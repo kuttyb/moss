@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <set>
 #include <string>
@@ -53,7 +54,14 @@ struct Param {
   bool inferred = false;
 };
 struct Stmt {
-  enum class Kind { Raw, Pass, Assign, Call, Message, Echo, If, Else, While, For, Match, Case, Let, Var, Reply, Return } kind = Kind::Raw;
+  enum class Kind {
+    Raw, Pass, Assign, Call, Message, Echo, If, Else, While, For, Match, Case,
+    Let, Var, Reply, Return,
+    // Phase 21 exceptional control-flow is represented explicitly.  These
+    // nodes are consumed by the same semantic walkers as ordinary branches;
+    // code generation never rediscovers them from source text.
+    Try, Recover, Raise
+  } kind = Kind::Raw;
   int line = 0; int indent = 0; string text, a, b; vector<string> args;
   // A synchronous message may be used as an expression initializer.  The
   // receiver/handler remain in `a`/`b` (the canonical domain-call slots),
@@ -96,7 +104,48 @@ struct Stmt {
   // not a nested message inside an existing Root. Codegen and Fast Debug
   // select their lowering from this checked fact, never from source text.
   mutable bool message_root_ingress = false;
+  // Checked Phase 21 exceptional IR.  `exceptional_alternatives` is the
+  // complete normalized set produced by this source node after concrete
+  // resolution; the node/scope identities feed ABI-v8 CFG verification and
+  // every downstream consumer.
+  RaiseSet exceptional_alternatives;
+  std::uint32_t exceptional_node = 0;
+  std::uint32_t exceptional_scope = 0;
+  // Exact whole owned bindings consumed while checking this statement.
+  // Native recovery lowering uses these facts across variant-specific edges.
+  mutable std::set<string> ownership_consumed_bindings;
   string source_file;
+};
+
+struct FailureArm {
+  int line = 0;
+  string source_file;
+  // Canonical source patterns (for example `FileError.Full`).  An empty list
+  // denotes the final catch-all.  `binding` is present only for the approved
+  // single-concrete-error-type catch-all form.
+  vector<string> patterns;
+  string binding;
+  // Reachable identities selected from the owning handler's fixed-point
+  // raise set. Populated by the checker; code generation must not reconstruct
+  // reachability from source spelling.
+  RaiseSet exceptional_alternatives;
+  // D7-proved owned handler locals read by this Root-only continuation.
+  // Populated from every escaping source-site ownership snapshot.
+  struct Capture { string name, type, binding_identity; };
+  mutable vector<Capture> captures;
+  // Checked pseudo-handler footprint exported for a compiled provider's
+  // fresh Root failure interval. This is distinct from the normal handler.
+  std::optional<StateLeafEffects> state_effects;
+  vector<Stmt> body;
+};
+// ABI-v9 diagnostic provenance. A witness is emitted only for a checked
+// no-op catch-all whose selected raise can follow these formal WRITE leaves.
+// The consumer maps formal leaves to protected actual storage at a call site.
+struct RecoveryWarningWitness {
+  int line = 0;
+  bool on_fail = false;
+  RaiseSet selected;
+  StateLeafSet formal_writes;
 };
 struct Method {
   string owner, name;
@@ -112,6 +161,7 @@ struct Method {
   Effect receiver_effect = Effect::Read;
   vector<Effect> parameter_effects;
   ObservableEffects observable_effects;
+  vector<RecoveryWarningWitness> recovery_warning_witnesses;
   int line = 0;
   string source_file;
 };
@@ -121,11 +171,20 @@ struct Handler {
   vector<Param> params;
   std::optional<string> reply_type;
   vector<Stmt> body;
+  vector<FailureArm> failure_arms;
   ObservableEffects observable_effects;
+  mutable vector<RecoveryWarningWitness> recovery_warning_witnesses;
   int line = 0;
   string source_file;
   // Checked semantic state effects, also carried by compiled providers.
   std::optional<StateLeafEffects> state_effects;
+  // Concrete provider-owned raised carrier when an on_fail arm captures a
+  // handler local. Empty handlers keep the ordinary __MossRaised ABI.
+  mutable string phase21_capture_carrier_type;
+  // ABI-v8 provider metadata. Source handlers receive a deterministic empty
+  // contract during interface emission; source-free handlers must carry the
+  // complete record or loading fails closed.
+  std::optional<ProviderHandlerAbi> provider_abi;
 };
 struct DomainRoute {
   string name, type;
@@ -147,6 +206,10 @@ struct FunctionSpecialization {
   string generated_name;
   vector<string> parameter_types;
   string return_type;
+  // Concrete observable effects drive the native Result ABI of this static
+  // specialization. A duck-typed method may raise even when the unspecialized
+  // function body cannot resolve that method's exact variant.
+  ObservableEffects observable_effects;
   // Ownership is checked in this complete concrete parameter environment.
   vector<Effect> parameter_effects;
   vector<bool> parameter_mutations;
@@ -186,6 +249,7 @@ struct Function {
   vector<string> callable_dependencies;
   bool exported = false;
   ObservableEffects observable_effects;
+  vector<RecoveryWarningWitness> recovery_warning_witnesses;
   // Inferred parameter effects, parallel to `params`.
   vector<Effect> parameter_effects;
   // A parameter may be both written and consumed. The joined effect is

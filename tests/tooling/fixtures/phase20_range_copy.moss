@@ -1,7 +1,21 @@
-fn main():
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn copy_file():
   source = FileIO.open("tmp/phase20-binary-source.data", ro)
   data = source.read(0, 8)
   destination = FileIO.open("tmp/phase20-binary-copy.data", create)
   destination.write(0, data)
   source.close()
   destination.close()
+
+fn main():
+  try:
+    copy_file()
+  recover:
+    echo "unexpected FileIO error"

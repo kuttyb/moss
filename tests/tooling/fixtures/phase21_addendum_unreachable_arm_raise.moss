@@ -1,0 +1,16 @@
+enum Failure:
+  A
+  B
+  C
+
+fn only_a():
+  try:
+    raise Failure.A
+  recover Failure.B:
+    raise Failure.C
+  recover Failure.A:
+    pass
+
+fn main():
+  only_a()
+  echo "ok"

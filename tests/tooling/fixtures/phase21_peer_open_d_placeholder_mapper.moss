@@ -1,0 +1,35 @@
+# Reconstructed from the external A-F review description; original ZIP absent.
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+enum FormatError:
+  Bad
+
+fn checked(chunk: Range) -> Int:
+  if chunk.length() < 2:
+    raise FormatError.Bad
+  return chunk.length()
+
+fn add(total: Int, value: Int) -> Int:
+  return total + value
+
+domain Reader:
+  fn Run() -> Int:
+    file = FileIO.open("tmp/phase21-peer-open-d/p4.bin", ro)
+    total = file.chunks(2) |> map(checked(_)) |> reduce(0, add)
+    file.close()
+    reply total
+
+  on_fail FormatError.Bad:
+    reply -1
+  on_fail:
+    reply -2
+
+fn main():
+  reader = Reader()
+  echo message reader.Run()

@@ -2,8 +2,14 @@
 fn first(file: FileIO) -> Range:
   return file.read(0, 4)
 
-fn main():
+fn phase20_probe():
   file = FileIO.open("tmp/phase20-review/input.txt", ro)
   r = first(file)
   echo r.length()
   file.close()
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

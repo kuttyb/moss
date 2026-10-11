@@ -1,5 +1,1325 @@
 # Moss current status
 
+## Phase 21 independent Architect GO; L7 merge gate — 2026-10-11
+
+Exact reviewed implementation: `19cf731ae08291500e7488c8a03df123aac4f9aa`
+on `phase-21-integration`. The independent Architect L6 retested its earlier
+nested Root expression counterexample in checker, native O0/O3, Fast Debug
+and a consumer rebuilt after removing provider source. It also challenged
+no-trailer and nested-handler safety, ABI-v9 binding, O1/O4/O8 and bounded
+early-placement gates. Its separately attributable **GO for the approved
+Phase 21 scope** is in `docs/PHASE_21_ARCHITECT_V9_RETEST_19CF731.md`. The
+earlier `96eef9e` NO-GO remains valid for that older SHA.
+
+Engineering's `make check`, `make examples`, strict GCC/Clang C++17, four-pair
+Float matrix, source-free and focused Root gates pass on the reviewed
+implementation source. The Architect separately found that whole-vector
+`echo [1]` checks but fails generated Rust with E0277 on both `96eef9e` and
+`19cf731`; it classified this pre-existing general compiler defect outside
+the Phase 21 Root/ABI acceptance contract. Track for checker/native output
+hardening. The supported vector-element Root case passes.
+
+**Engineering L6: GO. Independent Architect L6: GO at `19cf731`. L7:
+HOLD merge pending explicit approval.** No merge into `main` has occurred.
+
+## Phase 21 independent Architect NO-GO and engineering repair — 2026-10-11
+
+Independent Architect L6 reviewed exact pushed `96eef9e` and recorded an
+attributable **NO-GO** in `docs/PHASE_21_ARCHITECT_V9_REVIEW.md`. It found
+that an exhaustive Root `on_fail` was falsely rejected when `message` appeared
+inside a binary, vector or ordinary call expression in `main`, including a
+source-free provider case. The Architect independently reran 30+ ABI-v9,
+effect, ownership, lock, FileIO, Float and original A–F gates; those passed
+within the report's stated limits.
+
+Engineering repaired the recursive Root-ingress effect context at source
+`3a964dc9aa22bfc7d85cccaa57515c532ee839b2` and added
+`check_phase21_root_expression_ingress.py`. The valid forms now check and
+execute in native O0/O3 and Fast Debug; a consumer rebuilt after provider
+source removal executes, while a nested Root without `on_fail` still fails
+`ROOT_UNHANDLED_RAISE`. The isolated repair worktree passed full `make check`,
+`make examples` (32), strict GCC 13.3/Clang 18.1 C++17, and the four-pair
+Float matrix. The integration tree also passed full `make check` and
+`make examples`. Exact-SHA Architect retest is next.
+Engineering recommends GO for independent retest; **main merge remains HOLD**.
+
+## Phase 21 original A–F final acceptance handoff — 2026-10-11
+
+L7 supplied a single-text bundle described as a byte-for-byte transcription
+of the original A–F README and six `.moss` programs. Those files were imported
+unchanged into `tests/tooling/fixtures/p21_open_at_7775049/`; the actual ZIP
+was unavailable for independent byte comparison. The earlier original
+`p21_review_repros.zip` is still unavailable, and its cases retain
+reconstructed provenance. Source hashes, command forms, exact exits and output
+are in `docs/PHASE_21_ORIGINAL_AF_RESULTS.md`.
+
+On compiler implementation `c1ef3ebb13d7c74c3ed86a45d45e536d527161da`
+(pre-evidence worktree HEAD `c59ede0`), all six supplied original cases met
+their README expectations: A rejects unhandled `E.A`; B and F print exact
+canonical Float text in O0/O3/Fast Debug; C checks with only `E.A` escaping
+and prints `outer A`; D/E check, report exact typed effects and print `-1`
+through Root `on_fail` in native O0/O3. The unchanged D/E Fast Debug runs
+produce the documented Phase 20 FileIO unsupported diagnostic. The original
+D/E legacy `FileError` declarations needed no ABI-v9 migration variant.
+
+The permanent original-source gate and final `make check` rerun both pass;
+`make examples` also passes on the combined tree. Engineering recommends GO for
+independent Architect acceptance. The strict GCC/Clang and four-pair Float
+results below apply to the same compiler source and were run before these
+original files entered the regression corpus.
+At this earlier checkpoint the Architect had not voted on the ABI-v9 source;
+the later NO-GO at `96eef9e` is recorded at the top of this status file.
+The historical `5941d98` NO-GO remains attributable to that earlier SHA.
+No merge into `main`.
+The final acceptance evidence is committed and pushed to
+`origin/phase-21-integration` following the user's explicit push request.
+L7 must arrange independent Architect review of the exact candidate before
+any merge vote.
+
+## Previous Phase 21 pre-original acceptance checkpoint (2026-10-11)
+
+Exact validated compiler/runtime/test source:
+`c1ef3ebb13d7c74c3ed86a45d45e536d527161da` on
+`phase-21-integration`. Later release-packet commits add unchanged original
+fixtures, a regression gate and documents without changing compiler source.
+The independent engineering proof reviewer ran 13 focused O1/O4/O8 and
+bounded early-release gates on this source; all passed under the documented
+accepted/fail-closed contract. Reconstructed external A–F cases, ABI-v9
+artifact binding and migration, source-free methods/warnings, compiler-defined
+standard errors, Root totality and checked pipelines are integrated.
+
+`TMPDIR="$PWD/tmp" make check` exited 0 with `all Moss v0.1 tests passed`.
+`make examples` passed 32 positive builds. Strict GCC 13.3.0 and Clang 18.1.3
+C++17 `-O2 -Wall -Wextra -Werror -pedantic` builds passed. The strict Phase 20
+review passed 36 bug, 30 guard and two pre-existing probes; eight design
+proposals remain INFO. All four GCC/Clang × Rust 1.97.0/1.98.1 Float runs
+matched native O0/O3 and Fast Debug byte-for-byte against the pinned corpora.
+Actual source-removed providers, warm-cache and recomputed-hash falsification,
+concurrent Executor/Root/Branch, and FileIO fault/cleanup gates passed within
+`make check`. Refetched `origin/main` remains
+`d15e968778fa1cff3cd5085911c505592af54a30`, an integration ancestor.
+The external reproduction ZIPs were unavailable; L7 approved reconstructed
+permanent cases, and that provenance remains explicit in the peer register.
+
+**Engineering L6: GO for independent Architect acceptance.** The last
+independent Architect L6 vote is historical NO-GO at `5941d98`, before the
+approved ABI-v9 and A–F repairs; it is not a vote on this source. **L7: NO-GO
+for merging into `main`** until independent review and explicit authorization.
+Full evidence and limits are in `docs/PHASE_21_FINAL_REVIEW.md`,
+`docs/PHASE_21_PEER_REVIEW_DISPOSITION.md`, and
+`docs/PHASE_21_FINAL_PROOF_AUDIT.md`. Do not merge into `main`.
+
+
+## Phase 21 autonomous completion checkpoint — 2026-10-11
+
+Integration `phase-21-integration` is pushed through implementation/test SHA
+`5439a2578cc529ffc18eb14a6450c9c820bd78d9` and remains **NO-GO for
+`main`**. The approved ABI v9 provider-artifact binding, imported method
+effects, recovery-warning provenance, compiler-defined standard errors and
+cross-crate standard-error WRITE bridge are integrated. On this combined
+compiler, source-free ABI execution, recomputed-hash/warm-cache falsification,
+warning parity, standard-error namespace/WRITE order/Root recovery, pinned
+Float IEEE plus reconstructed B/F expression corpus, reconstructed D/E chunk
+pipeline native O0/O3, peer effects, and actual O9 Branch error gates pass.
+Those are focused results, not a final full-suite verdict.
+
+The external A–F ZIP and original peer ZIP are unavailable in this workspace;
+L7 explicitly approved reconstruction. Reconstructed A and C are now permanent
+red gates in `check_phase21_addendum_a_c.py`: A loses the raise from a trailing
+local method expression; C falsely widens grouped bare re-raise effects to an
+unreachable variant. Their isolated repairs are in progress. An independent
+pipeline reviewer found that a raising placeholder mapper inside lexical
+`try` checks but emits an invalid cross-closure recovery break; its test/fix
+is in progress. The D/E fix is not closed until that gate passes. The source-free
+WRITE argument-order defect was repaired at `60cd8ec` and its native O0/O3,
+Fast Debug and removed-source gates pass on the combined tree.
+
+The latest complete `make check`, `make examples`, strict GCC/Clang C++17,
+strict Phase 20 review and GCC/Clang × Rust 1.97/1.98 Float matrix still apply
+only to older implementation SHAs. Rerun all after the A/C and pipeline fixes,
+then update `docs/PHASE_21_PEER_REVIEW_DISPOSITION.md`,
+`docs/PHASE_21_FINAL_PROOF_AUDIT.md` and `docs/PHASE_21_FINAL_REVIEW.md` with
+the exact code SHA and results. Independent Architect L6 acceptance is pending
+L7 coordination. Do not merge into `main`.
+
+## Phase 21 ABI v9 remediation in progress — 2026-10-11
+
+The integration branch now contains the ABI-v9 artifact digest/rlib marker
+checkpoint, compiler-defined standard errors, expression-point exceptional
+ownership, and the failure-arm capture-type planner repair. The forged
+failure-pattern metadata gate, source-free ABI/imported-effects gates,
+standard-error namespace gate, absolute Root boundary gate, expression-edge
+gate, recover-reinitialization gate, and leading-condition gate pass on the
+combined compiler through `ed9ff0c` (the later proof-document commit has no
+compiler edit). This remains an engineering checkpoint: imported source-free
+method WRITE effects and warning provenance are being repaired in the ABI
+worktree; standard-error transport through imported methods/messages is being
+repaired in the standard-error worktree. The numeric package gate exposed a
+stale ABI-v8 `.mossi` in its reusable scratch build directory that the v9
+marker generator incorrectly treated as fresh. The FileIO adversarial gate
+also needs its exported user `FileError` namesake fixture migrated to the
+canonical `std.FileError` recovery selector. Neither is waived. Full `make
+check` and final toolchain validation are pending after these repairs.
+
+After that checkpoint, `838aae6` integrated native standard-error bridges
+and the FileIO fixture migration. The adversarial lock/FileIO gate and new
+source-free O1/O8 iterator/capture gate pass. A further independent ABI-v9
+audit proved that a warm consumer build can return its cached executable
+without revalidating a changed external `.mossi` or missing rlib; the
+permanent negative gate is `check_phase21_source_free_cache_binding.py` and
+the ABI worktree is repairing the cache path. The standard namespace
+source-free handler reply gate is also red: an imported handler's synthetic
+`reply 0` conflicts with the provider contract's `std__ParseError` reply.
+These are known live failures, not accepted limitations. The current `make
+check` run stopped at the now-migrated FileIO fixture; rerun it after ABI
+repairs.
+
+L7 has authorized ABI v9, compiler-recognized standard errors, absolute Root
+typed-error totality, the O2 wording correction, and general O1/O4/O8 and
+early-release proof closeout. The current `phase-21-integration` branch is an
+engineering checkpoint, **not a release candidate**. Independent worktrees
+are implementing the ABI, constructing standard-error/Root conformance gates,
+and auditing exceptional control flow and ownership. The integration branch
+now includes the approved O2 correction and failed-create durability caveat.
+
+The leading-condition typed-raise and recover-after-reinitialization
+counterexamples are repaired in `184a3b1`. Their focused native O0/O3/Fast
+Debug gates pass; on_fail capture, recovery semantics and synchronization
+plan gates also pass. `c5d7e08` closes an O1 hole by rejecting implicit
+typed-raising custom iterator `iter()`/`next()` calls at Moss checking with
+`RAISING_ITERATOR_UNSUPPORTED`, including generic specialization, until
+checked iterator lowering is implemented. It also includes implicit method
+observable summaries, including panic. The bounded early-placement and O8
+protected-state capture gates pass. These are targeted results; the combined
+full suite has not yet been rerun. The standard-error namespace gate remains
+red at `UNKNOWN_ERROR_TYPE` for declaration-free `ParseError`, while the
+absolute Root boundary gate passes its current native/Fast Debug/source-free
+matrix. ABI v9 implementation and independent proof review remain active.
+The proof audit has since added a red expression-originated O4 counterexample:
+`consume_after(fail(), data)` in a `try` raises before `data` is evaluated,
+yet statement-level ownership snapshots currently mark `data` consumed at
+`recover`. The reverse argument order correctly rejects. The enabled
+`check_phase21_expression_ownership_edges.py` gate preserves both cases;
+evaluation-order exceptional-edge lowering is under repair.
+Earlier `make check` and Float matrix results below apply only to the prior
+implementation SHA and do not validate the eventual ABI v9 tree.
+
+## Phase 21 peer-review engineering validation — 2026-10-11
+
+Integration branch `phase-21-integration` is reconciled with `origin/main`
+`d15e968778fa1cff3cd5085911c505592af54a30`. The frozen implementation
+SHA is `5941d98c824f31550f520891235c8b7ac96f3992`; later changes are
+report-only. It narrows declared `FileError` presence validation after a
+full-suite counterexample on `263ad67`: legacy Phase 20 FileIO sources without
+a typed enum incorrectly received `UNKNOWN_ERROR_TYPE`. Declared malformed
+and ambiguous contracts still fail closed, and typed recovery selectors still
+require a declaration.
+
+`TMPDIR="$PWD/tmp" make check` now passes (`all Moss v0.1 tests passed`),
+including strict Phase 20 review (36 bug, 30 guard, two pre-existing probes;
+eight design INFO), native/Fast Debug, source-removed providers, concurrent
+Executor/Branch and FileIO fault-injection gates. `make examples`, strict
+GCC and Clang C++17, and the GCC/Clang × Rust 1.97.0/1.98.1 Float matrix pass
+on this implementation. The 270-value corpus SHA-256 is
+`91553f7482c35cfef6c108c429c7bdb54fba4cc8d4959c4d0a7bd3faf1ca28ef`.
+
+The independent release-gate audit on immediately preceding `263ad67`
+passed strict Phase 20, examples, actual source-removed provider execution,
+imported function/generic effects, Root FileIO fault injection, Executor,
+Branch, Range fail-closed controls, and native/Fast Debug focused gates. Both
+that audit and the current reproducer confirm that forged ABI-v8 `.mossi`
+metadata builds an executable that aborts. The current source-free
+imported-helper warning repro still fails with no warning. The Architect L6
+independently retested exact implementation `5941d98` and issued **NO-GO**;
+its findings and per-issue dispositions are in
+`docs/PHASE_21_ARCHITECT_REVIEW.md`. O1/O4/O8 and §42 early-release general
+arguments remain incomplete. Engineering and L7 also remain NO-GO. No merge
+into `main` is authorized.
+
+## Phase 21 peer review EXT-12/15 isolated remediation — 2026-10-11
+
+The `phase-21-peer-major-minor` branch corrects observable effects for IEEE
+Float division while keeping integer division panicking. The focused Float
+gate passes native unoptimized, native optimized, and Fast Debug output and
+asserts Float and Int effect summaries. The checker now rejects malformed
+declared `FileError`, `ParseError`, and `ConversionError` shapes when their
+built-in operations are used, and reports a missing `FileError` contract at
+Moss checking. The new contract gate passes valid native typed recovery,
+numeric Fast Debug recovery, missing and malformed negative diagnostics, and
+an unrelated user `FileError` enum. Fast Debug FileIO execution remains
+unsupported by the existing interpreter.
+An additional cross-module gate preserves an unrelated provider-owned
+`FileError.Full(code: Int)` while a consumer uses its own six-variant FileIO
+contract. This guards against accidentally treating every imported enum with
+the same short name as the consumer's built-in error type.
+The package reproducer also exposed two pre-existing native identity defects:
+multiple qualified FileError names can leave generated Rust without a
+FileError alias (E0425), and a module-qualified specific recovery selector
+does not match the plain FileError identity raised by FileIO. The isolated
+follow-up fails both cases at Moss checking with
+`FILEIO_ERROR_IDENTITY_UNSUPPORTED`; it does not conflate nominal identities
+or change ABI v8. When the consumer has no local FileError, a unique imported
+declaration must still have the six approved tag-only variants. Full
+cross-module FileIO recovery and implicit built-in enum availability remain
+design decisions, not accepted fixes.
+
+At the `8d8a9cc` checkpoint, `moss check` accepted `FileError.IO(code: Int)`
+with FileIO use, then rustc failed E0533. The isolated branch rejects it with
+`BUILTIN_ERROR_TYPE_SHAPE`. The strict Phase 20 review on the isolated parent
+baseline still has eight Root-totality migration failures; all are
+`ROOT_UNHANDLED_RAISE`, with no new built-in error contract failures. Full
+integration gates and independent architectural acceptance remain with L7.
+
+## Phase 21 peer review EXT-05 engineering checkpoint — 2026-10-11
+
+The isolated `phase-21-peer-imported-effects` branch preserves checked `.mossi`
+observable effects for source-free ordinary and generic functions. A permanent
+gate tests variant-precise raises, panic summaries, native source-free execution,
+Root recovery, Moss rejection of unhandled raises, and rehashed missing effect
+metadata. Source-backed raising object methods now compile through their
+`MossAccess_*` trait defaults and pass native/Fast Debug parity. Source-free
+object methods remain unsupported under frozen ABI v8 because `object_method`
+records contain no observable-effect summary; such calls fail at Moss checking
+with `IMPORTED_METHOD_EFFECTS_UNAVAILABLE`, including mapper callbacks. This is
+an interim safety restriction, not semantic acceptance. An approved `.mossi`
+contract revision is required for full EXT-05 closure; no ABI record was changed.
+
+Completed local validation: `check_phase21_imported_effects.py`,
+`check_phase21_source_free_abi.py`, `check_borrowed_reads.py`, strict C++17
+syntax compilation, and `git diff --check` all passed after the last compiler
+edit. Full integration `make check` and `make examples` have not run on this
+isolated branch; L7 must run them after cherry-picking the fix.
+
+## Phase 21 final independent review candidate — 2026-10-11
+
+The Phase 21 implementation checkpoint `8d8a9cc6f842e11701dbedc56e3d2d2d3da9852a`
+was reconciled with current `main`/`origin/main`
+`d15e968778fa1cff3cd5085911c505592af54a30` by integration merge
+`7eb192b`. All four independent review areas completed. Their defect fixes
+and adversarial regressions are integrated through implementation commit
+`c89f5644785dad60c108f80609c8692364a8c190`, without changing the frozen
+Phase 21 ABI v8. The full O1–O9 matrix, implementation locations, findings,
+test evidence, assumptions, and approval gates are in
+`docs/PHASE_21_FINAL_REVIEW.md`.
+
+After all implementation edits, `TMPDIR="$PWD/tmp" make check` passed
+(`all Moss v0.1 tests passed`, including strict Phase 20 review: 36 bug and
+30 guard probes passed), `make examples` passed, and strict C++17
+warnings-as-errors compilation passed. Source-free provider execution with
+Moss source removed and native/Fast Debug parity passed the tested cases.
+Reviewer 3's concurrent O9 case passed 64 native runs; Reviewer 2's lock
+gate covered 45 concurrent failure and 45 NotFound Roots. Documentation
+edits after those results do not invalidate compiler/runtime validation.
+
+Recommendation is **NO-GO for merging into `main`**. A forged `.mossi` that
+swaps failure-arm pattern identities while recomputing its existing hashes
+still passes check/build and aborts at runtime; fixing cross-artifact
+authenticity needs an approved ABI/contract decision. The required extra
+Rust/C++ Float toolchain combination was unavailable locally. The general
+early-release proof and exhaustive O4/O8 invariant arguments remain open.
+Concrete cross-crate typed `Range` now fails closed at the Moss call site,
+pending a broader Phase 20 native ABI repair. No waiver is assumed. Stop at
+the human approval gate; do not merge into `main`.
+
+## Phase 21 independent locking/FileIO review — 2026-10-11
+
+Reviewer 2 audited the compiler's recovery/lock plan in `src/moss.cpp`
+(`specialized_handler_effects`, `specialized_handler_failure_effects`,
+`derive_path_placement`, `build_synchronization_plan`), physical wrapper
+acquisition/release and Root failure dispatch in `src/handler_lowering.inc`,
+and FileIO abandonment/claim release in `src/fileio_runtime.hpp`. A concrete
+native defect was found: Phase 21 checked FileIO operations still lowered to
+Phase 20 panicking calls, so injected `FileSync` inside an `on_fail` `try`
+aborted instead of reaching `recover`. The repair lowers open, read (including
+batch and expression forms), write, sync, and close through checked runtime
+calls with typed propagation in Phase 21 result contexts. A source-free
+provider whose only FileIO appears in an `on_fail` arm now emits the FileIO
+runtime and all intermediate raised variants needed by that arm.
+
+The new native adversarial gate in `tests/tooling/check_phase21_lock_fileio_adversarial.py`
+checks separate attempt/failure class sets, old-guard release before new
+acquisition, inode-claim absence at the failure acquisition, injected partial
+write, abandoned-close, read, trailer-sync and expression-sync failures,
+nested re-raise, 45 concurrent failure Roots, 45 concurrent NotFound Roots,
+and provider execution after removal of its Moss source. This is behavioral
+evidence, not a general proof. Existing Phase 21 Root cleanup, nested handler,
+source-free ABI, recovery and Branch tests and strict Phase 20 FileIO suites
+also pass. On the final reviewer branch, repository-local `TMPDIR make check`
+ended with `all Moss v0.1 tests passed`; `make examples`, strict C++17
+warnings-as-errors syntax compilation, and `git diff --check` passed.
+
+O1/O2/O3/O5/O6/O7 have direct implementation and regression evidence from
+this review, subject to the effect walk, tagged-return and runtime ownership
+invariants documented in the Phase 21 specification. The distinct §16
+`2PL/early-release semantics` row remains **INCOMPLETE**: bounded Phase 15.3
+untouched-guard cancellation is visible in implementation, but the design
+explicitly leaves a general mid-execution early-release proof open. Reviewer
+2 did not claim O9's complete Branch quiescence invariant; that is Reviewer
+3's area. The release candidate still needs the coordinator's integrated
+validation and human approval before any `main` merge.
+## Phase 21 independent source-free/numeric review — 2026-10-11
+
+Reviewer 4's isolated branch `phase-21-review-sourcefree-numeric` was cut from
+integration `82dd956`. It found two distinct issues. First, a source-free
+provider with two tag-only raised variants accepted a `.mossi` file with its
+two `on_fail` callable symbols swapped, linked successfully, and aborted at
+runtime. The loader now checks the existing ABI-v8 concrete and semantic
+section hashes plus the canonical `on_fail` symbol derived from module,
+domain, handler, and arm index. This is a validation-only repair; the ABI-v8
+layout and emitted records are unchanged. The focused source-free gate passes
+with both unadjusted and recomputed-hash symbol-swap regressions.
+
+The stronger falsification case remains **unresolved**: swapping only the two
+failure-arm pattern identities, recomputing all existing hashes, and retaining
+canonical symbols passes `moss --check` and native build but aborts at runtime
+(SIGABRT, exit 134). Existing hashes verify file consistency, not that the
+`.mossi` contract matches the provider rlib. A general repair needs a
+provider-artifact-bound contract or provider-owned dispatch, which changes
+the frozen cross-artifact agreement and requires architectural review. Do not
+claim arbitrary falsified metadata rejection or Phase 21 release readiness
+from the narrow validation repair.
+
+Second, the Phase 20 typed `Range` cross-crate fixture is caused by each
+generated module crate defining a separate nominal FileIO `Range`. Correct
+compilation requires a shared native FileIO ABI or an equivalent owner-safe
+cross-crate transport. Pending that broader Phase 20 repair, direct calls
+passing `Range` or `RangeBatch` into concrete provider-owned functions of
+another explicit module fail at the Moss call site with
+`FILEIO_CROSS_CRATE_ABI`. The source-backed and source-free typed fixture
+both reject before rustc E0308; a same-module Range helper still builds and
+prints 65. Generic/static functions specialize in the consumer crate and
+remain valid: independent source-backed and source-free `Range.length()`
+helpers both build and print 1. This is an interim diagnostic, not a working
+cross-crate concrete Range ABI.
+
+Independent numeric probes on rustc 1.98.1 and GCC 13.3.0 passed: 2,048
+finite binary64 patterns matched a Python shortest-decimal oracle in native
+debug, native optimized, and Fast Debug; 2,070 `parse_float` and 535
+`parse_int`/`to_int` inputs matched the same three engines. No second Rust or
+C++ toolchain is installed locally. The spec's wider formatter portability
+pin remains unverified; CI should run this corpus on at least two Rust
+toolchain versions and both GCC and Clang C++17 compiler builds. The tested
+local combination was rustc 1.98.1 (LLVM 22.1.8) and GCC 13.3.0 on
+x86_64-unknown-linux-gnu; no Clang or second rustc/GCC was available. CI
+should build Moss with GCC and Clang, then run the pinned Float and numeric
+oracles with the current pinned rustc plus an independently pinned prior or
+next supported rustc release for each C++ build. Every job should require
+native debug, native optimized, and Fast Debug output equality.
+
+Final isolated-branch validation after the narrowed diagnostic: `make check`
+PASS (`all Moss v0.1 tests passed`, including strict Phase 20 review:
+36 bug and 30 guard probes passed); `make examples` PASS; strict C++17
+`g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic -fsyntax-only src/moss.cpp`
+PASS; `git diff --check` PASS. Focused source-free ABI, borrowed-view, Range
+ABI, and strict Phase 20 gates also passed after the follow-up. Source-free
+provider execution passed in both the ABI and generic Range gates. These
+results do not validate the unresolved recomputed-hash pattern swap or the
+untested toolchain matrix. Historical checkpoints below describe the earlier
+integration state.
+
+## Phase 21 A–D integration review — 2026-10-10
+
+Agents A, B, C, and D have completed their assigned work. Their reviewed
+changes are integrated on `phase-21-integration` through `5d60b94`. A's
+source-site capture graph, provider-owned failure frame, and lexical recovery
+fixes; B's FileIO failure cleanup and guarded flag handling; C's ordered
+Branch outcomes, quiescence and panic witnesses, and source-free panic fact
+checks; and D's Float oracle and language parity checks are present together.
+The focused A/B/C/D gates pass on this combined tree.
+
+The O1–O9 implementation review found passing evidence for entry-planned
+normal/recovery locks, separate `Run$fail` lock planning, source-site capture
+proofs, guard release before failure dispatch, Root FileIO cleanup ordering,
+nested typed-raise propagation, rejected unsafe captures, and ordered Branch
+termination with no live read-borrow tokens. The final combined `make check`
+passed with repository-local `TMPDIR` (`all Moss v0.1 tests passed`), as did
+`make examples`, strict C++17 warnings-as-errors syntax compilation, and
+`git diff --check`. Earlier individual-agent validation below remains useful
+history; this section records the final combined validation.
+
+Phase 21 is ready for human review of this integration branch, not merged to
+`main`. The design's wider Float formatter pin across other Rust/C++
+toolchains remains unverified because only Rust 1.98.1 and GCC 13.3 are
+installed here. The separate Phase 20 source-free cross-crate typed `Range`
+ABI gap has a tracked reproducer under
+`tests/tooling/fixtures/phase20_typed_range_cross_crate/`: Moss checking
+passes but native compilation fails with rustc E0308. Resolve that gap as
+a Phase 20 follow-up or explicitly disposition it at the review gate.
+
+## Phase 21.A owned failure capture closeout — 2026-10-10
+
+The checker now proves handler-local `on_fail` captures over each selected
+escaping exceptional source edge, including definite initialization, stable
+binding identity, unconsumed ownership, and rejection of FileIO and borrowed
+enum payload capabilities. Its ABI-v8 graph records distinct source sites,
+recovery scopes, and exceptional edges instead of merging sites by error tag.
+Provider body results carry an opaque provider-owned frame; Root wrappers
+extract it only after body completion and dispatch it after guard release and
+fresh failure-lock acquisition. Source-free `.mossi` plus provider rlib builds
+execute non-Copy captures. A value first bound inside a `try` is captured at
+its inner raise edge before its Rust lexical scope ends.
+
+Variant-specific `recover` lowering retains checker-proved owned locals in
+scoped `Option<T>` slots across consumed and surviving edges. Native
+regressions cover consuming matches and helpers, String method READs,
+reassignment within recovery and after `try`, post-try use, and a combined
+recovery-slot/on_fail capture. Tracked negatives cover pre-initialization,
+consumption, FileIO, and borrowed enum payloads. A message-result binding
+also has a positive capture regression.
+
+Completed validation on the final tree: strict C++17 warning-free syntax
+compilation; focused Phase 21 capture, recovery, source-free ABI and native
+gates; full `make check` (`all Moss v0.1 tests passed`); `make examples`; and
+`git diff --check`. This closes Agent A's implementation work for integration
+review. Final Phase 21 acceptance, including O1–O9 combined review and the
+wider Float formatter toolchain pin, remains an integration decision.
+## Phase 21.D independent Float corpus and source-free view review — 2026-10-10
+
+The Float gate now checks 270 deterministic finite binary64 bit patterns
+against a Python 3.12 shortest-round-trip oracle, including signed zero,
+subnormal/normal boundaries, both notation thresholds, and maximum finite.
+The reference output has a fixed SHA-256 digest, every text value round-trips
+to its original bits, and default/optimized native Rust plus Fast Debug must
+match it. This is independent evidence for the pinned Ryū and C++ `to_chars`
+implementations on this host; it is not the spec's wider multi-toolchain pin.
+Only Rust 1.98.1 and GCC 13.3 are installed; no alternate Rust or C++
+toolchain was installed or tested.
+
+The approved finite `parse_float` forms are now explicit in the language
+skill, consistent with the practical guide and Phase 21 §13.3. Focused numeric
+parsing/conversion, Float, borrowed-view, and skill checks pass. The direct
+typed `Range` and `RangeBatch` WRITE tests emit
+`FILEIO_VIEW_PARAMETER_WRITE`; source-free generic specialization reaches the
+provider `.mossi` and fails closed with `FILEIO_PINNED_OWNERSHIP`. The latter
+proves rejection across the interface, not the more specific WRITE diagnostic.
+
+Full `make check` with an absolute repository-local `TMPDIR` passed after
+these edits (`all Moss v0.1 tests passed`). Phase 21 acceptance remains dependent
+on A's capture frame, the final O1–O9 integration review, and the unavailable
+wider Float toolchain pin.
+
+## Phase 21.C final O9 review and adjacent ABI finding — 2026-10-10
+
+The bounded-K chunk lowering still joins each complete Branch window before
+reading an outcome slot, commits indexed Value/Raised/EOF outcomes in logical
+order, and publishes no later window after a terminal event. A new `moss_perf`
+counter in the production FileIO read-borrow type confirms zero live Branch
+read tokens at the terminal Root boundaries in the injected read-fault native
+test. A generated-code mutation panics immediately after its first Branch
+publication and requires process `SIGABRT` with no typed recovery output;
+the Root fail-closed guard does not convert a panic into a typed raise.
+
+A source-free exported generic mapper whose provider `.mossi` says
+`may_panic=1` correctly uses the sequential chunk path and runs natively.
+Removing that effect fact from the interface causes a structured rejection,
+so an unknown provider panic fact cannot silently authorize speculation.
+These checks supplement the existing ordered fold/mapper/EOF native matrix.
+The Phase 21.C O9 paths reviewed here are complete, subject to final
+all-phase integration review.
+
+An adjacent Phase 20 cross-crate Range ABI gap remains open. A minimal
+source-free provider with `export fn first(chunk: Range) -> Int` and a consumer
+calling it on a normal `FileIO.read` result passes `./moss check --json` with
+no diagnostics, but `./moss build` fails rustc E0308: it expects
+`moss_mapper::Range` and receives consumer `moss_fileio::Range`. A durable
+source reproducer is in
+`tests/tooling/fixtures/phase20_typed_range_cross_crate/`; the observed
+checker result and rustc error are recorded there. It does not involve Branch
+lowering and is not repaired by this C
+closeout; resolving the shared Range ABI or rejecting that invalid native
+path is a separate Phase 20 follow-up and an integration acceptance risk.
+
+Validation after the edits: the focused C gate, full `make check` (`all Moss
+v0.1 tests passed`), `make examples`, strict C++17 warnings-as-errors syntax
+compilation, and `git diff --check` passed. The typed-Range reproducer is a
+separate failing native probe and does not pass the Phase 20 ABI acceptance
+check; no Phase 21 acceptance or merge to `main` is claimed here.
+
+## Phase 21.D documentation wording review — 2026-10-10
+
+The active v0.1 syntax and roadmap pages now describe implemented numeric
+parsing, checked conversion, Phase 20 support, and Phase 21's current name and
+remaining gates. The consolidated Phase 21 specification now marks the old
+Fast Debug Float division mismatch, Float golden migration, borrowed-view
+WRITE hole, and fusion-only chunk eligibility as historical implementation
+motivations. Its normative Float spelling and tie rules remain unchanged.
+The shared ABI document and README already distinguish available source-free
+typed failure arms from the unmaterialized handler-local capture frame.
+The wider cross-toolchain Float formatter pin remains unverified in this
+workspace; final Phase 21 acceptance still depends on A's capture frame and
+the O1–O9 integration review.
+
+## Phase 21.A lexical native recovery checkpoint — 2026-10-10
+
+Native `try` lowering now uses a labeled Rust block. Explicit `raise`, fallible
+calls, numeric conversion, Root ingress, and chunk-pipeline errors route to
+that block's tagged outcome; nested unmatched errors route to the outer block
+or callable. This removes the generated attempt closure and preserves Moss
+`return` from inside a `try`. A new native regression checks both the early
+return and the handled error return in a plain value-returning function.
+Cross-crate error propagation retains Rust's `Into` conversion. The generated
+callable fallback is diverging only on the checker's unreachable normal path
+when source has exhaustive explicit returns.
+
+Completed validation after these edits: focused recovery checker/native,
+numeric cross-module parsing, chunk FileIO raise, and handler Root tests;
+full `make check` (`all Moss v0.1 tests passed`); `make examples`; strict
+C++17 `-Wall -Wextra -Werror -pedantic` syntax compilation; and
+`git diff --check`.
+
+The legal variant-specific ownership probe still passes `moss check` and
+fails native rustc E0382. Removing the closure avoids eager capture, but Rust
+still sees a possible move of `item` on `Failure.First` when
+`Failure.Second` recovery reads it. The next lowering step must carry the
+owned value along the exceptional edge on which it survives, rather than
+assuming Rust can infer ownership from the error variant. The handler-local
+`on_fail` capture frame, source-free nonempty capture execution, final O1–O9
+review, and wider Float toolchain pin remain open. Phase 21 is not accepted or
+merged to `main`.
+
+## Phase 21.A exceptional recovery ownership checkpoint — 2026-10-10
+
+The ownership checker previously entered each `recover` arm with the state
+from before its `try`. A non-Copy enum consumed before an explicit raise, or
+by a fallible consuming call, was accepted when the recovery arm read the
+consumed binding; native Rust then failed with E0382. The checker now records
+ownership snapshots at direct raising statements, carries unmatched snapshots
+through nested `try`/`recover`, and joins moved binding facts only for the
+error alternatives selected by each recovery arm. It records a fallible
+statement after its expression ownership effects and before a successful
+assignment initializes or reinitializes the target. Regression coverage
+includes explicit and call-originated raises, nested propagation, a
+variant-specific checker-positive path, and reinitialization in `recover`
+with a passing native executable.
+
+Strict C++17 warning-free syntax compilation, the focused recovery gate,
+full `make check` (`all Moss v0.1 tests passed`), `make examples`, and
+`git diff --check` pass after the compiler edit. A separate legal
+variant-specific path still passes `moss check` but fails native rustc E0382:
+the current `try` closure captures a non-Copy outer binding by move before
+control flow selects an error. Its source fixture is retained by the focused
+checker gate; native closure lowering needs a path-sensitive ownership handoff.
+The handler-local `on_fail` capture frame and final O1–O9 review also remain
+open. No Phase 21 acceptance or merge to `main` is claimed.
+
+## Phase 21.A capture-frame investigation and documentation checkpoint — 2026-10-10
+
+The concrete `on_fail` local probe in `tmp/phase21_on_fail_capture_probe.moss`
+still fails `moss check --json` with `UNKNOWN_SYMBOL_OR_TYPE` on the
+handler-local `attempt`. The failure-arm type/ownership environments in
+`check_domains` and `phase21_validate_failure_arms` contain only domain
+members, routes, handler parameters, and pattern bindings. The current
+provider body returns `Result<_, __MossRaised>`; its Root wrapper receives no
+owned-local frame. The `.mossi` capture schema validates ownership/type facts
+but source-free loading rejects every nonempty capture list. The existing
+two-crate Rust fixture demonstrates an opaque frame crossing a source-free
+provider boundary, but generated Moss code does not yet implement that fixture's
+capture behavior.
+
+The next A implementation must first derive each arm's free handler-local
+bindings and intersect definite availability, ownership, and binding identity
+across **escaping** exceptional paths selected by that arm. This includes
+raises inside expressions, nested `try`/`recover`, and local moves; a
+normal-path scope join is insufficient. Then materialize the provider-owned
+frame at those paths, carrying values through the provider body result so its
+lexical frame and Root-local FileIO end before the fresh failure lock plan.
+The application Root wrapper must pass the opaque frame to the exported arm;
+nested wrappers must discard or propagate errors without running the arm.
+Source-free tests need positive owned captures and negative pre-initialization,
+consumed, capability, and view cases. Do not accept a sidecar that snapshots
+only at statement entry: a raising operation can mutate an owned value before
+returning an error.
+
+The Phase 21 design, handoff, shared ABI, README roadmap, and v0.1 language
+design now distinguish the implemented checkpoints from the unmaterialized
+capture contract. The Part I Example 10 and Part II §21 cross-enum snippets now
+use dynamic input and a bounded write/sync path. A standalone probe with the
+required enum/reporter declarations passes `moss check --json`; `moss effects`
+reports both `ParseError.Invalid` and `FileError.Full` among the handler's
+raise alternatives. The Float golden gate now compares default and
+`-C opt-level=3` native builds with Fast Debug; its focused run passes after
+the follow-up edit. The follow-up `git diff --check` also passes.
+Only Rust 1.98.1 and GCC 13.3 are installed in this workspace; the wider
+cross-toolchain Float-format pin remains unverified. Phase 21 is still open.
+
+## Phase 21.B FileIO API audit and 21.C iterator-boundary follow-up — 2026-10-10
+
+The final B source/runtime audit enumerated open and reopen, metadata,
+descriptor flag setup, parent-directory open, read, write, file and parent
+sync, and explicit close sites against the six `FileError` variants and the
+operation-specific inferred raise sets. `fstatfs` remains diagnostic only.
+Known closed-resource use is a checker error; dynamic closed-resource use
+remains a fatal programmer error. The Rust runtime's `is_open()` is internal,
+and Moss source rejects it with `FILEIO_INVALID_OPERATION`; the Phase 21
+specification now records that API disposition. B's audited failure mapping
+and source API are complete, while the all-phase O6 capture-frame proof still
+depends on A.
+
+The final C offset review found that the public checked `MossChunks` iterator
+could request an unrepresentable next range after a full chunk at
+`i64::MAX`. It now recognizes that end boundary as EOF, matching generated
+sequential and bounded Branch chunk paths. A test-only native probe sets the
+iterator to the reachable saturated-offset state without creating an
+enormous file. The C ordering review confirms full-window join before slot
+inspection, zero live read tokens at terminal commit, indexed Value/Raised/EOF
+publication, and speculative mapper rejection when `may_panic` or required
+provider facts are unresolved. Possible divergence remains under the
+specification's finite-completion assumption; process memory exhaustion is
+outside the typed-raise guarantee. C's O9 implementation evidence is complete
+for the reviewed paths, subject to final all-phase integration review.
+
+After the final source edit, focused Phase 21 FileIO, generated Root cleanup,
+Branch ordering/large-read, and Phase 20 FileIO semantics/hardening gates
+passed. Full `make check` ended with `all Moss v0.1 tests passed`;
+`make examples`, strict C++17 `-Wall -Wextra -Werror -pedantic` syntax
+compilation, and `git diff --check` passed.
+
+The remaining A blocker is concrete: handler-local names in `on_fail` are
+currently rejected as unknown; the exported provider body returns only
+`__MossRaised` on failure. The ABI validates capture metadata but explicitly
+rejects nonempty source-free capture records. Completing A requires a D7
+exceptional-path proof for each owned local, a materialized provider-owned
+capture frame that survives the attempt body, and source-free Root dispatch
+that passes that frame to the selected exported arm after cleanup and fresh
+lock acquisition. D's wider toolchain pins and final documentation review
+also remain. Phase 21 is not accepted or merged to `main`.
+
+## Phase 21.D Float formatter and 21.C large-read checkpoint — 2026-10-10
+
+The approved Float text tie rule is now explicit in the normative spec:
+among shortest round-trip decimals, choose the nearest exact value, then an
+even final significand digit on an exact tie. Native generated Rust uses the
+pinned Ryū 1.0.23 binary64 shortest-decimal core with Moss's own notation
+thresholds and special-value spellings; it no longer delegates Float echo to
+Rust Debug. The embedded source is Apache-2.0 attributed. Fast Debug's
+`std::to_chars` path and native output agreed for 100,883 seeded/boundary
+binary64 bit patterns in an isolated comparison. The focused native/Fast Debug
+golden gate includes exact halfway vectors, subnormals, maximum finite, and
+the plain/scientific boundaries. Strict `rustc --check-cfg -D warnings` is
+covered. The language design's consistency summary now includes completed
+typed-raise exits under Phase 21 Theorem A2.
+
+The C/B review found that a maximum-size checked read on a short file
+allocated the entire request before reaching EOF. FileIO now reads into a
+buffer that grows in at most 1 MiB steps; reservation failure returns typed
+`FileError.IO`. Bounded Branch lanes check both start and end offset
+arithmetic and publish ordered EOF for unrepresentable ranges. The
+sequential chunk fallback uses the same end-boundary rule. A native
+maximum-Int chunk request against a four-byte file exercises both paths and
+returns the expected `131` without aborting.
+
+After the final source edit, focused Float, Branch, FileIO, 10.6D/10.6E/10.6F
+and source-free specialization checks passed; full `make check` ended with
+`all Moss v0.1 tests passed`; `make examples`, strict C++17
+`-Wall -Wextra -Werror -pedantic` syntax compilation, and `git diff --check`
+passed. The full gate used an absolute repository-local `TMPDIR`; an earlier
+relative `TMPDIR` run invalidated three Emacs tests, and an earlier source
+revision failed generated-code scans that had not yet excluded the new
+runtime. Both issues were corrected before the final passing run.
+
+Phase 21 is still open. A's handler-local owned `on_fail` capture frame and
+final O1–O9 proof review, B's final FileIO source/API audit, C's remaining
+speculative allocation/panic review, and D's wider toolchain pins and final
+documentation migration remain. No Phase 21 acceptance or merge to `main`
+is claimed.
+
+## Phase 21.D numeric parsing and checked conversion checkpoint — 2026-10-10
+
+`parse_int(String)`, `parse_float(String)`, and `to_int(Float)` now have
+variant-precise typed raises in the checker, native Rust output, and Fast
+Debug. The two parsers share the approved ASCII decimal grammar, exact
+whitespace and nonfinite spellings, and overflow/underflow behavior.
+`to_int` checks finite range before truncating. Numeric calls retain their
+owning module's error enum identity, including through `try`/`recover` and
+cross-module raised-result bridges. Discovery, the practical guide, and the
+repository-local language skill now describe these operations.
+
+The focused gate covers lexical successes and failures, Int and Float bounds,
+signed zero, nonfinite values, checked conversion, structured diagnostics,
+effect summaries, standalone native/Fast Debug parity, and single- and
+cross-module Margo native/Fast Debug parity. The focused gate, full `make
+check` (`all Moss v0.1 tests passed`), `make examples`, strict C++17
+`-Wall -Wextra -Werror -pedantic` compilation, and `git diff --check` pass
+after the final source edit.
+
+Phase 21 remains open. D still needs the Rust-independent native Float
+formatter/tie-break, wider toolchain pins, and remaining documentation
+migration. A's handler-local owned `on_fail` capture frame and final O1–O9
+review, B's final FileIO source/API audit, and C's final speculative
+allocation/panic review remain open. No Phase 21 acceptance or merge to
+`main` is claimed.
+
+## Phase 21.B FileIO open flag failure audit — 2026-10-10
+
+The native FileIO OS-site review found that `open_checked` ignored failures
+from `fcntl(F_GETFL)` and `fcntl(F_SETFL)` when clearing `O_NONBLOCK`. It could
+return an owner whose descriptor had different blocking behavior from the
+FileIO contract. Both failures now close the descriptor before any inode
+registry claim and return typed `FileError.IO`. A test-only `OpenFlagClear`
+fault proves the error is catchable, exactly one descriptor close occurs,
+and the same path can be reopened, so no claim/descriptor is left live. The
+focused typed FileIO test, full `make check` (`all Moss v0.1 tests passed`),
+`make examples`, strict C++17 `-Wall -Wextra -Werror -pedantic` compilation,
+and `git diff --check` pass after the edit.
+
+The reviewed OS sites are open/reopen, descriptor metadata, flag setup,
+parent-directory open, `pread`, `pwrite`, file/parent `fsync` and `fdatasync`,
+and file/parent close. `fstatfs` is diagnostic-only. Invalid offsets, modes,
+bounds, and closed-resource use remain programmer-misuse panic paths; the
+runtime `is_open()` helper exists, while the Moss source API does not expose
+it. Final B proof and source API review remain open.
+
+## Phase 21.A source-free Root trailer execution checkpoint — 2026-10-10
+
+Provider codegen now exports each checked `on_fail` arm as a typed callable
+over a public provider failure-state view. The application reconstructs the
+fresh failure pseudo-handler plan from validated ABI-v8 arm state effects and
+dispatches source-free Root errors into the provider callable after the normal
+attempt releases its guards. Nested calls continue to propagate typed errors
+without executing the trailer. A provider's external handler uses the
+conservative full-entry plan because its `.rlib` exports the regular body,
+not application-specific path-split continuations.
+
+Real `.mossi`/`.rlib` regressions remove provider Moss source and verify a
+state-writing reply trailer, caller-side `recover` not bypassing that trailer,
+nested propagation, a routed reporting-domain message, and two enum-specific
+failure arms. A separate Rust consumer links directly to the exported arm
+callable after source removal. The focused source-free gate, full `make check`
+(`all Moss v0.1 tests passed`), `make examples`, strict C++17
+`-Wall -Wextra -Werror -pedantic` compilation, and `git diff --check` pass
+after the final edits.
+
+This is not A acceptance. Handler-local owned D7 capture frames and their
+exceptional-path definite-initialization proof remain absent; the checker
+currently rejects such local references in `on_fail`. Source-free ABI records
+claiming captures still fail closed. Final O1–O9 review, B's FileIO audit,
+C's remaining speculative allocation/panic review, and D's numeric
+parsing/conversion/formatter work remain open. No Phase 21 acceptance or
+merge to `main` is claimed.
+
+## Phase 21.C bounded Branch offset arithmetic checkpoint — 2026-10-10
+
+An eligible FileIO chunk pipeline could generate raw signed `next + lane`,
+`index * chunk_size`, and `next += K` arithmetic in bounded Branch lowering.
+The compiler accepts a maximum-Int chunk-size probe as eligible. Its native
+run aborted on the enormous first read allocation before reaching offset
+arithmetic, so that run is not an overflow witness. The lowering now uses
+checked index/offset arithmetic; a nonrepresentable offset publishes an
+ordered EOF outcome without a read. The focused Branch gate inspects the
+generated checked operations and runs the ordinary native ordering cases.
+
+After this edit, the focused Branch gate, complete `make check` (`all Moss
+v0.1 tests passed`), and strict C++17 `-Wall -Wextra -Werror -pedantic`
+compilation pass. This closes the generated signed-arithmetic hazard, not
+the entire O9 review: the extreme-size allocation path and final speculative
+panic audit remain open. A's source-free `on_fail` callable/capture/Root
+dispatch, B's final FileIO audit, and D's numeric parsing/conversion/formatter
+work also remain open. No Phase 21 acceptance or merge to `main` is claimed.
+
+## Phase 21.D Float predicates checkpoint — 2026-10-10
+
+`is_nan(Float) -> Bool` and `is_finite(Float) -> Bool` are implemented as
+nonraising pure builtins in the checker, native Rust lowering, Fast Debug,
+module rewriting, and live `source_surface` discovery. The practical guide
+documents them. The focused gate checks NaN, infinities, finite and signed
+zero values in both engines; rejects Int arguments and wrong arity with
+structured diagnostics; verifies resolved effect summaries without raises or
+panics; and builds/runs a generic explicit-module call in both engines.
+
+After integration, the focused gate, full `make check` (`all Moss v0.1 tests
+passed`), `make examples`, strict C++17 `-Wall -Wextra -Werror -pedantic`
+build, and `git diff --check` pass. D still needs raising `parse_int` and
+`parse_float`, checked `to_int`, the general Rust-independent native Float
+formatter/tie-break, wider toolchain pins, and remaining documentation
+migration. A's executable source-free `on_fail` and capture frame, B's final
+FileIO/proof audit, and C's final O9 review also remain open. No Phase 21
+acceptance or merge to `main` is claimed.
+
+## Phase 21.D numeric grammar and Float text checkpoint — 2026-10-10
+
+The approved §13.3 finite decimal grammar now explicitly accepts `.5`,
+`1.`, uppercase `E`, leading zeros, and explicit exponent signs, while
+retaining the exact ASCII trim, underscore, and nonfinite-token rules.
+`parse_int`/`parse_float` raising builtins themselves are still unimplemented.
+
+Source exponent signs such as `1e-4` and `1e+3` now remain part of the Float
+literal in both checker and native codegen, and exponent literals receive
+Float typing instead of Rust's plain integer/Display path. Fast Debug Float
+display now uses shortest-roundtrip digits and the Phase 21 plain/scientific
+thresholds. The focused native/Fast Debug golden gate covers signed zero,
+nonfinite results, `0.1 + 0.2`, both notation boundaries, and binary64
+subnormal/minimum-normal/maximum-finite values. The native path still relies
+on Rust Debug for shortest digits; the general Rust-independent tie-break
+implementation and wider cross-toolchain pins remain open, along with
+`parse_int`, `parse_float`, `to_int`, and documentation migration.
+
+After the A, C, and D checkpoints were integrated, complete `make check`
+(`all Moss v0.1 tests passed`), `make examples`, strict C++17
+`-Wall -Wextra -Werror -pedantic` compilation, and `git diff --check`
+passed. Phase 21 is not accepted or merged to `main`. A's executable
+source-free `on_fail` and owned capture frame, B's final FileIO/proof audit,
+C's final O9 review, and D's remaining numeric operations are open.
+
+## Phase 21.C native Branch read-fault checkpoint — 2026-10-10
+
+The ordered-Branch focused gate now runs generated native Rust with a real
+one-shot `FileIO` `ReadBefore`/`IO` fault while bounded-K chunk reads are
+outstanding. Every input byte is a successful mapper value, so whichever lane
+consumes the fault, the first Root recovers `FileError.IO`; a second Root then
+raises its expected parent-fold error. The test checks zero live Branch scopes
+between Roots and before executor join, and repeats the native run 32 times.
+The existing owned read-token harness still checks all tokens drop before a
+terminal decision. The focused Phase 21.C suite and the complete `make check`
+gate pass after this edit (`all Moss v0.1 tests passed`). This strengthens the
+O9/quiescence evidence but does not close the remaining final C proof review
+or Phase 21 acceptance.
+
+## Phase 21.A source-free failure-arm state effects — 2026-10-10
+
+In isolated branch `phase-21-a-source-free`, each checked source `on_fail`
+arm now retains its own inferred state-leaf footprint, and `.mossi` exports
+those reads/writes/consumes in the arm's ABI-v8 record. A real provider
+fixture has a normal handler with no state effects and a trailer that reads
+and writes `count`; the interface records `handler_state_effects` as empty
+for the normal path and `count` as both read and write for the trailer. The
+source-backed executable prints the typed payload `4` and reply `4`.
+
+The user also approved D's remaining finite `parse_float` spellings on
+2026-10-10: accept leading zeros (`00.5`) and explicit exponent signs
+(`1e+3`, `1e-3`), in addition to the previously approved `.5`, `1.`, and
+uppercase `E`. The grammar is now documented; the parser remains pending.
+
+The focused source-free ABI suite, full `make check` (`all Moss v0.1 tests
+passed`), `make examples`, strict C++17 `-Wall -Wextra -Werror -pedantic`
+build, and `git diff --check` pass after these edits. The existing source-free
+`on_fail` fail-closed diagnostic remains
+until callable bodies, owned capture frames, and application Root dispatch
+are materialized. No integration merge or Phase 21 acceptance is claimed.
+
+## Phase 21.I source-free `on_fail` fail-closed guard — 2026-10-10
+
+A real provider with a typed `on_fail` trailer builds and runs when its Moss
+source is present (`4`, then reply `5`). After removing that source, its
+ABI-v8 `.mossi` still names failure-arm callables, but the provider `.rlib`
+does not export them and the consumer cannot construct the Root wrapper.
+Previously the consumer could mis-handle this path by letting caller-side
+`recover` bypass the trailer. The checker now reports
+`SOURCE_FREE_ON_FAIL_UNMATERIALIZED` for such imports until executable arm
+materialization and Root dispatch are implemented. The source-free ABI test
+checks both direct Root and caller-side `recover` cases, while the real
+source-free handler without a trailer remains executable.
+
+Focused source-free ABI validation, `make examples`, and strict C++17
+`-Wall -Wextra -Werror -pedantic` compilation pass. The repository-wide
+`make check` rerun also passes (`all Moss v0.1 tests passed`).
+This is a safety guard, not A acceptance: the
+source-free trailer callable/capture/Root work remains necessary.
+
+## Phase 21.I source-free handler effect checkpoint — 2026-10-10
+
+The integration checker now preserves the checked observable effects from an
+ABI-v8 `.mossi` handler instead of inferring an empty raise set from its
+synthetic placeholder body. A real two-crate fixture builds a raising provider,
+removes its Moss source, rebuilds the consumer, and verifies both native typed
+recovery (`4`) and rejection of an unhandled raised call in `main`. The older
+loader fixture still checks forged nonempty metadata, but no longer attempts
+to link those records to a deliberately nonraising provider binary.
+
+Validation after these edits: focused source-free ABI suite PASS; complete
+`make check` PASS (`all Moss v0.1 tests passed`); `make examples` PASS; strict
+C++17 `-Wall -Wextra -Werror -pedantic` compiler build PASS. No merge to
+`main` has occurred.
+
+The remaining A blocker is concrete: source-free `.mossi` files declare
+`on_fail` callable symbols, but provider codegen does not export those bodies;
+the imported handler also has no source `failure_arms` for Root wrapper
+generation or totality. An actual source-free Root with a trailer therefore
+cannot execute that trailer. This remains open alongside A's owned D7 captures
+and exceptional-CFG consumer proof, B's final review, C's O9/read-fault
+matrix review, and D's numeric parser/formatter/documentation work. The A–D
+branches are clean committed checkpoints, not Phase 21 acceptance.
+
+For D's still-pending finite `parse_float` grammar, the user approved accepting
+`.5`, `1.`, and uppercase `E` (for example `1E3`) on 2026-10-10. This decision
+has not yet been implemented or incorporated into the normative numeric text.
+
+## Phase 21.I ordered Branch raises and source-free view proof — 2026-10-10
+
+The green integration base now has an actual native Root/Executor fixture for
+ordered chunk failures. The bounded-K Branch code stores both checked FileIO
+read failures and typed mapper failures as owned `__MossRaised` outcomes,
+commits them only after joining the window, and propagates a raising parent
+fold. The invocation-local nonempty `chunk[0]` proof retains the mapper's
+typed raise set; it removes only the proven index panic. The native fixture
+repeats both ordering cases 32 times: the earlier mapper error wins over a
+later mapper error, and a parent fold error wins over a later mapper error.
+
+The borrowed-view regression now builds a generic WRITE helper as a provider,
+removes its source, and checks that source-free `Range` and `RangeBatch` calls
+are rejected while an `Int` specialization builds and runs. This verifies
+fail-closed behavior across the `.mossi` boundary; the specific source-free
+diagnostic is currently `FILEIO_PINNED_OWNERSHIP` rather than the direct
+formal's `FILEIO_VIEW_PARAMETER_WRITE`.
+
+Validation after these edits: focused Phase 21.C and borrowed-view suites
+PASS; complete `make check` PASS (`all Moss v0.1 tests passed`); `make
+examples` PASS; strict C++17 `-Werror` build PASS. Phase 21 still needs A's
+source-free failure-arm/capture and exceptional-CFG work, B's final proof
+review, C's remaining O9/read-fault matrix review, and D's numeric
+parsing/formatting/docs work. No merge to `main` has occurred.
+
+## Phase 21.I integration gate restored — 2026-10-10
+
+The integration branch now passes the complete `make check` suite, `make
+examples`, and a strict C++17 compiler build (`-Wall -Wextra -Werror
+-pedantic`). This supersedes the earlier `make check` failures below. The
+strict Phase 20 review suite passes 36 bug probes, 30 guards, and 2
+pre-existing probes; its 8 design cases remain informational.
+
+The Phase 20 FileIO semantics suite and 59 older review sources were migrated
+to the Phase 21 rule that `main` handles typed errors. The compiler now counts
+raising message expressions in effect inference, while preserving exhaustive
+Root `on_fail` handling. Native enum display uses debug formatting for payload
+types without `Display`, fixing the EXPRESS-005 vector-payload case.
+
+This is an integration checkpoint, not Phase 21 completion. Agent A's
+source-free failure-arm/capture and exceptional-CFG proof, Agent B's remaining
+integration/proof review, Agent C's ordered-error/O9 proof, and Agent D's
+numeric parsing/formatter contract, documentation, and source-free view
+proof remain open. No merge to `main` or Phase 21 acceptance claim has been
+made. Next, complete the outstanding agent acceptance matrix on this green
+integration base, then review the combined result before merging to `main`.
+
+## Phase 21.I checked chunk FileIO follow-up — 2026-10-10
+
+After pushed integration checkpoint `0614399`, migrated the older Phase 20
+Executor/FileIO sources to declare the six `FileError` variants and make Root
+handlers or `main` total under typed failure. The range-copy fixture keeps
+its bounded read/write in a helper because a direct `try` wrapper lost the
+checker proof of its finite write payload. The physical Rust lock observer
+now unwraps the generated typed outcomes instead of assuming bare values.
+
+Native chunk lowering no longer emits undefined failure placeholders. It
+returns `Err(__moss_raise_fileio(error))` from a checked outcome context,
+mapping `MossFileError` to the existing `__MossRaised` tags. Sequential
+pipelines now propagate raising map and combine calls; explicit-module code
+gets a `FileError` alias for its qualified enum when needed. A permanent
+native regression compiles and runs an ordinary read (`4`) and an injected
+read error recovered through an ordinary helper (`99`). The complete Phase
+20 Executor/FileIO suite passes, including its source-free package case;
+the focused 21.C Branch-error and physical lock gates also pass.
+
+The latest `make check` passes all gates through Phase 15.9, including 40/40
+generic and 129/129 builtin typing probes, then fails in
+`tests/tooling/check_phase20_fileio_semantics.py`: its first positive source,
+`root_read`, lets typed FileIO errors escape `main`. This is the next legacy
+source migration gate. `make examples` and strict C++17 `-Werror` compilation
+pass on the latest source. Phase 21 proof gates remain open, notably native
+speculative mapper raised-outcome coverage, source-free failure-arm capture,
+and the numeric parsing/formatting contract.
+
+## Phase 21.I combined A+B+C+D integration checkpoint — 2026-10-10
+
+The integration branch merged the current 21.D checkpoint (`a20d250`) and
+21.A failure-trailer checkpoint (`60aefd0`) with the earlier A+B+C base and
+the corrected 21.C fixture (`529ef0b`). The merge needed one missing closing
+brace after `proven_index_access` in `src/moss.cpp`; the combined compiler now
+builds. The Root FileIO cleanup witness now catches all handler failures,
+handles cleanup's own FileIO errors inside `on_fail`, and still proves the
+successful path returns `11` after reopening the file. Two older Phase 20
+Executor negative fixtures now handle FileIO raises so they continue to test
+their intended capability-boundary diagnostics. The generated basic FileIO
+fixture in the Phase 20 Executor suite now declares `FileError` and handles
+typed failure. The direct FileIO integration fixture also now declares that
+enum and catches its `main` error set.
+
+Validated on this combined tree: `make` PASS; focused A native Root,
+21.B typed FileIO and Root cleanup, 21.C Branch error, 21.D Float and view
+WRITE checks PASS; 40/40 generic specialization and 129/129 builtin typing
+probes PASS; `make examples` PASS; strict C++17 `-Werror` compiler build PASS.
+The full `make check` gate advances beyond
+the two corrected negative Executor fixtures but is **not yet green**: the
+Phase 20 Executor/FileIO suite next fails compiling
+`tests/tooling/fixtures/phase20_domain_fileio_native.moss` because its
+`main` leaves typed FileIO errors unhandled. Other older positive FileIO
+fixtures in that suite need a source migration audit. This result
+supersedes the earlier integration notes below that predate the current A/C/D
+merges. No O1–O9 or Phase 21 completion is claimed;
+source-free typed failure capture/arm materialization, full fixture migration,
+numeric parsing/formatter contracts, documentation, and review remain open.
+
+## Phase 21.A typed recovery continuation — 2026-10-10
+
+Continued `phase-21-a-recovery` from checkpoint `620b567` in
+`tmp/moss-worktrees/21-a`. The current worktree has uncommitted implementation
+and regression changes; no push or integration merge was performed.
+
+This continuation closes several native/checker gaps after the first tagged
+outcome checkpoint:
+
+- path-sensitive handlers now retain their generated Root `on_fail` wrapper;
+- explicit-module rewriting covers typed failure patterns and arm bodies;
+- fixed-point raise inference suppresses provisional warnings and performs one
+  final authoritative annotation/diagnostic pass, so method raises no longer
+  leave false unreachable-arm warnings and `main` totality sees transitive
+  function/method/handler effects;
+- handler trailers are checked for typed pattern validity, overlap/order,
+  exhaustiveness, empty escaping raise sets, and reply totality; their bodies
+  now receive normal type, ownership, and FileIO lifecycle checking;
+- payload patterns introduce checked immutable field bindings in `recover` and
+  `on_fail`, and native lowering projects their owned values;
+- Root-total messages in `main` account for a validated exhaustive trailer;
+- source provider failure patterns are converted to ABI identities correctly;
+  application/provider crates now receive stable-identity conversions between
+  their internal raised enums, allowing an exported handler to raise in a
+  provider crate and execute its Root trailer in the application crate.
+
+Permanent coverage now includes method propagation, payload binding use,
+path-sensitive normal/failure lock plans, nested-versus-Root dispatch,
+value-returning and asynchronous Roots, explicit two-module provider lowering,
+and negative diagnostics for non-exhaustive trailers, escaping trailer raises,
+missing failure replies, and ambiguous multi-enum catch-all bindings.
+
+Validation on the current uncommitted revision:
+
+- strict C++17 `-Wall -Wextra -Werror -pedantic` compiler build: PASS;
+- all four focused Phase 21 recovery/native/source-free scripts: PASS;
+- the real two-module provider fixture compiles and runs through Margo, printing
+  the payload `4` and failure reply `5`: PASS;
+- Phase 20C executor regression suite: 54/54 PASS;
+- `git diff --check`: PASS.
+
+The repository-wide `tests/run.sh` rerun reaches the known A/B integration
+boundary: 37/40 generic-specialization probes pass, while `range_fileio`,
+`range_direct`, and `fileio_direct` fail native Rust compilation because 21.A
+now carries `FileError` alternatives but the generated FileError definition and
+native FileIO tagged-result lowering remain on 21.B. No later full-suite gate
+was claimed. Remaining Phase 21.A/integration work includes true source-free
+failure-arm callable/capture materialization (not merely same-project separate
+crates), D7 capture joins, complete exceptional-CFG consumer wiring, provider
+path-split ABI visibility, and A/B Root FileIO quiescence/teardown sequencing.
+This remains a checkpoint, not Phase 21.A completion.
+
+## Phase 21.D settled parity and borrowed-view checkpoint — 2026-10-10
+
+The transferred `ed8374f` WIP now builds and has a follow-up repair. Native
+Float echo lowering gives its temporary an explicit `f64` type, avoiding Rust
+E0689, and uses Debug formatting as an interim shortest-roundtrip mechanism.
+Fast Debug no longer rejects Float division by zero and renders signed zero,
+infinity, NaN, and integral Float values in the tested Phase 21 forms. The
+focused native/Fast Debug test runs generated Rust under `-D warnings` and
+passes for `inf`, `-inf`, `NaN`, and `-0.0`. Legacy test goldens for integral
+Float output changed from `3`/`0`/`8` to `3.0`/`0.0`/`8.0` where the normative
+Phase 21 text requires a fractional digit.
+
+The borrowed-view WRITE validator originally compared canonical types against
+lowercase `range`/`rangebatch` and never rejected them. It now compares
+`Range`/`RangeBatch`. The new focused gate proves direct `moss check --json`
+rejects WRITE through both formal types with `FILEIO_VIEW_PARAMETER_WRITE`,
+including the documented `RangeBatch` retargeting source, while an ordinary
+`Int` formal retains inferred WRITE. It does not yet prove the source-free
+`.mossi` specialization path; that remains required by V4-03.
+
+Final validation for this checkpoint: `make`, focused Float and borrowed-view
+scripts, `make check` (all Moss v0.1 tests, 40 generic probes, 129 builtin
+probes, and 54 Executor runtime probes), `make examples`, strict C++17
+`-Werror` compilation, and `git diff --check` passed. Earlier full-gate runs
+that stopped at old Float goldens are superseded by the final passing run.
+
+Phase 21.D is not complete. The normative general shortest-roundtrip formatter
+and tie-break algorithm are not frozen or implemented; current Debug/
+`setprecision(15)` formatting is interim and does not establish all §13.2
+goldens. The accepted finite decimal grammar, raising parse operations,
+`to_int` error cases, predicates, source-free view specialization test,
+supported Fast Debug `for` parity, and remaining documentation migration are
+open. Do not merge this WIP checkpoint as full Phase 21.D acceptance.
+
+## Phase 21.I A+B+C integration continuation — 2026-10-10
+
+The integration branch also merged committed 21.C head `f0c0464` after the
+A+B checkpoint. Four small conflicts were resolved: keep B's catchable
+interior-NUL `FileError.IO` mapping and its regression, retain A's external-I/O
+effect while passing C's proven-index context, and register all A/B/C tests.
+The combined compiler builds with `make`. The 40-case generic specialization
+suite passes 40/40; B's typed FileIO test and A's local native recovery test
+pass after the merge.
+
+The C focused gate fails during native lowering with `checked raising Root
+message lacks a Phase 21 outcome context`. Its original fixture sends a
+potentially raising handler message from `main` without a recovery arm; simply
+adding a try/recover in the fixture does not fix current checked/lowered
+message-effect agreement, so that experiment was reverted. A's separate Root
+fixtures remain blocked as recorded below. The 21.A worktree contains newer
+uncommitted Root/checker edits that have not been integrated. The branch is a
+durable partial integration checkpoint; full `make check`, `make examples`,
+O1–O9, source-free typed failures, and review before merging to main remain
+open. No Phase 21 completion is claimed.
+
+## Phase 21.I A+B integration checkpoint — 2026-10-10
+
+The integration branch merged committed 21.A head `620b567` and 21.B head
+`a47e639` on the frozen ABI-v8 base. The only merge conflict was the additive
+test registration in `tests/run.sh`; both workstreams' checks are retained.
+This is an integration checkpoint, not Phase 21 completion or a merge to main.
+
+The three legacy FileIO generic-specialization fixtures now declare the
+six-variant `FileError` enum required by their native typed-error lowering.
+With 21.B's runtime included, the 40-case generic-specialization suite passes
+40/40. The 21.B deterministic FileIO typed-error test and 21.A local native
+recovery test pass. No compiler source was changed in this integration step.
+
+Two Root fixtures remain blocked at `moss check` by `main may not let typed
+errors escape`: 21.A's nested/Root failure fixture and 21.B's Root FileIO
+cleanup fixture. The current fixed-point raise walker reports the underlying
+handler's raises at a top-level message despite a handler `on_fail` trailer;
+the latter fixture's `on_fail` also performs fallible FileIO open/close that
+needs its own recovery. Do not treat this as a validated Root implementation.
+21.A has separate new uncommitted work after `620b567`; it has not been folded
+into integration. Await a reviewed checkpoint before merging that work.
+O1–O9, source-free typed failure integration, full `make check`, `make examples`,
+and the human review gate before any merge to main remain open.
+
+## Phase 21.A native recovery checkpoint — 2026-10-10
+
+On `phase-21-a-recovery`, the in-progress native lowering now generates tagged
+`raise`/`try`/`recover` outcomes, nested handler propagation, Root `on_fail`
+dispatch, and separate failure synchronization plans. The new native fixtures
+exercise local recovery, typed re-raise, nested versus Root behavior, and class
+repartitioning. The source-free ABI fixture was made total under its injected
+provider error metadata. The earlier Fast Debug checkpoint remains in place.
+
+The full `make check` gate exposed three legacy FileIO specialization fixtures
+whose `main` functions let Phase 21 typed errors escape. They now use
+`try`/`recover`. This exposed a FileIO lifecycle join bug: a file opened and
+explicitly closed inside a try suite was carried into the sibling recover arm
+as an uncertain owner. The lifecycle walker now requires try/recover-local
+owners to be closed on normal arm exit and removes those scoped owners before
+joining. Focused regression checks cover all three accepted fixtures and an
+unclosed owner rejection.
+
+Validation after the lifecycle fix: branch `make` passed; all four focused
+Phase 21 recovery/native/source-free scripts passed; the recovery script's new
+FileIO positive/negative checker probes passed; `moss check --json` passed for
+the `range_fileio` fixture. Strict C++17 `-Werror` compilation and
+`git diff --check` passed. The rerun of the 40-case generic specialization
+suite reaches native compilation in its three FileIO cases but fails because
+21.A alone references `FileError` while its generated runtime definition is on
+the separate 21.B branch. The other 37 probes pass. The earlier `make check`
+failure was before this lifecycle fix and is superseded by the focused rerun;
+no full gate passes on this branch. A/B integration, exceptional-CFG consumer
+review, Root cleanup sequencing, and complete source-free recovery coverage
+remain open. This is a checkpoint, not Phase 21.A completion.
+
+## Phase 21.A restart checkpoint — 2026-10-10
+
+Work resumed on `phase-21-a-recovery` in
+`tmp/moss-worktrees/21-a` from transferred head
+`299fdf3fdfe9f81c225a92b1ec065e46140ede43`. All seven Phase 21 worktrees were
+recreated locally at the exact remote heads recorded by the Phase 21 planning
+register. This checkpoint is intentionally limited to the 21.A worktree; no
+integration merge or push was performed.
+
+In-flight implementation adds checked Fast Debug execution for Phase 21
+`try`/`recover`/`raise`: typed raised values propagate through ordinary helper
+calls, qualified and catch-all recovery arms select the originating error, bare
+`raise` preserves the selected typed value through an outer recovery, bound
+catch-all errors are installed and restored lexically, and structured traces
+emit `raise`/`recover` events. The primary type-environment walker now also
+introduces the already-supported `recover err:` binding, matching the effect and
+ownership walkers. Focused coverage exercises variant-precise effects, both
+normal variants, a bound catch-all, bare re-raise, outer recovery, stdout, and
+trace counts.
+
+Completed validation on the current source revision:
+
+- Branch compiler rebuilt successfully with `make`.
+- `python3 tests/tooling/check_phase21_recovery_semantics.py ./moss`: PASS
+  (`Phase 21 recovery checker, effects, and Fast Debug probes passed`).
+- `python3 tests/tooling/check_phase21_shared_abi.py
+  tmp/resume-phase21-shared-abi-1`: PASS.
+
+Known next issue: `check_phase21_source_free_abi.py` now reaches the synthetic
+provider stage and fails because 21.A correctly enforces `main` totality after
+the test rewrites provider `Bump` metadata to raise
+`provider::FileError.Full`, while the fixture's `main` still sends `Bump`
+without `try`/`recover`. Update that fixture to include a valid recovery arm
+that is merely unreachable before the metadata rewrite, rerun the source-free
+gate, then run strict compilation. Native generator lowering remains the major
+21.A blocker: its statement switch still warns that `Try`, `Recover`, and
+`Raise` are unhandled. Do not claim 21.A or Phase 21 complete from this Fast
+Debug checkpoint.
+
+## Phase 21.0 corrective shared effects/error ABI checkpoint — 2026-10-10
+
+Worktree: `tmp/moss-worktrees/21-0`, branch
+`phase-21-0-effects-abi`, corrective base
+`d33e3be434a1e899e95590c80b12bce4a070b53b`. Repository-local Moss skills were
+loaded and bootstrap confirms `moss-0.1`. Three Codex subagents independently
+reviewed the ABI/schema and implemented the executable Rust fixture. Agents A-D
+were not launched and remain gated on human approval.
+
+Native/provider ABI v8 now freezes cross-specialization typed-error transport.
+A caller never returns a callee frame as its own type: it nests the opaque callee
+frame in a caller-private carrier, translates specialization-local tags through
+`RaisedIdentity`, and uses consuming projection/rebuild callables to recover
+owned payload fields or exactly bare re-raise the original payload/residual.
+Final application linkage verifies the named callee specialization, outcome and
+frame types, callee/caller tags, identity, and ordered payload schema. There is
+no source-visible mixed union, trait object, serialization, or host unwinding.
+
+The `.mossi` v8 schema includes reversible projections, imported frame bridges,
+and a counted canonical `handler_owned_type_shapes` table. Payload/capture
+fingerprints must match the table; every recursive dependency is declared and
+intrinsic/exported shapes are independently resolved. Unknown scalar safety
+claims, unbounded payloads, and borrowed/capability values at any nesting depth
+fail closed. Legal owned non-capability captures include String and private
+aggregates with complete authoritative structural declarations.
+
+Exceptional CFG verification now requires each raising node's complete variant
+set and a disjoint exact routing partition. It rejects missing/impossible or
+duplicate alternatives, invalid/contradictory destinations, incomplete consumer
+masks, repeated lexical scopes, duplicate `(scope, match_order)` recovery arms,
+and routes that skip the nearest lexical match. Bare re-raise remains confined
+to the selected-error slot and designated outer scope. Locally recovered errors
+need not appear in the handler outcome.
+
+Provider validity and concrete application Root validity are separate. A
+provider may expose typed errors for nested propagation with partial/no
+`on_fail`; `verify_root_totality` requires the concrete Root escaping set to
+equal the handler outcome and every alternative to select exactly one nonraising,
+reply-total arm. Empty/subset/superset Root sets are covered by negatives.
+
+The source-free regression now compiles a real provider crate as a separate
+`rlib`, removes its Rust source, and compiles/runs a consumer against the
+materialized provider. It covers a genuinely fallible body, opaque frame,
+typed `on_fail`, nested forwarding across different frame/outcome types, owned
+payload and captures, variant recovery, exact re-raise, Root dispatch, and typed
+ordinary replies instead of the former `-1` sentinel.
+
+Final validation after all corrective edits:
+
+- `./moss agent bootstrap --json`: passed; `moss-0.1` confirmed.
+- Focused shared ABI C++ test: passed.
+- ABI-v8 source-free loader and two-crate Rust fixture: passed.
+- Strict `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic src/moss.cpp -o
+  tmp/moss-phase21-v8-strict`: passed.
+- The ABI-v8 source-free/two-crate fixture rerun with that strict compiler:
+  passed.
+- `make check`: passed all Moss v0.1 tests, including Phase 21 focused/source-free
+  coverage, 40 specialization probes, 129 typing probes, 61 editor ERT tests,
+  and 54 Phase 20 Executor runtime probes.
+- `make examples`: passed; the intentional negative example was skipped.
+- Independent final ABI review: no remaining checkpoint blocker.
+- `git diff --check`: passed before this status update.
+
+No implementation or validation blocker remains. ABI v8 intentionally rejects
+tentative v7 and all earlier artifacts with a full-rebuild diagnostic. The
+corrective checkpoint awaits human approval before it becomes the base for
+Agents A-D.
+
+The following main-branch transfer entries are historical; the current
+integration review above supersedes their status and Git directions.
+
 ## Phase 21 continuation — 2026-10-10
 
 The user authorized repository-local commits and pushes for this task and

@@ -1,5 +1,5 @@
 # Reviewer completeness variant: a later loop shadows a bounded chunk name.
-fn main():
+fn phase20_probe():
   src = FileIO.open("tmp/phase20-review/input.txt", ro)
   dst = FileIO.open("tmp/phase20-review/out/stale-vector.txt", create)
   for item in src.chunks(8):
@@ -9,3 +9,9 @@ fn main():
     dst.write(0, item)
   dst.close()
   src.close()
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

@@ -1,0 +1,233 @@
+#![deny(warnings)]
+
+extern crate phase21_provider as provider;
+
+use provider::{DownReason, StoreFailureCapture, StoreLoadOutcome, StoreLoadProjection};
+
+const WORKER_STORE_DOWN_TAG: u32 = 1; // tag 0 belongs to a caller-local error
+
+#[derive(Debug, Eq, PartialEq)]
+struct WorkerCapture {
+    request_id: i64,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum WorkerReply {
+    Success { value: i64, request_id: i64 },
+    Unavailable { code: i64, request_id: i64 },
+}
+
+enum WorkerGetRaised {
+    FromStore(provider::StoreLoadFrame),
+}
+
+struct WorkerGetFrame {
+    tag: u32,
+    raised: WorkerGetRaised,
+    capture: WorkerCapture,
+}
+
+enum WorkerGetOutcome {
+    Replied(WorkerReply),
+    Raised(WorkerGetFrame),
+}
+
+fn worker_get_body(should_fail: bool, value: i64, request_id: i64) -> WorkerGetOutcome {
+    let worker_capture = WorkerCapture { request_id };
+    match provider::store_load_body(
+        should_fail,
+        value,
+        StoreFailureCapture { bias: 5 },
+    ) {
+        StoreLoadOutcome::Replied(provider::StoreReply::Loaded { value }) => {
+            WorkerGetOutcome::Replied(WorkerReply::Success {
+                value,
+                request_id: worker_capture.request_id,
+            })
+        }
+        StoreLoadOutcome::Replied(provider::StoreReply::Unavailable { .. }) => {
+            unreachable!()
+        }
+        // The provider frame cannot be returned as WorkerGetFrame. The
+        // generated bridge moves it into a consumer-local carrier variant.
+        StoreLoadOutcome::Raised(frame) => {
+            let caller_tag = match provider::store_load_tag(&frame) {
+                provider::STORE_ERROR_DOWN_TAG => WORKER_STORE_DOWN_TAG,
+                _ => unreachable!(),
+            };
+            WorkerGetOutcome::Raised(WorkerGetFrame {
+                tag: caller_tag,
+                raised: WorkerGetRaised::FromStore(frame),
+                capture: worker_capture,
+            })
+        }
+    }
+}
+
+struct SupervisorFrame {
+    tag: u32,
+    worker: WorkerGetFrame,
+}
+
+enum SupervisorOutcome {
+    Replied(WorkerReply),
+    Raised(SupervisorFrame),
+}
+
+fn supervisor_body(should_fail: bool, value: i64, request_id: i64) -> SupervisorOutcome {
+    match worker_get_body(should_fail, value, request_id) {
+        WorkerGetOutcome::Replied(reply) => {
+            SupervisorOutcome::Replied(reply)
+        }
+        WorkerGetOutcome::Raised(frame) => {
+            assert_eq!(frame.tag, WORKER_STORE_DOWN_TAG);
+            SupervisorOutcome::Raised(SupervisorFrame {
+                tag: 0,
+                worker: frame,
+            })
+        }
+    }
+}
+
+fn into_store_frame(frame: WorkerGetFrame) -> (provider::StoreLoadFrame, WorkerCapture) {
+    let WorkerGetFrame { tag, raised, capture } = frame;
+    assert_eq!(tag, WORKER_STORE_DOWN_TAG);
+    match raised {
+        WorkerGetRaised::FromStore(store) => (store, capture),
+    }
+}
+
+fn payload_code(payload: provider::DownPayload) -> i64 {
+    match payload.reason {
+        DownReason::Offline { code } => code.value,
+    }
+}
+
+fn recover_by_variant(frame: WorkerGetFrame) -> WorkerReply {
+    let (store, worker_capture) = into_store_frame(frame);
+    assert_eq!(
+        provider::store_load_identity(&store),
+        provider::STORE_ERROR_DOWN_IDENTITY
+    );
+    match provider::project_store_down(store) {
+        StoreLoadProjection::Matched { payload, residual: _ } => {
+            WorkerReply::Unavailable {
+                code: payload_code(payload),
+                request_id: worker_capture.request_id,
+            }
+        }
+        StoreLoadProjection::Other(_) => unreachable!(),
+    }
+}
+
+fn recover_then_bare_reraise(frame: WorkerGetFrame) -> WorkerGetFrame {
+    let (store, worker_capture) = into_store_frame(frame);
+    match provider::project_store_down(store) {
+        StoreLoadProjection::Matched { payload, residual } => WorkerGetFrame {
+            tag: WORKER_STORE_DOWN_TAG,
+            raised: WorkerGetRaised::FromStore(provider::make_store_down(payload, residual)),
+            capture: worker_capture,
+        },
+        StoreLoadProjection::Other(_) => unreachable!(),
+    }
+}
+
+// This callable is invoked only by the concrete application Root wrapper.
+// Its input and output are the consumer specialization's exact generated types.
+fn supervisor_on_fail(frame: SupervisorFrame) -> WorkerReply {
+    assert_eq!(frame.tag, 0);
+    recover_by_variant(frame.worker)
+}
+
+fn supervisor_root(should_fail: bool, value: i64, request_id: i64) -> WorkerReply {
+    match supervisor_body(should_fail, value, request_id) {
+        SupervisorOutcome::Replied(reply) => reply,
+        // Exhaustiveness here models Root totality. Nested bodies above remain
+        // free to propagate their typed failure carriers.
+        SupervisorOutcome::Raised(frame) => supervisor_on_fail(frame),
+    }
+}
+
+fn provider_root(should_fail: bool, value: i64) -> provider::StoreReply {
+    match provider::store_load_body(
+        should_fail,
+        value,
+        StoreFailureCapture { bias: 7 },
+    ) {
+        StoreLoadOutcome::Replied(reply) => reply,
+        StoreLoadOutcome::Raised(frame) => provider::store_load_on_fail(frame),
+    }
+}
+
+fn expect_worker_failure(outcome: WorkerGetOutcome) -> WorkerGetFrame {
+    match outcome {
+        WorkerGetOutcome::Raised(frame) => frame,
+        WorkerGetOutcome::Replied(reply) => {
+            panic!("expected raised outcome, received typed reply {reply:?}")
+        }
+    }
+}
+
+fn main() {
+    let success = supervisor_root(false, 31, 900);
+    assert_eq!(
+        success,
+        WorkerReply::Success {
+            value: 31,
+            request_id: 900,
+        }
+    );
+
+    // A real provider failure crosses two distinct specialization outcomes and
+    // is dispatched only when the concrete application Root is reached.
+    let failed = supervisor_root(true, 37, 901);
+    assert_eq!(
+        failed,
+        WorkerReply::Unavailable {
+            code: 37,
+            request_id: 901,
+        }
+    );
+
+    // Recover by exact provider variant and move the owned nested payload out.
+    let recovered = recover_by_variant(expect_worker_failure(worker_get_body(true, 40, 902)));
+    assert_eq!(
+        recovered,
+        WorkerReply::Unavailable {
+            code: 40,
+            request_id: 902,
+        }
+    );
+
+    // Bare re-raise reconstructs the provider-private carrier with the exact
+    // identity, owned payload and both provider/consumer captures intact.
+    let reraised = recover_then_bare_reraise(expect_worker_failure(worker_get_body(
+        true, 41, 903,
+    )));
+    let (store, worker_capture) = into_store_frame(reraised);
+    assert_eq!(
+        provider::store_load_identity(&store),
+        provider::STORE_ERROR_DOWN_IDENTITY
+    );
+    assert_eq!(worker_capture, WorkerCapture { request_id: 903 });
+    assert_eq!(provider::store_load_tag(&store), provider::STORE_ERROR_DOWN_TAG);
+    assert_eq!(
+        provider::store_load_on_fail(store),
+        provider::StoreReply::Unavailable {
+            code: 41,
+            capture_bias: 5,
+        }
+    );
+
+    // The provider's exported typed on_fail callable is independently usable
+    // by a Root wrapper compiled in this source-free consumer crate.
+    assert_eq!(
+        provider_root(true, 43),
+        provider::StoreReply::Unavailable {
+            code: 43,
+            capture_bias: 7,
+        }
+    );
+
+    println!("phase21 two-crate source-free Rust ABI fixture passed");
+}

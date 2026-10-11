@@ -1,0 +1,20 @@
+module app
+import mapper
+
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn main():
+  try:
+    file = FileIO.open("tmp/phase20-typed-range-cross-crate.data", create)
+    file.write(0, "A")
+    chunk = file.read(0, 1)
+    echo mapper.first(chunk)
+    file.close()
+  recover:
+    echo -1

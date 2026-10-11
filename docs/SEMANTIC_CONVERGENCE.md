@@ -16,7 +16,8 @@ already provides:
 - typed functional IR with named functions, statically bound methods,
   placeholders, and specialized higher-order callables;
 - ownership (`READ`, `WRITE`, `CONSUME`) and observable-effect summaries,
-  including `may_fail` and conservative `may_diverge`;
+  including separate `may_panic`, normalized typed `raise_set`, and
+  conservative `may_diverge`;
 - static call graphs and concrete domain routing, source-aware diagnostics, impact analysis, and
   cost facts;
 - newline-delimited Fast Debug trace events for ordinary and synchronous-domain

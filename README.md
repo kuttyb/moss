@@ -559,13 +559,14 @@ For a minimal two-module project, see
 `Second` imports the exported functions from `First` and can be run with
 `moss debug .` or `moss build` from that directory.
 
-## Next milestone
+## Roadmap
 
-**Phase 15 — Dogfooding:** write substantial Moss programs, identify real friction,
-and let actual usage determine the next refinements. Later milestones are
-Phase 20 Rust Interoperability, Phase 21 Error Propagation & Supervision,
-Phase 22 Agent Agency Tooling, Phase 23 Static Compiler Optimizations, and
-Phase 24 TileIR Integration (Dynamic Optimizations). The [v0.1 roadmap](docs/V0_1.md) preserves current
+Phase 15 dogfooding and Phase 20 FileIO/Executor work are implemented. Phase 21
+Error Handling and Recovery is in progress; the remaining capture-frame and
+proof gates are recorded in [.codex/CURRENT_STATUS.md](.codex/CURRENT_STATUS.md).
+Later roadmap entries include Phase 22 Agent Agency Tooling, Phase 23 Static
+Compiler Optimizations, and Phase 24 TileIR Integration (Dynamic
+Optimizations). The [v0.1 roadmap](docs/V0_1.md) preserves current
 restrictions and the future scoped-domain breadcrumb.
 
 Phase 22.2A and 22.2B provide a hardened, frozen 30-task

@@ -1,3 +1,11 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # §13.1: a chunk pipeline directly on a domain-field FileIO (the Root holds
 # the field's READ access). Today: generated Rust fails (*state.file.read).
 fn len(chunk: Range) -> Int:
@@ -12,11 +20,20 @@ domain Store:
   fn Open(path: String):
     file.open(path, ro)
 
+  on_fail:
+    echo "unexpected FileIO error"
+
   fn Total() -> Int:
     reply file.chunks(4) |> map(len) |> reduce(0, add)
 
+  on_fail:
+    reply -1
+
   fn Close():
     file.close()
+
+  on_fail:
+    echo "unexpected FileIO error"
 
 fn main():
   store = Store()

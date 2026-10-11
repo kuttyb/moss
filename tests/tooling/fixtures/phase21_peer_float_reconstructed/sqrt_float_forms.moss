@@ -1,0 +1,5 @@
+fn sqrt_inferred(x):
+  return sqrt(x)
+
+fn main():
+  echo sqrt(16.0), sqrt_inferred(9.0)

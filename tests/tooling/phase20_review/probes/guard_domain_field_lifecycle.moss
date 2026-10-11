@@ -1,3 +1,11 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # §9.2 / §11: domain-field FileIO opened in place, written, synced, read by
 # two overlapping one-way Roots, then closed.
 domain Store:
@@ -6,19 +14,34 @@ domain Store:
   fn Open(path: String):
     file.open(path, rw)
 
+  on_fail:
+    echo "unexpected FileIO error"
+
   fn Verify(offset: Int, expected: Int):
     data = file.read(offset, 4)
     assert(data.length() == expected)
     echo data.length()
 
+  on_fail:
+    echo "unexpected FileIO error"
+
   fn Update(offset: Int):
     file.write(offset, "abcd")
+
+  on_fail:
+    echo "unexpected FileIO error"
 
   fn Flush():
     file.sync()
 
+  on_fail:
+    echo "unexpected FileIO error"
+
   fn Close():
     file.close()
+
+  on_fail:
+    echo "unexpected FileIO error"
 
 fn main():
   store = Store()

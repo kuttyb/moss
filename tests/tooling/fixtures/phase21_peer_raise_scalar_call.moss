@@ -1,0 +1,22 @@
+enum Failure:
+  Bad
+
+fn number(fail: Bool) -> Int:
+  if fail:
+    raise Failure.Bad
+  return 7
+
+fn forward(fail: Bool):
+  raise number(fail)
+
+fn route(fail: Bool):
+  try:
+    forward(fail)
+  recover Failure.Bad:
+    echo "bad"
+  recover err:
+    echo err
+
+fn main():
+  route(true)
+  route(false)

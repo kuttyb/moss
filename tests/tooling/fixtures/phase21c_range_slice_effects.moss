@@ -1,0 +1,39 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn safe(chunk: Range) -> Int:
+  s = chunk.slice(0, 1)
+  return s.length()
+
+fn risky(chunk: Range) -> Int:
+  s = chunk.slice(0, 0)
+  return s[0]
+
+fn add(total: Int, value: Int) -> Int:
+  return total + value
+
+domain Worker:
+  fn Run() -> Int:
+    file = FileIO.open("tmp/phase21c-range-slice-effects.data", ro)
+    r = file.read(0, 1)
+    result = safe(r)
+    file.close()
+    reply result
+
+  on_fail:
+    reply -1
+
+  fn Risky() -> Int:
+    file = FileIO.open("tmp/phase21c-range-slice-effects.data", ro)
+    result = file.chunks(1) |> map(risky) |> reduce(0, add)
+    file.close()
+    reply result
+
+fn main():
+  worker = Worker()
+  echo message worker.Run()

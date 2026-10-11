@@ -14,6 +14,7 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <numeric>
 #include <optional>
@@ -36,8 +37,10 @@
 #include "interpreter.hpp"
 #include "handler_runtime.hpp"
 #include "fileio_runtime.hpp"
+#include "float_format_runtime.hpp"
 #include "executor_runtime.hpp"
 #include "synchronization_lowering.hpp"
+#include "source_free_abi_v9.hpp"
 
 using std::string;
 using std::vector;
@@ -61,7 +64,9 @@ class CompilerStageTimer {
 };
 
 static constexpr const char* kCompilerVersion = "0.1.0";
-static constexpr int kNativeAbiVersion = 6;
+// ABI v8's raised-value layout is retained, while v9 adds an artifact-bound
+// source-free contract. A v8 interface must be rebuilt before source-free use.
+static constexpr int kNativeAbiVersion = 9;
 static constexpr const char* kMossLanguageVersion = "moss-0.1";
 static constexpr int kAgentProtocolVersion = 1;
 static constexpr const char* kAgentSchemaVersion = "moss-agent-1";
@@ -77,8 +82,58 @@ static string rtrim(string s) {
 }
 static string trim(string s) { return rtrim(ltrim(std::move(s))); }
 static bool starts_with(const string& s, const string& p) { return s.rfind(p, 0) == 0; }
+
+static string source_code_only(string line) {
+  bool in_string = false, escaped = false;
+  for (size_t index = 0; index < line.size(); ++index) {
+    char ch = line[index];
+    if (in_string) {
+      line[index] = ' ';
+      if (escaped) escaped = false;
+      else if (ch == '\\') escaped = true;
+      else if (ch == '"') in_string = false;
+    } else if (ch == '"') {
+      line[index] = ' ';
+      in_string = true;
+    } else if (ch == '#') {
+      line.resize(index);
+      break;
+    }
+  }
+  return line;
+}
 static bool ends_with(const string& s, const string& p) {
   return s.size() >= p.size() && s.compare(s.size() - p.size(), p.size(), p) == 0;
+}
+
+static bool decimal_float_literal(const string& value) {
+  size_t index = 0;
+  if (index < value.size() && (value[index] == '+' || value[index] == '-'))
+    ++index;
+  auto digits = [&] {
+    size_t start = index;
+    while (index < value.size() &&
+           std::isdigit(static_cast<unsigned char>(value[index])))
+      ++index;
+    return index != start;
+  };
+  bool before_point = digits();
+  bool point = index < value.size() && value[index] == '.';
+  bool after_point = false;
+  if (point) {
+    ++index;
+    after_point = digits();
+  }
+  if (!before_point && !after_point) return false;
+  bool exponent = index < value.size() &&
+      (value[index] == 'e' || value[index] == 'E');
+  if (exponent) {
+    ++index;
+    if (index < value.size() && (value[index] == '+' || value[index] == '-'))
+      ++index;
+    if (!digits()) return false;
+  }
+  return index == value.size() && (point || exponent);
 }
 
 static string stable_hash(const string& value) {
@@ -174,6 +229,89 @@ static string canonical_type_name(string type) {
   return type;
 }
 
+static bool standard_error_short_name(const string& name) {
+  return name == "FileError" || name == "ParseError" ||
+         name == "ConversionError";
+}
+
+static string standard_error_identity(const string& name) {
+  return "std__" + name;
+}
+
+static vector<string> standard_error_variants(const string& identity) {
+  if (identity == "std__FileError")
+    return {"NotFound", "PermissionDenied", "NotRegularFile", "InUse",
+            "Full", "IO"};
+  if (identity == "std__ParseError") return {"Invalid", "Overflow"};
+  if (identity == "std__ConversionError") return {"NonFinite", "Overflow"};
+  return {};
+}
+
+// The standard namespace is compiler-owned.  Rewrite source tokens before
+// parsing so every checker and backend path sees one nominal identity.  A
+// module's own enum retains its separate identity; a qualified provider enum
+// is never captured by the unqualified shorthand.
+static void normalize_standard_error_lines(
+    vector<Line>& lines, const std::set<string>& forced_aliases = {}) {
+  bool explicit_module = false;
+  std::set<string> local_names;
+  for (const auto& line : lines) {
+    const string code = trim(source_code_only(line.text));
+    if (starts_with(code, "module ")) explicit_module = true;
+    string declaration = starts_with(code, "export ")
+        ? trim(code.substr(7)) : code;
+    if (starts_with(declaration, "enum ")) {
+      const string name = trim(declaration.substr(5,
+          declaration.find(':') == string::npos ? string::npos :
+          declaration.find(':') - 5));
+      if (standard_error_short_name(name)) local_names.insert(name);
+    }
+  }
+  for (const auto& alias : forced_aliases) local_names.erase(alias);
+  for (auto& line : lines) {
+    string rewritten;
+    bool in_string = false;
+    const string& value = line.text;
+    for (size_t at = 0; at < value.size();) {
+      if (value[at] == '"' && (at == 0 || value[at - 1] != '\\'))
+        in_string = !in_string;
+      if (!in_string && value[at] == '#') {
+        rewritten += value.substr(at);
+        break;
+      }
+      if (in_string || !(std::isalpha(static_cast<unsigned char>(value[at])) ||
+                         value[at] == '_')) {
+        rewritten.push_back(value[at++]);
+        continue;
+      }
+      size_t end = at + 1;
+      while (end < value.size() &&
+             (std::isalnum(static_cast<unsigned char>(value[end])) ||
+              value[end] == '_')) ++end;
+      const string token = value.substr(at, end - at);
+      if (token == "std" && end < value.size() && value[end] == '.') {
+        size_t member = end + 1;
+        while (member < value.size() &&
+               (std::isalnum(static_cast<unsigned char>(value[member])) ||
+                value[member] == '_')) ++member;
+        const string name = value.substr(end + 1, member - end - 1);
+        if (standard_error_short_name(name)) {
+          rewritten += standard_error_identity(name);
+          at = member;
+          continue;
+        }
+      }
+      if (standard_error_short_name(token) &&
+          (!explicit_module || !local_names.count(token)) &&
+          (at == 0 || value[at - 1] != '.'))
+        rewritten += standard_error_identity(token);
+      else rewritten += token;
+      at = end;
+    }
+    line.text = std::move(rewritten);
+  }
+}
+
 // Iterator ownership is a concrete specialization fact. Built-in Range and
 // Vector traversal read their source; a custom Iterator uses next()'s actual
 // receiver effect. The checker and native lowering share this decision.
@@ -225,7 +363,7 @@ struct BuiltinOperationDescriptor {
   Effect receiver_effect;
   vector<Effect> argument_effects;
   vector<string> argument_types;
-  bool may_fail = false;
+  bool may_panic = false;
 };
 
 // Authoritative compiler-owned surface for receiver builtins.  Type checking
@@ -825,7 +963,10 @@ static string snake_case(const string& s) {
 
 class Parser {
  public:
-  explicit Parser(vector<Line> lines) : lines_(std::move(lines)) {
+  explicit Parser(vector<Line> lines,
+                  std::set<string> standard_aliases = {})
+      : lines_(std::move(lines)) {
+    normalize_standard_error_lines(lines_, standard_aliases);
     int unit = 0;
     for (const auto& line : lines_) {
       if (line.indent > 0) unit = unit == 0 ? line.indent : std::gcd(unit, line.indent);
@@ -843,6 +984,12 @@ class Parser {
       if (starts_with(L.text, "module ")) {
         string name = trim(L.text.substr(7));
         if (!plain_identifier(name)) fail(L, "module name must be an identifier");
+        if (name == "std") {
+          CompileError error(L.no, "module 'std' is reserved for compiler-defined standard types",
+                             "RESERVED_STANDARD_NAMESPACE");
+          error.source_file = L.source_file;
+          throw error;
+        }
         if (p.explicit_module && p.module_name != name)
           fail(L, "a source file may declare only one module");
         p.module_name = name;
@@ -851,7 +998,10 @@ class Parser {
       } else if (starts_with(L.text, "import ")) {
         string name = trim(L.text.substr(7));
         if (!plain_identifier(name)) fail(L, "import name must be an identifier");
-        p.imports.push_back(ModuleImport{name, {}, L.no, L.source_file});
+        // std is compiler-owned and needs no provider artifact.  Accept an
+        // explicit import for discoverability without manufacturing a module.
+        if (name != "std")
+          p.imports.push_back(ModuleImport{name, {}, L.no, L.source_file});
         ++i_;
       } else {
         bool exported = false;
@@ -1138,6 +1288,9 @@ class Parser {
         d.handlers.push_back(parse_handler(head.indent + indent_unit_, "on"));
       } else if (starts_with(L.text, "fn ")) {
         d.handlers.push_back(parse_handler(head.indent + indent_unit_, "fn"));
+      } else if (L.text == "on_fail" || L.text == "on_fail:" ||
+                 starts_with(L.text, "on_fail ")) {
+        fail(L, "on_fail must immediately follow the handler it attaches to");
       } else {
         // Julia-like state declarations omit both the var keyword and, when
         // inferable, the type annotation: `value = 0`.
@@ -1247,6 +1400,36 @@ class Parser {
     h.line = head.no;
     h.body = parse_stmt_block(member_indent + indent_unit_);
     if (h.body.empty()) fail(head, "handler body may not be empty");
+    while (i_ < lines_.size() && lines_[i_].indent == member_indent &&
+           (lines_[i_].text == "on_fail" ||
+            lines_[i_].text == "on_fail:" ||
+            starts_with(lines_[i_].text, "on_fail "))) {
+      Line arm_head = lines_[i_++];
+      if (!ends_with(arm_head.text, ":"))
+        fail(arm_head, "on_fail arm must end with ':'");
+      string selector = trim(arm_head.text.substr(
+          std::string("on_fail").size(),
+          arm_head.text.size() - std::string("on_fail").size() - 1));
+      FailureArm arm;
+      arm.line = arm_head.no;
+      arm.source_file = arm_head.source_file;
+      if (!selector.empty()) {
+        auto alternatives = split_top_level(selector, ',');
+        bool all_qualified = std::all_of(
+            alternatives.begin(), alternatives.end(), [](const string& value) {
+              return trim(value).find('.') != string::npos;
+            });
+        if (all_qualified) arm.patterns = std::move(alternatives);
+        else if (alternatives.size() == 1 && plain_identifier(selector))
+          arm.binding = selector;
+        else
+          fail(arm_head,
+               "on_fail requires qualified error variants, a single error binding, or a catch-all");
+      }
+      arm.body = parse_stmt_block(member_indent + indent_unit_);
+      if (arm.body.empty()) fail(arm_head, "on_fail arm body may not be empty");
+      h.failure_arms.push_back(std::move(arm));
+    }
     return h;
   }
 
@@ -1377,6 +1560,30 @@ class Parser {
     static const vector<string> forbidden = {"async ", "yield ", "lock ", "shared ", "thread "};
     for (const auto& k : forbidden) if (starts_with(L.text, k)) fail(L, "'" + trim(k) + "' is not part of Moss's concurrency model");
     if (L.text == "pass") { s.kind = Stmt::Kind::Pass; return s; }
+
+    if (L.text == "try" || L.text == "try:") {
+      if (L.text != "try:") fail(L, "try statement must end with ':'");
+      s.kind = Stmt::Kind::Try;
+      return s;
+    }
+    if (L.text == "recover" || L.text == "recover:" ||
+        starts_with(L.text, "recover ")) {
+      if (!ends_with(L.text, ":")) fail(L, "recover arm must end with ':'");
+      s.kind = Stmt::Kind::Recover;
+      s.a = trim(L.text.substr(std::string("recover").size(),
+                               L.text.size() - std::string("recover").size() - 1));
+      return s;
+    }
+    if (L.text == "raise") {
+      s.kind = Stmt::Kind::Raise;
+      return s;
+    }
+    if (starts_with(L.text, "raise ")) {
+      s.kind = Stmt::Kind::Raise;
+      s.a = trim(L.text.substr(6));
+      if (s.a.empty()) fail(L, "raise requires an error value");
+      return s;
+    }
 
     if (starts_with(L.text, "echo ")) {
       s.kind = Stmt::Kind::Echo;
@@ -1673,6 +1880,26 @@ class SourceFileScope {
 class Checker {
  public:
   explicit Checker(Program& p) : p_(p) {
+    const std::pair<const char*, vector<string>> standard_errors[] = {
+        {"FileError", {"NotFound", "PermissionDenied", "NotRegularFile",
+                       "InUse", "Full", "IO"}},
+        {"ParseError", {"Invalid", "Overflow"}},
+        {"ConversionError", {"NonFinite", "Overflow"}}};
+    for (const auto& [short_name, cases] : standard_errors) {
+      const string identity = standard_error_identity(short_name);
+      const bool present = std::any_of(p_.enums.begin(), p_.enums.end(),
+          [&](const EnumType& declaration) {
+            return declaration.name == identity;
+          });
+      if (present) continue;
+      EnumType declaration;
+      declaration.name = identity;
+      declaration.header = "compiler standard error " + string(short_name);
+      declaration.source_file = "<moss-std>";
+      for (const auto& name : cases)
+        declaration.cases.push_back(EnumCase{name, {}, 0, "<moss-std>"});
+      p_.enums.push_back(std::move(declaration));
+    }
     for (auto& f : p_.functions) {
       if (f.name == "assert" || f.name == "assertEqual")
         err(f.source_file, f.line, "function name '" + f.name +
@@ -1744,6 +1971,7 @@ class Checker {
         specialization.parameter_effects = concrete_function_effects(
             function, specialization.parameter_types, &specialization.parameter_mutations);
       }
+    validate_borrowed_view_write_effects();
     { CompilerStageTimer timer("concrete_graph"); build_concrete_domain_graph(); }
     check_method_ownership();
     for (const auto& f : p_.functions) check_function(f);
@@ -1760,6 +1988,11 @@ class Checker {
                      << std::quoted(edge.target_instance);
     p_.concrete_domain_graph.identity = "domain-graph:" + stable_hash(graph_material.str());
     build_functional_ir();
+    for (auto& function : p_.functions)
+      for (auto& specialization : function.specializations)
+        specialization.observable_effects =
+            concrete_function_observable_effects(
+                function, specialization.parameter_types);
     { CompilerStageTimer timer("synchronization_plan"); build_synchronization_plan(p_.concrete_domain_graph); }
     warn_fileio_blocking_with_shared_write();
     retain_checked_type_uses();
@@ -1817,13 +2050,16 @@ class Checker {
   mutable vector<bool>* parameter_mutation_capture_ = nullptr;
   mutable string current_source_file_;
   string current_semantic_context_;
+  mutable const Stmt* ownership_current_stmt_ = nullptr;
   vector<Warning> warnings_;
+  bool phase21_warnings_enabled_ = true;
 
   using TypeEnv = std::unordered_map<string,string>;
   using TypeEnvVisitor = std::function<void(const Stmt&, const TypeEnv&)>;
 
 #include "static_bounds.inc"
 #include "fileio_semantics.inc"
+#include "borrowed_view_write.inc"
 
   [[noreturn]] void err(int line, const string& msg) const {
     CompileError error(line, msg);
@@ -1842,6 +2078,14 @@ class Checker {
                         const string& msg) const {
     CompileError error(line, msg);
     error.source_file = !source_file.empty() ? source_file : current_source_file_;
+    throw error;
+  }
+
+  [[noreturn]] void err(const string& source_file, int line,
+                        const string& msg, const string& diagnostic_code) const {
+    CompileError error(line, msg, diagnostic_code);
+    error.source_file = !source_file.empty()
+        ? source_file : current_source_file_;
     throw error;
   }
 
@@ -2462,6 +2706,27 @@ class Checker {
         ++index;
         return true;
       }
+      if (statement.kind == Stmt::Kind::Raise) {
+        ++index;
+        return true;  // no normally completing path continues past a raise.
+      }
+      if (statement.kind == Stmt::Kind::Try) {
+        ++index;
+        bool normal_replies = every_handler_path_replies(
+            statements, index, level + 1);
+        bool all_recover_reply = true;
+        bool any_recover = false;
+        while (index < statements.size() &&
+               statements[index].indent == level &&
+               statements[index].kind == Stmt::Kind::Recover) {
+          any_recover = true;
+          ++index;
+          all_recover_reply &= every_handler_path_replies(
+              statements, index, level + 1);
+        }
+        if (normal_replies && any_recover && all_recover_reply) return true;
+        continue;
+      }
       if (statement.kind == Stmt::Kind::If) {
         ++index;
         bool then_replies = every_handler_path_replies(statements, index, level + 1);
@@ -2567,6 +2832,90 @@ class Checker {
             err(field.source_file, field.line,
                 "trait types are static structural constraints and cannot be stored in enum payloads");
         }
+    for (const auto& declaration : p_.enums) {
+      string short_name = declaration.name;
+      if (auto separator = short_name.rfind("__"); separator != string::npos)
+        short_name = short_name.substr(separator + 2);
+      // A provider-owned namesake is nominally distinct even when a built-in
+      // operation appears in the same source file.  Only the compiler's std
+      // identity must satisfy the closed standard variant contract.
+      if (declaration.name != standard_error_identity(short_name)) continue;
+      const vector<string> expected =
+          standard_error_variants(declaration.name);
+      if (expected.empty()) continue;
+      std::set<string> actual;
+      bool tag_only = true;
+      for (const auto& item : declaration.cases) {
+        actual.insert(item.name);
+        tag_only &= item.fields.empty();
+      }
+      if (tag_only && declaration.cases.size() == expected.size() &&
+          actual == std::set<string>(expected.begin(), expected.end()))
+        continue;
+      string required;
+      for (const auto& variant : expected) {
+        if (!required.empty()) required += ", ";
+        required += variant;
+      }
+      err(declaration.source_file, declaration.line,
+          short_name + " must declare exactly these tag-only variants: " +
+              required, "BUILTIN_ERROR_TYPE_SHAPE");
+    }
+  }
+
+  void validate_fileio_error_contract_presence() const {
+    std::set<string> checked_sources;
+    for (const auto& source : p_.source_lines) {
+      const string code = source_code_only(source.text);
+      if (code.find("FileIO.") == string::npos &&
+          code.find("FileIO(") == string::npos)
+        continue;
+      if (!checked_sources.insert(source.source_file).second) continue;
+      auto is_file_error = [](const EnumType& declaration) {
+        return declaration.name == "FileError" ||
+            ends_with(declaration.name, "__FileError");
+      };
+      bool local = std::any_of(p_.enums.begin(), p_.enums.end(),
+          [&](const EnumType& declaration) {
+            return is_file_error(declaration) &&
+                declaration.source_file == source.source_file;
+          });
+      if (local) {
+        size_t candidates = static_cast<size_t>(std::count_if(
+            p_.enums.begin(), p_.enums.end(), is_file_error));
+        if (candidates > 1)
+          err(source.source_file, source.no,
+              "FileIO has multiple module-qualified FileError declarations; native error identity is ambiguous",
+              "FILEIO_ERROR_IDENTITY_UNSUPPORTED");
+        continue;  // check_enums already validated its shape.
+      }
+      vector<const EnumType*> imported;
+      for (const auto& declaration : p_.enums)
+        if (is_file_error(declaration)) imported.push_back(&declaration);
+      // Phase 20 FileIO programs may use the aborting API without declaring
+      // a typed error enum. A typed recovery selector still requires its
+      // declaration during ordinary recovery checking.
+      if (imported.empty()) continue;
+      if (imported.size() != 1)
+        err(source.source_file, source.no,
+            "FileIO requires one unambiguous six-variant FileError enum",
+            "UNKNOWN_ERROR_TYPE");
+      const auto& declaration = *imported.front();
+      const std::set<string> expected = {
+          "NotFound", "PermissionDenied", "NotRegularFile",
+          "InUse", "Full", "IO"};
+      std::set<string> actual;
+      bool tag_only = true;
+      for (const auto& item : declaration.cases) {
+        actual.insert(item.name);
+        tag_only &= item.fields.empty();
+      }
+      if (!tag_only || declaration.cases.size() != expected.size() ||
+          actual != expected)
+        err(declaration.source_file, declaration.line,
+            "imported FileError used by FileIO must declare exactly six approved tag-only variants",
+            "BUILTIN_ERROR_TYPE_SHAPE");
+    }
   }
 
   void check_domain_handle_declarations() {
@@ -2702,7 +3051,8 @@ class Checker {
         if (initializer_effects.message ||
             initializer_effects.domain_read || initializer_effects.domain_write ||
             initializer_effects.local_mutation || initializer_effects.external_io ||
-            initializer_effects.may_fail || initializer_effects.may_diverge ||
+            initializer_effects.may_panic || !initializer_effects.raise_set.empty() ||
+            initializer_effects.may_diverge ||
             initializer_effects.unresolved) {
           err(f_source, f.line,
               "domain state initializers must be side-effect-free and cannot perform message, domain, I/O, failing, or divergent work");
@@ -2739,9 +3089,7 @@ class Checker {
       if (has_reply && !h.reply_type)
         err(h_source, h.line, "cannot infer reply type for handler '" + d.name + "." + h.name +
             "'; add an annotation or use a statically typed reply expression");
-      if (h.reply_type && !has_reply)
-        err(h_source, h.line, "reply handler '" + d.name + "." + h.name + "' must contain at least one reply statement");
-      if (h.reply_type) {
+      if (h.reply_type && !h.provider_abi) {
         size_t reply_index = 0;
         if (!every_handler_path_replies(h.body, reply_index, 0))
           err(h_source, h.line, "reply handler '" + d.name + "." + h.name +
@@ -2771,8 +3119,100 @@ class Checker {
       for (const auto& f : d.state) ownership.state_fields.insert(f.name);
       for (const auto& parameter : h.params)
         ownership.message_payloads.insert(parameter.name);
-      check_ownership(h.body, std::move(ownership), &d, &h);
+      vector<ExceptionalOwnershipExit> escaping_exits;
+      check_ownership(h.body, std::move(ownership), &d, &h,
+                      &escaping_exits);
       check_fileio_lifecycle(h.body, env, &d, h.line);
+      const TypeEnv local_candidates =
+          phase21_handler_local_candidates(h, env);
+      for (const auto& arm : h.failure_arms) {
+        SourceFileScope arm_source(current_source_file_, arm.source_file);
+        TypeEnv arm_env = env;
+        if (!arm.binding.empty()) {
+          std::set<string> error_types;
+          for (const auto& identity : arm.exceptional_alternatives)
+            error_types.insert(identity.type);
+          if (error_types.size() != 1)
+            err(arm.line,
+                "bound on_fail catch-all requires one concrete error type",
+                "AMBIGUOUS_RECOVERY_BINDING");
+          arm_env[arm.binding] = *error_types.begin();
+        }
+        if (arm.patterns.size() == 1)
+          for (const auto& binding :
+               phase21_pattern_bindings(arm.line, arm.patterns.front()))
+            arm_env[binding.first] = binding.second;
+        arm.captures.clear();
+        for (const auto& name :
+             phase21_failure_capture_reads(arm, arm_env, local_candidates)) {
+          const string& candidate_type = local_candidates.at(name);
+          if (candidate_type == "_ambiguous_capture_type")
+            err(arm.line, "on_fail capture '" + name +
+                "' has incompatible handler-local types",
+                "ON_FAIL_CAPTURE_TYPE_MISMATCH");
+          if (arm.exceptional_alternatives.empty()) {
+            // The checked warning-only arm can never be selected. Its body
+            // remains typechecked, but no value crosses a Root boundary.
+            arm_env[name] = candidate_type;
+            continue;
+          }
+          std::optional<string> binding_identity;
+          for (const auto& exit : escaping_exits) {
+            bool reaches_arm = false;
+            for (const auto& identity : arm.exceptional_alternatives)
+              reaches_arm |= exit.alternatives.count(identity) != 0;
+            if (!reaches_arm) continue;
+            const auto type = exit.ownership.types.find(name);
+            const auto binding =
+                exit.ownership.binding_identities.find(name);
+            if (type == exit.ownership.types.end() ||
+                binding == exit.ownership.binding_identities.end())
+              err(arm.line, "on_fail capture '" + name +
+                  "' is not initialized on every selected raise path",
+                  "ON_FAIL_CAPTURE_NOT_INITIALIZED");
+            if (!same_type(type->second, candidate_type))
+              err(arm.line, "on_fail capture '" + name +
+                  "' has different types on selected raise paths",
+                  "ON_FAIL_CAPTURE_TYPE_MISMATCH");
+            if (exit.ownership.moved.count(name))
+              err(arm.line, "on_fail capture '" + name +
+                  "' was consumed before a selected raise",
+                  "ON_FAIL_CAPTURE_CONSUMED");
+            if (exit.ownership.borrowed_enum_payloads.count(name) ||
+                fileio_contains_scoped_type(type->second) ||
+                domains_.count(canonical_type_name(type->second)))
+              err(arm.line, "on_fail capture '" + name +
+                  "' must be an owned non-capability value",
+                  "ON_FAIL_CAPTURE_NOT_OWNED");
+            if (binding_identity && *binding_identity != binding->second)
+              err(arm.line, "on_fail capture '" + name +
+                  "' resolves to different bindings on selected raise paths",
+                  "ON_FAIL_CAPTURE_BINDING_MISMATCH");
+            binding_identity = binding->second;
+          }
+          if (!binding_identity)
+            err(arm.line, "on_fail capture '" + name +
+                "' has no proved incoming exceptional ownership edge",
+                "ON_FAIL_CAPTURE_UNPROVEN");
+          arm.captures.push_back(
+              {name, candidate_type, *binding_identity});
+          arm_env[name] = candidate_type;
+        }
+        check_stmts(arm.body, arm_env, &d, &h);
+        OwnershipEnv arm_ownership;
+        arm_ownership.types = arm_env;
+        for (const auto& field : d.state)
+          arm_ownership.state_fields.insert(field.name);
+        for (const auto& parameter : h.params)
+          arm_ownership.message_payloads.insert(parameter.name);
+        check_ownership(arm.body, std::move(arm_ownership), &d, &h);
+        check_fileio_lifecycle(arm.body, arm_env, &d, arm.line);
+      }
+      const bool has_captures = std::any_of(
+          h.failure_arms.begin(), h.failure_arms.end(),
+          [](const FailureArm& arm) { return !arm.captures.empty(); });
+      const_cast<Handler&>(h).phase21_capture_carrier_type = has_captures
+          ? "__MossRaisedCarrier_" + d.name + "_" + h.name : string();
     }
   }
 
@@ -2782,6 +3222,7 @@ class Checker {
     std::unordered_map<string,string> env;
     env = check_stmts(m.body, std::move(env), nullptr, nullptr,
                       nullptr, true);
+    phase21_validate_root_ingress_totality(env);
     OwnershipEnv ownership;
     ownership.types = std::move(env);
     check_ownership(m.body, std::move(ownership), nullptr, nullptr);
@@ -2936,7 +3377,8 @@ class Checker {
             if (initializer_effects.message ||
                 initializer_effects.domain_read || initializer_effects.domain_write ||
                 initializer_effects.local_mutation || initializer_effects.external_io ||
-                initializer_effects.may_fail || initializer_effects.may_diverge ||
+                initializer_effects.may_panic || !initializer_effects.raise_set.empty() ||
+                initializer_effects.may_diverge ||
                 initializer_effects.unresolved)
               fail_at(statement,
                       "domain state initializers must be side-effect-free and cannot perform message, domain, I/O, failing, or divergent work");
@@ -3193,12 +3635,7 @@ class Checker {
     if (start < e.size() && std::all_of(e.begin() + static_cast<std::ptrdiff_t>(start), e.end(), [](char c) {
           return std::isdigit(static_cast<unsigned char>(c));
         })) return "int";
-    bool dot = false, digit = start < e.size();
-    for (size_t i = start; digit && i < e.size(); ++i) {
-      if (e[i] == '.' && !dot) dot = true;
-      else if (!std::isdigit(static_cast<unsigned char>(e[i]))) digit = false;
-    }
-    if (digit && dot) return "float";
+    if (decimal_float_literal(e)) return "float";
     return std::nullopt;
   }
 
@@ -3409,6 +3846,21 @@ class Checker {
     std::map<string,MoveInfo> moved;
   };
 
+  struct ExceptionalOwnershipExit {
+    RaiseSet alternatives;
+    OwnershipEnv ownership;
+    const Stmt* source = nullptr;
+  };
+
+  struct OwnershipExpressionFrame {
+    RaiseSet all_raises;
+    RaiseSet child_raises;
+    OwnershipExpressionFrame* parent = nullptr;
+  };
+  vector<ExceptionalOwnershipExit>* ownership_exceptional_sink_ = nullptr;
+  const Stmt* ownership_exceptional_source_ = nullptr;
+  OwnershipExpressionFrame* ownership_expression_frame_ = nullptr;
+
   void retain_semantic_use(const string& target_identity, const string& kind,
                            int line) {
     if (target_identity.empty() || current_semantic_context_.empty()) return;
@@ -3598,6 +4050,11 @@ class Checker {
                 --before;
               if (before == 0) return true;
               char prior = expression[before - 1];
+              if ((prior == 'e' || prior == 'E') && before >= 2 &&
+                  std::isdigit(static_cast<unsigned char>(expression[before - 2])) &&
+                  i + 1 < expression.size() &&
+                  std::isdigit(static_cast<unsigned char>(expression[i + 1])))
+                return true;
               return prior == '(' || prior == '[' || prior == '{' || prior == ',' ||
                   prior == ':' || prior == '+' || prior == '-' || prior == '*' ||
                   prior == '/' || prior == '%' || prior == '=' || prior == '<' ||
@@ -3615,10 +4072,10 @@ class Checker {
   struct BuiltinCallSemantics {
     string result_type;
     ObservableEffects observable_effects;
-    BuiltinCallSemantics(string result, bool may_fail)
+    BuiltinCallSemantics(string result, bool may_panic)
         : result_type(std::move(result)) {
       observable_effects.unresolved = false;
-      observable_effects.may_fail = may_fail;
+      observable_effects.may_panic = may_panic;
     }
     bool pure() const { return observable_effects.fusion_safe(); }
   };
@@ -3639,6 +4096,26 @@ class Checker {
       return BuiltinCallSemantics{"range[int]", false};
     if (callee == "sqrt" && args.size() == 1)
       return BuiltinCallSemantics{"float", false};
+    if ((callee == "is_nan" || callee == "is_finite") && args.size() == 1)
+      return BuiltinCallSemantics{"bool", false};
+    const std::string_view numeric_name = numeric_builtin_base(callee);
+    if (!numeric_name.empty() && args.size() == 1) {
+      BuiltinCallSemantics result{
+          numeric_name == "parse_float" ? "float" : "int", false};
+      const string error_type = numeric_builtin_error_type(callee);
+      auto variant = [&](const char* type, const char* name) {
+        result.observable_effects.raise_set.insert(
+            RaisedIdentity::enum_variant(type, name));
+      };
+      if (numeric_name == "to_int") {
+        variant(error_type.c_str(), "NonFinite");
+        variant(error_type.c_str(), "Overflow");
+      } else {
+        variant(error_type.c_str(), "Invalid");
+        if (numeric_name == "parse_int") variant(error_type.c_str(), "Overflow");
+      }
+      return result;
+    }
     if (callee == "Some" && args.size() == 1) {
       auto element = inferred_expr_type(args.front(), env);
       return BuiltinCallSemantics{
@@ -4251,7 +4728,9 @@ class Checker {
       if (statement.kind == Stmt::Kind::Match) {
         visitor(statement, env);
         auto scrutinee_type = inferred_expr_type(statement.a, env);
-        bool deferred = (scrutinee_type && starts_with(*scrutinee_type, "_generic:")) ||
+        bool deferred = (scrutinee_type &&
+            (starts_with(*scrutinee_type, "_generic:") ||
+             *scrutinee_type == "_selected_error")) ||
             (!scrutinee_type && env.count(statement.a) && env.at(statement.a).empty());
         if (!deferred && (!scrutinee_type ||
             !enums_.count(canonical_type_name(*scrutinee_type))))
@@ -4336,6 +4815,67 @@ class Checker {
       }
       if (statement.kind == Stmt::Kind::Case)
         err(statement.line, "case requires an enclosing match", "CASE_OUTSIDE_MATCH");
+
+      if (statement.kind == Stmt::Kind::Try) {
+        visitor(statement, env);
+        TypeEnv incoming = env;
+        ++index;
+        if (index >= statements.size() || statements[index].indent != level + 1)
+          err(statement.line, "try requires a statement body", "EMPTY_TRY_BODY");
+        TypeEnv normal = incoming;
+        walk_type_environment_block(statements, index, level + 1, normal,
+                                    visitor, reject_conflicts,
+                                    record_join_types, record_semantic_types,
+                                    join_context);
+        vector<TypeEnv> paths{std::move(normal)};
+        bool saw_recover = false;
+        while (index < statements.size() &&
+               statements[index].indent == level &&
+               statements[index].kind == Stmt::Kind::Recover) {
+          const Stmt& arm = statements[index];
+          saw_recover = true;
+          visitor(arm, incoming);
+          ++index;
+          if (index >= statements.size() || statements[index].indent != level + 1)
+            err(arm.line, "recover requires a statement body",
+                "EMPTY_RECOVER_BODY");
+          TypeEnv recovered = incoming;
+          if (!arm.a.empty() && arm.a.find('.') == string::npos &&
+              arm.a.find(',') == string::npos) {
+            std::set<string> selected_types;
+            for (const auto& identity : arm.exceptional_alternatives)
+              selected_types.insert(identity.type);
+            recovered[arm.a] = selected_types.size() == 1
+                ? *selected_types.begin() : "_selected_error";
+          }
+          else if (!arm.a.empty()) {
+            auto alternatives = split_top_level(arm.a, ',');
+            if (alternatives.size() == 1)
+              for (const auto& binding :
+                   phase21_pattern_bindings(arm.line, alternatives.front()))
+                recovered[binding.first] = binding.second;
+          }
+          walk_type_environment_block(statements, index, level + 1, recovered,
+                                      visitor, reject_conflicts,
+                                      record_join_types, record_semantic_types,
+                                      join_context);
+          paths.push_back(std::move(recovered));
+        }
+        if (!saw_recover)
+          err(statement.line, "try must be followed by at least one recover arm",
+              "TRY_REQUIRES_RECOVER");
+        env = merge_type_environments(paths, statement.line, reject_conflicts);
+        if (record_join_types) {
+          const_cast<Stmt&>(statement).joined_types = env;
+          if (!join_context.empty())
+            const_cast<Stmt&>(statement)
+                .joined_types_by_context[join_context] = env;
+        }
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::Recover)
+        err(statement.line, "recover requires an immediately preceding try",
+            "RECOVER_OUTSIDE_TRY");
 
       if (statement.kind == Stmt::Kind::If) {
         visitor(statement, env);
@@ -4567,6 +5107,7 @@ class Checker {
           break;
         case Stmt::Kind::Reply:
         case Stmt::Kind::Return:
+        case Stmt::Kind::Raise:
           if (!statement.a.empty())
             constrain_constructor_fields(statement.line, statement.a, current_env);
           break;
@@ -4575,6 +5116,8 @@ class Checker {
           break;
         case Stmt::Kind::Pass:
         case Stmt::Kind::Else:
+        case Stmt::Kind::Try:
+        case Stmt::Kind::Recover:
           break;
       }
     };
@@ -5489,6 +6032,8 @@ class Checker {
     std::map<string,string> roots;
     std::map<string,StorageLocation> aliases;
     StateLeafEffects effects;
+    bool ignore_recovery = false;
+    bool recording = true;
   };
   mutable LeafEffectCapture* leaf_effect_capture_ = nullptr;
   struct LeafCaptureScope {
@@ -5497,6 +6042,17 @@ class Checker {
     LeafCaptureScope(LeafEffectCapture*& target, LeafEffectCapture* value)
         : slot(target), previous(target) { slot = value; }
     ~LeafCaptureScope() { slot = previous; }
+  };
+  struct LeafRecordingScope {
+    LeafEffectCapture* capture;
+    bool previous;
+    explicit LeafRecordingScope(LeafEffectCapture* value)
+        : capture(value), previous(value ? value->recording : true) {
+      if (capture && capture->ignore_recovery) capture->recording = false;
+    }
+    ~LeafRecordingScope() {
+      if (capture) capture->recording = previous;
+    }
   };
 
   void checked_state_leaves(const string& path, const string& type,
@@ -5517,7 +6073,7 @@ class Checker {
   }
 
   void observe_leaf_access(const StorageLocation& location, Effect effect) const {
-    if (!leaf_effect_capture_) return;
+    if (!leaf_effect_capture_ || !leaf_effect_capture_->recording) return;
     auto& capture = *leaf_effect_capture_;
     string root = location.root;
     vector<string> path = location.path;
@@ -5544,6 +6100,20 @@ class Checker {
     for (const auto& item : leaves) capture.effects.observe(item, effect);
   }
 
+  StateLeafEffects conservative_method_formal_effects(
+      const Method& method) const {
+    StateLeafEffects effects;
+    auto observe = [&](const string& formal, Effect effect) {
+      if (effect == Effect::Read) effects.reads.insert(formal);
+      else if (effect == Effect::Write) effects.writes.insert(formal);
+      else effects.consumes.insert(formal);
+    };
+    observe("self", method.receiver_effect);
+    for (size_t index = 0; index < method.params.size(); ++index)
+      observe(method.params[index].name, method_parameter_effect(method, index));
+    return effects;
+  }
+
   // Reuse the same effect walker with concrete parameter/receiver types. Its
   // formal access paths are substituted onto the caller's checked locations.
   void capture_callable_effects(
@@ -5555,6 +6125,8 @@ class Checker {
       const ObjectType* object = nullptr, const string& receiver = "",
       const StateLeafEffects* recorded = nullptr) const {
     LeafEffectCapture capture;
+    capture.ignore_recovery = leaf_effect_capture_ &&
+                              leaf_effect_capture_->ignore_recovery;
     std::unordered_map<string,string> env;
     std::map<string,string> substitutions;
     std::set<string> fields;
@@ -5618,13 +6190,16 @@ class Checker {
 
   StateLeafEffects specialized_handler_effects(
       const Domain& domain, const Handler& handler,
-      const DomainSpecialization* specialization) const {
+      const DomainSpecialization* specialization,
+      bool ignore_recovery = false,
+      const TypeEnv* local_types = nullptr) const {
     for (const auto& module : p_.external_modules)
       if (starts_with(domain.name, module + "__")) {
         if (handler.state_effects) return *handler.state_effects;
         throw CompileError(handler.line, "compiled domain lacks handler state effects; rebuild its .mossi provider");
       }
     LeafEffectCapture capture;
+    capture.ignore_recovery = ignore_recovery;
     std::unordered_map<string,string> env;
     std::set<string> fields;
     for (const auto& field : domain.state) {
@@ -5637,6 +6212,9 @@ class Checker {
       env[handler.params[i].name] = specialization
           ? specialization->handler_parameter_types.at(handler.name).at(i) : handler.params[i].type;
     for (const auto& route : domain.routes) env[route.name] = route.type;
+    if (local_types)
+      for (const auto& binding : *local_types)
+        env[binding.first] = binding.second;
     LeafCaptureScope scope(leaf_effect_capture_, &capture);
     vector<Effect> unused(handler.params.size(), Effect::Read);
     Effect unused_receiver = Effect::Read;
@@ -5649,15 +6227,55 @@ class Checker {
   // placement is a backend choice; it must not become a second effect system.
   StateLeafEffects specialized_handler_body_effects(
       const Domain& domain, const Handler& handler, const vector<Stmt>& body,
-      const DomainSpecialization* specialization) const {
+      const DomainSpecialization* specialization,
+      bool ignore_recovery = false,
+      const TypeEnv* local_types = nullptr) const {
     Handler fragment = handler;
     fragment.body = body;
-    return specialized_handler_effects(domain, fragment, specialization);
+    return specialized_handler_effects(domain, fragment, specialization,
+                                       ignore_recovery, local_types);
+  }
+
+  TypeEnv phase21_failure_arm_local_types(const FailureArm& arm) const {
+    TypeEnv arm_types;
+    for (const auto& capture : arm.captures)
+      arm_types[capture.name] = capture.type;
+    if (!arm.binding.empty()) {
+      std::set<string> selected_types;
+      for (const auto& identity : arm.exceptional_alternatives)
+        selected_types.insert(identity.type);
+      if (selected_types.size() == 1)
+        arm_types[arm.binding] = *selected_types.begin();
+    }
+    if (arm.patterns.size() == 1)
+      for (const auto& binding :
+           phase21_pattern_bindings(arm.line, arm.patterns.front()))
+        arm_types[binding.first] = binding.second;
+    return arm_types;
+  }
+
+  StateLeafEffects specialized_handler_failure_effects(
+      const Domain& domain, const Handler& handler,
+      const DomainSpecialization* specialization) const {
+    StateLeafEffects result;
+    for (const auto& arm : handler.failure_arms) {
+      const TypeEnv arm_types = phase21_failure_arm_local_types(arm);
+      auto arm_effects = handler.provider_abi
+          ? arm.state_effects.value_or(StateLeafEffects{})
+          : specialized_handler_body_effects(
+                domain, handler, arm.body, specialization, false, &arm_types);
+      result.reads.insert(arm_effects.reads.begin(), arm_effects.reads.end());
+      result.writes.insert(arm_effects.writes.begin(), arm_effects.writes.end());
+      result.consumes.insert(arm_effects.consumes.begin(),
+                             arm_effects.consumes.end());
+    }
+    return result;
   }
 
   StateLeafEffects specialized_handler_expression_effects(
       const Domain& domain, const Handler& handler, const string& expression,
-      const DomainSpecialization* specialization) const {
+      const DomainSpecialization* specialization,
+      const TypeEnv* local_types = nullptr) const {
     LeafEffectCapture capture;
     std::unordered_map<string,string> env;
     std::set<string> fields;
@@ -5671,6 +6289,9 @@ class Checker {
       env[handler.params[i].name] = specialization
           ? specialization->handler_parameter_types.at(handler.name).at(i) : handler.params[i].type;
     for (const auto& route : domain.routes) env[route.name] = route.type;
+    if (local_types)
+      for (const auto& binding : *local_types)
+        env[binding.first] = binding.second;
     LeafCaptureScope scope(leaf_effect_capture_, &capture);
     vector<Effect> unused(handler.params.size(), Effect::Read);
     Effect unused_receiver = Effect::Read;
@@ -5689,6 +6310,19 @@ class Checker {
       result.push_back(std::move(statement));
     }
     return result;
+  }
+
+  void phase21_warning(int line, const string& source_file,
+                       const string& code, const string& message) {
+    if (!phase21_warnings_enabled_) return;
+    if (std::any_of(warnings_.begin(), warnings_.end(),
+                    [&](const Warning& warning) {
+                      return warning.line == line &&
+                          warning.source_file == source_file &&
+                          warning.code == code && warning.message == message;
+                    }))
+      return;
+    warnings_.push_back({line, message, code, source_file});
   }
 
   static size_t statement_subtree_end(const vector<Stmt>& body, size_t begin) {
@@ -5717,7 +6351,17 @@ class Checker {
   void derive_path_placement(const Domain& domain, const Handler& source,
                              const DomainSpecialization& specialization,
                              DomainSynchronizationPlan& planned,
-                             HandlerSynchronizationPlan& whole) const {
+                             HandlerSynchronizationPlan& whole,
+                             bool ignore_recovery = false) const {
+    // A compiled provider exports its regular typed handler body, not the
+    // application's path-specific Then/Else continuations. Retain the exact
+    // full-entry plan for a domain owned by another module.
+    if (p_.explicit_module && !p_.main_module.empty() &&
+        !starts_with(domain.name, p_.main_module + "__")) {
+      whole.path_placement.reason =
+          "conservative entry placement: external provider body ABI";
+      return;
+    }
     // Continuation splitting is intentionally bounded to a handler whose
     // first executable statement is a top-level if.  This is the shape in
     // which the condition has no predecessor-local bindings to transport and
@@ -5745,8 +6389,14 @@ class Checker {
     for (const auto& route : domain.routes) condition_env[route.name] = route.type;
     const ObservableEffects condition_observables =
         observable_expression_effects(branch.a, condition_env, domain_fields);
+    // The split wrapper emits this condition outside the tagged-outcome
+    // context used by the ordinary handler body. A typed raise here must
+    // stay in the full-entry wrapper so it can reach lexical recovery or the
+    // Root trailer with its original variant. Keep potentially panicking or
+    // unresolved conditions on that conservative path as well.
     if (condition_observables.message || condition_observables.external_io ||
-        condition_observables.unresolved) {
+        !condition_observables.raise_set.empty() ||
+        condition_observables.may_panic || condition_observables.unresolved) {
       whole.path_placement.reason =
           "conservative entry placement: leading condition crosses observable-action barrier";
       return;
@@ -5774,9 +6424,9 @@ class Checker {
     placement.condition_effects = specialized_handler_expression_effects(
         domain, source, branch.a, &specialization);
     placement.then_effects = specialized_handler_body_effects(
-        domain, source, then_body, &specialization);
+        domain, source, then_body, &specialization, ignore_recovery);
     placement.else_effects = specialized_handler_body_effects(
-        domain, source, else_body, &specialization);
+        domain, source, else_body, &specialization, ignore_recovery);
     auto condition = path_class_modes(planned, whole, placement.condition_effects);
     auto then_modes = path_class_modes(planned, whole, placement.then_effects);
     auto else_modes = path_class_modes(planned, whole, placement.else_effects);
@@ -5812,6 +6462,1076 @@ class Checker {
     placement.reason = "leading conditional continuation split; rank-forced entries may cancel untouched guards";
   }
 
+  static bool phase21_noop_body(const vector<Stmt>& body,
+                                size_t begin, size_t end) {
+    for (size_t index = begin; index < end; ++index)
+      if (body[index].kind != Stmt::Kind::Pass) return false;
+    return true;
+  }
+
+  static string phase21_leaf_names(const StateLeafSet& leaves) {
+    std::ostringstream out;
+    bool first = true;
+    for (const auto& leaf : leaves) {
+      if (!first) out << ", ";
+      out << leaf;
+      first = false;
+    }
+    return out.str();
+  }
+
+  static StateLeafSet phase21_written_leaves(const StateLeafEffects& effects) {
+    StateLeafSet result = effects.writes;
+    result.insert(effects.consumes.begin(), effects.consumes.end());
+    return result;
+  }
+
+  static void phase21_join_leaves(StateLeafSet& into,
+                                  const StateLeafSet& from) {
+    into.insert(from.begin(), from.end());
+  }
+
+  static bool phase21_raise_sets_intersect(const RaiseSet& left,
+                                            const RaiseSet& right) {
+    for (const auto& alternative : left)
+      if (right.count(alternative)) return true;
+    return false;
+  }
+
+  TypeEnv phase21_local_types_before(
+      const Domain& domain, const Handler& source,
+      const DomainSpecialization& specialization, size_t end) const {
+    TypeEnv env;
+    for (const auto& field : domain.state)
+      env[field.name] = specialization.state_types.at(field.name);
+    for (size_t index = 0; index < source.params.size(); ++index)
+      env[source.params[index].name] =
+          specialization.handler_parameter_types.at(source.name).at(index);
+    for (size_t index = 0; index < end; ++index) {
+      const Stmt& statement = source.body[index];
+      if (statement.kind == Stmt::Kind::Assign ||
+          statement.kind == Stmt::Kind::Let ||
+          statement.kind == Stmt::Kind::Var) {
+        if (auto type = inferred_expr_type(statement.b, env))
+          env[statement.a] = *type;
+      }
+      for (const auto& binding : statement.joined_types)
+        env[binding.first] = binding.second;
+    }
+    return env;
+  }
+
+  StateLeafSet phase21_writes_before_selected_raise(
+      const Domain& domain, const Handler& source,
+      const DomainSpecialization& specialization,
+      const vector<Stmt>& body, size_t begin, size_t end, int level,
+      StateLeafSet prior, const RaiseSet& selected,
+      StateLeafSet& witnesses, TypeEnv locals = {}) {
+    size_t index = begin;
+    while (index < end) {
+      const Stmt& statement = body[index];
+      if (statement.indent != level) {
+        ++index;
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::Try) {
+        const size_t attempt_end = statement_subtree_end(body, index);
+        size_t arm_index = attempt_end;
+        RaiseSet caught;
+        while (arm_index < end && body[arm_index].indent == level &&
+               body[arm_index].kind == Stmt::Kind::Recover) {
+          caught = raise_set_union(
+              std::move(caught), body[arm_index].exceptional_alternatives);
+          arm_index = statement_subtree_end(body, arm_index);
+        }
+        RaiseSet escaping_attempt = selected;
+        for (const auto& alternative : caught)
+          escaping_attempt.erase(alternative);
+        StateLeafSet attempt_writes = phase21_writes_before_selected_raise(
+            domain, source, specialization, body, index + 1, attempt_end,
+            level + 1, prior, escaping_attempt, witnesses, locals);
+        phase21_join_leaves(prior, attempt_writes);
+        arm_index = attempt_end;
+        while (arm_index < end && body[arm_index].indent == level &&
+               body[arm_index].kind == Stmt::Kind::Recover) {
+          const size_t arm_end = statement_subtree_end(body, arm_index);
+          StateLeafSet arm_writes = phase21_writes_before_selected_raise(
+              domain, source, specialization, body, arm_index + 1, arm_end,
+              level + 1, prior, selected, witnesses, locals);
+          phase21_join_leaves(prior, arm_writes);
+          arm_index = arm_end;
+        }
+        index = arm_index;
+        for (const auto& binding : statement.joined_types)
+          locals[binding.first] = binding.second;
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::If ||
+          statement.kind == Stmt::Kind::While ||
+          statement.kind == Stmt::Kind::For ||
+          statement.kind == Stmt::Kind::Match) {
+        const string& expression = statement.kind == Stmt::Kind::For
+            ? statement.b : statement.a;
+        const StateLeafSet condition_writes = phase21_written_leaves(
+            specialized_handler_expression_effects(
+                domain, source, expression, &specialization, &locals));
+        if (phase21_raise_sets_intersect(
+                statement.exceptional_alternatives, selected)) {
+          phase21_join_leaves(witnesses, prior);
+          phase21_join_leaves(witnesses, condition_writes);
+        }
+        phase21_join_leaves(prior, condition_writes);
+        const size_t subtree_end = statement_subtree_end(body, index);
+        if (statement.kind == Stmt::Kind::Match) {
+          const StateLeafSet before_arms = prior;
+          StateLeafSet joined_arms = prior;
+          size_t arm_index = index + 1;
+          while (arm_index < subtree_end) {
+            if (body[arm_index].kind != Stmt::Kind::Case) {
+              ++arm_index;
+              continue;
+            }
+            const size_t arm_end = statement_subtree_end(body, arm_index);
+            auto arm_writes = phase21_writes_before_selected_raise(
+                domain, source, specialization, body, arm_index + 1,
+                arm_end, level + 2, before_arms, selected, witnesses, locals);
+            phase21_join_leaves(joined_arms, arm_writes);
+            arm_index = arm_end;
+          }
+          prior = std::move(joined_arms);
+          index = subtree_end;
+          continue;
+        }
+        const StateLeafSet before_branch = prior;
+        auto branch_writes = phase21_writes_before_selected_raise(
+            domain, source, specialization, body, index + 1, subtree_end,
+            level + 1, before_branch, selected, witnesses, locals);
+        phase21_join_leaves(prior, branch_writes);
+        if (statement.kind == Stmt::Kind::While ||
+            statement.kind == Stmt::Kind::For) {
+          // One more abstract iteration exposes a raise that follows a
+          // successful earlier iteration's state write.
+          if (phase21_raise_sets_intersect(
+                  statement.exceptional_alternatives, selected))
+            phase21_join_leaves(witnesses, prior);
+          auto later_writes = phase21_writes_before_selected_raise(
+              domain, source, specialization, body, index + 1, subtree_end,
+              level + 1, prior, selected, witnesses, locals);
+          phase21_join_leaves(prior, later_writes);
+        }
+        index = subtree_end;
+        if (statement.kind == Stmt::Kind::If && index < end &&
+            body[index].indent == level &&
+            body[index].kind == Stmt::Kind::Else) {
+          const size_t else_end = statement_subtree_end(body, index);
+          auto else_writes = phase21_writes_before_selected_raise(
+              domain, source, specialization, body, index + 1, else_end,
+              level + 1, before_branch, selected, witnesses, locals);
+          phase21_join_leaves(prior, else_writes);
+          index = else_end;
+        }
+        for (const auto& binding : statement.joined_types)
+          locals[binding.first] = binding.second;
+        continue;
+      }
+      Stmt normalized = statement;
+      normalized.indent = 0;
+      const StateLeafSet statement_writes = phase21_written_leaves(
+          specialized_handler_body_effects(
+              domain, source, vector<Stmt>{normalized}, &specialization,
+              false, &locals));
+      StateLeafSet before_raise = statement_writes;
+      if (statement.kind == Stmt::Kind::Assign ||
+          statement.kind == Stmt::Kind::Let ||
+          statement.kind == Stmt::Kind::Var)
+        before_raise = phase21_written_leaves(
+            specialized_handler_expression_effects(
+                domain, source, statement.b, &specialization, &locals));
+      if (phase21_raise_sets_intersect(
+              statement.exceptional_alternatives, selected)) {
+        phase21_join_leaves(witnesses, prior);
+        phase21_join_leaves(witnesses, before_raise);
+      }
+      phase21_join_leaves(prior, statement_writes);
+      if (statement.kind == Stmt::Kind::Assign ||
+          statement.kind == Stmt::Kind::Let ||
+          statement.kind == Stmt::Kind::Var) {
+        TypeEnv env = locals;
+        for (const auto& field : domain.state)
+          env[field.name] = specialization.state_types.at(field.name);
+        for (size_t parameter = 0; parameter < source.params.size();
+             ++parameter)
+          env[source.params[parameter].name] =
+              specialization.handler_parameter_types.at(source.name)
+                  .at(parameter);
+        if (auto type = inferred_expr_type(statement.b, env))
+          locals[statement.a] = *type;
+      }
+      if (statement.kind == Stmt::Kind::Raise ||
+          statement.kind == Stmt::Kind::Return ||
+          statement.kind == Stmt::Kind::Reply)
+        return prior;
+      ++index;
+    }
+    return prior;
+  }
+
+  struct LocalCallSite {
+    string target;
+    vector<string> arguments;
+    vector<string> argument_types;
+    string receiver = "";
+  };
+
+  vector<RecoveryWarningWitness> phase21_callable_warning_witnesses(
+      const vector<Stmt>& body,
+      const vector<std::pair<string, string>>& formals) {
+    Domain formal_domain;
+    formal_domain.name = "_phase21_provider_warning";
+    Handler formal_handler;
+    formal_handler.name = "_phase21_provider_warning";
+    formal_handler.body = body;
+    DomainSpecialization specialization;
+    specialization.source_domain = formal_domain.name;
+    for (const auto& formal : formals) {
+      Field field;
+      field.name = formal.first;
+      field.type = formal.second;
+      formal_domain.state.push_back(field);
+      specialization.state_types[field.name] = field.type;
+    }
+    vector<RecoveryWarningWitness> witnesses;
+    for (size_t index = 0; index < body.size(); ++index) {
+      const auto& statement = body[index];
+      if (statement.kind != Stmt::Kind::Try) continue;
+      const size_t attempt_end = statement_subtree_end(body, index);
+      size_t arm_index = attempt_end;
+      while (arm_index < body.size() &&
+             body[arm_index].indent == statement.indent &&
+             body[arm_index].kind == Stmt::Kind::Recover) {
+        const auto& arm = body[arm_index];
+        const size_t arm_end = statement_subtree_end(body, arm_index);
+        const bool catch_all = arm.a.empty() ||
+            (arm.a.find('.') == string::npos &&
+             arm.a.find(',') == string::npos);
+        if (catch_all && !arm.exceptional_alternatives.empty() &&
+            phase21_noop_body(body, arm_index + 1, arm_end)) {
+          StateLeafSet written;
+          (void)phase21_writes_before_selected_raise(
+              formal_domain, formal_handler, specialization, body,
+              index + 1, attempt_end, statement.indent + 1, {},
+              arm.exceptional_alternatives, written,
+              phase21_local_types_before(
+                  formal_domain, formal_handler, specialization, index));
+          if (!written.empty())
+            witnesses.push_back({arm.line, false,
+                                 arm.exceptional_alternatives,
+                                 std::move(written)});
+        }
+        arm_index = arm_end;
+      }
+    }
+    return witnesses;
+  }
+
+  void phase21_propagate_callable_warning_witnesses() {
+    auto same_witness = [](const RecoveryWarningWitness& left,
+                           const RecoveryWarningWitness& right) {
+      return left.line == right.line && left.on_fail == right.on_fail &&
+             left.selected == right.selected &&
+             left.formal_writes == right.formal_writes;
+    };
+    auto forward = [&](const vector<Stmt>& body,
+                       const std::optional<string>& result_expression,
+                       int result_line,
+                       const vector<std::pair<string, string>>& formals,
+                       vector<RecoveryWarningWitness>& output) {
+      if (body.empty() && !result_expression) return false;
+      vector<Stmt> scan_body = body;
+      if (result_expression) {
+        Stmt result;
+        result.kind = Stmt::Kind::Raw;
+        result.line = result_line;
+        result.text = *result_expression;
+        scan_body.push_back(std::move(result));
+      }
+      Domain formal_domain;
+      formal_domain.name = "_phase21_warning_forward";
+      Handler formal_handler;
+      formal_handler.name = "_phase21_warning_forward";
+      formal_handler.body = scan_body;
+      DomainSpecialization specialization;
+      specialization.source_domain = formal_domain.name;
+      std::set<string> formal_roots;
+      for (const auto& formal : formals) {
+        Field field;
+        field.name = formal.first;
+        field.type = formal.second;
+        formal_domain.state.push_back(field);
+        specialization.state_types[field.name] = field.type;
+        formal_roots.insert(field.name);
+      }
+      bool changed = false;
+      for (size_t index = 0; index < scan_body.size(); ++index) {
+        const auto& statement = scan_body[index];
+        TypeEnv env = phase21_local_types_before(
+            formal_domain, formal_handler, specialization, index);
+        vector<LocalCallSite> calls;
+        for (const auto& expression : statement_expressions(statement))
+          collect_local_call_sites(statement.line, expression, env,
+                                   nullptr, calls);
+        for (const auto& site : calls) {
+          const Function* target_function = nullptr;
+          const Method* target_method = nullptr;
+          const ObjectType* target_owner = nullptr;
+          if (starts_with(site.target, "fn:")) {
+            auto found = functions_.find(site.target.substr(3));
+            if (found != functions_.end()) target_function = found->second;
+          } else if (starts_with(site.target, "method:")) {
+            target_method = callable_method(site.target, &target_owner);
+          }
+          const auto* witnesses = target_function
+              ? &target_function->recovery_warning_witnesses
+              : target_method ? &target_method->recovery_warning_witnesses
+                              : nullptr;
+          if (!witnesses) continue;
+          for (const auto& witness : *witnesses) {
+            RecoveryWarningWitness mapped = witness;
+            mapped.formal_writes.clear();
+            for (const auto& leaf : witness.formal_writes) {
+              const size_t dot = leaf.find('.');
+              const string root = leaf.substr(0, dot);
+              const string suffix = dot == string::npos ? "" : leaf.substr(dot);
+              string expression;
+              string appended = suffix;
+              if (target_function) {
+                for (size_t slot = 0; slot < target_function->params.size() &&
+                                      slot < site.arguments.size(); ++slot)
+                  if (target_function->params[slot].name == root)
+                    expression = site.arguments[slot];
+              } else if (target_method) {
+                if (root == "self")
+                  expression = site.receiver;
+                else if (target_owner && std::any_of(
+                             target_owner->fields.begin(),
+                             target_owner->fields.end(),
+                             [&](const Field& field) {
+                               return field.name == root;
+                             })) {
+                  expression = site.receiver;
+                  appended = "." + leaf;
+                } else
+                  for (size_t slot = 0;
+                       slot < target_method->params.size() &&
+                       slot < site.arguments.size(); ++slot)
+                    if (target_method->params[slot].name == root)
+                      expression = site.arguments[slot];
+              }
+              auto location = storage_location(expression, env);
+              if (!location || !formal_roots.count(location->root)) continue;
+              string actual = location->root;
+              bool indexed = false;
+              for (const auto& member : location->path) {
+                if (member == "[]") { indexed = true; break; }
+                actual += "." + member;
+              }
+              if (!indexed) mapped.formal_writes.insert(actual + appended);
+            }
+            if (mapped.formal_writes.empty() ||
+                std::any_of(output.begin(), output.end(),
+                            [&](const RecoveryWarningWitness& prior) {
+                              return same_witness(prior, mapped);
+                            }))
+              continue;
+            output.push_back(std::move(mapped));
+            changed = true;
+          }
+        }
+      }
+      return changed;
+    };
+    const size_t limit = p_.functions.size() + p_.objects.size() + 1;
+    for (size_t round = 0; round < limit; ++round) {
+      bool changed = false;
+      for (auto& function : p_.functions) {
+        if (std::filesystem::path(function.source_file).extension() == ".mossi" ||
+            std::any_of(function.params.begin(), function.params.end(),
+                [](const Param& parameter) { return parameter.type.empty(); }))
+          continue;
+        vector<std::pair<string, string>> formals;
+        for (const auto& parameter : function.params)
+          formals.emplace_back(parameter.name, parameter.type);
+        changed |= forward(function.body, function.result_expression,
+                           function.result_line, formals,
+                           function.recovery_warning_witnesses);
+      }
+      for (auto& object : p_.objects) {
+        if (std::filesystem::path(object.source_file).extension() == ".mossi")
+          continue;
+        for (auto& method : object.methods) {
+          if (std::any_of(method.params.begin(), method.params.end(),
+                  [](const Param& parameter) { return parameter.type.empty(); }))
+            continue;
+          vector<std::pair<string, string>> formals{{"self", object.name}};
+          for (const auto& field : object.fields)
+            formals.emplace_back(field.name, field.type);
+          for (const auto& parameter : method.params)
+            formals.emplace_back(parameter.name, parameter.type);
+          changed |= forward(method.body, method.result_expression,
+                             method.result_line, formals,
+                             method.recovery_warning_witnesses);
+        }
+      }
+      if (!changed) break;
+    }
+  }
+
+  void phase21_warn_empty_catch_alls(
+      const Domain& domain, const Handler& source,
+      const DomainSpecialization& specialization) {
+    if (source.provider_abi) {
+      for (const auto& witness : source.recovery_warning_witnesses)
+        phase21_warning(
+            witness.line, source.source_file,
+            witness.on_fail ? "ON_FAIL_EMPTY_AFTER_STATE_WRITE"
+                            : "RECOVER_EMPTY_AFTER_STATE_WRITE",
+            string("source-free ") +
+                (witness.on_fail ? "on_fail" : "recover") +
+                " no-op catch-all may leave protected domain-state writes (" +
+                phase21_leaf_names(witness.formal_writes) + ")");
+      return;
+    }
+    for (size_t index = 0; index < source.body.size(); ++index) {
+      const Stmt& statement = source.body[index];
+      if (statement.kind != Stmt::Kind::Try) continue;
+      size_t attempt_end = statement_subtree_end(source.body, index);
+      size_t arm_index = attempt_end;
+      while (arm_index < source.body.size() &&
+             source.body[arm_index].indent == statement.indent &&
+             source.body[arm_index].kind == Stmt::Kind::Recover) {
+        const Stmt& arm = source.body[arm_index];
+        size_t arm_end = statement_subtree_end(source.body, arm_index);
+        const bool catch_all = arm.a.empty() ||
+            (arm.a.find('.') == string::npos &&
+             arm.a.find(',') == string::npos);
+        StateLeafSet writes;
+        if (catch_all && !arm.exceptional_alternatives.empty() &&
+            phase21_noop_body(source.body, arm_index + 1, arm_end))
+          (void)phase21_writes_before_selected_raise(
+              domain, source, specialization, source.body,
+              index + 1, attempt_end, statement.indent + 1, {},
+              arm.exceptional_alternatives, writes,
+              phase21_local_types_before(domain, source, specialization,
+                                          index));
+        if (catch_all && !arm.exceptional_alternatives.empty() &&
+            phase21_noop_body(source.body, arm_index + 1, arm_end) &&
+            !writes.empty()) {
+          RecoveryWarningWitness witness{arm.line, false,
+                                         arm.exceptional_alternatives, writes};
+          if (std::none_of(source.recovery_warning_witnesses.begin(),
+                           source.recovery_warning_witnesses.end(),
+                           [&](const RecoveryWarningWitness& prior) {
+                             return prior.line == witness.line &&
+                                    !prior.on_fail &&
+                                    prior.selected == witness.selected &&
+                                    prior.formal_writes == witness.formal_writes;
+                           }))
+            source.recovery_warning_witnesses.push_back(std::move(witness));
+          phase21_warning(
+              arm.line, arm.source_file, "RECOVER_EMPTY_AFTER_STATE_WRITE",
+              "no-op recover catch-all may swallow an error after protected "
+              "domain-state writes in try at line " +
+                  std::to_string(statement.line) + " (" +
+                  phase21_leaf_names(writes) + ")");
+        }
+        arm_index = arm_end;
+      }
+    }
+    for (const auto& arm : source.failure_arms)
+      if (arm.patterns.empty() && !arm.exceptional_alternatives.empty() &&
+          phase21_noop_body(arm.body, 0, arm.body.size())) {
+        StateLeafSet writes;
+        (void)phase21_writes_before_selected_raise(
+            domain, source, specialization, source.body, 0,
+            source.body.size(), 0, {}, arm.exceptional_alternatives,
+            writes);
+        if (!writes.empty()) {
+          RecoveryWarningWitness witness{arm.line, true,
+                                         arm.exceptional_alternatives, writes};
+          if (std::none_of(source.recovery_warning_witnesses.begin(),
+                           source.recovery_warning_witnesses.end(),
+                           [&](const RecoveryWarningWitness& prior) {
+                             return prior.line == witness.line &&
+                                    prior.on_fail &&
+                                    prior.selected == witness.selected &&
+                                    prior.formal_writes == witness.formal_writes;
+                           }))
+            source.recovery_warning_witnesses.push_back(std::move(witness));
+          phase21_warning(
+              arm.line, arm.source_file, "ON_FAIL_EMPTY_AFTER_STATE_WRITE",
+              "no-op on_fail catch-all may leave protected domain-state "
+              "writes from the abandoned Root attempt (" +
+                  phase21_leaf_names(writes) + ")");
+        }
+      }
+  }
+
+  void phase21_warn_method_catch_alls(
+      const Domain& domain, const Handler& source,
+      const DomainSynchronizationPlan& planned, const LocalCallSite& site,
+      const TypeEnv& caller_types, int call_line) {
+    const ObjectType* owner = nullptr;
+    const Method* method = callable_method(site.target, &owner);
+    if (!method || !owner || site.arguments.size() != method->params.size() ||
+        site.receiver.empty()) return;
+    bool imported = false;
+    for (const auto& module : p_.external_modules)
+      imported |= starts_with(owner->name, module + "__");
+    Domain formal_domain;
+    formal_domain.name = "_phase21_method_warning";
+    Handler formal_handler;
+    formal_handler.name = "_phase21_method_warning";
+    formal_handler.body = method->body;
+    DomainSpecialization formal_specialization;
+    formal_specialization.source_domain = formal_domain.name;
+    auto add_field = [&](const string& name, const string& type) {
+      Field field;
+      field.name = name;
+      field.type = type;
+      formal_domain.state.push_back(field);
+      formal_specialization.state_types[name] = type;
+    };
+    add_field("self", owner->name);
+    for (const auto& field : owner->fields)
+      add_field(field.name, field.type);
+    for (size_t index = 0; index < method->params.size(); ++index) {
+      auto type = inferred_expr_type(site.arguments[index], caller_types);
+      if (!type) return;
+      add_field(method->params[index].name, *type);
+    }
+    auto receiver_location = storage_location(site.receiver, caller_types);
+    if (!receiver_location) return;
+    auto mapped_actual = [&](const string& expression,
+                             const string& suffix) -> string {
+      auto location = storage_location(expression, caller_types);
+      if (!location) return "";
+      string mapped = location->root;
+      for (const auto& member : location->path) {
+        if (member == "[]") return "";
+        mapped += "." + member;
+      }
+      return mapped + suffix;
+    };
+    if (imported) {
+      for (const auto& witness : method->recovery_warning_witnesses) {
+        StateLeafSet protected_writes;
+        for (const auto& leaf : witness.formal_writes) {
+          const size_t dot = leaf.find('.');
+          const string root = leaf.substr(0, dot);
+          const string suffix = dot == string::npos ? "" : leaf.substr(dot);
+          string actual;
+          if (root == "self")
+            actual = mapped_actual(site.receiver, suffix);
+          else if (std::any_of(owner->fields.begin(), owner->fields.end(),
+                               [&](const Field& field) {
+                                 return field.name == root;
+                               }))
+            actual = mapped_actual(site.receiver, "." + leaf);
+          else
+            for (size_t slot = 0; slot < method->params.size(); ++slot)
+              if (method->params[slot].name == root)
+                actual = mapped_actual(site.arguments[slot], suffix);
+          if (planned.state_leaves.count(actual))
+            protected_writes.insert(actual);
+        }
+        if (!protected_writes.empty())
+          phase21_warning(
+              call_line, source.source_file,
+              "RECOVER_EMPTY_AFTER_STATE_WRITE",
+              "no-op recover catch-all in source-free method '" +
+                  owner->name + "." + method->name +
+                  "' may swallow an error after protected domain-state "
+                  "writes (" + phase21_leaf_names(protected_writes) + ")");
+      }
+      return;
+    }
+    if (method->body.empty()) return;
+    for (size_t index = 0; index < method->body.size(); ++index) {
+      const Stmt& statement = method->body[index];
+      if (statement.kind != Stmt::Kind::Try) continue;
+      const size_t attempt_end = statement_subtree_end(method->body, index);
+      size_t arm_index = attempt_end;
+      while (arm_index < method->body.size() &&
+             method->body[arm_index].indent == statement.indent &&
+             method->body[arm_index].kind == Stmt::Kind::Recover) {
+        const Stmt& arm = method->body[arm_index];
+        const size_t arm_end = statement_subtree_end(method->body, arm_index);
+        const bool catch_all = arm.a.empty() ||
+            (arm.a.find('.') == string::npos &&
+             arm.a.find(',') == string::npos);
+        if (catch_all && !arm.exceptional_alternatives.empty() &&
+            phase21_noop_body(method->body, arm_index + 1, arm_end)) {
+          StateLeafSet written;
+          (void)phase21_writes_before_selected_raise(
+              formal_domain, formal_handler, formal_specialization,
+              method->body, index + 1, attempt_end,
+              statement.indent + 1, {}, arm.exceptional_alternatives,
+              written, phase21_local_types_before(
+                  formal_domain, formal_handler, formal_specialization,
+                  index));
+          StateLeafSet protected_writes;
+          for (const auto& leaf : written) {
+            const size_t dot = leaf.find('.');
+            const string root = leaf.substr(0, dot);
+            const string suffix = dot == string::npos ? "" : leaf.substr(dot);
+            string actual;
+            if (root == "self")
+              actual = mapped_actual(site.receiver, suffix);
+            else if (std::any_of(owner->fields.begin(), owner->fields.end(),
+                                 [&](const Field& field) {
+                                   return field.name == root;
+                                 }))
+              actual = mapped_actual(site.receiver, "." + leaf);
+            else {
+              auto parameter = std::find_if(
+                  method->params.begin(), method->params.end(),
+                  [&](const Param& candidate) {
+                    return candidate.name == root;
+                  });
+              if (parameter != method->params.end()) {
+                const size_t slot = static_cast<size_t>(
+                    parameter - method->params.begin());
+                actual = mapped_actual(site.arguments[slot], suffix);
+              }
+            }
+            if (planned.state_leaves.count(actual))
+              protected_writes.insert(actual);
+          }
+          if (!protected_writes.empty())
+            phase21_warning(
+                arm.line, arm.source_file,
+                "RECOVER_EMPTY_AFTER_STATE_WRITE",
+                "no-op recover catch-all in method '" + owner->name +
+                    "." + method->name +
+                    "' may swallow an error after protected domain-state "
+                    "writes from '" + domain.name + "." + source.name +
+                    "' call at line " + std::to_string(call_line) +
+                    " (" + phase21_leaf_names(protected_writes) + ")");
+        }
+        arm_index = arm_end;
+      }
+    }
+  }
+
+  void phase21_warn_helper_catch_alls(
+      const Domain& domain, const Handler& source,
+      const DomainSpecialization& specialization,
+      const DomainSynchronizationPlan& planned) {
+    if (source.provider_abi) return;
+    for (size_t call_index = 0; call_index < source.body.size(); ++call_index) {
+      const Stmt& call = source.body[call_index];
+      TypeEnv caller_types = phase21_local_types_before(
+          domain, source, specialization, call_index);
+      for (const auto& route : domain.routes)
+        caller_types[route.name] = route.type;
+      vector<LocalCallSite> call_sites;
+      for (const auto& expression : statement_expressions(call))
+        collect_local_call_sites(call.line, expression, caller_types,
+                                 nullptr, call_sites);
+      for (const auto& site : call_sites) {
+      if (starts_with(site.target, "method:")) {
+        phase21_warn_method_catch_alls(domain, source, planned, site,
+                                      caller_types, call.line);
+        continue;
+      }
+      if (!starts_with(site.target, "fn:")) continue;
+      const string callee = site.target.substr(3);
+      const vector<string>& arguments = site.arguments;
+      auto target = functions_.find(callee);
+      if (target == functions_.end() ||
+          target->second->params.size() != arguments.size())
+        continue;
+      const Function& function = *target->second;
+      bool imported = false;
+      for (const auto& module : p_.external_modules)
+        imported |= starts_with(function.name, module + "__");
+      // Static/generic exports carry checked semantic IR in the interface.
+      // Re-evaluate their warning condition with the consumer's concrete
+      // argument types; only bodyless concrete imports need a witness.
+      if (imported && (function.body.empty() || !function.static_dispatch)) {
+        for (const auto& witness : function.recovery_warning_witnesses) {
+          StateLeafSet protected_writes;
+          for (const auto& leaf : witness.formal_writes) {
+            const size_t dot = leaf.find('.');
+            const string formal = leaf.substr(0, dot);
+            for (size_t slot = 0; slot < function.params.size(); ++slot) {
+              if (function.params[slot].name != formal) continue;
+              auto location = storage_location(arguments[slot], caller_types);
+              if (!location) continue;
+              string actual = location->root;
+              bool indexed = false;
+              for (const auto& member : location->path) {
+                if (member == "[]") { indexed = true; break; }
+                actual += "." + member;
+              }
+              if (indexed) continue;
+              if (dot != string::npos) actual += leaf.substr(dot);
+              if (planned.state_leaves.count(actual))
+                protected_writes.insert(actual);
+            }
+          }
+          if (!protected_writes.empty())
+            phase21_warning(
+                call.line, call.source_file,
+                "RECOVER_EMPTY_AFTER_STATE_WRITE",
+                "no-op recover catch-all in source-free helper '" +
+                    function.name +
+                    "' may swallow an error after protected domain-state "
+                    "writes (" + phase21_leaf_names(protected_writes) + ")");
+        }
+        continue;
+      }
+      if (function.body.empty()) continue;
+      Domain formal_domain;
+      formal_domain.name = "_phase21_helper_warning";
+      Handler formal_handler;
+      formal_handler.name = "_phase21_helper_warning";
+      formal_handler.body = function.body;
+      DomainSpecialization formal_specialization;
+      formal_specialization.source_domain = formal_domain.name;
+      for (size_t parameter = 0; parameter < function.params.size();
+           ++parameter) {
+        auto type = inferred_expr_type(arguments[parameter], caller_types);
+        if (!type) {
+          formal_domain.state.clear();
+          break;
+        }
+        Field field;
+        field.name = function.params[parameter].name;
+        field.type = *type;
+        formal_domain.state.push_back(field);
+        formal_specialization.state_types[field.name] = *type;
+      }
+      if (formal_domain.state.size() != function.params.size()) continue;
+      for (size_t index = 0; index < function.body.size(); ++index) {
+        const Stmt& statement = function.body[index];
+        if (statement.kind != Stmt::Kind::Try) continue;
+        const size_t attempt_end = statement_subtree_end(function.body, index);
+        size_t arm_index = attempt_end;
+        while (arm_index < function.body.size() &&
+               function.body[arm_index].indent == statement.indent &&
+               function.body[arm_index].kind == Stmt::Kind::Recover) {
+          const Stmt& arm = function.body[arm_index];
+          const size_t arm_end = statement_subtree_end(function.body,
+                                                        arm_index);
+          const bool catch_all = arm.a.empty() ||
+              (arm.a.find('.') == string::npos &&
+               arm.a.find(',') == string::npos);
+          if (catch_all && !arm.exceptional_alternatives.empty() &&
+              phase21_noop_body(function.body, arm_index + 1, arm_end)) {
+            StateLeafSet written_formals;
+            (void)phase21_writes_before_selected_raise(
+                formal_domain, formal_handler, formal_specialization,
+                function.body, index + 1, attempt_end,
+                statement.indent + 1, {}, arm.exceptional_alternatives,
+                written_formals,
+                phase21_local_types_before(
+                    formal_domain, formal_handler, formal_specialization,
+                    index));
+            StateLeafSet protected_writes;
+            for (const auto& leaf : written_formals) {
+              const size_t dot = leaf.find('.');
+              const string formal = leaf.substr(0, dot);
+              auto parameter = std::find_if(
+                  function.params.begin(), function.params.end(),
+                  [&](const Param& candidate) {
+                    return candidate.name == formal;
+                  });
+              if (parameter == function.params.end()) continue;
+              const size_t slot = static_cast<size_t>(
+                  parameter - function.params.begin());
+              auto location = storage_location(arguments[slot], caller_types);
+              if (!location) continue;
+              string actual = location->root;
+              for (const auto& member : location->path) {
+                if (member == "[]") break;
+                actual += "." + member;
+              }
+              if (dot != string::npos) actual += leaf.substr(dot);
+              if (planned.state_leaves.count(actual))
+                protected_writes.insert(actual);
+            }
+            if (!protected_writes.empty())
+              phase21_warning(
+                  arm.line, arm.source_file,
+                  "RECOVER_EMPTY_AFTER_STATE_WRITE",
+                  "no-op recover catch-all in helper '" + function.name +
+                      "' may swallow an error after protected domain-state "
+                      "writes from '" + domain.name + "." + source.name +
+                      "' call at line " + std::to_string(call.line) +
+                      " (" + phase21_leaf_names(protected_writes) + ")");
+          }
+          arm_index = arm_end;
+        }
+      }
+      }
+    }
+  }
+
+  void phase21_warn_nested_helper_catch_alls(
+      const Domain& domain, const Handler& source,
+      const DomainSpecialization& specialization,
+      const DomainSynchronizationPlan& planned) {
+    if (source.provider_abi) return;
+    std::function<void(const Function&, const vector<string>&,
+                       const TypeEnv&, std::set<string>)> visit;
+    visit = [&](const Function& function, const vector<string>& actuals,
+                const TypeEnv& handler_env, std::set<string> stack) {
+      if (!stack.insert(function.name).second ||
+          function.params.size() != actuals.size()) return;
+      vector<Stmt> body = function.body;
+      if (function.result_expression) {
+        Stmt result;
+        result.kind = Stmt::Kind::Return;
+        result.a = *function.result_expression;
+        result.line = function.result_line;
+        body.push_back(std::move(result));
+      }
+      Domain formal_domain;
+      formal_domain.name = "_phase21_nested_helper_warning";
+      Handler formal_handler;
+      formal_handler.name = "_phase21_nested_helper_warning";
+      formal_handler.body = body;
+      DomainSpecialization formal_specialization;
+      formal_specialization.source_domain = formal_domain.name;
+      for (size_t parameter = 0; parameter < function.params.size();
+           ++parameter) {
+        auto type = inferred_expr_type(actuals[parameter], handler_env);
+        if (!type) return;
+        Field field;
+        field.name = function.params[parameter].name;
+        field.type = *type;
+        formal_domain.state.push_back(field);
+        formal_specialization.state_types[field.name] = *type;
+      }
+      for (size_t index = 0; index < body.size(); ++index) {
+        const Stmt& statement = body[index];
+        TypeEnv formal_env = phase21_local_types_before(
+            formal_domain, formal_handler, formal_specialization, index);
+        vector<LocalCallSite> calls;
+        for (const auto& expression : statement_expressions(statement))
+          collect_local_call_sites(statement.line, expression, formal_env,
+                                   nullptr, calls);
+        for (const auto& call : calls) {
+          auto map_to_handler = [&](const string& expression) {
+            string actual = expression;
+            auto location = storage_location(expression, formal_env);
+            if (location) {
+              auto formal = std::find_if(
+                  function.params.begin(), function.params.end(),
+                  [&](const Param& candidate) {
+                    return candidate.name == location->root;
+                  });
+              if (formal != function.params.end()) {
+                const size_t slot = static_cast<size_t>(
+                    formal - function.params.begin());
+                actual = actuals[slot];
+                for (const auto& member : location->path)
+                  actual += member == "[]" ? "[]" : "." + member;
+              }
+            }
+            return actual;
+          };
+          if (starts_with(call.target, "method:")) {
+            LocalCallSite mapped = call;
+            mapped.receiver = map_to_handler(call.receiver);
+            for (auto& argument : mapped.arguments)
+              argument = map_to_handler(argument);
+            phase21_warn_method_catch_alls(domain, source, planned, mapped,
+                                          handler_env, statement.line);
+            continue;
+          }
+          if (!starts_with(call.target, "fn:")) continue;
+          const string nested_name = call.target.substr(3);
+          auto nested = functions_.find(nested_name);
+          if (nested == functions_.end() ||
+              nested->second->params.size() != call.arguments.size() ||
+              (nested->second->body.empty() &&
+               !nested->second->result_expression)) continue;
+          bool imported = false;
+          for (const auto& module : p_.external_modules)
+            imported |= starts_with(nested_name, module + "__");
+          if (imported) continue;
+          vector<string> mapped;
+          for (const auto& argument : call.arguments)
+            mapped.push_back(map_to_handler(argument));
+          Stmt forwarded;
+          forwarded.kind = Stmt::Kind::Call;
+          forwarded.a = nested_name;
+          forwarded.args = mapped;
+          forwarded.line = statement.line;
+          forwarded.source_file = statement.source_file;
+          Handler projected = source;
+          projected.body = {forwarded};
+          phase21_warn_helper_catch_alls(domain, projected, specialization,
+                                         planned);
+          visit(*nested->second, mapped, handler_env, stack);
+        }
+      }
+    };
+    for (size_t index = 0; index < source.body.size(); ++index) {
+      const Stmt& statement = source.body[index];
+      TypeEnv handler_env = phase21_local_types_before(
+          domain, source, specialization, index);
+      vector<LocalCallSite> calls;
+      for (const auto& expression : statement_expressions(statement))
+        collect_local_call_sites(statement.line, expression, handler_env,
+                                 nullptr, calls);
+      for (const auto& call : calls) {
+        if (!starts_with(call.target, "fn:")) continue;
+        auto function = functions_.find(call.target.substr(3));
+        if (function != functions_.end() &&
+            (!function->second->body.empty() ||
+             function->second->result_expression))
+          visit(*function->second, call.arguments, handler_env, {});
+      }
+    }
+  }
+
+  void phase21_warn_recovery_lock_inflation(
+      const Domain& domain, const Handler& source,
+      const DomainSpecialization& specialization,
+      const DomainSynchronizationPlan& raw,
+      const DomainSynchronizationPlan& complete) {
+    if (source.provider_abi ||
+        std::none_of(source.body.begin(), source.body.end(),
+                     [](const Stmt& statement) {
+                       return statement.kind == Stmt::Kind::Recover;
+                     }))
+      return;
+    DomainSynchronizationPlan baseline = raw;
+    auto normal_handler = std::find_if(
+        baseline.handlers.begin(), baseline.handlers.end(),
+        [&](const HandlerSynchronizationPlan& candidate) {
+          return candidate.name == source.name;
+        });
+    synchronization_require(normal_handler != baseline.handlers.end(),
+                            "normal handler absent from recovery baseline");
+    normal_handler->effects = specialized_handler_effects(
+        domain, source, &specialization, true);
+    derive_domain_synchronization(baseline);
+    normal_handler = std::find_if(
+        baseline.handlers.begin(), baseline.handlers.end(),
+        [&](const HandlerSynchronizationPlan& candidate) {
+          return candidate.name == source.name;
+        });
+    derive_path_placement(domain, source, specialization, baseline,
+                          *normal_handler, true);
+    const auto actual_handler = std::find_if(
+        complete.handlers.begin(), complete.handlers.end(),
+        [&](const HandlerSynchronizationPlan& candidate) {
+          return candidate.name == source.name;
+        });
+    synchronization_require(actual_handler != complete.handlers.end(),
+                            "recovery handler absent from complete plan");
+    const auto& actual_modes = actual_handler->path_placement.enabled
+        ? actual_handler->path_placement.entry_modes
+        : actual_handler->class_modes;
+    const auto& normal_modes = normal_handler->path_placement.enabled
+        ? normal_handler->path_placement.entry_modes
+        : normal_handler->class_modes;
+    std::map<string, std::set<int>> recovery_provenance;
+    for (size_t index = 0; index < source.body.size(); ++index) {
+      const Stmt& arm = source.body[index];
+      if (arm.kind != Stmt::Kind::Recover) continue;
+      const size_t end = statement_subtree_end(source.body, index);
+      auto body = normalized_statement_slice(
+          source.body, index + 1, end, arm.indent + 1);
+      TypeEnv local_types = phase21_local_types_before(
+          domain, source, specialization, index);
+      if (!arm.a.empty() && plain_identifier(trim(arm.a))) {
+        std::set<string> selected_types;
+        for (const auto& identity : arm.exceptional_alternatives)
+          selected_types.insert(identity.type);
+        if (selected_types.size() == 1)
+          local_types[trim(arm.a)] = *selected_types.begin();
+      } else if (!arm.a.empty() && arm.a.find('.') != string::npos) {
+        auto alternatives = split_top_level(arm.a, ',');
+        if (alternatives.size() == 1)
+          for (const auto& binding :
+               phase21_pattern_bindings(arm.line, alternatives.front()))
+            local_types[binding.first] = binding.second;
+      }
+      const auto effects = specialized_handler_body_effects(
+          domain, source, body, &specialization, false, &local_types);
+      for (const auto* leaves : {&effects.reads, &effects.writes,
+                                 &effects.consumes})
+        for (const auto& leaf : *leaves)
+          recovery_provenance[leaf].insert(arm.line);
+    }
+    std::ostringstream inflated;
+    bool any = false;
+    std::set<int> lines;
+    auto compare_modes = [&](const string& placement,
+                             const std::map<size_t, SynchronizationMode>& actual,
+                             const std::map<size_t, SynchronizationMode>& normal) {
+      for (const auto& acquisition : actual) {
+        const auto& cls = complete.classes.at(acquisition.first);
+        std::ostringstream changes;
+        bool class_changed = false;
+        for (const auto& leaf : cls.member_leaves) {
+          SynchronizationMode previous = SynchronizationMode::None;
+          auto prior_class = baseline.leaf_to_class.find(leaf);
+          if (prior_class != baseline.leaf_to_class.end()) {
+            auto prior_mode = normal.find(prior_class->second);
+            if (prior_mode != normal.end()) previous = prior_mode->second;
+          }
+          if (static_cast<int>(acquisition.second) <=
+              static_cast<int>(previous)) continue;
+          if (class_changed) changes << ", ";
+          changes << leaf << " " << synchronization_mode_name(previous)
+                  << "->" << synchronization_mode_name(acquisition.second);
+          class_changed = true;
+          const auto provenance = recovery_provenance.find(leaf);
+          if (provenance != recovery_provenance.end())
+            lines.insert(provenance->second.begin(),
+                         provenance->second.end());
+        }
+        if (!class_changed) continue;
+        if (any) inflated << "; ";
+        inflated << placement << " class " << acquisition.first << " ["
+                 << changes.str() << "]";
+        any = true;
+      }
+    };
+    compare_modes("entry", actual_modes, normal_modes);
+    if (actual_handler->path_placement.enabled &&
+        normal_handler->path_placement.enabled) {
+      compare_modes("then", actual_handler->path_placement.then_modes,
+                    normal_handler->path_placement.then_modes);
+      compare_modes("else", actual_handler->path_placement.else_modes,
+                    normal_handler->path_placement.else_modes);
+    }
+    if (any && lines.empty())
+      for (const auto& statement : source.body)
+        if (statement.kind == Stmt::Kind::Recover)
+          lines.insert(statement.line);
+    if (any) {
+      inflated << "; recovery provenance: ";
+      bool first = true;
+      for (int line : lines) {
+        if (!first) inflated << ", ";
+        inflated << "line " << line;
+        first = false;
+      }
+    }
+    if (any)
+      phase21_warning(
+          source.line, source.source_file, "RECOVER_LOCK_INFLATION",
+          "recovery increases the actual handler entry lock plan for '" +
+              domain.name + "." + source.name + "': " + inflated.str());
+  }
+
   void build_synchronization_plan(const ConcreteDomainGraph& graph) {
     synchronization_require(graph.closed, "graph is not closed");
     SynchronizationPlan plan;
@@ -5843,13 +7563,44 @@ class Checker {
           for (const auto& leaf : *leaves)
             synchronization_require(planned.state_leaves.count(leaf), "semantic effect outside specialization");
         planned.handlers.push_back(std::move(h));
+        if (!handler.failure_arms.empty()) {
+          HandlerSynchronizationPlan failure;
+          failure.name = handler.name + "$fail";
+          failure.handler_identity = specialization.identity() +
+              "::pseudo-handler:" + handler.name + "$fail";
+          failure.effects = specialized_handler_failure_effects(
+              domain, handler, &specialization);
+          for (const auto* leaves : {&failure.effects.reads,
+                                     &failure.effects.writes,
+                                     &failure.effects.consumes})
+            for (const auto& leaf : *leaves)
+              synchronization_require(planned.state_leaves.count(leaf),
+                                      "failure-arm effect outside specialization");
+          planned.handlers.push_back(std::move(failure));
+        }
       }
+      DomainSynchronizationPlan raw = planned;
       derive_domain_synchronization(planned);
       for (auto& handler : planned.handlers) {
         auto source = std::find_if(domain.handlers.begin(), domain.handlers.end(),
             [&](const Handler& candidate) { return candidate.name == handler.name; });
-        synchronization_require(source != domain.handlers.end(), "missing source handler for path placement");
+        if (source == domain.handlers.end()) {
+          synchronization_require(ends_with(handler.name, "$fail"),
+                                  "missing source handler for path placement");
+          handler.path_placement.reason =
+              "failure pseudo-handler always uses a fresh complete entry plan";
+          continue;
+        }
         derive_path_placement(domain, *source, specialization, planned, handler);
+      }
+      for (const auto& source : domain.handlers) {
+        phase21_warn_recovery_lock_inflation(domain, source, specialization,
+                                             raw, planned);
+        phase21_warn_empty_catch_alls(domain, source, specialization);
+        phase21_warn_helper_catch_alls(domain, source, specialization,
+                                       planned);
+        phase21_warn_nested_helper_catch_alls(
+            domain, source, specialization, planned);
       }
       plan.domains.push_back(std::move(planned));
     }
@@ -5875,11 +7626,51 @@ class Checker {
                                   receiver, {}, Effect::Consume);
       function.parameter_leaf_effects = std::move(capture.effects);
     }
+    // A concrete source-free callable does not export its Moss body. Preserve
+    // the minimal checked warning witnesses in ABI v9 so a consumer can map
+    // formal writes onto its own protected state without reading provider IR.
+    for (auto& function : p_.functions) {
+      if (std::filesystem::path(function.source_file).extension() == ".mossi" ||
+          function.body.empty() ||
+          std::any_of(function.params.begin(), function.params.end(),
+              [](const Param& parameter) { return parameter.type.empty(); }))
+        continue;
+      vector<std::pair<string, string>> formals;
+      for (const auto& parameter : function.params)
+        formals.emplace_back(parameter.name, parameter.type);
+      function.recovery_warning_witnesses =
+          phase21_callable_warning_witnesses(function.body, formals);
+    }
+    for (auto& object : p_.objects) {
+      if (std::filesystem::path(object.source_file).extension() == ".mossi")
+        continue;
+      for (auto& method : object.methods) {
+        if (method.body.empty() ||
+            std::any_of(method.params.begin(), method.params.end(),
+                [](const Param& parameter) { return parameter.type.empty(); }))
+          continue;
+        vector<std::pair<string, string>> formals{{"self", object.name}};
+        for (const auto& field : object.fields)
+          formals.emplace_back(field.name, field.type);
+        for (const auto& parameter : method.params)
+          formals.emplace_back(parameter.name, parameter.type);
+        method.recovery_warning_witnesses =
+            phase21_callable_warning_witnesses(method.body, formals);
+      }
+    }
+    phase21_propagate_callable_warning_witnesses();
     // Source declarations retain semantic observations for .mossi export only
     // after instance plans have consumed their exact specialization contexts.
     for (auto& domain : p_.domains)
-      for (auto& handler : domain.handlers)
+      for (auto& handler : domain.handlers) {
         handler.state_effects = specialized_handler_effects(domain, handler, nullptr);
+        if (handler.provider_abi) continue;
+        for (auto& arm : handler.failure_arms) {
+          const TypeEnv arm_types = phase21_failure_arm_local_types(arm);
+          arm.state_effects = specialized_handler_body_effects(
+              domain, handler, arm.body, nullptr, false, &arm_types);
+        }
+      }
   }
 
   static bool storage_locations_overlap(const StorageLocation& left,
@@ -6214,11 +8005,17 @@ class Checker {
     if (parse_member_call(value, receiver, method, arguments)) {
       auto receiver_type = inferred_expr_type(receiver, env);
       if (receiver_type) {
-        if ((canonical_type_name(*receiver_type) == "Range" ||
-             canonical_type_name(*receiver_type) == "RangeBatch") &&
-            method == "length") {
+        const string concrete_receiver = canonical_type_name(*receiver_type);
+        if (((concrete_receiver == "Range" ||
+              concrete_receiver == "RangeBatch") &&
+             method == "length" && arguments.empty()) ||
+            (concrete_receiver == "Range" && method == "slice" &&
+             arguments.size() == 2)) {
           analyze_effect_expression(receiver, env, params, parameter_effects,
                                     receiver_effect, receiver_fields, Effect::Read);
+          for (const auto& argument : arguments)
+            analyze_effect_expression(argument, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Read);
           return;
         }
         if (canonical_type_name(*receiver_type) == "FileIO" ||
@@ -6252,9 +8049,15 @@ class Checker {
             concrete_arguments.push_back(inferred_expr_type(argument, env).value_or(""));
         if (auto object_method = resolve_method(concrete, method, concrete_arguments, true, nullptr)) {
           if (leaf_effect_capture_) {
+            const StateLeafEffects coarse =
+                conservative_method_formal_effects(*object_method);
+            const StateLeafEffects* recorded =
+                object_method->body.empty() && !object_method->result_expression
+                    ? &coarse : nullptr;
             capture_callable_effects(object_method->body, object_method->result_expression,
                 object_method->params, arguments, env, params, parameter_effects,
-                receiver_effect, receiver_fields, objects_.at(concrete), receiver);
+                receiver_effect, receiver_fields, objects_.at(concrete), receiver,
+                recorded);
             return;
           }
           analyze_effect_expression(receiver, env, params, parameter_effects,
@@ -6366,9 +8169,15 @@ class Checker {
                 canonical_type_name(self->second), callee, argument_types,
                 true, nullptr)) {
           if (leaf_effect_capture_) {
+            const StateLeafEffects coarse =
+                conservative_method_formal_effects(*object_method);
+            const StateLeafEffects* recorded =
+                object_method->body.empty() && !object_method->result_expression
+                    ? &coarse : nullptr;
             capture_callable_effects(object_method->body, object_method->result_expression,
                 object_method->params, call_arguments, env, params, parameter_effects,
-                receiver_effect, receiver_fields, objects_.at(canonical_type_name(self->second)), "self");
+                receiver_effect, receiver_fields, objects_.at(canonical_type_name(self->second)), "self",
+                recorded);
             return;
           }
           analyze_effect_expression("self", env, params, parameter_effects,
@@ -6491,6 +8300,53 @@ class Checker {
       }
       if (statement.kind == Stmt::Kind::Case)
         err(statement.line, "case requires an enclosing match", "CASE_OUTSIDE_MATCH");
+      if (statement.kind == Stmt::Kind::Try) {
+        ++index;
+        auto normal = env;
+        analyze_effect_block(statements, index, level + 1, normal, params,
+                             parameter_effects, receiver_effect,
+                             receiver_fields);
+        vector<TypeEnv> paths{normal};
+        bool saw_recover = false;
+        while (index < statements.size() &&
+               statements[index].indent == level &&
+               statements[index].kind == Stmt::Kind::Recover) {
+          saw_recover = true;
+          const Stmt& arm = statements[index++];
+          auto recovered = env;
+          if (!arm.a.empty() && arm.a.find('.') == string::npos &&
+              arm.a.find(',') == string::npos) {
+            std::set<string> selected_types;
+            for (const auto& identity : arm.exceptional_alternatives)
+              selected_types.insert(identity.type);
+            recovered[arm.a] = selected_types.size() == 1
+                ? *selected_types.begin() : "_selected_error";
+          }
+          else if (!arm.a.empty()) {
+            auto alternatives = split_top_level(arm.a, ',');
+            if (alternatives.size() == 1)
+              for (const auto& binding :
+                   phase21_pattern_bindings(arm.line, alternatives.front()))
+                recovered[binding.first] = binding.second;
+          }
+          {
+            LeafRecordingScope recording(leaf_effect_capture_);
+            analyze_effect_block(statements, index, level + 1, recovered,
+                                 params, parameter_effects, receiver_effect,
+                                 receiver_fields);
+          }
+          paths.push_back(std::move(recovered));
+        }
+        if (!saw_recover)
+          err(statement.line, "try must be followed by at least one recover arm",
+              "TRY_REQUIRES_RECOVER");
+        if (leaf_effect_capture_)
+          env = merge_type_environments(paths, statement.line, false);
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::Recover)
+        err(statement.line, "recover requires an immediately preceding try",
+            "RECOVER_OUTSIDE_TRY");
       if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While ||
           statement.kind == Stmt::Kind::For) {
         Effect iteration_effect = Effect::Read;
@@ -6634,6 +8490,13 @@ class Checker {
                                       receiver_effect, receiver_fields, Effect::Consume);
           ++index;
           break;
+        case Stmt::Kind::Raise:
+          if (!statement.a.empty())
+            analyze_effect_expression(statement.a, env, params,
+                                      parameter_effects, receiver_effect,
+                                      receiver_fields, Effect::Consume);
+          ++index;
+          break;
         case Stmt::Kind::Raw:
           analyze_effect_expression(statement.text, env, params, parameter_effects,
                                     receiver_effect, receiver_fields, Effect::Read);
@@ -6648,6 +8511,8 @@ class Checker {
         case Stmt::Kind::For:
         case Stmt::Kind::Match:
         case Stmt::Kind::Case:
+        case Stmt::Kind::Try:
+        case Stmt::Kind::Recover:
           return;
       }
     }
@@ -6661,12 +8526,6 @@ class Checker {
     }
     return out.str();
   }
-
-  struct LocalCallSite {
-    string target;
-    vector<string> arguments;
-    vector<string> argument_types;
-  };
 
   string callable_label(const string& id) const {
     if (starts_with(id, "fn:")) return id.substr(3);
@@ -6742,7 +8601,7 @@ class Checker {
                       concrete, bound_method, argument_types, true, nullptr))
                 calls.push_back(LocalCallSite{
                     "method:" + concrete + "." + method->name, {},
-                    argument_types});
+                    argument_types, bound_receiver});
             }
           } else {
             auto local = env.find(identity);
@@ -6779,7 +8638,7 @@ class Checker {
                                                     true, nullptr)) {
             calls.push_back(LocalCallSite{
                 "method:" + type + "." + method->name, arguments,
-                argument_types});
+                argument_types, receiver});
           }
         } else if (traits_.count(type) || contains_internal_placeholder(type)) {
           for (const auto& object : p_.objects) {
@@ -6788,7 +8647,7 @@ class Checker {
               if (method.name == method_name && method.params.size() == arguments.size()) {
                 calls.push_back(LocalCallSite{
                     "method:" + object.name + "." + method.name, arguments,
-                    argument_types});
+                    argument_types, receiver});
               }
           }
         }
@@ -6830,7 +8689,7 @@ class Checker {
                                                   argument_types, true, nullptr))
           calls.push_back(LocalCallSite{
               "method:" + implicit_owner->name + "." + method->name,
-              call_arguments, argument_types});
+              call_arguments, argument_types, "self"});
       }
       for (const auto& argument : call_arguments) {
         string field, field_value;
@@ -6894,6 +8753,7 @@ class Checker {
         break;
       case Stmt::Kind::Reply:
       case Stmt::Kind::Return:
+      case Stmt::Kind::Raise:
         if (!statement.a.empty()) expressions.push_back(statement.a);
         break;
       case Stmt::Kind::Raw:
@@ -6901,6 +8761,8 @@ class Checker {
         break;
       case Stmt::Kind::Pass:
       case Stmt::Kind::Else:
+      case Stmt::Kind::Try:
+      case Stmt::Kind::Recover:
         break;
     }
     return expressions;
@@ -6935,6 +8797,7 @@ class Checker {
         break;
       case Stmt::Kind::Reply:
       case Stmt::Kind::Return:
+      case Stmt::Kind::Raise:
         if (!statement.a.empty()) expressions.push_back(statement.a);
         break;
       case Stmt::Kind::Raw:
@@ -6942,6 +8805,8 @@ class Checker {
         break;
       case Stmt::Kind::Pass:
       case Stmt::Kind::Else:
+      case Stmt::Kind::Try:
+      case Stmt::Kind::Recover:
         break;
     }
     return expressions;
@@ -7197,11 +9062,12 @@ class Checker {
 
   void infer_effects() {
     for (auto& function : p_.functions)
-      if (!function.body.empty() || function.result_expression || !function.parameter_leaf_effects)
+      if (std::filesystem::path(function.source_file).extension() != ".mossi")
         function.parameter_effects.assign(function.params.size(), Effect::Read);
     for (auto& object : p_.objects)
       for (auto& method : object.methods)
-        method.parameter_effects.assign(method.params.size(), Effect::Read);
+        if (std::filesystem::path(method.source_file).extension() != ".mossi")
+          method.parameter_effects.assign(method.params.size(), Effect::Read);
 
     size_t entities = p_.functions.size();
     for (const auto& object : p_.objects) entities += object.methods.size();
@@ -7209,9 +9075,12 @@ class Checker {
     for (size_t round = 0; round < rounds; ++round) {
       bool changed = false;
       for (auto& function : p_.functions) {
+        if (std::filesystem::path(function.source_file).extension() == ".mossi")
+          continue;
         std::unordered_map<string,string> env;
         for (const auto& parameter : function.params)
           env[parameter.name] = parameter.type.empty() ? "_generic:" + parameter.name : parameter.type;
+        const TypeEnv entry_env = env;
         auto inferred = function.parameter_effects;
         vector<bool> mutations(function.params.size(), false);
         auto* previous_mutation_capture = parameter_mutation_capture_;
@@ -7221,9 +9090,13 @@ class Checker {
         size_t index = 0;
         analyze_effect_block(function.body, index, 0, env, function.params,
                              inferred, receiver, no_fields);
-        if (function.result_expression)
-          analyze_effect_expression(*function.result_expression, env, function.params,
-                                    inferred, receiver, no_fields, Effect::Consume);
+        if (function.result_expression) {
+          auto result_env = walk_type_environment(function.body, entry_env,
+              [](const Stmt&, const TypeEnv&) {}, false);
+          analyze_effect_expression(*function.result_expression, result_env,
+                                    function.params, inferred, receiver,
+                                    no_fields, Effect::Consume);
+        }
         parameter_mutation_capture_ = previous_mutation_capture;
         // Iterability alone carries no WRITE effect. analyze_effect_block
         // records the source access (READ for Range/Vector traversal, or the
@@ -7239,6 +9112,8 @@ class Checker {
       }
       for (auto& object : p_.objects) {
         for (auto& method : object.methods) {
+          if (std::filesystem::path(method.source_file).extension() == ".mossi")
+            continue;
           std::unordered_map<string,string> env;
           std::set<string> fields;
           for (const auto& field : object.fields) {
@@ -7247,14 +9122,19 @@ class Checker {
           }
           env["self"] = object.name;
           for (const auto& parameter : method.params) env[parameter.name] = parameter.type;
+          const TypeEnv entry_env = env;
           auto inferred = method.parameter_effects;
           Effect receiver = Effect::Read;
           size_t index = 0;
           analyze_effect_block(method.body, index, 0, env, method.params,
                                inferred, receiver, fields);
-          if (method.result_expression)
-            analyze_effect_expression(*method.result_expression, env, method.params,
-                                      inferred, receiver, fields, Effect::Consume);
+          if (method.result_expression) {
+            auto result_env = walk_type_environment(method.body, entry_env,
+                [](const Stmt&, const TypeEnv&) {}, false);
+            analyze_effect_expression(*method.result_expression, result_env,
+                                      method.params, inferred, receiver,
+                                      fields, Effect::Consume);
+          }
           if (inferred != method.parameter_effects || receiver != method.receiver_effect) {
             method.parameter_effects = std::move(inferred);
             method.receiver_effect = receiver;
@@ -7272,6 +9152,384 @@ class Checker {
     return effects;
   }
 
+  bool phase21_bounded_error_type(const string& type,
+                                  std::set<string>& visiting) const {
+    const string concrete = canonical_type_name(type);
+    if (concrete == "int" || concrete == "float" || concrete == "bool" ||
+        concrete == "Int" || concrete == "Float" || concrete == "Bool")
+      return true;
+    auto declaration = enums_.find(concrete);
+    if (declaration == enums_.end() || !visiting.insert(concrete).second)
+      return false;
+    for (const auto& item : declaration->second->cases)
+      for (const auto& field : item.fields)
+        if (!phase21_bounded_error_type(field.type, visiting)) return false;
+    visiting.erase(concrete);
+    return true;
+  }
+
+  bool phase21_bounded_error_type(const string& type) const {
+    std::set<string> visiting;
+    return phase21_bounded_error_type(type, visiting);
+  }
+
+  vector<std::pair<string,string>> phase21_pattern_bindings(
+      int line, string pattern) const {
+    pattern = trim(std::move(pattern));
+    const auto open = pattern.find('(');
+    if (open == string::npos) return {};
+    const auto close = matching_paren(pattern, open);
+    if (close == string::npos || close + 1 != pattern.size())
+      err(line, "error payload patterns support only plain field bindings",
+          "INVALID_RECOVERY_PATTERN");
+    const string qualified = trim(pattern.substr(0, open));
+    const auto dot = qualified.rfind('.');
+    if (dot == string::npos)
+      err(line, "error payload patterns require a qualified enum variant",
+          "RECOVERY_PATTERN_REQUIRES_VARIANT");
+    const string type = canonical_type_name(trim(qualified.substr(0, dot)));
+    const string variant = trim(qualified.substr(dot + 1));
+    auto declaration = enums_.find(type);
+    if (declaration == enums_.end()) return {};
+    auto item = std::find_if(
+        declaration->second->cases.begin(), declaration->second->cases.end(),
+        [&](const EnumCase& candidate) { return candidate.name == variant; });
+    if (item == declaration->second->cases.end()) return {};
+    vector<string> names;
+    const string inside = trim(pattern.substr(open + 1, close - open - 1));
+    if (!inside.empty()) names = split_top_level(inside, ',');
+    if (names.size() != item->fields.size())
+      err(line, "error variant '" + type + "." + variant +
+                    "' must bind all " +
+                    std::to_string(item->fields.size()) + " payload field(s)",
+          "RECOVERY_BINDING_COUNT");
+    vector<std::pair<string,string>> result;
+    std::set<string> seen;
+    for (size_t index = 0; index < names.size(); ++index) {
+      const string name = trim(names[index]);
+      if (!plain_identifier(name))
+        err(line, "error payload patterns support only plain field bindings",
+            "INVALID_RECOVERY_PATTERN");
+      if (name != item->fields[index].name)
+        err(line, "error variant '" + type + "." + variant +
+                      "' requires payload field '" +
+                      item->fields[index].name + "' in declaration order",
+            "RECOVERY_FIELD_NAME_MISMATCH");
+      if (!seen.insert(name).second)
+        err(line, "duplicate error payload binding '" + name + "'",
+            "DUPLICATE_PATTERN_BINDING");
+      result.push_back({name, item->fields[index].type});
+    }
+    return result;
+  }
+
+  RaisedIdentity phase21_pattern_identity(int line, string pattern) const {
+    pattern = trim(std::move(pattern));
+    const auto open = pattern.find('(');
+    if (open != string::npos) pattern = trim(pattern.substr(0, open));
+    const auto dot = pattern.find('.');
+    if (dot == string::npos || pattern.find('.', dot + 1) != string::npos)
+      err(line, "recovery patterns must name a qualified enum variant",
+          "RECOVERY_PATTERN_REQUIRES_VARIANT");
+    const string type = canonical_type_name(trim(pattern.substr(0, dot)));
+    const string variant = trim(pattern.substr(dot + 1));
+    auto declaration = enums_.find(type);
+    if (declaration == enums_.end())
+      err(line, "unknown error enum '" + type + "'",
+          "UNKNOWN_ERROR_TYPE");
+    auto item = std::find_if(
+        declaration->second->cases.begin(), declaration->second->cases.end(),
+        [&](const EnumCase& candidate) { return candidate.name == variant; });
+    if (item == declaration->second->cases.end())
+      err(line, "unknown error variant '" + type + "." + variant + "'",
+          "UNKNOWN_ERROR_VARIANT");
+    for (const auto& field : item->fields)
+      if (!phase21_bounded_error_type(field.type))
+        err(line, "raised error payload field '" + field.name +
+                      "' must be an owned bounded scalar or enum value",
+            "RAISE_PAYLOAD_NOT_OWNED_BOUNDED");
+    return {RaisedIdentityKind::EnumVariant, type, variant};
+  }
+
+  RaiseSet phase21_raised_identities(int line, const string& expression,
+                                    const TypeEnv& env) const {
+    string enum_name, case_name;
+    vector<string> fields;
+    bool called = false;
+    if (parse_enum_case_expression(expression, enum_name, case_name, fields,
+                                   called) &&
+        enums_.count(canonical_type_name(enum_name)))
+      return {phase21_pattern_identity(line, enum_name + "." + case_name)};
+    auto type = inferred_expr_type(expression, env);
+    if (!type || contains_internal_placeholder(*type))
+      err(line, "raise requires a statically typed error value",
+          "RAISE_REQUIRES_TYPED_VALUE");
+    const string concrete = canonical_type_name(*type);
+    if (!phase21_bounded_error_type(concrete))
+      err(line, "raised values must be owned bounded scalar or enum values",
+          "RAISE_PAYLOAD_NOT_OWNED_BOUNDED");
+    auto declaration = enums_.find(concrete);
+    if (declaration != enums_.end()) {
+      RaiseSet alternatives;
+      for (const auto& item : declaration->second->cases)
+        alternatives.insert(phase21_pattern_identity(
+            line, concrete + "." + item.name));
+      return alternatives;
+    }
+    return {{RaisedIdentityKind::ScalarType, concrete, {}}};
+  }
+
+  RaiseSet phase21_recovery_pattern(int line, const string& selector,
+                                    const RaiseSet& remaining,
+                                    string* binding_type = nullptr) const {
+    const string value = trim(selector);
+    if (value.empty()) return remaining;
+    auto alternatives = split_top_level(value, ',');
+    const bool qualified = std::all_of(
+        alternatives.begin(), alternatives.end(), [](const string& item) {
+          return trim(item).find('.') != string::npos;
+        });
+    if (qualified) {
+      RaiseSet result;
+      for (const auto& alternative : alternatives) {
+        auto identity = phase21_pattern_identity(line, alternative);
+        auto bindings = phase21_pattern_bindings(line, alternative);
+        if (alternatives.size() > 1 && !bindings.empty())
+          err(line,
+              "grouped recovery alternatives must be tag-only variants",
+              "GROUPED_RECOVERY_PAYLOAD_BINDING");
+        if (!result.insert(identity).second)
+          err(line, "duplicate error variant in recovery arm",
+              "DUPLICATE_RECOVERY_VARIANT");
+      }
+      return result;
+    }
+    if (alternatives.size() != 1 || !plain_identifier(value))
+      err(line, "recover requires qualified variants, one error binding, or an unbound catch-all",
+          "INVALID_RECOVERY_PATTERN");
+    std::set<string> types;
+    for (const auto& identity : remaining) types.insert(identity.type);
+    if (types.size() != 1)
+      err(line, "a bound recovery catch-all requires one concrete error type; use recover:",
+          "AMBIGUOUS_RECOVERY_BINDING");
+    if (binding_type && !types.empty()) *binding_type = *types.begin();
+    return remaining;
+  }
+
+  RaiseSet phase21_raise_set_block(const vector<Stmt>& body, size_t& index,
+                                   int level, TypeEnv env,
+                                   const RaiseSet& selected = {},
+                                   string selected_binding = {},
+                                   bool inside_recovery_arm = false) {
+    RaiseSet result;
+    while (index < body.size()) {
+      const Stmt& statement = body[index];
+      if (statement.indent < level) return result;
+      if (statement.indent > level || statement.kind == Stmt::Kind::Else ||
+          statement.kind == Stmt::Kind::Recover ||
+          statement.kind == Stmt::Kind::Case)
+        return result;
+      if (statement.kind == Stmt::Kind::Try) {
+        ++index;
+        RaiseSet attempted = phase21_raise_set_block(
+            body, index, level + 1, env, selected, selected_binding,
+            inside_recovery_arm);
+        const_cast<Stmt&>(statement).exceptional_alternatives = attempted;
+        RaiseSet remaining = attempted;
+        RaiseSet recovered_raises;
+        bool saw_recover = false;
+        bool saw_catch_all = false;
+        std::set<RaisedIdentity> named;
+        while (index < body.size() && body[index].indent == level &&
+               body[index].kind == Stmt::Kind::Recover) {
+          const Stmt& arm = body[index++];
+          saw_recover = true;
+          if (saw_catch_all)
+            err(arm.line, "no recover arm may follow a catch-all",
+                "RECOVER_AFTER_CATCH_ALL");
+          string binding_type;
+          RaiseSet matched = phase21_recovery_pattern(
+              arm.line, arm.a, remaining, &binding_type);
+          RaiseSet reachable_matched;
+          for (const auto& identity : matched)
+            if (remaining.count(identity)) reachable_matched.insert(identity);
+          const_cast<Stmt&>(arm).exceptional_alternatives =
+              reachable_matched;
+          const bool catch_all = arm.a.empty() ||
+              (arm.a.find('.') == string::npos && arm.a.find(',') == string::npos);
+          if (catch_all) saw_catch_all = true;
+          for (const auto& identity : matched) {
+            if (!named.insert(identity).second)
+              err(arm.line, "overlapping recovery alternatives",
+                  "OVERLAPPING_RECOVERY_PATTERN");
+            if (!remaining.count(identity)) {
+              const string message = "recovery alternative '" +
+                  identity.canonical() + "' is unreachable in this try";
+              if (phase21_warnings_enabled_ &&
+                  std::none_of(warnings_.begin(), warnings_.end(),
+                               [&](const Warning& warning) {
+                                 return warning.line == arm.line &&
+                                     warning.code == "RECOVER_UNREACHABLE_VARIANT" &&
+                                     warning.message == message;
+                               }))
+                warnings_.push_back({arm.line, message,
+                                     "RECOVER_UNREACHABLE_VARIANT",
+                                     arm.source_file});
+              continue;
+            }
+            remaining.erase(identity);
+          }
+          if (catch_all && matched.empty()) {
+            const string message = "catch-all recovery arm cannot receive a typed error from this try";
+            if (phase21_warnings_enabled_ &&
+                std::none_of(warnings_.begin(), warnings_.end(),
+                             [&](const Warning& warning) {
+                               return warning.line == arm.line &&
+                                   warning.code == "RECOVER_EMPTY_CATCH_ALL";
+                             }))
+              warnings_.push_back({arm.line, message,
+                                   "RECOVER_EMPTY_CATCH_ALL",
+                                   arm.source_file});
+          }
+          TypeEnv arm_env = env;
+          if (!binding_type.empty() && plain_identifier(trim(arm.a)))
+            arm_env[trim(arm.a)] = binding_type;
+          if (!arm.a.empty() && arm.a.find('.') != string::npos) {
+            auto alternatives = split_top_level(arm.a, ',');
+            if (alternatives.size() == 1)
+              for (const auto& binding :
+                   phase21_pattern_bindings(arm.line, alternatives.front()))
+                arm_env[binding.first] = binding.second;
+          }
+          RaiseSet arm_raises = phase21_raise_set_block(
+              body, index, level + 1, std::move(arm_env), reachable_matched,
+              plain_identifier(trim(arm.a)) ? trim(arm.a) : string(), true);
+          if (!reachable_matched.empty())
+            recovered_raises = raise_set_union(
+                std::move(recovered_raises), arm_raises);
+        }
+        if (!saw_recover)
+          err(statement.line, "try must be followed by at least one recover arm",
+              "TRY_REQUIRES_RECOVER");
+        result = raise_set_union(std::move(result), remaining);
+        result = raise_set_union(std::move(result), recovered_raises);
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::Raise) {
+        RaiseSet alternatives;
+        if (statement.a.empty()) {
+          if (!inside_recovery_arm)
+            err(statement.line, "bare raise is legal only inside an active recover arm",
+                "BARE_RAISE_OUTSIDE_RECOVER");
+          alternatives = selected;
+        } else {
+          alternatives = phase21_raised_identities(
+              statement.line, statement.a, env);
+          if (!selected_binding.empty() &&
+              trim(statement.a) == selected_binding) {
+            std::set<string> selected_types;
+            for (const auto& identity : selected)
+              selected_types.insert(identity.type);
+            auto binding = env.find(selected_binding);
+            if (binding != env.end() && selected_types.size() == 1 &&
+                selected_types.count(canonical_type_name(binding->second)))
+              alternatives = selected;
+          }
+          auto expression = observable_expression_effects(
+              statement.a, env, {}, nullptr, {}, nullptr,
+              statement.message_root_ingress);
+          alternatives = raise_set_union(
+              std::move(alternatives), expression.raise_set);
+        }
+        const_cast<Stmt&>(statement).exceptional_alternatives = alternatives;
+        result = raise_set_union(std::move(result), alternatives);
+        ++index;
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::If ||
+          statement.kind == Stmt::Kind::While ||
+          statement.kind == Stmt::Kind::For ||
+          statement.kind == Stmt::Kind::Match) {
+        const string expression = statement.kind == Stmt::Kind::For
+            ? statement.b : statement.a;
+        const RaiseSet direct = observable_expression_effects(
+            expression, env, {}, nullptr, {}, nullptr,
+            statement.message_root_ingress).raise_set;
+        const_cast<Stmt&>(statement).exceptional_alternatives = direct;
+        result = raise_set_union(
+            std::move(result), direct);
+        const auto parent_kind = statement.kind;
+        ++index;
+        if (parent_kind == Stmt::Kind::Match) {
+          while (index < body.size() && body[index].indent == level + 1 &&
+                 body[index].kind == Stmt::Kind::Case) {
+            ++index;
+            result = raise_set_union(
+                std::move(result), phase21_raise_set_block(
+                    body, index, level + 2, env, selected,
+                    selected_binding, inside_recovery_arm));
+          }
+        } else {
+          result = raise_set_union(
+              std::move(result), phase21_raise_set_block(
+                  body, index, level + 1, env, selected,
+                  selected_binding, inside_recovery_arm));
+          if (parent_kind == Stmt::Kind::If && index < body.size() &&
+              body[index].indent == level &&
+              body[index].kind == Stmt::Kind::Else) {
+            ++index;
+            result = raise_set_union(
+                std::move(result), phase21_raise_set_block(
+                    body, index, level + 1, env, selected,
+                    selected_binding, inside_recovery_arm));
+          }
+        }
+        continue;
+      }
+      RaiseSet direct;
+      if (statement.kind == Stmt::Kind::Message) {
+        auto receiver = env.find(statement.a);
+        if (receiver != env.end() && domains_.count(receiver->second))
+          if (const Handler* target =
+                  find_handler(*domains_.at(receiver->second), statement.b)) {
+            // A message evaluated by main is a Root ingress. An exhaustive,
+            // checked on_fail trailer consumes that Root's raised outcome;
+            // nested messages never do.
+            if (!(statement.message_root_ingress &&
+                  !target->failure_arms.empty()))
+              direct = raise_set_union(
+                  std::move(direct), target->observable_effects.raise_set);
+          }
+      }
+      for (const auto& expression : statement_expressions(statement))
+        direct = raise_set_union(
+            std::move(direct),
+            observable_expression_effects(
+                expression, env, {}, nullptr, {}, nullptr,
+                statement.message_root_ingress).raise_set);
+      const_cast<Stmt&>(statement).exceptional_alternatives = direct;
+      result = raise_set_union(std::move(result), direct);
+      if (statement.kind == Stmt::Kind::Assign ||
+          statement.kind == Stmt::Kind::Let ||
+          statement.kind == Stmt::Kind::Var) {
+        if (statement.a == selected_binding) selected_binding.clear();
+        if (auto type = inferred_expr_type(statement.b, env))
+          env[statement.a] = *type;
+      }
+      ++index;
+    }
+    return result;
+  }
+
+  RaiseSet phase21_raise_set(const vector<Stmt>& body, TypeEnv env) {
+    size_t index = 0;
+    RaiseSet result = phase21_raise_set_block(body, index, 0, std::move(env));
+    if (index != body.size())
+      err(body[index].line, "malformed exceptional control-flow nesting",
+          "INVALID_EXCEPTIONAL_CFG");
+    return result;
+  }
+
   static bool same_observable_effects(const ObservableEffects& left,
                                       const ObservableEffects& right) {
     return left.local_capture_read == right.local_capture_read &&
@@ -7282,19 +9540,304 @@ class Checker {
         left.external_io == right.external_io &&
         left.fileio == right.fileio &&
         left.fileio_unknown == right.fileio_unknown &&
-        left.may_fail == right.may_fail &&
+        left.may_panic == right.may_panic &&
+        left.raise_set == right.raise_set &&
         left.may_diverge == right.may_diverge &&
         left.unresolved == right.unresolved;
+  }
+
+  // A proved-safe index fact is deliberately local to one analysis context.
+  // It never mutates the ordinary callable summary: P21-10A supplies
+  // (chunk_parameter, "0") only while rechecking one chunk-map invocation,
+  // while P21-10B supplies (range_binding, induction_binding) only inside a
+  // verified stable loop body.
+  using ProvenIndexAccesses =
+      std::set<std::pair<std::string, std::string>>;
+
+  static bool proven_index_access(
+      const ProvenIndexAccesses* proven, const string& base,
+      const string& index) {
+    return proven && proven->count({trim(base), trim(index)}) != 0;
+  }
+
+  TypeEnv phase21_handler_local_candidates(const Handler& handler,
+                                            const TypeEnv& entry) const {
+    TypeEnv candidates;
+    const TypeEnvVisitor visit = [&](const Stmt& statement,
+                                     const TypeEnv& current) {
+      if (statement.kind == Stmt::Kind::Message &&
+          !statement.message_result.empty() &&
+          !entry.count(statement.message_result)) {
+        const auto receiver = current.find(statement.a);
+        const auto domain = receiver == current.end() ? domains_.end()
+            : domains_.find(canonical_type_name(receiver->second));
+        if (domain != domains_.end())
+          if (const Handler* target =
+                  find_handler(*domain->second, statement.b))
+            if (target->reply_type)
+              candidates.emplace(statement.message_result,
+                                 *target->reply_type);
+      }
+      if (statement.kind == Stmt::Kind::Match) {
+        const auto type = inferred_expr_type(statement.a, current);
+        const auto declaration = type
+            ? enums_.find(canonical_type_name(*type)) : enums_.end();
+        if (declaration != enums_.end()) {
+          size_t index = static_cast<size_t>(
+              &statement - handler.body.data()) + 1;
+          while (index < handler.body.size() &&
+                 handler.body[index].indent == statement.indent + 1 &&
+                 handler.body[index].kind == Stmt::Kind::Case) {
+            const Stmt& arm = handler.body[index];
+            auto variant = std::find_if(
+                declaration->second->cases.begin(),
+                declaration->second->cases.end(),
+                [&](const EnumCase& item) { return item.name == arm.a; });
+            if (variant != declaration->second->cases.end())
+              for (size_t field = 0;
+                   field < arm.args.size() && field < variant->fields.size();
+                   ++field)
+                if (!entry.count(arm.args[field]))
+                  candidates.emplace(arm.args[field],
+                                     variant->fields[field].type);
+            ++index;
+            while (index < handler.body.size() &&
+                   handler.body[index].indent > statement.indent + 1)
+              ++index;
+          }
+        }
+      }
+      if (statement.kind != Stmt::Kind::Let &&
+          statement.kind != Stmt::Kind::Var &&
+          statement.kind != Stmt::Kind::Assign) return;
+      if (!plain_identifier(statement.a) || entry.count(statement.a)) return;
+      auto type = inferred_expr_type(statement.b, current);
+      if (!type || contains_internal_placeholder(*type)) return;
+      auto [item, inserted] = candidates.emplace(statement.a, *type);
+      if (!inserted && !same_type(item->second, *type))
+        item->second = "_ambiguous_capture_type";
+    };
+    (void)walk_type_environment(handler.body, entry, visit, false);
+    return candidates;
+  }
+
+  std::set<string> phase21_failure_capture_reads(
+      const FailureArm& arm, const TypeEnv& arm_entry,
+      const TypeEnv& candidates) const {
+    std::set<string> result;
+    const TypeEnvVisitor visit = [&](const Stmt& statement,
+                                     const TypeEnv& current) {
+      for (const auto& expression : statement_expressions(statement)) {
+        if (statement.kind == Stmt::Kind::Assign &&
+            plain_identifier(expression) && expression == statement.a)
+          continue;
+        for (const auto& name : functional_captures(expression, candidates))
+          if (!current.count(name)) result.insert(name);
+      }
+    };
+    (void)walk_type_environment(arm.body, arm_entry, visit, false);
+    return result;
+  }
+
+  ObservableEffects concrete_function_observable_effects(
+      const Function& function, const vector<string>& argument_types) const {
+    ObservableEffects summary = function.observable_effects;
+    if (!function.static_dispatch ||
+        argument_types.size() != function.params.size() ||
+        std::any_of(argument_types.begin(), argument_types.end(),
+                    [&](const string& type) {
+                      return unresolved_semantic_type(type);
+                    }))
+      return summary;
+
+    TypeEnv env;
+    std::set<string> parameters;
+    for (size_t i = 0; i < argument_types.size(); ++i) {
+      env[function.params[i].name] = canonical_type_name(argument_types[i]);
+      parameters.insert(function.params[i].name);
+    }
+    ObservableEffects concrete = observable_body_effects(
+        function.body, env, parameters);
+    // Exceptional alternatives must be re-evaluated with concrete duck-typed
+    // receivers. The general function summary can have unresolved calls or
+    // variants from other specializations. Work on a body copy because the
+    // original AST's CFG annotations belong to its ordinary check context.
+    auto body = function.body;
+    auto* compiler = const_cast<Checker*>(this);
+    const bool warnings_before = compiler->phase21_warnings_enabled_;
+    compiler->phase21_warnings_enabled_ = false;
+    try {
+      concrete.raise_set = compiler->phase21_raise_set(body, env);
+    } catch (...) {
+      compiler->phase21_warnings_enabled_ = warnings_before;
+      throw;
+    }
+    compiler->phase21_warnings_enabled_ = warnings_before;
+    if (function.result_expression)
+      concrete.merge(observable_expression_effects(
+          *function.result_expression,
+          walk_type_environment(function.body, env,
+              [](const Stmt&, const TypeEnv&) {}, false)));
+
+    // A compiled provider's checked .mossi effect record is authoritative.
+    // Its embedded generic IR may refine a concrete use, but must never erase
+    // the declared panic or typed-error facts from the provider contract.
+    for (const auto& module : p_.external_modules)
+      if (starts_with(function.name, module + "__")) {
+        concrete.merge(summary);
+        break;
+      }
+    return concrete;
+  }
+
+  void phase21_validate_failure_arms(const Domain& domain, Handler& handler) {
+    if (handler.provider_abi &&
+        !handler.provider_abi->failure_arms.empty()) {
+      const auto totality = verify_root_totality(
+          *handler.provider_abi, handler.observable_effects.raise_set);
+      if (!totality.ok)
+        err(handler.line,
+            "compiled provider on_fail does not cover every Root error",
+            "NONEXHAUSTIVE_ON_FAIL");
+      return;
+    }
+    if (handler.failure_arms.empty()) return;
+    TypeEnv handler_entry{{"self", domain.name}};
+    for (const auto& field : domain.state)
+      handler_entry[field.name] = field.type;
+    for (const auto& route : domain.routes)
+      handler_entry[route.name] = route.type;
+    for (const auto& parameter : handler.params)
+      handler_entry[parameter.name] = parameter.type;
+    const TypeEnv local_candidates =
+        phase21_handler_local_candidates(handler, handler_entry);
+    RaiseSet remaining = handler.observable_effects.raise_set;
+    std::set<RaisedIdentity> named;
+    bool saw_catch_all = false;
+    for (auto& arm : handler.failure_arms) {
+      SourceFileScope source(current_source_file_, arm.source_file);
+      if (saw_catch_all)
+        err(arm.line, "no on_fail arm may follow a catch-all",
+            "ON_FAIL_AFTER_CATCH_ALL");
+      string selector;
+      if (!arm.patterns.empty()) {
+        for (const auto& pattern : arm.patterns) {
+          if (!selector.empty()) selector += ", ";
+          selector += pattern;
+        }
+      } else {
+        selector = arm.binding;
+      }
+      string binding_type;
+      RaiseSet matched = phase21_recovery_pattern(
+          arm.line, selector, remaining, &binding_type);
+      RaiseSet reachable;
+      for (const auto& identity : matched)
+        if (remaining.count(identity)) reachable.insert(identity);
+      arm.exceptional_alternatives = reachable;
+      const bool catch_all = arm.patterns.empty();
+      if (catch_all) saw_catch_all = true;
+      for (const auto& identity : matched) {
+        if (!named.insert(identity).second)
+          err(arm.line, "overlapping on_fail alternatives",
+              "OVERLAPPING_ON_FAIL_PATTERN");
+        if (!remaining.count(identity)) {
+          const string message = "on_fail alternative '" +
+              identity.canonical() + "' is unreachable for handler '" +
+              domain.name + "." + handler.name + "'";
+          if (phase21_warnings_enabled_ &&
+              std::none_of(warnings_.begin(), warnings_.end(),
+                           [&](const Warning& warning) {
+                             return warning.line == arm.line &&
+                                 warning.code == "ON_FAIL_UNREACHABLE_VARIANT" &&
+                                 warning.message == message;
+                           }))
+            warnings_.push_back({arm.line, message,
+                                 "ON_FAIL_UNREACHABLE_VARIANT",
+                                 arm.source_file});
+          continue;
+        }
+        remaining.erase(identity);
+      }
+
+      TypeEnv env;
+      env["self"] = domain.name;
+      for (const auto& field : domain.state) env[field.name] = field.type;
+      for (const auto& route : domain.routes) env[route.name] = route.type;
+      for (const auto& parameter : handler.params)
+        env[parameter.name] = parameter.type;
+      if (!arm.binding.empty()) env[arm.binding] = binding_type;
+      if (arm.patterns.size() == 1)
+        for (const auto& binding :
+             phase21_pattern_bindings(arm.line, arm.patterns.front()))
+          env[binding.first] = binding.second;
+      for (const auto& name :
+           phase21_failure_capture_reads(arm, env, local_candidates))
+        env[name] = local_candidates.at(name);
+      RaiseSet escaping = phase21_raise_set(arm.body, std::move(env));
+      if (!escaping.empty())
+        err(arm.line, "on_fail arm may not let typed errors escape",
+            "ON_FAIL_MUST_HANDLE_ERRORS");
+      if (handler.reply_type) {
+        size_t reply_index = 0;
+        if (!every_handler_path_replies(arm.body, reply_index, 0))
+          err(arm.line, "on_fail arm for value-returning handler '" +
+              domain.name + "." + handler.name +
+              "' must reply on every normal control-flow path",
+              "ON_FAIL_REPLY_REQUIRED");
+      }
+    }
+    if (!remaining.empty()) {
+      std::ostringstream missing;
+      bool first = true;
+      for (const auto& identity : remaining) {
+        if (!first) missing << ", ";
+        missing << identity.canonical();
+        first = false;
+      }
+      err(handler.line, "non-exhaustive on_fail trailer for handler '" +
+              domain.name + "." + handler.name + "'; missing: " +
+              missing.str(),
+          "NONEXHAUSTIVE_ON_FAIL");
+    }
   }
 
   ObservableEffects observable_expression_effects(
       const string& expression, const TypeEnv& env,
       const std::set<string>& domain_fields = {},
       const ObjectType* implicit_object = nullptr,
-      const std::set<string>& parameters = {}) const {
+      const std::set<string>& parameters = {},
+      const ProvenIndexAccesses* proven_indices = nullptr,
+      bool root_ingress = false) const {
     ObservableEffects effects = no_observable_effects();
-    string original = trim(expression);
+    auto mark_mutated_storage = [&](const string& actual) {
+      auto location = storage_location(actual, env);
+      if (location && domain_fields.count(location->root))
+        effects.domain_write = true;
+    };
+    string original = strip_redundant_outer_parentheses(expression);
     if (original.empty()) return effects;
+
+    // A message remains a Root ingress anywhere within a main expression.
+    // Carry that context through every recursive expression form so its
+    // checked on_fail trailer consumes the handler's typed outcome precisely.
+    // Grouping and vector construction do not hide effects of their contents.
+    // In particular, a raised element must reach recovery/Root totality, and
+    // a grouped index panic must keep a chunk mapper out of Branch work.
+    if (auto elements = parse_vector_literal(original)) {
+      for (const auto& element : *elements)
+        effects.merge(observable_expression_effects(
+            element, env, domain_fields, implicit_object, parameters,
+            proven_indices, root_ingress));
+      return effects;
+    }
+    // `not` is a value transformation, so every observable effect of its
+    // operand still occurs.  Recurse before call/identifier fallback; losing
+    // a typed raise here would also make Root totality and recovery unsound.
+    if (starts_with(original, "not "))
+      return observable_expression_effects(
+          trim(original.substr(4)), env, domain_fields, implicit_object,
+          parameters, proven_indices, root_ingress);
 
     if (starts_with(original, "message ")) {
       effects.message = true;
@@ -7302,10 +9845,22 @@ class Checker {
       vector<string> arguments;
       if (parse_member_call(trim(original.substr(8)), receiver, handler, arguments)) {
         effects.merge(observable_expression_effects(
-            receiver, env, domain_fields, implicit_object));
+            receiver, env, domain_fields, implicit_object, parameters,
+            proven_indices, root_ingress));
         for (const auto& argument : arguments)
           effects.merge(observable_expression_effects(
-              argument, env, domain_fields, implicit_object));
+              argument, env, domain_fields, implicit_object, parameters,
+              proven_indices, root_ingress));
+        auto receiver_type = env.find(receiver);
+        if (receiver_type != env.end()) {
+          auto domain = domains_.find(canonical_type_name(receiver_type->second));
+          if (domain != domains_.end())
+            if (const Handler* target = find_handler(*domain->second, handler))
+              if (!root_ingress || target->failure_arms.empty())
+                effects.raise_set = raise_set_union(
+                    std::move(effects.raise_set),
+                    target->observable_effects.raise_set);
+        }
       } else {
         effects.unresolved = true;
       }
@@ -7314,7 +9869,8 @@ class Checker {
 
     if (auto pipeline = parse_functional_pipeline(original)) {
       effects.merge(observable_expression_effects(
-          pipeline->source, env, domain_fields, implicit_object));
+          pipeline->source, env, domain_fields, implicit_object, parameters,
+          proven_indices, root_ingress));
       auto source_type = inferred_expr_type(pipeline->source, env);
       string element = source_type
           ? functional_element_type(*source_type, pipeline->source).value_or("")
@@ -7323,7 +9879,8 @@ class Checker {
         if (stage.kind == FunctionalNodeKind::Reduce &&
             !stage.arguments.empty())
           effects.merge(observable_expression_effects(
-              stage.arguments.front(), env, domain_fields, implicit_object));
+              stage.arguments.front(), env, domain_fields, implicit_object,
+              parameters, proven_indices, root_ingress));
         string callable;
         if ((stage.kind == FunctionalNodeKind::Map ||
              stage.kind == FunctionalNodeKind::Filter ||
@@ -7339,7 +9896,8 @@ class Checker {
           TypeEnv placeholder_env = env;
           placeholder_env["_"] = element;
           effects.merge(observable_expression_effects(
-              callable, placeholder_env, domain_fields, implicit_object));
+              callable, placeholder_env, domain_fields, implicit_object,
+              parameters, proven_indices, root_ingress));
         } else {
           string identity = trim(callable);
           string bound_receiver, bound_method;
@@ -7362,8 +9920,10 @@ class Checker {
               effects.merge(method->observable_effects);
               effects.local_capture_read = true;
               if (domain_fields.count(bound_receiver)) effects.domain_read = true;
-              if (method->receiver_effect != Effect::Read)
+              if (method->receiver_effect != Effect::Read) {
                 effects.local_mutation = true;
+                mark_mutated_storage(bound_receiver);
+              }
             } else {
               effects.unresolved = true;
             }
@@ -7372,9 +9932,15 @@ class Checker {
             if (local != env.end() && starts_with(local->second, "callable:"))
               identity = local->second.substr(9);
             auto function = functions_.find(identity);
-            if (function != functions_.end())
-              effects.merge(function->second->observable_effects);
-            else
+            if (function != functions_.end()) {
+              vector<string> input_types{element};
+              if (stage.kind == FunctionalNodeKind::Reduce &&
+                  stage.arguments.size() == 2)
+                input_types.insert(input_types.begin(),
+                    inferred_expr_type(stage.arguments.front(), env).value_or(""));
+              effects.merge(concrete_function_observable_effects(
+                  *function->second, input_types));
+            } else
               effects.unresolved = true;
           }
         }
@@ -7393,23 +9959,56 @@ class Checker {
                                 {"+", "-"}, {"*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
         effects.merge(observable_expression_effects(
-            binary->first, env, domain_fields, implicit_object));
+            binary->first, env, domain_fields, implicit_object, parameters,
+            proven_indices, root_ingress));
         effects.merge(observable_expression_effects(
-            binary->second, env, domain_fields, implicit_object));
+            binary->second, env, domain_fields, implicit_object, parameters,
+            proven_indices, root_ingress));
         if (operators.front() == "*") {
-          if (split_binary(value, {"/", "%"})) effects.may_fail = true;
+          if (split_binary(value, {"%"})) effects.may_panic = true;
+          if (split_binary(value, {"/"})) {
+            auto result_type = inferred_expr_type(value, env);
+            if (!result_type || canonical_type_name(*result_type) != "float")
+              effects.may_panic = true;
+          }
         }
         return effects;
       }
     }
     string index_base, index_expression;
     if (parse_index(value, index_base, index_expression)) {
-      effects.may_fail = true;
+      effects.may_panic =
+          !proven_index_access(proven_indices, index_base, index_expression);
       effects.merge(observable_expression_effects(
-          index_base, env, domain_fields, implicit_object));
+          index_base, env, domain_fields, implicit_object, parameters,
+          proven_indices, root_ingress));
       effects.merge(observable_expression_effects(
-          index_expression, env, domain_fields, implicit_object));
+          index_expression, env, domain_fields, implicit_object, parameters,
+          proven_indices, root_ingress));
       return effects;
+    }
+    // Reading a field of a computed object first evaluates its base.  A
+    // function or method producing that object may raise before projection.
+    // Confirm this is an object field so enum tags and module members keep
+    // their existing effect paths below.
+    if (auto dot = value.rfind('.'); dot != string::npos) {
+      const string base = trim(value.substr(0, dot));
+      const string field = trim(value.substr(dot + 1));
+      if (plain_identifier(field)) {
+        auto base_type = inferred_expr_type(base, env);
+        if (base_type) {
+          auto object = objects_.find(canonical_type_name(*base_type));
+          if (object != objects_.end() &&
+              std::any_of(object->second->fields.begin(),
+                          object->second->fields.end(),
+                          [&](const Field& candidate) {
+                            return candidate.name == field;
+                          }))
+            return observable_expression_effects(
+                base, env, domain_fields, implicit_object, parameters,
+                proven_indices, root_ingress);
+        }
+      }
     }
     string receiver, method;
     vector<string> arguments;
@@ -7425,7 +10024,8 @@ class Checker {
           string field, field_value;
           effects.merge(observable_expression_effects(
               parse_named_argument(argument, field, field_value) ? field_value : argument,
-              env, domain_fields, implicit_object, parameters));
+              env, domain_fields, implicit_object, parameters,
+              proven_indices, root_ingress));
         }
         return effects;
       }
@@ -7435,18 +10035,25 @@ class Checker {
       if (parse_fileio_open(value, open_arguments)) {
         for (const auto& argument : open_arguments)
           effects.merge(observable_expression_effects(
-              argument, env, domain_fields, implicit_object, parameters));
+              argument, env, domain_fields, implicit_object, parameters,
+              proven_indices, root_ingress));
+        effects.external_io = true;
         effects.fileio = true;
+        effects.may_panic = true;  // invalid resource/mode use remains fatal.
+        effects.raise_set = raise_set_union(
+            std::move(effects.raise_set), fileio_operation_raise_set("open"));
         return effects;
       }
     }
     if (parse_member_call(value, receiver, method, arguments)) {
       if (receiver != "FileIO")
         effects.merge(observable_expression_effects(
-            receiver, env, domain_fields, implicit_object, parameters));
+            receiver, env, domain_fields, implicit_object, parameters,
+            proven_indices, root_ingress));
       for (const auto& argument : arguments)
         effects.merge(observable_expression_effects(
-            argument, env, domain_fields, implicit_object, parameters));
+            argument, env, domain_fields, implicit_object, parameters,
+            proven_indices, root_ingress));
       auto receiver_type = inferred_expr_type(receiver, env);
       if (receiver_type &&
           (canonical_type_name(*receiver_type) == "Range" ||
@@ -7455,7 +10062,10 @@ class Checker {
       if ((receiver == "FileIO" && method == "open") ||
           (receiver_type && canonical_type_name(*receiver_type) == "FileIO")) {
         effects.external_io = true;
-        effects.may_fail = true;
+        effects.fileio = true;
+        effects.may_panic = true;
+        effects.raise_set = raise_set_union(
+            std::move(effects.raise_set), fileio_operation_raise_set(method));
         if (domain_fields.count(receiver)) {
           if (fileio_operation_effect(method) == Effect::Read)
             effects.domain_read = true;
@@ -7466,7 +10076,7 @@ class Checker {
       if (receiver_type) {
         if (const auto* builtin = builtin_operation(*receiver_type, method);
             builtin && builtin->argument_effects.size() == arguments.size()) {
-          effects.may_fail = effects.may_fail || builtin->may_fail;
+          effects.may_panic = effects.may_panic || builtin->may_panic;
           auto mark_write = [&](const string& expression) {
             auto location = storage_location(expression, env);
             if (location && domain_fields.count(location->root)) effects.domain_write = true;
@@ -7492,6 +10102,11 @@ class Checker {
                 canonical_type_name(*receiver_type), method, argument_types,
                 true, nullptr)) {
           effects.merge(resolved->observable_effects);
+          if (resolved->receiver_effect != Effect::Read)
+            mark_mutated_storage(receiver);
+          for (size_t index = 0; index < arguments.size(); ++index)
+            if (method_parameter_effect(*resolved, index) != Effect::Read)
+              mark_mutated_storage(arguments[index]);
           return effects;
         }
         if (domains_.count(canonical_type_name(*receiver_type))) {
@@ -7510,18 +10125,32 @@ class Checker {
         if (place && domain_fields.count(place->root)) effects.domain_write = true;
         else effects.local_mutation = true;
         effects.merge(observable_expression_effects(
-            arguments_call[1], env, domain_fields, implicit_object, parameters));
+            arguments_call[1], env, domain_fields, implicit_object, parameters,
+            proven_indices, root_ingress));
         return effects;
       }
       for (const auto& argument : arguments_call) {
         string field, field_value;
         effects.merge(observable_expression_effects(
             parse_named_argument(argument, field, field_value) ? field_value : argument,
-            env, domain_fields, implicit_object));
+            env, domain_fields, implicit_object, parameters,
+            proven_indices, root_ingress));
       }
       auto function = functions_.find(callee);
       if (function != functions_.end()) {
-        effects.merge(function->second->observable_effects);
+        vector<string> argument_types;
+        for (const auto& argument : arguments_call)
+          argument_types.push_back(
+              inferred_expr_type(argument, env).value_or(""));
+        effects.merge(concrete_function_observable_effects(
+            *function->second, argument_types));
+        auto parameter_effects = concrete_function_effects(
+            *function->second, argument_types);
+        for (size_t index = 0;
+             index < arguments_call.size() && index < parameter_effects.size();
+             ++index)
+          if (parameter_effects[index] != Effect::Read)
+            mark_mutated_storage(arguments_call[index]);
         return effects;
       }
       if (implicit_object) {
@@ -7558,6 +10187,21 @@ class Checker {
     }
     try {
       return std::stoll(s) > 0;
+    } catch (...) {
+      return false;
+    }
+  }
+
+  static bool is_nonnegative_integer_literal(const string& text) {
+    string s = trim(text);
+    if (s.empty()) return false;
+    size_t start = (s.front() == '+') ? 1 : 0;
+    if (start >= s.size()) return false;
+    for (size_t i = start; i < s.size(); ++i) {
+      if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
+    }
+    try {
+      return std::stoll(s) >= 0;
     } catch (...) {
       return false;
     }
@@ -7612,7 +10256,8 @@ class Checker {
 
     // Bound must be invariant and side-effect-free
     ObservableEffects bound_effects = observable_expression_effects(bound_expr, env);
-    if (bound_effects.may_diverge || bound_effects.may_fail ||
+    if (bound_effects.may_diverge || bound_effects.may_panic ||
+        !bound_effects.raise_set.empty() ||
         bound_effects.message || bound_effects.external_io ||
         bound_effects.domain_write || bound_effects.local_mutation ||
         bound_effects.unresolved)
@@ -7670,15 +10315,115 @@ class Checker {
     return progress_steps == 1;
   }
 
+  static size_t nested_block_end(const vector<Stmt>& body,
+                                 size_t header_index) {
+    size_t end = header_index + 1;
+    while (end < body.size() &&
+           body[end].indent > body[header_index].indent)
+      ++end;
+    return end;
+  }
+
+  // P21-10B is intentionally a narrow reaching-definition proof.  Accept
+  // only `for i in range(start, r.length()[, positive_step])` where start is
+  // a nonnegative literal, r is a Range, and neither the Range binding nor
+  // induction binding is replaced anywhere in the loop.
+  // Shifted indices, a different Range, changed bounds, and shadow/rebinding
+  // all remain ordinary potentially panicking index operations.
+  std::optional<std::pair<string, string>> stable_range_loop_index_fact(
+      const vector<Stmt>& body, size_t for_index, const TypeEnv& env) const {
+    const Stmt& loop = body[for_index];
+    if (loop.kind != Stmt::Kind::For) return std::nullopt;
+    string callee;
+    vector<string> arguments;
+    if (!parse_simple_call(trim(loop.b), callee, arguments) ||
+        callee != "range" ||
+        (arguments.size() != 2 && arguments.size() != 3) ||
+        !is_nonnegative_integer_literal(arguments[0]) ||
+        (arguments.size() == 3 &&
+         !is_positive_integer_literal(arguments[2])))
+      return std::nullopt;
+    string range_binding, method;
+    vector<string> method_arguments;
+    if (!parse_member_call(trim(arguments[1]), range_binding, method,
+                           method_arguments) ||
+        method != "length" || !method_arguments.empty() ||
+        !plain_identifier(range_binding))
+      return std::nullopt;
+    auto range_type = env.find(range_binding);
+    if (range_type == env.end() ||
+        canonical_type_name(range_type->second) != "Range")
+      return std::nullopt;
+
+    const string induction = trim(loop.a);
+    const size_t end = nested_block_end(body, for_index);
+    for (size_t index = for_index + 1; index < end; ++index) {
+      const Stmt& statement = body[index];
+      if (statement.kind == Stmt::Kind::Assign ||
+          statement.kind == Stmt::Kind::Let ||
+          statement.kind == Stmt::Kind::Var) {
+        const string root = extract_root_identifier(statement.a);
+        if (root == range_binding || root == induction) return std::nullopt;
+      }
+      if (statement.kind == Stmt::Kind::For &&
+          (trim(statement.a) == range_binding ||
+           trim(statement.a) == induction))
+        return std::nullopt;
+      if (statement.kind == Stmt::Kind::Case &&
+          (std::find(statement.args.begin(), statement.args.end(),
+                     range_binding) != statement.args.end() ||
+           std::find(statement.args.begin(), statement.args.end(),
+                     induction) != statement.args.end()))
+        return std::nullopt;
+      for (const auto& expression : statement_expressions(statement)) {
+        string replace_callee;
+        vector<string> replace_arguments;
+        if (parse_simple_call(expression, replace_callee, replace_arguments) &&
+            replace_callee == "replace" && !replace_arguments.empty() &&
+            extract_root_identifier(replace_arguments.front()) == range_binding)
+          return std::nullopt;
+      }
+    }
+    return std::make_pair(range_binding, induction);
+  }
+
+  vector<ProvenIndexAccesses> stable_range_loop_index_facts(
+      const vector<Stmt>& body, TypeEnv env) const {
+    vector<ProvenIndexAccesses> facts(body.size());
+    for (size_t index = 0; index < body.size(); ++index) {
+      auto fact = stable_range_loop_index_fact(body, index, env);
+      if (fact) {
+        const size_t end = nested_block_end(body, index);
+        for (size_t nested = index + 1; nested < end; ++nested)
+          facts[nested].insert(*fact);
+      }
+      if (body[index].kind == Stmt::Kind::Assign ||
+          body[index].kind == Stmt::Kind::Let ||
+          body[index].kind == Stmt::Kind::Var) {
+        if (auto type = inferred_expr_type(body[index].b, env))
+          env[body[index].a] = *type;
+      }
+    }
+    return facts;
+  }
+
   ObservableEffects observable_body_effects(
       const vector<Stmt>& body, TypeEnv env,
       const std::set<string>& parameters,
       const std::set<string>& domain_fields = {},
-      const ObjectType* implicit_object = nullptr) const {
+      const ObjectType* implicit_object = nullptr,
+      const ProvenIndexAccesses* invocation_proven_indices = nullptr) const {
     ObservableEffects effects = no_observable_effects();
     std::set<string> locals = parameters;
+    const auto loop_index_facts = stable_range_loop_index_facts(body, env);
     for (size_t stmt_idx = 0; stmt_idx < body.size(); ++stmt_idx) {
       const auto& statement = body[stmt_idx];
+      ProvenIndexAccesses statement_indices = loop_index_facts[stmt_idx];
+      if (invocation_proven_indices)
+        statement_indices.insert(invocation_proven_indices->begin(),
+                                 invocation_proven_indices->end());
+      const ProvenIndexAccesses* proven_indices =
+          statement_indices.empty() ? nullptr : &statement_indices;
       if (statement.kind == Stmt::Kind::While) {
         if (!is_bounded_while_loop(body, stmt_idx, env))
           effects.may_diverge = true;
@@ -7702,6 +10447,11 @@ class Checker {
           }
         }
         if (!bounded) effects.may_diverge = true;
+        // A custom `for` invokes iter() and/or next() implicitly. Their
+        // panic and other observable effects belong to the loop even though
+        // neither call appears in its source expression.
+        for (const Method* method : implicit_iterator_methods(iter_expr, env))
+          effects.merge(method->observable_effects);
       }
       if (statement.kind == Stmt::Kind::Echo) effects.external_io = true;
       if (statement.kind == Stmt::Kind::Message) effects.message = true;
@@ -7729,7 +10479,7 @@ class Checker {
         string root = trim(statement.a);
         bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
         if (statement.b == "pop" || statement.b == "pop_front") {
-          effects.may_fail = true;
+          effects.may_panic = true;
         }
         if (mutating) {
           if (domain_fields.count(root)) effects.domain_write = true;
@@ -7745,7 +10495,8 @@ class Checker {
       }
       for (const auto& expression_value : statement_expressions(statement))
         effects.merge(observable_expression_effects(
-            expression_value, env, domain_fields, implicit_object, parameters));
+            expression_value, env, domain_fields, implicit_object, parameters,
+            proven_indices));
       if (statement.kind == Stmt::Kind::Assign ||
           statement.kind == Stmt::Kind::Let ||
           statement.kind == Stmt::Kind::Var) {
@@ -7757,14 +10508,23 @@ class Checker {
   }
 
   void infer_observable_effects() {
+    phase21_warnings_enabled_ = false;
+    auto imported = [&](const string& name) {
+      for (const auto& module : p_.external_modules)
+        if (starts_with(name, module + "__")) return true;
+      return false;
+    };
     for (auto& function : p_.functions)
-      function.observable_effects = no_observable_effects();
+      if (!imported(function.name))
+        function.observable_effects = no_observable_effects();
     for (auto& object : p_.objects)
       for (auto& method : object.methods)
-        method.observable_effects = no_observable_effects();
+        if (!imported(object.name))
+          method.observable_effects = no_observable_effects();
     for (auto& domain : p_.domains)
       for (auto& handler : domain.handlers)
-        handler.observable_effects = no_observable_effects();
+        if (!handler.provider_abi)
+          handler.observable_effects = no_observable_effects();
 
     size_t entities = p_.functions.size();
     for (const auto& object : p_.objects) entities += object.methods.size();
@@ -7775,6 +10535,11 @@ class Checker {
     for (size_t round = 0; round < entities * 3 + 3; ++round) {
       bool changed = false;
       for (auto& function : p_.functions) {
+        // An imported body is absent for a concrete export and its semantic
+        // IR is only a specialization template for a static export.  Neither
+        // can replace the checked provider summary from the interface.
+        if (imported(function.name)) continue;
+        SourceFileScope source(current_source_file_, function.source_file);
         TypeEnv env;
         std::set<string> parameters;
         for (const auto& parameter : function.params) {
@@ -7784,21 +10549,21 @@ class Checker {
         }
         auto inferred = observable_body_effects(
             function.body, env, parameters);
+        inferred.raise_set = phase21_raise_set(function.body, env);
         if (function.result_expression)
           inferred.merge(observable_expression_effects(
-              *function.result_expression, env));
-        // Source-free provider interfaces do not publish a FileIO effect bit,
-        // so absence of FileIO cannot be proven for imported callables.
-        for (const auto& module : p_.external_modules)
-          if (starts_with(function.name, module + "__"))
-            inferred.fileio_unknown = true;
+              *function.result_expression,
+              walk_type_environment(function.body, env,
+                  [](const Stmt&, const TypeEnv&) {}, false)));
         if (!same_observable_effects(inferred, function.observable_effects)) {
           function.observable_effects = inferred;
           changed = true;
         }
       }
       for (auto& object : p_.objects) {
+        if (imported(object.name)) continue;
         for (auto& method : object.methods) {
+          SourceFileScope source(current_source_file_, method.source_file);
           TypeEnv env;
           std::set<string> parameters;
           env["self"] = object.name;
@@ -7809,9 +10574,12 @@ class Checker {
           }
           auto inferred = observable_body_effects(
               method.body, env, parameters, {}, &object);
+          inferred.raise_set = phase21_raise_set(method.body, env);
           if (method.result_expression)
             inferred.merge(observable_expression_effects(
-                *method.result_expression, env, {}, &object));
+                *method.result_expression,
+                walk_type_environment(method.body, env,
+                    [](const Stmt&, const TypeEnv&) {}, false), {}, &object));
           if (!same_observable_effects(inferred, method.observable_effects)) {
             method.observable_effects = inferred;
             changed = true;
@@ -7823,6 +10591,11 @@ class Checker {
         for (const auto& field : domain.state)
           domain_fields.insert(field.name);
         for (auto& handler : domain.handlers) {
+          SourceFileScope source(current_source_file_, handler.source_file);
+          // A compiled provider's body is not available here. Its ABI-v9
+          // checked summary is authoritative; the synthetic reply statement
+          // in the interface is only a shape placeholder for old passes.
+          if (handler.provider_abi) continue;
           TypeEnv env;
           std::set<string> parameters;
           env["self"] = domain.name;
@@ -7834,6 +10607,7 @@ class Checker {
           }
           auto inferred = observable_body_effects(
               handler.body, env, parameters, domain_fields);
+          inferred.raise_set = phase21_raise_set(handler.body, env);
           if (!same_observable_effects(inferred,
                                        handler.observable_effects)) {
             handler.observable_effects = inferred;
@@ -7842,6 +10616,66 @@ class Checker {
         }
       }
       if (!changed) break;
+    }
+    phase21_warnings_enabled_ = true;
+
+    // Re-run the exceptional walk once over the fixed-point summaries.  This
+    // is the authoritative annotation/diagnostic pass: emitting warnings in
+    // an earlier round would retain stale "unreachable" findings, and main
+    // totality must observe transitive function/method/handler raises.
+    for (auto& function : p_.functions) {
+      SourceFileScope source(current_source_file_, function.source_file);
+      TypeEnv env;
+      for (const auto& parameter : function.params)
+        env[parameter.name] = parameter.type.empty()
+            ? "_generic:" + parameter.name : parameter.type;
+      (void)phase21_raise_set(function.body, std::move(env));
+    }
+    for (auto& object : p_.objects) {
+      if (imported(object.name)) continue;
+      for (auto& method : object.methods) {
+        SourceFileScope source(current_source_file_, method.source_file);
+        TypeEnv env;
+        env["self"] = object.name;
+        for (const auto& field : object.fields) env[field.name] = field.type;
+        for (const auto& parameter : method.params)
+          env[parameter.name] = parameter.type;
+        (void)phase21_raise_set(method.body, std::move(env));
+      }
+    }
+    for (auto& domain : p_.domains) {
+      for (auto& handler : domain.handlers) {
+        SourceFileScope source(current_source_file_, handler.source_file);
+        TypeEnv env;
+        env["self"] = domain.name;
+        for (const auto& field : domain.state) env[field.name] = field.type;
+        for (const auto& route : domain.routes) env[route.name] = route.type;
+        for (const auto& parameter : handler.params)
+          env[parameter.name] = parameter.type;
+        (void)phase21_raise_set(handler.body, std::move(env));
+        phase21_validate_failure_arms(domain, handler);
+      }
+    }
+    // Tests are independent checked execution roots: validate lexical
+    // recovery patterns and selected-error scoping, but deliberately allow a
+    // typed error to reach the test harness.
+    for (auto& test : p_.tests) {
+      SourceFileScope source(current_source_file_, test.source_file);
+      TypeEnv env;
+      (void)phase21_raise_set(test.body, std::move(env));
+    }
+    if (p_.main) {
+      SourceFileScope source(current_source_file_, p_.main->source_file);
+      TypeEnv env;
+      for (auto& statement : p_.main->body)
+        statement.message_root_ingress = true;
+      for (const auto& statement : p_.main->body)
+        if (auto domain = domain_constructor(statement.b))
+          env[statement.a] = *domain;
+      RaiseSet escaping = phase21_raise_set(p_.main->body, env);
+      if (!escaping.empty())
+        err(p_.main->source_file, p_.main->line,
+            "main may not let typed errors escape; handle every raised variant with try/recover");
     }
   }
 
@@ -7886,7 +10720,8 @@ class Checker {
     if (effects.message) return "message send";
     if (effects.external_io) return "external/I/O effect";
     if (effects.local_mutation) return "observable local mutation";
-    if (effects.may_fail) return "possible failure ordering";
+    if (effects.may_panic) return "possible panic ordering";
+    if (!effects.raise_set.empty()) return "possible typed-raise ordering";
     if (effects.unresolved) return "unresolved effect";
     return "none";
   }
@@ -7947,22 +10782,8 @@ class Checker {
       effects.unresolved = true;
       return effects;
     }
-    effects = function->second->observable_effects;
-    if (effects.unresolved && !input_types.empty() &&
-        input_types.size() == function->second->params.size() &&
-        std::all_of(input_types.begin(), input_types.end(),
-                    [&](const string& t) { return !unresolved_semantic_type(t); })) {
-      TypeEnv specialized_env;
-      std::set<string> params;
-      for (size_t i = 0; i < input_types.size(); ++i) {
-        specialized_env[function->second->params[i].name] = canonical_type_name(input_types[i]);
-        params.insert(function->second->params[i].name);
-      }
-      auto specialized_effects = observable_body_effects(function->second->body, specialized_env, params);
-      if (function->second->result_expression)
-        specialized_effects.merge(observable_expression_effects(*function->second->result_expression, specialized_env));
-      effects = specialized_effects;
-    }
+    effects = concrete_function_observable_effects(
+        *function->second, input_types);
     return effects;
   }
 
@@ -8155,7 +10976,8 @@ class Checker {
     pipeline.output_type = current_value_type;
     if (pipeline.decision.empty())
       pipeline.decision = "fusion eligible: ordered element-independent stages";
-    annotate_fileio_chunk_pipeline(pipeline, *parsed, env);
+    annotate_fileio_chunk_pipeline(
+        pipeline, *parsed, env, domain_fields, implicit_object);
     size_t pipeline_id = pipeline.transient_id;
     p_.functional_pipelines.push_back(std::move(pipeline));
     return pipeline_id;
@@ -8415,6 +11237,8 @@ class Checker {
     }
     if (env.state_fields.count(name))
       err(line, "domain state '" + name + "' cannot be consumed into '" + destination + "'");
+    if (ownership_current_stmt_)
+      ownership_current_stmt_->ownership_consumed_bindings.insert(name);
     const_cast<OwnershipEnv&>(env).moved[name] = MoveInfo{line, destination};
   }
 
@@ -8452,6 +11276,8 @@ class Checker {
       }
       if (callable.empty()) continue;
 
+      RaiseSet callback_raises;
+
       if (expression_uses(callable, "_")) {
         OwnershipEnv placeholder_env = env;
         placeholder_env.types["_"] = current_element;
@@ -8473,7 +11299,21 @@ class Checker {
               " access to captured binding '" + captures[index] +
               "'; captures must remain read-only");
         }
-        check_ownership_expression(line, callable, placeholder_env, Effect::Read);
+        // The placeholder is a per-element value, not a binding in the
+        // enclosing ownership environment. Record its failure at the stage
+        // boundary below, after the source and reduce initializer have run.
+        auto* saved_sink = ownership_exceptional_sink_;
+        ownership_exceptional_sink_ = nullptr;
+        try {
+          check_ownership_expression(line, callable, placeholder_env,
+                                     Effect::Read);
+        } catch (...) {
+          ownership_exceptional_sink_ = saved_sink;
+          throw;
+        }
+        ownership_exceptional_sink_ = saved_sink;
+        callback_raises = observable_expression_effects(
+            callable, placeholder_env.types).raise_set;
         if (placeholder_env.moved.count("_") && transfer_type(current_element))
           err(line, "functional placeholder requires CONSUME access to a "
               "nontrivial source element; this pipeline only reads its source; "
@@ -8496,6 +11336,7 @@ class Checker {
                                callback_inputs, true, nullptr)
               : nullptr;
           if (method) {
+            callback_raises = method->observable_effects.raise_set;
             if (method->receiver_effect != Effect::Read)
               err(line, "functional bound method '" + identity +
                   "' cannot mutate or consume captured binding '" +
@@ -8526,6 +11367,8 @@ class Checker {
             identity = local->second.substr(9);
           auto function = functions_.find(identity);
           if (function != functions_.end()) {
+            callback_raises = concrete_function_observable_effects(
+                *function->second, callback_inputs).raise_set;
             for (size_t index = 0;
                  index < callback_inputs.size() &&
                      index < function->second->params.size();
@@ -8552,6 +11395,17 @@ class Checker {
         }
       }
 
+      if (ownership_exceptional_sink_ && !callback_raises.empty()) {
+        ownership_exceptional_sink_->push_back(
+            {callback_raises, env, ownership_exceptional_source_});
+        // The enclosing expression frame has already accounted for this
+        // variant at its exact stage; do not also emit a post-pipeline edge.
+        if (ownership_expression_frame_)
+          ownership_expression_frame_->child_raises = raise_set_union(
+              std::move(ownership_expression_frame_->child_raises),
+              callback_raises);
+      }
+
       if (stage.kind == FunctionalNodeKind::Map) {
         auto result = functional_callable_result(callable, {current_element}, env.types);
         if (result) current_element = *result;
@@ -8560,8 +11414,83 @@ class Checker {
     return true;
   }
 
+  RaiseSet direct_ownership_expression_raises(
+      const string& expression, const TypeEnv& types) const {
+    const string value = strip_expression_parens(normalize_pipeline(trim(expression)));
+    vector<string> arguments;
+    if (parse_fileio_open(value, arguments))
+      return fileio_operation_raise_set("open");
+    string enum_name, case_name;
+    bool called = false;
+    if (parse_enum_case_expression(value, enum_name, case_name, arguments,
+                                   called) && enums_.count(enum_name))
+      return {};
+    string receiver, method;
+    if (parse_member_call(value, receiver, method, arguments)) {
+      auto receiver_type = inferred_expr_type(receiver, types);
+      if ((receiver == "FileIO" && method == "open") ||
+          (receiver_type && canonical_type_name(*receiver_type) == "FileIO"))
+        return fileio_operation_raise_set(method);
+      if (receiver_type) {
+        vector<string> argument_types;
+        for (const auto& argument : arguments)
+          argument_types.push_back(inferred_expr_type(argument, types).value_or(""));
+        if (const Method* resolved = resolve_method(
+                canonical_type_name(*receiver_type), method, argument_types,
+                true, nullptr))
+          return resolved->observable_effects.raise_set;
+      }
+      return {};
+    }
+    string callee;
+    if (parse_simple_call(value, callee, arguments)) {
+      vector<string> argument_types;
+      for (const auto& argument : arguments)
+        argument_types.push_back(inferred_expr_type(argument, types).value_or(""));
+      if (auto function = functions_.find(callee); function != functions_.end())
+        return concrete_function_observable_effects(
+            *function->second, argument_types).raise_set;
+      if (current_object_)
+        if (const Method* method = resolve_method(
+                current_object_->name, callee, argument_types, true, nullptr))
+          return method->observable_effects.raise_set;
+      if (auto builtin = builtin_call_semantics(callee, arguments, types))
+        return builtin->observable_effects.raise_set;
+    }
+    return {};
+  }
+
   void check_ownership_expression(int line, const string& expression,
                                   OwnershipEnv& env, Effect requested = Effect::Read) {
+    if (!ownership_exceptional_sink_) {
+      check_ownership_expression_walk(line, expression, env, requested);
+      return;
+    }
+    OwnershipExpressionFrame frame{
+        observable_expression_effects(expression, env.types).raise_set,
+        {}, ownership_expression_frame_};
+    const RaiseSet direct = direct_ownership_expression_raises(
+        expression, env.types);
+    ownership_expression_frame_ = &frame;
+    try {
+      check_ownership_expression_walk(line, expression, env, requested);
+    } catch (...) {
+      ownership_expression_frame_ = frame.parent;
+      throw;
+    }
+    ownership_expression_frame_ = frame.parent;
+    if (frame.parent)
+      frame.parent->child_raises = raise_set_union(
+          std::move(frame.parent->child_raises), frame.all_raises);
+    RaiseSet at_this_point = raise_set_union(
+        raise_set_without(frame.all_raises, frame.child_raises), direct);
+    if (!at_this_point.empty())
+      ownership_exceptional_sink_->push_back(
+          {std::move(at_this_point), env, ownership_exceptional_source_});
+  }
+
+  void check_ownership_expression_walk(int line, const string& expression,
+                                       OwnershipEnv& env, Effect requested) {
     string original = trim(expression);
     if (check_functional_pipeline_ownership(line, original, env)) return;
     string value = strip_expression_parens(normalize_pipeline(std::move(original)));
@@ -8746,6 +11675,11 @@ class Checker {
         for (const auto& argument : arguments)
           argument_types.push_back(inferred_expr_type(argument, env.types).value_or(""));
         if (auto object_method = resolve_method(concrete, method, argument_types, true, nullptr)) {
+          if (std::filesystem::path(object_method->source_file).extension() == ".mossi" &&
+              object_method->observable_effects.unresolved)
+            err(line, "source-free method '" + concrete + "." + method +
+                "' has unknown checked observable effects; rebuild its ABI-v9 provider",
+                "IMPORTED_METHOD_EFFECTS_UNAVAILABLE");
           vector<string> access_expressions{receiver};
           vector<Effect> access_effects{object_method->receiver_effect};
           for (size_t index = 0; index < arguments.size(); ++index) {
@@ -8899,6 +11833,40 @@ class Checker {
     }
   }
 
+  void merge_binding_identities(OwnershipEnv& destination,
+                                const vector<OwnershipEnv>& paths,
+                                int join_line) const {
+    for (const auto& entry : destination.types) {
+      // An outer binding keeps its lexical identity across a branch-local
+      // shadow. Assignments to that binding also retain its identity.
+      if (destination.binding_identities.count(entry.first)) continue;
+      std::optional<string> identity;
+      bool all_present = true;
+      bool different = false;
+      for (const auto& path : paths) {
+        const auto found = path.binding_identities.find(entry.first);
+        if (found == path.binding_identities.end()) {
+          all_present = false;
+          break;
+        }
+        if (identity && *identity != found->second) different = true;
+        identity = found->second;
+      }
+      if (!all_present) {
+        destination.binding_identities.erase(entry.first);
+      } else if (different) {
+        // The source join establishes one definitely initialized binding
+        // from distinct arm-local definitions. Exceptional edges before this
+        // point retain their individual source identities.
+        destination.binding_identities[entry.first] =
+            statement_binding_identity(current_semantic_context_, join_line) +
+            ":" + entry.first;
+      } else {
+        destination.binding_identities[entry.first] = *identity;
+      }
+    }
+  }
+
   void require_cross_domain_value(int line, const string& expression,
                                   const string& expected_type,
                                   const OwnershipEnv& env,
@@ -8917,15 +11885,42 @@ class Checker {
 
   OwnershipEnv check_ownership(const vector<Stmt>& statements, OwnershipEnv env,
                                const Domain* current_domain,
-                               const Handler* current_handler) {
+                               const Handler* current_handler,
+                               vector<ExceptionalOwnershipExit>* exceptional = nullptr) {
     size_t index = 0;
-    check_ownership_block(statements, index, 0, env, current_domain, current_handler);
+    check_ownership_block(statements, index, 0, env, current_domain,
+                          current_handler, exceptional);
     return env;
+  }
+
+  RaiseSet direct_ownership_raise_set(const Stmt& statement,
+                                      const TypeEnv& types) const {
+    RaiseSet alternatives;
+    if (statement.kind == Stmt::Kind::Raise)
+      alternatives = statement.a.empty()
+          ? statement.exceptional_alternatives
+          : phase21_raised_identities(statement.line, statement.a, types);
+    if (statement.kind == Stmt::Kind::Message) {
+      auto receiver = types.find(statement.a);
+      if (receiver != types.end()) {
+        auto domain = domains_.find(canonical_type_name(receiver->second));
+        if (domain != domains_.end())
+          if (const Handler* target =
+                  find_handler(*domain->second, statement.b))
+            if (!(statement.message_root_ingress &&
+                  !target->failure_arms.empty()))
+              alternatives = raise_set_union(
+                  std::move(alternatives),
+                  target->observable_effects.raise_set);
+      }
+    }
+    return alternatives;
   }
 
   void check_ownership_block(const vector<Stmt>& statements, size_t& index, int level,
                              OwnershipEnv& env, const Domain* current_domain,
-                             const Handler* current_handler) {
+                             const Handler* current_handler,
+                             vector<ExceptionalOwnershipExit>* exceptional = nullptr) {
     (void)current_domain;
     while (index < statements.size()) {
       const Stmt& s = statements[index];
@@ -8933,6 +11928,39 @@ class Checker {
       if (s.kind == Stmt::Kind::Else) return;
       if (!env.can_continue) { ++index; continue; }
       if (s.indent > level) return;
+      struct OwnershipStatementScope {
+        const Stmt*& slot;
+        const Stmt* prior;
+        OwnershipStatementScope(const Stmt*& target, const Stmt* current)
+            : slot(target), prior(target) { slot = current; }
+        ~OwnershipStatementScope() { slot = prior; }
+      } ownership_statement_scope(ownership_current_stmt_, &s);
+
+      struct OwnershipExceptionalScope {
+        Checker& checker;
+        vector<ExceptionalOwnershipExit>* prior_sink;
+        const Stmt* prior_source;
+        OwnershipExceptionalScope(Checker& owner,
+                                  vector<ExceptionalOwnershipExit>* sink,
+                                  const Stmt* source)
+            : checker(owner),
+              prior_sink(owner.ownership_exceptional_sink_),
+              prior_source(owner.ownership_exceptional_source_) {
+          checker.ownership_exceptional_sink_ = sink;
+          checker.ownership_exceptional_source_ = source;
+        }
+        ~OwnershipExceptionalScope() {
+          checker.ownership_exceptional_sink_ = prior_sink;
+          checker.ownership_exceptional_source_ = prior_source;
+        }
+      } ownership_exceptional_scope(*this, exceptional, &s);
+
+      const RaiseSet direct_raises = exceptional
+          ? direct_ownership_raise_set(s, env.types) : RaiseSet{};
+      auto record_direct_raise = [&] {
+        if (exceptional && !direct_raises.empty())
+          exceptional->push_back({direct_raises, env, &s});
+      };
 
       if (s.kind == Stmt::Kind::Match) {
         auto type = inferred_expr_type(s.a, env.types);
@@ -8953,11 +11981,13 @@ class Checker {
         } else {
           check_ownership_expression(s.line, s.a, env, Effect::Read);
         }
+        record_direct_raise();
         bool read_place = !consuming && storage_location(s.a, env.types).has_value();
         bool prior_read = env.active_read_traversals.count(s.a);
         const EnumType& declaration = *enums_.at(canonical_type_name(*type));
         OwnershipEnv incoming = env;
         vector<TypeEnv> path_types;
+        vector<OwnershipEnv> continuing_paths;
         std::map<string,MoveInfo> merged_moves;
         ++index;
         while (index < statements.size() && statements[index].indent == level + 1) {
@@ -8972,6 +12002,9 @@ class Checker {
             const string& name = arm.args[field_index];
             const string& field_type = item->fields[field_index].type;
             branch.types[name] = field_type;
+            branch.binding_identities[name] =
+                statement_binding_identity(current_semantic_context_, arm.line) +
+                ":" + name;
             branch.moved.erase(name);
             branch.immutable_locals.insert(name);
             branch.message_payloads.erase(name);
@@ -8981,10 +12014,14 @@ class Checker {
           }
           ++index;
           check_ownership_block(statements, index, level + 2, branch,
-                                current_domain, current_handler);
+                                current_domain, current_handler, exceptional);
           for (const auto& name : arm.args) {
             if (incoming.types.count(name)) branch.types[name] = incoming.types.at(name);
             else branch.types.erase(name);
+            if (incoming.binding_identities.count(name))
+              branch.binding_identities[name] =
+                  incoming.binding_identities.at(name);
+            else branch.binding_identities.erase(name);
             if (incoming.moved.count(name)) branch.moved[name] = incoming.moved.at(name);
             else branch.moved.erase(name);
             if (incoming.borrowed_enum_payloads.count(name))
@@ -8995,6 +12032,7 @@ class Checker {
           if (read_place && !prior_read) branch.active_read_traversals.erase(s.a);
           if (branch.can_continue) {
             path_types.push_back(branch.types);
+            continuing_paths.push_back(branch);
             for (const auto& moved : branch.moved)
               merged_moves.emplace(moved);
           }
@@ -9004,19 +12042,136 @@ class Checker {
         if (env.can_continue) {
           env.types = merge_type_environments(path_types, s.line, false);
           env.moved = std::move(merged_moves);
+          merge_binding_identities(env, continuing_paths, s.line);
         }
         continue;
       }
       if (s.kind == Stmt::Kind::Case)
         err(s.line, "case requires an enclosing match", "CASE_OUTSIDE_MATCH");
 
+      if (s.kind == Stmt::Kind::Try) {
+        OwnershipEnv incoming = env;
+        ++index;
+        OwnershipEnv normal = incoming;
+        vector<ExceptionalOwnershipExit> attempted_exits;
+        check_ownership_block(statements, index, level + 1, normal,
+                              current_domain, current_handler, &attempted_exits);
+        vector<OwnershipEnv> paths;
+        if (normal.can_continue) paths.push_back(normal);
+        bool saw_recover = false;
+        RaiseSet handled;
+        vector<ExceptionalOwnershipExit> recovery_exits;
+        while (index < statements.size() &&
+               statements[index].indent == level &&
+               statements[index].kind == Stmt::Kind::Recover) {
+          const Stmt& arm = statements[index++];
+          saw_recover = true;
+          OwnershipEnv recovered = incoming;
+          bool selected_exit = false;
+          for (const auto& raised : attempted_exits) {
+            bool reaches_arm = false;
+            for (const auto& identity : arm.exceptional_alternatives)
+              reaches_arm |= raised.alternatives.count(identity) != 0;
+            if (!reaches_arm) continue;
+            // Recovery sees the ownership state at a selected raise edge,
+            // not the state at entry to the try. A consumed outer var can be
+            // reinitialized on every reaching edge. Union unavailable facts
+            // from those edges so any missing reinitialization still fails.
+            if (!selected_exit) recovered.moved.clear();
+            selected_exit = true;
+            for (const auto& binding : incoming.types) {
+              const auto before_id = incoming.binding_identities.find(binding.first);
+              const auto raised_id =
+                  raised.ownership.binding_identities.find(binding.first);
+              const bool same_binding =
+                  (before_id == incoming.binding_identities.end() &&
+                   raised_id == raised.ownership.binding_identities.end()) ||
+                  (before_id != incoming.binding_identities.end() &&
+                   raised_id != raised.ownership.binding_identities.end() &&
+                   before_id->second == raised_id->second);
+              if (!same_binding) {
+                recovered.moved.emplace(
+                    binding.first, MoveInfo{arm.line, "shadowed before raise"});
+              } else if (auto moved = raised.ownership.moved.find(binding.first);
+                         moved != raised.ownership.moved.end()) {
+                recovered.moved.emplace(*moved);
+              }
+            }
+          }
+          handled.insert(arm.exceptional_alternatives.begin(),
+                         arm.exceptional_alternatives.end());
+          if (!arm.a.empty() && arm.a.find('.') == string::npos &&
+              arm.a.find(',') == string::npos) {
+            std::set<string> selected_types;
+            for (const auto& identity : arm.exceptional_alternatives)
+              selected_types.insert(identity.type);
+            recovered.types[arm.a] = selected_types.size() == 1
+                ? *selected_types.begin() : "_selected_error";
+            recovered.immutable_locals.insert(arm.a);
+            recovered.moved.erase(arm.a);
+          } else if (!arm.a.empty()) {
+            auto alternatives = split_top_level(arm.a, ',');
+            if (alternatives.size() == 1)
+              for (const auto& binding :
+                   phase21_pattern_bindings(arm.line, alternatives.front())) {
+                recovered.types[binding.first] = binding.second;
+                recovered.immutable_locals.insert(binding.first);
+                recovered.moved.erase(binding.first);
+              }
+          }
+          vector<ExceptionalOwnershipExit> arm_recovery_exits;
+          check_ownership_block(statements, index, level + 1, recovered,
+                                current_domain, current_handler,
+                                &arm_recovery_exits);
+          // An arm with no selected incoming variant is still checked, but
+          // cannot contribute a normal or exceptional successor. Otherwise
+          // its moves could poison a reachable post-try ownership join.
+          if (!arm.exceptional_alternatives.empty()) {
+            recovery_exits.insert(recovery_exits.end(),
+                std::make_move_iterator(arm_recovery_exits.begin()),
+                std::make_move_iterator(arm_recovery_exits.end()));
+            if (recovered.can_continue) paths.push_back(std::move(recovered));
+          }
+        }
+        if (!saw_recover)
+          err(s.line, "try must be followed by at least one recover arm",
+              "TRY_REQUIRES_RECOVER");
+        if (exceptional) {
+          for (auto& raised : attempted_exits) {
+            raised.alternatives = raise_set_without(
+                raised.alternatives, handled);
+            if (!raised.alternatives.empty())
+              exceptional->push_back(std::move(raised));
+          }
+          exceptional->insert(exceptional->end(),
+                              std::make_move_iterator(recovery_exits.begin()),
+                              std::make_move_iterator(recovery_exits.end()));
+        }
+        env = incoming;
+        env.can_continue = !paths.empty();
+        if (!paths.empty()) {
+          vector<TypeEnv> path_types;
+          for (const auto& path : paths) path_types.push_back(path.types);
+          env.types = merge_type_environments(path_types, s.line, false);
+          env.moved.clear();
+          for (const auto& path : paths) merge_moved(env, path);
+          merge_binding_identities(env, paths, s.line);
+        }
+        continue;
+      }
+      if (s.kind == Stmt::Kind::Recover)
+        err(s.line, "recover requires an immediately preceding try",
+            "RECOVER_OUTSIDE_TRY");
+
       if (s.kind == Stmt::Kind::If || s.kind == Stmt::Kind::While) {
         check_ownership_expression(s.line, s.a, env, Effect::Read);
+        record_direct_raise();
         bool is_if = s.kind == Stmt::Kind::If;
         OwnershipEnv incoming = env;
         ++index;
         OwnershipEnv body = incoming;
-        check_ownership_block(statements, index, level + 1, body, current_domain, current_handler);
+        check_ownership_block(statements, index, level + 1, body,
+                              current_domain, current_handler, exceptional);
         if (!is_if && body.can_continue)
           for (const auto& moved : body.moved)
             if (incoming.types.count(moved.first) && !incoming.moved.count(moved.first))
@@ -9028,7 +12183,7 @@ class Checker {
           ++index;
           OwnershipEnv alternative = incoming;
           check_ownership_block(statements, index, level + 1, alternative,
-                                current_domain, current_handler);
+                                current_domain, current_handler, exceptional);
           env = incoming;
           env.can_continue = body.can_continue || alternative.can_continue;
           if (body.can_continue && alternative.can_continue) {
@@ -9037,6 +12192,7 @@ class Checker {
             env.moved.clear();
             merge_moved(env, alternative);
             merge_moved(env, body);
+            merge_binding_identities(env, {body, alternative}, s.line);
           } else if (body.can_continue) {
             env = body;
           } else if (alternative.can_continue) {
@@ -9048,6 +12204,7 @@ class Checker {
             env.types = merge_type_environments(
                 {incoming.types, body.types}, s.line, false);
             merge_moved(env, body);
+            merge_binding_identities(env, {incoming, body}, s.line);
           }
         }
         continue;
@@ -9066,6 +12223,7 @@ class Checker {
             source_effect = next->receiver_effect;
         }
         check_ownership_expression(s.line, s.b, env, source_effect);
+        record_direct_raise();
         OwnershipEnv body = env;
         body.types[s.a] = element.value_or("_value");
         body.binding_identities[s.a] = statement_binding_identity(
@@ -9074,7 +12232,7 @@ class Checker {
           body.active_read_traversals.insert(source_root);
         ++index;
         check_ownership_block(statements, index, level + 1, body,
-                              current_domain, current_handler);
+                              current_domain, current_handler, exceptional);
         body.types.erase(s.a);
         if (auto prior = env.binding_identities.find(s.a);
             prior != env.binding_identities.end())
@@ -9124,6 +12282,7 @@ class Checker {
           } else {
             check_ownership_expression(s.line, s.b, env, Effect::Read);
           }
+          record_direct_raise();
           std::optional<string> type;
           if (auto constructed = domain_constructor(s.b)) type = *constructed;
           else type = inferred_expr_type(s.b, env.types);
@@ -9174,6 +12333,7 @@ class Checker {
           } else {
             check_ownership_expression(s.line, s.b, env, Effect::Read);
           }
+          record_direct_raise();
           if (auto constructed = domain_constructor(s.b)) {
             env.types[s.a] = *constructed;
             env.moved.erase(s.a);
@@ -9212,6 +12372,7 @@ class Checker {
                            message_payload_materializes(s.a, env));
             }
           }
+          record_direct_raise();
           if (!s.message_result.empty()) {
             if (handler->reply_type) env.types[s.message_result] = *handler->reply_type;
             env.binding_identities[s.message_result] = statement_binding_identity(
@@ -9223,6 +12384,7 @@ class Checker {
         }
         case Stmt::Kind::Echo:
           for (const auto& arg : s.args) check_ownership_expression(s.line, arg, env, Effect::Read);
+          record_direct_raise();
           ++index;
           break;
         case Stmt::Kind::Call:
@@ -9231,6 +12393,7 @@ class Checker {
           else
             check_ownership_expression(s.line, s.a + "(" + join_arguments(s.args) + ")",
                                        env, Effect::Read);
+          record_direct_raise();
           // A fresh inferred Queue/Vector learns its element type at push.
           // Keep the ownership walk in sync with the type-environment walk so
           // a subsequent pop can be checked as the concrete enum value.
@@ -9249,6 +12412,7 @@ class Checker {
             err(s.line, "FileIO and ranges cannot be replied",
                 "FILEIO_BOUNDARY_ESCAPE");
           check_ownership_expression(s.line, s.a, env, Effect::Read);
+          record_direct_raise();
           if (current_handler && current_handler->reply_type)
             require_cross_domain_value(s.line, s.a, *current_handler->reply_type,
                                        env, " in a reply");
@@ -9260,6 +12424,7 @@ class Checker {
         }
         case Stmt::Kind::Raw:
           check_ownership_expression(s.line, s.text, env, Effect::Read);
+          record_direct_raise();
           ++index;
           break;
         case Stmt::Kind::Pass:
@@ -9267,6 +12432,14 @@ class Checker {
           break;
         case Stmt::Kind::Return:
           if (!s.a.empty()) check_ownership_expression(s.line, s.a, env, Effect::Consume);
+          record_direct_raise();
+          ++index;
+          env.can_continue = false;
+          break;
+        case Stmt::Kind::Raise:
+          if (!s.a.empty())
+            check_ownership_expression(s.line, s.a, env, Effect::Consume);
+          record_direct_raise();
           ++index;
           env.can_continue = false;
           break;
@@ -9276,6 +12449,8 @@ class Checker {
         case Stmt::Kind::For:
         case Stmt::Kind::Match:
         case Stmt::Kind::Case:
+        case Stmt::Kind::Try:
+        case Stmt::Kind::Recover:
           return;
       }
     }
@@ -9493,6 +12668,45 @@ class Checker {
       if (args.size() != 1) err(line, "Some expects one value");
       return;
     }
+    if (name == "is_nan" || name == "is_finite") {
+      if (args.size() != 1)
+        err(line, name + " expects one Float argument", "INVALID_ARITY");
+      auto actual = inferred_expr_type(args.front(), env);
+      if (!actual || (!unresolved_semantic_type(*actual) &&
+                      canonical_type_name(*actual) != "float"))
+        err(line, name + " argument must have type 'Float'", "TYPE_MISMATCH");
+      return;
+    }
+    const std::string_view numeric_name = numeric_builtin_base(name);
+    if (!numeric_name.empty()) {
+      if (args.size() != 1)
+        err(line, name + " expects one argument", "INVALID_ARITY");
+      const string expected = numeric_name == "to_int" ? "float" : "string";
+      auto actual = inferred_expr_type(args.front(), env);
+      if (!actual || (!unresolved_semantic_type(*actual) &&
+                      canonical_type_name(*actual) != expected))
+        err(line, name + " argument must have type '" +
+                  (expected == "float" ? "Float" : "String") + "'",
+            "TYPE_MISMATCH");
+      const string error_type = numeric_builtin_error_type(name);
+      auto declaration = enums_.find(error_type);
+      if (declaration == enums_.end())
+        err(line, name + " requires enum " + error_type,
+            "UNKNOWN_ERROR_TYPE");
+      const vector<string> required = numeric_name == "parse_float"
+          ? vector<string>{"Invalid"} : numeric_name == "to_int"
+              ? vector<string>{"NonFinite", "Overflow"}
+              : vector<string>{"Invalid", "Overflow"};
+      for (const auto& variant : required) {
+        auto found = std::find_if(declaration->second->cases.begin(),
+                                  declaration->second->cases.end(),
+            [&](const EnumCase& item) { return item.name == variant; });
+        if (found == declaration->second->cases.end() || !found->fields.empty())
+          err(line, error_type + "." + variant +
+                    " must be a tag-only variant", "UNKNOWN_ERROR_VARIANT");
+      }
+      return;
+    }
     if (name == "assert") {
       if (args.size() != 1)
         err(line, "assert expects 1 argument, got " +
@@ -9546,6 +12760,37 @@ class Checker {
     vector<string> actual_types;
     for (const auto& argument : args)
       actual_types.push_back(inferred_expr_type(argument, env).value_or(""));
+    // Each explicit module currently emits its own nominal FileIO runtime.
+    // A concrete provider-owned call cannot take another crate's Range.
+    // Static/generic calls specialize in the consumer crate and use its Range;
+    // they remain valid even when their Moss body came from a .mossi file.
+    if (p_.explicit_module && !function->second->static_dispatch) {
+      auto module_of = [](const string& symbol) {
+        const size_t separator = symbol.find("__");
+        return separator == string::npos ? string() : symbol.substr(0, separator);
+      };
+      string owner = current_semantic_context_;
+      if (starts_with(owner, "fn:")) owner = owner.substr(3);
+      else if (starts_with(owner, "handler:")) owner = owner.substr(8);
+      else if (starts_with(owner, "method:")) owner = owner.substr(7);
+      else owner = p_.main_module;
+      const string caller_module = module_of(owner).empty()
+          ? owner : module_of(owner);
+      const string callee_module = module_of(function->second->name);
+      if (!callee_module.empty() && callee_module != caller_module)
+        for (size_t index = 0; index < actual_types.size(); ++index) {
+          const string actual = canonical_type_name(actual_types[index]);
+          const string expected = canonical_type_name(
+              function->second->params[index].type);
+          if (actual == "Range" || actual == "RangeBatch" ||
+              expected == "Range" || expected == "RangeBatch")
+            err(line, "call to imported function '" + name +
+                "' cannot pass " + (actual == "RangeBatch" || expected == "RangeBatch"
+                    ? "RangeBatch" : "Range") +
+                " across native module crates until the Phase 20 FileIO ABI is shared",
+                "FILEIO_CROSS_CRATE_ABI");
+        }
+    }
     for (size_t index = 0; index < args.size(); ++index) {
       const auto& actual_type = actual_types[index];
       const auto& param = function->second->params[index];
@@ -10404,6 +13649,24 @@ class Checker {
     return std::nullopt;
   }
 
+  vector<const Method*> implicit_iterator_methods(
+      const string& source, const TypeEnv& env) const {
+    auto source_type = inferred_expr_type(source, env);
+    if (!source_type) return {};
+    const string concrete = canonical_type_name(*source_type);
+    if (!objects_.count(concrete)) return {};
+    if (const Method* next = resolve_method(
+            concrete, "next", {}, true, nullptr))
+      return {next};
+    const Method* factory = resolve_method(
+        concrete, "iter", {}, true, nullptr);
+    if (!factory || !factory->return_type) return {};
+    const Method* next = resolve_method(
+        canonical_type_name(*factory->return_type), "next", {}, true, nullptr);
+    return next ? vector<const Method*>{factory, next}
+                : vector<const Method*>{factory};
+  }
+
   void check_for_source(int line, const string& source, const TypeEnv& env) {
     string callee;
     vector<string> arguments;
@@ -10414,6 +13677,11 @@ class Checker {
       check_expression(line, source, env);
     }
     (void)iterator_element_type(line, source, env);
+    for (const Method* method : implicit_iterator_methods(source, env))
+      if (method->observable_effects.unresolved ||
+          !method->observable_effects.raise_set.empty())
+        err(line, "custom iterator iter()/next() has unresolved or typed-raising effects; checked propagation through for is unsupported",
+            "RAISING_ITERATOR_UNSUPPORTED");
   }
 
   TypeEnv check_stmts(const vector<Stmt>& statements, TypeEnv env,
@@ -11234,7 +14502,8 @@ class FunctionalOptimizer {
       if (effects.message) return "message send";
       if (effects.external_io) return "observable callback effect";
       if (effects.local_mutation) return "observable local mutation";
-      if (effects.may_fail) return "callback may fail";
+      if (effects.may_panic) return "callback may panic";
+      if (!effects.raise_set.empty()) return "callback may raise";
       if (effects.unresolved) return "unresolved callback effect";
     }
     return "eager semantics required";
@@ -11251,7 +14520,8 @@ class FunctionalOptimizer {
         if (effects.message) return "message send";
         if (effects.external_io) return "observable callback effect";
         if (effects.local_mutation) return "observable local mutation";
-        if (effects.may_fail) return "callback may fail";
+        if (effects.may_panic) return "callback may panic";
+        if (!effects.raise_set.empty()) return "callback may raise";
         if (effects.may_diverge) return "skipped callback may diverge";
         if (effects.unresolved) return "unresolved callback effect";
       }
@@ -11354,7 +14624,8 @@ class FunctionalOptimizer {
       if (effects.message) return "message send";
       if (effects.external_io) return "observable callback effect";
       if (effects.local_mutation) return "observable local mutation";
-      if (effects.may_fail) return "callback may fail";
+      if (effects.may_panic) return "callback may panic";
+      if (!effects.raise_set.empty()) return "callback may raise";
       if (effects.may_diverge) return "callback may diverge";
       if (effects.unresolved) return "unresolved callback effect";
     }
@@ -12049,7 +15320,9 @@ static string observable_effect_label(const ObservableEffects& effects) {
   if (effects.domain_write) labels.push_back("DOMAIN_WRITE");
   if (effects.message) labels.push_back("MESSAGE");
   if (effects.external_io) labels.push_back("IO");
-  if (effects.may_fail) labels.push_back("MAY_FAIL");
+  if (effects.may_panic) labels.push_back("MAY_PANIC");
+  for (const auto& raised : effects.raise_set)
+    labels.push_back("RAISE(" + raised.canonical() + ")");
   if (effects.may_diverge) labels.push_back("MAY_DIVERGE");
   if (effects.unresolved) labels.push_back("UNRESOLVED");
   std::ostringstream out;
@@ -12295,6 +15568,8 @@ class Generator {
     o << "fn __moss_require_send<T: Send>() {}\n\n";
 
     o << handler_runtime_rust();
+    o << float_format_runtime_rust();
+    if (program_uses_numeric_builtins()) o << numeric_runtime_rust();
     if (program_uses_fileio(p_)) {
       o << fileio_runtime_rust();
     }
@@ -12311,6 +15586,9 @@ class Generator {
                 : ExecutorRuntimeRole::SelectedByExecutableBuild;
     o << executor_runtime_rust(executor_role);
     for (const auto& e : p_.enums) gen_enum(o, e);
+    gen_standard_error_external_bridges(o);
+    gen_phase21_raised_type(o);
+    gen_phase21_external_raised_bridges(o);
     for (const auto& t : p_.objects) gen_object(o, t);
     std::map<string, const ObjectType*> view_objects(objects_.begin(), objects_.end());
     for (const auto& entry : view_objects) {
@@ -12368,6 +15646,51 @@ class Generator {
 
  private:
   const Program& p_;
+  bool program_uses_numeric_builtins() const {
+    const auto contains = [](const string& value) {
+      for (const char* name : {"parse_int", "parse_float", "to_int"}) {
+        if (numeric_builtin_base(value) == name) return true;
+        for (size_t at = value.find(name); at != string::npos;
+             at = value.find(name, at + 1)) {
+          size_t end = at + std::char_traits<char>::length(name);
+          while (end < value.size() &&
+                 std::isspace(static_cast<unsigned char>(value[end]))) ++end;
+          if (end < value.size() && value[end] == '(') return true;
+        }
+      }
+      return false;
+    };
+    const auto body_uses = [&](const vector<Stmt>& body) {
+      for (const auto& statement : body) {
+        if (contains(statement.a) || contains(statement.b) ||
+            contains(statement.text)) return true;
+        for (const auto& argument : statement.args)
+          if (contains(argument)) return true;
+      }
+      return false;
+    };
+    for (const auto& function : p_.functions)
+      if (body_uses(function.body) ||
+          (function.result_expression && contains(*function.result_expression)))
+        return true;
+    for (const auto& object : p_.objects)
+      for (const auto& method : object.methods)
+        if (body_uses(method.body) ||
+            (method.result_expression && contains(*method.result_expression)))
+          return true;
+    for (const auto& domain : p_.domains)
+      for (const auto& handler : domain.handlers)
+        if (body_uses(handler.body)) return true;
+    for (const auto& domain : specialized_domains_)
+      for (const auto& handler : domain.handlers)
+        if (body_uses(handler.body)) return true;
+    if (p_.main && body_uses(p_.main->body)) return true;
+    for (const auto& test : p_.tests)
+      if (body_uses(test.body)) return true;
+    for (const auto& benchmark : p_.benchmarks)
+      if (body_uses(benchmark.body)) return true;
+    return false;
+  }
   const Program* semantic_program_ = nullptr;
   std::set<string> write_through_parameters_;
   std::set<string> borrowed_function_parameters_;
@@ -12409,6 +15732,299 @@ class Generator {
   mutable size_t executor_invoke_temp_ = 0;
   mutable bool root_ingress_statement_ = false;
   mutable size_t fileio_chunk_temp_ = 0;
+  bool phase21_result_context_ = false;
+  std::optional<bool> phase21_return_result_context_;
+  string phase21_selected_error_;
+  string phase21_selected_carrier_;
+  string phase21_try_label_;
+  size_t phase21_try_temp_ = 0;
+  const Handler* phase21_capture_handler_ = nullptr;
+  const std::set<string>* phase21_capture_locals_ = nullptr;
+  const RaiseSet* phase21_capture_alternatives_ = nullptr;
+  std::set<string> phase21_option_slots_;
+  const Stmt* phase21_codegen_statement_ = nullptr;
+
+  static bool handler_has_failure_captures(const Handler& handler) {
+    if (handler.provider_abi)
+      for (const auto& arm : handler.provider_abi->failure_arms)
+        if (!arm.captures.empty()) return true;
+    for (const auto& arm : handler.failure_arms)
+      if (!arm.captures.empty()) return true;
+    return false;
+  }
+
+  string handler_capture_carrier_type(const Handler& handler) const {
+    return handler.provider_abi
+        ? handler.provider_abi->raised_carrier_rust_type
+        : handler.phase21_capture_carrier_type;
+  }
+
+  string phase21_capture_carrier(const string& error,
+                                 const RaiseSet* selected = nullptr) const {
+    if (!phase21_capture_handler_ || !phase21_capture_locals_ ||
+        !(selected ? selected : phase21_capture_alternatives_))
+      throw std::runtime_error(
+          "internal error: missing on_fail capture lowering context");
+    const Handler& handler = *phase21_capture_handler_;
+    const string carrier = handler_capture_carrier_type(handler);
+    const string frame = carrier.substr(0, carrier.find("__MossRaisedCarrier_")) +
+        "__MossFailureFrame_" +
+        carrier.substr(carrier.find("__MossRaisedCarrier_") + 20);
+    std::map<string,string> capture_types;
+    for (const auto& arm : handler.failure_arms)
+      for (const auto& capture : arm.captures)
+        capture_types.emplace(capture.name, capture.type);
+    std::ostringstream out;
+    out << "#[allow(unreachable_patterns)] match " << error << " { ";
+    const RaiseSet& possible = *(selected ? selected :
+                                phase21_capture_alternatives_);
+    for (const auto& identity : possible) {
+      const string variant = phase21_rust_variant(identity);
+      out << "__MossRaised::" << variant << "(__moss_payload) => "
+          << carrier << "(" << frame << " { error: __MossRaised::"
+          << variant << "(__moss_payload)";
+      for (const auto& capture : capture_types) {
+        bool selected = false;
+        for (const auto& arm : handler.failure_arms)
+          if (arm.exceptional_alternatives.count(identity))
+            selected |= std::any_of(arm.captures.begin(), arm.captures.end(),
+                [&](const FailureArm::Capture& item) {
+                  return item.name == capture.first;
+                });
+        if (selected && !phase21_capture_locals_->count(capture.first))
+          throw std::runtime_error(
+              "internal error: on_fail capture is unavailable at native raise site");
+        out << ", " << rust_identifier(capture.first) << ": "
+            << (selected ? "Some(" +
+                (phase21_option_slots_.count(capture.first)
+                    ? "__moss_recovery_slot_" + capture.first +
+                        ".take().unwrap_or_else(|| std::process::abort())"
+                    : rust_identifier(capture.first)) + ")"
+                         : "None");
+      }
+      out << " }), ";
+    }
+    out << "_ => std::process::abort() }";
+    return out.str();
+  }
+
+  string phase21_propagate(const string& fallible) const {
+    if (phase21_try_label_.empty()) {
+      if (phase21_capture_handler_)
+        return "match " + fallible + " { Ok(__moss_value) => "
+            "__moss_value, Err(__moss_error) => return Err(" +
+            phase21_capture_carrier("__moss_error.into()") + ") }";
+      return "(" + fallible + ")?";
+    }
+    return "match " + fallible + " { Ok(__moss_value) => __moss_value, "
+        "Err(__moss_error) => break '" + phase21_try_label_ +
+        " Err(" + (phase21_capture_handler_
+            ? phase21_capture_carrier("__moss_error.into()")
+            : "__moss_error.into()") + ") }";
+  }
+
+  string phase21_error_exit(const string& error) const {
+    if (phase21_try_label_.empty())
+      return "return Err(" +
+          (phase21_capture_handler_ ? phase21_capture_carrier(error) : error) +
+          ")";
+    return "break '" + phase21_try_label_ + " Err(" +
+        (phase21_capture_handler_ ? phase21_capture_carrier(error) : error) +
+        ")";
+  }
+
+  static string phase21_rust_variant(const RaisedIdentity& identity) {
+    return "Raised_" + stable_hash(identity.canonical()).substr(0, 16);
+  }
+
+  string phase21_rust_error_type(const RaisedIdentity& identity) const {
+    string type = canonical_type_name(identity.type);
+    if (identity.kind == RaisedIdentityKind::EnumVariant &&
+        !enums_.count(type)) {
+      for (size_t separator = type.find("::"); separator != string::npos;
+           separator = type.find("::"))
+        type.replace(separator, 2, "__");
+    }
+    return rust_type(type);
+  }
+
+  RaiseSet phase21_program_raise_set() const {
+    RaiseSet result;
+    const auto merge = [&](const ObservableEffects& effects) {
+      result.insert(effects.raise_set.begin(), effects.raise_set.end());
+    };
+    const auto statements = [&](const vector<Stmt>& body) {
+      for (const auto& statement : body)
+        result.insert(statement.exceptional_alternatives.begin(),
+                      statement.exceptional_alternatives.end());
+    };
+    for (const auto& function : p_.functions) {
+      merge(function.observable_effects);
+      for (const auto& specialization : function.specializations)
+        merge(specialization.observable_effects);
+      statements(function.body);
+    }
+    for (const auto& object : p_.objects)
+      for (const auto& method : object.methods) {
+        merge(method.observable_effects);
+        statements(method.body);
+      }
+    for (const auto& domain : p_.domains)
+      for (const auto& handler : domain.handlers) {
+        merge(handler.observable_effects);
+        statements(handler.body);
+        for (const auto& arm : handler.failure_arms)
+          statements(arm.body);
+      }
+    if (p_.main) statements(p_.main->body);
+    for (const auto& test : p_.tests) statements(test.body);
+    return result;
+  }
+
+  void gen_phase21_raised_type(std::ostringstream& o) const {
+    const RaiseSet raised = phase21_program_raise_set();
+    if (raised.empty()) return;
+    o << "#[derive(Clone, Debug)]\n";
+    if (p_.explicit_module) o << "pub ";
+    o << "enum __MossRaised {\n";
+    for (const auto& identity : raised) {
+      o << "    " << phase21_rust_variant(identity) << "(";
+      o << phase21_rust_error_type(identity);
+      o << "),\n";
+    }
+    o << "}\n\n";
+    for (const auto& domain : p_.domains) {
+      auto module = phase21_external_module_for_symbol(domain.name);
+      if (!module) continue;
+      for (const auto& handler : domain.handlers)
+        if (handler.provider_abi &&
+            handler_has_failure_captures(handler))
+          o << "use " << tooling_name("moss_" + *module) << "::"
+            << handler.provider_abi->raised_carrier_rust_type << ";\n";
+    }
+    if (program_uses_fileio(p_)) {
+      o << "#[allow(dead_code)]\n"
+        << "fn __moss_raise_fileio(error: MossFileError) -> __MossRaised {\n"
+        << "    match error {\n";
+      for (const char* name : {"NotFound", "PermissionDenied",
+                               "NotRegularFile", "InUse", "Full", "IO"}) {
+        const RaisedIdentity identity =
+            RaisedIdentity::enum_variant("std__FileError", name);
+        o << "        MossFileError::" << name << " => ";
+        if (raised.count(identity))
+          o << "__MossRaised::" << phase21_rust_variant(identity)
+            << "(std__FileError::" << name << "),\n";
+        else
+          o << "std::process::abort(),\n";
+      }
+      o << "    }\n}\n\n";
+    }
+  }
+
+  std::optional<string> phase21_external_module_for_symbol(
+      const string& symbol) const {
+    for (const auto& module : p_.external_modules)
+      if (starts_with(symbol, module + "__")) return module;
+    for (const auto& module : rust_dependencies_)
+      if (module != "__moss_specializations__" &&
+          starts_with(symbol, module + "__"))
+        return module;
+    return std::nullopt;
+  }
+
+  string phase21_external_raised_type(const string& module) const {
+    return tooling_name("moss_" + module) + "::__MossRaised";
+  }
+
+  void gen_standard_error_external_bridges(std::ostringstream& o) const {
+    for (const auto& module : rust_dependencies_) {
+      if (module == "__moss_specializations__") continue;
+      const string crate = tooling_name("moss_" + module);
+      for (const char* short_name :
+           {"FileError", "ParseError", "ConversionError"}) {
+        const string local = standard_error_identity(short_name);
+        const string external = crate + "::" + local;
+        const auto cases = standard_error_variants(local);
+        o << "impl From<" << external << "> for " << local << " {\n"
+          << "    fn from(value: " << external << ") -> Self { match value {\n";
+        for (const auto& name : cases)
+          o << "        " << external << "::" << name << " => "
+            << local << "::" << name << ",\n";
+        o << "    } }\n}\n";
+        o << "impl From<" << local << "> for " << external << " {\n"
+          << "    fn from(value: " << local << ") -> Self { match value {\n";
+        for (const auto& name : cases)
+          o << "        " << local << "::" << name << " => "
+            << external << "::" << name << ",\n";
+        o << "    } }\n}\n";
+      }
+    }
+  }
+
+  void gen_phase21_external_raised_bridges(std::ostringstream& o) const {
+    const RaiseSet raised = phase21_program_raise_set();
+    if (raised.empty()) return;
+    std::map<string, RaiseSet> by_module;
+    for (const auto& function : semantic_program_->functions)
+      if (auto module = phase21_external_module_for_symbol(function.name))
+        by_module[*module].insert(function.observable_effects.raise_set.begin(),
+                                  function.observable_effects.raise_set.end());
+    for (const auto& object : semantic_program_->objects)
+      if (auto module = phase21_external_module_for_symbol(object.name))
+        for (const auto& method : object.methods)
+          by_module[*module].insert(method.observable_effects.raise_set.begin(),
+                                    method.observable_effects.raise_set.end());
+    for (const auto& domain : semantic_program_->domains)
+      if (auto module = phase21_external_module_for_symbol(domain.name))
+        for (const auto& handler : domain.handlers)
+          by_module[*module].insert(handler.observable_effects.raise_set.begin(),
+                                    handler.observable_effects.raise_set.end());
+    for (const auto& entry : by_module) {
+      RaiseSet reachable;
+      for (const auto& identity : entry.second)
+        if (raised.count(identity)) reachable.insert(identity);
+      if (reachable.empty()) continue;
+      const string provider = phase21_external_raised_type(entry.first);
+      auto bridge_payload = [&](const RaisedIdentity& identity,
+                                bool from_provider) {
+        const auto variants = standard_error_variants(identity.type);
+        if (variants.empty()) return string("payload");
+        const string external = tooling_name("moss_" + entry.first) +
+            "::" + identity.type;
+        const string source = from_provider ? external : identity.type;
+        const string target = from_provider ? identity.type : external;
+        string conversion = "match payload { ";
+        for (const auto& variant : variants)
+          conversion += source + "::" + variant + " => " + target +
+              "::" + variant + ", ";
+        return conversion + "}";
+      };
+      o << "impl From<" << provider << "> for __MossRaised {\n"
+        << "    fn from(value: " << provider << ") -> Self {\n"
+        << "        #[allow(unreachable_patterns)]\n"
+        << "        match value {\n";
+      for (const auto& identity : reachable) {
+        const string variant = phase21_rust_variant(identity);
+        o << "            " << provider << "::" << variant
+          << "(payload) => __MossRaised::" << variant << "("
+          << bridge_payload(identity, true) << "),\n";
+      }
+      o << "            _ => std::process::abort(),\n"
+        << "        }\n    }\n}\n";
+      o << "impl From<__MossRaised> for " << provider << " {\n"
+        << "    fn from(value: __MossRaised) -> Self {\n"
+        << "        #[allow(unreachable_patterns)]\n"
+        << "        match value {\n";
+      for (const auto& identity : reachable) {
+        const string variant = phase21_rust_variant(identity);
+        o << "            __MossRaised::" << variant << "(payload) => "
+          << provider << "::" << variant << "("
+          << bridge_payload(identity, false) << "),\n";
+      }
+      o << "            _ => std::process::abort(),\n"
+        << "        }\n    }\n}\n\n";
+    }
+  }
 
   bool owns_specialization(const Domain& specialized) const {
     const string& source = specialization_sources_.at(specialized.name);
@@ -12737,13 +16353,19 @@ class Generator {
                                 const std::unordered_map<string,string>* types,
                                 size_t functional_pipeline_id = 0,
                                 const FunctionSpecialization* specialization = nullptr) const {
-    string rendered = nominal_domain_handle_argument(
-        argument, index < function.params.size() ? function.params[index].type : "",
-        d, locals, types, functional_pipeline_id);
-    if (index >= function.params.size()) return rendered;
+    if (index >= function.params.size())
+      return nominal_domain_handle_argument(argument, "", d, locals, types,
+                                            functional_pipeline_id);
     string actual_type = generated_expr_type(argument, types).value_or("");
     auto abi = function_parameter_abi(function, index, actual_type, specialization);
     Effect effect = abi.effect;
+    if (effect == Effect::Consume &&
+        phase21_option_slots_.count(trim(argument)))
+      return "__moss_recovery_slot_" + trim(argument) +
+          ".take().unwrap_or_else(|| std::process::abort())";
+    string rendered = nominal_domain_handle_argument(
+        argument, function.params[index].type, d, locals, types,
+        functional_pipeline_id);
     if (abi.passing == ParameterPassingMode::Value) return rendered;
     // Non-object payloads arrive through the internal handler ABI as `&T`.
     // Preserve that borrow when handing it to a READ helper. Object payloads
@@ -12761,11 +16383,17 @@ class Generator {
                               const std::set<string>& locals,
                               const std::unordered_map<string,string>* types,
                               size_t functional_pipeline_id = 0) const {
-    string rendered = nominal_domain_handle_argument(
-        argument, index < method.params.size() ? method.params[index].type : "",
-        d, locals, types, functional_pipeline_id);
-    if (index >= method.params.size()) return rendered;
+    if (index >= method.params.size())
+      return nominal_domain_handle_argument(argument, "", d, locals, types,
+                                            functional_pipeline_id);
     Effect effect = method_effect(method, index);
+    if (effect == Effect::Consume &&
+        phase21_option_slots_.count(trim(argument)))
+      return "__moss_recovery_slot_" + trim(argument) +
+          ".take().unwrap_or_else(|| std::process::abort())";
+    string rendered = nominal_domain_handle_argument(
+        argument, method.params[index].type, d, locals, types,
+        functional_pipeline_id);
     string type = method.params[index].type;
     if (effect == Effect::Consume || (effect != Effect::Write && !borrowable_type(type))) return rendered;
     if (effect == Effect::Read && borrowed_message_parameter(argument) &&
@@ -12831,6 +16459,11 @@ class Generator {
             --before;
           if (before == 0) continue;
           char previous = expression[before - 1];
+          if ((previous == 'e' || previous == 'E') && before >= 2 &&
+              std::isdigit(static_cast<unsigned char>(expression[before - 2])) &&
+              index + 1 < expression.size() &&
+              std::isdigit(static_cast<unsigned char>(expression[index + 1])))
+            continue;
           if (previous == '(' || previous == '[' || previous == '{' ||
               previous == ',' || previous == '+' || previous == '-' ||
               previous == '*' || previous == '/' || previous == '%' || previous == '<' ||
@@ -13033,16 +16666,9 @@ class Generator {
     if (plain_identifier(value) && functions_.count(value))
       return "callable:" + value;
     if (auto typed_vector = typed_empty_vector_constructor(value)) return *typed_vector;
-    size_t start = !value.empty() && (value.front() == '+' || value.front() == '-') ? 1 : 0;
     if (generated_integer_literal(value))
       return string("int");
-    bool dot = false;
-    bool numeric = start < value.size();
-    for (size_t index = start; numeric && index < value.size(); ++index) {
-      if (value[index] == '.' && !dot) dot = true;
-      else if (!std::isdigit(static_cast<unsigned char>(value[index]))) numeric = false;
-    }
-    if (numeric && dot) return string("float");
+    if (decimal_float_literal(value)) return string("float");
     if (value.size() >= 2 && value.front() == '[' && value.back() == ']') {
       auto elements = split_top_level(value.substr(1, value.size() - 2), ',');
       if (elements.size() == 1 && elements.front().empty()) return std::nullopt;
@@ -13099,6 +16725,11 @@ class Generator {
     vector<string> call_args;
     if (parse_simple_call(value, callee, call_args)) {
       if (objects_.count(callee)) return callee;
+      if (callee == "sqrt" && call_args.size() == 1) {
+        auto argument = generated_expr_type(call_args.front(), types);
+        return argument && canonical_type_name(*argument) == "float"
+            ? std::optional<string>("float") : std::nullopt;
+      }
       if (callee == "Some" && call_args.size() == 1) {
         auto value_type = generated_expr_type(call_args.front(), types);
         return value_type ? "option[" + *value_type + "]" : "option[_]";
@@ -13179,6 +16810,12 @@ class Generator {
           return (*left == "float" || *right == "float") ? "float" : "int";
       }
     }
+    if (value.size() > 1 && (value.front() == '-' || value.front() == '+')) {
+      auto operand = generated_expr_type(trim(value.substr(1)), types);
+      if (operand && (canonical_type_name(*operand) == "int" ||
+                      canonical_type_name(*operand) == "float"))
+        return operand;
+    }
     return std::nullopt;
   }
 
@@ -13234,6 +16871,20 @@ class Generator {
       const Domain* domain, const std::set<string>& locals,
       const std::unordered_map<string,string>* types) const {
     const auto* specialization = call_specialization(function, arguments, types);
+    const auto external_module = function.static_dispatch ? std::nullopt :
+        phase21_external_module_for_symbol(name);
+    const bool cross_crate = external_module.has_value();
+    const bool standard_write_bridge = cross_crate &&
+        std::any_of(function.params.begin(), function.params.end(),
+            [&](const Param& parameter) {
+              const size_t index = static_cast<size_t>(
+                  &parameter - function.params.data());
+              return !standard_error_variants(canonical_type_name(
+                  parameter.type)).empty() &&
+                  function_parameter_abi(function, index, parameter.type,
+                      specialization).effect == Effect::Write;
+            });
+    std::ostringstream bridge_before, bridge_after;
     vector<string> temporaries(arguments.size());
     if (domain) {
       for (size_t write_index = 0;
@@ -13278,14 +16929,87 @@ class Generator {
           .value_or("").rfind("callable:", 0) == 0;
       if (compile_time_callable) continue;
       if (emitted_arguments++) call << ", ";
-      if (!temporaries[index].empty()) call << temporaries[index];
-      else call << function_call_argument(function, index, arguments[index],
-                                          domain, locals, types, 0, specialization);
+      {
+        string rendered = temporaries[index].empty()
+            ? function_call_argument(function, index, arguments[index], domain,
+                                     locals, types, 0, specialization)
+            : temporaries[index];
+        if (cross_crate && index < function.params.size() &&
+            !standard_error_variants(
+                canonical_type_name(function.params[index].type)).empty()) {
+          const auto abi = function_parameter_abi(function, index,
+              generated_expr_type(arguments[index], types).value_or(""),
+              specialization);
+          const string external_type = tooling_name("moss_" +
+              *external_module) + "::" +
+              canonical_type_name(function.params[index].type);
+          if (abi.effect == Effect::Write) {
+            const string prefix = "__moss_standard_write_" +
+                std::to_string(call_argument_temp_++);
+            const string local_ref = prefix + "_local";
+            const string provider_value = prefix + "_provider";
+            bridge_before << "let " << local_ref << " = " << rendered
+              << "; let mut " << provider_value << " = " << external_type
+              << "::from((*" << local_ref << ").clone()); ";
+            bridge_after << "*" << local_ref << " = "
+              << canonical_type_name(function.params[index].type)
+              << "::from(" << provider_value << "); ";
+            rendered = "&mut " + provider_value;
+          } else
+            rendered = abi.passing == ParameterPassingMode::Value
+                ? external_type + "::from(" + rendered + ")"
+                : "&(" + external_type +
+                    "::from((* (" + rendered + ")).clone()))";
+        }
+        if (standard_write_bridge &&
+            !(cross_crate && index < function.params.size() &&
+              !standard_error_variants(canonical_type_name(
+                  function.params[index].type)).empty() &&
+              function_parameter_abi(function, index,
+                  generated_expr_type(arguments[index], types).value_or(""),
+                  specialization).effect == Effect::Write)) {
+          const string staged = "__moss_call_argument_" +
+              std::to_string(call_argument_temp_++);
+          bridge_before << "let " << staged << " = " << rendered << "; ";
+          rendered = staged;
+        }
+        call << rendered;
+      }
     }
     call << ")";
+    if (!bridge_before.str().empty()) {
+      const string native_call = call.str();
+      call.str("");
+      call.clear();
+      call << "{ " << bridge_before.str() << "let __moss_bridge_result = "
+        << native_call << "; " << bridge_after.str()
+        << "__moss_bridge_result }";
+    }
     bool needs_prelude = std::any_of(
         temporaries.begin(), temporaries.end(),
         [](const string& temporary) { return !temporary.empty(); });
+    const bool raises = !(specialization ? specialization->observable_effects
+                                       : function.observable_effects).raise_set.empty();
+    const string result_type = specialization ? specialization->return_type :
+        function.return_type.value_or("");
+    const bool convert_result = cross_crate &&
+        !standard_error_variants(canonical_type_name(result_type)).empty();
+    if (convert_result) {
+      const string rendered = call.str();
+      call.str("");
+      call.clear();
+      call << (raises ? "(" + rendered + ").map(" + result_type + "::from)"
+                      : result_type + "::from(" + rendered + ")");
+    }
+    if (raises) {
+      if (!phase21_result_context_)
+        throw std::runtime_error(
+            "internal error: checked raising function call lacks a Phase 21 outcome context");
+      const string propagated = phase21_propagate(call.str());
+      call.str("");
+      call.clear();
+      call << propagated;
+    }
     if (!needs_prelude) return call.str();
 
     std::ostringstream lowered;
@@ -13398,7 +17122,9 @@ class Generator {
   string render_functional_callable(
       const string& callable, const vector<FunctionalValue>& arguments,
       const Domain* domain, const std::set<string>& locals,
-      const std::unordered_map<string,string>* types) const {
+      const std::unordered_map<string,string>* types,
+      bool propagate_raises = true,
+      bool checked_placeholder_result = false) const {
     if (generated_expression_uses(callable, "_")) {
       if (arguments.size() != 1)
         throw std::runtime_error("internal error: placeholder functional arity");
@@ -13409,6 +17135,20 @@ class Generator {
       callback_types[arguments.front().expression] = arguments.front().type;
       auto callback_locals = locals;
       callback_locals.insert(arguments.front().expression);
+      // A checked chunk mapper runs in its own Rust callback result. Its
+      // expression must propagate into that result, then the surrounding
+      // chunk lowering decides whether to commit the indexed error. In
+      // particular, a lexical try label or Root capture exit outside this
+      // callback is not reachable from inside the generated closure.
+      if (checked_placeholder_result && !propagate_raises) {
+        Generator callback = *this;
+        callback.phase21_try_label_.clear();
+        callback.phase21_capture_handler_ = nullptr;
+        string rendered = callback.expr(replaced, domain, callback_locals,
+                                        &callback_types);
+        return "(|| { let __moss_callback_value = " + rendered +
+            "; Ok::<_, __MossRaised>(__moss_callback_value) })()";
+      }
       return expr(replaced, domain, callback_locals, &callback_types);
     }
 
@@ -13447,6 +17187,13 @@ class Generator {
           rendered << argument.expression;
       }
       rendered << ")";
+      if (!method->observable_effects.raise_set.empty()) {
+        if (!phase21_result_context_)
+          throw std::runtime_error(
+              "checked raising pipeline method lacks a Phase 21 outcome context");
+        return propagate_raises ? phase21_propagate(rendered.str())
+                                : rendered.str();
+      }
       return rendered.str();
     }
 
@@ -13491,6 +17238,16 @@ class Generator {
         rendered << argument.expression;
     }
     rendered << ")";
+    const bool raises = !(concrete ? concrete->observable_effects
+                                  : function->second->observable_effects)
+                             .raise_set.empty();
+    if (raises) {
+      if (!phase21_result_context_)
+        throw std::runtime_error(
+            "checked raising pipeline callable lacks a Phase 21 outcome context");
+      return propagate_raises ? phase21_propagate(rendered.str())
+                              : rendered.str();
+    }
     return rendered.str();
   }
 
@@ -14131,6 +17888,12 @@ class Generator {
     // Remove only complete balanced outer groups before lowering. Nested groups
     // still protect precedence until their recursive expr() call reaches them.
     e = strip_redundant_outer_parentheses(std::move(e));
+    if (phase21_option_slots_.count(e))
+      return "__moss_recovery_slot_" + e +
+          (phase21_codegen_statement_ &&
+           phase21_codegen_statement_->ownership_consumed_bindings.count(e)
+              ? ".take()" : ".as_ref()") +
+          ".unwrap_or_else(|| std::process::abort())";
     if (auto place = view_place(e, d, locals, types)) return *place;
     if (write_through_parameters_.count(e) && types && types->count(e) && copy_type(types->at(e)))
       return "*" + e;
@@ -14158,6 +17921,10 @@ class Generator {
         return root_ingress_message(receiver, handler, arguments, target_domain,
                                     *target_handler, d, locals, types,
                                     message_argument_plans);
+      const bool raises = !target_handler->observable_effects.raise_set.empty();
+      if (raises && !phase21_result_context_)
+        throw std::runtime_error(
+            "internal error: checked raising message lacks a Phase 21 outcome context");
       if (target_domain.exported && !exported_domain_bridge_body_) {
         std::ostringstream call;
         call << expr(receiver, d, locals, types) << ".__moss_message_" << handler << "(";
@@ -14167,7 +17934,7 @@ class Generator {
                               d, locals, types, message_argument_plans ? message_argument_plans->at(index) : 0);
         }
         call << ")";
-        return call.str();
+        return raises ? phase21_propagate(call.str()) : call.str();
       }
       std::ostringstream rendered;
       rendered << expr(receiver, d, locals, types) << "." << handler << "_shared(";
@@ -14178,6 +17945,12 @@ class Generator {
                                        message_argument_plans ? message_argument_plans->at(index) : 0);
       }
       rendered << ")";
+      if (raises) {
+        const string propagated = phase21_propagate(rendered.str());
+        rendered.str("");
+        rendered.clear();
+        rendered << propagated;
+      }
       if (target_handler->reply_type)
         rendered << ".unwrap_or_else(|| std::process::abort())";
       return rendered.str();
@@ -14380,6 +18153,57 @@ class Generator {
       auto receiver_type = generated_expr_type(member_receiver, types);
       if (receiver_type) {
         string concrete = canonical_type_name(*receiver_type);
+        if (concrete == "FileIO" && member_name == "read" &&
+            member_arguments.size() == 2) {
+          string read = receiver_expression +
+              (phase21_result_context_ ? ".read_checked(" : ".read(") +
+              expr(member_arguments[0], d, locals, types) + ", " +
+              expr(member_arguments[1], d, locals, types) + ")";
+          return phase21_result_context_
+              ? phase21_propagate(read + ".map_err(__moss_raise_fileio)")
+              : read;
+        }
+        if (concrete == "FileIO" && member_name == "write" &&
+            member_arguments.size() == 2) {
+          string call = receiver_expression +
+              (phase21_result_context_ ? ".write_checked(" : ".write(") +
+              expr(member_arguments[0], d, locals, types) + ", &( " +
+              expr(member_arguments[1], d, locals, types) + " ))";
+          return phase21_result_context_
+              ? phase21_propagate(call + ".map_err(__moss_raise_fileio)")
+              : call;
+        }
+        if (concrete == "FileIO" && member_name == "open" &&
+            member_arguments.size() == 2) {
+          string call = receiver_expression +
+              (phase21_result_context_ ? ".open_in_place_checked(&( "
+                                       : ".open_in_place(&( ") +
+              expr(member_arguments[0], d, locals, types) + " ), " +
+              rust_string_literal(trim(member_arguments[1])) + ")";
+          return phase21_result_context_
+              ? phase21_propagate(call + ".map_err(__moss_raise_fileio)")
+              : call;
+        }
+        if (concrete == "FileIO" && member_name == "sync" &&
+            member_arguments.size() <= 1) {
+          bool dataonly = !member_arguments.empty() &&
+              trim(member_arguments[0]) == "dataonly";
+          string call = receiver_expression +
+              (phase21_result_context_
+                  ? ".sync_checked(" + string(dataonly ? "true" : "false") + ")"
+                  : dataonly ? ".sync_dataonly()" : ".sync()");
+          return phase21_result_context_
+              ? phase21_propagate(call + ".map_err(__moss_raise_fileio)")
+              : call;
+        }
+        if (concrete == "FileIO" && member_name == "close" &&
+            member_arguments.empty()) {
+          string call = receiver_expression +
+              (phase21_result_context_ ? ".close_checked()" : ".close()");
+          return phase21_result_context_
+              ? phase21_propagate(call + ".map_err(__moss_raise_fileio)")
+              : call;
+        }
         // Agent A checks the one-argument read form as a bounded RangeBatch.
         // This branch only adapts that checked form to Agent B's read_batch
         // ABI; it deliberately does not repeat request legality or bound
@@ -14434,8 +18258,14 @@ class Generator {
                     << ", __moss_request."
                     << rust_identifier(size_field->name)
                     << ")).collect::<std::vec::Vec<_>>(); "
-                    << receiver_temp << ".read_batch(&" << pairs_temp << ") }";
-            return lowered.str();
+                    << receiver_temp
+                    << (phase21_result_context_ ? ".read_batch_checked(&"
+                                                : ".read_batch(&")
+                    << pairs_temp << ") }";
+            return phase21_result_context_
+                ? phase21_propagate("(" + lowered.str() +
+                    ").map_err(__moss_raise_fileio)")
+                : lowered.str();
           }
 
           string entries_source = trim(
@@ -14481,14 +18311,19 @@ class Generator {
             coordinate_temps.emplace_back(std::move(offset_temp),
                                           std::move(size_temp));
           }
-          lowered << receiver_temp << ".read_batch(&[";
+          lowered << receiver_temp
+                  << (phase21_result_context_ ? ".read_batch_checked(&["
+                                              : ".read_batch(&[");
           for (size_t index = 0; index < coordinate_temps.size(); ++index) {
             if (index) lowered << ", ";
             lowered << "(" << coordinate_temps[index].first << ", "
                     << coordinate_temps[index].second << ")";
           }
           lowered << "]) }";
-          return lowered.str();
+          return phase21_result_context_
+              ? phase21_propagate("(" + lowered.str() +
+                  ").map_err(__moss_raise_fileio)")
+              : lowered.str();
         }
         // Phase 20: Moss `range.length()` lowers to Agent B's runtime
         // `Range::len() -> i64`; Agent B need not expose a `.length()` alias.
@@ -14551,6 +18386,8 @@ class Generator {
                                                     result.push_back(generated_expr_type(argument, types).value_or(""));
                                                   return result;
                                                 }(), true, nullptr)) {
+          const auto external_method_module =
+              phase21_external_module_for_symbol(concrete);
           // A consuming concrete method cannot be invoked through either a
           // field-only access view or an ordinary borrowed function parameter.
           // The former has no method surface at all; the latter must retain
@@ -14574,17 +18411,84 @@ class Generator {
                     std::to_string(call_argument_temp_++);
             }
           }
-          std::ostringstream rendered;
-          rendered << receiver_expression << "." << viewed_method_name(member_receiver, member_name, member_arguments, d, locals, types) << "(";
+          const bool standard_write_bridge = external_method_module &&
+              std::any_of(method->params.begin(), method->params.end(),
+                  [&](const Param& parameter) {
+                    const size_t index = static_cast<size_t>(
+                        &parameter - method->params.data());
+                    return !standard_error_variants(canonical_type_name(
+                        parameter.type)).empty() &&
+                        method_effect(*method, index) == Effect::Write;
+                  });
+          std::ostringstream bridge_before, bridge_after, rendered;
+          rendered << (standard_write_bridge ? "__moss_bridge_receiver" :
+              receiver_expression) << "." << viewed_method_name(
+                  member_receiver, member_name, member_arguments, d, locals,
+                  types) << "(";
           for (size_t index = 0; index < member_arguments.size(); ++index) {
             if (index) rendered << ", ";
-            rendered << method_call_argument(*method, index,
+            string argument = method_call_argument(*method, index,
                 argument_temporaries[index].empty() ? member_arguments[index]
                                                     : argument_temporaries[index],
                 d, locals, types);
+            bool standard_write_argument = false;
+            if (external_method_module && index < method->params.size() &&
+                !standard_error_variants(canonical_type_name(
+                    method->params[index].type)).empty()) {
+              const string external_type = tooling_name("moss_" +
+                  *external_method_module) + "::" +
+                  canonical_type_name(method->params[index].type);
+              const Effect effect = method_effect(*method, index);
+              if (effect == Effect::Write) {
+                standard_write_argument = true;
+                const string prefix = "__moss_standard_write_" +
+                    std::to_string(call_argument_temp_++);
+                const string local_ref = prefix + "_local";
+                const string provider_value = prefix + "_provider";
+                bridge_before << "let " << local_ref << " = " << argument
+                  << "; let mut " << provider_value << " = " << external_type
+                  << "::from((*" << local_ref << ").clone()); ";
+                bridge_after << "*" << local_ref << " = "
+                  << canonical_type_name(method->params[index].type)
+                  << "::from(" << provider_value << "); ";
+                argument = "&mut " + provider_value;
+              } else
+                argument = effect == Effect::Read
+                    ? "&" + external_type + "::from((*(" + argument + ")).clone())"
+                    : external_type + "::from(" + argument + ")";
+            }
+            if (standard_write_bridge && !standard_write_argument) {
+              const string staged = "__moss_call_argument_" +
+                  std::to_string(call_argument_temp_++);
+              bridge_before << "let " << staged << " = " << argument << "; ";
+              argument = staged;
+            }
+            rendered << argument;
           }
           rendered << ")";
           string result = rendered.str();
+          if (standard_write_bridge) {
+            string receiver_binding = method->receiver_effect == Effect::Consume
+                ? receiver_expression
+                : (method->receiver_effect == Effect::Write ? "&mut (" :
+                    "&(") + receiver_expression + ")";
+            result = "{ let __moss_bridge_receiver = " + receiver_binding +
+                "; " + bridge_before.str() + "let __moss_bridge_result = " +
+                result + "; " + bridge_after.str() + "__moss_bridge_result }";
+          }
+          const string return_type = method->return_type.value_or("");
+          const bool standard_return = external_method_module &&
+              !standard_error_variants(canonical_type_name(return_type)).empty();
+          if (standard_return)
+            result = method->observable_effects.raise_set.empty()
+                ? return_type + "::from(" + result + ")"
+                : "(" + result + ").map(" + return_type + "::from)";
+          if (!method->observable_effects.raise_set.empty()) {
+            if (!phase21_result_context_)
+              throw std::runtime_error(
+                  "internal error: checked raising method call lacks a Phase 21 outcome context");
+            result = phase21_propagate(result);
+          }
           if (std::any_of(argument_temporaries.begin(),
                           argument_temporaries.end(),
                           [](const string& value) { return !value.empty(); })) {
@@ -14632,7 +18536,37 @@ class Generator {
       if (builtin == "Some" && builtin_args.size() == 1)
         return "Some(" + expr(builtin_args.front(), d, locals, types) + ")";
       if (builtin == "sqrt" && builtin_args.size() == 1)
-        return "(" + expr(builtin_args.front(), d, locals, types) + ").sqrt()";
+        return "{ let __moss_sqrt_value: f64 = " +
+            expr(builtin_args.front(), d, locals, types) +
+            "; __moss_sqrt_value.sqrt() }";
+      if ((builtin == "is_nan" || builtin == "is_finite") &&
+          builtin_args.size() == 1)
+        return "{ let __moss_float_value: f64 = " +
+            expr(builtin_args.front(), d, locals, types) +
+            "; __moss_float_value." + builtin + "() }";
+      const std::string_view numeric_name = numeric_builtin_base(builtin);
+      if (!numeric_name.empty() && builtin_args.size() == 1) {
+        if (!phase21_result_context_)
+          throw std::runtime_error("internal error: numeric raise lacks outcome context");
+        const string value = expr(builtin_args.front(), d, locals, types);
+        const string error_type = numeric_builtin_error_type(builtin);
+        const string invalid = numeric_name == "to_int" ? "NonFinite" : "Invalid";
+        const string overflow = "Overflow";
+        const string first_variant = phase21_rust_variant(
+            RaisedIdentity::enum_variant(error_type, invalid));
+        const string second_variant = phase21_rust_variant(
+            RaisedIdentity::enum_variant(error_type, overflow));
+        string call = "__moss_" + string(numeric_name) + "(" + value +
+            (numeric_name == "to_int" ? "" : ".as_str()") + ")";
+        string mapping = call + ".map_err(|__moss_numeric_error| "
+            "if __moss_numeric_error == 0 { __MossRaised::" + first_variant +
+            "(" + error_type + "::" + invalid + ") } else { __MossRaised::" +
+            second_variant + "(" + error_type + "::" + overflow + ") })";
+        if (numeric_name == "parse_float")
+          mapping = call + ".map_err(|_| __MossRaised::" +
+              first_variant + "(" + error_type + "::" + invalid + "))";
+        return phase21_propagate(mapping);
+      }
       if (builtin == "sum" && builtin_args.size() == 1) {
         auto argument_type = generated_expr_type(builtin_args.front(), types);
         string element_type;
@@ -14736,6 +18670,16 @@ class Generator {
             r << expr(call_args[i], d, locals, types);
         }
         r << ")";
+        if (sibling_method &&
+            !sibling_method->observable_effects.raise_set.empty()) {
+          if (!phase21_result_context_)
+            throw std::runtime_error(
+                "internal error: checked raising sibling method call lacks a Phase 21 outcome context");
+          const string propagated = phase21_propagate(r.str());
+          r.str("");
+          r.clear();
+          r << propagated;
+        }
         if (std::any_of(sibling_temporaries.begin(), sibling_temporaries.end(),
                         [](const string& value) { return !value.empty(); })) {
           std::ostringstream sequenced;
@@ -15025,6 +18969,44 @@ class Generator {
       tooling_end(o, 4, case_identity);
     }
     o << "}\n\n";
+    o << "impl std::fmt::Display for " << declaration.name << " {\n"
+      << "    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n"
+      << "        match self {\n";
+    for (const auto& item : declaration.cases) {
+      o << "            " << declaration.name << "::"
+        << rust_identifier(item.name);
+      if (!item.fields.empty()) {
+        o << " { ";
+        for (size_t index = 0; index < item.fields.size(); ++index) {
+          if (index) o << ", ";
+          o << rust_identifier(item.fields[index].name);
+        }
+        o << " }";
+      }
+      o << " => write!(formatter, \"" << declaration.name << "."
+        << item.name;
+      if (!item.fields.empty()) {
+        o << "(";
+        for (size_t index = 0; index < item.fields.size(); ++index) {
+          if (index) o << ", ";
+          const string field_type = canonical_type_name(item.fields[index].type);
+          const bool display_field = field_type == "int" ||
+              field_type == "float" || field_type == "bool" ||
+              field_type == "string" || enums_.count(field_type);
+          o << item.fields[index].name
+            << (display_field ? ": {}" : ": {:?}");
+        }
+        o << ")\"";
+        for (const auto& field : item.fields)
+          o << ", " << rust_identifier(field.name);
+        o << "),\n";
+      } else {
+        o << "\"),\n";
+      }
+    }
+    o << "        }\n"
+      << "    }\n"
+      << "}\n\n";
     tooling_end(o, 0, enum_identity);
   }
 
@@ -15065,6 +19047,8 @@ class Generator {
       source_comment(o, 4, method.line,
                      "fn " + method.name);
       debug_symbol_attributes(o, 4, native_symbol, !view);
+      const bool raises = !method.observable_effects.raise_set.empty();
+      if (raises) o << "    #[allow(unreachable_code)]\n";
       o << "    " << ((t.exported || p_.explicit_module) ? "pub " : "")
         << "fn " << method_name;
       if (method.receiver_effect == Effect::Consume) o << "(self";
@@ -15083,8 +19067,17 @@ class Generator {
           o << ", mut " << p.name << ": " << parameter_type;
         }
       }
-      if (method.return_type) o << ") -> " << rust_type(*method.return_type) << " {\n";
-      else o << ") {\n";
+      if (method.return_type) {
+        o << ") -> ";
+        if (raises) o << "Result<";
+        o << rust_type(*method.return_type);
+        if (raises) o << ", __MossRaised>";
+        o << " {\n";
+      } else {
+        o << ")";
+        if (raises) o << " -> Result<(), __MossRaised>";
+        o << " {\n";
+      }
       write_through_parameters_.clear(); view_parameters_.clear();
       for (size_t index = 0; index < method.params.size(); ++index) {
         if (view && method_effect(method, index) != Effect::Consume && view_object_type(method.params[index].type))
@@ -15099,6 +19092,8 @@ class Generator {
       std::unordered_map<string,string> types{{"self", t.name}};
       for (const auto& field : t.fields) types[field.name] = field.type;
       for (const auto& p : method.params) { locals.insert(p.name); types[p.name] = p.type; }
+      const bool saved_phase21_result_context = phase21_result_context_;
+      phase21_result_context_ = raises;
       gen_stmts(o, method.body, &receiver, nullptr, "", locals, types, 2, false, true, functional_method_context(t, method));
       if (method.result_expression) {
         string context = functional_method_context(t, method);
@@ -15106,12 +19101,24 @@ class Generator {
         source_comment(o, 8,
                        method.result_line ? method.result_line : method.line,
                        *method.result_expression);
-        o << "        "
-          << expr(*method.result_expression, &receiver, locals, &types,
+        o << "        ";
+        if (raises) o << "Ok(";
+        o << expr(*method.result_expression, &receiver, locals, &types,
                   plan == method.result_functional_pipeline_ids.end()
                       ? 0 : plan->second)
-          << "\n";
+          ;
+        if (raises) o << ")";
+        o << "\n";
+      } else if (raises && !method.return_type) {
+        o << "        Ok(())\n";
+      } else if (method.return_type &&
+                 canonical_type_name(*method.return_type) != "unit") {
+        // The checker requires every source path to return. Rust does not
+        // infer that a checked try's Ok arm is unreachable after `return`.
+        o << "        #[allow(unreachable_code)]\n"
+          << "        { std::process::abort() }\n";
       }
+      phase21_result_context_ = saved_phase21_result_context;
       o << "    }\n";
       o << "}\n\n";
       tooling_end(o, 0, semantic_identity);
@@ -15146,6 +19153,10 @@ class Generator {
         ? "STATIC specialization: concrete local function selected before Rust generation"
         : "LOCAL function: ordinary intra-domain call; no domain dispatch");
     debug_symbol_attributes(o, 0, native_symbol, can_export);
+    const bool raises = !(specialization ? specialization->observable_effects
+                                       : f.observable_effects).raise_set.empty();
+    if (raises)
+      o << "#[allow(unreachable_code)]\n";
     bool materialized_export = f.exported && !specialization &&
         !f.generic && !container_generic;
     o << ((materialized_export || (specialization && public_specializations_)) ? "pub " : "")
@@ -15203,7 +19214,10 @@ class Generator {
       if (!specialization && starts_with(rr, "_generic:")) rr = "T_" + rr.substr(9);
       else if (!specialization && starts_with(rr, "_element:_element:")) rr = "T_" + rr.substr(17);
       else if (!specialization && starts_with(rr, "_element:element:")) rr = "T_" + rr.substr(17);
-      o << ") -> " << (rr == return_type ? rust_type(rr) : rr);
+      o << ") -> ";
+      if (raises) o << "Result<";
+      o << (rr == return_type ? rust_type(rr) : rr);
+      if (raises) o << ", __MossRaised>";
       if (!specialization && (f.generic || container_generic)) {
         o << " where "; size_t bi=0;
         for (const auto& p : f.params) { auto ops = constraint_ops(f, p.name); if (ops.empty() && p.type != "vector" && p.type != "queue") continue; if (bi++) o << ", "; o << "T_" << p.name << ": ";
@@ -15217,7 +19231,11 @@ class Generator {
       }
       o << " {\n";
     }
-    else o << ") {\n";
+    else {
+      o << ")";
+      if (raises) o << " -> Result<(), __MossRaised>";
+      o << " {\n";
+    }
     std::set<string> locals;
     std::unordered_map<string,string> types;
     for (size_t index = 0; index < f.params.size(); ++index) {
@@ -15233,6 +19251,8 @@ class Generator {
         write_through_parameters_.insert(f.params[index].name);
     }
     string functional_context = functional_function_context(f, specialization);
+    const bool saved_phase21_result_context = phase21_result_context_;
+    phase21_result_context_ = raises;
     gen_stmts(o, f.body, nullptr, nullptr, "", locals, types, 1, false, true, functional_context);
     if (f.result_expression) {
       source_comment(o, 4, f.result_line, *f.result_expression);
@@ -15252,8 +19272,20 @@ class Generator {
           }
         }
       }
-      o << "    " << rendered << "\n";
+      o << "    ";
+      if (raises) o << "Ok(";
+      o << rendered;
+      if (raises) o << ")";
+      o << "\n";
+    } else if (raises && return_type == "unit") {
+      o << "    Ok(())\n";
+    } else if (return_type != "unit") {
+      // The checker requires every source path to return. Keep a diverging
+      // native fallback for a try whose normal outcome is unreachable.
+      o << "    #[allow(unreachable_code)]\n"
+        << "    { std::process::abort() }\n";
     }
+    phase21_result_context_ = saved_phase21_result_context;
     o << "}\n\n";
     tooling_end(o, 0, semantic_identity);
     write_through_parameters_.clear(); view_parameters_.clear();
@@ -15301,6 +19333,25 @@ class Generator {
     return std::any_of(h.body.begin(), h.body.end(), [](const Stmt& s) {
       return s.kind == Stmt::Kind::Return || s.kind == Stmt::Kind::Reply;
     });
+  }
+
+  string handler_internal_return_type(const Handler& handler) const {
+    string normal = handler.reply_type
+        ? "Option<" + rust_type(*handler.reply_type) + ">"
+        : "()";
+    return handler.observable_effects.raise_set.empty()
+        ? normal
+        : "Result<" + normal + ", " +
+            (handler_has_failure_captures(handler)
+                ? handler_capture_carrier_type(handler)
+                : "__MossRaised") + ">";
+  }
+
+  string handler_message_return_type(const Handler& handler) const {
+    string normal = rust_type(handler.reply_type.value_or("unit"));
+    return handler.observable_effects.raise_set.empty()
+        ? normal
+        : "Result<" + normal + ", __MossRaised>";
   }
 
 #include "handler_lowering.inc"
@@ -15382,7 +19433,7 @@ class Generator {
           if (!arguments.empty()) arguments += ", ";
           arguments += parameter.name;
         }
-        o << ") -> " << rust_type(handler.reply_type.value_or("unit"))
+        o << ") -> " << handler_message_return_type(handler)
           << " {\n        match &self.route {\n";
         for (size_t index = 0; index < routes.size(); ++index)
           o << "            " << route << "::"
@@ -15395,7 +19446,7 @@ class Generator {
         o << "    fn " << handler.name << "_shared(&self";
         for (const auto& parameter : handler.params)
           o << ", " << shared_message_parameter(parameter);
-        o << ") -> " << (handler.reply_type ? "Option<" + rust_type(*handler.reply_type) + ">" : "()")
+        o << ") -> " << handler_internal_return_type(handler)
           << " {\n        match &self.route {\n";
         for (size_t index = 0; index < routes.size(); ++index) {
           o << "            " << route << "::" << (index == 0 ? "Base" : nominal_handle_variant(routes[index]->name))
@@ -15427,8 +19478,30 @@ class Generator {
         call += parameter.name;
       }
       call += ")";
-      out << ") -> " << rust_type(handler.reply_type.value_or("unit")) << " {\n"
-          << "        " << expr(call, nullptr, locals, &types) << "\n    }\n";
+      const bool saved_phase21_result_context = phase21_result_context_;
+      phase21_result_context_ = !handler.observable_effects.raise_set.empty();
+      out << ") -> " << handler_message_return_type(handler) << " {\n"
+          << "        ";
+      if (handler_has_failure_captures(handler)) {
+        out << "self." << handler.name << "_shared(";
+        for (const auto& parameter : handler.params)
+          out << parameter.name << ", ";
+        out << ")";
+        if (handler.reply_type)
+          out << ".map(|value| value.unwrap_or_else(|| std::process::abort()))";
+        if (auto module = phase21_external_module_for_symbol(domain.name))
+          out << ".map_err(|carrier| __MossRaised::from("
+              << phase21_external_raised_type(*module)
+              << "::from(carrier)))";
+        else
+          out << ".map_err(__MossRaised::from)";
+      } else {
+        if (!handler.observable_effects.raise_set.empty()) out << "Ok(";
+        out << expr(call, nullptr, locals, &types);
+        if (!handler.observable_effects.raise_set.empty()) out << ")";
+      }
+      out << "\n    }\n";
+      phase21_result_context_ = saved_phase21_result_context;
     }
     exported_domain_bridge_body_ = false;
     out << "}\n\n";
@@ -15455,17 +19528,26 @@ class Generator {
 
   void gen_test_harness(std::ostringstream& o) {
     gen_protocol_hex_helper(o);
+    const RaiseSet raised = phase21_program_raise_set();
+    const bool typed_outcomes = !raised.empty();
     for (const auto& test : p_.tests) {
       string function_name = test_or_benchmark_function_name(
           "test", test.semantic_identity);
       tooling_begin(o, 0, "test", test.semantic_identity, function_name);
       source_comment(o, 0, test.line, test.header);
-      o << "#[inline(never)]\nfn " << function_name << "() {\n";
+      o << "#[inline(never)]\n#[allow(unreachable_code)]\nfn "
+        << function_name << "()";
+      if (typed_outcomes) o << " -> Result<(), __MossRaised>";
+      o << " {\n";
       std::set<string> locals;
       std::unordered_map<string,string> types;
+      const bool saved_result_context = phase21_result_context_;
+      phase21_result_context_ = typed_outcomes;
       gen_stmts(o, test.body, nullptr, nullptr, "", locals, types, 1,
                 false, false,
                 "test:" + test.name);
+      phase21_result_context_ = saved_result_context;
+      if (typed_outcomes) o << "    Ok(())\n";
       o << "}\n";
       tooling_end(o, 0, test.semantic_identity);
       o << "\n";
@@ -15475,16 +19557,35 @@ class Generator {
     o << "    let previous_hook = std::panic::take_hook();\n";
     o << "    std::panic::set_hook(Box::new(|_| {}));\n";
     o << "    let mut failures = 0_usize;\n";
+    if (typed_outcomes) {
+      o << "    fn __moss_test_error_identity(error: &__MossRaised) -> &'static str {\n"
+        << "        match error {\n";
+      for (const auto& identity : raised)
+        o << "            __MossRaised::" << phase21_rust_variant(identity)
+          << "(_) => " << rust_string_literal(identity.canonical()) << ",\n";
+      o << "        }\n    }\n";
+    }
     for (const auto& test : p_.tests) {
       string function_name = test_or_benchmark_function_name(
           "test", test.semantic_identity);
       o << "    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| "
         << function_name << "()));\n";
       o << "    match outcome {\n";
-      o << "        Ok(()) => println!(\"MOSS_TEST|PASS|{}|{}|\", "
+      o << "        " << (typed_outcomes ? "Ok(Ok(()))" : "Ok(())")
+        << " => println!(\"MOSS_TEST|PASS|{}|{}|\", "
         << "__moss_protocol_hex(" << rust_string_literal(test.semantic_identity)
         << "), __moss_protocol_hex(" << rust_string_literal(test.name)
         << ")),\n";
+      if (typed_outcomes) {
+        o << "        Ok(Err(error)) => {\n"
+          << "            failures += 1;\n"
+          << "            let detail = format!(\"unhandled typed raise {}\", __moss_test_error_identity(&error));\n"
+          << "            println!(\"MOSS_TEST|FAIL|{}|{}|{}\", "
+          << "__moss_protocol_hex(" << rust_string_literal(test.semantic_identity)
+          << "), __moss_protocol_hex(" << rust_string_literal(test.name)
+          << "), __moss_protocol_hex(&detail));\n"
+          << "        }\n";
+      }
       o << "        Err(payload) => {\n";
       o << "            failures += 1;\n";
       o << "            let detail = if let Some(value) = payload.downcast_ref::<String>() { value.clone() } else if let Some(value) = payload.downcast_ref::<&str>() { (*value).to_string() } else { \"test panicked without a Moss assertion message\".to_string() };\n";
@@ -15640,6 +19741,13 @@ class Generator {
                  int base, bool in_handler, bool in_function,
                  std::set<string> join_assignments = {},
                  const string& functional_context = "") {
+    struct RecoverySlotScope {
+      std::set<string>& slot;
+      std::set<string> prior;
+      explicit RecoverySlotScope(std::set<string>& current)
+          : slot(current), prior(current) {}
+      ~RecoverySlotScope() { slot = std::move(prior); }
+    } recovery_slot_scope(phase21_option_slots_);
     auto indent = [&](int lev){ return string((base + lev) * 4, ' '); };
     while (i < ss.size()) {
       const auto& s = ss[i];
@@ -15650,6 +19758,14 @@ class Generator {
       if (s.indent > level) throw std::runtime_error("internal error: unexpected statement indentation");
       if (s.kind == Stmt::Kind::Else) return; // consumed by the preceding if
 
+      struct CodegenStatementScope {
+        const Stmt*& slot;
+        const Stmt* prior;
+        CodegenStatementScope(const Stmt*& target, const Stmt* current)
+            : slot(target), prior(target) { slot = current; }
+        ~CodegenStatementScope() { slot = prior; }
+      } codegen_statement_scope(phase21_codegen_statement_, &s);
+
       source_comment(o, (base + level) * 4, s.line, s.text);
 
       struct RootIngressScope {
@@ -15657,6 +19773,23 @@ class Generator {
         RootIngressScope(bool& f, bool value) : flag(f), saved(f) { flag = value; }
         ~RootIngressScope() { flag = saved; }
       } root_ingress_scope(root_ingress_statement_, s.message_root_ingress);
+      struct CaptureLocalsScope {
+        const std::set<string>*& slot;
+        const std::set<string>* prior;
+        CaptureLocalsScope(const std::set<string>*& target,
+                           const std::set<string>& current)
+            : slot(target), prior(target) { slot = &current; }
+        ~CaptureLocalsScope() { slot = prior; }
+      } capture_locals_scope(phase21_capture_locals_, locals);
+      struct CaptureAlternativesScope {
+        const RaiseSet*& slot;
+        const RaiseSet* prior;
+        CaptureAlternativesScope(const RaiseSet*& target,
+                                 const RaiseSet& current)
+            : slot(target), prior(target) { slot = &current; }
+        ~CaptureAlternativesScope() { slot = prior; }
+      } capture_alternatives_scope(phase21_capture_alternatives_,
+                                   s.exceptional_alternatives);
 
       size_t direct_functional_id = statement_functional_pipeline_id(
           s, functional_context, 0);
@@ -15703,6 +19836,323 @@ class Generator {
       }
 
       switch (s.kind) {
+        case Stmt::Kind::Try: {
+          // Rust cannot infer that a move on one exceptional variant leaves
+          // an owned local available on another. The checker has already
+          // proved the recovery path; retain only affected locals in slots.
+          size_t attempt_end = i + 1;
+          while (attempt_end < ss.size() && ss[attempt_end].indent > level)
+            ++attempt_end;
+          size_t recover_end = attempt_end;
+          while (recover_end < ss.size() && ss[recover_end].indent == level &&
+                 ss[recover_end].kind == Stmt::Kind::Recover) {
+            ++recover_end;
+            while (recover_end < ss.size() && ss[recover_end].indent > level)
+              ++recover_end;
+          }
+          std::set<string> recovery_slots;
+          for (size_t candidate = i + 1; candidate < attempt_end; ++candidate) {
+            const Stmt& consumed = ss[candidate];
+            for (const auto& binding : consumed.ownership_consumed_bindings) {
+              if (!types.count(binding) || copy_type(types.at(binding)) ||
+                  phase21_option_slots_.count(binding))
+                continue;
+              for (size_t read = attempt_end; read < recover_end; ++read) {
+                const Stmt& recovered = ss[read];
+                bool mentions = expression_mentions_identifier(
+                    recovered.b, binding);
+                if (recovered.kind != Stmt::Kind::Assign)
+                  mentions |= expression_mentions_identifier(
+                      recovered.a, binding);
+                for (const auto& argument : recovered.args)
+                  mentions |= expression_mentions_identifier(
+                      argument, binding);
+                if (mentions) {
+                  recovery_slots.insert(binding);
+                  break;
+                }
+              }
+            }
+          }
+          for (const auto& binding : recovery_slots) {
+            o << indent(level) << "let mut __moss_recovery_slot_" << binding
+              << " = Some(" << rust_identifier(binding) << ");\n";
+            phase21_option_slots_.insert(binding);
+          }
+          const auto exact_join =
+              s.joined_types_by_context.find(functional_context);
+          const auto& joined_types = exact_join ==
+                  s.joined_types_by_context.end()
+              ? s.joined_types
+              : exact_join->second;
+          vector<string> joined_bindings;
+          for (const auto& entry : joined_types)
+            if (!types.count(entry.first) &&
+                !contains_internal_placeholder(entry.second))
+              joined_bindings.push_back(entry.first);
+          std::sort(joined_bindings.begin(), joined_bindings.end());
+          for (const auto& binding : joined_bindings) {
+            o << indent(level) << "let mut " << binding << ": "
+              << rust_type(joined_types.at(binding)) << ";\n";
+            locals.insert(binding);
+            types[binding] = joined_types.at(binding);
+          }
+
+          if (s.exceptional_alternatives.empty()) {
+            ++i;
+            auto attempt_locals = locals;
+            auto attempt_types = types;
+            auto attempt_join_assignments = join_assignments;
+            attempt_join_assignments.insert(joined_bindings.begin(),
+                                            joined_bindings.end());
+            gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
+                      attempt_locals, attempt_types, base, in_handler,
+                      in_function, attempt_join_assignments,
+                      functional_context);
+            while (i < ss.size() && ss[i].indent == level &&
+                   ss[i].kind == Stmt::Kind::Recover) {
+              ++i;
+              while (i < ss.size() && ss[i].indent > level) ++i;
+            }
+            break;
+          }
+
+          const string outcome = "__moss_try_outcome_" +
+              std::to_string(phase21_try_temp_++);
+          o << indent(level) << "#[allow(unreachable_code)]\n";
+          const string try_label = "__moss_try_" +
+              std::to_string(phase21_try_temp_++);
+          const bool captured_try = phase21_capture_handler_ != nullptr;
+          const string carrier = captured_try
+              ? handler_capture_carrier_type(*phase21_capture_handler_) : "";
+          o << indent(level) << "let " << outcome
+            << ": Result<(), " << (captured_try ? carrier : "__MossRaised")
+            << "> = '" << try_label << ": {\n";
+          ++i;
+          auto attempt_locals = locals;
+          auto attempt_types = types;
+          auto attempt_join_assignments = join_assignments;
+          attempt_join_assignments.insert(joined_bindings.begin(),
+                                          joined_bindings.end());
+          const bool saved_result_context = phase21_result_context_;
+          const string saved_try_label = phase21_try_label_;
+          const auto saved_return_result_context = phase21_return_result_context_;
+          if (!phase21_return_result_context_)
+            phase21_return_result_context_ = saved_result_context;
+          phase21_result_context_ = true;
+          phase21_try_label_ = try_label;
+          gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
+                    attempt_locals, attempt_types, base, in_handler,
+                    in_function, attempt_join_assignments,
+                    functional_context);
+          phase21_result_context_ = saved_result_context;
+          phase21_try_label_ = saved_try_label;
+          o << indent(level + 1) << "Ok(())\n";
+          o << indent(level) << "};\n";
+          o << indent(level) << "#[allow(unreachable_patterns)]\n";
+          o << indent(level) << "match " << outcome << " {\n";
+          o << indent(level + 1) << "Ok(()) => {},\n";
+
+          RaiseSet handled;
+          while (i < ss.size() && ss[i].indent == level &&
+                 ss[i].kind == Stmt::Kind::Recover) {
+            const Stmt& arm = ss[i++];
+            const size_t body_begin = i;
+            size_t body_end = i;
+            while (body_end < ss.size() && ss[body_end].indent > level)
+              ++body_end;
+
+            for (const auto& identity : arm.exceptional_alternatives) {
+              handled.insert(identity);
+              const string variant = phase21_rust_variant(identity);
+              const string inner = "__moss_selected_value";
+              if (captured_try) {
+                o << indent(level + 1) << "Err(__moss_selected_carrier) "
+                  << "if matches!(&__moss_selected_carrier.0.error, "
+                  << "__MossRaised::" << variant << "(";
+              } else {
+                o << indent(level + 1) << "Err(__MossRaised::" << variant
+                  << "(" << inner << " @ ";
+              }
+              if (identity.kind == RaisedIdentityKind::EnumVariant) {
+                o << phase21_rust_error_type(identity) << "::"
+                  << rust_identifier(identity.variant);
+                string enum_key = canonical_type_name(identity.type);
+                if (!enums_.count(enum_key)) {
+                  for (size_t separator = enum_key.find("::");
+                       separator != string::npos;
+                       separator = enum_key.find("::"))
+                    enum_key.replace(separator, 2, "__");
+                }
+                auto declaration = enums_.find(enum_key);
+                auto item = declaration == enums_.end()
+                    ? vector<EnumCase>::const_iterator{}
+                    : std::find_if(
+                          declaration->second->cases.begin(),
+                          declaration->second->cases.end(),
+                          [&](const EnumCase& candidate) {
+                            return candidate.name == identity.variant;
+                          });
+                if (declaration != enums_.end() &&
+                    item != declaration->second->cases.end() &&
+                    !item->fields.empty())
+                  o << " { .. }";
+              } else {
+                o << "_";
+              }
+              o << ")";
+              if (captured_try) {
+                o << ") => {\n";
+                o << indent(level + 2) << "let " << inner
+                  << " = match &__moss_selected_carrier.0.error { "
+                  << "__MossRaised::" << variant
+                  << "(__moss_value) => __moss_value.clone(), "
+                  << "_ => std::process::abort() };\n";
+              } else {
+                o << ") => {\n";
+              }
+              const string selected = "__moss_selected_error";
+              o << indent(level + 2) << "let " << selected
+                << " = __MossRaised::" << variant << "(" << inner
+                << ".clone());\n";
+
+              auto arm_locals = locals;
+              auto arm_types = types;
+              if (!arm.a.empty() && arm.a.find('.') == string::npos &&
+                  arm.a.find(',') == string::npos) {
+                o << indent(level + 2) << "let " << arm.a << " = " << inner
+                  << ";\n";
+                arm_locals.insert(arm.a);
+                arm_types[arm.a] = identity.type;
+              } else if (!arm.a.empty()) {
+                auto alternatives = split_top_level(arm.a, ',');
+                for (const auto& pattern : alternatives) {
+                  if (!(generated_failure_pattern_identity(pattern) == identity))
+                    continue;
+                  emit_generated_error_payload_bindings(
+                      o, (base + level + 2) * 4, inner, identity,
+                      generated_error_pattern_bindings(pattern, identity),
+                      arm_locals, arm_types);
+                  break;
+                }
+              }
+              auto arm_join_assignments = join_assignments;
+              arm_join_assignments.insert(joined_bindings.begin(),
+                                          joined_bindings.end());
+              const string saved_selected_error = phase21_selected_error_;
+              const string saved_selected_carrier = phase21_selected_carrier_;
+              phase21_selected_error_ = selected;
+              phase21_selected_carrier_ = captured_try
+                  ? "__moss_selected_carrier" : string();
+              size_t rendered_end = body_begin;
+              gen_block(o, ss, rendered_end, level + 1, d, current_handler,
+                        reply_slot, arm_locals, arm_types, base + 1,
+                        in_handler, in_function, arm_join_assignments,
+                        functional_context);
+              phase21_selected_error_ = saved_selected_error;
+              phase21_selected_carrier_ = saved_selected_carrier;
+              if (rendered_end != body_end)
+                throw std::runtime_error(
+                    "internal error: recover body was not fully lowered");
+              o << indent(level + 1) << "},\n";
+            }
+            i = body_end;
+          }
+          RaiseSet remaining = raise_set_without(
+              s.exceptional_alternatives, handled);
+          if (!remaining.empty()) {
+            o << indent(level + 1)
+              << "Err(__moss_unhandled_error) => ";
+            if (!saved_try_label.empty())
+              o << "break '" << saved_try_label
+                << " Err(__moss_unhandled_error),\n";
+            else if (saved_result_context)
+              o << "return Err(" <<
+                  "__moss_unhandled_error" << "),\n";
+            else
+              o << "std::process::abort(),\n";
+          } else {
+            o << indent(level + 1)
+              << "Err(_) => std::process::abort(),\n";
+          }
+          o << indent(level) << "}\n";
+          phase21_return_result_context_ = saved_return_result_context;
+          break;
+        }
+        case Stmt::Kind::Recover:
+          throw std::runtime_error(
+              "internal error: recover arm escaped checked try lowering");
+        case Stmt::Kind::Raise: {
+          if (s.a.empty()) {
+            if (phase21_selected_error_.empty())
+              throw std::runtime_error(
+                  "internal error: bare raise lacks a selected error");
+            if (phase21_selected_carrier_.empty()) {
+              o << indent(level)
+                << phase21_error_exit(phase21_selected_error_) << ";\n";
+            } else if (phase21_try_label_.empty()) {
+              o << indent(level) << "return Err("
+                << phase21_selected_carrier_ << ");\n";
+            } else {
+              o << indent(level) << "break '" << phase21_try_label_
+                << " Err(" << phase21_selected_carrier_ << ");\n";
+            }
+          } else {
+            auto type = generated_expr_type(s.a, &types);
+            if (!type)
+              throw std::runtime_error(
+                  "internal error: raise lacks a checked error value type");
+            const string concrete = canonical_type_name(*type);
+            const string value = expr(s.a, d, locals, &types,
+                statement_functional_pipeline_id(
+                    s, functional_context, 0));
+            if (enums_.count(concrete)) {
+              const string raised_value = "__moss_error_value_" +
+                  std::to_string(phase21_try_temp_++);
+              const string temporary = "__moss_raised_value_" +
+                  std::to_string(phase21_try_temp_++);
+              o << indent(level) << "let " << raised_value << " = "
+                << value << ";\n"
+                << indent(level) << "#[allow(unreachable_patterns)]\n"
+                << indent(level) << "let " << temporary << " = match "
+                << raised_value << " {\n";
+              for (const auto& identity : s.exceptional_alternatives) {
+                if (identity.kind != RaisedIdentityKind::EnumVariant ||
+                    canonical_type_name(identity.type) != concrete)
+                  continue;
+                const auto& declaration = *enums_.at(concrete);
+                auto item = std::find_if(declaration.cases.begin(),
+                    declaration.cases.end(), [&](const EnumCase& candidate) {
+                      return candidate.name == identity.variant;
+                    });
+                if (item == declaration.cases.end()) continue;
+                o << indent(level + 1) << "value @ "
+                  << phase21_rust_error_type(identity) << "::"
+                  << rust_identifier(identity.variant);
+                if (!item->fields.empty()) o << " { .. }";
+                o << " => __MossRaised::"
+                  << phase21_rust_variant(identity) << "(value),\n";
+              }
+              o << indent(level + 1)
+                << "_ => std::process::abort(),\n"
+                << indent(level) << "};\n"
+                << indent(level)
+                << phase21_error_exit(temporary) << ";\n";
+            } else {
+              const RaisedIdentity identity{
+                  RaisedIdentityKind::ScalarType, concrete, {}};
+              if (!s.exceptional_alternatives.count(identity))
+                throw std::runtime_error(
+                    "internal error: raise lacks its checked scalar identity");
+              o << indent(level) << phase21_error_exit(
+                  "__MossRaised::" + phase21_rust_variant(identity) +
+                  "(" + value + ")") << ";\n";
+            }
+          }
+          ++i;
+          while (i < ss.size() && ss[i].indent >= level) ++i;
+          break;
+        }
         case Stmt::Kind::Match: {
           auto scrutinee_type = generated_expr_type(s.a, &types);
           if (!scrutinee_type || !enums_.count(canonical_type_name(*scrutinee_type)))
@@ -15739,9 +20189,14 @@ class Generator {
             }
           }
           o << indent(level) << "match ";
-          if (s.b != "consume") o << "&";
+          const bool recovery_slot = phase21_option_slots_.count(s.a) != 0;
+          if (s.b != "consume" && !recovery_slot) o << "&";
           if (struct_literal) o << "(";
-          o << expr(s.a, d, locals, &types);
+          if (recovery_slot && s.b == "consume")
+            o << "__moss_recovery_slot_" << s.a
+              << ".take().unwrap_or_else(|| std::process::abort())";
+          else
+            o << expr(s.a, d, locals, &types);
           if (struct_literal) o << ")";
           o << " {\n";
           ++i;
@@ -16018,17 +20473,30 @@ class Generator {
             o << "println!(\"";
             for (size_t k = 0; k < s.args.size(); ++k) { if (k) o << " "; o << "{}"; }
             o << "\"";
-            for (size_t argument = 0; argument < s.args.size(); ++argument)
-              o << ", "
-                << expr(s.args[argument], d, locals, &types,
-                        statement_functional_pipeline_id(
-                            s, functional_context, argument));
+            for (size_t argument = 0; argument < s.args.size(); ++argument) {
+              string rendered = expr(
+                  s.args[argument], d, locals, &types,
+                  statement_functional_pipeline_id(s, functional_context,
+                                                   argument));
+              auto type = generated_expr_type(s.args[argument], &types);
+              if (type && canonical_type_name(*type) == "float")
+                rendered = "__moss_ryu::canonical_float_text(" + rendered + ")";
+              o << ", " << rendered;
+            }
             o << ");\n";
           }
           ++i;
           break;
         }
         case Stmt::Kind::Assign: {
+          if (phase21_option_slots_.count(s.a)) {
+            o << indent(level) << "__moss_recovery_slot_" << s.a
+              << " = Some(" << expr(s.b, d, locals, &types,
+                     statement_functional_pipeline_id(
+                         s, functional_context, 0)) << ");\n";
+            ++i;
+            break;
+          }
           if (auto sd = domain_construction(s.b)) {
             const string source_domain = *sd;
             construction_binding_ = s.a;
@@ -16084,6 +20552,9 @@ class Generator {
                             "LOCAL assignment: introduce an inferred Moss binding");
             string annotation;
             if (starts_with(statement_type, "map[") && ends_with(statement_type, "]")) annotation = rust_type(statement_type);
+            else if (canonical_type_name(statement_type) == "float" ||
+                     canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float")
+              annotation = "f64";
             o << indent(level) << "let mut " << s.a;
             if (!annotation.empty()) o << ": " << annotation;
             o << " = "
@@ -16227,6 +20698,19 @@ class Generator {
                         argument, generated_expr_type(argument, &types).value_or("")));
                   return result;
                 }(), true, nullptr);
+          const auto external_method_module = call_method && call_receiver_type
+              ? phase21_external_module_for_symbol(
+                    canonical_type_name(*call_receiver_type))
+              : std::optional<string>{};
+          const bool standard_write_bridge = external_method_module &&
+              std::any_of(call_method->params.begin(), call_method->params.end(),
+                  [&](const Param& parameter) {
+                    const size_t index = static_cast<size_t>(
+                        &parameter - call_method->params.data());
+                    return !standard_error_variants(canonical_type_name(
+                        parameter.type)).empty() &&
+                        method_effect(*call_method, index) == Effect::Write;
+                  });
           vector<string> argument_temporaries(s.args.size());
           if (call_method && call_method->receiver_effect != Effect::Read) {
             for (size_t k = 0; k < s.args.size(); ++k) {
@@ -16265,55 +20749,112 @@ class Generator {
               types[argument_temporaries[k]] = temporary_type;
             }
           }
-          o << indent(level);
-          if (benchmark_body_) o << "std::hint::black_box(";
-          o << (implicit_method ? "self." : "")
-            << (s.b.empty() && known_function
+          string method_receiver_expression = (implicit_method ? "self." : "") +
+            (s.b.empty() && known_function
                     ? viewed_function_name(function_name, s.args, d, locals, &types)
                     : !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
                     : expr(s.a, d, locals, &types));
+          std::ostringstream bridge_before, bridge_after, call_output;
+          call_output << (standard_write_bridge ? "__moss_bridge_receiver" :
+              method_receiver_expression);
           if (!s.b.empty()) {
             string method = s.b;
             auto it = types.find(s.a);
             if (it != types.end() && (it->second == "queue" || starts_with(it->second, "queue["))) method = method == "push" ? "push_back" : method == "pop" ? "pop_front" : method;
-            o << "." << viewed_method_name(s.a, method, s.args, d, locals, &types);
+            call_output << "." << viewed_method_name(s.a, method, s.args, d, locals, &types);
           }
-          o << "(";
+          call_output << "(";
           size_t emitted_arguments = 0;
           for (size_t k = 0; k < s.args.size(); ++k) {
             bool compile_time_callable = known_function &&
                 starts_with(generated_expr_type(s.args[k], &types).value_or(""),
                             "callable:");
             if (compile_time_callable) continue;
-            if (emitted_arguments++) o << ", ";
-            if (benchmark_body_) o << "std::hint::black_box(";
+            if (emitted_arguments++) call_output << ", ";
+            if (benchmark_body_) call_output << "std::hint::black_box(";
             string argument_expression = argument_temporaries[k].empty()
                 ? s.args[k] : argument_temporaries[k];
             if (known_function) {
-              o << function_call_argument(*functions_.at(function_name), k, argument_expression, d,
+              call_output << function_call_argument(*functions_.at(function_name), k, argument_expression, d,
                                           locals, &types,
                                           statement_functional_pipeline_id(
                                               s, functional_context, k),
                                           call_specialization(*functions_.at(function_name),
                                                               s.args, &types));
             } else if (!s.b.empty() || implicit_method) {
-              if (call_method)
-                o << method_call_argument(
+              if (call_method) {
+                string rendered = method_call_argument(
                     *call_method, k, argument_expression, d, locals, &types,
                     statement_functional_pipeline_id(
                         s, functional_context, k));
-              else
-                o << expr(argument_expression, d, locals, &types,
+                bool standard_write_argument = false;
+                if (external_method_module && k < call_method->params.size() &&
+                    !standard_error_variants(canonical_type_name(
+                        call_method->params[k].type)).empty()) {
+                  const string local_type =
+                      canonical_type_name(call_method->params[k].type);
+                  const string external_type = tooling_name("moss_" +
+                      *external_method_module) + "::" + local_type;
+                  const Effect effect = method_effect(*call_method, k);
+                  if (effect == Effect::Write) {
+                    standard_write_argument = true;
+                    const string prefix = "__moss_standard_write_" +
+                        std::to_string(call_argument_temp_++);
+                    const string local_ref = prefix + "_local";
+                    const string provider_value = prefix + "_provider";
+                    bridge_before << "let " << local_ref << " = " << rendered
+                      << "; let mut " << provider_value << " = "
+                      << external_type << "::from((*" << local_ref
+                      << ").clone()); ";
+                    bridge_after << "*" << local_ref << " = " << local_type
+                      << "::from(" << provider_value << "); ";
+                    rendered = "&mut " + provider_value;
+                  } else
+                    rendered = effect == Effect::Read
+                        ? "&" + external_type + "::from((*(" + rendered +
+                            ")).clone())"
+                        : external_type + "::from(" + rendered + ")";
+                }
+                if (standard_write_bridge && !standard_write_argument) {
+                  const string staged = "__moss_call_argument_" +
+                      std::to_string(call_argument_temp_++);
+                  bridge_before << "let " << staged << " = " << rendered
+                    << "; ";
+                  rendered = staged;
+                }
+                call_output << rendered;
+              } else
+                call_output << expr(argument_expression, d, locals, &types,
                           statement_functional_pipeline_id(
                               s, functional_context, k));
             } else {
-              o << expr(s.args[k], d, locals, &types,
+              call_output << expr(s.args[k], d, locals, &types,
                         statement_functional_pipeline_id(
                             s, functional_context, k));
             }
-            if (benchmark_body_) o << ")";
+            if (benchmark_body_) call_output << ")";
           }
-          o << ")";
+          call_output << ")";
+          string lowered_call = call_output.str();
+          if (standard_write_bridge) {
+            string receiver_binding = call_method->receiver_effect == Effect::Consume
+                ? method_receiver_expression
+                : (call_method->receiver_effect == Effect::Write ? "&mut (" :
+                    "&(") + method_receiver_expression + ")";
+            lowered_call = "{ let __moss_bridge_receiver = " +
+                receiver_binding + "; " + bridge_before.str() +
+                "let __moss_bridge_result = " + lowered_call + "; " +
+                bridge_after.str() + "__moss_bridge_result }";
+          }
+          if (call_method && !call_method->observable_effects.raise_set.empty()) {
+            if (!phase21_result_context_)
+              throw std::runtime_error(
+                  "internal error: checked raising method statement lacks a Phase 21 outcome context");
+            lowered_call = phase21_propagate(lowered_call);
+          }
+          o << indent(level);
+          if (benchmark_body_) o << "std::hint::black_box(";
+          o << lowered_call;
           auto receiver_type = !s.b.empty()
               ? generated_expr_type(s.a, &types) : std::optional<string>{};
           if (!s.b.empty() && s.b == "pop" && receiver_type &&
@@ -16347,7 +20888,12 @@ class Generator {
             o << indent(level);
             if (!joined_assignment)
               o << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "");
-            o << s.a << " = "
+            o << s.a;
+            if (!joined_assignment && !domain_capability &&
+                (canonical_type_name(statement_type) == "float" ||
+                 canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float"))
+              o << ": f64";
+            o << " = "
               << expr(s.b, d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 0));
@@ -16423,7 +20969,13 @@ class Generator {
             } else if (types.count(expr_trimmed) && view_object_type(types.at(expr_trimmed))) {
               rendered = "(" + rendered + ").clone()";
             }
-            o << indent(level) << "return " << rendered << ";\n";
+            o << indent(level) << "return ";
+            const bool returns_result = phase21_return_result_context_.value_or(
+                phase21_result_context_);
+            if (returns_result) o << "Ok(";
+            o << rendered;
+            if (returns_result) o << ")";
+            o << ";\n";
           }
           else
             o << indent(level) << (in_handler ? "break 'handler;" : "return;") << "\n";
@@ -17004,15 +21556,20 @@ static string compact_semantic_text(const string& text) {
 }
 
 static string observable_effect_fingerprint(const ObservableEffects& effects) {
-  return string(effects.local_capture_read ? "1" : "0") +
+  string result = string(effects.local_capture_read ? "1" : "0") +
       (effects.local_mutation ? "1" : "0") +
       (effects.domain_read ? "1" : "0") +
       (effects.domain_write ? "1" : "0") +
       (effects.message ? "1" : "0") +
       (effects.external_io ? "1" : "0") +
-      (effects.may_fail ? "1" : "0") +
+      (effects.fileio ? "1" : "0") +
+      (effects.fileio_unknown ? "1" : "0") +
+      (effects.may_panic ? "1" : "0") +
       (effects.may_diverge ? "1" : "0") +
       (effects.unresolved ? "1" : "0");
+  for (const auto& raised : effects.raise_set)
+    result += "|" + raised.canonical();
+  return result;
 }
 
 static string statement_fingerprint_text(const Stmt& statement) {
@@ -18267,7 +22824,15 @@ static void write_observable_effects_json(
       << ", \"message\": " << (effects.message ? "true" : "false")
       << ", \"external_io\": "
       << (effects.external_io ? "true" : "false")
-      << ", \"may_fail\": " << (effects.may_fail ? "true" : "false")
+      << ", \"may_panic\": " << (effects.may_panic ? "true" : "false")
+      << ", \"raise_set\": [";
+  bool first_raise = true;
+  for (const auto& raised : effects.raise_set) {
+    if (!first_raise) out << ", ";
+    write_debug_json_string(out, raised.canonical());
+    first_raise = false;
+  }
+  out << "]"
       << ", \"may_diverge\": "
       << (effects.may_diverge ? "true" : "false")
       << ", \"unresolved\": "
@@ -18846,6 +23411,10 @@ static void write_bootstrap_json(std::ostream& out,
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"pass\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"],\"exhaustive_enum_match\":\"match expression: / match consume <owned enum expression>:\"},"
          "\"enums\":{\"declaration\":\"enum Name: with closed named-field cases\",\"construction\":\"Name.Case(field: value)\",\"read_match\":\"match expression:\",\"consume_match\":\"match consume <owned enum expression>:\",\"pattern_ownership_modifiers\":false,\"replace\":\"replace(place, replacement)\"},"
          "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"}},"
+         "\"numeric\":{\"float_predicates\":[\"is_nan(Float) -> Bool\",\"is_finite(Float) -> Bool\"],"
+         "\"parsing\":[\"parse_int(String) -> Int raises ParseError.Invalid|Overflow\","
+         "\"parse_float(String) -> Float raises ParseError.Invalid\"],"
+         "\"conversion\":[\"to_int(Float) -> Int raises ConversionError.NonFinite|Overflow\"]},"
          "\"domains\":{\"fn_inside_domain\":\"handler\",\"ordinary_helper\":\"non-domain function\",\"composition\":{\"domain_instances\":\"constructed statically in main's initial composition prefix\",\"initializer_rule\":\"domain state initializer expressions must be side-effect-free; pure helper calls are accepted, but messages, domain access, I/O, failing, divergent, and unresolved work are rejected; unresolved means relevant observable effects cannot be statically established, not ordinary locals, local computation, normal allocation, or multi-statement pure helpers\"}},"
          "\"tests\":{\"syntax\":\"test \\\"name\\\":\",\"assertions\":[\"assert(condition)\",\"assertEqual(actual, expected)\"],\"domain_topology\":{\"test_blocks_are_composition_roots\":false,\"composition_root\":\"main initial composition prefix\"}},"
          "\"collections\":{\"builtins\":[\"Vector\",\"Map\",\"Queue\"],\"concrete_type_positions\":\"Vector[T], Map[K, V], and Queue[T] are concrete built-in types, not source generics\",\"vector_literal\":\"[a, b, c]\",\"empty_typed_vector\":\"Vector[T]()\",\"local_type_annotations\":false,\"Vector\":{\"construction\":{\"literal\":\"[a, b, c]\",\"empty_typed\":\"Vector[T]()\"},\"methods\":[\"push(item)\",\"pop()\"],\"indexing\":{\"read\":\"vec[i]\",\"write\":\"vec[i] = item\"},\"cardinality\":\"vec |> count\"},\"Map\":{\"construction\":{\"inferred\":\"Map()\"},\"indexing\":{\"read\":\"map[key]\",\"write\":\"map[key] = value\"},\"methods\":[\"get(key, default)\",\"keys()\",\"values()\",\"delete(key, fallback, found)\"],\"iteration_note\":\"keys() and values() return eager owned Vector snapshots\",\"deletion_supported\":true},\"Queue\":{\"construction\":{\"inferred\":\"Queue()\"},\"methods\":[\"push(item)\",\"pop()\"]}},"
@@ -21736,6 +26305,12 @@ static string rewrite_module_type(string type, const string& module,
     while (end < type.size() &&
            (std::isalnum(static_cast<unsigned char>(type[end])) || type[end] == '_')) ++end;
     string token = type.substr(i, end - i);
+    if (starts_with(token, "std__") &&
+        standard_error_short_name(token.substr(5))) {
+      result += token;
+      i = end;
+      continue;
+    }
     if (starts_with(token, module + "__")) {
       result += token;
       i = end;
@@ -21799,8 +26374,19 @@ static string rewrite_module_expression(
     while (end < expression.size() &&
            (std::isalnum(static_cast<unsigned char>(expression[end])) || expression[end] == '_')) ++end;
     string token = expression.substr(i, end - i);
+    if (starts_with(token, "std__") &&
+        standard_error_short_name(token.substr(5))) {
+      result += token;
+      i = end;
+      continue;
+    }
     if (starts_with(token, module + "__")) {
       result += token;
+      i = end;
+      continue;
+    }
+    if (!numeric_builtin_base(token).empty()) {
+      result += module_symbol(module, token);
       i = end;
       continue;
     }
@@ -21810,7 +26396,8 @@ static string rewrite_module_expression(
     if (token == "assert" || token == "assertEqual" ||
         functional_stage_kind(token).has_value() ||
         token == "Map" || token == "Queue" || token == "Vector" ||
-        token == "Some" || token == "sqrt" || token == "range") {
+        token == "Some" || token == "sqrt" || token == "range" ||
+        token == "is_nan" || token == "is_finite") {
       result += token;
       i = end;
       continue;
@@ -21890,6 +26477,32 @@ static void rewrite_module_program(
           continue;
         }
         if (statement.kind == Stmt::Kind::Else) return;
+
+        if (statement.kind == Stmt::Kind::Try) {
+          const std::set<string> incoming = locals;
+          ++index;
+          std::set<string> normal_locals = incoming;
+          walk_block(index, level + 1, normal_locals);
+          std::vector<std::set<string>> paths{std::move(normal_locals)};
+          while (index < statements.size() &&
+                 statements[index].indent == level &&
+                 statements[index].kind == Stmt::Kind::Recover) {
+            Stmt& arm = statements[index];
+            arm.a = rewrite_module_expression(
+                arm.a, module, modules, public_exports, sibling_methods,
+                &incoming);
+            std::set<string> arm_locals = incoming;
+            if (plain_identifier(arm.a)) arm_locals.insert(arm.a);
+            ++index;
+            walk_block(index, level + 1, arm_locals);
+            paths.push_back(std::move(arm_locals));
+          }
+          for (const auto& binding : paths.front())
+            if (std::all_of(paths.begin() + 1, paths.end(),
+                            [&](const auto& path) { return path.count(binding); }))
+              locals.insert(binding);
+          continue;
+        }
 
         if (statement.kind == Stmt::Kind::If) {
           statement.a = rewrite_module_expression(
@@ -21996,7 +26609,10 @@ static void rewrite_module_program(
           }
         } else if (statement.kind == Stmt::Kind::Call && !statement.a.empty()) {
           string callee = trim(statement.a);
-          if (callee.find('.') == string::npos && plain_identifier(callee) &&
+          if (!numeric_builtin_base(callee).empty() &&
+              callee.find("__") == string::npos)
+            statement.a = module_symbol(module, callee);
+          else if (callee.find('.') == string::npos && plain_identifier(callee) &&
               !(sibling_methods && sibling_methods->count(callee)) &&
               !locals.count(callee) &&
               functions.count(callee) &&
@@ -22004,6 +26620,9 @@ static void rewrite_module_program(
               !functional_stage_kind(callee).has_value() &&
               callee != "Map" && callee != "Queue" && callee != "Vector" &&
               callee != "Some" && callee != "sqrt" && callee != "range" &&
+              callee != "is_nan" && callee != "is_finite" &&
+              callee != "parse_int" && callee != "parse_float" &&
+              callee != "to_int" &&
               !starts_with(callee, module + "__") &&
               callee.find("__") == string::npos)
             statement.a = module_symbol(module, callee);
@@ -22106,6 +26725,42 @@ static void rewrite_module_program(
       std::set<string> initial_locals{"self"};
       for (const auto& p : handler.params) initial_locals.insert(p.name);
       body(handler.body, initial_locals);
+      for (auto& arm : handler.failure_arms) {
+        for (auto& pattern : arm.patterns)
+          pattern = rewrite_module_expression(
+              pattern, module, modules, public_exports, nullptr,
+              &initial_locals);
+        auto arm_locals = initial_locals;
+        if (!arm.binding.empty()) arm_locals.insert(arm.binding);
+        body(arm.body, arm_locals);
+      }
+      if (handler.provider_abi) {
+        RaiseSet remaining = handler.observable_effects.raise_set;
+        for (const auto& record : handler.provider_abi->failure_arms) {
+          FailureArm arm;
+          arm.line = handler.line;
+          arm.source_file = handler.source_file;
+          if (record.pattern.kind == FailurePatternKind::CatchAll) {
+            arm.exceptional_alternatives = remaining;
+            remaining.clear();
+          } else {
+            for (const auto& identity : record.pattern.variants) {
+              arm.patterns.push_back(identity.type + "." + identity.variant);
+              if (remaining.erase(identity))
+                arm.exceptional_alternatives.insert(identity);
+            }
+          }
+          StateLeafEffects effects;
+          effects.reads.insert(record.state_reads.begin(),
+                               record.state_reads.end());
+          effects.writes.insert(record.state_writes.begin(),
+                                record.state_writes.end());
+          effects.consumes.insert(record.state_consumes.begin(),
+                                  record.state_consumes.end());
+          arm.state_effects = std::move(effects);
+          handler.failure_arms.push_back(std::move(arm));
+        }
+      }
     }
   }
   if (program.main) body(program.main->body);
@@ -22268,14 +26923,92 @@ static string interface_field(const string& text, const string& key) {
     size_t end = text.find('"', begin + 1);
     return end == string::npos ? string() : text.substr(begin + 1, end - begin - 1);
   }
-  size_t end = text.find_first_of(" \t\r\n", begin);
+  size_t end = text.find_first_of("; \t\r\n", begin);
   return text.substr(begin, end == string::npos ? string::npos : end - begin);
+}
+
+static RaisedIdentity parse_interface_raise_identity(const string& value) {
+  if (starts_with(value, "scalar:")) {
+    RaisedIdentity identity = RaisedIdentity::scalar(value.substr(7));
+    if (identity.valid()) return identity;
+  }
+  if (starts_with(value, "enum:")) {
+    size_t separator = value.rfind(':');
+    if (separator != string::npos && separator > 5) {
+      RaisedIdentity identity = RaisedIdentity::enum_variant(
+          value.substr(5, separator - 5), value.substr(separator + 1));
+      if (identity.valid()) return identity;
+    }
+  }
+  throw CompileError(0, "invalid raised identity in module interface");
+}
+
+static RecoveryWarningWitness parse_interface_warning_witness(
+    const string& record) {
+  std::istringstream input(record);
+  RecoveryWarningWitness witness;
+  int on_fail = -1;
+  size_t alternatives = 0;
+  if (!(input >> witness.line >> on_fail >> alternatives) ||
+      witness.line < 0 || (on_fail != 0 && on_fail != 1) ||
+      alternatives == 0 || alternatives > 1024)
+    throw CompileError(0, "invalid ABI-v9 warning witness header",
+                       "SOURCE_FREE_WARNING_CONTRACT_INVALID");
+  witness.on_fail = on_fail == 1;
+  for (size_t index = 0; index < alternatives; ++index) {
+    string identity;
+    if (!(input >> std::quoted(identity)) ||
+        !witness.selected.insert(
+            parse_interface_raise_identity(identity)).second)
+      throw CompileError(0, "invalid ABI-v9 warning witness alternatives",
+                         "SOURCE_FREE_WARNING_CONTRACT_INVALID");
+  }
+  size_t leaves = 0;
+  if (!(input >> leaves) || leaves == 0 || leaves > 4096)
+    throw CompileError(0, "invalid ABI-v9 warning witness leaf count",
+                       "SOURCE_FREE_WARNING_CONTRACT_INVALID");
+  for (size_t index = 0; index < leaves; ++index) {
+    string leaf;
+    if (!(input >> std::quoted(leaf)) || leaf.empty() ||
+        !witness.formal_writes.insert(leaf).second)
+      throw CompileError(0, "invalid ABI-v9 warning witness leaf",
+                         "SOURCE_FREE_WARNING_CONTRACT_INVALID");
+  }
+  string trailing;
+  if (input >> trailing)
+    throw CompileError(0, "trailing data in ABI-v9 warning witness",
+                       "SOURCE_FREE_WARNING_CONTRACT_INVALID");
+  return witness;
+}
+
+static void write_interface_warning_witness(
+    std::ostream& out, const string& prefix,
+    const RecoveryWarningWitness& witness) {
+  out << prefix << " " << witness.line << " " << (witness.on_fail ? 1 : 0)
+      << " " << witness.selected.size();
+  for (const auto& identity : witness.selected)
+    out << " " << std::quoted(identity.canonical());
+  out << " " << witness.formal_writes.size();
+  for (const auto& leaf : witness.formal_writes)
+    out << " " << std::quoted(leaf);
+  out << "\n";
 }
 
 static ObservableEffects interface_effects(const string& text) {
   ObservableEffects effects;
+  static const vector<string> required_fields = {
+      "local_capture_read", "local_mutation", "domain_read", "domain_write",
+      "message", "external_io", "fileio", "fileio_unknown", "may_panic",
+      "raise_set", "may_diverge", "unresolved"};
+  for (const auto& key : required_fields)
+    if (interface_field(text, key).empty())
+      throw CompileError(0,
+          "compiled provider lacks Phase 21 observable effects; rebuild its .mossi provider");
   auto flag = [&](const string& key) {
-    return interface_field(text, key) == "1";
+    string value = interface_field(text, key);
+    if (value != "0" && value != "1")
+      throw CompileError(0, "invalid observable effect flag in module interface");
+    return value == "1";
   };
   effects.local_capture_read = flag("local_capture_read");
   effects.local_mutation = flag("local_mutation");
@@ -22283,12 +27016,31 @@ static ObservableEffects interface_effects(const string& text) {
   effects.domain_write = flag("domain_write");
   effects.message = flag("message");
   effects.external_io = flag("external_io");
-  effects.may_fail = flag("may_fail");
+  effects.fileio = flag("fileio");
+  effects.fileio_unknown = flag("fileio_unknown");
+  effects.may_panic = flag("may_panic");
+  string serialized_raises = interface_field(text, "raise_set");
+  if (serialized_raises != "-") {
+    size_t begin = 0;
+    std::optional<RaisedIdentity> previous;
+    while (begin <= serialized_raises.size()) {
+      size_t end = serialized_raises.find(',', begin);
+      string identity = serialized_raises.substr(
+          begin, end == string::npos ? string::npos : end - begin);
+      RaisedIdentity parsed = parse_interface_raise_identity(identity);
+      if (!parsed.valid())
+        throw CompileError(0, "invalid raised identity in module interface");
+      if (previous && !(previous.value() < parsed))
+        throw CompileError(0,
+            "raise set is not normalized in module interface");
+      previous = parsed;
+      effects.raise_set.insert(std::move(parsed));
+      if (end == string::npos) break;
+      begin = end + 1;
+    }
+  }
   effects.may_diverge = flag("may_diverge");
   effects.unresolved = flag("unresolved");
-  // The source-free .mossi format has no FileIO effect bit. Keep imported
-  // callables conservative until the provider interface can state one.
-  effects.fileio_unknown = true;
   return effects;
 }
 
@@ -22350,14 +27102,320 @@ static void parse_generic_ir_line(const string& line, Function& function) {
   }
 }
 
+static FailurePatternAbi parse_failure_pattern_text(const string& text);
+
+static ResolvedTypeAbi resolve_phase21_owned_type(
+    const Program& provider, const string& spelling,
+    std::set<string>& resolving) {
+  ResolvedTypeAbi result;
+  result.canonical_type = trim(spelling);
+  const string concrete = canonical_type_name(result.canonical_type);
+  if (concrete.empty()) return result;
+  if (concrete.front() == '&') {
+    result.kind = ResolvedTypeKind::Borrowed;
+    return result;
+  }
+  const auto is_named = [&](const string& candidate, const string& name) {
+    const string normalized = canonical_type_name(name);
+    if (candidate == normalized) return true;
+    const auto name_separator = normalized.rfind("::");
+    if (name_separator != string::npos &&
+        candidate == normalized.substr(name_separator + 2))
+      return true;
+    const auto candidate_separator = candidate.rfind("::");
+    return candidate_separator != string::npos &&
+           candidate.substr(candidate_separator + 2) == normalized;
+  };
+  static const std::set<string> intrinsic_capabilities = {
+      "FileIO", "Range", "RangeBatch", "MossGuard", "ProtectedRead",
+      "ProtectedWrite"};
+  if (intrinsic_capabilities.count(result.canonical_type) ||
+      starts_with(concrete, "DomainHandle[") ||
+      starts_with(concrete, "domainhandle[") ||
+      concrete.find("MossGuard") != string::npos ||
+      concrete.find("ProtectedRead") != string::npos ||
+      concrete.find("ProtectedWrite") != string::npos) {
+    result.kind = ResolvedTypeKind::Capability;
+    return result;
+  }
+  for (const auto& domain : provider.domains)
+    if (is_named(concrete, domain.name)) {
+      result.kind = ResolvedTypeKind::Capability;
+      return result;
+    }
+  if (concrete == "int" || concrete == "float" || concrete == "bool" ||
+      concrete == "unit") {
+    result.kind = ResolvedTypeKind::Scalar;
+    return result;
+  }
+  const auto bracket = concrete.find('[');
+  if (concrete == "string" || starts_with(concrete, "vector[") ||
+      starts_with(concrete, "map[") || starts_with(concrete, "queue[")) {
+    result.kind = ResolvedTypeKind::OwnedUnbounded;
+    if (bracket != string::npos && ends_with(concrete, "]"))
+      for (const auto& argument : split_top_level(
+               concrete.substr(bracket + 1, concrete.size() - bracket - 2),
+               ','))
+        result.children.push_back(
+            resolve_phase21_owned_type(provider, argument, resolving));
+    return result;
+  }
+  if ((starts_with(concrete, "option[") ||
+       starts_with(concrete, "result[")) &&
+      ends_with(concrete, "]")) {
+    result.kind = ResolvedTypeKind::ErrorEnum;
+    for (const auto& argument : split_top_level(
+             concrete.substr(bracket + 1, concrete.size() - bracket - 2),
+             ','))
+      result.children.push_back(
+          resolve_phase21_owned_type(provider, argument, resolving));
+    return result;
+  }
+  if (!resolving.insert(concrete).second) return result;
+  const auto finish = [&]() { resolving.erase(concrete); };
+  for (const auto& enumeration : provider.enums) {
+    if (!is_named(concrete, enumeration.name)) continue;
+    result.kind = ResolvedTypeKind::ErrorEnum;
+    for (const auto& item : enumeration.cases)
+      for (const auto& field : item.fields)
+        result.children.push_back(
+            resolve_phase21_owned_type(provider, field.type, resolving));
+    finish();
+    return result;
+  }
+  for (const auto& object : provider.objects) {
+    if (!is_named(concrete, object.name)) continue;
+    result.kind = ResolvedTypeKind::Aggregate;
+    for (const auto& field : object.fields)
+      result.children.push_back(
+          resolve_phase21_owned_type(provider, field.type, resolving));
+    finish();
+    return result;
+  }
+  finish();
+  return result;
+}
+
+static ResolvedTypeAbi resolve_phase21_owned_type(
+    const Program& provider, const string& spelling) {
+  std::set<string> resolving;
+  return resolve_phase21_owned_type(provider, spelling, resolving);
+}
+
+static bool phase21_declared_type_shape_valid(
+    const Program& provider,
+    const std::map<string, ResolvedTypeAbi>& declarations,
+    const ResolvedTypeAbi& declared,
+    std::set<string>& checking) {
+  auto entry = declarations.find(declared.canonical_type);
+  if (entry == declarations.end() || !(entry->second == declared) ||
+      declared.kind == ResolvedTypeKind::Unknown)
+    return false;
+  ResolvedTypeAbi resolved =
+      resolve_phase21_owned_type(provider, declared.canonical_type);
+  if (resolved.kind != ResolvedTypeKind::Unknown && !(resolved == declared))
+    return false;
+  if (resolved.kind == ResolvedTypeKind::Unknown &&
+      declared.kind != ResolvedTypeKind::Aggregate &&
+      declared.kind != ResolvedTypeKind::ErrorEnum)
+    return false;
+  if (!checking.insert(declared.canonical_type).second) return false;
+  for (const auto& child : declared.children)
+    if (!phase21_declared_type_shape_valid(
+            provider, declarations, child, checking)) {
+      checking.erase(declared.canonical_type);
+      return false;
+    }
+  checking.erase(declared.canonical_type);
+  return true;
+}
+
+static bool phase21_declared_type_shape_valid(
+    const Program& provider,
+    const std::map<string, ResolvedTypeAbi>& declarations,
+    const ResolvedTypeAbi& declared) {
+  std::set<string> checking;
+  return phase21_declared_type_shape_valid(
+      provider, declarations, declared, checking);
+}
+
+static std::filesystem::path selected_provider_rlib(
+    const std::filesystem::path& interface_file) {
+  std::error_code error;
+  auto rlib = interface_file;
+  rlib.replace_extension(".rlib");
+  if (std::filesystem::is_regular_file(rlib, error)) return rlib;
+  rlib = interface_file.parent_path() /
+      ("lib" + interface_file.stem().string() + ".rlib");
+  if (std::filesystem::is_regular_file(rlib, error)) return rlib;
+  throw CompileError(0, "compiled provider artifact is missing for '" +
+      interface_file.string() + "'; rebuild the ABI-v9 provider",
+      "SOURCE_FREE_PROVIDER_ARTIFACT_MISSING");
+}
+
+static string source_free_contract_marker(const string& module,
+                                          const string& digest) {
+  return "MOSS_ABI_V9_CONTRACT::" + tooling_name(module) + "::" + digest +
+         "::END";
+}
+
+static string source_free_contract_material(const string& text) {
+  static const string prefix = "provider_contract_digest sha256:";
+  if (!starts_with(text, "moss-module-interface-v2\n"))
+    throw CompileError(0, "source-free provider uses an older module interface; rebuild it for ABI v9",
+                       "SOURCE_FREE_ABI_REBUILD_REQUIRED");
+  // ABI v8 used the same interface container but had no provider-owned seal.
+  // Diagnose that version before the v9-only digest check. A v9 interface
+  // missing its digest remains a malformed v9 contract.
+  if (text.find("\nnative_abi 8\n") != string::npos)
+    throw CompileError(0, "source-free provider uses ABI v8; rebuild its .mossi and .rlib for ABI v9",
+                       "SOURCE_FREE_ABI_REBUILD_REQUIRED");
+  const size_t begin = text.find("\n" + prefix);
+  if (begin == string::npos ||
+      text.find("\n" + prefix, begin + 1) != string::npos)
+    throw CompileError(0, "ABI-v9 provider contract digest is missing or repeated",
+                       "SOURCE_FREE_CONTRACT_INVALID");
+  const size_t end = text.find('\n', begin + 1);
+  if (end == string::npos)
+    throw CompileError(0, "ABI-v9 provider contract digest is incomplete",
+                       "SOURCE_FREE_CONTRACT_INVALID");
+  const string declared = text.substr(begin + 1 + prefix.size(),
+                                      end - begin - 1 - prefix.size());
+  if (declared.size() != 64 ||
+      !std::all_of(declared.begin(), declared.end(), [](unsigned char ch) {
+        return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f');
+      }))
+    throw CompileError(0, "ABI-v9 provider contract digest is malformed",
+                       "SOURCE_FREE_CONTRACT_INVALID");
+  return text.substr(0, begin + 1) + text.substr(end + 1);
+}
+
+static string source_free_declared_digest(const string& text) {
+  const string marker = "\nprovider_contract_digest sha256:";
+  const size_t begin = text.find(marker);
+  if (begin == string::npos) return {};
+  return text.substr(begin + marker.size(), 64);
+}
+
+static void verify_source_free_provider_binding(
+    const std::filesystem::path& interface_file, const string& text) {
+  const string material = source_free_contract_material(text);
+  const string declared = source_free_declared_digest(text);
+  if (source_free_contract_sha256(material) != declared)
+    throw CompileError(0, "ABI-v9 provider metadata does not match its declared contract digest",
+                       "SOURCE_FREE_CONTRACT_MISMATCH");
+  const auto rlib = selected_provider_rlib(interface_file);
+  std::ifstream input(rlib, std::ios::binary);
+  std::ostringstream archive;
+  archive << input.rdbuf();
+  if (!input && !input.eof())
+    throw CompileError(0, "cannot read selected ABI-v9 provider artifact '" +
+        rlib.string() + "'", "SOURCE_FREE_PROVIDER_ARTIFACT_MISSING");
+  const string bytes = archive.str();
+  const string prefix = "MOSS_ABI_V9_CONTRACT::" +
+      tooling_name(interface_file.stem().string()) + "::";
+  // rustc rlibs contain an .rmeta copy of the static initializer as well as
+  // native object bytes. Only the compiled object is the provider-owned
+  // binding; metadata copies are not evidence that the selected code matches.
+  if (!starts_with(bytes, "!<arch>\n"))
+    throw CompileError(0, "selected provider artifact is not a Rust rlib archive",
+                       "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
+  std::size_t count = 0;
+  string embedded;
+  for (std::size_t cursor = 8; cursor < bytes.size();) {
+    if (bytes.size() - cursor < 60 || bytes.compare(cursor + 58, 2, "`\n") != 0)
+      throw CompileError(0, "selected provider rlib has malformed archive records",
+                         "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
+    const string name = trim(bytes.substr(cursor, 16));
+    const string size_text = trim(bytes.substr(cursor + 48, 10));
+    if (size_text.empty() || !std::all_of(size_text.begin(), size_text.end(),
+        [](unsigned char ch) { return ch >= '0' && ch <= '9'; }))
+      throw CompileError(0, "selected provider rlib has an invalid archive member",
+                         "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
+    std::size_t member_size = 0;
+    try {
+      const auto parsed_size = std::stoull(size_text);
+      if (parsed_size > std::numeric_limits<std::size_t>::max())
+        throw std::out_of_range("archive member size");
+      member_size = static_cast<std::size_t>(parsed_size);
+    } catch (const std::exception&) {
+      throw CompileError(0, "selected provider rlib has an overflowing archive member",
+                         "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
+    }
+    const std::size_t member_begin = cursor + 60;
+    if (member_size > bytes.size() - member_begin)
+      throw CompileError(0, "selected provider rlib has a truncated archive member",
+                         "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
+    if (name.find(".rmeta") == string::npos && name != "/" && name != "//") {
+      const size_t found = bytes.find(prefix, member_begin);
+      const std::size_t marker_size = prefix.size() + 64 + string("::END").size();
+      if (found != string::npos && found < member_begin + member_size &&
+          marker_size <= member_begin + member_size - found) {
+        ++count;
+        embedded = bytes.substr(found, marker_size);
+        const size_t repeated = bytes.find(prefix, found + 1);
+        if (repeated != string::npos && repeated < member_begin + member_size)
+          ++count;
+      }
+    }
+    cursor = member_begin + member_size + (member_size & 1);
+    if (cursor > bytes.size())
+      throw CompileError(0, "selected provider rlib has a truncated archive pad",
+                         "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
+  }
+  if (count != 1)
+    throw CompileError(0,
+        "selected provider artifact has missing or ambiguous ABI-v9 contract binding",
+        "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
+  const string expected = source_free_contract_marker(
+      interface_file.stem().string(), declared);
+  if (embedded != expected)
+    throw CompileError(0,
+        "ABI-v9 provider metadata does not match the selected compiled artifact",
+        "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
+}
+
 static ParsedModuleUnit load_module_interface(
     const std::filesystem::path& file) {
   std::ifstream input(file, std::ios::binary);
   std::ostringstream content;
   content << input.rdbuf();
   string text = content.str();
+  verify_source_free_provider_binding(file, text);
   if (text.find("\nnative_abi " + std::to_string(kNativeAbiVersion) + "\n") == string::npos)
     throw CompileError(0, "compiled provider uses an incompatible native calling convention; rebuild its .mossi provider");
+  // The producer already records separate hashes for the native contract and
+  // semantic exports.  Validate them before trusting source-free metadata;
+  // otherwise a changed failure-arm symbol can link and abort at runtime.
+  const string contract_marker = "\ncontract\n";
+  const string semantic_marker = "\nsemantic_exports\n";
+  const size_t contract_at = text.find(contract_marker);
+  const size_t semantic_at = text.find(semantic_marker,
+      contract_at == string::npos ? 0 : contract_at + contract_marker.size());
+  if (contract_at == string::npos || semantic_at == string::npos)
+    throw CompileError(0, "compiled provider has incomplete module interface sections; rebuild its .mossi provider");
+  std::map<string, string> declared_hashes;
+  std::istringstream header(text.substr(0, contract_at));
+  string header_line;
+  while (std::getline(header, header_line)) {
+    for (const char* key : {"concrete_interface_hash", "generic_semantic_hash",
+                            "interface_hash"}) {
+      const string prefix = string(key) + " ";
+      if (starts_with(header_line, prefix) &&
+          !declared_hashes.emplace(key, header_line.substr(prefix.size())).second)
+        throw CompileError(0, "compiled provider has duplicate module interface hash; rebuild its .mossi provider");
+    }
+  }
+  const string concrete_hash = stable_hash(text.substr(
+      contract_at + contract_marker.size(),
+      semantic_at + 1 - contract_at - contract_marker.size()));
+  const string generic_hash = stable_hash(text.substr(
+      semantic_at + semantic_marker.size()));
+  if (declared_hashes.size() != 3 ||
+      declared_hashes["concrete_interface_hash"] != concrete_hash ||
+      declared_hashes["interface_hash"] != concrete_hash ||
+      declared_hashes["generic_semantic_hash"] != generic_hash)
+    throw CompileError(0, "compiled provider module interface hash mismatch; rebuild its .mossi provider");
   std::istringstream lines(text);
   ParsedModuleUnit unit;
   unit.name = interface_module_name(text, file);
@@ -22371,6 +27429,25 @@ static ParsedModuleUnit load_module_interface(
   EnumType* current_enum = nullptr;
   Domain* current_domain = nullptr;
   Trait* current_trait = nullptr;
+  std::map<string, size_t> expected_failure_arms;
+  std::map<string, size_t> expected_raise_tags;
+  std::map<string, size_t> seen_raise_tags;
+  std::map<string, size_t> expected_raise_projections;
+  std::map<string, size_t> seen_raise_projections;
+  std::map<string, size_t> expected_raise_bridges;
+  std::map<string, size_t> expected_owned_type_shapes;
+  std::map<std::pair<string, std::uint32_t>, size_t>
+      expected_bridge_translations;
+  std::map<string, size_t> expected_exceptional_edges;
+  std::map<string, size_t> expected_exceptional_destinations;
+  std::map<string, size_t> expected_raising_nodes;
+  std::map<std::pair<string, std::uint32_t>, size_t> expected_failure_captures;
+  std::map<std::pair<string, std::uint32_t>, size_t> expected_payload_fields;
+  std::set<string> outcome_contracts;
+  std::set<string> wrapper_contracts;
+  std::set<string> reply_contracts;
+  std::set<string> raising_node_contracts;
+  std::set<string> exceptional_consumer_contracts;
   bool in_semantic_exports = false;
   bool in_imports = false;
   while (std::getline(lines, line)) {
@@ -22430,6 +27507,52 @@ static ParsedModuleUnit load_module_interface(
     }
     if (starts_with(line, "  ")) line = trim(line);
     if (starts_with(line, "  ")) continue;
+    if (starts_with(line, "function_warning ")) {
+      if (!current)
+        throw CompileError(0, "orphan ABI-v9 function warning witness",
+                           "SOURCE_FREE_WARNING_CONTRACT_INVALID");
+      current->recovery_warning_witnesses.push_back(
+          parse_interface_warning_witness(line.substr(17)));
+      continue;
+    }
+    if (starts_with(line, "object_method_warning ")) {
+      std::istringstream record(line.substr(22));
+      string name;
+      if (!(record >> std::quoted(name)) || !current_object)
+        throw CompileError(0, "orphan ABI-v9 method warning witness",
+                           "SOURCE_FREE_WARNING_CONTRACT_INVALID");
+      auto method = std::find_if(current_object->methods.begin(),
+          current_object->methods.end(), [&](const Method& item) {
+            return item.name == name;
+          });
+      if (method == current_object->methods.end())
+        throw CompileError(0, "unknown ABI-v9 method warning owner",
+                           "SOURCE_FREE_WARNING_CONTRACT_INVALID");
+      string remainder;
+      std::getline(record, remainder);
+      method->recovery_warning_witnesses.push_back(
+          parse_interface_warning_witness(remainder));
+      continue;
+    }
+    if (starts_with(line, "handler_warning ")) {
+      std::istringstream record(line.substr(16));
+      string name;
+      if (!(record >> std::quoted(name)) || !current_domain)
+        throw CompileError(0, "orphan ABI-v9 handler warning witness",
+                           "SOURCE_FREE_WARNING_CONTRACT_INVALID");
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& item) {
+            return item.name == name;
+          });
+      if (handler == current_domain->handlers.end())
+        throw CompileError(0, "unknown ABI-v9 handler warning owner",
+                           "SOURCE_FREE_WARNING_CONTRACT_INVALID");
+      string remainder;
+      std::getline(record, remainder);
+      handler->recovery_warning_witnesses.push_back(
+          parse_interface_warning_witness(remainder));
+      continue;
+    }
     if (starts_with(line, "export fn ")) {
       std::istringstream header(line.substr(10));
       string name, kind;
@@ -22578,6 +27701,528 @@ static ParsedModuleUnit load_module_interface(
       handler->params.push_back(std::move(parameter));
       continue;
     }
+    if (starts_with(line, "handler_abi ") && current_domain) {
+      std::istringstream fields(line.substr(12));
+      ProviderHandlerAbi abi;
+      int nested_owner = 0, root_owner = 0;
+      fields >> std::quoted(abi.handler) >> std::quoted(abi.body_symbol)
+             >> std::quoted(abi.opaque_failure_frame_type)
+             >> std::quoted(abi.raised_carrier_rust_type)
+             >> nested_owner >> root_owner;
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == abi.handler;
+          });
+      if (!fields || handler == current_domain->handlers.end() ||
+          handler->provider_abi)
+        throw CompileError(0, "invalid or duplicate handler ABI in module interface");
+      abi.application_owns_nested_wrapper = nested_owner == 1;
+      abi.application_owns_root_wrapper = root_owner == 1;
+      handler->provider_abi = std::move(abi);
+      continue;
+    }
+    if (starts_with(line, "handler_outcome_contract ") && current_domain) {
+      std::istringstream fields(line.substr(25));
+      string handler_name;
+      TaggedOutcomeAbi outcome;
+      fields >> std::quoted(handler_name) >> std::quoted(outcome.rust_type)
+             >> std::quoted(outcome.normal_type);
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi || !outcome_contracts.insert(record_key).second)
+        throw CompileError(0, "invalid tagged-outcome contract in module interface");
+      handler->provider_abi->outcome = std::move(outcome);
+      continue;
+    }
+    if (starts_with(line, "handler_wrapper_contract ") && current_domain) {
+      std::istringstream fields(line.substr(25));
+      string handler_name, nested, root;
+      fields >> std::quoted(handler_name) >> nested >> root;
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi || !wrapper_contracts.insert(record_key).second ||
+          nested != "nested=propagate" ||
+          root != "root=join,close_fileio,release_guards,acquire_failure_locks,execute_arm,fulfill_reply")
+        throw CompileError(0, "invalid application wrapper contract in module interface");
+      continue;
+    }
+    if (starts_with(line, "handler_reply_contract ") && current_domain) {
+      std::istringstream fields(line.substr(22));
+      string handler_name;
+      FailureReplyAbi reply;
+      int one_way = 0, all_reply = 0;
+      fields >> std::quoted(handler_name) >> std::quoted(reply.moss_type)
+             >> one_way >> all_reply;
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi || !reply_contracts.insert(record_key).second)
+        throw CompileError(0, "invalid handler reply contract in module interface");
+      reply.one_way = one_way == 1;
+      reply.every_normal_arm_replies = all_reply == 1;
+      handler->provider_abi->reply = std::move(reply);
+      continue;
+    }
+    if (starts_with(line, "handler_owned_type_shapes ") && current_domain) {
+      std::istringstream fields(line.substr(26));
+      string handler_name;
+      size_t count = 0;
+      fields >> std::quoted(handler_name) >> count;
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || expected_owned_type_shapes.count(record_key))
+        throw CompileError(0,
+            "invalid handler owned-type-shape count in module interface");
+      expected_owned_type_shapes[record_key] = count;
+      continue;
+    }
+    if (starts_with(line, "handler_owned_type_shape ") && current_domain) {
+      std::istringstream fields(line.substr(25));
+      string handler_name, canonical_type, fingerprint;
+      fields >> std::quoted(handler_name) >> std::quoted(canonical_type)
+             >> std::quoted(fingerprint);
+      auto shape = parse_resolved_type_fingerprint(fingerprint);
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      if (!fields || !shape || shape->canonical_type != canonical_type ||
+          handler == current_domain->handlers.end() ||
+          !handler->provider_abi)
+        throw CompileError(0,
+            "invalid handler owned-type shape in module interface");
+      handler->provider_abi->owned_type_shapes.push_back(std::move(*shape));
+      continue;
+    }
+    if (starts_with(line, "handler_raise_tags ") && current_domain) {
+      std::istringstream fields(line.substr(19));
+      string handler_name;
+      size_t count = 0;
+      fields >> std::quoted(handler_name) >> count;
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || expected_raise_tags.count(record_key))
+        throw CompileError(0, "invalid handler raise-tag count in module interface");
+      expected_raise_tags[record_key] = count;
+      continue;
+    }
+    if (starts_with(line, "handler_raise_tag ") && current_domain) {
+      std::istringstream fields(line.substr(18));
+      string handler_name, identity_text;
+      std::uint32_t tag = 0;
+      size_t payload_count = 0;
+      fields >> std::quoted(handler_name) >> tag >> std::quoted(identity_text)
+             >> payload_count;
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      RaisedIdentity identity = parse_interface_raise_identity(identity_text);
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi || !outcome_contracts.count(record_key) ||
+          !handler->observable_effects.raise_set.count(identity) ||
+          tag != seen_raise_tags[record_key]++ ||
+          expected_payload_fields.count({record_key, tag}))
+        throw CompileError(0, "invalid handler raise tag in module interface");
+      expected_payload_fields[{record_key, tag}] = payload_count;
+      handler->provider_abi->outcome.raised.push_back(
+          {std::move(identity), tag, {}, {}});
+      continue;
+    }
+    if (starts_with(line, "handler_raise_payload ") && current_domain) {
+      std::istringstream fields(line.substr(21));
+      string handler_name;
+      std::uint32_t tag = 0;
+      OwnedPayloadFieldAbi payload;
+      string type_fingerprint;
+      unsigned kind = 0;
+      int owned = 0, bounded = 0;
+      fields >> std::quoted(handler_name) >> tag >> std::quoted(payload.name)
+             >> std::quoted(payload.moss_type) >> kind >> owned >> bounded
+             >> std::quoted(type_fingerprint);
+      auto resolved_type = parse_resolved_type_fingerprint(type_fingerprint);
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      if (kind > static_cast<unsigned>(OwnedPayloadFieldAbi::Kind::ErrorEnum) ||
+          !fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi || !resolved_type)
+        throw CompileError(0, "invalid raised payload in module interface");
+      auto& raised = handler->provider_abi->outcome.raised;
+      auto value = std::find_if(raised.begin(), raised.end(),
+          [tag](const RaisedValueAbi& candidate) {
+            return candidate.stable_tag == tag;
+          });
+      payload.kind = static_cast<OwnedPayloadFieldAbi::Kind>(kind);
+      payload.owned = owned == 1;
+      payload.bounded = bounded == 1;
+      payload.resolved_type = std::move(*resolved_type);
+      if (value == raised.end())
+        throw CompileError(0, "illegal raised payload in module interface");
+      value->payload.push_back(std::move(payload));
+      continue;
+    }
+    if (starts_with(line, "handler_raise_projections ") && current_domain) {
+      std::istringstream fields(line.substr(26));
+      string handler_name;
+      size_t count = 0;
+      fields >> std::quoted(handler_name) >> count;
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || expected_raise_projections.count(record_key))
+        throw CompileError(0,
+            "invalid handler raise-projection count in module interface");
+      expected_raise_projections[record_key] = count;
+      continue;
+    }
+    if (starts_with(line, "handler_raise_projection ") && current_domain) {
+      std::istringstream fields(line.substr(25));
+      string handler_name;
+      std::uint32_t tag = 0;
+      RaisedProjectionAbi projection;
+      fields >> std::quoted(handler_name) >> tag
+             >> std::quoted(projection.payload_rust_type)
+             >> std::quoted(projection.residual_rust_type)
+             >> std::quoted(projection.projection_rust_type)
+             >> std::quoted(projection.project_symbol)
+             >> std::quoted(projection.rebuild_symbol);
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi || !projection.valid())
+        throw CompileError(0, "invalid raised projection in module interface");
+      auto& raised = handler->provider_abi->outcome.raised;
+      auto value = std::find_if(raised.begin(), raised.end(),
+          [tag](const RaisedValueAbi& candidate) {
+            return candidate.stable_tag == tag;
+          });
+      if (value == raised.end() || value->projection.valid() ||
+          tag != seen_raise_projections[record_key]++)
+        throw CompileError(0, "invalid raised projection in module interface");
+      value->projection = std::move(projection);
+      continue;
+    }
+    if (starts_with(line, "handler_raise_bridges ") && current_domain) {
+      std::istringstream fields(line.substr(22));
+      string handler_name;
+      size_t count = 0;
+      fields >> std::quoted(handler_name) >> count;
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || expected_raise_bridges.count(record_key))
+        throw CompileError(0,
+            "invalid handler raise-bridge count in module interface");
+      expected_raise_bridges[record_key] = count;
+      continue;
+    }
+    if (starts_with(line, "handler_raise_bridge ") && current_domain) {
+      std::istringstream fields(line.substr(21));
+      string handler_name;
+      ImportedRaiseBridgeAbi bridge;
+      size_t translation_count = 0;
+      fields >> std::quoted(handler_name) >> bridge.source_order
+             >> std::quoted(bridge.callee_specialization)
+             >> std::quoted(bridge.callee_outcome_rust_type)
+             >> std::quoted(bridge.callee_frame_rust_type)
+             >> std::quoted(bridge.caller_carrier_variant)
+             >> std::quoted(bridge.bridge_symbol) >> translation_count;
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      string record_key = current_domain->name + "::" + handler_name;
+      auto translation_key = std::make_pair(record_key, bridge.source_order);
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi ||
+          bridge.source_order != handler->provider_abi->imported_raise_bridges.size() ||
+          expected_bridge_translations.count(translation_key))
+        throw CompileError(0, "invalid raised bridge in module interface");
+      expected_bridge_translations[translation_key] = translation_count;
+      handler->provider_abi->imported_raise_bridges.push_back(
+          std::move(bridge));
+      continue;
+    }
+    if (starts_with(line, "handler_raise_bridge_tag ") && current_domain) {
+      std::istringstream fields(line.substr(25));
+      string handler_name, identity_text;
+      std::uint32_t bridge_order = 0;
+      RaisedTagTranslationAbi translation;
+      fields >> std::quoted(handler_name) >> bridge_order
+             >> translation.callee_tag >> translation.caller_tag
+             >> std::quoted(identity_text);
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi ||
+          bridge_order >= handler->provider_abi->imported_raise_bridges.size())
+        throw CompileError(0,
+            "invalid raised bridge translation in module interface");
+      translation.identity = parse_interface_raise_identity(identity_text);
+      handler->provider_abi->imported_raise_bridges[bridge_order]
+          .translations.push_back(std::move(translation));
+      continue;
+    }
+    if (starts_with(line, "handler_failure_arms ") && current_domain) {
+      std::istringstream fields(line.substr(21));
+      string handler_name;
+      size_t count = 0;
+      fields >> std::quoted(handler_name) >> count;
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || expected_failure_arms.count(record_key))
+        throw CompileError(0, "invalid handler failure-arm count in module interface");
+      expected_failure_arms[record_key] = count;
+      continue;
+    }
+    if (starts_with(line, "handler_failure_arm ") && current_domain) {
+      std::istringstream fields(line.substr(20));
+      string handler_name, pattern;
+      FailureArmAbi arm;
+      size_t capture_count = 0;
+      int escaping_empty = 0;
+      fields >> std::quoted(handler_name) >> arm.source_order
+             >> std::quoted(pattern) >> std::quoted(arm.callable_symbol)
+             >> capture_count >> escaping_empty;
+      arm.pattern = parse_failure_pattern_text(pattern);
+      arm.escaping_raise_set_empty = escaping_empty == 1;
+      for (auto* leaves : {&arm.state_reads, &arm.state_writes,
+                           &arm.state_consumes}) {
+        size_t count = 0;
+        if (!(fields >> count))
+          throw CompileError(0, "incomplete failure-arm effects in module interface");
+        for (size_t index = 0; index < count; ++index) {
+          string leaf;
+          if (!(fields >> std::quoted(leaf)))
+            throw CompileError(0, "invalid failure-arm effect in module interface");
+          leaves->push_back(std::move(leaf));
+        }
+      }
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi ||
+          capture_count > static_cast<size_t>(1000000))
+        throw CompileError(0, "invalid handler failure arm in module interface");
+      // Reserve communicates the declared capture count; exactness is checked
+      // after all following capture records are parsed.
+      arm.captures.reserve(capture_count);
+      auto capture_key = std::make_pair(
+          current_domain->name + "::" + handler_name, arm.source_order);
+      if (expected_failure_captures.count(capture_key))
+        throw CompileError(0, "duplicate failure-arm order in module interface");
+      expected_failure_captures[capture_key] = capture_count;
+      handler->provider_abi->failure_arms.push_back(std::move(arm));
+      continue;
+    }
+    if (starts_with(line, "handler_failure_capture ") && current_domain) {
+      std::istringstream fields(line.substr(24));
+      string handler_name;
+      std::uint32_t arm_order = 0;
+      FailureCaptureAbi capture;
+      string type_fingerprint;
+      int owned = 0, initialized = 0;
+      fields >> std::quoted(handler_name) >> arm_order
+             >> std::quoted(capture.name) >> std::quoted(capture.moss_type)
+             >> std::quoted(capture.provider_rust_field) >> owned >> initialized
+             >> std::quoted(type_fingerprint);
+      auto resolved_type = parse_resolved_type_fingerprint(type_fingerprint);
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi)
+        throw CompileError(0, "invalid handler failure capture in module interface");
+      auto arm = std::find_if(handler->provider_abi->failure_arms.begin(),
+          handler->provider_abi->failure_arms.end(),
+          [arm_order](const FailureArmAbi& candidate) {
+            return candidate.source_order == arm_order;
+          });
+      capture.owned = owned == 1;
+      capture.definitely_initialized = initialized == 1;
+      if (!resolved_type)
+        throw CompileError(0,
+            "invalid failure capture type shape in module interface");
+      capture.resolved_type = std::move(*resolved_type);
+      if (arm == handler->provider_abi->failure_arms.end())
+        throw CompileError(0, "illegal failure capture in module interface");
+      arm->captures.push_back(std::move(capture));
+      continue;
+    }
+    if (starts_with(line, "handler_raising_nodes ") && current_domain) {
+      std::istringstream fields(line.substr(22));
+      string handler_name;
+      size_t count = 0;
+      fields >> std::quoted(handler_name) >> count;
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi ||
+          !raising_node_contracts.insert(record_key).second)
+        throw CompileError(0, "invalid raising-node record in module interface");
+      handler->provider_abi->raising_nodes.reserve(count);
+      expected_raising_nodes[record_key] = count;
+      continue;
+    }
+    if (starts_with(line, "handler_raising_node ") && current_domain) {
+      std::istringstream fields(line.substr(21));
+      string handler_name;
+      RaisingNodeAbi node;
+      int selected = 0;
+      size_t scope_count = 0, alternative_count = 0;
+      fields >> std::quoted(handler_name) >> node.node >> selected
+             >> node.selected_error_scope >> node.outer_scope >> scope_count;
+      for (size_t index = 0; index < scope_count; ++index) {
+        std::uint32_t scope = 0;
+        if (!(fields >> scope))
+          throw CompileError(0,
+              "incomplete raising-node scope chain in module interface");
+        node.recovery_scope_chain.push_back(scope);
+      }
+      fields >> alternative_count;
+      for (size_t index = 0; index < alternative_count; ++index) {
+        string identity_text;
+        if (!(fields >> std::quoted(identity_text)) ||
+            !node.possible_alternatives.insert(
+                parse_interface_raise_identity(identity_text)).second)
+          throw CompileError(0,
+              "duplicate or invalid raising-node alternative in module interface");
+      }
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      if (!fields || selected < 0 || selected > 1 ||
+          handler == current_domain->handlers.end() ||
+          !handler->provider_abi)
+        throw CompileError(0, "invalid raising node in module interface");
+      node.selected_error_slot = selected == 1;
+      handler->provider_abi->raising_nodes.push_back(std::move(node));
+      continue;
+    }
+    if (starts_with(line, "handler_exceptional_destinations ") &&
+        current_domain) {
+      std::istringstream fields(line.substr(33));
+      string handler_name;
+      size_t count = 0;
+      fields >> std::quoted(handler_name) >> count;
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || expected_exceptional_destinations.count(record_key))
+        throw CompileError(0,
+            "invalid exceptional-destination count in module interface");
+      expected_exceptional_destinations[record_key] = count;
+      continue;
+    }
+    if (starts_with(line, "handler_exceptional_destination ") &&
+        current_domain) {
+      std::istringstream fields(line.substr(32));
+      string handler_name;
+      ExceptionalDestinationAbi destination;
+      unsigned kind = 0;
+      size_t alternative_count = 0;
+      fields >> std::quoted(handler_name) >> destination.node >> kind
+             >> destination.lexical_scope >> destination.match_order
+             >> alternative_count;
+      if (kind > static_cast<unsigned>(
+                     ExceptionalDestinationKind::OuterRecoveryOrExit))
+        throw CompileError(0,
+            "invalid exceptional destination kind in module interface");
+      destination.kind = static_cast<ExceptionalDestinationKind>(kind);
+      for (size_t index = 0; index < alternative_count; ++index) {
+        string identity_text;
+        if (!(fields >> std::quoted(identity_text)) ||
+            !destination.accepted_alternatives.insert(
+                parse_interface_raise_identity(identity_text)).second)
+          throw CompileError(0,
+              "duplicate exceptional destination alternative in module interface");
+      }
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi)
+        throw CompileError(0,
+            "invalid exceptional destination in module interface");
+      handler->provider_abi->exceptional_destinations.push_back(
+          std::move(destination));
+      continue;
+    }
+    if (starts_with(line, "handler_exceptional_edges ") && current_domain) {
+      std::istringstream fields(line.substr(26));
+      string handler_name;
+      size_t count = 0;
+      fields >> std::quoted(handler_name) >> count;
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || expected_exceptional_edges.count(record_key))
+        throw CompileError(0, "invalid exceptional-edge count in module interface");
+      expected_exceptional_edges[record_key] = count;
+      continue;
+    }
+    if (starts_with(line, "handler_exceptional_edge ") && current_domain) {
+      std::istringstream fields(line.substr(25));
+      string handler_name;
+      ExceptionalCfgEdgeAbi edge;
+      unsigned kind = 0;
+      size_t alternatives = 0;
+      fields >> std::quoted(handler_name) >> edge.source_node
+             >> edge.destination_node >> kind >> edge.consumers >> alternatives;
+      if (kind > static_cast<unsigned>(ExceptionalEdgeKind::ReRaiseToOuter))
+        throw CompileError(0, "invalid exceptional-edge kind in module interface");
+      edge.kind = static_cast<ExceptionalEdgeKind>(kind);
+      for (size_t index = 0; index < alternatives; ++index) {
+        string identity;
+        if (!(fields >> std::quoted(identity)) ||
+            !edge.alternatives.insert(
+                parse_interface_raise_identity(identity)).second)
+          throw CompileError(0,
+              "duplicate or incomplete exceptional edge in module interface");
+      }
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi)
+        throw CompileError(0, "invalid exceptional edge in module interface");
+      handler->provider_abi->exceptional_edges.push_back(std::move(edge));
+      continue;
+    }
+    if (starts_with(line, "handler_exceptional_consumers ") && current_domain) {
+      std::istringstream fields(line.substr(30));
+      string handler_name;
+      std::uint32_t consumers = 0;
+      fields >> std::quoted(handler_name) >> consumers;
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi ||
+          !exceptional_consumer_contracts.insert(record_key).second ||
+          consumers != kAllExceptionalCfgConsumers)
+        throw CompileError(0, "incomplete exceptional-CFG consumers in module interface");
+      continue;
+    }
     if (starts_with(line, "export trait ")) {
       std::istringstream header(line.substr(13));
       string name;
@@ -22632,7 +28277,15 @@ static ParsedModuleUnit load_module_interface(
       if (!return_type.empty() && return_type != "unit")
         method.return_type = std::move(return_type);
       string receiver = interface_field(rest, "receiver");
-      if (auto effect = interface_effect(receiver)) method.receiver_effect = *effect;
+      auto receiver_effect = interface_effect(receiver);
+      if (!receiver_effect)
+        throw CompileError(0, "invalid receiver effect in ABI-v9 object method",
+                           "SOURCE_FREE_METHOD_CONTRACT_INVALID");
+      method.receiver_effect = *receiver_effect;
+      method.observable_effects = interface_effects(rest);
+      if (method.observable_effects.unresolved)
+        throw CompileError(0, "unresolved effects in ABI-v9 object method",
+                           "SOURCE_FREE_METHOD_CONTRACT_INVALID");
       string count_text = interface_field(rest, "params");
       size_t count = count_text.empty() ? 0 : static_cast<size_t>(std::stoul(count_text));
       size_t parameters = rest.find("params=");
@@ -22646,8 +28299,11 @@ static ParsedModuleUnit load_module_interface(
                     >> effect_name))
           throw CompileError(0, "incomplete object method in module interface");
         method.params.push_back(std::move(parameter));
-        method.parameter_effects.push_back(
-            interface_effect(effect_name).value_or(Effect::Read));
+        auto parameter_effect = interface_effect(effect_name);
+        if (!parameter_effect)
+          throw CompileError(0, "invalid parameter effect in ABI-v9 object method",
+                             "SOURCE_FREE_METHOD_CONTRACT_INVALID");
+        method.parameter_effects.push_back(*parameter_effect);
       }
       if (method.name.empty())
         throw CompileError(0, "invalid object method in module interface");
@@ -22667,19 +28323,10 @@ static ParsedModuleUnit load_module_interface(
       handler_line >> name;
       Handler handler;
       handler.name = name;
+      handler.source_file = file.string();
       string reply = interface_field(line, "reply");
       if (!reply.empty() && reply != "unit") handler.reply_type = std::move(reply);
       handler.observable_effects = interface_effects(line);
-      if (handler.reply_type) {
-        Stmt reply_statement;
-        reply_statement.kind = Stmt::Kind::Reply;
-        reply_statement.line = 0;
-        string type = canonical_type_name(*handler.reply_type);
-        reply_statement.a = type == "bool" ? "false"
-            : type == "float" ? "0.0"
-            : type == "string" ? "\"\"" : "0";
-        handler.body.push_back(std::move(reply_statement));
-      }
       current_domain->handlers.push_back(std::move(handler));
       continue;
     }
@@ -22738,6 +28385,135 @@ static ParsedModuleUnit load_module_interface(
         starts_with(line, "generic_result")) {
       if (current) parse_generic_ir_line(line, *current);
       continue;
+    }
+  }
+  for (auto& domain : provider.domains) {
+    for (auto& handler : domain.handlers) {
+      string record_key = domain.name + "::" + handler.name;
+      if (!handler.provider_abi || !wrapper_contracts.count(record_key) ||
+          !outcome_contracts.count(record_key) ||
+          !reply_contracts.count(record_key) ||
+          !raising_node_contracts.count(record_key) ||
+          !exceptional_consumer_contracts.count(record_key) ||
+          !expected_raise_tags.count(record_key) ||
+          !expected_raise_projections.count(record_key) ||
+          !expected_raise_bridges.count(record_key) ||
+          !expected_owned_type_shapes.count(record_key) ||
+          !expected_failure_arms.count(record_key) ||
+          !expected_exceptional_destinations.count(record_key) ||
+          !expected_exceptional_edges.count(record_key))
+        throw CompileError(0,
+            "compiled provider lacks ABI-v9 handler metadata; rebuild its .mossi provider");
+      const auto& abi = *handler.provider_abi;
+      if (expected_raise_tags.at(record_key) != handler.observable_effects.raise_set.size() ||
+          seen_raise_tags[record_key] != expected_raise_tags.at(record_key) ||
+          expected_raise_projections.at(record_key) !=
+              abi.outcome.raised.size() ||
+          seen_raise_projections[record_key] !=
+              expected_raise_projections.at(record_key) ||
+          expected_raise_bridges.at(record_key) !=
+              abi.imported_raise_bridges.size() ||
+          expected_owned_type_shapes.at(record_key) !=
+              abi.owned_type_shapes.size() ||
+          expected_failure_arms.at(record_key) != abi.failure_arms.size() ||
+          expected_raising_nodes.at(record_key) != abi.raising_nodes.size() ||
+          expected_exceptional_destinations.at(record_key) !=
+              abi.exceptional_destinations.size() ||
+          expected_exceptional_edges.at(record_key) != abi.exceptional_edges.size())
+        throw CompileError(0,
+            "compiled provider has inconsistent ABI-v9 handler metadata");
+      for (const auto& arm : abi.failure_arms) {
+        auto capture_key = std::make_pair(record_key, arm.source_order);
+        if (!expected_failure_captures.count(capture_key) ||
+            expected_failure_captures.at(capture_key) != arm.captures.size())
+          throw CompileError(0,
+              "compiled provider has incomplete failure captures");
+        const string expected_symbol = "__moss_on_fail_" + unit.name +
+            "__" + domain.name + "_" + handler.name + "_" +
+            std::to_string(arm.source_order);
+        if (arm.callable_symbol != expected_symbol)
+          throw CompileError(0,
+              "compiled provider has invalid ABI-v9 failure-arm symbol");
+      }
+      for (const auto& raised : abi.outcome.raised) {
+        auto payload_key = std::make_pair(record_key, raised.stable_tag);
+        if (!expected_payload_fields.count(payload_key) ||
+            expected_payload_fields.at(payload_key) != raised.payload.size())
+          throw CompileError(0,
+              "compiled provider has incomplete raised payload metadata");
+      }
+      for (const auto& bridge : abi.imported_raise_bridges) {
+        auto translation_key = std::make_pair(record_key, bridge.source_order);
+        if (!expected_bridge_translations.count(translation_key) ||
+            expected_bridge_translations.at(translation_key) !=
+                bridge.translations.size())
+          throw CompileError(0,
+              "compiled provider has incomplete raised bridge metadata");
+      }
+      std::map<string, ResolvedTypeAbi> declared_type_shapes;
+      for (const auto& shape : abi.owned_type_shapes)
+        if (!declared_type_shapes.emplace(shape.canonical_type, shape).second)
+          throw CompileError(0,
+              "compiled provider has duplicate owned-type shapes");
+      for (auto& raised : handler.provider_abi->outcome.raised)
+        for (auto& payload : raised.payload) {
+          auto declaration = declared_type_shapes.find(payload.moss_type);
+          if (declaration == declared_type_shapes.end() ||
+              !(declaration->second == payload.resolved_type) ||
+              !phase21_declared_type_shape_valid(
+                  provider, declared_type_shapes, payload.resolved_type))
+            throw CompileError(0,
+                "compiled provider raised payload type shape disagrees with its resolved type");
+        }
+      for (const auto& raised : handler.provider_abi->outcome.raised) {
+        if (raised.identity.kind != RaisedIdentityKind::EnumVariant) continue;
+        const string identity_type = canonical_type_name(raised.identity.type);
+        const EnumType* resolved_enum = nullptr;
+        for (const auto& enumeration : provider.enums) {
+          const string candidate = canonical_type_name(enumeration.name);
+          const auto separator = identity_type.rfind("::");
+          if (identity_type == candidate ||
+              (separator != string::npos &&
+               identity_type.substr(separator + 2) == candidate)) {
+            resolved_enum = &enumeration;
+            break;
+          }
+        }
+        if (!resolved_enum) continue;  // imported identity; field types still resolve
+        auto variant = std::find_if(
+            resolved_enum->cases.begin(), resolved_enum->cases.end(),
+            [&](const EnumCase& item) {
+              return item.name == raised.identity.variant;
+            });
+        if (variant == resolved_enum->cases.end() ||
+            variant->fields.size() != raised.payload.size())
+          throw CompileError(0,
+              "compiled provider raised payload disagrees with its enum variant");
+        for (size_t index = 0; index < variant->fields.size(); ++index)
+          if (variant->fields[index].name != raised.payload[index].name ||
+              canonical_type_name(variant->fields[index].type) !=
+                  canonical_type_name(raised.payload[index].moss_type))
+            throw CompileError(0,
+                "compiled provider raised payload disagrees with its enum variant");
+      }
+      for (auto& arm : handler.provider_abi->failure_arms)
+        for (auto& capture : arm.captures) {
+          auto declaration = declared_type_shapes.find(capture.moss_type);
+          if (declaration == declared_type_shapes.end() ||
+              !(declaration->second == capture.resolved_type) ||
+              !phase21_declared_type_shape_valid(
+                  provider, declared_type_shapes, capture.resolved_type))
+            throw CompileError(0,
+                "compiled provider failure capture type shape disagrees with its resolved type");
+        }
+      if (abi.reply.moss_type != handler.reply_type.value_or("unit") ||
+          abi.reply.one_way != !handler.reply_type.has_value() ||
+          abi.outcome.normal_type != handler.reply_type.value_or("unit") ||
+          !tagged_outcome_matches_raise_set(
+              abi.outcome, handler.observable_effects.raise_set) ||
+          !provider_handler_abi_valid(abi))
+        throw CompileError(0,
+            "compiled provider has invalid ABI-v9 handler contract");
     }
   }
   for (auto& function : provider.functions) {
@@ -22840,6 +28616,27 @@ static const CompiledModuleProvider* unique_compiled_module_provider(
   throw error;
 }
 
+static std::set<string> legacy_standard_error_aliases(const Program& program) {
+  std::set<string> aliases;
+  if (!program.explicit_module) return aliases;
+  for (const auto& declaration : program.enums) {
+    if (declaration.exported ||
+        !standard_error_short_name(declaration.name)) continue;
+    const auto expected = standard_error_variants(
+        standard_error_identity(declaration.name));
+    std::set<string> actual;
+    bool tag_only = true;
+    for (const auto& item : declaration.cases) {
+      actual.insert(item.name);
+      tag_only &= item.fields.empty();
+    }
+    if (tag_only && declaration.cases.size() == expected.size() &&
+        actual == std::set<string>(expected.begin(), expected.end()))
+      aliases.insert(declaration.name);
+  }
+  return aliases;
+}
+
 static CheckedProjectUnit check_project_sources(
     const ProjectManifest& manifest,
     const vector<std::filesystem::path>& sources,
@@ -22867,6 +28664,16 @@ static CheckedProjectUnit check_project_sources(
                              "cannot read Moss source '" + source.string() + "'",
                              source.string());
         parsed = Parser(lex_lines(input, source.string())).parse();
+      }
+      const auto legacy_aliases = legacy_standard_error_aliases(parsed);
+      if (!legacy_aliases.empty()) {
+        parsed = Parser(parsed.source_lines, legacy_aliases).parse();
+        parsed.enums.erase(std::remove_if(parsed.enums.begin(), parsed.enums.end(),
+            [&](const EnumType& declaration) {
+              return !declaration.exported &&
+                  starts_with(declaration.name, "std__") &&
+                  legacy_aliases.count(declaration.name.substr(5));
+            }), parsed.enums.end());
       }
       assign_project_declaration_identities(
           parsed, project_relative_path(manifest, source));
@@ -23525,7 +29332,8 @@ static Program module_program(const Program& whole, const string& module,
   for (const auto& object : whole.objects)
     if (belongs_to_module(object.name, module)) result.objects.push_back(object);
   for (const auto& enumeration : whole.enums)
-    if (belongs_to_module(enumeration.name, module))
+    if (enumeration.source_file == "<moss-std>" ||
+        belongs_to_module(enumeration.name, module))
       result.enums.push_back(enumeration);
   for (const auto& trait : whole.traits)
     if (belongs_to_module(trait.name, module)) result.traits.push_back(trait);
@@ -23563,7 +29371,8 @@ static vector<string> module_names_for_program(const Program& program) {
         !program.external_modules.count(module_name_from_symbol(object.name)))
       names.insert(module_name_from_symbol(object.name));
   for (const auto& enumeration : program.enums)
-    if (!module_name_from_symbol(enumeration.name).empty() &&
+    if (enumeration.source_file != "<moss-std>" &&
+        !module_name_from_symbol(enumeration.name).empty() &&
         !program.external_modules.count(module_name_from_symbol(enumeration.name)))
       names.insert(module_name_from_symbol(enumeration.name));
   for (const auto& domain : program.domains)
@@ -23635,10 +29444,441 @@ static string interface_effects_text(const ObservableEffects& effects) {
       << ";domain_write=" << (effects.domain_write ? 1 : 0)
       << ";message=" << (effects.message ? 1 : 0)
       << ";external_io=" << (effects.external_io ? 1 : 0)
-      << ";may_fail=" << (effects.may_fail ? 1 : 0)
+      << ";fileio=" << (effects.fileio ? 1 : 0)
+      << ";fileio_unknown=" << (effects.fileio_unknown ? 1 : 0)
+      << ";may_panic=" << (effects.may_panic ? 1 : 0)
+      << ";raise_set=";
+  if (effects.raise_set.empty()) out << "-";
+  else {
+    bool first = true;
+    for (const auto& raised : effects.raise_set) {
+      if (!first) out << ",";
+      out << raised.canonical();
+      first = false;
+    }
+  }
+  out
       << ";may_diverge=" << (effects.may_diverge ? 1 : 0)
       << ";unresolved=" << (effects.unresolved ? 1 : 0);
   return out.str();
+}
+
+static string failure_pattern_text(const FailurePatternAbi& pattern) {
+  if (pattern.kind == FailurePatternKind::CatchAll) return "*";
+  std::ostringstream out;
+  bool first = true;
+  for (const auto& identity : pattern.variants) {
+    if (!first) out << ",";
+    out << identity.canonical();
+    first = false;
+  }
+  return out.str();
+}
+
+static FailurePatternAbi parse_failure_pattern_text(const string& text) {
+  FailurePatternAbi pattern;
+  if (text == "*") {
+    pattern.kind = FailurePatternKind::CatchAll;
+    return pattern;
+  }
+  pattern.kind = FailurePatternKind::Variant;
+  size_t begin = 0;
+  while (begin <= text.size()) {
+    size_t end = text.find(',', begin);
+    string identity = text.substr(
+        begin, end == string::npos ? string::npos : end - begin);
+    RaisedIdentity parsed = parse_interface_raise_identity(identity);
+    if (!parsed.valid())
+      throw CompileError(0, "invalid failure pattern in module interface");
+    pattern.variants.insert(std::move(parsed));
+    if (end == string::npos) break;
+    begin = end + 1;
+  }
+  if (pattern.variants.empty())
+    throw CompileError(0, "empty failure pattern in module interface");
+  return pattern;
+}
+
+static void collect_phase21_owned_type_shape(
+    const ResolvedTypeAbi& shape,
+    std::map<string, ResolvedTypeAbi>& shapes) {
+  auto [entry, inserted] = shapes.emplace(shape.canonical_type, shape);
+  synchronization_require(inserted || entry->second == shape,
+                          "inconsistent Phase 21 owned type shape");
+  for (const auto& child : shape.children)
+    collect_phase21_owned_type_shape(child, shapes);
+}
+
+static void complete_phase21_owned_type_shapes(ProviderHandlerAbi& abi) {
+  std::map<string, ResolvedTypeAbi> shapes;
+  for (const auto& raised : abi.outcome.raised)
+    for (const auto& payload : raised.payload)
+      collect_phase21_owned_type_shape(payload.resolved_type, shapes);
+  for (const auto& arm : abi.failure_arms)
+    for (const auto& capture : arm.captures)
+      collect_phase21_owned_type_shape(capture.resolved_type, shapes);
+  abi.owned_type_shapes.clear();
+  for (auto& entry : shapes)
+    abi.owned_type_shapes.push_back(std::move(entry.second));
+}
+
+// Serialize the checked source CFG, rather than one synthetic node per raised
+// identity.  Two sites that raise the same variant can have different D7 and
+// guard-lifetime facts, so merging them would erase an incoming edge.
+static void populate_phase21_source_exceptional_cfg(
+    const Handler& handler, ProviderHandlerAbi& abi) {
+  struct Scope {
+    std::uint32_t id = 0;
+    std::vector<std::pair<RaiseSet, std::uint32_t>> arms;
+  };
+  std::uint32_t next_node = 1;
+  std::uint32_t next_scope = 1;
+  std::uint32_t handler_exit = 0;
+  if (!handler.observable_effects.raise_set.empty()) {
+    handler_exit = next_node++;
+    abi.exceptional_destinations.push_back(
+        {handler_exit, ExceptionalDestinationKind::HandlerExit, 0, 0,
+         handler.observable_effects.raise_set});
+  }
+  std::function<void(size_t, size_t, std::vector<Scope>, std::uint32_t)> walk;
+  walk = [&](size_t begin, size_t end, std::vector<Scope> scopes,
+             std::uint32_t selected_scope) {
+    for (size_t index = begin; index < end;) {
+      const Stmt& statement = handler.body[index];
+      if (statement.kind == Stmt::Kind::Try) {
+        const int indent = statement.indent;
+        const size_t attempt_begin = index + 1;
+        size_t attempt_end = attempt_begin;
+        while (attempt_end < end &&
+               handler.body[attempt_end].indent > indent)
+          ++attempt_end;
+        Scope scope;
+        scope.id = next_scope++;
+        std::vector<std::pair<size_t, size_t>> arm_bodies;
+        size_t after = attempt_end;
+        std::uint32_t order = 0;
+        while (after < end && handler.body[after].indent == indent &&
+               handler.body[after].kind == Stmt::Kind::Recover) {
+          const Stmt& arm = handler.body[after];
+          const size_t arm_begin = ++after;
+          while (after < end && handler.body[after].indent > indent) ++after;
+          const std::uint32_t destination = next_node++;
+          abi.exceptional_destinations.push_back(
+              {destination, ExceptionalDestinationKind::RecoveryArm,
+               scope.id, order++, arm.exceptional_alternatives});
+          scope.arms.push_back({arm.exceptional_alternatives, destination});
+          arm_bodies.push_back({arm_begin, after});
+        }
+        auto attempt_scopes = scopes;
+        attempt_scopes.insert(attempt_scopes.begin(), scope);
+        walk(attempt_begin, attempt_end, std::move(attempt_scopes), 0);
+        for (const auto& bounds : arm_bodies)
+          walk(bounds.first, bounds.second, scopes, scope.id);
+        index = after;
+        continue;
+      }
+      const RaiseSet& alternatives = statement.exceptional_alternatives;
+      if (!alternatives.empty() &&
+          statement.kind != Stmt::Kind::Recover) {
+        RaisingNodeAbi raising;
+        raising.node = next_node++;
+        raising.possible_alternatives = alternatives;
+        for (const auto& scope : scopes)
+          raising.recovery_scope_chain.push_back(scope.id);
+        raising.selected_error_slot =
+            statement.kind == Stmt::Kind::Raise && statement.a.empty();
+        if (raising.selected_error_slot) {
+          raising.selected_error_scope = selected_scope;
+          raising.outer_scope = scopes.empty() ? 0 : scopes.front().id;
+        }
+        const_cast<Stmt&>(statement).exceptional_node = raising.node;
+        const_cast<Stmt&>(statement).exceptional_scope =
+            scopes.empty() ? 0 : scopes.front().id;
+        abi.raising_nodes.push_back(raising);
+        for (const auto& alternative : alternatives) {
+          std::uint32_t destination = handler_exit;
+          ExceptionalEdgeKind kind =
+              ExceptionalEdgeKind::RaiseToHandlerExit;
+          if (raising.selected_error_slot) {
+            destination = next_node++;
+            abi.exceptional_destinations.push_back(
+                {destination, ExceptionalDestinationKind::OuterRecoveryOrExit,
+                 raising.outer_scope, 0, RaiseSet{alternative}});
+            kind = ExceptionalEdgeKind::ReRaiseToOuter;
+          } else {
+            for (const auto& scope : scopes) {
+              auto arm = std::find_if(scope.arms.begin(), scope.arms.end(),
+                  [&](const auto& candidate) {
+                    return candidate.first.count(alternative) != 0;
+                  });
+              if (arm == scope.arms.end()) continue;
+              destination = arm->second;
+              kind = ExceptionalEdgeKind::RaiseToRecover;
+              break;
+            }
+            if (kind == ExceptionalEdgeKind::RaiseToHandlerExit)
+              synchronization_require(handler_exit != 0,
+                  "checked exceptional exit missing from handler raise set");
+          }
+          abi.exceptional_edges.push_back(
+              {raising.node, destination, kind, RaiseSet{alternative},
+               kAllExceptionalCfgConsumers});
+        }
+      }
+      ++index;
+    }
+  };
+  walk(0, handler.body.size(), {}, 0);
+}
+
+static ProviderHandlerAbi source_provider_handler_abi(
+    const Program& provider, const Domain& domain, const Handler& handler) {
+  if (handler.provider_abi) {
+    ProviderHandlerAbi abi = *handler.provider_abi;
+    complete_phase21_owned_type_shapes(abi);
+    return abi;
+  }
+  ProviderHandlerAbi abi;
+  abi.handler = handler.name;
+  abi.body_symbol = "__moss_body_" + domain.name + "_" + handler.name;
+  abi.opaque_failure_frame_type =
+      "__MossFailureFrame_" + domain.name + "_" + handler.name;
+  abi.raised_carrier_rust_type =
+      "__MossRaisedCarrier_" + domain.name + "_" + handler.name;
+  abi.outcome.rust_type =
+      "__MossBodyOutcome_" + domain.name + "_" + handler.name;
+  abi.outcome.normal_type = handler.reply_type.value_or("unit");
+  std::uint32_t tag = 0;
+  for (const auto& identity : handler.observable_effects.raise_set) {
+    const string suffix = domain.name + "_" + handler.name + "_" +
+        std::to_string(tag);
+    RaisedProjectionAbi projection{
+        "__MossPayload_" + suffix,
+        "__MossResidual_" + suffix,
+        "__MossProjection_" + suffix,
+        "__moss_project_" + suffix,
+        "__moss_rebuild_" + suffix,
+    };
+    std::vector<OwnedPayloadFieldAbi> payload;
+    if (identity.kind == RaisedIdentityKind::ScalarType) {
+      const string type = canonical_type_name(identity.type);
+      ResolvedTypeAbi shape;
+      shape.canonical_type = type;
+      shape.kind = ResolvedTypeKind::Scalar;
+      payload.push_back({"value", type,
+                         OwnedPayloadFieldAbi::Kind::Scalar, true, true,
+                         std::move(shape)});
+    } else {
+      auto enumeration = std::find_if(
+          provider.enums.begin(), provider.enums.end(),
+          [&](const EnumType& candidate) {
+            return canonical_type_name(candidate.name) ==
+                canonical_type_name(identity.type);
+          });
+      if (enumeration != provider.enums.end()) {
+        auto variant = std::find_if(
+            enumeration->cases.begin(), enumeration->cases.end(),
+            [&](const EnumCase& candidate) {
+              return candidate.name == identity.variant;
+            });
+        if (variant != enumeration->cases.end())
+          for (const auto& field : variant->fields) {
+            ResolvedTypeAbi shape =
+                resolve_phase21_owned_type(provider, field.type);
+            const auto kind = shape.kind == ResolvedTypeKind::ErrorEnum
+                ? OwnedPayloadFieldAbi::Kind::ErrorEnum
+                : OwnedPayloadFieldAbi::Kind::Scalar;
+            payload.push_back({field.name, field.type, kind, true, true,
+                               std::move(shape)});
+          }
+      }
+    }
+    abi.outcome.raised.push_back(
+        {identity, tag++, std::move(payload), std::move(projection)});
+  }
+  populate_phase21_source_exceptional_cfg(handler, abi);
+  std::uint32_t arm_order = 0;
+  for (const auto& source_arm : handler.failure_arms) {
+    FailureArmAbi arm;
+    arm.source_order = arm_order++;
+    arm.pattern.kind = source_arm.patterns.empty()
+        ? FailurePatternKind::CatchAll : FailurePatternKind::Variant;
+    for (const auto& pattern : source_arm.patterns) {
+      string qualified = trim(pattern);
+      const auto open = qualified.find('(');
+      if (open != string::npos)
+        qualified = trim(qualified.substr(0, open));
+      const auto dot = qualified.rfind('.');
+      synchronization_require(
+          dot != string::npos,
+          "checked on_fail pattern lost its qualified enum variant");
+      arm.pattern.variants.insert(RaisedIdentity::enum_variant(
+          canonical_type_name(trim(qualified.substr(0, dot))),
+          trim(qualified.substr(dot + 1))));
+    }
+    arm.callable_symbol = "__moss_on_fail_" + domain.name + "_" +
+        handler.name + "_" + std::to_string(arm.source_order);
+    for (const auto& checked : source_arm.captures) {
+      FailureCaptureAbi capture;
+      capture.name = checked.name;
+      capture.moss_type = canonical_type_name(checked.type);
+      capture.provider_rust_field = checked.name;
+      capture.owned = true;
+      capture.definitely_initialized = true;
+      capture.resolved_type =
+          resolve_phase21_owned_type(provider, capture.moss_type);
+      synchronization_require(failure_capture_allowed(capture),
+          "checked on_fail capture lacks an owned ABI-v9 type shape");
+      arm.captures.push_back(std::move(capture));
+    }
+    synchronization_require(
+        source_arm.state_effects.has_value(),
+        "checked on_fail arm lacks its state-effect footprint");
+    const auto& effects = *source_arm.state_effects;
+    arm.state_reads.assign(effects.reads.begin(), effects.reads.end());
+    arm.state_writes.assign(effects.writes.begin(), effects.writes.end());
+    arm.state_consumes.assign(effects.consumes.begin(),
+                              effects.consumes.end());
+    abi.failure_arms.push_back(std::move(arm));
+  }
+  abi.reply.moss_type = handler.reply_type.value_or("unit");
+  abi.reply.one_way = !handler.reply_type.has_value();
+  abi.reply.every_normal_arm_replies = true;
+  complete_phase21_owned_type_shapes(abi);
+  return abi;
+}
+
+static void write_provider_handler_abi(std::ostream& out,
+                                       const ProviderHandlerAbi& abi) {
+  out << "  handler_abi " << std::quoted(abi.handler) << " "
+      << std::quoted(abi.body_symbol) << " "
+      << std::quoted(abi.opaque_failure_frame_type) << " "
+      << std::quoted(abi.raised_carrier_rust_type) << " "
+      << (abi.application_owns_nested_wrapper ? 1 : 0) << " "
+      << (abi.application_owns_root_wrapper ? 1 : 0) << "\n";
+  out << "  handler_outcome_contract " << std::quoted(abi.handler) << " "
+      << std::quoted(abi.outcome.rust_type) << " "
+      << std::quoted(abi.outcome.normal_type) << "\n";
+  out << "  handler_wrapper_contract " << std::quoted(abi.handler)
+      << " nested=propagate root=join,close_fileio,release_guards,"
+         "acquire_failure_locks,execute_arm,fulfill_reply\n";
+  out << "  handler_reply_contract " << std::quoted(abi.handler) << " "
+      << std::quoted(abi.reply.moss_type) << " "
+      << (abi.reply.one_way ? 1 : 0) << " "
+      << (abi.reply.every_normal_arm_replies ? 1 : 0) << "\n";
+  out << "  handler_owned_type_shapes " << std::quoted(abi.handler) << " "
+      << abi.owned_type_shapes.size() << "\n";
+  for (const auto& shape : abi.owned_type_shapes)
+    out << "  handler_owned_type_shape " << std::quoted(abi.handler) << " "
+        << std::quoted(shape.canonical_type) << " "
+        << std::quoted(resolved_type_fingerprint(shape)) << "\n";
+  out << "  handler_raise_tags " << std::quoted(abi.handler) << " "
+      << abi.outcome.raised.size() << "\n";
+  for (const auto& raised : abi.outcome.raised) {
+    out << "  handler_raise_tag " << std::quoted(abi.handler) << " "
+        << raised.stable_tag << " "
+        << std::quoted(raised.identity.canonical()) << " "
+        << raised.payload.size() << "\n";
+    for (const auto& payload : raised.payload)
+      out << "  handler_raise_payload " << std::quoted(abi.handler) << " "
+          << raised.stable_tag << " " << std::quoted(payload.name) << " "
+          << std::quoted(payload.moss_type) << " "
+          << static_cast<unsigned>(payload.kind) << " "
+          << (payload.owned ? 1 : 0) << " "
+          << (payload.bounded ? 1 : 0) << " "
+          << std::quoted(resolved_type_fingerprint(payload.resolved_type))
+          << "\n";
+  }
+  out << "  handler_raise_projections " << std::quoted(abi.handler) << " "
+      << abi.outcome.raised.size() << "\n";
+  for (const auto& raised : abi.outcome.raised)
+    out << "  handler_raise_projection " << std::quoted(abi.handler) << " "
+        << raised.stable_tag << " "
+        << std::quoted(raised.projection.payload_rust_type) << " "
+        << std::quoted(raised.projection.residual_rust_type) << " "
+        << std::quoted(raised.projection.projection_rust_type) << " "
+        << std::quoted(raised.projection.project_symbol) << " "
+        << std::quoted(raised.projection.rebuild_symbol) << "\n";
+  out << "  handler_raise_bridges " << std::quoted(abi.handler) << " "
+      << abi.imported_raise_bridges.size() << "\n";
+  for (const auto& bridge : abi.imported_raise_bridges) {
+    out << "  handler_raise_bridge " << std::quoted(abi.handler) << " "
+        << bridge.source_order << " "
+        << std::quoted(bridge.callee_specialization) << " "
+        << std::quoted(bridge.callee_outcome_rust_type) << " "
+        << std::quoted(bridge.callee_frame_rust_type) << " "
+        << std::quoted(bridge.caller_carrier_variant) << " "
+        << std::quoted(bridge.bridge_symbol) << " "
+        << bridge.translations.size() << "\n";
+    for (const auto& translation : bridge.translations)
+      out << "  handler_raise_bridge_tag " << std::quoted(abi.handler) << " "
+          << bridge.source_order << " " << translation.callee_tag << " "
+          << translation.caller_tag << " "
+          << std::quoted(translation.identity.canonical()) << "\n";
+  }
+  out << "  handler_failure_arms " << std::quoted(abi.handler) << " "
+      << abi.failure_arms.size() << "\n";
+  for (const auto& arm : abi.failure_arms) {
+    out << "  handler_failure_arm " << std::quoted(abi.handler) << " "
+        << arm.source_order << " "
+        << std::quoted(failure_pattern_text(arm.pattern)) << " "
+        << std::quoted(arm.callable_symbol) << " "
+        << arm.captures.size() << " "
+        << (arm.escaping_raise_set_empty ? 1 : 0);
+    for (const auto* leaves : {&arm.state_reads, &arm.state_writes,
+                               &arm.state_consumes}) {
+      out << " " << leaves->size();
+      for (const auto& leaf : *leaves) out << " " << std::quoted(leaf);
+    }
+    out << "\n";
+    for (const auto& capture : arm.captures)
+      out << "  handler_failure_capture " << std::quoted(abi.handler) << " "
+          << arm.source_order << " " << std::quoted(capture.name) << " "
+          << std::quoted(capture.moss_type) << " "
+          << std::quoted(capture.provider_rust_field) << " "
+          << (capture.owned ? 1 : 0) << " "
+          << (capture.definitely_initialized ? 1 : 0) << " "
+          << std::quoted(resolved_type_fingerprint(capture.resolved_type))
+          << "\n";
+  }
+  out << "  handler_raising_nodes " << std::quoted(abi.handler) << " "
+      << abi.raising_nodes.size() << "\n";
+  for (const auto& node : abi.raising_nodes) {
+    out << "  handler_raising_node " << std::quoted(abi.handler) << " "
+        << node.node << " " << (node.selected_error_slot ? 1 : 0) << " "
+        << node.selected_error_scope << " " << node.outer_scope << " "
+        << node.recovery_scope_chain.size();
+    for (const auto scope : node.recovery_scope_chain) out << " " << scope;
+    out << " " << node.possible_alternatives.size();
+    for (const auto& identity : node.possible_alternatives)
+      out << " " << std::quoted(identity.canonical());
+    out << "\n";
+  }
+  out << "  handler_exceptional_destinations " << std::quoted(abi.handler)
+      << " " << abi.exceptional_destinations.size() << "\n";
+  for (const auto& destination : abi.exceptional_destinations) {
+    out << "  handler_exceptional_destination " << std::quoted(abi.handler)
+        << " " << destination.node << " "
+        << static_cast<unsigned>(destination.kind) << " "
+        << destination.lexical_scope << " " << destination.match_order << " "
+        << destination.accepted_alternatives.size();
+    for (const auto& identity : destination.accepted_alternatives)
+      out << " " << std::quoted(identity.canonical());
+    out << "\n";
+  }
+  out << "  handler_exceptional_edges " << std::quoted(abi.handler) << " "
+      << abi.exceptional_edges.size() << "\n";
+  for (const auto& edge : abi.exceptional_edges) {
+    out << "  handler_exceptional_edge " << std::quoted(abi.handler) << " "
+        << edge.source_node << " " << edge.destination_node << " "
+        << static_cast<unsigned>(edge.kind) << " " << edge.consumers << " "
+        << edge.alternatives.size();
+    for (const auto& identity : edge.alternatives)
+      out << " " << std::quoted(identity.canonical());
+    out << "\n";
+  }
+  out << "  handler_exceptional_consumers " << std::quoted(abi.handler)
+      << " " << kAllExceptionalCfgConsumers << "\n";
 }
 
 static vector<std::filesystem::path> write_module_interfaces(
@@ -23657,7 +29897,8 @@ static vector<std::filesystem::path> write_module_interfaces(
         !program.external_modules.count(module_name_from_symbol(object.name)))
       module_names.insert(module_name_from_symbol(object.name));
   for (const auto& enumeration : program.enums)
-    if (!module_name_from_symbol(enumeration.name).empty() &&
+    if (enumeration.source_file != "<moss-std>" &&
+        !module_name_from_symbol(enumeration.name).empty() &&
         !program.external_modules.count(module_name_from_symbol(enumeration.name)))
       module_names.insert(module_name_from_symbol(enumeration.name));
   for (const auto& domain : program.domains)
@@ -23750,6 +29991,8 @@ static vector<std::filesystem::path> write_module_interfaces(
           << " mode=" << ownership_effect_name(effect)
           << " name=" << std::quoted(function.params[index].name) << "\n";
     }
+    for (const auto& witness : function.recovery_warning_witnesses)
+      write_interface_warning_witness(out, "  function_warning", witness);
     if (function.static_dispatch) {
       if (function.generic) {
         out << "  open_parameters";
@@ -23853,7 +30096,8 @@ static vector<std::filesystem::path> write_module_interfaces(
     for (const auto& method : object.methods) {
       out << "  object_method " << method.name << " return="
           << method.return_type.value_or("unit") << " receiver="
-          << ownership_effect_name(method.receiver_effect) << " params="
+          << ownership_effect_name(method.receiver_effect) << " effects="
+          << interface_effects_text(method.observable_effects) << " params="
           << method.params.size();
       for (size_t index = 0; index < method.params.size(); ++index) {
         Effect effect = index < method.parameter_effects.size()
@@ -23863,10 +30107,15 @@ static vector<std::filesystem::path> write_module_interfaces(
             << " " << ownership_effect_name(effect);
       }
       out << "\n";
+      for (const auto& witness : method.recovery_warning_witnesses) {
+        std::ostringstream prefix;
+        prefix << "  object_method_warning " << std::quoted(method.name);
+        write_interface_warning_witness(out, prefix.str(), witness);
+      }
     }
   }
   for (const auto& enumeration : program.enums) {
-    if (!enumeration.exported) continue;
+    if (!enumeration.exported || enumeration.source_file == "<moss-std>") continue;
     string module = module_name_from_symbol(enumeration.name);
     if (module.empty() || program.external_modules.count(module)) continue;
     string name = enumeration.name.substr(module.size() + 2);
@@ -23942,13 +30191,29 @@ static vector<std::filesystem::path> write_module_interfaces(
         interface_contents[module] << slot.str();
         out << slot.str();
       }
-
+      ProviderHandlerAbi provider_abi =
+          source_provider_handler_abi(program, domain, handler);
+      synchronization_require(provider_handler_abi_valid(provider_abi),
+                              "invalid exported handler ABI-v9 contract");
+      synchronization_require(tagged_outcome_matches_raise_set(
+                                  provider_abi.outcome,
+                                  handler.observable_effects.raise_set),
+                              "handler outcome tags disagree with raise set");
+      std::ostringstream handler_abi;
+      write_provider_handler_abi(handler_abi, provider_abi);
+      out << handler_abi.str();
+      interface_contents[module] << handler_abi.str();
+      for (const auto& witness : handler.recovery_warning_witnesses) {
+        std::ostringstream prefix;
+        prefix << "  handler_warning " << std::quoted(handler.name);
+        write_interface_warning_witness(out, prefix.str(), witness);
+      }
     }
   }
   vector<std::filesystem::path> result;
   for (auto& entry : contents) {
     std::ostringstream header;
-    header << "moss-module-interface-v1\n"
+    header << "moss-module-interface-v2\n"
            << "module_id " << manifest.name << "::" << entry.first << "\n"
            << "compiler " << kCompilerVersion << "\n"
            << "native_abi " << kNativeAbiVersion << "\n"
@@ -23970,7 +30235,14 @@ static vector<std::filesystem::path> write_module_interfaces(
     std::ifstream prior(file, std::ios::binary);
     std::ostringstream prior_text;
     if (prior) prior_text << prior.rdbuf();
-    string text = header.str();
+    const string material = header.str();
+    const size_t first_line = material.find('\n');
+    synchronization_require(first_line != string::npos,
+                            "ABI-v9 interface header is incomplete");
+    const string digest = source_free_contract_sha256(material);
+    const string text = material.substr(0, first_line + 1) +
+        "provider_contract_digest sha256:" + digest + "\n" +
+        material.substr(first_line + 1);
     if (!prior || prior_text.str() != text) {
       std::ofstream output(file, std::ios::binary);
       if (!output)
@@ -24039,26 +30311,51 @@ static NativeArtifact compile_native_artifact(
             entry.path().extension() == ".mossi")
           artifact.module_interfaces.push_back(entry.path());
       std::sort(artifact.module_interfaces.begin(), artifact.module_interfaces.end());
-      for (const auto& interface_file : artifact.module_interfaces) {
-        std::filesystem::path rlib = interface_file;
-        rlib.replace_extension(".rlib");
-        if (!std::filesystem::is_regular_file(rlib, interface_error)) {
-          rlib = interface_file.parent_path() /
-              ("lib" + interface_file.stem().string() + ".rlib");
-        }
-        if (std::filesystem::is_regular_file(rlib, interface_error))
-          artifact.module_rlibs.push_back(std::move(rlib));
-      }
     }
   }
   artifact.backend_toolchain = inspect_backend_toolchain(
       optimized, debug_build, mode);
   std::ostringstream source_key;
   source_key << "sources\n";
-  for (const auto& source : sources)
+  std::set<string> local_source_modules;
+  bool source_has_import = false;
+  for (const auto& source : sources) {
+    const string source_text = read_text_file(source, "PROJECT_SOURCE_NOT_FOUND");
     source_key << project_relative_path(manifest, source) << "\n"
-               << stable_hash(read_text_file(source, "PROJECT_SOURCE_NOT_FOUND"))
+               << stable_hash(source_text)
                << "\n";
+    std::istringstream lines(source_text);
+    string line;
+    while (std::getline(lines, line)) {
+      line = trim(line);
+      if (starts_with(line, "module ")) {
+        std::istringstream declaration(line.substr(7));
+        string module;
+        if (declaration >> module) local_source_modules.insert(module);
+      } else if (starts_with(line, "import ")) {
+        source_has_import = true;
+      }
+    }
+  }
+  // Previous local interfaces in the output directory are not providers for
+  // this build. In particular, a stale v8 app.mossi must not enter its cache
+  // key, extern set or provider-contract marker selection.
+  artifact.module_interfaces.erase(std::remove_if(
+      artifact.module_interfaces.begin(), artifact.module_interfaces.end(),
+      [&](const std::filesystem::path& file) {
+        return local_source_modules.empty() ||
+               local_source_modules.count(file.stem().string()) != 0;
+      }), artifact.module_interfaces.end());
+  for (const auto& interface_file : artifact.module_interfaces) {
+    std::error_code provider_error;
+    auto rlib = interface_file;
+    rlib.replace_extension(".rlib");
+    if (!std::filesystem::is_regular_file(rlib, provider_error))
+      rlib = interface_file.parent_path() /
+          ("lib" + interface_file.stem().string() + ".rlib");
+    if (std::filesystem::is_regular_file(rlib, provider_error))
+      artifact.module_rlibs.push_back(std::move(rlib));
+  }
   // Compiled providers are semantic inputs too.  Their .mossi contract (and
   // backend fingerprint below) must invalidate a consumer even when the
   // consumer's Moss source is unchanged.
@@ -24094,7 +30391,12 @@ static NativeArtifact compile_native_artifact(
   std::ifstream early_cache(artifact.cache_metadata, std::ios::binary);
   std::ostringstream early_cache_stream;
   if (early_cache) early_cache_stream << early_cache.rdbuf();
-  if (mode == ProgramGenerationMode::Application && early_cache &&
+  // An explicit module can resolve providers through MOSS_MODULE_PATH or a
+  // package dependency, outside this output directory. Re-run selection and
+  // v9 binding validation before any warm-cache return. Legacy unmodular
+  // sources retain the fast path when they have no import declaration.
+  if (local_source_modules.empty() && !source_has_import &&
+      mode == ProgramGenerationMode::Application && early_cache &&
       early_cache_stream.str() == cache_text &&
       std::filesystem::is_regular_file(artifact.rust) &&
       std::filesystem::is_regular_file(artifact.debug_map) &&
@@ -24108,10 +30410,26 @@ static NativeArtifact compile_native_artifact(
   CompiledProjectUnit unit = analyze_project_sources(
       manifest, sources, optimized, debug_build, mode, declaration_filter,
       declaration_ids);
+  for (const auto& selected : unit.external_module_interfaces) {
+    const auto& interface_file = selected.second;
+    const auto provider_rlib = selected_provider_rlib(interface_file);
+    source_key << "selected-provider " << selected.first << "\n"
+               << interface_file.string() << "\n"
+               << stable_hash(read_text_file(interface_file, "MOSS_INTERFACE_ERROR"))
+               << "\n" << provider_rlib.string() << "\n";
+    std::ifstream rlib_input(provider_rlib, std::ios::binary);
+    std::ostringstream rlib_text;
+    rlib_text << rlib_input.rdbuf();
+    source_key << stable_hash(rlib_text.str()) << "\n";
+  }
+  source_fingerprint = stable_hash(source_key.str());
+  cache_text = backend_cache_metadata(
+      artifact.backend_toolchain, source_fingerprint);
   vector<std::filesystem::path> preexisting_interfaces = artifact.module_interfaces;
   vector<string> local_module_names = module_names_for_program(unit.program);
-  artifact.module_interfaces = write_module_interfaces(
+  const auto emitted_interfaces = write_module_interfaces(
       manifest, unit.program, directory, artifact.backend_toolchain);
+  artifact.module_interfaces = emitted_interfaces;
   for (const auto& interface_file : preexisting_interfaces) {
     string module = interface_file.stem().string();
     if (std::find(local_module_names.begin(), local_module_names.end(), module) ==
@@ -24168,6 +30486,24 @@ static NativeArtifact compile_native_artifact(
       vector<string> dependencies = module_dependencies(unit.program, module);
       string generated = Generator(projected, projected_plan, debug_build,
                                    mode, dependencies, &unit.program).generate();
+      const auto provider_interface = directory /
+          (tooling_name(module) + ".mossi");
+      if (std::find(emitted_interfaces.begin(), emitted_interfaces.end(),
+                    provider_interface) != emitted_interfaces.end()) {
+        const string interface_text = read_text_file(
+            provider_interface, "MOSS_INTERFACE_ERROR");
+        const string digest = source_free_declared_digest(interface_text);
+        if (digest.size() != 64 ||
+            source_free_contract_sha256(
+                source_free_contract_material(interface_text)) != digest)
+          throw ProjectError("MOSS_INTERFACE_ERROR",
+              "generated ABI-v9 provider interface has an invalid digest",
+              provider_interface.string());
+        const string marker = source_free_contract_marker(module, digest);
+        generated += "\n#[used]\n#[no_mangle]\npub static __moss_abi_v9_contract_" +
+            tooling_name(module) + ": [u8; " +
+            std::to_string(marker.size()) + "] = *b\"" + marker + "\";\n";
+      }
       rust_changed = update_file(rust_file, generated) || rust_changed;
       if (module == root_module) artifact.rust = rust_file;
     }
@@ -24181,11 +30517,7 @@ static NativeArtifact compile_native_artifact(
         throw ProjectError("MODULE_PROVIDER_NOT_FOUND",
                            "no selected provider for imported module '" + external + "'");
       const auto& interface_file = selected->second;
-      std::filesystem::path rlib = interface_file;
-      rlib.replace_extension(".rlib");
-      if (!std::filesystem::is_regular_file(rlib))
-        rlib = interface_file.parent_path() /
-            ("lib" + interface_file.stem().string() + ".rlib");
+      std::filesystem::path rlib = selected_provider_rlib(interface_file);
       if (std::filesystem::is_regular_file(rlib)) {
         module_rlib[external] = rlib;
         // Source-free providers need the same transitive rustc discovery

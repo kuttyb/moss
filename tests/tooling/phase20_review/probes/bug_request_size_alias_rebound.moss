@@ -10,5 +10,11 @@ type Request:
   offset: Int
   size: Int
 
-fn main():
+fn phase20_probe():
   run(8)
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

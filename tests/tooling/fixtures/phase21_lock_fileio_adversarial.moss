@@ -1,0 +1,82 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+domain Worker:
+  attempts = 0
+  completed = 0
+
+  fn Fail(path: String) -> Int:
+    attempts = attempts + 1
+    file = FileIO.open(path, create)
+    file.write(0, "payload")
+    raise FileError.Full
+
+  on_fail FileError.Full:
+    completed = completed + 1
+    try:
+      try:
+        reopened = FileIO.open(path, rw)
+        reopened.sync()
+        reopened.close()
+      recover FileError.IO:
+        raise
+    recover:
+      reply -1
+    reply completed
+
+  on_fail:
+    reply -2
+
+  fn Missing(path: String) -> Int:
+    try:
+      file = FileIO.open(path, ro)
+      file.close()
+    recover FileError.NotFound:
+      reply -1
+    recover:
+      reply -2
+    reply 1
+
+  fn Read(path: String) -> Int:
+    try:
+      file = FileIO.open(path, ro)
+      chunk = file.read(0, 4)
+      size = chunk.length()
+      file.close()
+      reply size
+    recover FileError.IO:
+      reply -1
+    recover:
+      reply -2
+
+  fn ReadBatch(path: String) -> Int:
+    try:
+      file = FileIO.open(path, ro)
+      batch = file.read([(0, 2)])
+      size = batch.length()
+      file.close()
+      reply size
+    recover FileError.IO:
+      reply -1
+    recover:
+      reply -2
+
+  fn SyncExpression(path: String) -> Int:
+    try:
+      file = FileIO.open(path, rw)
+      ignored = file.sync()
+      file.close()
+      reply 1
+    recover FileError.IO:
+      reply -1
+    recover:
+      reply -2
+
+fn main():
+  worker = Worker()
+  echo message worker.Fail("tmp/phase21-lock-fileio-main.dat")

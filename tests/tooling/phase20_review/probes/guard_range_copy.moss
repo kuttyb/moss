@@ -1,5 +1,13 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # Write a Range that came straight from a read (byte-exact copy).
-fn main():
+fn phase20_probe():
   src = FileIO.open("tmp/phase20-review/input.txt", ro)
   dst = FileIO.open("tmp/phase20-review/out/copy.txt", create)
   data = src.read(0, 4096)
@@ -7,3 +15,9 @@ fn main():
   dst.sync()
   dst.close()
   src.close()
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

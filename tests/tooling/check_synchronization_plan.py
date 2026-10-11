@@ -78,7 +78,8 @@ for c in d["sync_classes"]:
     assert signature == expected[c["member_leaves"][0]]
 assert "Conflict read_stats / record_fill" in account["synchronization_dump"]
 
-with tempfile.TemporaryDirectory(prefix="moss-sync-plan-") as temporary:
+(repository / "tmp").mkdir(exist_ok=True)
+with tempfile.TemporaryDirectory(prefix="moss-sync-plan-", dir=repository / "tmp") as temporary:
     root = Path(temporary)
     source = root / "primitive_effect.moss"
     source.write_text(
@@ -199,7 +200,8 @@ with tempfile.TemporaryDirectory(prefix="moss-sync-plan-") as temporary:
                                            if "parameter_leaf_effects" not in line) + "\n")
     missing_helper = invoke("inspect", "main", "--source", application, "--json",
                             cwd=project, success=False)
-    assert "rebuild" in missing_helper.stdout + missing_helper.stderr
+    assert json.loads(missing_helper.stdout)["error"]["code"] == \
+        "SOURCE_FREE_CONTRACT_MISMATCH", missing_helper.stdout
     helper_interface.write_text(helper_contents)
     provider.rename(provider.with_suffix(".hidden"))
     after = inspect(application, project)["synchronization_plan"]["domains"][0]
@@ -211,6 +213,7 @@ with tempfile.TemporaryDirectory(prefix="moss-sync-plan-") as temporary:
     interface.write_text("\n".join(line for line in contents.splitlines()
                                     if "handler_state_effects" not in line) + "\n")
     failure = invoke("inspect", "main", "--source", application, "--json", cwd=project, success=False)
-    assert "rebuild" in failure.stdout + failure.stderr
+    assert json.loads(failure.stdout)["error"]["code"] == \
+        "SOURCE_FREE_CONTRACT_MISMATCH", failure.stdout
 
 print("Phase 10.6C synchronization-plan checks passed")

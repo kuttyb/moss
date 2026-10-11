@@ -10,5 +10,8 @@ domain Store:
 
 fn main():
   store = Store()
-  message store.Open("tmp/phase20-review/input.txt")
-  message store.Close()
+  try:
+    message store.Open("tmp/phase20-review/input.txt")
+    message store.Close()
+  recover:
+    pass

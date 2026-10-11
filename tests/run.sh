@@ -10,6 +10,46 @@ python3 tests/tooling/check_retired_syntax.py --self-test
 
 # Repository-local agent skills carry current source guidance and a checked example.
 python3 tests/tooling/check_agent_skills.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_shared_abi.py "$test_build/phase21-shared-abi"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_source_free_abi.py "$compiler" "$test_build/phase21-source-free"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_abi_v9_migration.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_source_free_cache_binding.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_source_free_proof_edges.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_source_free_standard_write_recovery.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_standard_write_order.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_addendum_a_c.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_original_af.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_imported_effects.py "$compiler" "$test_build/phase21-imported-effects"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_sourcefree_noop_warning.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/repro_phase21_mossi_pattern_forgery.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_abi_v9_external_cache.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_cross_crate_range_abi.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_on_fail_capture.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_recovery_semantics.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_peer_recovery.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_peer_warnings.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_unary_not_effects.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_field_projection_effects.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_early_condition_raise.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_recover_reinit.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_expression_ownership_edges.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_raising_iterators.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_early_placement_proof.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_method_noop_warning.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_recovery_native.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_root_totality.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_root_expression_ingress.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_absolute_root_boundary.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_handler_failure_native.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_fileio_errors.py
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_fileio_close_full.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_fileio_root_cleanup.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_lock_fileio_adversarial.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_float_ieee.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_numeric_parse.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_builtin_error_contract.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_standard_error_namespace.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_borrowed_view_write.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_generic_specialization.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_builtin_generic_typing.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tools/check_swarm_feedback.py --self-test
@@ -19,6 +59,12 @@ python3 tests/tooling/check_agent_baseline.py "$compiler"
 python3 tests/tooling/check_agent_baseline_analysis.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase22_3_ab.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_executor_fileio.py "$compiler" "$test_build"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21c_branch_errors.py "$compiler" "$test_build"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_peer_effects.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_peer_open_pipelines.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_pipeline_try_placeholder.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_unary_not_speculation.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_chunk_fileio_raise.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_domain_field_physical.py "$compiler" "$test_build/phase20_domain_physical"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_r5_fair.py "$test_build/phase20_r5_fair"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_teaching_diagnostics.py "$compiler"
@@ -46,15 +92,20 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_doc_examples.py
 
 # Generated Rust minus the emitted Phase 20 executor runtime, whose work
 # queue, threads, and C Branch ABI are runtime internals rather than lowered
-# Moss code.  Negative backend-shape checks inspect only lowered code.  Unless
-# exactly one line-anchored, delimited block is present, the whole file is
-# returned, so a malformed delimiter makes these checks stricter, never weaker.
+# Moss code. The pinned Float formatter is also compiler runtime code.
+# Negative backend-shape checks inspect only lowered code. Unless exactly one
+# of each delimited block is present, the whole file is returned.
 lowered_rust() {
   runtime_start='^// Phase 20 Executor Runtime  (moss executor_runtime_rust: '
   runtime_end='^// ─── End Phase 20 Executor Runtime '
+  float_start='^// ─── Begin Moss Float Format Runtime '
+  float_end='^// ─── End Moss Float Format Runtime '
   if [ "$(grep -c "$runtime_start" "$1")" -eq 1 ] &&
-     [ "$(grep -c "$runtime_end" "$1")" -eq 1 ]; then
-    sed "\\#$runtime_start#,\\#$runtime_end#d" "$1"
+     [ "$(grep -c "$runtime_end" "$1")" -eq 1 ] &&
+     [ "$(grep -c "$float_start" "$1")" -eq 1 ] &&
+     [ "$(grep -c "$float_end" "$1")" -eq 1 ]; then
+    sed -e "\#$runtime_start#,\#$runtime_end#d" \
+        -e "\#$float_start#,\#$float_end#d" "$1"
   else
     cat "$1"
   fi
@@ -293,8 +344,8 @@ run_case swarm_021_map_get_fallback_owned tests/swarm_021_map_get_fallback_owned
 run_case swarm_022_fast_debug_map_state tests/swarm_022_fast_debug_map_state.moss '0'
 run_case swarm_023_fast_debug_pipelines tests/swarm_023_fast_debug_pipelines.moss "$(printf '12\n3\n6\ntrue\ntrue')"
 run_case swarm_023_eager_terminals tests/swarm_023_eager_terminals.moss "$(printf '1\n2\n3\ntrue\n1\n2\n3\nfalse')"
-run_case swarm_023_empty_map_types tests/swarm_023_empty_map_types.moss '0 0 0'
-run_case swarm_023_pipeline_context_identity tests/swarm_023_pipeline_context_identity.moss "$(printf '0\n0\n0\n0\n0\n0 0')"
+run_case swarm_023_empty_map_types tests/swarm_023_empty_map_types.moss '0.0 0 0.0'
+run_case swarm_023_pipeline_context_identity tests/swarm_023_pipeline_context_identity.moss "$(printf '0.0\n0.0\n0.0\n0.0\n0.0\n0.0 0')"
 run_case swarm_023_pipeline_test_context tests/swarm_023_pipeline_test_context.moss 'test context'
 run_case swarm_025_fast_debug_sibling_method tests/swarm_025_fast_debug_sibling_method.moss '25'
 reject_case swarm_026_in_expression "binary 'in' expression is not supported"
@@ -414,7 +465,7 @@ run_phase4_differential phase4_map_map tests/phase4_map_map.moss '3 7'
 run_phase4_differential phase4_object tests/phase4_object_smoke.moss '12'
 run_phase4_differential phase4_bound_method tests/phase4_bound_method.moss '24'
 run_phase4_differential phase4_callable_specialization \
-  tests/phase4_callable_specialization.moss '6 8'
+  tests/phase4_callable_specialization.moss '6 8.0'
 run_phase4_differential phase4_hof tests/phase4_hof_smoke.moss '6 4'
 run_phase4_differential phase4_effect_order tests/phase4_effect_smoke.moss \
   "$(printf 'first 1\nfirst 2\nfirst 3\nsecond 1\nsecond 2\nsecond 3\ntotal 6')"
@@ -772,7 +823,7 @@ grep -F 'short-circuit all enabled' \
 "$compiler" -O --dump-functional-ir --check \
   tests/phase45_short_circuit_failure_barrier.moss \
   >"$test_build/phase45_short_circuit_failure_barrier.ir"
-grep -F 'short-circuit any disabled; reason: callback may fail' \
+grep -F 'short-circuit any disabled; reason: callback may panic' \
   "$test_build/phase45_short_circuit_failure_barrier.ir" >/dev/null ||
   fail 'functional explanation omitted the failure short-circuit barrier'
 "$compiler" -O --dump-functional-ir --check \
@@ -1001,7 +1052,7 @@ grep -F 'fusion stopped: external/I/O effect' \
   fail 'fusion explanation omitted the I/O barrier'
 "$compiler" -O --explain-fusion --check tests/phase4_failure_barrier.moss \
   >"$test_build/phase4_failure.explain"
-grep -F 'fusion stopped: possible failure ordering' \
+grep -F 'fusion stopped: possible panic ordering' \
   "$test_build/phase4_failure.explain" >/dev/null ||
   fail 'fusion explanation omitted the possible-failure barrier'
 "$compiler" -O --explain-fusion --check tests/phase4_domain_barrier.moss \
@@ -1196,7 +1247,7 @@ overflow_expected=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s' \
   '-9223372036854775808' '9223372036854775807' \
   '-9223372036854775808' '9223372036854775807' \
   '-9223372036854775808' '-9223372036854775808' \
-  '-9223372036854775808' '3' \
+  '-9223372036854775808' '3.0' \
   '-9223372036854775808')
 "$compiler" --check tests/phase25_integer_overflow.moss
 "$compiler" -O0 tests/phase25_integer_overflow.moss \

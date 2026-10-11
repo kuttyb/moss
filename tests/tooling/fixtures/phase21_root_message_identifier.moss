@@ -1,0 +1,6 @@
+type Envelope:
+  message: String
+
+fn main():
+  let envelope = Envelope(message: "ordinary field")
+  echo envelope.message

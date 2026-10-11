@@ -1,0 +1,27 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn length(chunk: Range) -> Int:
+  return chunk.length()
+
+fn add(total: Int, amount: Int) -> Int:
+  return total + amount
+
+fn read_total(path: String) -> Int:
+  file = FileIO.open(path, ro)
+  total = file.chunks(2) |> map(length) |> reduce(0, add)
+  file.close()
+  return total
+
+fn main():
+  try:
+    echo read_total("tmp/phase21-chunk-fileio-raise.data")
+  recover FileError.IO:
+    echo 99
+  recover:
+    echo 88

@@ -1,0 +1,12 @@
+enum Failure:
+  Bad
+domain Worker:
+  fn Run() -> String:
+    while false:
+      let item = "inside"
+    raise Failure.Bad
+  on_fail Failure.Bad:
+    reply item
+fn main():
+  worker = Worker()
+  echo message worker.Run()

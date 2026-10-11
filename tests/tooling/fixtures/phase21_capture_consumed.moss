@@ -1,0 +1,15 @@
+enum Failure:
+  Bad
+enum Data:
+  Have(value: String)
+domain Worker:
+  fn Run() -> Data:
+    attempt = Data.Have(value: "hello")
+    match consume attempt:
+      case Have(value):
+        raise Failure.Bad
+  on_fail Failure.Bad:
+    reply attempt
+fn main():
+  worker = Worker()
+  message worker.Run()

@@ -1,0 +1,17 @@
+enum E:
+  A
+
+type Box:
+  v: Int
+
+  fn poke() -> Int:
+    if v == 0:
+      raise E.A
+    return v
+
+fn via_local() -> Int:
+  b = Box(v: 0)
+  b.poke()
+
+fn main():
+  echo via_local()

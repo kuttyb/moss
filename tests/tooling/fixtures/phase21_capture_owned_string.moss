@@ -1,0 +1,13 @@
+enum Failure:
+  Bad
+
+domain Worker:
+  fn Run() -> String:
+    name = "hello"
+    raise Failure.Bad
+  on_fail Failure.Bad:
+    reply name
+
+fn main():
+  worker = Worker()
+  echo message worker.Run()

@@ -1,0 +1,25 @@
+enum Failure:
+  Bad
+  Other
+
+enum Data:
+  Have(value: String)
+
+fn consume_then_fail(data: Data):
+  match consume data:
+    case Have(value):
+      raise Failure.Bad
+
+fn main():
+  var item = Data.Have(value: "seven")
+  try:
+    if true:
+      consume_then_fail(item)
+    else:
+      raise Failure.Other
+  recover Failure.Bad:
+    pass
+  recover Failure.Other:
+    match item:
+      case Have(value):
+        echo value

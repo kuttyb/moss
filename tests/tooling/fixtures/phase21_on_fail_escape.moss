@@ -1,0 +1,14 @@
+enum FirstError:
+  One
+  Two
+
+domain Worker:
+  fn Run():
+    raise FirstError.One
+
+  on_fail FirstError.One:
+    raise FirstError.Two
+
+fn main():
+  worker = Worker()
+  message worker.Run()

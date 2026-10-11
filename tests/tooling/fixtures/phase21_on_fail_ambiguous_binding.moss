@@ -1,0 +1,19 @@
+enum FirstError:
+  One
+
+enum SecondError:
+  Two
+
+domain Worker:
+  fn Run(first: Bool):
+    if first:
+      raise FirstError.One
+    else:
+      raise SecondError.Two
+
+  on_fail error:
+    echo error
+
+fn main():
+  worker = Worker()
+  message worker.Run(true)

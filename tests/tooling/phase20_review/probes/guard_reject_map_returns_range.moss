@@ -5,8 +5,14 @@ fn ident(chunk: Range) -> Range:
 fn add(a: Int, b: Range) -> Int:
   return a + b.length()
 
-fn main():
+fn phase20_probe():
   file = FileIO.open("tmp/phase20-review/input.txt", ro)
   total = file.chunks(4) |> map(ident) |> reduce(0, add)
   file.close()
   echo total
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

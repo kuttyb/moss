@@ -1,0 +1,26 @@
+enum Failure:
+  Bad
+
+fn decide(fail: Bool) -> Bool:
+  if fail:
+    raise Failure.Bad
+  return false
+
+domain Worker:
+  left = 0
+  right = 0
+
+  fn Run(fail: Bool) -> Int:
+    if decide(fail):
+      left = left + 1
+    else:
+      right = right + 1
+    reply right
+  on_fail Failure.Bad:
+    reply 4
+
+fn main():
+  worker = Worker()
+  echo message worker.Run(false)
+  echo message worker.Run(true)
+  echo message worker.Run(false)

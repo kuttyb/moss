@@ -1,9 +1,20 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # §23: one stateless domain, independent roots with root-local FileIO.
 domain Worker:
   fn Process(path: String):
     file = FileIO.open(path, ro)
     echo file.read(0, 4).length()
     file.close()
+
+  on_fail:
+    echo "unexpected FileIO error"
 
 fn main():
   worker = Worker()

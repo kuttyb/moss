@@ -141,8 +141,13 @@ whether changing the schedule is visible. It records:
 Arithmetic, comparisons, local temporaries, immutable capture reads, and transitively
 equivalent calls can be fusion-safe. Mutation, domain effects, communication, I/O,
 unresolved calls, and potentially different failure ordering are barriers. In
-particular, division or indexing remains a conservative `may_fail` barrier when the
+particular, division or indexing remains a conservative `may_panic` barrier when the
 compiler lacks a proof that it cannot fail.
+
+Phase 21 also carries a normalized variant-precise `raise_set`. Typed raises
+remain barriers for ordinary `fusion_safe()` ordering. FileIO chunk Branch
+speculation uses the separate `chunk_speculation_safe()` contract and may
+buffer typed raised outcomes only when the callback cannot panic.
 
 Phase 4.5 also distinguishes invocation-preserving fusion from work-skipping
 optimization. A function, method, or handler containing a `while` is conservatively

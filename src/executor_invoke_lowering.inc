@@ -194,6 +194,133 @@ void check_executor_invoke(const Stmt& statement, const TypeEnv& env,
   statement.root_submission_plan_id = p_.root_submission_plans.size();
 }
 
+// Run after observable effects reach their fixed point.  The earlier Executor
+// shape pass cannot establish Root totality: a handler's typed raise set may
+// come from a transitive helper or a source-free provider.  A lexical recover
+// around a synchronous Root message is not a substitute for the handler's
+// Root-only on_fail, because §4 provides no per-ingress exception channel.
+void phase21_validate_root_ingress_totality(const TypeEnv& main_env) {
+  if (!p_.main) return;
+  auto target_for = [&](const string& binding, const string& handler_name,
+                        int line, const string& ingress) -> const Handler* {
+    auto receiver = main_env.find(binding);
+    if (receiver == main_env.end())
+      throw std::runtime_error("internal error: checked " + ingress +
+                               " lost its Root target binding");
+    auto domain = domains_.find(canonical_type_name(receiver->second));
+    if (domain == domains_.end())
+      throw std::runtime_error("internal error: checked " + ingress +
+                               " lost its Root target domain");
+    const Handler* target = find_handler(*domain->second, handler_name);
+    if (!target)
+      throw std::runtime_error("internal error: checked " + ingress +
+                               " lost its Root target handler");
+    if (!target->observable_effects.raise_set.empty() &&
+        target->failure_arms.empty()) {
+      std::ostringstream alternatives;
+      bool first = true;
+      for (const auto& identity : target->observable_effects.raise_set) {
+        if (!first) alternatives << ", ";
+        alternatives << identity.canonical();
+        first = false;
+      }
+      err(line, ingress + " of '" + domain->second->name + "." +
+                    handler_name + "' may raise " + alternatives.str() +
+                    " without an exhaustive on_fail trailer; recover inside "
+                    "the handler or attach on_fail",
+          "ROOT_UNHANDLED_RAISE");
+    }
+    return target;
+  };
+
+  for (const auto& statement : p_.main->body) {
+    if (statement.root_submission_plan_id) {
+      const auto& plan = p_.root_submission_plans.at(
+          statement.root_submission_plan_id - 1);
+      target_for(plan.target_domain_binding, plan.handler_name,
+                 statement.line, "executor.invoke Root");
+    }
+    if (!statement.message_root_ingress) continue;
+    if (statement.kind == Stmt::Kind::Message) {
+      target_for(statement.a, statement.b, statement.line,
+                 "synchronous Root message");
+      continue;
+    }
+    // Value-returning messages are ordinary expressions.  Walk their source
+    // spelling for checked `message binding.Handler(...)` calls, including
+    // parentheses and collection elements; a prefix-only test would let a
+    // lexical recover around `(message worker.Fetch())` bypass Root totality.
+    for (const auto& expression : statement_expressions(statement)) {
+      bool quoted = false, escaped = false;
+      for (size_t index = 0; index < expression.size(); ++index) {
+        const char ch = expression[index];
+        if (quoted) {
+          if (escaped) escaped = false;
+          else if (ch == '\\') escaped = true;
+          else if (ch == '"') quoted = false;
+          continue;
+        }
+        if (ch == '"') { quoted = true; continue; }
+        if (expression.compare(index, 7, "message") != 0 ||
+            (index > 0 && (std::isalnum(static_cast<unsigned char>(expression[index - 1])) ||
+                           expression[index - 1] == '_')) ||
+            (index + 7 < expression.size() &&
+             (std::isalnum(static_cast<unsigned char>(expression[index + 7])) ||
+              expression[index + 7] == '_')))
+          continue;
+        size_t start = index + 7;
+        while (start < expression.size() &&
+               std::isspace(static_cast<unsigned char>(expression[start]))) ++start;
+        // `message` is also a legal identifier and record-field name.  Only
+        // the keyword followed by a receiver member call is a Root ingress.
+        // The ordinary expression checker has already rejected malformed
+        // message syntax before this post-inference pass runs.
+        size_t receiver_end = start;
+        while (receiver_end < expression.size() &&
+               (std::isalnum(static_cast<unsigned char>(expression[receiver_end])) ||
+                expression[receiver_end] == '_')) ++receiver_end;
+        size_t dot = receiver_end;
+        while (dot < expression.size() &&
+               std::isspace(static_cast<unsigned char>(expression[dot]))) ++dot;
+        if (receiver_end == start || dot == expression.size() ||
+            expression[dot] != '.')
+          continue;
+        size_t open = expression.find('(', start);
+        if (open == string::npos)
+          err(statement.line, "unresolved Root message expression",
+              "ROOT_MESSAGE_TARGET_UNRESOLVED");
+        int depth = 0;
+        bool call_quoted = false, call_escaped = false;
+        size_t end = open;
+        for (; end < expression.size(); ++end) {
+          const char current = expression[end];
+          if (call_quoted) {
+            if (call_escaped) call_escaped = false;
+            else if (current == '\\') call_escaped = true;
+            else if (current == '"') call_quoted = false;
+            continue;
+          }
+          if (current == '"') { call_quoted = true; continue; }
+          if (current == '(') ++depth;
+          else if (current == ')' && --depth == 0) { ++end; break; }
+        }
+        if (depth != 0)
+          err(statement.line, "unresolved Root message expression",
+              "ROOT_MESSAGE_TARGET_UNRESOLVED");
+        string binding, handler;
+        vector<string> arguments;
+        if (!parse_member_call(expression.substr(start, end - start),
+                               binding, handler, arguments) ||
+            !plain_identifier(binding))
+          err(statement.line, "unresolved Root message target",
+              "ROOT_MESSAGE_TARGET_UNRESOLVED");
+        target_for(binding, handler, statement.line,
+                   "synchronous Root message");
+      }
+    }
+  }
+}
+
 // Validates one statement that constructs or uses an Executor/FileIO value,
 // returning true when it fully owns (and has fully checked) that statement so
 // the generic Assign/Call handling in check_stmts must not also run.
@@ -311,6 +438,47 @@ std::map<string, ExecutorLifecycle> check_executor_lifecycle_block(
       err(statement.line, "indentation jumps more than one block level");
     if (statement.kind == Stmt::Kind::Else) return state;
 
+    if (statement.kind == Stmt::Kind::Try) {
+      const auto incoming = state;
+      ++index;
+      bool normal_continuing = true;
+      auto normal_state = check_executor_lifecycle_block(
+          statements, index, level + 1, incoming, normal_continuing);
+      if (!normal_continuing && normal_state != incoming)
+        err(statement.line,
+            "an Executor lifecycle change before a typed raise cannot cross "
+            "into recover; construct and join the complete Executor lifecycle "
+            "outside the try, or leave its state unchanged",
+            "EXECUTOR_LIFECYCLE_EXCEPTIONAL_MISMATCH");
+      vector<std::pair<std::map<string, ExecutorLifecycle>, bool>> paths;
+      paths.push_back({std::move(normal_state), normal_continuing});
+      bool saw_recover = false;
+      while (index < statements.size() &&
+             statements[index].indent == level &&
+             statements[index].kind == Stmt::Kind::Recover) {
+        saw_recover = true;
+        ++index;
+        bool recover_continuing = true;
+        auto recover_state = check_executor_lifecycle_block(
+            statements, index, level + 1, incoming, recover_continuing);
+        if (!recover_continuing && recover_state != incoming)
+          err(statement.line,
+              "an Executor lifecycle change before a typed raise cannot escape "
+              "a recover arm; keep its lifecycle unchanged on that path",
+              "EXECUTOR_LIFECYCLE_EXCEPTIONAL_MISMATCH");
+        paths.push_back({std::move(recover_state), recover_continuing});
+      }
+      if (!saw_recover)
+        err(statement.line, "try must be followed by at least one recover arm",
+            "TRY_REQUIRES_RECOVER");
+      state = merge_executor_lifecycle_paths(statement.line, paths);
+      continuing = std::any_of(
+          paths.begin(), paths.end(), [](const auto& path) {
+            return path.second;
+          });
+      continue;
+    }
+
     if (statement.kind == Stmt::Kind::If) {
       ++index;
       bool then_continuing = true;
@@ -383,6 +551,11 @@ std::map<string, ExecutorLifecycle> check_executor_lifecycle_block(
                   ") active and unjoined; call Executor.join() on every "
                   "normal exit path, including 'return'",
               "EXECUTOR_JOIN_MISSING");
+      ++index;
+      continuing = false;
+      continue;
+    }
+    if (statement.kind == Stmt::Kind::Raise) {
       ++index;
       continuing = false;
       continue;

@@ -2,7 +2,13 @@ fn change(first: FileIO, second: FileIO):
   first.write(0, "x")
   data = second.read(0, 4)
 
-fn main():
+fn phase20_probe():
   file = FileIO.open("tmp/phase20-review/input.txt", rw)
   change(file, file)
   file.close()
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

@@ -1,3 +1,11 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # Same inside a handler.
 domain Reader:
   fn Pair(path: String) -> Int:
@@ -6,6 +14,9 @@ domain Reader:
     n = batch[1].length()
     file.close()
     reply n
+
+  on_fail:
+    reply -1
 
 fn main():
   r = Reader()

@@ -1,5 +1,5 @@
 # A bound used by an iterated read can change before the next iteration.
-fn main():
+fn phase20_probe():
   src = FileIO.open("tmp/phase20-review/input.txt", ro)
   dst = FileIO.open("tmp/phase20-review/out/loop-carried.txt", create)
   size = 4
@@ -9,3 +9,9 @@ fn main():
     dst.write(0, r)
   dst.close()
   src.close()
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

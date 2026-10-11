@@ -54,8 +54,8 @@ mod phase20_domain_physical {
         }), Condvar::new())).ok().unwrap();
         MOSS_LOCK_HOOK.set(observer).ok().unwrap();
         CONSTRUCT_STORE
-        store.Open_shared();
-        store.Update_shared();
+        store.Open_shared().expect("open");
+        store.Update_shared().expect("update");
         wait_for(|s| s.open_exclusive == 1);
         {
             let (lock, _) = EVENTS.get().unwrap();
@@ -66,13 +66,13 @@ mod phase20_domain_physical {
         let executor = MossExecutor::new().threads(2).max_threads(2).start();
         let first = store.clone();
         executor.enqueue_root(MossRootDescriptor::with_target(next_root_id(), "Verify", move || {
-            assert_eq!(first.Verify_shared(), Some(100));
+            assert_eq!(first.Verify_shared().expect("first verify"), Some(100));
         }));
         wait_for(|s| s.verify_acquired == 1);
         if target == ":handler:Verify" {
             let second = store.clone();
             executor.enqueue_root(MossRootDescriptor::with_target(next_root_id(), "Verify", move || {
-                assert_eq!(second.Verify_shared(), Some(100));
+                assert_eq!(second.Verify_shared().expect("second verify"), Some(100));
             }));
             wait_for(|s| s.verify_acquired == 2);
         } else {
@@ -83,7 +83,7 @@ mod phase20_domain_physical {
                     ":handler:Flush" => writer.Flush_shared(),
                     ":handler:Close" => writer.Close_shared(),
                     _ => unreachable!(),
-                }
+                }.expect("writer operation");
             }));
             wait_for(|s| s.target_contended == 1);
             let (lock, _) = EVENTS.get().unwrap();
@@ -94,7 +94,7 @@ mod phase20_domain_physical {
         cv.notify_all();
         if target != ":handler:Verify" { wait_for(|s| s.target_acquired == 1); }
         executor.join();
-        if target != ":handler:Close" { store.Close_shared(); }
+        if target != ":handler:Close" { store.Close_shared().expect("close"); }
     }
 
     #[test] fn shared() { scenario(":handler:Verify"); }

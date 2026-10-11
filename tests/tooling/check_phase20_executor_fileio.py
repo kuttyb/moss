@@ -103,14 +103,21 @@ def code_only(rust_text):
 
 
 def lowered_rust(rust_text):
-    """Remove exactly C's delimited runtime block for user-code assertions."""
+    """Remove delimited compiler runtimes for user-code assertions."""
     lines = rust_text.splitlines()
     start = [i for i, line in enumerate(lines)
              if line.startswith('// Phase 20 Executor Runtime  (moss executor_runtime_rust: ')]
     end = [i for i, line in enumerate(lines)
            if line.startswith('// ─── End Phase 20 Executor Runtime ')]
-    if len(start) == len(end) == 1 and start[0] < end[0]:
-        del lines[start[0]:end[0] + 1]
+    float_start = [i for i, line in enumerate(lines)
+                   if line.startswith('// ─── Begin Moss Float Format Runtime ')]
+    float_end = [i for i, line in enumerate(lines)
+                 if line.startswith('// ─── End Moss Float Format Runtime ')]
+    if len(start) == len(end) == len(float_start) == len(float_end) == 1 and \
+            start[0] < end[0] and float_start[0] < float_end[0]:
+        for begin, finish in sorted(((start[0], end[0]),
+                                     (float_start[0], float_end[0])), reverse=True):
+            del lines[begin:finish + 1]
     return '\n'.join(lines)
 
 
@@ -382,22 +389,35 @@ read_data.write_bytes(b'hello world')
 write_target = out / 'phase20_fileio_write.data'
 if write_target.exists():
     write_target.unlink()
-fileio_source = write_source('phase20_fileio_basic', '''fn main():
-  file = FileIO.open("%s", ro)
-  data = file.read(0, 5)
-  echo data.length()
-  file.close()
+fileio_source = write_source('phase20_fileio_basic', '''enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
 
-  out = FileIO.open("%s", create)
-  out.write(0, "written bytes")
-  out.sync()
-  out.sync(dataonly)
-  out.close()
+fn main():
+  try:
+    file = FileIO.open("%s", ro)
+    data = file.read(0, 5)
+    echo data.length()
+    file.close()
+
+    out = FileIO.open("%s", create)
+    out.write(0, "written bytes")
+    out.sync()
+    out.sync(dataonly)
+    out.close()
+  recover:
+    echo "unexpected FileIO error"
 ''' % (read_data, write_target))
 rust, binary = native_build('phase20_fileio_basic', fileio_source)
 text = code_only(rust.read_text())
 assert_owned_runtime(text, 'phase20_fileio_basic', fileio=True)
-assert 'out.sync();' in text and 'out.sync_dataonly();' in text
+assert 'out.sync_checked(false)' in text and 'out.sync_checked(true)' in text
+assert 'out.sync_checked(false).map_err(__moss_raise_fileio)' in text
+assert 'out.sync_checked(true).map_err(__moss_raise_fileio)' in text
 assert 'data.len()' in text and 'data.length()' not in text
 assert run_binary(binary).stdout == '5\n'
 assert write_target.read_text() == 'written bytes', write_target.read_text()
@@ -412,7 +432,8 @@ integration_fixture = 'tests/tooling/fixtures/phase20_fileio_runtime_integration
 fixture_rust, fixture_binary = native_build(
     'phase20_fileio_runtime_integration', integration_fixture)
 fixture_text = fixture_rust.read_text()
-assert '.read_batch(&[' in fixture_text, fixture_text
+assert '.read_batch_checked(&[' in fixture_text
+assert ').map_err(__moss_raise_fileio)' in fixture_text
 assert '(batch).get(0_i64)' in fixture_text, fixture_text
 assert '(batch).get(index)' in fixture_text, fixture_text
 assert 'in (batch).ranges()' in fixture_text, fixture_text
@@ -423,7 +444,8 @@ assert run_binary(fixture_binary).stdout == '4 4 4 8\n'
 domain_fileio_rust, domain_fileio_binary = native_build(
     'phase20_domain_fileio_native',
     'tests/tooling/fixtures/phase20_domain_fileio_native.moss')
-assert '.open_in_place(' in domain_fileio_rust.read_text()
+assert '.open_in_place_checked(' in domain_fileio_rust.read_text()
+assert '.map_err(__moss_raise_fileio)' in domain_fileio_rust.read_text()
 assert run_binary(domain_fileio_binary).stdout == '100\n4\n'
 
 # The proposal's untyped callback and actual byte indexing exercise all
@@ -455,7 +477,15 @@ assert '.bytes()' in range_iteration_rust.read_text()
 assert run_binary(range_iteration_binary).stdout == '294\n'
 
 # Agent A also accepts bounded computed local Vector[record] request batches.
-computed_batch_source = write_source('phase20_fileio_computed_batch', '''type ReadRequest:
+computed_batch_source = write_source('phase20_fileio_computed_batch', '''enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+type ReadRequest:
   offset: Int
   size: Int
 
@@ -470,12 +500,15 @@ fn inspect(file: FileIO, offset: Int) -> Int:
   return second.length() + total
 
 fn main():
-  file = FileIO.open("%s", create)
-  file.write(0, "abcdefgh")
-  result = inspect(file, 1)
-  file.sync()
-  file.close()
-  echo result
+  try:
+    file = FileIO.open("%s", create)
+    file.write(0, "abcdefgh")
+    result = inspect(file, 1)
+    file.sync()
+    file.close()
+    echo result
+  recover:
+    echo "unexpected FileIO error"
 ''' % (out / 'phase20_fileio_computed_batch.data'))
 computed_data = out / 'phase20_fileio_computed_batch.data'
 if computed_data.exists():
@@ -483,7 +516,8 @@ if computed_data.exists():
 computed_rust, computed_binary = native_build(
     'phase20_fileio_computed_batch', computed_batch_source)
 computed_text = computed_rust.read_text()
-assert 'read_batch(&__moss_fileio_batch_pairs_' in computed_text, computed_text
+assert 'read_batch_checked(&__moss_fileio_batch_pairs_' in computed_text
+assert ').map_err(__moss_raise_fileio)' in computed_text
 assert '.iter().map(|__moss_request| (__moss_request.offset, __moss_request.size))' in computed_text
 assert '(batch).get(index)' in computed_text, computed_text
 assert 'in (batch).ranges()' in computed_text, computed_text
@@ -496,7 +530,15 @@ assert run_binary(binary).stdout == '64\n'
 # ---------------------------------------------------------------------------
 # FileIO chunk pipelines.
 # ---------------------------------------------------------------------------
-CHUNK_SOURCE = '''fn chunk_length(chunk: Range) -> Int:
+CHUNK_SOURCE = '''enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn chunk_length(chunk: Range) -> Int:
   return chunk.length()
 
 fn positional(acc: Int, len: Int) -> Int:
@@ -512,6 +554,9 @@ domain Counter:
     total = file.chunks({size}) |> map(chunk_length) |> reduce(start_acc(), positional)
     file.close()
     reply total
+
+  on_fail:
+    reply -1
 
 fn main():
   counter = Counter()
@@ -589,7 +634,15 @@ chunk_data.write_bytes(b'0123456789abc')
 
 # FileIO reached (transitively, through a helper) from map, and from combine:
 # both remain valid Moss and lower sequentially.
-ineligible_case('phase20_chunk_fileio_map', write_source('phase20_chunk_fileio_map', '''fn chunk_len_io(chunk: Range) -> Int:
+ineligible_case('phase20_chunk_fileio_map', write_source('phase20_chunk_fileio_map', '''enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn chunk_len_io(chunk: Range) -> Int:
   side = FileIO.open("%s", ro)
   extra = side.read(0, 1).length()
   side.close()
@@ -599,13 +652,24 @@ fn positional(acc: Int, len: Int) -> Int:
   return acc * 10 + len
 
 fn main():
-  file = FileIO.open("%s", ro)
-  total = file.chunks(2) |> map(chunk_len_io) |> reduce(0, positional)
-  file.close()
-  echo total
+  try:
+    file = FileIO.open("%s", ro)
+    total = file.chunks(2) |> map(chunk_len_io) |> reduce(0, positional)
+    file.close()
+    echo total
+  recover:
+    echo "unexpected FileIO error"
 ''' % (side, chunk_data)), '2222221\n', 'map stage reaches a FileIO operation')
 
-ineligible_case('phase20_chunk_fileio_combine', write_source('phase20_chunk_fileio_combine', '''fn chunk_length(chunk: Range) -> Int:
+ineligible_case('phase20_chunk_fileio_combine', write_source('phase20_chunk_fileio_combine', '''enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn chunk_length(chunk: Range) -> Int:
   return chunk.length()
 
 fn positional_io(acc: Int, len: Int) -> Int:
@@ -615,10 +679,13 @@ fn positional_io(acc: Int, len: Int) -> Int:
   return acc * 10 + len + extra * 0
 
 fn main():
-  file = FileIO.open("%s", ro)
-  total = file.chunks(2) |> map(chunk_length) |> reduce(0, positional_io)
-  file.close()
-  echo total
+  try:
+    file = FileIO.open("%s", ro)
+    total = file.chunks(2) |> map(chunk_length) |> reduce(0, positional_io)
+    file.close()
+    echo total
+  recover:
+    echo "unexpected FileIO error"
 ''' % (side, chunk_data)), '2222221\n', 'combine stage reaches a FileIO operation')
 
 # Inside a handler: a capture-free placeholder map is eligible (and its
@@ -626,7 +693,15 @@ fn main():
 # is ineligible and lowers sequentially, still producing the right result.
 handler_data = out / 'phase20_chunk_handler.data'
 handler_data.write_bytes(b'123456')
-handler_source = write_source('phase20_chunk_handler', '''fn positional(acc: Int, len: Int) -> Int:
+handler_source = write_source('phase20_chunk_handler', '''enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn positional(acc: Int, len: Int) -> Int:
   return acc * 10 + len
 
 domain Counter:
@@ -638,11 +713,17 @@ domain Counter:
     file.close()
     reply total
 
+  on_fail:
+    reply -1
+
   fn Bonus(path: String) -> Int:
     file = FileIO.open(path, ro)
     total = file.chunks(3) |> map(_.length() + bonus) |> reduce(0, positional)
     file.close()
     reply total
+
+  on_fail:
+    reply -1
 
 fn main():
   counter = Counter()
@@ -688,9 +769,9 @@ assert mutant_program == ['33', '44'], mutant_program
 assert mutant_trace == ['moss-branch publish', 'moss-branch run'] * 4, mutant_trace
 assert mutant_trace != WINDOW_TRACE, mutant_trace
 
-# A source-free .mossi provider has no authoritative FileIO effect bit. The
-# consumer runs with the real process-root runtime: its local combine is
-# eligible for Branch lowering, while the provider combine stays sequential.
+# A source-free .mossi provider retains its checked observable effects. The
+# consumer runs with the real process-root runtime; local and provider
+# combines both remain eligible when their summaries are pure.
 provider_root = out / 'phase20_provider'
 provider = provider_root / 'provider'
 consumer = provider_root / 'consumer'
@@ -712,6 +793,14 @@ provider_data.write_bytes(b'123456')
 (consumer / 'src/main.moss').write_text("""module app
 import folds
 
+export enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 fn chunk_length(chunk: Range) -> Int:
   return chunk.length()
 
@@ -729,6 +818,9 @@ domain Counter:
     file.close()
     reply local_total * 100 + provider_total
 
+  on_fail:
+    reply -1
+
 fn main():
   counter = Counter()
   executor = Executor().threads(2).start()
@@ -743,7 +835,8 @@ consumer_rust = consumer / 'build/debug/app.rs'
 consumer_text = consumer_rust.read_text()
 consumer_lowered = lowered_rust(consumer_text)
 assert re.search(r'branch_publish\(&', consumer_lowered), consumer_lowered
-assert 'ineligible for Branch lowering: combine callable FileIO effect unavailable for compiled provider' in consumer_text
+assert consumer_text.count('FileIO CHUNK PIPELINE -- eligible') >= 2
+assert 'combine callable FileIO effect unavailable for compiled provider' not in consumer_text
 consumer_binary = consumer / 'build/debug/p20consumer'
 provider_run = subprocess.run([str(consumer_binary)], text=True, capture_output=True,
                               timeout=120, check=True)
@@ -758,7 +851,15 @@ e2e_data = out / 'phase20_e2e.data'
 e2e_data.write_bytes(bytes(range(256)) * 400 + b'tail')
 for suffix in ('a', 'b'):
     (out / ('phase20_e2e.data.' + suffix)).write_bytes(e2e_data.read_bytes())
-e2e_source = write_source('phase20_e2e_executor_fileio', '''fn add_length(acc: Int, len: Int) -> Int:
+e2e_source = write_source('phase20_e2e_executor_fileio', '''enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn add_length(acc: Int, len: Int) -> Int:
   return acc + len
 
 domain Count:
@@ -768,6 +869,9 @@ domain Count:
     file.close()
     reply total
 
+  on_fail:
+    reply -1
+
 domain Reader:
   seen = 0
 
@@ -776,6 +880,9 @@ domain Reader:
     data = file.read(0, 64)
     seen = seen + data.length()
     file.close()
+
+  on_fail:
+    echo "unexpected FileIO error"
 
   fn Seen() -> Int:
     reply seen
@@ -811,25 +918,42 @@ for _ in range(5):
     assert any(position > solo_positions[0] for position in worker_positions), stdout
 
 # Sequential `for` over the scoped chunk source iterates Agent B's MossChunks.
-for_chunks_source = write_source('phase20_for_chunks', '''fn main():
-  file = FileIO.open("%s", ro)
-  for chunk in file.chunks(3):
-    echo chunk.length()
-  file.close()
+for_chunks_source = write_source('phase20_for_chunks', '''enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn main():
+  try:
+    file = FileIO.open("%s", ro)
+    for chunk in file.chunks(3):
+      echo chunk.length()
+    file.close()
+  recover:
+    echo "unexpected FileIO error"
 ''' % (out / 'phase20_chunk_short_final.data'))
 _, binary = native_build('phase20_for_chunks', for_chunks_source)
 assert run_binary(binary).stdout == '3\n3\n1\n'
 
 # The chunk source is a scoped seq[Range], not a materializable collection.
 expect_rejected(write_source('phase20_chunks_materialize', '''fn main():
-  file = FileIO.open("%s", ro)
-  c = file.chunks(4)
-  file.close()
+  try:
+    file = FileIO.open("%s", ro)
+    c = file.chunks(4)
+    file.close()
+  recover:
+    pass
 ''' % chunk_data), 'not a materializable collection', code='FILEIO_CHUNKS_NOT_MATERIALIZABLE')
 expect_rejected(write_source('phase20_chunks_shape', '''fn main():
-  file = FileIO.open("%s", ro)
-  n = file.chunks(4) |> count
-  file.close()
+  try:
+    file = FileIO.open("%s", ro)
+    n = file.chunks(4) |> count
+    file.close()
+  recover:
+    pass
 ''' % chunk_data), "must be exactly 'file.chunks(size) |> map(f) |> reduce(initial, combine)'",
     code='FILEIO_CHUNK_PIPELINE_SHAPE')
 

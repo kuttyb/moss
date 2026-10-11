@@ -1,0 +1,61 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+enum MapError:
+  Early
+  Late
+
+enum FoldError:
+  First
+
+fn mark(chunk: Range) -> Int:
+  value = chunk[0]
+  if value == 66:
+    raise MapError.Early
+  if value == 67:
+    raise MapError.Late
+  return value
+
+fn add(total: Int, value: Int) -> Int:
+  return total + value
+
+fn first_fold(total: Int, value: Int) -> Int:
+  if value == 65:
+    raise FoldError.First
+  return total + value
+
+domain Worker:
+  fn Run(path: String, kind: Int, id: Int):
+    try:
+      file = FileIO.open(path, ro)
+      if kind == 2:
+        total = file.chunks(1) |> map(mark) |> reduce(0, first_fold)
+      else:
+        total = file.chunks(1) |> map(mark) |> reduce(0, add)
+      file.close()
+      echo id * 1000 + total
+    recover MapError.Early:
+      echo id * 1000 + 1
+    recover MapError.Late:
+      echo id * 1000 + 2
+    recover FoldError.First:
+      echo id * 1000 + 3
+    recover:
+      echo id * 1000 + 4
+
+fn main():
+  a = Worker()
+  b = Worker()
+  c = Worker()
+  d = Worker()
+  executor = Executor().threads(4).max_threads(8).queue_capacity(8).start()
+  executor.invoke(a.Run("tmp/phase21c-concurrent-a.data", 0, 1))
+  executor.invoke(b.Run("tmp/phase21c-concurrent-b.data", 1, 2))
+  executor.invoke(c.Run("tmp/phase21c-concurrent-c.data", 2, 3))
+  executor.invoke(d.Run("tmp/phase21c-concurrent-d.data", 0, 4))
+  executor.join()

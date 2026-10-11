@@ -118,7 +118,21 @@ application_rust=(project/'build/debug/app.rs').read_text()
 assert 'struct provider__CounterRuntime' not in provider_rust
 assert 'struct provider__CounterRuntime' in application_rust
 assert '__moss_body_provider__Counter_Bump' in provider_rust
-interface=(project/'build/debug/provider.mossi').read_text()
-assert 'native_abi 6' in interface
+interface_path=project/'build/debug/provider.mossi'
+interface=interface_path.read_text()
+assert 'native_abi 9' in interface
+assert re.search(r'(?m)^provider_contract_digest sha256:[0-9a-f]{64}$', interface)
 assert not any(x in interface for x in ('ClassState','RwLock','ClassSet','class_rank','MossRead'))
-print('10.6F.1 typed class layouts, exact direct acquisitions, no metadata/heap work, optimized assembly, independent instances, and uninstantiated/source-free provider body ABI passed.')
+# A historical ABI-v8 interface lacks the provider-owned v9 contract seal.
+# It must fail during Moss checking, before native code generation or linking.
+legacy=re.sub(r'(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n', '', interface)
+legacy=legacy.replace('native_abi 9\n', 'native_abi 8\n')
+assert legacy != interface
+interface_path.write_text(legacy)
+checked=subprocess.run([str(compiler),'check',str(main),'--json'],cwd=project,
+                       text=True,capture_output=True,timeout=180)
+assert checked.returncode != 0, (checked.stdout,checked.stderr)
+diagnostic=json.loads(checked.stdout)['error']['code']
+assert diagnostic == 'SOURCE_FREE_ABI_REBUILD_REQUIRED', diagnostic
+interface_path.write_text(interface)
+print('10.6F.1 typed class layouts, exact direct acquisitions, no metadata/heap work, optimized assembly, independent instances, source-free ABI-v9 execution, and ABI-v8 rejection passed.')

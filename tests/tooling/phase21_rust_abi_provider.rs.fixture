@@ -1,0 +1,138 @@
+#![deny(warnings)]
+
+// This crate models the materialized, source-free side of the Phase 21 ABI.
+// StoreLoadFrame is nameable by a consumer so it can be moved across an rlib
+// boundary, but its representation and raised-carrier enum remain provider
+// private.
+
+pub const STORE_ERROR_DOWN_IDENTITY: u128 = 0x5354_4f52_455f_4552_524f_525f_444f_574e;
+pub const STORE_ERROR_DOWN_TAG: u32 = 0;
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct OwnedCode {
+    pub value: i64,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum DownReason {
+    Offline { code: OwnedCode },
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct DownPayload {
+    pub reason: DownReason,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct StoreFailureCapture {
+    pub bias: i64,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum StoreReply {
+    Loaded { value: i64 },
+    Unavailable { code: i64, capture_bias: i64 },
+}
+
+enum StoreLoadRaised {
+    Down(DownPayload),
+}
+
+pub struct StoreLoadFrame {
+    tag: u32,
+    raised: StoreLoadRaised,
+    capture: StoreFailureCapture,
+}
+
+pub enum StoreLoadOutcome {
+    Replied(StoreReply),
+    Raised(StoreLoadFrame),
+}
+
+// A consumer can destructure an exported alternative without learning the
+// provider-private frame representation. Both the payload and capture move.
+pub struct StoreLoadResidual {
+    capture: StoreFailureCapture,
+}
+
+pub enum StoreLoadProjection {
+    Matched {
+        payload: DownPayload,
+        residual: StoreLoadResidual,
+    },
+    Other(StoreLoadFrame),
+}
+
+pub fn store_load_body(
+    should_fail: bool,
+    value: i64,
+    capture: StoreFailureCapture,
+) -> StoreLoadOutcome {
+    if should_fail {
+        StoreLoadOutcome::Raised(StoreLoadFrame {
+            tag: STORE_ERROR_DOWN_TAG,
+            raised: StoreLoadRaised::Down(DownPayload {
+                reason: DownReason::Offline {
+                    code: OwnedCode { value },
+                },
+            }),
+            capture,
+        })
+    } else {
+        StoreLoadOutcome::Replied(StoreReply::Loaded { value })
+    }
+}
+
+pub fn store_load_identity(_frame: &StoreLoadFrame) -> u128 {
+    STORE_ERROR_DOWN_IDENTITY
+}
+
+pub fn store_load_tag(frame: &StoreLoadFrame) -> u32 {
+    frame.tag
+}
+
+pub fn project_store_down(frame: StoreLoadFrame) -> StoreLoadProjection {
+    match frame.raised {
+        StoreLoadRaised::Down(payload) if frame.tag == STORE_ERROR_DOWN_TAG => {
+            StoreLoadProjection::Matched {
+            payload,
+                residual: StoreLoadResidual {
+                    capture: frame.capture,
+                },
+            }
+        }
+        StoreLoadRaised::Down(payload) => StoreLoadProjection::Other(StoreLoadFrame {
+            tag: frame.tag,
+            raised: StoreLoadRaised::Down(payload),
+            capture: frame.capture,
+        }),
+    }
+}
+
+// This is the generated inverse bridge used by a bare re-raise after a typed
+// recovery match. It restores the same identity and moves the original owned
+// payload and capture into a fresh opaque provider frame.
+pub fn make_store_down(
+    payload: DownPayload,
+    residual: StoreLoadResidual,
+) -> StoreLoadFrame {
+    StoreLoadFrame {
+        tag: STORE_ERROR_DOWN_TAG,
+        raised: StoreLoadRaised::Down(payload),
+        capture: residual.capture,
+    }
+}
+
+// The callable is separately exported and has the concrete frame and reply
+// types in its signature; no integer sentinel or host exception is involved.
+pub fn store_load_on_fail(frame: StoreLoadFrame) -> StoreReply {
+    match project_store_down(frame) {
+        StoreLoadProjection::Matched { payload, residual } => match payload.reason {
+            DownReason::Offline { code } => StoreReply::Unavailable {
+                code: code.value,
+                capture_bias: residual.capture.bias,
+            },
+        },
+        StoreLoadProjection::Other(_) => unreachable!(),
+    }
+}

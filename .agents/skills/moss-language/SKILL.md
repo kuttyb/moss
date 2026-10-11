@@ -140,7 +140,12 @@ concatenation and `==`/`!=` equality, but not `<`, `<=`, `>`, or
 `>=` ordering.
 Its read-only methods are `length()`, `char_at(index)`, `chars()`,
 `split(separator)`, and `join(parts)` on the separator. Positions count
-zero-based Unicode code points. Numeric parsing awaits Phase 21 error handling.
+zero-based Unicode code points. `parse_int(String)` and `parse_float(String)`
+raise `ParseError` variants; `to_int(Float)` raises `ConversionError` variants.
+Declare the tag-only error enum in source and recover the typed failures.
+Finite `parse_float` text accepts `.5`, `1.`, uppercase `E`, leading zeros,
+and explicit exponent signs; digits are ASCII only. The exact grammar and
+nonfinite spellings are in the Phase 21 error-handling spec §13.3.
 
 ### Arithmetic and empty collections
 

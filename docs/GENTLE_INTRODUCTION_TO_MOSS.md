@@ -109,6 +109,21 @@ Moss is statically checked even when you leave the annotation out. Omitting a
 type does not make the value dynamically typed. Local annotations such as
 `var count: Int = 10` are not part of v0.1; use inference instead.
 
+`Float` uses IEEE binary64 values. `is_nan(value)` and `is_finite(value)`
+accept a `Float` and return a `Bool` without raising; use them to distinguish
+NaN and infinity from finite values.
+
+`parse_int(text)` and `parse_float(text)` return `Int` and `Float`. They raise
+tag-only `ParseError.Invalid` for malformed text; `parse_int` also raises
+`ParseError.Overflow`. `to_int(value)` truncates a finite `Float` toward zero
+and raises `ConversionError.NonFinite` or `ConversionError.Overflow` when the
+result is unavailable. Declare the corresponding tag-only error enum in the
+source module and handle these variants with `try`/`recover` or a Root handler's
+`on_fail` trailer. Parsing accepts surrounding ASCII whitespace, decimal digit
+underscores, `.5`, `1.`, uppercase `E`, leading zeros, and exponent signs.
+See `docs/MOSS_PHASE_21_ERROR_HANDLING.md` §13.3 for the exact grammar and
+nonfinite spellings.
+
 Explicit local declarations are available when mutability matters:
 
 ```moss
@@ -147,7 +162,7 @@ fn main():
 `char_at` requires a valid nonnegative position; `split` requires a nonempty
 separator. Invalid inputs fail under current runtime precondition behavior.
 `join` accepts `Vector[String]` and returns an empty String for an empty vector.
-String numeric parsing and recoverable invalid-input behavior belong to Phase 21.
+String numeric parsing and recoverable invalid-input behavior are described above.
 
 There are no bitwise or shift operators (`&`, `|`, `^`, `<<`, `>>`) in v0.1, and
 Boolean logic uses words rather than `&&` and `||` (Section 2).
@@ -929,7 +944,8 @@ effects cannot be statically established; it does not mean ordinary local
 computation, local bindings, multi-statement pure helpers, or normal value
 allocation. To check a helper before using it as an initializer, run
 `moss effects fn:<name> --source <file> --json`. It reports the same
-`may_fail`, `may_diverge`, and `unresolved` facts the checker uses.
+separate `may_panic`, variant-precise `raise_set`, `may_diverge`, and
+`unresolved` facts the checker uses.
 
 ### Messages have value semantics
 

@@ -1,0 +1,102 @@
+# Reconstructed from the external P21-EXT-03 effect-inference descriptions.
+enum EffectFault:
+  Bad
+
+fn fail() -> Int:
+  raise EffectFault.Bad
+
+fn grouped() -> Int:
+  return (fail())
+
+fn listed() -> Vector[Int]:
+  return [fail()]
+
+type EffectWorker:
+  fn Fail() -> Int:
+    raise EffectFault.Bad
+
+fn method_exit(worker: EffectWorker) -> Int:
+  return worker.Fail()
+
+fn duck(worker) -> Int:
+  return worker.Fail()
+
+fn duck_call() -> Int:
+  worker = EffectWorker()
+  return duck(worker)
+
+fn reduce_duck(total: Int, worker) -> Int:
+  return total + worker.Fail()
+
+fn pipeline_duck() -> Int:
+  return [EffectWorker()] |> reduce(0, reduce_duck)
+
+fn map_raise_or_panic(value: Int) -> Int:
+  if value == 1:
+    raise EffectFault.Bad
+  return 1 / (value - 2)
+
+fn predicate_raise(value: Int) -> Bool:
+  if value == 1:
+    raise EffectFault.Bad
+  return true
+
+fn mapped() -> Int:
+  return [1, 2] |> map(map_raise_or_panic) |> sum
+
+fn filtered() -> Int:
+  return [1, 2] |> filter(predicate_raise) |> sum
+
+fn any_checked() -> Bool:
+  return [1, 2] |> any(predicate_raise)
+
+fn all_checked() -> Bool:
+  return [1, 2] |> all(predicate_raise)
+
+domain EffectDomain:
+  fn Run() -> Int:
+    reply duck_call()
+
+  on_fail EffectFault.Bad:
+    reply 7
+
+fn main():
+  owner = EffectDomain()
+  try:
+    echo grouped()
+  recover EffectFault.Bad:
+    echo "grouped"
+  try:
+    echo listed() |> count
+  recover EffectFault.Bad:
+    echo "listed"
+  worker = EffectWorker()
+  try:
+    echo method_exit(worker)
+  recover EffectFault.Bad:
+    echo "method"
+  try:
+    echo duck_call()
+  recover EffectFault.Bad:
+    echo "duck"
+  try:
+    echo pipeline_duck()
+  recover EffectFault.Bad:
+    echo "pipeline"
+  try:
+    echo mapped()
+  recover EffectFault.Bad:
+    echo "map"
+  try:
+    echo filtered()
+  recover EffectFault.Bad:
+    echo "filter"
+  try:
+    echo any_checked()
+  recover EffectFault.Bad:
+    echo "any"
+  try:
+    echo all_checked()
+  recover EffectFault.Bad:
+    echo "all"
+  echo message owner.Run()

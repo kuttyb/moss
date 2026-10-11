@@ -1,3 +1,11 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 domain Store:
   file: FileIO
   value = 0
@@ -5,26 +13,44 @@ domain Store:
   fn Open():
     file.open("tmp/phase20-domain-fileio.data", create)
 
+  on_fail:
+    echo "unexpected FileIO error"
+
   fn Verify() -> Int:
     data = file.read(0, 4)
     reply data[0]
 
+  on_fail:
+    reply -1
+
   fn Update():
     file.write(0, "data")
+
+  on_fail:
+    echo "unexpected FileIO error"
 
   fn Flush():
     file.sync()
     file.sync(dataonly)
 
+  on_fail:
+    echo "unexpected FileIO error"
+
   fn Chunks():
     for chunk in file.chunks(2):
       value = value + chunk.length()
+
+  on_fail:
+    echo "unexpected FileIO error"
 
   fn Total() -> Int:
     reply value
 
   fn Close():
     file.close()
+
+  on_fail:
+    echo "unexpected FileIO error"
 
 fn main():
   store = Store()

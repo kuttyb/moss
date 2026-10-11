@@ -2,7 +2,7 @@
 
 **Date:** October 9, 2026  
 **Design baseline:** `MOSS_PHASE_21_ERROR_HANDLING.md`, consolidated v4.5.2.  
-**Status:** Design approved, implementation not yet established. This is a review/handoff supplement, **not a replacement for the normative specification**.
+**Status:** Design approved; implementation is in progress. The current integration state and outstanding acceptance gates are recorded in `.codex/CURRENT_STATUS.md`. This is a review/handoff supplement, **not a replacement for the normative specification**.
 
 ## 1. Independent-review disposition
 
@@ -18,11 +18,11 @@ Add class-partition regression: with one handler writing two leaves, show adding
 
 ### Tutorial/spec example correction — avoid a misleading unreachable-arm warning
 
-Part I Example 10 and the corresponding Part II §21 cross-enum example open and close a file without writing it, yet include `on_fail FileError.Full`. Because Phase 21 requires **operation-precise** inferred failure sets and warns on well-formed unreachable arm patterns, `Full` may be unreachable in that specific program, defeating the example's purpose. Part II §21 additionally parses the constant literal `"bad"`, which may be statically known to raise before any FileIO operation. Replace these examples with a dynamic parse input and a bounded file **write/sync** path so both `ParseError` and `FileError.Full` are plausibly reachable. Keep this as an example repair, not a change to the six-variant FileError taxonomy. Validate the actual inferred effects, rather than asserting open/close always exclude `Full` without an OS-site audit.
+Part I Example 10 and the corresponding Part II §21 cross-enum example now use a dynamic parse input and a bounded file write/sync path. Both `ParseError` and `FileError.Full` remain plausible without treating open/close as `Full` sites. This is an example repair, not a change to the six-variant FileError taxonomy. Validate the actual inferred effects rather than asserting open/close always exclude `Full` without an OS-site audit.
 
 ### Numeric contract freeze checks (not design redesign)
 
-- Part II §13.2: canonical shortest-round-trip Float formatting specifies a "deterministic nearest-roundtrip choice for any ties." Freeze an unambiguous tie-break rule or a named, version-pinned reference algorithm, plus adversarial halfway/tie golden vectors; a finite golden suite alone is not a general definition.
+- Part II §13.2: canonical shortest-round-trip Float formatting now chooses the nearest decimal value and an even final significand digit on an exact tie. Keep adversarial halfway/tie vectors in the golden suite and pin the algorithm independently of host Rust formatting.
 - Part II §13.3: establish an explicit accepted finite decimal token grammar in tests (e.g. `.5`, `1.`, `1e+3`, uppercase `E`, signed zero, leading zeros) so Rust/Interpreter parsers cannot quietly diverge on forms not explicitly covered by the text. Do not impose a new grammar by inference in an agent; seek approval for any previously unsettled token spelling.
 
 These are contract-completeness checks, not objections to the central exception-handling architecture.
@@ -43,7 +43,7 @@ Before Agents A–D integrate changes, produce a small committed, reviewable con
 2. **Tagged outcomes.** Generated Rust sum representation and stable tag + payload layout for normal values, scalar error types, and enum variants. Error payloads are bounded, owned, no capabilities/borrows. Define how a concrete specialization with several error enums encodes its internal tagged value without exposing a cross-enum source type. Define error identity and propagation across helpers, nested messages, provider callables and Root wrappers. Panics are separate and non-catchable.
 3. **Role-separated wrappers.** Provider exports handler body, plus separately materialized failure-arm bodies and metadata. Consumer application emits (i) nested wrapper, which never calls `on_fail`; (ii) Root wrapper, which quiesces, closes Root-local FileIO, releases old guards, acquires `h_fail`, dispatches typed arm, and fulfills reply contract. No panic catching/unwinding implementation.
 4. **Captures and D7.** ABI for owned, definitely initialized, legal values made available to a failure-arm body **after** the attempt's frame ends. Forbid FileIO, Range, RangeBatch, guards, protected borrowed views. Plan arm-refined D7 for variant-specific paths. Preserve provider-private types safely through provider-exported signatures and calling convention.
-5. **Semantic interfaces.** `.mossi` version, serializable effect/arm pattern/capture/reply records, canonical specialization hash, missing-record fail-closed behavior, and full ABI-v6→v7 rebuild requirement. Version number only after the representation is frozen.
+5. **Semantic interfaces.** `.mossi` version, serializable effect/arm pattern/capture/reply records, canonical specialization hash, missing-record fail-closed behavior, and full prior-ABI→v8 rebuild requirement. Version number only after the representation is frozen.
 6. **Diagnostics/CFG schema.** Identify syntactic raising nodes, exceptional-edge wiring, which analyses consume them, and how selected-error slots scope across nested `recover` arms. O4 must be checkable as an independent verifier test.
 
 **Gate 21.0 passes only if:** a design/ABI header and example native Rust signatures are reviewed, a source-free provider fixture can be planned unambiguously, owners A–D have agreed on names/paths, and there are no unexplained version/interface dependencies. Commit only this interface contract first; do not merge divergent tagged-outcome implementations.
@@ -138,7 +138,7 @@ Instructions:
           A+B: quiesce -> close -> drop -> fresh acquire -> dispatch
           B+C: scoped FileIO borrow/token lifetime and join order
           A+D: native/Fast Debug raised-effect parity and test harness
-          All: provider-source-removed ABI v7; make check; make examples
+          All: provider-source-removed ABI v8; make check; make examples
 ```
 
 Do not give multiple agents concurrent write ownership of `ObservableEffects`, ABI serialization, Rust tagged outcome types, or the same lowering entry. Land 21.0 first. Each workstream should rebase to the frozen contract instead of editing the contract in its own branch.

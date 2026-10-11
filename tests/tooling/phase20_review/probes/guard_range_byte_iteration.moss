@@ -1,3 +1,11 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # Range byte iteration inside an eligible map (loop is deliberate: Range is
 # not a pipeline source; see design_range_as_pipeline_source).
 fn spaces(chunk: Range) -> Int:
@@ -10,8 +18,14 @@ fn spaces(chunk: Range) -> Int:
 fn add(a: Int, b: Int) -> Int:
   return a + b
 
-fn main():
+fn phase20_probe():
   file = FileIO.open("tmp/phase20-review/input.txt", ro)
   total = file.chunks(4096) |> map(spaces) |> reduce(0, add)
   file.close()
   echo total
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

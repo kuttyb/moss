@@ -1,11 +1,11 @@
 #pragma once
 
 #include <cmath>
+#include <charconv>
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
-#include <iomanip>
 #include <limits>
 #include <memory>
 #include <map>
@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "ast.hpp"
+#include "numeric_runtime.hpp"
 #include "type_placeholders.hpp"
 
 namespace moss {
@@ -132,6 +133,14 @@ class FastInterpreter {
       } catch (const RuntimeError& error) {
         output << "FAIL " << test.name << ": " << error.what() << "\n";
         ++failed;
+      } catch (const RaisedSignal& raised) {
+        output << "FAIL " << test.name << ": unhandled typed raise "
+               << raised.identity.canonical() << " at "
+               << (!raised.source_file.empty() ? raised.source_file :
+                   !test.source_file.empty() ? test.source_file :
+                   options_.source_file)
+               << ":" << raised.line << "\n";
+        ++failed;
       }
     }
     if (!discovered)
@@ -209,6 +218,13 @@ class FastInterpreter {
     Value value;
   };
 
+  struct RaisedSignal {
+    RaisedIdentity identity;
+    Value value;
+    int line = 0;
+    std::string source_file;
+  };
+
   const Program& program_;
   Options options_;
   std::vector<TraceEvent> trace_;
@@ -217,7 +233,62 @@ class FastInterpreter {
   std::vector<int> message_stack_;
   std::vector<int> handler_stack_;
   std::vector<int> control_stack_;
+  std::vector<RaisedSignal> selected_errors_;
   std::map<std::string, std::unique_ptr<DomainValue>> instances_;
+
+  static bool recovery_matches(const std::string& selector,
+                               const RaisedIdentity& identity) {
+    if (selector.empty() || selector.find('.') == std::string::npos)
+      return true;
+    for (const auto& alternative : split_arguments(selector)) {
+      const auto dot = alternative.find('.');
+      const auto payload = alternative.find('(', dot);
+      if (dot != std::string::npos &&
+          trim_copy(alternative.substr(0, dot)) == identity.type &&
+          trim_copy(alternative.substr(dot + 1,
+              payload == std::string::npos ? std::string::npos :
+              payload - dot - 1)) == identity.variant)
+        return true;
+    }
+    return false;
+  }
+
+  std::vector<std::pair<std::string, std::pair<Value, std::string>>>
+  error_pattern_payloads(const std::string& selector,
+                         const RaisedSignal& raised, int line) const {
+    for (const auto& alternative : split_arguments(selector)) {
+      if (!recovery_matches(alternative, raised.identity)) continue;
+      const auto open = alternative.find('(');
+      if (open == std::string::npos) return {};
+      const auto close = alternative.rfind(')');
+      if (close == std::string::npos || close <= open ||
+          !raised.value.object)
+        throw RuntimeError(line, "checked error payload is absent");
+      const auto names = split_arguments(
+          alternative.substr(open + 1, close - open - 1));
+      const EnumCase* variant = nullptr;
+      for (const auto& declaration : program_.enums)
+        if (declaration.name == raised.identity.type)
+          for (const auto& item : declaration.cases)
+            if (item.name == raised.identity.variant) variant = &item;
+      if (!variant || names.size() != variant->fields.size())
+        throw RuntimeError(line, "checked error payload shape is invalid");
+      std::vector<std::pair<std::string, std::pair<Value, std::string>>>
+          bindings;
+      for (size_t index = 0; index < names.size(); ++index) {
+        const auto& name = names[index];
+        const auto& field = variant->fields[index];
+        auto value = raised.value.object->fields.find(field.name);
+        if (value == raised.value.object->fields.end())
+          throw RuntimeError(line,
+              "checked error payload field '" + field.name +
+              "' is absent");
+        bindings.push_back({name, {independent(value->second), field.type}});
+      }
+      return bindings;
+    }
+    return {};
+  }
 
   static std::string checked_binding_type(const Stmt& statement,
                                           const Frame& frame) {
@@ -801,6 +872,51 @@ class FastInterpreter {
           auto value = eval(args.front(), frame, line, output);
           return Value::float_value(std::sqrt(value.kind == Value::Kind::Int ? value.integer : value.floating));
         }
+        if (callee == "is_nan" || callee == "is_finite") {
+          if (args.size() != 1)
+            throw RuntimeError(line, callee + " expects one Float argument");
+          auto value = eval(args.front(), frame, line, output);
+          if (value.kind != Value::Kind::Float)
+            throw RuntimeError(line, callee + " argument must have type Float");
+          return Value::boolean_value(callee == "is_nan"
+              ? std::isnan(value.floating) : std::isfinite(value.floating));
+        }
+        const std::string_view numeric_name = numeric_builtin_base(callee);
+        if (numeric_name == "parse_int" || numeric_name == "parse_float") {
+          auto argument = eval(args.front(), frame, line, output);
+          NumericParseError error = NumericParseError::Invalid;
+          if (numeric_name == "parse_int") {
+            std::int64_t number = 0;
+            if (numeric_parse_int(argument.string, number, error))
+              return Value::int_value(number);
+          } else {
+            double number = 0.0;
+            if (numeric_parse_float(argument.string, number, error))
+              return Value::float_value(number);
+          }
+          const std::string variant = error == NumericParseError::Invalid
+              ? "Invalid" : "Overflow";
+          const std::string error_type = numeric_builtin_error_type(callee);
+          Value raised = Value::struct_value(error_type);
+          raised.object->case_name = variant;
+          emit("raise", frame, line, "variant:" + error_type + "." + variant);
+          throw RaisedSignal{RaisedIdentity::enum_variant(error_type, variant),
+                             std::move(raised), line, frame.source_file};
+        }
+        if (numeric_name == "to_int") {
+          auto argument = eval(args.front(), frame, line, output);
+          const double number = argument.floating;
+          const std::string variant = !std::isfinite(number) ? "NonFinite" :
+              (std::trunc(number) < -9223372036854775808.0 ||
+               std::trunc(number) >= 9223372036854775808.0) ? "Overflow" : "";
+          if (variant.empty()) return Value::int_value(static_cast<std::int64_t>(number));
+          const std::string error_type = numeric_builtin_error_type(callee);
+          Value raised = Value::struct_value(error_type);
+          raised.object->case_name = variant;
+          emit("raise", frame, line, "variant:" + error_type + "." + variant);
+          throw RaisedSignal{RaisedIdentity::enum_variant(error_type, variant),
+                             std::move(raised), line, frame.source_file};
+        }
         if (auto fn = function(callee)) return call(*fn, args, frame, line, output);
         auto callable_local = frame.locals.find(callee);
         const Value* callable_val = callable_local != frame.locals.end() ? &callable_local->second : nullptr;
@@ -1039,7 +1155,6 @@ class FastInterpreter {
     if (op == "-") return Value::float_value(l - r);
     if (op == "*") return Value::float_value(l * r);
     if (op == "%") throw RuntimeError(line, "integer remainder requires Int operands");
-    if (r == 0.0) throw RuntimeError(line, "floating-point division by zero");
     return Value::float_value(l / r);
   }
 
@@ -1215,6 +1330,92 @@ class FastInterpreter {
     size_t index = begin;
     while (index < end) {
       const Stmt& statement = statements[index];
+      if (statement.kind == Stmt::Kind::Try) {
+        size_t try_end = index + 1;
+        while (try_end < end && statements[try_end].indent > statement.indent)
+          ++try_end;
+        size_t after = try_end;
+        while (after < end &&
+               statements[after].kind == Stmt::Kind::Recover &&
+               statements[after].indent == statement.indent) {
+          ++after;
+          while (after < end &&
+                 statements[after].indent > statement.indent)
+            ++after;
+        }
+        try {
+          Flow flow = execute(statements, frame, output, index + 1, try_end);
+          if (flow.returned) return flow;
+        } catch (const RaisedSignal& raised) {
+          size_t arm = try_end;
+          bool handled = false;
+          while (arm < after) {
+            const Stmt& recovery = statements[arm];
+            size_t arm_end = arm + 1;
+            while (arm_end < after &&
+                   statements[arm_end].indent > recovery.indent)
+              ++arm_end;
+            if (!handled && recovery_matches(recovery.a, raised.identity)) {
+              handled = true;
+              emit("recover", frame, recovery.line,
+                   raised.identity.canonical());
+              const bool bound = !recovery.a.empty() &&
+                  recovery.a.find('.') == std::string::npos;
+              struct SavedBinding {
+                std::string name;
+                std::optional<Value> value;
+                std::optional<std::string> type;
+              };
+              std::vector<SavedBinding> saved;
+              const auto bind = [&](const std::string& name, Value value,
+                                    const std::string& type) {
+                SavedBinding prior;
+                prior.name = name;
+                if (auto found = frame.locals.find(name);
+                    found != frame.locals.end())
+                  prior.value = found->second;
+                if (auto found = frame.local_types.find(name);
+                    found != frame.local_types.end())
+                  prior.type = found->second;
+                saved.push_back(std::move(prior));
+                frame.locals[name] = std::move(value);
+                frame.local_types[name] = type;
+              };
+              const auto restore = [&] {
+                for (auto item = saved.rbegin(); item != saved.rend(); ++item) {
+                  if (item->value) frame.locals[item->name] = *item->value;
+                  else frame.locals.erase(item->name);
+                  if (item->type) frame.local_types[item->name] = *item->type;
+                  else frame.local_types.erase(item->name);
+                }
+              };
+              if (bound) {
+                bind(recovery.a, independent(raised.value),
+                     raised.identity.type);
+              }
+              for (const auto& item : error_pattern_payloads(
+                       recovery.a, raised, recovery.line))
+                bind(item.first, item.second.first, item.second.second);
+              selected_errors_.push_back(raised);
+              try {
+                Flow flow = execute(
+                    statements, frame, output, arm + 1, arm_end);
+                selected_errors_.pop_back();
+                restore();
+                if (flow.returned) return flow;
+              } catch (...) {
+                selected_errors_.pop_back();
+                restore();
+                throw;
+              }
+            }
+            arm = arm_end;
+          }
+          if (!handled) throw;
+        }
+        index = after;
+        continue;
+      }
       if (statement.kind == Stmt::Kind::Match) {
         Value selected = eval(statement.a, frame, statement.line, output);
         if (selected.kind != Value::Kind::Struct || !selected.object ||
@@ -1381,8 +1582,52 @@ class FastInterpreter {
           flow.value = independent(eval(statement.a, frame, statement.line, output));
           emit("reply", frame, statement.line, summary(flow.value));
           return flow;
+        case Stmt::Kind::Raise: {
+          if (statement.a.empty()) {
+            if (selected_errors_.empty())
+              throw RuntimeError(statement.line,
+                                 "bare raise has no selected recovery error");
+            emit("raise", frame, statement.line,
+                 selected_errors_.back().identity.canonical());
+            throw selected_errors_.back();
+          }
+          Value value = independent(eval(statement.a, frame,
+                                         statement.line, output));
+          RaisedIdentity identity;
+          if (value.kind == Value::Kind::Struct && value.object &&
+              !value.object->case_name.empty()) {
+            identity = RaisedIdentity::enum_variant(
+                value.object->type, value.object->case_name);
+          } else {
+            std::vector<RaisedIdentity> scalar_candidates;
+            for (const auto& candidate : statement.exceptional_alternatives) {
+              if (candidate.kind != RaisedIdentityKind::ScalarType) continue;
+              const bool matches =
+                  (value.kind == Value::Kind::Int &&
+                   (candidate.type == "Int" || candidate.type == "int")) ||
+                  (value.kind == Value::Kind::Float &&
+                   (candidate.type == "Float" || candidate.type == "float")) ||
+                  (value.kind == Value::Kind::Bool &&
+                   (candidate.type == "Bool" || candidate.type == "bool"));
+              if (matches) scalar_candidates.push_back(candidate);
+            }
+            if (scalar_candidates.size() != 1)
+              throw RuntimeError(statement.line,
+                                 "checked raise lacks one concrete error identity");
+            identity = scalar_candidates.front();
+          }
+          if (!statement.exceptional_alternatives.count(identity))
+            throw RuntimeError(statement.line,
+                               "raised error variant is outside the checked effect set");
+          RaisedSignal raised{identity, std::move(value),
+                              statement.line, frame.source_file};
+          emit("raise", frame, statement.line, raised.identity.canonical());
+          throw raised;
+        }
         case Stmt::Kind::For:
           throw RuntimeError(statement.line, "Fast Debug does not support for iteration yet");
+        case Stmt::Kind::Try:
+        case Stmt::Kind::Recover:
         case Stmt::Kind::If:
         case Stmt::Kind::Else:
         case Stmt::Kind::While:
@@ -1445,6 +1690,42 @@ inline bool FastInterpreter::Value::truthy() const {
   if (kind == Kind::Map) return map && !map->empty();
   return kind != Kind::Unit;
 }
+inline std::string moss_canonical_float_text(double value) {
+  if (std::isnan(value)) return "NaN";
+  if (std::isinf(value)) return std::signbit(value) ? "-inf" : "inf";
+  if (value == 0.0) return std::signbit(value) ? "-0.0" : "0.0";
+
+  char buffer[128];
+  auto converted = std::to_chars(buffer, buffer + sizeof(buffer),
+                                 std::fabs(value), std::chars_format::scientific);
+  if (converted.ec != std::errc{})
+    throw std::runtime_error("failed to format Float");
+  std::string scientific(buffer, converted.ptr);
+  size_t exponent_at = scientific.find('e');
+  if (exponent_at == std::string::npos)
+    throw std::runtime_error("scientific Float format lacks exponent");
+  int exponent = std::stoi(scientific.substr(exponent_at + 1));
+  std::string digits;
+  for (size_t index = 0; index < exponent_at; ++index)
+    if (scientific[index] != '.') digits += scientific[index];
+
+  std::string result;
+  if (exponent >= -4 && exponent < 16) {
+    int decimal_at = exponent + 1;
+    if (decimal_at <= 0)
+      result = "0." + std::string(static_cast<size_t>(-decimal_at), '0') + digits;
+    else if (static_cast<size_t>(decimal_at) >= digits.size())
+      result = digits + std::string(static_cast<size_t>(decimal_at) - digits.size(), '0') + ".0";
+    else
+      result = digits.substr(0, static_cast<size_t>(decimal_at)) + "." +
+          digits.substr(static_cast<size_t>(decimal_at));
+  } else {
+    result = digits.substr(0, 1);
+    if (digits.size() > 1) result += "." + digits.substr(1);
+    result += "e" + std::to_string(exponent);
+  }
+  return std::signbit(value) ? "-" + result : result;
+}
 inline std::string FastInterpreter::Value::display() const {
   std::ostringstream out;
   switch (kind) {
@@ -1452,7 +1733,7 @@ inline std::string FastInterpreter::Value::display() const {
     case Kind::Unit: return "()";
     case Kind::Bool: return boolean ? "true" : "false";
     case Kind::Int: return std::to_string(integer);
-    case Kind::Float: out << std::setprecision(15) << floating; return out.str();
+    case Kind::Float: return moss_canonical_float_text(floating);
     case Kind::String: return string;
     case Kind::Callable: return "<callable:" + string + ">";
     case Kind::Struct:

@@ -1,0 +1,26 @@
+enum Error:
+  Bad
+
+type Box:
+  value: Int
+
+  fn swallow():
+    try:
+      value = 2
+      raise Error.Bad
+    recover:
+      pass
+
+fn call(target: Box):
+  target.swallow()
+
+domain Sample:
+  cell = Box(value = 1)
+
+  fn Run():
+    call(cell)
+    echo cell.value
+
+fn main():
+  sample = Sample()
+  message sample.Run()

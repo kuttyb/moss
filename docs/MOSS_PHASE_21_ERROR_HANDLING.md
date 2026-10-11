@@ -2,7 +2,7 @@
 
 **Consolidated design document · v4.5.2 · October 9, 2026**
 
-**Status:** Design-approved implementation baseline. Not implemented. Part III gives paper proofs for four §16 obligations, conditional on the implementation obligations O1–O9. The proofs are not machine-checked.
+**Status:** Design-approved implementation baseline. Phase 21 implementation is in progress; see `.codex/CURRENT_STATUS.md` for validated checkpoints and remaining gates. Part III gives paper proofs for four §16 obligations, conditional on the implementation obligations O1–O9. The proofs are not machine-checked.
 
 **Supersedes:** the separate v4.5.1 specification, the v4.5.1 example sheet, the §16 proof note, and every earlier Phase 21 draft. The language semantics are unchanged from v4.5.
 
@@ -26,7 +26,7 @@
    - O3 and Lemma 2 are scoped to the handler's own domain;
    - Lemma Q covers raises that a Branch produces while its siblings are still running;
    - progress has moved out of Theorem B2 into Corollary B3.
-2. **§3 step 5 and §2:** writes in `on_fail` and in `recover` arms can add *shared* locks to readers of the same leaves (P10, C1). The old wording, "never causes a normal-path inflation warning", overstated this.
+2. **§3 step 5 and §2:** writes in `on_fail` and in `recover` arms can add *shared* locks to readers of the same leaves (P10, C1). An `on_fail` signature column can also repartition classes and change normal-path exclusive lock counts without increasing the original handler's per-leaf WRITE requirements. The old wording, "never causes a normal-path inflation warning", overstated the guarantee.
 3. **§7 and §15 (V4-01):** serializability now covers executions that exit by a typed raise (Theorem A2; P10, C2). The validity of the state they leave is still disclaimed.
 4. **§16:** new status column. Four rows cite their Part III proofs, and O1–O9 are named as mandatory acceptance gates. §17 and §18 are updated to match, including a new "Proof gates" test row.
 5. **Editorial:**
@@ -38,7 +38,7 @@
 
 ## Part I — Error handling by example
 
-Fourteen short programs that illustrate the design. They use the proposed Phase 21 forms (`raise`, `try`/`recover`, and handler `on_fail` trailers), which current Moss does not yet accept. Everything else (`domainroutes`, `Executor`, `FileIO`, one-line pipelines, and `not`) follows current Moss syntax. A snippet without a `main` assumes a suitable enclosing function or handler.
+Fourteen short programs that illustrate the design. Moss now accepts the Phase 21 forms (`raise`, `try`/`recover`, handler `on_fail` trailers, and handler-local `on_fail` captures) on the integration branch. Final acceptance remains subject to the review gate and the wider Float formatter toolchain pin; see `.codex/CURRENT_STATUS.md`. Everything else (`domainroutes`, `Executor`, `FileIO`, one-line pipelines, and `not`) follows current Moss syntax. A snippet without a `main` assumes a suitable enclosing function or handler.
 
 ### Example 1. Expected errors use `raise` / `recover`
 
@@ -265,6 +265,8 @@ domain Worker:
   fn Work(text: String):
     number = parse_int(text)         # ParseError
     file = FileIO.open("out.txt", rw) # FileError
+    file.write(0, "ok")             # bounded write can raise FileError.Full
+    file.sync()                      # delayed allocation can also report Full
     file.close()
 
   on_fail ParseError.Invalid:
@@ -401,7 +403,7 @@ A Moss operation may either return an ordinary result or terminate that attempt 
 
 #### Illustrative surface spelling
 
-New grammar remains subject to compiler/parser integration; examples demonstrate agreed **behavior**, not evidence that v4 syntax is already accepted by the current parser.
+The core grammar is implemented, while the full Phase 21 acceptance gates remain open. These examples specify agreed **behavior**; individual snippets may omit surrounding declarations.
 
 ```moss
 enum FileError:
@@ -497,7 +499,7 @@ The wording and order below are normative:
 2. **Join or safely quiesce all compiler Branches and in-flight descendants**. Do not propagate the selected terminal result or destroy its resources while an associated Branch can still use them.
 3. **Close every Root-local FileIO belonging to the abandoned attempt**, including a FileIO still live in the Root handler's own frame. Normal Rust frame lifetime does **not** accomplish this on its own if the Root's frame is retained for `on_fail`. Under the §8 ABI, where each failure body is a separate callable, the body frame exits before the wrapper releases its guards, and that exit closes these files in the required order (Part III, O6). Teardown performs **no implicit sync**, ignores secondary close errors, and releases each inode claim; do not overwrite the original raised error. Borrowed views, `Range`, `RangeBatch`, and FileIO capabilities are unusable in the subsequent `on_fail`. Ordinary RAII applies to other abandoned-frame resources.
 4. **Release all old Root-held Moss guards** (all remaining protected frames from the abandoned attempt); previously returned nested handlers already released their guards. No old guard or protected borrowed view may be carried into cleanup.
-5. Independently infer and acquire the **fresh ranked Moss lock plan** required by `on_fail`; the plan may be larger, smaller, or different. It is planned as a separate pseudo-handler of the domain (Part III, O2), so it is never unioned into the handler's own normal/recovery entry plan and never adds an exclusive class to it. Its writes do join the domain's mutable state, so readers of the same leaves, including this handler's normal path, may need **shared** locks where they previously read lock-free, exactly as with any other writer (Part III, P10, C1).
+5. Independently infer and acquire the **fresh ranked Moss lock plan** required by `on_fail`; the plan may be larger, smaller, or different. It is planned as a separate pseudo-handler of the domain (Part III, O2): its effects do not increase the original handler's per-leaf WRITE requirements. Its additional signature column can repartition synchronization classes and change normal-path lock counts, including exclusive lock counts. Its writes also join the domain's mutable state, so readers of the same leaves, including this handler's normal path, may need **shared** locks where they previously read lock-free, exactly as with any other writer (Part III, P10, C1).
 6. Select the appropriate typed `on_fail` arm, execute programmer-authored cleanup/logging/repair/reporting, **satisfy the original handler's reply contract**, and release the new guards by normal rules. A Root calling a value-returning handler must receive a reply of the declared/inferred reply type from either the successful handler body or **every normally completing `on_fail` arm**. One-way handlers do not synthesize a reply. `on_fail` may not silently substitute a unit outcome for a required reply.
 
 Other independent Roots may interleave between steps 4 and 5. No atomicity exists between the abandoned Root attempt and the fresh cleanup interval. A Root can retain owned, independent, definitely initialized **non-capability values** only when permitted by existing ownership/definite-initialization rules. EXPRESS-005 D7 applies to each raise-path join; a value used by `on_fail` must be definitely available on **every path that can enter it**. In addition, the explicit boundary forbids protected borrowed views and FileIO resources, even if their Rust lifetime or D7 initialization status might otherwise allow them. To access the same file during cleanup, `on_fail` must **reopen it by path**.
@@ -567,7 +569,7 @@ enum FileError:
 
 Infer a distinct **exact subset of these variants for each concrete FileIO operation** (`open`, `read`, `write`, `sync`, `close`, and applicable metadata/parent-directory actions) according to its audited reachable errors. Do not assign every variant to every operation or invent additional operation-specific variants; reviewing the **mapping and completeness** of the OS-site audit remains an implementation acceptance requirement, not an unresolved choice of public enum shape.
 
-The Phase 20 implementation currently aborts on OS failures; those sites must be **enumerated, classified, and converted**, not blanket-converted from every abort. Bad offsets, invalid modes that static checking should reject, invalid bounds, and use of invalid resources are programmer misuse and remain panic paths unless deliberately given a checked alternative. In particular, the reviewer identified dynamically closed domain-field FileIO as a policy boundary: the simplest proposed rule retains panic on invalid closed-resource use and can add `is_open()` for explicit checks. **This exact API-level disposition should be verified in the final review**, rather than silently inferred from the existing runtime.
+The audited Phase 21 runtime converts OS failures at `open`, metadata/flag setup, read, write, sync, parent-directory sync, and explicit close into the six typed `FileError` variants according to their cause. Bad offsets, invalid modes that static checking should reject, invalid bounds, and use of invalid resources are programmer misuse and remain panic paths. A statically known closed domain-field FileIO use is rejected by the checker; dynamically closed use remains fatal at runtime. The Rust runtime has an internal `is_open()` lifecycle helper, but `is_open()` is **not** a Moss source operation in Phase 21. Adding a checked source alternative would require a separate API decision.
 
 The same `(device,inode)` already-open collision becomes an immediate recoverable `FileError.InUse`, **not a wait**: waiting could introduce a Root-on-Root forward-progress dependency. **`InUse` is not a retry signal.** In particular, repeatedly retrying `open` inside a Root can reproduce that Root-on-Root wait when the current file owner depends on locks held by the retrying Root. Roots that need to share a file must route access through a **domain-field FileIO**, rather than busy-retrying a competing open. No second live claim is installed on failure. `open` must clean up any descriptors/temporary registry state acquired before the raise.
 
@@ -612,7 +614,7 @@ The notation is conceptual, not a new source-visible type or specific C++ data s
 
 **Source-free provider and Root-entry ABI:** Since Phase 10.6F.1, providers export typed/materialized handler **bodies**, while the final application generates the synchronized entry wrappers using its concrete domain graph and lock classes. Preserve that division. A provider whose handler declares an `on_fail` trailer group must export each **typed failure-arm body as a separate callable**, or an equivalent single callable with a closed typed-dispatch ABI, along with pattern metadata, semantic IR, effect/raise summaries, reply contract, and the required ownership-checked captured-value contract through `.mossi` and its materialized provider artifact. The **final application**, not the provider, constructs the Root-specialized wrapper that joins/quiesces children, closes abandoned Root-local FileIO, releases old guards, acquires a fresh `on_fail` lock plan, then dispatches to the selected provider-exported typed failure body with pattern-bound values and permitted definitely initialized owned locals. The application's nested-handler wrapper must never call that failure body. This must work even when the consumer has only a source-free compiled provider. Define the concrete capture/argument and tagged-call ABI before generating wrappers or bumping the ABI version.
 
-**Native lowering:** a fallible function is represented internally using a tagged normal-or-raised result, with explicit propagation and resource cleanup, not unwinding the host's exception mechanism. The exact Rust tagged representation, tag-only/payload error-pattern dispatch, Root reply contract, and cross-artifact calling convention must be fixed *before* bumping the native provider ABI. Because a raised function's materialized signature changes, plan a compatible version transition (from current ABI v6 to a new version such as v7), full provider rebuild, and source-free provider tests. An ABI version number does **not** replace a lowering design.
+**Native lowering:** a fallible function is represented internally using a tagged normal-or-raised result, with explicit propagation and resource cleanup, not unwinding the host's exception mechanism. The exact Rust tagged representation, tag-only/payload error-pattern dispatch, Root reply contract, and cross-artifact calling convention must be fixed *before* bumping the native provider ABI. Because a raised function's materialized signature changes, Phase 21 uses native ABI v8, requires a full rebuild of prior provider artifacts, and includes source-free provider tests. An ABI version number does **not** replace a lowering design.
 
 **Diagnostics:** expose variant-precise raises and possible panics separately (`moss effects`), show entry-lock inflation with provenance (`moss check`/teaching diagnostics), retain meaningful specialization/`.mossi` visibility, and maintain source-level errors when a typed raise cannot be handled at `main`/Root ingress. Parser diagnostics must also reject bare `try`, misplaced/orphan `on_fail` arms, overlapping or non-exhaustive failure-trailer patterns, catch-alls not last, invalid multi-enum `on_fail err:`/`recover err:` binding, bare `raise` outside a `recover` arm, missing reply paths in value-returning `on_fail`, overlapping grouped `recover` variants, and domain handles written as ordinary state instead of `domainroutes`. **Warnings rather than errors:** an empty/no-op catch-all swallowing errors following possible protected domain-state writes, and a well-formed but currently unreachable error-variant arm. Unknown enum variants, duplicated/overlapping arms, or non-exhaustive `on_fail` remain errors.
 
@@ -632,7 +634,7 @@ The notation is conceptual, not a new source-visible type or specific C++ data s
 
 Implement a **dedicated chunk eligibility predicate** (illustratively `chunk_speculation_safe`) that tests purity, absence of `may_panic` **after justified proofs**, legal capture/ownership, and the existing no-FileIO-in-map restrictions. It must not use `fusion_safe()` as a substitute for those independent requirements and must not change the normal fusion contract. The parent-only left fold keeps its sequential callback/error order and may have its existing allowed domain effects; it must not be moved into Branches.
 
-This intentionally expands today's Phase 20 eligibility: the current `fusion_safe()` use rejects index-based mappers because their general `may_fail` bit is nonempty. Under Phase 21, an index-based mapper may become eligible **at a proven-safe invocation site** without globally changing the function's error summary.
+This intentionally expands Phase 20 eligibility: its `fusion_safe()` check rejected index-based mappers because their general `may_fail` bit was nonempty. Under Phase 21, an index-based mapper may become eligible **at a proven-safe invocation site** without globally changing the function's error summary.
 
 ### 10. Compiler Branch errors: commit, quiescence, and panic exclusion
 
@@ -713,7 +715,7 @@ Fast Debug must implement general language-level `raise`, nested `recover`, Root
 
 #### 13.1 Arithmetic and predicates
 
-`Float` uses **IEEE-754 binary64**, including signed zero, infinity, and NaN. Division by `0.0` returns the IEEE result (`1.0 / 0.0` → `inf`, `-1.0 / 0.0` → `-inf`, `0.0 / 0.0` → `NaN`) rather than panicking. This aligns with existing `sqrt(-1.0)` producing NaN and requires correcting Fast Debug's current explicit floating-point division-by-zero error. **Int** division by zero remains a panic; ordinary integer wrapping behavior is unchanged.
+`Float` uses **IEEE-754 binary64**, including signed zero, infinity, and NaN. Division by `0.0` returns the IEEE result (`1.0 / 0.0` → `inf`, `-1.0 / 0.0` → `-inf`, `0.0 / 0.0` → `NaN`) rather than panicking. This aligns with `sqrt(-1.0)` producing NaN. Fast Debug's former explicit floating-point division-by-zero error has been corrected. **Int** division by zero remains a panic; ordinary integer wrapping behavior is unchanged.
 
 Provide pure non-raising Float predicates `is_nan(x)` and `is_finite(x)`. `NaN != NaN` remains true by IEEE equality rules; the predicates are the supported way to test for NaN and finite values. After concrete numeric type inference, **Float division does not contribute divide-by-zero `may_panic`**, whereas Int division retains it. Other possible faults in the expression are not dismissed by this fact.
 
@@ -721,7 +723,7 @@ Provide pure non-raising Float predicates `is_nan(x)` and `is_finite(x)`. `NaN !
 
 Moss's canonical formatter is defined by the following rules, **not** by the evolving output of Rust `Debug`/`Display`:
 
-1. For every finite nonzero Float, print the **shortest decimal significand digits that parse back to exactly the same IEEE-754 binary64 value** under Moss's parser, with a deterministic nearest-roundtrip choice for any ties. The formatting algorithm must be independently pinned by golden tests across supported compilers/toolchains. Native may *implement* the formatter using a compatible routine but must not inherit unreviewed host-format changes.
+1. For every finite nonzero Float, print the **shortest decimal significand digits that parse back to exactly the same IEEE-754 binary64 value** under Moss's parser. When multiple such decimal values have the same shortest length, choose the one closest to the exact binary64 value; if equally close, choose the one with an **even final significand digit**. The formatting algorithm must be independently pinned by golden tests across supported compilers/toolchains. Native may *implement* the formatter using a compatible routine but must not inherit unreviewed host-format changes.
 2. If `10^-4 <= abs(x) < 10^16`, print **plain decimal notation** with **at least one fractional digit**, even for integral Float values.
 3. Otherwise, print normalized **scientific notation**, one leading nonzero significand digit, optional fractional digits, and a lowercase `e` followed by the exponent in base ten; omit `+` for nonnegative exponents and superfluous exponent leading zeros. These conventions apply identically to negative finite values, with their leading minus sign.
 4. Print positive zero as `0.0`, negative zero as **`-0.0`**, positive infinity as **`inf`**, negative infinity as **`-inf`**, and every NaN as exactly **`NaN`**. No guarantee that a NaN's sign/payload bits survive text conversion.
@@ -741,7 +743,7 @@ Moss's canonical formatter is defined by the following rules, **not** by the evo
 | negative infinity | `-inf` |
 | NaN | `NaN` |
 
-The agreed thresholds and spellings deliberately resemble Rust `f64` Debug behavior at the time of design, but **the Moss text contract is frozen independently** so a rustc upgrade cannot change a Moss program's visible output. **Both** native and Fast Debug must use it. This will change previously recorded golden output in both engines (for example `1.0` previously echoing as `1`), and the test corpus must be updated explicitly.
+The agreed thresholds and spellings deliberately resemble Rust `f64` Debug behavior at the time of design, but **the Moss text contract is frozen independently** so a rustc upgrade cannot change a Moss program's visible output. **Both** native and Fast Debug use it. The golden corpus records the resulting change in both engines (for example `1.0` had previously echoed as `1`). Wider cross-toolchain pinning remains an acceptance gate.
 
 #### 13.3 Numeric parsing
 
@@ -750,7 +752,18 @@ The agreed thresholds and spellings deliberately resemble Rust `f64` Debug behav
 - Lexical digits are **ASCII `0`–`9` only**. Do not silently accept Unicode decimal digits (e.g. Arabic-Indic digits).
 - Leading/trailing whitespace accepts **exactly** these ASCII characters: horizontal tab U+0009 (`\t`), line feed U+000A (`\n`), vertical tab U+000B (`\v`), form feed U+000C (`\f`), carriage return U+000D (`\r`), and space U+0020. No other whitespace (including Unicode nonbreaking space) is accepted, and none is allowed inside the numeric token. A leading `+` or `-` is accepted for ordinary decimal numeric text.
 - Underscores are permitted **only between ASCII digits** (including exponent digits when present); no leading/trailing, repeated, or punctuation-adjacent underscores. Examples: `1_000` accepted, `1__000` rejected.
-- Decimal exponent notation is accepted for Float. For nonfinite **literal tokens**, accept **exactly** `inf`, `-inf`, and `NaN` after the permitted surrounding ASCII whitespace is removed. Reject **every other nonfinite spelling**, including `+inf`, `-nan`, `+NaN`, `nan`, `INF`, `Infinity`, and mixed-case aliases. The `+` sign allowed on ordinary decimal numbers is **not** an alias for `+inf`; syntactically valid finite-decimal input that overflows to infinity remains valid under the separate overflow rule below. Native must perform lexical validation rather than exposing the broader accepted spellings of Rust `parse::<f64>()` as Moss behavior.
+- After trimming that exact surrounding whitespace, finite decimal text uses this grammar (`digit` is ASCII `0`–`9`; `digits` is `digit` followed by zero or more repetitions of an optional single `_` and a `digit`):
+
+  ```text
+  sign       := "+" | "-"
+  int_text   := sign? digits
+  mantissa   := digits ("." digits?)? | "." digits
+  exponent   := ("e" | "E") sign? digits
+  float_text := sign? mantissa exponent?
+  ```
+
+  `parse_int` accepts `int_text`; `parse_float` accepts `float_text`. Decimal text may have leading zeros (`00.5`), a leading decimal point (`.5`), a trailing decimal point (`1.`), uppercase `E` (`1E3`), and an explicit exponent sign (`1e+3`, `1e-3`). Both parsers accept an ordinary leading `+` or `-`; a negative zero retains its sign when parsed as Float. An exponent always has at least one digit. Underscores are legal only inside `digits`, so `1_.0`, `1._0`, `1e_3`, and `1e+_3` are invalid. Hexadecimal, locale separators, and additional numeric spellings are invalid.
+- For nonfinite **literal tokens**, accept **exactly** `inf`, `-inf`, and `NaN` after the permitted surrounding ASCII whitespace is removed. Reject **every other nonfinite spelling**, including `+inf`, `-nan`, `+NaN`, `nan`, `INF`, `Infinity`, and mixed-case aliases. The `+` sign allowed on ordinary decimal numbers is **not** an alias for `+inf`; syntactically valid finite-decimal input that overflows to infinity remains valid under the separate overflow rule below. Native must perform lexical validation rather than exposing the broader accepted spellings of Rust `parse::<f64>()` as Moss behavior.
 - `parse_int` raises `ParseError.Invalid` for malformed text or `ParseError.Overflow` for values outside Moss Int range. It never silently defaults, wraps, or saturates malformed/out-of-range input.
 - `parse_float` raises `ParseError.Invalid` for malformed lexical input. Syntactically valid decimal magnitude overflow produces IEEE infinity, and underflow follows IEEE binary64 rounding. Infinity is a Float value, not a parsing error.
 - Formatting followed by parsing is **bit-exact for finite values**, including negative zero, subject to the stated IEEE representation; NaN sign/payload preservation is not required.
@@ -777,7 +790,7 @@ Moss parameters are **not generally immutable**. Phase 10.6D deliberately suppor
 
 **New exception:** A formal parameter whose type is **`Range` or `RangeBatch`** must **never** infer WRITE mode. A helper attempting whole-binding reassignment/replacement of either such parameter must fail **`moss check`**, before generating Rust. Merely emitting the caller's binding as `mut` is the **wrong fix**.
 
-**Rationale:** `Range`/`RangeBatch` are pinned or borrowed FileIO views subject to Phase 20 non-escape rules. A WRITE-through formal lets a helper **replace the caller's view** with a view created inside the helper, bypassing the restriction that such borrowed capabilities cannot be moved/returned or outlive their intended scope. `RangeBatch` demonstrates the concrete hole: the current compiler can accept a helper that assigns `b = file.read([(0,2),(2,2)])` to a `RangeBatch` parameter; the caller's batch binding then reflects the helper's newly created batch after return. Unlike the analogous `Range` example, the RangeBatch case can currently **compile and run**, making this a real semantic ownership escape, not merely an E0596 backend mismatch.
+**Rationale:** `Range`/`RangeBatch` are pinned or borrowed FileIO views subject to Phase 20 non-escape rules. A WRITE-through formal lets a helper **replace the caller's view** with a view created inside the helper, bypassing the restriction that such borrowed capabilities cannot be moved/returned or outlive their intended scope. `RangeBatch` exposed this hole before the Phase 21 checker prohibition: a helper assigning `b = file.read([(0,2),(2,2)])` to a `RangeBatch` parameter could compile and run, replacing the caller's batch after return. The prohibition now rejects that source at `moss check`.
 
 **Mandatory negative checks (illustrative source):**
 
@@ -872,7 +885,7 @@ This is a **planned test inventory**; no test success is claimed by this design 
 | **Core raise channel and syntax** | Variant-sensitive inference; `raise` from leaves and runtime; `raise` without expression inside `recover` re-emits original tagged variant; named and unbound catch-all recovery (multi-enum uses unbound `recover:`); unhandled Root diagnostic; `main` totality; normal returned `Outcome` does not propagate; helper specialization and `.mossi`; try-local scoping and all-arm definite binding at join; reject `try` without `recover`, misplaced/orphan `on_fail`, and domain handles in ordinary fields. |
 | **`try` scope and FileIO** | A name first bound in `try` is inaccessible in sibling `recover`; a new name is available after the statement only when all normal completing alternatives establish it; an owned FileIO opened inside `try` is automatically dropped on a raised scope exit before `recover` (after quiescence); normal completion still requires explicit close; an outer FileIO remains live through local recover. |
 | **Recovery locking** | READ→WRITE inflation, including previously lock-free READ-only one-handler field becoming exclusive WRITE; added domain class; multiple nested `recover`; sibling arm does not recatch own raised errors; non-inflating recover; warning fidelity to Phase 15.3 normal-plan baseline; concurrency/deadlock proof probes. |
-| **Proof gates (Part III O1–O9)** | Recover-arm classes appear in the handler's entry plan in sufficient mode (O1, O3); a trailer write never adds an exclusive class to its own handler (O2); guard-cancellation and D7 analyses include exceptional edges (O4); raise exits release through the ordinary wrapper path (O5); the Root wrapper order is body exit, guard drop, fresh acquisition (O6); nested invocation never runs the trailer (O7); trailer captures contain no views, guards or capabilities (O8); the window join precedes every slot read (O9). |
+| **Proof gates (Part III O1–O9)** | Recover-arm classes appear in the handler's entry plan in sufficient mode (O1, O3); a trailer does not increase its handler's per-leaf WRITE requirements, though its signature column may repartition classes and change normal-path lock counts (O2); guard-cancellation and D7 analyses include exceptional edges (O4); raise exits release through the ordinary wrapper path (O5); the Root wrapper order is body exit, guard drop, fresh acquisition (O6); nested invocation never runs the trailer (O7); trailer captures contain no views, guards or capabilities (O8); the window join precedes every slot read (O9). |
 | **Root role/cleanup** | Same handler as Root and nested; nested execution must never execute `on_fail`; exhaustive multi-arm typed trailer with optional catch-all; handler returning value requires `reply` in all normal-completion arms; abandoned Root permits fresh, unrelated lock plan; D7 definite-initialization positives/negatives; borrowed views rejected; FileIO closed before `on_fail`, reopened only via path; source-free provider exports typed failure bodies and application builds Root wrapper. |
 | **Provider `on_fail` ABI** | Build a source-free provider with typed `on_fail` arms matching alternatives from multiple error enums; export separately callable bodies, pattern signatures, owned captures, and reply contracts. As Root the application wrapper quiesces/closes/unlocks/relocks and dispatches; as nested message it does not. |
 | **`on_fail` totality** | Handler-level pattern trailer at `fn` indentation, with or without local `try`; payload and tag-only pattern arms; optional final catch-all; multi-enum `on_fail err:` rejected; **missing coverage** and missing `reply` diagnosed; orphan/misindented trailer rejected; cleanup with a newly raised error rejected; nested handled raise accepted; original error identity preserved in diagnostics; panic terminates process; ordinary typed-outcome replies used rather than magic numeric sentinels; separately test that local `recover` converts the same error into the same typed outcome for both Root and nested invocation (without using `on_fail`). |
@@ -945,9 +958,9 @@ The design consolidates earlier decisions and deferred backlogs. Primary reposit
 - [`examples/swarm/ISSUES.jsonl`](https://github.com/kuttyb/moss/blob/main/examples/swarm/ISSUES.jsonl) and [`examples/swarm/FINDINGS.md`](https://github.com/kuttyb/moss/blob/main/examples/swarm/FINDINGS.md) — SWARM-040, EXPRESS-007, EXPRESS-009.
 - [`src/fileio_runtime.hpp`](https://github.com/kuttyb/moss/blob/main/src/fileio_runtime.hpp) — `Drop for FileIO`, close/read/write/sync error paths, Range and RangeBatch.
 - [`src/fileio_semantics.inc`](https://github.com/kuttyb/moss/blob/main/src/fileio_semantics.inc) — pinned capability checker and normal-path `FILEIO_MUST_CLOSE`.
-- [`src/file_chunk_lowering.inc`](https://github.com/kuttyb/moss/blob/main/src/file_chunk_lowering.inc) — current `fusion_safe()`-based chunk eligibility; requires independent predicate.
+- [`src/file_chunk_lowering.inc`](https://github.com/kuttyb/moss/blob/main/src/file_chunk_lowering.inc) — chunk eligibility and its independent speculation predicate.
 - [`src/file_chunk_codegen.inc`](https://github.com/kuttyb/moss/blob/main/src/file_chunk_codegen.inc) — the actual zero-length-before-map and `branch_join`-before-commit lowering.
-- [`src/interpreter.hpp`](https://github.com/kuttyb/moss/blob/main/src/interpreter.hpp) and [`src/interpreter_phase20.inc`](https://github.com/kuttyb/moss/blob/main/src/interpreter_phase20.inc) — current Float division mismatch and Fast Debug/Executor boundary.
+- [`src/interpreter.hpp`](https://github.com/kuttyb/moss/blob/main/src/interpreter.hpp) and [`src/interpreter_phase20.inc`](https://github.com/kuttyb/moss/blob/main/src/interpreter_phase20.inc) — Float parity and the Fast Debug/Executor boundary.
 - [`docs/MODULE_ABI.md`](https://github.com/kuttyb/moss/blob/main/docs/MODULE_ABI.md) — existing exported effect and provider ABI versioning contract.
 
 **Repository checkpoint used in the discussion:** main at `395b4c0` (October 8, 2026), with additional compiler/runtime reproducibility evidence supplied by peer review. Recheck current `main` when implementing or formally accepting this document. Those peer-reported reproducers are proposed regression requirements here; the act of drafting v4 does **not** independently certify running each reproduction or all repository tests.
@@ -1011,9 +1024,11 @@ fn main():
 domain Worker:
   domainroutes(reporter: Reporter)
 
-  fn Run():
-    parse_int("bad")               # can raise ParseError.Invalid
+  fn Run(text: String):
+    number = parse_int(text)        # dynamic input can raise ParseError.Invalid
     file = FileIO.open("out", rw)  # can raise FileError variants
+    file.write(0, "ok")            # bounded write can raise FileError.Full
+    file.sync()                     # delayed allocation can also report Full
     file.close()
 
   on_fail ParseError.Invalid:
@@ -1205,7 +1220,7 @@ Each counterexample uses a domain `D` with classes `C1 < C2`, and a second handl
 
 ### P10. Corrections applied to Part II
 
-**C1. `on_fail` can add shared locks to readers elsewhere.** Under O2, the trailer's accesses never enter ClassSet(h), so it never adds exclusive locks to `h`. But its writes join the domain's set of mutable leaves (v0.1 §23), and every reader of a leaf that any handler writes must lock it. So a handler, including `h`'s own normal path, that used to read a leaf lock-free because nothing wrote it now takes that leaf's class in shared mode once the trailer writes it.
+**C1. `on_fail` can change normal-path lock counts.** Under O2, the trailer's accesses never enter ClassSet(h), so they do not increase `h`'s per-leaf WRITE requirements. The new signature column can nevertheless repartition synchronization classes and change the number of locks, including exclusive locks, in `h`'s normal plan. The trailer's writes also join the domain's set of mutable leaves (v0.1 §23), and every reader of a leaf that any handler writes must lock it. Thus a handler, including `h`'s own normal path, that used to read a leaf lock-free because nothing wrote it now takes that leaf's class in shared mode once the trailer writes it.
 
 Example: in a one-handler `Cache`, `Load` reads `value` without a lock. Adding a trailer that sets `value = 0` makes every `Load` take `value`'s class in shared mode.
 

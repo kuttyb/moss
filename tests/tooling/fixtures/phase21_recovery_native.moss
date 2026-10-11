@@ -1,0 +1,49 @@
+enum WorkError:
+  Missing
+  Failed(code: Int)
+
+fn may_fail(missing: Bool) -> Int:
+  if missing:
+    raise WorkError.Missing
+  raise WorkError.Failed(code: 7)
+
+fn handled(missing: Bool) -> Int:
+  var value = 0
+  try:
+    value = may_fail(missing)
+  recover WorkError.Missing:
+    value = 10
+  recover WorkError.Failed(code):
+    value = code + 13
+  return value
+
+type MethodWorker:
+  fn Fail() -> Int:
+    raise WorkError.Failed(code: 9)
+
+fn handled_method(worker: MethodWorker) -> Int:
+  var value = 0
+  try:
+    value = worker.Fail()
+  recover WorkError.Failed(code):
+    value = code + 21
+  return value
+
+fn reraised():
+  try:
+    raise WorkError.Missing
+  recover WorkError.Missing:
+    raise
+
+fn handle_reraised():
+  try:
+    reraised()
+  recover WorkError.Missing:
+    echo "reraised"
+
+fn main():
+  echo handled(true)
+  echo handled(false)
+  worker = MethodWorker()
+  echo handled_method(worker)
+  handle_reraised()

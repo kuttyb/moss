@@ -19,6 +19,11 @@ def strip_executor_runtime(text):
         "", text, flags=re.S | re.M)
     assert blocks == 1 and "Phase 20 Executor Runtime" not in lowered, \
         "expected exactly one delimited Phase 20 executor runtime block"
+    lowered, float_blocks = re.subn(
+        r"^// ─── Begin Moss Float Format Runtime ─*\n"
+        r".*?^// ─── End Moss Float Format Runtime ─*\n",
+        "", lowered, flags=re.S | re.M)
+    assert float_blocks == 1, "expected exactly one delimited Float runtime block"
     return lowered
 
 
@@ -305,9 +310,14 @@ for source_free in (False, True):
         assert physical not in interface
 interface_path = project / 'build/debug/provider.mossi'
 contents = interface_path.read_text()
-interface_path.write_text(contents.replace('native_abi 6\n', ''))
+# ABI v9 binds source-free metadata to the provider artifact. A historical
+# v8 interface has neither the v9 version nor its provider-owned seal.
+legacy = contents.replace('native_abi 9\n', 'native_abi 8\n')
+legacy = re.sub(r'(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n', '', legacy)
+assert legacy != contents
+interface_path.write_text(legacy)
 old = run([compiler, 'inspect', 'main', '--source', application, '--json'], expected=1, cwd=project)
-assert 'rebuild' in old and 'native calling convention' in old
+assert json.loads(old)['error']['code'] == 'SOURCE_FREE_ABI_REBUILD_REQUIRED', old
 interface_path.write_text(contents)
 print('Phase 10.6D source/source-free domain and primitive WRITE ABI checks passed.')
 

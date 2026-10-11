@@ -1,5 +1,13 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # The first chunk loop remains bounded; its fact ends at the loop boundary.
-fn main():
+fn phase20_probe():
   src = FileIO.open("tmp/phase20-review/input.txt", ro)
   dst = FileIO.open("tmp/phase20-review/out/chunk-guard.txt", create)
   for item in src.chunks(8):
@@ -7,3 +15,9 @@ fn main():
   dst.close()
   src.close()
   echo 1
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

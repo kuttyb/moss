@@ -1,0 +1,23 @@
+enum Failure:
+  First
+  Second
+
+fn choose(first: Bool):
+  if first:
+    raise Failure.First
+  else:
+    raise Failure.Second
+
+fn inspect_error(first: Bool):
+  try:
+    choose(first)
+  recover err:
+    match err:
+      case First:
+        echo "first"
+      case Second:
+        echo "second"
+
+fn main():
+  inspect_error(true)
+  inspect_error(false)

@@ -1,7 +1,21 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # Chained slice(...).length(). Today: emits .length() on the runtime Range
 # (no such method; should be .len()).
-fn main():
+fn phase20_probe():
   src = FileIO.open("tmp/phase20-review/input.txt", ro)
   data = src.read(0, 8)
   echo data.slice(1, 2).length()
   src.close()
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

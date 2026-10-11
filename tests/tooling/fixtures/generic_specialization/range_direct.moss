@@ -1,7 +1,18 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 fn size(x):
   return x.length()
 
 fn main():
-  f = FileIO.open("tmp/generic-specialization/input.txt", ro)
-  echo size(f.read(0, 4))
-  f.close()
+  try:
+    f = FileIO.open("tmp/generic-specialization/input.txt", ro)
+    echo size(f.read(0, 4))
+    f.close()
+  recover:
+    echo -1
