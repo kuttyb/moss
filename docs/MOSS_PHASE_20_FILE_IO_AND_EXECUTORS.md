@@ -820,7 +820,7 @@ If this open created the file (`create` on a file that did not exist), it owes a
 - `sync()` performs `fsync(file)`, then `fsync(parent directory)`;
 - `sync(dataonly)` performs `fdatasync(file)`, then `fsync(parent directory)`.
 
-The obligation clears when a directory sync succeeds, so the first successful sync of either kind discharges it. It belongs to the open that created the file: closing without a successful sync discards it, consistent with close implying no durability, and a later reopen owes nothing. `dataonly` skips metadata unnecessary for reading the data back, and the directory entry is necessary: without it the data cannot be found by name.
+The obligation clears when a directory sync succeeds, so the first successful sync of either kind discharges it. It belongs to the open that created the file: closing without a successful sync discards it, consistent with close implying no durability, and a later reopen owes nothing. `dataonly` skips metadata unnecessary for reading the data back, and the directory entry is necessary: without it the data cannot be found by name. A failed `create` can leave a directory entry behind without an outstanding obligation on a later reopen. Consequently, a successful retry followed by `sync()` does not necessarily prove durability of the name created by the failed attempt; callers needing that guarantee must account for the first attempt's failure. This contract does not require rollback of the entry on failed `create`.
 
 A sync failure is not automatically retried. Recovery semantics belong to Phase 21.
 
