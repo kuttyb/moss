@@ -1,0 +1,12 @@
+enum WorkError:
+  Failed
+
+domain Worker:
+  fn Run():
+    raise WorkError.Failed
+
+fn main():
+  worker = Worker()
+  executor = Executor().threads(1).start()
+  executor.invoke(worker.Run())
+  executor.join()

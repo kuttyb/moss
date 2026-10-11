@@ -2982,6 +2982,7 @@ class Checker {
     std::unordered_map<string,string> env;
     env = check_stmts(m.body, std::move(env), nullptr, nullptr,
                       nullptr, true);
+    phase21_validate_root_ingress_totality(env);
     OwnershipEnv ownership;
     ownership.types = std::move(env);
     check_ownership(m.body, std::move(ownership), nullptr, nullptr);
