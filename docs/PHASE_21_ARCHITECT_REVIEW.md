@@ -5,7 +5,7 @@
 **Normative baseline:** `MOSS_PHASE_21_ERROR_HANDLING.md` v4.5.2 and its implementation handoff.
 
 **Preliminary integration SHA:** `f6f11c4e990d5a85a9e246f39004d4b0c1b7cbc7`.
-**Disposition at this SHA:** **NO-GO**. The source-free ABI authenticity counterexample below produces a successful build followed by an abort. Two focused suite fixtures also still assume the superseded main-level recovery rule. This is a preliminary verdict; the exact frozen integration SHA has not yet been supplied or retested.
+**Disposition at this SHA:** **NO-GO**. The source-free ABI authenticity counterexample below produces a successful build followed by an abort. A bound `recover err:` still cannot be matched as its approved enum type. Two focused suite fixtures also assume the superseded main-level recovery rule. This is a preliminary verdict; the exact frozen integration SHA has not yet been supplied or retested.
 
 This review uses the repository-local Moss skills and live `./moss agent bootstrap --json` (`language_version: moss-0.1`). The compiler was built from the pinned SHA in an isolated worktree. The original external P21-EXT-01..20 archive was unavailable; the cases below are reconstructed from the coordinator's text summary and identified permanent regressions. A committed test is evidence only where it was run successfully on this SHA.
 
@@ -62,6 +62,28 @@ ABI-v8 exceptional edges carry the six consumer bits D7, ownership, guard cancel
 
 The §4 rule applies to synchronous `message` in `main` even if `main` lexically catches the handler's error. A top-level and a nested-`if` minimal probe both return `ROOT_UNHANDLED_RAISE` for a raising `Worker.Fetch` lacking `on_fail`. The focused Root-totality suite passes. At the pinned SHA, `check_phase21_source_free_abi.py` stops at its first raised-handler fixture because it places this forbidden lexical recovery around a Root; `check_phase21_peer_effects.py` stops at the same issue in its speculative-panic fixture. These are test migrations, not evidence that §4 should be relaxed. The coordinator reports that migrations are underway on integration; they are not part of this SHA's results.
 
+### A6. Bound `recover err:` does not supply the approved enum type to `match`
+
+The approved §2 rule says `recover err:` binds the single concrete error enum when all covered variants belong to that enum. The existing recovery fixture only echoes `err`. This independent minimal probe fails at `moss check --json` with `MATCH_REQUIRES_ENUM` and “found _selected_error”:
+
+```moss
+enum WorkError:
+  Missing
+  Broken
+
+fn main():
+  try:
+    raise WorkError.Missing
+  recover err:
+    match err:
+      case Missing:
+        echo "missing"
+      case Broken:
+        echo "broken"
+```
+
+The probe is in `tmp/architect-l6/recover_err_match.moss` in the review worktree. This reproduces EXT-13 at the pinned SHA. Treat it as an unimplemented approved type rule, not as a reason to change the pattern grammar. The coordinator reports a repair and permanent native/Fast Debug regression in progress; retest only on the frozen integration SHA.
+
 ## O1–O9 evidence and open proof work
 
 | Gate | Independent assessment at `f6f11c4` |
@@ -70,7 +92,7 @@ The §4 rule applies to synchronous `message` in `main` even if `main` lexically
 | O2 | Separate `h_fail` plan and repartitioning test passed. Preserve the lock-count wording correction (A3). |
 | O3 | Adversarial native Root lock/FileIO test passed. No proof from this test alone for all leading-conditional and nested-recovery shapes. |
 | O4 | Shared ABI edge verifier test passed; full cross-analysis consumer argument remains to be supplied (A4). |
-| O5 | Native handler failure and guard handoff have implementation tests; this review did not independently exhaust every raised exit. |
+| O5 | Native handler failure/class-repartition and Root guard handoff tests passed; this review did not exhaust every raised exit. |
 | O6 | Adversarial Root lock/FileIO test passed, including old guard release before fresh failure lock acquisition. Branch join and every local file lifetime remain broader proof obligations. |
 | O7 | Focused Root-totality suite passed; nested `on_fail` rejection has permanent fixtures. Recheck source-free fixture after migration. |
 | O8 | Owned capture proof and native handoff test passed; cross-crate typed Range now fails at Moss check with `FILEIO_CROSS_CRATE_ABI`, while same-crate and source-free generic controls pass. This is fail-closed evidence, not full capability-escape proof. |
@@ -82,25 +104,25 @@ These descriptions are from the coordinator's summary, not a recovered original 
 
 | ID | Independent disposition at preliminary SHA |
 | --- | --- |
-| EXT-01 FileIO open/read/write/sync/close abort | Phase 21 FileIO error regression is present; not independently rerun here. |
+| EXT-01 FileIO open/read/write/sync/close abort | Phase 21 typed FileIO error test passed; it includes cause mapping and injected failure sites. |
 | EXT-02 Executor Root silently discards raised outcome | Root totality suite passed for `executor.invoke`; unhandled raise is rejected. |
 | EXT-03 expression and duck-helper raise-set loss | Reconstructed peer-effects suite contains cases; its later assertions were blocked by A5. Imported function effects suite passed. |
 | EXT-04 hidden panic admitted to 4097-byte speculation | Reconstructed peer-speculation fixture exists; blocked by A5 at this SHA. |
 | EXT-05 imported function/method effects | Function effects pass source-free tests; method metadata gap A2 remains. |
 | EXT-06 synchronous Root raise caught in `main` | Top-level and nested `if` probes reject with `ROOT_UNHANDLED_RAISE`. |
 | EXT-07 lock inflation and no-op catch-all warnings | Warning paths and focused regression are present; not independently rerun. O2 wording A3 remains. |
-| EXT-08 unhandled test raise aborts suite | Test-harness regression exists; not independently rerun. |
-| EXT-09 `raise e` loses enum variant | Recovery regression exists; not independently rerun. |
+| EXT-08 unhandled test raise aborts suite | `check_phase21_recovery_semantics.py` passed, including its unhandled typed test outcome. |
+| EXT-09 `raise e` loses enum variant | Recovery semantics and native local-recovery suites passed; exact external source was unavailable. |
 | EXT-10 raising pipeline callback Rust E0308 | Native recovery regression exists; not independently rerun. |
 | EXT-11 Fast Debug `on_fail`/payload dispatch | Interpreter/regression code exists; not independently rerun. |
 | EXT-12 Float text/division effects | `check_phase21_float_ieee.py` passed debug native, optimized native and Fast Debug at this SHA. Its independent Python corpus checks 270 finite bit patterns; wider rustc/toolchain matrix remains open. |
-| EXT-13 bound `recover err` unusable in match | Recovery semantics regression exists; not independently rerun. |
+| EXT-13 bound `recover err` unusable in match | **Reproduced:** approved single-enum binding fails `match` with `MATCH_REQUIRES_ENUM` (A6). |
 | EXT-14 provider symbol and weak `.mossi` metadata | Shared ABI test passed, but source-free suite stops at A5 and pattern-swap authenticity fails as A1. |
 | EXT-15 unchecked FileError/ParseError shape | FileIO and numeric tests exist; `check_phase21_numeric_parse.py` passed. |
 | EXT-16 keyword-prefix identifier | No focused permanent `recovered` identifier regression was located in this review; unresolved. |
 | EXT-17 grouped recovery re-raises wrong alternative | Native recovery regression exists; not independently rerun. |
-| EXT-18 ENXIO/ENODEV and close ENOSPC mapping | FileIO error test exists; exact OS-site audit was not independently rerun. |
-| EXT-19 failed-create cleanup and parent sync | FileIO root-cleanup test exists; not independently rerun. |
+| EXT-18 ENXIO/ENODEV and close ENOSPC mapping | FileIO error test passed; it does not explicitly enumerate ENXIO/ENODEV or close ENOSPC, so those exact mappings remain unverified here. |
+| EXT-19 failed-create cleanup and parent sync | FileIO error and Root cleanup tests passed, including injected parent-directory paths. |
 | EXT-20 timing-dependent Branch quiescence | Deterministic Branch tests exist; not independently rerun. |
 
 ## Numeric and source-surface decisions
@@ -118,12 +140,18 @@ All commands below used the isolated worktree compiler built from `f6f11c4` with
 | `check_phase21_shared_abi.py tmp/architect-l6/shared-abi` | Pass. |
 | `check_phase21_imported_effects.py ./moss tmp/architect-l6/imported` | Pass, with imported method calls intentionally rejected. |
 | `check_phase21_lock_fileio_adversarial.py ./moss` | Pass. |
+| `check_phase21_handler_failure_native.py ./moss` | Pass, including class repartitioning. |
 | `check_phase21_on_fail_capture.py ./moss` | Pass. |
 | `check_phase20_cross_crate_range_abi.py ./moss` | Pass, including fail-closed cross-crate typed Range. |
 | `check_phase21_float_ieee.py ./moss` | Pass. |
 | `check_phase21_numeric_parse.py ./moss` | Pass. |
+| `check_phase21_fileio_errors.py` | Pass. |
+| `check_phase21_fileio_root_cleanup.py ./moss` | Pass. |
+| `check_phase21_recovery_semantics.py ./moss` | Pass; its bound error fixture only echoes the binding. |
+| `check_phase21_recovery_native.py ./moss` | Pass. |
 | `check_phase21_source_free_abi.py ./moss tmp/architect-l6/sourcefree` | **Fail:** stale main-level Root recovery fixture; later ABI assertions not reached. |
 | `check_phase21_peer_effects.py ./moss` | **Fail:** stale main-level Root recovery in peer speculation fixture; later speculation assertions not reached. |
 | Independent `.mossi` pattern-swap/source-free build | **Build passes; executable aborts (134)**. |
+| Independent one-enum `recover err: match err` probe | **Fail:** `MATCH_REQUIRES_ENUM`, internal `_selected_error` type. |
 
-No `make check`, `make examples`, full Branch suite or cross-toolchain Float run has been claimed for this SHA. Retest the exact frozen integration SHA after the coordinator signals code freeze; record that SHA, all gate results, and a revised GO/NO-GO here. Until A1 and any approved method-contract disposition are settled, keep **NO-GO** even if general test suites pass.
+No `make check`, `make examples`, full Branch suite or cross-toolchain Float run has been claimed for this SHA. Retest the exact frozen integration SHA after the coordinator signals code freeze; record that SHA, all gate results, and a revised GO/NO-GO here. Until A1, A6 and any approved method-contract disposition are settled, keep **NO-GO** even if general test suites pass.
