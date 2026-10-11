@@ -125,20 +125,33 @@ export domain Worker:
     raise ServiceError.Bad
   on_fail ServiceError.Bad:
     reply attempt
+  fn Join(flag: Bool) -> String:
+    if flag:
+      let joined = "yes"
+    else:
+      let joined = "no"
+    raise ServiceError.Bad
+  on_fail ServiceError.Bad:
+    reply joined
 ''')
     (capture_out / "src/main.moss").write_text('''module app
 import service
 fn main():
   worker = service.Worker()
   echo message worker.Run()
+  echo message worker.Join(true)
+  echo message worker.Join(false)
 ''')
     built = json.loads(run([compiler, "build", "--json"], cwd=capture_out).stdout)
-    assert run([built["result"]["artifacts"]["executable"]]).stdout == "hello\n"
+    assert run([built["result"]["artifacts"]["executable"]]).stdout == (
+        "hello\nyes\nno\n")
     interface = (capture_out / "build/debug/service.mossi").read_text()
     assert 'handler_failure_capture "Run" 0 "attempt" "string"' in interface
+    assert 'handler_failure_capture "Join" 0 "joined" "string"' in interface
     provider.rename(provider.with_suffix(".removed"))
     rebuilt = json.loads(run([compiler, "build", "--json"], cwd=capture_out).stdout)
-    assert run([rebuilt["result"]["artifacts"]["executable"]]).stdout == "hello\n"
+    assert run([rebuilt["result"]["artifacts"]["executable"]]).stdout == (
+        "hello\nyes\nno\n")
 
 
 def run_source_free_on_fail_trailer_fixture():

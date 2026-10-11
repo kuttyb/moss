@@ -1,0 +1,20 @@
+enum Failure:
+  Bad
+  Other
+fn maybe(flag: Bool):
+  if flag:
+    raise Failure.Bad
+domain Worker:
+  fn Run(flag: Bool) -> String:
+    try:
+      let item = "yes"
+      maybe(flag)
+    recover Failure.Bad:
+      let item = "no"
+    raise Failure.Other
+  on_fail Failure.Other:
+    reply item
+fn main():
+  worker = Worker()
+  echo message worker.Run(true)
+  echo message worker.Run(false)

@@ -10067,6 +10067,40 @@ class Checker {
     }
   }
 
+  void merge_binding_identities(OwnershipEnv& destination,
+                                const vector<OwnershipEnv>& paths,
+                                int join_line) const {
+    for (const auto& entry : destination.types) {
+      // An outer binding keeps its lexical identity across a branch-local
+      // shadow. Assignments to that binding also retain its identity.
+      if (destination.binding_identities.count(entry.first)) continue;
+      std::optional<string> identity;
+      bool all_present = true;
+      bool different = false;
+      for (const auto& path : paths) {
+        const auto found = path.binding_identities.find(entry.first);
+        if (found == path.binding_identities.end()) {
+          all_present = false;
+          break;
+        }
+        if (identity && *identity != found->second) different = true;
+        identity = found->second;
+      }
+      if (!all_present) {
+        destination.binding_identities.erase(entry.first);
+      } else if (different) {
+        // The source join establishes one definitely initialized binding
+        // from distinct arm-local definitions. Exceptional edges before this
+        // point retain their individual source identities.
+        destination.binding_identities[entry.first] =
+            statement_binding_identity(current_semantic_context_, join_line) +
+            ":" + entry.first;
+      } else {
+        destination.binding_identities[entry.first] = *identity;
+      }
+    }
+  }
+
   void require_cross_domain_value(int line, const string& expression,
                                   const string& expected_type,
                                   const OwnershipEnv& env,
@@ -10171,6 +10205,7 @@ class Checker {
         const EnumType& declaration = *enums_.at(canonical_type_name(*type));
         OwnershipEnv incoming = env;
         vector<TypeEnv> path_types;
+        vector<OwnershipEnv> continuing_paths;
         std::map<string,MoveInfo> merged_moves;
         ++index;
         while (index < statements.size() && statements[index].indent == level + 1) {
@@ -10215,6 +10250,7 @@ class Checker {
           if (read_place && !prior_read) branch.active_read_traversals.erase(s.a);
           if (branch.can_continue) {
             path_types.push_back(branch.types);
+            continuing_paths.push_back(branch);
             for (const auto& moved : branch.moved)
               merged_moves.emplace(moved);
           }
@@ -10224,6 +10260,7 @@ class Checker {
         if (env.can_continue) {
           env.types = merge_type_environments(path_types, s.line, false);
           env.moved = std::move(merged_moves);
+          merge_binding_identities(env, continuing_paths, s.line);
         }
         continue;
       }
@@ -10315,6 +10352,7 @@ class Checker {
           env.types = merge_type_environments(path_types, s.line, false);
           env.moved.clear();
           for (const auto& path : paths) merge_moved(env, path);
+          merge_binding_identities(env, paths, s.line);
         }
         continue;
       }
@@ -10351,6 +10389,7 @@ class Checker {
             env.moved.clear();
             merge_moved(env, alternative);
             merge_moved(env, body);
+            merge_binding_identities(env, {body, alternative}, s.line);
           } else if (body.can_continue) {
             env = body;
           } else if (alternative.can_continue) {
@@ -10362,6 +10401,7 @@ class Checker {
             env.types = merge_type_environments(
                 {incoming.types, body.types}, s.line, false);
             merge_moved(env, body);
+            merge_binding_identities(env, {incoming, body}, s.line);
           }
         }
         continue;
@@ -13837,6 +13877,7 @@ class Generator {
   bool phase21_result_context_ = false;
   std::optional<bool> phase21_return_result_context_;
   string phase21_selected_error_;
+  string phase21_selected_carrier_;
   string phase21_try_label_;
   size_t phase21_try_temp_ = 0;
   const Handler* phase21_capture_handler_ = nullptr;
@@ -17720,11 +17761,6 @@ class Generator {
           const bool captured_try = phase21_capture_handler_ != nullptr;
           const string carrier = captured_try
               ? handler_capture_carrier_type(*phase21_capture_handler_) : "";
-          const string frame = captured_try
-              ? carrier.substr(0, carrier.find("__MossRaisedCarrier_")) +
-                    "__MossFailureFrame_" +
-                    carrier.substr(carrier.find("__MossRaisedCarrier_") + 20)
-              : "";
           o << indent(level) << "let " << outcome
             << ": Result<(), " << (captured_try ? carrier : "__MossRaised")
             << "> = '" << try_label << ": {\n";
@@ -17766,10 +17802,14 @@ class Generator {
               handled.insert(identity);
               const string variant = phase21_rust_variant(identity);
               const string inner = "__moss_selected_value";
-              o << indent(level + 1) << "Err(";
-              if (captured_try) o << carrier << "(" << frame << " { error: ";
-              o << "__MossRaised::" << variant
-                << "(" << inner << " @ ";
+              if (captured_try) {
+                o << indent(level + 1) << "Err(__moss_selected_carrier) "
+                  << "if matches!(&__moss_selected_carrier.0.error, "
+                  << "__MossRaised::" << variant << "(";
+              } else {
+                o << indent(level + 1) << "Err(__MossRaised::" << variant
+                  << "(" << inner << " @ ";
+              }
               if (identity.kind == RaisedIdentityKind::EnumVariant) {
                 o << phase21_rust_error_type(identity) << "::"
                   << rust_identifier(identity.variant);
@@ -17797,8 +17837,16 @@ class Generator {
                 o << "_";
               }
               o << ")";
-              if (captured_try) o << ", .. })";
-              o << ") => {\n";
+              if (captured_try) {
+                o << ") => {\n";
+                o << indent(level + 2) << "let " << inner
+                  << " = match &__moss_selected_carrier.0.error { "
+                  << "__MossRaised::" << variant
+                  << "(__moss_value) => __moss_value.clone(), "
+                  << "_ => std::process::abort() };\n";
+              } else {
+                o << ") => {\n";
+              }
               const string selected = "__moss_selected_error";
               o << indent(level + 2) << "let " << selected
                 << " = __MossRaised::" << variant << "(" << inner
@@ -17828,13 +17876,17 @@ class Generator {
               arm_join_assignments.insert(joined_bindings.begin(),
                                           joined_bindings.end());
               const string saved_selected_error = phase21_selected_error_;
+              const string saved_selected_carrier = phase21_selected_carrier_;
               phase21_selected_error_ = selected;
+              phase21_selected_carrier_ = captured_try
+                  ? "__moss_selected_carrier" : string();
               size_t rendered_end = body_begin;
               gen_block(o, ss, rendered_end, level + 1, d, current_handler,
                         reply_slot, arm_locals, arm_types, base + 1,
                         in_handler, in_function, arm_join_assignments,
                         functional_context);
               phase21_selected_error_ = saved_selected_error;
+              phase21_selected_carrier_ = saved_selected_carrier;
               if (rendered_end != body_end)
                 throw std::runtime_error(
                     "internal error: recover body was not fully lowered");
@@ -17871,8 +17923,16 @@ class Generator {
             if (phase21_selected_error_.empty())
               throw std::runtime_error(
                   "internal error: bare raise lacks a selected error");
-            o << indent(level)
-              << phase21_error_exit(phase21_selected_error_) << ";\n";
+            if (phase21_selected_carrier_.empty()) {
+              o << indent(level)
+                << phase21_error_exit(phase21_selected_error_) << ";\n";
+            } else if (phase21_try_label_.empty()) {
+              o << indent(level) << "return Err("
+                << phase21_selected_carrier_ << ");\n";
+            } else {
+              o << indent(level) << "break '" << phase21_try_label_
+                << " Err(" << phase21_selected_carrier_ << ");\n";
+            }
           } else {
             if (s.exceptional_alternatives.size() != 1)
               throw std::runtime_error(

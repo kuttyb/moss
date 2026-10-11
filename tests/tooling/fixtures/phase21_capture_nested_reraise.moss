@@ -1,0 +1,20 @@
+enum Failure:
+  Bad(code: Int)
+  Other
+domain Worker:
+  fn Run() -> String:
+    let item = "kept"
+    try:
+      try:
+        raise Failure.Bad(code: 4)
+      recover Failure.Bad(code):
+        raise
+    recover Failure.Other:
+      pass
+    reply "ok"
+  on_fail Failure.Bad(code):
+    echo code
+    reply item
+fn main():
+  worker = Worker()
+  echo message worker.Run()

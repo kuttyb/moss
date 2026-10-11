@@ -240,6 +240,7 @@
     auto& instance = *call.instance;
     const Handler* target = call.target;
     int line = call.line;
+    const bool root_ingress = caller.domain == nullptr;
     Frame frame; frame.handler_scope = true; frame.domain = &instance; frame.handler = target->name;
     frame.function = instance.definition->name + "." + target->name;
     frame.functional_context = functional_handler_context(*instance.definition, *target);
@@ -267,7 +268,65 @@
     Flow flow;
     {
       EventScope handler_scope(*this, handler_id, true, true);
-      flow = execute(target->body, frame, output);
+      try {
+        flow = execute(target->body, frame, output);
+      } catch (const RaisedSignal& raised) {
+        if (!root_ingress || target->failure_arms.empty()) throw;
+        const FailureArm* selected = nullptr;
+        size_t selected_index = 0;
+        for (size_t index = 0; index < target->failure_arms.size(); ++index)
+          if (target->failure_arms[index].exceptional_alternatives.count(
+                  raised.identity)) {
+            selected = &target->failure_arms[index];
+            selected_index = index;
+            break;
+          }
+        if (!selected)
+          throw RuntimeError(line,
+              "checked Root on_fail has no arm for '" +
+              raised.identity.canonical() + "'");
+
+        // The normal attempt's lexical frame is abandoned at this boundary.
+        // Make the failure continuation from its checked owned captures and
+        // immutable incoming payloads, rather than exposing every old local.
+        Frame failure = frame;
+        failure.function += "$fail";
+        failure.functional_context += ":on_fail:" +
+            std::to_string(selected_index);
+        failure.locals.clear();
+        failure.local_types.clear();
+        failure.aliases.clear();
+        for (const auto& parameter : target->params) {
+          auto value = frame.locals.find(parameter.name);
+          if (value != frame.locals.end())
+            failure.locals[parameter.name] = independent(value->second);
+          auto type = frame.local_types.find(parameter.name);
+          if (type != frame.local_types.end())
+            failure.local_types[parameter.name] = type->second;
+        }
+        for (const auto& capture : selected->captures) {
+          auto value = frame.locals.find(capture.name);
+          if (value == frame.locals.end())
+            throw RuntimeError(selected->line,
+                "checked on_fail capture '" + capture.name +
+                "' is absent at its exceptional edge");
+          failure.locals[capture.name] = independent(value->second);
+          failure.local_types[capture.name] = capture.type;
+        }
+        if (!selected->binding.empty()) {
+          failure.locals[selected->binding] = independent(raised.value);
+          failure.local_types[selected->binding] = raised.identity.type;
+        }
+        for (const auto& pattern : selected->patterns)
+          for (const auto& binding :
+               error_pattern_payloads(pattern, raised, selected->line)) {
+            failure.locals[binding.first] = binding.second.first;
+            failure.local_types[binding.first] = binding.second.second;
+          }
+        emit("on_fail", failure, selected->line,
+             raised.identity.canonical());
+        flow = execute(selected->body, failure, output);
+      }
       bool needs_reply = target->reply_type.has_value() || specialization.handler_reply_types.count(target->name);
       if (needs_reply && !flow.returned) throw RuntimeError(line, "handler completed without its required reply");
       emit("handler_exit", frame, target->line);

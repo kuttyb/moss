@@ -33,6 +33,9 @@ assert compiled.returncode == 0, (compiled.stdout, compiled.stderr)
 executed = run(executable)
 assert executed.returncode == 0, (executed.stdout, executed.stderr)
 assert executed.stdout == "10\n20\n30\nreraised\n", executed.stdout
+interpreted = run(compiler, "run", "--interp", source)
+assert interpreted.returncode == 0, interpreted.stderr
+assert interpreted.stdout == executed.stdout, interpreted.stdout
 
 # `return` inside a try exits the Moss function. A Rust closure around the
 # attempt would instead return from that closure and could not preserve the
