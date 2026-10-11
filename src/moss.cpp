@@ -29279,7 +29279,8 @@ static vector<std::filesystem::path> write_module_interfaces(
         !program.external_modules.count(module_name_from_symbol(object.name)))
       module_names.insert(module_name_from_symbol(object.name));
   for (const auto& enumeration : program.enums)
-    if (!module_name_from_symbol(enumeration.name).empty() &&
+    if (enumeration.source_file != "<moss-std>" &&
+        !module_name_from_symbol(enumeration.name).empty() &&
         !program.external_modules.count(module_name_from_symbol(enumeration.name)))
       module_names.insert(module_name_from_symbol(enumeration.name));
   for (const auto& domain : program.domains)
