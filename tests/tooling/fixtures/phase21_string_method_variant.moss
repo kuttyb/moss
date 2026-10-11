@@ -1,0 +1,19 @@
+enum Failure:
+  Bad
+  Other
+
+fn take(data: String) -> String:
+  return data
+
+fn main():
+  var item = "seven"
+  try:
+    if true:
+      let discarded = take(item)
+      raise Failure.Bad
+    else:
+      raise Failure.Other
+  recover Failure.Bad:
+    pass
+  recover Failure.Other:
+    echo item.length()

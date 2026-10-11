@@ -1,5 +1,33 @@
 # Moss current status
 
+## Phase 21.A owned failure capture closeout — 2026-10-10
+
+The checker now proves handler-local `on_fail` captures over each selected
+escaping exceptional source edge, including definite initialization, stable
+binding identity, unconsumed ownership, and rejection of FileIO and borrowed
+enum payload capabilities. Its ABI-v8 graph records distinct source sites,
+recovery scopes, and exceptional edges instead of merging sites by error tag.
+Provider body results carry an opaque provider-owned frame; Root wrappers
+extract it only after body completion and dispatch it after guard release and
+fresh failure-lock acquisition. Source-free `.mossi` plus provider rlib builds
+execute non-Copy captures. A value first bound inside a `try` is captured at
+its inner raise edge before its Rust lexical scope ends.
+
+Variant-specific `recover` lowering retains checker-proved owned locals in
+scoped `Option<T>` slots across consumed and surviving edges. Native
+regressions cover consuming matches and helpers, String method READs,
+reassignment within recovery and after `try`, post-try use, and a combined
+recovery-slot/on_fail capture. Tracked negatives cover pre-initialization,
+consumption, FileIO, and borrowed enum payloads. A message-result binding
+also has a positive capture regression.
+
+Completed validation on the final tree: strict C++17 warning-free syntax
+compilation; focused Phase 21 capture, recovery, source-free ABI and native
+gates; full `make check` (`all Moss v0.1 tests passed`); `make examples`; and
+`git diff --check`. This closes Agent A's implementation work for integration
+review. Final Phase 21 acceptance, including O1–O9 combined review and the
+wider Float formatter toolchain pin, remains an integration decision.
+
 ## Phase 21.D documentation wording review — 2026-10-10
 
 The active v0.1 syntax and roadmap pages now describe implemented numeric

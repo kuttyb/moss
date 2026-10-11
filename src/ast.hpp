@@ -111,6 +111,9 @@ struct Stmt {
   RaiseSet exceptional_alternatives;
   std::uint32_t exceptional_node = 0;
   std::uint32_t exceptional_scope = 0;
+  // Exact whole owned bindings consumed while checking this statement.
+  // Native recovery lowering uses these facts across variant-specific edges.
+  mutable std::set<string> ownership_consumed_bindings;
   string source_file;
 };
 
@@ -126,6 +129,10 @@ struct FailureArm {
   // raise set. Populated by the checker; code generation must not reconstruct
   // reachability from source spelling.
   RaiseSet exceptional_alternatives;
+  // D7-proved owned handler locals read by this Root-only continuation.
+  // Populated from every escaping source-site ownership snapshot.
+  struct Capture { string name, type, binding_identity; };
+  mutable vector<Capture> captures;
   // Checked pseudo-handler footprint exported for a compiled provider's
   // fresh Root failure interval. This is distinct from the normal handler.
   std::optional<StateLeafEffects> state_effects;
@@ -160,6 +167,9 @@ struct Handler {
   string source_file;
   // Checked semantic state effects, also carried by compiled providers.
   std::optional<StateLeafEffects> state_effects;
+  // Concrete provider-owned raised carrier when an on_fail arm captures a
+  // handler local. Empty handlers keep the ordinary __MossRaised ABI.
+  mutable string phase21_capture_carrier_type;
   // ABI-v8 provider metadata. Source handlers receive a deterministic empty
   // contract during interface emission; source-free handlers must carry the
   // complete record or loading fails closed.

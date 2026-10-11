@@ -219,10 +219,13 @@
       if (view_object_type(p.type)) view_parameters_.insert(p.name);
     }
     const bool saved_phase21_result_context = phase21_result_context_;
+    const Handler* saved_capture_handler = phase21_capture_handler_;
+    phase21_capture_handler_ = handler_has_failure_captures(h) ? &h : nullptr;
     phase21_result_context_ = !h.observable_effects.raise_set.empty();
     gen_stmts(o, body, &d, &h, result, locals, types, 2, true, false,
               functional_handler_context(d, h));
     phase21_result_context_ = saved_phase21_result_context;
+    phase21_capture_handler_ = saved_capture_handler;
     view_domain_ = false; view_domain_access_ = false; borrowed_message_parameters_.clear();
     view_parameters_.clear(); write_through_parameters_.clear();
     o << "    }\n";
@@ -336,7 +339,8 @@
     for (const auto& p : h.params) o << ", " << p.name;
     o << ")";
     if (!h.observable_effects.raise_set.empty() &&
-        phase21_external_module_for_symbol(d.name))
+        phase21_external_module_for_symbol(d.name) &&
+        !handler_has_failure_captures(h))
       o << ".map_err(__MossRaised::from)";
     o << ";\n";
     if (h.reply_type) {
@@ -364,7 +368,8 @@
     for (const auto& p : h.params) o << ", " << p.name;
     o << ")";
     if (!h.observable_effects.raise_set.empty() &&
-        phase21_external_module_for_symbol(d.name))
+        phase21_external_module_for_symbol(d.name) &&
+        !handler_has_failure_captures(h))
       o << ".map_err(__MossRaised::from)";
     o << ";\n";
     if (h.reply_type) {
@@ -451,12 +456,14 @@
       const HandlerSynchronizationPlan& failure) {
     const auto external_module = phase21_external_module_for_symbol(d.name);
     const bool compiled_provider = h.provider_abi && external_module;
+    const bool captures = handler_has_failure_captures(h);
     const string provider_crate = compiled_provider
         ? tooling_name("moss_" + *external_module) : string();
     const string state_type = compiled_provider
         ? provider_crate + "::" + d.name + h.name + "ProviderFailState"
-        : d.name + h.name + "FailState";
-    if (!compiled_provider)
+        : d.name + h.name +
+              (captures ? "ProviderFailState" : "FailState");
+    if (!compiled_provider && !captures)
       emit_path_state_definition(o, d, failure, state_type);
     o << "impl " << d.name << "Ref {\n"
       << "    fn " << h.name << "_root(&self";
@@ -477,8 +484,40 @@
 
     emit_path_acquire(o, failure, plan, failure.class_modes, 16);
     emit_path_values_and_state(o, d, failure, plan, state_type);
-    if (h.reply_type && !compiled_provider)
+    if (h.reply_type && !compiled_provider && !captures)
       o << "                let mut __moss_failure_reply = None;\n";
+    if (captures) {
+      o << "                let __moss_failure_result = match "
+        << "__moss_error.tag() {\n";
+      std::uint32_t tag = 0;
+      for (const auto& identity : h.observable_effects.raise_set) {
+        size_t arm_index = 0;
+        while (arm_index < h.failure_arms.size() &&
+               !h.failure_arms[arm_index].exceptional_alternatives.count(identity))
+          ++arm_index;
+        synchronization_require(arm_index < h.failure_arms.size(),
+            "checked Root capture tag lacks an on_fail arm");
+        const string callable = compiled_provider
+            ? provider_crate + "::" +
+                  h.provider_abi->failure_arms.at(arm_index).callable_symbol
+            : "__moss_on_fail_" + d.name + "_" + h.name + "_" +
+                  std::to_string(arm_index);
+        o << "                    " << tag++ << " => " << callable
+          << "(&mut state, __moss_error.into_frame()";
+        for (const auto& parameter : h.params)
+          o << ", " << shared_message_forward_argument(parameter, true);
+        o << "),\n";
+      }
+      o << "                    _ => std::process::abort(),\n"
+        << "                };\n";
+      emit_path_release(o, failure, plan, failure.class_modes);
+      o << "                __moss_failure_result\n"
+        << "            },\n"
+        << "        }\n"
+        << "    }\n"
+        << "}\n";
+      return;
+    }
     o << "                #[allow(unreachable_patterns)]\n"
       << "                let __moss_failure_result = match __moss_error {\n";
 
@@ -617,15 +656,29 @@
       bodyargs += ", impl " + canonical_type_name(route.type) + "Messages";
     for (size_t arm_index = 0; arm_index < h.failure_arms.size(); ++arm_index) {
       const auto& arm = h.failure_arms[arm_index];
+      const bool has_captures = handler_has_failure_captures(h);
+      const string frame = "__MossFailureFrame_" + d.name + "_" + h.name;
       o << "#[allow(unreachable_patterns)]\n";
       o << (d.exported ? "pub " : "") << "fn __moss_on_fail_"
         << d.name << "_" << h.name << "_"
         << arm_index << "(state: &mut " << state_type << "<" << bodyargs
-        << ">, __moss_error: __MossRaised";
+        << ">, " << (has_captures
+            ? "__moss_frame: " + frame
+            : "__moss_error: __MossRaised");
       for (const auto& parameter : h.params)
         o << ", " << shared_message_parameter(parameter);
-      o << ") -> " << rust_type(h.reply_type.value_or("unit")) << " {\n"
-        << "    match __moss_error {\n";
+      o << ") -> " << rust_type(h.reply_type.value_or("unit")) << " {\n";
+      if (has_captures) {
+        o << "    let " << frame << " { error: __moss_error";
+        std::set<string> fields;
+        for (const auto& source_arm : h.failure_arms)
+          for (const auto& capture : source_arm.captures)
+            fields.insert(capture.name);
+        for (const auto& field : fields)
+          o << ", " << rust_identifier(field);
+        o << " } = __moss_frame;\n";
+      }
+      o << "    match __moss_error {\n";
       for (const auto& identity : arm.exceptional_alternatives) {
         const string variant = phase21_rust_variant(identity);
         const string inner = "__moss_failure_value";
@@ -652,6 +705,10 @@
             o << " { .. }";
         }
         o << ") => {\n";
+        for (const auto& capture : arm.captures)
+          o << "            let " << rust_identifier(capture.name)
+            << " = " << rust_identifier(capture.name)
+            << ".unwrap_or_else(|| std::process::abort());\n";
         if (h.reply_type)
           o << "            let mut __moss_failure_reply = None;\n";
         std::set<string> locals;
@@ -666,6 +723,10 @@
           o << "            let " << arm.binding << " = " << inner << ";\n";
           locals.insert(arm.binding);
           types[arm.binding] = identity.type;
+        }
+        for (const auto& capture : arm.captures) {
+          locals.insert(capture.name);
+          types[capture.name] = capture.type;
         }
         if (arm.patterns.size() == 1)
           emit_generated_error_payload_bindings(
@@ -707,6 +768,38 @@
       o << "        _ => std::process::abort(),\n"
         << "    }\n}\n";
     }
+  }
+
+  void emit_failure_capture_frame(std::ostringstream& o, const Domain& d,
+                                  const Handler& h) {
+    if (!handler_has_failure_captures(h) || h.provider_abi) return;
+    const string frame = "__MossFailureFrame_" + d.name + "_" + h.name;
+    const string carrier = handler_capture_carrier_type(h);
+    std::map<string,string> captures;
+    for (const auto& arm : h.failure_arms)
+      for (const auto& capture : arm.captures)
+        captures.emplace(capture.name, capture.type);
+    o << "#[allow(non_camel_case_types)]\n"
+      << "pub struct " << frame << " {\n"
+      << "    error: __MossRaised,\n";
+    for (const auto& capture : captures)
+      o << "    " << rust_identifier(capture.first) << ": Option<"
+        << rust_type(capture.second) << ">,\n";
+    o << "}\n#[allow(non_camel_case_types)]\n"
+      << "pub struct " << carrier << "(" << frame << ");\n"
+      << "impl " << carrier << " {\n"
+      << "    pub fn tag(&self) -> u32 { match &self.0.error {\n";
+    std::uint32_t tag = 0;
+    for (const auto& identity : h.observable_effects.raise_set)
+      o << "        __MossRaised::" << phase21_rust_variant(identity)
+        << "(_) => " << tag++ << ",\n";
+    o << "        #[allow(unreachable_patterns)] _ => std::process::abort(),\n"
+      << "    } }\n"
+      << "    pub fn into_frame(self) -> " << frame << " { self.0 }\n"
+      << "}\n"
+      << "impl From<" << carrier << "> for __MossRaised {\n"
+      << "    fn from(value: " << carrier << ") -> Self { value.0.error }\n"
+      << "}\n";
   }
 
   void gen_planned_domain(std::ostringstream& o, const Domain& d) {
@@ -792,7 +885,8 @@
       for (const auto& p : h.params) o << ", " << p.name;
       o << ")";
       if (!h.observable_effects.raise_set.empty() &&
-          phase21_external_module_for_symbol(d.name))
+          phase21_external_module_for_symbol(d.name) &&
+          !handler_has_failure_captures(h))
         o << ".map_err(__MossRaised::from)";
       o << ";\n";
       if (h.reply_type) {
@@ -871,6 +965,7 @@
     o << "}\n";
     const auto* plan = typed_domain_plan(d);
     for (const auto& h : d.handlers) {
+      emit_failure_capture_frame(o, d, h);
       HandlerSynchronizationPlan fallback;
       fallback.name = h.name;
       if (h.state_effects) fallback.effects = *h.state_effects;
@@ -937,9 +1032,12 @@
         if (view_object_type(p.type)) view_parameters_.insert(p.name);
       }
       const bool saved_phase21_result_context = phase21_result_context_;
+      const Handler* saved_capture_handler = phase21_capture_handler_;
+      phase21_capture_handler_ = handler_has_failure_captures(h) ? &h : nullptr;
       phase21_result_context_ = !h.observable_effects.raise_set.empty();
       gen_stmts(o, h.body, &d, &h, result, locals, types, 2, true, false, functional_handler_context(d, h));
       phase21_result_context_ = saved_phase21_result_context;
+      phase21_capture_handler_ = saved_capture_handler;
       view_domain_ = false; view_domain_access_ = false;
       borrowed_message_parameters_.clear(); view_parameters_.clear();
       write_through_parameters_.clear();
@@ -973,7 +1071,7 @@
       const bool external_raises = external_module.has_value() &&
           !h.observable_effects.raise_set.empty();
       auto contract_return_type = [&](string type) {
-        if (external_raises) {
+        if (external_raises && ends_with(type, "__MossRaised>")) {
           const string local = "__MossRaised";
           const auto position = type.rfind(local);
           if (position != string::npos)
@@ -1011,9 +1109,12 @@
           else
             o << ".map(|value| value.unwrap_or_else(|| std::process::abort()))";
         }
-        if (external_raises)
+        if (external_raises &&
+            (!prefix.empty() || !handler_has_failure_captures(h)))
           o << ".map_err(" << phase21_external_raised_type(*external_module)
             << "::from)";
+        else if (!prefix.empty() && handler_has_failure_captures(h))
+          o << ".map_err(__MossRaised::from)";
         o << " }\n";
       }
     }
