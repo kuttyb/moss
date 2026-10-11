@@ -1,5 +1,26 @@
 # Moss current status
 
+## Phase 21 independent Architect NO-GO and engineering repair — 2026-10-11
+
+Independent Architect L6 reviewed exact pushed `96eef9e` and recorded an
+attributable **NO-GO** in `docs/PHASE_21_ARCHITECT_V9_REVIEW.md`. It found
+that an exhaustive Root `on_fail` was falsely rejected when `message` appeared
+inside a binary, vector or ordinary call expression in `main`, including a
+source-free provider case. The Architect independently reran 30+ ABI-v9,
+effect, ownership, lock, FileIO, Float and original A–F gates; those passed
+within the report's stated limits.
+
+Engineering repaired the recursive Root-ingress effect context at source
+`3a964dc9aa22bfc7d85cccaa57515c532ee839b2` and added
+`check_phase21_root_expression_ingress.py`. The valid forms now check and
+execute in native O0/O3 and Fast Debug; a consumer rebuilt after provider
+source removal executes, while a nested Root without `on_fail` still fails
+`ROOT_UNHANDLED_RAISE`. The isolated repair worktree passed full `make check`,
+`make examples` (32), strict GCC 13.3/Clang 18.1 C++17, and the four-pair
+Float matrix. The integration tree also passed full `make check` and
+`make examples`. Exact-SHA Architect retest is next.
+Engineering recommends GO for independent retest; **main merge remains HOLD**.
+
 ## Phase 21 original A–F final acceptance handoff — 2026-10-11
 
 L7 supplied a single-text bundle described as a byte-for-byte transcription
@@ -24,8 +45,10 @@ The permanent original-source gate and final `make check` rerun both pass;
 independent Architect acceptance. The strict GCC/Clang and four-pair Float
 results below apply to the same compiler source and were run before these
 original files entered the regression corpus.
-The independent Architect L6 has not voted on `c1ef3eb`; the historical NO-GO
-at `5941d98` remains attributable to that earlier SHA. No merge into `main`.
+At this earlier checkpoint the Architect had not voted on the ABI-v9 source;
+the later NO-GO at `96eef9e` is recorded at the top of this status file.
+The historical `5941d98` NO-GO remains attributable to that earlier SHA.
+No merge into `main`.
 The final acceptance evidence is committed and pushed to
 `origin/phase-21-integration` following the user's explicit push request.
 L7 must arrange independent Architect review of the exact candidate before

@@ -1,21 +1,22 @@
 # Phase 21 unified engineering release review
 
-> **Implementation complete; ready for independent Architect acceptance
-> (2026-10-11).** The exact validated implementation is
-> `c1ef3ebb13d7c74c3ed86a45d45e536d527161da` on
-> `phase-21-integration`. ABI v9, standard errors and the external A–F repairs
-> are integrated. The unchanged L7-supplied originals pass their permanent
-> focused gate, and the full `make check` rerun passes with that gate included.
-> Independent Architect L6 review is
-> pending. **NO-GO for merging into `main`.**
+> **Engineering repair ready for independent retest (2026-10-11).** The
+> current implementation source is
+> `3a964dc9aa22bfc7d85cccaa57515c532ee839b2` on
+> `phase-21-integration`.
+> Architect L6 independently rejected candidate `96eef9e` because an
+> exhaustive Root `on_fail` was lost when a `message` appeared inside a
+> larger `main` expression. The isolated repair and integrated branch pass the
+> full engineering suite, native/Fast Debug and source-free regressions; Architect retest of
+> the repaired source is pending. **NO-GO for merging into `main`.**
 
-The last *independently reviewed* implementation remains `5941d98c824f31550f520891235c8b7ac96f3992`.
-`docs/PHASE_21_ARCHITECT_REVIEW.md` records an independently attributable
-**NO-GO** at that SHA. It identified ABI-v8 artifact forgery, missing
-source-free warning provenance, and general proof gaps. L7 subsequently
-approved ABI v9, compiler-defined standard error types, absolute Root typed
-error boundaries, and corrected O2 wording. Later engineering work is
-reported here without representing it as Architect acceptance.
+The latest *independently reviewed* implementation is
+`96eef9e0d554e26139b3e86268faf598fc03b38e`.
+`docs/PHASE_21_ARCHITECT_V9_REVIEW.md` records its attributable **NO-GO** and
+the exact counterexample. The older `docs/PHASE_21_ARCHITECT_REVIEW.md`
+records the earlier **NO-GO** at `5941d98` for ABI-v8 forgery, warning
+provenance and proof gaps. Neither verdict is relabeled by the engineering
+repair; the Architect must independently retest it.
 
 ## Baselines, scope and changed contract
 
@@ -23,11 +24,11 @@ reported here without representing it as Architect acceptance.
 | --- | --- |
 | Original implementation-complete checkpoint | `8d8a9cc6f842e11701dbedc56e3d2d2d3da9852a` |
 | External addendum failing baseline | `7775049` |
-| Independent Architect L6 implementation | `5941d98c824f31550f520891235c8b7ac96f3992` |
-| Validated implementation/source SHA | `c1ef3ebb13d7c74c3ed86a45d45e536d527161da`; later commits add the unchanged original fixtures, their permanent gate and documentation without modifying compiler source |
+| Latest independently reviewed implementation | `96eef9e0d554e26139b3e86268faf598fc03b38e` (**NO-GO**) |
+| Current engineering repair/source SHA | `3a964dc9aa22bfc7d85cccaa57515c532ee839b2`; preserves ABI v9 and adds nested Root ingress propagation plus a permanent regression gate |
 | Reconciled `origin/main` baseline | `d15e968778fa1cff3cd5085911c505592af54a30`, integrated at `7eb192b`; refetched at final validation and still an integration ancestor |
 | Branch and merge gate | `phase-21-integration`; **do not merge into `main`** without explicit L7 approval |
-| Independent Architect L6 and L7 acceptance | Pending exact-source Architect review and explicit L7 merge decision |
+| Independent Architect L6 and L7 acceptance | Pending independent retest of the repaired source and explicit L7 merge decision |
 
 The language now provides variant-precise typed `raise`, lexical
 `try`/`recover`, exhaustive Root-level `on_fail`, owned failure captures,
@@ -67,7 +68,7 @@ exact-source behavioral gates. The independent Architect has not accepted it.
 
 | Obligation and guarantee | Compiler/runtime locations and argument | Behavioral and adversarial evidence | Assumption, limit and current status |
 | --- | --- | --- | --- |
-| **O1:** Every accepted expression and call preserves variant-precise typed raises, separate panic, and observable effects through recovery and imports. | `src/moss.cpp`: `observable_expression_effects`, `analyze_effect_block`, specialized handler effects, imported callable records; `src/file_chunk_lowering.inc` uses their summaries. | `check_phase21_peer_effects.py`, unary/projection gates, A/C addendum exact `check --json`/`effects --json`, imported-effects and source-free method gates. `6aa69be` repairs trailing method expression and concrete generic specialization; `9af6d79` excludes the raised effect of a well-formed recovery arm no variant can enter. | Accepted syntax has a recursive transfer; unresolved concrete calls and typed-raising custom iterators fail closed. ABI-v9 imported effects are artifact-bound. The 13-gate independent engineering audit and full `make check` passed on `c1ef3eb`. **ENGINEERING PASS under documented assumptions; Architect pending.** |
+| **O1:** Every accepted expression and call preserves variant-precise typed raises, separate panic, and observable effects through recovery and imports. | `src/moss.cpp`: `observable_expression_effects`, `analyze_effect_block`, specialized handler effects, imported callable records; `src/file_chunk_lowering.inc` uses their summaries. | Prior peer-effects, unary/projection, A/C and source-free gates pass. `check_phase21_root_expression_ingress.py` adds Architect-discovered binary/vector/call/condition Root context and source-removed provider controls. | The `96eef9e` Architect NO-GO exposed a main-expression Root projection gap. `3a964dc` propagates Root ingress through every recursive transfer and conditions; a no-trailer nested Root remains rejected. **ENGINEERING PASS on repaired source; independent retest pending.** |
 | **O2:** `h` and `h$fail` have independent lock plans. The trailer adds no per-leaf WRITE requirement to `h`, but its signature column can repartition classes and change normal exclusive lock count. | `src/moss.cpp`: `specialized_handler_failure_effects`, `build_synchronization_plan`; `src/handler_lowering.inc`: failure wrapper. | `check_phase21_handler_failure_native.py`, `check_phase21_peer_warnings.py`, A/C grouped Root plan check; exact-source full suite passes. | Uses the final class partition and ranked acquisition; no assumption of invariant class count. L7 approved wording correction; normative text updated. **ENGINEERING PASS, conditional on O1.** |
 | **O3:** Required recovery locks are planned and acquired in rank order before the relevant `try`/first observable action; no dynamic upgrade. | `src/moss.cpp`: `derive_path_placement`; `src/handler_lowering.inc`: path wrapper. | Recovery-plan, lock inflation warning, `check_phase21_early_placement_proof.py`, concurrent Root gate; exact-source full suite passes. | Closed static routes and complete effect/remaining-path sets are required. **ENGINEERING PASS, conditional on O1/O4.** |
 | **O4:** Exceptional edges, definite initialization, moves and D7 recovery ownership agree at the expression evaluation point, including loops, nested recovery and re-raise. | `src/moss.cpp`: `check_ownership_block` and exceptional effect/CFG walkers; `src/handler_lowering.inc`: tagged carrier and `Option<T>` capture slots. | `check_phase21_expression_ownership_edges.py`, `check_phase21_recover_reinit.py`, `check_phase21_early_condition_raise.py`, `check_phase21_on_fail_capture.py`; A/C grouped reachable-variant gate. `f4519fd` still checks unreachable arm bodies but excludes their impossible ownership successors; the gate includes unreachable consume positive and reachable consume negative. | The proof audit traces evaluation-point snapshots, selected exceptional edges, joins and native lowering. The 13-gate audit and full suite passed on `c1ef3eb`. **ENGINEERING PASS under documented assumptions; Architect pending.** |
@@ -98,6 +99,7 @@ independent Architect acceptance pending.**
 | --- | --- | --- |
 | Local helpers, methods, generics, collections and ordinary expressions | Exact variants and panic separation in peer-effects, unary/projection and reconstructed A/C gates; the unchanged supplied A rejects unhandled `E.A`, while C checks with only `E.A` escaping and prints `outer A`. Other A/C gates cover unreachable explicit raise and reachable/unreachable consume. | The O1/O4 proof closes accepted and fail-closed syntax under stated assumptions; independent Architect assessment remains pending. |
 | Root ingress and recovery | Unhandled synchronous/Executor Roots receive `ROOT_UNHANDLED_RAISE`; source-free and positive lexical recovery/`on_fail` pass native and Fast Debug gates. | No typed raise may cross a Root; native `runtime_invoke` and bound imported effects rely on the checked Root contract. |
+| Nested Root expressions | `check_phase21_root_expression_ingress.py` proves the valid direct/binary/vector/call/condition forms check and execute in O0/O3 and Fast Debug; it removes provider source and rebuilds a nested consumer. A nested no-trailer Root remains `ROOT_UNHANDLED_RAISE`. | Architect L6 found the false rejection on `96eef9e`; the `3a964dc` repair carries the Root ingress context through recursive expression effects and control conditions. Independent retest is pending. |
 | Pipelines and Branches | The unchanged supplied D/E programs use `p4.bin=ABABC` and `p6.bin=ABCD`, require `-1` through `on_fail`; exact effects and O0/O3 output pass. Separate gates cover ordered speculative precedence and concurrent quiescence. | File-chunk Fast Debug has a documented interpreter limit; native ordering and resource cleanup are the required physical witnesses. |
 | Source-free packages | ABI v9 binds canonical `.mossi` to selected `.rlib`; exact-source gates reject v8, missing, stale, forged, warm-cache and valid-but-mismatched artifact pairs. Removed-source methods, warning provenance and cross-crate standard-error WRITE recovery execute. | Contract consistency assumes a trusted provider build; this is not publisher authentication. Architect review pending. |
 | FileIO, locks and errors | Typed FileIO, standard error identity, injected cleanup, fresh failure locks and concurrent Roots pass exact-source gates. | Failed `create` may leave a name; later retry `sync()` does not prove that name durable. Descriptor cleanup remains required. |
@@ -106,17 +108,18 @@ independent Architect acceptance pending.**
 
 ## Validation ledger and exact environment
 
-All results below used exact implementation/source
-`c1ef3ebb13d7c74c3ed86a45d45e536d527161da`. Later release-report commits
-change documentation only. The historical `5941d98` full-suite result and
-independent Architect NO-GO remain separately attributable in
-`docs/PHASE_21_ARCHITECT_REVIEW.md`.
+The repair-specific results below used source
+`3a964dc9aa22bfc7d85cccaa57515c532ee839b2` in an isolated worktree and
+the content-identical integration tree.
+Earlier ABI-v9 and original A–F evidence used source `c1ef3eb`; those gates
+also pass in the repaired full suite. Independent Architect NO-GO reports
+remain attributable to `5941d98` and `96eef9e`, not to the repaired source.
 
 | Gate | Exact-source result |
 | --- | --- |
-| `TMPDIR="$PWD/tmp" make check` | **PASS**, exit 0, ending `all Moss v0.1 tests passed` after import of the unchanged supplied A–F and their permanent gate. Includes ABI-v9 forgery/cache/migration, imported effects and warning, standard error, Root/Branch and FileIO fault gates; the Phase 20 Executor runtime suite passed 54/54. |
-| `TMPDIR="$PWD/tmp" make examples` | **PASS**, exit 0 on the combined tree; 32 positive example builds. |
-| Strict GCC and Clang C++17 | **PASS** under GCC 13.3.0 and Clang 18.1.3, both `-std=c++17 -O2 -Wall -Wextra -Werror -pedantic`. |
+| `TMPDIR="$PWD/tmp" make check` | **PASS** on isolated and integrated repair source `3a964dc`, exit 0, ending `all Moss v0.1 tests passed`; includes the new nested Root/source-free gate and Phase 20 Executor runtime 54/54. |
+| `TMPDIR="$PWD/tmp" make examples` | **PASS** on isolated and integrated repair source; 32 positive example builds. |
+| Strict GCC and Clang C++17 | **PASS** on isolated repair source under GCC 13.3.0 and repository-local Clang 18.1.3, both `-std=c++17 -O2 -Wall -Wextra -Werror -pedantic`. |
 | Strict Phase 20 review in `make check` | **PASS**: 36 bug, 30 guard and two pre-existing probes; eight design proposals remain INFO. Phase 20 Executor runtime 54/54 passes. |
 | Unchanged L7-supplied A/C | **PASS**: A is rejected at Moss checking, both native generator modes and Fast Debug for the unhandled `E.A`; a recovery-only scratch companion reports exact `via_local` raise set. C checks with only `E.A` escaping and prints `outer A` in native O0/O3 and Fast Debug. Other permanent A/C controls pass. |
 | Unchanged L7-supplied D/E | **PASS**: exact `FormatError.Bad`/`SetupError.Bad` plus six standard FileError effects and native O0/O3 `-1` through Root `on_fail` with isolated `ABABC`/`ABCD` input files. Fast Debug reports its intentional FileIO unsupported diagnostic. |
@@ -124,7 +127,7 @@ independent Architect NO-GO remain separately attributable in
 | ABI-v9 source-free adversarial | **PASS**: removed-source execution; recomputed-hash pattern forgery, warm-cache edited/deleted provider, valid-but-mismatched provider swap, v8 rebuild and malformed v9 contract rejected at checking/build boundary. |
 | O1/O4/O8 and early-release proof retest | **PASS**: independent engineering reviewer ran 13 focused exact-source gates and closed the implementation argument under accepted/fail-closed syntax and stated assumptions. Architect review remains separate. |
 | Concurrent and fault-injection suites | **PASS** in `make check`: actual concurrent Executor/Root/Branch, FileIO cleanup and failure injection, zero terminal Branch token witnesses. |
-| Float portability | **PASS**: GCC 13.3.0 and Clang 18.1.3 × Rust 1.97.0 and 1.98.1. All four pairs matched native O0/O3 and Fast Debug byte-for-byte against both pinned corpora. |
+| Float portability | **PASS** on isolated repair source: GCC 13.3.0 and Clang 18.1.3 × Rust 1.97.0 and 1.98.1. All four pairs matched native O0/O3 and Fast Debug byte-for-byte against both pinned corpora. |
 | `origin/main` reconciliation | **PASS**: refetched `d15e968778fa1cff3cd5085911c505592af54a30`; remains ancestor of integration. |
 | `git diff --check` | **PASS** for this documentation revision; integration final clean-tree check belongs to the release commit. |
 
@@ -146,11 +149,11 @@ subject to L7 acceptance before merging.
 
 | Owner | Recommendation | Basis |
 | --- | --- | --- |
-| Engineering L6 | **GO for independent Architect acceptance** | The unchanged supplied A–F pass their permanent gate and the full `make check` rerun passes on identical compiler source. O1/O4/O8 and bounded early-release implementation arguments are closed under documented assumptions. |
-| Independent Architect L6 | **Historic NO-GO at `5941d98`; no vote on `c1ef3eb`** | The attributable review predates approved ABI v9 and A–F repairs. L7 coordinates exact-source independent assessment. |
+| Engineering L6 | **GO for independent retest of `3a964dc`** | The new nested Root counterexample and source-free variant pass focused native/Fast Debug gates; isolated and integrated full suites and examples, strict C++ builds and Float matrix pass. |
+| Independent Architect L6 | **NO-GO at `96eef9e`; retest of `3a964dc` pending** | The independently reproduced nested Root false rejection is fixed in Engineering's isolated branch; no Architect verdict on the repair is claimed. |
 | L7 | **NO-GO for merging into `main` pending review and explicit approval** | Architectural acceptance and merge authorization remain with L7. |
 
-The remaining difference is temporal: engineering repaired the Architect's
-observed ABI-v8 blockers, while that independent reviewer has not assessed the
-new implementation. The exact source SHA and evidence are available for that
-review. Stop before merging into `main`.
+Engineering repaired the latest Architect's concrete nested Root finding.
+The latest independent verdict remains NO-GO for the earlier SHA until the
+Architect retests the exact repaired candidate. Stop before merging into
+`main`.

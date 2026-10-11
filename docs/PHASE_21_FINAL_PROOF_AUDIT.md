@@ -7,8 +7,8 @@ with Rust 1.98.1 and GCC 13.3. This is not the final candidate SHA.
 
 **Combined-source engineering retest:** `c1ef3eb` on
 `phase-21-integration`, independently built with strict GCC C++17 and tested
-from the proof worktree. This is the latest exact source SHA audited here;
-the final release-candidate SHA may advance for documents or validation.
+from the proof worktree. The later `3a964dc` repair changes O1's main Root
+projection; its specific transfer argument and validation are added below.
 
 **Historical audit-base status (`7775049`):** open. Counterexamples below
 were accepted by `moss check` there or revealed a false D7 rejection.
@@ -41,7 +41,7 @@ Moss diagnostic.
 
 | Area | Implementation invariant needed | Engineering audit status |
 | --- | --- | --- |
-| O1 | Every executed effect and possible typed variant is included in the concrete handler/callable summary; panic remains separate. | **FAIL at base SHA** for implicit iterator calls and later reconstructed final-expression method calls. **Engineering-closed at `c1ef3eb`** under the accepted/fail-closed surface, using the recursive transfer audit, ABI-v9 artifact gate, and exact focused retest below. Independent Architect acceptance remains pending. |
+| O1 | Every executed effect and possible typed variant is included in the concrete handler/callable summary; panic remains separate, and a checked Root trailer consumes its own outcome at every main-expression position. | **FAIL at base SHA** for implicit iterator calls and final-expression methods; Architect L6 then found a nested Root projection gap at `96eef9e`. **Engineering-closed at `3a964dc`** under the accepted/fail-closed surface with the new nested/source-free regression. Independent Architect retest remains pending. |
 | O4 | Every possible raise site has a selected-variant edge to its first matching recovery arm or the handler exit, carrying the ownership state at that site. | **FAIL at base SHA** for reinitialization and expression order. **Engineering-closed at `c1ef3eb`** under the selected-edge and lowering argument below; reconstructed reachable-arm ownership joins, native parity and focused D7 gates pass. Independent Architect acceptance remains pending. |
 | O8 | Every body-to-trailer capture is an owned, initialized value with one binding identity on every selected exceptional edge; its type contains no capability or protected view. | **Engineering-closed at `c1ef3eb`** under recursive capability exclusion, selected-edge capture checks, ABI-v9 binding and source-removed execution. Independent Architect acceptance remains pending. |
 | Early release | Every touched guard lasts until completion; only a statically untouched guard can cancel, and all later acquisitions remain ranked and precede the first externally observable action. | **Engineering-closed at `c1ef3eb`** for the implemented bounded leading-conditional split and conservative full-entry fallback, using a safe superset of state footprints. No minimal-lock claim or machine proof is made. Independent Architect acceptance remains pending. |
@@ -49,6 +49,26 @@ Moss diagnostic.
 ## O1: effect completeness
 
 ### Implementation argument
+
+The independent Architect's `96eef9e` adversarial pass exposed a missing
+**Root-ingress projection** in this argument. A `message` evaluated by `main`
+is a Root even when it is a vector element, binary operand, call argument or
+control condition. At that SHA, recursive effect analysis dropped the
+`root_ingress` context and falsely counted a handler's pre-trailer raise as
+escaping from an exhaustive `on_fail`. The `3a964dc` repair passes that
+statement context through all recursive expression transfers and through
+`phase21_raise_set_block`'s condition and explicit-raise expressions. The
+direct message case removes the handler's typed raise only when its checked
+Root trailer exists; effects of evaluating receiver and arguments remain in
+the parent expression. A handler without a trailer still fails
+`ROOT_UNHANDLED_RAISE`, including under a lexical `main` recovery arm.
+`check_phase21_root_expression_ingress.py` executes arithmetic, vector, call,
+condition and grouped forms in native O0/O3 and Fast Debug, then rebuilds a
+consumer after deleting the ABI-v9 provider's Moss source. This closes the
+identified transfer gap in Engineering's implementation argument. Isolated
+and integrated `make check` and `make examples` pass on this source, as do
+strict GCC/Clang C++17 and the four-pair Float matrix. Architect retest of the
+repaired source remains pending.
 
 `observable_expression_effects` in `src/moss.cpp` recursively visits grouped
 expressions, vector elements, unary `not`, binary operands, indexed operands,
@@ -473,12 +493,14 @@ No guarantee of minimal class/lock count is claimed here.
 | `check_phase21_standard_write_order.py` | Added after cross-crate WRITE bridge; no base-SHA result. | Same-module and cross-crate argument order must agree. At `c2793ce`, same-module O0/O3 and Fast Debug print `1`; cross-crate check accepts but native build fails rustc E0499 because the later WRITE borrow is hoisted before an earlier mutating argument. |
 | `check_phase21_addendum_a_c.py` | Reconstructed from written peer addendum because the archive was unavailable. At `7775049`, final local method effect is omitted, and grouped bare re-raise is overapproximated. | On the repair branch: unhandled ordinary/generic callers reject; handled A output, A-only/B-only/both reachable variants, unreachable explicit arm, unreachable-arm ownership positive and reachable-arm D7 negative, Root totality and separate lock plans pass check/effects, native O0/O3 and Fast Debug. Rerun on exact final SHA. |
 
-The exact implementation/source SHA is `c1ef3eb`; report-only commits do not
-change compiler, runtime or test source. ABI-v9 source-free execution and
+At that historical closeout, the exact implementation/source SHA was
+`c1ef3eb`. ABI-v9 source-free execution and
 falsification, complete `make check`, `make examples`, strict GCC/Clang C++17,
 strict Phase 20, and the four-pair Float matrix passed on that source. The
-targeted repairs support engineering closure under the accepted/fail-closed
-surface. Independent Architect acceptance remains a separate gate.
+later `3a964dc` Root-ingress repair has its own full engineering rerun and
+still requires independent Architect retest. The targeted repairs support
+engineering closure under the accepted/fail-closed surface, subject to that
+review.
 
 ### Audit-worktree validation before integration
 

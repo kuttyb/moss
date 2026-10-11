@@ -1,24 +1,20 @@
 # Phase 21 peer-review findings and disposition
 
-**Engineering validated implementation (2026-10-11):**
-`phase-21-integration` at `c1ef3ebb13d7c74c3ed86a45d45e536d527161da`
-contains the approved ABI
-v9 successor, compiler-defined standard errors, source-free warning
-provenance, cross-crate standard-error WRITE transport, and external addendum
-A–F repairs. The complete `make check` and examples gates,
-strict GCC/Clang C++17 builds, strict Phase 20 review, and four-pair Float
-portability matrix passed on this exact compiler source before the unchanged
-original A–F programs were imported. Those originals pass their permanent
-gate, and the full `make check` rerun passes with that gate included.
-Engineering recommends **GO for independent Architect acceptance**. Merging into `main`
-remains **NO-GO** until L7 approval. No independent Architect L6 vote exists
-for ABI v9.
+**Current engineering repair (2026-10-11):** `phase-21-integration` source
+`3a964dc9aa22bfc7d85cccaa57515c532ee839b2` carries the approved ABI v9,
+standard errors and original A–F repairs, plus the newly discovered nested
+Root-ingress correction. The isolated repair and integration tree pass full
+`make check` and examples; strict GCC/Clang C++17 and the four-pair Float
+matrix pass on identical repaired source. Engineering
+recommends **GO for independent retest**, while merging into `main` remains
+**NO-GO** until an Architect GO and L7 approval.
 
-The independent Architect L6's **NO-GO** in
-`PHASE_21_ARCHITECT_REVIEW.md` applies to exact implementation `5941d98`,
-before L7 authorized ABI v9 and the later repairs. Its original findings and
-attribution remain intact below. No engineering retest changes that historic
-vote or constitutes a new Architect disposition.
+The latest independent Architect L6 **NO-GO** in
+`PHASE_21_ARCHITECT_V9_REVIEW.md` applies to exact implementation `96eef9e`:
+it found a nested Root `on_fail` false rejection. The earlier **NO-GO** in
+`PHASE_21_ARCHITECT_REVIEW.md` applies to `5941d98` before ABI v9. Both reports
+retain independent attribution; neither is rewritten as acceptance of the
+new engineering repair.
 
 This register reconciles the external review of `8d8a9cc6f842e11701dbedc56e3d2d2d3da9852a`
 with the subsequent independent integration review and the remediation branch.
@@ -49,6 +45,7 @@ was `7775049`; later engineering results do not alter that observation.
 
 | Finding | Later implementation and permanent counterexample | Current engineering evidence and independent status |
 | --- | --- | --- |
+| ARCH-V9-01; absolute Root/public O1 | Architect L6 independently reproduced `echo 1 + message worker.Fetch()` with exhaustive `on_fail E.Bad: reply 7` failing Moss checking at `96eef9e`; binary/vector/call and source-removed provider forms also failed. `3a964dc` carries `root_ingress` through every recursive expression effect transfer and main control condition. `check_phase21_root_expression_ingress.py` adds positive and no-trailer negative fixtures plus a removed-source ABI-v9 consumer rebuild. | The valid forms check and print `8`/`7` as specified in native O0/O3 and Fast Debug; the imported consumer prints `8`/`7`; a no-trailer nested Root still emits `ROOT_UNHANDLED_RAISE`. Isolated and integrated `make check`/examples, strict GCC/Clang and four-pair Float matrix pass. **Engineering repair validated; independent Architect disposition pending.** |
 | EXT-01, EXT-18, INT-02 | Checked FileIO operations, cleanup, errno mapping, and fresh Root failure locks remain covered by `check_phase21_lock_fileio_adversarial.py`, `check_phase21_fileio_errors.py`, and `check_phase21_fileio_close_full.py`. `98391aa` introduced compiler `std.FileError`; `838aae6` migrated the adversarial identity fixture. | Exact-source `make check` includes the fault-injection, cleanup and concurrent Root gates; Architect retest pending. |
 | EXT-02, EXT-06 | Absolute Root typed-error boundary, including synchronous, Executor and source-free ingress, is covered by `check_phase21_root_totality.py`. | Exact-source `make check` includes Root totality and native/Fast Debug/source-free controls; Architect retest pending. |
 | EXT-03, INT-11; addendum **A** | `6aa69be` repairs implicit final-expression method raises and exact local/generic specialization effects. `check_phase21_addendum_a_c.py` includes unhandled and handled trailing methods and a generic negative; preexisting unary/projection, collection and helper gates remain. | The unchanged supplied A is rejected at `main` by check, both native generator modes and Fast Debug. Whole-program `effects` also rejects invalid A; a recovery-only scratch companion reports `via_local` exactly `enum:E:A`. The permanent gate covers check/effects/native/Debug. Engineering **FIXED** on `c1ef3eb`; Architect retest pending. |
