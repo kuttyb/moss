@@ -93,28 +93,8 @@
   // programmer misuse (closed owners, invalid bounds/modes) stays on the fatal
   // panic channel and is not represented here.
   RaiseSet fileio_operation_raise_set(const string& method) const {
-    vector<string> candidates;
-    for (const auto& entry : enums_)
-      if (entry.first == "FileError" || ends_with(entry.first, "__FileError"))
-        candidates.push_back(entry.first);
-    string error_type;
-    for (const auto& candidate : candidates)
-      if (!current_source_file_.empty() &&
-          enums_.at(candidate)->source_file == current_source_file_) {
-        if (!error_type.empty())
-          err(1, "multiple FileError declarations in the current source",
-              "FILEIO_ERROR_TYPE_AMBIGUOUS");
-        error_type = candidate;
-      }
-    if (error_type.empty() && candidates.size() == 1)
-      error_type = candidates.front();
-    if (error_type.empty() && candidates.empty())
-      error_type = "FileError";
-    if (error_type.empty())
-      err(1, "FileIO requires one unambiguous FileError declaration",
-          "FILEIO_ERROR_TYPE_AMBIGUOUS");
     auto variant = [&](const char* name) {
-      return RaisedIdentity::enum_variant(error_type, name);
+      return RaisedIdentity::enum_variant("std__FileError", name);
     };
     if (method == "open")
       return {variant("NotFound"), variant("PermissionDenied"),
