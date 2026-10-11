@@ -48,6 +48,32 @@ assert rejected.returncode != 0, (rejected.stdout, rejected.stderr)
 diagnostic = json.loads(rejected.stdout)
 assert diagnostic["error"]["code"] == "OWNERSHIP_USE_AFTER_CONSUME", diagnostic
 
+# Vector elements are evaluated in source order and a grouped binary operand
+# above must preserve the same earlier-raise edge.
+vector_positive = fixtures / "phase21_vector_raise_before_consume.moss"
+checked = run(compiler, "check", vector_positive, "--json")
+assert checked.returncode == 0, (checked.stdout, checked.stderr)
+generated = scratch / "vector-positive.rs"
+lowered = run(compiler, vector_positive, "-o", generated)
+assert lowered.returncode == 0, (lowered.stdout, lowered.stderr)
+for opt in ("0", "3"):
+    binary = scratch / f"vector-positive-o{opt}"
+    compiled = run("rustc", "--edition=2021", "-D", "warnings",
+                   f"-Copt-level={opt}", generated, "-o", binary)
+    assert compiled.returncode == 0, (opt, compiled.stdout, compiled.stderr)
+    native = run(binary)
+    assert native.returncode == 0 and native.stdout == "3\n", (
+        opt, native.returncode, native.stdout, native.stderr)
+debug = run(compiler, "run", "--interp", vector_positive)
+assert debug.returncode == 0 and debug.stdout == "3\n", (
+    debug.returncode, debug.stdout, debug.stderr)
+
+vector_negative = fixtures / "phase21_vector_consume_before_raise.moss"
+rejected = run(compiler, "check", vector_negative, "--json")
+assert rejected.returncode != 0, (rejected.stdout, rejected.stderr)
+diagnostic = json.loads(rejected.stdout)
+assert diagnostic["error"]["code"] == "OWNERSHIP_USE_AFTER_CONSUME", diagnostic
+
 # The argument and callee may raise the same variant. Both ownership states
 # reach the same arm; preserving only the early argument edge would be unsound.
 shared = fixtures / "phase21_expression_shared_variant_edges.moss"
