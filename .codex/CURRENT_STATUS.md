@@ -1,5 +1,20 @@
 # Moss current status
 
+## Independent Phase 21 Reviewer 3 O9 audit — 2026-10-11
+
+On isolated `phase-21-review-o9`, commit `7dd5bc0` repairs the Range.slice
+READ-effect synchronization lookup and adds adversarial native Branch tests.
+The generated bounded-K path has a structural join-before-slot-read and
+ordered-commit-before-next-window argument; O9 is PASS subject to finite Branch
+work, non-panicking speculative mappers, and the executor progress contract.
+This is not a machine-checked proof. Four distinct native Roots were forced to
+overlap at Branch publication and completed 64 runs with ordered results and
+zero live Branch scopes/read borrows after join. The focused Phase 21.C,
+Phase 20 FileIO semantics, Phase 20 executor/FileIO, and strict C++17 gates
+passed on rustc 1.98.1 and GCC 13.3.0. An initial fifth missing-file Root
+exposed aborting FileIO.open lowering inside try; Reviewer 2 owns that fix.
+This isolated review branch is not the release candidate or a main merge.
+
 ## Phase 21 A–D integration review — 2026-10-10
 
 Agents A, B, C, and D have completed their assigned work. Their reviewed
