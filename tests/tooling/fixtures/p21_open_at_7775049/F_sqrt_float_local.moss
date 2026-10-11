@@ -1,0 +1,9 @@
+fn root(x: Float) -> Float:
+  return sqrt(x)
+
+fn main():
+  a = 2.0
+  v = a * 8.0
+  echo sqrt(v)
+  echo root(v)
+  echo sqrt(a)

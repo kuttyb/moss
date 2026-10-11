@@ -1,0 +1,34 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+enum FormatError:
+  Bad
+
+fn checked(chunk: Range) -> Int:
+  if chunk.length() < 2:
+    raise FormatError.Bad
+  return chunk.length()
+
+fn add(acc: Int, value: Int) -> Int:
+  return acc + value
+
+domain Worker:
+  fn A(path: String) -> Int:
+    file = FileIO.open(path, ro)
+    total = file.chunks(2) |> map(checked(_)) |> reduce(0, add)
+    file.close()
+    reply total
+
+  on_fail FormatError.Bad:
+    reply -1
+  on_fail:
+    reply -2
+
+fn main():
+  worker = Worker()
+  echo message worker.A("p4.bin")

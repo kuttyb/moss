@@ -1,0 +1,45 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+enum SetupError:
+  Bad
+
+fn seed(flag: Int) -> Int:
+  if flag == 0:
+    raise SetupError.Bad
+  return 7
+
+fn size_of(flag: Int) -> Int:
+  if flag == 0:
+    raise SetupError.Bad
+  return 2
+
+fn length(chunk: Range) -> Int:
+  return chunk.length()
+
+fn add(acc: Int, value: Int) -> Int:
+  return acc + value
+
+domain Worker:
+  fn Init(flag: Int) -> Int:
+    file = FileIO.open("p6.bin", ro)
+    total = file.chunks(2) |> map(length) |> reduce(seed(flag), add)
+    file.close()
+    reply total
+
+  on_fail SetupError.Bad:
+    reply -1
+  on_fail:
+    reply -2
+
+
+fn main():
+  worker = Worker()
+  executor = Executor().threads(2).start()
+  echo message worker.Init(0)
+  executor.join()

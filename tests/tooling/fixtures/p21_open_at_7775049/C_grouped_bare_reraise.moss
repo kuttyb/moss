@@ -1,0 +1,18 @@
+enum E:
+  A
+  B
+
+fn only_a():
+  raise E.A
+
+fn grouped_reraise():
+  try:
+    only_a()
+  recover E.A, E.B:
+    raise
+
+fn main():
+  try:
+    grouped_reraise()
+  recover E.A:
+    echo "outer A"

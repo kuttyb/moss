@@ -1,0 +1,13 @@
+fn main():
+  a = 2.0
+  b = 0.5
+  echo -a
+  echo a * -b
+  echo 0.0 - a
+  c = -a
+  echo c
+  echo -1.0
+  z = 0.0
+  echo -z
+  big = 10000000000000000.0
+  echo -big
