@@ -25,6 +25,9 @@ domain Worker:
     file.close()
     reply result
 
+  on_fail:
+    reply -1
+
   fn Risky() -> Int:
     file = FileIO.open("tmp/phase21c-range-slice-effects.data", ro)
     result = file.chunks(1) |> map(risky) |> reduce(0, add)
@@ -33,7 +36,4 @@ domain Worker:
 
 fn main():
   worker = Worker()
-  try:
-    echo message worker.Run()
-  recover:
-    echo -1
+  echo message worker.Run()

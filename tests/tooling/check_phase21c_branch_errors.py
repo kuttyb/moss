@@ -98,13 +98,13 @@ domain Worker:
     file.close()
     reply a + b
 
+  on_fail:
+    reply -1
+
 fn main():
   worker = Worker()
   executor = Executor().threads(2).start()
-  try:
-    message worker.Check("tmp/phase21c-branch-errors.data")
-  recover:
-    pass
+  message worker.Check("tmp/phase21c-branch-errors.data")
   executor.join()
 '''
 
@@ -379,9 +379,17 @@ for _ in range(32):
 # one-shot fault, the first Root must recover FileError.IO. The second Root
 # proves that the executor and FileIO owner remain usable after quiescence.
 native_data.write_bytes(b"AAAA")
-fault_marker = "    // Moss line 48: try:"
-between_roots = "    // Moss line 56: try:"
-before_join = "    // Moss line 64: executor.join()"
+def moss_marker(fragment):
+    matches = [f"    // Moss line {line}: {content.strip()}"
+               for line, content in enumerate(native_source.read_text().splitlines(), 1)
+               if content.strip() == fragment]
+    assert len(matches) == 1, (fragment, matches)
+    return matches[0]
+
+
+fault_marker = moss_marker("message worker.MapOrder()")
+between_roots = moss_marker("message worker.FoldOrder()")
+before_join = moss_marker("executor.join()")
 for marker in (fault_marker, between_roots, before_join):
     assert native_text.count(marker) == 1, marker
 fault_text = native_text.replace(
@@ -476,13 +484,13 @@ domain Worker:
     file.close()
     reply total
 
+  on_fail:
+    reply -1
+
 fn main():
   worker = Worker()
   executor = Executor().threads(2).start()
-  try:
-    echo message worker.Run()
-  recover:
-    echo -1
+  echo message worker.Run()
   executor.join()
 ''')
 provider_env = dict(os.environ, MOSS_MODULE_PATH=str(provider / "build/debug"))
@@ -507,7 +515,7 @@ assert "module interface hash mismatch" in json.loads(bad.stdout)["error"]["mess
 large_source = OUT / "phase21c_large_read.moss"
 large_source.write_text(
     SOURCE.replace("file.chunks(2)", "file.chunks(9223372036854775807)")
-          .replace("    message worker.Check(", "    echo message worker.Check(")
+          .replace("  message worker.Check(", "  echo message worker.Check(")
 )
 (REPO / "tmp/phase21c-branch-errors.data").write_bytes(b"ABCD")
 large_rust = OUT / "phase21c_large_read.rs"

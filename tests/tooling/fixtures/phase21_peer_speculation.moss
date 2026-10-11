@@ -41,43 +41,46 @@ fn add(total: Int, value: Int) -> Int:
   return total + value
 
 domain Worker:
-  fn Paren(path: String) -> Int:
+  fn Paren(path: String):
     file = FileIO.open(path, ro)
     total = file.chunks(4096) |> map(paren_panic) |> reduce(0, add)
     file.close()
-    reply total
+    echo total
 
-  fn Case(path: String) -> Int:
+  on_fail MapFault.Early:
+    echo "paren early"
+
+  on_fail:
+    echo "other"
+
+  fn Case(path: String):
     file = FileIO.open(path, ro)
     total = file.chunks(4096) |> map(case_shadow) |> reduce(0, add)
     file.close()
-    reply total
+    echo total
 
-  fn For(path: String) -> Int:
+  on_fail MapFault.Early:
+    echo "case early"
+
+  on_fail:
+    echo "other"
+
+  fn For(path: String):
     file = FileIO.open(path, ro)
     total = file.chunks(4096) |> map(for_shadow) |> reduce(0, add)
     file.close()
-    reply total
+    echo total
+
+  on_fail MapFault.Early:
+    echo "for early"
+
+  on_fail:
+    echo "other"
 
 fn main():
   worker = Worker()
   executor = Executor().threads(4).start()
-  try:
-    echo message worker.Paren("tmp/phase21-peer-speculation.data")
-  recover MapFault.Early:
-    echo "paren early"
-  recover:
-    echo "other"
-  try:
-    echo message worker.Case("tmp/phase21-peer-speculation.data")
-  recover MapFault.Early:
-    echo "case early"
-  recover:
-    echo "other"
-  try:
-    echo message worker.For("tmp/phase21-peer-speculation.data")
-  recover MapFault.Early:
-    echo "for early"
-  recover:
-    echo "other"
+  message worker.Paren("tmp/phase21-peer-speculation.data")
+  message worker.Case("tmp/phase21-peer-speculation.data")
+  message worker.For("tmp/phase21-peer-speculation.data")
   executor.join()

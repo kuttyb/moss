@@ -30,35 +30,35 @@ fn first_fold(total: Int, value: Int) -> Int:
   return total + value
 
 domain Worker:
-  fn MapOrder() -> Int:
+  fn MapOrder():
     file = FileIO.open("tmp/phase21c-native-ordered-raise.data", ro)
     total = file.chunks(1) |> map(mark) |> reduce(0, add)
     file.close()
-    reply total
+    echo total
 
-  fn FoldOrder() -> Int:
+  on_fail MapError.Early:
+    echo 11
+  on_fail MapError.Late:
+    echo 12
+  on_fail:
+    echo 13
+
+  fn FoldOrder():
     file = FileIO.open("tmp/phase21c-native-ordered-raise.data", ro)
     total = file.chunks(1) |> map(mark) |> reduce(0, first_fold)
     file.close()
-    reply total
+    echo total
+
+  on_fail FoldError.First:
+    echo 21
+  on_fail MapError.Early:
+    echo 22
+  on_fail:
+    echo 23
 
 fn main():
   worker = Worker()
   executor = Executor().threads(4).start()
-  try:
-    echo message worker.MapOrder()
-  recover MapError.Early:
-    echo 11
-  recover MapError.Late:
-    echo 12
-  recover:
-    echo 13
-  try:
-    echo message worker.FoldOrder()
-  recover FoldError.First:
-    echo 21
-  recover MapError.Early:
-    echo 22
-  recover:
-    echo 23
+  message worker.MapOrder()
+  message worker.FoldOrder()
   executor.join()

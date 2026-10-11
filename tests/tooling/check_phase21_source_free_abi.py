@@ -104,12 +104,19 @@ export domain Worker:
     main = raised_out / "src/main.moss"
     main.write_text('''module app
 import service
+domain Caller:
+  domainroutes(worker: service.Worker)
+  fn Run() -> Int:
+    result = 0
+    try:
+      result = message worker.Run()
+    recover service.ServiceError.Bad(code):
+      result = code
+    reply result
 fn main():
   worker = service.Worker()
-  try:
-    echo message worker.Run()
-  recover service.ServiceError.Bad(code):
-    echo code
+  caller = Caller(worker: worker)
+  echo message caller.Run()
 ''')
     first = json.loads(run([compiler, "build", "--json"], cwd=raised_out).stdout)
     assert run([first["result"]["artifacts"]["executable"]]).stdout.strip() == "4"
