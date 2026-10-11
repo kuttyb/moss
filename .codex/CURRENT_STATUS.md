@@ -12,6 +12,20 @@ Moss checking. The new contract gate passes valid native typed recovery,
 numeric Fast Debug recovery, missing and malformed negative diagnostics, and
 an unrelated user `FileError` enum. Fast Debug FileIO execution remains
 unsupported by the existing interpreter.
+An additional cross-module gate preserves an unrelated provider-owned
+`FileError.Full(code: Int)` while a consumer uses its own six-variant FileIO
+contract. This guards against accidentally treating every imported enum with
+the same short name as the consumer's built-in error type.
+The package reproducer also exposed two pre-existing native identity defects:
+multiple qualified FileError names can leave generated Rust without a
+FileError alias (E0425), and a module-qualified specific recovery selector
+does not match the plain FileError identity raised by FileIO. The isolated
+follow-up fails both cases at Moss checking with
+`FILEIO_ERROR_IDENTITY_UNSUPPORTED`; it does not conflate nominal identities
+or change ABI v8. When the consumer has no local FileError, a unique imported
+declaration must still have the six approved tag-only variants. Full
+cross-module FileIO recovery and implicit built-in enum availability remain
+design decisions, not accepted fixes.
 
 At the `8d8a9cc` checkpoint, `moss check` accepted `FileError.IO(code: Int)`
 with FileIO use, then rustc failed E0533. The isolated branch rejects it with

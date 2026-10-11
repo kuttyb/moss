@@ -78,6 +78,26 @@ static string rtrim(string s) {
 }
 static string trim(string s) { return rtrim(ltrim(std::move(s))); }
 static bool starts_with(const string& s, const string& p) { return s.rfind(p, 0) == 0; }
+
+static string source_code_only(string line) {
+  bool in_string = false, escaped = false;
+  for (size_t index = 0; index < line.size(); ++index) {
+    char ch = line[index];
+    if (in_string) {
+      line[index] = ' ';
+      if (escaped) escaped = false;
+      else if (ch == '\\') escaped = true;
+      else if (ch == '"') in_string = false;
+    } else if (ch == '"') {
+      line[index] = ' ';
+      in_string = true;
+    } else if (ch == '#') {
+      line.resize(index);
+      break;
+    }
+  }
+  return line;
+}
 static bool ends_with(const string& s, const string& p) {
   return s.size() >= p.size() && s.compare(s.size() - p.size(), p.size(), p) == 0;
 }
@@ -2694,32 +2714,43 @@ class Checker {
             err(field.source_file, field.line,
                 "trait types are static structural constraints and cannot be stored in enum payloads");
         }
-    const bool uses_fileio = program_uses_fileio(p_);
-    auto calls_builtin = [&](const string& name) {
+    auto calls_builtin = [&](const string& name, const string& source_file) {
       for (const auto& line : p_.source_lines) {
+        if (line.source_file != source_file) continue;
+        const string code = source_code_only(line.text);
         size_t position = 0;
-        while ((position = line.text.find(name, position)) != string::npos) {
+        while ((position = code.find(name, position)) != string::npos) {
           bool boundary = position == 0 ||
-              (!std::isalnum(static_cast<unsigned char>(line.text[position - 1])) &&
-               line.text[position - 1] != '_');
+              (!std::isalnum(static_cast<unsigned char>(code[position - 1])) &&
+               code[position - 1] != '_');
           size_t after = position + name.size();
-          while (after < line.text.size() &&
-                 std::isspace(static_cast<unsigned char>(line.text[after])))
+          while (after < code.size() &&
+                 std::isspace(static_cast<unsigned char>(code[after])))
             ++after;
-          if (boundary && after < line.text.size() && line.text[after] == '(')
+          if (boundary && after < code.size() && code[after] == '(')
             return true;
           position += name.size();
         }
       }
       return false;
     };
-    const bool uses_parse = calls_builtin("parse_int") ||
-                            calls_builtin("parse_float");
-    const bool uses_conversion = calls_builtin("to_int");
     for (const auto& declaration : p_.enums) {
       string short_name = declaration.name;
       if (auto separator = short_name.rfind("__"); separator != string::npos)
         short_name = short_name.substr(separator + 2);
+      // Qualified imported enums can share a short name with the local error
+      // contract. Only the module using the built-in operation owns its shape.
+      const bool uses_fileio = std::any_of(
+          p_.source_lines.begin(), p_.source_lines.end(),
+          [&](const Line& line) {
+            const string code = source_code_only(line.text);
+            return line.source_file == declaration.source_file &&
+                (code.find("FileIO.") != string::npos ||
+                 code.find("FileIO(") != string::npos);
+          });
+      const bool uses_parse = calls_builtin("parse_int", declaration.source_file) ||
+                              calls_builtin("parse_float", declaration.source_file);
+      const bool uses_conversion = calls_builtin("to_int", declaration.source_file);
       vector<string> expected;
       if (short_name == "FileError" && uses_fileio)
         expected = {"NotFound", "PermissionDenied", "NotRegularFile",
@@ -2750,23 +2781,54 @@ class Checker {
   }
 
   void validate_fileio_error_contract_presence() const {
-    if (!program_uses_fileio(p_) ||
-        std::any_of(p_.enums.begin(), p_.enums.end(),
-                    [](const EnumType& declaration) {
-                      return declaration.name == "FileError" ||
-                          ends_with(declaration.name, "__FileError");
-                    }))
-      return;
-    const Line* source = nullptr;
-    for (const auto& line : p_.source_lines)
-      if (expr_uses_fileio(line.text)) {
-        source = &line;
-        break;
+    std::set<string> checked_sources;
+    for (const auto& source : p_.source_lines) {
+      const string code = source_code_only(source.text);
+      if (code.find("FileIO.") == string::npos &&
+          code.find("FileIO(") == string::npos)
+        continue;
+      if (!checked_sources.insert(source.source_file).second) continue;
+      auto is_file_error = [](const EnumType& declaration) {
+        return declaration.name == "FileError" ||
+            ends_with(declaration.name, "__FileError");
+      };
+      bool local = std::any_of(p_.enums.begin(), p_.enums.end(),
+          [&](const EnumType& declaration) {
+            return is_file_error(declaration) &&
+                declaration.source_file == source.source_file;
+          });
+      if (local) {
+        size_t candidates = static_cast<size_t>(std::count_if(
+            p_.enums.begin(), p_.enums.end(), is_file_error));
+        if (candidates > 1)
+          err(source.source_file, source.no,
+              "FileIO has multiple module-qualified FileError declarations; native error identity is ambiguous",
+              "FILEIO_ERROR_IDENTITY_UNSUPPORTED");
+        continue;  // check_enums already validated its shape.
       }
-    err(source ? source->source_file : string(),
-        source ? source->no : 1,
-        "FileIO requires enum FileError with the six approved tag-only variants",
-        "UNKNOWN_ERROR_TYPE");
+      vector<const EnumType*> imported;
+      for (const auto& declaration : p_.enums)
+        if (is_file_error(declaration)) imported.push_back(&declaration);
+      if (imported.size() != 1)
+        err(source.source_file, source.no,
+            "FileIO requires one unambiguous six-variant FileError enum",
+            "UNKNOWN_ERROR_TYPE");
+      const auto& declaration = *imported.front();
+      const std::set<string> expected = {
+          "NotFound", "PermissionDenied", "NotRegularFile",
+          "InUse", "Full", "IO"};
+      std::set<string> actual;
+      bool tag_only = true;
+      for (const auto& item : declaration.cases) {
+        actual.insert(item.name);
+        tag_only &= item.fields.empty();
+      }
+      if (!tag_only || declaration.cases.size() != expected.size() ||
+          actual != expected)
+        err(declaration.source_file, declaration.line,
+            "imported FileError used by FileIO must declare exactly six approved tag-only variants",
+            "BUILTIN_ERROR_TYPE_SHAPE");
+    }
   }
 
   void check_domain_handle_declarations() {
@@ -8568,7 +8630,8 @@ class Checker {
     return {{RaisedIdentityKind::ScalarType, concrete, {}}};
   }
 
-  RaiseSet phase21_recovery_pattern(int line, const string& selector,
+  RaiseSet phase21_recovery_pattern(int line, const string& source_file,
+                                    const string& selector,
                                     const RaiseSet& remaining,
                                     string* binding_type = nullptr) const {
     const string value = trim(selector);
@@ -8587,6 +8650,18 @@ class Checker {
           err(line,
               "grouped recovery alternatives must be tag-only variants",
               "GROUPED_RECOVERY_PAYLOAD_BINDING");
+        if (identity.kind == RaisedIdentityKind::EnumVariant &&
+            ends_with(identity.type, "__FileError")) {
+          auto declaration = enums_.find(identity.type);
+          const RaisedIdentity built_in =
+              RaisedIdentity::enum_variant("FileError", identity.variant);
+          if (declaration != enums_.end() &&
+              declaration->second->source_file == source_file &&
+              remaining.count(built_in))
+            err(line,
+                "module-qualified FileError recovery cannot select the built-in FileIO error identity",
+                "FILEIO_ERROR_IDENTITY_UNSUPPORTED");
+        }
         if (!result.insert(identity).second)
           err(line, "duplicate error variant in recovery arm",
               "DUPLICATE_RECOVERY_VARIANT");
@@ -8636,7 +8711,7 @@ class Checker {
                 "RECOVER_AFTER_CATCH_ALL");
           string binding_type;
           RaiseSet matched = phase21_recovery_pattern(
-              arm.line, arm.a, remaining, &binding_type);
+              arm.line, arm.source_file, arm.a, remaining, &binding_type);
           RaiseSet reachable_matched;
           for (const auto& identity : matched)
             if (remaining.count(identity)) reachable_matched.insert(identity);
@@ -9011,7 +9086,7 @@ class Checker {
       }
       string binding_type;
       RaiseSet matched = phase21_recovery_pattern(
-          arm.line, selector, remaining, &binding_type);
+          arm.line, arm.source_file, selector, remaining, &binding_type);
       RaiseSet reachable;
       for (const auto& identity : matched)
         if (remaining.count(identity)) reachable.insert(identity);

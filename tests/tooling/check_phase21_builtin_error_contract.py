@@ -110,5 +110,56 @@ check_error(valid.replace(conversion_error + "\n", ""), "UNKNOWN_ERROR_TYPE")
 SOURCE.write_text("enum FileError:\n  Full(code: Int)\nfn main():\n  pass\n")
 subprocess.run([str(COMPILER), "check", str(SOURCE), "--json"],
                check=True, capture_output=True, text=True)
+SOURCE.write_text('fn main():\n  echo "FileIO.open( parse_int( to_int("\n')
+subprocess.run([str(COMPILER), "check", str(SOURCE), "--json"],
+               check=True, capture_output=True, text=True)
+
+# A provider may export a distinct user-defined FileError. Until FileIO error
+# identity is resolved across qualified modules, this ambiguity fails closed.
+package = SCRATCH / "unrelated_import"
+(package / "src").mkdir(parents=True, exist_ok=True)
+(package / "Moss.toml").write_text(
+    '[project]\nname="phase21_error_contract_modules"\nversion="0.1.0"\n')
+(package / "src/provider.moss").write_text(
+    'module provider\nexport enum FileError:\n  Full(code: Int)\n')
+(package / "src/main.moss").write_text(
+    'module app\nimport provider\n' + file_error + '\n' +
+    'fn main():\n  try:\n'
+    '    file = FileIO.open("phase21-error-contract-absent.txt", ro)\n'
+    '    file.close()\n'
+    '  recover FileError.NotFound:\n    echo 1\n'
+    '  recover:\n    echo 99\n')
+checked = subprocess.run([str(COMPILER), "build", "--json"], cwd=package,
+                         capture_output=True, text=True)
+diagnostic = json.loads(checked.stdout)
+if checked.returncode == 0 or diagnostic.get("error", {}).get("code") != "FILEIO_ERROR_IDENTITY_UNSUPPORTED":
+    raise SystemExit(f"ambiguous module FileError identity accepted: {diagnostic}")
+
+(package / "src/main.moss").write_text(
+    'module app\nimport provider\nfn main():\n'
+    '  try:\n    file = FileIO.open("phase21-error-contract-absent.txt", ro)\n'
+    '    file.close()\n  recover:\n    echo 1\n')
+checked = subprocess.run([str(COMPILER), "build", "--json"], cwd=package,
+                         capture_output=True, text=True)
+diagnostic = json.loads(checked.stdout)
+if checked.returncode == 0 or diagnostic.get("error", {}).get("code") != "BUILTIN_ERROR_TYPE_SHAPE":
+    raise SystemExit(f"imported payload FileError accepted for FileIO: {diagnostic}")
+
+qualified = SCRATCH / "qualified_recovery"
+(qualified / "src").mkdir(parents=True, exist_ok=True)
+(qualified / "Moss.toml").write_text(
+    '[project]\nname="phase21_qualified_error_recovery"\nversion="0.1.0"\n')
+(qualified / "src/main.moss").write_text(
+    'module app\n' + file_error + '\n' +
+    'fn main():\n  try:\n'
+    '    file = FileIO.open("phase21-error-contract-absent.txt", ro)\n'
+    '    file.close()\n'
+    '  recover FileError.NotFound:\n    echo 1\n'
+    '  recover:\n    echo 99\n')
+checked = subprocess.run([str(COMPILER), "build", "--json"], cwd=qualified,
+                         capture_output=True, text=True)
+diagnostic = json.loads(checked.stdout)
+if checked.returncode == 0 or diagnostic.get("error", {}).get("code") != "FILEIO_ERROR_IDENTITY_UNSUPPORTED":
+    raise SystemExit(f"module-qualified FileIO recovery accepted: {diagnostic}")
 
 print("Phase 21 declared built-in error contracts passed")
