@@ -112,7 +112,7 @@ Independent architectural acceptance remains pending L7 coordination.
 
 ### Major external findings at the ABI-v8 review
 
-| ID | Severity and original guarantee | Reproducer and checkpoint state | Current engineering disposition | Independent Architect L6 |
+| ID | Severity and original guarantee | Reproducer and checkpoint state | Engineering disposition at `5941d98` | Independent Architect L6 |
 | --- | --- | --- | --- | --- |
 | P21-EXT-06 | Major: synchronous Root raises must not escape into `main`'s `try` (§4). | Reconstructed `phase21_sync_root_lexical_recover.moss` and grouped-expression variant; `8d8a9cc` and `1ae239b` accepted. | `f70196c` rejects both with `ROOT_UNHANDLED_RAISE`; positive `phase21_sync_root_total.moss` returns through exhaustive `on_fail`. Native O0/O3 and Fast Debug pass. Provisional pending independent review. | Pending exact-final-SHA verification. |
 | P21-EXT-07 | Major: lock-inflation and state-writing empty catch-all warnings. | Reconstructed direct, loop-condition, WRITE-helper, transitive-helper, nested-call, and method-receiver cases. `8d8a9cc` emitted none of the required provenance warnings. | `b149a88`, `40d6704`, `a3ee83c`, `5b8aca6`, and `11d62d2` add `RECOVER_LOCK_INFLATION`, `RECOVER_EMPTY_AFTER_STATE_WRITE`, and `ON_FAIL_EMPTY_AFTER_STATE_WRITE`, with helper and method provenance. Focused checker/native/Fast Debug gates pass; `5d1c194` also preserves handler locals in warning analysis. Source-removed imported helper warning parity **fails** the permanent known-issue gate (INT-10) and needs a provider-contract decision. Overall status **DESIGN-DECISION-REQUIRED** despite local fixes. | Architect confirms source-free metadata lacks required catch-all provenance; exact-final-SHA retest pending. |
@@ -127,7 +127,7 @@ Independent architectural acceptance remains pending L7 coordination.
 
 ### Minor external findings at the ABI-v8 review
 
-| ID | Severity and original issue | Reproducer / checkpoint status | Current engineering disposition | Independent Architect L6 |
+| ID | Severity and original issue | Reproducer / checkpoint status | Engineering disposition at `5941d98` | Independent Architect L6 |
 | --- | --- | --- | --- | --- |
 | P21-EXT-16 | Minor: `recover`/`on_fail` prefix parsing rejects identifiers such as `recovered`. | `phase21_peer_keyword_prefix.moss`; engineering reproduced rejection at `8d8a9cc` and `f6f11c4`. | `eda7533` requires a keyword boundary. Engineering checker/native/Fast Debug gate passes; Architect retest pending. | Pending final-SHA verification. |
 | P21-EXT-17 | Minor: grouped `recover A, B: raise` may re-raise the wrong alternative. | `phase21_peer_grouped_reraise.moss` exercises both A and B with outer-arm dispatch. | Engineering ran old `8d8a9cc` and current checker/native/Fast Debug; reconstructed case passes both. Provisional **NOT-REPRODUCIBLE** pending original archive or Architect challenge. | Pending independent confirmation. |
@@ -137,7 +137,7 @@ Independent architectural acceptance remains pending L7 coordination.
 
 ### Later independent integration-review findings at `5941d98`
 
-| ID | Severity and guarantee | Reproducer / checkpoint status | Current engineering disposition | Independent Architect L6 |
+| ID | Severity and guarantee | Reproducer / checkpoint status | Engineering disposition at `5941d98` | Independent Architect L6 |
 | --- | --- | --- | --- | --- |
 | P21-INT-01 | Major: D7 joined captures and nested bare re-raise must lower to owned native values. | Internal reviewer fixtures added after `8d8a9cc`; original branch-join and E0382 cases failed. | Repaired by `95a3ae8` and `e200d69`; native/Fast Debug/source-free behavior to be retested at final SHA. | Pending. |
 | P21-INT-02 | Major: checked FileIO propagation and Root lock/cleanup order. | Injected FileIO and concurrent Root gate added after checkpoint. | `2384900` plus P21-EXT-01 peer follow-up; general proof remains conditional. | Pending. |

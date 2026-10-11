@@ -563,5 +563,5 @@ provider artifact contract. They are not a machine-checked proof and do not
 cover a future syntax form unless its transfer rule and lowering are audited.
 The O1/O4/O8 and bounded early-release obligations are **engineering-closed
 at this source SHA** under those assumptions. The full combined release suite
-and independent Architect L6 acceptance must be recorded separately before
-release approval; the lock plan does not promise a minimal footprint.
+passed on the same source; independent Architect L6 acceptance remains pending
+before release approval. The lock plan does not promise a minimal footprint.
