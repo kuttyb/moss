@@ -149,10 +149,6 @@ domain Store:
 
 fn main():
   store = Store()
-  try:
-    echo message store.Read()
-  recover:
-    pass
 '''
 domain_path, diagnostics = check('domain_effects', domain)
 assert any('FILEIO_BLOCKING_WITH_SHARED_WRITE' in str(d) and 'table' in str(d)
