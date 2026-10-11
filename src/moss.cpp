@@ -7006,8 +7006,23 @@ class Checker {
       const size_t end = statement_subtree_end(source.body, index);
       auto body = normalized_statement_slice(
           source.body, index + 1, end, arm.indent + 1);
+      TypeEnv local_types = phase21_local_types_before(
+          domain, source, specialization, index);
+      if (!arm.a.empty() && plain_identifier(trim(arm.a))) {
+        std::set<string> selected_types;
+        for (const auto& identity : arm.exceptional_alternatives)
+          selected_types.insert(identity.type);
+        if (selected_types.size() == 1)
+          local_types[trim(arm.a)] = *selected_types.begin();
+      } else if (!arm.a.empty() && arm.a.find('.') != string::npos) {
+        auto alternatives = split_top_level(arm.a, ',');
+        if (alternatives.size() == 1)
+          for (const auto& binding :
+               phase21_pattern_bindings(arm.line, alternatives.front()))
+            local_types[binding.first] = binding.second;
+      }
       const auto effects = specialized_handler_body_effects(
-          domain, source, body, &specialization);
+          domain, source, body, &specialization, false, &local_types);
       for (const auto* leaves : {&effects.reads, &effects.writes,
                                  &effects.consumes})
         for (const auto& leaf : *leaves)
