@@ -9404,8 +9404,9 @@ class Checker {
           RaiseSet arm_raises = phase21_raise_set_block(
               body, index, level + 1, std::move(arm_env), reachable_matched,
               plain_identifier(trim(arm.a)) ? trim(arm.a) : string(), true);
-          recovered_raises = raise_set_union(
-              std::move(recovered_raises), arm_raises);
+          if (!reachable_matched.empty())
+            recovered_raises = raise_set_union(
+                std::move(recovered_raises), arm_raises);
         }
         if (!saw_recover)
           err(statement.line, "try must be followed by at least one recover arm",
