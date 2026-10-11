@@ -5626,3 +5626,22 @@ Fast Debug frames now carry the checker-compatible functional context separately
 their human-readable trace name. Pipeline metadata lookup matches canonical context,
 line, and checked stage source, including static function specializations and multiple
 pipeline expressions on one line.
+
+## Phase 21 peer warning remediation (isolated branch)
+
+The isolated `phase-21-peer-warnings` branch contains EXT-07 diagnostic repairs in
+`51d1851`, `759a927`, `b9cce65`, and `07419d3`. The checker now reports
+`RECOVER_LOCK_INFLATION`, `RECOVER_EMPTY_AFTER_STATE_WRITE`, and
+`ON_FAIL_EMPTY_AFTER_STATE_WRITE` for tested recovery lock inflation and no-op
+catch-alls after protected state writes, including direct and transitive ordinary
+helpers, nested call expressions, and writes across loop iterations. At the original
+`8d8a9cc` checkpoint, independently reconstructed base fixtures passed without
+either warning. The focused EXT-07 regression script, recovery semantics/native,
+nested/Root native, strict C++17 `-O2 -Wall -Wextra -Werror -pedantic` build, and
+`git diff --check` pass on `07419d3`. Native and Fast Debug agree on the helper
+chain and nested expression fixtures. These results precede integration and are
+invalidated by any subsequent relevant compiler edits until rerun.
+
+The independent Architect review, source-free imported helper warning behavior,
+method helper chains, and the full integration test suite remain open. No language
+semantics or ABI v8 change was made on this branch.
