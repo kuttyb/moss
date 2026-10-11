@@ -104,6 +104,11 @@ void emit_root_submit(std::ostringstream& o, const Stmt& s, int spaces,
     throw std::runtime_error(
         "internal error: Executor Root target lost its checked handler");
   const bool root_handles_failure = !target_handler->failure_arms.empty();
+  if (!root_handles_failure &&
+      !target_handler->observable_effects.raise_set.empty())
+    throw std::runtime_error(
+        "internal error: raising Executor Root reached codegen without "
+        "on_fail totality");
   o << pad << "        let _ = " << domain_temp << "." << plan.handler_name
     << (root_handles_failure ? "_root(" : "_shared(");
   for (size_t index = 0; index < argument_locals.size(); ++index) {

@@ -1,0 +1,13 @@
+enum WorkError:
+  Failed
+
+domain Worker:
+  fn Fetch() -> Int:
+    raise WorkError.Failed
+
+  on_fail WorkError.Failed:
+    reply 7
+
+fn main():
+  worker = Worker()
+  echo message worker.Fetch()

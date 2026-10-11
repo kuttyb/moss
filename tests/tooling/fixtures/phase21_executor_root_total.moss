@@ -1,0 +1,32 @@
+enum WorkError:
+  Failed
+
+domain Reporter:
+  count = 0
+
+  fn Record():
+    count = count + 1
+
+  fn Count() -> Int:
+    reply count
+
+domain Worker:
+  domainroutes(reporter: Reporter)
+
+  fn Fail():
+    raise WorkError.Failed
+
+  on_fail WorkError.Failed:
+    message reporter.Record()
+
+  fn Succeed():
+    message reporter.Record()
+
+fn main():
+  reporter = Reporter()
+  worker = Worker(reporter: reporter)
+  executor = Executor().threads(2).start()
+  executor.invoke(worker.Fail())
+  executor.invoke(worker.Succeed())
+  executor.join()
+  echo message reporter.Count()

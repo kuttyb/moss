@@ -16,6 +16,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_cross_crate_range_
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_on_fail_capture.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_recovery_semantics.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_recovery_native.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_root_totality.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_handler_failure_native.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_fileio_errors.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_fileio_root_cleanup.py "$compiler"
