@@ -181,6 +181,12 @@ void annotate_fileio_chunk_pipeline(FunctionalPipeline& pipeline,
       used_nonempty_proof);
   pipeline.chunk_plan.map_invocation_effects = map_effects;
   pipeline.chunk_plan.used_nonempty_chunk_index_proof = used_nonempty_proof;
+  string combine_identity;
+  vector<string> combine_captures;
+  pipeline.chunk_plan.combine_invocation_effects = functional_stage_effects(
+      pipeline.chunk_plan.combine_callable,
+      {pipeline.chunk_plan.accumulator_type, pipeline.chunk_plan.mapped_type},
+      env, combine_identity, combine_captures, domain_fields, implicit_object);
   const ObservableEffects& combine_effects = pipeline.nodes[2].effects;
   // Eligibility is purely static, never a function of whether an Executor
   // happens to be active in `main` (corrective-pass item 23):

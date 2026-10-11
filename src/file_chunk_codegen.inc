@@ -153,7 +153,7 @@ string gen_chunk_pipeline_sequential(
   out << "            if __moss_chunk_len_" << id << " == 0 { break; }\n";
   string mapped_call = render_functional_callable(
       plan.map_callable, {FunctionalValue{bytes, "Range", false}}, domain,
-      locals, types, false);
+      locals, types, false, !plan.map_invocation_effects.raise_set.empty());
   if (!plan.map_invocation_effects.raise_set.empty())
     mapped_call = phase21_propagate(mapped_call);
   out << "            let " << mapped << " = " << mapped_call;
@@ -254,7 +254,7 @@ string gen_chunk_pipeline_bounded_k(
       << "::Eof { index: " << index << " } } else { ";
   const string mapped = render_functional_callable(
       plan.map_callable, {FunctionalValue{bytes, "Range", false}}, domain,
-      locals, types, false);
+      locals, types, false, map_raises);
   if (map_raises) {
     out << "match " << mapped << " { Ok(value) => " << chunk_outcome
         << "::Value { index: " << index << ", value, len: " << len
@@ -331,7 +331,7 @@ std::optional<string> gen_fileio_chunk_pipeline(
         "internal error: checked FileIO chunk pipeline lacks a Phase 21 outcome context");
   const auto& plan = planned->chunk_plan;
   const bool combine_raises =
-      !planned->nodes[2].effects.raise_set.empty();
+      !plan.combine_invocation_effects.raise_set.empty();
   if (!plan.eligible)
     return gen_chunk_pipeline_sequential(
         plan, domain, locals, types, combine_raises);

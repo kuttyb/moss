@@ -241,6 +241,9 @@ struct FunctionalPipeline {
     // may discharge only the contextual `chunk[0]` panic proof; the callable's
     // ordinary/global effect summary remains unchanged.
     ObservableEffects map_invocation_effects;
+    // The Reduce node also includes the initializer's effects. Keep the
+    // combiner's own result contract separate for checked call lowering.
+    ObservableEffects combine_invocation_effects;
     bool used_nonempty_chunk_index_proof = false;
     // Eligible for the bounded-K read/map Branch lowering (file_chunk_codegen.inc).
     // Static only: never depends on whether an Executor happens to be active.

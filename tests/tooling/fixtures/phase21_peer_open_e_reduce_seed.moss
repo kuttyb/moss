@@ -1,0 +1,38 @@
+# Reconstructed from the external A-F review description; original ZIP absent.
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+enum SetupError:
+  Bad
+
+fn length(chunk: Range) -> Int:
+  return chunk.length()
+
+fn seed(flag: Int) -> Int:
+  if flag == 0:
+    raise SetupError.Bad
+  return flag
+
+fn add(total: Int, value: Int) -> Int:
+  return total + value
+
+domain Reader:
+  fn Run(flag: Int) -> Int:
+    file = FileIO.open("tmp/phase21-peer-open-e/p6.bin", ro)
+    total = file.chunks(2) |> map(length) |> reduce(seed(flag), add)
+    file.close()
+    reply total
+
+  on_fail SetupError.Bad:
+    reply -1
+  on_fail:
+    reply -2
+
+fn main():
+  reader = Reader()
+  echo message reader.Run(0)

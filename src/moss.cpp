@@ -17075,7 +17075,8 @@ class Generator {
       const string& callable, const vector<FunctionalValue>& arguments,
       const Domain* domain, const std::set<string>& locals,
       const std::unordered_map<string,string>* types,
-      bool propagate_raises = true) const {
+      bool propagate_raises = true,
+      bool checked_placeholder_result = false) const {
     if (generated_expression_uses(callable, "_")) {
       if (arguments.size() != 1)
         throw std::runtime_error("internal error: placeholder functional arity");
@@ -17086,7 +17087,12 @@ class Generator {
       callback_types[arguments.front().expression] = arguments.front().type;
       auto callback_locals = locals;
       callback_locals.insert(arguments.front().expression);
-      return expr(replaced, domain, callback_locals, &callback_types);
+      string rendered = expr(replaced, domain, callback_locals,
+                             &callback_types);
+      if (checked_placeholder_result && !propagate_raises)
+        return "(|| { let __moss_callback_value = " + rendered +
+            "; Ok::<_, __MossRaised>(__moss_callback_value) })()";
+      return rendered;
     }
 
     string bound_receiver, bound_method;

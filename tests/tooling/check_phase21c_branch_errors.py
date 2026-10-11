@@ -507,7 +507,8 @@ bad = subprocess.run([str(COMPILER), "check", "src/main.moss", "--json"],
                      cwd=consumer, env=provider_env, text=True,
                      capture_output=True, timeout=120)
 assert bad.returncode != 0, bad
-assert "module interface hash mismatch" in json.loads(bad.stdout)["error"]["message"]
+failure = json.loads(bad.stdout)["error"]
+assert failure["code"] == "SOURCE_FREE_CONTRACT_MISMATCH", failure
 
 # A huge valid request against a tiny file must read only through EOF. The
 # speculative later lanes have unrepresentable offset+size and publish EOF
