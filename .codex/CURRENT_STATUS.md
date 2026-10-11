@@ -1,5 +1,23 @@
 # Moss current status
 
+## Phase 21 standard-error transport validation — 2026-10-11
+
+The standard-error implementation branch is at `9cae208` and is pushed.
+Independent validation in a detached worktree at exact combined integration
+`67bda5a` passed strict GCC C++17 O2 compilation and the permanent
+standard namespace, source-free Root WRITE recovery, and argument-order gates.
+Those gates exercised native O0/O3, Fast Debug where supported, and consumers
+rebuilt after removing provider Moss source. In the argument-order gate, an
+earlier helper or typed raise completes before a later bridged WRITE argument
+is borrowed. Generated Rust copies a provider enum's final WRITE value back
+before typed-error propagation. Scratch probes also confirmed two distinct
+WRITE arguments on normal and typed-error exits; aliasing the same local twice
+or aliasing a receiver field with a WRITE argument receives
+`OWNERSHIP_CONFLICTING_ACCESS`.
+
+These are focused standard-error results. The broader integration, proof, and
+Architect acceptance gates remain under the Phase 21 coordinator.
+
 ## Phase 21 ABI v9 remediation in progress — 2026-10-11
 
 L7 has authorized ABI v9, compiler-recognized standard errors, absolute Root
