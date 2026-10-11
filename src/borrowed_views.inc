@@ -140,6 +140,7 @@
       // bodies and source identities as their ordinary owned implementations.
       for (const auto& method : t.methods) {
         if (method.receiver_effect == Effect::Consume) continue;
+        const bool raises = !method.observable_effects.raise_set.empty();
         string identity = method_semantic_identity(t, method);
         tooling_begin(o, 4, "method", identity, trait + "::" + method.name);
         source_comment(o, 4, method.line, "fn " + method.name);
@@ -156,7 +157,11 @@
             << (object ? "impl " + access_trait(p.type) : rust_type(p.type));
         }
         o << ")";
-        if (method.return_type) o << " -> " << rust_type(*method.return_type);
+        if (raises) o << " -> Result<";
+        else if (method.return_type) o << " -> ";
+        if (method.return_type) o << rust_type(*method.return_type);
+        else if (raises) o << "()";
+        if (raises) o << ", __MossRaised>";
         o << " {\n";
         Domain receiver; receiver.name = t.name; receiver.state = t.fields;
         std::set<string> locals;
@@ -164,13 +169,23 @@
         for (const auto& field : t.fields) types[field.name] = field.type;
         for (const auto& p : method.params) { locals.insert(p.name); types[p.name] = p.type; }
         view_method_ = true;
+        const bool saved_phase21_result_context = phase21_result_context_;
+        phase21_result_context_ = raises;
         gen_stmts(o, method.body, &receiver, nullptr, "", locals, types, 2, false, true, functional_method_context(t, method));
         if (method.result_expression) {
           auto context = functional_method_context(t, method);
           auto pipeline = method.result_functional_pipeline_ids.find(context);
-          o << "        " << expr(*method.result_expression, &receiver, locals, &types,
-              pipeline == method.result_functional_pipeline_ids.end() ? 0 : pipeline->second) << "\n";
+          o << "        ";
+          if (raises) o << "Ok(";
+          o << expr(*method.result_expression, &receiver, locals, &types,
+              pipeline == method.result_functional_pipeline_ids.end() ? 0 : pipeline->second);
+          if (raises) o << ")";
+          o << "\n";
         }
+        else if (raises && !method.return_type) o << "        Ok(())\n";
+        else if (raises) o << "        #[allow(unreachable_code)]\n"
+                           << "        { std::process::abort() }\n";
+        phase21_result_context_ = saved_phase21_result_context;
         view_method_ = false; view_parameters_.clear(); write_through_parameters_.clear();
         o << "    }\n"; tooling_end(o, 4, identity);
       }
