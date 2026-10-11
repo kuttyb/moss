@@ -62,11 +62,14 @@ Second, the Phase 20 typed `Range` cross-crate fixture is caused by each
 generated module crate defining a separate nominal FileIO `Range`. Correct
 compilation requires a shared native FileIO ABI or an equivalent owner-safe
 cross-crate transport. Pending that broader Phase 20 repair, direct calls
-passing `Range` or `RangeBatch` to another explicit module now fail at the
-Moss call site with `FILEIO_CROSS_CRATE_ABI`. The source-backed and
-source-free fixture both reject before rustc E0308; a same-module Range
-helper still builds and prints 65. This is an interim diagnostic, not a
-working cross-crate Range implementation.
+passing `Range` or `RangeBatch` into concrete provider-owned functions of
+another explicit module fail at the Moss call site with
+`FILEIO_CROSS_CRATE_ABI`. The source-backed and source-free typed fixture
+both reject before rustc E0308; a same-module Range helper still builds and
+prints 65. Generic/static functions specialize in the consumer crate and
+remain valid: independent source-backed and source-free `Range.length()`
+helpers both build and print 1. This is an interim diagnostic, not a working
+cross-crate concrete Range ABI.
 
 Independent numeric probes on rustc 1.98.1 and GCC 13.3.0 passed: 2,048
 finite binary64 patterns matched a Python shortest-decimal oracle in native
@@ -82,14 +85,16 @@ oracles with the current pinned rustc plus an independently pinned prior or
 next supported rustc release for each C++ build. Every job should require
 native debug, native optimized, and Fast Debug output equality.
 
-Final isolated-branch validation after the code and test edits: `make check`
+Final isolated-branch validation after the narrowed diagnostic: `make check`
 PASS (`all Moss v0.1 tests passed`, including strict Phase 20 review:
 36 bug and 30 guard probes passed); `make examples` PASS; strict C++17
 `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic -fsyntax-only src/moss.cpp`
-PASS; `git diff --check` PASS. Source-free provider execution passed within
-the ABI gate. These results do not validate the unresolved recomputed-hash
-pattern swap or the untested toolchain matrix. Historical checkpoints below
-describe the earlier integration state.
+PASS; `git diff --check` PASS. Focused source-free ABI, borrowed-view, Range
+ABI, and strict Phase 20 gates also passed after the follow-up. Source-free
+provider execution passed in both the ABI and generic Range gates. These
+results do not validate the unresolved recomputed-hash pattern swap or the
+untested toolchain matrix. Historical checkpoints below describe the earlier
+integration state.
 
 ## Phase 21 A–D integration review — 2026-10-10
 

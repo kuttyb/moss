@@ -10958,10 +10958,10 @@ class Checker {
     for (const auto& argument : args)
       actual_types.push_back(inferred_expr_type(argument, env).value_or(""));
     // Each explicit module currently emits its own nominal FileIO runtime.
-    // A borrowed Range from one crate cannot satisfy another crate's Range
-    // parameter.  Reject this call at the Moss source boundary until Phase 20
-    // provides one shared native Range ABI, regardless of provider source.
-    if (p_.explicit_module) {
+    // A concrete provider-owned call cannot take another crate's Range.
+    // Static/generic calls specialize in the consumer crate and use its Range;
+    // they remain valid even when their Moss body came from a .mossi file.
+    if (p_.explicit_module && !function->second->static_dispatch) {
       auto module_of = [](const string& symbol) {
         const size_t separator = symbol.find("__");
         return separator == string::npos ? string() : symbol.substr(0, separator);
