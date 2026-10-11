@@ -1,0 +1,19 @@
+enum Failure:
+  A
+  B
+
+fn take(value: String) -> String:
+  return value
+
+fn only_a():
+  data = "ok"
+  try:
+    raise Failure.A
+  recover Failure.B:
+    ignored = take(data)
+  recover Failure.A:
+    pass
+  echo data
+
+fn main():
+  only_a()

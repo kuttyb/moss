@@ -30,6 +30,12 @@ for name in ("trailing_method_unhandled", "trailing_generic_unhandled"):
     error = json.loads(checked.stdout)["error"]
     assert "main may not let typed errors escape" in error["message"], (name, error)
 
+reachable_consume = fixtures / "phase21_addendum_reachable_arm_consumes.moss"
+checked = run(compiler, "check", reachable_consume, "--json")
+assert checked.returncode != 0, (checked.stdout, checked.stderr)
+error = json.loads(checked.stdout)["error"]
+assert error["code"] == "OWNERSHIP_USE_AFTER_CONSUME", error
+
 cases = (
     ("trailing_method_handled", "fn:via_local", ["enum:Failure:Bad"],
      "7\n8\n"),
@@ -39,6 +45,7 @@ cases = (
      ["enum:Failure:A", "enum:Failure:B"], "A\nB\n"),
     ("grouped_root", "handler:Worker.Run", ["enum:Failure:A"], "1\n"),
     ("unreachable_arm_raise", "fn:only_a", [], "ok\n"),
+    ("unreachable_arm_consumes", "fn:only_a", [], "ok\n"),
 )
 for name, target, variants, output in cases:
     source = fixtures / f"phase21_addendum_{name}.moss"
