@@ -132,8 +132,10 @@ Explicit-module builds re-resolve imports and verify artifact bindings before
 returning a cached result. Their cache key includes the bytes and paths of
 each selected external `.mossi` and `.rlib`, compiler version, native ABI
 version, mode and backend fingerprint. A changed or missing provider therefore
-invalidates the consumer even when its Moss source is unchanged. The early
-cache shortcut remains available only to unmodular builds with no import.
+invalidates the consumer even when its Moss source is unchanged; the selected
+set includes providers reached through another provider's `imports` records.
+The early cache shortcut remains available only to unmodular builds with no
+import.
 Determinism depends on deterministic Moss interface ordering and backend
 identity; the binding digest itself has no clock, path nonce or random input.
 

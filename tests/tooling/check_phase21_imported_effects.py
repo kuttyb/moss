@@ -86,6 +86,11 @@ fn main():
     echo code
 '''
 consumer.write_text(source_backed)
+# Plant an old local output before the first build. It is neither an imported
+# provider nor a contract for the current app module.
+stale_app = project / "build/debug/app.mossi"
+stale_app.parent.mkdir(parents=True)
+stale_app.write_text("moss-module-interface-v1\nnative_abi 8\n")
 assert check()["ok"]
 assert effects("entity-v1:function:provider__fail")["raise_set"] == [
     "enum:provider__Fault:Bad"]
@@ -96,6 +101,8 @@ assert effects("entity-v1:method:provider__Gauge.fail")["raise_set"] == [
 assert effects("entity-v1:method:provider__Gauge.panic")["may_panic"]
 assert effects("entity-v1:function:provider__panic")["may_panic"]
 build_and_run("17\n23\n19\n")
+assert stale_app.read_text().startswith(
+    "moss-module-interface-v2\nprovider_contract_digest sha256:")
 assert run([margo, "debug"]).stdout == "17\n23\n19\n"
 
 provider.rename(provider.with_suffix(".removed"))
@@ -213,7 +220,6 @@ interface.write_text(original)
 
 # Old local output metadata must not be mistaken for a compiled provider when
 # a no-export application is rebuilt in the same directory.
-stale_app = project / "build/debug/app.mossi"
 stale_app.write_text("moss-module-interface-v1\nnative_abi 8\n")
 built = json.loads(run([margo, "build", "--json"]).stdout)
 assert stale_app.read_text().startswith(
