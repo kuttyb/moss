@@ -117,6 +117,22 @@ red gate for this defect. The O1 imported-contract premise is not established
 for every build entrypoint until that gate passes. The defect is in cache
 invalidation, not a change to the ABI-v9 semantic contract.
 
+A separate imported-method audit found that the ABI-v9 `.mossi` record can
+contain an exact `WRITE` parameter effect while `moss effects` in the
+source-removed consumer reports `READ`. `infer_effects` resets every object
+method's parameter effects before traversing its body; an imported method
+has only a synthetic empty body. The consumer then accepts a cross-crate
+`std.ParseError` WRITE call and native compilation fails with rustc E0308
+because the compiled provider expects a mutable argument. This directly
+violates O1's READ/WRITE/CONSUME effect completeness, even though the typed
+`raise_set` remains exact. The permanent
+`check_phase21_source_free_standard_write_recovery.py` gate requires the
+provider metadata's `WRITE` and `Failure.Bad` effects to survive source
+removal. It also requires a consumer Root recovery arm to observe the
+provider's mutation after that typed raise. A correct cross-crate bridge
+must copy the mutated standard enum back before propagating the checked
+error. The approved Phase 20 Range deferral does not cover this case.
+
 Other existing adversarial gates cover previously repaired parenthesized,
 vector-element, unary, field-projection, helper, generic and pipeline effects,
 variant-precise recovery, Root totality, and speculative mapper eligibility.
@@ -354,6 +370,7 @@ made.
 | `check_phase21_on_fail_capture.py` | Base cases green, protected state borrow negative; added method-local case was red with an internal planner invariant. | Method-local and early-raise capture paths pass O0/O3 native and Fast Debug; rerun after selected-exit and ABI changes, including source-free. |
 | `check_phase21_source_free_proof_edges.py` | Added after ABI-v9 method metadata; no base-SHA result. | Source-removed imported `next()` rejects with `RAISING_ITERATOR_UNSUPPORTED`; source-removed owned String capture and method call run and print `3\n3\n`. Provisional integration passes. |
 | `check_phase21_source_free_cache_binding.py` | Added after ABI-v9 provider binding; no base-SHA result. | Warm consumer build must reject forged metadata with recomputed digest and deleted provider rlib before cache reuse. Provisional integration fails both warm-build cases, although `moss check` rejects them. |
+| `check_phase21_source_free_standard_write_recovery.py` | Added after ABI-v9 standard errors; no base-SHA result. | Source-backed and source-removed provider method must retain `WRITE` and exact typed variant; Root recovery must see the mutated standard enum. Provisional integration rejects the source-backed valid call and, after source removal, loses `WRITE` then fails rustc E0308. |
 
 The final engineering closeout must record the exact implementation SHA,
 compiler and Rust toolchain versions, ABI-v9 source-free executions and
