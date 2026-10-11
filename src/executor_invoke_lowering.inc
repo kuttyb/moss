@@ -271,6 +271,20 @@ void phase21_validate_root_ingress_totality(const TypeEnv& main_env) {
         size_t start = index + 7;
         while (start < expression.size() &&
                std::isspace(static_cast<unsigned char>(expression[start]))) ++start;
+        // `message` is also a legal identifier and record-field name.  Only
+        // the keyword followed by a receiver member call is a Root ingress.
+        // The ordinary expression checker has already rejected malformed
+        // message syntax before this post-inference pass runs.
+        size_t receiver_end = start;
+        while (receiver_end < expression.size() &&
+               (std::isalnum(static_cast<unsigned char>(expression[receiver_end])) ||
+                expression[receiver_end] == '_')) ++receiver_end;
+        size_t dot = receiver_end;
+        while (dot < expression.size() &&
+               std::isspace(static_cast<unsigned char>(expression[dot]))) ++dot;
+        if (receiver_end == start || dot == expression.size() ||
+            expression[dot] != '.')
+          continue;
         size_t open = expression.find('(', start);
         if (open == string::npos)
           err(statement.line, "unresolved Root message expression",

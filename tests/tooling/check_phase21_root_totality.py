@@ -41,6 +41,7 @@ for name, ingress in (
 for name, expected in (
     ("phase21_executor_root_total", "2\n"),
     ("phase21_sync_root_total", "7\n"),
+    ("phase21_root_message_identifier", "ordinary field\n"),
 ):
     source = fixtures / f"{name}.moss"
     checked = run(compiler, "check", source, "--json")
