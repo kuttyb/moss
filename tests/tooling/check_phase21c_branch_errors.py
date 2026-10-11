@@ -546,19 +546,21 @@ concurrent_hook = r'''static REVIEW_FIRST_BRANCH_ROOT: std::sync::atomic::Atomic
     std::sync::atomic::AtomicU64::new(0);
 static REVIEW_SECOND_BRANCH_ROOT: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
+static REVIEW_BRANCH_OVERLAP: std::sync::OnceLock<std::sync::Barrier> =
+    std::sync::OnceLock::new();
 fn review_concurrent_branch_hook(event: MossRtEvent, root_id: u64,
                                  _branch_id: u64, _worker_id: usize) {
     if let MossRtEvent::BranchPublished = event {
         use std::sync::atomic::Ordering::SeqCst;
+        let barrier = REVIEW_BRANCH_OVERLAP.get_or_init(||
+            std::sync::Barrier::new(2));
         if REVIEW_FIRST_BRANCH_ROOT.compare_exchange(0, root_id, SeqCst, SeqCst).is_ok() {
-            for _ in 0..10_000_000 {
-                if REVIEW_SECOND_BRANCH_ROOT.load(SeqCst) { return; }
-                std::thread::yield_now();
-            }
-            panic!("independent Roots did not overlap in Branch publication");
+            barrier.wait();
+            return;
         }
-        if REVIEW_FIRST_BRANCH_ROOT.load(SeqCst) != root_id {
-            REVIEW_SECOND_BRANCH_ROOT.store(true, SeqCst);
+        if REVIEW_FIRST_BRANCH_ROOT.load(SeqCst) != root_id &&
+           !REVIEW_SECOND_BRANCH_ROOT.swap(true, SeqCst) {
+            barrier.wait();
         }
     }
 }
