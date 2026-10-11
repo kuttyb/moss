@@ -5,6 +5,10 @@
 **Provisional integration retest:** `53f11363e2f973e30b1e9a869407b6ecb6eef166`
 with Rust 1.98.1 and GCC 13.3. This is not the final candidate SHA.
 
+**Reconstructed peer-addendum A/C repair:** `b7a7ead` plus `5b2cbf7` on
+`phase-21-a-c-fixes` (base `6a08830`). The source fixes and focused gate pass;
+the exact combined integration SHA and full-suite rerun remain pending.
+
 **Status at this audit base:** open. The counterexamples below are accepted by
 `moss check` at this SHA or reveal a false D7 rejection. Post-base engineering
 repairs are identified explicitly. Every gate must be rerun on the exact final
@@ -33,9 +37,9 @@ Moss diagnostic.
 
 | Area | Implementation invariant needed | Engineering audit status |
 | --- | --- | --- |
-| O1 | Every executed effect and possible typed variant is included in the concrete handler/callable summary; panic remains separate. | **FAIL at base SHA** for implicit iterator calls. Direct, factory, generic and panic iterator gates pass on provisional integration. Source-removed imported `next()` retains its typed effect and fails closed. The external-provider warm build cache still bypasses ABI-v9 artifact validation after provider mutation; the public build guarantee remains **OPEN**. |
-| O4 | Every possible raise site has a selected-variant edge to its first matching recovery arm or the handler exit, carrying the ownership state at that site. | **FAIL at base SHA** for reinitialization and expression order. Selected-exit, early condition, expression order and capture gates pass on provisional integration. The later cross-crate standard WRITE bridge introduces an accepted argument-order case that fails rustc E0499 at `c2793ce`; general closure is **OPEN**. |
-| O8 | Every body-to-trailer capture is an owned, initialized value with one binding identity on every selected exceptional edge; its type contains no capability or protected view. | Checked local and source-removed method-capture cases pass on provisional integration. The external-provider warm cache is an open source-free artifact-authenticity defect; the general source-free claim remains **OPEN**. |
+| O1 | Every executed effect and possible typed variant is included in the concrete handler/callable summary; panic remains separate. | **FAIL at base SHA** for implicit iterator calls and a later reconstructed final-expression method call. Iterator and source-free gates pass on provisional integration. The local/generic trailing-method and reachable grouped-recovery gates pass on the repair branch. ABI-v9 warm-cache repair passes its targeted gate. Exact final-SHA proof review remains **OPEN**. |
+| O4 | Every possible raise site has a selected-variant edge to its first matching recovery arm or the handler exit, carrying the ownership state at that site. | **FAIL at base SHA** for reinitialization and expression order. Selected-exit, early condition, expression order and capture gates pass on provisional integration. The standard WRITE argument-order bridge passes its targeted gate after repair. A/C Root and native gates pass on the repair branch. Exact final-SHA proof review remains **OPEN**. |
+| O8 | Every body-to-trailer capture is an owned, initialized value with one binding identity on every selected exceptional edge; its type contains no capability or protected view. | Checked local and source-removed method-capture cases pass on provisional integration. ABI-v9 warm-cache and source-free capture gates pass after repair. Final artifact-bound contract and exact-SHA review remain **OPEN**. |
 | Early release | Every touched guard lasts until completion; only a statically untouched guard can cancel, and all later acquisitions remain ranked and precede the first externally observable action. | Bounded leading-conditional plan and raising-condition fallback pass on provisional integration. The proof covers the implemented bounded placement and conservative full-entry fallback, conditional on complete effects and final-SHA code review. |
 
 ## O1: effect completeness
@@ -142,6 +146,48 @@ accepted expression/statement and implicit-call grammar against
 `observable_expression_effects`, `phase21_raise_set_block` and lowering, with a
 fail-closed branch for any unhandled form. ABI v9 must prove imported effects
 come from the selected provider artifact.
+
+### Reconstructed peer addendum A/C: final expressions and reachable arms
+
+The original `p21_review_repros.zip` was unavailable. The permanent
+`check_phase21_addendum_a_c.py` gate reconstructs the written shape; its
+results are not an exact archive retest. In A, `via_local()` constructs a
+`Box`, binds it to `item`, and ends with `item.poke()`, whose method raises
+`Failure.Bad`. At `7775049`, `moss check` accepted an unhandled call from
+`main`, `moss effects fn:via_local` had an empty raise set with
+`unresolved=true`, and native lowering failed with `checked raising method
+call lacks a Phase 21 outcome context`. A generic `via_generic(value)`
+sibling specializes to the same `Box` through a local alias. With repair
+`b7a7ead`, both unhandled main calls fail at Moss checking; the handled
+program reports the exact variant and prints `7\n8\n` under native Rust O0,
+O3 and Fast Debug.
+
+The root cause was a scope mismatch. `observable_body_effects` advanced the
+local type environment through ordinary body statements, but
+`infer_observable_effects` and `concrete_function_observable_effects` analyzed
+the final expression with the original parameter-only environment. The
+repair uses the same post-body type-environment transfer for the final
+expression; parameter and receiver-effect inference does likewise. This
+argument assumes `walk_type_environment` conservatively joins predecessor
+types and concrete unresolved calls fail closed.
+
+In C, `recover Failure.A, Failure.B: raise` may name two alternatives when
+only one reaches that arm. Previously the re-raise analysis used the full
+named set, so A-only and B-only helpers each reported both variants. The
+repair passes the intersection of named and remaining variants into arm
+analysis and separately tracks lexical recovery context, leaving a bare
+`raise` in an unreachable arm legal with an empty effect. Follow-up
+`5b2cbf7` still checks the body of an entirely unreachable arm but omits its
+explicit raised effects from the enclosing callable summary. Its fixture
+shows `recover B: raise C` after an A-only attempt cannot make C escape.
+
+A-only, B-only, both-variant, and unreachable-arm fixtures pass
+`moss check --json`, exact `moss effects --json`, Rust O0/O3 execution and
+Fast Debug. The A-only output is literally `outer A`. A Root version with
+A-only `on_fail` passes totality, executes its failure reply, and exposes
+separate normal `left` and failure `right` lock plans. This proves these
+reconstructed paths; exact final-SHA verification and independent Architect
+review remain pending.
 
 ## O4: exceptional CFG, definite initialization and moves
 
@@ -264,6 +310,12 @@ earlier argument values in source order before constructing the later WRITE
 temporary, or reject a shape it cannot lower safely at Moss checking. The
 general expression-order proof cannot close while this gate is red.
 
+The subsequent bridge repair stages earlier argument expressions before
+constructing a later WRITE temporary. The permanent order gate passes on
+the combined ABI/standard-error implementation, including source-backed and
+source-removed calls, native O0/O3 and Fast Debug. It remains a required
+exact final-SHA regression.
+
 Existing D7 gates exercise preinitialization, conditional joins, loop
 reinitialization, loop consumption, shadowed bindings, nested recovery,
 re-raise and variant-specific ownership. They remain behavioral witnesses.
@@ -322,6 +374,10 @@ a Root trailer calling `data.length()` after an early expression raise.
 The provider `.rlib` and `.mossi` are present and match in this case. The
 warm-cache counterexample above keeps the quantified source-free premise
 open, and the final-SHA gate must rerun after the ABI cache repair.
+
+ABI repair `4711a47` made the warm-cache falsification gate pass with a fresh
+strict C++17 compiler build. The final implementation SHA must still rerun
+the gate before lifting the quantified source-free premise.
 
 ## General early-release guarantee
 
@@ -387,13 +443,14 @@ made.
 | `check_phase21_source_free_cache_binding.py` | Added after ABI-v9 provider binding; no base-SHA result. | Warm consumer build must reject forged metadata with recomputed digest and deleted provider rlib before cache reuse. Provisional `b4a0087` fails; post-repair `4711a47` passes with a fresh compiler build. |
 | `check_phase21_source_free_standard_write_recovery.py` | Added after ABI-v9 standard errors; no base-SHA result. | Source-backed and source-removed provider method must retain `WRITE` and exact typed variant; Root recovery must see the mutated standard enum. Provisional integration rejects the valid source-backed call, and source-removed metadata lost `WRITE` then failed rustc E0308. ABI `4711a47` restores the imported effect; the bridge remains under repair. |
 | `check_phase21_standard_write_order.py` | Added after cross-crate WRITE bridge; no base-SHA result. | Same-module and cross-crate argument order must agree. At `c2793ce`, same-module O0/O3 and Fast Debug print `1`; cross-crate check accepts but native build fails rustc E0499 because the later WRITE borrow is hoisted before an earlier mutating argument. |
+| `check_phase21_addendum_a_c.py` | Reconstructed from written peer addendum because the archive was unavailable. At `7775049`, final local method effect is omitted, and grouped bare re-raise is overapproximated. | On repair branch `5b2cbf7`: unhandled ordinary/generic callers reject; handled A output, A-only/B-only/both reachable variants, unreachable explicit arm, Root totality and separate lock plans pass check/effects, native O0/O3 and Fast Debug. Rerun on exact final SHA. |
 
 The final engineering closeout must record the exact implementation SHA,
 compiler and Rust toolchain versions, ABI-v9 source-free executions and
 falsification tests, complete `make check`/`make examples` results, and the
-independent Architect L6 assessment separately. Until the red gates turn
-green and imported contracts are bound to artifacts, the quantified O1/O4/O8
-claims remain **open** regardless of other passing suites.
+independent Architect L6 assessment separately. The targeted repairs above
+are green in their stated worktrees, but the quantified O1/O4/O8 claims
+remain **open** until exact combined-SHA validation and independent review.
 
 ### Audit-worktree validation before integration
 
@@ -417,3 +474,18 @@ provider cache-binding gate failed as described above; thus the entire
 `make check` suite has **not** passed on this SHA. An ABI-v9 cache repair and
 exact-final-SHA rerun are required before engineering can claim O1/O4/O8
 closure. Independent Architect L6 acceptance is separate.
+
+### Later A/C repair-branch validation
+
+At `5b2cbf7` on `phase-21-a-c-fixes`, strict GCC C++17 compilation and the
+expanded reconstructed A/C gate pass, including check/effects JSON, Rust
+O0/O3 and Fast Debug. Peer effects, recovery semantics, Root totality,
+recovery reinitialization, expression ownership, early condition and warning
+gates pass in focused runs. The branch-local `make check` run with the earlier
+`b7a7ead` compiler reached the late Phase 10.6C synchronization-plan suite
+then stopped at `tests/tooling/check_synchronization_plan.py:202`: after a
+deliberate `.mossi` edit, ABI v9 correctly reports
+`SOURCE_FREE_CONTRACT_MISMATCH`, whereas this older test expects the word
+`rebuild`. This is a test expectation migration, not an A/C compiler failure.
+The exact combined-SHA full run, proof review and independent Architect
+assessment remain outstanding.
