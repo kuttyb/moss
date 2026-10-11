@@ -1,5 +1,30 @@
 # Moss current status
 
+## Phase 21.D independent Float corpus and source-free view review — 2026-10-10
+
+The Float gate now checks 270 deterministic finite binary64 bit patterns
+against a Python 3.12 shortest-round-trip oracle, including signed zero,
+subnormal/normal boundaries, both notation thresholds, and maximum finite.
+The reference output has a fixed SHA-256 digest, every text value round-trips
+to its original bits, and default/optimized native Rust plus Fast Debug must
+match it. This is independent evidence for the pinned Ryū and C++ `to_chars`
+implementations on this host; it is not the spec's wider multi-toolchain pin.
+Only Rust 1.98.1 and GCC 13.3 are installed; no alternate Rust or C++
+toolchain was installed or tested.
+
+The approved finite `parse_float` forms are now explicit in the language
+skill, consistent with the practical guide and Phase 21 §13.3. Focused numeric
+parsing/conversion, Float, borrowed-view, and skill checks pass. The direct
+typed `Range` and `RangeBatch` WRITE tests emit
+`FILEIO_VIEW_PARAMETER_WRITE`; source-free generic specialization reaches the
+provider `.mossi` and fails closed with `FILEIO_PINNED_OWNERSHIP`. The latter
+proves rejection across the interface, not the more specific WRITE diagnostic.
+
+Full `make check` with an absolute repository-local `TMPDIR` passed after
+these edits (`all Moss v0.1 tests passed`). Phase 21 acceptance remains dependent
+on A's capture frame, the final O1–O9 integration review, and the unavailable
+wider Float toolchain pin.
+
 ## Phase 21.D documentation wording review — 2026-10-10
 
 The active v0.1 syntax and roadmap pages now describe implemented numeric

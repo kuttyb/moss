@@ -142,8 +142,10 @@ Its read-only methods are `length()`, `char_at(index)`, `chars()`,
 `split(separator)`, and `join(parts)` on the separator. Positions count
 zero-based Unicode code points. `parse_int(String)` and `parse_float(String)`
 raise `ParseError` variants; `to_int(Float)` raises `ConversionError` variants.
-Declare the tag-only error enum in source and recover the typed failures. The
-exact decimal grammar is in the Phase 21 error-handling spec §13.3.
+Declare the tag-only error enum in source and recover the typed failures.
+Finite `parse_float` text accepts `.5`, `1.`, uppercase `E`, leading zeros,
+and explicit exponent signs; digits are ASCII only. The exact grammar and
+nonfinite spellings are in the Phase 21 error-handling spec §13.3.
 
 ### Arithmetic and empty collections
 

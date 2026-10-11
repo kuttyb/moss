@@ -2,8 +2,12 @@
 """Focused Phase 21 Float division and canonical text parity check."""
 
 import json
+import hashlib
+import math
+import struct
 import subprocess
 import sys
+from decimal import Decimal
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -77,6 +81,84 @@ if native_optimized != expected:
         f"optimized native output mismatch: {native_optimized!r} != {expected!r}")
 if debug != expected:
     raise SystemExit(f"Fast Debug output mismatch: {debug!r} != {expected!r}")
+
+# Python's shortest-round-trip conversion is independent of both the pinned
+# native Ryū core and Fast Debug's C++ to_chars implementation. Freeze the
+# resulting corpus digest as well, so a change in the Python oracle cannot
+# silently redefine the expected Moss output on a future test host.
+def reference_float_text(value):
+    if value == 0.0:
+        return "-0.0" if math.copysign(1.0, value) < 0 else "0.0"
+    negative = value < 0
+    decimal = Decimal(repr(abs(value)))
+    digits = "".join(str(digit) for digit in decimal.as_tuple().digits)
+    exponent = decimal.as_tuple().exponent + len(digits) - 1
+    digits = digits.rstrip("0")
+    if -4 <= exponent < 16:
+        decimal_at = exponent + 1
+        if decimal_at <= 0:
+            rendered = "0." + "0" * -decimal_at + digits
+        elif decimal_at >= len(digits):
+            rendered = digits + "0" * (decimal_at - len(digits)) + ".0"
+        else:
+            rendered = digits[:decimal_at] + "." + digits[decimal_at:]
+    else:
+        rendered = digits[0]
+        if len(digits) > 1:
+            rendered += "." + digits[1:]
+        rendered += "e" + str(exponent)
+    return "-" + rendered if negative else rendered
+
+
+bit_patterns = [0, 1 << 63, 1, (1 << 63) | 1,
+                0x000fffffffffffff, 0x0010000000000000,
+                0x7fefffffffffffff, 0xffefffffffffffff]
+for boundary in (1e-4, 1e16):
+    for value in (math.nextafter(boundary, 0.0), boundary,
+                  math.nextafter(boundary, math.inf)):
+        bit_patterns.append(struct.unpack(">Q", struct.pack(">d", value))[0])
+state = 0x21d5a17e5eedcafe
+while len(bit_patterns) < 270:
+    state = (state * 6364136223846793005 + 1442695040888963407) & ((1 << 64) - 1)
+    value = struct.unpack(">d", state.to_bytes(8, "big"))[0]
+    if math.isfinite(value):
+        bit_patterns.append(state)
+values = [struct.unpack(">d", bits.to_bytes(8, "big"))[0]
+          for bits in bit_patterns]
+expected_corpus = [reference_float_text(value) for value in values]
+for bits, rendered in zip(bit_patterns, expected_corpus):
+    parsed_bits = struct.unpack(">Q", struct.pack(">d", float(rendered)))[0]
+    if parsed_bits != bits:
+        raise SystemExit(f"reference Float text did not round-trip 0x{bits:016x}")
+corpus_hash = hashlib.sha256(("\n".join(expected_corpus) + "\n").encode()).hexdigest()
+if corpus_hash != "91553f7482c35cfef6c108c429c7bdb54fba4cc8d4959c4d0a7bd3faf1ca28ef":
+    raise SystemExit(f"independent Float corpus changed: {corpus_hash}")
+corpus_source = SCRATCH / "float_corpus.moss"
+corpus_rust = SCRATCH / "float_corpus.rs"
+corpus_native = SCRATCH / "float_corpus"
+corpus_native_opt = SCRATCH / "float_corpus_optimized"
+corpus_source.write_text("fn main():\n" + "".join(
+    f"  echo {repr(value)}\n" for value in values))
+subprocess.run([str(COMPILER), str(corpus_source), "-o", str(corpus_rust)], check=True)
+subprocess.run(["rustc", "-D", "warnings", str(corpus_rust), "-o",
+                str(corpus_native)], check=True)
+subprocess.run(["rustc", "-C", "opt-level=3", "-D", "warnings",
+                str(corpus_rust), "-o", str(corpus_native_opt)], check=True)
+for engine, command in (("native", [str(corpus_native)]),
+                        ("optimized native", [str(corpus_native_opt)]),
+                        ("Fast Debug", [str(COMPILER), "run", "--interp",
+                                        str(corpus_source)])):
+    actual = subprocess.run(command, check=True, capture_output=True,
+                            text=True).stdout.splitlines()
+    if len(actual) != len(expected_corpus):
+        raise SystemExit(f"{engine} Float corpus printed {len(actual)} values, "
+                         f"expected {len(expected_corpus)}")
+    if actual != expected_corpus:
+        first = next(index for index, pair in enumerate(zip(actual, expected_corpus))
+                     if pair[0] != pair[1])
+        raise SystemExit(
+            f"{engine} Float corpus mismatch at bits 0x{bit_patterns[first]:016x}: "
+            f"{actual[first]!r} != {expected_corpus[first]!r}")
 
 for expression, code in (("is_nan(1)", "TYPE_MISMATCH"),
                          ("is_finite()", "INVALID_ARITY")):
