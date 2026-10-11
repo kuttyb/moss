@@ -25,7 +25,8 @@ def run(*args, expected=0):
 
 checked = json.loads(run(COMPILER, "check", SOURCE, "--json").stdout)
 assert checked["ok"], checked
-for handler in ("Reader.Eligible", "Reader.Sequential", "Reader.SeedBeforeMap"):
+for handler in ("Reader.Eligible", "Reader.Sequential",
+                "Reader.SeedBeforeMap", "Reader.Capture"):
     effects = json.loads(run(COMPILER, "effects", handler, "--source",
                              SOURCE, "--json").stdout)
     assert effects["ok"] and not effects["result"]["observable_effects"]["unresolved"]
@@ -42,6 +43,6 @@ for level in (0, 3):
     native = OUT / f"pipeline_try_placeholder_O{level}"
     run("rustc", "--edition=2021", "-Dwarnings", "-C", f"opt-level={level}",
         rust, "-o", native)
-    assert run(native).stdout == "-1\n-1\n-3\n", level
+    assert run(native).stdout == "-1\n-1\n-3\n4\n", level
 
 print("Phase 21 lexical recovery of checked chunk placeholders passed.")
