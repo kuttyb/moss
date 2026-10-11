@@ -26,10 +26,11 @@ Branch, Range fail-closed controls, and native/Fast Debug focused gates. Both
 that audit and the current reproducer confirm that forged ABI-v8 `.mossi`
 metadata builds an executable that aborts. The current source-free
 imported-helper warning repro still fails with no warning. The Architect L6
-independently confirmed this warning gap and the ABI authenticity issue;
-its final exact-SHA review was interrupted and must resume. O1/O4/O8 and
-§42 early-release general arguments remain incomplete. Engineering and L7
-remain NO-GO. No merge into `main` is authorized.
+independently retested exact implementation `5941d98` and issued **NO-GO**;
+its findings and per-issue dispositions are in
+`docs/PHASE_21_ARCHITECT_REVIEW.md`. O1/O4/O8 and §42 early-release general
+arguments remain incomplete. Engineering and L7 also remain NO-GO. No merge
+into `main` is authorized.
 
 ## Phase 21 peer review EXT-12/15 isolated remediation — 2026-10-11
 

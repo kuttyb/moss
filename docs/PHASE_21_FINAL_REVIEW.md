@@ -3,11 +3,9 @@
 > **Validated engineering checkpoint, not architectural acceptance
 > (2026-10-11):** implementation commit `5941d98` passes the full Moss suite,
 > examples, strict GCC/Clang C++17, and the four-combination Float matrix.
-> The independent Architect L6 confirmed the source-free warning gap on its
-> immediately preceding implementation SHA and retains a preliminary NO-GO;
-> its final exact-SHA acceptance review was interrupted. Two live ABI-v8
-> counterexamples and incomplete general proofs remain. Engineering and L7
-> remain NO-GO.
+> The independent Architect L6 retested the exact implementation SHA and
+> issued a NO-GO recommendation. Two live ABI-v8 counterexamples and
+> incomplete general proofs remain. Engineering and L7 also remain NO-GO.
 
 **Recommendation: NO-GO for merging into `main`.** This is the release-candidate
 review record, not a merge approval. Independent reviewers inspected the compiler
@@ -145,10 +143,10 @@ and Fast Debug. The complete external and later integration issue register is
 | Owner | Recommendation | Basis |
 | --- | --- | --- |
 | Engineering L6 | **NO-GO** | Green implementation gates coexist with ABI-v8 counterexamples and incomplete general obligations. |
-| Independent Architect L6 | **NO-GO, preliminary** | Independently reproduced the forged-pattern failure, missing source-free warning and O2/O4/O8 objections. Its final exact-`5941d98` disposition was interrupted and remains pending. |
-| L7 | **NO-GO** | Release blockers require an approved contract/proof resolution and completed independent acceptance. |
+| Independent Architect L6 | **NO-GO** | Independently retested `5941d98`, reproduced the forged-pattern failure and missing source-free warning, and recorded O2/O4/O8 objections in `PHASE_21_ARCHITECT_REVIEW.md`. |
+| L7 | **NO-GO** | The independent exact-SHA review confirms live release blockers; contract and proof decisions remain open. |
 
 Engineering's passing fixtures and the Architect's broader source-free and
 proof objections are intentionally both retained. No merger into `main` is
 authorized. The branch is a reviewable NO-GO candidate awaiting human
-architectural decisions and an exact-SHA independent retest.
+architectural decisions.

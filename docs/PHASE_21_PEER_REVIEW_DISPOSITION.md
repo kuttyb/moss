@@ -1,11 +1,12 @@
 # Phase 21 peer-review findings and disposition
 
-**Checkpoint status (2026-10-11):** This is the current engineering register,
-not a final Architect L6 acceptance. Integration implementation `5941d98`
+**Exact-SHA status (2026-10-11):** Integration implementation `5941d98`
 passes the complete `make check`, examples, strict GCC/Clang C++17 builds,
-and four-combination Float matrix. Independent exact-SHA architectural review
-remains pending. The source-free metadata forgery and imported-helper warning
-counterexamples remain live NO-GO findings.
+and four-combination Float matrix. The independent Architect L6 retested that
+SHA and recommends **NO-GO**. The source-free metadata forgery and
+imported-helper warning counterexamples remain live. The final disposition
+matrix below supersedes provisional "pending" labels in the engineering
+history rows.
 
 This register reconciles the external review of `8d8a9cc6f842e11701dbedc56e3d2d2d3da9852a`
 with the subsequent independent integration review and the remediation branch.
@@ -105,6 +106,53 @@ revision of this register.
 | P21-INT-12 | Major: warning provenance analysis lacked a handler local type and raised an internal synchronization invariant. | Interim full `make check` stopped at `phase21_capture_slot_combined.moss` during `check_phase21_on_fail_capture.py`: the recovery body uses `item.length()`, but the warning-only leaf-effect walk treated `item` as an unresolved concrete method target. | `5d1c194` carries checked local and selected-error binding types into recovery-arm lock-inflation analysis. D7 capture, warning, method, O9, built-in and complete `make check` gates pass on `5941d98`. | Pending independent final-SHA verification. |
 | P21-INT-13 | Major: declared `FileError` presence check rejected Phase 20 FileIO sources that use the legacy aborting API without a typed enum. | Full `make check` on `263ad67` failed `check_phase20_fileio_semantics.py` at `root_read` with `UNKNOWN_ERROR_TYPE`; the suite contains positive and negative legacy FileIO controls. | `5941d98` skips presence validation only when no FileError enum is declared. Declared malformed and ambiguous contracts still fail, and typed recovery selectors still require a declaration. The Phase 20 FileIO suite, Phase 21 built-in contract gate and complete `make check` pass on the new implementation SHA. Architect exact-SHA review pending. | Pending. |
 
+## Authoritative independent disposition at `5941d98`
+
+The independent Architect L6's exact-SHA report in
+`PHASE_21_ARCHITECT_REVIEW.md` records the individual commands and distinguishes
+rerun tests from code/spec inspection. `FIXED` below applies to each
+reconstructed counterexample, not a claim that all accepted Moss programs
+satisfy the broader invariant. EXT-17 cannot be fully resolved without the
+unavailable original archive. INT-13 was found after the architect's matrix
+was drafted; its exact-SHA Phase 20 and Phase 21 gates were independently
+rerun in the architect report's final section.
+
+| ID | Independent disposition | Verification and remaining boundary |
+| --- | --- | --- |
+| EXT-01 | FIXED | Typed FileIO injection, cleanup and source-free gates rerun. |
+| EXT-02 | FIXED | Unhandled Executor Root rejected; positive Root executes. |
+| EXT-03 | FIXED | Group/list/helper/method, unary and projection reproducers pass; O1 general proof remains open. |
+| EXT-04 | FIXED | 4097-byte panic/shadowing/precedence cases pass; O9 still assumes complete O1. |
+| EXT-05 | DESIGN-DECISION-REQUIRED | Imported functions/generics pass; source-free object methods fail closed under ABI v8. |
+| EXT-06 | FIXED | Synchronous Root lexical catch is rejected; exhaustive `on_fail` succeeds. |
+| EXT-07 | DESIGN-DECISION-REQUIRED | Local warning gates pass; source-free imported-helper warning still disappears. |
+| EXT-08 | FIXED | Native/Fast Debug unhandled test fails individually and later test runs. |
+| EXT-09 | FIXED | Enum-valued and selected bare re-raises dispatch exact A/B variants. |
+| EXT-10 | FIXED | Reconstructed eager raising callbacks pass check, native O0/O3 and Fast Debug. |
+| EXT-11 | FIXED | Native/Fast Debug payload `on_fail` variant dispatch agrees. |
+| EXT-12 | FIXED | IEEE division effects and Float text pass two Rust versions independently; coordinator verified Clang pairs. |
+| EXT-13 | FIXED | `recover err: match err` passes native/Fast Debug. |
+| EXT-14 | DESIGN-DECISION-REQUIRED | Missing/canonical symbols reject, but recomputed-hash pattern forgery builds and aborts. |
+| EXT-15 | DESIGN-DECISION-REQUIRED | Declared shapes and unambiguous qualified recovery pass; implicit availability/nominal cross-module identity unsettled. |
+| EXT-16 | FIXED | `recovered` keyword-prefix source passes checker/native/Fast Debug. |
+| EXT-17 | NOT-REPRODUCIBLE | Reconstructed grouped A/B bare re-raise passes; original archive unavailable. |
+| EXT-18 | FIXED | ENXIO/ENODEV and close-time ENOSPC mappings pass focused gates. |
+| EXT-19 | CONFIRMED | Failed-create name durability is a bounded contract limitation; cleanup passes, retry `sync()` is not proof of durable name. |
+| EXT-20 | FIXED | Deterministic Branch barrier and 64 concurrent native runs pass. |
+| INT-01 | FIXED | Joined captures and nested bare re-raise pass focused native/Fast Debug/source-free gates. |
+| INT-02 | FIXED | Tested Root FileIO/lock release and fresh acquisition order passes; general O6 assumes path completeness. |
+| INT-03 | FIXED | `Range.slice` and concurrent Branch cases pass. |
+| INT-04 | CONFIRMED | Concrete cross-crate Range remains unsupported but fails closed at Moss check; legal controls pass. |
+| INT-05 | DESIGN-DECISION-REQUIRED | Exact source-free pattern forgery remains build-success/runtime-abort. |
+| INT-06 | FIXED | Architect reran GCC with Rust 1.97/1.98; coordinator completed exact-SHA Clang pairs. |
+| INT-07 | CONFIRMED | O4/O8 and §42 early-release general proof gaps remain after code/spec inspection. |
+| INT-08 | FIXED | Ordinary `message` field no longer triggers Root scan. |
+| INT-09 | FIXED | Method receiver write reaches effect query and exact `cell.value` warning. |
+| INT-10 | DESIGN-DECISION-REQUIRED | Source-free imported-helper warning gate still fails with `[]`. |
+| INT-11 | FIXED | Unary/projection raise inference and unary speculative mapper regressions pass; O1 generality remains open. |
+| INT-12 | FIXED | Handler-local recovery no longer trips synchronization warning invariant. |
+| INT-13 | FIXED | Architect independently reran Phase 20 FileIO semantics/runtime/executor and Phase 21 declared-error/ABI gates. |
+
 ## Acceptance layers and open decisions
 
 This register uses two distinct layers. **Formal implementation obligations**
@@ -124,9 +172,10 @@ while general correctness needs a path-complete argument.
 | FileIO, locks and Branch execution | Injected failures, concurrent Roots, ordered Branch outcomes and zero terminal read tokens pass focused native gates. | The O4/O8 general proof and §42 early-release reconciliation remain incomplete; failed-create name durability has a contract caveat. |
 | Numeric conversions and Float output | Four Rust/C++ combinations pass the pinned native O0/O3 and Fast Debug corpus on `5941d98`; the complete numeric suite passes. | Pin the versions and corpus digest in reproducible CI. |
 
-No disposition above is self-certified FIXED while independent Architect
-verification is pending. Exact mode results and the final Engineering L6,
-Architect L6 and L7 votes belong in `PHASE_21_FINAL_REVIEW.md`.
+The independent statuses above apply to exact implementation `5941d98`.
+Mode-by-mode engineering results and the Engineering L6, Architect L6 and L7
+votes are in `PHASE_21_FINAL_REVIEW.md`; the architect's directly observed
+results are in `PHASE_21_ARCHITECT_REVIEW.md`.
 
 Human approval is required before changing §4 Root ingress, numerical grammar
 or canonical Float tie-breaking, O2 proof wording, the frozen source-free
