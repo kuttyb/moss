@@ -3539,6 +3539,11 @@ class Checker {
     std::map<string,MoveInfo> moved;
   };
 
+  struct ExceptionalOwnershipExit {
+    RaiseSet alternatives;
+    OwnershipEnv ownership;
+  };
+
   void retain_semantic_use(const string& target_identity, const string& kind,
                            int line) {
     if (target_identity.empty() || current_semantic_context_.empty()) return;
@@ -9921,9 +9926,37 @@ class Checker {
     return env;
   }
 
+  RaiseSet direct_ownership_raise_set(const Stmt& statement,
+                                      const TypeEnv& types) const {
+    RaiseSet alternatives = statement.kind == Stmt::Kind::Raise
+        ? statement.exceptional_alternatives : RaiseSet{};
+    if (statement.kind == Stmt::Kind::Message) {
+      auto receiver = types.find(statement.a);
+      if (receiver != types.end()) {
+        auto domain = domains_.find(canonical_type_name(receiver->second));
+        if (domain != domains_.end())
+          if (const Handler* target =
+                  find_handler(*domain->second, statement.b))
+            if (!(statement.message_root_ingress &&
+                  !target->failure_arms.empty()))
+              alternatives = raise_set_union(
+                  std::move(alternatives),
+                  target->observable_effects.raise_set);
+      }
+    }
+    for (const auto& expression : statement_expressions(statement))
+      alternatives = raise_set_union(
+          std::move(alternatives),
+          observable_expression_effects(
+              expression, types, {}, nullptr, {}, nullptr,
+              statement.message_root_ingress).raise_set);
+    return alternatives;
+  }
+
   void check_ownership_block(const vector<Stmt>& statements, size_t& index, int level,
                              OwnershipEnv& env, const Domain* current_domain,
-                             const Handler* current_handler) {
+                             const Handler* current_handler,
+                             vector<ExceptionalOwnershipExit>* exceptional = nullptr) {
     (void)current_domain;
     while (index < statements.size()) {
       const Stmt& s = statements[index];
@@ -9931,6 +9964,13 @@ class Checker {
       if (s.kind == Stmt::Kind::Else) return;
       if (!env.can_continue) { ++index; continue; }
       if (s.indent > level) return;
+
+      const RaiseSet direct_raises = exceptional
+          ? direct_ownership_raise_set(s, env.types) : RaiseSet{};
+      auto record_direct_raise = [&] {
+        if (exceptional && !direct_raises.empty())
+          exceptional->push_back({direct_raises, env});
+      };
 
       if (s.kind == Stmt::Kind::Match) {
         auto type = inferred_expr_type(s.a, env.types);
@@ -9951,6 +9991,7 @@ class Checker {
         } else {
           check_ownership_expression(s.line, s.a, env, Effect::Read);
         }
+        record_direct_raise();
         bool read_place = !consuming && storage_location(s.a, env.types).has_value();
         bool prior_read = env.active_read_traversals.count(s.a);
         const EnumType& declaration = *enums_.at(canonical_type_name(*type));
@@ -9979,7 +10020,7 @@ class Checker {
           }
           ++index;
           check_ownership_block(statements, index, level + 2, branch,
-                                current_domain, current_handler);
+                                current_domain, current_handler, exceptional);
           for (const auto& name : arm.args) {
             if (incoming.types.count(name)) branch.types[name] = incoming.types.at(name);
             else branch.types.erase(name);
@@ -10012,21 +10053,51 @@ class Checker {
         OwnershipEnv incoming = env;
         ++index;
         OwnershipEnv normal = incoming;
+        vector<ExceptionalOwnershipExit> attempted_exits;
         check_ownership_block(statements, index, level + 1, normal,
-                              current_domain, current_handler);
+                              current_domain, current_handler, &attempted_exits);
         vector<OwnershipEnv> paths;
         if (normal.can_continue) paths.push_back(normal);
         bool saw_recover = false;
+        RaiseSet handled;
+        vector<ExceptionalOwnershipExit> recovery_exits;
         while (index < statements.size() &&
                statements[index].indent == level &&
                statements[index].kind == Stmt::Kind::Recover) {
           const Stmt& arm = statements[index++];
           saw_recover = true;
           OwnershipEnv recovered = incoming;
+          for (const auto& raised : attempted_exits) {
+            bool reaches_arm = false;
+            for (const auto& identity : arm.exceptional_alternatives)
+              reaches_arm |= raised.alternatives.count(identity) != 0;
+            if (!reaches_arm) continue;
+            for (const auto& binding : incoming.types) {
+              const auto before_id = incoming.binding_identities.find(binding.first);
+              const auto raised_id =
+                  raised.ownership.binding_identities.find(binding.first);
+              const bool same_binding =
+                  (before_id == incoming.binding_identities.end() &&
+                   raised_id == raised.ownership.binding_identities.end()) ||
+                  (before_id != incoming.binding_identities.end() &&
+                   raised_id != raised.ownership.binding_identities.end() &&
+                   before_id->second == raised_id->second);
+              if (!same_binding) {
+                recovered.moved.emplace(
+                    binding.first, MoveInfo{arm.line, "shadowed before raise"});
+              } else if (auto moved = raised.ownership.moved.find(binding.first);
+                         moved != raised.ownership.moved.end()) {
+                recovered.moved.emplace(*moved);
+              }
+            }
+          }
+          handled.insert(arm.exceptional_alternatives.begin(),
+                         arm.exceptional_alternatives.end());
           if (!arm.a.empty() && arm.a.find('.') == string::npos &&
               arm.a.find(',') == string::npos) {
             recovered.types[arm.a] = "_selected_error";
             recovered.immutable_locals.insert(arm.a);
+            recovered.moved.erase(arm.a);
           } else if (!arm.a.empty()) {
             auto alternatives = split_top_level(arm.a, ',');
             if (alternatives.size() == 1)
@@ -10034,15 +10105,27 @@ class Checker {
                    phase21_pattern_bindings(arm.line, alternatives.front())) {
                 recovered.types[binding.first] = binding.second;
                 recovered.immutable_locals.insert(binding.first);
+                recovered.moved.erase(binding.first);
               }
           }
           check_ownership_block(statements, index, level + 1, recovered,
-                                current_domain, current_handler);
+                                current_domain, current_handler, &recovery_exits);
           if (recovered.can_continue) paths.push_back(std::move(recovered));
         }
         if (!saw_recover)
           err(s.line, "try must be followed by at least one recover arm",
               "TRY_REQUIRES_RECOVER");
+        if (exceptional) {
+          for (auto& raised : attempted_exits) {
+            raised.alternatives = raise_set_without(
+                raised.alternatives, handled);
+            if (!raised.alternatives.empty())
+              exceptional->push_back(std::move(raised));
+          }
+          exceptional->insert(exceptional->end(),
+                              std::make_move_iterator(recovery_exits.begin()),
+                              std::make_move_iterator(recovery_exits.end()));
+        }
         env = incoming;
         env.can_continue = !paths.empty();
         if (!paths.empty()) {
@@ -10060,11 +10143,13 @@ class Checker {
 
       if (s.kind == Stmt::Kind::If || s.kind == Stmt::Kind::While) {
         check_ownership_expression(s.line, s.a, env, Effect::Read);
+        record_direct_raise();
         bool is_if = s.kind == Stmt::Kind::If;
         OwnershipEnv incoming = env;
         ++index;
         OwnershipEnv body = incoming;
-        check_ownership_block(statements, index, level + 1, body, current_domain, current_handler);
+        check_ownership_block(statements, index, level + 1, body,
+                              current_domain, current_handler, exceptional);
         if (!is_if && body.can_continue)
           for (const auto& moved : body.moved)
             if (incoming.types.count(moved.first) && !incoming.moved.count(moved.first))
@@ -10076,7 +10161,7 @@ class Checker {
           ++index;
           OwnershipEnv alternative = incoming;
           check_ownership_block(statements, index, level + 1, alternative,
-                                current_domain, current_handler);
+                                current_domain, current_handler, exceptional);
           env = incoming;
           env.can_continue = body.can_continue || alternative.can_continue;
           if (body.can_continue && alternative.can_continue) {
@@ -10114,6 +10199,7 @@ class Checker {
             source_effect = next->receiver_effect;
         }
         check_ownership_expression(s.line, s.b, env, source_effect);
+        record_direct_raise();
         OwnershipEnv body = env;
         body.types[s.a] = element.value_or("_value");
         body.binding_identities[s.a] = statement_binding_identity(
@@ -10122,7 +10208,7 @@ class Checker {
           body.active_read_traversals.insert(source_root);
         ++index;
         check_ownership_block(statements, index, level + 1, body,
-                              current_domain, current_handler);
+                              current_domain, current_handler, exceptional);
         body.types.erase(s.a);
         if (auto prior = env.binding_identities.find(s.a);
             prior != env.binding_identities.end())
@@ -10172,6 +10258,7 @@ class Checker {
           } else {
             check_ownership_expression(s.line, s.b, env, Effect::Read);
           }
+          record_direct_raise();
           std::optional<string> type;
           if (auto constructed = domain_constructor(s.b)) type = *constructed;
           else type = inferred_expr_type(s.b, env.types);
@@ -10222,6 +10309,7 @@ class Checker {
           } else {
             check_ownership_expression(s.line, s.b, env, Effect::Read);
           }
+          record_direct_raise();
           if (auto constructed = domain_constructor(s.b)) {
             env.types[s.a] = *constructed;
             env.moved.erase(s.a);
@@ -10260,6 +10348,7 @@ class Checker {
                            message_payload_materializes(s.a, env));
             }
           }
+          record_direct_raise();
           if (!s.message_result.empty()) {
             if (handler->reply_type) env.types[s.message_result] = *handler->reply_type;
             env.binding_identities[s.message_result] = statement_binding_identity(
@@ -10271,6 +10360,7 @@ class Checker {
         }
         case Stmt::Kind::Echo:
           for (const auto& arg : s.args) check_ownership_expression(s.line, arg, env, Effect::Read);
+          record_direct_raise();
           ++index;
           break;
         case Stmt::Kind::Call:
@@ -10279,6 +10369,7 @@ class Checker {
           else
             check_ownership_expression(s.line, s.a + "(" + join_arguments(s.args) + ")",
                                        env, Effect::Read);
+          record_direct_raise();
           // A fresh inferred Queue/Vector learns its element type at push.
           // Keep the ownership walk in sync with the type-environment walk so
           // a subsequent pop can be checked as the concrete enum value.
@@ -10297,6 +10388,7 @@ class Checker {
             err(s.line, "FileIO and ranges cannot be replied",
                 "FILEIO_BOUNDARY_ESCAPE");
           check_ownership_expression(s.line, s.a, env, Effect::Read);
+          record_direct_raise();
           if (current_handler && current_handler->reply_type)
             require_cross_domain_value(s.line, s.a, *current_handler->reply_type,
                                        env, " in a reply");
@@ -10308,6 +10400,7 @@ class Checker {
         }
         case Stmt::Kind::Raw:
           check_ownership_expression(s.line, s.text, env, Effect::Read);
+          record_direct_raise();
           ++index;
           break;
         case Stmt::Kind::Pass:
@@ -10315,12 +10408,14 @@ class Checker {
           break;
         case Stmt::Kind::Return:
           if (!s.a.empty()) check_ownership_expression(s.line, s.a, env, Effect::Consume);
+          record_direct_raise();
           ++index;
           env.can_continue = false;
           break;
         case Stmt::Kind::Raise:
           if (!s.a.empty())
             check_ownership_expression(s.line, s.a, env, Effect::Consume);
+          record_direct_raise();
           ++index;
           env.can_continue = false;
           break;

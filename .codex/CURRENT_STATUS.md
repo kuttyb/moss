@@ -1,5 +1,30 @@
 # Moss current status
 
+## Phase 21.A exceptional recovery ownership checkpoint — 2026-10-10
+
+The ownership checker previously entered each `recover` arm with the state
+from before its `try`. A non-Copy enum consumed before an explicit raise, or
+by a fallible consuming call, was accepted when the recovery arm read the
+consumed binding; native Rust then failed with E0382. The checker now records
+ownership snapshots at direct raising statements, carries unmatched snapshots
+through nested `try`/`recover`, and joins moved binding facts only for the
+error alternatives selected by each recovery arm. It records a fallible
+statement after its expression ownership effects and before a successful
+assignment initializes or reinitializes the target. Regression coverage
+includes explicit and call-originated raises, nested propagation, a
+variant-specific checker-positive path, and reinitialization in `recover`
+with a passing native executable.
+
+Strict C++17 warning-free syntax compilation, the focused recovery gate,
+full `make check` (`all Moss v0.1 tests passed`), `make examples`, and
+`git diff --check` pass after the compiler edit. A separate legal
+variant-specific path still passes `moss check` but fails native rustc E0382:
+the current `try` closure captures a non-Copy outer binding by move before
+control flow selects an error. Its source fixture is retained by the focused
+checker gate; native closure lowering needs a path-sensitive ownership handoff.
+The handler-local `on_fail` capture frame and final O1–O9 review also remain
+open. No Phase 21 acceptance or merge to `main` is claimed.
+
 ## Phase 21.A capture-frame investigation and documentation checkpoint — 2026-10-10
 
 The concrete `on_fail` local probe in `tmp/phase21_on_fail_capture_probe.moss`

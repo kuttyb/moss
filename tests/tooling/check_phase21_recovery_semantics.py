@@ -58,6 +58,113 @@ for filename, code in invalid_on_fail.items():
     failure_json = json.loads(failure.stdout)
     assert failure_json["error"]["code"] == code, (filename, failure_json)
 
+
+# Recovery enters from the actual exceptional edge. A move before the raise
+# must remain moved, including through a nested try or a fallible consuming
+# call. Reinitializing a mutable binding in the recovery arm is legal.
+ownership_scratch = repo / "tmp/phase21_recovery_ownership"
+ownership_scratch.mkdir(parents=True, exist_ok=True)
+ownership_header = '''enum Failure:
+  Bad
+  Other
+enum Data:
+  Have(value: String)
+'''
+ownership_cases = {
+    "consumed_before_raise": '''fn main():
+  var item = Data.Have(value: "seven")
+  try:
+    match consume item:
+      case Have(value):
+        raise Failure.Bad
+  recover Failure.Bad:
+    match item:
+      case Have(value):
+        echo value
+''',
+    "consumed_by_fallible_call": '''fn consume_then_fail(data: Data):
+  match consume data:
+    case Have(value):
+      raise Failure.Bad
+fn main():
+  var item = Data.Have(value: "seven")
+  try:
+    consume_then_fail(item)
+  recover Failure.Bad:
+    match item:
+      case Have(value):
+        echo value
+''',
+    "consumed_in_nested_try": '''fn main():
+  var item = Data.Have(value: "seven")
+  try:
+    try:
+      match consume item:
+        case Have(value):
+          raise Failure.Bad
+    recover Failure.Other:
+      pass
+  recover Failure.Bad:
+    match item:
+      case Have(value):
+        echo value
+''',
+}
+for name, body in ownership_cases.items():
+    case_source = ownership_scratch / f"{name}.moss"
+    case_source.write_text(ownership_header + body)
+    failure = run(compiler, "check", case_source, "--json")
+    diagnostic = json.loads(failure.stdout)
+    assert failure.returncode != 0, (name, diagnostic)
+    assert diagnostic["error"]["code"] == "OWNERSHIP_USE_AFTER_CONSUME", (
+        name, diagnostic)
+
+reinitialized_source = ownership_scratch / "reinitialized.moss"
+reinitialized_source.write_text(ownership_header + '''fn main():
+  var item = Data.Have(value: "seven")
+  try:
+    match consume item:
+      case Have(value):
+        raise Failure.Bad
+  recover Failure.Bad:
+    item = Data.Have(value: "new")
+    match item:
+      case Have(value):
+        echo value
+''')
+reinitialized = run(compiler, "check", reinitialized_source, "--json")
+assert reinitialized.returncode == 0, reinitialized.stdout
+reinitialized_rust = ownership_scratch / "reinitialized.rs"
+reinitialized_native = ownership_scratch / "reinitialized"
+assert run(compiler, reinitialized_source, "-o", reinitialized_rust).returncode == 0
+compiled = run("rustc", "-D", "warnings", reinitialized_rust, "-o",
+               reinitialized_native)
+assert compiled.returncode == 0, compiled.stderr
+assert run(reinitialized_native).stdout == "new\n"
+
+# D7 is variant-specific: this checker-positive path raises Failure.Second
+# without consuming item. Native closure capture for that shape is tracked
+# separately as an unfinished lowering gate.
+variant_source = ownership_scratch / "variant_specific.moss"
+variant_source.write_text(ownership_header + '''fn main():
+  var item = Data.Have(value: "seven")
+  try:
+    if true:
+      match consume item:
+        case Have(value):
+          raise Failure.Bad
+    else:
+      raise Failure.Other
+  recover Failure.Bad:
+    pass
+  recover Failure.Other:
+    match item:
+      case Have(value):
+        echo value
+''')
+variant_checked = run(compiler, "check", variant_source, "--json")
+assert variant_checked.returncode == 0, variant_checked.stdout
+
 for name in ("range_fileio", "range_direct", "fileio_direct"):
     fileio_source = repo / "tests/tooling/fixtures/generic_specialization" / f"{name}.moss"
     fileio_check = run(compiler, "check", fileio_source, "--json")
