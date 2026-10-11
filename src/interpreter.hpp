@@ -133,6 +133,14 @@ class FastInterpreter {
       } catch (const RuntimeError& error) {
         output << "FAIL " << test.name << ": " << error.what() << "\n";
         ++failed;
+      } catch (const RaisedSignal& raised) {
+        output << "FAIL " << test.name << ": unhandled typed raise "
+               << raised.identity.canonical() << " at "
+               << (!raised.source_file.empty() ? raised.source_file :
+                   !test.source_file.empty() ? test.source_file :
+                   options_.source_file)
+               << ":" << raised.line << "\n";
+        ++failed;
       }
     }
     if (!discovered)
@@ -213,6 +221,8 @@ class FastInterpreter {
   struct RaisedSignal {
     RaisedIdentity identity;
     Value value;
+    int line = 0;
+    std::string source_file;
   };
 
   const Program& program_;
@@ -232,12 +242,52 @@ class FastInterpreter {
       return true;
     for (const auto& alternative : split_arguments(selector)) {
       const auto dot = alternative.find('.');
+      const auto payload = alternative.find('(', dot);
       if (dot != std::string::npos &&
           trim_copy(alternative.substr(0, dot)) == identity.type &&
-          trim_copy(alternative.substr(dot + 1)) == identity.variant)
+          trim_copy(alternative.substr(dot + 1,
+              payload == std::string::npos ? std::string::npos :
+              payload - dot - 1)) == identity.variant)
         return true;
     }
     return false;
+  }
+
+  std::vector<std::pair<std::string, std::pair<Value, std::string>>>
+  error_pattern_payloads(const std::string& selector,
+                         const RaisedSignal& raised, int line) const {
+    for (const auto& alternative : split_arguments(selector)) {
+      if (!recovery_matches(alternative, raised.identity)) continue;
+      const auto open = alternative.find('(');
+      if (open == std::string::npos) return {};
+      const auto close = alternative.rfind(')');
+      if (close == std::string::npos || close <= open ||
+          !raised.value.object)
+        throw RuntimeError(line, "checked error payload is absent");
+      const auto names = split_arguments(
+          alternative.substr(open + 1, close - open - 1));
+      const EnumCase* variant = nullptr;
+      for (const auto& declaration : program_.enums)
+        if (declaration.name == raised.identity.type)
+          for (const auto& item : declaration.cases)
+            if (item.name == raised.identity.variant) variant = &item;
+      if (!variant || names.size() != variant->fields.size())
+        throw RuntimeError(line, "checked error payload shape is invalid");
+      std::vector<std::pair<std::string, std::pair<Value, std::string>>>
+          bindings;
+      for (size_t index = 0; index < names.size(); ++index) {
+        const auto& name = names[index];
+        const auto& field = variant->fields[index];
+        auto value = raised.value.object->fields.find(field.name);
+        if (value == raised.value.object->fields.end())
+          throw RuntimeError(line,
+              "checked error payload field '" + field.name +
+              "' is absent");
+        bindings.push_back({name, {independent(value->second), field.type}});
+      }
+      return bindings;
+    }
+    return {};
   }
 
   static std::string checked_binding_type(const Stmt& statement,
@@ -851,7 +901,7 @@ class FastInterpreter {
           raised.object->case_name = variant;
           emit("raise", frame, line, "variant:" + error_type + "." + variant);
           throw RaisedSignal{RaisedIdentity::enum_variant(error_type, variant),
-                             std::move(raised)};
+                             std::move(raised), line, frame.source_file};
         }
         if (numeric_name == "to_int") {
           auto argument = eval(args.front(), frame, line, output);
@@ -865,7 +915,7 @@ class FastInterpreter {
           raised.object->case_name = variant;
           emit("raise", frame, line, "variant:" + error_type + "." + variant);
           throw RaisedSignal{RaisedIdentity::enum_variant(error_type, variant),
-                             std::move(raised)};
+                             std::move(raised), line, frame.source_file};
         }
         if (auto fn = function(callee)) return call(*fn, args, frame, line, output);
         auto callable_local = frame.locals.find(callee);
@@ -1311,37 +1361,51 @@ class FastInterpreter {
                    raised.identity.canonical());
               const bool bound = !recovery.a.empty() &&
                   recovery.a.find('.') == std::string::npos;
-              std::optional<Value> saved_local;
-              std::optional<std::string> saved_type;
+              struct SavedBinding {
+                std::string name;
+                std::optional<Value> value;
+                std::optional<std::string> type;
+              };
+              std::vector<SavedBinding> saved;
+              const auto bind = [&](const std::string& name, Value value,
+                                    const std::string& type) {
+                SavedBinding prior;
+                prior.name = name;
+                if (auto found = frame.locals.find(name);
+                    found != frame.locals.end())
+                  prior.value = found->second;
+                if (auto found = frame.local_types.find(name);
+                    found != frame.local_types.end())
+                  prior.type = found->second;
+                saved.push_back(std::move(prior));
+                frame.locals[name] = std::move(value);
+                frame.local_types[name] = type;
+              };
+              const auto restore = [&] {
+                for (auto item = saved.rbegin(); item != saved.rend(); ++item) {
+                  if (item->value) frame.locals[item->name] = *item->value;
+                  else frame.locals.erase(item->name);
+                  if (item->type) frame.local_types[item->name] = *item->type;
+                  else frame.local_types.erase(item->name);
+                }
+              };
               if (bound) {
-                auto prior = frame.locals.find(recovery.a);
-                if (prior != frame.locals.end()) saved_local = prior->second;
-                auto prior_type = frame.local_types.find(recovery.a);
-                if (prior_type != frame.local_types.end())
-                  saved_type = prior_type->second;
-                frame.locals[recovery.a] = independent(raised.value);
-                frame.local_types[recovery.a] = raised.identity.type;
+                bind(recovery.a, independent(raised.value),
+                     raised.identity.type);
               }
+              for (const auto& item : error_pattern_payloads(
+                       recovery.a, raised, recovery.line))
+                bind(item.first, item.second.first, item.second.second);
               selected_errors_.push_back(raised);
               try {
                 Flow flow = execute(
                     statements, frame, output, arm + 1, arm_end);
                 selected_errors_.pop_back();
-                if (bound) {
-                  frame.locals.erase(recovery.a);
-                  frame.local_types.erase(recovery.a);
-                  if (saved_local) frame.locals[recovery.a] = *saved_local;
-                  if (saved_type) frame.local_types[recovery.a] = *saved_type;
-                }
+                restore();
                 if (flow.returned) return flow;
               } catch (...) {
                 selected_errors_.pop_back();
-                if (bound) {
-                  frame.locals.erase(recovery.a);
-                  frame.local_types.erase(recovery.a);
-                  if (saved_local) frame.locals[recovery.a] = *saved_local;
-                  if (saved_type) frame.local_types[recovery.a] = *saved_type;
-                }
+                restore();
                 throw;
               }
             }
@@ -1532,7 +1596,8 @@ class FastInterpreter {
                                "checked raise lacks one concrete error identity");
           RaisedSignal raised{*statement.exceptional_alternatives.begin(),
                               independent(eval(statement.a, frame,
-                                               statement.line, output))};
+                                               statement.line, output)),
+                              statement.line, frame.source_file};
           emit("raise", frame, statement.line, raised.identity.canonical());
           throw raised;
         }

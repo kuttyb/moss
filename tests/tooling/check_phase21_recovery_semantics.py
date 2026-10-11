@@ -173,6 +173,9 @@ for branch, expected in (("true", ""), ("false", "seven\n")):
                    native_rust, "-o", native_binary)
     assert compiled.returncode == 0, compiled.stderr
     assert run(native_binary).stdout == expected
+    interpreted = run(compiler, "run", "--interp", variant_source)
+    assert interpreted.returncode == 0 and interpreted.stdout == expected, (
+        branch, interpreted.stdout, interpreted.stderr)
 
 # A recovery READ through a helper, reassignment after a consumed branch,
 # and post-try use all follow the same checked ownership path.
@@ -210,6 +213,9 @@ for branch, expected in (("true", "new\n"),
                    native_rust, "-o", native_binary)
     assert compiled.returncode == 0, compiled.stderr
     assert run(native_binary).stdout == expected
+    interpreted = run(compiler, "run", "--interp", slot_source)
+    assert interpreted.returncode == 0 and interpreted.stdout == expected, (
+        branch, interpreted.stdout, interpreted.stderr)
 
 branch_assign_source = ownership_scratch / "variant_branch_reassign.moss"
 branch_assign_source.write_text(ownership_header + '''fn main():
@@ -322,5 +328,16 @@ assert traced.returncode == 0, (traced.stdout, traced.stderr)
 events = [json.loads(line) for line in traced.stderr.splitlines() if line.strip()]
 assert sum(item.get("event") == "raise" for item in events) == 4, events
 assert sum(item.get("event") == "recover" for item in events) == 4, events
+
+unhandled_test = repo / "tests/tooling/fixtures/phase21_unhandled_interpreter_test.moss"
+checked_test = run(compiler, "check", unhandled_test, "--json")
+assert checked_test.returncode == 0, checked_test.stdout
+test_result = run(compiler, "test", "--interp", unhandled_test)
+assert test_result.returncode == 1, test_result
+assert ("FAIL unhandled typed raise: unhandled typed raise "
+        "enum:Failure:Bad at " + str(unhandled_test) + ":4") in test_result.stdout, (
+    test_result.stdout, test_result.stderr)
+assert "PASS subsequent test still runs" in test_result.stdout, test_result.stdout
+assert "1 passed, 1 failed" in test_result.stdout, test_result.stdout
 
 print("Phase 21 recovery checker, effects, and Fast Debug probes passed.")

@@ -24,7 +24,10 @@ for name, output in (
         ("message_result", "hello\n"),
         ("try_local", "9\n"),
         ("owned_payload", "hello\n"),
-        ("slot_combined", "seven\n")):
+        ("slot_combined", "seven\n"),
+        ("if_join", "yes\nno\n"),
+        ("try_join", "no\nyes\n"),
+        ("nested_reraise", "4\nkept\n")):
     source = fixtures / f"phase21_capture_{name}.moss"
     checked = run(compiler, "check", source, "--json")
     assert checked.returncode == 0, (name, checked.stdout, checked.stderr)
@@ -38,11 +41,15 @@ for name, output in (
     executed = run(executable)
     assert executed.returncode == 0 and executed.stdout == output, (
         name, executed.returncode, executed.stdout, executed.stderr)
+    interpreted = run(compiler, "run", "--interp", source)
+    assert interpreted.returncode == 0 and interpreted.stdout == output, (
+        name, interpreted.returncode, interpreted.stdout, interpreted.stderr)
 
 
 for name, code in (
         ("preinit", "ON_FAIL_CAPTURE_NOT_INITIALIZED"),
         ("consumed", "ON_FAIL_CAPTURE_CONSUMED"),
+        ("branch_mismatch", "ON_FAIL_CAPTURE_BINDING_MISMATCH"),
         ("fileio", "ON_FAIL_CAPTURE_NOT_OWNED"),
         ("borrowed_payload", "ON_FAIL_CAPTURE_NOT_OWNED")):
     source = fixtures / f"phase21_capture_{name}.moss"
@@ -50,6 +57,21 @@ for name, code in (
     assert checked.returncode != 0, (name, checked.stdout, checked.stderr)
     diagnostic = json.loads(checked.stdout)
     assert diagnostic["error"]["code"] == code, (name, diagnostic)
+
+
+# The same handler dispatches its trailer as a Root, while its nested call
+# propagates the typed payload into the caller's lexical recovery arm.
+source = fixtures / "phase21_on_fail_root_nested.moss"
+assert run(compiler, "check", source, "--json").returncode == 0
+generated = scratch / "root_nested.rs"
+executable = scratch / "root_nested"
+assert run(compiler, source, "-o", generated).returncode == 0
+compiled = run("rustc", "--edition=2021", "-D", "warnings",
+               generated, "-o", executable)
+assert compiled.returncode == 0, compiled.stderr
+for result in (run(executable), run(compiler, "run", "--interp", source)):
+    assert result.returncode == 0 and result.stdout == "8\n9\n", (
+        result.returncode, result.stdout, result.stderr)
 
 
 print("Phase 21 D7 owned capture proof and native handoff passed.")

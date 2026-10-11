@@ -1,0 +1,19 @@
+enum Failure:
+  Bad(code: Int)
+domain Inner:
+  fn Run() -> Int:
+    raise Failure.Bad(code: 7)
+  on_fail Failure.Bad(code):
+    reply code + 1
+domain Outer:
+  domainroutes(inner: Inner)
+  fn Run() -> Int:
+    try:
+      reply message inner.Run()
+    recover Failure.Bad(code):
+      reply code + 2
+fn main():
+  inner = Inner()
+  outer = Outer(inner: inner)
+  echo message inner.Run()
+  echo message outer.Run()

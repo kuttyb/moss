@@ -1,0 +1,8 @@
+enum Failure:
+  Bad
+fn fail():
+  raise Failure.Bad
+test "unhandled typed raise":
+  fail()
+test "subsequent test still runs":
+  assert(true)
