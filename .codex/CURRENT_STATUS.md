@@ -1,5 +1,44 @@
 # Moss current status
 
+## Phase 21.D Float formatter and 21.C large-read checkpoint — 2026-10-10
+
+The approved Float text tie rule is now explicit in the normative spec:
+among shortest round-trip decimals, choose the nearest exact value, then an
+even final significand digit on an exact tie. Native generated Rust uses the
+pinned Ryū 1.0.23 binary64 shortest-decimal core with Moss's own notation
+thresholds and special-value spellings; it no longer delegates Float echo to
+Rust Debug. The embedded source is Apache-2.0 attributed. Fast Debug's
+`std::to_chars` path and native output agreed for 100,883 seeded/boundary
+binary64 bit patterns in an isolated comparison. The focused native/Fast Debug
+golden gate includes exact halfway vectors, subnormals, maximum finite, and
+the plain/scientific boundaries. Strict `rustc --check-cfg -D warnings` is
+covered. The language design's consistency summary now includes completed
+typed-raise exits under Phase 21 Theorem A2.
+
+The C/B review found that a maximum-size checked read on a short file
+allocated the entire request before reaching EOF. FileIO now reads into a
+buffer that grows in at most 1 MiB steps; reservation failure returns typed
+`FileError.IO`. Bounded Branch lanes check both start and end offset
+arithmetic and publish ordered EOF for unrepresentable ranges. The
+sequential chunk fallback uses the same end-boundary rule. A native
+maximum-Int chunk request against a four-byte file exercises both paths and
+returns the expected `131` without aborting.
+
+After the final source edit, focused Float, Branch, FileIO, 10.6D/10.6E/10.6F
+and source-free specialization checks passed; full `make check` ended with
+`all Moss v0.1 tests passed`; `make examples`, strict C++17
+`-Wall -Wextra -Werror -pedantic` syntax compilation, and `git diff --check`
+passed. The full gate used an absolute repository-local `TMPDIR`; an earlier
+relative `TMPDIR` run invalidated three Emacs tests, and an earlier source
+revision failed generated-code scans that had not yet excluded the new
+runtime. Both issues were corrected before the final passing run.
+
+Phase 21 is still open. A's handler-local owned `on_fail` capture frame and
+final O1–O9 proof review, B's final FileIO source/API audit, C's remaining
+speculative allocation/panic review, and D's wider toolchain pins and final
+documentation migration remain. No Phase 21 acceptance or merge to `main`
+is claimed.
+
 ## Phase 21.D numeric parsing and checked conversion checkpoint — 2026-10-10
 
 `parse_int(String)`, `parse_float(String)`, and `to_int(Float)` now have

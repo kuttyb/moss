@@ -58,15 +58,20 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_doc_examples.py
 
 # Generated Rust minus the emitted Phase 20 executor runtime, whose work
 # queue, threads, and C Branch ABI are runtime internals rather than lowered
-# Moss code.  Negative backend-shape checks inspect only lowered code.  Unless
-# exactly one line-anchored, delimited block is present, the whole file is
-# returned, so a malformed delimiter makes these checks stricter, never weaker.
+# Moss code. The pinned Float formatter is also compiler runtime code.
+# Negative backend-shape checks inspect only lowered code. Unless exactly one
+# of each delimited block is present, the whole file is returned.
 lowered_rust() {
   runtime_start='^// Phase 20 Executor Runtime  (moss executor_runtime_rust: '
   runtime_end='^// ─── End Phase 20 Executor Runtime '
+  float_start='^// ─── Begin Moss Float Format Runtime '
+  float_end='^// ─── End Moss Float Format Runtime '
   if [ "$(grep -c "$runtime_start" "$1")" -eq 1 ] &&
-     [ "$(grep -c "$runtime_end" "$1")" -eq 1 ]; then
-    sed "\\#$runtime_start#,\\#$runtime_end#d" "$1"
+     [ "$(grep -c "$runtime_end" "$1")" -eq 1 ] &&
+     [ "$(grep -c "$float_start" "$1")" -eq 1 ] &&
+     [ "$(grep -c "$float_end" "$1")" -eq 1 ]; then
+    sed -e "\#$runtime_start#,\#$runtime_end#d" \
+        -e "\#$float_start#,\#$float_end#d" "$1"
   else
     cat "$1"
   fi

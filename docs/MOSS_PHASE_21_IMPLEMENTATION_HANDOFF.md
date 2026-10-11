@@ -22,7 +22,7 @@ Part I Example 10 and the corresponding Part II §21 cross-enum example open and
 
 ### Numeric contract freeze checks (not design redesign)
 
-- Part II §13.2: canonical shortest-round-trip Float formatting specifies a "deterministic nearest-roundtrip choice for any ties." Freeze an unambiguous tie-break rule or a named, version-pinned reference algorithm, plus adversarial halfway/tie golden vectors; a finite golden suite alone is not a general definition.
+- Part II §13.2: canonical shortest-round-trip Float formatting now chooses the nearest decimal value and an even final significand digit on an exact tie. Keep adversarial halfway/tie vectors in the golden suite and pin the algorithm independently of host Rust formatting.
 - Part II §13.3: establish an explicit accepted finite decimal token grammar in tests (e.g. `.5`, `1.`, `1e+3`, uppercase `E`, signed zero, leading zeros) so Rust/Interpreter parsers cannot quietly diverge on forms not explicitly covered by the text. Do not impose a new grammar by inference in an agent; seek approval for any previously unsettled token spelling.
 
 These are contract-completeness checks, not objections to the central exception-handling architecture.

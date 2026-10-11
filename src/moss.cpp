@@ -36,6 +36,7 @@
 #include "interpreter.hpp"
 #include "handler_runtime.hpp"
 #include "fileio_runtime.hpp"
+#include "float_format_runtime.hpp"
 #include "executor_runtime.hpp"
 #include "synchronization_lowering.hpp"
 
@@ -13394,6 +13395,7 @@ class Generator {
     o << "fn __moss_require_send<T: Send>() {}\n\n";
 
     o << handler_runtime_rust();
+    o << float_format_runtime_rust();
     if (program_uses_numeric_builtins()) o << numeric_runtime_rust();
     if (program_uses_fileio(p_)) {
       o << fileio_runtime_rust();
@@ -17671,11 +17673,7 @@ class Generator {
                                                    argument));
               auto type = generated_expr_type(s.args[argument], &types);
               if (type && canonical_type_name(*type) == "float")
-                rendered = "{ let __moss_echo_float: f64 = " + rendered +
-                    "; if __moss_echo_float == 0.0 && "
-                    "__moss_echo_float.is_sign_negative() { "
-                    "\"-0.0\".to_string() } else { "
-                    "format!(\"{:?}\", __moss_echo_float) } }";
+                rendered = "__moss_ryu::canonical_float_text(" + rendered + ")";
               o << ", " << rendered;
             }
             o << ");\n";

@@ -167,7 +167,9 @@ assert re.search(
 ), text[scope_match.start():join_at]
 assert re.search(
     r"match __moss_chunk_index_\d+\.checked_mul\(__moss_chunk_size_\d+\)"
-    r" \{\s*None => __MossChunkOutcome_\d+::Eof", text[scope_match.start():join_at]
+    r"\.and_then\(\|offset\| offset\.checked_add\(__moss_chunk_size_\d+\)"
+    r"\.map\(\|_\| offset\)\) \{\s*None => __MossChunkOutcome_\d+::Eof",
+    text[scope_match.start():join_at]
 ), text[scope_match.start():join_at]
 assert "MossFileError" in text
 assert "::Raised { index:" in text
@@ -175,6 +177,11 @@ assert "::Eof { index:" in text
 assert "::Value { index:" in text
 assert ".read_checked(" in text
 assert ".read(" not in text[scope_match.start():join_at]
+assert re.search(
+    r"if __moss_chunk_len_\d+ < __moss_chunk_size_\d+ \|\| "
+    r"__moss_chunk_offset_\d+\.checked_add\(__moss_chunk_size_\d+\)"
+    r"\.is_none\(\) \{ break; \}", text
+), text
 raise_at = text.index(
     "return Err(__moss_raise_fileio(error))",
     observe_at,
@@ -394,5 +401,21 @@ run(["rustc", "--edition=2021", "-D", "warnings", "--cfg", "moss_perf",
      fault_rs, "-o", fault_bin])
 for _ in range(32):
     assert run([fault_bin]).stdout == "13\n21\n"
+
+# A huge valid request against a tiny file must read only through EOF. The
+# speculative later lanes have unrepresentable offset+size and publish EOF
+# without entering FileIO; eager full-request allocation would abort here.
+large_source = OUT / "phase21c_large_read.moss"
+large_source.write_text(
+    SOURCE.replace("file.chunks(2)", "file.chunks(9223372036854775807)")
+          .replace("    message worker.Check(", "    echo message worker.Check(")
+)
+(REPO / "tmp/phase21c-branch-errors.data").write_bytes(b"ABCD")
+large_rust = OUT / "phase21c_large_read.rs"
+large_ir = run([COMPILER, large_source, "--dump-functional-ir", "-o", large_rust]).stdout
+assert "eligible=yes" in large_ir, large_ir
+large_bin = OUT / "phase21c_large_read"
+run(["rustc", "--edition=2021", "-D", "warnings", large_rust, "-o", large_bin])
+assert run([large_bin]).stdout == "131\n"
 
 print("phase21c branch-error checks passed")

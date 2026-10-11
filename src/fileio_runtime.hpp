@@ -1295,10 +1295,15 @@ pub mod moss_fileio {
         let after_fault = take_fileio_fault(MossFileIoFaultSite::ReadAfterPrefix);
         let target = after_fault
             .map_or(target, |(_, progress)| std::cmp::min(progress, target));
-        let mut buf = vec![0u8; target];
+        // Grow only as bytes are requested from the kernel. A very large
+        // checked request against a short file must reach EOF without first
+        // allocating the entire requested length in a speculative Branch.
+        let mut buf = Vec::new();
         let mut total_read = 0usize;
-        let mut at_eof = false;
-        while total_read < target && !at_eof {
+        while total_read < target {
+            let request = std::cmp::min(target - total_read, 1024 * 1024);
+            buf.try_reserve_exact(request).map_err(|_| MossFileError::IO)?;
+            buf.resize(total_read + request, 0);
             let current_off = offset.checked_add(i64::try_from(total_read).unwrap_or_else(|_| std::process::abort()))
                 .unwrap_or_else(|| {
                     eprintln!("[moss-fileio] error: offset overflow during read");
@@ -1309,7 +1314,7 @@ pub mod moss_fileio {
                 posix::pread(
                     fd,
                     buf[total_read..].as_mut_ptr(),
-                    target - total_read,
+                    request,
                     current_off,
                 )
             };
@@ -1322,19 +1327,21 @@ pub mod moss_fileio {
             if res < 0 {
                 let err = read_err.unwrap_or_else(std::io::Error::last_os_error);
                 if err.raw_os_error() == Some(posix::EINTR) {
+                    buf.truncate(total_read);
                     continue;
                 }
                 let _ = err;
                 return Err(MossFileError::IO);
             }
             if res == 0 {
-                at_eof = true;
+                buf.truncate(total_read);
+                break;
             } else {
                 let res_usize = usize::try_from(res).unwrap_or_else(|_| std::process::abort());
+                buf.truncate(total_read + res_usize);
                 total_read += res_usize;
             }
         }
-        buf.truncate(total_read);
         if let Some((cause, _)) = after_fault {
             return Err(cause);
         }

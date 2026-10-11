@@ -103,14 +103,21 @@ def code_only(rust_text):
 
 
 def lowered_rust(rust_text):
-    """Remove exactly C's delimited runtime block for user-code assertions."""
+    """Remove delimited compiler runtimes for user-code assertions."""
     lines = rust_text.splitlines()
     start = [i for i, line in enumerate(lines)
              if line.startswith('// Phase 20 Executor Runtime  (moss executor_runtime_rust: ')]
     end = [i for i, line in enumerate(lines)
            if line.startswith('// ─── End Phase 20 Executor Runtime ')]
-    if len(start) == len(end) == 1 and start[0] < end[0]:
-        del lines[start[0]:end[0] + 1]
+    float_start = [i for i, line in enumerate(lines)
+                   if line.startswith('// ─── Begin Moss Float Format Runtime ')]
+    float_end = [i for i, line in enumerate(lines)
+                 if line.startswith('// ─── End Moss Float Format Runtime ')]
+    if len(start) == len(end) == len(float_start) == len(float_end) == 1 and \
+            start[0] < end[0] and float_start[0] < float_end[0]:
+        for begin, finish in sorted(((start[0], end[0]),
+                                     (float_start[0], float_end[0])), reverse=True):
+            del lines[begin:finish + 1]
     return '\n'.join(lines)
 
 

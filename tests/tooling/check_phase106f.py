@@ -21,6 +21,11 @@ def strip_executor_runtime(text):
         "", text, flags=re.S | re.M)
     assert blocks == 1 and "Phase 20 Executor Runtime" not in lowered, \
         "expected exactly one delimited Phase 20 executor runtime block"
+    lowered, float_blocks = re.subn(
+        r"^// ─── Begin Moss Float Format Runtime ─*\n"
+        r".*?^// ─── End Moss Float Format Runtime ─*\n",
+        "", lowered, flags=re.S | re.M)
+    assert float_blocks == 1, "expected exactly one delimited Float runtime block"
     return lowered
 
 

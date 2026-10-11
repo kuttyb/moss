@@ -141,7 +141,8 @@ string gen_chunk_pipeline_sequential(
   out << ";\n";
   out << "            " << offset << " += __moss_chunk_len_" << id << ";\n";
   out << "            if __moss_chunk_len_" << id << " < " << size_var
-      << " { break; }\n";
+      << " || " << offset << ".checked_add(" << size_var
+      << ").is_none() { break; }\n";
   out << "        }\n";
   out << "        " << acc << "\n";
   out << "    }";
@@ -211,7 +212,9 @@ string gen_chunk_pipeline_bounded_k(
       << method_receiver_place(plan.fileio_receiver, "read", {size_var}, domain, locals, types) << "));\n";
   out << "                branch_publish(&" << scope << ", move || {\n";
   out << "                    let " << outcome << ": " << outcome_type
-      << " = match " << index << ".checked_mul(" << size_var << ") {\n"
+      << " = match " << index << ".checked_mul(" << size_var
+      << ").and_then(|offset| offset.checked_add(" << size_var
+      << ").map(|_| offset)) {\n"
       << "                        None => " << chunk_outcome << "::Eof { index: "
       << index << " },\n"
       << "                        Some(" << offset << ") => match " << borrow
