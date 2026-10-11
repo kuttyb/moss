@@ -516,4 +516,84 @@ large_bin = OUT / "phase21c_large_read"
 run(["rustc", "--edition=2021", "-D", "warnings", large_rust, "-o", large_bin])
 assert run([large_bin]).stdout == "131\n"
 
+# Adversarial native execution with four independent concurrent Roots. They
+# own separate files and exercise ordered success, mapper raise, parent-fold
+# precedence, and a short final read. The generated production lowering is
+# compiled with its runtime counters, then checked after executor.join().
+concurrent_source = REPO / "tests/tooling/fixtures/phase21c_concurrent_roots.moss"
+for suffix, payload in (("a", b"AAAA"), ("b", b"ABCD"),
+                        ("c", b"ABCD"), ("d", b"A")):
+    (REPO / f"tmp/phase21c-concurrent-{suffix}.data").write_bytes(payload)
+run([COMPILER, "check", concurrent_source, "--json"])
+concurrent_rs = OUT / "phase21c_concurrent_roots.rs"
+concurrent_ir = run([COMPILER, concurrent_source, "--dump-functional-ir",
+                     "-o", concurrent_rs]).stdout
+assert concurrent_ir.count("chunk-plan:") == 2, concurrent_ir
+assert concurrent_ir.count("eligible=yes") >= 2, concurrent_ir
+concurrent_text = concurrent_rs.read_text()
+main_marker = "fn main() {\n"
+assert concurrent_text.count(main_marker) == 1
+concurrent_hook = r'''static REVIEW_FIRST_BRANCH_ROOT: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+static REVIEW_SECOND_BRANCH_ROOT: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+fn review_concurrent_branch_hook(event: MossRtEvent, root_id: u64,
+                                 _branch_id: u64, _worker_id: usize) {
+    if let MossRtEvent::BranchPublished = event {
+        use std::sync::atomic::Ordering::SeqCst;
+        if REVIEW_FIRST_BRANCH_ROOT.compare_exchange(0, root_id, SeqCst, SeqCst).is_ok() {
+            for _ in 0..10_000_000 {
+                if REVIEW_SECOND_BRANCH_ROOT.load(SeqCst) { return; }
+                std::thread::yield_now();
+            }
+            panic!("independent Roots did not overlap in Branch publication");
+        }
+        if REVIEW_FIRST_BRANCH_ROOT.load(SeqCst) != root_id {
+            REVIEW_SECOND_BRANCH_ROOT.store(true, SeqCst);
+        }
+    }
+}
+'''
+concurrent_text = concurrent_text.replace(
+    main_marker, concurrent_hook + main_marker +
+    "    moss_rt_set_hook(review_concurrent_branch_hook);\n", 1)
+join_marker = re.search(
+    r"(    // Moss line \d+: executor\.join\(\)\n"
+    r"    // Moss backend: EXECUTOR 'executor'\.join\(\)[^\n]*\n"
+    r"    executor\.join\(\);)", concurrent_text
+)
+assert join_marker, "generated concurrent Root join missing"
+concurrent_text = (
+    concurrent_text[:join_marker.end()] + "\n"
+    "    assert_eq!(moss_live_branch_scopes(), 0);\n"
+    "    assert_eq!(moss_live_fileio_branch_read_borrows(), 0);"
+    "\n    assert!(REVIEW_SECOND_BRANCH_ROOT.load("
+    "std::sync::atomic::Ordering::SeqCst));"
+    + concurrent_text[join_marker.end():]
+)
+concurrent_rs.write_text(concurrent_text)
+concurrent_bin = OUT / "phase21c_concurrent_roots"
+run(["rustc", "--edition=2021", "-D", "warnings", "--cfg", "moss_perf",
+     concurrent_rs, "-o", concurrent_bin])
+for _ in range(64):
+    output = run([concurrent_bin]).stdout.splitlines()
+    assert sorted(map(int, output)) == [1260, 2001, 3003, 4065], output
+
+# Range.slice is a valid READ-only FileIO view method, even in an ordinary
+# helper under a handler's synchronization plan. Its local alias must check
+# and compile; an invalid slice index remains a possible panic and forces
+# sequential chunk lowering. This guards the formerly internal effect-target
+# error independently of the concurrent fixture.
+slice_source = REPO / "tests/tooling/fixtures/phase21c_range_slice_effects.moss"
+(REPO / "tmp/phase21c-range-slice-effects.data").write_bytes(b"A")
+run([COMPILER, "check", slice_source, "--json"])
+slice_rs = OUT / "phase21c_range_slice_effects.rs"
+slice_ir = run([COMPILER, slice_source, "--dump-functional-ir",
+                "-o", slice_rs]).stdout
+assert "map stage is not pure: possible panic ordering" in slice_ir, slice_ir
+slice_bin = OUT / "phase21c_range_slice_effects"
+run(["rustc", "--edition=2021", "-D", "warnings", slice_rs,
+     "-o", slice_bin])
+assert run([slice_bin]).stdout == "1\n"
+
 print("phase21c branch-error checks passed")
