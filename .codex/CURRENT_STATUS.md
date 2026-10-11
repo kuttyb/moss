@@ -1,5 +1,31 @@
 # Moss current status
 
+## Phase 21.D numeric parsing and checked conversion checkpoint — 2026-10-10
+
+`parse_int(String)`, `parse_float(String)`, and `to_int(Float)` now have
+variant-precise typed raises in the checker, native Rust output, and Fast
+Debug. The two parsers share the approved ASCII decimal grammar, exact
+whitespace and nonfinite spellings, and overflow/underflow behavior.
+`to_int` checks finite range before truncating. Numeric calls retain their
+owning module's error enum identity, including through `try`/`recover` and
+cross-module raised-result bridges. Discovery, the practical guide, and the
+repository-local language skill now describe these operations.
+
+The focused gate covers lexical successes and failures, Int and Float bounds,
+signed zero, nonfinite values, checked conversion, structured diagnostics,
+effect summaries, standalone native/Fast Debug parity, and single- and
+cross-module Margo native/Fast Debug parity. The focused gate, full `make
+check` (`all Moss v0.1 tests passed`), `make examples`, strict C++17
+`-Wall -Wextra -Werror -pedantic` compilation, and `git diff --check` pass
+after the final source edit.
+
+Phase 21 remains open. D still needs the Rust-independent native Float
+formatter/tie-break, wider toolchain pins, and remaining documentation
+migration. A's handler-local owned `on_fail` capture frame and final O1–O9
+review, B's final FileIO source/API audit, and C's final speculative
+allocation/panic review remain open. No Phase 21 acceptance or merge to
+`main` is claimed.
+
 ## Phase 21.B FileIO open flag failure audit — 2026-10-10
 
 The native FileIO OS-site review found that `open_checked` ignored failures

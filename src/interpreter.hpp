@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "ast.hpp"
+#include "numeric_runtime.hpp"
 #include "type_placeholders.hpp"
 
 namespace moss {
@@ -829,6 +830,42 @@ class FastInterpreter {
             throw RuntimeError(line, callee + " argument must have type Float");
           return Value::boolean_value(callee == "is_nan"
               ? std::isnan(value.floating) : std::isfinite(value.floating));
+        }
+        const std::string_view numeric_name = numeric_builtin_base(callee);
+        if (numeric_name == "parse_int" || numeric_name == "parse_float") {
+          auto argument = eval(args.front(), frame, line, output);
+          NumericParseError error = NumericParseError::Invalid;
+          if (numeric_name == "parse_int") {
+            std::int64_t number = 0;
+            if (numeric_parse_int(argument.string, number, error))
+              return Value::int_value(number);
+          } else {
+            double number = 0.0;
+            if (numeric_parse_float(argument.string, number, error))
+              return Value::float_value(number);
+          }
+          const std::string variant = error == NumericParseError::Invalid
+              ? "Invalid" : "Overflow";
+          const std::string error_type = numeric_builtin_error_type(callee);
+          Value raised = Value::struct_value(error_type);
+          raised.object->case_name = variant;
+          emit("raise", frame, line, "variant:" + error_type + "." + variant);
+          throw RaisedSignal{RaisedIdentity::enum_variant(error_type, variant),
+                             std::move(raised)};
+        }
+        if (numeric_name == "to_int") {
+          auto argument = eval(args.front(), frame, line, output);
+          const double number = argument.floating;
+          const std::string variant = !std::isfinite(number) ? "NonFinite" :
+              (std::trunc(number) < -9223372036854775808.0 ||
+               std::trunc(number) >= 9223372036854775808.0) ? "Overflow" : "";
+          if (variant.empty()) return Value::int_value(static_cast<std::int64_t>(number));
+          const std::string error_type = numeric_builtin_error_type(callee);
+          Value raised = Value::struct_value(error_type);
+          raised.object->case_name = variant;
+          emit("raise", frame, line, "variant:" + error_type + "." + variant);
+          throw RaisedSignal{RaisedIdentity::enum_variant(error_type, variant),
+                             std::move(raised)};
         }
         if (auto fn = function(callee)) return call(*fn, args, frame, line, output);
         auto callable_local = frame.locals.find(callee);

@@ -3775,6 +3775,24 @@ class Checker {
       return BuiltinCallSemantics{"float", false};
     if ((callee == "is_nan" || callee == "is_finite") && args.size() == 1)
       return BuiltinCallSemantics{"bool", false};
+    const std::string_view numeric_name = numeric_builtin_base(callee);
+    if (!numeric_name.empty() && args.size() == 1) {
+      BuiltinCallSemantics result{
+          numeric_name == "parse_float" ? "float" : "int", false};
+      const string error_type = numeric_builtin_error_type(callee);
+      auto variant = [&](const char* type, const char* name) {
+        result.observable_effects.raise_set.insert(
+            RaisedIdentity::enum_variant(type, name));
+      };
+      if (numeric_name == "to_int") {
+        variant(error_type.c_str(), "NonFinite");
+        variant(error_type.c_str(), "Overflow");
+      } else {
+        variant(error_type.c_str(), "Invalid");
+        if (numeric_name == "parse_int") variant(error_type.c_str(), "Overflow");
+      }
+      return result;
+    }
     if (callee == "Some" && args.size() == 1) {
       auto element = inferred_expr_type(args.front(), env);
       return BuiltinCallSemantics{
@@ -10539,6 +10557,36 @@ class Checker {
         err(line, name + " argument must have type 'Float'", "TYPE_MISMATCH");
       return;
     }
+    const std::string_view numeric_name = numeric_builtin_base(name);
+    if (!numeric_name.empty()) {
+      if (args.size() != 1)
+        err(line, name + " expects one argument", "INVALID_ARITY");
+      const string expected = numeric_name == "to_int" ? "float" : "string";
+      auto actual = inferred_expr_type(args.front(), env);
+      if (!actual || (!unresolved_semantic_type(*actual) &&
+                      canonical_type_name(*actual) != expected))
+        err(line, name + " argument must have type '" +
+                  (expected == "float" ? "Float" : "String") + "'",
+            "TYPE_MISMATCH");
+      const string error_type = numeric_builtin_error_type(name);
+      auto declaration = enums_.find(error_type);
+      if (declaration == enums_.end())
+        err(line, name + " requires enum " + error_type,
+            "UNKNOWN_ERROR_TYPE");
+      const vector<string> required = numeric_name == "parse_float"
+          ? vector<string>{"Invalid"} : numeric_name == "to_int"
+              ? vector<string>{"NonFinite", "Overflow"}
+              : vector<string>{"Invalid", "Overflow"};
+      for (const auto& variant : required) {
+        auto found = std::find_if(declaration->second->cases.begin(),
+                                  declaration->second->cases.end(),
+            [&](const EnumCase& item) { return item.name == variant; });
+        if (found == declaration->second->cases.end() || !found->fields.empty())
+          err(line, error_type + "." + variant +
+                    " must be a tag-only variant", "UNKNOWN_ERROR_VARIANT");
+      }
+      return;
+    }
     if (name == "assert") {
       if (args.size() != 1)
         err(line, "assert expects 1 argument, got " +
@@ -13346,6 +13394,7 @@ class Generator {
     o << "fn __moss_require_send<T: Send>() {}\n\n";
 
     o << handler_runtime_rust();
+    if (program_uses_numeric_builtins()) o << numeric_runtime_rust();
     if (program_uses_fileio(p_)) {
       o << fileio_runtime_rust();
     }
@@ -13421,6 +13470,51 @@ class Generator {
 
  private:
   const Program& p_;
+  bool program_uses_numeric_builtins() const {
+    const auto contains = [](const string& value) {
+      for (const char* name : {"parse_int", "parse_float", "to_int"}) {
+        if (numeric_builtin_base(value) == name) return true;
+        for (size_t at = value.find(name); at != string::npos;
+             at = value.find(name, at + 1)) {
+          size_t end = at + std::char_traits<char>::length(name);
+          while (end < value.size() &&
+                 std::isspace(static_cast<unsigned char>(value[end]))) ++end;
+          if (end < value.size() && value[end] == '(') return true;
+        }
+      }
+      return false;
+    };
+    const auto body_uses = [&](const vector<Stmt>& body) {
+      for (const auto& statement : body) {
+        if (contains(statement.a) || contains(statement.b) ||
+            contains(statement.text)) return true;
+        for (const auto& argument : statement.args)
+          if (contains(argument)) return true;
+      }
+      return false;
+    };
+    for (const auto& function : p_.functions)
+      if (body_uses(function.body) ||
+          (function.result_expression && contains(*function.result_expression)))
+        return true;
+    for (const auto& object : p_.objects)
+      for (const auto& method : object.methods)
+        if (body_uses(method.body) ||
+            (method.result_expression && contains(*method.result_expression)))
+          return true;
+    for (const auto& domain : p_.domains)
+      for (const auto& handler : domain.handlers)
+        if (body_uses(handler.body)) return true;
+    for (const auto& domain : specialized_domains_)
+      for (const auto& handler : domain.handlers)
+        if (body_uses(handler.body)) return true;
+    if (p_.main && body_uses(p_.main->body)) return true;
+    for (const auto& test : p_.tests)
+      if (body_uses(test.body)) return true;
+    for (const auto& benchmark : p_.benchmarks)
+      if (body_uses(benchmark.body)) return true;
+    return false;
+  }
   const Program* semantic_program_ = nullptr;
   std::set<string> write_through_parameters_;
   std::set<string> borrowed_function_parameters_;
@@ -13486,16 +13580,25 @@ class Generator {
     const auto merge = [&](const ObservableEffects& effects) {
       result.insert(effects.raise_set.begin(), effects.raise_set.end());
     };
-    for (const auto& function : p_.functions) merge(function.observable_effects);
-    for (const auto& object : p_.objects)
-      for (const auto& method : object.methods) merge(method.observable_effects);
-    for (const auto& domain : p_.domains)
-      for (const auto& handler : domain.handlers) merge(handler.observable_effects);
-    std::function<void(const vector<Stmt>&)> statements = [&](const vector<Stmt>& body) {
+    const auto statements = [&](const vector<Stmt>& body) {
       for (const auto& statement : body)
         result.insert(statement.exceptional_alternatives.begin(),
                       statement.exceptional_alternatives.end());
     };
+    for (const auto& function : p_.functions) {
+      merge(function.observable_effects);
+      statements(function.body);
+    }
+    for (const auto& object : p_.objects)
+      for (const auto& method : object.methods) {
+        merge(method.observable_effects);
+        statements(method.body);
+      }
+    for (const auto& domain : p_.domains)
+      for (const auto& handler : domain.handlers) {
+        merge(handler.observable_effects);
+        statements(handler.body);
+      }
     if (p_.main) statements(p_.main->body);
     for (const auto& test : p_.tests) statements(test.body);
     return result;
@@ -13564,30 +13667,34 @@ class Generator {
   }
 
   void gen_phase21_external_raised_bridges(std::ostringstream& o) const {
-    if (phase21_program_raise_set().empty()) return;
+    const RaiseSet raised = phase21_program_raise_set();
+    if (raised.empty()) return;
     std::map<string, RaiseSet> by_module;
-    for (const auto& function : p_.functions)
+    for (const auto& function : semantic_program_->functions)
       if (auto module = phase21_external_module_for_symbol(function.name))
         by_module[*module].insert(function.observable_effects.raise_set.begin(),
                                   function.observable_effects.raise_set.end());
-    for (const auto& object : p_.objects)
+    for (const auto& object : semantic_program_->objects)
       if (auto module = phase21_external_module_for_symbol(object.name))
         for (const auto& method : object.methods)
           by_module[*module].insert(method.observable_effects.raise_set.begin(),
                                     method.observable_effects.raise_set.end());
-    for (const auto& domain : p_.domains)
+    for (const auto& domain : semantic_program_->domains)
       if (auto module = phase21_external_module_for_symbol(domain.name))
         for (const auto& handler : domain.handlers)
           by_module[*module].insert(handler.observable_effects.raise_set.begin(),
                                     handler.observable_effects.raise_set.end());
     for (const auto& entry : by_module) {
-      if (entry.second.empty()) continue;
+      RaiseSet reachable;
+      for (const auto& identity : entry.second)
+        if (raised.count(identity)) reachable.insert(identity);
+      if (reachable.empty()) continue;
       const string provider = phase21_external_raised_type(entry.first);
       o << "impl From<" << provider << "> for __MossRaised {\n"
         << "    fn from(value: " << provider << ") -> Self {\n"
         << "        #[allow(unreachable_patterns)]\n"
         << "        match value {\n";
-      for (const auto& identity : entry.second) {
+      for (const auto& identity : reachable) {
         const string variant = phase21_rust_variant(identity);
         o << "            " << provider << "::" << variant
           << "(payload) => __MossRaised::" << variant << "(payload),\n";
@@ -13598,7 +13705,7 @@ class Generator {
         << "    fn from(value: __MossRaised) -> Self {\n"
         << "        #[allow(unreachable_patterns)]\n"
         << "        match value {\n";
-      for (const auto& identity : entry.second) {
+      for (const auto& identity : reachable) {
         const string variant = phase21_rust_variant(identity);
         o << "            __MossRaised::" << variant << "(payload) => "
           << provider << "::" << variant << "(payload),\n";
@@ -15853,6 +15960,29 @@ class Generator {
         return "{ let __moss_float_value: f64 = " +
             expr(builtin_args.front(), d, locals, types) +
             "; __moss_float_value." + builtin + "() }";
+      const std::string_view numeric_name = numeric_builtin_base(builtin);
+      if (!numeric_name.empty() && builtin_args.size() == 1) {
+        if (!phase21_result_context_)
+          throw std::runtime_error("internal error: numeric raise lacks outcome context");
+        const string value = expr(builtin_args.front(), d, locals, types);
+        const string error_type = numeric_builtin_error_type(builtin);
+        const string invalid = numeric_name == "to_int" ? "NonFinite" : "Invalid";
+        const string overflow = "Overflow";
+        const string first_variant = phase21_rust_variant(
+            RaisedIdentity::enum_variant(error_type, invalid));
+        const string second_variant = phase21_rust_variant(
+            RaisedIdentity::enum_variant(error_type, overflow));
+        string call = "__moss_" + string(numeric_name) + "(" + value +
+            (numeric_name == "to_int" ? "" : ".as_str()") + ")";
+        string mapping = call + ".map_err(|__moss_numeric_error| "
+            "if __moss_numeric_error == 0 { __MossRaised::" + first_variant +
+            "(" + error_type + "::" + invalid + ") } else { __MossRaised::" +
+            second_variant + "(" + error_type + "::" + overflow + ") })?";
+        if (numeric_name == "parse_float")
+          mapping = call + ".map_err(|_| __MossRaised::" +
+              first_variant + "(" + error_type + "::" + invalid + "))?";
+        return mapping;
+      }
       if (builtin == "sum" && builtin_args.size() == 1) {
         auto argument_type = generated_expr_type(builtin_args.front(), types);
         string element_type;
@@ -20394,7 +20524,10 @@ static void write_bootstrap_json(std::ostream& out,
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"pass\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"],\"exhaustive_enum_match\":\"match expression: / match consume <owned enum expression>:\"},"
          "\"enums\":{\"declaration\":\"enum Name: with closed named-field cases\",\"construction\":\"Name.Case(field: value)\",\"read_match\":\"match expression:\",\"consume_match\":\"match consume <owned enum expression>:\",\"pattern_ownership_modifiers\":false,\"replace\":\"replace(place, replacement)\"},"
          "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"}},"
-         "\"numeric\":{\"float_predicates\":[\"is_nan(Float) -> Bool\",\"is_finite(Float) -> Bool\"]},"
+         "\"numeric\":{\"float_predicates\":[\"is_nan(Float) -> Bool\",\"is_finite(Float) -> Bool\"],"
+         "\"parsing\":[\"parse_int(String) -> Int raises ParseError.Invalid|Overflow\","
+         "\"parse_float(String) -> Float raises ParseError.Invalid\"],"
+         "\"conversion\":[\"to_int(Float) -> Int raises ConversionError.NonFinite|Overflow\"]},"
          "\"domains\":{\"fn_inside_domain\":\"handler\",\"ordinary_helper\":\"non-domain function\",\"composition\":{\"domain_instances\":\"constructed statically in main's initial composition prefix\",\"initializer_rule\":\"domain state initializer expressions must be side-effect-free; pure helper calls are accepted, but messages, domain access, I/O, failing, divergent, and unresolved work are rejected; unresolved means relevant observable effects cannot be statically established, not ordinary locals, local computation, normal allocation, or multi-statement pure helpers\"}},"
          "\"tests\":{\"syntax\":\"test \\\"name\\\":\",\"assertions\":[\"assert(condition)\",\"assertEqual(actual, expected)\"],\"domain_topology\":{\"test_blocks_are_composition_roots\":false,\"composition_root\":\"main initial composition prefix\"}},"
          "\"collections\":{\"builtins\":[\"Vector\",\"Map\",\"Queue\"],\"concrete_type_positions\":\"Vector[T], Map[K, V], and Queue[T] are concrete built-in types, not source generics\",\"vector_literal\":\"[a, b, c]\",\"empty_typed_vector\":\"Vector[T]()\",\"local_type_annotations\":false,\"Vector\":{\"construction\":{\"literal\":\"[a, b, c]\",\"empty_typed\":\"Vector[T]()\"},\"methods\":[\"push(item)\",\"pop()\"],\"indexing\":{\"read\":\"vec[i]\",\"write\":\"vec[i] = item\"},\"cardinality\":\"vec |> count\"},\"Map\":{\"construction\":{\"inferred\":\"Map()\"},\"indexing\":{\"read\":\"map[key]\",\"write\":\"map[key] = value\"},\"methods\":[\"get(key, default)\",\"keys()\",\"values()\",\"delete(key, fallback, found)\"],\"iteration_note\":\"keys() and values() return eager owned Vector snapshots\",\"deletion_supported\":true},\"Queue\":{\"construction\":{\"inferred\":\"Queue()\"},\"methods\":[\"push(item)\",\"pop()\"]}},"
@@ -23353,6 +23486,11 @@ static string rewrite_module_expression(
       i = end;
       continue;
     }
+    if (!numeric_builtin_base(token).empty()) {
+      result += module_symbol(module, token);
+      i = end;
+      continue;
+    }
     // Test assertions and functional pipeline stages are compiler-recognized builtins,
     // never module-local functions. Keeping their source spelling also lets explicit-module
     // test targets and functional pipelines share the normal checker and Rust lowering.
@@ -23440,6 +23578,32 @@ static void rewrite_module_program(
           continue;
         }
         if (statement.kind == Stmt::Kind::Else) return;
+
+        if (statement.kind == Stmt::Kind::Try) {
+          const std::set<string> incoming = locals;
+          ++index;
+          std::set<string> normal_locals = incoming;
+          walk_block(index, level + 1, normal_locals);
+          std::vector<std::set<string>> paths{std::move(normal_locals)};
+          while (index < statements.size() &&
+                 statements[index].indent == level &&
+                 statements[index].kind == Stmt::Kind::Recover) {
+            Stmt& arm = statements[index];
+            arm.a = rewrite_module_expression(
+                arm.a, module, modules, public_exports, sibling_methods,
+                &incoming);
+            std::set<string> arm_locals = incoming;
+            if (plain_identifier(arm.a)) arm_locals.insert(arm.a);
+            ++index;
+            walk_block(index, level + 1, arm_locals);
+            paths.push_back(std::move(arm_locals));
+          }
+          for (const auto& binding : paths.front())
+            if (std::all_of(paths.begin() + 1, paths.end(),
+                            [&](const auto& path) { return path.count(binding); }))
+              locals.insert(binding);
+          continue;
+        }
 
         if (statement.kind == Stmt::Kind::If) {
           statement.a = rewrite_module_expression(
@@ -23546,7 +23710,10 @@ static void rewrite_module_program(
           }
         } else if (statement.kind == Stmt::Kind::Call && !statement.a.empty()) {
           string callee = trim(statement.a);
-          if (callee.find('.') == string::npos && plain_identifier(callee) &&
+          if (!numeric_builtin_base(callee).empty() &&
+              callee.find("__") == string::npos)
+            statement.a = module_symbol(module, callee);
+          else if (callee.find('.') == string::npos && plain_identifier(callee) &&
               !(sibling_methods && sibling_methods->count(callee)) &&
               !locals.count(callee) &&
               functions.count(callee) &&
@@ -23555,6 +23722,8 @@ static void rewrite_module_program(
               callee != "Map" && callee != "Queue" && callee != "Vector" &&
               callee != "Some" && callee != "sqrt" && callee != "range" &&
               callee != "is_nan" && callee != "is_finite" &&
+              callee != "parse_int" && callee != "parse_float" &&
+              callee != "to_int" &&
               !starts_with(callee, module + "__") &&
               callee.find("__") == string::npos)
             statement.a = module_symbol(module, callee);
