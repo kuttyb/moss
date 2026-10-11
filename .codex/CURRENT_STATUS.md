@@ -1,5 +1,26 @@
 # Moss current status
 
+## Phase 21 peer-review checkpoint — 2026-10-11
+
+Integration branch `phase-21-integration` contains the external-review
+remediation through `263ad67` and a subsequent narrow checker
+repair. A full `make check` on `263ad67` reached the Phase 20 FileIO semantic
+gate, then failed because new declared-error validation rejected legacy
+FileIO programs without a `FileError` declaration. The checker now skips the
+presence check when no enum is declared; typed recovery selectors remain
+subject to ordinary enum checking. The focused Phase 20 FileIO semantics and
+Phase 21 declared-error contract gates pass. The full-suite rerun is pending,
+so earlier green results are not current validation.
+
+The independent release-gate audit on `263ad67` passed strict GCC C++17,
+strict Phase 20 review, examples, actual source-removed provider execution,
+imported function/generic effects, Root FileIO fault injection, Executor,
+Branch, Range fail-closed controls, and native/Fast Debug focused gates. It
+reproduced the forged `.mossi` build-then-abort and missing source-free
+imported-helper warning. The Architect L6 independently confirmed the latter
+on `263ad67`; its final exact-SHA review was interrupted and must resume.
+Engineering and L7 remain NO-GO. No merge into `main` is authorized.
+
 ## Phase 21 peer review EXT-12/15 isolated remediation — 2026-10-11
 
 The `phase-21-peer-major-minor` branch corrects observable effects for IEEE

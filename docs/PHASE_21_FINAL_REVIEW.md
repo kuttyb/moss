@@ -1,12 +1,24 @@
 # Phase 21 final independent review
 
+> **Checkpoint, not final acceptance (2026-10-11):** implementation review is
+> continuing after `263ad67`. A full `make check` on that commit exposed a
+> Phase 20 FileIO compatibility regression in `check_phase20_fileio_semantics.py`:
+> legacy sources without a declared `FileError` received `UNKNOWN_ERROR_TYPE`.
+> The narrow checker repair passes focused Phase 20 FileIO and Phase 21
+> declared-error gates; a full-suite rerun remains pending. The validation
+> table below records the earlier `c89f564` pass, not a pass of the current
+> implementation. The independent Architect L6 confirmed the source-free
+> warning gap on `263ad67` before its exact-SHA review was interrupted; final
+> independent acceptance remains pending. Engineering and L7 remain NO-GO.
+
 **Recommendation: NO-GO for merging into `main`.** This is the release-candidate
 review record, not a merge approval. Independent reviewers inspected the compiler
 and runtime, supplied counterexamples, and repaired defects without changing the
-frozen Phase 21 ABI v8. Two mandatory acceptance issues remain: the source-free
-interface is not bound to its provider rlib, and canonical Float formatting has
-not been pinned across another Rust/C++ toolchain combination. The separate
-general early-release proof in the Phase 21 specification also remains open.
+frozen Phase 21 ABI v8. Source-free interface metadata remains unbound to its
+provider rlib, source-free object methods lack ABI-v8 effect summaries, and the
+general O4/O8 and early-release proof obligations remain open. A four-combination
+Rust/C++ Float portability matrix passed on an earlier engineering tree and
+is being repeated on the frozen implementation SHA.
 
 ## Exact baseline and scope
 
@@ -15,7 +27,7 @@ general early-release proof in the Phase 21 specification also remains open.
 | Implementation checkpoint challenged | `8d8a9cc6f842e11701dbedc56e3d2d2d3da9852a` |
 | Current `main` and `origin/main` reconciled into integration | `d15e968778fa1cff3cd5085911c505592af54a30` |
 | Integration merge of that `main` | `7eb192b` |
-| Reviewed implementation commit | `c89f5644785dad60c108f80609c8692364a8c190` |
+| Provisional frozen implementation commit | `263ad67f1af5781d54bf7f8bba2c123fb955a648`; final release SHA will also contain reports and status. |
 | Release-candidate branch | `phase-21-integration`; no merge into `main` |
 
 The implementation includes typed `raise` and lexical `try`/`recover`, variant
@@ -33,8 +45,8 @@ when the observed fixtures pass.
 
 | Obligation and exact guarantee | Implementation inspected | Existing positive/negative coverage | New adversarial result and assumptions | Status |
 | --- | --- | --- | --- | --- |
-| **O1**: normal handler effects cover every reachable `recover`, nested arm, and helper. | `src/moss.cpp`: `analyze_effect_block`, `specialized_handler_effects`, `build_synchronization_plan`. | `check_phase21_recovery_semantics.py` checks variant sets, catches, and invalid bare raise. | Nested FileIO recovery and semantic lock query pass. Argument assumes effect walking and static call summaries are sound for all reachable callees. | **PASS**, conditional. |
-| **O2**: `h$fail` has separate effects, class-signature column, and ClassSet; its accesses never enter `ClassSet(h)`. | `src/moss.cpp`: `specialized_handler_failure_effects`, `build_synchronization_plan`; `src/handler_lowering.inc`: failure wrapper. | `check_phase21_handler_failure_native.py` distinguishes normal and failure plans. | New `Fail`/`Fail$fail` semantic query shows disjoint class sets in a real Root. Assumes class derivation consumes both columns without conflation. | **PASS**, conditional. |
+| **O1**: normal handler effects cover every reachable `recover`, nested arm, and helper. | `src/moss.cpp`: `observable_expression_effects`, `analyze_effect_block`, `specialized_handler_effects`, `build_synchronization_plan`. | Recovery semantics, `check_phase21_peer_effects.py`, and the imported-effects gate check concrete variant sets. | External grouped/list/duck cases were repaired in `26fcb9f`. Independent `not fail()` and `fail().value` counterexamples later lost exact raises, admitted an unhandled Root and failed native lowering; `5cc76d0` repairs those forms, and focused checker/effects/native/Fast Debug gates pass. `11d62d2` also repairs receiver/argument method writes in public effect summaries and warning analysis. Source-free helper warning provenance is separately unresolved under ABI v8. A path-complete structural induction over every accepted expression and import form has not been established. | **INCOMPLETE** for the general O1 guarantee. |
+| **O2**: `h$fail` has separate effects, class-signature column, and ClassSet; its accesses never enter `ClassSet(h)`. | `src/moss.cpp`: `specialized_handler_failure_effects`, `build_synchronization_plan`; `src/handler_lowering.inc`: failure wrapper. | `check_phase21_handler_failure_native.py` distinguishes normal and failure plans. | A real Root query shows separate effect columns and lock sets. Adding the `h_fail` signature column can still repartition a class and increase the number of normal exclusive acquisitions without adding a per-leaf write; the approved Part II/P10 wording that says it never adds an exclusive class is overbroad. The rank proof is unaffected, but normative correction requires approval. | **PASS** for separate planning; prose correction **OPEN**. |
 | **O3**: all own-domain recovery classes are acquired in rank order before their `try`/first observable action; no arm upgrade or late acquisition. | `src/moss.cpp`: `derive_path_placement`; `src/handler_lowering.inc`: `emit_path_sensitive_wrapper`. | Existing synchronization-plan and recovery-native suites exercise entry planning and warnings. | Lock hook observes old attempt before fresh failure acquisition under concurrent Roots. Bounded leading-condition placement hoists for rank and cancels only untouched classes. Assumes O1 summaries and closed route ranks. Broader §16 mid-execution early-release proof remains open separately. | **PASS** for implemented placement, conditional. |
 | **O4**: remaining-path, guard-cancellation, and D7 analyses include each exceptional source edge and destination. | `src/moss.cpp`: `check_ownership_block`, exceptional-edge ABI emission/loader; `src/handler_lowering.inc`: carrier forwarding. | `check_phase21_on_fail_capture.py` includes preinit/consumed/borrowed-view negatives and source-site captures; `check_phase21_recovery_semantics.py` tests variant ownership. | New if/try/loop joins, branch mismatch, nested re-raise, and native/Fast Debug/source-free captures pass. The reviews did not establish an exhaustive invariant over every expression and CFG form. | **INCOMPLETE** as a general proof; tested paths pass. |
 | **O5**: a tagged raise materializes an owned payload and releases exactly the wrapper's acquired guards after its last protected access. | `src/handler_lowering.inc`: typed wrapper result and reverse guard drops in `gen_planned_domain`. | Handler failure native and recovery suites cover normal/raised exits. | New runtime lock events show old guard release before failure acquisition. Assumes Rust frame/RAII semantics and no hidden guard in the owned carrier. | **PASS**, conditional. |
@@ -82,12 +94,18 @@ matched native O0/O3 and Fast Debug for 2,048 finite Float bit patterns, 2,070
 `parse_float` inputs, and 535 `parse_int`/`to_int` inputs. The existing fixed
 270-value Float corpus and targeted IEEE edge suite also pass on this host.
 
-No second Rust or C++ toolchain is installed here. CI should cross a pinned
-current Rust release and an adjacent supported Rust release with GCC and Clang
-on supported Linux targets. Each job should run the fixed corpus and independent
-Python oracle against default/optimized native output and Fast Debug, fail on
-any byte difference, and archive exact compiler versions and corpus digest.
-That matrix is a proposed completion path, not validation already performed.
+Engineering later installed Rust 1.97.0 and Clang 18.1.3 under this
+repository's disposable `tmp/` without privilege changes. A GCC 13.3.0 and a
+Clang 18.1.3 strict C++17 build of Moss were each crossed with Rust 1.97.0
+(`2d8144b78`, LLVM 22.1.6) and Rust 1.98.1 (`48a229cea`, LLVM 22.1.8).
+All four combinations passed `check_phase21_float_ieee.py`, comparing native
+unoptimized, native optimized, and Fast Debug output byte-for-byte against
+the 270-pattern oracle with SHA-256
+`91553f7482c35cfef6c108c429c7bdb54fba4cc8d4959c4d0a7bd3faf1ca28ef`.
+Those results preceded the last expression-effect and method-warning edits;
+repeat them on the final frozen implementation SHA. Reproducible CI should
+pin the same versions and digest, then archive the tool version strings and
+diff any output bytes across all four cells. No portability waiver is assumed.
 
 ## Outstanding approval questions and recommendation
 

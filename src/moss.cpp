@@ -2809,6 +2809,10 @@ class Checker {
       vector<const EnumType*> imported;
       for (const auto& declaration : p_.enums)
         if (is_file_error(declaration)) imported.push_back(&declaration);
+      // Phase 20 FileIO programs may use the aborting API without declaring
+      // a typed error enum. A typed recovery selector still requires its
+      // declaration during ordinary recovery checking.
+      if (imported.empty()) continue;
       if (imported.size() != 1)
         err(source.source_file, source.no,
             "FileIO requires one unambiguous six-variant FileError enum",

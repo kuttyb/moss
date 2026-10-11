@@ -1,0 +1,192 @@
+# Phase 21 peer-review findings and disposition
+
+**Checkpoint status (2026-10-11):** This is the current engineering register,
+not a final Architect L6 acceptance. The integration implementation is beyond
+`263ad67`; a narrowly scoped Phase 20 FileIO compatibility repair passes
+focused Phase 20 and Phase 21 gates after full `make check` exposed the
+regression. A full-suite rerun and independent exact-SHA
+review remains pending. The source-free metadata forgery and imported-helper
+warning counterexamples remain live NO-GO findings.
+
+This register reconciles the external review of `8d8a9cc6f842e11701dbedc56e3d2d2d3da9852a`
+with the subsequent independent integration review and the remediation branch.
+It is an acceptance ledger, not an assertion that a green test suite proves
+the language contract. The external archive `p21_review_repros.zip` was not
+present in the repository (including ignored repository-local files) when
+this review began. Reproducers named below were reconstructed independently
+from the review descriptions and are committed as permanent fixtures.
+
+**Disposition vocabulary:** FIXED, CONFIRMED, DEFERRED-APPROVED,
+DESIGN-DECISION-REQUIRED, NOT-REPRODUCIBLE. FIXED requires the original
+counterexample to pass and independent Architect L6 verification. Engineering
+results alone remain provisional until that review. The exact final SHA,
+Architect disposition, and mode-by-mode results are recorded in the final
+revision of this register.
+
+## Original release blockers
+
+### P21-EXT-01 · Blocker · Ordinary FileIO typed errors
+
+- **Guarantee / original case:** direct and indirect FileIO open/read/write/sync/close failures are typed `FileError` raises, including within `try`, handlers, `on_fail`, expressions and source-free providers. Cleanup preserves the original cause; misuse remains a panic.
+- **Reproducer provenance:** independently reconstructed from the external description; `tests/tooling/check_phase21_lock_fileio_adversarial.py` and the new peer FileIO gate cover native fault injection and source-removed provider execution.
+- **At `8d8a9cc`:** CONFIRMED: ordinary operations still used aborting Phase 20 calls.
+- **Since checkpoint / root cause / fix:** `2384900` introduced checked FileIO lowering; `e828490` corrected module-qualified `FileError` identity and close-time ENOSPC/Full mapping, and `9be2c7f` kept ownership diagnostics reachable when a negative fixture omits a declaration.
+- **Permanent gates / current modes / Architect:** `check_phase21_fileio_errors.py`, `check_phase21_lock_fileio_adversarial.py`, `check_phase21_fileio_close_full.py`, and `check_phase21_source_free_abi.py` pass on the combined tree. The last executes a source-removed provider. FileIO Fast Debug is outside the approved Phase 21 runtime (§18). Exact-final-SHA independent verification remains pending; disposition is provisionally CONFIRMED pending that review.
+
+### P21-EXT-02 · Blocker · Executor silently discards a raised Root outcome
+
+- **Guarantee / original case:** `executor.invoke(worker.Run())` where `Run` raises `WorkError.Failed` without `on_fail` must fail Moss checking. `join()` is drain-only and cannot silently consume a typed failure.
+- **Reproducer provenance:** reconstructed `tests/tooling/fixtures/phase21_executor_unhandled_raise.moss`; a corresponding total handler and a nonraising handler appear in `phase21_executor_root_total.moss`.
+- **At `8d8a9cc` and `1ae239b`:** CONFIRMED: `moss check --json` accepted the source; generated Rust used `let _ = ...Run_shared()` and the executable exited 0 without reporting `WorkError.Failed`.
+- **Since checkpoint / root cause / fix:** `f70196c` adds post-inference Root totality checking and a native codegen guard. The check reports `ROOT_UNHANDLED_RAISE` with `enum:WorkError:Failed`; positive submitted Roots use `on_fail` and normal Roots need none.
+- **Permanent gate / modes:** `check_phase21_root_totality.py` rejects the original case through check and lowering, and executes positive O0/O3 native and Fast Debug cases. Source-free imported effects remain subject to P21-EXT-05. Architect disposition pending.
+
+### P21-EXT-03 · Blocker · Incomplete exact raise-set inference
+
+- **Guarantee / original cases:** parentheses, list elements, method exit calls and duck-typed helpers must preserve exact typed variants in `check`, `effects`, native and Fast Debug, including across packages.
+- **Reproducer provenance:** independently reconstructed grouped, vector, method and duck-helper cases in `phase21_peer_effects.moss`, with `check_phase21_peer_effects.py` as a permanent gate.
+- **At `8d8a9cc`:** CONFIRMED for grouped/vector/duck call forms; method-exit variant was already visible in the separately reconstructed direct case. An unreachable-arm warning masked reachable variants.
+- **Root cause / fix / current status:** expression effect descent and concrete specialization gaps repaired in `26fcb9f`; eager pipeline Result propagation also changed there. The original grouped/list/method/duck gate passes `moss check --json`, `moss effects --json`, native O0/O3, and Fast Debug for its concrete cases. Independent follow-up found `return not fail()` and `return fail().value` dropped typed raises, falsely warned that recovery was unreachable, admitted an unhandled Root, and failed native lowering while Fast Debug caught the variant. Permanent regressions in `5c3f1ed` and `f49ca8a` pass after the recursive effect-walker repair `5cc76d0`. Method receiver/argument writes enter public `observable_effects.domain_write` after `11d62d2`. These are verified engineering fixes at `263ad67`; full O1 generality and independent final-SHA review remain open. Imported source-free effects remain tracked under P21-EXT-05.
+
+### P21-EXT-04 · Blocker · Unsound speculative mapper eligibility
+
+- **Guarantee / original cases:** no mapper with possible panic or unresolved imported behavior may execute in speculative Branches. Shadowed `case`/`for` binders must not inherit parameter bounds facts; an earlier typed raise must outrank a later speculative panic.
+- **Reproducer provenance:** 4097-byte grouped-expression, case-shadow and for-shadow programs independently reconstructed in `phase21_peer_speculation.moss`, exercised by `check_phase21_peer_effects.py`.
+- **At `8d8a9cc`:** CONFIRMED: functional IR reported these mappers eligible, and native execution aborted on a short `Range` index despite an earlier typed raise.
+- **Root cause / fix / current status:** panic effect descent and name-based index proof repaired in `26fcb9f`; lexical shadowing invalidates the nonempty index proof. The 4097-byte native O0/O3 cases produce the earlier typed arm result without later panic. `check_phase21c_branch_errors.py` passes actual concurrent native O9 tests after valid Root fixture migration `a967f47`. O9 general argument and final Architect retest remain pending.
+
+### P21-EXT-05 · Blocker · Imported function and method effects
+
+- **Guarantee / original cases:** source-removed providers preserve variant-precise raises and panic facts for functions, methods and generic specializations; unhandled imports fail at Moss checking and unsafe mappers stay sequential.
+- **Reproducer provenance:** independently reconstructed source-removed provider functions/methods, Root call and mapper cases in `check_phase21_imported_effects.py`.
+- **At `8d8a9cc` and `1ae239b`:** CONFIRMED: imported function summaries were reset during fixed-point inference; ABI-v8 `object_method` records lack an effects field. A raising source-backed method also failed native trait lowering.
+- **Root cause / current engineering remedy:** preserve imported function summaries, repair native method Result lowering, and fail closed at source-free object-method calls whose effects cannot be proved. This v8-safe diagnostic is an interim compatibility restriction. Complete method metadata requires approved provider contract evolution.
+- **Status / modes / Architect:** DESIGN-DECISION-REQUIRED. The combined gate passes source-free function/generic check and native execution, source-backed method native/Fast Debug, and expected source-free method rejection `IMPORTED_METHOD_EFFECTS_UNAVAILABLE`. The independent Architect confirmed ABI-v8 method metadata absence. No ABI-v8 schema edit is authorized.
+
+## Major external findings
+
+| ID | Severity and original guarantee | Reproducer and checkpoint state | Current engineering disposition | Independent Architect L6 |
+| --- | --- | --- | --- | --- |
+| P21-EXT-06 | Major: synchronous Root raises must not escape into `main`'s `try` (§4). | Reconstructed `phase21_sync_root_lexical_recover.moss` and grouped-expression variant; `8d8a9cc` and `1ae239b` accepted. | `f70196c` rejects both with `ROOT_UNHANDLED_RAISE`; positive `phase21_sync_root_total.moss` returns through exhaustive `on_fail`. Native O0/O3 and Fast Debug pass. Provisional pending independent review. | Pending exact-final-SHA verification. |
+| P21-EXT-07 | Major: lock-inflation and state-writing empty catch-all warnings. | Reconstructed direct, loop-condition, WRITE-helper, transitive-helper, nested-call, and method-receiver cases. `8d8a9cc` emitted none of the required provenance warnings. | `b149a88`, `40d6704`, `a3ee83c`, `5b8aca6`, and `11d62d2` add `RECOVER_LOCK_INFLATION`, `RECOVER_EMPTY_AFTER_STATE_WRITE`, and `ON_FAIL_EMPTY_AFTER_STATE_WRITE`, with helper and method provenance. Focused checker/native/Fast Debug gates pass; `5d1c194` also preserves handler locals in warning analysis. Source-removed imported helper warning parity **fails** the permanent known-issue gate (INT-10) and needs a provider-contract decision. Overall status **DESIGN-DECISION-REQUIRED** despite local fixes. | Architect confirms source-free metadata lacks required catch-all provenance; exact-final-SHA retest pending. |
+| P21-EXT-08 | Major: unhandled typed raise in a `test` fails only that test. | `check_phase21_peer_recovery.py` reconstructs native test continuation; at `8d8a9cc`/`f6f11c4`, native lowering rejected a raising test call before compilation. | `eda7533` gives each native test a typed outcome and reports the selected variant while continuing later tests. Engineering native/Fast Debug gate passed on its branch; final Architect retest pending. | Pending final-SHA verification. |
+| P21-EXT-09 | Major: `raise e` must preserve the selected concrete enum variant. | `phase21_peer_raise_enum_value.moss` and `phase21_peer_re_raise_exact.moss`; at `f6f11c4`, enum-valued raises were inferred as a scalar enum identity. | `eda7533` enumerates possible enum variants and preserves an active recovery binding's selected identity. Engineering gate checks exact A/B arms in checker, native and Fast Debug; final Architect retest pending. | Pending final-SHA verification. |
+| P21-EXT-10 | Major: raising callbacks in eager pipelines must propagate or fail Moss check, never rustc E0308. | Reconstructed map/filter/any/all and generic reducer cases in `check_phase21_peer_effects.py`. | `26fcb9f` propagates checked Result values through eager pipelines; engineering check/native O0/O3/Fast Debug gate passes. General callback-shape argument and Architect retest pending. | Pending final-SHA verification. |
+| P21-EXT-11 | Major: Fast Debug `on_fail` and payload-pattern dispatch must match native. | `phase21_peer_on_fail_parity.moss`; reconstructed two-arm payload case aborts on old `8d8a9cc` Fast Debug. | Internal `95a3ae8` repaired interpreter trailer routing; `eda7533` adds exact variant parity gate. Engineering native/Fast Debug gate passes; Architect retest pending. | Pending final-SHA verification. |
+| P21-EXT-12 | Major: Float expression text parity and IEEE division must not be marked panicking. | `check_phase21_float_ieee.py` reconstructs `echo 0.1 + 0.2`, `1.0 / 0.0`, `0.0 / 0.0`, nested Float division and an Int-division control. At `8d8a9cc`, Float expression formatting/effects differed from the approved IEEE contract. | `dba4daf` removes the false Float-division panic effect. The permanent gate checks `effects --json` (`divide` and `nested` nonpanicking, Int division panicking), expected native O0/O3 and Fast Debug bytes, IEEE edges and the pinned 270-value corpus. Engineering passes; final Architect retest pending. | Pending final-SHA verification. |
+| P21-EXT-13 | Major: `recover err:` binding must have its concrete type and work in `match`. | Independent Architect reproduced `MATCH_REQUIRES_ENUM` for single-enum `recover err: match err` at `f6f11c4`; permanent `phase21_peer_recover_binding.moss` exercises native/Fast Debug. | `eda7533` binds the selected enum type when all alternatives share one enum; engineering gate passes checker/native/Fast Debug. | Independent defect confirmation; final-SHA fix verification pending. |
+| P21-EXT-14 | Major: missing provider symbols and falsified `.mossi` must fail closed. | `check_phase21_source_free_abi.py` covers missing/canonical symbol rejection; permanent `repro_phase21_mossi_pattern_forgery.py` reconstructs a recomputed-hash failure-pattern swap. | Narrow hash/symbol checks in `382e361`; the pattern forgery still checks/builds and exits by abort (`-6` in Python) against unchanged rlib. **DESIGN-DECISION-REQUIRED** for artifact binding; no v8 schema change made. | Architect independently reproduced the same pattern-swap class at preliminary SHA; final-SHA retest pending. |
+| P21-EXT-15 | Major: `FileError`/`ParseError` shape, availability, and nominal identity must match built-in operations. | At `8d8a9cc`, a manually declared `FileError.IO(code: Int)` with FileIO use passed `moss check` then failed rustc E0533; `check_phase21_builtin_error_contract.py` reconstructs this. A package probe gives a consumer its own `app__FileError` and an unrelated provider namesake: old checker acceptance led to rustc E0425 or a `FileError.NotFound` recovery falling into the catch-all. | `dba4daf` validates the six/two/two tag-only declarations; `16859f0` scopes shape checks by source and rejects ambiguous multiple `FileError` candidates as `FILEIO_ERROR_IDENTITY_UNSUPPORTED`. `263ad67` preserves valid single-module qualified provider recovery; the focused package gate builds and runs it with the correct arm. The ambiguous package negative fails at Moss checking, while declared-shape/native numeric/Fast Debug gates pass. Implicit built-in availability is not established by recorded approval: normative examples omit declarations while the practical guide requires them. Overall **DESIGN-DECISION-REQUIRED**; no suffix alias or ABI-v8 identity change was made. | Architect independently confirmed nominal identity risk; exact-final-SHA disposition pending. |
+
+## Minor external findings
+
+| ID | Severity and original issue | Reproducer / checkpoint status | Current engineering disposition | Independent Architect L6 |
+| --- | --- | --- | --- | --- |
+| P21-EXT-16 | Minor: `recover`/`on_fail` prefix parsing rejects identifiers such as `recovered`. | `phase21_peer_keyword_prefix.moss`; engineering reproduced rejection at `8d8a9cc` and `f6f11c4`. | `eda7533` requires a keyword boundary. Engineering checker/native/Fast Debug gate passes; Architect retest pending. | Pending final-SHA verification. |
+| P21-EXT-17 | Minor: grouped `recover A, B: raise` may re-raise the wrong alternative. | `phase21_peer_grouped_reraise.moss` exercises both A and B with outer-arm dispatch. | Engineering ran old `8d8a9cc` and current checker/native/Fast Debug; reconstructed case passes both. Provisional **NOT-REPRODUCIBLE** pending original archive or Architect challenge. | Pending independent confirmation. |
+| P21-EXT-18 | Minor: ENXIO/ENODEV and close-time ENOSPC mapping under the six-variant FileIO contract. | `check_phase21_fileio_errors.py` now enumerates Linux ENXIO/ENODEV and actual/injected close ENOSPC; `check_phase21_fileio_close_full.py` exercises a Moss `FileError.Full` arm. | `e828490` maps absent-device errors to IO and close storage exhaustion to Full. Engineering native gates pass; Architect retest pending. | Pending final-SHA verification. |
+| P21-EXT-19 | Minor: failed `create`/retry cleanup and parent-directory synchronization obligation. | `check_phase21_fileio_errors.py` injects post-descriptor and parent-open failures, then reopens the path. The independent Architect inspected `open_checked(create)` against Phase 20 §12.8/R10 and Phase 21 §6. | **CONFIRMED contract limitation:** the first failed create closes its descriptor and registry claim but can leave a name. A later `create` takes the existing-file path (`created=false`) and carries no parent-directory sync obligation. The approved contract discards that obligation at close and promises no rollback, so this is not yet an implementation violation. A successful retry plus `sync()` must not be advertised as proof that the new name is durable. An unlink or obligation-transfer remedy would change race and failure semantics and requires a separate decision. | Architect independently confirmed the code path and restricted contract; final-SHA rerun pending. |
+| P21-EXT-20 | Minor: Branch quiescence assertion may be timing-dependent. | `check_phase21c_branch_errors.py` previously gave a second Root ten million scheduler yields to publish a Branch, then panicked if it had not run. This could fail under load without a quiescence violation. | `d5976de` uses a two-Root barrier at the first distinct Branch publications. The subprocess timeout remains a deadlock witness; the test still requires both Root publications and zero live Branch scopes/read tokens after `join()`. Its 64-run native gate passes on the combined tree; final Architect retest pending. | Pending final-SHA verification. |
+
+## Later independent integration-review findings
+
+| ID | Severity and guarantee | Reproducer / checkpoint status | Current engineering disposition | Independent Architect L6 |
+| --- | --- | --- | --- | --- |
+| P21-INT-01 | Major: D7 joined captures and nested bare re-raise must lower to owned native values. | Internal reviewer fixtures added after `8d8a9cc`; original branch-join and E0382 cases failed. | Repaired by `95a3ae8` and `e200d69`; native/Fast Debug/source-free behavior to be retested at final SHA. | Pending. |
+| P21-INT-02 | Major: checked FileIO propagation and Root lock/cleanup order. | Injected FileIO and concurrent Root gate added after checkpoint. | `2384900` plus P21-EXT-01 peer follow-up; general proof remains conditional. | Pending. |
+| P21-INT-03 | Major: `Range.slice` effect lookup and actual concurrent O9 execution. | `check_phase21c_branch_errors.py` four-Root, 64-run case. | `82dd956` repaired effect lookup; O9 to be rechecked after EXT-03/04/05. | Pending. |
+| P21-INT-04 | Major, Phase 20: concrete typed cross-crate `Range` fails native E0308. | `check_phase20_cross_crate_range_abi.py`: source-backed and source-free negative, legal generic/same-module controls. | `382e361` and `c89f564` fail closed at Moss check. Full native interoperability is separate Phase 20 work, not claimed fixed. | Pending. |
+| P21-INT-05 | Blocker: internally consistent but forged `.mossi` can mismatch provider rlib. | `repro_phase21_mossi_pattern_forgery.py`: swap failure-arm pattern identities, recompute hashes, retain canonical symbols; check/build succeed, runtime SIGABRT. | DESIGN-DECISION-REQUIRED: proposed artifact-bound contract or provider-owned dispatch in this register; ABI-v8 evolution may be required. | Architect independently reproduced and objects to acceptance at preliminary SHA; final-SHA retest pending. |
+| P21-INT-06 | Blocker: canonical Float portability matrix initially had one Rust/GCC combination only. | Original 2,048 bit-pattern, 2,070 parse_float and 535 parse_int/to_int probes used Rust 1.98.1/GCC 13.3. The permanent 270-pattern Float corpus has expected-output SHA-256 `91553f7482c35cfef6c108c429c7bdb54fba4cc8d4959c4d0a7bd3faf1ca28ef`. | Engineering installed Rust 1.97.0 and Clang 18.1.3 under repository `tmp/` without privilege changes, then passed `check_phase21_float_ieee.py` for GCC 13.3 and Clang 18.1.3 builds of Moss crossed with Rust 1.97.0 and 1.98.1. Each run compares native O0/O3 and Fast Debug byte-for-byte. The matrix must be rerun after final code freeze, pinned in the final report, and preferably reproduced in CI. No waiver assumed. | Architect independently confirmed both Rust versions with the GCC-built compiler at preliminary SHA; final-SHA retest pending. |
+| P21-INT-07 | Major: general O4/O8 and mid-execution early-release arguments remain incomplete. | Reviewed implementation and focused fixtures in `PHASE_21_FINAL_REVIEW.md`; no exhaustive invariant proof. | Precise restricted guarantee and Architect L6 proof review required. | Pending. |
+| P21-INT-08 | Major: Root ingress post-inference scan mistakes an ordinary field named `message` for a Root message. | Full `make check` stopped at `tests/phase15_15_enum_positive.moss:40` with `ROOT_MESSAGE_TARGET_UNRESOLVED` for `Outcome.Failure(message: "helper")`; the focused `phase21_root_message_identifier.moss` reconstructs the same token ambiguity. | `a61c728` requires a receiver member-call shape before interpreting the token as a Root message. `moss check --json` accepts the old enum fixture and the targeted Root-totality gate passes native O0/O3 and Fast Debug. Full-suite rerun and Architect verification pending. | Pending. |
+| P21-INT-09 | Major: a method's no-op recovery after protected receiver state write emits no warning, and the public handler effect query omits that write. | Independent reviewer committed direct and helper-wrapped method fixtures/gate as `21679ca` and `6fe83c4`. At integration `5b8aca6`, check emitted no warning; native/Fast Debug printed `2`; synchronization said `write_set=[cell.value]` while public `domain_write=false`. | `11d62d2` maps receiver and writable argument effects to protected state and emits the exact `cell.value` provenance for both call shapes. The permanent method checker/effects/native/Fast Debug gate passes on the combined O0 compiler; full-suite and Architect final-SHA retest pending. | Architect classified the original as substantive O1 public-effect loss; fix verification pending. |
+| P21-INT-10 | Blocker: source-free imported helper loses the required no-op recovery warning. | Independent `check_phase21_sourcefree_noop_warning.py` (known-issue gate `8d6f717`) builds `provider.swallow(target)` with a write followed by raise and no-op catch. Source-backed consumer `swallow(value)` warns, but after provider source removal the rebuilt consumer warns no more while native execution still leaves state `2`. | **DESIGN-DECISION-REQUIRED.** ABI v8 carries parameter WRITE effects but no helper recovery-body/provenance summary. A provider-source warning cannot know whether the future caller's argument is protected state. Precise source-free parity needs approved provider metadata evolution or an explicitly approved limitation/fail-closed contract. The red reproducer is preserved outside green gates. | Architect independently agrees this is a public diagnostic-contract gap; final-SHA retest pending. |
+| P21-INT-11 | Blocker: unary `not` and object-field projection hide a typed raise from O1 analysis. | Independent `check_phase21_unary_not_effects.py` and `check_phase21_field_projection_effects.py` reconstruct `return not fail()` and `return fail().value`, plus unhandled Root uses. At `5b8aca6`, check falsely warned recovery unreachable and admitted Root, effects lost `Error.Bad`, native lowering failed internally, Fast Debug caught it. | `5cc76d0` recursively descends both accepted expression forms. Both permanent gates now pass exact `check --json`/`effects --json`, native and Fast Debug, and are in `tests/run.sh`. The separate 4097-byte unary mapper O9 gate `e192f14` passes native O0/O3 with `may_panic=true` and speculation ineligible. O1 general coverage and final-SHA Architect review remain open. | Architect independently reproduced unary `not` on the earlier SHA; final retest pending. |
+| P21-INT-12 | Major: warning provenance analysis lacked a handler local type and raised an internal synchronization invariant. | Interim full `make check` stopped at `phase21_capture_slot_combined.moss` during `check_phase21_on_fail_capture.py`: the recovery body uses `item.length()`, but the warning-only leaf-effect walk treated `item` as an unresolved concrete method target. | `5d1c194` carries checked local and selected-error binding types into recovery-arm lock-inflation analysis. D7 capture, warning, method, O9 and built-in gates pass with the combined O0 compiler; full-suite O2 rerun is pending. | Pending independent final-SHA verification. |
+
+## Acceptance layers and open decisions
+
+This register uses two distinct layers. **Formal implementation obligations**
+are O1–O9 in the approved specification and ask whether the compiler/runtime
+argument covers every relevant control-flow and ownership path. Their detailed
+locations, assumptions, tests and status are in `PHASE_21_FINAL_REVIEW.md`.
+**Public language semantics** ask whether ordinary syntax, helpers, methods,
+generics, module imports, Executor Roots and Fast Debug expose those promises.
+The layers are not interchangeable: a positive fixture is behavioral evidence,
+while general correctness needs a path-complete argument.
+
+| Public surface | Current acceptance result | Blocking distinction |
+| --- | --- | --- |
+| Local expressions, helpers and generic effects | Focused native O0/O3, Fast Debug, `check --json` and `effects --json` cases pass after `26fcb9f`. | EXT-07 transitive warning provenance and all-expression coverage are still under independent review. |
+| Root ingress and recovery | Unhandled synchronous/submitted Roots fail checker; positive `on_fail`, typed bindings and variant dispatch pass focused modes. | The full integration suite must be rerun after the keyword-scan repair and warning follow-ups. |
+| Source-backed and source-free packages | Source-free function effects, raised provider frames and owned captures have positive execution evidence. | Object-method effects are absent from ABI v8 and fail closed; forged same-symbol `.mossi` patterns still build and abort. |
+| FileIO, locks and Branch execution | Injected failures, concurrent Roots, ordered Branch outcomes and zero terminal read tokens pass focused native gates. | The O4/O8 general proof and §42 early-release reconciliation remain incomplete; failed-create name durability has a contract caveat. |
+| Numeric conversions and Float output | Current four-combination Rust/C++ matrix passed its pinned native/Fast Debug corpus before the last compiler edits. | Repeat the matrix on the frozen implementation SHA and retain corpus digest and tool versions in the final report. |
+
+No disposition above is self-certified FIXED while independent Architect
+verification is pending. Exact mode results and the final Engineering L6,
+Architect L6 and L7 votes belong in `PHASE_21_FINAL_REVIEW.md`.
+
+Human approval is required before changing §4 Root ingress, numerical grammar
+or canonical Float tie-breaking, O2 proof wording, the frozen source-free
+provider contract, or waiving a mandatory proof/portability gate. The agreed
+numeric grammar already accepts `.5`, `1.`, uppercase `E`, leading zeros and
+signed exponents, and the chosen Float tie-breaking is nearest, ties to even;
+these choices are recorded normatively in
+`docs/MOSS_PHASE_21_ERROR_HANDLING.md` §13.2–13.3 and are exercised by the
+numeric and Float gates. No new numerical decision is proposed.
+
+## Proposed source-free provider contract decision
+
+The threat is modification, replacement, or accidental mismatch of a `.mossi`
+file while its provider `.rlib` remains unchanged. ABI-v8 section hashes detect
+accidental edits that leave the stored hash stale; they do not authenticate
+metadata against compiled provider behavior. In a concrete two-arm provider,
+swapping only the two `handler_failure_arm` pattern identities, retaining the
+canonical symbols, and recomputing both interface hashes makes a source-free
+consumer pass `moss check` and link against the original `.rlib`. Execution
+then aborts when provider-owned dispatch and consumer interpretation disagree.
+The independent Architect L6 reconstructed this case under repository-local
+`tmp/architect-l6/forged-pattern` at `f6f11c4`. Commit `4fb1663` preserves the
+equivalent source and falsification steps in the permanent standalone known-issue
+reproducer `tests/tooling/repro_phase21_mossi_pattern_forgery.py`. It is kept
+outside green acceptance gates until a contract decision enables expected
+checker rejection.
+
+**Recommended contract:** a versioned provider-owned digest over the canonical
+effect, method, failure-arm, capture, and symbol metadata, embedded in the
+compiled provider artifact and checked by the consumer compiler against the
+`.mossi` contents before accepting source-free imports. The digest must be
+derived from the provider build, not a second editable interface field.
+Provider-owned dispatch is an alternative if the consumer never interprets
+failure patterns independently. Either design needs a precise representation
+and independent adversarial review. A content hash alone does not establish a
+publisher identity if an attacker can replace both artifacts; this proposal
+protects the consistency boundary between a selected rlib and its interface,
+assuming the build system selects the intended provider artifact.
+
+ABI v8 has no artifact-bound proof field and no object-method effects record.
+Adding those records is a provider-contract change and requires approval of a
+versioned successor, likely ABI v9. Rebuilt providers can emit the new record;
+source-free v8 providers cannot be retroactively authenticated. The proposed
+transition fails closed for source-free v8 imports at the new strict boundary
+or uses an explicit, approved compatibility mode. It does not claim that the
+current fail-closed method diagnostic or section hashes fully resolve
+P21-EXT-05/P21-EXT-14/P21-INT-05.
+
+## O2 wording and proof boundary requiring approval
+
+Current Part III O2 says trailer effects never enter `ClassSet(h)` and P10 C1
+says a trailer never adds exclusive locks to `h`. The first statement is about
+separate effect columns; the latter is too broad. A new `h_fail` signature
+column can split an existing class of two leaves both written by `h`, so `h`
+may acquire two exclusive classes after previously acquiring one even though
+its per-leaf write footprint is unchanged. The recommended wording is:
+"Fresh `on_fail` effects are not unioned into the original handler's state
+effect footprint and do not increase its per-leaf write requirements. As with
+any new signature column or writer, they may repartition synchronization
+classes and alter normal-path lock counts, including exclusive counts."
+This corrects the class-count claim without changing ranked acquisition or the
+deadlock proof. It requires an approved specification correction, not an
+unreviewed compiler change.
