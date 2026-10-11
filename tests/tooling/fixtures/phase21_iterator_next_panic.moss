@@ -1,0 +1,19 @@
+type Counter:
+  index: Int
+
+  fn next() -> option[Int]:
+    values = [1]
+    item = values[index]
+    return None
+
+domain Worker:
+  fn Run() -> Int:
+    counter = Counter(index = 2)
+    var total = 0
+    for value in counter:
+      total = total + value
+    reply total
+
+fn main():
+  worker = Worker()
+  echo message worker.Run()

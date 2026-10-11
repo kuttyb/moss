@@ -51,4 +51,16 @@ for kind in ("next", "factory", "generic"):
         assert native.returncode == 0 and native.stdout == "7\n", (
             kind, opt, native.returncode, native.stdout, native.stderr)
 
+
+# A fatal index panic inside implicit next() is distinct from a typed raise.
+# Its summary must reach the enclosing handler even though no recovery arm runs.
+source = fixtures / "phase21_iterator_next_panic.moss"
+checked = run(compiler, "check", source, "--json")
+assert checked.returncode == 0, (checked.stdout, checked.stderr)
+effects = run(compiler, "effects", "handler:Worker.Run", "--source", source,
+              "--json")
+assert effects.returncode == 0, (effects.stdout, effects.stderr)
+facts = json.loads(effects.stdout)["result"]["observable_effects"]
+assert facts["may_panic"] is True and facts["raise_set"] == [], facts
+
 print("Phase 21 raising iterator effects and native boundary passed.")
