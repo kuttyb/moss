@@ -116,6 +116,10 @@ states correctly. `check_phase21_source_free_cache_binding.py` is a permanent
 red gate for this defect. The O1 imported-contract premise is not established
 for every build entrypoint until that gate passes. The defect is in cache
 invalidation, not a change to the ABI-v9 semantic contract.
+Post-provisional ABI repair `4711a47` adds external provider artifacts to
+the early cache fingerprint; the falsification and deletion gate passes
+when run with a fresh strict C++17 build of that integration source. The
+exact final-SHA rerun remains required.
 
 A separate imported-method audit found that the ABI-v9 `.mossi` record can
 contain an exact `WRITE` parameter effect while `moss effects` in the
@@ -132,6 +136,10 @@ removal. It also requires a consumer Root recovery arm to observe the
 provider's mutation after that typed raise. A correct cross-crate bridge
 must copy the mutated standard enum back before propagating the checked
 error. The approved Phase 20 Range deferral does not cover this case.
+The same ABI repair preserves imported method parameter and receiver effects:
+the source-removed `Reset` query now reports `WRITE` and the exact
+`provider__Failure.Bad` variant. The consumer call fails closed at Moss
+checking while its cross-crate WRITE bridge is being implemented.
 
 Other existing adversarial gates cover previously repaired parenthesized,
 vector-element, unary, field-projection, helper, generic and pipeline effects,
@@ -369,8 +377,8 @@ made.
 | `check_phase21_early_placement_proof.py` | Green: plan assertions, native and Fast Debug. | Rerun after all O1/O4/ABI changes. |
 | `check_phase21_on_fail_capture.py` | Base cases green, protected state borrow negative; added method-local case was red with an internal planner invariant. | Method-local and early-raise capture paths pass O0/O3 native and Fast Debug; rerun after selected-exit and ABI changes, including source-free. |
 | `check_phase21_source_free_proof_edges.py` | Added after ABI-v9 method metadata; no base-SHA result. | Source-removed imported `next()` rejects with `RAISING_ITERATOR_UNSUPPORTED`; source-removed owned String capture and method call run and print `3\n3\n`. Provisional integration passes. |
-| `check_phase21_source_free_cache_binding.py` | Added after ABI-v9 provider binding; no base-SHA result. | Warm consumer build must reject forged metadata with recomputed digest and deleted provider rlib before cache reuse. Provisional integration fails both warm-build cases, although `moss check` rejects them. |
-| `check_phase21_source_free_standard_write_recovery.py` | Added after ABI-v9 standard errors; no base-SHA result. | Source-backed and source-removed provider method must retain `WRITE` and exact typed variant; Root recovery must see the mutated standard enum. Provisional integration rejects the source-backed valid call and, after source removal, loses `WRITE` then fails rustc E0308. |
+| `check_phase21_source_free_cache_binding.py` | Added after ABI-v9 provider binding; no base-SHA result. | Warm consumer build must reject forged metadata with recomputed digest and deleted provider rlib before cache reuse. Provisional `b4a0087` fails; post-repair `4711a47` passes with a fresh compiler build. |
+| `check_phase21_source_free_standard_write_recovery.py` | Added after ABI-v9 standard errors; no base-SHA result. | Source-backed and source-removed provider method must retain `WRITE` and exact typed variant; Root recovery must see the mutated standard enum. Provisional integration rejects the valid source-backed call, and source-removed metadata lost `WRITE` then failed rustc E0308. ABI `4711a47` restores the imported effect; the bridge remains under repair. |
 
 The final engineering closeout must record the exact implementation SHA,
 compiler and Rust toolchain versions, ABI-v9 source-free executions and
@@ -398,6 +406,6 @@ placement, on-fail-capture and iterator gates all passed. The new
 source-removed provider method/capture gate also passed. These gates include
 native O0/O3 and Fast Debug where each gate supports them. The warm external
 provider cache-binding gate failed as described above; thus the entire
-`make check` suite has **not** passed on this SHA. An ABI-v9 cache repair and
-exact-final-SHA rerun are required before engineering can claim O1/O4/O8
-closure. Independent Architect L6 acceptance is separate.
+`make check` suite has **not** passed on this SHA. The later ABI repair passes
+that focused cache gate, but standard-error WRITE and exact-final-SHA full
+validation remain. Independent Architect L6 acceptance is separate.
