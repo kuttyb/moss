@@ -24,7 +24,7 @@ reported here without representing it as Architect acceptance.
 | Original implementation-complete checkpoint | `8d8a9cc6f842e11701dbedc56e3d2d2d3da9852a` |
 | External addendum failing baseline | `7775049` |
 | Independent Architect L6 implementation | `5941d98c824f31550f520891235c8b7ac96f3992` |
-| Validated implementation/source SHA | `c1ef3ebb13d7c74c3ed86a45d45e536d527161da`; later report commits change documentation only |
+| Validated implementation/source SHA | `c1ef3ebb13d7c74c3ed86a45d45e536d527161da`; later commits add the unchanged original fixtures, their permanent gate and documentation without modifying compiler source |
 | Reconciled `origin/main` baseline | `d15e968778fa1cff3cd5085911c505592af54a30`, integrated at `7eb192b`; refetched at final validation and still an integration ancestor |
 | Branch and merge gate | `phase-21-integration`; **do not merge into `main`** without explicit L7 approval |
 | Independent Architect L6 and L7 acceptance | Pending exact-source Architect review and explicit L7 merge decision |

@@ -14,7 +14,8 @@ FIXTURES = ROOT / "tests/tooling/fixtures/p21_open_at_7775049"
 SCRATCH = ROOT / "tmp/phase21-original-af"
 SCRATCH.mkdir(parents=True, exist_ok=True)
 
-# The originals are transcribed from p21_open_at_7775049.zip. Any ABI migration
+# L7 supplied a text transcription attributed to p21_open_at_7775049.zip;
+# the ZIP itself was unavailable for independent byte comparison. Any ABI migration
 # must use a separate file; changing these bytes invalidates this review gate.
 ORIGINAL_SHA256 = {
     "README.md": "7800cce4680124f511f8460e639630c37a716a2ef0927592e2a5781e633c2c8e",
