@@ -91,6 +91,33 @@ rejected = json.loads(run(consumer_project, MARGO, "build", "--json",
 assert not rejected["ok"], rejected
 interface.write_text(original)
 
+# A different, valid provider build with the same module and exported symbol
+# names is still stale for this metadata. Reject it even when the consumer's
+# own source and cache are unchanged.
+alternate = OUT / "alternate-provider"
+(alternate / "src").mkdir(parents=True)
+(alternate / "moss.toml").write_text(
+    '[project]\nname="phase21_abi_v9_external_cache"\nversion="0.1.0"\n')
+(alternate / "src/provider.moss").write_text('''module provider
+export fn answer() -> Int:
+  return 43
+''')
+(alternate / "src/main.moss").write_text('''module app
+import provider
+fn main():
+  echo provider.answer()
+''')
+run(alternate, MARGO, "build", "--json")
+shutil.copy2(alternate / "build/debug/libprovider.rlib", rlib)
+checked = json.loads(run(consumer_project, MOSS, "check", consumer, "--json",
+                         provider_path=external, expected=1).stdout)
+assert checked["error"]["code"] == \
+    "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH", checked
+rejected = json.loads(run(consumer_project, MARGO, "build", "--json",
+                          provider_path=external, expected=1).stdout)
+assert not rejected["ok"] and \
+    "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH" in rejected["error"], rejected
+
 # A selected stale provider artifact must also invalidate the warm consumer.
 rlib.write_bytes(b"!<arch>\n")
 rejected = json.loads(run(consumer_project, MARGO, "build", "--json",
