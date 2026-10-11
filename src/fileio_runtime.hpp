@@ -832,6 +832,7 @@ pub mod moss_fileio {
             // an open failure, not permission to return a descriptor with
             // different blocking behavior. No inode claim exists yet.
             let injected_flag_error = take_fileio_fault(MossFileIoFaultSite::OpenFlagClear);
+            let flag_guard = SoloGuard::new("open_flag_clear");
             let flags = if injected_flag_error.is_some() {
                 -1
             } else {
@@ -839,6 +840,7 @@ pub mod moss_fileio {
             };
             let flag_clear_failed = flags < 0 ||
                 unsafe{ posix::fcntl(fd, posix::F_SETFL, flags & !posix::O_NONBLOCK) } < 0;
+            drop(flag_guard);
             if flag_clear_failed {
                 let cguard = SoloGuard::new("cleanup_close");
                 let _ = unsafe{ sys_close(fd) };
