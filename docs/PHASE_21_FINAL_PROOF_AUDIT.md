@@ -2,6 +2,9 @@
 
 **Engineering audit base:** `7775049ab70951b749dfd25cd3902fa4291e187a`
 
+**Provisional integration retest:** `53f11363e2f973e30b1e9a869407b6ecb6eef166`
+with Rust 1.98.1 and GCC 13.3. This is not the final candidate SHA.
+
 **Status at this audit base:** open. The counterexamples below are accepted by
 `moss check` at this SHA or reveal a false D7 rejection. Post-base engineering
 repairs are identified explicitly. Every gate must be rerun on the exact final
@@ -28,12 +31,12 @@ guard against certain borrow errors, but a Moss program accepted by `check`
 that fails during lowering or rustc is an engineering defect, not a successful
 Moss diagnostic.
 
-| Area | Implementation invariant needed | Audit result at base SHA |
+| Area | Implementation invariant needed | Engineering audit status |
 | --- | --- | --- |
-| O1 | Every executed effect and possible typed variant is included in the concrete handler/callable summary; panic remains separate. | **FAIL at base SHA** for implicit object iterator calls. Post-base integration rejects typed-raising custom iterators and preserves panic effects; rerun the permanent gate at final SHA. Ordinary expression and method effects have focused positive coverage, but the general claim remains conditional on a complete source-surface audit and validated ABI v9 imports. |
-| O4 | Every possible raise site has a selected-variant edge to its first matching recovery arm or the handler exit, carrying the ownership state at that site. | **FAIL at base SHA** for a consumed outer `var` reinitialized before a selected raise, for an early argument raise followed by a consuming argument, and for checked raising code in a leading condition. Post-base expression-order repair has focused green gates; the reinitialization and leading-condition gates and exact final-SHA review remain required. Also depends on O1 for implicit iterator edges. |
-| O8 | Every body-to-trailer capture is an owned, initialized value with one binding identity on every selected exceptional edge; its type contains no capability or protected view. | Checked local cases and native handoff pass after the post-base capture-method planner repair. A general claim depends on complete O1/O4 edges and on ABI-v9 provider-artifact validation for source-free contracts. |
-| Early release | Every touched guard lasts until completion; only a statically untouched guard can cancel, and all later acquisitions remain ranked and precede the first externally observable action. | Bounded leading-conditional plan has a concrete three-class witness. The general argument below is conditional on O1 and O4 and on an accurate condition-effect barrier. |
+| O1 | Every executed effect and possible typed variant is included in the concrete handler/callable summary; panic remains separate. | **FAIL at base SHA** for implicit iterator calls. Direct, factory, generic and panic iterator gates pass on provisional integration. Source-removed imported `next()` retains its typed effect and fails closed. The external-provider warm build cache still bypasses ABI-v9 artifact validation after provider mutation; the public build guarantee remains **OPEN**. |
+| O4 | Every possible raise site has a selected-variant edge to its first matching recovery arm or the handler exit, carrying the ownership state at that site. | **FAIL at base SHA** for reinitialization and expression order. Selected-exit, early condition, expression order and capture gates pass on provisional integration. The general claim remains conditional on O1 completeness, ABI-v9 validity and final-SHA transfer coverage. |
+| O8 | Every body-to-trailer capture is an owned, initialized value with one binding identity on every selected exceptional edge; its type contains no capability or protected view. | Checked local and source-removed method-capture cases pass on provisional integration. The external-provider warm cache is an open source-free artifact-authenticity defect; the general source-free claim remains **OPEN**. |
+| Early release | Every touched guard lasts until completion; only a statically untouched guard can cancel, and all later acquisitions remain ranked and precede the first externally observable action. | Bounded leading-conditional plan and raising-condition fallback pass on provisional integration. The proof covers the implemented bounded placement and conservative full-entry fallback, conditional on complete effects and final-SHA code review. |
 
 ## O1: effect completeness
 
@@ -93,6 +96,26 @@ with a typed-raising `next()`, remove its Moss source, and check a consumer
 `for`. The consumer must receive the same fail-closed diagnostic before rustc.
 The provider's method metadata must be bound to its selected artifact so the
 consumer cannot downgrade the raise set by editing `.mossi`.
+
+`check_phase21_source_free_proof_edges.py` executes that source-free gate:
+after provider source removal, the imported `Counter.next()` still leads to
+`RAISING_ITERATOR_UNSUPPORTED`. It also compiles and runs an imported Root
+whose early argument raise carries an owned String into `on_fail` for a
+`length()` method call. These are particular source-free paths, not evidence
+that every artifact selection or cache entry is valid.
+
+The ABI-v9 checker rejects a `.mossi` whose digest was recomputed without
+rebuilding the provider `.rlib`. An adversarial warm-build gate found a
+separate entrypoint bypass at provisional integration `b4a0087`: for an
+external provider selected through `MOSS_MODULE_PATH`,
+`compile_native_artifact` hashes local build-directory `.mossi` files but
+omits the external provider from its early cache key. A warm `moss build`
+can return a prior executable with `units_analyzed=0` after the external
+`.mossi` is forged or the `.rlib` is deleted. `moss check` rejects both
+states correctly. `check_phase21_source_free_cache_binding.py` is a permanent
+red gate for this defect. The O1 imported-contract premise is not established
+for every build entrypoint until that gate passes. The defect is in cache
+invalidation, not a change to the ABI-v9 semantic contract.
 
 Other existing adversarial gates cover previously repaired parenthesized,
 vector-element, unary, field-projection, helper, generic and pipeline effects,
@@ -198,6 +221,18 @@ tagged outcome with correct guard cleanup or conservatively use full entry
 when its `raise_set` is nonempty. The final gate requires O0/O3 and Fast Debug
 output `1\n4\n2\n`.
 
+The provisional integration compiler takes the conservative full-entry path
+for a leading condition with a typed raise, panic or unresolved effect.
+`check_phase21_early_condition_raise.py` now passes Moss checking, native
+O0/O3 and Fast Debug. `check_phase21_recover_reinit.py` likewise passes its
+positive reinitialization and negative missing-reinitialization cases. The
+selected-exit merge in `check_ownership_block` starts a reachable recovery
+arm's unavailable set from the union of moved or shadowed facts on the
+**matching exceptional exits**, not the pre-`try` moved set. The
+expression-edge recorder captures children in left-to-right order and a
+direct callee outcome after its arguments. These transfer rules close the
+identified counterexamples, subject to O1 finding every implicit raise.
+
 Existing D7 gates exercise preinitialization, conditional joins, loop
 reinitialization, loop consumption, shadowed bindings, nested recovery,
 re-raise and variant-specific ownership. They remain behavioral witnesses.
@@ -250,9 +285,12 @@ capture types, selected error binding and payload-pattern types into those
 effect passes. The method-local and early-expression-raise capture fixtures
 pass Moss checking, native O0/O3 and Fast Debug. The latter confirms that
 `Option<T>` failure-frame lowering can transport a String left available by an
-early raising argument. Source-free replay of the method capture remains an
-ABI-v9 final-SHA validation case; the planned export now sees its concrete
-type, but a valid provider artifact must still be bound to the interface.
+early raising argument. `check_phase21_source_free_proof_edges.py` removes
+the provider Moss source, rebuilds the consumer, and observes `3\n3\n` from
+a Root trailer calling `data.length()` after an early expression raise.
+The provider `.rlib` and `.mossi` are present and match in this case. The
+warm-cache counterexample above keeps the quantified source-free premise
+open, and the final-SHA gate must rerun after the ABI cache repair.
 
 ## General early-release guarantee
 
@@ -314,6 +352,8 @@ made.
 | `check_phase21_raising_iterators.py` | Red: false unreachable warnings/empty effects; rustc E0308/E0599; panic iterator incorrectly has `may_panic=false`. | Explicit `RAISING_ITERATOR_UNSUPPORTED` for direct, factory and generic typed raises; accepted panic iterator has `may_panic=true`, `raise_set=[]`. |
 | `check_phase21_early_placement_proof.py` | Green: plan assertions, native and Fast Debug. | Rerun after all O1/O4/ABI changes. |
 | `check_phase21_on_fail_capture.py` | Base cases green, protected state borrow negative; added method-local case was red with an internal planner invariant. | Method-local and early-raise capture paths pass O0/O3 native and Fast Debug; rerun after selected-exit and ABI changes, including source-free. |
+| `check_phase21_source_free_proof_edges.py` | Added after ABI-v9 method metadata; no base-SHA result. | Source-removed imported `next()` rejects with `RAISING_ITERATOR_UNSUPPORTED`; source-removed owned String capture and method call run and print `3\n3\n`. Provisional integration passes. |
+| `check_phase21_source_free_cache_binding.py` | Added after ABI-v9 provider binding; no base-SHA result. | Warm consumer build must reject forged metadata with recomputed digest and deleted provider rlib before cache reuse. Provisional integration fails both warm-build cases, although `moss check` rejects them. |
 
 The final engineering closeout must record the exact implementation SHA,
 compiler and Rust toolchain versions, ABI-v9 source-free executions and
@@ -331,6 +371,16 @@ method-warning gates passed again; the new O8 method captures ran native O0/O3
 and Fast Debug.
 `make check` advanced through those suites and then stopped at the previously
 identified leading-condition lowering gate on this worktree's base compiler.
-That run does not establish a green integration baseline. Neither ABI v9 nor
-the separate selected-exit reinitialization and leading-condition repairs were
-present in this worktree, so O1/O4/O8 and early-release status remains open.
+That historical run does not establish a green integration baseline.
+
+### Provisional integration retest
+
+At integration `53f1136`, using Rust 1.98.1 and GCC 13.3, the focused
+raising-condition, recovery-reinitialization, expression-order, bounded
+placement, on-fail-capture and iterator gates all passed. The new
+source-removed provider method/capture gate also passed. These gates include
+native O0/O3 and Fast Debug where each gate supports them. The warm external
+provider cache-binding gate failed as described above; thus the entire
+`make check` suite has **not** passed on this SHA. An ABI-v9 cache repair and
+exact-final-SHA rerun are required before engineering can claim O1/O4/O8
+closure. Independent Architect L6 acceptance is separate.
