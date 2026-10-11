@@ -6441,6 +6441,123 @@ class Checker {
       }
   }
 
+  void phase21_warn_helper_catch_alls(
+      const Domain& domain, const Handler& source,
+      const DomainSpecialization& specialization,
+      const DomainSynchronizationPlan& planned) {
+    if (source.provider_abi) return;
+    for (size_t call_index = 0; call_index < source.body.size(); ++call_index) {
+      const Stmt& call = source.body[call_index];
+      string callee;
+      vector<string> arguments;
+      if (call.kind == Stmt::Kind::Call && call.b.empty()) {
+        callee = call.a;
+        arguments = call.args;
+      } else {
+        for (const auto& expression : statement_expressions(call))
+          if (parse_simple_call(strip_expression_parens(expression), callee,
+                                arguments))
+            break;
+      }
+      auto target = functions_.find(callee);
+      if (target == functions_.end() ||
+          target->second->params.size() != arguments.size() ||
+          target->second->body.empty())
+        continue;
+      const Function& function = *target->second;
+      bool imported = false;
+      for (const auto& module : p_.external_modules)
+        imported |= starts_with(function.name, module + "__");
+      if (imported) continue;
+      TypeEnv caller_types = phase21_local_types_before(
+          domain, source, specialization, call_index);
+      for (const auto& route : domain.routes)
+        caller_types[route.name] = route.type;
+      Domain formal_domain;
+      formal_domain.name = "_phase21_helper_warning";
+      Handler formal_handler;
+      formal_handler.name = "_phase21_helper_warning";
+      formal_handler.body = function.body;
+      DomainSpecialization formal_specialization;
+      formal_specialization.source_domain = formal_domain.name;
+      for (size_t parameter = 0; parameter < function.params.size();
+           ++parameter) {
+        auto type = inferred_expr_type(arguments[parameter], caller_types);
+        if (!type) {
+          formal_domain.state.clear();
+          break;
+        }
+        Field field;
+        field.name = function.params[parameter].name;
+        field.type = *type;
+        formal_domain.state.push_back(field);
+        formal_specialization.state_types[field.name] = *type;
+      }
+      if (formal_domain.state.size() != function.params.size()) continue;
+      for (size_t index = 0; index < function.body.size(); ++index) {
+        const Stmt& statement = function.body[index];
+        if (statement.kind != Stmt::Kind::Try) continue;
+        const size_t attempt_end = statement_subtree_end(function.body, index);
+        size_t arm_index = attempt_end;
+        while (arm_index < function.body.size() &&
+               function.body[arm_index].indent == statement.indent &&
+               function.body[arm_index].kind == Stmt::Kind::Recover) {
+          const Stmt& arm = function.body[arm_index];
+          const size_t arm_end = statement_subtree_end(function.body,
+                                                        arm_index);
+          const bool catch_all = arm.a.empty() ||
+              (arm.a.find('.') == string::npos &&
+               arm.a.find(',') == string::npos);
+          if (catch_all && !arm.exceptional_alternatives.empty() &&
+              phase21_noop_body(function.body, arm_index + 1, arm_end)) {
+            StateLeafSet written_formals;
+            (void)phase21_writes_before_selected_raise(
+                formal_domain, formal_handler, formal_specialization,
+                function.body, index + 1, attempt_end,
+                statement.indent + 1, {}, arm.exceptional_alternatives,
+                written_formals,
+                phase21_local_types_before(
+                    formal_domain, formal_handler, formal_specialization,
+                    index));
+            StateLeafSet protected_writes;
+            for (const auto& leaf : written_formals) {
+              const size_t dot = leaf.find('.');
+              const string formal = leaf.substr(0, dot);
+              auto parameter = std::find_if(
+                  function.params.begin(), function.params.end(),
+                  [&](const Param& candidate) {
+                    return candidate.name == formal;
+                  });
+              if (parameter == function.params.end()) continue;
+              const size_t slot = static_cast<size_t>(
+                  parameter - function.params.begin());
+              auto location = storage_location(arguments[slot], caller_types);
+              if (!location) continue;
+              string actual = location->root;
+              for (const auto& member : location->path) {
+                if (member == "[]") break;
+                actual += "." + member;
+              }
+              if (dot != string::npos) actual += leaf.substr(dot);
+              if (planned.state_leaves.count(actual))
+                protected_writes.insert(actual);
+            }
+            if (!protected_writes.empty())
+              phase21_warning(
+                  arm.line, arm.source_file,
+                  "RECOVER_EMPTY_AFTER_STATE_WRITE",
+                  "no-op recover catch-all in helper '" + function.name +
+                      "' may swallow an error after protected domain-state "
+                      "writes from '" + domain.name + "." + source.name +
+                      "' call at line " + std::to_string(call.line) +
+                      " (" + phase21_leaf_names(protected_writes) + ")");
+          }
+          arm_index = arm_end;
+        }
+      }
+    }
+  }
+
   void phase21_warn_recovery_lock_inflation(
       const Domain& domain, const Handler& source,
       const DomainSpecialization& specialization,
@@ -6625,6 +6742,8 @@ class Checker {
         phase21_warn_recovery_lock_inflation(domain, source, specialization,
                                              raw, planned);
         phase21_warn_empty_catch_alls(domain, source, specialization);
+        phase21_warn_helper_catch_alls(domain, source, specialization,
+                                       planned);
       }
       plan.domains.push_back(std::move(planned));
     }
