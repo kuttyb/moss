@@ -6139,15 +6139,34 @@ class Checker {
                                        ignore_recovery, local_types);
   }
 
+  TypeEnv phase21_failure_arm_local_types(const FailureArm& arm) const {
+    TypeEnv arm_types;
+    for (const auto& capture : arm.captures)
+      arm_types[capture.name] = capture.type;
+    if (!arm.binding.empty()) {
+      std::set<string> selected_types;
+      for (const auto& identity : arm.exceptional_alternatives)
+        selected_types.insert(identity.type);
+      if (selected_types.size() == 1)
+        arm_types[arm.binding] = *selected_types.begin();
+    }
+    if (arm.patterns.size() == 1)
+      for (const auto& binding :
+           phase21_pattern_bindings(arm.line, arm.patterns.front()))
+        arm_types[binding.first] = binding.second;
+    return arm_types;
+  }
+
   StateLeafEffects specialized_handler_failure_effects(
       const Domain& domain, const Handler& handler,
       const DomainSpecialization* specialization) const {
     StateLeafEffects result;
     for (const auto& arm : handler.failure_arms) {
+      const TypeEnv arm_types = phase21_failure_arm_local_types(arm);
       auto arm_effects = handler.provider_abi
           ? arm.state_effects.value_or(StateLeafEffects{})
           : specialized_handler_body_effects(
-                domain, handler, arm.body, specialization);
+                domain, handler, arm.body, specialization, false, &arm_types);
       result.reads.insert(arm_effects.reads.begin(), arm_effects.reads.end());
       result.writes.insert(arm_effects.writes.begin(), arm_effects.writes.end());
       result.consumes.insert(arm_effects.consumes.begin(),
@@ -7204,9 +7223,11 @@ class Checker {
       for (auto& handler : domain.handlers) {
         handler.state_effects = specialized_handler_effects(domain, handler, nullptr);
         if (handler.provider_abi) continue;
-        for (auto& arm : handler.failure_arms)
+        for (auto& arm : handler.failure_arms) {
+          const TypeEnv arm_types = phase21_failure_arm_local_types(arm);
           arm.state_effects = specialized_handler_body_effects(
-              domain, handler, arm.body, nullptr);
+              domain, handler, arm.body, nullptr, false, &arm_types);
+        }
       }
   }
 
