@@ -9435,7 +9435,9 @@ class Checker {
                 selected_types.count(canonical_type_name(binding->second)))
               alternatives = selected;
           }
-          auto expression = observable_expression_effects(statement.a, env);
+          auto expression = observable_expression_effects(
+              statement.a, env, {}, nullptr, {}, nullptr,
+              statement.message_root_ingress);
           alternatives = raise_set_union(
               std::move(alternatives), expression.raise_set);
         }
@@ -9450,8 +9452,9 @@ class Checker {
           statement.kind == Stmt::Kind::Match) {
         const string expression = statement.kind == Stmt::Kind::For
             ? statement.b : statement.a;
-        const RaiseSet direct =
-            observable_expression_effects(expression, env).raise_set;
+        const RaiseSet direct = observable_expression_effects(
+            expression, env, {}, nullptr, {}, nullptr,
+            statement.message_root_ingress).raise_set;
         const_cast<Stmt&>(statement).exceptional_alternatives = direct;
         result = raise_set_union(
             std::move(result), direct);
@@ -9815,6 +9818,9 @@ class Checker {
     string original = strip_redundant_outer_parentheses(expression);
     if (original.empty()) return effects;
 
+    // A message remains a Root ingress anywhere within a main expression.
+    // Carry that context through every recursive expression form so its
+    // checked on_fail trailer consumes the handler's typed outcome precisely.
     // Grouping and vector construction do not hide effects of their contents.
     // In particular, a raised element must reach recovery/Root totality, and
     // a grouped index panic must keep a chunk mapper out of Branch work.
@@ -9822,7 +9828,7 @@ class Checker {
       for (const auto& element : *elements)
         effects.merge(observable_expression_effects(
             element, env, domain_fields, implicit_object, parameters,
-            proven_indices));
+            proven_indices, root_ingress));
       return effects;
     }
     // `not` is a value transformation, so every observable effect of its
@@ -9840,11 +9846,11 @@ class Checker {
       if (parse_member_call(trim(original.substr(8)), receiver, handler, arguments)) {
         effects.merge(observable_expression_effects(
             receiver, env, domain_fields, implicit_object, parameters,
-            proven_indices));
+            proven_indices, root_ingress));
         for (const auto& argument : arguments)
           effects.merge(observable_expression_effects(
               argument, env, domain_fields, implicit_object, parameters,
-              proven_indices));
+              proven_indices, root_ingress));
         auto receiver_type = env.find(receiver);
         if (receiver_type != env.end()) {
           auto domain = domains_.find(canonical_type_name(receiver_type->second));
@@ -9864,7 +9870,7 @@ class Checker {
     if (auto pipeline = parse_functional_pipeline(original)) {
       effects.merge(observable_expression_effects(
           pipeline->source, env, domain_fields, implicit_object, parameters,
-          proven_indices));
+          proven_indices, root_ingress));
       auto source_type = inferred_expr_type(pipeline->source, env);
       string element = source_type
           ? functional_element_type(*source_type, pipeline->source).value_or("")
@@ -9874,7 +9880,7 @@ class Checker {
             !stage.arguments.empty())
           effects.merge(observable_expression_effects(
               stage.arguments.front(), env, domain_fields, implicit_object,
-              parameters, proven_indices));
+              parameters, proven_indices, root_ingress));
         string callable;
         if ((stage.kind == FunctionalNodeKind::Map ||
              stage.kind == FunctionalNodeKind::Filter ||
@@ -9891,7 +9897,7 @@ class Checker {
           placeholder_env["_"] = element;
           effects.merge(observable_expression_effects(
               callable, placeholder_env, domain_fields, implicit_object,
-              parameters, proven_indices));
+              parameters, proven_indices, root_ingress));
         } else {
           string identity = trim(callable);
           string bound_receiver, bound_method;
@@ -9954,10 +9960,10 @@ class Checker {
       if (auto binary = split_binary(value, operators)) {
         effects.merge(observable_expression_effects(
             binary->first, env, domain_fields, implicit_object, parameters,
-            proven_indices));
+            proven_indices, root_ingress));
         effects.merge(observable_expression_effects(
             binary->second, env, domain_fields, implicit_object, parameters,
-            proven_indices));
+            proven_indices, root_ingress));
         if (operators.front() == "*") {
           if (split_binary(value, {"%"})) effects.may_panic = true;
           if (split_binary(value, {"/"})) {
@@ -9975,10 +9981,10 @@ class Checker {
           !proven_index_access(proven_indices, index_base, index_expression);
       effects.merge(observable_expression_effects(
           index_base, env, domain_fields, implicit_object, parameters,
-          proven_indices));
+          proven_indices, root_ingress));
       effects.merge(observable_expression_effects(
           index_expression, env, domain_fields, implicit_object, parameters,
-          proven_indices));
+          proven_indices, root_ingress));
       return effects;
     }
     // Reading a field of a computed object first evaluates its base.  A
@@ -10018,7 +10024,8 @@ class Checker {
           string field, field_value;
           effects.merge(observable_expression_effects(
               parse_named_argument(argument, field, field_value) ? field_value : argument,
-              env, domain_fields, implicit_object, parameters, proven_indices));
+              env, domain_fields, implicit_object, parameters,
+              proven_indices, root_ingress));
         }
         return effects;
       }
@@ -10029,7 +10036,7 @@ class Checker {
         for (const auto& argument : open_arguments)
           effects.merge(observable_expression_effects(
               argument, env, domain_fields, implicit_object, parameters,
-              proven_indices));
+              proven_indices, root_ingress));
         effects.external_io = true;
         effects.fileio = true;
         effects.may_panic = true;  // invalid resource/mode use remains fatal.
@@ -10042,11 +10049,11 @@ class Checker {
       if (receiver != "FileIO")
         effects.merge(observable_expression_effects(
             receiver, env, domain_fields, implicit_object, parameters,
-            proven_indices));
+            proven_indices, root_ingress));
       for (const auto& argument : arguments)
         effects.merge(observable_expression_effects(
             argument, env, domain_fields, implicit_object, parameters,
-            proven_indices));
+            proven_indices, root_ingress));
       auto receiver_type = inferred_expr_type(receiver, env);
       if (receiver_type &&
           (canonical_type_name(*receiver_type) == "Range" ||
@@ -10119,14 +10126,15 @@ class Checker {
         else effects.local_mutation = true;
         effects.merge(observable_expression_effects(
             arguments_call[1], env, domain_fields, implicit_object, parameters,
-            proven_indices));
+            proven_indices, root_ingress));
         return effects;
       }
       for (const auto& argument : arguments_call) {
         string field, field_value;
         effects.merge(observable_expression_effects(
             parse_named_argument(argument, field, field_value) ? field_value : argument,
-            env, domain_fields, implicit_object, parameters, proven_indices));
+            env, domain_fields, implicit_object, parameters,
+            proven_indices, root_ingress));
       }
       auto function = functions_.find(callee);
       if (function != functions_.end()) {

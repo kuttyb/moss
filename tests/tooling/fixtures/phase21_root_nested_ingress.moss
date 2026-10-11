@@ -1,0 +1,22 @@
+enum E:
+  Bad
+
+fn identity(value: Int) -> Int:
+  return value
+
+domain Worker:
+  fn Fetch() -> Int:
+    raise E.Bad
+
+  on_fail E.Bad:
+    reply 7
+
+fn main():
+  worker = Worker()
+  echo 1 + message worker.Fetch()
+  values = [message worker.Fetch()]
+  echo values[0]
+  echo identity(message worker.Fetch())
+  if 7 == message worker.Fetch():
+    echo "ready"
+  echo (message worker.Fetch())

@@ -1,0 +1,16 @@
+enum E:
+  Bad
+
+fn identity(value: Int) -> Int:
+  return value
+
+domain Worker:
+  fn Fetch() -> Int:
+    raise E.Bad
+
+fn main():
+  worker = Worker()
+  try:
+    echo identity(message worker.Fetch())
+  recover E.Bad:
+    echo -1

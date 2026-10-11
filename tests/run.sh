@@ -38,6 +38,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_early_placement_pr
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_method_noop_warning.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_recovery_native.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_root_totality.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_root_expression_ingress.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_absolute_root_boundary.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_handler_failure_native.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_fileio_errors.py
