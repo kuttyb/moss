@@ -1,5 +1,24 @@
 # Moss current status
 
+## Phase 21 ABI v9 remediation in progress — 2026-10-11
+
+L7 has authorized ABI v9, compiler-recognized standard errors, absolute Root
+typed-error totality, the O2 wording correction, and general O1/O4/O8 and
+early-release proof closeout. The current `phase-21-integration` branch is an
+engineering checkpoint, **not a release candidate**. Independent worktrees
+are implementing the ABI, constructing standard-error/Root conformance gates,
+and auditing exceptional control flow and ownership. The integration branch
+now includes the approved O2 correction and failed-create durability caveat.
+
+The new `check_phase21_early_condition_raise.py` gate records a confirmed
+red counterexample on the pre-fix compiler: a leading handler `if` condition
+with a typed raise passes Moss checking and has the correct effect summary,
+but path-sensitive native lowering lacks an outcome context. An equivalent
+full-entry control compiles and runs. The gate remains enabled; the planned
+conservative placement fix and renewed broader validation have not yet run.
+Earlier `make check` and Float matrix results below apply only to the prior
+implementation SHA and do not validate the eventual ABI v9 tree.
+
 ## Phase 21 peer-review engineering validation — 2026-10-11
 
 Integration branch `phase-21-integration` is reconciled with `origin/main`
