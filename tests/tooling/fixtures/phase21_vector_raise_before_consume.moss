@@ -1,0 +1,18 @@
+enum Failure:
+  Bad
+
+fn fail() -> String:
+  raise Failure.Bad
+
+domain Worker:
+  fn Run() -> Int:
+    var data = "abc"
+    try:
+      values = [fail(), data]
+    recover Failure.Bad:
+      reply data.length()
+    reply 0
+
+fn main():
+  worker = Worker()
+  echo message worker.Run()

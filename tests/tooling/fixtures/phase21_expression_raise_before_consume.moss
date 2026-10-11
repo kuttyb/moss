@@ -11,7 +11,7 @@ domain Worker:
   fn Run() -> Int:
     var data = "abc"
     try:
-      result = consume_after(fail(), data)
+      result = consume_after((fail() + 1), data)
     recover Failure.Bad:
       reply data.length()
     reply 0
