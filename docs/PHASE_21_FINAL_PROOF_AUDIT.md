@@ -32,7 +32,7 @@ Moss diagnostic.
 | --- | --- | --- |
 | O1 | Every executed effect and possible typed variant is included in the concrete handler/callable summary; panic remains separate. | **FAIL at base SHA** for implicit object iterator calls. Post-base integration rejects typed-raising custom iterators and preserves panic effects; rerun the permanent gate at final SHA. Ordinary expression and method effects have focused positive coverage, but the general claim remains conditional on a complete source-surface audit and validated ABI v9 imports. |
 | O4 | Every possible raise site has a selected-variant edge to its first matching recovery arm or the handler exit, carrying the ownership state at that site. | **FAIL at base SHA** for a consumed outer `var` reinitialized before a selected raise, for an early argument raise followed by a consuming argument, and for checked raising code in a leading condition. Post-base expression-order repair has focused green gates; the reinitialization and leading-condition gates and exact final-SHA review remain required. Also depends on O1 for implicit iterator edges. |
-| O8 | Every body-to-trailer capture is an owned, initialized value with one binding identity on every selected exceptional edge; its type contains no capability or protected view. | Checked local cases and native handoff pass. A general claim depends on complete O1/O4 edges and on ABI-v9 provider-artifact validation for source-free contracts. |
+| O8 | Every body-to-trailer capture is an owned, initialized value with one binding identity on every selected exceptional edge; its type contains no capability or protected view. | Checked local cases and native handoff pass after the post-base capture-method planner repair. A general claim depends on complete O1/O4 edges and on ABI-v9 provider-artifact validation for source-free contracts. |
 | Early release | Every touched guard lasts until completion; only a statically untouched guard can cancel, and all later acquisitions remain ranked and precede the first externally observable action. | Bounded leading-conditional plan has a concrete three-class witness. The general argument below is conditional on O1 and O4 and on an accurate condition-effect barrier. |
 
 ## O1: effect completeness
@@ -240,6 +240,20 @@ the local can cross the guard-release boundary. These tests are specific
 counterexamples to common leaks, not a proof that all future type constructors
 preserve capability exclusion.
 
+The audit also found a valid local capture that the synchronization planner
+could not analyze: `on_fail Failure.Bad: reply data.length()` where `data` is
+a checked handler-local String. The checker previously emitted an internal
+`unresolved concrete method effect target` error, because both the instance
+failure plan and provider interface state-effect export traversed the trailer
+body without the capture's type. Repair `6e65560` seeds each arm's validated
+capture types, selected error binding and payload-pattern types into those
+effect passes. The method-local and early-expression-raise capture fixtures
+pass Moss checking, native O0/O3 and Fast Debug. The latter confirms that
+`Option<T>` failure-frame lowering can transport a String left available by an
+early raising argument. Source-free replay of the method capture remains an
+ABI-v9 final-SHA validation case; the planned export now sees its concrete
+type, but a valid provider artifact must still be bound to the interface.
+
 ## General early-release guarantee
 
 ### Bounded implementation argument
@@ -299,7 +313,7 @@ made.
 | `check_phase21_expression_ownership_edges.py` | Red: early argument raise before later String consume is falsely rejected; second-raise and same-variant negative siblings reject correctly. | Early argument and pipeline-source paths pass O0/O3 native and Fast Debug; consume-before-raise, shared-variant callee, and shared-variant pipeline callback remain D7 rejects. |
 | `check_phase21_raising_iterators.py` | Red: false unreachable warnings/empty effects; rustc E0308/E0599; panic iterator incorrectly has `may_panic=false`. | Explicit `RAISING_ITERATOR_UNSUPPORTED` for direct, factory and generic typed raises; accepted panic iterator has `may_panic=true`, `raise_set=[]`. |
 | `check_phase21_early_placement_proof.py` | Green: plan assertions, native and Fast Debug. | Rerun after all O1/O4/ABI changes. |
-| `check_phase21_on_fail_capture.py` | Green, including protected state borrow negative. | Rerun after selected-exit and ABI changes. |
+| `check_phase21_on_fail_capture.py` | Base cases green, protected state borrow negative; added method-local case was red with an internal planner invariant. | Method-local and early-raise capture paths pass O0/O3 native and Fast Debug; rerun after selected-exit and ABI changes, including source-free. |
 
 The final engineering closeout must record the exact implementation SHA,
 compiler and Rust toolchain versions, ABI-v9 source-free executions and
@@ -312,6 +326,9 @@ claims remain **open** regardless of other passing suites.
 
 The strict C++17 `make` build, expression-edge gate, on-fail capture gate,
 recovery-semantics gate and peer-effects gate passed after `e1793e8`.
+After `6e65560`, the capture gate, expression-edge gate, recovery-warning and
+method-warning gates passed again; the new O8 method captures ran native O0/O3
+and Fast Debug.
 `make check` advanced through those suites and then stopped at the previously
 identified leading-condition lowering gate on this worktree's base compiler.
 That run does not establish a green integration baseline. Neither ABI v9 nor
