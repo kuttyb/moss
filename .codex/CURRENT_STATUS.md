@@ -1,5 +1,34 @@
 # Moss current status
 
+## Phase 21 independent recovery and D7 review — 2026-10-11
+
+Adversarial review of `phase-21-integration` at `8d8a9cc` found and fixed:
+joined owned locals falsely rejected as `on_fail` captures; nested bare
+re-raise rebuilding an ABI-v8 failure frame and causing native Rust E0382;
+Fast Debug omitting Root-only `on_fail` dispatch and typed recovery payload
+bindings; and an unhandled typed raise aborting all Fast Debug tests instead
+of failing only its test. Fixes are `b31d1e0` and loop D7 regression commit
+`ce8fd2b` on `phase-21-review-d7`. ABI v8 was not changed.
+
+Review probes now cover `if` and `try` joined String captures, nested bare
+re-raise with a typed payload and owned capture, Root versus nested handler
+dispatch, source-free provider execution with joined capture, loop-carried
+consume/reinitialize, and negative pre-initialization, consumption, and
+distinct-binding edges. Raised payloads are checker-restricted to heap-free
+bounded Int/Float/Bool/enum shapes, so the recovery dispatch clone copies no
+String or heap-owned error payload; the original carrier is forwarded on
+bare re-raise. These passing fixtures are behavioral evidence for O4/O8,
+not a general invariant proof. Source-free Fast Debug remains unsupported.
+
+Validation on the final compiler sources: focused Phase 21 capture,
+recovery semantics/native, and source-free ABI suites; Phase 22.5 semantic
+IDE query suite; strict C++17 warnings-as-errors compilation; `git diff
+--check`; `make examples`; and `make check` with repository-local `TMPDIR`
+all passed. The full `make check` began before the final loop-only test
+additions; its compiler and runtime sources were final, and the expanded
+capture gate passed separately afterward. Re-run the integrated full suite
+after cherry-picking both commits.
+
 ## Phase 21 A–D integration review — 2026-10-10
 
 Agents A, B, C, and D have completed their assigned work. Their reviewed
