@@ -6264,8 +6264,14 @@ class Checker {
     for (const auto& route : domain.routes) condition_env[route.name] = route.type;
     const ObservableEffects condition_observables =
         observable_expression_effects(branch.a, condition_env, domain_fields);
+    // The split wrapper emits this condition outside the tagged-outcome
+    // context used by the ordinary handler body. A typed raise here must
+    // stay in the full-entry wrapper so it can reach lexical recovery or the
+    // Root trailer with its original variant. Keep potentially panicking or
+    // unresolved conditions on that conservative path as well.
     if (condition_observables.message || condition_observables.external_io ||
-        condition_observables.unresolved) {
+        !condition_observables.raise_set.empty() ||
+        condition_observables.may_panic || condition_observables.unresolved) {
       whole.path_placement.reason =
           "conservative entry placement: leading condition crosses observable-action barrier";
       return;
@@ -11425,11 +11431,18 @@ class Checker {
           const Stmt& arm = statements[index++];
           saw_recover = true;
           OwnershipEnv recovered = incoming;
+          bool selected_exit = false;
           for (const auto& raised : attempted_exits) {
             bool reaches_arm = false;
             for (const auto& identity : arm.exceptional_alternatives)
               reaches_arm |= raised.alternatives.count(identity) != 0;
             if (!reaches_arm) continue;
+            // Recovery sees the ownership state at a selected raise edge,
+            // not the state at entry to the try. A consumed outer var can be
+            // reinitialized on every reaching edge. Union unavailable facts
+            // from those edges so any missing reinitialization still fails.
+            if (!selected_exit) recovered.moved.clear();
+            selected_exit = true;
             for (const auto& binding : incoming.types) {
               const auto before_id = incoming.binding_identities.find(binding.first);
               const auto raised_id =
