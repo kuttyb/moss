@@ -16826,6 +16826,16 @@ class Generator {
     const auto external_module = function.static_dispatch ? std::nullopt :
         phase21_external_module_for_symbol(name);
     const bool cross_crate = external_module.has_value();
+    const bool standard_write_bridge = cross_crate &&
+        std::any_of(function.params.begin(), function.params.end(),
+            [&](const Param& parameter) {
+              const size_t index = static_cast<size_t>(
+                  &parameter - function.params.data());
+              return !standard_error_variants(canonical_type_name(
+                  parameter.type)).empty() &&
+                  function_parameter_abi(function, index, parameter.type,
+                      specialization).effect == Effect::Write;
+            });
     std::ostringstream bridge_before, bridge_after;
     vector<string> temporaries(arguments.size());
     if (domain) {
@@ -16902,6 +16912,18 @@ class Generator {
                 ? external_type + "::from(" + rendered + ")"
                 : "&(" + external_type +
                     "::from((* (" + rendered + ")).clone()))";
+        }
+        if (standard_write_bridge &&
+            !(cross_crate && index < function.params.size() &&
+              !standard_error_variants(canonical_type_name(
+                  function.params[index].type)).empty() &&
+              function_parameter_abi(function, index,
+                  generated_expr_type(arguments[index], types).value_or(""),
+                  specialization).effect == Effect::Write)) {
+          const string staged = "__moss_call_argument_" +
+              std::to_string(call_argument_temp_++);
+          bridge_before << "let " << staged << " = " << rendered << "; ";
+          rendered = staged;
         }
         call << rendered;
       }
@@ -18346,6 +18368,7 @@ class Generator {
                 argument_temporaries[index].empty() ? member_arguments[index]
                                                     : argument_temporaries[index],
                 d, locals, types);
+            bool standard_write_argument = false;
             if (external_method_module && index < method->params.size() &&
                 !standard_error_variants(canonical_type_name(
                     method->params[index].type)).empty()) {
@@ -18354,6 +18377,7 @@ class Generator {
                   canonical_type_name(method->params[index].type);
               const Effect effect = method_effect(*method, index);
               if (effect == Effect::Write) {
+                standard_write_argument = true;
                 const string prefix = "__moss_standard_write_" +
                     std::to_string(call_argument_temp_++);
                 const string local_ref = prefix + "_local";
@@ -18369,6 +18393,12 @@ class Generator {
                 argument = effect == Effect::Read
                     ? "&" + external_type + "::from((*(" + argument + ")).clone())"
                     : external_type + "::from(" + argument + ")";
+            }
+            if (standard_write_bridge && !standard_write_argument) {
+              const string staged = "__moss_call_argument_" +
+                  std::to_string(call_argument_temp_++);
+              bridge_before << "let " << staged << " = " << argument << "; ";
+              argument = staged;
             }
             rendered << argument;
           }
@@ -20689,6 +20719,7 @@ class Generator {
                     *call_method, k, argument_expression, d, locals, &types,
                     statement_functional_pipeline_id(
                         s, functional_context, k));
+                bool standard_write_argument = false;
                 if (external_method_module && k < call_method->params.size() &&
                     !standard_error_variants(canonical_type_name(
                         call_method->params[k].type)).empty()) {
@@ -20698,6 +20729,7 @@ class Generator {
                       *external_method_module) + "::" + local_type;
                   const Effect effect = method_effect(*call_method, k);
                   if (effect == Effect::Write) {
+                    standard_write_argument = true;
                     const string prefix = "__moss_standard_write_" +
                         std::to_string(call_argument_temp_++);
                     const string local_ref = prefix + "_local";
@@ -20714,6 +20746,13 @@ class Generator {
                         ? "&" + external_type + "::from((*(" + rendered +
                             ")).clone())"
                         : external_type + "::from(" + rendered + ")";
+                }
+                if (standard_write_bridge && !standard_write_argument) {
+                  const string staged = "__moss_call_argument_" +
+                      std::to_string(call_argument_temp_++);
+                  bridge_before << "let " << staged << " = " << rendered
+                    << "; ";
+                  rendered = staged;
                 }
                 call_output << rendered;
               } else
