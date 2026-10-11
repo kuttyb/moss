@@ -5,8 +5,9 @@
 **Provisional integration retest:** `53f11363e2f973e30b1e9a869407b6ecb6eef166`
 with Rust 1.98.1 and GCC 13.3. This is not the final candidate SHA.
 
-**Reconstructed peer-addendum A/C repair:** `b7a7ead` plus `5b2cbf7` on
-`phase-21-a-c-fixes` (base `6a08830`). The source fixes and focused gate pass;
+**Reconstructed peer-addendum A/C repair:** `b7a7ead`, `5b2cbf7` and a
+subsequent ownership-join correction on `phase-21-a-c-fixes` (base `6a08830`).
+The source fixes and focused gate pass;
 the exact combined integration SHA and full-suite rerun remain pending.
 
 **Status at this audit base:** open. The counterexamples below are accepted by
@@ -188,6 +189,18 @@ A-only `on_fail` passes totality, executes its failure reply, and exposes
 separate normal `left` and failure `right` lock plans. This proves these
 reconstructed paths; exact final-SHA verification and independent Architect
 review remain pending.
+
+The effect-level reachable-arm repair exposed a separate O4 join error:
+ownership checking still merged the normal successor of an entirely
+unreachable recovery arm. If that arm consumed a String, a valid later read
+was rejected with `OWNERSHIP_USE_AFTER_CONSUME`. The follow-up repair keeps
+checking the arm's body, then excludes its normal and exceptional ownership
+successors when its selected incoming set is empty. The permanent gate has
+an unreachable B arm that consumes `data` but allows a later read after an
+A-only attempt; a sibling whose B arm is reachable must still reject the
+same read. The positive runs under native O0/O3 and Fast Debug. This aligns
+the ownership CFG's successor set with the variant-reachability rule used by
+the effect analysis.
 
 ## O4: exceptional CFG, definite initialization and moves
 
@@ -443,7 +456,7 @@ made.
 | `check_phase21_source_free_cache_binding.py` | Added after ABI-v9 provider binding; no base-SHA result. | Warm consumer build must reject forged metadata with recomputed digest and deleted provider rlib before cache reuse. Provisional `b4a0087` fails; post-repair `4711a47` passes with a fresh compiler build. |
 | `check_phase21_source_free_standard_write_recovery.py` | Added after ABI-v9 standard errors; no base-SHA result. | Source-backed and source-removed provider method must retain `WRITE` and exact typed variant; Root recovery must see the mutated standard enum. Provisional integration rejects the valid source-backed call, and source-removed metadata lost `WRITE` then failed rustc E0308. ABI `4711a47` restores the imported effect; the bridge remains under repair. |
 | `check_phase21_standard_write_order.py` | Added after cross-crate WRITE bridge; no base-SHA result. | Same-module and cross-crate argument order must agree. At `c2793ce`, same-module O0/O3 and Fast Debug print `1`; cross-crate check accepts but native build fails rustc E0499 because the later WRITE borrow is hoisted before an earlier mutating argument. |
-| `check_phase21_addendum_a_c.py` | Reconstructed from written peer addendum because the archive was unavailable. At `7775049`, final local method effect is omitted, and grouped bare re-raise is overapproximated. | On repair branch `5b2cbf7`: unhandled ordinary/generic callers reject; handled A output, A-only/B-only/both reachable variants, unreachable explicit arm, Root totality and separate lock plans pass check/effects, native O0/O3 and Fast Debug. Rerun on exact final SHA. |
+| `check_phase21_addendum_a_c.py` | Reconstructed from written peer addendum because the archive was unavailable. At `7775049`, final local method effect is omitted, and grouped bare re-raise is overapproximated. | On the repair branch: unhandled ordinary/generic callers reject; handled A output, A-only/B-only/both reachable variants, unreachable explicit arm, unreachable-arm ownership positive and reachable-arm D7 negative, Root totality and separate lock plans pass check/effects, native O0/O3 and Fast Debug. Rerun on exact final SHA. |
 
 The final engineering closeout must record the exact implementation SHA,
 compiler and Rust toolchain versions, ABI-v9 source-free executions and

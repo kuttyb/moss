@@ -12111,9 +12111,19 @@ class Checker {
                 recovered.moved.erase(binding.first);
               }
           }
+          vector<ExceptionalOwnershipExit> arm_recovery_exits;
           check_ownership_block(statements, index, level + 1, recovered,
-                                current_domain, current_handler, &recovery_exits);
-          if (recovered.can_continue) paths.push_back(std::move(recovered));
+                                current_domain, current_handler,
+                                &arm_recovery_exits);
+          // An arm with no selected incoming variant is still checked, but
+          // cannot contribute a normal or exceptional successor. Otherwise
+          // its moves could poison a reachable post-try ownership join.
+          if (!arm.exceptional_alternatives.empty()) {
+            recovery_exits.insert(recovery_exits.end(),
+                std::make_move_iterator(arm_recovery_exits.begin()),
+                std::make_move_iterator(arm_recovery_exits.end()));
+            if (recovered.can_continue) paths.push_back(std::move(recovered));
+          }
         }
         if (!saw_recover)
           err(s.line, "try must be followed by at least one recover arm",
