@@ -1,5 +1,39 @@
 # Moss current status
 
+## Phase 21.A capture-frame investigation and documentation checkpoint — 2026-10-10
+
+The concrete `on_fail` local probe in `tmp/phase21_on_fail_capture_probe.moss`
+still fails `moss check --json` with `UNKNOWN_SYMBOL_OR_TYPE` on the
+handler-local `attempt`. The failure-arm type/ownership environments in
+`check_domains` and `phase21_validate_failure_arms` contain only domain
+members, routes, handler parameters, and pattern bindings. The current
+provider body returns `Result<_, __MossRaised>`; its Root wrapper receives no
+owned-local frame. The `.mossi` capture schema validates ownership/type facts
+but source-free loading rejects every nonempty capture list. The existing
+two-crate Rust fixture demonstrates an opaque frame crossing a source-free
+provider boundary, but generated Moss code does not yet implement that fixture's
+capture behavior.
+
+The next A implementation must first derive each arm's free handler-local
+bindings and intersect definite availability, ownership, and binding identity
+across **escaping** exceptional paths selected by that arm. This includes
+raises inside expressions, nested `try`/`recover`, and local moves; a
+normal-path scope join is insufficient. Then materialize the provider-owned
+frame at those paths, carrying values through the provider body result so its
+lexical frame and Root-local FileIO end before the fresh failure lock plan.
+The application Root wrapper must pass the opaque frame to the exported arm;
+nested wrappers must discard or propagate errors without running the arm.
+Source-free tests need positive owned captures and negative pre-initialization,
+consumed, capability, and view cases. Do not accept a sidecar that snapshots
+only at statement entry: a raising operation can mutate an owned value before
+returning an error.
+
+The Phase 21 design, handoff, shared ABI, README roadmap, and v0.1 language
+design now distinguish the implemented checkpoints from the unmaterialized
+capture contract. `git diff --check` passed for these documentation edits.
+Only Rust 1.98.1 and GCC 13.3 are installed in this workspace; the wider
+cross-toolchain Float-format pin remains unverified. Phase 21 is still open.
+
 ## Phase 21.B FileIO API audit and 21.C iterator-boundary follow-up — 2026-10-10
 
 The final B source/runtime audit enumerated open and reopen, metadata,

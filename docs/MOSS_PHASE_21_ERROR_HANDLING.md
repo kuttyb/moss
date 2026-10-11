@@ -2,7 +2,7 @@
 
 **Consolidated design document · v4.5.2 · October 9, 2026**
 
-**Status:** Design-approved implementation baseline. Not implemented. Part III gives paper proofs for four §16 obligations, conditional on the implementation obligations O1–O9. The proofs are not machine-checked.
+**Status:** Design-approved implementation baseline. Phase 21 implementation is in progress; see `.codex/CURRENT_STATUS.md` for validated checkpoints and remaining gates. Part III gives paper proofs for four §16 obligations, conditional on the implementation obligations O1–O9. The proofs are not machine-checked.
 
 **Supersedes:** the separate v4.5.1 specification, the v4.5.1 example sheet, the §16 proof note, and every earlier Phase 21 draft. The language semantics are unchanged from v4.5.
 
@@ -38,7 +38,7 @@
 
 ## Part I — Error handling by example
 
-Fourteen short programs that illustrate the design. They use the proposed Phase 21 forms (`raise`, `try`/`recover`, and handler `on_fail` trailers), which current Moss does not yet accept. Everything else (`domainroutes`, `Executor`, `FileIO`, one-line pipelines, and `not`) follows current Moss syntax. A snippet without a `main` assumes a suitable enclosing function or handler.
+Fourteen short programs that illustrate the design. Moss now accepts the core Phase 21 forms (`raise`, `try`/`recover`, and handler `on_fail` trailers), but handler-local `on_fail` captures and final conformance gates remain open. Everything else (`domainroutes`, `Executor`, `FileIO`, one-line pipelines, and `not`) follows current Moss syntax. A snippet without a `main` assumes a suitable enclosing function or handler.
 
 ### Example 1. Expected errors use `raise` / `recover`
 

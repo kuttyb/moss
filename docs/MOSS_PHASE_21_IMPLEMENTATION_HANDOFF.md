@@ -2,7 +2,7 @@
 
 **Date:** October 9, 2026  
 **Design baseline:** `MOSS_PHASE_21_ERROR_HANDLING.md`, consolidated v4.5.2.  
-**Status:** Design approved, implementation not yet established. This is a review/handoff supplement, **not a replacement for the normative specification**.
+**Status:** Design approved; implementation is in progress. The current integration state and outstanding acceptance gates are recorded in `.codex/CURRENT_STATUS.md`. This is a review/handoff supplement, **not a replacement for the normative specification**.
 
 ## 1. Independent-review disposition
 

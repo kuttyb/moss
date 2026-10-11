@@ -1,7 +1,9 @@
 # Phase 21 shared error-handling and provider ABI contract
 
-**Status:** revised Stage 21.0 checkpoint, pending human approval before the
-shared freeze and before Agents 21.A–D start.
+**Status:** approved Stage 21.0 contract, with ABI-v8 metadata and source-free
+typed failure arms implemented. The opaque handler-local capture frame remains
+unmaterialized; see `.codex/CURRENT_STATUS.md` before treating the full ABI as
+accepted.
 **Native/provider ABI:** 8.
 **Normative parent design:** `MOSS_PHASE_21_ERROR_HANDLING.md` v4.5.2.
 
@@ -9,6 +11,12 @@ This document fixes the representation and ownership boundaries consumed by
 Agents 21.A–D. It does not add the Phase 21 source grammar. The compiling C++
 schema is `src/error_handling_abi.hpp`; the observable effect integration is
 `src/functional_ir.hpp`.
+
+The Rust frame/outcome signatures below describe the target capture-carrying
+ABI. Current generated handler bodies still return `Result<_, __MossRaised>`;
+source-free failure arms work when they have no handler-local captures. The
+declared opaque frame and capture records are not yet materialized by native
+lowering, and nonempty source-free capture records fail closed.
 
 ## 1. Observable effects
 

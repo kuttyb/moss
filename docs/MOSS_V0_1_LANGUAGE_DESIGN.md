@@ -158,7 +158,8 @@ is checked at branches and loop back edges. `pass` is an effect-free no-op
 statement. Ordinary untyped functions can match after static specialization
 supplies a concrete enum type; each specialization is checked separately.
 Legacy lowercase `option[T]` remains distinct from matchable user enums while
-Phase 21 considers convergence with Result/error semantics.
+Phase 21 adds typed raises and local recovery; it does not turn legacy
+lowercase `option[T]` into a Result type.
 
 ### 4 Functional/dataflow code without general closure objects
 
@@ -1121,7 +1122,7 @@ Phase 10 defines the Moss v0.1 usable-language milestone. Phase 15 established d
 
 Already-known questions include ordinary recursion, remaining module/package ergonomics after the Phase 15.9 static-specialization convergence, trace slicing, domain lifetime scopes, and standard-library gaps. None should be solved merely because the roadmap has room. The language should now earn its next features through use.
 
-Phase 15 swarm findings are classified in an issue ledger (`examples/swarm/ISSUES.jsonl`) that separates false acceptances, ambiguous-specification decisions, lost semantics, and missing expressiveness. Phases 15.13 and 15.14 were the corrective pass over the implementation, lowering, Fast Debug, formatter, diagnostic-attribution, and semantic-tooling defects recorded there. They also landed the first expressiveness item, statically known callable parameters for ordinary functions (Section 4). Phase 15.15 settled field access on an untyped parameter: it is rejected at the field expression, including through an alias. A concrete parameter type permits field access; untyped method calls retain inferred static requirements. SWARM-044 specializes built-in indexing. EXPRESS-002 general copying was rejected pending a compelling concrete use case. Phase 15.15 added core `String` methods, Map deletion, and the closed enums specified above, with native and Fast Debug validation. String numeric parsing and recoverable invalid-input semantics are explicitly deferred to Phase 21. Explicit user-defined indexing (EXPRESS-008) was considered and rejected: built-in indexing remains compiler-defined, while ordinary methods/functions cover custom access without introducing an operator-customization surface. A static `Self`-returning trait constraint was rejected pending a compelling concrete use case: unannotated returns are inferred per specialization and checked where used. Runtime dynamic dispatch, escaping closures, and recursion remain deliberate v0.1 differences, not expressiveness requests.
+Phase 15 swarm findings are classified in an issue ledger (`examples/swarm/ISSUES.jsonl`) that separates false acceptances, ambiguous-specification decisions, lost semantics, and missing expressiveness. Phases 15.13 and 15.14 were the corrective pass over the implementation, lowering, Fast Debug, formatter, diagnostic-attribution, and semantic-tooling defects recorded there. They also landed the first expressiveness item, statically known callable parameters for ordinary functions (Section 4). Phase 15.15 settled field access on an untyped parameter: it is rejected at the field expression, including through an alias. A concrete parameter type permits field access; untyped method calls retain inferred static requirements. SWARM-044 specializes built-in indexing. EXPRESS-002 general copying was rejected pending a compelling concrete use case. Phase 15.15 added core `String` methods, Map deletion, and the closed enums specified above, with native and Fast Debug validation. Phase 21 now implements `parse_int`, `parse_float`, and checked `to_int` with recoverable invalid-input semantics; remaining acceptance gates are tracked in `.codex/CURRENT_STATUS.md`. Explicit user-defined indexing (EXPRESS-008) was considered and rejected: built-in indexing remains compiler-defined, while ordinary methods/functions cover custom access without introducing an operator-customization surface. A static `Self`-returning trait constraint was rejected pending a compelling concrete use case: unannotated returns are inferred per specialization and checked where used. Runtime dynamic dispatch, escaping closures, and recursion remain deliberate v0.1 differences, not expressiveness requests.
 
 ## Part IV - Related Work and Positioning
 
@@ -1160,7 +1161,7 @@ The v0.1 paper leaves several questions deliberately open:
   byte/text conversion semantics;
 - startup-declared bounds and broader proven dynamic clamp narrowing;
 - Duo I/O and Receive-Moss-Send protocol design beyond the Solo contract;
-- recoverable I/O/Root failure and result-carrying joins under Phase 21;
+- completion of Phase 21 Root failure captures and conformance; result-carrying Executor joins remain deferred;
 - later conflict-aware Root admission and other scheduler optimizations;
 - the FileIO/Executor contention and performance work reserved for Phase 20.5;
 - how Rust interoperability should constrain foreign aliases and foreign lock acquisition;
@@ -1268,7 +1269,7 @@ The formal claims rely on the following conditions:
 | 20.1 | Completed Root-admission safety hardening; executing Roots cannot recursively submit/admit another Root |
 | 20.2 | Completed bounds analysis, FileIO/Range semantics, lowering, and reviewer-completeness hardening |
 | 20.5 | Reserved FileIO/Executor performance and contention follow-up |
-| Phase 21 | Error propagation and supervision; clean-slate design after current contracts settle |
+| Phase 21 | Error handling and recovery in progress; typed raises, recovery, FileIO errors, and numeric parsing implemented; Root trailer captures and final proof gates open |
 | Phase 22 | Agent agency tooling; Phase 22.1 teaching diagnostics, Phase 22.2 benchmark/baseline, Phase 22.3 static semantic queries, and Phase 22.4 structured runtime debugging complete |
 | Phase 23 | Static Compiler Optimizations; LLM proposals are one possible technique |
 | Phase 24 | TileIR Integration (Dynamic Optimizations); future design, not part of v0.1 |
