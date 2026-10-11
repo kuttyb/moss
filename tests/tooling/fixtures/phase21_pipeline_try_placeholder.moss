@@ -44,6 +44,17 @@ domain Reader:
   on_fail:
     reply -2
 
+  fn Capture() -> Int:
+    note = "kept"
+    file = FileIO.open("tmp/phase21-pipeline-try-placeholder/p4.bin", ro)
+    total = file.chunks(2) |> map(checked(_) + 1) |> reduce(0, add)
+    file.close()
+    reply total
+  on_fail FormatError.Bad:
+    reply note.length()
+  on_fail:
+    reply -2
+
   fn Sequential() -> Int:
     file = FileIO.open("tmp/phase21-pipeline-try-placeholder/p4.bin", ro)
     increment = 1
@@ -62,3 +73,4 @@ fn main():
   echo message reader.Eligible()
   echo message reader.Sequential()
   echo message reader.SeedBeforeMap()
+  echo message reader.Capture()
