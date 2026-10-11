@@ -1,5 +1,25 @@
 # Moss current status
 
+## Phase 21 peer review EXT-12/15 isolated remediation — 2026-10-11
+
+The `phase-21-peer-major-minor` branch corrects observable effects for IEEE
+Float division while keeping integer division panicking. The focused Float
+gate passes native unoptimized, native optimized, and Fast Debug output and
+asserts Float and Int effect summaries. The checker now rejects malformed
+declared `FileError`, `ParseError`, and `ConversionError` shapes when their
+built-in operations are used, and reports a missing `FileError` contract at
+Moss checking. The new contract gate passes valid native typed recovery,
+numeric Fast Debug recovery, missing and malformed negative diagnostics, and
+an unrelated user `FileError` enum. Fast Debug FileIO execution remains
+unsupported by the existing interpreter.
+
+At the `8d8a9cc` checkpoint, `moss check` accepted `FileError.IO(code: Int)`
+with FileIO use, then rustc failed E0533. The isolated branch rejects it with
+`BUILTIN_ERROR_TYPE_SHAPE`. The strict Phase 20 review on the isolated parent
+baseline still has eight Root-totality migration failures; all are
+`ROOT_UNHANDLED_RAISE`, with no new built-in error contract failures. Full
+integration gates and independent architectural acceptance remain with L7.
+
 ## Phase 21 peer review EXT-05 engineering checkpoint — 2026-10-11
 
 The isolated `phase-21-peer-imported-effects` branch preserves checked `.mossi`

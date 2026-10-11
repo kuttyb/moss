@@ -182,6 +182,24 @@ for function in ("check_nan", "check_finite"):
     effects = json.loads(queried.stdout)["result"]["observable_effects"]
     if effects["unresolved"] or effects["may_panic"] or effects["raise_set"]:
         raise SystemExit(f"{function} must be pure: {effects}")
+
+division_source = SCRATCH / "float_division_effects.moss"
+division_source.write_text("""fn divide(x: Float, y: Float) -> Float:
+  return x / y
+fn nested(x: Float, y: Float) -> Float:
+  return (x / y) + 1.0
+fn int_divide(x: Int, y: Int) -> Int:
+  return x / y
+""")
+for function, expected_panic in (("divide", False), ("nested", False),
+                                 ("int_divide", True)):
+    queried = subprocess.run([str(COMPILER), "effects", function, "--source",
+                              str(division_source), "--json"], check=True,
+                             capture_output=True, text=True)
+    effects = json.loads(queried.stdout)["result"]["observable_effects"]
+    if (effects["may_panic"] != expected_panic or effects["raise_set"] or
+            effects["unresolved"]):
+        raise SystemExit(f"{function} division effects mismatch: {effects}")
 bootstrap = subprocess.run([str(COMPILER), "agent", "bootstrap", "--json"],
                            check=True, capture_output=True, text=True)
 predicates = json.loads(bootstrap.stdout)["result"]["source_surface"]["numeric"]["float_predicates"]

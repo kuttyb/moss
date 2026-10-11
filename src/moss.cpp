@@ -1856,6 +1856,7 @@ class Checker {
                 function, specialization.parameter_types);
     { CompilerStageTimer timer("synchronization_plan"); build_synchronization_plan(p_.concrete_domain_graph); }
     warn_fileio_blocking_with_shared_write();
+    validate_fileio_error_contract_presence();
     retain_checked_type_uses();
     std::sort(p_.semantic_uses.begin(), p_.semantic_uses.end(),
               [](const SemanticUse& left, const SemanticUse& right) {
@@ -1939,6 +1940,14 @@ class Checker {
                         const string& msg) const {
     CompileError error(line, msg);
     error.source_file = !source_file.empty() ? source_file : current_source_file_;
+    throw error;
+  }
+
+  [[noreturn]] void err(const string& source_file, int line,
+                        const string& msg, const string& diagnostic_code) const {
+    CompileError error(line, msg, diagnostic_code);
+    error.source_file = !source_file.empty()
+        ? source_file : current_source_file_;
     throw error;
   }
 
@@ -2685,6 +2694,79 @@ class Checker {
             err(field.source_file, field.line,
                 "trait types are static structural constraints and cannot be stored in enum payloads");
         }
+    const bool uses_fileio = program_uses_fileio(p_);
+    auto calls_builtin = [&](const string& name) {
+      for (const auto& line : p_.source_lines) {
+        size_t position = 0;
+        while ((position = line.text.find(name, position)) != string::npos) {
+          bool boundary = position == 0 ||
+              (!std::isalnum(static_cast<unsigned char>(line.text[position - 1])) &&
+               line.text[position - 1] != '_');
+          size_t after = position + name.size();
+          while (after < line.text.size() &&
+                 std::isspace(static_cast<unsigned char>(line.text[after])))
+            ++after;
+          if (boundary && after < line.text.size() && line.text[after] == '(')
+            return true;
+          position += name.size();
+        }
+      }
+      return false;
+    };
+    const bool uses_parse = calls_builtin("parse_int") ||
+                            calls_builtin("parse_float");
+    const bool uses_conversion = calls_builtin("to_int");
+    for (const auto& declaration : p_.enums) {
+      string short_name = declaration.name;
+      if (auto separator = short_name.rfind("__"); separator != string::npos)
+        short_name = short_name.substr(separator + 2);
+      vector<string> expected;
+      if (short_name == "FileError" && uses_fileio)
+        expected = {"NotFound", "PermissionDenied", "NotRegularFile",
+                    "InUse", "Full", "IO"};
+      else if (short_name == "ParseError" && uses_parse)
+        expected = {"Invalid", "Overflow"};
+      else if (short_name == "ConversionError" && uses_conversion)
+        expected = {"NonFinite", "Overflow"};
+      if (expected.empty()) continue;
+      std::set<string> actual;
+      bool tag_only = true;
+      for (const auto& item : declaration.cases) {
+        actual.insert(item.name);
+        tag_only &= item.fields.empty();
+      }
+      if (tag_only && declaration.cases.size() == expected.size() &&
+          actual == std::set<string>(expected.begin(), expected.end()))
+        continue;
+      string required;
+      for (const auto& variant : expected) {
+        if (!required.empty()) required += ", ";
+        required += variant;
+      }
+      err(declaration.source_file, declaration.line,
+          short_name + " must declare exactly these tag-only variants: " +
+              required, "BUILTIN_ERROR_TYPE_SHAPE");
+    }
+  }
+
+  void validate_fileio_error_contract_presence() const {
+    if (!program_uses_fileio(p_) ||
+        std::any_of(p_.enums.begin(), p_.enums.end(),
+                    [](const EnumType& declaration) {
+                      return declaration.name == "FileError" ||
+                          ends_with(declaration.name, "__FileError");
+                    }))
+      return;
+    const Line* source = nullptr;
+    for (const auto& line : p_.source_lines)
+      if (expr_uses_fileio(line.text)) {
+        source = &line;
+        break;
+      }
+    err(source ? source->source_file : string(),
+        source ? source->no : 1,
+        "FileIO requires enum FileError with the six approved tag-only variants",
+        "UNKNOWN_ERROR_TYPE");
   }
 
   void check_domain_handle_declarations() {
@@ -9038,7 +9120,12 @@ class Checker {
             binary->second, env, domain_fields, implicit_object, parameters,
             proven_indices));
         if (operators.front() == "*") {
-          if (split_binary(value, {"/", "%"})) effects.may_panic = true;
+          if (split_binary(value, {"%"})) effects.may_panic = true;
+          if (split_binary(value, {"/"})) {
+            auto result_type = inferred_expr_type(value, env);
+            if (!result_type || canonical_type_name(*result_type) != "float")
+              effects.may_panic = true;
+          }
         }
         return effects;
       }
