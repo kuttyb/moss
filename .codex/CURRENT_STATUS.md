@@ -1,25 +1,35 @@
 # Moss current status
 
-## Phase 21 peer-review checkpoint — 2026-10-11
+## Phase 21 peer-review engineering validation — 2026-10-11
 
-Integration branch `phase-21-integration` contains the external-review
-remediation through `263ad67` and a subsequent narrow checker
-repair. A full `make check` on `263ad67` reached the Phase 20 FileIO semantic
-gate, then failed because new declared-error validation rejected legacy
-FileIO programs without a `FileError` declaration. The checker now skips the
-presence check when no enum is declared; typed recovery selectors remain
-subject to ordinary enum checking. The focused Phase 20 FileIO semantics and
-Phase 21 declared-error contract gates pass. The full-suite rerun is pending,
-so earlier green results are not current validation.
+Integration branch `phase-21-integration` is reconciled with `origin/main`
+`d15e968778fa1cff3cd5085911c505592af54a30`. The frozen implementation
+SHA is `5941d98c824f31550f520891235c8b7ac96f3992`; later changes are
+report-only. It narrows declared `FileError` presence validation after a
+full-suite counterexample on `263ad67`: legacy Phase 20 FileIO sources without
+a typed enum incorrectly received `UNKNOWN_ERROR_TYPE`. Declared malformed
+and ambiguous contracts still fail closed, and typed recovery selectors still
+require a declaration.
 
-The independent release-gate audit on `263ad67` passed strict GCC C++17,
-strict Phase 20 review, examples, actual source-removed provider execution,
+`TMPDIR="$PWD/tmp" make check` now passes (`all Moss v0.1 tests passed`),
+including strict Phase 20 review (36 bug, 30 guard, two pre-existing probes;
+eight design INFO), native/Fast Debug, source-removed providers, concurrent
+Executor/Branch and FileIO fault-injection gates. `make examples`, strict
+GCC and Clang C++17, and the GCC/Clang × Rust 1.97.0/1.98.1 Float matrix pass
+on this implementation. The 270-value corpus SHA-256 is
+`91553f7482c35cfef6c108c429c7bdb54fba4cc8d4959c4d0a7bd3faf1ca28ef`.
+
+The independent release-gate audit on immediately preceding `263ad67`
+passed strict Phase 20, examples, actual source-removed provider execution,
 imported function/generic effects, Root FileIO fault injection, Executor,
-Branch, Range fail-closed controls, and native/Fast Debug focused gates. It
-reproduced the forged `.mossi` build-then-abort and missing source-free
-imported-helper warning. The Architect L6 independently confirmed the latter
-on `263ad67`; its final exact-SHA review was interrupted and must resume.
-Engineering and L7 remain NO-GO. No merge into `main` is authorized.
+Branch, Range fail-closed controls, and native/Fast Debug focused gates. Both
+that audit and the current reproducer confirm that forged ABI-v8 `.mossi`
+metadata builds an executable that aborts. The current source-free
+imported-helper warning repro still fails with no warning. The Architect L6
+independently confirmed this warning gap and the ABI authenticity issue;
+its final exact-SHA review was interrupted and must resume. O1/O4/O8 and
+§42 early-release general arguments remain incomplete. Engineering and L7
+remain NO-GO. No merge into `main` is authorized.
 
 ## Phase 21 peer review EXT-12/15 isolated remediation — 2026-10-11
 

@@ -1,15 +1,13 @@
 # Phase 21 final independent review
 
-> **Checkpoint, not final acceptance (2026-10-11):** implementation review is
-> continuing after `263ad67`. A full `make check` on that commit exposed a
-> Phase 20 FileIO compatibility regression in `check_phase20_fileio_semantics.py`:
-> legacy sources without a declared `FileError` received `UNKNOWN_ERROR_TYPE`.
-> The narrow checker repair passes focused Phase 20 FileIO and Phase 21
-> declared-error gates; a full-suite rerun remains pending. The validation
-> table below records the earlier `c89f564` pass, not a pass of the current
-> implementation. The independent Architect L6 confirmed the source-free
-> warning gap on `263ad67` before its exact-SHA review was interrupted; final
-> independent acceptance remains pending. Engineering and L7 remain NO-GO.
+> **Validated engineering checkpoint, not architectural acceptance
+> (2026-10-11):** implementation commit `5941d98` passes the full Moss suite,
+> examples, strict GCC/Clang C++17, and the four-combination Float matrix.
+> The independent Architect L6 confirmed the source-free warning gap on its
+> immediately preceding implementation SHA and retains a preliminary NO-GO;
+> its final exact-SHA acceptance review was interrupted. Two live ABI-v8
+> counterexamples and incomplete general proofs remain. Engineering and L7
+> remain NO-GO.
 
 **Recommendation: NO-GO for merging into `main`.** This is the release-candidate
 review record, not a merge approval. Independent reviewers inspected the compiler
@@ -17,8 +15,7 @@ and runtime, supplied counterexamples, and repaired defects without changing the
 frozen Phase 21 ABI v8. Source-free interface metadata remains unbound to its
 provider rlib, source-free object methods lack ABI-v8 effect summaries, and the
 general O4/O8 and early-release proof obligations remain open. A four-combination
-Rust/C++ Float portability matrix passed on an earlier engineering tree and
-is being repeated on the frozen implementation SHA.
+Rust/C++ Float portability matrix passed on the frozen implementation SHA.
 
 ## Exact baseline and scope
 
@@ -27,7 +24,7 @@ is being repeated on the frozen implementation SHA.
 | Implementation checkpoint challenged | `8d8a9cc6f842e11701dbedc56e3d2d2d3da9852a` |
 | Current `main` and `origin/main` reconciled into integration | `d15e968778fa1cff3cd5085911c505592af54a30` |
 | Integration merge of that `main` | `7eb192b` |
-| Provisional frozen implementation commit | `263ad67f1af5781d54bf7f8bba2c123fb955a648`; final release SHA will also contain reports and status. |
+| Reviewed implementation commit | `5941d98c824f31550f520891235c8b7ac96f3992`; later commits change reports and status only. |
 | Release-candidate branch | `phase-21-integration`; no merge into `main` |
 
 The implementation includes typed `raise` and lexical `try`/`recover`, variant
@@ -68,8 +65,9 @@ when the observed fixtures pass.
 ## Validation and environment
 
 All results below are from the reconciled integration tree at implementation
-commit `c89f5644785dad60c108f80609c8692364a8c190`, after every review
-fix. The report and status commit adds no compiler or runtime edits.
+commit `5941d98c824f31550f520891235c8b7ac96f3992`. Its Phase 20 FileIO
+compatibility adjustment was followed by a complete rerun. Later commits add
+reports only; they do not change compiler or runtime source.
 
 | Gate | Combined-tree result |
 | --- | --- |
@@ -79,7 +77,10 @@ fix. The report and status commit adds no compiler or runtime edits.
 | Native/Fast Debug parity, run by `make check` and independent numeric review | **PASS** on tested cases: typed recovery and capture, fixed Float/IEEE corpus, numeric parsing/conversion. Separate 2,048-pattern/2,070-input/535-input oracle probes passed at native O0/O3 and Fast Debug. |
 | `TMPDIR="$PWD/tmp" make examples` | **PASS**, exit 0, default and optimized example generation. |
 | `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic -fsyntax-only src/moss.cpp` | **PASS**, exit 0. |
-| `git diff --check` | **PASS** on the final staged report and status changes. |
+| `clang++ 18.1.3 -std=c++17 -O2 -Wall -Wextra -Werror -pedantic` | **PASS**, produced the independent Clang-built compiler used in the Float matrix. |
+| Recomputed-hash `.mossi` pattern forgery | **KNOWN RED**: checker/build accept the source-removed provider; linked executable exits `-6` after selecting a mismatched provider arm. |
+| Source-free imported-helper empty-catch warning | **KNOWN RED**: source-backed check warns, source-removed consumer rebuilds and executes, but `warning_codes() == []`. |
+| `git diff --check` | To rerun on the final staged report and status changes. |
 
 Reviewer 3's actual concurrent native O9 fixture ran 64 times with four
 simultaneous Roots. The FileIO/lock gate used 45 concurrent failure Roots
@@ -88,38 +89,66 @@ schedules; they do not exhaust all scheduler interleavings. The stronger
 recomputed-hash `.mossi` forgery still builds and aborts, so the green gates
 must not be read as a pass of the source-free authenticity requirement.
 
-The host is Linux 6.18.33.2-microsoft-standard-WSL2 x86_64, Rust 1.98.1
-(LLVM 22.1.8), GCC 13.3.0, and Python 3.12.3. Independent numeric probes
-matched native O0/O3 and Fast Debug for 2,048 finite Float bit patterns, 2,070
-`parse_float` inputs, and 535 `parse_int`/`to_int` inputs. The existing fixed
-270-value Float corpus and targeted IEEE edge suite also pass on this host.
+The host is Linux 6.18.33.2-microsoft-standard-WSL2 x86_64, GCC 13.3.0,
+Clang 18.1.3, Rust 1.97.0 (LLVM 22.1.6), Rust 1.98.1 (LLVM 22.1.8), and
+Python 3.12.3. Earlier independent numeric probes matched native O0/O3 and
+Fast Debug for 2,048 finite Float bit patterns, 2,070 `parse_float` inputs,
+and 535 `parse_int`/`to_int` inputs. The current `make check` reruns the
+permanent numeric parity and IEEE suites, not those larger disposable probes.
 
-Engineering later installed Rust 1.97.0 and Clang 18.1.3 under this
-repository's disposable `tmp/` without privilege changes. A GCC 13.3.0 and a
-Clang 18.1.3 strict C++17 build of Moss were each crossed with Rust 1.97.0
-(`2d8144b78`, LLVM 22.1.6) and Rust 1.98.1 (`48a229cea`, LLVM 22.1.8).
-All four combinations passed `check_phase21_float_ieee.py`, comparing native
-unoptimized, native optimized, and Fast Debug output byte-for-byte against
-the 270-pattern oracle with SHA-256
+GCC and Clang builds of the exact implementation commit were each crossed
+with Rust 1.97.0 (`2d8144b78`) and 1.98.1 (`48a229cea`). All four runs of
+`check_phase21_float_ieee.py` passed native unoptimized, native optimized,
+and Fast Debug output byte-for-byte against the 270-pattern oracle with SHA-256
 `91553f7482c35cfef6c108c429c7bdb54fba4cc8d4959c4d0a7bd3faf1ca28ef`.
-Those results preceded the last expression-effect and method-warning edits;
-repeat them on the final frozen implementation SHA. Reproducible CI should
-pin the same versions and digest, then archive the tool version strings and
-diff any output bytes across all four cells. No portability waiver is assumed.
+The four logs are in repository-local `tmp/phase21-float-{gcc,clang}-rust{197,198}.log`.
+Reproducible CI should pin these versions and the corpus digest and archive
+the output bytes; the local matrix satisfies the requested additional
+toolchain acceptance check without a waiver.
+
+## Public-language acceptance layer
+
+The formal O1–O9 matrix above concerns specific implementation invariants.
+Ordinary language use also crosses helpers, methods, packages, Executor Roots,
+and Fast Debug. The complete external and later integration issue register is
+`PHASE_21_PEER_REVIEW_DISPOSITION.md`.
+
+| Surface | Behavioral evidence | Acceptance limit |
+| --- | --- | --- |
+| Local expressions, helpers, methods and pipelines | Exact `check --json`/`effects --json` variants, native O0/O3 and Fast Debug cases pass, including reconstructed `not fail()` and `fail().value`. | O1 lacks a path-complete argument for every accepted expression and specialization. |
+| Root ingress and recovery | Unhandled synchronous and Executor Roots fail checking; typed `on_fail`, captures, exact re-raise and test continuation pass focused native/Fast Debug gates. | Authentic provider metadata is assumed at a source-free boundary. |
+| Source-free packages | Removed-source ordinary/generic providers, owned captures and failure arms execute; unsupported imported methods fail closed at Moss checking. | ABI v8 cannot carry exported method effects or catch-all warning provenance, and a forged `.mossi` can disagree with its rlib. |
+| FileIO, locks and Branches | Fault injection, concurrent Roots, ordered 4097-byte Branch cases and terminal read-token checks pass. | O4/O8 and §42 early-release proofs remain incomplete; failed-create name durability has a documented caveat. |
+| Numeric conversion and Float text | Permanent parse/conversion suite and four-toolchain Float output matrix pass. | Preserve pinned corpus and compiler versions in CI. |
 
 ## Outstanding approval questions and recommendation
 
-1. Approve a provider-rlib-bound contract mechanism, with the required native
-   ABI/version disposition, or explicitly narrow the source-free falsification
-   acceptance criterion. The current recomputed-hash pattern swap is a concrete
-   build-success/runtime-abort counterexample.
-2. Run the additional Float toolchain matrix, or explicitly approve a waiver
-   of the specification's cross-toolchain pin. No waiver is assumed here.
-3. Close the Phase 21 §16 general early-release argument and the incomplete
-   O4/O8 invariant audits to the standard required for implementation acceptance.
-4. Track the shared cross-crate `Range` ABI as separate Phase 20 work; the
-   release candidate only makes the unsupported concrete call fail closed.
+1. Approve a provider-rlib-bound contract or provider-owned dispatch, with a
+   versioned successor to frozen ABI v8, or explicitly approve a narrower
+   source-free contract. Recomputed-hash pattern forgery currently builds and
+   aborts; exported object-method effects and helper warning provenance are
+   also absent from ABI v8. Rebuilding providers would be required for a new
+   contract. No ABI change or waiver has been made.
+2. Approve the O2 wording correction proposed in the peer register: separate
+   trailer effects do not add per-leaf normal writes, but class repartition
+   can change the count of normal exclusive locks. The rank proof is unchanged.
+3. Complete the general O1/O4/O8 audits and §42 mid-execution early-release
+   reconciliation. The current evidence establishes only the restricted tested
+   cases. No proof waiver is assumed.
+4. Preserve the approved §4 no-per-ingress-exception rule. The recorded
+   `.5`, `1.`, uppercase `E`, exponent-sign and leading-zero grammar, and
+   nearest-ties-to-even Float rule are already normative and tested; no new
+   language-semantics decision is requested.
+5. Track concrete cross-crate `Range` interoperability as Phase 20 work. The
+   current `FILEIO_CROSS_CRATE_ABI` diagnostic is fail-closed, not an ABI fix.
 
-**NO-GO:** do not merge this branch into `main` until these items receive the
-required human decisions or verification. The branch can be reviewed and
-revised without changing the approved Phase 21 language semantics.
+| Owner | Recommendation | Basis |
+| --- | --- | --- |
+| Engineering L6 | **NO-GO** | Green implementation gates coexist with ABI-v8 counterexamples and incomplete general obligations. |
+| Independent Architect L6 | **NO-GO, preliminary** | Independently reproduced the forged-pattern failure, missing source-free warning and O2/O4/O8 objections. Its final exact-`5941d98` disposition was interrupted and remains pending. |
+| L7 | **NO-GO** | Release blockers require an approved contract/proof resolution and completed independent acceptance. |
+
+Engineering's passing fixtures and the Architect's broader source-free and
+proof objections are intentionally both retained. No merger into `main` is
+authorized. The branch is a reviewable NO-GO candidate awaiting human
+architectural decisions and an exact-SHA independent retest.
