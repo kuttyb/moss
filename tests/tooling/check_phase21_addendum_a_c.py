@@ -38,6 +38,7 @@ cases = (
     ("grouped_both", "fn:regroup_both",
      ["enum:Failure:A", "enum:Failure:B"], "A\nB\n"),
     ("grouped_root", "handler:Worker.Run", ["enum:Failure:A"], "1\n"),
+    ("unreachable_arm_raise", "fn:only_a", [], "ok\n"),
 )
 for name, target, variants, output in cases:
     source = fixtures / f"phase21_addendum_{name}.moss"
