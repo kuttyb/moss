@@ -2,7 +2,7 @@
 
 **Exact candidate:** `96eef9e0d554e26139b3e86268faf598fc03b38e` on `phase-21-integration`.
 
-**Architect L6 verdict for this SHA: NO-GO.** A valid synchronous Root message from `main`, whose handler has an exhaustive `on_fail`, is rejected when the message is nested in a binary expression, vector literal or ordinary function argument. The same Root checks as a direct or parenthesized `echo message`. This is a new concrete accepted-syntax failure at the absolute Root boundary. L7 independently reproduced it and is repairing another worktree; that future repair has not been reviewed here.
+**Architect L6 verdict for this SHA: NO-GO.** A valid synchronous Root message from `main`, whose handler has an exhaustive `on_fail`, is rejected when the message is nested in a binary expression, vector literal or ordinary function argument. The same Root checks as a direct or parenthesized `echo message`. This is a new concrete accepted-syntax failure at the absolute Root boundary. Engineering L6 independently reproduced it and is repairing another worktree; that future repair has not been reviewed here.
 
 I checked out the exact candidate in an isolated repository-local worktree, read the two Moss repository skills, built its compiler with `make moss -j2`, and ran `./moss agent bootstrap --json` (`moss-0.1`). The original external peer ZIP and original A–F ZIP were not available for independent byte comparison. The A–F files committed under `tests/tooling/fixtures/p21_open_at_7775049/` are attributed to L7's transcription; their SHA-256 values are pinned and validated by the gate. No implementation or test source was edited in this review.
 
