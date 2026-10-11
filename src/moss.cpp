@@ -5792,6 +5792,8 @@ class Checker {
     std::map<string,string> roots;
     std::map<string,StorageLocation> aliases;
     StateLeafEffects effects;
+    bool ignore_recovery = false;
+    bool recording = true;
   };
   mutable LeafEffectCapture* leaf_effect_capture_ = nullptr;
   struct LeafCaptureScope {
@@ -5800,6 +5802,17 @@ class Checker {
     LeafCaptureScope(LeafEffectCapture*& target, LeafEffectCapture* value)
         : slot(target), previous(target) { slot = value; }
     ~LeafCaptureScope() { slot = previous; }
+  };
+  struct LeafRecordingScope {
+    LeafEffectCapture* capture;
+    bool previous;
+    explicit LeafRecordingScope(LeafEffectCapture* value)
+        : capture(value), previous(value ? value->recording : true) {
+      if (capture && capture->ignore_recovery) capture->recording = false;
+    }
+    ~LeafRecordingScope() {
+      if (capture) capture->recording = previous;
+    }
   };
 
   void checked_state_leaves(const string& path, const string& type,
@@ -5820,7 +5833,7 @@ class Checker {
   }
 
   void observe_leaf_access(const StorageLocation& location, Effect effect) const {
-    if (!leaf_effect_capture_) return;
+    if (!leaf_effect_capture_ || !leaf_effect_capture_->recording) return;
     auto& capture = *leaf_effect_capture_;
     string root = location.root;
     vector<string> path = location.path;
@@ -5858,6 +5871,8 @@ class Checker {
       const ObjectType* object = nullptr, const string& receiver = "",
       const StateLeafEffects* recorded = nullptr) const {
     LeafEffectCapture capture;
+    capture.ignore_recovery = leaf_effect_capture_ &&
+                              leaf_effect_capture_->ignore_recovery;
     std::unordered_map<string,string> env;
     std::map<string,string> substitutions;
     std::set<string> fields;
@@ -5921,13 +5936,15 @@ class Checker {
 
   StateLeafEffects specialized_handler_effects(
       const Domain& domain, const Handler& handler,
-      const DomainSpecialization* specialization) const {
+      const DomainSpecialization* specialization,
+      bool ignore_recovery = false) const {
     for (const auto& module : p_.external_modules)
       if (starts_with(domain.name, module + "__")) {
         if (handler.state_effects) return *handler.state_effects;
         throw CompileError(handler.line, "compiled domain lacks handler state effects; rebuild its .mossi provider");
       }
     LeafEffectCapture capture;
+    capture.ignore_recovery = ignore_recovery;
     std::unordered_map<string,string> env;
     std::set<string> fields;
     for (const auto& field : domain.state) {
@@ -5952,10 +5969,12 @@ class Checker {
   // placement is a backend choice; it must not become a second effect system.
   StateLeafEffects specialized_handler_body_effects(
       const Domain& domain, const Handler& handler, const vector<Stmt>& body,
-      const DomainSpecialization* specialization) const {
+      const DomainSpecialization* specialization,
+      bool ignore_recovery = false) const {
     Handler fragment = handler;
     fragment.body = body;
-    return specialized_handler_effects(domain, fragment, specialization);
+    return specialized_handler_effects(domain, fragment, specialization,
+                                       ignore_recovery);
   }
 
   StateLeafEffects specialized_handler_failure_effects(
@@ -6011,6 +6030,19 @@ class Checker {
     return result;
   }
 
+  void phase21_warning(int line, const string& source_file,
+                       const string& code, const string& message) {
+    if (!phase21_warnings_enabled_) return;
+    if (std::any_of(warnings_.begin(), warnings_.end(),
+                    [&](const Warning& warning) {
+                      return warning.line == line &&
+                          warning.source_file == source_file &&
+                          warning.code == code && warning.message == message;
+                    }))
+      return;
+    warnings_.push_back({line, message, code, source_file});
+  }
+
   static size_t statement_subtree_end(const vector<Stmt>& body, size_t begin) {
     const int indent = body.at(begin).indent;
     size_t end = begin + 1;
@@ -6037,7 +6069,8 @@ class Checker {
   void derive_path_placement(const Domain& domain, const Handler& source,
                              const DomainSpecialization& specialization,
                              DomainSynchronizationPlan& planned,
-                             HandlerSynchronizationPlan& whole) const {
+                             HandlerSynchronizationPlan& whole,
+                             bool ignore_recovery = false) const {
     // A compiled provider exports its regular typed handler body, not the
     // application's path-specific Then/Else continuations. Retain the exact
     // full-entry plan for a domain owned by another module.
@@ -6103,9 +6136,9 @@ class Checker {
     placement.condition_effects = specialized_handler_expression_effects(
         domain, source, branch.a, &specialization);
     placement.then_effects = specialized_handler_body_effects(
-        domain, source, then_body, &specialization);
+        domain, source, then_body, &specialization, ignore_recovery);
     placement.else_effects = specialized_handler_body_effects(
-        domain, source, else_body, &specialization);
+        domain, source, else_body, &specialization, ignore_recovery);
     auto condition = path_class_modes(planned, whole, placement.condition_effects);
     auto then_modes = path_class_modes(planned, whole, placement.then_effects);
     auto else_modes = path_class_modes(planned, whole, placement.else_effects);
@@ -6139,6 +6172,338 @@ class Checker {
       if (!condition.count(entry.first) && !else_modes.count(entry.first)) placement.cancel_else.insert(entry.first);
     }
     placement.reason = "leading conditional continuation split; rank-forced entries may cancel untouched guards";
+  }
+
+  static bool phase21_noop_body(const vector<Stmt>& body,
+                                size_t begin, size_t end) {
+    for (size_t index = begin; index < end; ++index)
+      if (body[index].kind != Stmt::Kind::Pass) return false;
+    return true;
+  }
+
+  static string phase21_leaf_names(const StateLeafSet& leaves) {
+    std::ostringstream out;
+    bool first = true;
+    for (const auto& leaf : leaves) {
+      if (!first) out << ", ";
+      out << leaf;
+      first = false;
+    }
+    return out.str();
+  }
+
+  static StateLeafSet phase21_written_leaves(const StateLeafEffects& effects) {
+    StateLeafSet result = effects.writes;
+    result.insert(effects.consumes.begin(), effects.consumes.end());
+    return result;
+  }
+
+  static void phase21_join_leaves(StateLeafSet& into,
+                                  const StateLeafSet& from) {
+    into.insert(from.begin(), from.end());
+  }
+
+  static bool phase21_raise_sets_intersect(const RaiseSet& left,
+                                            const RaiseSet& right) {
+    for (const auto& alternative : left)
+      if (right.count(alternative)) return true;
+    return false;
+  }
+
+  StateLeafSet phase21_writes_before_selected_raise(
+      const Domain& domain, const Handler& source,
+      const DomainSpecialization& specialization,
+      const vector<Stmt>& body, size_t begin, size_t end, int level,
+      StateLeafSet prior, const RaiseSet& selected,
+      StateLeafSet& witnesses) {
+    size_t index = begin;
+    while (index < end) {
+      const Stmt& statement = body[index];
+      if (statement.indent != level) {
+        ++index;
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::Try) {
+        const size_t attempt_end = statement_subtree_end(body, index);
+        size_t arm_index = attempt_end;
+        RaiseSet caught;
+        while (arm_index < end && body[arm_index].indent == level &&
+               body[arm_index].kind == Stmt::Kind::Recover) {
+          caught = raise_set_union(
+              std::move(caught), body[arm_index].exceptional_alternatives);
+          arm_index = statement_subtree_end(body, arm_index);
+        }
+        RaiseSet escaping_attempt = selected;
+        for (const auto& alternative : caught)
+          escaping_attempt.erase(alternative);
+        StateLeafSet attempt_writes = phase21_writes_before_selected_raise(
+            domain, source, specialization, body, index + 1, attempt_end,
+            level + 1, prior, escaping_attempt, witnesses);
+        phase21_join_leaves(prior, attempt_writes);
+        arm_index = attempt_end;
+        while (arm_index < end && body[arm_index].indent == level &&
+               body[arm_index].kind == Stmt::Kind::Recover) {
+          const size_t arm_end = statement_subtree_end(body, arm_index);
+          StateLeafSet arm_writes = phase21_writes_before_selected_raise(
+              domain, source, specialization, body, arm_index + 1, arm_end,
+              level + 1, prior, selected, witnesses);
+          phase21_join_leaves(prior, arm_writes);
+          arm_index = arm_end;
+        }
+        index = arm_index;
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::If ||
+          statement.kind == Stmt::Kind::While ||
+          statement.kind == Stmt::Kind::For ||
+          statement.kind == Stmt::Kind::Match) {
+        const string& expression = statement.kind == Stmt::Kind::For
+            ? statement.b : statement.a;
+        const StateLeafSet condition_writes = phase21_written_leaves(
+            specialized_handler_expression_effects(
+                domain, source, expression, &specialization));
+        if (phase21_raise_sets_intersect(
+                statement.exceptional_alternatives, selected)) {
+          phase21_join_leaves(witnesses, prior);
+          phase21_join_leaves(witnesses, condition_writes);
+        }
+        phase21_join_leaves(prior, condition_writes);
+        const size_t subtree_end = statement_subtree_end(body, index);
+        if (statement.kind == Stmt::Kind::Match) {
+          const StateLeafSet before_arms = prior;
+          StateLeafSet joined_arms = prior;
+          size_t arm_index = index + 1;
+          while (arm_index < subtree_end) {
+            if (body[arm_index].kind != Stmt::Kind::Case) {
+              ++arm_index;
+              continue;
+            }
+            const size_t arm_end = statement_subtree_end(body, arm_index);
+            auto arm_writes = phase21_writes_before_selected_raise(
+                domain, source, specialization, body, arm_index + 1,
+                arm_end, level + 2, before_arms, selected, witnesses);
+            phase21_join_leaves(joined_arms, arm_writes);
+            arm_index = arm_end;
+          }
+          prior = std::move(joined_arms);
+          index = subtree_end;
+          continue;
+        }
+        const StateLeafSet before_branch = prior;
+        auto branch_writes = phase21_writes_before_selected_raise(
+            domain, source, specialization, body, index + 1, subtree_end,
+            level + 1, before_branch, selected, witnesses);
+        phase21_join_leaves(prior, branch_writes);
+        index = subtree_end;
+        if (statement.kind == Stmt::Kind::If && index < end &&
+            body[index].indent == level &&
+            body[index].kind == Stmt::Kind::Else) {
+          const size_t else_end = statement_subtree_end(body, index);
+          auto else_writes = phase21_writes_before_selected_raise(
+              domain, source, specialization, body, index + 1, else_end,
+              level + 1, before_branch, selected, witnesses);
+          phase21_join_leaves(prior, else_writes);
+          index = else_end;
+        }
+        continue;
+      }
+      Stmt normalized = statement;
+      normalized.indent = 0;
+      const StateLeafSet statement_writes = phase21_written_leaves(
+          specialized_handler_body_effects(
+              domain, source, vector<Stmt>{normalized}, &specialization));
+      StateLeafSet before_raise = statement_writes;
+      if (statement.kind == Stmt::Kind::Assign ||
+          statement.kind == Stmt::Kind::Let ||
+          statement.kind == Stmt::Kind::Var)
+        before_raise = phase21_written_leaves(
+            specialized_handler_expression_effects(
+                domain, source, statement.b, &specialization));
+      if (phase21_raise_sets_intersect(
+              statement.exceptional_alternatives, selected)) {
+        phase21_join_leaves(witnesses, prior);
+        phase21_join_leaves(witnesses, before_raise);
+      }
+      phase21_join_leaves(prior, statement_writes);
+      if (statement.kind == Stmt::Kind::Raise ||
+          statement.kind == Stmt::Kind::Return ||
+          statement.kind == Stmt::Kind::Reply)
+        return prior;
+      ++index;
+    }
+    return prior;
+  }
+
+  void phase21_warn_empty_catch_alls(
+      const Domain& domain, const Handler& source,
+      const DomainSpecialization& specialization) {
+    if (source.provider_abi) return;
+    for (size_t index = 0; index < source.body.size(); ++index) {
+      const Stmt& statement = source.body[index];
+      if (statement.kind != Stmt::Kind::Try) continue;
+      size_t attempt_end = statement_subtree_end(source.body, index);
+      size_t arm_index = attempt_end;
+      while (arm_index < source.body.size() &&
+             source.body[arm_index].indent == statement.indent &&
+             source.body[arm_index].kind == Stmt::Kind::Recover) {
+        const Stmt& arm = source.body[arm_index];
+        size_t arm_end = statement_subtree_end(source.body, arm_index);
+        const bool catch_all = arm.a.empty() ||
+            (arm.a.find('.') == string::npos &&
+             arm.a.find(',') == string::npos);
+        StateLeafSet writes;
+        if (catch_all && !arm.exceptional_alternatives.empty() &&
+            phase21_noop_body(source.body, arm_index + 1, arm_end))
+          (void)phase21_writes_before_selected_raise(
+              domain, source, specialization, source.body,
+              index + 1, attempt_end, statement.indent + 1, {},
+              arm.exceptional_alternatives, writes);
+        if (catch_all && !arm.exceptional_alternatives.empty() &&
+            phase21_noop_body(source.body, arm_index + 1, arm_end) &&
+            !writes.empty())
+          phase21_warning(
+              arm.line, arm.source_file, "RECOVER_EMPTY_AFTER_STATE_WRITE",
+              "no-op recover catch-all may swallow an error after protected "
+              "domain-state writes in try at line " +
+                  std::to_string(statement.line) + " (" +
+                  phase21_leaf_names(writes) + ")");
+        arm_index = arm_end;
+      }
+    }
+    for (const auto& arm : source.failure_arms)
+      if (arm.patterns.empty() && !arm.exceptional_alternatives.empty() &&
+          phase21_noop_body(arm.body, 0, arm.body.size())) {
+        StateLeafSet writes;
+        (void)phase21_writes_before_selected_raise(
+            domain, source, specialization, source.body, 0,
+            source.body.size(), 0, {}, arm.exceptional_alternatives,
+            writes);
+        if (!writes.empty())
+          phase21_warning(
+              arm.line, arm.source_file, "ON_FAIL_EMPTY_AFTER_STATE_WRITE",
+              "no-op on_fail catch-all may leave protected domain-state "
+              "writes from the abandoned Root attempt (" +
+                  phase21_leaf_names(writes) + ")");
+      }
+  }
+
+  void phase21_warn_recovery_lock_inflation(
+      const Domain& domain, const Handler& source,
+      const DomainSpecialization& specialization,
+      const DomainSynchronizationPlan& raw,
+      const DomainSynchronizationPlan& complete) {
+    if (source.provider_abi ||
+        std::none_of(source.body.begin(), source.body.end(),
+                     [](const Stmt& statement) {
+                       return statement.kind == Stmt::Kind::Recover;
+                     }))
+      return;
+    DomainSynchronizationPlan baseline = raw;
+    auto normal_handler = std::find_if(
+        baseline.handlers.begin(), baseline.handlers.end(),
+        [&](const HandlerSynchronizationPlan& candidate) {
+          return candidate.name == source.name;
+        });
+    synchronization_require(normal_handler != baseline.handlers.end(),
+                            "normal handler absent from recovery baseline");
+    normal_handler->effects = specialized_handler_effects(
+        domain, source, &specialization, true);
+    derive_domain_synchronization(baseline);
+    normal_handler = std::find_if(
+        baseline.handlers.begin(), baseline.handlers.end(),
+        [&](const HandlerSynchronizationPlan& candidate) {
+          return candidate.name == source.name;
+        });
+    derive_path_placement(domain, source, specialization, baseline,
+                          *normal_handler, true);
+    const auto actual_handler = std::find_if(
+        complete.handlers.begin(), complete.handlers.end(),
+        [&](const HandlerSynchronizationPlan& candidate) {
+          return candidate.name == source.name;
+        });
+    synchronization_require(actual_handler != complete.handlers.end(),
+                            "recovery handler absent from complete plan");
+    const auto& actual_modes = actual_handler->path_placement.enabled
+        ? actual_handler->path_placement.entry_modes
+        : actual_handler->class_modes;
+    const auto& normal_modes = normal_handler->path_placement.enabled
+        ? normal_handler->path_placement.entry_modes
+        : normal_handler->class_modes;
+    std::map<string, std::set<int>> recovery_provenance;
+    for (size_t index = 0; index < source.body.size(); ++index) {
+      const Stmt& arm = source.body[index];
+      if (arm.kind != Stmt::Kind::Recover) continue;
+      const size_t end = statement_subtree_end(source.body, index);
+      auto body = normalized_statement_slice(
+          source.body, index + 1, end, arm.indent + 1);
+      const auto effects = specialized_handler_body_effects(
+          domain, source, body, &specialization);
+      for (const auto* leaves : {&effects.reads, &effects.writes,
+                                 &effects.consumes})
+        for (const auto& leaf : *leaves)
+          recovery_provenance[leaf].insert(arm.line);
+    }
+    std::ostringstream inflated;
+    bool any = false;
+    std::set<int> lines;
+    auto compare_modes = [&](const string& placement,
+                             const std::map<size_t, SynchronizationMode>& actual,
+                             const std::map<size_t, SynchronizationMode>& normal) {
+      for (const auto& acquisition : actual) {
+        const auto& cls = complete.classes.at(acquisition.first);
+        std::ostringstream changes;
+        bool class_changed = false;
+        for (const auto& leaf : cls.member_leaves) {
+          SynchronizationMode previous = SynchronizationMode::None;
+          auto prior_class = baseline.leaf_to_class.find(leaf);
+          if (prior_class != baseline.leaf_to_class.end()) {
+            auto prior_mode = normal.find(prior_class->second);
+            if (prior_mode != normal.end()) previous = prior_mode->second;
+          }
+          if (static_cast<int>(acquisition.second) <=
+              static_cast<int>(previous)) continue;
+          if (class_changed) changes << ", ";
+          changes << leaf << " " << synchronization_mode_name(previous)
+                  << "->" << synchronization_mode_name(acquisition.second);
+          class_changed = true;
+          const auto provenance = recovery_provenance.find(leaf);
+          if (provenance != recovery_provenance.end())
+            lines.insert(provenance->second.begin(),
+                         provenance->second.end());
+        }
+        if (!class_changed) continue;
+        if (any) inflated << "; ";
+        inflated << placement << " class " << acquisition.first << " ["
+                 << changes.str() << "]";
+        any = true;
+      }
+    };
+    compare_modes("entry", actual_modes, normal_modes);
+    if (actual_handler->path_placement.enabled &&
+        normal_handler->path_placement.enabled) {
+      compare_modes("then", actual_handler->path_placement.then_modes,
+                    normal_handler->path_placement.then_modes);
+      compare_modes("else", actual_handler->path_placement.else_modes,
+                    normal_handler->path_placement.else_modes);
+    }
+    if (any && lines.empty())
+      for (const auto& statement : source.body)
+        if (statement.kind == Stmt::Kind::Recover)
+          lines.insert(statement.line);
+    if (any) {
+      inflated << "; recovery provenance: ";
+      bool first = true;
+      for (int line : lines) {
+        if (!first) inflated << ", ";
+        inflated << "line " << line;
+        first = false;
+      }
+    }
+    if (any)
+      phase21_warning(
+          source.line, source.source_file, "RECOVER_LOCK_INFLATION",
+          "recovery increases the actual handler entry lock plan for '" +
+              domain.name + "." + source.name + "': " + inflated.str());
   }
 
   void build_synchronization_plan(const ConcreteDomainGraph& graph) {
@@ -6188,6 +6553,7 @@ class Checker {
           planned.handlers.push_back(std::move(failure));
         }
       }
+      DomainSynchronizationPlan raw = planned;
       derive_domain_synchronization(planned);
       for (auto& handler : planned.handlers) {
         auto source = std::find_if(domain.handlers.begin(), domain.handlers.end(),
@@ -6200,6 +6566,11 @@ class Checker {
           continue;
         }
         derive_path_placement(domain, *source, specialization, planned, handler);
+      }
+      for (const auto& source : domain.handlers) {
+        phase21_warn_recovery_lock_inflation(domain, source, specialization,
+                                             raw, planned);
+        phase21_warn_empty_catch_alls(domain, source, specialization);
       }
       plan.domains.push_back(std::move(planned));
     }
@@ -6881,9 +7252,12 @@ class Checker {
                    phase21_pattern_bindings(arm.line, alternatives.front()))
                 recovered[binding.first] = binding.second;
           }
-          analyze_effect_block(statements, index, level + 1, recovered,
-                               params, parameter_effects, receiver_effect,
-                               receiver_fields);
+          {
+            LeafRecordingScope recording(leaf_effect_capture_);
+            analyze_effect_block(statements, index, level + 1, recovered,
+                                 params, parameter_effects, receiver_effect,
+                                 receiver_fields);
+          }
           paths.push_back(std::move(recovered));
         }
         if (!saw_recover)
