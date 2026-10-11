@@ -1,0 +1,43 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn read_helper(path: String) -> Int:
+  try:
+    source = FileIO.open(path, ro)
+    bytes = source.read(0, 1)
+    size = bytes.length()
+    source.close()
+    return size
+  recover FileError.IO:
+    return -1
+  recover:
+    return -2
+
+domain Worker:
+  file: FileIO
+
+  fn Open(path: String):
+    file.open(path, ro)
+
+  fn Close() -> Int:
+    try:
+      file.close()
+    recover FileError.Full:
+      reply 4
+    recover FileError.IO:
+      reply 5
+    reply 1
+
+fn main():
+  worker = Worker()
+  try:
+    message worker.Open("tmp/phase21-fileio-close-full/input.dat")
+  recover:
+    echo -1
+  echo message worker.Close()
+  echo read_helper("tmp/phase21-fileio-close-full/input.dat")

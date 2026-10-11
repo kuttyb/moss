@@ -250,7 +250,7 @@ pub mod moss_fileio {
             ReadBefore | ReadAfterPrefix => cause == IO,
             WriteBefore | WriteAfterPrefix | FileSync | ParentDirectorySync =>
                 matches!(cause, Full | IO),
-            ParentDirectoryClose | FileClose => cause == IO,
+            ParentDirectoryClose | FileClose => matches!(cause, Full | IO),
         }
     }
 
@@ -1151,8 +1151,7 @@ pub mod moss_fileio {
                     return Err(cause);
                 }
                 if let Some(err) = cerr_opt {
-                    let _ = err;
-                    return Err(MossFileError::IO);
+                    return Err(map_data_os_error(&err, true));
                 }
             }
             Ok(())
@@ -1227,13 +1226,15 @@ pub mod moss_fileio {
                     if closed_is_misuse {
                         eprintln!("[moss-fileio] error: close failed on parent directory descriptor");
                     }
-                    return Err(injected_parent.unwrap_or(MossFileError::IO));
+                    return Err(injected_parent.unwrap_or_else(||
+                        map_data_os_error(parent_close_err.as_ref().unwrap(), true)));
                 }
                 if injected_file.is_some() || file_close_err.is_some() {
                     if closed_is_misuse {
                         eprintln!("[moss-fileio] error: close failed on descriptor {}", fd);
                     }
-                    return Err(injected_file.unwrap_or(MossFileError::IO));
+                    return Err(injected_file.unwrap_or_else(||
+                        map_data_os_error(file_close_err.as_ref().unwrap(), true)));
                 }
             }
             Ok(())

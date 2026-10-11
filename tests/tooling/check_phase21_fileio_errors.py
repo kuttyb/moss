@@ -28,11 +28,20 @@ use std::io::Write;
 use std::os::unix::io::RawFd;
 use std::sync::Mutex;
 
+extern "C" { fn __errno_location() -> *mut i32; }
+
 static CLOSE_COUNT: Mutex<usize> = Mutex::new(0);
 
 fn counting_close(fd: RawFd) -> i32 {
     *CLOSE_COUNT.lock().unwrap() += 1;
     unsafe { moss_fileio::posix::close(fd) }
+}
+
+fn close_reports_no_space(fd: RawFd) -> i32 {
+    let closed = unsafe { moss_fileio::posix::close(fd) };
+    require(closed == 0, "fault setup closed the descriptor");
+    unsafe { *__errno_location() = moss_fileio::posix::ENOSPC; }
+    -1
 }
 
 fn require(condition: bool, message: &str) {
@@ -94,6 +103,10 @@ fn test_errno_mapping() {
     }
     require(moss_fileio_map_open_errno_for_test(9999) == MossFileError::IO,
             "unknown open errno maps to IO");
+    for errno in [6, 19] { // Linux ENXIO and ENODEV
+        require(moss_fileio_map_open_errno_for_test(errno) == MossFileError::IO,
+                "device absence is generic IO, not a missing pathname");
+    }
     require(moss_fileio_map_data_errno_for_test(moss_fileio::posix::EACCES, true) ==
                 MossFileError::IO,
             "non-storage data errno maps to IO");
@@ -287,9 +300,51 @@ fn test_parent_close_failure_is_not_retried(dir: &str) {
             "completed directory sync moves descriptor out before failed close");
     file.sync_checked(false).unwrap();
     file.close_checked().unwrap();
+
+    let no_space_path = format!("{}/parent-close-full.dat", dir);
+    let no_space_file = FileIO::open_checked(&no_space_path, "create").unwrap();
+    no_space_file.write_checked(0, b"payload").unwrap();
+    moss_set_close_override(close_reports_no_space);
+    let parent_close_result = no_space_file.sync_checked(false);
+    moss_clear_close_override();
+    require_error(parent_close_result, MossFileError::Full,
+                  "parent close-time ENOSPC is a storage-exhaustion cause");
+    require(!no_space_file.has_directory_obligation(),
+            "successful directory sync clears obligation before close failure");
+    no_space_file.close_checked().unwrap();
+
+    let injected_path = format!("{}/parent-close-injected-full.dat", dir);
+    let injected_file = FileIO::open_checked(&injected_path, "create").unwrap();
+    moss_inject_fileio_fault(
+        MossFileIoFaultSite::ParentDirectoryClose,
+        MossFileError::Full,
+        0,
+    );
+    require_error(injected_file.sync_checked(false), MossFileError::Full,
+                  "injected parent close Full matches actual ENOSPC mapping");
+    injected_file.close_checked().unwrap();
 }
 
 fn test_checked_close_and_abandoned_cleanup(dir: &str) {
+    let no_space_path = format!("{}/close-full.dat", dir);
+    fs::write(&no_space_path, b"content").unwrap();
+    let no_space_file = FileIO::open_checked(&no_space_path, "ro").unwrap();
+    let dev = no_space_file.device();
+    let ino = no_space_file.inode();
+    moss_set_close_override(close_reports_no_space);
+    let no_space_result = no_space_file.close_checked();
+    moss_clear_close_override();
+    require_error(no_space_result, MossFileError::Full,
+                  "close-time ENOSPC is a storage-exhaustion cause");
+    require(!moss_fileio_registry_contains(dev, ino),
+            "no-space close still releases its registry claim");
+
+    let injected_path = format!("{}/close-injected-full.dat", dir);
+    let injected_file = FileIO::open_checked(&injected_path, "create").unwrap();
+    moss_inject_fileio_fault(MossFileIoFaultSite::FileClose, MossFileError::Full, 0);
+    require_error(injected_file.close_checked(), MossFileError::Full,
+                  "injected file close Full follows the same checked path");
+
     let path = format!("{}/checked-close.dat", dir);
     let file = FileIO::open_checked(&path, "create").unwrap();
     let dev = file.device();
