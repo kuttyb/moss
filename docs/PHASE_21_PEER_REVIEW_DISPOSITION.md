@@ -1,20 +1,20 @@
 # Phase 21 peer-review findings and disposition
 
-**Current engineering repair (2026-10-11):** `phase-21-integration` source
-`3a964dc9aa22bfc7d85cccaa57515c532ee839b2` carries the approved ABI v9,
-standard errors and original A–F repairs, plus the newly discovered nested
-Root-ingress correction. The isolated repair and integration tree pass full
-`make check` and examples; strict GCC/Clang C++17 and the four-pair Float
-matrix pass on identical repaired source. Engineering
-recommends **GO for independent retest**, while merging into `main` remains
-**NO-GO** until an Architect GO and L7 approval.
+**Exact-SHA acceptance update (2026-10-11):** `phase-21-integration`
+implementation `19cf731ae08291500e7488c8a03df123aac4f9aa` includes the
+approved ABI v9, standard errors, original A–F repairs and Architect-discovered
+nested Root-ingress correction. Engineering's full suite, examples, strict
+GCC/Clang C++17 and four-pair Float matrix pass on identical repaired source.
+The independent Architect L6 retested this candidate and issued **GO for the
+approved Phase 21 scope** in `PHASE_21_ARCHITECT_V9_RETEST_19CF731.md`.
+Merging into `main` remains on **HOLD pending explicit L7 approval**.
 
-The latest independent Architect L6 **NO-GO** in
+The independent Architect L6 **NO-GO** in
 `PHASE_21_ARCHITECT_V9_REVIEW.md` applies to exact implementation `96eef9e`:
 it found a nested Root `on_fail` false rejection. The earlier **NO-GO** in
 `PHASE_21_ARCHITECT_REVIEW.md` applies to `5941d98` before ABI v9. Both reports
-retain independent attribution; neither is rewritten as acceptance of the
-new engineering repair.
+retain independent attribution; the later GO at `19cf731` is a separate
+exact-SHA retest, not a rewrite of either historical verdict.
 
 This register reconciles the external review of `8d8a9cc6f842e11701dbedc56e3d2d2d3da9852a`
 with the subsequent independent integration review and the remediation branch.
@@ -26,9 +26,11 @@ from the review descriptions and are committed as permanent fixtures.
 
 **Disposition vocabulary:** FIXED, CONFIRMED, DEFERRED-APPROVED,
 DESIGN-DECISION-REQUIRED, NOT-REPRODUCIBLE. FIXED on the *new* implementation
-requires a final-SHA independent Architect retest. The historic Architect
-matrix records its independent `5941d98` decisions; the table immediately
-below records later engineering evidence without relabeling those decisions.
+requires a final-SHA independent Architect retest when a new fix changes that
+finding. The historic Architect matrix records its independent `5941d98`
+decisions; the table immediately below records later engineering evidence.
+The `19cf731` Architect GO follows focused counterexample and adjacent-gate
+review; it does not mean that the Architect individually reran every row.
 
 ## Post-`5941d98` engineering reconciliation
 
@@ -45,7 +47,8 @@ was `7775049`; later engineering results do not alter that observation.
 
 | Finding | Later implementation and permanent counterexample | Current engineering evidence and independent status |
 | --- | --- | --- |
-| ARCH-V9-01; absolute Root/public O1 | Architect L6 independently reproduced `echo 1 + message worker.Fetch()` with exhaustive `on_fail E.Bad: reply 7` failing Moss checking at `96eef9e`; binary/vector/call and source-removed provider forms also failed. `3a964dc` carries `root_ingress` through every recursive expression effect transfer and main control condition. `check_phase21_root_expression_ingress.py` adds positive and no-trailer negative fixtures plus a removed-source ABI-v9 consumer rebuild. | The valid forms check and print `8`/`7` as specified in native O0/O3 and Fast Debug; the imported consumer prints `8`/`7`; a no-trailer nested Root still emits `ROOT_UNHANDLED_RAISE`. Isolated and integrated `make check`/examples, strict GCC/Clang and four-pair Float matrix pass. **Engineering repair validated; independent Architect disposition pending.** |
+| ARCH-V9-01; absolute Root/public O1 | Architect L6 independently reproduced `echo 1 + message worker.Fetch()` with exhaustive `on_fail E.Bad: reply 7` failing Moss checking at `96eef9e`; binary/vector/call and source-removed provider forms also failed. `3a964dc` carries `root_ingress` through every recursive expression effect transfer and main control condition. `check_phase21_root_expression_ingress.py` adds positive and no-trailer negative fixtures plus a removed-source ABI-v9 consumer rebuild. | **FIXED and independently verified at `19cf731`.** The Architect reran binary, call, direct, grouped, valid vector-value and source-removed provider cases in native O0/O3 and Fast Debug, plus no-trailer and nested-handler negatives; its exact-SHA addendum records the GO. |
+| ARCH-V9-02; general whole-vector output | The Architect's literal `echo [message worker.Fetch()]` probe now checks but rustc fails E0277; the minimal control `fn main(): echo [1]` has the same result on both `96eef9e` and `19cf731`, while Fast Debug prints `[1]`. The checker accepts whole-vector echo but native lowering requires `Display` for `Vec<i64>`. | **CONFIRMED, outside the approved Phase 21 Root/ABI acceptance scope.** The Architect explicitly excluded this pre-existing general output defect from its Phase 21 GO. Track for compiler checker/native output hardening; the supported vector-element Root case checks and executes. No claim of a fix or permanent passing regression is made. |
 | EXT-01, EXT-18, INT-02 | Checked FileIO operations, cleanup, errno mapping, and fresh Root failure locks remain covered by `check_phase21_lock_fileio_adversarial.py`, `check_phase21_fileio_errors.py`, and `check_phase21_fileio_close_full.py`. `98391aa` introduced compiler `std.FileError`; `838aae6` migrated the adversarial identity fixture. | Exact-source `make check` includes the fault-injection, cleanup and concurrent Root gates; Architect retest pending. |
 | EXT-02, EXT-06 | Absolute Root typed-error boundary, including synchronous, Executor and source-free ingress, is covered by `check_phase21_root_totality.py`. | Exact-source `make check` includes Root totality and native/Fast Debug/source-free controls; Architect retest pending. |
 | EXT-03, INT-11; addendum **A** | `6aa69be` repairs implicit final-expression method raises and exact local/generic specialization effects. `check_phase21_addendum_a_c.py` includes unhandled and handled trailing methods and a generic negative; preexisting unary/projection, collection and helper gates remain. | The unchanged supplied A is rejected at `main` by check, both native generator modes and Fast Debug. Whole-program `effects` also rejects invalid A; a recovery-only scratch companion reports `via_local` exactly `enum:E:A`. The permanent gate covers check/effects/native/Debug. Engineering **FIXED** on `c1ef3eb`; Architect retest pending. |
@@ -71,7 +74,12 @@ INFO). `make examples` built 32 positive examples. Strict GCC 13.3 and Clang
 18.1 C++17 `-O2 -Wall -Wextra -Werror -pedantic` passed. GCC/Clang × Rust
 1.97/1.98 Float native O0/O3 and Fast Debug output matched both pinned corpora
 byte-for-byte. The full environment and gate matrix are in the final review.
-Independent architectural acceptance remains pending L7 coordination.
+The independent Architect subsequently issued a scoped GO at `19cf731` after
+focused exact-SHA challenge. Its addendum separately records a pre-existing
+whole-vector `echo` checker/native discrepancy (`echo [1]` checks but rustc
+reports E0277) outside the approved Phase 21 Root/ABI contract. The issue is
+tracked here and in the final review for general compiler hardening; the
+valid vector-element Root case passes. L7 merge authorization remains pending.
 
 ## Historical issue record through `5941d98`
 

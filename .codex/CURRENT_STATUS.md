@@ -1,5 +1,27 @@
 # Moss current status
 
+## Phase 21 independent Architect GO; L7 merge gate — 2026-10-11
+
+Exact reviewed implementation: `19cf731ae08291500e7488c8a03df123aac4f9aa`
+on `phase-21-integration`. The independent Architect L6 retested its earlier
+nested Root expression counterexample in checker, native O0/O3, Fast Debug
+and a consumer rebuilt after removing provider source. It also challenged
+no-trailer and nested-handler safety, ABI-v9 binding, O1/O4/O8 and bounded
+early-placement gates. Its separately attributable **GO for the approved
+Phase 21 scope** is in `docs/PHASE_21_ARCHITECT_V9_RETEST_19CF731.md`. The
+earlier `96eef9e` NO-GO remains valid for that older SHA.
+
+Engineering's `make check`, `make examples`, strict GCC/Clang C++17, four-pair
+Float matrix, source-free and focused Root gates pass on the reviewed
+implementation source. The Architect separately found that whole-vector
+`echo [1]` checks but fails generated Rust with E0277 on both `96eef9e` and
+`19cf731`; it classified this pre-existing general compiler defect outside
+the Phase 21 Root/ABI acceptance contract. Track for checker/native output
+hardening. The supported vector-element Root case passes.
+
+**Engineering L6: GO. Independent Architect L6: GO at `19cf731`. L7:
+HOLD merge pending explicit approval.** No merge into `main` has occurred.
+
 ## Phase 21 independent Architect NO-GO and engineering repair — 2026-10-11
 
 Independent Architect L6 reviewed exact pushed `96eef9e` and recorded an
