@@ -1,5 +1,31 @@
 # Moss current status
 
+## Phase 24 repository-wide agent feedback bootstrap — 2026-10-12
+
+Phase A infrastructure is complete on `phase24-agent-feedback-bootstrap`.
+The reviewed implementation commit is
+`0a99ee9fb3797404d8d84cc429313df8fd6818dd`, based directly on
+`e563401a4938b76bcfce1a9c727c55b155fdc652`. It defines the repository-wide
+developer-experience policy, versioned schema, dependency-free JSONL validator,
+valid examples, summary template, Team T guidance, onboarding hooks, and test
+workflow integration. `AGENTS.md` and `moss-agent-workflow` require ongoing
+ordinary-development capture while preserving the separate SWARM experimental
+protocol; work qualifying for both cross-links evidence rather than duplicating
+issue stores. The AGENTS Git boundary now positively authorizes remote pushes
+only on explicit user direction, replacing its earlier no-push wording.
+
+The independent Architect issued **GO** for exact candidate `0a99ee9` after
+fresh positive, critical/negative, malformed, duplicate, path, rogue-filename,
+empty-repository, and Draft 2020-12 schema checks. It also verified that existing
+SWARM policy, schemas, and validators are unchanged. Focused feedback, skill,
+SWARM, shell, and whitespace checks pass. On the same candidate,
+`TMPDIR="$PWD/tmp" make check` exited 0 with 54/54 executor tests and
+`all Moss v0.1 tests passed`; `make examples` built every positive example.
+
+Branch publication and the authorized feedback-only merge into the freshly
+fetched `phase24-integration` remain. After that merge is pushed, record its
+exact SHA and fork Team T's `phase24-text` branch from that remote commit.
+
 ## Phase 24 Foundations SDK independent Architect final adversarial GO; L7 merge gate — 2026-10-12
 
 Exact reviewed implementation: `23d625ba09d20490b8c5e98beddcd246b2bac416`

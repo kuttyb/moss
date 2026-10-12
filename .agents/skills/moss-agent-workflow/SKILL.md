@@ -25,7 +25,9 @@ This is the required start of every fresh Moss task:
    and/or `./moss agent schema --json` for its purpose, inputs, response shape, stable
    identities, and common failure modes.
 8. Use `./margo` for package/project work and `./moss` for language and semantic work.
-9. Only then inspect or edit Moss source.
+9. For Moss source, SDK, compiler, runtime, or ecosystem work, read
+   `agent-feedback/README.md` and identify the project/workstream record path.
+10. Only then inspect or edit Moss source.
 
 In a repository checkout, prefer `./moss` and `./margo`. Bare `moss` and
 `margo` are valid when those executables are already available on `PATH`; the
@@ -34,6 +36,20 @@ bootstrap contract treats them as logical tool names, not different tools.
 The language skill declares `moss-0.1`. Compare it with bootstrap's
 `result.language_version`; a mismatch means the skill may be stale. Refresh live
 discovery and report the mismatch rather than trusting historical guidance.
+
+## Developer-experience feedback during ordinary work
+
+For Moss source, SDK, compiler, runtime, and ecosystem tasks, follow
+`agent-feedback/README.md` throughout the work. Store meaningful JSONL
+observations by phase, project, and actual workstream. Record specific positive,
+negative, or uncertain experiences near the time they occur, preserve original
+records after resolution, and never invent entries to meet a quota. Evidence
+should show how a language or tool behavior affected the real task; availability
+alone is not evidence that a tool helped.
+
+This ongoing developer-experience record is distinct from the experimental
+SWARM protocol below. When both apply, follow both and cross-link durable
+evidence or a canonical SWARM issue rather than duplicating defect databases.
 
 ## Experimental feedback inventory
 
@@ -90,6 +106,8 @@ moss_workflow_contract:
   composition_initializers: bootstrap-discoverable
   fileio_executor: bootstrap-discoverable
   gap_classification: minimal-reproducer-first
+  developer_experience_feedback: agent-feedback-v1
+  experimental_feedback: swarm-protocol
 ```
 
 ## Route unfamiliar questions through discovery
@@ -188,12 +206,15 @@ language-discovery surface for a Moss programmer or fresh agent.
 2. Use the versioned `moss-agent-1` bootstrap result as the live capability manifest;
    use `capabilities` and `schema` for progressive detail rather than compiler-source
    archaeology.
-3. Inspect the relevant source and make the smallest edit that expresses the intended
+3. For covered development work, read `agent-feedback/README.md`, identify the
+   phase/project/workstream path, and capture meaningful observations as they
+   occur rather than reconstructing them at closeout.
+4. Inspect the relevant source and make the smallest edit that expresses the intended
    Moss change. Do not edit generated Rust.
-4. Check the program first. For a standalone source, use
+5. Check the program first. For a standalone source, use
    `moss check path/to/file.moss --json`. In a project, use the source path that
    identifies the physical file you are investigating.
-5. Read structured diagnostics before guessing at a repair. Diagnostics include a
+6. Read structured diagnostics before guessing at a repair. Diagnostics include a
    stable code and source span. Specialized teaching diagnostics additionally expose
    `rule`, `cause.entities`, `related` locations, and compiler-owned `guidance`; entity
    facts may include an exact expression, argument index, semantic identity, and
@@ -427,6 +448,12 @@ session-report-template --json` provides the standard prompt. Note which compile
 features reduced ambiguity, significant edit/check/repair cycles, remaining guesses,
 whether impact/affected tests avoided work, and the next most valuable compiler-agent
 improvement. This is local dogfooding, not telemetry.
+
+For work covered by the repository developer-experience policy, also review the
+workstream's raw observations, preserve their original account and resolution
+history, and run `python3 tests/tooling/check_agent_feedback.py`. Project summaries
+supplement the JSONL evidence; they never replace it. SWARM experiments additionally
+perform their separate closeout and validators under `examples/swarm/SWARM.md`.
 
 The skill is operational guidance, not a substitute for the compiler or a new language
 specification. If it drifts, correct the skill/docs and retain current compiler

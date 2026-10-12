@@ -29,6 +29,7 @@ COMPOSITION_PURE_HELPER = ROOT / "tests" / "tooling" / "fixtures" / "moss_compos
 TEST_COMPOSITION_ROOT_REJECTED = ROOT / "tests" / "tooling" / "fixtures" / "moss_test_domain_composition_root_rejected.moss"
 IMPURE_COMPOSITION_INITIALIZER = ROOT / "tests" / "negative" / "phase106b_impure_state_initializer.moss"
 AGENTS = ROOT / "AGENTS.md"
+FEEDBACK_POLICY = ROOT / "agent-feedback" / "README.md"
 MARGO = ROOT / "margo"
 
 
@@ -162,6 +163,8 @@ def main() -> int:
             "composition_initializers": "bootstrap-discoverable",
             "fileio_executor": "bootstrap-discoverable",
             "gap_classification": "minimal-reproducer-first",
+            "developer_experience_feedback": "agent-feedback-v1",
+            "experimental_feedback": "swarm-protocol",
         },
         "moss-agent-workflow",
     )
@@ -176,6 +179,36 @@ def main() -> int:
     ):
         if marker not in workflow:
             fail(f"moss-agent-workflow no longer exposes invocation contract: {marker}")
+
+    agents = AGENTS.read_text(encoding="utf-8")
+    if not FEEDBACK_POLICY.is_file():
+        fail("repository-wide developer-experience feedback policy is missing")
+    feedback_policy = FEEDBACK_POLICY.read_text(encoding="utf-8")
+    for marker in (
+        "must read `agent-feedback/README.md` at project startup",
+        "follow it\nthroughout the work",
+        "Ordinary development uses `agent-feedback/",
+        "SWARM, dogfood, fresh-agent, and language-surface experiments",
+        "Work that qualifies for both follows both protocols",
+    ):
+        if marker not in agents:
+            fail(f"AGENTS.md no longer discovers the feedback policy: {marker}")
+    for marker in (
+        "read\n   `agent-feedback/README.md`",
+        "Record specific positive,\nnegative, or uncertain experiences near the time they occur",
+        "This ongoing developer-experience record is distinct from the experimental\nSWARM protocol",
+        "run `python3 tests/tooling/check_agent_feedback.py`",
+    ):
+        if marker not in workflow:
+            fail(f"moss-agent-workflow no longer enforces feedback capture: {marker}")
+    for marker in (
+        "agent-feedback/<phase>/<team-project>/<workstream>/observations.jsonl",
+        "There is no minimum count",
+        "follow both\n  protocols",
+        "Do not commit credentials",
+    ):
+        if marker not in feedback_policy:
+            fail(f"developer-experience feedback policy drifted: {marker}")
 
     onboarding = readme.split("### Coding-agent onboarding", 1)[1]
     loop = onboarding.split("```sh", 1)[1].split("```", 1)[0].strip().splitlines()
