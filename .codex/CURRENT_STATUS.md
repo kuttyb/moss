@@ -1,5 +1,26 @@
 # Moss current status
 
+## Phase 24 Team T performance sprint — engineering candidate — 2026-10-12
+
+The integrated sprint now includes compiler-owned `String.find`, code-point
+`String.slice` with an ASCII byte-offset fast path, ASCII case operations,
+empty-concat clone lowering, thin `moss.text` wrappers, and UTF-8 hot loops
+without per-byte cross-package/helper calls. The complete evidence and candid
+exceptions are in `docs/PHASE_24_TEXT_ENCODING_PERF_DELIVERY.md`.
+
+Coordinator validation passes: full native debug/release/Fast Debug Team T
+acceptance, compiled-only Text and source-free ABI-v9 Encoding consumers, the
+66-valid/15-invalid three-mode Python oracle, six SHA-bound release providers,
+strict Rust references, codec measurements, feedback/skill validators, and
+`TMPDIR="$PWD/tmp" make check` ending in `all Moss v0.1 tests passed`.
+
+Independent V gives correctness/methodology/provider/ABI GO but retains a
+performance HOLD: multibyte search varies around 2x idiomatic Rust and the
+observable retained-segment builder remains 5.8x–18.5x behind a one-allocation
+reserved Rust builder. Engineering therefore issues conditional GO, not an
+unqualified parity claim. The next gate is an independent Architect review of
+the frozen engineering SHA; Team I alone owns integration.
+
 ## Phase 24 Team T performance sprint — independent V review — 2026-10-12
 
 Independent validation reviewed implementation SHA

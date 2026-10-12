@@ -131,6 +131,34 @@ This disposition predates the L7 stabilization request. A new independently
 attributable exact-SHA performance and error-contract review was therefore
 required before delivery.
 
+## Performance sprint addendum
+
+The performance sprint replaces the materializing search, slice, and ASCII
+case paths with compiler-owned read-only String operations and removes
+per-byte cross-package/helper calls from UTF-8 hot loops. Corrected release
+measurements put search and slicing near Rust-class performance, ASCII casing
+at parity when input is preconstructed, and UTF-8 within 1.42x of
+representation-matched Rust in independent runs. Original and stabilization
+records remain preserved rather than rewritten.
+
+The dogfood trail identified two honest limits. First, multibyte search varies
+around the 2x idiomatic-Rust ceiling despite generated code using the same
+native search and code-point conversion algorithm. Second, the public builder
+retains independently owned, inspectable `Vector[String]` segments and cannot
+match a one-allocation reserved Rust String without a representation/API
+decision. Rust allocation instrumentation measured 263 allocations for the
+matched 128-segment contract and one for the reserved builder; no Moss
+allocation count is inferred. Large end-to-end casing additionally exposes
+general nonempty String-concatenation cost, distinct from isolated casing.
+
+Independent validator V gave correctness, methodology, release-provider
+provenance, Fast Debug, and ABI-v9 **GO** for exact implementation `85a9138`,
+but retained a performance **HOLD / conditional NO-GO** pending L7 disposition
+of the builder exception and Architect review of the multibyte-search boundary.
+This disagreement is preserved in
+`docs/PHASE_24_TEXT_ENCODING_PERF_VALIDATION_V.md`; the Coordinator does not
+convert it into an unconditional parity claim.
+
 ## Stabilization review disposition
 
 - Reviewer role: Independent Team T L6 Architect.
