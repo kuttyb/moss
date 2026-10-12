@@ -35,7 +35,7 @@ fn main():
 
   var disjoint = "left"
   other = "-right"
-  disjoint.append(identity(other))
+  append_part(disjoint, identity(other))
   disjoint.reserve(string_length(other))
   assertEqual(disjoint, "left-right")
   echo "string concat ok"

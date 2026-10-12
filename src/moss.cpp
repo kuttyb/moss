@@ -7739,6 +7739,7 @@ class Checker {
       Effect effect;
       string expression;
       size_t argument_index = 0;
+      bool nested = false;
     };
     vector<Access> accesses;
     for (size_t index = 0; index < expressions.size(); ++index) {
@@ -7748,16 +7749,21 @@ class Checker {
         if (type && transfer_type(*type))
           accesses.push_back(Access{*location,
               index < effects.size() ? effects[index] : Effect::Read,
-              expressions[index], index});
+              expressions[index], index, false});
         continue;
       }
       if (!include_nested_accesses) continue;
       for (const auto& nested : expression_storage_accesses(expressions[index], env))
         accesses.push_back(Access{nested.first, nested.second,
-                                  expressions[index], index});
+                                  expressions[index], index, true});
     }
     for (size_t left = 0; left < accesses.size(); ++left) {
       for (size_t right = left + 1; right < accesses.size(); ++right) {
+        // Nested accesses happen while constructing owned argument values and
+        // finish before the outer call begins. Compare them with direct outer
+        // borrows, but do not invent overlap between two sequential nested
+        // computations.
+        if (accesses[left].nested && accesses[right].nested) continue;
         if (!storage_locations_overlap(accesses[left].location,
                                        accesses[right].location))
           continue;
@@ -11876,7 +11882,8 @@ class Checker {
           effects.push_back(concrete_function_parameter_effect(
               *function->second, index,
               concrete_argument_types(call_arguments, env.types)));
-        check_conflicting_call_accesses(line, callee, call_arguments, effects, env);
+        check_conflicting_call_accesses(line, callee, call_arguments, effects,
+                                        env, true);
       } else if (current_object_) {
         vector<string> argument_types;
         for (const auto& argument : call_arguments)

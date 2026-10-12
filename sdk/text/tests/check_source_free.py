@@ -36,7 +36,10 @@ with tempfile.TemporaryDirectory(prefix="text-source-free-", dir=SCRATCH) as tem
         '[package]\nname = "text_source_free_smoke"\nversion = "0.1.0"\n\n'
         '[build]\nsource = "src"\n', encoding="utf-8")
     (app / "src" / "main.moss").write_text(
-        'module app\nimport text\n\nfn main():\n'
+        'module app\nimport text\n\n'
+        'fn copy_twice(value: String) -> String:\n'
+        '  return value + value\n\n'
+        'fn main():\n'
         '  echo text.find("aé🙂z", "é🙂")\n'
         '  echo text.slice("aé🙂z", 1, 2)\n'
         '  echo text.to_ascii_lower("AZ-é🙂")\n'
@@ -48,6 +51,8 @@ with tempfile.TemporaryDirectory(prefix="text-source-free-", dir=SCRATCH) as tem
         '  var capacity = text.new_capacity_builder(16)\n'
         '  text.capacity_builder_append(capacity, "Moss")\n'
         '  text.capacity_builder_append_line(capacity, "🙂")\n'
+        '  other = "!"\n'
+        '  text.capacity_builder_append(capacity, copy_twice(other))\n'
         '  echo text.capacity_builder_build(capacity)\n'
         '  echo text.capacity_builder_finish(capacity)\n', encoding="utf-8")
     source_free_env = ENV | {"MOSS_MODULE_PATH": str(provider)}
@@ -60,7 +65,7 @@ with tempfile.TemporaryDirectory(prefix="text-source-free-", dir=SCRATCH) as tem
     result = subprocess.run([str(app / "build" / "debug" / "text_source_free_smoke")],
                             cwd=app, env=source_free_env, check=True,
                             capture_output=True, text=True)
-    assert result.stdout == "1\né🙂\naz-é🙂\nAZ-é🙂\nMoss🙂\nMoss🙂\n\nMoss🙂\n\n", result.stdout
+    assert result.stdout == "1\né🙂\naz-é🙂\nAZ-é🙂\nMoss🙂\nMoss🙂\n!!\nMoss🙂\n!!\n", result.stdout
     (app / "src" / "main.moss").write_text(
         'module app\nimport text\n\nfn main():\n'
         '  var builder = text.new_capacity_builder(16)\n'
@@ -74,16 +79,20 @@ with tempfile.TemporaryDirectory(prefix="text-source-free-", dir=SCRATCH) as tem
     (app / "src" / "main.moss").write_text(
         'module app\nimport text\n\n'
         'fn copy_twice(value: String) -> String:\n'
-        '  return value + ""\n\n'
+        '  return value + value\n\n'
         'fn main():\n'
         '  var builder = text.new_capacity_builder(16)\n'
         '  text.capacity_builder_append(builder, copy_twice(builder))\n',
         encoding="utf-8")
-    wrapped = subprocess.run([str(MOSS), "check", "src/main.moss", "--json"],
-                             cwd=app, env=source_free_env, check=False,
-                             capture_output=True, text=True)
-    assert wrapped.returncode != 0, wrapped.stdout
-    wrapped_diagnostic = json.loads(wrapped.stdout)
-    assert wrapped_diagnostic["error"]["code"] == \
-        "OWNERSHIP_CONFLICTING_ACCESS", wrapped_diagnostic
+    nested = subprocess.run([str(MOSS), "check", "src/main.moss", "--json"],
+                            cwd=app, env=source_free_env, check=False,
+                            capture_output=True, text=True)
+    assert nested.returncode != 0, nested.stdout
+    nested_diagnostic = json.loads(nested.stdout)
+    assert nested_diagnostic["error"]["code"] == \
+        "OWNERSHIP_CONFLICTING_ACCESS", nested_diagnostic
+    assert "text__capacity_builder_append" in \
+        nested_diagnostic["error"]["message"], nested_diagnostic
+    assert "overlapping WRITE and READ" in \
+        nested_diagnostic["error"]["message"], nested_diagnostic
 print("Compiled-only moss.text provider: check, build, run passed")

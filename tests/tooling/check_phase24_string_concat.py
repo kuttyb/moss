@@ -93,6 +93,13 @@ with tempfile.TemporaryDirectory(dir=ROOT / "tmp") as directory:
          'fn main():\n'
          '  var value = "x"\n'
          '  value.reserve(string_length(value))\n', 'string_length(value)'),
+        ('fn identity(value: String) -> String:\n'
+         '  return value + ""\n\n'
+         'fn append_part(target: String, part: String):\n'
+         '  target.append(part)\n\n'
+         'fn main():\n'
+         '  var value = "x"\n'
+         '  append_part(value, identity(value))\n', 'identity(value)'),
     ]:
         invalid = pathlib.Path(directory) / "nested-invalid.moss"
         invalid.write_text(body, encoding="utf-8")

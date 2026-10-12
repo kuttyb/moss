@@ -1,5 +1,18 @@
 # Moss current status
 
+## Phase 24 Team T source-free nested alias repair — 2026-10-12
+
+The post-`ca6cd0d` Architect case showed that ordinary/imported call overlap
+checking did not project nested argument access, allowing a source-free
+`text.capacity_builder_append(builder, copy_twice(builder))` through Moss check
+before Rust E0502. Ordinary function overlap checking now uses the same
+transitive leaf-effect projection as mutable String builtins. It compares
+nested evaluation with direct outer borrows but not two sequential nested
+computations. The ABI-v9 source-free regression rejects the self-alias with
+JSON `OWNERSHIP_CONFLICTING_ACCESS` before rustc, while disjoint nested controls
+pass source-free native execution and ordinary Fast Debug. Coordinator
+integration and renewed exact-SHA Architect review remain pending.
+
 ## Phase 24 Team T String/builder repaired-candidate Architect — 2026-10-12
 
 The independent L6 Architect reviewed exact repaired SHA
@@ -19,7 +32,6 @@ and the three-mode UTF-8 oracle pass. The preserved first-review NO-GO and this
 re-review are documented in
 `docs/PHASE_24_TEXT_ENCODING_STRING_BUILDER_ARCHITECT.md`; another repaired and
 frozen SHA needs final review.
-
 ## Phase 24 Team T focused String/builder repaired candidate — 2026-10-12
 
 Engineering is **GO for renewed exact-SHA Architect review**. The combined tree
