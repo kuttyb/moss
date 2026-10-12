@@ -1,0 +1,585 @@
+module sparse
+
+import linalg
+import math
+
+# ============================================================================
+# Moss Phase 24 — Package B: moss.sparse
+# Compressed Sparse Row (CSR) and Compressed Sparse Column (CSC) representations,
+# coordinate triplet assembly with additive duplicate summation, SpMV, and SpMM.
+# ============================================================================
+
+# --- Types & Error Contracts ---
+
+export enum SparseError:
+  InvalidDimensions
+  DimensionMismatch
+  InvalidStructure
+  IndexOutOfBounds
+
+export type Triplet:
+  row: Int
+  col: Int
+  value: Float
+
+export type CsrMatrix:
+  rows: Int
+  cols: Int
+  row_ptrs: Vector[Int]
+  col_indices: Vector[Int]
+  values: Vector[Float]
+
+export type CscMatrix:
+  rows: Int
+  cols: Int
+  col_ptrs: Vector[Int]
+  row_indices: Vector[Int]
+  values: Vector[Float]
+
+# --- Triplet Sorting & CSR Assembly ---
+
+fn triplet_less(a: Triplet, b: Triplet) -> Bool:
+  if a.row < b.row:
+    return true
+  if a.row > b.row:
+    return false
+  return a.col < b.col
+
+fn sift_down_triplets(triplets, start: Int, end_idx: Int):
+  var root = start
+  while (root * 2 + 1) <= end_idx:
+    var child = root * 2 + 1
+    let right = child + 1
+    if right <= end_idx and triplet_less(triplets[child], triplets[right]):
+      child = right
+    if triplet_less(triplets[root], triplets[child]):
+      let tmp = triplets[root]
+      triplets[root] = triplets[child]
+      triplets[child] = tmp
+      root = child
+    else:
+      return
+
+fn heapsort_triplets(triplets):
+  let count_t = triplets |> count
+  if count_t <= 1:
+    return
+  var start = (count_t - 2) / 2
+  while start >= 0:
+    sift_down_triplets(triplets, start, count_t - 1)
+    start = start - 1
+  var end_idx = count_t - 1
+  while end_idx > 0:
+    let tmp = triplets[0]
+    triplets[0] = triplets[end_idx]
+    triplets[end_idx] = tmp
+    end_idx = end_idx - 1
+    sift_down_triplets(triplets, 0, end_idx)
+
+export fn from_triplets(rows: Int, cols: Int, in_triplets: Vector[Triplet]) -> CsrMatrix:
+  if rows <= 0 or cols <= 0:
+    raise SparseError.InvalidDimensions
+  let n_t = in_triplets |> count
+  var i = 0
+  while i < n_t:
+    let t = in_triplets[i]
+    if t.row < 0 or t.row >= rows or t.col < 0 or t.col >= cols:
+      raise SparseError.IndexOutOfBounds
+    i = i + 1
+
+  heapsort_triplets(in_triplets)
+
+  var row_ptrs = Vector[Int]()
+  var col_indices = Vector[Int]()
+  var values = Vector[Float]()
+
+  row_ptrs.push(0)
+  var current_row = 0
+  var current_col = 0 - 1
+  var current_val = 0.0
+  var has_entry = false
+
+  var k = 0
+  while k < n_t:
+    let t = in_triplets[k]
+    if not has_entry:
+      while current_row < t.row:
+        row_ptrs.push(col_indices |> count)
+        current_row = current_row + 1
+      current_col = t.col
+      current_val = t.value
+      has_entry = true
+    else:
+      if t.row == current_row and t.col == current_col:
+        # Architect mandate: duplicate coordinates MUST be summed
+        current_val = current_val + t.value
+      else:
+        col_indices.push(current_col)
+        values.push(current_val)
+        while current_row < t.row:
+          row_ptrs.push(col_indices |> count)
+          current_row = current_row + 1
+        current_col = t.col
+        current_val = t.value
+    k = k + 1
+
+  if has_entry:
+    col_indices.push(current_col)
+    values.push(current_val)
+
+  while current_row < rows:
+    row_ptrs.push(col_indices |> count)
+    current_row = current_row + 1
+
+  return CsrMatrix(rows: rows, cols: cols, row_ptrs: row_ptrs, col_indices: col_indices, values: values)
+
+# --- Validation & Structural Properties ---
+
+export fn validate_csr(m: CsrMatrix) -> Bool:
+  if m.rows <= 0 or m.cols <= 0:
+    return false
+  let expected_rp_len = m.rows + 1
+  if (m.row_ptrs |> count) != expected_rp_len:
+    return false
+  if m.row_ptrs[0] != 0:
+    return false
+  let total_nnz = m.row_ptrs[m.rows]
+  if (m.col_indices |> count) != total_nnz:
+    return false
+  if (m.values |> count) != total_nnz:
+    return false
+  var r = 0
+  while r < m.rows:
+    let start_idx = m.row_ptrs[r]
+    let end_idx = m.row_ptrs[r + 1]
+    if start_idx > end_idx or end_idx > total_nnz:
+      return false
+    var k = start_idx
+    while k < end_idx:
+      let col = m.col_indices[k]
+      if col < 0 or col >= m.cols:
+        return false
+      if k > start_idx:
+        let prev_col = m.col_indices[k - 1]
+        if col <= prev_col:
+          return false
+      k = k + 1
+    r = r + 1
+  return true
+
+export fn validate_csc(m: CscMatrix) -> Bool:
+  if m.rows <= 0 or m.cols <= 0:
+    return false
+  let expected_cp_len = m.cols + 1
+  if (m.col_ptrs |> count) != expected_cp_len:
+    return false
+  if m.col_ptrs[0] != 0:
+    return false
+  let total_nnz = m.col_ptrs[m.cols]
+  if (m.row_indices |> count) != total_nnz:
+    return false
+  if (m.values |> count) != total_nnz:
+    return false
+  var c = 0
+  while c < m.cols:
+    let start_idx = m.col_ptrs[c]
+    let end_idx = m.col_ptrs[c + 1]
+    if start_idx > end_idx or end_idx > total_nnz:
+      return false
+    var k = start_idx
+    while k < end_idx:
+      let row = m.row_indices[k]
+      if row < 0 or row >= m.rows:
+        return false
+      if k > start_idx:
+        let prev_row = m.row_indices[k - 1]
+        if row <= prev_row:
+          return false
+      k = k + 1
+    c = c + 1
+  return true
+
+export fn nnz(m: CsrMatrix) -> Int:
+  return m.values |> count
+
+export fn density(m: CsrMatrix) -> Float:
+  let count_nnz = m.values |> count
+  let denom = (m.rows * 1.0) * (m.cols * 1.0)
+  return (count_nnz * 1.0) / denom
+
+export fn csr_get(m: CsrMatrix, r: Int, c: Int) -> Float:
+  if r < 0 or r >= m.rows or c < 0 or c >= m.cols:
+    raise SparseError.IndexOutOfBounds
+  let start_idx = m.row_ptrs[r]
+  let end_idx = m.row_ptrs[r + 1]
+  var low = start_idx
+  var high = end_idx - 1
+  while low <= high:
+    let mid = (low + high) / 2
+    let col = m.col_indices[mid]
+    if col == c:
+      return m.values[mid]
+    if col < c:
+      low = mid + 1
+    else:
+      high = mid - 1
+  return 0.0
+
+export fn csr_eliminate_zeros(m: CsrMatrix, tol: Float) -> CsrMatrix:
+  var row_ptrs = Vector[Int]()
+  var col_indices = Vector[Int]()
+  var values = Vector[Float]()
+  row_ptrs.push(0)
+  var r = 0
+  while r < m.rows:
+    let start_idx = m.row_ptrs[r]
+    let end_idx = m.row_ptrs[r + 1]
+    var k = start_idx
+    while k < end_idx:
+      let val = m.values[k]
+      if math.abs(val) > tol:
+        col_indices.push(m.col_indices[k])
+        values.push(val)
+      k = k + 1
+    row_ptrs.push(col_indices |> count)
+    r = r + 1
+  return CsrMatrix(rows: m.rows, cols: m.cols, row_ptrs: row_ptrs, col_indices: col_indices, values: values)
+
+# --- Dense Interoperability ---
+
+export fn from_dense(m: linalg.Matrix) -> CsrMatrix:
+  if m.rows <= 0 or m.cols <= 0:
+    raise SparseError.InvalidDimensions
+  var row_ptrs = Vector[Int]()
+  var col_indices = Vector[Int]()
+  var values = Vector[Float]()
+  row_ptrs.push(0)
+  var r = 0
+  while r < m.rows:
+    var c = 0
+    while c < m.cols:
+      let val = linalg.matrix_get(m, r, c)
+      if val != 0.0:
+        col_indices.push(c)
+        values.push(val)
+      c = c + 1
+    row_ptrs.push(col_indices |> count)
+    r = r + 1
+  return CsrMatrix(rows: m.rows, cols: m.cols, row_ptrs: row_ptrs, col_indices: col_indices, values: values)
+
+export fn to_dense(m: CsrMatrix) -> linalg.Matrix:
+  var dense = linalg.zeros(m.rows, m.cols)
+  var r = 0
+  while r < m.rows:
+    let start_idx = m.row_ptrs[r]
+    let end_idx = m.row_ptrs[r + 1]
+    var k = start_idx
+    while k < end_idx:
+      linalg.matrix_set(dense, r, m.col_indices[k], m.values[k])
+      k = k + 1
+    r = r + 1
+  return dense
+
+# --- Structural Conversions & Transpose ---
+
+export fn csr_to_csc(m: CsrMatrix) -> CscMatrix:
+  let nnz_count = m.values |> count
+  var col_counts = Vector[Int]()
+  var c = 0
+  while c < m.cols:
+    col_counts.push(0)
+    c = c + 1
+  var i = 0
+  while i < nnz_count:
+    let col = m.col_indices[i]
+    col_counts[col] = col_counts[col] + 1
+    i = i + 1
+
+  var col_ptrs = Vector[Int]()
+  var next_pos = Vector[Int]()
+  col_ptrs.push(0)
+  var cum = 0
+  c = 0
+  while c < m.cols:
+    next_pos.push(cum)
+    cum = cum + col_counts[c]
+    col_ptrs.push(cum)
+    c = c + 1
+
+  var row_indices = Vector[Int]()
+  var values = Vector[Float]()
+  i = 0
+  while i < nnz_count:
+    row_indices.push(0)
+    values.push(0.0)
+    i = i + 1
+
+  var r = 0
+  while r < m.rows:
+    let start_idx = m.row_ptrs[r]
+    let end_idx = m.row_ptrs[r + 1]
+    var k = start_idx
+    while k < end_idx:
+      let col = m.col_indices[k]
+      let val = m.values[k]
+      let dest = next_pos[col]
+      row_indices[dest] = r
+      values[dest] = val
+      next_pos[col] = dest + 1
+      k = k + 1
+    r = r + 1
+
+  return CscMatrix(rows: m.rows, cols: m.cols, col_ptrs: col_ptrs, row_indices: row_indices, values: values)
+
+export fn csc_to_csr(m: CscMatrix) -> CsrMatrix:
+  let nnz_count = m.values |> count
+  var row_counts = Vector[Int]()
+  var r = 0
+  while r < m.rows:
+    row_counts.push(0)
+    r = r + 1
+  var i = 0
+  while i < nnz_count:
+    let row = m.row_indices[i]
+    row_counts[row] = row_counts[row] + 1
+    i = i + 1
+
+  var row_ptrs = Vector[Int]()
+  var next_pos = Vector[Int]()
+  row_ptrs.push(0)
+  var cum = 0
+  r = 0
+  while r < m.rows:
+    next_pos.push(cum)
+    cum = cum + row_counts[r]
+    row_ptrs.push(cum)
+    r = r + 1
+
+  var col_indices = Vector[Int]()
+  var values = Vector[Float]()
+  i = 0
+  while i < nnz_count:
+    col_indices.push(0)
+    values.push(0.0)
+    i = i + 1
+
+  var c = 0
+  while c < m.cols:
+    let start_idx = m.col_ptrs[c]
+    let end_idx = m.col_ptrs[c + 1]
+    var k = start_idx
+    while k < end_idx:
+      let row = m.row_indices[k]
+      let val = m.values[k]
+      let dest = next_pos[row]
+      col_indices[dest] = c
+      values[dest] = val
+      next_pos[row] = dest + 1
+      k = k + 1
+    c = c + 1
+
+  return CsrMatrix(rows: m.rows, cols: m.cols, row_ptrs: row_ptrs, col_indices: col_indices, values: values)
+
+export fn csr_transpose(m: CsrMatrix) -> CsrMatrix:
+  let nnz_count = m.values |> count
+  var col_counts = Vector[Int]()
+  var c = 0
+  while c < m.cols:
+    col_counts.push(0)
+    c = c + 1
+  var i = 0
+  while i < nnz_count:
+    let col = m.col_indices[i]
+    col_counts[col] = col_counts[col] + 1
+    i = i + 1
+
+  var row_ptrs = Vector[Int]()
+  var next_pos = Vector[Int]()
+  row_ptrs.push(0)
+  var cum = 0
+  c = 0
+  while c < m.cols:
+    next_pos.push(cum)
+    cum = cum + col_counts[c]
+    row_ptrs.push(cum)
+    c = c + 1
+
+  var col_indices = Vector[Int]()
+  var values = Vector[Float]()
+  i = 0
+  while i < nnz_count:
+    col_indices.push(0)
+    values.push(0.0)
+    i = i + 1
+
+  var r = 0
+  while r < m.rows:
+    let start_idx = m.row_ptrs[r]
+    let end_idx = m.row_ptrs[r + 1]
+    var k = start_idx
+    while k < end_idx:
+      let col = m.col_indices[k]
+      let val = m.values[k]
+      let dest = next_pos[col]
+      col_indices[dest] = r
+      values[dest] = val
+      next_pos[col] = dest + 1
+      k = k + 1
+    r = r + 1
+
+  return CsrMatrix(rows: m.cols, cols: m.rows, row_ptrs: row_ptrs, col_indices: col_indices, values: values)
+
+# --- Arithmetic & Matrix Operations ---
+
+export fn csr_scale(m: CsrMatrix, s: Float) -> CsrMatrix:
+  var new_vals = Vector[Float]()
+  let total_nnz = m.values |> count
+  var i = 0
+  while i < total_nnz:
+    new_vals.push(m.values[i] * s)
+    i = i + 1
+
+  var new_row_ptrs = Vector[Int]()
+  let rp_len = m.row_ptrs |> count
+  i = 0
+  while i < rp_len:
+    new_row_ptrs.push(m.row_ptrs[i])
+    i = i + 1
+
+  var new_col_indices = Vector[Int]()
+  let ci_len = m.col_indices |> count
+  i = 0
+  while i < ci_len:
+    new_col_indices.push(m.col_indices[i])
+    i = i + 1
+
+  return CsrMatrix(rows: m.rows, cols: m.cols, row_ptrs: new_row_ptrs, col_indices: new_col_indices, values: new_vals)
+
+export fn csr_mat_vec_mul(m: CsrMatrix, v: Vector[Float]) -> Vector[Float]:
+  let v_len = v |> count
+  if m.cols != v_len:
+    raise SparseError.DimensionMismatch
+  var res = Vector[Float]()
+  var r = 0
+  while r < m.rows:
+    var sum = 0.0
+    let start_idx = m.row_ptrs[r]
+    let end_idx = m.row_ptrs[r + 1]
+    var k = start_idx
+    while k < end_idx:
+      let col = m.col_indices[k]
+      sum = sum + m.values[k] * v[col]
+      k = k + 1
+    res.push(sum)
+    r = r + 1
+  return res
+
+export fn csr_mat_add(a: CsrMatrix, b: CsrMatrix) -> CsrMatrix:
+  if a.rows != b.rows or a.cols != b.cols:
+    raise SparseError.DimensionMismatch
+  var row_ptrs = Vector[Int]()
+  var col_indices = Vector[Int]()
+  var values = Vector[Float]()
+  row_ptrs.push(0)
+
+  var r = 0
+  while r < a.rows:
+    var ptr_a = a.row_ptrs[r]
+    let end_a = a.row_ptrs[r + 1]
+    var ptr_b = b.row_ptrs[r]
+    let end_b = b.row_ptrs[r + 1]
+    while ptr_a < end_a and ptr_b < end_b:
+      let col_a = a.col_indices[ptr_a]
+      let col_b = b.col_indices[ptr_b]
+      if col_a < col_b:
+        col_indices.push(col_a)
+        values.push(a.values[ptr_a])
+        ptr_a = ptr_a + 1
+      else:
+        if col_b < col_a:
+          col_indices.push(col_b)
+          values.push(b.values[ptr_b])
+          ptr_b = ptr_b + 1
+        else:
+          col_indices.push(col_a)
+          values.push(a.values[ptr_a] + b.values[ptr_b])
+          ptr_a = ptr_a + 1
+          ptr_b = ptr_b + 1
+    while ptr_a < end_a:
+      col_indices.push(a.col_indices[ptr_a])
+      values.push(a.values[ptr_a])
+      ptr_a = ptr_a + 1
+    while ptr_b < end_b:
+      col_indices.push(b.col_indices[ptr_b])
+      values.push(b.values[ptr_b])
+      ptr_b = ptr_b + 1
+
+    row_ptrs.push(col_indices |> count)
+    r = r + 1
+
+  return CsrMatrix(rows: a.rows, cols: a.cols, row_ptrs: row_ptrs, col_indices: col_indices, values: values)
+
+export fn csr_mat_mul(a: CsrMatrix, b: CsrMatrix) -> CsrMatrix:
+  if a.cols != b.rows:
+    raise SparseError.DimensionMismatch
+  var row_ptrs = Vector[Int]()
+  var col_indices = Vector[Int]()
+  var values = Vector[Float]()
+  row_ptrs.push(0)
+
+  var acc = Vector[Float]()
+  var visited = Vector[Bool]()
+  var c = 0
+  while c < b.cols:
+    acc.push(0.0)
+    visited.push(false)
+    c = c + 1
+
+  var r = 0
+  while r < a.rows:
+    var cols_in_row = Vector[Int]()
+    let start_a = a.row_ptrs[r]
+    let end_a = a.row_ptrs[r + 1]
+    var ka = start_a
+    while ka < end_a:
+      let a_col = a.col_indices[ka]
+      let a_val = a.values[ka]
+      let start_b = b.row_ptrs[a_col]
+      let end_b = b.row_ptrs[a_col + 1]
+      var kb = start_b
+      while kb < end_b:
+        let b_col = b.col_indices[kb]
+        let b_val = b.values[kb]
+        if not visited[b_col]:
+          visited[b_col] = true
+          cols_in_row.push(b_col)
+        acc[b_col] = acc[b_col] + a_val * b_val
+        kb = kb + 1
+      ka = ka + 1
+
+    let n_cols_row = cols_in_row |> count
+    var i = 1
+    while i < n_cols_row:
+      let key = cols_in_row[i]
+      var j = i - 1
+      while j >= 0 and cols_in_row[j] > key:
+        cols_in_row[j + 1] = cols_in_row[j]
+        j = j - 1
+      cols_in_row[j + 1] = key
+      i = i + 1
+
+    var idx = 0
+    while idx < n_cols_row:
+      let col_idx = cols_in_row[idx]
+      let val = acc[col_idx]
+      if val != 0.0:
+        col_indices.push(col_idx)
+        values.push(val)
+      acc[col_idx] = 0.0
+      visited[col_idx] = false
+      idx = idx + 1
+
+    row_ptrs.push(col_indices |> count)
+    r = r + 1
+
+  return CsrMatrix(rows: a.rows, cols: b.cols, row_ptrs: row_ptrs, col_indices: col_indices, values: values)

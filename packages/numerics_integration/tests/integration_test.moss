@@ -1,0 +1,62 @@
+module integration_test
+
+import numerics_integration
+import linalg
+import sparse
+import statistics
+import math
+
+test "linear regression solve and residual statistical summary":
+  # Design matrix X: 5 samples, 3 features (intercept + 2 predictors)
+  # [1.0, 0.0, 1.0] -> y = 3.0 + 2.0*0 - 1.5*1 = 1.5
+  # [1.0, 1.0, 0.0] -> y = 3.0 + 2.0*1 - 1.5*0 = 5.0
+  # [1.0, 2.0, 2.0] -> y = 3.0 + 2.0*2 - 1.5*2 = 4.0
+  # [1.0, 3.0, 1.0] -> y = 3.0 + 2.0*3 - 1.5*1 = 7.5
+  # [1.0, 4.0, 3.0] -> y = 3.0 + 2.0*4 - 1.5*3 = 6.5
+  let x_data = [1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 2.0, 2.0, 1.0, 3.0, 1.0, 1.0, 4.0, 3.0]
+  let x = linalg.from_vector(5, 3, x_data)
+  let y = [1.5, 5.0, 4.0, 7.5, 6.5]
+
+  let res = numerics_integration.solve_linear_regression(x, y)
+  assertEqual(res.beta |> count, 3)
+  assert(math.abs(res.beta[0] - 3.0) < 0.00000001)
+  assert(math.abs(res.beta[1] - 2.0) < 0.00000001)
+  assert(math.abs(res.beta[2] - (0.0 - 1.5)) < 0.00000001)
+
+  # Check residuals summary
+  assertEqual(res.residual_summary.count, 5)
+  assert(math.abs(res.residual_summary.mean_val) < 0.00000001)
+  assert(res.residual_summary.var_val < 0.00000001)
+
+test "sparse dense SpMV consistency":
+  var triplets = [sparse.Triplet(row: 0, col: 0, value: 10.0), sparse.Triplet(row: 0, col: 3, value: 2.5), sparse.Triplet(row: 1, col: 1, value: 5.0), sparse.Triplet(row: 2, col: 0, value: 1.5), sparse.Triplet(row: 2, col: 2, value: 8.0), sparse.Triplet(row: 3, col: 3, value: 3.0)]
+  let sp = sparse.from_triplets(4, 4, triplets)
+
+  var v = Vector[Float]()
+  v.push(1.0)
+  v.push(2.0)
+  v.push(3.0)
+  v.push(4.0)
+
+  let max_diff = numerics_integration.verify_sparse_dense_consistency(sp, v)
+  assert(max_diff < 0.00000001)
+
+test "sparse spectral diagonal and streaming equivalence":
+  var triplets = [sparse.Triplet(row: 0, col: 1, value: 3.0), sparse.Triplet(row: 1, col: 0, value: 4.0), sparse.Triplet(row: 2, col: 2, value: 5.0)]
+  let sp = sparse.from_triplets(3, 3, triplets)
+
+  let diag_summary = numerics_integration.analyze_sparse_spectrum_diagonal(sp)
+  assertEqual(diag_summary.count, 3)
+  # Diagonal of A * A^T: row 0 has 3^2=9, row 1 has 4^2=16, row 2 has 5^2=25
+  assertEqual(diag_summary.min_val, 9.0)
+  assertEqual(diag_summary.max_val, 25.0)
+  assert(math.abs(diag_summary.mean_val - (50.0 / 3.0)) < 0.00000001)
+
+  # Verify streaming accumulator matches
+  var running = statistics.new_running_stats()
+  statistics.running_update(running, 9.0)
+  statistics.running_update(running, 16.0)
+  statistics.running_update(running, 25.0)
+  assertEqual(statistics.running_count(running), 3)
+  assert(math.abs(statistics.running_mean(running) - (50.0 / 3.0)) < 0.00000001)
+  assert(math.abs(statistics.running_variance(running, true) - diag_summary.var_val) < 0.00000001)

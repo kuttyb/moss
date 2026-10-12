@@ -1,0 +1,12 @@
+[package]
+name = "moss.numerics_integration"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+linalg = { path = "../linalg" }
+sparse = { path = "../sparse" }
+statistics = { path = "../statistics" }
+math = { path = "../math" }

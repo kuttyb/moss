@@ -1,0 +1,122 @@
+module sparse_test
+
+import sparse
+import linalg
+import math
+
+test "triplet construction and duplicate summation":
+  var triplets = [sparse.Triplet(row: 0, col: 0, value: 1.0), sparse.Triplet(row: 0, col: 2, value: 2.0), sparse.Triplet(row: 0, col: 0, value: 4.0), sparse.Triplet(row: 1, col: 1, value: 3.0), sparse.Triplet(row: 2, col: 0, value: 7.0)]
+  let m = sparse.from_triplets(3, 3, triplets)
+  assert(sparse.validate_csr(m))
+  assertEqual(sparse.nnz(m), 4)
+  assertEqual(sparse.csr_get(m, 0, 0), 5.0)
+  assertEqual(sparse.csr_get(m, 0, 2), 2.0)
+  assertEqual(sparse.csr_get(m, 1, 1), 3.0)
+  assertEqual(sparse.csr_get(m, 2, 0), 7.0)
+  assertEqual(sparse.csr_get(m, 0, 1), 0.0)
+
+test "sparse bounds and error contracts":
+  var caught_invalid_dim = false
+  try:
+    ignored1 = sparse.from_triplets(0, 3, [])
+  recover sparse.SparseError.InvalidDimensions:
+    caught_invalid_dim = true
+  assert(caught_invalid_dim)
+
+  var caught_oob = false
+  try:
+    ignored2 = sparse.from_triplets(3, 3, [sparse.Triplet(row: 3, col: 0, value: 1.0)])
+  recover sparse.SparseError.IndexOutOfBounds:
+    caught_oob = true
+  assert(caught_oob)
+
+  var caught_get_oob = false
+  let m = sparse.from_triplets(2, 2, [])
+  try:
+    ignored3 = sparse.csr_get(m, 2, 0)
+  recover sparse.SparseError.IndexOutOfBounds:
+    caught_get_oob = true
+  assert(caught_get_oob)
+
+test "dense interop":
+  var triplets = [sparse.Triplet(row: 0, col: 1, value: 4.5), sparse.Triplet(row: 1, col: 0, value: 2.5)]
+  let sp = sparse.from_triplets(2, 2, triplets)
+
+  let dense = sparse.to_dense(sp)
+  assertEqual(dense.rows, 2)
+  assertEqual(dense.cols, 2)
+  assertEqual(linalg.matrix_get(dense, 0, 1), 4.5)
+  assertEqual(linalg.matrix_get(dense, 1, 0), 2.5)
+  assertEqual(linalg.matrix_get(dense, 0, 0), 0.0)
+
+  let back_sp = sparse.from_dense(dense)
+  assert(sparse.validate_csr(back_sp))
+  assertEqual(sparse.csr_get(back_sp, 0, 1), 4.5)
+  assertEqual(sparse.csr_get(back_sp, 1, 0), 2.5)
+
+test "csc conversion and transpose":
+  var triplets = [sparse.Triplet(row: 0, col: 2, value: 10.0), sparse.Triplet(row: 1, col: 0, value: 20.0)]
+  let m = sparse.from_triplets(2, 3, triplets)
+
+  let csc = sparse.csr_to_csc(m)
+  assert(sparse.validate_csc(csc))
+
+  let csr_back = sparse.csc_to_csr(csc)
+  assert(sparse.validate_csr(csr_back))
+  assertEqual(sparse.csr_get(csr_back, 0, 2), 10.0)
+  assertEqual(sparse.csr_get(csr_back, 1, 0), 20.0)
+
+  let tr = sparse.csr_transpose(m)
+  assert(sparse.validate_csr(tr))
+  assertEqual(tr.rows, 3)
+  assertEqual(tr.cols, 2)
+  assertEqual(sparse.csr_get(tr, 2, 0), 10.0)
+  assertEqual(sparse.csr_get(tr, 0, 1), 20.0)
+
+test "sparse mat vec mul and arithmetic":
+  var triplets = [sparse.Triplet(row: 0, col: 0, value: 5.0), sparse.Triplet(row: 0, col: 2, value: 2.0), sparse.Triplet(row: 1, col: 1, value: 3.0), sparse.Triplet(row: 2, col: 0, value: 7.0)]
+  let a = sparse.from_triplets(3, 3, triplets)
+
+  var v = Vector[Float]()
+  v.push(1.0)
+  v.push(2.0)
+  v.push(3.0)
+  let y = sparse.csr_mat_vec_mul(a, v)
+  assertEqual(y[0], 11.0)
+  assertEqual(y[1], 6.0)
+  assertEqual(y[2], 7.0)
+
+  let a2 = sparse.csr_scale(a, 2.0)
+  assertEqual(sparse.csr_get(a2, 0, 0), 10.0)
+  assertEqual(sparse.csr_get(a2, 0, 2), 4.0)
+
+  let sum_mat = sparse.csr_mat_add(a, a)
+  assert(sparse.validate_csr(sum_mat))
+  assertEqual(sparse.csr_get(sum_mat, 0, 0), 10.0)
+  assertEqual(sparse.csr_get(sum_mat, 0, 2), 4.0)
+
+test "sparse matrix multiplication":
+  var triplets_a = [sparse.Triplet(row: 0, col: 0, value: 2.0), sparse.Triplet(row: 0, col: 1, value: 3.0), sparse.Triplet(row: 1, col: 0, value: 4.0)]
+  let a = sparse.from_triplets(2, 2, triplets_a)
+
+  var triplets_id = [sparse.Triplet(row: 0, col: 0, value: 1.0), sparse.Triplet(row: 1, col: 1, value: 1.0)]
+  let id = sparse.from_triplets(2, 2, triplets_id)
+
+  let prod = sparse.csr_mat_mul(a, id)
+  assert(sparse.validate_csr(prod))
+  assertEqual(sparse.csr_get(prod, 0, 0), 2.0)
+  assertEqual(sparse.csr_get(prod, 0, 1), 3.0)
+  assertEqual(sparse.csr_get(prod, 1, 0), 4.0)
+  assertEqual(sparse.csr_get(prod, 1, 1), 0.0)
+
+test "eliminate zeros":
+  var triplets = [sparse.Triplet(row: 0, col: 0, value: 5.0), sparse.Triplet(row: 0, col: 1, value: 0.0000001), sparse.Triplet(row: 1, col: 1, value: 2.0)]
+  let m = sparse.from_triplets(2, 2, triplets)
+  assertEqual(sparse.nnz(m), 3)
+
+  let pruned = sparse.csr_eliminate_zeros(m, 0.0001)
+  assert(sparse.validate_csr(pruned))
+  assertEqual(sparse.nnz(pruned), 2)
+  assertEqual(sparse.csr_get(pruned, 0, 0), 5.0)
+  assertEqual(sparse.csr_get(pruned, 0, 1), 0.0)
+  assertEqual(sparse.csr_get(pruned, 1, 1), 2.0)

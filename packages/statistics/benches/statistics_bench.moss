@@ -1,0 +1,41 @@
+module statistics_bench
+
+import statistics
+
+bench "statistics streaming welford updates 1000 items":
+  var running = statistics.new_running_stats()
+  var x = 0.0
+  var i = 0
+  while i < 1000:
+    statistics.running_update(running, x * 0.1)
+    x = x + 1.0
+    i = i + 1
+  var cnt = statistics.running_count(running)
+  var mean_val = running.mean_val
+  var min_val = running.min_val
+  var max_val = running.max_val
+
+bench "statistics streaming chan golub leveque parallel combine":
+  var a = statistics.new_running_stats()
+  var b = statistics.new_running_stats()
+  var x = 0.0
+  var i = 0
+  while i < 500:
+    statistics.running_update(a, x * 0.1)
+    statistics.running_update(b, (x + 500.0) * 0.1)
+    x = x + 1.0
+    i = i + 1
+  var combined = statistics.running_combine(a, b)
+  var total_cnt = statistics.running_count(combined)
+  var combined_mean = combined.mean_val
+
+bench "statistics streaming welford updates 5000 items":
+  var running = statistics.new_running_stats()
+  var x = 0.0
+  var i = 0
+  while i < 500:
+    statistics.running_update(running, (x * 0.05) - 25.0)
+    x = x + 1.0
+    i = i + 1
+  var cnt = statistics.running_count(running)
+  var mean_val = running.mean_val

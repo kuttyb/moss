@@ -1,5 +1,24 @@
 # Moss current status
 
+## Phase 24 Team N Numerical Computing complete — 2026-10-12
+
+`phase24-numerics` was branched from `phase24-integration` at `3999e12b635be2f6d5f74dcbc1cf72bb50b74ffc`.
+Team N delivered three foundational numerical SDK packages and an end-to-end integration application:
+- `moss.linalg` (`packages/linalg`): Dense linear algebra, vectors, norms, outer products, LU decomposition with partial row pivoting, linear system solver, log-determinant, matrix inversion.
+- `moss.sparse` (`packages/sparse`): Compressed sparse representations (CSR and CSC), coordinate triplet assembly with additive duplicate summation, SpMV, SpMM, sparse addition, transpose, zero pruning, and dense conversion.
+- `moss.statistics` (`packages/statistics`): Numerically stable descriptive and streaming statistics, Neumaier compensated summation, Welford accumulators, Chan-Golub-LeVeque parallel combination, bivariate covariance/correlation, Hyndman-Fan Method 7 quantiles, and non-recursive float heapsort.
+- `moss.numerics_integration` (`packages/numerics_integration`): Cross-package end-to-end integration application executing linear regression solves, sparse vs dense SpMV consistency verification, and sparse spectral diagonal analysis.
+
+All deliverables were verified under independent adversarial review:
+- Independent Python reference oracles (`tests/oracles/test_numerics_falsification.py`) verified all mathematical and structural invariants against reference libraries with 0 falsifications.
+- 100% test pass parity across Native compiled execution (`margo test`) and Fast Debug interpreter mode (`margo test --interp`) across all 23 package tests (Linalg: 6, Sparse: 7, Statistics: 7, Integration: 3).
+- Comprehensive Phase 21 typed error contracts (`LinalgError`, `SparseError`, `StatsError`).
+- Performance benchmarks with `margo bench` across all three packages.
+- Full repository validation gates passed: `TMPDIR="$PWD/tmp" make check` (54/54 executor tests passed), `make examples` (32/32 examples passed), `python3 tests/tooling/check_agent_feedback.py` (passed 100%).
+- 7 authentic compiler-lowering observations recorded in `agent-feedback/phase24/team-n-numerics/`.
+- Independent L6 Architect review and explicit sign-off in `docs/team_n/ARCHITECT_REVIEW.md` and `docs/team_n/FINAL_DELIVERY_REPORT.md`.
+- Isolated branch discipline: all changes remain on `phase24-numerics`. Zero commits merged into `main` or `phase24-integration`. Team I owns integration into `phase24-integration`.
+
 ## Phase 24 Team I final merge checkpoint — 2026-10-12
 
 Team I merged the final source tips `phase24-math`

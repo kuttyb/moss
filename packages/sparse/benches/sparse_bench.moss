@@ -1,0 +1,43 @@
+module sparse_bench
+
+import sparse
+
+fn make_csr(n: Int) -> sparse.CsrMatrix:
+  var row_ptrs = Vector[Int]()
+  var col_indices = Vector[Int]()
+  var values = Vector[Float]()
+  var r = 0
+  var offset = 0
+  row_ptrs.push(0)
+  var x = 1.0
+  while r < n:
+    col_indices.push(r)
+    values.push(x * 0.5)
+    offset = offset + 1
+    if r + 1 < n:
+      col_indices.push(r + 1)
+      values.push(x * 0.25)
+      offset = offset + 1
+    row_ptrs.push(offset)
+    x = x + 1.0
+    r = r + 1
+  return sparse.CsrMatrix(rows: n, cols: n, row_ptrs: row_ptrs, col_indices: col_indices, values: values)
+
+bench "sparse csr transpose 200x200":
+  var m = make_csr(200)
+  var mt = sparse.csr_transpose(m)
+
+bench "sparse csr to csc conversion 200x200":
+  var m = make_csr(200)
+  var csc = sparse.csr_to_csc(m)
+
+bench "sparse csr scale 500x500":
+  var m = make_csr(500)
+  var scaled = sparse.csr_scale(m, 3.5)
+
+bench "sparse csr structural inspection 500x500":
+  var m = make_csr(500)
+  var n = sparse.nnz(m)
+  var rows = m.rows
+  var cols = m.cols
+  var dens = sparse.density(m)
