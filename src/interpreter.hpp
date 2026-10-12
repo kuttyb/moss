@@ -813,6 +813,45 @@ class FastInterpreter {
     // falling back to a single String literal.
     if (e.size() >= 2 && e.front() == '"' && e.back() == '"')
       return Value::string_value(decode_string(e.substr(1, e.size() - 2)));
+    // A final index may follow a computed value, including a vector literal.
+    // Match the final bracket pair instead of treating every expression that
+    // starts and ends with '['/']' as one literal (`[x][0]`). Lvalue-shaped
+    // indices were already handled by locate() above.
+    if (e.back() == ']') {
+      std::vector<size_t> brackets;
+      bool quoted = false, escaped = false;
+      for (size_t i = 0; i < e.size(); ++i) {
+        const char c = e[i];
+        if (quoted) {
+          if (escaped) escaped = false;
+          else if (c == '\\') escaped = true;
+          else if (c == '"') quoted = false;
+          continue;
+        }
+        if (c == '"') { quoted = true; continue; }
+        if (c == '[') brackets.push_back(i);
+        else if (c == ']' && !brackets.empty()) {
+          const size_t open = brackets.back();
+          brackets.pop_back();
+          if (i == e.size() - 1 && open > 0) {
+            Value base = eval(e.substr(0, open), frame, line, output);
+            Value index = eval(e.substr(open + 1, i - open - 1), frame,
+                               line, output);
+            if (base.kind == Value::Kind::Map && base.map) {
+              for (const auto& entry : *base.map)
+                if (equal(entry.first, index)) return entry.second;
+              throw RuntimeError(line, "missing map key");
+            }
+            auto values = base.kind == Value::Kind::Vector ? base.vector :
+                base.kind == Value::Kind::Queue ? base.queue : nullptr;
+            if (!values || index.kind != Value::Kind::Int || index.integer < 0 ||
+                static_cast<std::uint64_t>(index.integer) >= values->size())
+              throw RuntimeError(line, "vector index out of bounds");
+            return values->at(static_cast<size_t>(index.integer));
+          }
+        }
+      }
+    }
     if (e.front() == '[' && e.back() == ']') {
       std::vector<Value> values;
       auto inside = e.substr(1, e.size() - 2);

@@ -1,0 +1,15 @@
+module app
+import collections
+
+fn main():
+  numbers = [4, 2, 4]
+  names = ["red", "blue", "red"]
+  assert(collections.index_of(numbers, 4) == 0)
+  assert(collections.index_of(names, "red") == 0)
+  assert(collections.count_equal(numbers, 4) == 2)
+  assert(collections.count_equal(names, "red") == 2)
+  has_four = collections.contains(numbers, 4)
+  has_green = collections.contains(names, "green")
+  assert(has_four)
+  assert(not has_green)
+  echo "source-free generic ok"

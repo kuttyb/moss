@@ -1,0 +1,9 @@
+[package]
+name = "inverted_clamp_repro"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+"moss.core" = { path = "../../../core" }
