@@ -1,5 +1,17 @@
 # Moss current status
 
+## Phase 24 Team T UTF-8 performance workstream complete — 2026-10-12
+
+P3 removed non-inlined per-byte `moss.bytes` calls and the encoder's fallible
+per-byte append helper while preserving the public `Vector[Int]` contract and
+exact UTF-8 errors. On the content-asserting 256-emoji release workload, Moss
+encode/decode/validate medians are 614/680/625 ns, within 1.13x of matched
+`Vec<i64>` Rust; decode is 1.21x and validation 1.96x idiomatic Rust. Native,
+Fast Debug, the 66-valid/15-invalid three-mode oracle, compiled-only ABI-v9,
+full Team T acceptance, optimized-provider benchmark verification, and
+feedback validation pass. Team T's coordinator owns integration into
+`phase24-text-perf`; P3 does not push or merge.
+
 ## Phase 24 Team T L7 stabilization complete — 2026-10-12
 
 The focused stabilization implementation is frozen at exact SHA
