@@ -1,5 +1,25 @@
 # Moss current status
 
+## Phase 24 Team T final focused String/builder candidate — 2026-10-12
+
+Engineering is **GO for final exact-SHA Architect review**. The second-review
+source-free nested-alias blocker is repaired: ordinary and ABI-v9 imported
+calls reject a direct earlier WRITE borrow that would overlap a later nested
+READ/WRITE/CONSUME access. The check respects argument evaluation order, so an
+earlier nested computation that completes before a later direct borrow remains
+legal. Supplemental overlap discovery tolerates unresolved methods before
+generic receiver specialization without weakening the normal strict
+synchronization/effect analysis.
+
+Coordinator validation on the combined tree passes the targeted source-backed
+and source-free alias/order cases, recovery and generic-specialization gates,
+strict GCC C++17, full Team T native debug/release/Fast Debug and source-free
+ABI-v9 acceptance, the 66-valid/15-invalid three-mode UTF-8 oracle, full
+`TMPDIR="$PWD/tmp" make check` (54/54 Executor tests; all Moss v0.1 tests), and
+`make examples`. The corrected optimized benchmark evidence and allocation
+scope remain unchanged. Historical Architect NO-GO records are preserved; a
+fresh independent verdict is required on the new frozen commit.
+
 ## Phase 24 Team T generic nested-access repair — 2026-10-12
 
 Full `make check` on integrated `902c6ca` exposed an internal synchronization

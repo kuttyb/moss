@@ -107,13 +107,19 @@ structural evidence only.
   reserve reads now fail during Moss checking with
   `OWNERSHIP_CONFLICTING_ACCESS`; legal disjoint controls pass native and Fast
   Debug.
+- The same contract holds through source-free ABI-v9 wrappers: a direct earlier
+  builder WRITE overlapping a later nested read is rejected before rustc.
+  Argument-order controls confirm that an earlier nested computation may finish
+  before a later direct borrow, and generic receiver specialization retains its
+  existing strict synchronization invariant.
 
 ## Engineering disposition
 
 Engineering L6: **GO** for independent exact-SHA review. Nonempty
 concatenation and the additive capacity-aware builder meet the requested
 performance target in the reproduced workloads without changing the existing
-builder contract. Both blockers from the first Architect review—the wrapped
-mutable alias and mismatched reusable-builder timing boundary—are repaired and
-covered by permanent checks. Final acceptance remains subject to a fresh,
-separately attributable Architect verdict on the frozen candidate.
+builder contract. The mismatched reusable-builder timing boundary and both
+ownership blockers found by the independent reviews—builtin wrapped aliasing
+and source-free wrapper aliasing—are repaired and covered by permanent checks.
+Final acceptance remains subject to a fresh, separately attributable Architect
+verdict on the frozen candidate.
