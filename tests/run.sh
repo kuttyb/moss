@@ -51,6 +51,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_builtin_error_cont
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_standard_error_namespace.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_borrowed_view_write.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_generic_specialization.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_imported_generic_expressions.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_builtin_generic_typing.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tools/check_swarm_feedback.py --self-test
 PYTHONDONTWRITEBYTECODE=1 python3 tools/check_swarm_issues.py --self-test

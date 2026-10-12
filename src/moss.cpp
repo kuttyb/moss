@@ -8624,6 +8624,32 @@ class Checker {
            matching_paren(value, 0) == value.size() - 1)
       value = trim(value.substr(1, value.size() - 2));
 
+    // Every call evaluated by a value wrapper still needs a semantic call
+    // edge.  Module projection uses these edges to emit imported generic
+    // specializations into the consumer crate.  The checker and native
+    // expression lowering already recurse through these forms.
+    if (auto elements = parse_vector_literal(value)) {
+      for (const auto& element : *elements)
+        collect_local_call_sites(line, element, env, implicit_owner, calls);
+      return;
+    }
+    if (starts_with(value, "not ")) {
+      collect_local_call_sites(line, trim(value.substr(4)), env,
+                               implicit_owner, calls);
+      return;
+    }
+    // Split at the outer operator before looking for a trailing call.  For
+    // example, `0 - lib.lookup(xs)` ends in `lookup(...)`; treating the whole
+    // expression as one member call loses the imported lookup specialization.
+    for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
+                                                         {"==", "!=", "<=", ">=", "<", ">"},
+                                                         {"+", "-", "*", "/", "%"}})
+      if (auto binary = split_binary(value, operators)) {
+        collect_local_call_sites(line, binary->first, env, implicit_owner, calls);
+        collect_local_call_sites(line, binary->second, env, implicit_owner, calls);
+        return;
+      }
+
     string receiver, method_name;
     vector<string> arguments;
     if (parse_member_call(value, receiver, method_name, arguments)) {
@@ -8707,14 +8733,9 @@ class Checker {
       collect_local_call_sites(line, index, env, implicit_owner, calls);
       return;
     }
-    for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
-                                                         {"==", "!=", "<=", ">=", "<", ">"},
-                                                         {"+", "-", "*", "/", "%"}})
-      if (auto binary = split_binary(value, operators)) {
-        collect_local_call_sites(line, binary->first, env, implicit_owner, calls);
-        collect_local_call_sites(line, binary->second, env, implicit_owner, calls);
-        return;
-      }
+    if (value.size() > 1 && (value.front() == '-' || value.front() == '+'))
+      collect_local_call_sites(line, trim(value.substr(1)), env,
+                               implicit_owner, calls);
   }
 
   vector<string> statement_expressions(const Stmt& statement) const {
