@@ -1,0 +1,96 @@
+import csv
+
+test "csv simple records":
+  simple_input = "a,b,c\nd,e,f\n"
+  table = csv.read_all(simple_input, ",")
+  assertEqual(csv.row_count(table), 2)
+  assertEqual(csv.col_count(table, 0), 3)
+  assertEqual(csv.get_field(table, 0, 0), "a")
+  assertEqual(csv.get_field(table, 0, 1), "b")
+  assertEqual(csv.get_field(table, 0, 2), "c")
+  assertEqual(csv.get_field(table, 1, 0), "d")
+  assertEqual(csv.get_field(table, 1, 1), "e")
+  assertEqual(csv.get_field(table, 1, 2), "f")
+
+  crlf_input = "1,2,3\r\n4,5,6\r\n"
+  table2 = csv.read_all(crlf_input, ",")
+  assertEqual(csv.row_count(table2), 2)
+  assertEqual(csv.get_field(table2, 1, 2), "6")
+
+test "csv quoted fields and escaping":
+  q = "\""
+  input = q + "hello, world" + q + ",regular," + q + "quote \"\"inside\"\"" + q
+  table = csv.read_all(input, ",")
+  assertEqual(csv.row_count(table), 1)
+  assertEqual(csv.col_count(table, 0), 3)
+  assertEqual(csv.get_field(table, 0, 0), "hello, world")
+  assertEqual(csv.get_field(table, 0, 1), "regular")
+  assertEqual(csv.get_field(table, 0, 2), "quote \"inside\"")
+
+  multiline_input = q + "first line\nsecond line" + q + ",ok"
+  table2 = csv.read_all(multiline_input, ",")
+  assertEqual(csv.row_count(table2), 1)
+  assertEqual(csv.col_count(table2, 0), 2)
+  assertEqual(csv.get_field(table2, 0, 0), "first line\nsecond line")
+  assertEqual(csv.get_field(table2, 0, 1), "ok")
+
+test "csv empty fields":
+  input = "a,,c\n,x,\n"
+  table = csv.read_all(input, ",")
+  assertEqual(csv.row_count(table), 2)
+  assertEqual(csv.get_field(table, 0, 0), "a")
+  assertEqual(csv.get_field(table, 0, 1), "")
+  assertEqual(csv.get_field(table, 0, 2), "c")
+  assertEqual(csv.get_field(table, 1, 0), "")
+  assertEqual(csv.get_field(table, 1, 1), "x")
+  assertEqual(csv.get_field(table, 1, 2), "")
+
+test "csv custom delimiter and tsv":
+  tsv_input = "id\tname\tscore\n1\tAlice\t95\n2\tBob\t88"
+  table = csv.read_tsv(tsv_input)
+  assertEqual(csv.row_count(table), 3)
+  assertEqual(csv.get_field(table, 0, 1), "name")
+  assertEqual(csv.get_field(table, 1, 1), "Alice")
+  assertEqual(csv.get_field(table, 2, 2), "88")
+
+  pipe_input = "col1|col2|col3\nval1|val2|val3"
+  table2 = csv.read_all(pipe_input, "|")
+  assertEqual(csv.row_count(table2), 2)
+  assertEqual(csv.get_field(table2, 0, 1), "col2")
+  assertEqual(csv.get_field(table2, 1, 0), "val1")
+
+test "csv writer and roundtrip":
+  var rows = Vector[Vector[String]]()
+  var r1 = Vector[String]()
+  r1.push("name")
+  r1.push("notes")
+  rows.push(r1)
+
+  var r2 = Vector[String]()
+  r2.push("Alpha")
+  r2.push("hello, \"quoted\" world")
+  rows.push(r2)
+
+  csv_text = csv.write_all(rows, ",")
+  parsed = csv.read_all(csv_text, ",")
+  assertEqual(csv.row_count(parsed), 2)
+  assertEqual(csv.get_field(parsed, 1, 0), "Alpha")
+  assertEqual(csv.get_field(parsed, 1, 1), "hello, \"quoted\" world")
+
+  tsv_text = csv.write_tsv(rows)
+  tsv_parsed = csv.read_tsv(tsv_text)
+  assertEqual(csv.row_count(tsv_parsed), 2)
+  assertEqual(csv.get_field(tsv_parsed, 1, 1), "hello, \"quoted\" world")
+
+test "csv validation and malformed inputs":
+  assert(csv.validate("a,b,c", ","))
+  assert(csv.validate("\"quoted field\",123", ","))
+
+  unclosed = "\"unclosed quote,123"
+  assert(not csv.validate(unclosed, ","))
+
+  trailing_garbage = "\"quoted\"garbage,123"
+  assert(not csv.validate(trailing_garbage, ","))
+
+  unexpected_quote = "ab\"cd,123"
+  assert(not csv.validate(unexpected_quote, ","))
