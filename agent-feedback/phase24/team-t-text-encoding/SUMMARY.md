@@ -70,6 +70,12 @@ a documented process-amortized harness was used instead, without subtracting
 startup or claiming direct Rust parity
 (`phase24-team-t-text-encoding-performance-002`).
 
+The first exact candidate exposed a separate reproducibility failure: the
+repository-wide `*.rs` ignore silently omitted the maintained Rust baseline.
+The Architect rejected that SHA; the source was then force-tracked and
+reproduced from the corrected Git tree
+(`phase24-team-t-text-encoding-performance-003`).
+
 ## Candidate improvements
 
 1. Add strict owned String/UTF-8 conversion primitives with typed malformed
@@ -82,6 +88,8 @@ startup or claiming direct Rust parity
 4. Align accepted Unicode escapes and imported assertion lowering across check
    and native stages (`phase24-team-t-text-encoding-text-primitives-001`,
    `phase24-team-t-text-encoding-utf8-codec-001`).
+5. Narrow generated-Rust ignore rules or explicitly exempt maintained Rust
+   reference sources (`phase24-team-t-text-encoding-performance-003`).
 
 These observations do not duplicate SWARM records; no matching existing SWARM
 issue was identified during this work.
@@ -89,8 +97,12 @@ issue was identified during this work.
 ## Review disposition
 
 - Reviewer role: Independent Team T L6 Architect.
-- Exact reviewed commit: pending candidate freeze.
-- Classification or evidence corrections: pending independent review.
+- Exact reviewed commit: `1c01a899819d495347fd99e05500bb50e50e7da1`.
+- Classification or evidence corrections: the original builder classification
+  is preserved, while this synthesis identifies the demonstrated boundary more
+  narrowly as cross-module lowering. The Architect required the missing Rust
+  baseline to become a tracked artifact before approval.
 - Preserved disagreements or uncertainty: String interoperability and
   benchmark lowering remain explicit limitations.
-- Overall assessment: pending exact-SHA GO/NO-GO verdict.
+- Overall assessment: **GO** for the exact implementation candidate. The prior
+  `a2f0cd7` candidate remains NO-GO because it was not reproducible from Git.

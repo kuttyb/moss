@@ -1,5 +1,28 @@
 # Moss current status
 
+## Phase 24 Team T Text & Encoding complete — 2026-10-12
+
+`phase24-text` was forked from feedback-enabled integration SHA
+`610f2d632b53541cc31153174e37e1b1640d6f01`. It delivers `moss.text`, the
+strict pure `moss.encoding` UTF-8 codec, external/source-free acceptance,
+native debug/release/Fast Debug validation, a deterministic Python oracle,
+benchmarks, documentation, and seven workstream feedback trails.
+
+The independent Team T L6 Architect issued **GO** for exact implementation
+SHA `1c01a899819d495347fd99e05500bb50e50e7da1`. Its earlier review correctly
+issued NO-GO for `a2f0cd7` because the documented Rust baseline was ignored and
+absent from Git; `1c01a89` tracks and reproduces that source. Fresh adversarial
+UTF-8/text cases, all three execution modes, compiled-only ABI-v9, semantic
+ownership/effect queries, the full Python corpus, and benchmarks passed.
+
+Coordinator gates pass: the full Team T acceptance runner; feedback
+validation; `TMPDIR="$PWD/tmp" make check` (all Moss v0.1
+tests, 54/54 Executor tests); `make examples`; Margo and Rust benchmarks; and
+`git diff --check`. Layer B String interoperability is explicitly deferred
+because Moss v0.1 exposes no supported String/UTF-8 byte conversion or scalar
+String constructor. Team I alone may integrate this branch; no merge to `main`
+is authorized.
+
 ## Phase 24 repository-wide agent feedback bootstrap — 2026-10-12
 
 Phase A infrastructure is complete on `phase24-agent-feedback-bootstrap`.

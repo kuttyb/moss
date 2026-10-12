@@ -42,8 +42,19 @@ and `READ` for the appended String. `encoding.decode_utf8` infers `READ` for its
 byte vector and reports the complete typed `Utf8Error` raise set. Performance
 methodology and results are in `PHASE_24_TEXT_ENCODING_PERFORMANCE.md`.
 
-The final full repository gate results and exact independent review SHA are
-recorded at closeout after the implementation candidate is frozen.
+`TMPDIR="$PWD/tmp" make check` passed with all Moss v0.1 tests, including
+54/54 Executor tests and the wired Team T smoke suite. `make examples` built
+every positive repository example. The feedback validator passed, as did the
+repository whitespace check.
+
+The independent Team T L6 Architect issued **GO** for exact implementation
+candidate `1c01a899819d495347fd99e05500bb50e50e7da1`. Its fresh consumer added
+scalar boundary encodings, malformed sequences, invalid byte integers after
+valid prefixes, overlapping searches/replacements, max-Int slice bounds,
+ASCII/NBSP trimming, and combining-sequence builder cases; native debug,
+native release, and Fast Debug all passed. The Architect's first review had
+correctly rejected `a2f0cd7` because the documented Rust baseline was hidden
+by `*.rs` ignore rules and absent from Git; `1c01a89` tracks and reproduces it.
 
 ## Limitations and deferrals
 
