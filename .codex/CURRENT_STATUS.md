@@ -1,5 +1,25 @@
 # Moss current status
 
+## Phase 24 Team T String/builder repaired-candidate Architect — 2026-10-12
+
+The independent L6 Architect reviewed exact repaired SHA
+`ca6cd0d58b95d63d09d90b50603cf3dcca4e2e9b` and issued **NO-GO**. Direct and
+wrapped aliases on builtin `String.append` and `String.reserve` are now
+correctly rejected, but a source-free public call
+`text.capacity_builder_append(builder, copy_twice(builder))` still passes Moss
+checking and fails rustc with E0502. ABI-v9 exports the correct `WRITE + READ`
+effects; ordinary imported-call overlap checking does not project nested
+argument access. A durable source-free regression records the required result.
+
+The benchmark-equivalence repair passes independent inspection. Moss and Rust
+now time identical end-to-end reusable-builder setup and sixteen snapshots; a
+fresh optimized six-provider-bound run measured 864/893 ns. Allocation-only
+snapshot evidence is correctly labeled setup-excluded. Full Team T acceptance
+and the three-mode UTF-8 oracle pass. The preserved first-review NO-GO and this
+re-review are documented in
+`docs/PHASE_24_TEXT_ENCODING_STRING_BUILDER_ARCHITECT.md`; another repaired and
+frozen SHA needs final review.
+
 ## Phase 24 Team T focused String/builder repaired candidate — 2026-10-12
 
 Engineering is **GO for renewed exact-SHA Architect review**. The combined tree

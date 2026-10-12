@@ -71,4 +71,19 @@ with tempfile.TemporaryDirectory(prefix="text-source-free-", dir=SCRATCH) as tem
     assert rejected.returncode != 0, rejected.stdout
     diagnostic = json.loads(rejected.stdout)
     assert diagnostic["error"]["code"] == "OWNERSHIP_CONFLICTING_ACCESS", diagnostic
+    (app / "src" / "main.moss").write_text(
+        'module app\nimport text\n\n'
+        'fn copy_twice(value: String) -> String:\n'
+        '  return value + ""\n\n'
+        'fn main():\n'
+        '  var builder = text.new_capacity_builder(16)\n'
+        '  text.capacity_builder_append(builder, copy_twice(builder))\n',
+        encoding="utf-8")
+    wrapped = subprocess.run([str(MOSS), "check", "src/main.moss", "--json"],
+                             cwd=app, env=source_free_env, check=False,
+                             capture_output=True, text=True)
+    assert wrapped.returncode != 0, wrapped.stdout
+    wrapped_diagnostic = json.loads(wrapped.stdout)
+    assert wrapped_diagnostic["error"]["code"] == \
+        "OWNERSHIP_CONFLICTING_ACCESS", wrapped_diagnostic
 print("Compiled-only moss.text provider: check, build, run passed")

@@ -97,3 +97,62 @@ with that independent expectation present it intentionally fails on the frozen
 candidate. A repaired candidate must pass it, correct the benchmark equivalence,
 rerun release/provider validation and repository gates, and receive a new
 exact-SHA Architect review.
+
+## Re-review of repaired candidate `ca6cd0d`
+
+The independent L6 Architect next reviewed exact frozen engineering SHA
+`ca6cd0d58b95d63d09d90b50603cf3dcca4e2e9b`.
+
+**Verdict: NO-GO.** Both originally reported defects were repaired at their
+immediate sites, but a fresh source-free public-API counterexample exposes the
+same ownership hole through an ordinary imported wrapper call.
+
+The builtin forms now behave correctly. Direct self-alias, two-level wrapped
+append alias, and two-level wrapped reserve alias all return structured
+`OWNERSHIP_CONFLICTING_ACCESS`; the cause identifies the writable receiver and
+the wrapped READ expression. A disjoint Unicode control passes checking,
+native rustc with warnings denied, and Fast Debug with identical output.
+
+The remaining blocker is:
+
+```moss
+module app
+import text
+
+fn copy_twice(value: String) -> String:
+  return value + ""
+
+fn main():
+  var builder = text.new_capacity_builder(16)
+  text.capacity_builder_append(builder, copy_twice(builder))
+```
+
+With the source removed and `text.mossi` plus `libtext.rlib` supplied, `moss
+check --json` incorrectly returns success. `moss build --json` then fails rustc
+E0502 at the imported call because `builder` is borrowed WRITE for the first
+argument and READ inside the second. Thus ABI-v9 carries the correct exported
+`WRITE + READ` effects, but ordinary call-site overlap checking still ignores
+nested argument storage accesses. The permanent source-free test now expects
+the structured Moss rejection.
+
+The benchmark repair is independently confirmed. Generated Moss and tracked
+Rust both time construction of one owned `"abcdefgh"` part, exact reservation
+of 1,024 bytes, 128 appends, sixteen reusable snapshots, scalar counts, and a
+16,384 checksum assertion. Both setup sequences are inside their timed
+function/closure. The release validator reports `-O` and SHA-256 equality for
+all six linked providers. A fresh paired run measured the corrected end-to-end
+row at 864 ns Moss versus 893 ns Rust (0.97x). Other capacity rows measured
+100/72 ns, 388/298 ns, 2,460/1,839 ns, and 294/198 ns: all at or below 1.48x.
+
+The allocation-only Rust harness remains intentionally different in scope: it
+constructs the reusable builder before tracking and measures sixteen snapshot
+allocations (16,384 bytes). This is correctly labeled setup-excluded and is not
+used as timing evidence. Finish and append-only allocation counts reproduced
+the documented two allocations each. Moss allocation counts remain unmeasured.
+
+Full Team T native/release/Fast Debug acceptance, compiled-only providers, and
+the 66-valid/15-invalid three-mode UTF-8 oracle pass. The repository `make
+check` progressed through the focused String regression and extensive compiler,
+SDK, SWARM, FileIO, and Executor gates before the Architect stopped it after the
+new source-free blocker was confirmed; a completed full rerun remains required
+on the next repaired candidate.
