@@ -10,6 +10,7 @@ python3 tests/tooling/check_retired_syntax.py --self-test
 
 # Repository-local agent skills carry current source guidance and a checked example.
 python3 tests/tooling/check_agent_skills.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_agent_feedback.py --self-test
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_shared_abi.py "$test_build/phase21-shared-abi"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_source_free_abi.py "$compiler" "$test_build/phase21-source-free"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_abi_v9_migration.py "$compiler"
