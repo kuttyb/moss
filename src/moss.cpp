@@ -4202,11 +4202,10 @@ class Checker {
       vector<string> open_arguments;
       if (parse_fileio_open(e, open_arguments)) return string("FileIO");
     }
-    if (e.size() >= 2 && e.front() == '[' && e.back() == ']') {
-      auto parts = split_top_level(e.substr(1, e.size() - 2), ',');
-      if (parts.size() == 1 && trim(parts[0]).empty()) return std::nullopt;
+    if (auto parts = parse_vector_literal(e)) {
+      if (parts->empty()) return std::nullopt;
       string element;
-      for (const auto& part : parts) {
+      for (const auto& part : *parts) {
         auto t = inferred_expr_type(part, env);
         if (!t) return std::nullopt;
         if (element.empty()) element = *t;
@@ -13332,8 +13331,8 @@ class Checker {
       check_expression(line, original.substr(1, original.size() - 2), env);
       return;
     }
-    if (original.size() >= 2 && original.front() == '[' && original.back() == ']') {
-      for (const auto& element : split_top_level(original.substr(1, original.size() - 2), ',')) {
+    if (auto elements = parse_vector_literal(original)) {
+      for (const auto& element : *elements) {
         auto type = inferred_expr_type(element, env);
         if (type && fileio_scoped_type(*type))
           err(line, "FileIO and ranges cannot enter ordinary collections",
@@ -16714,11 +16713,10 @@ class Generator {
     if (generated_integer_literal(value))
       return string("int");
     if (decimal_float_literal(value)) return string("float");
-    if (value.size() >= 2 && value.front() == '[' && value.back() == ']') {
-      auto elements = split_top_level(value.substr(1, value.size() - 2), ',');
-      if (elements.size() == 1 && elements.front().empty()) return std::nullopt;
+    if (auto elements = parse_vector_literal(value)) {
+      if (elements->empty()) return std::nullopt;
       string element_type;
-      for (const auto& element : elements) {
+      for (const auto& element : *elements) {
         auto current = generated_expr_type(element, types);
         if (!current) return std::nullopt;
         string concrete = canonical_type_name(*current);
@@ -18125,13 +18123,12 @@ class Generator {
     // "a" + "b" and "a" == "b" also begin and end with quote characters.
     if (e.size() >= 2 && e.front() == '"' && e.back() == '"')
       return e + ".to_string()";
-    if (e.size() >= 2 && e.front() == '[' && e.back() == ']') {
-      auto parts = split_top_level(e.substr(1, e.size()-2), ',');
+    if (auto parts = parse_vector_literal(e)) {
       std::ostringstream r; r << "vec![";
-      for (size_t i=0;i<parts.size();++i) {
+      for (size_t i=0;i<parts->size();++i) {
         if (i) r << ", ";
-        string value = expr(parts[i], d, locals, types);
-        auto value_type = generated_expr_type(parts[i], types);
+        string value = expr(parts->at(i), d, locals, types);
+        auto value_type = generated_expr_type(parts->at(i), types);
         if (value_type && domains_.count(canonical_type_name(*value_type)))
           value = "(" + value + ").clone()";
         r << value;
