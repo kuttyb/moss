@@ -1,5 +1,24 @@
 # Moss current status
 
+## Phase 24 Team M: L7 Adversarial Repairs & Dual GO Verification — 2026-10-12
+
+Feature branch: `phase24-math` (pushed to `origin/phase24-math`).
+Baseline evaluated: `129a81fa54a4f3d9b7f6d76bb376a9f85c3d9256` (NO-GO).
+Independent Adversarial Numerical Reviewer and L6 Architect conducted comprehensive re-evaluation following implementation repairs across `moss.math`, `moss.random`, and `moss.time`.
+
+**Verification Results:**
+1. Unit & Integration Tests: 37/37 passed (0 failed) across 4 packages (`math` 18/18, `random` 7/7, `time` 10/10, `integration` 2/2).
+2. Independent Adversarial Oracles: 100% PASS (Zero falsifications) via `python3 tests/oracles/verify_repairs.py`.
+3. Correctness Repairs Verified:
+   - `moss.math`: `atan(x)` range reduction fixed across $(-\infty, \infty)$ including $x = 1.0, 1.5, 2.0, 3.0, -2.0, \pm\infty$ (max error $< 1$ ULP); `exp(x)` subnormals preserved down to $-745$ (e.g. $x=-710 \to 4.476 \times 10^{-309}$) and finite results up to $709.78$ without intermediate $2^{1024}$ overflow ($x=709.5 \to 1.355 \times 10^{308}$) with split $2^k$ scaling and split $\ln 2$; $\text{hypot}(\pm\infty, \text{NaN}) = +\infty$.
+   - `moss.random`: Int64 signed overflow eliminated; mathematically proven uniform multi-draw sampler over $[0, AM-1]$ with zero rejection on $w \pmod A$ and rejection limit $L = AM - (AM \pmod R)$ eliminating modulo bias; Phase 21 typed error contracts (`export enum RandomError { InvalidRange, EmptyCollection }`) enforced.
+   - `moss.time`: Saturating arithmetic across all operations clamping at `INT64_MAX`/`INT64_MIN`; `duration_abs(INT64_MIN)` clamps to `INT64_MAX`; Phase 21 typed error contracts (`export enum TimeError { DivisionByZero, InvalidDate }`) enforced (`duration_div(d, 0)` raises `TimeError.DivisionByZero`); complete Gregorian calendar validation rejects April 31 and Feb 29 on 1900 with `TimeError.InvalidDate`; Euclidean division for pre-1970 Unix timestamps. Real clock reading (`.now()`) explicitly documented as deferred.
+4. Full Gates: `TMPDIR="$PWD/tmp" make check` PASS (all Moss v0.1 tests and 54/54 Phase 20 executor tests pass); `make examples` PASS (32/32 examples pass); `./margo bench` recorded live (sub-nanosecond to microsecond latencies).
+5. Separately Attributable Verdicts:
+   - Independent Adversarial Numerical Reviewer: **GO FOR MERGE REVIEW** (Zero falsifications).
+   - L6 Architect: **GO FOR MERGE REVIEW** (Full architectural, contract, and correctness compliance).
+   - Merge Gate: Branch remains strictly on `phase24-math`; **zero commits merged into `main`**.
+
 ## Phase 24 Team M: Independent Architect L6 Review — NO-GO — 2026-10-12
 
 Exact reviewed candidate commit: `129a81fa54a4f3d9b7f6d76bb376a9f85c3d9256` on `phase24-math`.

@@ -20,8 +20,19 @@ test "mrg32k3a determinism and repeatability":
   b2 = random.rng_randbool(rng2)
   assertEqual(b1, b2)
 
+test "pierre l ecuyer 1999 reference sequence validation":
+  # Reference vector: [12345, 12345, 12345, 12345, 12345, 12345]
+  var rng_ref = random.Rng(x1 = 12345, x2 = 12345, x3 = 12345, y1 = 12345, y2 = 12345, y3 = 12345)
+
+  # Exact first 5 integer outputs from L'Ecuyer's 1999 paper:
+  assertEqual(random.rng_next_int(rng_ref), 545508589)
+  assertEqual(random.rng_next_int(rng_ref), 1368065410)
+  assertEqual(random.rng_next_int(rng_ref), 1327943761)
+  assertEqual(random.rng_next_int(rng_ref), 3546985096)
+  assertEqual(random.rng_next_int(rng_ref), 951893194)
+
 test "boundary seed initialization safety":
-  # Must not overflow on INT64_MAX, INT64_MIN, or 0
+  # Must not overflow on INT64_MAX, INT64_MIN, negative, or 0
   var rng_max = random.new_rng(9223372036854775807)
   val_max = random.rng_next_float(rng_max)
   assertEqual(val_max > 0.0 and val_max < 1.0, true)
@@ -30,30 +41,112 @@ test "boundary seed initialization safety":
   val_min = random.rng_next_float(rng_min)
   assertEqual(val_min > 0.0 and val_min < 1.0, true)
 
+  var rng_neg = random.new_rng(-123456789)
+  val_neg = random.rng_next_float(rng_neg)
+  assertEqual(val_neg > 0.0 and val_neg < 1.0, true)
+
   var rng_zero = random.new_rng(0)
   val_zero = random.rng_next_float(rng_zero)
   assertEqual(val_zero > 0.0 and val_zero < 1.0, true)
 
-test "randint large range and exact boundary test":
+test "randint single and multi draw range sampling":
   var rng = random.new_rng(12345)
-  # Test the exact boundary that previously caused an infinite rejection loop:
+
+  # Single value range (min == max)
+  val_single = random.rng_randint(rng, 7, 7)
+  assertEqual(val_single, 7)
+
+  # Single draw exact boundary (range_size == M = 4294967086)
   val_boundary = random.rng_randint(rng, 0, 4294967086)
   assertEqual(val_boundary >= 0, true)
   assertEqual(val_boundary <= 4294967086, true)
 
-  # Test multi-draw range larger than one draw:
+  # Multi-draw range (M < range_size)
   val_large = random.rng_randint(rng, 0, 10000000000)
   assertEqual(val_large >= 0, true)
   assertEqual(val_large <= 10000000000, true)
 
-test "empty collection safe fallback":
+  # Negative to positive multi-draw range
+  val_neg_pos = random.rng_randint(rng, -5000000000, 5000000000)
+  assertEqual(val_neg_pos >= -5000000000, true)
+  assertEqual(val_neg_pos <= 5000000000, true)
+
+  # Maximum supported range R_max: range_size = r_max
+  rm = random.max_range()
+  val_max_range = random.rng_randint(rng, 0, rm - 1)
+  assertEqual(val_max_range >= 0, true)
+  assertEqual(val_max_range <= rm - 1, true)
+
+test "public typed error contract invalid range":
+  var rng = random.new_rng(12345)
+
+  # min > max raises InvalidRange
+  var caught_inverted = false
+  try:
+    bad = random.rng_randint(rng, 10, 5)
+  recover random.RandomError.InvalidRange:
+    caught_inverted = true
+  assertEqual(caught_inverted, true)
+
+  # Range exceeding R_max: 0 to r_max (size = r_max + 1)
+  rm = random.max_range()
+  var caught_exceeded = false
+  try:
+    bad_large = random.rng_randint(rng, 0, rm)
+  recover random.RandomError.InvalidRange:
+    caught_exceeded = true
+  assertEqual(caught_exceeded, true)
+
+  # 64-bit integer overflow range: INT64_MIN to INT64_MAX
+  var caught_overflow = false
+  try:
+    bad_overflow = random.rng_randint(rng, -9223372036854775808, 9223372036854775807)
+  recover random.RandomError.InvalidRange:
+    caught_overflow = true
+  assertEqual(caught_overflow, true)
+
+  # Negative boundary overflow: INT64_MIN to 0
+  var caught_neg_overflow = false
+  try:
+    bad_neg = random.rng_randint(rng, -9223372036854775808, 0)
+  recover random.RandomError.InvalidRange:
+    caught_neg_overflow = true
+  assertEqual(caught_neg_overflow, true)
+
+test "public typed error contract empty collection":
   var rng = random.new_rng(999)
   empty_vec = Vector[Int]()
-  c = random.choice(empty_vec, rng)
-  assertEqual(c, 0)
 
+  # choice on empty vector raises EmptyCollection
+  var caught_empty = false
+  try:
+    c = random.choice(empty_vec, rng)
+  recover random.RandomError.EmptyCollection:
+    caught_empty = true
+  assertEqual(caught_empty, true)
+
+  # choice on non-empty vector succeeds
+  var non_empty = Vector[Int]()
+  non_empty.push(10)
+  non_empty.push(20)
+  non_empty.push(30)
+  picked = random.choice(non_empty, rng)
+  assertEqual(picked == 10 or picked == 20 or picked == 30, true)
+
+  # shuffle returns empty vector when input is empty
   shuffled_empty = random.shuffle(empty_vec, rng)
   assertEqual(shuffled_empty |> count, 0)
+
+  # shuffle returns single-element vector when input length is 1
+  var single_vec = Vector[Int]()
+  single_vec.push(42)
+  shuffled_single = random.shuffle(single_vec, rng)
+  assertEqual(shuffled_single |> count, 1)
+  assertEqual(shuffled_single[0], 42)
+
+  # shuffle with multiple elements preserves count
+  shuffled = random.shuffle(non_empty, rng)
+  assertEqual(shuffled |> count, 3)
 
 test "long deterministic sequence consistency":
   var rng = random.new_rng(314159)

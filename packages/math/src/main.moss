@@ -72,7 +72,7 @@ export fn min(a: Float, b: Float) -> Float:
   if a == 0.0 and b == 0.0:
     # Signed zero distinction: 1.0 / -0.0 is -inf (< 0.0)
     if (1.0 / a) < 0.0 or (1.0 / b) < 0.0:
-      return -0.0
+      return (0.0 - 1.0) * 0.0
     return 0.0
   if a < b:
     return a
@@ -94,7 +94,7 @@ export fn max(a: Float, b: Float) -> Float:
   if a == 0.0 and b == 0.0:
     if (1.0 / a) > 0.0 or (1.0 / b) > 0.0:
       return 0.0
-    return -0.0
+    return (0.0 - 1.0) * 0.0
   if a > b:
     return a
   return b
@@ -127,13 +127,13 @@ export fn signum(x: Float) -> Float:
     return x
   if x > 0.0:
     return 1.0
-  return -1.0
+  return 0.0 - 1.0
 
 export fn signum_int(x: Int) -> Int:
   if x > 0:
     return 1
   if x < 0:
-    return -1
+    return 0 - 1
   return 0
 
 # --- Rounding Functions (Exact 2^52 Constant Shift Identity) ---
@@ -201,37 +201,89 @@ export fn exp(x: Float) -> Float:
     if x > 0.0:
       return infinity()
     return 0.0
-  if x > 709.7827:
+  if x > 709.782712893384:
     return infinity()
-  if x < -708.3964:
+  if x < -745.1332191019412:
     return 0.0
+  if x == 0.0:
+    return 1.0
 
-  ln2 = 0.6931471805599453
-  k = round(x / ln2)
-  r = x - k * ln2
+  c1 = 0.6931471803691238
+  c2 = 1.9082149292705877 / 10000000000.0
+  k = round(x / 0.6931471805599453)
+  r = (x - k * c1) - k * c2
 
   # Taylor series expansion of exp(r)
   var term = 1.0
   var sum = 1.0
   var n = 1.0
-  while n <= 18.0:
+  while n <= 22.0:
     term = term * r / n
     sum = sum + term
     n = n + 1.0
 
-  # Binary exponentiation for 2^k
-  var factor = 1.0
-  var count = k
-  if count < 0.0:
-    count = 0.0 - count
-  var base = 2.0
-  while count >= 1.0:
-    factor = factor * base
-    count = count - 1.0
-
+  # Split 2^k scaling into two halves (2^k1 * 2^k2) so intermediate values never overflow 2^1023
+  var k1 = 0.0
+  var rem = k
+  if rem < 0.0:
+    rem = 0.0 - rem
+  while rem >= 64.0:
+    rem = rem - 64.0
+    k1 = k1 + 32.0
+  while rem >= 16.0:
+    rem = rem - 16.0
+    k1 = k1 + 8.0
+  while rem >= 4.0:
+    rem = rem - 4.0
+    k1 = k1 + 2.0
+  while rem >= 2.0:
+    rem = rem - 2.0
+    k1 = k1 + 1.0
   if k < 0.0:
-    return sum / factor
-  return sum * factor
+    k1 = 0.0 - k1
+  let k2 = k - k1
+
+  # Compute 2^k1
+  var s1 = 1.0
+  var p1 = k1
+  if p1 < 0.0:
+    p1 = 0.0 - p1
+  while p1 >= 64.0:
+    s1 = s1 * 1.8446744073709552e19
+    p1 = p1 - 64.0
+  while p1 >= 16.0:
+    s1 = s1 * 65536.0
+    p1 = p1 - 16.0
+  while p1 >= 4.0:
+    s1 = s1 * 16.0
+    p1 = p1 - 4.0
+  while p1 >= 1.0:
+    s1 = s1 * 2.0
+    p1 = p1 - 1.0
+  if k1 < 0.0:
+    s1 = 1.0 / s1
+
+  # Compute 2^k2
+  var s2 = 1.0
+  var p2 = k2
+  if p2 < 0.0:
+    p2 = 0.0 - p2
+  while p2 >= 64.0:
+    s2 = s2 * 1.8446744073709552e19
+    p2 = p2 - 64.0
+  while p2 >= 16.0:
+    s2 = s2 * 65536.0
+    p2 = p2 - 16.0
+  while p2 >= 4.0:
+    s2 = s2 * 16.0
+    p2 = p2 - 4.0
+  while p2 >= 1.0:
+    s2 = s2 * 2.0
+    p2 = p2 - 1.0
+  if k2 < 0.0:
+    s2 = 1.0 / s2
+
+  return (sum * s1) * s2
 
 export fn ln(x: Float) -> Float:
   if is_nan(x):
@@ -242,66 +294,152 @@ export fn ln(x: Float) -> Float:
     return neg_infinity()
   if not is_finite(x):
     return x
+  if x == 1.0:
+    return 0.0
+
   var v = x
   var k = 0.0
+  while v >= 1.8446744073709552e19:
+    v = v / 1.8446744073709552e19
+    k = k + 64.0
+  while v <= (1.0 / 1.8446744073709552e19):
+    v = v * 1.8446744073709552e19
+    k = k - 64.0
+  while v >= 65536.0:
+    v = v / 65536.0
+    k = k + 16.0
+  while v <= 0.0000152587890625:
+    v = v * 65536.0
+    k = k - 16.0
   while v > 1.4142135623730951:
     v = v / 2.0
     k = k + 1.0
   while v < 0.7071067811865475:
     v = v * 2.0
     k = k - 1.0
+
   u = (v - 1.0) / (v + 1.0)
   u2 = u * u
   var term = u
   var series = u
   var d = 3.0
-  while d <= 21.0:
+  while d <= 27.0:
     term = term * u2
     series = series + term / d
     d = d + 2.0
   ln_v = 2.0 * series
-  ln2 = 0.6931471805599453
-  return ln_v + k * ln2
+  c1 = 0.6931471803691238
+  c2 = 1.9082149292705877 / 10000000000.0
+  return (ln_v + k * c1) + k * c2
 
 export fn log2(x: Float) -> Float:
+  if x == 1.0:
+    return 0.0
   return ln(x) / 0.6931471805599453
 
 export fn log10(x: Float) -> Float:
+  if x == 1.0:
+    return 0.0
   return ln(x) / 2.302585092994046
 
 export fn pow(base: Float, exponent: Float) -> Float:
-  # IEEE-754: x^0 == 1.0 for any x (including NaN)
+  # IEEE-754 cascades
   if exponent == 0.0:
     return 1.0
-  # IEEE-754: 1.0^y == 1.0 for any y (including NaN)
   if base == 1.0:
     return 1.0
   if is_nan(base) or is_nan(exponent):
     return nan()
-  if base == 0.0:
-    if exponent > 0.0:
+  if base == -1.0 and is_infinite(exponent):
+    return 1.0
+  if is_infinite(exponent):
+    let abs_b = abs(base)
+    if abs_b > 1.0:
+      if exponent > 0.0:
+        return infinity()
       return 0.0
-    return infinity()
+    if abs_b < 1.0:
+      if exponent > 0.0:
+        return 0.0
+      return infinity()
+
+  let is_int_exp = exponent == trunc(exponent)
+  let is_odd_exp = is_int_exp and ((trunc(exponent / 2.0) * 2.0) != exponent)
+
+  if is_infinite(base):
+    if base > 0.0:
+      if exponent > 0.0:
+        return infinity()
+      return 0.0
+    else:
+      if exponent > 0.0:
+        if is_odd_exp:
+          return neg_infinity()
+        return infinity()
+      else:
+        if is_odd_exp:
+          return (0.0 - 1.0) * 0.0
+        return 0.0
+
+  if base == 0.0:
+    let base_neg = (1.0 / base) < 0.0
+    if exponent > 0.0:
+      if base_neg and is_odd_exp:
+        return (0.0 - 1.0) * 0.0
+      return 0.0
+    else:
+      if base_neg and is_odd_exp:
+        return neg_infinity()
+      return infinity()
+
+  let exp_abs = abs(exponent)
+  if is_int_exp and exp_abs <= 1000.0:
+    var res = 1.0
+    var b = abs(base)
+    var e = exp_abs
+    while e > 0.0:
+      var half_e = 0.0
+      var rem = e
+      while rem >= 64.0:
+        rem = rem - 64.0
+        half_e = half_e + 32.0
+      while rem >= 16.0:
+        rem = rem - 16.0
+        half_e = half_e + 8.0
+      while rem >= 4.0:
+        rem = rem - 4.0
+        half_e = half_e + 2.0
+      while rem >= 2.0:
+        rem = rem - 2.0
+        half_e = half_e + 1.0
+      if (e - half_e * 2.0) != 0.0:
+        res = res * b
+      b = b * b
+      e = half_e
+    if base < 0.0 and is_odd_exp:
+      res = 0.0 - res
+    if exponent < 0.0:
+      return 1.0 / res
+    return res
+
   if base < 0.0:
-    if exponent == trunc(exponent):
-      exp_abs = abs(exponent)
-      p = exp(exp_abs * ln(0.0 - base))
-      if (trunc(exponent / 2.0) * 2.0) != exponent:
-        p = 0.0 - p
-      if exponent < 0.0:
-        return 1.0 / p
-      return p
-    return nan()
+    if not is_int_exp:
+      return nan()
+    let mag = exp(exponent * ln(0.0 - base))
+    if is_odd_exp:
+      return 0.0 - mag
+    return mag
+
   return exp(exponent * ln(base))
 
 export fn pow_int(base: Int, exponent: Int) -> Int:
   if exponent < 0:
     if base == 1:
       return 1
-    if base == -1:
+    if base == 0 - 1:
       if exponent % 2 == 0:
         return 1
-      return -1
+      return 0 - 1
     return 0
   var result = 1
   var b = base
@@ -314,40 +452,101 @@ export fn pow_int(base: Int, exponent: Int) -> Int:
   return result
 
 export fn sin(x: Float) -> Float:
-  if not is_finite(x):
+  if is_nan(x) or not is_finite(x):
     return nan()
+  if x == 0.0:
+    return x
+
   two_pi = 6.283185307179586
-  pi_val = 3.141592653589793
   half_pi = 1.5707963267948966
   var v = x - trunc(x / two_pi) * two_pi
   if v < 0.0:
     v = v + two_pi
-  if v > pi_val:
-    v = v - two_pi
-  if v > half_pi:
-    v = pi_val - v
+
+  k = round(v / half_pi)
+  r = v - k * half_pi
+  var rem = k
+  while rem >= 4.0:
+    rem = rem - 4.0
+  m = rem
+
+  r2 = r * r
+  if m == 0.0 or m == 2.0:
+    var term = r
+    var sum = r
+    var n = 3.0
+    while n <= 21.0:
+      term = (0.0 - term) * r2 / (n * (n - 1.0))
+      sum = sum + term
+      n = n + 2.0
+    if m == 2.0:
+      return 0.0 - sum
+    return sum
   else:
-    if v < 0.0 - half_pi:
-      v = 0.0 - pi_val - v
-  v2 = v * v
-  var term = v
-  var sum = v
-  var n = 3.0
-  while n <= 21.0:
-    term = (0.0 - term) * v2 / (n * (n - 1.0))
-    sum = sum + term
-    n = n + 2.0
-  return sum
+    var term = 1.0
+    var sum = 1.0
+    var n = 2.0
+    while n <= 20.0:
+      term = (0.0 - term) * r2 / (n * (n - 1.0))
+      sum = sum + term
+      n = n + 2.0
+    if m == 3.0:
+      return 0.0 - sum
+    return sum
 
 export fn cos(x: Float) -> Float:
-  if not is_finite(x):
+  if is_nan(x) or not is_finite(x):
     return nan()
+  if x == 0.0:
+    return 1.0
+
+  two_pi = 6.283185307179586
   half_pi = 1.5707963267948966
-  return sin(half_pi - x)
+  var v = x - trunc(x / two_pi) * two_pi
+  if v < 0.0:
+    v = v + two_pi
+
+  k = round(v / half_pi)
+  r = v - k * half_pi
+  var rem = k
+  while rem >= 4.0:
+    rem = rem - 4.0
+  m = rem
+
+  r2 = r * r
+  if m == 0.0 or m == 2.0:
+    var term = 1.0
+    var sum = 1.0
+    var n = 2.0
+    while n <= 20.0:
+      term = (0.0 - term) * r2 / (n * (n - 1.0))
+      sum = sum + term
+      n = n + 2.0
+    if m == 2.0:
+      return 0.0 - sum
+    return sum
+  else:
+    var term = r
+    var sum = r
+    var n = 3.0
+    while n <= 21.0:
+      term = (0.0 - term) * r2 / (n * (n - 1.0))
+      sum = sum + term
+      n = n + 2.0
+    if m == 1.0:
+      return 0.0 - sum
+    return sum
 
 export fn tan(x: Float) -> Float:
+  if is_nan(x) or not is_finite(x):
+    return nan()
+  if x == 0.0:
+    return x
   c = cos(x)
   if c == 0.0:
+    s = sin(x)
+    if s < 0.0:
+      return neg_infinity()
     return infinity()
   return sin(x) / c
 
@@ -361,69 +560,129 @@ export fn atan(x: Float) -> Float:
   if not is_finite(x):
     if x > 0.0:
       return 1.5707963267948966
-    return -1.5707963267948966
+    return 0.0 - 1.5707963267948966
+  if x == 0.0:
+    return x
   var sign = 1.0
   var v = x
   if v < 0.0:
-    sign = -1.0
+    sign = 0.0 - 1.0
     v = 0.0 - v
-  var offset = 0.0
+  var inverted = false
   if v > 1.0:
     v = 1.0 / v
-    offset = 1.5707963267948966
+    inverted = true
+  var reduced = false
   if v > 0.41421356237309505:
     v = (v - 1.0) / (v + 1.0)
-    if offset == 0.0:
-      offset = 0.7853981633974483
-    else:
-      offset = offset - 0.7853981633974483
+    reduced = true
 
   v2 = v * v
   var term = v
   var sum = v
-  var sign_alt = -1.0
+  var sign_alt = 0.0 - 1.0
   var n = 3.0
   while n <= 35.0:
     term = term * v2
     sum = sum + sign_alt * (term / n)
     sign_alt = 0.0 - sign_alt
     n = n + 2.0
-  if offset != 0.0:
-    return sign * (offset + sum)
-  return sign * sum
+
+  let pi_4 = 0.7853981633974483
+  let pi_2 = 1.5707963267948966
+  var res = 0.0
+  if not inverted:
+    if reduced:
+      res = pi_4 + sum
+    else:
+      res = sum
+  else:
+    if reduced:
+      res = pi_4 - sum
+    else:
+      res = pi_2 - sum
+
+  if sign < 0.0:
+    return 0.0 - res
+  return res
 
 export fn atan2(y: Float, x: Float) -> Float:
   pi_val = 3.141592653589793
   half_pi = 1.5707963267948966
+  three_pi_4 = 2.356194490192345
+  pi_4 = 0.7853981633974483
+
   if is_nan(y) or is_nan(x):
     return nan()
+
+  if is_infinite(y):
+    if is_infinite(x):
+      if y > 0.0 and x > 0.0:
+        return pi_4
+      if y > 0.0 and x < 0.0:
+        return three_pi_4
+      if y < 0.0 and x > 0.0:
+        return 0.0 - pi_4
+      return 0.0 - three_pi_4
+    else:
+      if y > 0.0:
+        return half_pi
+      return 0.0 - half_pi
+
+  if is_infinite(x):
+    y_is_neg = (1.0 / y) < 0.0 or y < 0.0
+    if x > 0.0:
+      if y_is_neg:
+        return (0.0 - 1.0) * 0.0
+      return 0.0
+    else:
+      if y_is_neg:
+        return 0.0 - pi_val
+      return pi_val
+
+  if y == 0.0:
+    y_is_neg = (1.0 / y) < 0.0
+    if x == 0.0:
+      x_is_neg = (1.0 / x) < 0.0
+      if x_is_neg:
+        if y_is_neg:
+          return 0.0 - pi_val
+        return pi_val
+      else:
+        if y_is_neg:
+          return (0.0 - 1.0) * 0.0
+        return 0.0
+    if x > 0.0:
+      if y_is_neg:
+        return (0.0 - 1.0) * 0.0
+      return 0.0
+    else:
+      if y_is_neg:
+        return 0.0 - pi_val
+      return pi_val
+
+  if x == 0.0:
+    if y > 0.0:
+      return half_pi
+    return 0.0 - half_pi
+
   if x > 0.0:
     return atan(y / x)
-  if x < 0.0:
-    if y >= 0.0:
-      return atan(y / x) + pi_val
-    return atan(y / x) - pi_val
-  # x == 0.0
-  if y > 0.0:
-    return half_pi
-  if y < 0.0:
-    return 0.0 - half_pi
-  return 0.0
+  if y >= 0.0:
+    return atan(y / x) + pi_val
+  return atan(y / x) - pi_val
 
 export fn asin(x: Float) -> Float:
   if is_nan(x) or x < -1.0 or x > 1.0:
     return nan()
-  if x == 1.0:
-    return 1.5707963267948966
-  if x == -1.0:
-    return -1.5707963267948966
-  return atan(x / sqrt(1.0 - x * x))
+  if x == 0.0:
+    return x
+  return atan2(x, sqrt((1.0 - x) * (1.0 + x)))
 
 export fn acos(x: Float) -> Float:
   if is_nan(x) or x < -1.0 or x > 1.0:
     return nan()
-  half_pi = 1.5707963267948966
-  return half_pi - asin(x)
+  return atan2(sqrt((1.0 - x) * (1.0 + x)), x)
 
 # --- Hyperbolic Functions with Large-Magnitude Protection ---
 
@@ -432,10 +691,20 @@ export fn sinh(x: Float) -> Float:
     return x
   if not is_finite(x):
     return x
-  if x > 709.7827:
+  if x == 0.0:
+    return x
+  ax = abs(x)
+  if ax < 0.00001:
+    return x
+  if x > 710.47586:
     return infinity()
-  if x < -709.7827:
+  if x < -710.47586:
     return neg_infinity()
+  if ax > 700.0:
+    val = exp(ax - 0.6931471805599453)
+    if x < 0.0:
+      return 0.0 - val
+    return val
   return (exp(x) - exp(0.0 - x)) / 2.0
 
 export fn cosh(x: Float) -> Float:
@@ -443,8 +712,13 @@ export fn cosh(x: Float) -> Float:
     return x
   if not is_finite(x):
     return infinity()
-  if x > 709.7827 or x < -709.7827:
+  if x == 0.0:
+    return 1.0
+  ax = abs(x)
+  if ax > 710.47586:
     return infinity()
+  if ax > 700.0:
+    return exp(ax - 0.6931471805599453)
   return (exp(x) + exp(0.0 - x)) / 2.0
 
 export fn tanh(x: Float) -> Float:
@@ -453,11 +727,16 @@ export fn tanh(x: Float) -> Float:
   if not is_finite(x):
     if x > 0.0:
       return 1.0
-    return -1.0
+    return 0.0 - 1.0
+  if x == 0.0:
+    return x
+  ax = abs(x)
+  if ax < 0.00001:
+    return x
   if x >= 20.0:
     return 1.0
   if x <= -20.0:
-    return -1.0
+    return 0.0 - 1.0
   e2x = exp(2.0 * x)
   return (e2x - 1.0) / (e2x + 1.0)
 
@@ -466,19 +745,19 @@ export fn tanh(x: Float) -> Float:
 export fn hypot(x: Float, y: Float) -> Float:
   ax = abs(x)
   ay = abs(y)
-  if not is_finite(ax) or not is_finite(ay):
-    if is_nan(ax) or is_nan(ay):
-      return nan()
+  if is_infinite(ax) or is_infinite(ay):
     return infinity()
+  if is_nan(ax) or is_nan(ay):
+    return nan()
   if ax == 0.0 and ay == 0.0:
     return 0.0
-  var max_val = ax
-  var min_val = ay
+  var a = ax
+  var b = ay
   if ay > ax:
-    max_val = ay
-    min_val = ax
-  ratio = min_val / max_val
-  return max_val * sqrt(1.0 + ratio * ratio)
+    a = ay
+    b = ax
+  ratio = b / a
+  return a * sqrt(1.0 + ratio * ratio)
 
 export fn rad_to_deg(rad: Float) -> Float:
   return rad * (180.0 / 3.141592653589793)

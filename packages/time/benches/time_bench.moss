@@ -11,5 +11,5 @@ bench "hinnant civil calendar decomposition":
   dt = time.timestamp_to_datetime(ts)
 
 bench "iso 8601 formatting":
-  dt = time.make_datetime(2026, 10, 12, 12, 30, 45, 123)
+  dt = time.DateTime(year: 2026, month: 10, day: 12, hour: 12, minute: 30, second: 45, millisecond: 123)
   iso = time.datetime_to_iso8601(dt)

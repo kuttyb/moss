@@ -1,17 +1,17 @@
 import random
 
+bench "mrg32k3a next int generation":
+  var rng = random.new_rng(12345)
+  var i = 0
+  while i < 1000:
+    v = random.rng_next_int(rng)
+    i = i + 1
+
 bench "mrg32k3a next float generation":
   var rng = random.new_rng(12345)
   var i = 0
   while i < 1000:
     f = random.rng_next_float(rng)
-    i = i + 1
-
-bench "mrg32k3a randint with rejection sampling":
-  var rng = random.new_rng(12345)
-  var i = 0
-  while i < 1000:
-    r = random.rng_randint(rng, 1, 100)
     i = i + 1
 
 bench "fisher yates shuffle 100 elements":
