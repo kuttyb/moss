@@ -61,9 +61,6 @@ export fn valid_slice(value: String, start: Int, length: Int) -> Bool:
 # Call valid_slice first when a valid empty slice must be distinguished from an
 # invalid request.
 export fn slice(value: String, start: Int, length: Int) -> String:
-  total = value.length()
-  if not core.valid_slice(start, length, total):
-    return ""
   return value.slice(start, length)
 
 export fn is_ascii_whitespace(character: String) -> Bool:

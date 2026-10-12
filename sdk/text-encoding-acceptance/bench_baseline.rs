@@ -235,10 +235,10 @@ fn main() {
     measure("Rust text find 256 code points", || {
         let value = make_find_input();
         assert_eq!(value.chars().count(), 256);
-        let pattern = "aaaaab";
+        let pattern = "aaaaab".to_owned();
         assert_eq!(pattern.chars().count(), 6);
         assert_eq!(
-            black_box(text_find(black_box(&value), black_box(pattern))),
+            black_box(text_find(black_box(&value), black_box(&pattern))),
             250
         );
     });
@@ -258,9 +258,10 @@ fn main() {
     });
     measure("Rust scalar text find 256 code points", || {
         let value = make_find_input();
+        let pattern = "aaaaab".to_owned();
         assert_eq!(value.chars().count(), 256);
         assert_eq!(
-            black_box(scalar_text_find(black_box(&value), "aaaaab")),
+            black_box(scalar_text_find(black_box(&value), black_box(&pattern))),
             250
         );
     });
@@ -309,13 +310,27 @@ fn main() {
 
     measure("Rust profile text find prebuilt 256 code points x8", || {
         let value = make_find_input();
+        let pattern = "aaaaab".to_owned();
         let mut checksum = 0_i64;
         for _ in 0..8 {
-            checksum += black_box(text_find(black_box(&value), black_box("aaaaab")));
+            checksum += black_box(text_find(black_box(&value), black_box(&pattern)));
         }
         assert_eq!(value.chars().count(), 256);
         assert_eq!(checksum, 2_000);
     });
+    measure(
+        "Rust scalar profile text find prebuilt 256 code points x8",
+        || {
+            let value = make_find_input();
+            let pattern = "aaaaab".to_owned();
+            let mut checksum = 0_i64;
+            for _ in 0..8 {
+                checksum += black_box(scalar_text_find(black_box(&value), black_box(&pattern)));
+            }
+            assert_eq!(value.chars().count(), 256);
+            assert_eq!(checksum, 2_000);
+        },
+    );
     measure(
         "Rust profile text slice prebuilt 256 code points x16",
         || {
@@ -331,57 +346,122 @@ fn main() {
         },
     );
     measure(
-        "Rust scalar profile text find long ASCII early late no match x8",
+        "Rust scalar profile text slice prebuilt 256 code points x16",
         || {
-            let value = make_long_ascii_find_input();
-            let mut checksum = 0_i64;
-            for _ in 0..8 {
-                checksum += black_box(scalar_text_find(black_box(&value), "aaa"));
-                checksum += black_box(scalar_text_find(black_box(&value), "needle"));
-                checksum += black_box(scalar_text_find(black_box(&value), "absent"));
+            let value = make_slice_input();
+            let mut total = 0;
+            for _ in 0..16 {
+                total += black_box(scalar_text_slice(black_box(&value), 64, 128))
+                    .chars()
+                    .count();
             }
-            assert_eq!(value.chars().count(), 1_030);
-            assert_eq!(value.chars().nth(1_024), Some('n'));
-            assert_eq!(checksum, 8_184);
+            assert_eq!(value.chars().count(), 256);
+            assert_eq!(total, 2_048);
         },
     );
     measure(
-        "Rust scalar profile text find multibyte early late no match x8",
+        "Rust scalar profile text find prebuilt 256 code points x128",
+        || {
+            let value = make_find_input();
+            let pattern = "aaaaab".to_owned();
+            let mut checksum = 0_i64;
+            for _ in 0..128 {
+                checksum += black_box(scalar_text_find(black_box(&value), black_box(&pattern)));
+            }
+            assert_eq!(value.chars().count(), 256);
+            assert_eq!(checksum, 32_000);
+        },
+    );
+    measure(
+        "Rust scalar profile text slice prebuilt 256 code points x128",
+        || {
+            let value = make_slice_input();
+            let mut total = 0;
+            for _ in 0..128 {
+                total += black_box(scalar_text_slice(black_box(&value), 64, 128))
+                    .chars()
+                    .count();
+            }
+            assert_eq!(value.chars().count(), 256);
+            assert_eq!(total, 16_384);
+        },
+    );
+    measure(
+        "Rust scalar profile text find long ASCII early late no match x128",
+        || {
+            let value = make_long_ascii_find_input();
+            let early_pattern = "aaa".to_owned();
+            let late_pattern = "needle".to_owned();
+            let absent_pattern = "absent".to_owned();
+            let mut checksum = 0_i64;
+            for _ in 0..128 {
+                checksum += black_box(scalar_text_find(
+                    black_box(&value),
+                    black_box(&early_pattern),
+                ));
+                checksum += black_box(scalar_text_find(
+                    black_box(&value),
+                    black_box(&late_pattern),
+                ));
+                checksum += black_box(scalar_text_find(
+                    black_box(&value),
+                    black_box(&absent_pattern),
+                ));
+            }
+            assert_eq!(value.chars().count(), 1_030);
+            assert_eq!(value.chars().nth(1_024), Some('n'));
+            assert_eq!(checksum, 130_944);
+        },
+    );
+    measure(
+        "Rust scalar profile text find multibyte early late no match x128",
         || {
             let value = make_long_multibyte_find_input();
+            let early_pattern = "é🙂".to_owned();
+            let late_pattern = "界end".to_owned();
+            let absent_pattern = "absent".to_owned();
             let mut checksum = 0_i64;
-            for _ in 0..8 {
-                checksum += black_box(scalar_text_find(black_box(&value), "é🙂"));
-                checksum += black_box(scalar_text_find(black_box(&value), "界end"));
-                checksum += black_box(scalar_text_find(black_box(&value), "absent"));
+            for _ in 0..128 {
+                checksum += black_box(scalar_text_find(
+                    black_box(&value),
+                    black_box(&early_pattern),
+                ));
+                checksum += black_box(scalar_text_find(
+                    black_box(&value),
+                    black_box(&late_pattern),
+                ));
+                checksum += black_box(scalar_text_find(
+                    black_box(&value),
+                    black_box(&absent_pattern),
+                ));
             }
             assert_eq!(value.chars().count(), 1_028);
             assert_eq!(value.chars().nth(1_024), Some('界'));
-            assert_eq!(checksum, 8_184);
+            assert_eq!(checksum, 130_944);
         },
     );
-    measure("Rust scalar profile text slice long ASCII x8", || {
+    measure("Rust scalar profile text slice long ASCII x128", || {
         let value = make_long_ascii_slice_input();
         let mut total = 0;
-        for _ in 0..8 {
+        for _ in 0..128 {
             total += black_box(scalar_text_slice(black_box(&value), 512, 1_024))
                 .chars()
                 .count();
         }
         assert_eq!(value.chars().count(), 2_048);
-        assert_eq!(total, 8_192);
+        assert_eq!(total, 131_072);
     });
-    measure("Rust scalar profile text slice long multibyte x8", || {
+    measure("Rust scalar profile text slice long multibyte x128", || {
         let value = make_long_multibyte_slice_input();
         let mut total = 0;
-        for _ in 0..8 {
+        for _ in 0..128 {
             let sliced = black_box(scalar_text_slice(black_box(&value), 255, 512));
             assert_eq!(sliced.chars().next(), Some('🙂'));
             assert_eq!(sliced.chars().last(), Some('é'));
             total += sliced.chars().count();
         }
         assert_eq!(value.chars().count(), 1_024);
-        assert_eq!(total, 4_096);
+        assert_eq!(total, 65_536);
     });
     measure(
         "Rust profile ASCII lower prebuilt 256 code points x4",
