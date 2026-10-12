@@ -1,0 +1,21 @@
+# Minimal successful alternative: generic Range `for` specialization.
+fn from_range(data):
+  var result = Vector[Int]()
+  for byte in data:
+    result.push(byte)
+  return result
+
+domain Worker:
+  fn Read(path: String) -> Int:
+    file = FileIO.open(path, ro)
+    data = file.read(0, 8)
+    owned = from_range(data)
+    file.close()
+    reply owned |> count
+
+  on_fail:
+    reply -1
+
+fn main():
+  worker = Worker()
+  echo message worker.Read("input.bin")

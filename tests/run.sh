@@ -10,6 +10,7 @@ python3 tests/tooling/check_retired_syntax.py --self-test
 
 # Repository-local agent skills carry current source guidance and a checked example.
 python3 tests/tooling/check_agent_skills.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_agent_feedback.py --self-test
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_shared_abi.py "$test_build/phase21-shared-abi"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_source_free_abi.py "$compiler" "$test_build/phase21-source-free"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_abi_v9_migration.py "$compiler"
@@ -51,6 +52,9 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_builtin_error_cont
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_standard_error_namespace.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_borrowed_view_write.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_generic_specialization.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_imported_generic_expressions.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 sdk/foundations/acceptance/run_all.py
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_adversarial_architect.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_builtin_generic_typing.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tools/check_swarm_feedback.py --self-test
 PYTHONDONTWRITEBYTECODE=1 python3 tools/check_swarm_issues.py --self-test

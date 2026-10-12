@@ -1,0 +1,7 @@
+module app
+import bytes
+
+fn main():
+  invalid = [0, 999]
+  copied = bytes.copy_bytes(invalid)
+  echo copied |> count

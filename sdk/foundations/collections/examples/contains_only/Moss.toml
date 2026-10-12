@@ -1,0 +1,9 @@
+[package]
+name = "collections_contains_only"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+"moss.collections" = { path = "../.." }

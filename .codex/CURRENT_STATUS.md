@@ -19,6 +19,32 @@ Independent Adversarial Numerical Reviewer and L6 Architect conducted comprehens
    - L6 Architect: **GO FOR MERGE REVIEW** (Full architectural, contract, and correctness compliance).
    - Merge Gate: Branch remains strictly on `phase24-math`; **zero commits merged into `main`**.
 
+## Phase 24 repository-wide agent feedback bootstrap — 2026-10-12
+
+Phase A infrastructure is complete on `phase24-agent-feedback-bootstrap`.
+The reviewed implementation commit is
+`0a99ee9fb3797404d8d84cc429313df8fd6818dd`, based directly on
+`e563401a4938b76bcfce1a9c727c55b155fdc652`. It defines the repository-wide
+developer-experience policy, versioned schema, dependency-free JSONL validator,
+valid examples, summary template, Team T guidance, onboarding hooks, and test
+workflow integration. `AGENTS.md` and `moss-agent-workflow` require ongoing
+ordinary-development capture while preserving the separate SWARM experimental
+protocol; work qualifying for both cross-links evidence rather than duplicating
+issue stores. The AGENTS Git boundary now positively authorizes remote pushes
+only on explicit user direction, replacing its earlier no-push wording.
+
+The independent Architect issued **GO** for exact candidate `0a99ee9` after
+fresh positive, critical/negative, malformed, duplicate, path, rogue-filename,
+empty-repository, and Draft 2020-12 schema checks. It also verified that existing
+SWARM policy, schemas, and validators are unchanged. Focused feedback, skill,
+SWARM, shell, and whitespace checks pass. On the same candidate,
+`TMPDIR="$PWD/tmp" make check` exited 0 with 54/54 executor tests and
+`all Moss v0.1 tests passed`; `make examples` built every positive example.
+
+Branch publication and the authorized feedback-only merge into the freshly
+fetched `phase24-integration` remain. After that merge is pushed, record its
+exact SHA and fork Team T's `phase24-text` branch from that remote commit.
+
 ## Phase 24 Team M: Independent Architect L6 Review — NO-GO — 2026-10-12
 
 Exact reviewed candidate commit: `129a81fa54a4f3d9b7f6d76bb376a9f85c3d9256` on `phase24-math`.
@@ -34,6 +60,35 @@ While Team M achieved clean execution of 23 existing unit tests, verified compil
 7. `moss.time`: Incomplete Gregorian calendar validation allows April 31 and Feb 29 on century non-leap year 1900, which silently mutate on roundtrip (April 31 $\to$ May 1, Feb 29 1900 $\to$ March 1).
 
 **Independent Architect L6 Verdict: NO-GO FOR MERGE INTO `main`.** Remediation roadmap defined in `docs/team_m/ARCHITECT_REVIEW.md`.
+
+## Phase 24 Foundations SDK independent Architect final adversarial GO; L7 merge gate — 2026-10-12
+
+Exact reviewed implementation: `23d625ba09d20490b8c5e98beddcd246b2bac416`
+on `phase24-core`. Following L7's conditional GO, the independent Architect L6
+executed an explicitly adversarial, falsification-oriented campaign covering:
+1. Advanced imported generic compositions (multi-level indexing, nested field projections,
+   arithmetic, boolean/comparisons, nested generics, and combined indexing/projections)
+   across native debug, native release, Fast Debug, and compiled-only ABI-v9 providers.
+2. Ownership, mutability, and synchronization boundaries (rejection of immutable inputs
+   to mutating algorithms with `IMMUTABLE_LOCAL_MUTATION`, domain-state exclusive 2PL locking
+   with `EXCLUSIVE` mode in compiler's synchronization plan, invalid byte value safety).
+3. Algorithm correctness across degenerate boundaries (empty collections, single elements,
+   duplicate keys, and extreme signed Int64 boundaries `INT64_MIN` and `INT64_MAX`).
+4. Controlled benchmark verification distinguishing algorithm implementation cost (heapsort
+   is within 8.5-9% of Rust's own heapsort, validated byte copy is within 3.3% of Rust)
+   from allocation overhead and pdqsort heuristics.
+
+All adversarial falsification tests passed with 0 failures, and the permanent gate
+`check_phase24_adversarial_architect.py` is integrated into `tests/run.sh`.
+The full acceptance test suite (`python3 sdk/foundations/acceptance/run_all.py --full`),
+all four package unit test suites (15/15), repository `TMPDIR="$PWD/tmp" make check`
+(54/54 executor tests; `all Moss v0.1 tests passed`), `make examples` (all 32 programs),
+strict C++17 compilation (0 warnings, 0 errors), and `git diff --check` pass cleanly.
+The separately attributable **GO for Phase 24 Foundations SDK** is recorded in
+`docs/PHASE_24_FOUNDATIONS_ARCHITECT_FINAL_ACCEPTANCE.md`.
+
+**Engineering L6: GO. Independent Architect L6: GO at `23d625b`. L7:
+HOLD merge pending explicit approval.** No merge into `main` has occurred.
 
 ## Phase 24 Team M: Post-L7 Review Repairs & Live Validation Verified — 2026-10-12
 
@@ -65,6 +120,32 @@ Team M resolved all requested repairs and unblocked live execution in the worksp
 - Native benchmarks: 11 benchmark targets executed cleanly via `margo bench` (1-38 ns for math,
   552-2933 ns for random, 2-872 ns for time).
 - Status: **VALIDATED BY LIVE RUN — READY FOR L7 MERGE REVIEW**. No merge into `main` has occurred.
+
+## Phase 24 Foundations SDK independent Architect GO; L7 merge gate — 2026-10-11
+
+Exact reviewed implementation: `bcebfaa27e57c8bfbc43ff124d9c0e5a953a9926`
+on `phase-24-foundations-integration`. The independent Architect L6 retested
+its earlier indexed vector literal counterexample (`[collections.index_of(...)][0]`,
+`[1, 2][0]`, and `collections.reversed_copy_int(...)`) in native debug/release
+and Fast Debug, as well as the earlier field-projection generic call repair
+(`probe.make(7).value`). Both P1 counterexamples are verified resolved in
+source-backed and compiled-only ABI-v9 provider contexts.
+The separately attributable **GO for the approved Phase 24 Foundations scope**
+is in `docs/PHASE_24_FOUNDATIONS_ARCHITECT_FINAL.md`. The earlier `20ccbcf`
+NO-GO remains valid for that older SHA.
+
+Four independent Margo packages (`moss.core`, `moss.bytes`, `moss.collections`,
+`moss.algorithms`) under `sdk/foundations/` are implemented, documented, and tested.
+The full acceptance test suite (`python3 sdk/foundations/acceptance/run_all.py --full`)
+passed 44 generated sort/search cases and 8 byte cases across native O0, native release,
+Fast Debug, and source-removed ABI-v9 providers. Smoke acceptance is integrated into
+`tests/run.sh`. Full repository `TMPDIR="$PWD/tmp" make check` exited 0 (`all Moss v0.1 tests passed`),
+`make examples` built all 32 showcase programs, strict C++17 compilation
+(`g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic -fsyntax-only src/moss.cpp`)
+passed with zero warnings/errors, and `git diff --check` passed cleanly.
+
+**Engineering L6: GO. Independent Architect L6: GO at `bcebfaa`. L7:
+HOLD merge pending explicit approval.** No merge into `main` has occurred.
 
 ## Phase 21 independent Architect GO; L7 merge gate — 2026-10-11
 

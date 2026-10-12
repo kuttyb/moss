@@ -1,0 +1,17 @@
+module app
+import bytes
+
+domain Reader:
+  fn Count(path: String) -> Int:
+    file = FileIO.open(path, ro)
+    borrowed = file.read(0, 8)
+    owned = bytes.from_range(borrowed)
+    file.close()
+    reply owned |> count
+
+  on_fail:
+    reply -1
+
+fn main():
+  reader = Reader()
+  echo message reader.Count("input.bin")

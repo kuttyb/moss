@@ -1,0 +1,66 @@
+import core
+import bytes
+import collections
+import algorithms
+
+test "core extreme boundaries":
+  assert(core.min_int(-9223372036854775807, 9223372036854775807) == -9223372036854775807)
+  assert(core.max_int(-9223372036854775807, 9223372036854775807) == 9223372036854775807)
+  assert(not core.valid_index(-1, 9223372036854775807))
+  assert(not core.valid_index(9223372036854775807, 9223372036854775807))
+  assert(core.valid_slice(9223372036854775807, 0, 9223372036854775807))
+  assert(not core.valid_slice(9223372036854775807, 1, 9223372036854775807))
+  assert(not core.valid_slice(-1, 1, 9223372036854775807))
+  assert(not core.valid_slice(0, 0, -1))
+
+test "bytes empty invalid indexes and existing invalid values":
+  empty = Vector[Int]()
+  assert(bytes.all_bytes(empty))
+  assert((bytes.copy_bytes(empty) |> count) == 0)
+  assert((bytes.slice_bytes(empty, 0, 0) |> count) == 0)
+  assert(bytes.get_or(empty, -1, 12) == 12)
+  assert(bytes.get_or(empty, 0, 12) == 12)
+  var values = [0, 255]
+  assert(not bytes.set_if_valid(values, -1, 4))
+  assert(not bytes.set_if_valid(values, 2, 4))
+  assert(not bytes.set_if_valid(values, 1, 256))
+  assert(not bytes.append_if_valid(values, -1))
+  assert(values[0] == 0)
+  assert(values[1] == 255)
+  assert((values |> count) == 2)
+  assert((bytes.slice_bytes(values, -1, 1) |> count) == 0)
+  assert((bytes.slice_bytes(values, 1, 9223372036854775807) |> count) == 1)
+  invalid = [3, 999]
+  assert(not bytes.all_bytes(invalid))
+  assert(bytes.get_or(invalid, 0, 9) == 3)
+
+test "collections generic specializations and empty":
+  empty = Vector[Int]()
+  assert(collections.index_of(empty, 2) == -1)
+  empty_has_two = collections.contains(empty, 2)
+  assert(not empty_has_two)
+  assert(collections.count_equal(empty, 2) == 0)
+  ints = [1, 2, 1, 1]
+  assert(collections.index_of(ints, 1) == 0)
+  assert(collections.count_equal(ints, 1) == 3)
+  words = ["z", "é", "z"]
+  assert(collections.index_of(words, "é") == 1)
+  assert(collections.count_equal(words, "z") == 2)
+  assert((collections.reversed_copy_int(empty) |> count) == 0)
+
+test "algorithms duplicate and order boundaries":
+  var empty = Vector[Int]()
+  algorithms.sort_int(empty)
+  assert(algorithms.lower_bound_int(empty, 5) == 0)
+  assert(algorithms.binary_search_int(empty, 5) == -1)
+  var equal = [7, 7, 7, 7, 7]
+  algorithms.sort_int(equal)
+  assert(algorithms.lower_bound_int(equal, 7) == 0)
+  assert(algorithms.binary_search_int(equal, 7) == 0)
+  assert(algorithms.lower_bound_int(equal, 8) == 5)
+  var reverse = [9223372036854775807, 2, 0, -2, -9223372036854775807]
+  algorithms.sort_int(reverse)
+  assert(reverse[0] == -9223372036854775807)
+  assert(reverse[4] == 9223372036854775807)
+  assert(algorithms.lower_bound_int(reverse, 1) == 3)
+  assert(algorithms.binary_search_int(reverse, -2) == 1)

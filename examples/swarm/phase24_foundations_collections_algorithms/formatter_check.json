@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0",
+  "command": "check",
+  "ok": true,
+  "result": {"source_file": "/home/owner/daji/code/moss/tmp/phase24-foundations/collections-algorithms/examples/swarm/phase24_foundations_collections_algorithms/repro_formatter_negative_return.moss", "diagnostics": []}
+}

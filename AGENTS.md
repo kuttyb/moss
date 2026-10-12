@@ -21,6 +21,26 @@ those executables are already available on `PATH`.
    - Use `margo` for package/project operations: `./margo build`, `./margo run`, `./margo test`, `./margo bench`, `./margo clean`, and package-aware Fast Debug via `./margo debug [--trace]`.
    - Use `moss` for language, semantic queries, diagnostics, and formatting: `moss check`, `inspect`, `type`, `effects`, `ownership`, `calls`, `why`, `cost`, `impact`, `edit`, `fmt`, and `debug`.
 
+## Mandatory developer-experience feedback
+
+Agents working on Moss source, SDKs, compiler support, runtime, or ecosystem
+tooling must read `agent-feedback/README.md` at project startup and follow it
+throughout the work. Capture a small number of meaningful, evidence-backed
+positive, negative, or uncertain observations near the time they occur; do not
+defer the entire record until closeout and do not invent observations to meet a
+quota.
+
+This repository has two complementary feedback systems:
+
+- Ordinary development uses `agent-feedback/<phase>/<team-project>/<workstream>/observations.jsonl`.
+- SWARM, dogfood, fresh-agent, and language-surface experiments continue to use
+  the protocol in `examples/swarm/SWARM.md`.
+- Work that qualifies for both follows both protocols and cross-links evidence
+  or an existing SWARM issue instead of creating duplicate bug databases.
+
+Run `python3 tests/tooling/check_agent_feedback.py` before integrating changes
+that add or modify developer-experience records.
+
 ## Before declaring a Moss gap
 
 Before reporting a Moss language/compiler/API feature as missing:
@@ -124,4 +144,6 @@ When working with Moss:
 - **Scratch Storage**: Use `./tmp/` for all temporary files and caches. Create `./tmp/` if it does not exist.
 - **No Elevation**: Never run `sudo` or otherwise attempt to elevate privileges.
 - **Authorized Commands**: Run in-repository Git commands, Python scripts, builds, and tests without requesting approval.
-- **Git Boundary**: You may stage files, create local commits, and push to the configured remote when explicitly directed by the user. Never push without that direction.
+- **Git Boundary**: You may stage files and create local commits. A push to the
+  configured remote is authorized when the user explicitly directs it; otherwise
+  leave branch publication to the user or designated coordinator.

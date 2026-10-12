@@ -1,0 +1,9 @@
+module app
+import algorithms
+
+fn main():
+  var values = [5, 2, 4, 1, 2]
+  algorithms.sort_int(values)
+  echo values[0], values[1], values[2], values[3], values[4]
+  echo algorithms.lower_bound_int(values, 2)
+  echo algorithms.binary_search_int(values, 3)
