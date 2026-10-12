@@ -1,0 +1,32 @@
+import collections
+
+test "empty and missing collection searches":
+  empty = Vector[Int]()
+  assertEqual(collections.index_of(empty, 3), -1)
+  assert(not collections.contains(empty, 3))
+  assertEqual(collections.count_equal(empty, 3), 0)
+  assertEqual(collections.index_of([1, 2, 3], 9), -1)
+
+test "first match and duplicate count":
+  numbers = [4, 2, 4, 4]
+  assertEqual(collections.index_of(numbers, 4), 0)
+  assert(collections.contains(numbers, 2))
+  assertEqual(collections.count_equal(numbers, 4), 3)
+  assertEqual(collections.count_equal(numbers, 8), 0)
+
+test "String specialization":
+  words = ["alpha", "beta", "alpha"]
+  assertEqual(collections.index_of(words, "beta"), 1)
+  assert(collections.contains(words, "alpha"))
+  assertEqual(collections.count_equal(words, "alpha"), 2)
+
+test "reverse Int copy leaves input untouched":
+  original = [1, 2, 3]
+  reversed = collections.reversed_copy_int(original)
+  assertEqual(original[0], 1)
+  assertEqual(original[2], 3)
+  assertEqual(reversed[0], 3)
+  assertEqual(reversed[1], 2)
+  assertEqual(reversed[2], 1)
+  empty = collections.reversed_copy_int(Vector[Int]())
+  assertEqual(empty |> count, 0)

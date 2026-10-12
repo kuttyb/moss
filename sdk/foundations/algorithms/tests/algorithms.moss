@@ -1,0 +1,43 @@
+import algorithms
+
+test "heap sort boundaries and duplicates":
+  var empty = Vector[Int]()
+  algorithms.sort_int(empty)
+  assertEqual(empty |> count, 0)
+  var one = [8]
+  algorithms.sort_int(one)
+  assertEqual(one[0], 8)
+  var values = [5, 2, 4, 1, 3, 2]
+  algorithms.sort_int(values)
+  assertEqual(values[0], 1)
+  assertEqual(values[1], 2)
+  assertEqual(values[2], 2)
+  assertEqual(values[3], 3)
+  assertEqual(values[4], 4)
+  assertEqual(values[5], 5)
+
+test "sort reverse order and equal values":
+  var descending = [5, 4, 3, 2, 1]
+  algorithms.sort_int(descending)
+  assertEqual(descending[0], 1)
+  assertEqual(descending[4], 5)
+  var equal = [7, 7, 7, 7]
+  algorithms.sort_int(equal)
+  assertEqual(equal[0], 7)
+  assertEqual(equal[3], 7)
+
+test "lower bound returns first qualifying slot":
+  values = [1, 2, 2, 2, 4]
+  assertEqual(algorithms.lower_bound_int(values, 0), 0)
+  assertEqual(algorithms.lower_bound_int(values, 2), 1)
+  assertEqual(algorithms.lower_bound_int(values, 3), 4)
+  assertEqual(algorithms.lower_bound_int(values, 5), 5)
+  assertEqual(algorithms.lower_bound_int(Vector[Int](), 1), 0)
+
+test "binary search returns first equal slot":
+  values = [1, 2, 2, 2, 4]
+  assertEqual(algorithms.binary_search_int(values, 2), 1)
+  assertEqual(algorithms.binary_search_int(values, 1), 0)
+  assertEqual(algorithms.binary_search_int(values, 4), 4)
+  assertEqual(algorithms.binary_search_int(values, 3), -1)
+  assertEqual(algorithms.binary_search_int(Vector[Int](), 1), -1)

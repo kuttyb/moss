@@ -1,0 +1,6 @@
+module app
+import algorithms
+
+fn main():
+  let values = [2, 1]
+  algorithms.sort_int(values)
