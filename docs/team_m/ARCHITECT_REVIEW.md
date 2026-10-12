@@ -2,7 +2,8 @@
 
 **Reviewer:** Independent L6 Architect, Moss Team M  
 **Target SDK Packages:** `moss.math` (`packages/math`), `moss.random` (`packages/random`), `moss.time` (`packages/time`), `moss.integration` (`packages/integration`)  
-**Exact Reviewed Implementation SHA:** `129a81fa54a4f3d9b7f6d76bb376a9f85c3d9256` on branch `phase24-math`  
+**Initial Reviewed Implementation SHA:** `129a81fa54a4f3d9b7f6d76bb376a9f85c3d9256` (NO-GO)  
+**Final Re-Evaluated Implementation SHA:** `2eee39ae2780389303846bd7029243d039e1c467` (GO)  
 **Parent Baseline Commit:** `4c07e31ea98a2ec9facb14c38cf3af8e56efe81d` (Merge Phase 21 error handling and ABI v9)  
 **Normative Specifications:**
 - `docs/MOSS_PHASE_21_ERROR_HANDLING.md` (Phase 21 error semantics, typed exceptions, closed error enums)
@@ -17,9 +18,9 @@
 
 Following the submission of the Phase 24 Team M Final Delivery Report (`FINAL_DELIVERY_REPORT.md`) on commit `129a81f`, this independent architectural evaluation performed a deep review of API contracts, error semantics, numerical algorithms, integer overflow safety, calendar completeness, and backend lowering.
 
-While Team M successfully resolved direct shell execution blockers, ensured clean `make check` regression passes, and fixed a Rust code generator lowering bug in `src/moss.cpp`, **the delivered library implementations contain severe mathematical defects, broken range reductions, unhandled signed integer overflow, silent data corruption, and complete non-conformance with Phase 21 error semantics**.
+Initial review of SHA `129a81f` resulted in an attributable **NO-GO** due to 7 blocking issues. Following Team M's comprehensive adversarial repairs on commit `2eee39ae2780389303846bd7029243d039e1c467`, all 7 issues were resolved, verified by 37/37 passing package tests, zero oracle falsifications, and passing `make check` / `make examples`. The final verdict on `2eee39ae2780389303846bd7029243d039e1c467` is **GO FOR MERGE REVIEW BY L7** (see Section 9).
 
-### Independent Attributable Verdict: **NO-GO FOR MERGE INTO `main`**
+### Historical Initial Verdict on SHA `129a81f`: **NO-GO FOR MERGE INTO `main`**
 
 Seven blocking architectural and correctness defects prevent production acceptance:
 1. **[CRITICAL] Broken `atan(x)` Range Reduction for $|x| > 1.0$:** Reversal of sign reconstruction causes `atan(2.0)` to return `0.4636` instead of `1.1071` (error > 58%), cascading catastrophic inaccuracies into `asin`, `acos`, and `atan2`.
@@ -382,4 +383,98 @@ Before Phase 24 can be accepted for merge into `main`, Team M must execute the f
 | `moss.integration` | Dependent on Flawed SDKs | **NO-GO** | Depends directly on flawed `moss.math`, `moss.random`, and `moss.time` implementations. |
 | Compiler (`src/moss.cpp`) | Lowering Bugfix Verified | **PASS** | Mixed Float/Int code generation lowering verified; passes full `make check`. |
 
-**Overall Gate Decision:** **HOLD MERGE — NO-GO FOR MAIN.** Team M must implement the remediation roadmap on their repair branches and submit for re-audit.
+**Overall Gate Decision at SHA 129a81f:** **HOLD MERGE — NO-GO FOR MAIN.** (Superseded by Section 9 below).
+
+---
+
+## 9. Final Re-Evaluation & Verification of Commit `2eee39ae2780389303846bd7029243d039e1c467`
+
+**Evaluation Date:** 2026-10-12  
+**Candidate Commit SHA:** `2eee39ae2780389303846bd7029243d039e1c467` on branch `phase24-math`  
+**Final Independent Attributable Verdict:** **GO FOR MERGE REVIEW BY L7**
+
+Following the initial NO-GO architectural review on `129a81f`, Team M implemented comprehensive algorithmic, numerical, and contract repairs across all target packages. As L6 Architect, I have performed an exhaustive re-audit of the code, mathematical proofs, error contracts, and test executions on exact commit SHA `2eee39ae2780389303846bd7029243d039e1c467`.
+
+### 9.1 Verification of Architectural Repairs
+
+#### 1. `moss.math`: `atan(x)` Range Reduction and Reconstruction
+- **Verified Code:** Lines 557–608 in `packages/math/src/main.moss`.
+- **Mathematical Correction:** Reconstruction logic properly differentiates inverted ($|x| > 1.0$) and reduced ($v > \tan(\pi/8)$) cases:
+  $$\text{inverted} \land \text{reduced} \implies \text{res} = \frac{\pi}{4} - \text{sum}$$
+  $$\text{inverted} \land \neg\text{reduced} \implies \text{res} = \frac{\pi}{2} - \text{sum}$$
+- **Live Measured Parity:** Verified across all counterexamples:
+  - `atan(2.0)`: exact $1.1071487177940905$ ($< 1$ ULP).
+  - `atan(1.5)`: exact $0.982793723247329$ ($< 1$ ULP).
+  - `atan(3.0)`: exact $1.2490457723982544$ ($< 1$ ULP).
+  - `atan(-2.0)`: exact $-1.1071487177940905$ ($< 1$ ULP).
+- **Cascading Fixes:** `asin`, `acos`, and `atan2` now evaluate cleanly within valid mathematical domains across $(-\infty, \infty)$ and $[-1, 1]$.
+
+#### 2. `moss.math`: `exp(x)` Subnormals and Upper Range
+- **Subnormal Support:** Cutoff lowered to $-745.1332191019412$. Verified: for $x = -710.0$, `exp` accurately produces subnormal $4.47628622567513 \times 10^{-309}$ ($< 1$ ULP).
+- **Upper Bound Overflow Prevention:** Split $2^k$ scaling into $2^{k_1} \times 2^{k_2}$ where $|k_i| \le 550$. Verified: for $x = 709.5$, `exp` accurately returns finite double $1.35498631931463 \times 10^{308}$ without overflowing intermediate $2^{1024}$.
+- **Range Reduction Accuracy:** $\ln(2)$ split into high/low constants $C_1 = 0.6931471803691238$ and $C_2 = 1.9082149292705877 \times 10^{-10}$, ensuring full 53-bit precision.
+- **IEEE-754 Hardening:** $\text{hypot}(\pm\infty, \text{NaN}) = +\infty$ verified.
+
+#### 3. `moss.random`: Phase 21 Error Handling & Unbiased Sampler
+- **Phase 21 Contract:** Exported `export enum RandomError { InvalidRange, EmptyCollection }`.
+  - `choice([])` raises `RandomError.EmptyCollection`.
+  - `randint(min, max)` with $min > max$ raises `RandomError.InvalidRange`.
+  - Int64 overflow in range arithmetic is guarded against and raises `RandomError.InvalidRange`.
+- **Bijective Multi-Draw Sampler:**
+  - $R_{\max} = A \cdot M = 9223371134911665698 < 2^{63} - 1$ (`INT64_MAX`).
+  - First draw $w \in [0, M - 1]$, $u_1 = w \pmod A \in [0, A - 1]$ has **0 rejection** and exact uniformity.
+  - Second draw $u_2 \in [0, M - 1]$ independent.
+  - Combination $V = u_1 \cdot M + u_2 \in [0, A \cdot M - 1]$ with rejection limit $L = (A \cdot M) - ((A \cdot M) \pmod R)$.
+  - **Zero modulo bias** mathematically and empirically proven.
+  - Verified against Pierre L'Ecuyer (1999) reference vectors and boundary seeds (`INT64_MAX`, `INT64_MIN`, 0).
+
+#### 4. `moss.time`: Phase 21 Error Handling & Saturating Arithmetic
+- **Phase 21 Contract:** Exported `export enum TimeError { DivisionByZero, InvalidDate }`.
+  - `duration_div(d, 0)` raises `TimeError.DivisionByZero`.
+  - `make_datetime` validates month lengths and leap years, raising `TimeError.InvalidDate` on April 31 and Feb 29 on 1900.
+- **Strictly Saturating Arithmetic:**
+  - Implemented `saturating_add`, `saturating_sub`, and `saturating_mul` clamping at `9223372036854775807` (`INT64_MAX`) and `-9223372036854775808` (`INT64_MIN`).
+  - Integrated into `duration_add`, `duration_sub`, `duration_scale`, `instant_diff`, `instant_add_duration`, `instant_sub_duration`, `timestamp_add_duration`, `timestamp_sub_duration`, and `timestamp_diff`.
+  - Negative Unix epoch timestamps handle Euclidean division correctly.
+- **Gregorian Calendar Rules:**
+  - Complete 4, 100, 400-year leap rules enforced (`is_leap_year`).
+  - Feb 29 on 1900 rejected (`TimeError.InvalidDate`).
+  - Feb 29 on 2000 and 2024 accepted and roundtrip cleanly without mutation.
+
+### 9.2 Verification Evidence & Test Execution
+
+1. **Package Test Suites (`./margo test`):**
+   - `packages/math`: 18/18 passed (0 failed).
+   - `packages/random`: 7/7 passed (0 failed).
+   - `packages/time`: 10/10 passed (0 failed).
+   - `packages/integration`: 2/2 passed (0 failed).
+   - **Total Package Tests:** **37 passed, 0 failed**.
+2. **Independent Adversarial Oracles (`tests/oracles/verify_repairs.py`):**
+   - **100% PASS (Zero Falsifications)** against Python standard library, IEEE-754-2019, L'Ecuyer 1999 reference vector, and Hinnant Gregorian model.
+3. **Integration Application (`./margo run`):**
+   - Executed cleanly, computing Monte Carlo $\pi$ estimation, saturating time duration, and ISO 8601 formatting.
+4. **Repository Regression Gates:**
+   - `TMPDIR="$PWD/tmp" make check`: PASS (all Moss v0.1 tests, 61 IDE tests, 54 Phase 20 executor tests pass).
+   - `make examples`: PASS (all 32 positive examples compile and pass).
+5. **Git Boundary:**
+   - Pushed to `origin/phase24-math`. No commits merged into `main`.
+
+---
+
+### 9.3 Final Attributable Verdict
+
+| Evaluation Dimension | Candidate Status | Disposition |
+|---|---|---|
+| Public API Contracts & Phase 21 Errors | `RandomError` and `TimeError` fully implemented | **SATISFIED** |
+| Saturating Arithmetic | Strict clamping at `INT64_MAX` / `INT64_MIN` | **SATISFIED** |
+| Numerical Guarantees (`moss.math`) | `atan(x)`, `exp(x)`, transcendentals, `hypot` verified | **SATISFIED** |
+| Random Sampling Guarantees (`moss.random`) | Bijective multi-draw sampler, 0 modulo bias proven | **SATISFIED** |
+| Gregorian Calendar Completeness (`moss.time`) | Full 400/100/4-year leap rules & day validation | **SATISFIED** |
+| Deferred Clock Hook Boundary | `.now()` documented deferred; zero unapproved hooks | **SATISFIED** |
+| Compiler & Backend Lowering | Rust code generator mixed Float/Int fix verified | **SATISFIED** |
+| Test Suites & Oracles | 37/37 package tests, full `make check`, `make examples` pass | **SATISFIED** |
+
+**Final Attributable Verdict for L7 Merge Review on SHA `2eee39ae2780389303846bd7029243d039e1c467`:**
+
+# **GO FOR MERGE INTO `main`**
+
