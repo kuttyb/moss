@@ -41,6 +41,15 @@ This repository has two complementary feedback systems:
 Run `python3 tests/tooling/check_agent_feedback.py` before integrating changes
 that add or modify developer-experience records.
 
+## Multi-agent Team efficiency tracking
+
+Every engineering Team's L6 Coordinator must follow
+[`docs/AGENT_TEAM_EFFICIENCY.md`](docs/AGENT_TEAM_EFFICIENCY.md) and include
+one low-overhead Team closeout record at `docs/<phase>/agent-patterns/<team-name>.md`.
+Use existing Git/PR/agent-platform evidence; do not require extra leaf-agent
+reports or invent unavailable token and review metrics. This is distinct from
+developer-experience feedback.
+
 ## Before declaring a Moss gap
 
 Before reporting a Moss language/compiler/API feature as missing:
