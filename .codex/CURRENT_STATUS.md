@@ -1,5 +1,24 @@
 # Moss current status
 
+## Phase 24 Team T focused String/builder independent Architect — 2026-10-12
+
+The independent L6 Architect reviewed exact frozen engineering SHA
+`1fc4def7ddb040967a560ffa2a16cb30394f8563` and issued **NO-GO**. Direct
+String append self-aliasing is rejected, but a fresh nested case
+`value.append(identity(value))` is incorrectly accepted by Moss checking and
+then fails rustc with E0502 because append needs WRITE while `identity` READs
+the same String. A permanent regression expectation now exposes the gap.
+
+The reusable-build benchmark also does not match its Rust baseline: Moss
+constructs and fills the supposedly preconstructed builder inside every timed
+benchmark invocation, while Rust performs that setup outside its timed closure.
+Consequently the published reusable-build ratio cannot support acceptance.
+Fresh native/Fast Debug concatenation order cases, exact effect queries,
+source-free ABI-v9 checks, full Team T acceptance/oracles, strict Rust, and
+feedback/skill validation otherwise pass. Details are in
+`docs/PHASE_24_TEXT_ENCODING_STRING_BUILDER_ARCHITECT.md`. A repaired, refrozen
+engineering SHA needs a new exact-SHA Architect review.
+
 ## Phase 24 Team T focused String/builder engineering candidate — 2026-10-12
 
 The focused follow-up replaces formatting-based nonempty String concatenation
