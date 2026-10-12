@@ -107,6 +107,71 @@ passed with zero warnings/errors, and `git diff --check` passed cleanly.
 
 **Engineering L6: GO. Independent Architect L6: GO at `bcebfaa`. L7:
 HOLD merge pending explicit approval.** No merge into `main` has occurred.
+## Phase 24 Team M: L7 Adversarial Repairs & Dual GO Verification (`2eee39a`) — 2026-10-12
+
+Exact reviewed candidate commit: `2eee39ae2780389303846bd7029243d039e1c467` on branch `phase24-math`.
+Baseline evaluated: `129a81fa54a4f3d9b7f6d76bb376a9f85c3d9256` (historical NO-GO).
+Independent Adversarial Numerical Reviewer and L6 Architect conducted comprehensive re-evaluation following implementation repairs across `moss.math`, `moss.random`, and `moss.time`.
+
+**Verification Results:**
+1. Unit & Integration Tests: 37/37 passed (0 failed) across 4 packages (`math` 18/18, `random` 7/7, `time` 10/10, `integration` 2/2).
+2. Independent Adversarial Oracles: 100% PASS (Zero falsifications) via `python3 tests/oracles/verify_repairs.py`.
+3. Correctness Repairs Verified:
+   - `moss.math`: `atan(x)` range reduction fixed across $(-\infty, \infty)$ including $x = 1.0, 1.5, 2.0, 3.0, -2.0, \pm\infty$ (max error $< 1$ ULP); `exp(x)` subnormals preserved down to $-745$ (e.g. $x=-710 \to 4.476 \times 10^{-309}$) and finite results up to $709.78$ without intermediate $2^{1024}$ overflow ($x=709.5 \to 1.355 \times 10^{308}$) with split $2^k$ scaling and split $\ln 2$; $\text{hypot}(\pm\infty, \text{NaN}) = +\infty$.
+   - `moss.random`: Int64 signed overflow eliminated; mathematically proven uniform multi-draw sampler over $[0, AM-1]$ with zero rejection on $w \pmod A$ and rejection limit $L = AM - (AM \pmod R)$ eliminating modulo bias; Phase 21 typed error contracts (`export enum RandomError { InvalidRange, EmptyCollection }`) enforced.
+   - `moss.time`: Saturating arithmetic across all operations clamping at `INT64_MAX`/`INT64_MIN`; `duration_abs(INT64_MIN)` clamps to `INT64_MAX`; Phase 21 typed error contracts (`export enum TimeError { DivisionByZero, InvalidDate }`) enforced (`duration_div(d, 0)` raises `TimeError.DivisionByZero`); complete Gregorian calendar validation rejects April 31 and Feb 29 on 1900 with `TimeError.InvalidDate`; Euclidean division for pre-1970 Unix timestamps. Real clock reading (`.now()`) explicitly documented as deferred.
+4. Full Gates: `TMPDIR="$PWD/tmp" make check` PASS (all Moss v0.1 tests and 54/54 Phase 20 executor tests pass); `make examples` PASS (32/32 examples pass); `./margo bench` recorded live (sub-nanosecond to microsecond latencies).
+5. Separately Attributable Verdicts:
+   - Independent Adversarial Numerical Reviewer: **GO FOR MERGE REVIEW** (Zero falsifications).
+   - L6 Architect: **GO FOR MERGE REVIEW** (Full architectural, contract, and correctness compliance).
+   - Merge Gate: Branch remains strictly on `phase24-math`; **zero commits merged into `main`**.
+
+## Phase 24 Team M: Independent Architect L6 Review — NO-GO — 2026-10-12
+
+Exact reviewed candidate commit: `129a81fa54a4f3d9b7f6d76bb376a9f85c3d9256` on `phase24-math`.
+Independent Architect L6 completed evaluation and rendered an attributable **NO-GO** in `docs/team_m/ARCHITECT_REVIEW.md`.
+
+While Team M achieved clean execution of 23 existing unit tests, verified compiler lowering in `src/moss.cpp` (full `TMPDIR="$PWD/tmp" make check` passed), and unblocked environment operations, deep architectural and numerical falsification revealed 7 critical blockers:
+1. `moss.math`: `atan(x)` range reduction for $|x| > 1.0$ is inverted, returning $0.4636$ instead of $1.1071$ at $x=2.0$ (error > 58%), cascading into `asin` ($0.99 \to 1.7123 > \pi/2$), `acos` ($0.99 \to -0.1415 < 0$), and `atan2`.
+2. `moss.math`: `exp(x)` truncates to $0.0$ at $x < -708.3964$, missing IEEE-754 subnormals down to $-744.44$, and overflows to $\infty$ at $709.78$ due to unsplit $2^{1024}$ float overflow, failing to return finite results up to $709.7827$. Missing split $2^k$ scaling and split $\ln(2)$.
+3. `moss.random`: Violates Phase 21 error semantics (missing `export enum RandomError { InvalidRange, EmptyCollection }`), silently returning $0$ on empty choice and $min$ on inverted ranges.
+4. `moss.random`: Two-draw sampler outcome constant `total_outcomes = (m_half + 1) * m` mismatches generated domain $[0, A \cdot M - 1]$, failing rejection sampling and injecting modulo bias into large integer ranges.
+5. `moss.time`: Violates Phase 21 error semantics (missing `export enum TimeError { DivisionByZero, InvalidDate }`), silently returning $0$ on duration division by zero.
+6. `moss.time`: Core duration and timestamp arithmetic (`duration_add`, `sub`, `scale`, `instant_add_duration`, `timestamp_diff`) does NOT saturate, silently wrapping around $2^{63}-1$ to negative values under signed two's complement integer arithmetic.
+7. `moss.time`: Incomplete Gregorian calendar validation allows April 31 and Feb 29 on century non-leap year 1900, which silently mutate on roundtrip (April 31 $\to$ May 1, Feb 29 1900 $\to$ March 1).
+
+**Independent Architect L6 Verdict: NO-GO FOR MERGE INTO `main`.** Remediation roadmap defined in `docs/team_m/ARCHITECT_REVIEW.md`.
+
+## Phase 24 Team M: Post-L7 Review Repairs & Live Validation Verified — 2026-10-12
+
+Following L7 NO-GO merge gate on HEAD `4abed3451dfd8a475ed6641bcf6bf0cb7b6f6c1c` on `phase24-math`,
+Team M resolved all requested repairs and unblocked live execution in the workspace:
+- `moss.math`: Fixed `abs(-0.0)` sign clearing, IEEE-754 signed zero in `min`/`max`,
+  `pow(NaN, 0.0) == 1.0`, `atan(1.0)` range reduction ($\pi/4$ exact), and large
+  magnitude hyperbolic clamping (`tanh(1000) == 1.0`). Normalized unary variable
+  negations to `0.0 - var` and added exported `is_finite`/`is_nan` aliases.
+- `moss.random`: Repaired `randint(0, 4294967086)` rejection sampling boundary (preventing
+  infinite loops), added multi-draw 64-bit integer range synthesis, guarded seed
+  initialization against intermediate integer overflow, and defined empty collection fallbacks.
+- `moss.time`: Added duration division-by-zero protection, overflow clamping on large durations,
+  Euclidean negative Unix timestamp handling, extended ISO 8601 year formatting (`+YYYYY`),
+  and explicitly marked real-clock `.now()` functionality as DEFERRED pending L7 intrinsic approval.
+- `moss.integration`: Verified cross-package workflow, qualified return type `-> time.Duration`,
+  and executed `margo run` successfully.
+- Compiler lowering bugfix: Repaired `src/moss.cpp` Rust code generator where mixed float/int
+  operations with non-literal integer variables (e.g. `z * 1.0`) were emitted without `as f64`,
+  causing rustc E0277.
+- Documentation: Updated `STAGE4_VALIDATION.md`, `STAGE5_BENCHMARKS.md`, and `FINAL_DELIVERY_REPORT.md`
+  with live measured execution metrics and test results.
+
+**Live Validation Results:**
+- `packages/math`: 9/9 unit tests PASS via `margo test`.
+- `packages/random`: 5/5 unit tests PASS via `margo test`.
+- `packages/time`: 7/7 unit tests PASS via `margo test`.
+- `packages/integration`: 2/2 integration tests PASS via `margo test`; executable runs via `margo run`.
+- Native benchmarks: 11 benchmark targets executed cleanly via `margo bench` (1-38 ns for math,
+  552-2933 ns for random, 2-872 ns for time).
+- Status: **VALIDATED BY LIVE RUN — READY FOR L7 MERGE REVIEW**. No merge into `main` has occurred.
 
 ## Phase 21 independent Architect GO; L7 merge gate — 2026-10-11
 

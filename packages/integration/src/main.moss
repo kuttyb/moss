@@ -1,0 +1,47 @@
+module integration
+
+# ============================================================================
+# Moss Phase 24 — Cross-Package Integration Suite
+# Demonstrates seamless integration of moss.math, moss.random, and moss.time
+# ============================================================================
+
+import math
+import random
+import time
+
+export fn estimate_pi_monte_carlo(num_samples: Int, seed: Int) -> Float:
+  var rng = random.new_rng(seed)
+  var inside = 0
+  var i = 0
+  while i < num_samples:
+    x = random.rng_next_float(rng)
+    y = random.rng_next_float(rng)
+    dist = math.hypot(x, y)
+    if dist <= 1.0:
+      inside = inside + 1
+    i = i + 1
+  return (4.0 * inside) / num_samples
+
+export fn demonstrate_time_arithmetic() -> time.Duration:
+  d1 = time.duration_from_seconds(5)
+  d2 = time.duration_from_millis(250)
+  return time.duration_add(d1, d2)
+
+fn main():
+  # 1. Math constants & functions
+  pi_val = math.pi()
+  echo "Math PI:", pi_val
+
+  # 2. Random Monte Carlo simulation
+  samples = 1000
+  approx = estimate_pi_monte_carlo(samples, 1337)
+  echo "Monte Carlo PI approx:", approx
+  diff = math.abs(approx - pi_val)
+  echo "Error:", diff
+
+  # 3. Time duration & timestamp formatting
+  total_duration = demonstrate_time_arithmetic()
+  echo "Total duration millis:", time.duration_millis(total_duration)
+
+  ts = time.timestamp_from_unix_millis(1700000000000)
+  echo "ISO timestamp:", time.timestamp_to_iso8601(ts)

@@ -1,0 +1,414 @@
+# ============================================================================
+# Moss Phase 24 — Tests for moss.time
+# ============================================================================
+
+import time
+
+test "duration conversions and arithmetic":
+  d_zero = time.duration_zero()
+  assertEqual(time.duration_is_zero(d_zero), true)
+  assertEqual(time.duration_nanos(d_zero), 0)
+
+  d_sec = time.duration_from_seconds(5)
+  assertEqual(time.duration_seconds(d_sec), 5)
+  assertEqual(time.duration_millis(d_sec), 5000)
+  assertEqual(time.duration_micros(d_sec), 5000000)
+  assertEqual(time.duration_nanos(d_sec), 5000000000)
+
+  d_min = time.duration_from_minutes(2)
+  assertEqual(time.duration_seconds(d_min), 120)
+
+  d_hr = time.duration_from_hours(1)
+  assertEqual(time.duration_minutes(d_hr), 60)
+
+  # Arithmetic
+  d_sum = time.duration_add(d_sec, d_min)
+  assertEqual(time.duration_seconds(d_sum), 125)
+
+  d_diff = time.duration_sub(d_min, d_sec)
+  assertEqual(time.duration_seconds(d_diff), 115)
+
+  d_scaled = time.duration_scale(d_sec, 3)
+  assertEqual(time.duration_seconds(d_scaled), 15)
+
+  d_div = time.duration_div(d_sec, 2)
+  assertEqual(time.duration_millis(d_div), 2500)
+
+  # Negatives and abs
+  d_neg = time.duration_sub(d_sec, d_min)
+  assertEqual(time.duration_is_negative(d_neg), true)
+  d_pos = time.duration_abs(d_neg)
+  assertEqual(time.duration_is_negative(d_pos), false)
+  assertEqual(time.duration_seconds(d_pos), 115)
+
+  # Predicates
+  assertEqual(time.duration_lt(d_sec, d_min), true)
+  assertEqual(time.duration_gt(d_min, d_sec), true)
+  assertEqual(time.duration_eq(d_sec, time.duration_from_seconds(5)), true)
+
+test "instant monotonic points":
+  t0 = time.make_instant(1000000000)
+  t1 = time.make_instant(2500000000)
+
+  diff = time.instant_diff(t1, t0)
+  assertEqual(time.duration_millis(diff), 1500)
+
+  elapsed = time.instant_elapsed(t0, t1)
+  assertEqual(time.duration_millis(elapsed), 1500)
+
+  assertEqual(time.instant_lt(t0, t1), true)
+  assertEqual(time.instant_gt(t1, t0), true)
+  assertEqual(time.instant_eq(t0, time.make_instant(1000000000)), true)
+
+  t2 = time.instant_add_duration(t0, time.duration_from_seconds(1))
+  assertEqual(time.instant_nanos(t2), 2000000000)
+
+  t3 = time.instant_sub_duration(t1, time.duration_from_millis(500))
+  assertEqual(time.instant_nanos(t3), 2000000000)
+
+test "timestamp and epoch arithmetic":
+  ts0 = time.timestamp_from_unix_seconds(0)
+  assertEqual(time.timestamp_unix_millis(ts0), 0)
+  assertEqual(time.timestamp_unix_seconds(ts0), 0)
+
+  ts1 = time.timestamp_from_unix_millis(1609459200000)
+  assertEqual(time.timestamp_unix_seconds(ts1), 1609459200)
+
+  dur = time.duration_from_seconds(3600)
+  ts2 = time.timestamp_add_duration(ts1, dur)
+  assertEqual(time.timestamp_unix_seconds(ts2), 1609462800)
+
+  ts3 = time.timestamp_sub_duration(ts2, dur)
+  assertEqual(time.timestamp_eq(ts3, ts1), true)
+
+  diff = time.timestamp_diff(ts2, ts1)
+  assertEqual(time.duration_seconds(diff), 3600)
+
+test "duration division by zero raises TimeError":
+  d = time.duration_from_seconds(10)
+  var caught_zero = false
+  try:
+    time.duration_div(d, 0)
+  recover time.TimeError.DivisionByZero:
+    caught_zero = true
+  assertEqual(caught_zero, true)
+
+test "saturating arithmetic helpers":
+  # Addition overflow and underflow
+  assertEqual(time.saturating_add(9223372036854775807, 1), 9223372036854775807)
+  assertEqual(time.saturating_add(9223372036854775807, 1000), 9223372036854775807)
+  assertEqual(time.saturating_add((-9223372036854775807 - 1), -1), (-9223372036854775807 - 1))
+  assertEqual(time.saturating_add((-9223372036854775807 - 1), -500), (-9223372036854775807 - 1))
+  assertEqual(time.saturating_add(100, 200), 300)
+
+  # Subtraction overflow and underflow
+  assertEqual(time.saturating_sub((-9223372036854775807 - 1), 1), (-9223372036854775807 - 1))
+  assertEqual(time.saturating_sub((-9223372036854775807 - 1), 1000), (-9223372036854775807 - 1))
+  assertEqual(time.saturating_sub(9223372036854775807, -1), 9223372036854775807)
+  assertEqual(time.saturating_sub(9223372036854775807, -1000), 9223372036854775807)
+  assertEqual(time.saturating_sub(500, 200), 300)
+
+  # Multiplication overflow and underflow
+  assertEqual(time.saturating_mul(9223372036854775807, 2), 9223372036854775807)
+  assertEqual(time.saturating_mul(9223372036854775807, -2), (-9223372036854775807 - 1))
+  assertEqual(time.saturating_mul((-9223372036854775807 - 1), 2), (-9223372036854775807 - 1))
+  assertEqual(time.saturating_mul((-9223372036854775807 - 1), -2), 9223372036854775807)
+  assertEqual(time.saturating_mul((-9223372036854775807 - 1), -1), 9223372036854775807)
+  assertEqual(time.saturating_mul(12, 10), 120)
+
+test "saturating duration, instant, and timestamp operations":
+  # Duration addition and subtraction saturation
+  d_max = time.duration_from_nanos(9223372036854775807)
+  d_min = time.duration_from_nanos((-9223372036854775807 - 1))
+  d_one = time.duration_from_nanos(1)
+  d_neg_one = time.duration_from_nanos(-1)
+
+  d_add_overflow = time.duration_add(d_max, d_one)
+  assertEqual(time.duration_nanos(d_add_overflow), 9223372036854775807)
+
+  d_add_underflow = time.duration_add(d_min, d_neg_one)
+  assertEqual(time.duration_nanos(d_add_underflow), (-9223372036854775807 - 1))
+
+  d_sub_overflow = time.duration_sub(d_max, d_neg_one)
+  assertEqual(time.duration_nanos(d_sub_overflow), 9223372036854775807)
+
+  d_sub_underflow = time.duration_sub(d_min, d_one)
+  assertEqual(time.duration_nanos(d_sub_underflow), (-9223372036854775807 - 1))
+
+  # Duration scaling saturation
+  d_scaled_max = time.duration_scale(d_max, 5)
+  assertEqual(time.duration_nanos(d_scaled_max), 9223372036854775807)
+
+  d_scaled_min = time.duration_scale(d_min, 3)
+  assertEqual(time.duration_nanos(d_scaled_min), (-9223372036854775807 - 1))
+
+  # Duration abs saturation on INT64_MIN
+  d_abs_min = time.duration_abs(d_min)
+  assertEqual(time.duration_nanos(d_abs_min), 9223372036854775807)
+
+  # Duration division INT64_MIN / -1 saturation
+  d_div_overflow = time.duration_div(d_min, -1)
+  assertEqual(time.duration_nanos(d_div_overflow), 9223372036854775807)
+
+  # Epoch conversion saturation
+  d_huge = time.duration_from_seconds(1000000000000)
+  assertEqual(time.duration_nanos(d_huge), 9223372036854775807)
+
+  d_huge_neg = time.duration_from_seconds(-1000000000000)
+  assertEqual(time.duration_nanos(d_huge_neg), (-9223372036854775807 - 1))
+
+  ts_huge = time.timestamp_from_unix_seconds(9223372036854775807)
+  assertEqual(time.timestamp_unix_millis(ts_huge), 9223372036854775807)
+
+  ts_huge_neg = time.timestamp_from_unix_seconds((-9223372036854775807 - 1))
+  assertEqual(time.timestamp_unix_millis(ts_huge_neg), (-9223372036854775807 - 1))
+
+  # Instant saturation
+  inst_max = time.make_instant(9223372036854775807)
+  inst_min = time.make_instant((-9223372036854775807 - 1))
+
+  inst_add_sat = time.instant_add_duration(inst_max, d_one)
+  assertEqual(time.instant_nanos(inst_add_sat), 9223372036854775807)
+
+  inst_sub_sat = time.instant_sub_duration(inst_min, d_one)
+  assertEqual(time.instant_nanos(inst_sub_sat), (-9223372036854775807 - 1))
+
+  inst_diff_sat = time.instant_diff(inst_max, inst_min)
+  assertEqual(time.duration_nanos(inst_diff_sat), 9223372036854775807)
+
+  # Timestamp saturation
+  ts_max = time.timestamp_from_unix_millis(9223372036854775807)
+  ts_min = time.timestamp_from_unix_millis((-9223372036854775807 - 1))
+
+  ts_add_sat = time.timestamp_add_duration(ts_max, time.duration_from_millis(100))
+  assertEqual(time.timestamp_unix_millis(ts_add_sat), 9223372036854775807)
+
+  ts_sub_sat = time.timestamp_sub_duration(ts_min, time.duration_from_millis(100))
+  assertEqual(time.timestamp_unix_millis(ts_sub_sat), (-9223372036854775807 - 1))
+
+  ts_diff_sat = time.timestamp_diff(ts_max, ts_min)
+  assertEqual(time.duration_nanos(ts_diff_sat), 9223372036854775807)
+
+test "gregorian calendar validation rules":
+  # Valid dates
+  dt_valid1 = time.make_datetime(2023, 1, 31, 23, 59, 59, 999)
+  assertEqual(dt_valid1.month, 1)
+  assertEqual(dt_valid1.day, 31)
+
+  dt_leap2000 = time.make_datetime(2000, 2, 29, 0, 0, 0, 0)
+  assertEqual(dt_leap2000.day, 29)
+
+  dt_leap2024 = time.make_datetime(2024, 2, 29, 0, 0, 0, 0)
+  assertEqual(dt_leap2024.day, 29)
+
+  # Invalid date: month bounds
+  var caught_m0 = false
+  try:
+    time.make_datetime(2023, 0, 15, 12, 0, 0, 0)
+  recover time.TimeError.InvalidDate:
+    caught_m0 = true
+  assertEqual(caught_m0, true)
+
+  var caught_m13 = false
+  try:
+    time.make_datetime(2023, 13, 15, 12, 0, 0, 0)
+  recover time.TimeError.InvalidDate:
+    caught_m13 = true
+  assertEqual(caught_m13, true)
+
+  # Invalid date: day bounds (April 31)
+  var caught_apr31 = false
+  try:
+    time.make_datetime(2023, 4, 31, 12, 0, 0, 0)
+  recover time.TimeError.InvalidDate:
+    caught_apr31 = true
+  assertEqual(caught_apr31, true)
+
+  # Invalid date: non-leap year Feb 29 (1900 is not leap, divisible by 100 but not 400)
+  var caught_feb1900 = false
+  try:
+    time.make_datetime(1900, 2, 29, 0, 0, 0, 0)
+  recover time.TimeError.InvalidDate:
+    caught_feb1900 = true
+  assertEqual(caught_feb1900, true)
+
+  # Invalid date: non-leap year Feb 29 (2100 is not leap)
+  var caught_feb2100 = false
+  try:
+    time.make_datetime(2100, 2, 29, 0, 0, 0, 0)
+  recover time.TimeError.InvalidDate:
+    caught_feb2100 = true
+  assertEqual(caught_feb2100, true)
+
+  # Invalid date: non-leap year Feb 29 (2023)
+  var caught_feb2023 = false
+  try:
+    time.make_datetime(2023, 2, 29, 0, 0, 0, 0)
+  recover time.TimeError.InvalidDate:
+    caught_feb2023 = true
+  assertEqual(caught_feb2023, true)
+
+  # Invalid date: day 0 and day 32
+  var caught_d0 = false
+  try:
+    time.make_datetime(2023, 1, 0, 0, 0, 0, 0)
+  recover time.TimeError.InvalidDate:
+    caught_d0 = true
+  assertEqual(caught_d0, true)
+
+  var caught_d32 = false
+  try:
+    time.make_datetime(2023, 1, 32, 0, 0, 0, 0)
+  recover time.TimeError.InvalidDate:
+    caught_d32 = true
+  assertEqual(caught_d32, true)
+
+  # Invalid date: hour, minute, second, millisecond bounds
+  var caught_h24 = false
+  try:
+    time.make_datetime(2023, 1, 1, 24, 0, 0, 0)
+  recover time.TimeError.InvalidDate:
+    caught_h24 = true
+  assertEqual(caught_h24, true)
+
+  var caught_min60 = false
+  try:
+    time.make_datetime(2023, 1, 1, 0, 60, 0, 0)
+  recover time.TimeError.InvalidDate:
+    caught_min60 = true
+  assertEqual(caught_min60, true)
+
+  var caught_s60 = false
+  try:
+    time.make_datetime(2023, 1, 1, 0, 0, 60, 0)
+  recover time.TimeError.InvalidDate:
+    caught_s60 = true
+  assertEqual(caught_s60, true)
+
+  var caught_ms1000 = false
+  try:
+    time.make_datetime(2023, 1, 1, 0, 0, 0, 1000)
+  recover time.TimeError.InvalidDate:
+    caught_ms1000 = true
+  assertEqual(caught_ms1000, true)
+
+test "negative unix epoch timestamp euclidean division and calendar conversion":
+  # Euclidean division:
+  # -1000 ms is -1 s
+  ts_neg1000 = time.timestamp_from_unix_millis(-1000)
+  assertEqual(time.timestamp_unix_seconds(ts_neg1000), -1)
+
+  # -1 ms is -1 s (remainder 999 ms)
+  ts_neg1 = time.timestamp_from_unix_millis(-1)
+  assertEqual(time.timestamp_unix_seconds(ts_neg1), -1)
+
+  # -999 ms is -1 s (remainder 1 ms)
+  ts_neg999 = time.timestamp_from_unix_millis(-999)
+  assertEqual(time.timestamp_unix_seconds(ts_neg999), -1)
+
+  # -1001 ms is -2 s (remainder 999 ms)
+  ts_neg1001 = time.timestamp_from_unix_millis(-1001)
+  assertEqual(time.timestamp_unix_seconds(ts_neg1001), -2)
+
+  # 0 ms is 0 s
+  ts_zero = time.timestamp_from_unix_millis(0)
+  assertEqual(time.timestamp_unix_seconds(ts_zero), 0)
+
+  # 999 ms is 0 s
+  ts_pos999 = time.timestamp_from_unix_millis(999)
+  assertEqual(time.timestamp_unix_seconds(ts_pos999), 0)
+
+  # 1000 ms is 1 s
+  ts_pos1000 = time.timestamp_from_unix_millis(1000)
+  assertEqual(time.timestamp_unix_seconds(ts_pos1000), 1)
+
+  # Calendar conversion of -1000 ms = 1969-12-31 23:59:59.000 UTC
+  dt_neg1000 = time.timestamp_to_datetime(ts_neg1000)
+  assertEqual(dt_neg1000.year, 1969)
+  assertEqual(dt_neg1000.month, 12)
+  assertEqual(dt_neg1000.day, 31)
+  assertEqual(dt_neg1000.hour, 23)
+  assertEqual(dt_neg1000.minute, 59)
+  assertEqual(dt_neg1000.second, 59)
+  assertEqual(dt_neg1000.millisecond, 0)
+  assertEqual(time.timestamp_unix_millis(time.datetime_to_timestamp(dt_neg1000)), -1000)
+
+  # Calendar conversion of -1 ms = 1969-12-31 23:59:59.999 UTC
+  dt_neg1 = time.timestamp_to_datetime(ts_neg1)
+  assertEqual(dt_neg1.year, 1969)
+  assertEqual(dt_neg1.month, 12)
+  assertEqual(dt_neg1.day, 31)
+  assertEqual(dt_neg1.hour, 23)
+  assertEqual(dt_neg1.minute, 59)
+  assertEqual(dt_neg1.second, 59)
+  assertEqual(dt_neg1.millisecond, 999)
+  assertEqual(time.timestamp_unix_millis(time.datetime_to_timestamp(dt_neg1)), -1)
+
+test "calendar roundtrip on leap year and year boundaries":
+  # Leap year 2000 (century leap)
+  dt_2000 = time.make_datetime(2000, 2, 29, 12, 30, 45, 500)
+  ts_2000 = time.datetime_to_timestamp(dt_2000)
+  dt_back_2000 = time.timestamp_to_datetime(ts_2000)
+  assertEqual(dt_back_2000.year, 2000)
+  assertEqual(dt_back_2000.month, 2)
+  assertEqual(dt_back_2000.day, 29)
+  assertEqual(dt_back_2000.hour, 12)
+  assertEqual(dt_back_2000.minute, 30)
+  assertEqual(dt_back_2000.second, 45)
+  assertEqual(dt_back_2000.millisecond, 500)
+
+  # Leap year 2024
+  dt_2024 = time.make_datetime(2024, 2, 29, 23, 59, 59, 999)
+  ts_2024 = time.datetime_to_timestamp(dt_2024)
+  dt_back_2024 = time.timestamp_to_datetime(ts_2024)
+  assertEqual(dt_back_2024.year, 2024)
+  assertEqual(dt_back_2024.month, 2)
+  assertEqual(dt_back_2024.day, 29)
+
+  # Non-leap century 1900
+  dt_1900 = time.make_datetime(1900, 2, 28, 10, 0, 0, 0)
+  ts_1900 = time.datetime_to_timestamp(dt_1900)
+  dt_back_1900 = time.timestamp_to_datetime(ts_1900)
+  assertEqual(dt_back_1900.year, 1900)
+  assertEqual(dt_back_1900.month, 2)
+  assertEqual(dt_back_1900.day, 28)
+
+  # Non-leap century 2100
+  dt_2100 = time.make_datetime(2100, 2, 28, 14, 20, 0, 0)
+  ts_2100 = time.datetime_to_timestamp(dt_2100)
+  dt_back_2100 = time.timestamp_to_datetime(ts_2100)
+  assertEqual(dt_back_2100.year, 2100)
+  assertEqual(dt_back_2100.month, 2)
+  assertEqual(dt_back_2100.day, 28)
+
+  # Pre-1970 historical roundtrips
+  dt_1960 = time.make_datetime(1960, 5, 15, 8, 30, 0, 250)
+  ts_1960 = time.datetime_to_timestamp(dt_1960)
+  dt_back_1960 = time.timestamp_to_datetime(ts_1960)
+  assertEqual(dt_back_1960.year, 1960)
+  assertEqual(dt_back_1960.month, 5)
+  assertEqual(dt_back_1960.day, 15)
+
+  dt_1600 = time.make_datetime(1600, 1, 1, 0, 0, 0, 0)
+  ts_1600 = time.datetime_to_timestamp(dt_1600)
+  dt_back_1600 = time.timestamp_to_datetime(ts_1600)
+  assertEqual(dt_back_1600.year, 1600)
+  assertEqual(dt_back_1600.month, 1)
+  assertEqual(dt_back_1600.day, 1)
+
+  # Year boundary roundtrip (1999 to 2000)
+  dt_nye = time.make_datetime(1999, 12, 31, 23, 59, 59, 999)
+  ts_nye = time.datetime_to_timestamp(dt_nye)
+  dt_back_nye = time.timestamp_to_datetime(ts_nye)
+  assertEqual(dt_back_nye.year, 1999)
+  assertEqual(dt_back_nye.month, 12)
+  assertEqual(dt_back_nye.day, 31)
+
+test "iso 8601 extended year formatting":
+  # Standard 4-digit year
+  dt1 = time.make_datetime(2026, 10, 12, 5, 45, 30, 25)
+  assertEqual(time.datetime_to_iso8601(dt1), "2026-10-12T05:45:30.025Z")
+
+  # Greater than 9999 uses +YYYYY
+  dt2 = time.make_datetime(12345, 1, 15, 0, 0, 0, 0)
+  assertEqual(time.datetime_to_iso8601(dt2), "+12345-01-15T00:00:00.000Z")

@@ -1,0 +1,29 @@
+# ============================================================================
+# Moss Phase 24 — Cross-Package Integration Tests
+# ============================================================================
+
+import math
+import random
+import time
+import integration
+
+test "cross package monte carlo pi estimation":
+  approx = integration.estimate_pi_monte_carlo(1000, 1337)
+  pi_val = math.pi()
+  # Monte Carlo with 1000 samples should be within 0.25 of pi
+  err = math.abs(approx - pi_val)
+  assertEqual(err < 0.25, true)
+
+test "cross package time tracking and random sampling":
+  t0 = time.make_instant(100)
+  var rng = random.new_rng(9999)
+  var sum = 0.0
+  var i = 0
+  while i < 100:
+    val = random.rng_next_float(rng)
+    sum = sum + math.sin(val)
+    i = i + 1
+  t1 = time.make_instant(500)
+  elapsed = time.instant_diff(t1, t0)
+  assertEqual(time.duration_nanos(elapsed), 400)
+  assertEqual(sum > 0.0, true)

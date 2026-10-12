@@ -1,0 +1,301 @@
+# ============================================================================
+# Moss Phase 24 — Tests for moss.math
+# Full mathematical correctness and IEEE-754 validation
+# ============================================================================
+
+import math
+
+test "constants":
+  assertEqual(math.pi() > 3.14159 and math.pi() < 3.14160, true)
+  assertEqual(math.e() > 2.71828 and math.e() < 2.71829, true)
+  assertEqual(math.tau() > 6.28318 and math.tau() < 6.28319, true)
+  assertEqual(math.is_infinite(math.infinity()), true)
+  assertEqual(math.is_infinite(math.neg_infinity()), true)
+  assertEqual(math.is_nan_val(math.nan()), true)
+
+test "abs and signed zero clearing":
+  assertEqual(math.abs(5.5), 5.5)
+  assertEqual(math.abs(-5.5), 5.5)
+  # abs(-0.0) must clear the negative sign: 1.0 / abs(-0.0) must be +inf
+  abs_neg_zero = math.abs(-0.0)
+  assertEqual(abs_neg_zero, 0.0)
+  assertEqual(1.0 / abs_neg_zero > 0.0, true)
+
+test "abs_int and int min wrapping":
+  assertEqual(math.abs_int(42), 42)
+  assertEqual(math.abs_int(-42), 42)
+  # INT64_MIN wraps to INT64_MIN
+  int_min = -9223372036854775808
+  assertEqual(math.abs_int(int_min), int_min)
+
+test "min and max signed zero and nan contract":
+  # Signed zero: min(-0.0, +0.0) == -0.0
+  m_zero = math.min(-0.0, 0.0)
+  assertEqual(m_zero, 0.0)
+  assertEqual(1.0 / m_zero < 0.0, true)
+
+  # Signed zero: max(-0.0, +0.0) == +0.0
+  mx_zero = math.max(-0.0, 0.0)
+  assertEqual(mx_zero, 0.0)
+  assertEqual(1.0 / mx_zero > 0.0, true)
+
+  # NaN handling: non-NaN preferred
+  assertEqual(math.min(math.nan(), 5.0), 5.0)
+  assertEqual(math.min(5.0, math.nan()), 5.0)
+  assertEqual(math.max(math.nan(), 5.0), 5.0)
+  assertEqual(math.max(5.0, math.nan()), 5.0)
+
+test "clamp and signum":
+  assertEqual(math.clamp(5.0, 0.0, 10.0), 5.0)
+  assertEqual(math.clamp(-5.0, 0.0, 10.0), 0.0)
+  assertEqual(math.clamp(15.0, 0.0, 10.0), 10.0)
+  assertEqual(math.clamp_int(5, 0, 10), 5)
+  assertEqual(math.clamp_int(-5, 0, 10), 0)
+  assertEqual(math.clamp_int(15, 0, 10), 10)
+  assertEqual(math.signum(42.5), 1.0)
+  assertEqual(math.signum(-42.5), 0.0 - 1.0)
+  assertEqual(math.signum(0.0), 0.0)
+  assertEqual(math.signum_int(42), 1)
+  assertEqual(math.signum_int(-42), 0 - 1)
+  assertEqual(math.signum_int(0), 0)
+
+test "trunc floor ceil":
+  assertEqual(math.trunc(3.7), 3.0)
+  assertEqual(math.trunc(-3.7), 0.0 - 3.0)
+  assertEqual(math.floor(3.7), 3.0)
+  assertEqual(math.floor(-3.7), 0.0 - 4.0)
+  assertEqual(math.ceil(3.2), 4.0)
+  assertEqual(math.ceil(-3.2), 0.0 - 3.0)
+
+test "round ties to even":
+  assertEqual(math.round(2.5), 2.0)
+  assertEqual(math.round(3.5), 4.0)
+  assertEqual(math.round(-2.5), 0.0 - 2.0)
+  assertEqual(math.round(-3.5), 0.0 - 4.0)
+
+test "atan range reduction and reconstruction accuracy":
+  a1 = math.atan(1.0)
+  assertEqual(math.abs(a1 - 0.7853981633974483) < 0.00000000001, true)
+
+  a15 = math.atan(1.5)
+  assertEqual(math.abs(a15 - 0.982793723247329) < 0.00000000001, true)
+
+  a2 = math.atan(2.0)
+  assertEqual(math.abs(a2 - 1.107148717794091) < 0.00000000001, true)
+
+  a3 = math.atan(3.0)
+  assertEqual(math.abs(a3 - 1.249045772398254) < 0.00000000001, true)
+
+  an2 = math.atan(-2.0)
+  assertEqual(math.abs(an2 - (0.0 - 1.107148717794091)) < 0.00000000001, true)
+
+  # Full range coverage: zero, signed zero, infinities, magnitudes
+  assertEqual(math.atan(0.0), 0.0)
+  assertEqual(1.0 / math.atan(-0.0) < 0.0, true)
+  assertEqual(math.atan(math.infinity()), 1.5707963267948966)
+  assertEqual(math.atan(math.neg_infinity()), 0.0 - 1.5707963267948966)
+  tiny = 1.0 / 10000000000.0
+  assertEqual(math.abs(math.atan(tiny) - tiny) < 1.0 / 1000000000000000.0, true)
+  assertEqual(math.abs(math.atan(1e20) - 1.5707963267948966) < 0.000000000000001, true)
+  assertEqual(math.is_nan_val(math.atan(math.nan())), true)
+
+test "exp representable extremes and subnormals":
+  # Exact identities
+  assertEqual(math.exp(0.0), 1.0)
+  assertEqual(math.exp(-0.0), 1.0)
+  assertEqual(math.abs(math.exp(1.0) - 2.718281828459045) < 0.00000000001, true)
+
+  # Subnormal results down to x = -744.44
+  exp_m710 = math.exp(-710.0)
+  assertEqual(exp_m710 > 0.0, true)
+  diff_m710 = math.abs((exp_m710 / ((4.47628622567513 / 1e300) / 1e9)) - 1.0)
+  assertEqual(diff_m710 < 0.00001, true)
+
+  exp_m744 = math.exp(-744.44)
+  assertEqual(exp_m744 > 0.0, true)
+
+  # Finite results up to x = 709.7827
+  exp_7095 = math.exp(709.5)
+  assertEqual(math.is_finite(exp_7095), true)
+  diff_7095 = math.abs((exp_7095 / 1.35498631931463e308) - 1.0)
+  assertEqual(diff_7095 < 0.00001, true)
+
+  exp_70978 = math.exp(709.7827)
+  assertEqual(math.is_finite(exp_70978), true)
+
+  # Overflow and underflow extremes
+  assertEqual(math.is_infinite(math.exp(710.0)), true)
+  assertEqual(math.exp(-746.0), 0.0)
+  assertEqual(math.is_infinite(math.exp(math.infinity())), true)
+  assertEqual(math.exp(math.neg_infinity()), 0.0)
+  assertEqual(math.is_nan_val(math.exp(math.nan())), true)
+
+test "ln log2 log10 precision and edge cases":
+  assertEqual(math.ln(1.0), 0.0)
+  assertEqual(math.log2(1.0), 0.0)
+  assertEqual(math.log10(1.0), 0.0)
+
+  assertEqual(math.abs(math.ln(math.e()) - 1.0) < 0.00000000001, true)
+  assertEqual(math.abs(math.log2(2.0) - 1.0) < 0.00000000001, true)
+  assertEqual(math.abs(math.log2(8.0) - 3.0) < 0.00000000001, true)
+  assertEqual(math.abs(math.log2(0.5) - (0.0 - 1.0)) < 0.00000000001, true)
+  assertEqual(math.abs(math.log10(10.0) - 1.0) < 0.00000000001, true)
+  assertEqual(math.abs(math.log10(100.0) - 2.0) < 0.00000000001, true)
+
+  # Large magnitude
+  ln_1e300 = math.ln(1e300)
+  assertEqual(math.abs(ln_1e300 - 690.7755278982137) < 0.00001, true)
+
+  # Non-positive edge cases
+  assertEqual(math.ln(0.0), math.neg_infinity())
+  assertEqual(math.is_nan_val(math.ln(-1.0)), true)
+  assertEqual(math.is_infinite(math.ln(math.infinity())), true)
+  assertEqual(math.is_nan_val(math.ln(math.nan())), true)
+
+test "trigonometric precision and signed zero":
+  assertEqual(math.sin(0.0), 0.0)
+  assertEqual(1.0 / math.sin(-0.0) < 0.0, true)
+  assertEqual(math.cos(0.0), 1.0)
+  assertEqual(math.cos(-0.0), 1.0)
+  assertEqual(math.tan(0.0), 0.0)
+  assertEqual(1.0 / math.tan(-0.0) < 0.0, true)
+
+  pi_val = math.pi()
+  half_pi = pi_val / 2.0
+  assertEqual(math.abs(math.sin(half_pi) - 1.0) < 0.00000000001, true)
+  assertEqual(math.abs(math.cos(half_pi)) < 0.00000000001, true)
+  assertEqual(math.abs(math.sin(pi_val)) < 0.00000000001, true)
+  assertEqual(math.abs(math.cos(pi_val) - (0.0 - 1.0)) < 0.00000000001, true)
+
+  # Non-finite inputs return NaN
+  assertEqual(math.is_nan_val(math.sin(math.infinity())), true)
+  assertEqual(math.is_nan_val(math.cos(math.infinity())), true)
+  assertEqual(math.is_nan_val(math.tan(math.infinity())), true)
+
+test "inverse trigonometric coverage and signed zero":
+  assertEqual(math.asin(0.0), 0.0)
+  assertEqual(1.0 / math.asin(-0.0) < 0.0, true)
+  assertEqual(math.abs(math.asin(1.0) - 1.5707963267948966) < 0.00000000001, true)
+  assertEqual(math.abs(math.asin(-1.0) - (0.0 - 1.5707963267948966)) < 0.00000000001, true)
+  assertEqual(math.is_nan_val(math.asin(1.5)), true)
+  assertEqual(math.is_nan_val(math.asin(-1.5)), true)
+
+  assertEqual(math.acos(1.0), 0.0)
+  assertEqual(math.abs(math.acos(-1.0) - 3.141592653589793) < 0.00000000001, true)
+  assertEqual(math.abs(math.acos(0.0) - 1.5707963267948966) < 0.00000000001, true)
+  assertEqual(math.abs(math.acos(-0.0) - 1.5707963267948966) < 0.00000000001, true)
+  assertEqual(math.is_nan_val(math.acos(1.5)), true)
+
+test "atan2 ieee edge cases and branches":
+  pi_val = 3.141592653589793
+  half_pi = 1.5707963267948966
+
+  # Signed zero combinations
+  assertEqual(math.atan2(0.0, 0.0), 0.0)
+  assertEqual(1.0 / math.atan2(-0.0, 0.0) < 0.0, true)
+  assertEqual(math.abs(math.atan2(0.0, -0.0) - pi_val) < 0.00000000001, true)
+  assertEqual(math.abs(math.atan2(-0.0, -0.0) - (0.0 - pi_val)) < 0.00000000001, true)
+
+  assertEqual(math.atan2(0.0, 1.0), 0.0)
+  assertEqual(1.0 / math.atan2(-0.0, 1.0) < 0.0, true)
+  assertEqual(math.abs(math.atan2(0.0, -1.0) - pi_val) < 0.00000000001, true)
+  assertEqual(math.abs(math.atan2(-0.0, -1.0) - (0.0 - pi_val)) < 0.00000000001, true)
+
+  assertEqual(math.abs(math.atan2(1.0, 0.0) - half_pi) < 0.00000000001, true)
+  assertEqual(math.abs(math.atan2(-1.0, 0.0) - (0.0 - half_pi)) < 0.00000000001, true)
+
+  # Infinite combinations
+  inf = math.infinity()
+  ninf = math.neg_infinity()
+  assertEqual(math.abs(math.atan2(inf, inf) - 0.7853981633974483) < 0.00000000001, true)
+  assertEqual(math.abs(math.atan2(inf, ninf) - 2.356194490192345) < 0.00000000001, true)
+  assertEqual(math.abs(math.atan2(ninf, inf) - (0.0 - 0.7853981633974483)) < 0.00000000001, true)
+  assertEqual(math.abs(math.atan2(ninf, ninf) - (0.0 - 2.356194490192345)) < 0.00000000001, true)
+
+  assertEqual(math.atan2(1.0, inf), 0.0)
+  assertEqual(math.abs(math.atan2(1.0, ninf) - pi_val) < 0.00000000001, true)
+
+test "hyperbolics large magnitude protection":
+  # Signed zero and small identity
+  assertEqual(math.sinh(0.0), 0.0)
+  assertEqual(1.0 / math.sinh(-0.0) < 0.0, true)
+  small = 1.0 / 10000000000.0
+  assertEqual(math.abs(math.sinh(small) - small) < 1.0 / 1000000000000000.0, true)
+
+  assertEqual(math.cosh(0.0), 1.0)
+  assertEqual(math.tanh(0.0), 0.0)
+  assertEqual(1.0 / math.tanh(-0.0) < 0.0, true)
+  assertEqual(math.abs(math.tanh(small) - small) < 1.0 / 1000000000000000.0, true)
+
+  # Extreme magnitude clamping
+  sinh_710 = math.sinh(710.0)
+  assertEqual(math.is_finite(sinh_710), true)
+  diff_s710 = math.abs((sinh_710 / 1.1169973830808557e308) - 1.0)
+  assertEqual(diff_s710 < 0.00001, true)
+
+  cosh_710 = math.cosh(710.0)
+  assertEqual(math.is_finite(cosh_710), true)
+  diff_c710 = math.abs((cosh_710 / 1.1169973830808557e308) - 1.0)
+  assertEqual(diff_c710 < 0.00001, true)
+
+  assertEqual(math.tanh(1000.0), 1.0)
+  assertEqual(math.tanh(-1000.0), 0.0 - 1.0)
+  assertEqual(math.is_infinite(math.sinh(800.0)), true)
+  assertEqual(math.is_infinite(math.cosh(800.0)), true)
+
+test "hypot intermediate scaling":
+  # Standard 3-4-5
+  assertEqual(math.hypot(3.0, 4.0), 5.0)
+  assertEqual(math.hypot(0.0, 0.0), 0.0)
+
+  # Must not overflow on 1e200
+  h = math.hypot(3e200, 4e200)
+  assertEqual(math.is_finite(h), true)
+  ratio = h / 5e200
+  assertEqual(math.abs(ratio - 1.0) < 0.00001, true)
+
+  # IEEE-754: hypot(inf, nan) == inf
+  assertEqual(math.is_infinite(math.hypot(math.infinity(), math.nan())), true)
+  assertEqual(math.is_infinite(math.hypot(math.nan(), math.infinity())), true)
+
+test "pow ieee edge cases":
+  # pow(NaN, 0.0) == 1.0
+  assertEqual(math.pow(math.nan(), 0.0), 1.0)
+  assertEqual(math.pow(1.0, math.nan()), 1.0)
+  assertEqual(math.pow(-1.0, math.infinity()), 1.0)
+  assertEqual(math.pow(-1.0, math.neg_infinity()), 1.0)
+
+  # Zero base
+  assertEqual(math.pow(0.0, 3.0), 0.0)
+  assertEqual(1.0 / math.pow(-0.0, 3.0) < 0.0, true)
+  assertEqual(math.pow(0.0, 2.0), 0.0)
+  assertEqual(math.pow(-0.0, 2.0), 0.0)
+  assertEqual(math.pow(0.0, -3.0), math.infinity())
+  assertEqual(math.pow(-0.0, -3.0), math.neg_infinity())
+  assertEqual(math.pow(0.0, -2.0), math.infinity())
+  assertEqual(math.pow(-0.0, -2.0), math.infinity())
+
+  # Exact integer powers
+  assertEqual(math.pow(2.0, 3.0), 8.0)
+  assertEqual(math.pow(-2.0, 3.0), 0.0 - 8.0)
+  assertEqual(math.pow(-2.0, 4.0), 16.0)
+  assertEqual(math.pow(2.0, -3.0), 0.125)
+  assertEqual(math.is_nan_val(math.pow(-2.0, 2.5)), true)
+
+test "pow_int edge cases":
+  assertEqual(math.pow_int(2, 10), 1024)
+  assertEqual(math.pow_int(-2, 3), 0 - 8)
+  assertEqual(math.pow_int(-2, 4), 16)
+  assertEqual(math.pow_int(0, 0), 1)
+  assertEqual(math.pow_int(0, 5), 0)
+  assertEqual(math.pow_int(1, -5), 1)
+  assertEqual(math.pow_int(-1, -5), 0 - 1)
+  assertEqual(math.pow_int(-1, -6), 1)
+  assertEqual(math.pow_int(2, -3), 0)
+
+test "angle conversion":
+  pi_val = math.pi()
+  deg = math.rad_to_deg(pi_val)
+  assertEqual(math.abs(deg - 180.0) < 0.00000000001, true)
+  rad = math.deg_to_rad(180.0)
+  assertEqual(math.abs(rad - pi_val) < 0.00000000001, true)

@@ -1,0 +1,24 @@
+import random
+
+bench "mrg32k3a next int generation":
+  var rng = random.new_rng(12345)
+  var i = 0
+  while i < 1000:
+    v = random.rng_next_int(rng)
+    i = i + 1
+
+bench "mrg32k3a next float generation":
+  var rng = random.new_rng(12345)
+  var i = 0
+  while i < 1000:
+    f = random.rng_next_float(rng)
+    i = i + 1
+
+bench "fisher yates shuffle 100 elements":
+  var rng = random.new_rng(12345)
+  var vec = Vector[Int]()
+  var i = 0
+  while i < 100:
+    vec.push(i)
+    i = i + 1
+  shuffled = random.shuffle(vec, rng)

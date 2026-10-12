@@ -1,0 +1,15 @@
+import time
+
+bench "duration arithmetic and conversion":
+  d1 = time.duration_from_seconds(10)
+  d2 = time.duration_from_millis(500)
+  sum = time.duration_add(d1, d2)
+  ms = time.duration_millis(sum)
+
+bench "hinnant civil calendar decomposition":
+  ts = time.timestamp_from_unix_millis(1700000000000)
+  dt = time.timestamp_to_datetime(ts)
+
+bench "iso 8601 formatting":
+  dt = time.DateTime(year: 2026, month: 10, day: 12, hour: 12, minute: 30, second: 45, millisecond: 123)
+  iso = time.datetime_to_iso8601(dt)
