@@ -1,0 +1,101 @@
+module encoding
+
+fn same_ints(left: Vector[Int], right: Vector[Int]) -> Bool:
+  if (left |> count) != (right |> count):
+    return false
+  n = left |> count
+  var i = 0
+  while i < n:
+    if left[i] != right[i]:
+      return false
+    i = i + 1
+  return true
+
+fn error_kind(values: Vector[Int]) -> Int:
+  try:
+    decoded = decode_utf8(values)
+    return 0 + (decoded |> count) * 0
+  recover Utf8Error.InvalidByte(index, value):
+    return 1 + index * 0 + value * 0
+  recover Utf8Error.UnexpectedContinuation(index, value):
+    return 2 + index * 0 + value * 0
+  recover Utf8Error.InvalidLeadingByte(index, value):
+    return 3 + index * 0 + value * 0
+  recover Utf8Error.TruncatedSequence(index, expected_bytes, available_bytes):
+    return 4 + index * 0 + expected_bytes * 0 + available_bytes * 0
+  recover Utf8Error.InvalidContinuation(index, value):
+    return 5 + index * 0 + value * 0
+  recover Utf8Error.OverlongEncoding(index, scalar):
+    return 6 + index * 0 + scalar * 0
+  recover Utf8Error.SurrogateScalar(index, scalar):
+    return 7 + index * 0 + scalar * 0
+  recover Utf8Error.InvalidScalar(index, scalar):
+    return 8 + index * 0 + scalar * 0
+
+fn encode_error_kind(values: Vector[Int]) -> Int:
+  try:
+    encoded = encode_utf8(values)
+    return 0 + (encoded |> count) * 0
+  recover Utf8Error.InvalidByte(index, value):
+    return 1 + index * 0 + value * 0
+  recover Utf8Error.UnexpectedContinuation(index, value):
+    return 2 + index * 0 + value * 0
+  recover Utf8Error.InvalidLeadingByte(index, value):
+    return 3 + index * 0 + value * 0
+  recover Utf8Error.TruncatedSequence(index, expected_bytes, available_bytes):
+    return 4 + index * 0 + expected_bytes * 0 + available_bytes * 0
+  recover Utf8Error.InvalidContinuation(index, value):
+    return 5 + index * 0 + value * 0
+  recover Utf8Error.OverlongEncoding(index, scalar):
+    return 6 + index * 0 + scalar * 0
+  recover Utf8Error.SurrogateScalar(index, scalar):
+    return 7 + index * 0 + scalar * 0
+  recover Utf8Error.InvalidScalar(index, scalar):
+    return 8 + index * 0 + scalar * 0
+
+test "UTF-8 scalar boundaries and representative text":
+  scalars = [0, 65, 127, 128, 2047, 2048, 769, 20013, 65535, 65536, 128578, 1114111]
+  expected = [0, 65, 127, 194, 128, 223, 191, 224, 160, 128, 204, 129, 228, 184, 173, 239, 191, 191, 240, 144, 128, 128, 240, 159, 153, 130, 244, 143, 191, 191]
+  encoded = encode_utf8(scalars)
+  assert(same_ints(encoded, expected))
+  decoded = decode_utf8(expected)
+  assert(same_ints(decoded, scalars))
+  assert(validate_utf8(expected))
+  assert(validate_utf8(Vector[Int]()))
+
+test "UTF-8 rejects malformed bytes and sequences":
+  assertEqual(error_kind([-1]), 1)
+  assertEqual(error_kind([256]), 1)
+  assertEqual(error_kind([128]), 2)
+  assertEqual(error_kind([255]), 3)
+  assertEqual(error_kind([226, 130]), 4)
+  assertEqual(error_kind([226, 40, 161]), 5)
+  assertEqual(error_kind([192, 128]), 6)
+  assertEqual(error_kind([224, 128, 128]), 6)
+  assertEqual(error_kind([240, 128, 128, 128]), 6)
+  assertEqual(error_kind([237, 160, 128]), 7)
+  assertEqual(error_kind([244, 144, 128, 128]), 8)
+  assert(not validate_utf8([194]))
+  assert(not validate_utf8([245, 128, 128, 128]))
+
+test "UTF-8 encoder rejects non-scalars":
+  assertEqual(encode_error_kind([-1]), 8)
+  assertEqual(encode_error_kind([1114112]), 8)
+  assertEqual(encode_error_kind([55296]), 7)
+  assertEqual(encode_error_kind([57343]), 7)
+  assert(is_unicode_scalar(0))
+  assert(is_unicode_scalar(1114111))
+  assert(not is_unicode_scalar(-1))
+  assert(not is_unicode_scalar(55296))
+  assert(not is_unicode_scalar(1114112))
+
+test "UTF-8 large ASCII round trip":
+  var scalars = Vector[Int]()
+  var i = 0
+  while i < 4096:
+    scalars.push(65 + i % 26)
+    i = i + 1
+  encoded = encode_utf8(scalars)
+  assertEqual(encoded |> count, 4096)
+  decoded = decode_utf8(encoded)
+  assert(same_ints(decoded, scalars))
