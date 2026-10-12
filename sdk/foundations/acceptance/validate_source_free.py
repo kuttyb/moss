@@ -55,8 +55,34 @@ def main():
     executable = consumer_build["result"]["artifacts"]["executable"]
     output = invoke([executable], consumer, environment)
     assert output == "source-free generic ok\n", output
+
+    range_provider = workdir / "range_provider"
+    range_consumer = workdir / "range_consumer"
+    (range_provider / "src").mkdir(parents=True)
+    (range_consumer / "src").mkdir(parents=True)
+    shutil.copy2(root / "bytes/src/bytes.moss", range_provider / "src/bytes.moss")
+    range_source = Path(__file__).parent / "repros/source_free_range/src/main.moss"
+    shutil.copy2(range_source, range_consumer / "src/main.moss")
+    (range_provider / "Moss.toml").write_text('[project]\nname="byte_provider"\nversion="0.1.0"\n')
+    (range_consumer / "Moss.toml").write_text('[project]\nname="byte_consumer"\nversion="0.1.0"\n')
+    (range_consumer / "p4.bin").write_bytes(b"ABABC")
+    environment.pop("MOSS_MODULE_PATH")
+    built = json.loads(invoke([moss, "build", "--json"], range_provider, environment))
+    assert built["ok"]
+    byte_interface = range_provider / "build/debug/bytes.mossi"
+    byte_rlib = range_provider / "build/debug/libbytes.rlib"
+    assert byte_interface.exists() and byte_rlib.exists()
+    (range_provider / "src/bytes.moss").rename(range_provider / "src/bytes.removed")
+    assert not (range_provider / "src/bytes.moss").exists()
+    environment["MOSS_MODULE_PATH"] = str(range_provider / "build/debug")
+    rebuilt = json.loads(invoke([moss, "build", "--json"], range_consumer, environment))
+    assert rebuilt["ok"]
+    range_executable = rebuilt["result"]["artifacts"]["executable"]
+    range_output = invoke([range_executable], range_consumer, environment)
+    assert range_output == "329\n", range_output
     print(json.dumps({"source_removed": True, "provider_abi": "v9",
-                      "output": output.strip(), "native": "pass"}, sort_keys=True))
+                      "generic_output": output.strip(), "range_output": range_output.strip(),
+                      "native": "pass"}, sort_keys=True))
 
 
 if __name__ == "__main__":

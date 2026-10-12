@@ -53,9 +53,11 @@ full staged run was
 `546807815db9d61fc0ed510620cf50be0bb9e7a2b2f3131580ebc34402b53828`.
 The source-free gate builds a `collections` provider, removes its `.moss`
 source, then compiles and executes a fresh Int/String generic consumer against
-the ABI-v9 `.mossi` and `.rlib`. It invokes Moss directly because current
-Margo path dependencies require a source project; no source-free Fast Debug
-execution is claimed.
+the ABI-v9 `.mossi` and `.rlib`. It separately builds a `bytes` provider,
+removes its source, and specializes `bytes.from_range` against a live FileIO
+`Range` containing `ABABC`; the copied bytes sum to `329` after the FileIO
+owner closes. It invokes Moss directly because current Margo path dependencies
+require a source project; FileIO has no Fast Debug execution.
 
 ## Benchmarks
 
