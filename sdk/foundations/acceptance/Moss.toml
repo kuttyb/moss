@@ -1,0 +1,12 @@
+[package]
+name = "foundations_acceptance"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+"moss.core" = { path = "../core" }
+"moss.bytes" = { path = "../bytes" }
+"moss.collections" = { path = "../collections" }
+"moss.algorithms" = { path = "../algorithms" }

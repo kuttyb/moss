@@ -1,0 +1,9 @@
+[package]
+name = "foundations_source_free_generics"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+"moss.collections" = { path = "../../../collections" }

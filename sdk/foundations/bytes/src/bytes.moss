@@ -1,0 +1,70 @@
+module bytes
+
+export fn is_byte(value: Int) -> Bool:
+  return value >= 0 and value <= 255
+
+export fn all_bytes(values: Vector[Int]) -> Bool:
+  n = values |> count
+  var i = 0
+  while i < n:
+    if not is_byte(values[i]):
+      return false
+    i = i + 1
+  return true
+
+export fn copy_bytes(values: Vector[Int]) -> Vector[Int]:
+  var result = Vector[Int]()
+  n = values |> count
+  var i = 0
+  while i < n:
+    byte = values[i]
+    assert(is_byte(byte))
+    result.push(byte)
+    i = i + 1
+  return result
+
+export fn slice_bytes(values: Vector[Int], start: Int, length: Int) -> Vector[Int]:
+  var result = Vector[Int]()
+  n = values |> count
+  if start < 0 or start >= n or length <= 0:
+    return result
+  remaining = n - start
+  take = length
+  if take > remaining:
+    take = remaining
+  var i = 0
+  while i < take:
+    byte = values[start + i]
+    assert(is_byte(byte))
+    result.push(byte)
+    i = i + 1
+  return result
+
+export fn get_or(values: Vector[Int], index: Int, fallback: Int) -> Int:
+  assert(is_byte(fallback))
+  if index < 0 or index >= (values |> count):
+    return fallback
+  value = values[index]
+  assert(is_byte(value))
+  return value
+
+export fn set_if_valid(values: Vector[Int], index: Int, value: Int) -> Bool:
+  if index < 0 or index >= (values |> count) or not is_byte(value):
+    return false
+  values[index] = value
+  return true
+
+export fn append_if_valid(values: Vector[Int], value: Int) -> Bool:
+  if not is_byte(value):
+    return false
+  values.push(value)
+  return true
+
+# The generic helper is specialized with a borrowed Range in the consumer.
+# A concrete exported Range parameter would require the deferred Phase 20 ABI.
+export fn from_range(data):
+  var result = Vector[Int]()
+  for byte in data:
+    assert(is_byte(byte))
+    result.push(byte)
+  return result

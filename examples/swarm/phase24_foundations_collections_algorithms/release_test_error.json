@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0",
+  "command": "test",
+  "ok": false,
+  "error": {"code": "TEST_DISCOVERY_ERROR", "severity": "error", "message": "no Moss tests matched filter '--release'", "source_file": "/home/owner/daji/code/moss/tmp/phase24-foundations/collections-algorithms/sdk/foundations/algorithms/src/algorithms.moss", "line": 0, "column": 1, "span": null, "source": {"file": "/home/owner/daji/code/moss/tmp/phase24-foundations/collections-algorithms/sdk/foundations/algorithms/src/algorithms.moss", "line": 0, "column": 1, "span": null}, "semantic_identity": null, "symbol": null, "rule": null, "cause": null, "related": [], "guidance": null, "details": {"ownership_expected": null, "ownership_actual": null, "consume_line": null, "recursion_witness": null, "resolution": null}, "fixes": [], "legal_alternatives": []}
+}

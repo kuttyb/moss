@@ -1,0 +1,18 @@
+module app
+import bytes
+
+domain Reader:
+  fn CopyAndSum(path: String) -> Int:
+    file = FileIO.open(path, ro)
+    borrowed = file.read(0, 5)
+    owned = bytes.from_range(borrowed)
+    file.close()
+    assert((owned |> count) == 5)
+    reply owned[0] + owned[1] + owned[2] + owned[3] + owned[4]
+
+  on_fail:
+    reply -1
+
+fn main():
+  reader = Reader()
+  echo message reader.CopyAndSum("p4.bin")

@@ -4202,11 +4202,10 @@ class Checker {
       vector<string> open_arguments;
       if (parse_fileio_open(e, open_arguments)) return string("FileIO");
     }
-    if (e.size() >= 2 && e.front() == '[' && e.back() == ']') {
-      auto parts = split_top_level(e.substr(1, e.size() - 2), ',');
-      if (parts.size() == 1 && trim(parts[0]).empty()) return std::nullopt;
+    if (auto parts = parse_vector_literal(e)) {
+      if (parts->empty()) return std::nullopt;
       string element;
-      for (const auto& part : parts) {
+      for (const auto& part : *parts) {
         auto t = inferred_expr_type(part, env);
         if (!t) return std::nullopt;
         if (element.empty()) element = *t;
@@ -8624,6 +8623,56 @@ class Checker {
            matching_paren(value, 0) == value.size() - 1)
       value = trim(value.substr(1, value.size() - 2));
 
+    // Every call evaluated by a value wrapper still needs a semantic call
+    // edge.  Module projection uses these edges to emit imported generic
+    // specializations into the consumer crate.  The checker and native
+    // expression lowering already recurse through these forms.
+    if (auto elements = parse_vector_literal(value)) {
+      for (const auto& element : *elements)
+        collect_local_call_sites(line, element, env, implicit_owner, calls);
+      return;
+    }
+    if (starts_with(value, "not ")) {
+      collect_local_call_sites(line, trim(value.substr(4)), env,
+                               implicit_owner, calls);
+      return;
+    }
+    // Split at the outer operator before looking for a trailing call.  For
+    // example, `0 - lib.lookup(xs)` ends in `lookup(...)`; treating the whole
+    // expression as one member call loses the imported lookup specialization.
+    for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
+                                                         {"==", "!=", "<=", ">=", "<", ">"},
+                                                         {"+", "-", "*", "/", "%"}})
+      if (auto binary = split_binary(value, operators)) {
+        collect_local_call_sites(line, binary->first, env, implicit_owner, calls);
+        collect_local_call_sites(line, binary->second, env, implicit_owner, calls);
+        return;
+      }
+
+    // A computed object's field access evaluates its base, which may contain
+    // an imported generic call that needs a consumer-side specialization.
+    // Confirm a declared field before descending so qualified module names
+    // and enum cases retain their call-resolution paths below.
+    if (auto dot = value.rfind('.'); dot != string::npos) {
+      const string base = trim(value.substr(0, dot));
+      const string field = trim(value.substr(dot + 1));
+      if (plain_identifier(field)) {
+        auto base_type = inferred_expr_type(base, env);
+        if (base_type) {
+          auto object = objects_.find(canonical_type_name(*base_type));
+          if (object != objects_.end() &&
+              std::any_of(object->second->fields.begin(),
+                          object->second->fields.end(),
+                          [&](const Field& candidate) {
+                            return candidate.name == field;
+                          })) {
+            collect_local_call_sites(line, base, env, implicit_owner, calls);
+            return;
+          }
+        }
+      }
+    }
+
     string receiver, method_name;
     vector<string> arguments;
     if (parse_member_call(value, receiver, method_name, arguments)) {
@@ -8707,14 +8756,9 @@ class Checker {
       collect_local_call_sites(line, index, env, implicit_owner, calls);
       return;
     }
-    for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
-                                                         {"==", "!=", "<=", ">=", "<", ">"},
-                                                         {"+", "-", "*", "/", "%"}})
-      if (auto binary = split_binary(value, operators)) {
-        collect_local_call_sites(line, binary->first, env, implicit_owner, calls);
-        collect_local_call_sites(line, binary->second, env, implicit_owner, calls);
-        return;
-      }
+    if (value.size() > 1 && (value.front() == '-' || value.front() == '+'))
+      collect_local_call_sites(line, trim(value.substr(1)), env,
+                               implicit_owner, calls);
   }
 
   vector<string> statement_expressions(const Stmt& statement) const {
@@ -13287,8 +13331,8 @@ class Checker {
       check_expression(line, original.substr(1, original.size() - 2), env);
       return;
     }
-    if (original.size() >= 2 && original.front() == '[' && original.back() == ']') {
-      for (const auto& element : split_top_level(original.substr(1, original.size() - 2), ',')) {
+    if (auto elements = parse_vector_literal(original)) {
+      for (const auto& element : *elements) {
         auto type = inferred_expr_type(element, env);
         if (type && fileio_scoped_type(*type))
           err(line, "FileIO and ranges cannot enter ordinary collections",
@@ -16669,11 +16713,10 @@ class Generator {
     if (generated_integer_literal(value))
       return string("int");
     if (decimal_float_literal(value)) return string("float");
-    if (value.size() >= 2 && value.front() == '[' && value.back() == ']') {
-      auto elements = split_top_level(value.substr(1, value.size() - 2), ',');
-      if (elements.size() == 1 && elements.front().empty()) return std::nullopt;
+    if (auto elements = parse_vector_literal(value)) {
+      if (elements->empty()) return std::nullopt;
       string element_type;
-      for (const auto& element : elements) {
+      for (const auto& element : *elements) {
         auto current = generated_expr_type(element, types);
         if (!current) return std::nullopt;
         string concrete = canonical_type_name(*current);
@@ -18080,13 +18123,12 @@ class Generator {
     // "a" + "b" and "a" == "b" also begin and end with quote characters.
     if (e.size() >= 2 && e.front() == '"' && e.back() == '"')
       return e + ".to_string()";
-    if (e.size() >= 2 && e.front() == '[' && e.back() == ']') {
-      auto parts = split_top_level(e.substr(1, e.size()-2), ',');
+    if (auto parts = parse_vector_literal(e)) {
       std::ostringstream r; r << "vec![";
-      for (size_t i=0;i<parts.size();++i) {
+      for (size_t i=0;i<parts->size();++i) {
         if (i) r << ", ";
-        string value = expr(parts[i], d, locals, types);
-        auto value_type = generated_expr_type(parts[i], types);
+        string value = expr(parts->at(i), d, locals, types);
+        auto value_type = generated_expr_type(parts->at(i), types);
         if (value_type && domains_.count(canonical_type_name(*value_type)))
           value = "(" + value + ").clone()";
         r << value;

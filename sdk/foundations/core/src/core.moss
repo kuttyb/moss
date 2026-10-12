@@ -1,0 +1,25 @@
+module core
+
+export fn min_int(a: Int, b: Int) -> Int:
+  if a < b:
+    return a
+  return b
+
+export fn max_int(a: Int, b: Int) -> Int:
+  if a > b:
+    return a
+  return b
+
+export fn valid_index(index: Int, length: Int) -> Bool:
+  return index >= 0 and length >= 0 and index < length
+
+export fn valid_slice(start: Int, length: Int, total: Int) -> Bool:
+  return start >= 0 and length >= 0 and total >= 0 and start <= total and length <= total - start
+
+export fn clamp_int(value: Int, lower: Int, upper: Int) -> Int:
+  assert(lower <= upper)
+  if value < lower:
+    return lower
+  if value > upper:
+    return upper
+  return value

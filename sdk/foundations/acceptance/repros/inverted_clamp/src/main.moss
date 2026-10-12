@@ -1,0 +1,5 @@
+module app
+import core
+
+fn main():
+  echo core.clamp_int(3, 9, 1)

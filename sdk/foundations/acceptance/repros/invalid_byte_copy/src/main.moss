@@ -1,0 +1,7 @@
+module app
+import bytes
+
+fn main():
+  data = [1, 999]
+  copied = bytes.copy_bytes(data)
+  echo copied[0]

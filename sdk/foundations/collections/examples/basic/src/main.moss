@@ -1,0 +1,10 @@
+module app
+import collections
+
+fn main():
+  values = [1, 2, 1]
+  words = ["red", "blue", "red"]
+  echo collections.index_of(values, 1), collections.count_equal(values, 1)
+  echo collections.contains(values, 2), collections.contains(words, "green")
+  reverse = collections.reversed_copy_int(values)
+  echo reverse[0], reverse[1], reverse[2]

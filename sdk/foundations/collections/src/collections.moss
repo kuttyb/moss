@@ -1,0 +1,40 @@
+module collections
+
+# Returns the first matching index, or -1 when the value is absent.
+# The element type specializes at each call and must support equality.
+export fn index_of(items, target) -> Int:
+  var i = 0
+  n = items |> count
+  while i < n:
+    if items[i] == target:
+      return i
+    i = i + 1
+  return 0 - 1
+
+export fn contains(items, target) -> Bool:
+  var i = 0
+  n = items |> count
+  while i < n:
+    if items[i] == target:
+      return true
+    i = i + 1
+  return false
+
+export fn count_equal(items, target) -> Int:
+  var i = 0
+  var matches = 0
+  n = items |> count
+  while i < n:
+    if items[i] == target:
+      matches = matches + 1
+    i = i + 1
+  return matches
+
+# Returns a new Int vector and leaves the source unchanged.
+export fn reversed_copy_int(items: Vector[Int]) -> Vector[Int]:
+  var out = Vector[Int]()
+  var i = items |> count
+  while i > 0:
+    i = i - 1
+    out.push(items[i])
+  return out

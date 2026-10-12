@@ -1,0 +1,44 @@
+module acceptance
+import core
+import bytes
+import collections
+import algorithms
+
+fn main():
+  assert(core.min_int(-7, 9) == -7)
+  assert(core.max_int(-7, 9) == 9)
+  assert(core.clamp_int(9, -2, 4) == 4)
+  assert(core.valid_index(0, 1))
+  assert(not core.valid_index(1, 1))
+  assert(core.valid_slice(1, 2, 3))
+  assert(not core.valid_slice(2, 2, 3))
+
+  source = [0, 128, 255]
+  assert(bytes.all_bytes(source))
+  var copied = bytes.copy_bytes(source)
+  assert(bytes.set_if_valid(copied, 1, 42))
+  assert(source[1] == 128)
+  assert(copied[1] == 42)
+  assert(bytes.get_or(copied, -1, 7) == 7)
+  clipped = bytes.slice_bytes(source, 1, 99)
+  assert((clipped |> count) == 2)
+  assert(clipped[0] == 128)
+  assert(clipped[1] == 255)
+
+  names = ["red", "blue", "red"]
+  assert(collections.index_of(names, "red") == 0)
+  assert(collections.count_equal(names, "red") == 2)
+  contains_green = collections.contains(names, "green")
+  assert(not contains_green)
+
+  var values = [5, -2, 5, 0, -9, 3]
+  algorithms.sort_int(values)
+  assert(values[0] == -9)
+  assert(values[5] == 5)
+  assert(algorithms.lower_bound_int(values, 5) == 4)
+  assert(algorithms.binary_search_int(values, 5) == 4)
+  assert(collections.index_of(values, 5) == 4)
+  reversed = collections.reversed_copy_int(values)
+  assert(reversed[0] == 5)
+  assert(values[0] == -9)
+  echo "foundations acceptance ok"

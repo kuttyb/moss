@@ -1,0 +1,6 @@
+module app
+import collections
+
+fn main():
+  values = ["red", "blue"]
+  assert(not collections.contains(values, "green"))
