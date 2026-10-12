@@ -102,6 +102,49 @@ export fn object_set(doc: JsonDoc, obj_id: Int, key: String, child_id: Int):
   push_int(doc.obj_vals, child_id)
   doc.child_counts[obj_id] = doc.child_counts[obj_id] + 1
 
+export fn add_int(doc: JsonDoc, val: Int) -> Int:
+  return add_number(doc, val, 0.0, fmt.format_int(val))
+
+export fn array_push_string(doc: JsonDoc, arr_id: Int, val: String) -> Int:
+  str_id = add_string(doc, val)
+  array_push(doc, arr_id, str_id)
+  return str_id
+
+export fn array_push_int(doc: JsonDoc, arr_id: Int, val: Int) -> Int:
+  num_id = add_int(doc, val)
+  array_push(doc, arr_id, num_id)
+  return num_id
+
+export fn array_push_bool(doc: JsonDoc, arr_id: Int, val: Bool) -> Int:
+  b_id = add_bool(doc, val)
+  array_push(doc, arr_id, b_id)
+  return b_id
+
+export fn array_push_null(doc: JsonDoc, arr_id: Int) -> Int:
+  n_id = add_null(doc)
+  array_push(doc, arr_id, n_id)
+  return n_id
+
+export fn object_set_string(doc: JsonDoc, obj_id: Int, key: String, val: String) -> Int:
+  str_id = add_string(doc, val)
+  object_set(doc, obj_id, key, str_id)
+  return str_id
+
+export fn object_set_int(doc: JsonDoc, obj_id: Int, key: String, val: Int) -> Int:
+  num_id = add_int(doc, val)
+  object_set(doc, obj_id, key, num_id)
+  return num_id
+
+export fn object_set_bool(doc: JsonDoc, obj_id: Int, key: String, val: Bool) -> Int:
+  b_id = add_bool(doc, val)
+  object_set(doc, obj_id, key, b_id)
+  return b_id
+
+export fn object_set_null(doc: JsonDoc, obj_id: Int, key: String) -> Int:
+  n_id = add_null(doc)
+  object_set(doc, obj_id, key, n_id)
+  return n_id
+
 export fn node_kind(doc: JsonDoc, id: Int) -> Int:
   return doc.kinds[id]
 
@@ -507,3 +550,208 @@ export fn parse(input: String) -> JsonDoc:
   if not parse.is_eof(input, cursor):
     raise JsonError.TrailingCharacters(line: cursor.line, col: cursor.col)
   return doc
+
+export fn stringify(doc: JsonDoc) -> String:
+  if doc.root < 0:
+    return ""
+  root = doc.root
+  root_kind = doc.kinds[root]
+  if root_kind == kind_null():
+    return "null"
+  if root_kind == kind_bool():
+    if doc.bool_vals[root]:
+      return "true"
+    return "false"
+  if root_kind == kind_number():
+    return doc.str_vals[root] + ""
+  if root_kind == kind_string():
+    return fmt.quote_json_string(doc.str_vals[root])
+
+  var buffer = Vector[String]()
+  var stack_id = Vector[Int]()
+  var stack_idx = Vector[Int]()
+  var stack_is_obj = Vector[Bool]()
+
+  if root_kind == kind_array():
+    buffer.push("[")
+    stack_id.push(root)
+    stack_idx.push(0)
+    stack_is_obj.push(false)
+  else:
+    buffer.push("{")
+    stack_id.push(root)
+    stack_idx.push(0)
+    stack_is_obj.push(true)
+
+  while (stack_id |> count) > 0:
+    top = (stack_id |> count) - 1
+    curr_id = stack_id[top]
+    idx = stack_idx[top]
+    is_obj = stack_is_obj[top]
+    total = doc.child_counts[curr_id]
+
+    if idx >= total:
+      stack_id.pop()
+      stack_idx.pop()
+      stack_is_obj.pop()
+      if is_obj:
+        buffer.push("}")
+      else:
+        buffer.push("]")
+    else:
+      if idx > 0:
+        buffer.push(",")
+      stack_idx[top] = idx + 1
+      var child_id = 0
+      if is_obj:
+        key = object_key(doc, curr_id, idx)
+        buffer.push(fmt.quote_json_string(key))
+        buffer.push(":")
+        child_id = object_val(doc, curr_id, idx)
+      else:
+        child_id = array_get(doc, curr_id, idx)
+
+      ckind = doc.kinds[child_id]
+      if ckind == kind_null():
+        buffer.push("null")
+      else:
+        if ckind == kind_bool():
+          if doc.bool_vals[child_id]:
+            buffer.push("true")
+          else:
+            buffer.push("false")
+        else:
+          if ckind == kind_number():
+            buffer.push(doc.str_vals[child_id] + "")
+          else:
+            if ckind == kind_string():
+              buffer.push(fmt.quote_json_string(doc.str_vals[child_id]))
+            else:
+              if ckind == kind_array():
+                buffer.push("[")
+                stack_id.push(child_id)
+                stack_idx.push(0)
+                stack_is_obj.push(false)
+              else:
+                if ckind == kind_object():
+                  buffer.push("{")
+                  stack_id.push(child_id)
+                  stack_idx.push(0)
+                  stack_is_obj.push(true)
+
+  return "".join(buffer)
+
+export fn stringify_pretty(doc: JsonDoc, indent_str: String) -> String:
+  if doc.root < 0:
+    return ""
+  root = doc.root
+  root_kind = doc.kinds[root]
+  if root_kind == kind_null():
+    return "null"
+  if root_kind == kind_bool():
+    if doc.bool_vals[root]:
+      return "true"
+    return "false"
+  if root_kind == kind_number():
+    return doc.str_vals[root] + ""
+  if root_kind == kind_string():
+    return fmt.quote_json_string(doc.str_vals[root])
+
+  var buffer = Vector[String]()
+  var stack_id = Vector[Int]()
+  var stack_idx = Vector[Int]()
+  var stack_is_obj = Vector[Bool]()
+
+  if root_kind == kind_array():
+    if doc.child_counts[root] == 0:
+      return "[]"
+    buffer.push("[\n")
+    stack_id.push(root)
+    stack_idx.push(0)
+    stack_is_obj.push(false)
+  else:
+    if doc.child_counts[root] == 0:
+      return "{}"
+    buffer.push("{\n")
+    stack_id.push(root)
+    stack_idx.push(0)
+    stack_is_obj.push(true)
+
+  while (stack_id |> count) > 0:
+    top = (stack_id |> count) - 1
+    curr_id = stack_id[top]
+    idx = stack_idx[top]
+    is_obj = stack_is_obj[top]
+    total = doc.child_counts[curr_id]
+
+    if idx >= total:
+      stack_id.pop()
+      stack_idx.pop()
+      stack_is_obj.pop()
+      depth = stack_id |> count
+      buffer.push("\n")
+      buffer.push(fmt.repeat_string(indent_str, depth))
+      if is_obj:
+        buffer.push("}")
+      else:
+        buffer.push("]")
+    else:
+      if idx > 0:
+        buffer.push(",\n")
+      depth = stack_id |> count
+      buffer.push(fmt.repeat_string(indent_str, depth))
+      stack_idx[top] = idx + 1
+      var child_id = 0
+      if is_obj:
+        key = object_key(doc, curr_id, idx)
+        buffer.push(fmt.quote_json_string(key))
+        buffer.push(": ")
+        child_id = object_val(doc, curr_id, idx)
+      else:
+        child_id = array_get(doc, curr_id, idx)
+
+      ckind = doc.kinds[child_id]
+      if ckind == kind_null():
+        buffer.push("null")
+      else:
+        if ckind == kind_bool():
+          if doc.bool_vals[child_id]:
+            buffer.push("true")
+          else:
+            buffer.push("false")
+        else:
+          if ckind == kind_number():
+            buffer.push(doc.str_vals[child_id] + "")
+          else:
+            if ckind == kind_string():
+              buffer.push(fmt.quote_json_string(doc.str_vals[child_id]))
+            else:
+              if ckind == kind_array():
+                child_total = doc.child_counts[child_id]
+                if child_total == 0:
+                  buffer.push("[]")
+                else:
+                  buffer.push("[\n")
+                  stack_id.push(child_id)
+                  stack_idx.push(0)
+                  stack_is_obj.push(false)
+              else:
+                if ckind == kind_object():
+                  child_total = doc.child_counts[child_id]
+                  if child_total == 0:
+                    buffer.push("{}")
+                  else:
+                    buffer.push("{\n")
+                    stack_id.push(child_id)
+                    stack_idx.push(0)
+                    stack_is_obj.push(true)
+
+  return "".join(buffer)
+
+export fn validate(json_text: String) -> Bool:
+  try:
+    doc = parse(json_text)
+    return true
+  recover:
+    return false
+
