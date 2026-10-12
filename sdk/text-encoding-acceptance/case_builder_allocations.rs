@@ -104,7 +104,7 @@ fn main() {
     for _ in 0..128 {
         builder.push_str(&part);
     }
-    measured("Rust capacity builder reusable build 128 x16", || {
+    measured("Rust capacity builder reusable build 128 x16 (setup excluded)", || {
         let mut checksum = 0;
         for _ in 0..16 {
             let built = black_box(black_box(&builder).clone());

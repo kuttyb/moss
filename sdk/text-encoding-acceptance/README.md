@@ -38,9 +38,11 @@ code overhead. See `docs/PHASE_24_TEXT_ENCODING_UTF8_PERFORMANCE.md`.
 The focused casing/builder corpus is in `benches/case_builder.moss`. It retains
 the equivalent `Vec<String>` segment baseline and also compares the additive
 Moss capacity builder with the same reserved Rust `String` workloads. Finish
-(consume), append with a preconstructed segment, and reusable snapshot build
-are timed separately. The allocation reference counts the Rust workloads in a
-separate untimed run; it does not claim Moss allocation counts:
+(consume), append with a part constructed before the append loop, and an
+end-to-end reusable snapshot workload are timed separately. The reusable row
+constructs and fills the builder inside both timed bodies before taking sixteen
+snapshots. The allocation reference counts snapshot allocations in a separate
+untimed run after setup; it does not claim Moss allocation counts:
 
 ```sh
 rustc --edition=2021 -D warnings -O -C debuginfo=1 case_builder_baseline.rs -o ../../tmp/team-t-case-builder

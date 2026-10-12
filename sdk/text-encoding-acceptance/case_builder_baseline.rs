@@ -161,14 +161,14 @@ fn main() {
             assert_eq!(black_box(&builder).chars().count(), 1_024);
         },
     );
-    let part = String::from("abcdefgh");
-    let mut reusable_builder = String::with_capacity(1_024);
-    for _ in 0..128 {
-        reusable_builder.push_str(&part);
-    }
     measure(
-        "Rust capacity builder reusable build preconstructed 128 segments x16",
+        "Rust capacity builder end to end reusable build 128 segments x16",
         || {
+            let part = String::from("abcdefgh");
+            let mut reusable_builder = String::with_capacity(1_024);
+            for _ in 0..128 {
+                black_box(reusable_builder.push_str(black_box(&part)));
+            }
             let mut checksum = 0;
             for _ in 0..16 {
                 let built = black_box(reusable_reserved_builder_build(

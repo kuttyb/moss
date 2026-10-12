@@ -134,7 +134,7 @@ bench "capacity builder append preconstructed input 128 segments":
     i = i + 1
   assertEqual(builder.length(), 1024)
 
-bench "capacity builder reusable build preconstructed 128 segments x16":
+bench "capacity builder end to end reusable build 128 segments x16":
   part = "abcdefgh"
   var builder = text.new_capacity_builder(1024)
   var i = 0

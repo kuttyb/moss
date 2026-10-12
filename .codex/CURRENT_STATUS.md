@@ -1,5 +1,22 @@
 # Moss current status
 
+## Phase 24 Team T reusable-build benchmark repair — 2026-10-12
+
+The Architect's benchmark blocker at `f52f752` is repaired. The old reusable
+snapshot row is explicitly invalidated: Moss constructed its input inside each
+timed iteration while Rust constructed outside. The corrected row is labeled
+end-to-end and constructs the owned part, reserves and fills 128 segments, and
+takes sixteen snapshots inside both timed bodies.
+
+Three optimized runs with six SHA-bound providers measured Moss/Rust median
+ratios of 1.45x, 1.15x, and 0.79x; median-of-medians is 1.14x. The separate Rust
+allocator evidence still excludes setup intentionally and now says so in its
+label and documentation; it measures exactly sixteen snapshot allocations and
+is not timing evidence. Strict Rust compilation, allocation execution,
+feedback validation, and the full Team T differential acceptance suite pass.
+The Coordinator separately integrated the alias repair at `242d8d5`; it owns
+combined full-repository validation and the new exact-SHA Architect review.
+
 ## Phase 24 Team T nested String mutation alias repair — 2026-10-12
 
 The post-candidate Architect case `value.append(identity(value))` exposed that
@@ -10,7 +27,6 @@ and wrapped self-aliases receive structured `OWNERSHIP_CONFLICTING_ACCESS`
 diagnostics; disjoint wrapped inputs pass native and Fast Debug. Focused String,
 semantic IDE, skill, feedback, whitespace, and strict compiler gates pass. The
 coordinator owns integration and renewed exact-SHA Architect review.
-
 ## Phase 24 Team T focused String/builder independent Architect — 2026-10-12
 
 The independent L6 Architect reviewed exact frozen engineering SHA
