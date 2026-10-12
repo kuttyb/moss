@@ -1,5 +1,18 @@
 # Moss current status
 
+## Phase 24 Team T generic nested-access repair — 2026-10-12
+
+Full `make check` on integrated `902c6ca` exposed an internal synchronization
+invariant while the supplemental ordinary-call overlap query inspected the
+unconstrained `f.read(...)` expression in the generic `range_fileio` fixture.
+That query now explicitly tolerates an unresolved receiver method and walks its
+receiver and arguments conservatively; the normal synchronization/effect
+pipeline retains its strict concrete-target invariant. This preserves generic
+specialization while retaining the directional direct/nested alias checks.
+`TMPDIR="$PWD/tmp" make check` passes in full after the repair, including the
+40-probe generic-specialization suite and all source-free ABI gates.
+Coordinator integration and renewed exact-SHA Architect review remain pending.
+
 ## Phase 24 Team T argument-order ownership repair — 2026-10-12
 
 Full `make check` on integrated `64e9f8e` exposed a false positive in the

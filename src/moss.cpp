@@ -6038,6 +6038,7 @@ class Checker {
     std::map<string,StorageLocation> aliases;
     StateLeafEffects effects;
     bool ignore_recovery = false;
+    bool allow_unresolved_methods = false;
     bool recording = true;
   };
   mutable LeafEffectCapture* leaf_effect_capture_ = nullptr;
@@ -7698,6 +7699,12 @@ class Checker {
   vector<std::pair<StorageLocation, Effect>> expression_storage_accesses(
       const string& expression, const OwnershipEnv& env) const {
     LeafEffectCapture capture;
+    // This is a supplemental ownership-overlap query run before every generic
+    // function has necessarily acquired a concrete specialization. Unknown
+    // receiver methods cannot name a checked concrete storage root here; walk
+    // their receiver/arguments conservatively instead of enforcing the stricter
+    // synchronization-summary invariant used by the normal effect pipeline.
+    capture.allow_unresolved_methods = true;
     for (const auto& binding : env.types)
       if (!binding.second.empty() &&
           !contains_internal_placeholder(binding.second))
@@ -8163,7 +8170,8 @@ class Checker {
                                     receiver_effect, receiver_fields, Effect::Read);
         return;
       }
-      synchronization_require(!leaf_effect_capture_,
+      synchronization_require(!leaf_effect_capture_ ||
+                                  leaf_effect_capture_->allow_unresolved_methods,
                               "unresolved concrete method effect target");
       // An unresolved call with no bounded concrete candidate is diagnosed by
       // ordinary static dispatch checking; keep the effect walk conservative.
