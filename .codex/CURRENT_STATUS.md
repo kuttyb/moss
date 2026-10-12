@@ -1,5 +1,16 @@
 # Moss current status
 
+## Phase 24 Team T nested String mutation alias repair — 2026-10-12
+
+The post-candidate Architect case `value.append(identity(value))` exposed that
+mutable String overlap checking considered only top-level places. The checker
+now projects its existing transitive leaf-effect analysis through wrapped
+append/reserve arguments before comparing them with the WRITE receiver. Direct
+and wrapped self-aliases receive structured `OWNERSHIP_CONFLICTING_ACCESS`
+diagnostics; disjoint wrapped inputs pass native and Fast Debug. Focused String,
+semantic IDE, skill, feedback, whitespace, and strict compiler gates pass. The
+coordinator owns integration and renewed exact-SHA Architect review.
+
 ## Phase 24 Team T focused String/builder independent Architect — 2026-10-12
 
 The independent L6 Architect reviewed exact frozen engineering SHA
@@ -18,7 +29,6 @@ source-free ABI-v9 checks, full Team T acceptance/oracles, strict Rust, and
 feedback/skill validation otherwise pass. Details are in
 `docs/PHASE_24_TEXT_ENCODING_STRING_BUILDER_ARCHITECT.md`. A repaired, refrozen
 engineering SHA needs a new exact-SHA Architect review.
-
 ## Phase 24 Team T focused String/builder engineering candidate — 2026-10-12
 
 The focused follow-up replaces formatting-based nonempty String concatenation

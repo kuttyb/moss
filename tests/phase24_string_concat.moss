@@ -4,6 +4,12 @@ fn suffix(tag: String) -> String:
 fn append_part(target: String, part: String):
   target.append(part)
 
+fn identity(value: String) -> String:
+  return value + ""
+
+fn string_length(value: String) -> Int:
+  return value.length()
+
 fn main():
   left = "moss"
   right = "🙂"
@@ -26,4 +32,10 @@ fn main():
   builder.append("🙂")
   builder.reserve(-1)
   assertEqual(builder, "Moss🙂")
+
+  var disjoint = "left"
+  other = "-right"
+  disjoint.append(identity(other))
+  disjoint.reserve(string_length(other))
+  assertEqual(disjoint, "left-right")
   echo "string concat ok"

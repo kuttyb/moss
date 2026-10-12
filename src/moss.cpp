@@ -7695,9 +7695,45 @@ class Checker {
     return "READ";
   }
 
+  vector<std::pair<StorageLocation, Effect>> expression_storage_accesses(
+      const string& expression, const OwnershipEnv& env) const {
+    LeafEffectCapture capture;
+    for (const auto& binding : env.types)
+      if (!binding.second.empty() &&
+          !contains_internal_placeholder(binding.second))
+        capture.roots[binding.first] = binding.second;
+    vector<Effect> unused_effects;
+    Effect unused_receiver = Effect::Read;
+    {
+      LeafCaptureScope scope(leaf_effect_capture_, &capture);
+      analyze_effect_expression(expression, env.types, {}, unused_effects,
+                                unused_receiver, {}, Effect::Read);
+    }
+    vector<std::pair<StorageLocation, Effect>> result;
+    auto append = [&](const StateLeafSet& leaves, Effect effect) {
+      for (const auto& leaf : leaves) {
+        size_t dot = leaf.find('.');
+        StorageLocation location{
+            dot == string::npos ? leaf : leaf.substr(0, dot), {}};
+        while (dot != string::npos) {
+          size_t next = leaf.find('.', dot + 1);
+          location.path.push_back(leaf.substr(
+              dot + 1, next == string::npos ? string::npos : next - dot - 1));
+          dot = next;
+        }
+        result.emplace_back(std::move(location), effect);
+      }
+    };
+    append(capture.effects.reads, Effect::Read);
+    append(capture.effects.writes, Effect::Write);
+    append(capture.effects.consumes, Effect::Consume);
+    return result;
+  }
+
   void check_conflicting_call_accesses(
       int line, const string& call_name, const vector<string>& expressions,
-      const vector<Effect>& effects, const OwnershipEnv& env) const {
+      const vector<Effect>& effects, const OwnershipEnv& env,
+      bool include_nested_accesses = false) const {
     struct Access {
       StorageLocation location;
       Effect effect;
@@ -7707,12 +7743,18 @@ class Checker {
     vector<Access> accesses;
     for (size_t index = 0; index < expressions.size(); ++index) {
       auto location = storage_location(expressions[index], env.types);
-      if (!location) continue;
-      auto type = inferred_expr_type(expressions[index], env.types);
-      if (!type || !transfer_type(*type)) continue;
-      accesses.push_back(Access{*location,
-          index < effects.size() ? effects[index] : Effect::Read,
-          expressions[index], index});
+      if (location) {
+        auto type = inferred_expr_type(expressions[index], env.types);
+        if (type && transfer_type(*type))
+          accesses.push_back(Access{*location,
+              index < effects.size() ? effects[index] : Effect::Read,
+              expressions[index], index});
+        continue;
+      }
+      if (!include_nested_accesses) continue;
+      for (const auto& nested : expression_storage_accesses(expressions[index], env))
+        accesses.push_back(Access{nested.first, nested.second,
+                                  expressions[index], index});
     }
     for (size_t left = 0; left < accesses.size(); ++left) {
       for (size_t right = left + 1; right < accesses.size(); ++right) {
@@ -11692,7 +11734,8 @@ class Checker {
             access_effects.push_back(builtin->argument_effects.at(index));
           }
           check_conflicting_call_accesses(line, method, access_expressions,
-                                          access_effects, env);
+                                          access_effects, env,
+                                          builtin->receiver_effect != Effect::Read);
           check_ownership_expression(line, receiver, env, builtin->receiver_effect);
           for (size_t index = 0; index < arguments.size(); ++index)
             check_ownership_expression(line, arguments[index], env,

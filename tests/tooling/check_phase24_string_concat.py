@@ -3,6 +3,7 @@
 import pathlib
 import subprocess
 import tempfile
+import json
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 MOSS = ROOT / "moss"
@@ -20,7 +21,7 @@ checked = run("check", SOURCE, "--json")
 assert checked.returncode == 0, checked.stderr
 effects = run("effects", "append_part", "--source", SOURCE, "--json")
 assert effects.returncode == 0, effects.stderr
-effect_payload = __import__("json").loads(effects.stdout)["result"]
+effect_payload = json.loads(effects.stdout)["result"]
 parameters = effect_payload["ownership_facts"]["parameters"]
 assert [(item["name"], item["effect"]) for item in parameters] == [
     ("target", "WRITE"), ("part", "READ")
@@ -80,5 +81,26 @@ with tempfile.TemporaryDirectory(dir=ROOT / "tmp") as directory:
         result = run("check", invalid)
         assert result.returncode != 0, body
         assert diagnostic in result.stderr, result.stderr
+
+    for body, wrapped in [
+        ('fn identity(value: String) -> String:\n'
+         '  return value + ""\n\n'
+         'fn main():\n'
+         '  var value = "x"\n'
+         '  value.append(identity(value))\n', 'identity(value)'),
+        ('fn string_length(value: String) -> Int:\n'
+         '  return value.length()\n\n'
+         'fn main():\n'
+         '  var value = "x"\n'
+         '  value.reserve(string_length(value))\n', 'string_length(value)'),
+    ]:
+        invalid = pathlib.Path(directory) / "nested-invalid.moss"
+        invalid.write_text(body, encoding="utf-8")
+        result = run("check", invalid, "--json")
+        assert result.returncode != 0, body
+        payload = json.loads(result.stdout)
+        assert payload["error"]["code"] == "OWNERSHIP_CONFLICTING_ACCESS", payload
+        entities = payload["error"]["cause"]["entities"]
+        assert any(item.get("expression") == wrapped for item in entities), entities
 
 print("Phase 24 String concatenation checks passed")
