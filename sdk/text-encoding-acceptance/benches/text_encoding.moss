@@ -101,6 +101,74 @@ bench "profile text slice prebuilt 256 code points x16":
   assertEqual(value.length(), 256)
   assertEqual(total, 2048)
 
+bench "profile text find long ASCII early late no match x8":
+  var value = ""
+  var i = 0
+  while i < 1024:
+    value = value + "a"
+    i = i + 1
+  value = value + "needle"
+  var checksum = 0
+  var run = 0
+  while run < 8:
+    checksum = checksum + text.find(value, "aaa")
+    checksum = checksum + text.find(value, "needle")
+    checksum = checksum + text.find(value, "absent")
+    run = run + 1
+  assertEqual(value.length(), 1030)
+  assertEqual(value.char_at(1024), "n")
+  assertEqual(checksum, 8184)
+
+bench "profile text find multibyte early late no match x8":
+  var value = ""
+  var i = 0
+  while i < 512:
+    value = value + "é🙂"
+    i = i + 1
+  value = value + "界end"
+  var checksum = 0
+  var run = 0
+  while run < 8:
+    checksum = checksum + text.find(value, "é🙂")
+    checksum = checksum + text.find(value, "界end")
+    checksum = checksum + text.find(value, "absent")
+    run = run + 1
+  assertEqual(value.length(), 1028)
+  assertEqual(value.char_at(1024), "界")
+  assertEqual(checksum, 8184)
+
+bench "profile text slice long ASCII x8":
+  var value = ""
+  var i = 0
+  while i < 2048:
+    value = value + "x"
+    i = i + 1
+  var total = 0
+  var run = 0
+  while run < 8:
+    sliced = text.slice(value, 512, 1024)
+    total = total + sliced.length()
+    run = run + 1
+  assertEqual(value.length(), 2048)
+  assertEqual(total, 8192)
+
+bench "profile text slice long multibyte x8":
+  var value = ""
+  var i = 0
+  while i < 512:
+    value = value + "é🙂"
+    i = i + 1
+  var total = 0
+  var run = 0
+  while run < 8:
+    sliced = text.slice(value, 255, 512)
+    assertEqual(sliced.char_at(0), "🙂")
+    assertEqual(sliced.char_at(511), "é")
+    total = total + sliced.length()
+    run = run + 1
+  assertEqual(value.length(), 1024)
+  assertEqual(total, 4096)
+
 bench "profile ASCII lower prebuilt 256 code points x4":
   var value = ""
   var expected = ""

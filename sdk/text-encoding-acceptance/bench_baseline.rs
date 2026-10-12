@@ -138,6 +138,38 @@ fn make_slice_input() -> String {
     value
 }
 
+fn make_long_ascii_find_input() -> String {
+    let mut value = String::new();
+    for _ in 0..1_024 {
+        value = value + "a";
+    }
+    value + "needle"
+}
+
+fn make_long_multibyte_find_input() -> String {
+    let mut value = String::new();
+    for _ in 0..512 {
+        value = value + "é🙂";
+    }
+    value + "界end"
+}
+
+fn make_long_ascii_slice_input() -> String {
+    let mut value = String::new();
+    for _ in 0..2_048 {
+        value = value + "x";
+    }
+    value
+}
+
+fn make_long_multibyte_slice_input() -> String {
+    let mut value = String::new();
+    for _ in 0..512 {
+        value = value + "é🙂";
+    }
+    value
+}
+
 fn make_case_input() -> (String, String) {
     let mut value = String::new();
     let mut expected = String::new();
@@ -298,6 +330,59 @@ fn main() {
             assert_eq!(total, 2_048);
         },
     );
+    measure(
+        "Rust scalar profile text find long ASCII early late no match x8",
+        || {
+            let value = make_long_ascii_find_input();
+            let mut checksum = 0_i64;
+            for _ in 0..8 {
+                checksum += black_box(scalar_text_find(black_box(&value), "aaa"));
+                checksum += black_box(scalar_text_find(black_box(&value), "needle"));
+                checksum += black_box(scalar_text_find(black_box(&value), "absent"));
+            }
+            assert_eq!(value.chars().count(), 1_030);
+            assert_eq!(value.chars().nth(1_024), Some('n'));
+            assert_eq!(checksum, 8_184);
+        },
+    );
+    measure(
+        "Rust scalar profile text find multibyte early late no match x8",
+        || {
+            let value = make_long_multibyte_find_input();
+            let mut checksum = 0_i64;
+            for _ in 0..8 {
+                checksum += black_box(scalar_text_find(black_box(&value), "é🙂"));
+                checksum += black_box(scalar_text_find(black_box(&value), "界end"));
+                checksum += black_box(scalar_text_find(black_box(&value), "absent"));
+            }
+            assert_eq!(value.chars().count(), 1_028);
+            assert_eq!(value.chars().nth(1_024), Some('界'));
+            assert_eq!(checksum, 8_184);
+        },
+    );
+    measure("Rust scalar profile text slice long ASCII x8", || {
+        let value = make_long_ascii_slice_input();
+        let mut total = 0;
+        for _ in 0..8 {
+            total += black_box(scalar_text_slice(black_box(&value), 512, 1_024))
+                .chars()
+                .count();
+        }
+        assert_eq!(value.chars().count(), 2_048);
+        assert_eq!(total, 8_192);
+    });
+    measure("Rust scalar profile text slice long multibyte x8", || {
+        let value = make_long_multibyte_slice_input();
+        let mut total = 0;
+        for _ in 0..8 {
+            let sliced = black_box(scalar_text_slice(black_box(&value), 255, 512));
+            assert_eq!(sliced.chars().next(), Some('🙂'));
+            assert_eq!(sliced.chars().last(), Some('é'));
+            total += sliced.chars().count();
+        }
+        assert_eq!(value.chars().count(), 1_024);
+        assert_eq!(total, 4_096);
+    });
     measure(
         "Rust profile ASCII lower prebuilt 256 code points x4",
         || {

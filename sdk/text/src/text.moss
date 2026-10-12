@@ -32,12 +32,7 @@ export fn ends_with(value: String, suffix: String) -> Bool:
 
 # Returns the first code-point index, or -1. An empty pattern matches at zero.
 export fn find(value: String, pattern: String) -> Int:
-  if pattern.length() == 0:
-    return 0
-  parts = value.split(pattern)
-  if (parts |> count) == 1:
-    return 0 - 1
-  return parts[0].length()
+  return value.find(pattern)
 
 # Returns the last code-point index, or -1. An empty pattern matches at the end.
 export fn rfind(value: String, pattern: String) -> Int:
@@ -69,15 +64,7 @@ export fn slice(value: String, start: Int, length: Int) -> String:
   total = value.length()
   if not core.valid_slice(start, length, total):
     return ""
-  if length == 0:
-    return ""
-  chars = value.chars()
-  var parts = Vector[String]()
-  var i = 0
-  while i < length:
-    parts.push(chars[start + i])
-    i = i + 1
-  return "".join(parts)
+  return value.slice(start, length)
 
 export fn is_ascii_whitespace(character: String) -> Bool:
   space = " "
