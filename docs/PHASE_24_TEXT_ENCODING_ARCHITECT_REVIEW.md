@@ -1,5 +1,10 @@
 # Phase 24 Team T independent Architect review
 
+> Historical review: this verdict applies only to `1c01a899...`. L7 later
+> invalidated the original benchmark methodology because dependency profiles
+> and Rust timed work were not equivalent. It does not approve the stabilized
+> candidate, which requires a fresh exact-SHA review.
+
 **Verdict: GO**
 
 **Exact reviewed implementation:**

@@ -32,21 +32,12 @@ export fn ends_with(value: String, suffix: String) -> Bool:
 
 # Returns the first code-point index, or -1. An empty pattern matches at zero.
 export fn find(value: String, pattern: String) -> Int:
-  value_chars = value.chars()
-  pattern_chars = pattern.chars()
-  value_length = value_chars |> count
-  pattern_length = pattern_chars |> count
-  if pattern_length == 0:
+  if pattern.length() == 0:
     return 0
-  if pattern_length > value_length:
+  parts = value.split(pattern)
+  if (parts |> count) == 1:
     return 0 - 1
-  last_start = value_length - pattern_length
-  var start = 0
-  while start <= last_start:
-    if matches_at(value_chars, pattern_chars, start):
-      return start
-    start = start + 1
-  return 0 - 1
+  return parts[0].length()
 
 # Returns the last code-point index, or -1. An empty pattern matches at the end.
 export fn rfind(value: String, pattern: String) -> Int:

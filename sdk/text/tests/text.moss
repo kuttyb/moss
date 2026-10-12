@@ -12,6 +12,8 @@ test "prefix suffix and empty patterns":
 
 test "first last and overlapping search":
   assertEqual(text.find("bananana", "ana"), 1)
+  assertEqual(text.find("aaaaa", "a"), 0)
+  assertEqual(text.find("aaaaa", "aaa"), 0)
   assertEqual(text.rfind("bananana", "ana"), 5)
   assertEqual(text.find("abc", ""), 0)
   assertEqual(text.rfind("abc", ""), 3)

@@ -2,13 +2,42 @@ import text
 import encoding
 
 bench "text find 256 code points":
-  value = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"
-  text.find(value, "aaaaab")
+  var value = ""
+  var i = 0
+  while i < 255:
+    value = value + "a"
+    i = i + 1
+  value = value + "b"
+  assertEqual(value.length(), 256)
+  pattern = "aaaaab"
+  assertEqual(pattern.length(), 6)
+  found = text.find(value, pattern)
+  assertEqual(found, 250)
 
 bench "text slice 256 code points":
-  value = "é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂"
+  var value = ""
+  var i = 0
+  while i < 128:
+    value = value + "é🙂"
+    i = i + 1
+  assertEqual(value.length(), 256)
   sliced = text.slice(value, 64, 128)
-  sliced.length()
+  assertEqual(sliced.length(), 128)
+  assertEqual(sliced.char_at(0), "é")
+  assertEqual(sliced.char_at(127), "🙂")
+
+bench "ASCII lower 256 code points":
+  var value = ""
+  var expected = ""
+  var i = 0
+  while i < 32:
+    value = value + "AbCdEfGh"
+    expected = expected + "abcdefgh"
+    i = i + 1
+  assertEqual(value.length(), 256)
+  assertEqual(expected.length(), 256)
+  lowered = text.to_ascii_lower(value)
+  assertEqual(lowered, expected)
 
 bench "repeated concat 128 segments":
   var result = ""
@@ -16,7 +45,7 @@ bench "repeated concat 128 segments":
   while i < 128:
     result = result + "abcdefgh"
     i = i + 1
-  result.length()
+  assertEqual(result.length(), 1024)
 
 bench "segment builder 128 segments":
   var builder = text.new_builder()
@@ -25,7 +54,8 @@ bench "segment builder 128 segments":
     text.builder_append(builder, "abcdefgh")
     i = i + 1
   built = text.builder_build(builder)
-  built.length()
+  assertEqual(text.builder_segment_count(builder), 128)
+  assertEqual(built.length(), 1024)
 
 bench "UTF-8 validate 1024 ASCII bytes":
   var values = Vector[Int]()
@@ -33,4 +63,71 @@ bench "UTF-8 validate 1024 ASCII bytes":
   while i < 1024:
     values.push(65 + i % 26)
     i = i + 1
-  encoding.validate_utf8(values)
+  assertEqual(values |> count, 1024)
+  assertEqual(values[0], 65)
+  assertEqual(values[1023], 74)
+  assert(encoding.validate_utf8(values))
+
+# The repeated-operation cases amortize input construction so the performance
+# report can distinguish SDK work from benchmark setup. Counts and checksums are
+# part of the cross-language workload contract.
+bench "profile text find prebuilt 256 code points x8":
+  var value = ""
+  var i = 0
+  while i < 255:
+    value = value + "a"
+    i = i + 1
+  value = value + "b"
+  var checksum = 0
+  var run = 0
+  while run < 8:
+    checksum = checksum + text.find(value, "aaaaab")
+    run = run + 1
+  assertEqual(value.length(), 256)
+  assertEqual(checksum, 2000)
+
+bench "profile text slice prebuilt 256 code points x16":
+  var value = ""
+  var i = 0
+  while i < 128:
+    value = value + "é🙂"
+    i = i + 1
+  var total = 0
+  var run = 0
+  while run < 16:
+    sliced = text.slice(value, 64, 128)
+    total = total + sliced.length()
+    run = run + 1
+  assertEqual(value.length(), 256)
+  assertEqual(total, 2048)
+
+bench "profile ASCII lower prebuilt 256 code points x4":
+  var value = ""
+  var expected = ""
+  var i = 0
+  while i < 32:
+    value = value + "AbCdEfGh"
+    expected = expected + "abcdefgh"
+    i = i + 1
+  var lowered = ""
+  var run = 0
+  while run < 4:
+    lowered = text.to_ascii_lower(value)
+    run = run + 1
+  assertEqual(value.length(), 256)
+  assertEqual(lowered, expected)
+
+bench "profile UTF-8 validate prebuilt 1024 ASCII bytes x64":
+  var values = Vector[Int]()
+  var i = 0
+  while i < 1024:
+    values.push(65 + i % 26)
+    i = i + 1
+  var valid_count = 0
+  var run = 0
+  while run < 64:
+    if encoding.validate_utf8(values):
+      valid_count = valid_count + 1
+    run = run + 1
+  assertEqual(values |> count, 1024)
+  assertEqual(valid_count, 64)

@@ -59,11 +59,28 @@ build-directory race were excluded from feedback.
 
 ## Performance and workflow
 
-The Margo release harness measured text search, slicing, concatenation,
-segment-building, and UTF-8 validation with five warmups, 31 samples, and 1,000
-iterations. At 128 segments, repeated `String +` measured 7,252 ns median and
-the segment builder 14,184 ns, so the builder documentation makes no speed or
-quadratic-avoidance claim (`phase24-team-t-text-encoding-performance-001`).
+The initial performance record is preserved but invalidated: plain
+`margo bench --json` optimized the benchmark root while leaving path providers
+in debug profile, and its Rust comparison moved equivalent setup outside the
+timed region. The corrected harness uses `margo bench --release --json`,
+recursively verifies all six path providers' release manifests, and embeds
+assertions for identical contents, lengths, search positions, slice ranges,
+and results (`phase24-team-t-text-encoding-performance-004`). No timing was
+invented for the investigation.
+
+On the final corrected 128-segment workload, repeated `String +` measured
+8,400 ns median and the vector-backed builder 5,926 ns. This is a workload-specific
+result, not a general quadratic-complexity claim. Profiling also separated
+representation cost from SDK work: Moss `chars()` and slices materialize owned
+`String` vectors, while the matched Rust owned-String baselines were materially
+slower than scalar Rust references. Replacing the SDK's manual `find` scan with
+the built-in split path cut the late-single-match repeated-search median from
+290,986 ns to 14,501 ns in the final run; it also removed repeated alphabet-vector
+construction from ASCII
+case conversion. Direct UTF-8 validation no longer allocates a decoded scalar
+vector. The independent review also established that split still scans and
+materializes the complete input, so this is not an early-exit search claim
+(`phase24-team-t-text-encoding-performance-005` and `-006`).
 
 Typed-error encode/decode could not run inside the normal benchmark lowering;
 a documented process-amortized harness was used instead, without subtracting
@@ -90,11 +107,14 @@ reproduced from the corrected Git tree
    `phase24-team-t-text-encoding-utf8-codec-001`).
 5. Narrow generated-Rust ignore rules or explicitly exempt maintained Rust
    reference sources (`phase24-team-t-text-encoding-performance-003`).
+6. Make Margo's cross-package benchmark profile behavior explicit or diagnose
+   a release benchmark whose path providers are still debug-built
+   (`phase24-team-t-text-encoding-performance-004`).
 
 These observations do not duplicate SWARM records; no matching existing SWARM
 issue was identified during this work.
 
-## Review disposition
+## Original review disposition
 
 - Reviewer role: Independent Team T L6 Architect.
 - Exact reviewed commit: `1c01a899819d495347fd99e05500bb50e50e7da1`.
@@ -106,3 +126,21 @@ issue was identified during this work.
   benchmark lowering remain explicit limitations.
 - Overall assessment: **GO** for the exact implementation candidate. The prior
   `a2f0cd7` candidate remains NO-GO because it was not reproducible from Git.
+
+This disposition predates the L7 stabilization request. A new independently
+attributable exact-SHA performance and error-contract review was therefore
+required before delivery.
+
+## Stabilization review disposition
+
+- Reviewer role: Independent Team T L6 Architect.
+- Rejected stabilization commit: `817ec4f5e59110a5bf71139e2226e7cdd3f403e1`
+  (**NO-GO**) for unmatched reference work/barriers and verifier provenance.
+- Exact corrected commit: `c78184c736e8da8228a5057de21d4fa292d6705f`.
+- Fresh checks: release root and six linked provider rlibs, strict Rust
+  reference, native debug/release/Fast Debug exact error payloads, and a fresh
+  compiled-only ABI-v9 consumer.
+- Preserved limitations: split materializes the whole input; scalar Rust rows
+  are diagnostic; typed-error benchmarks use the process-amortized workaround;
+  String interoperability remains unavailable.
+- Overall assessment: **GO** for the exact corrected implementation candidate.

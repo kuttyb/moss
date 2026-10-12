@@ -85,11 +85,63 @@ export fn decode_utf8(values: Vector[Int]) -> Vector[Int]:
   return scalars
 
 export fn validate_utf8(values: Vector[Int]) -> Bool:
-  try:
-    scalars = decode_utf8(values)
-    return (scalars |> count) >= 0
-  recover error:
-    return false
+  n = values |> count
+  var i = 0
+  while i < n:
+    first = values[i]
+    if not bytes.is_byte(first):
+      return false
+    if first <= 127:
+      i = i + 1
+    else:
+      if first >= 128 and first <= 191:
+        return false
+
+      width = 0
+      minimum = 0
+      if first >= 192 and first <= 223:
+        width = 2
+        minimum = 128
+      else:
+        if first >= 224 and first <= 239:
+          width = 3
+          minimum = 2048
+        else:
+          if first >= 240 and first <= 247:
+            width = 4
+            minimum = 65536
+          else:
+            return false
+
+      if n - i < width:
+        return false
+      second = values[i + 1]
+      if not bytes.is_byte(second) or second < 128 or second > 191:
+        return false
+
+      scalar = 0
+      if width == 2:
+        scalar = (first - 192) * 64 + (second - 128)
+      else:
+        third = values[i + 2]
+        if not bytes.is_byte(third) or third < 128 or third > 191:
+          return false
+        if width == 3:
+          scalar = (first - 224) * 4096 + (second - 128) * 64 + (third - 128)
+        else:
+          fourth = values[i + 3]
+          if not bytes.is_byte(fourth) or fourth < 128 or fourth > 191:
+            return false
+          scalar = (first - 240) * 262144 + (second - 128) * 4096 + (third - 128) * 64 + (fourth - 128)
+
+      if scalar < minimum:
+        return false
+      if scalar >= 55296 and scalar <= 57343:
+        return false
+      if scalar > 1114111:
+        return false
+      i = i + width
+  return true
 
 fn append_encoded_byte(values: Vector[Int], value: Int):
   if not bytes.is_byte(value):
