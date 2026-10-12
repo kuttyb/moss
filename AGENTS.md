@@ -145,5 +145,6 @@ When working with Moss:
 - **No Elevation**: Never run `sudo` or otherwise attempt to elevate privileges.
 - **Authorized Commands**: Run in-repository Git commands, Python scripts, builds, and tests without requesting approval.
 - **Git Boundary**: You may stage files and create local commits. A push to the
-  configured remote is authorized when the user explicitly directs it; otherwise
-  leave branch publication to the user or designated coordinator.
+  configured remote is authorized when the user explicitly directs it. Coordinate
+  a single branch writer, and never force-push or rewrite published history unless
+  the user explicitly authorizes that separate operation.

@@ -1,5 +1,33 @@
 # Moss current status
 
+## Phase 24 initial SDK integration AMBER checkpoint — 2026-10-12
+
+Team I merged `phase24-text` at
+`932d883967d0752c28bdffe41f2ecc27e1044cc3` and `phase24-math` at
+`1bdb548ad7cb6808b1b9d97eaaabb6a8501a4ebd` into `phase24-integration` using
+normal provenance-preserving merge commits. The integrated implementation is
+`d945b252aeaf060e551c4c446c91edd113c86463`. Foundations and repository-wide
+agent-feedback infrastructure remain intact. The only content conflict was this
+status ledger, resolved additively; `src/moss.cpp` merged automatically and its
+combined imported-expression plus mixed Float/Int gates pass.
+
+Risk-based validation passed the full Team T runner, Foundations full
+acceptance, all Team F and Team M package suites, focused shared-compiler and
+source-free ABI-v9 gates, `TMPDIR="$PWD/tmp" make check`, `make examples`, and
+native debug/release/Fast Debug execution of Team M's integration application.
+The portable Team M aggregate oracle passed functionally in an isolated
+worktree, but its tracked-harness mutation prevents treating it as a
+reproducibly clean gate. Team T and Team M benchmark targets execute, while
+their known provider-optimization, workload-equivalence, constant-folding, and
+result-observability defects keep all comparison figures unvalidated.
+
+The checkpoint is **AMBER**. Team-specific correctness and methodology
+follow-ups are assigned in `docs/phase24/INTEGRATION_ISSUES.md`; actual commands
+and results are in `docs/phase24/INTEGRATION_STATUS.md`. Team I's feedback is
+under `agent-feedback/phase24/team-i-integration/`. Per coordinator direction,
+the independent whole-system Architect review is reserved for the final Phase
+24 acceptance milestone. No merge into `main` occurred.
+
 ## Phase 24 Team T Text & Encoding complete — 2026-10-12
 
 `phase24-text` was forked from feedback-enabled integration SHA

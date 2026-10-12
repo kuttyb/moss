@@ -1,7 +1,7 @@
 # Moss Phase 24 — Stage 5: Performance Benchmarks & Algorithmic Complexity (Post-L7 Revision)
 
-**Role:** Performance Engineering Agent, Moss Team M  
-**Target Packages:** `moss.math`, `moss.random`, `moss.time`  
+**Role:** Performance Engineering Agent, Moss Team M
+**Target Packages:** `moss.math`, `moss.random`, `moss.time`
 **Execution Environment Notice:** Direct benchmark execution has been completed using `./margo bench`. All figures below represent live measured execution metrics from 31 statistical samples per benchmark target, alongside theoretical algorithmic complexities.
 
 ---
