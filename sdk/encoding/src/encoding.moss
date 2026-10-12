@@ -1,0 +1,127 @@
+module encoding
+import bytes
+
+export enum Utf8Error:
+  InvalidByte(index: Int, value: Int)
+  UnexpectedContinuation(index: Int, value: Int)
+  InvalidLeadingByte(index: Int, value: Int)
+  TruncatedSequence(index: Int, expected_bytes: Int, available_bytes: Int)
+  InvalidContinuation(index: Int, value: Int)
+  OverlongEncoding(index: Int, scalar: Int)
+  SurrogateScalar(index: Int, scalar: Int)
+  InvalidScalar(index: Int, scalar: Int)
+
+export fn is_unicode_scalar(value: Int) -> Bool:
+  return value >= 0 and value <= 1114111 and not (value >= 55296 and value <= 57343)
+
+fn require_byte(values: Vector[Int], index: Int) -> Int:
+  value = values[index]
+  if not bytes.is_byte(value):
+    raise Utf8Error.InvalidByte(index: index, value: value)
+  return value
+
+fn require_continuation(values: Vector[Int], index: Int) -> Int:
+  value = require_byte(values, index)
+  if value < 128 or value > 191:
+    raise Utf8Error.InvalidContinuation(index: index, value: value)
+  return value
+
+export fn decode_utf8(values: Vector[Int]) -> Vector[Int]:
+  var scalars = Vector[Int]()
+  n = values |> count
+  var i = 0
+  while i < n:
+    first = require_byte(values, i)
+    if first <= 127:
+      scalars.push(first)
+      i = i + 1
+    else:
+      if first >= 128 and first <= 191:
+        raise Utf8Error.UnexpectedContinuation(index: i, value: first)
+
+      width = 0
+      minimum = 0
+      if first >= 192 and first <= 223:
+        width = 2
+        minimum = 128
+      else:
+        if first >= 224 and first <= 239:
+          width = 3
+          minimum = 2048
+        else:
+          if first >= 240 and first <= 247:
+            width = 4
+            minimum = 65536
+          else:
+            raise Utf8Error.InvalidLeadingByte(index: i, value: first)
+
+      available = n - i
+      if available < width:
+        raise Utf8Error.TruncatedSequence(index: i, expected_bytes: width, available_bytes: available)
+
+      scalar = 0
+      if width == 2:
+        second = require_continuation(values, i + 1)
+        scalar = (first - 192) * 64 + (second - 128)
+      else:
+        if width == 3:
+          second = require_continuation(values, i + 1)
+          third = require_continuation(values, i + 2)
+          scalar = (first - 224) * 4096 + (second - 128) * 64 + (third - 128)
+        else:
+          second = require_continuation(values, i + 1)
+          third = require_continuation(values, i + 2)
+          fourth = require_continuation(values, i + 3)
+          scalar = (first - 240) * 262144 + (second - 128) * 4096 + (third - 128) * 64 + (fourth - 128)
+
+      if scalar < minimum:
+        raise Utf8Error.OverlongEncoding(index: i, scalar: scalar)
+      if scalar >= 55296 and scalar <= 57343:
+        raise Utf8Error.SurrogateScalar(index: i, scalar: scalar)
+      if scalar > 1114111:
+        raise Utf8Error.InvalidScalar(index: i, scalar: scalar)
+      scalars.push(scalar)
+      i = i + width
+  return scalars
+
+export fn validate_utf8(values: Vector[Int]) -> Bool:
+  try:
+    scalars = decode_utf8(values)
+    return (scalars |> count) >= 0
+  recover error:
+    return false
+
+fn append_encoded_byte(values: Vector[Int], value: Int):
+  if not bytes.is_byte(value):
+    raise Utf8Error.InvalidByte(index: values |> count, value: value)
+  values.push(value)
+
+export fn encode_utf8(scalars: Vector[Int]) -> Vector[Int]:
+  var result = Vector[Int]()
+  n = scalars |> count
+  var i = 0
+  while i < n:
+    scalar = scalars[i]
+    if scalar < 0 or scalar > 1114111:
+      raise Utf8Error.InvalidScalar(index: i, scalar: scalar)
+    if scalar >= 55296 and scalar <= 57343:
+      raise Utf8Error.SurrogateScalar(index: i, scalar: scalar)
+
+    if scalar <= 127:
+      append_encoded_byte(result, scalar)
+    else:
+      if scalar <= 2047:
+        append_encoded_byte(result, 192 + scalar / 64)
+        append_encoded_byte(result, 128 + scalar % 64)
+      else:
+        if scalar <= 65535:
+          append_encoded_byte(result, 224 + scalar / 4096)
+          append_encoded_byte(result, 128 + (scalar / 64) % 64)
+          append_encoded_byte(result, 128 + scalar % 64)
+        else:
+          append_encoded_byte(result, 240 + scalar / 262144)
+          append_encoded_byte(result, 128 + (scalar / 4096) % 64)
+          append_encoded_byte(result, 128 + (scalar / 64) % 64)
+          append_encoded_byte(result, 128 + scalar % 64)
+    i = i + 1
+  return result

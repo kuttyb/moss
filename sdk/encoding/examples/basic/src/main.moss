@@ -1,0 +1,12 @@
+module main
+import encoding
+
+fn main():
+  try:
+    scalars = [77, 111, 115, 115, 32, 128578]
+    bytes = encoding.encode_utf8(scalars)
+    echo bytes |> count
+    decoded = encoding.decode_utf8(bytes)
+    echo decoded[5]
+  recover error:
+    echo 0 - 1

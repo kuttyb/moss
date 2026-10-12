@@ -1,0 +1,9 @@
+[package]
+name = "moss.text"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+"moss.core" = { path = "../foundations/core" }

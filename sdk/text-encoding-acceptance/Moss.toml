@@ -1,0 +1,14 @@
+[package]
+name = "text_encoding_acceptance"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+"moss.text" = { path = "../text" }
+"moss.encoding" = { path = "../encoding" }
+"moss.core" = { path = "../foundations/core" }
+"moss.bytes" = { path = "../foundations/bytes" }
+"moss.collections" = { path = "../foundations/collections" }
+"moss.algorithms" = { path = "../foundations/algorithms" }

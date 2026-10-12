@@ -1,0 +1,229 @@
+module text
+import core
+
+# All positions and lengths in this module count Unicode code points.
+
+fn matches_at(text_chars, pattern_chars, start: Int) -> Bool:
+  pattern_length = pattern_chars |> count
+  var i = 0
+  while i < pattern_length:
+    if text_chars[start + i] != pattern_chars[i]:
+      return false
+    i = i + 1
+  return true
+
+export fn starts_with(value: String, prefix: String) -> Bool:
+  value_chars = value.chars()
+  prefix_chars = prefix.chars()
+  value_length = value_chars |> count
+  prefix_length = prefix_chars |> count
+  if prefix_length > value_length:
+    return false
+  return matches_at(value_chars, prefix_chars, 0)
+
+export fn ends_with(value: String, suffix: String) -> Bool:
+  value_chars = value.chars()
+  suffix_chars = suffix.chars()
+  value_length = value_chars |> count
+  suffix_length = suffix_chars |> count
+  if suffix_length > value_length:
+    return false
+  return matches_at(value_chars, suffix_chars, value_length - suffix_length)
+
+# Returns the first code-point index, or -1. An empty pattern matches at zero.
+export fn find(value: String, pattern: String) -> Int:
+  value_chars = value.chars()
+  pattern_chars = pattern.chars()
+  value_length = value_chars |> count
+  pattern_length = pattern_chars |> count
+  if pattern_length == 0:
+    return 0
+  if pattern_length > value_length:
+    return 0 - 1
+  last_start = value_length - pattern_length
+  var start = 0
+  while start <= last_start:
+    if matches_at(value_chars, pattern_chars, start):
+      return start
+    start = start + 1
+  return 0 - 1
+
+# Returns the last code-point index, or -1. An empty pattern matches at the end.
+export fn rfind(value: String, pattern: String) -> Int:
+  value_chars = value.chars()
+  pattern_chars = pattern.chars()
+  value_length = value_chars |> count
+  pattern_length = pattern_chars |> count
+  if pattern_length == 0:
+    return value_length
+  if pattern_length > value_length:
+    return 0 - 1
+  var start = value_length - pattern_length
+  while start >= 0:
+    if matches_at(value_chars, pattern_chars, start):
+      return start
+    start = start - 1
+  return 0 - 1
+
+export fn contains(value: String, pattern: String) -> Bool:
+  return find(value, pattern) >= 0
+
+export fn valid_slice(value: String, start: Int, length: Int) -> Bool:
+  return core.valid_slice(start, length, value.length())
+
+# Returns an exact code-point slice. Invalid bounds return the empty String.
+# Call valid_slice first when a valid empty slice must be distinguished from an
+# invalid request.
+export fn slice(value: String, start: Int, length: Int) -> String:
+  total = value.length()
+  if not core.valid_slice(start, length, total):
+    return ""
+  if length == 0:
+    return ""
+  chars = value.chars()
+  var parts = Vector[String]()
+  var i = 0
+  while i < length:
+    parts.push(chars[start + i])
+    i = i + 1
+  return "".join(parts)
+
+export fn is_ascii_whitespace(character: String) -> Bool:
+  space = " "
+  tab = "\t"
+  line_feed = "\n"
+  carriage_return = "\r"
+  if character == space:
+    return true
+  if character == tab:
+    return true
+  if character == line_feed:
+    return true
+  return character == carriage_return
+
+# Trims ASCII space, tab, line feed, and carriage return only.
+export fn trim_ascii(value: String) -> String:
+  chars = value.chars()
+  length = chars |> count
+  var start = 0
+  while start < length and is_ascii_whitespace(chars[start]):
+    start = start + 1
+  var end = length
+  while end > start and is_ascii_whitespace(chars[end - 1]):
+    end = end - 1
+  return slice(value, start, end - start)
+
+# Replaces non-overlapping matches from left to right. An empty pattern leaves
+# the value unchanged.
+export fn replace_all(value: String, pattern: String, replacement: String) -> String:
+  pattern_chars = pattern.chars()
+  pattern_length = pattern_chars |> count
+  if pattern_length == 0:
+    return value + ""
+  value_chars = value.chars()
+  value_length = value_chars |> count
+  var parts = Vector[String]()
+  var i = 0
+  while i < value_length:
+    if i <= value_length - pattern_length and matches_at(value_chars, pattern_chars, i):
+      parts.push(replacement + "")
+      i = i + pattern_length
+    else:
+      parts.push(value_chars[i])
+      i = i + 1
+  return "".join(parts)
+
+# Safe wrapper around String.split. An empty separator returns one field: the
+# complete input, rather than triggering the built-in precondition failure.
+export fn split(value: String, separator: String) -> Vector[String]:
+  if separator.length() == 0:
+    return [value + ""]
+  return value.split(separator)
+
+# Splits on runs of ASCII space, tab, line feed, and carriage return. Empty
+# tokens are omitted.
+export fn tokens_ascii(value: String) -> Vector[String]:
+  chars = value.chars()
+  length = chars |> count
+  var tokens = Vector[String]()
+  var token_parts = Vector[String]()
+  var i = 0
+  while i < length:
+    character = chars[i]
+    if is_ascii_whitespace(character):
+      if (token_parts |> count) > 0:
+        tokens.push("".join(token_parts))
+        token_parts = Vector[String]()
+    else:
+      token_parts.push(character)
+    i = i + 1
+  if (token_parts |> count) > 0:
+    tokens.push("".join(token_parts))
+  return tokens
+
+export fn to_ascii_lower(value: String) -> String:
+  upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+  lower = "abcdefghijklmnopqrstuvwxyz"
+  chars = value.chars()
+  length = chars |> count
+  var parts = Vector[String]()
+  var i = 0
+  while i < length:
+    character = chars[i]
+    index = find(upper, character)
+    if index >= 0:
+      parts.push(lower.char_at(index))
+    else:
+      parts.push(character)
+    i = i + 1
+  return "".join(parts)
+
+export fn to_ascii_upper(value: String) -> String:
+  lower = "abcdefghijklmnopqrstuvwxyz"
+  upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+  chars = value.chars()
+  length = chars |> count
+  var parts = Vector[String]()
+  var i = 0
+  while i < length:
+    character = chars[i]
+    index = find(lower, character)
+    if index >= 0:
+      parts.push(upper.char_at(index))
+    else:
+      parts.push(character)
+    i = i + 1
+  return "".join(parts)
+
+export fn join(parts: Vector[String], separator: String) -> String:
+  return separator.join(parts)
+
+export fn concat(parts: Vector[String]) -> String:
+  return "".join(parts)
+
+export fn new_builder() -> Vector[String]:
+  return Vector[String]()
+
+# Appends an independent segment. Building batches segments into one final join.
+export fn builder_append(builder: Vector[String], part: String):
+  builder.push(part + "")
+
+export fn builder_append_line(builder: Vector[String], line: String):
+  builder.push(line + "")
+  builder.push("\n")
+
+export fn builder_segment_count(builder: Vector[String]) -> Int:
+  return builder |> count
+
+export fn builder_codepoint_length(builder: Vector[String]) -> Int:
+  var total = 0
+  count = builder |> count
+  var i = 0
+  while i < count:
+    part = builder[i]
+    total = total + part.length()
+    i = i + 1
+  return total
+
+export fn builder_build(builder: Vector[String]) -> String:
+  return "".join(builder)
