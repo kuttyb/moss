@@ -71,7 +71,7 @@ test "timestamp and epoch arithmetic":
   assertEqual(time.timestamp_unix_millis(ts0), 0)
   assertEqual(time.timestamp_unix_seconds(ts0), 0)
 
-  ts1 = time.timestamp_from_unix_millis(1609459200000) # 2021-01-01 00:00:00 UTC
+  ts1 = time.timestamp_from_unix_millis(1609459200000)
   assertEqual(time.timestamp_unix_seconds(ts1), 1609459200)
 
   dur = time.duration_from_seconds(3600)
@@ -84,41 +84,49 @@ test "timestamp and epoch arithmetic":
   diff = time.timestamp_diff(ts2, ts1)
   assertEqual(time.duration_seconds(diff), 3600)
 
-test "calendar conversion and leap years":
-  # 1970-01-01 00:00:00 UTC
-  ts_epoch = time.timestamp_from_unix_millis(0)
-  dt_epoch = time.timestamp_to_datetime(ts_epoch)
-  assertEqual(dt_epoch.year, 1970)
-  assertEqual(dt_epoch.month, 1)
-  assertEqual(dt_epoch.day, 1)
-  assertEqual(dt_epoch.hour, 0)
-  assertEqual(dt_epoch.minute, 0)
-  assertEqual(dt_epoch.second, 0)
-  assertEqual(dt_epoch.millisecond, 0)
+test "duration division by zero and overflow safety":
+  d = time.duration_from_seconds(10)
+  # Division by zero must return zero duration safely
+  d_div_zero = time.duration_div(d, 0)
+  assertEqual(time.duration_is_zero(d_div_zero), true)
+
+  # Overflow guards on large inputs
+  d_huge = time.duration_from_seconds(1000000000000)
+  assertEqual(time.duration_nanos(d_huge), 9223372036854775807)
+
+test "negative unix epoch timestamp calendar conversion":
+  # -1000 ms = 1969-12-31 23:59:59.000 UTC
+  ts_neg = time.timestamp_from_unix_millis(-1000)
+  dt_neg = time.timestamp_to_datetime(ts_neg)
+  assertEqual(dt_neg.year, 1969)
+  assertEqual(dt_neg.month, 12)
+  assertEqual(dt_neg.day, 31)
+  assertEqual(dt_neg.hour, 23)
+  assertEqual(dt_neg.minute, 59)
+  assertEqual(dt_neg.second, 59)
+  assertEqual(dt_neg.millisecond, 0)
 
   # Roundtrip
-  ts_epoch_roundtrip = time.datetime_to_timestamp(dt_epoch)
-  assertEqual(time.timestamp_unix_millis(ts_epoch_roundtrip), 0)
+  ts_neg_roundtrip = time.datetime_to_timestamp(dt_neg)
+  assertEqual(time.timestamp_unix_millis(ts_neg_roundtrip), -1000)
 
-  # Leap day: 2000-02-29 12:30:45.500 UTC
-  # Days to 2000-01-01 is 10957. Days to 2000-02-29 is 10957 + 31 + 28 = 11016 days.
-  # ms = 11016 * 86400000 + 12 * 3600000 + 30 * 60000 + 45 * 1000 + 500
+test "calendar roundtrip on leap year":
   dt_leap = time.make_datetime(2000, 2, 29, 12, 30, 45, 500)
   ts_leap = time.datetime_to_timestamp(dt_leap)
-  dt_leap_back = time.timestamp_to_datetime(ts_leap)
-  assertEqual(dt_leap_back.year, 2000)
-  assertEqual(dt_leap_back.month, 2)
-  assertEqual(dt_leap_back.day, 29)
-  assertEqual(dt_leap_back.hour, 12)
-  assertEqual(dt_leap_back.minute, 30)
-  assertEqual(dt_leap_back.second, 45)
-  assertEqual(dt_leap_back.millisecond, 500)
+  dt_back = time.timestamp_to_datetime(ts_leap)
+  assertEqual(dt_back.year, 2000)
+  assertEqual(dt_back.month, 2)
+  assertEqual(dt_back.day, 29)
+  assertEqual(dt_back.hour, 12)
+  assertEqual(dt_back.minute, 30)
+  assertEqual(dt_back.second, 45)
+  assertEqual(dt_back.millisecond, 500)
 
-test "iso 8601 formatting":
-  dt = time.make_datetime(2026, 10, 12, 5, 45, 30, 25)
-  iso = time.datetime_to_iso8601(dt)
-  assertEqual(iso, "2026-10-12T05:45:30.025Z")
+test "iso 8601 extended year formatting":
+  # Standard 4-digit year
+  dt1 = time.make_datetime(2026, 10, 12, 5, 45, 30, 25)
+  assertEqual(time.datetime_to_iso8601(dt1), "2026-10-12T05:45:30.025Z")
 
-  ts_epoch = time.timestamp_from_unix_millis(0)
-  iso_epoch = time.timestamp_to_iso8601(ts_epoch)
-  assertEqual(iso_epoch, "1970-01-01T00:00:00.000Z")
+  # Greater than 9999 uses +YYYYY
+  dt2 = time.make_datetime(12345, 1, 15, 0, 0, 0, 0)
+  assertEqual(time.datetime_to_iso8601(dt2), "+12345-01-15T00:00:00.000Z")

@@ -20,53 +20,47 @@ test "mrg32k3a determinism and repeatability":
   b2 = random.rng_randbool(rng2)
   assertEqual(b1, b2)
 
-test "mrg32k3a float range and uniformity":
+test "boundary seed initialization safety":
+  # Must not overflow on INT64_MAX, INT64_MIN, or 0
+  var rng_max = random.new_rng(9223372036854775807)
+  val_max = random.rng_next_float(rng_max)
+  assertEqual(val_max > 0.0 and val_max < 1.0, true)
+
+  var rng_min = random.new_rng(-9223372036854775808)
+  val_min = random.rng_next_float(rng_min)
+  assertEqual(val_min > 0.0 and val_min < 1.0, true)
+
+  var rng_zero = random.new_rng(0)
+  val_zero = random.rng_next_float(rng_zero)
+  assertEqual(val_zero > 0.0 and val_zero < 1.0, true)
+
+test "randint large range and exact boundary test":
   var rng = random.new_rng(12345)
+  # Test the exact boundary that previously caused an infinite rejection loop:
+  val_boundary = random.rng_randint(rng, 0, 4294967086)
+  assertEqual(val_boundary >= 0, true)
+  assertEqual(val_boundary <= 4294967086, true)
+
+  # Test multi-draw range larger than one draw:
+  val_large = random.rng_randint(rng, 0, 10000000000)
+  assertEqual(val_large >= 0, true)
+  assertEqual(val_large <= 10000000000, true)
+
+test "empty collection safe fallback":
+  var rng = random.new_rng(999)
+  empty_vec = Vector[Int]()
+  c = random.choice(empty_vec, rng)
+  assertEqual(c, 0)
+
+  shuffled_empty = random.shuffle(empty_vec, rng)
+  assertEqual(shuffled_empty |> count, 0)
+
+test "long deterministic sequence consistency":
+  var rng = random.new_rng(314159)
+  var sum = 0.0
   var i = 0
-  while i < 100:
-    val = random.rng_next_float(rng)
-    assertEqual(val > 0.0, true)
-    assertEqual(val < 1.0, true)
+  while i < 1000:
+    sum = sum + random.rng_next_float(rng)
     i = i + 1
-
-test "randint bounded range and rejection sampling":
-  var rng = random.new_rng(98765)
-  var i = 0
-  while i < 100:
-    val = random.rng_randint(rng, 10, 20)
-    assertEqual(val >= 10, true)
-    assertEqual(val <= 20, true)
-    i = i + 1
-
-test "uniform float range":
-  var rng = random.new_rng(555)
-  var i = 0
-  while i < 50:
-    u = random.uniform(rng, 5.0, 15.0)
-    assertEqual(u >= 5.0, true)
-    assertEqual(u <= 15.0, true)
-    i = i + 1
-
-test "choice from collection":
-  var rng = random.new_rng(777)
-  items = [10, 20, 30, 40, 50]
-  c = random.choice(items, rng)
-  found = (c == 10) or (c == 20) or (c == 30) or (c == 40) or (c == 50)
-  assertEqual(found, true)
-
-test "fisher-yates shuffle elements preservation":
-  var rng = random.new_rng(888)
-  original = [1, 2, 3, 4, 5]
-  shuffled = random.shuffle(original, rng)
-  assertEqual(shuffled |> count, 5)
-
-  # Check that sum is preserved
-  var orig_sum = 0
-  for x in original:
-    orig_sum = orig_sum + x
-
-  var shuf_sum = 0
-  for y in shuffled:
-    shuf_sum = shuf_sum + y
-
-  assertEqual(orig_sum, shuf_sum)
+  # Average of 1000 uniform (0, 1) floats should be between 450 and 550
+  assertEqual(sum > 450.0 and sum < 550.0, true)

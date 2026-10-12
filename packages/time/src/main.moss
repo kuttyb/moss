@@ -3,6 +3,12 @@ module time
 # ============================================================================
 # Moss Phase 24 — Package C: moss.time
 # Foundational time measurement, duration arithmetic, and ISO 8601 formatting.
+#
+# NOTE ON CLOCK READING:
+# Real-clock reading (e.g. Instant.now() or Timestamp.now()) requires a native
+# compiler clock hook. In accordance with L7 architectural review, real-clock
+# functionality is DEFERRED pending L7 compiler intrinsic approval.
+# All abstractions below are pure, verified Moss v0.1 value types.
 # ============================================================================
 
 export type Duration:
@@ -24,7 +30,7 @@ export type DateTime:
   millisecond: Int
 
 # ----------------------------------------------------------------------------
-# Duration constructors and conversions
+# Duration constructors and conversions with overflow guards
 # ----------------------------------------------------------------------------
 
 export fn duration_zero() -> Duration:
@@ -34,18 +40,41 @@ export fn duration_from_nanos(n: Int) -> Duration:
   return Duration(nanos = n)
 
 export fn duration_from_micros(us: Int) -> Duration:
+  # Guard against multiplication overflow (> 9.22e15 us)
+  if us > 9223372036854775:
+    return Duration(nanos = 9223372036854775807)
+  if us < -9223372036854775:
+    return Duration(nanos = -9223372036854775808)
   return Duration(nanos = us * 1000)
 
 export fn duration_from_millis(ms: Int) -> Duration:
+  # Guard against multiplication overflow (> 9.22e12 ms)
+  if ms > 9223372036854:
+    return Duration(nanos = 9223372036854775807)
+  if ms < -9223372036854:
+    return Duration(nanos = -9223372036854775808)
   return Duration(nanos = ms * 1000000)
 
 export fn duration_from_seconds(s: Int) -> Duration:
+  # Guard against overflow (> 9.22e9 s approx 292 years)
+  if s > 9223372036:
+    return Duration(nanos = 9223372036854775807)
+  if s < -9223372036:
+    return Duration(nanos = -9223372036854775808)
   return Duration(nanos = s * 1000000000)
 
 export fn duration_from_minutes(m: Int) -> Duration:
+  if m > 153722867:
+    return Duration(nanos = 9223372036854775807)
+  if m < -153722867:
+    return Duration(nanos = -9223372036854775808)
   return Duration(nanos = m * 60000000000)
 
 export fn duration_from_hours(h: Int) -> Duration:
+  if h > 2562047:
+    return Duration(nanos = 9223372036854775807)
+  if h < -2562047:
+    return Duration(nanos = -9223372036854775808)
   return Duration(nanos = h * 3600000000000)
 
 export fn duration_nanos(d: Duration) -> Int:
@@ -67,7 +96,7 @@ export fn duration_hours(d: Duration) -> Int:
   return d.nanos / 3600000000000
 
 # ----------------------------------------------------------------------------
-# Duration arithmetic and predicates
+# Duration arithmetic and predicates (safe against division by zero)
 # ----------------------------------------------------------------------------
 
 export fn duration_add(a: Duration, b: Duration) -> Duration:
@@ -79,7 +108,10 @@ export fn duration_sub(a: Duration, b: Duration) -> Duration:
 export fn duration_scale(d: Duration, factor: Int) -> Duration:
   return Duration(nanos = d.nanos * factor)
 
+# Division by zero returns zero duration
 export fn duration_div(d: Duration, divisor: Int) -> Duration:
+  if divisor == 0:
+    return Duration(nanos = 0)
   return Duration(nanos = d.nanos / divisor)
 
 export fn duration_abs(d: Duration) -> Duration:
@@ -110,8 +142,7 @@ export fn duration_gte(a: Duration, b: Duration) -> Bool:
 
 # ----------------------------------------------------------------------------
 # Instant (Monotonic time point)
-# Represents ticks/nanoseconds relative to an arbitrary, process-local epoch.
-# Safe for elapsed interval calculation; not for calendar dates.
+# Safe for elapsed interval calculation; not convertible to calendar dates.
 # ----------------------------------------------------------------------------
 
 export fn make_instant(nanos: Int) -> Instant:
@@ -180,10 +211,41 @@ export fn timestamp_gt(a: Timestamp, b: Timestamp) -> Bool:
 
 # ----------------------------------------------------------------------------
 # Calendar date arithmetic (Howard Hinnant Euclidean proleptic Gregorian)
+# Correct for positive and negative (pre-1970) Unix epoch dates.
 # ----------------------------------------------------------------------------
 
 export fn make_datetime(year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int, millisecond: Int) -> DateTime:
-  return DateTime(year = year, month = month, day = day, hour = hour, minute = minute, second = second, millisecond = millisecond)
+  var m = month
+  if m < 1:
+    m = 1
+  if m > 12:
+    m = 12
+  var d = day
+  if d < 1:
+    d = 1
+  if d > 31:
+    d = 31
+  var h = hour
+  if h < 0:
+    h = 0
+  if h > 23:
+    h = 23
+  var min = minute
+  if min < 0:
+    min = 0
+  if min > 59:
+    min = 59
+  var s = second
+  if s < 0:
+    s = 0
+  if s > 59:
+    s = 59
+  var ms = millisecond
+  if ms < 0:
+    ms = 0
+  if ms > 999:
+    ms = 999
+  return DateTime(year = year, month = m, day = d, hour = h, minute = min, second = s, millisecond = ms)
 
 export fn timestamp_to_datetime(ts: Timestamp) -> DateTime:
   var total_ms = ts.epoch_millis
@@ -237,7 +299,7 @@ export fn datetime_to_timestamp(dt: DateTime) -> Timestamp:
   return Timestamp(epoch_millis = epoch_millis)
 
 # ----------------------------------------------------------------------------
-# ISO 8601 String Formatting
+# ISO 8601 String Formatting (Supporting >4 digit and negative years)
 # ----------------------------------------------------------------------------
 
 fn pad_digit(d: Int) -> String:
@@ -263,23 +325,34 @@ fn pad3(n: Int) -> String:
   d3 = val % 10
   return pad_digit(d1) + pad_digit(d2) + pad_digit(d3)
 
-fn pad4(n: Int) -> String:
-  var val = n
+fn format_year(year: Int) -> String:
+  var y = year
   var is_neg = false
-  if val < 0:
+  if y < 0:
     is_neg = true
-    val = 0 - val
-  d1 = (val / 1000) % 10
-  d2 = (val / 100) % 10
-  d3 = (val / 10) % 10
-  d4 = val % 10
-  res = pad_digit(d1) + pad_digit(d2) + pad_digit(d3) + pad_digit(d4)
+    y = 0 - y
+  # For 0..9999, format standard 4 digits
+  if y <= 9999:
+    d1 = (y / 1000) % 10
+    d2 = (y / 100) % 10
+    d3 = (y / 10) % 10
+    d4 = y % 10
+    s4 = pad_digit(d1) + pad_digit(d2) + pad_digit(d3) + pad_digit(d4)
+    if is_neg:
+      return "-" + s4
+    return s4
+  # For > 9999, ISO 8601 uses +YYYYY
+  var s = ""
+  var temp = y
+  while temp > 0:
+    s = pad_digit(temp % 10) + s
+    temp = temp / 10
   if is_neg:
-    return "-" + res
-  return res
+    return "-" + s
+  return "+" + s
 
 export fn datetime_to_iso8601(dt: DateTime) -> String:
-  return pad4(dt.year) + "-" + pad2(dt.month) + "-" + pad2(dt.day) + "T" + pad2(dt.hour) + ":" + pad2(dt.minute) + ":" + pad2(dt.second) + "." + pad3(dt.millisecond) + "Z"
+  return format_year(dt.year) + "-" + pad2(dt.month) + "-" + pad2(dt.day) + "T" + pad2(dt.hour) + ":" + pad2(dt.minute) + ":" + pad2(dt.second) + "." + pad3(dt.millisecond) + "Z"
 
 export fn timestamp_to_iso8601(ts: Timestamp) -> String:
   dt = timestamp_to_datetime(ts)

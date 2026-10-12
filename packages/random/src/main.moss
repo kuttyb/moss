@@ -8,11 +8,6 @@ module random
 # Combines two 3rd-order multiple recursive generators using pure integer
 # modulo arithmetic. Period: ~ 2^191 (~ 3.1 x 10^57).
 #
-# ADVANTAGES FOR MOSS:
-# 1. Strictly zero bitwise operations required (no &, |, ^, <<, >>).
-# 2. All intermediate products (< 6.03 x 10^15) fit within signed 64-bit Int.
-# 3. No low-order bit periodicity (unlike raw LCGs). Passes TestU01 BigCrush.
-#
 # SECURITY NOTICE:
 # moss.random is an algorithmic pseudo-random number generator designed for
 # simulations, randomized algorithms, and testing. It is NOT cryptographically
@@ -47,7 +42,8 @@ export type Rng:
     y2 = y1
     y1 = p2
 
-    # Combination: z_n = (x_n - y_n) mod 4294967087
+    # Combination: z_n = (p1 - p2) mod 4294967087
+    # Yields z in [1, 4294967086]
     var z = (p1 - p2) % 4294967087
     if z <= 0:
       z = z + 4294967087
@@ -60,37 +56,56 @@ export type Rng:
   fn next_int() -> Int:
     return next_step()
 
+  # Bounded integer generation with unbiased rejection sampling.
+  # Handles small ranges (<= 4294967086) via single draw and large ranges
+  # (> 4294967086) via combined multiple draws without 64-bit integer overflow.
   fn randint(min: Int, max: Int) -> Int:
     if min >= max:
       return min
     range_size = max - min + 1
-    # Unbiased rejection sampling
-    limit = 4294967086 - (4294967086 % range_size)
-    var val = next_step()
-    while val > limit:
-      val = next_step()
-    return min + ((val - 1) % range_size)
+    let m = 4294967086
+
+    if range_size <= m:
+      # Single draw rejection sampling
+      limit = m - (m % range_size)
+      var u = next_step() - 1
+      while u >= limit:
+        u = next_step() - 1
+      return min + (u % range_size)
+    else:
+      # Multiple draw for large ranges up to 9.22e18 without Int64 overflow
+      # u1 in [0, 2147483543], u2 in [0, 4294967085]
+      let m_half = 2147483543
+      let total_outcomes = (m_half + 1) * m
+      limit = total_outcomes - (total_outcomes % range_size)
+      var v = ((next_step() - 1) / 2) * m + (next_step() - 1)
+      while v >= limit:
+        v = ((next_step() - 1) / 2) * m + (next_step() - 1)
+      return min + (v % range_size)
 
   fn randbool() -> Bool:
     return next_float() < 0.5
 
 # ----------------------------------------------------------------------------
 # Factory constructor
+# Safe against arbitrary 64-bit seeds (INT64_MIN, INT64_MAX, negative, 0).
 # ----------------------------------------------------------------------------
 
 export fn new_rng(seed: Int) -> Rng:
-  var s = seed
-  if s <= 0:
+  let m1 = 4294967086
+  let m2 = 4294944442
+  var s = seed % m1
+  if s < 0:
+    s = s + m1
+  if s == 0:
     s = 123456789
-  var s_pos = s
-  if s_pos < 0:
-    s_pos = 123456789
-  var rx1 = (s_pos * 10007) % 4294967086 + 1
-  var rx2 = (s_pos * 20011) % 4294967086 + 1
-  var rx3 = (s_pos * 30013) % 4294967086 + 1
-  var ry1 = (s_pos * 40009) % 4294944442 + 1
-  var ry2 = (s_pos * 50021) % 4294944442 + 1
-  var ry3 = (s_pos * 60017) % 4294944442 + 1
+
+  var rx1 = (s * 10007) % m1 + 1
+  var rx2 = (s * 20011) % m1 + 1
+  var rx3 = (s * 30013) % m1 + 1
+  var ry1 = (s * 40009) % m2 + 1
+  var ry2 = (s * 50021) % m2 + 1
+  var ry3 = (s * 60017) % m2 + 1
   return Rng(x1 = rx1, x2 = rx2, x3 = rx3, y1 = ry1, y2 = ry2, y3 = ry3)
 
 # ----------------------------------------------------------------------------
@@ -115,6 +130,7 @@ export fn uniform(rng: Rng, low: Float, high: Float) -> Float:
   f = rng.next_float()
   return low + (high - low) * f
 
+# Safe choice with empty-collection fallback
 export fn choice(items: Vector[Int], rng: Rng) -> Int:
   cnt = items |> count
   if cnt == 0:
@@ -122,11 +138,14 @@ export fn choice(items: Vector[Int], rng: Rng) -> Int:
   idx = rng.randint(0, cnt - 1)
   return items[idx]
 
+# Fisher-Yates shuffle with empty/single-element safety
 export fn shuffle(items: Vector[Int], rng: Rng) -> Vector[Int]:
   var result = Vector[Int]()
   for item in items:
     result.push(item)
   n = result |> count
+  if n <= 1:
+    return result
   var i = n - 1
   while i > 0:
     j = rng.randint(0, i)

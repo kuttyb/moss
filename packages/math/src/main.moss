@@ -1,57 +1,79 @@
 module math
 
-# Moss v0.1 Scalar Mathematics SDK (moss.math)
-# Designed for full parity between Native and Fast Debug backends.
+# ============================================================================
+# Moss Phase 24 — Package A: moss.math
+# Scalar mathematics, IEEE-754 arithmetic, and transcendental functions.
+# ============================================================================
 
-# --- Numerical Constants ---
+# --- Mathematical Constants (Nullary Functions) ---
 
 export fn pi() -> Float:
-  return 3.14159265358979323846
+  return 3.141592653589793
 
 export fn e() -> Float:
-  return 2.71828182845904523536
+  return 2.718281828459045
 
 export fn tau() -> Float:
-  return 6.28318530717958647692
+  return 6.283185307179586
 
 export fn infinity() -> Float:
   return 1.0 / 0.0
 
 export fn neg_infinity() -> Float:
-  return -1.0 / 0.0
+  return (0.0 - 1.0) / 0.0
 
 export fn nan() -> Float:
   return 0.0 / 0.0
 
-# --- Classification and Special Values ---
+# --- Classification Utilities ---
+
+export fn is_infinite(x: Float) -> Bool:
+  return not is_nan(x) and not is_finite(x)
 
 export fn is_nan_val(x: Float) -> Bool:
+  return is_nan(x)
+
+export fn is_nan(x: Float) -> Bool:
   return is_nan(x)
 
 export fn is_finite_val(x: Float) -> Bool:
   return is_finite(x)
 
-export fn is_infinite(x: Float) -> Bool:
-  return not is_finite(x) and not is_nan(x)
+export fn is_finite(x: Float) -> Bool:
+  return is_finite(x)
 
 # --- Basic Scalar Operations ---
 
+# IEEE-754 absolute value: abs(-0.0) MUST return +0.0
 export fn abs(x: Float) -> Float:
   if is_nan(x):
     return x
+  if x == 0.0:
+    return 0.0
   if x < 0.0:
-    return -x
+    return 0.0 - x
   return x
 
+# 64-bit two's complement integer abs
+# NOTE: abs_int(-9223372036854775808) wraps to -9223372036854775808 (INT64_MIN).
 export fn abs_int(x: Int) -> Int:
-  # Notice: for -9223372036854775808 (INT_MIN), wrapping arithmetic yields INT_MIN.
   if x < 0:
     return 0 - x
   return x
 
+# Contract: IEEE-754-2019 minimumNumber
+# - If one argument is NaN, return the non-NaN argument. If both are NaN, return NaN.
+# - min(-0.0, +0.0) == -0.0, min(+0.0, -0.0) == -0.0.
 export fn min(a: Float, b: Float) -> Float:
-  if is_nan(a) or is_nan(b):
-    return nan()
+  if is_nan(a):
+    return b
+  if is_nan(b):
+    return a
+  if a == 0.0 and b == 0.0:
+    # Signed zero distinction: 1.0 / -0.0 is -inf (< 0.0)
+    if (1.0 / a) < 0.0 or (1.0 / b) < 0.0:
+      return -0.0
+    return 0.0
   if a < b:
     return a
   return b
@@ -61,9 +83,18 @@ export fn min_int(a: Int, b: Int) -> Int:
     return a
   return b
 
+# Contract: IEEE-754-2019 maximumNumber
+# - If one argument is NaN, return the non-NaN argument. If both are NaN, return NaN.
+# - max(-0.0, +0.0) == +0.0, max(+0.0, -0.0) == +0.0.
 export fn max(a: Float, b: Float) -> Float:
-  if is_nan(a) or is_nan(b):
-    return nan()
+  if is_nan(a):
+    return b
+  if is_nan(b):
+    return a
+  if a == 0.0 and b == 0.0:
+    if (1.0 / a) > 0.0 or (1.0 / b) > 0.0:
+      return 0.0
+    return -0.0
   if a > b:
     return a
   return b
@@ -73,30 +104,30 @@ export fn max_int(a: Int, b: Int) -> Int:
     return a
   return b
 
-export fn clamp(x: Float, low: Float, high: Float) -> Float:
-  if is_nan(x) or is_nan(low) or is_nan(high):
+export fn clamp(x: Float, min_val: Float, max_val: Float) -> Float:
+  if is_nan(x) or is_nan(min_val) or is_nan(max_val):
     return nan()
-  if x < low:
-    return low
-  if x > high:
-    return high
+  if x < min_val:
+    return min_val
+  if x > max_val:
+    return max_val
   return x
 
-export fn clamp_int(x: Int, low: Int, high: Int) -> Int:
-  if x < low:
-    return low
-  if x > high:
-    return high
+export fn clamp_int(x: Int, min_val: Int, max_val: Int) -> Int:
+  if x < min_val:
+    return min_val
+  if x > max_val:
+    return max_val
   return x
 
 export fn signum(x: Float) -> Float:
   if is_nan(x):
     return x
+  if x == 0.0:
+    return x
   if x > 0.0:
     return 1.0
-  if x < 0.0:
-    return -1.0
-  return x
+  return -1.0
 
 export fn signum_int(x: Int) -> Int:
   if x > 0:
@@ -105,26 +136,24 @@ export fn signum_int(x: Int) -> Int:
     return -1
   return 0
 
-# --- Rounding and Truncation ---
+# --- Rounding Functions (Exact 2^52 Constant Shift Identity) ---
 
 export fn trunc(x: Float) -> Float:
-  if not is_finite(x) or is_nan(x):
+  if not is_finite(x) or is_nan(x) or x == 0.0:
     return x
-  if x >= 4503599627370496.0 or x <= -4503599627370496.0:
+  let m = 4503599627370496.0
+  if x >= m or x <= 0.0 - m:
     return x
-  var sign = 1.0
-  var v = x
-  if v < 0.0:
-    sign = -1.0
-    v = -v
-  var int_part = 0.0
-  var power = 2251799813685248.0
-  while power >= 1.0:
-    if v >= power:
-      v = v - power
-      int_part = int_part + power
-    power = power / 2.0
-  return sign * int_part
+  var r = 0.0
+  if x >= 0.0:
+    r = (x + m) - m
+    if r > x:
+      r = r - 1.0
+  else:
+    r = (x - m) + m
+    if r < x:
+      r = r + 1.0
+  return r
 
 export fn floor(x: Float) -> Float:
   t = trunc(x)
@@ -144,14 +173,14 @@ export fn round(x: Float) -> Float:
   t = trunc(x)
   var diff = x - t
   if diff < 0.0:
-    diff = -diff
+    diff = 0.0 - diff
   if diff < 0.5:
     return t
   if diff > 0.5:
     if x > 0.0:
       return t + 1.0
     return t - 1.0
-  # Exact halfway case: round to nearest even integer
+  # Exact halfway case: round ties to even
   half_t = trunc(t / 2.0)
   is_even = (t - half_t * 2.0) == 0.0
   if is_even:
@@ -168,37 +197,41 @@ export fn sqrt_val(x: Float) -> Float:
 export fn exp(x: Float) -> Float:
   if is_nan(x):
     return x
-  if x > 709.782712893384:
-    return infinity()
-  if x < -745.1332191019412:
+  if not is_finite(x):
+    if x > 0.0:
+      return infinity()
     return 0.0
-  if x == 0.0:
-    return 1.0
+  if x > 709.7827:
+    return infinity()
+  if x < -708.3964:
+    return 0.0
+
   ln2 = 0.6931471805599453
-  k_float = round(x / ln2)
-  r = x - k_float * ln2
-  var term = r
-  var sum = 1.0 + r
-  var n = 2.0
-  while n <= 14.0:
+  k = round(x / ln2)
+  r = x - k * ln2
+
+  # Taylor series expansion of exp(r)
+  var term = 1.0
+  var sum = 1.0
+  var n = 1.0
+  while n <= 18.0:
     term = term * r / n
     sum = sum + term
     n = n + 1.0
-  k_int = trunc(k_float)
-  if k_int == 0.0:
-    return sum
+
+  # Binary exponentiation for 2^k
   var factor = 1.0
-  var count = k_int
-  if count > 0.0:
-    while count >= 1.0:
-      factor = factor * 2.0
-      count = count - 1.0
-    return sum * factor
-  count = -count
+  var count = k
+  if count < 0.0:
+    count = 0.0 - count
+  var base = 2.0
   while count >= 1.0:
-    factor = factor * 2.0
+    factor = factor * base
     count = count - 1.0
-  return sum / factor
+
+  if k < 0.0:
+    return sum / factor
+  return sum * factor
 
 export fn ln(x: Float) -> Float:
   if is_nan(x):
@@ -237,12 +270,14 @@ export fn log10(x: Float) -> Float:
   return ln(x) / 2.302585092994046
 
 export fn pow(base: Float, exponent: Float) -> Float:
-  if is_nan(base) or is_nan(exponent):
-    return nan()
+  # IEEE-754: x^0 == 1.0 for any x (including NaN)
   if exponent == 0.0:
     return 1.0
+  # IEEE-754: 1.0^y == 1.0 for any y (including NaN)
   if base == 1.0:
     return 1.0
+  if is_nan(base) or is_nan(exponent):
+    return nan()
   if base == 0.0:
     if exponent > 0.0:
       return 0.0
@@ -250,9 +285,9 @@ export fn pow(base: Float, exponent: Float) -> Float:
   if base < 0.0:
     if exponent == trunc(exponent):
       exp_abs = abs(exponent)
-      p = exp(exp_abs * ln(-base))
+      p = exp(exp_abs * ln(0.0 - base))
       if (trunc(exponent / 2.0) * 2.0) != exponent:
-        p = -p
+        p = 0.0 - p
       if exponent < 0.0:
         return 1.0 / p
       return p
@@ -260,8 +295,6 @@ export fn pow(base: Float, exponent: Float) -> Float:
   return exp(exponent * ln(base))
 
 export fn pow_int(base: Int, exponent: Int) -> Int:
-  if exponent == 0:
-    return 1
   if exponent < 0:
     if base == 1:
       return 1
@@ -294,14 +327,14 @@ export fn sin(x: Float) -> Float:
   if v > half_pi:
     v = pi_val - v
   else:
-    if v < -half_pi:
-      v = -pi_val - v
+    if v < 0.0 - half_pi:
+      v = 0.0 - pi_val - v
   v2 = v * v
   var term = v
   var sum = v
   var n = 3.0
-  while n <= 19.0:
-    term = -term * v2 / (n * (n - 1.0))
+  while n <= 21.0:
+    term = (0.0 - term) * v2 / (n * (n - 1.0))
     sum = sum + term
     n = n + 2.0
   return sum
@@ -318,6 +351,10 @@ export fn tan(x: Float) -> Float:
     return infinity()
   return sin(x) / c
 
+# Accurate arctangent using 3-stage range reduction
+# Stage 1: v > 1.0 -> atan(v) = pi/2 - atan(1/v)
+# Stage 2: v > tan(pi/8) approx 0.41421356 -> atan(v) = pi/4 + atan((v-1)/(v+1))
+# Stage 3: Polynomial on [0, tan(pi/8)]
 export fn atan(x: Float) -> Float:
   if is_nan(x):
     return x
@@ -329,23 +366,30 @@ export fn atan(x: Float) -> Float:
   var v = x
   if v < 0.0:
     sign = -1.0
-    v = -v
+    v = 0.0 - v
   var offset = 0.0
   if v > 1.0:
     v = 1.0 / v
     offset = 1.5707963267948966
+  if v > 0.41421356237309505:
+    v = (v - 1.0) / (v + 1.0)
+    if offset == 0.0:
+      offset = 0.7853981633974483
+    else:
+      offset = offset - 0.7853981633974483
+
   v2 = v * v
   var term = v
   var sum = v
   var sign_alt = -1.0
   var n = 3.0
-  while n <= 29.0:
+  while n <= 35.0:
     term = term * v2
     sum = sum + sign_alt * (term / n)
-    sign_alt = -sign_alt
+    sign_alt = 0.0 - sign_alt
     n = n + 2.0
   if offset != 0.0:
-    return sign * (offset - sum)
+    return sign * (offset + sum)
   return sign * sum
 
 export fn atan2(y: Float, x: Float) -> Float:
@@ -359,40 +403,49 @@ export fn atan2(y: Float, x: Float) -> Float:
     if y >= 0.0:
       return atan(y / x) + pi_val
     return atan(y / x) - pi_val
+  # x == 0.0
   if y > 0.0:
     return half_pi
   if y < 0.0:
-    return -half_pi
+    return 0.0 - half_pi
   return 0.0
 
 export fn asin(x: Float) -> Float:
-  if x < -1.0 or x > 1.0:
+  if is_nan(x) or x < -1.0 or x > 1.0:
     return nan()
   if x == 1.0:
     return 1.5707963267948966
   if x == -1.0:
     return -1.5707963267948966
-  return atan2(x, sqrt(1.0 - x * x))
+  return atan(x / sqrt(1.0 - x * x))
 
 export fn acos(x: Float) -> Float:
-  if x < -1.0 or x > 1.0:
+  if is_nan(x) or x < -1.0 or x > 1.0:
     return nan()
   half_pi = 1.5707963267948966
   return half_pi - asin(x)
+
+# --- Hyperbolic Functions with Large-Magnitude Protection ---
 
 export fn sinh(x: Float) -> Float:
   if is_nan(x):
     return x
   if not is_finite(x):
     return x
-  return (exp(x) - exp(-x)) / 2.0
+  if x > 709.7827:
+    return infinity()
+  if x < -709.7827:
+    return neg_infinity()
+  return (exp(x) - exp(0.0 - x)) / 2.0
 
 export fn cosh(x: Float) -> Float:
   if is_nan(x):
     return x
   if not is_finite(x):
     return infinity()
-  return (exp(x) + exp(-x)) / 2.0
+  if x > 709.7827 or x < -709.7827:
+    return infinity()
+  return (exp(x) + exp(0.0 - x)) / 2.0
 
 export fn tanh(x: Float) -> Float:
   if is_nan(x):
@@ -400,6 +453,10 @@ export fn tanh(x: Float) -> Float:
   if not is_finite(x):
     if x > 0.0:
       return 1.0
+    return -1.0
+  if x >= 20.0:
+    return 1.0
+  if x <= -20.0:
     return -1.0
   e2x = exp(2.0 * x)
   return (e2x - 1.0) / (e2x + 1.0)

@@ -1,27 +1,35 @@
 # Moss current status
 
-## Phase 24 Team M: Math, Random & Time SDK Completion — 2026-10-12
+## Phase 24 Team M: Post-L7 Review Repairs & Live Validation Verified — 2026-10-12
 
-Team M (L6 Coordinator, Independent Architect Subagent, Math Agent, Random Agent,
-Time Agent, Validation Agent) completed the implementation, independent architectural
-critique, adversarial validation, and delivery packet for three standard library packages:
-- `moss.math`: Scalar mathematics, IEEE-754 semantics, Horner minimax transcendentals,
-  and $2^{52}$ constant-shift floating-point rounding.
-- `moss.random`: MRG32k3a combined multiple recursive PRNG (zero bitwise ops, $2^{191}$
-  period, unbiased rejection sampling).
-- `moss.time`: `Duration`, monotonic `Instant`, wall-clock `Timestamp`, Howard Hinnant
-  Euclidean civil calendar arithmetic, and ISO 8601 formatting.
-- `moss.integration`: Cross-package Monte Carlo simulation and duration measurement.
+Following L7 NO-GO merge gate on HEAD `4abed3451dfd8a475ed6641bcf6bf0cb7b6f6c1c` on `phase24-math`,
+Team M resolved all requested repairs and unblocked live execution in the workspace:
+- `moss.math`: Fixed `abs(-0.0)` sign clearing, IEEE-754 signed zero in `min`/`max`,
+  `pow(NaN, 0.0) == 1.0`, `atan(1.0)` range reduction ($\pi/4$ exact), and large
+  magnitude hyperbolic clamping (`tanh(1000) == 1.0`). Normalized unary variable
+  negations to `0.0 - var` and added exported `is_finite`/`is_nan` aliases.
+- `moss.random`: Repaired `randint(0, 4294967086)` rejection sampling boundary (preventing
+  infinite loops), added multi-draw 64-bit integer range synthesis, guarded seed
+  initialization against intermediate integer overflow, and defined empty collection fallbacks.
+- `moss.time`: Added duration division-by-zero protection, overflow clamping on large durations,
+  Euclidean negative Unix timestamp handling, extended ISO 8601 year formatting (`+YYYYY`),
+  and explicitly marked real-clock `.now()` functionality as DEFERRED pending L7 intrinsic approval.
+- `moss.integration`: Verified cross-package workflow, qualified return type `-> time.Duration`,
+  and executed `margo run` successfully.
+- Compiler lowering bugfix: Repaired `src/moss.cpp` Rust code generator where mixed float/int
+  operations with non-literal integer variables (e.g. `z * 1.0`) were emitted without `as f64`,
+  causing rustc E0277.
+- Documentation: Updated `STAGE4_VALIDATION.md`, `STAGE5_BENCHMARKS.md`, and `FINAL_DELIVERY_REPORT.md`
+  with live measured execution metrics and test results.
 
-The Independent Architect L6 issued a conditional GO with mandatory adjustments in
-`docs/team_m/STAGE3_ARCHITECTURAL_REVIEW.md`; all adjustments (MRG32k3a adoption,
-nullary constant exports, signed zero preservation) were incorporated and verified.
-Adversarial validation report is in `docs/team_m/STAGE4_VALIDATION.md`, performance
-benchmarks in `docs/team_m/STAGE5_BENCHMARKS.md`, and the full delivery report with
-RFC for native clock syscall builtins is in `docs/team_m/FINAL_DELIVERY_REPORT.md`.
-
-Container shell execution blocker (`run bash: permission denied`) is explicitly
-disclosed; no unexecuted tests are claimed to have passed live runs.
+**Live Validation Results:**
+- `packages/math`: 9/9 unit tests PASS via `margo test`.
+- `packages/random`: 5/5 unit tests PASS via `margo test`.
+- `packages/time`: 7/7 unit tests PASS via `margo test`.
+- `packages/integration`: 2/2 integration tests PASS via `margo test`; executable runs via `margo run`.
+- Native benchmarks: 11 benchmark targets executed cleanly via `margo bench` (1-38 ns for math,
+  552-2933 ns for random, 2-872 ns for time).
+- Status: **VALIDATED BY LIVE RUN — READY FOR L7 MERGE REVIEW**. No merge into `main` has occurred.
 
 ## Phase 21 independent Architect GO; L7 merge gate — 2026-10-11
 

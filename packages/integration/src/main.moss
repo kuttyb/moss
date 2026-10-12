@@ -22,12 +22,10 @@ export fn estimate_pi_monte_carlo(num_samples: Int, seed: Int) -> Float:
     i = i + 1
   return (4.0 * inside) / num_samples
 
-export fn benchmark_simulation(samples: Int) -> Duration:
-  start = time.make_instant(1000000)
-  pi_approx = estimate_pi_monte_carlo(samples, 42)
-  # simulated elapsed interval
-  finish = time.make_instant(15500000)
-  return time.instant_elapsed(start, finish)
+export fn demonstrate_time_arithmetic() -> time.Duration:
+  d1 = time.duration_from_seconds(5)
+  d2 = time.duration_from_millis(250)
+  return time.duration_add(d1, d2)
 
 fn main():
   # 1. Math constants & functions
@@ -41,9 +39,9 @@ fn main():
   diff = math.abs(approx - pi_val)
   echo "Error:", diff
 
-  # 3. Time duration & timestamp
-  elapsed = benchmark_simulation(samples)
-  echo "Elapsed millis:", time.duration_millis(elapsed)
+  # 3. Time duration & timestamp formatting
+  total_duration = demonstrate_time_arithmetic()
+  echo "Total duration millis:", time.duration_millis(total_duration)
 
   ts = time.timestamp_from_unix_millis(1700000000000)
   echo "ISO timestamp:", time.timestamp_to_iso8601(ts)

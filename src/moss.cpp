@@ -18031,13 +18031,19 @@ class Generator {
         right = "(" + right + ").as_str()";
       }
       if (left_type && canonical_type_name(*left_type) == "float" &&
-          right_type && canonical_type_name(*right_type) == "int" &&
-          generated_integer_literal(comparison->right))
-        right = generated_integer_literal_as_float(comparison->right);
+          right_type && canonical_type_name(*right_type) == "int") {
+        if (generated_integer_literal(comparison->right))
+          right = generated_integer_literal_as_float(comparison->right);
+        else
+          right = "((" + right + ") as f64)";
+      }
       if (right_type && canonical_type_name(*right_type) == "float" &&
-          left_type && canonical_type_name(*left_type) == "int" &&
-          generated_integer_literal(comparison->left))
-        left = generated_integer_literal_as_float(comparison->left);
+          left_type && canonical_type_name(*left_type) == "int") {
+        if (generated_integer_literal(comparison->left))
+          left = generated_integer_literal_as_float(comparison->left);
+        else
+          left = "((" + left + ") as f64)";
+      }
       return "(" + left + ") " + comparison->op + " (" + right + ")";
     }
     for (const auto& operators : vector<vector<string>>{{"+", "-"}, {"*", "/", "%"}}) {
@@ -18066,13 +18072,19 @@ class Generator {
         return "(" + left + ")." + method + "(" + right + ")";
       }
       if (left_type && canonical_type_name(*left_type) == "float" &&
-          right_type && canonical_type_name(*right_type) == "int" &&
-          generated_integer_literal(binary->right))
-        right = generated_integer_literal_as_float(binary->right);
+          right_type && canonical_type_name(*right_type) == "int") {
+        if (generated_integer_literal(binary->right))
+          right = generated_integer_literal_as_float(binary->right);
+        else
+          right = "((" + right + ") as f64)";
+      }
       if (right_type && canonical_type_name(*right_type) == "float" &&
-          left_type && canonical_type_name(*left_type) == "int" &&
-          generated_integer_literal(binary->left))
-        left = generated_integer_literal_as_float(binary->left);
+          left_type && canonical_type_name(*left_type) == "int") {
+        if (generated_integer_literal(binary->left))
+          left = generated_integer_literal_as_float(binary->left);
+        else
+          left = "((" + left + ") as f64)";
+      }
       return "(" + left + ") " + binary->op + " (" + right + ")";
     }
     // Only classify a quoted source form as a single literal after top-level
