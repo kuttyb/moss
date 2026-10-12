@@ -168,6 +168,24 @@ without erasing the end-to-end concatenation evidence. The Architect retains
 **CONDITIONAL GO / unconditional HOLD** solely for explicit L7 disposition of
 the reserved-builder representation gap.
 
+## Focused String/builder follow-up
+
+The retained-builder exception was resolved additively rather than by changing
+the original `Vector[String]` contract. Compiler-owned String reserve/append
+operations support a new String-backed builder with explicit reusable snapshot
+and consuming finish paths. Its release workloads remained at or below 1.49x
+idiomatic reserved Rust across the workstream's variance runs. Rust allocation
+instrumentation establishes the reference behavior; Moss allocation counts are
+still not claimed.
+
+Nonempty concatenation now uses capacity-sized `push_str` lowering, flattens
+chains, borrows literal `str` data without temporary allocation, and reuses a
+simple accumulator local only when later operands cannot alias it. The focused
+work also exposed and repaired a benchmark-lowering bug that borrowed consumed
+locals in synthetic anti-elision sinks. Original feedback records and the
+earlier Architect's conditional verdict remain preserved as historical
+evidence; the new implementation requires a fresh exact-SHA review.
+
 ## Stabilization review disposition
 
 - Reviewer role: Independent Team T L6 Architect.

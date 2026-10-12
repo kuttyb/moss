@@ -1,5 +1,27 @@
 # Moss current status
 
+## Phase 24 Team T focused String/builder engineering candidate — 2026-10-12
+
+The focused follow-up replaces formatting-based nonempty String concatenation
+with capacity-sized, chain-flattened `push_str` lowering and safely reuses a
+simple nonaliasing accumulator local. Literal operands no longer allocate
+temporary Strings. New ownership-checked String reserve/append primitives
+support an additive capacity-aware `moss.text` builder while the existing
+segment-preserving `Vector[String]` builder remains unchanged.
+
+Capacity finish, append-only, and reusable-snapshot workloads were all within
+1.49x idiomatic optimized Rust across the workstream variance runs; the final
+Coordinator run measured 128-segment finish at 419 ns for both Moss and Rust.
+Rust allocation instrumentation is recorded without claiming unmeasured Moss
+allocation counts.
+
+Focused semantics, native/Fast Debug, source-free ABI-v9 ownership, full Team T
+acceptance/oracles, six-provider release benchmark verification, strict C++ and
+Rust, `TMPDIR="$PWD/tmp" make check`, `make examples`, feedback/skill validators,
+and whitespace checks pass. Engineering L6 is **GO**. The next gate is an
+independent Architect review of the frozen exact SHA; Team I remains the sole
+integration owner.
+
 ## Phase 24 Team T focused capacity-builder workstream — 2026-10-12
 
 The additive `moss.text` capacity builder is implemented on compiler-owned
