@@ -148,6 +148,13 @@ Finite `parse_float` text accepts `.5`, `1.`, uppercase `E`, leading zeros,
 and explicit exponent signs; digits are ASCII only. The exact grammar and
 nonfinite spellings are in the Phase 21 error-handling spec §13.3.
 
+Mutable String construction uses `text.reserve(additional_bytes)` and
+`text.append(part)`. `reserve` is a non-semantic capacity hint measured in
+additional UTF-8 bytes; zero and negative requests are no-ops. `append`
+concatenates `part` without consuming it. Both require a writable receiver, and
+the ownership checker rejects overlapping WRITE/READ access such as
+`text.append(text)`; use ordinary `+` when a self-copy is intended.
+
 ### Arithmetic and empty collections
 
 Current integer arithmetic uses `+`, `-`, `*`, `/`, and `%`:

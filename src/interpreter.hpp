@@ -987,6 +987,32 @@ class FastInterpreter {
       if (member->second.find('(') != std::string::npos) {
         std::string method_name; std::vector<std::string> method_args;
         if (parse_call(member->second, method_name, method_args)) {
+          if ((method_name == "reserve" || method_name == "append") &&
+              method_args.size() == 1) {
+            Place receiver_place = locate(member->first, frame, line, output);
+            if (!receiver_place.value ||
+                receiver_place.value->kind != Value::Kind::String)
+              throw RuntimeError(line, "mutable String method requires writable receiver");
+            Value argument = eval(method_args.front(), frame, line, output);
+            const std::string before = summary(*receiver_place.value);
+            if (method_name == "reserve") {
+              if (argument.kind != Value::Kind::Int)
+                throw RuntimeError(line, "String reserve requires an Int capacity");
+              if (argument.integer > 0)
+                receiver_place.value->string.reserve(
+                    static_cast<size_t>(argument.integer));
+            } else {
+              if (argument.kind != Value::Kind::String)
+                throw RuntimeError(line, "String append requires a String part");
+              receiver_place.value->string += argument.string;
+            }
+            if (receiver_place.domain)
+              state_event("state_write", frame, line, receiver_place, before,
+                          summary(*receiver_place.value));
+            else
+              emit("LocalWrite", frame, line, member->first);
+            return Value::unit();
+          }
           auto receiver = eval(member->first, frame, line, output);
           if (receiver.kind == Value::Kind::String) {
             auto characters = [&]() {

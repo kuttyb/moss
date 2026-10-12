@@ -323,6 +323,12 @@ specified in [Phase 21 §13](MOSS_PHASE_21_ERROR_HANDLING.md#13-float-numeric-pa
 Lexicographic ordering is intentionally not a v0.1 operator surface:
 `String < String`, `<=`, `>`, and `>=` are rejected by the frontend.
 
+Writable Strings additionally support `reserve(Int) -> Unit`, a UTF-8-byte
+capacity hint whose nonpositive requests are no-ops, and
+`append(String) -> Unit`. The receiver is inferred WRITE and the append part is
+READ, so overlapping `value.append(value)` is rejected by the ordinary
+ownership rule.
+
 Binary operators outside the closed set are rejected by the frontend rather than
 passed through to generated Rust. v0.1 has no bitwise `&`, `|`, or `^`, no shifts
 `<<` or `>>`, and no symbolic `&&` or `||`; Boolean logic uses the word operators

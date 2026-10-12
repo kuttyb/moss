@@ -385,6 +385,8 @@ static const vector<BuiltinOperationDescriptor>& builtin_operations() {
       {BuiltinReceiverFamily::String, "slice", "slice(start, length)", "string", Effect::Read, {Effect::Read, Effect::Read}, {"int", "int"}},
       {BuiltinReceiverFamily::String, "ascii_lower", "ascii_lower()", "string", Effect::Read, {}, {}},
       {BuiltinReceiverFamily::String, "ascii_upper", "ascii_upper()", "string", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::String, "reserve", "reserve(additional_bytes)", "unit", Effect::Write, {Effect::Read}, {"int"}},
+      {BuiltinReceiverFamily::String, "append", "append(part)", "unit", Effect::Write, {Effect::Read}, {"string"}},
       {BuiltinReceiverFamily::String, "split", "split(separator)", "vector[string]", Effect::Read, {Effect::Read}, {"string"}, true},
       {BuiltinReceiverFamily::String, "join", "join(parts)", "string", Effect::Read, {Effect::Read}, {"vector[string]"}},
   };
@@ -11683,6 +11685,14 @@ class Checker {
         const auto* builtin = builtin_operation(concrete, method);
         if (builtin && concrete == "string" &&
             builtin->argument_effects.size() == arguments.size()) {
+          vector<string> access_expressions{receiver};
+          vector<Effect> access_effects{builtin->receiver_effect};
+          for (size_t index = 0; index < arguments.size(); ++index) {
+            access_expressions.push_back(arguments[index]);
+            access_effects.push_back(builtin->argument_effects.at(index));
+          }
+          check_conflicting_call_accesses(line, method, access_expressions,
+                                          access_effects, env);
           check_ownership_expression(line, receiver, env, builtin->receiver_effect);
           for (size_t index = 0; index < arguments.size(); ++index)
             check_ownership_expression(line, arguments[index], env,
@@ -18104,8 +18114,43 @@ class Generator {
         return "(" + left + ").clone()";
       if (string_concatenation && trim(binary->left) == "\"\"")
         return "(" + right + ").clone()";
-      if (string_concatenation)
-        return "format!(\"{}{}\", " + left + ", " + right + ")";
+      if (string_concatenation) {
+        vector<string> operands;
+        std::function<void(string)> collect = [&](string source) {
+          source = strip_redundant_outer_parentheses(std::move(source));
+          auto nested = generated_split_binary(source, {"+"});
+          auto nested_left = nested
+              ? generated_expr_type(nested->left, types) : std::nullopt;
+          auto nested_right = nested
+              ? generated_expr_type(nested->right, types) : std::nullopt;
+          if (nested && nested_left && nested_right &&
+              canonical_type_name(*nested_left) == "string" &&
+              canonical_type_name(*nested_right) == "string") {
+            collect(nested->left);
+            collect(nested->right);
+          } else {
+            operands.push_back(std::move(source));
+          }
+        };
+        collect(e);
+        std::ostringstream joined;
+        joined << "{ ";
+        for (size_t index = 0; index < operands.size(); ++index)
+          joined << "let __moss_concat_" << index << " = &("
+                 << expr(operands[index], d, locals, types) << "); ";
+        joined << "let mut __moss_concat_result = String::with_capacity(";
+        for (size_t index = 0; index < operands.size(); ++index) {
+          if (index) joined << ".saturating_add(";
+          joined << "__moss_concat_" << index << ".len()";
+        }
+        for (size_t index = 1; index < operands.size(); ++index) joined << ")";
+        joined << "); ";
+        for (size_t index = 0; index < operands.size(); ++index)
+          joined << "__moss_concat_result.push_str(__moss_concat_" << index
+                 << ".as_str()); ";
+        joined << "__moss_concat_result }";
+        return joined.str();
+      }
       bool integer_operation = left_type && right_type &&
           canonical_type_name(*left_type) == "int" &&
           canonical_type_name(*right_type) == "int";
@@ -18420,6 +18465,18 @@ class Generator {
             return source + ".to_ascii_lowercase()";
           if (member_name == "ascii_upper" && member_arguments.empty())
             return source + ".to_ascii_uppercase()";
+          if (member_name == "reserve" && member_arguments.size() == 1)
+            return "{ let __moss_string = &mut (" +
+                write_call_place(member_receiver, d, locals, types) +
+                "); let __moss_additional = " +
+                expr(member_arguments[0], d, locals, types) +
+                "; if __moss_additional > 0 { __moss_string.reserve(__moss_additional as usize); } }";
+          if (member_name == "append" && member_arguments.size() == 1)
+            return "{ let __moss_string = &mut (" +
+                write_call_place(member_receiver, d, locals, types) +
+                "); let __moss_part = &(" +
+                expr(member_arguments[0], d, locals, types) +
+                "); __moss_string.push_str(__moss_part.as_str()); }";
           if (member_name == "split" && member_arguments.size() == 1)
             return "{ let __moss_separator = " + expr(member_arguments[0], d, locals, types) +
                 "; if __moss_separator.is_empty() { std::process::abort(); } " + source +
@@ -20679,11 +20736,66 @@ class Generator {
             else if (is_object_view(s.a, d, locals, &types))
               o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
             else {
-              string assigned = expr(s.b, d, locals, &types,
-                  statement_functional_pipeline_id(s, functional_context, 0));
+              string assigned;
+              vector<string> concat_operands;
+              std::function<void(string)> collect_concat = [&](string source) {
+                source = strip_redundant_outer_parentheses(std::move(source));
+                auto binary = generated_split_binary(source, {"+"});
+                auto left_type = binary
+                    ? generated_expr_type(binary->left, &types) : std::nullopt;
+                auto right_type = binary
+                    ? generated_expr_type(binary->right, &types) : std::nullopt;
+                if (binary && left_type && right_type &&
+                    canonical_type_name(*left_type) == "string" &&
+                    canonical_type_name(*right_type) == "string") {
+                  collect_concat(binary->left);
+                  collect_concat(binary->right);
+                } else {
+                  concat_operands.push_back(std::move(source));
+                }
+              };
+              collect_concat(s.b);
+              bool reuse_string_buffer = plain_identifier(s.a) &&
+                  locals.count(s.a) && concat_operands.size() > 1 &&
+                  trim(concat_operands.front()) == trim(s.a) &&
+                  canonical_type_name(types.count(s.a) ? types.at(s.a) : "") ==
+                      "string";
+              for (size_t operand = 1;
+                   reuse_string_buffer && operand < concat_operands.size();
+                   ++operand)
+                if (expression_mentions_identifier(concat_operands[operand], s.a))
+                  reuse_string_buffer = false;
+              if (reuse_string_buffer) {
+                std::ostringstream reused;
+                reused << "{ ";
+                for (size_t operand = 1; operand < concat_operands.size(); ++operand)
+                  reused << "let __moss_append_" << operand << " = &("
+                         << expr(concat_operands[operand], d, locals, &types)
+                         << "); ";
+                string place = write_call_place(s.a, d, locals, &types);
+                reused << "(" << place << ").reserve(";
+                for (size_t operand = 1; operand < concat_operands.size(); ++operand) {
+                  if (operand > 1) reused << ".saturating_add(";
+                  reused << "__moss_append_" << operand << ".len()";
+                }
+                for (size_t operand = 2; operand < concat_operands.size(); ++operand)
+                  reused << ")";
+                reused << "); ";
+                for (size_t operand = 1; operand < concat_operands.size(); ++operand)
+                  reused << "(" << place << ").push_str(__moss_append_"
+                         << operand << ".as_str()); ";
+                reused << "}";
+                assigned = reused.str();
+              } else {
+                assigned = expr(s.b, d, locals, &types,
+                    statement_functional_pipeline_id(s, functional_context, 0));
+              }
               if (map_assignment && borrowed_function_parameters_.count(trim(s.b)))
                 assigned = "(" + assigned + ").clone()";
-              o << indent(level) << lhs << " = " << assigned << ";\n";
+              if (reuse_string_buffer)
+                o << indent(level) << assigned << ";\n";
+              else
+                o << indent(level) << lhs << " = " << assigned << ";\n";
             }
             if (plain_identifier(s.a)) forget_domain_instance_binding(s.a);
           }
@@ -23487,7 +23599,7 @@ static void write_bootstrap_json(std::ostream& out,
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"pass\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"],\"exhaustive_enum_match\":\"match expression: / match consume <owned enum expression>:\"},"
          "\"enums\":{\"declaration\":\"enum Name: with closed named-field cases\",\"construction\":\"Name.Case(field: value)\",\"read_match\":\"match expression:\",\"consume_match\":\"match consume <owned enum expression>:\",\"pattern_ownership_modifiers\":false,\"replace\":\"replace(place, replacement)\"},"
-         "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"find(pattern)\",\"slice(start, length)\",\"ascii_lower()\",\"ascii_upper()\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"}},"
+         "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"find(pattern)\",\"slice(start, length)\",\"ascii_lower()\",\"ascii_upper()\",\"reserve(additional_bytes)\",\"append(part)\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"}},"
          "\"numeric\":{\"float_predicates\":[\"is_nan(Float) -> Bool\",\"is_finite(Float) -> Bool\"],"
          "\"parsing\":[\"parse_int(String) -> Int raises ParseError.Invalid|Overflow\","
          "\"parse_float(String) -> Float raises ParseError.Invalid\"],"

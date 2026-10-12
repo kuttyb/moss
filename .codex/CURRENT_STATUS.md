@@ -1,5 +1,17 @@
 # Moss current status
 
+## Phase 24 Team T focused String concatenation checkpoint — 2026-10-12
+
+The compiler/runtime workstream replaces nonempty String formatting with a
+single capacity-sized result, flattens concatenation chains, and reuses the
+target buffer for provably nonaliasing local `value = value + parts`
+assignments. Self-aliasing forms retain independent-value construction. New
+WRITE `String.reserve(additional_bytes)` and `String.append(part)` primitives
+support the capacity-aware SDK builder while preserving Fast Debug behavior and
+ownership overlap checks. Focused native/Fast Debug, generated-Rust, semantic
+IDE, skill, and feedback checks pass; the coordinator owns integration and the
+full repository/benchmark gates.
+
 ## Phase 24 Team T performance sprint — independent Architect verdict — 2026-10-12
 
 The independent L6 Architect reviewed exact engineering candidate

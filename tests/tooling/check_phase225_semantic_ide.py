@@ -298,7 +298,7 @@ builtin_overlays = {
               "  echo values.\n", 4, {"push", "pop"}, {"keys"}),
     "string": ("fn main():\n  value = \"moss\"\n  echo value.\n", 3,
                {"length", "char_at", "chars", "find", "slice", "ascii_lower",
-                "ascii_upper", "split", "join"}, {"push"}),
+                "ascii_upper", "reserve", "append", "split", "join"}, {"push"}),
 }
 for family, (contents, line, required, forbidden) in builtin_overlays.items():
     result = invoke_overlay(

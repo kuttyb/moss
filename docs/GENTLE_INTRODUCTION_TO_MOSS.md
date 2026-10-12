@@ -145,9 +145,10 @@ overload or redefine them. `String` has three built-in operator forms:
 concatenation with `+`, equality with `==`, and inequality with `!=`.
 String ordering with `<`, `<=`, `>`, or `>=` is not part of v0.1.
 
-String methods read their inputs and return independent values. Character
-positions are zero-based Unicode code-point positions (like Python), not UTF-8
-byte offsets or grapheme clusters. A character is a one-code-point `String`:
+String inspection and transformation methods read their inputs and return
+independent values. Character positions are zero-based Unicode code-point
+positions (like Python), not UTF-8 byte offsets or grapheme clusters. A
+character is a one-code-point `String`:
 
 ```moss
 fn main():
@@ -161,6 +162,13 @@ fn main():
   fields = "a,b,".split(",") # ["a", "b", ""]
   echo ",".join(fields)       # a,b,
 ```
+
+For allocation-aware construction, a writable String also supports
+`reserve(additional_bytes)` and `append(part)`. Capacity is measured in UTF-8
+bytes and is not observable; nonpositive reserve requests are no-ops. `append`
+reads but does not consume its part, and overlapping access such as
+`text.append(text)` is rejected. Use `text = text + text` for an intentional
+self-copy.
 
 `char_at` requires a valid nonnegative position; `split` requires a nonempty
 separator. Invalid inputs fail under current runtime precondition behavior.

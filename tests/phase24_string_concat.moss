@@ -1,0 +1,26 @@
+fn suffix(tag: String) -> String:
+  return "[" + tag + "]"
+
+fn main():
+  left = "moss"
+  right = "🙂"
+  combined = left + "-" + right
+  assertEqual(combined, "moss-🙂")
+  assertEqual(left, "moss")
+  assertEqual(right, "🙂")
+
+  var reused = "seed"
+  reused = reused + "-" + suffix("é")
+  assertEqual(reused, "seed-[é]")
+
+  var aliased = "ab"
+  aliased = aliased + aliased
+  assertEqual(aliased, "abab")
+
+  var builder = ""
+  builder.reserve(64)
+  builder.append("Moss")
+  builder.append("🙂")
+  builder.reserve(-1)
+  assertEqual(builder, "Moss🙂")
+  echo "string concat ok"
