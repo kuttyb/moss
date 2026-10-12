@@ -1,0 +1,73 @@
+import text
+
+test "prefix suffix and empty patterns":
+  assert(text.starts_with("moss", "mo"))
+  assert(text.ends_with("moss", "ss"))
+  assert(not text.starts_with("moss", "os"))
+  assert(not text.ends_with("moss", "mo"))
+  assert(text.starts_with("", ""))
+  assert(text.ends_with("", ""))
+  assert(text.starts_with("moss", ""))
+  assert(text.ends_with("moss", ""))
+
+test "first last and overlapping search":
+  assertEqual(text.find("bananana", "ana"), 1)
+  assertEqual(text.rfind("bananana", "ana"), 5)
+  assertEqual(text.find("abc", ""), 0)
+  assertEqual(text.rfind("abc", ""), 3)
+  assertEqual(text.find("", "x"), -1)
+  assertEqual(text.find("abc", "abcd"), -1)
+  assert(text.contains("café🙂", "fé"))
+  assert(not text.contains("café🙂", "xyz"))
+
+test "exact Unicode code point slicing":
+  value = "aé🙂z"
+  assert(text.valid_slice(value, 1, 2))
+  assertEqual(text.slice(value, 1, 2), "é🙂")
+  assertEqual(text.slice(value, 4, 0), "")
+  assertEqual(text.slice(value, -1, 1), "")
+  assertEqual(text.slice(value, 3, 2), "")
+  assert(not text.valid_slice(value, 3, 2))
+  assertEqual(text.slice("é", 0, 1), "e")
+  assertEqual(text.slice("é", 1, 1), "́")
+
+test "ASCII trim and case preserve non ASCII":
+  assertEqual(text.trim_ascii(" \t\nMoss\r "), "Moss")
+  assertEqual(text.trim_ascii(""), "")
+  assertEqual(text.trim_ascii("  "), "")
+  assertEqual(text.trim_ascii(" Moss "), " Moss ")
+  assertEqual(text.to_ascii_lower("AZ-é🙂"), "az-é🙂")
+  assertEqual(text.to_ascii_upper("az-é🙂"), "AZ-é🙂")
+
+test "replacement is non overlapping and empty safe":
+  assertEqual(text.replace_all("aaaa", "aa", "b"), "bb")
+  assertEqual(text.replace_all("banana", "ana", "X"), "bXna")
+  assertEqual(text.replace_all("abc", "b", ""), "ac")
+  assertEqual(text.replace_all("abc", "", "X"), "abc")
+  assertEqual(text.replace_all("é🙂é", "é", "e"), "e🙂e")
+
+test "split tokenization and joining":
+  fields = text.split("a,b,", ",")
+  assertEqual(fields |> count, 3)
+  assertEqual(fields[2], "")
+  whole = text.split("abc", "")
+  assertEqual(whole |> count, 1)
+  assertEqual(whole[0], "abc")
+  tokens = text.tokens_ascii(" \talpha  βeta\n🙂 ")
+  assertEqual(tokens |> count, 3)
+  assertEqual(tokens[0], "alpha")
+  assertEqual(tokens[1], "βeta")
+  assertEqual(tokens[2], "🙂")
+  assertEqual(text.join(tokens, "|"), "alpha|βeta|🙂")
+  assertEqual(text.concat(["a", "é", "🙂"]), "aé🙂")
+
+test "builder composes segments once":
+  var builder = text.new_builder()
+  text.builder_append(builder, "Moss")
+  text.builder_append(builder, " ")
+  text.builder_append(builder, "é🙂")
+  assertEqual(text.builder_segment_count(builder), 3)
+  assertEqual(text.builder_codepoint_length(builder), 7)
+  assertEqual(text.builder_build(builder), "Moss é🙂")
+  text.builder_append_line(builder, "!")
+  assertEqual(text.builder_build(builder), "Moss é🙂!\n")

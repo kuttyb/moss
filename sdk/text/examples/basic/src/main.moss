@@ -1,0 +1,15 @@
+module app
+import text
+
+fn main():
+  value = "  Moss é🙂  "
+  echo text.trim_ascii(value)
+  echo text.find(value, "é🙂")
+  echo text.slice(value, 7, 2)
+  echo text.replace_all(value, "Moss", "moss")
+
+  var builder = text.new_builder()
+  text.builder_append(builder, "code")
+  text.builder_append(builder, "-")
+  text.builder_append(builder, "points")
+  echo text.builder_build(builder)
