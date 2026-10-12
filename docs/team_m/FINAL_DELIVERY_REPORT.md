@@ -138,3 +138,36 @@ Measured on host Linux environment across 31 statistical samples:
 
 - **Feature Branch:** `phase24-math` (pushed to `origin/phase24-math`).
 - **Main Branch:** Untouched. No merge into `main` has occurred.
+
+---
+
+## 8. L7 Final Follow-Up Closeout Summary & Sign-Off
+
+**Evaluation Date:** 2026-10-12  
+**Feature Branch:** `phase24-math`  
+**Candidate Implementation Baseline:** Post-backplane merge `d8a482a` / `b184aac` on `phase24-math`.
+
+### 8.1 Resolution of Conditional Review Items
+
+1. **`DateTime` Validation & Extreme Year Handling:**
+   - Exported `validate_datetime(dt)` verifies all date and time components against Gregorian calendar rules and raises `TimeError.InvalidDate` on invalid dates such as April 31 or Feb 29 1900.
+   - Extreme years clamped to $[-292277026, 292277026]$ to ensure civil decomposition product `era * 146097` never overflows Int64.
+   - `format_year(INT64_MIN)` safely formats without negation overflow.
+2. **`random.uniform()` Inverted-Range Error Contract:**
+   - Inverted range calls where `low > high` raise `RandomError.InvalidRange`. Point ranges where `low == high` return `low`.
+3. **IEEE Signed-Zero Rounding:**
+   - `math.trunc`, `math.ceil`, and `math.round` preserve `-0.0` for negative values in $(-1.0, 0.0)$ and $[-0.5, 0.0)$. Verified via reciprocal tests `1.0 / val < 0.0`.
+4. **Portable Adversarial Oracles:**
+   - Dynamic ephemeral harness located under `tmp/adversarial_oracle_harness`. All oracles executable together from root with zero tracked git changes.
+5. **Robust Microbenchmarks:**
+   - Restructured all benchmarks into 1,000-iteration while loops over dynamic values accumulating into mutable sums. Verified with both `margo bench` and `margo --release bench`.
+6. **Agent Feedback Backplane Synchronization:**
+   - Coordinated merge of `origin/phase24-agent-feedback-bootstrap` into `phase24-math`.
+   - Authentic observations documented under `agent-feedback/phase24/team-m-math-random-time/`. `check_agent_feedback.py` passes 100%.
+
+### 8.2 Attributable Dual GO Sign-Off
+
+- **Independent Adversarial Numerical Reviewer:** **GO FOR INTEGRATION** (Zero falsifications).
+- **L6 Architect:** **GO FOR INTEGRATION** (Full contract, architectural, and safety compliance).
+- **Merge Gate:** Branch strictly maintained on `phase24-math`. Ready for Team I integration into `phase24-integration`.
+

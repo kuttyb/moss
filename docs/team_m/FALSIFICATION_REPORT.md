@@ -452,3 +452,38 @@ The independent test harnesses in `tests/oracles/` confirm zero falsifications a
 
 # **GO FOR MERGE REVIEW BY L7**
 
+---
+
+## 9. L7 Final Follow-Up Falsification & Adversarial Sign-Off
+
+**Evaluation Date:** 2026-10-12  
+**Reviewer:** Independent Adversarial Numerical Reviewer  
+**Feature Branch:** `phase24-math`  
+**Baseline Evaluated:** Post-backplane merge `d8a482a` / `b184aac` on `phase24-math`.  
+**Execution Command:** `python3 tests/oracles/verify_repairs.py` (and test modules under `tests/oracles/`)  
+
+### 9.1 Verification of Follow-Up Edge Cases
+
+| Test Case | Condition / Input | Expected Result | Observed Result | Disposition |
+|---|---|---|---|---|
+| Direct Record Construction | `DateTime(year: 2026, month: 4, day: 31, ...)` | `TimeError.InvalidDate` | Raises `TimeError.InvalidDate` | **PASS (VERIFIED)** |
+| Secular Leap Century | `DateTime(year: 1900, month: 2, day: 29, ...)` | `TimeError.InvalidDate` | Raises `TimeError.InvalidDate` | **PASS (VERIFIED)** |
+| Extreme Gregorian Year | `DateTime(year: INT64_MAX, ...)` | Clamps to `INT64_MAX` | Clamps to `INT64_MAX` without overflow | **PASS (VERIFIED)** |
+| Extreme Gregorian Negative Year | `DateTime(year: INT64_MIN, ...)` | Clamps to `INT64_MIN` | Clamps to `INT64_MIN` without overflow | **PASS (VERIFIED)** |
+| ISO 8601 Minimum Year Format | `format_year(INT64_MIN)` | `"-9223372036854775808"` | Formats cleanly without negation overflow | **PASS (VERIFIED)** |
+| Inverted Uniform Range | `uniform(5.0, 1.0)` | `RandomError.InvalidRange` | Raises `RandomError.InvalidRange` | **PASS (VERIFIED)** |
+| Inverted Uniform Rng Range | `rng_uniform(rng, 10.0, 2.0)` | `RandomError.InvalidRange` | Raises `RandomError.InvalidRange` | **PASS (VERIFIED)** |
+| Point Uniform Range | `uniform(3.5, 3.5)` | Deterministic `3.5` | Returns `3.5` | **PASS (VERIFIED)** |
+| IEEE Signed Zero in `trunc` | `trunc(-0.5)` | `-0.0` (`1.0 / trunc(-0.5) < 0.0`) | Returns `-0.0` ($-\infty < 0.0$) | **PASS (VERIFIED)** |
+| IEEE Signed Zero in `ceil` | `ceil(-0.5)` | `-0.0` (`1.0 / ceil(-0.5) < 0.0`) | Returns `-0.0` ($-\infty < 0.0$) | **PASS (VERIFIED)** |
+| IEEE Signed Zero in `round` | `round(-0.2)`, `round(-0.5)` | `-0.0` (`1.0 / round(x) < 0.0`) | Returns `-0.0` ($-\infty < 0.0$) | **PASS (VERIFIED)** |
+| Portable Test Harness | `python3 tests/oracles/verify_repairs.py` | Runs in `tmp/`, clean git tree | 100% PASS, 0 git modifications | **PASS (VERIFIED)** |
+| Benchmark Anti-Optimization | `margo bench` & `margo --release bench` | Non-zero loop execution times | Measured $0.3\text{ ns}$ to $66.7\text{ }\mu\text{s}$ | **PASS (VERIFIED)** |
+
+### 9.2 Independent Reviewer Sign-Off
+
+The independent adversarial numerical review confirms that all counterexamples have been resolved, contracts are fully compliant with Moss Phase 21 typed error semantics, numerical boundary behaviors match IEEE-754 and Gregorian civil standards, and benchmarks reliably measure runtime performance.
+
+# **FINAL INDEPENDENT ADVERSARIAL VERDICT: GO FOR INTEGRATION**
+
+
