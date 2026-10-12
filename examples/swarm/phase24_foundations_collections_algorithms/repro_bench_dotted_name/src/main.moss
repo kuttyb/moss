@@ -1,0 +1,4 @@
+module bench_probe
+
+export fn value() -> Int:
+  return 1
