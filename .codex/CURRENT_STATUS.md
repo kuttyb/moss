@@ -1,5 +1,23 @@
 # Moss current status
 
+## Phase 24 Team T focused capacity-builder workstream — 2026-10-12
+
+The additive `moss.text` capacity builder is implemented on compiler-owned
+`String.reserve` and `String.append`; every existing vector-builder API and
+contract remains unchanged. Semantic queries prove append `WRITE + READ`,
+reusable build `READ`, and zero-copy finish `CONSUME`. Native and Fast Debug
+tests pass 12/12, and the compiled-only ABI-v9 consumer passes positive behavior
+plus imported alias-conflict rejection.
+
+The final corrected release run measured finish at 1.48x/1.41x/1.29x idiomatic
+reserved Rust for 8/128/1024 segments, append-only at 1.36x, and reusable build
+at 1.22x. Three executions kept median-of-medians ratios at or below 1.49x.
+Rust allocator instrumentation reports the expected two finish
+allocations (owned part and reserved buffer); Moss allocation counts are not
+claimed. Detailed method and caveats are in
+`docs/PHASE_24_TEXT_ENCODING_CAPACITY_BUILDER.md`. Coordinator integration and
+full repository/Architect gates remain pending.
+
 ## Phase 24 Team T focused String concatenation checkpoint — 2026-10-12
 
 The compiler/runtime workstream replaces nonempty String formatting with a

@@ -35,10 +35,12 @@ checksums. It reports both idiomatic Rust UTF-8 operations and matching
 `Vec<i64>` algorithms so representation cost is not confused with generated
 code overhead. See `docs/PHASE_24_TEXT_ENCODING_UTF8_PERFORMANCE.md`.
 
-The focused casing/builder corpus is in `benches/case_builder.moss`. Its two
-tracked Rust references separate the equivalent `Vec<String>` segment contract
-from an aspirational capacity-reserved `String` builder and count Rust
-allocations in a separate, untimed run:
+The focused casing/builder corpus is in `benches/case_builder.moss`. It retains
+the equivalent `Vec<String>` segment baseline and also compares the additive
+Moss capacity builder with the same reserved Rust `String` workloads. Finish
+(consume), append with a preconstructed segment, and reusable snapshot build
+are timed separately. The allocation reference counts the Rust workloads in a
+separate untimed run; it does not claim Moss allocation counts:
 
 ```sh
 rustc --edition=2021 -D warnings -O -C debuginfo=1 case_builder_baseline.rs -o ../../tmp/team-t-case-builder
@@ -48,7 +50,7 @@ rustc --edition=2021 -D warnings -O -C debuginfo=1 case_builder_allocations.rs -
 ```
 
 See `docs/PHASE_24_TEXT_ENCODING_CASE_BUILDER_PERFORMANCE.md` for the matched
-workloads, results, and remaining builder-representation exception.
+workloads, results, and allocation/lowering interpretation.
 
 The x128 Margo search/slice rows amortize input setup but still construct their
 inputs inside each timed benchmark invocation; they are end-to-end rows, not

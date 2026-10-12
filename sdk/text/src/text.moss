@@ -173,3 +173,26 @@ export fn builder_codepoint_length(builder: Vector[String]) -> Int:
 
 export fn builder_build(builder: Vector[String]) -> String:
   return "".join(builder)
+
+# Creates a String-backed builder with an initial UTF-8 byte-capacity hint.
+# Nonpositive hints are accepted as zero. This additive builder complements the
+# segment-preserving Vector[String] builder above; it does not replace it.
+export fn new_capacity_builder(capacity_bytes: Int) -> String:
+  var builder = ""
+  builder.reserve(capacity_bytes)
+  return builder
+
+export fn capacity_builder_append(builder: String, part: String):
+  builder.append(part)
+
+export fn capacity_builder_append_line(builder: String, line: String):
+  builder.append(line)
+  builder.append("\n")
+
+# Returns an independent snapshot and leaves the builder reusable.
+export fn capacity_builder_build(builder: String) -> String:
+  return builder + ""
+
+# Consumes the builder and returns its backing String without a final copy.
+export fn capacity_builder_finish(builder: String) -> String:
+  return builder

@@ -80,4 +80,36 @@ fn main() {
         let result = black_box(reserved_string_builder(128));
         assert_eq!(result.len(), 1_024);
     });
+    for count in [8_usize, 128, 1_024] {
+        measured(&format!("Rust capacity builder finish {count}"), || {
+            let part = String::from("abcdefgh");
+            let mut builder = String::with_capacity(count * 8);
+            for _ in 0..count {
+                black_box(builder.push_str(black_box(&part)));
+            }
+            let result = black_box(builder);
+            assert_eq!(result.len(), count * 8);
+        });
+    }
+    measured("Rust capacity builder append preconstructed 128", || {
+        let part = String::from("abcdefgh");
+        let mut builder = String::with_capacity(1_024);
+        for _ in 0..128 {
+            black_box(builder.push_str(black_box(&part)));
+        }
+        assert_eq!(black_box(&builder).len(), 1_024);
+    });
+    let part = String::from("abcdefgh");
+    let mut builder = String::with_capacity(1_024);
+    for _ in 0..128 {
+        builder.push_str(&part);
+    }
+    measured("Rust capacity builder reusable build 128 x16", || {
+        let mut checksum = 0;
+        for _ in 0..16 {
+            let built = black_box(black_box(&builder).clone());
+            checksum += built.len();
+        }
+        assert_eq!(checksum, 16_384);
+    });
 }

@@ -44,7 +44,12 @@ with tempfile.TemporaryDirectory(prefix="text-source-free-", dir=SCRATCH) as tem
         '  var builder = text.new_builder()\n'
         '  text.builder_append(builder, "Moss")\n'
         '  text.builder_append(builder, "🙂")\n'
-        '  echo text.builder_build(builder)\n', encoding="utf-8")
+        '  echo text.builder_build(builder)\n'
+        '  var capacity = text.new_capacity_builder(16)\n'
+        '  text.capacity_builder_append(capacity, "Moss")\n'
+        '  text.capacity_builder_append_line(capacity, "🙂")\n'
+        '  echo text.capacity_builder_build(capacity)\n'
+        '  echo text.capacity_builder_finish(capacity)\n', encoding="utf-8")
     source_free_env = ENV | {"MOSS_MODULE_PATH": str(provider)}
     checked = subprocess.run([str(MOSS), "check", "src/main.moss", "--json"],
                              cwd=app, env=source_free_env, check=True,
@@ -55,5 +60,15 @@ with tempfile.TemporaryDirectory(prefix="text-source-free-", dir=SCRATCH) as tem
     result = subprocess.run([str(app / "build" / "debug" / "text_source_free_smoke")],
                             cwd=app, env=source_free_env, check=True,
                             capture_output=True, text=True)
-    assert result.stdout == "1\né🙂\naz-é🙂\nAZ-é🙂\nMoss🙂\n", result.stdout
+    assert result.stdout == "1\né🙂\naz-é🙂\nAZ-é🙂\nMoss🙂\nMoss🙂\n\nMoss🙂\n\n", result.stdout
+    (app / "src" / "main.moss").write_text(
+        'module app\nimport text\n\nfn main():\n'
+        '  var builder = text.new_capacity_builder(16)\n'
+        '  text.capacity_builder_append(builder, builder)\n', encoding="utf-8")
+    rejected = subprocess.run([str(MOSS), "check", "src/main.moss", "--json"],
+                              cwd=app, env=source_free_env, check=False,
+                              capture_output=True, text=True)
+    assert rejected.returncode != 0, rejected.stdout
+    diagnostic = json.loads(rejected.stdout)
+    assert diagnostic["error"]["code"] == "OWNERSHIP_CONFLICTING_ACCESS", diagnostic
 print("Compiled-only moss.text provider: check, build, run passed")

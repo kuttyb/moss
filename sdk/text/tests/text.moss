@@ -113,3 +113,24 @@ test "builder composes segments once":
   assertEqual(text.builder_build(builder), "Moss é🙂")
   text.builder_append_line(builder, "!")
   assertEqual(text.builder_build(builder), "Moss é🙂!\n")
+
+test "capacity builder reserves appends snapshots and finishes":
+  var builder = text.new_capacity_builder(32)
+  text.capacity_builder_append(builder, "Moss")
+  text.capacity_builder_append(builder, " ")
+  text.capacity_builder_append(builder, "é🙂")
+  snapshot = text.capacity_builder_build(builder)
+  assertEqual(snapshot, "Moss é🙂")
+  text.capacity_builder_append_line(builder, "!")
+  assertEqual(snapshot, "Moss é🙂")
+  assertEqual(text.capacity_builder_build(builder), "Moss é🙂!\n")
+  finished = text.capacity_builder_finish(builder)
+  assertEqual(finished, "Moss é🙂!\n")
+
+test "capacity builder accepts empty and nonpositive reservations":
+  var zero = text.new_capacity_builder(0)
+  text.capacity_builder_append(zero, "")
+  assertEqual(text.capacity_builder_finish(zero), "")
+  var negative = text.new_capacity_builder(-64)
+  text.capacity_builder_append(negative, "é🙂")
+  assertEqual(text.capacity_builder_finish(negative), "é🙂")

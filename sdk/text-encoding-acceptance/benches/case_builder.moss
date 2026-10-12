@@ -88,3 +88,63 @@ bench "profile builder build preconstructed 128 segments x16":
     run = run + 1
   assertEqual(text.builder_segment_count(builder), 128)
   assertEqual(checksum, 16384)
+
+bench "capacity builder finish 8 segments":
+  part = "abcdefgh"
+  var builder = text.new_capacity_builder(64)
+  var i = 0
+  while i < 8:
+    text.capacity_builder_append(builder, part)
+    i = i + 1
+  built = text.capacity_builder_finish(builder)
+  assertEqual(built.length(), 64)
+  assertEqual(built.char_at(0), "a")
+  assertEqual(built.char_at(63), "h")
+
+bench "capacity builder finish 128 segments":
+  part = "abcdefgh"
+  var builder = text.new_capacity_builder(1024)
+  var i = 0
+  while i < 128:
+    text.capacity_builder_append(builder, part)
+    i = i + 1
+  built = text.capacity_builder_finish(builder)
+  assertEqual(built.length(), 1024)
+  assertEqual(built.char_at(0), "a")
+  assertEqual(built.char_at(1023), "h")
+
+bench "capacity builder finish 1024 segments":
+  part = "abcdefgh"
+  var builder = text.new_capacity_builder(8192)
+  var i = 0
+  while i < 1024:
+    text.capacity_builder_append(builder, part)
+    i = i + 1
+  built = text.capacity_builder_finish(builder)
+  assertEqual(built.length(), 8192)
+  assertEqual(built.char_at(0), "a")
+  assertEqual(built.char_at(8191), "h")
+
+bench "capacity builder append preconstructed input 128 segments":
+  part = "abcdefgh"
+  var builder = text.new_capacity_builder(1024)
+  var i = 0
+  while i < 128:
+    text.capacity_builder_append(builder, part)
+    i = i + 1
+  assertEqual(builder.length(), 1024)
+
+bench "capacity builder reusable build preconstructed 128 segments x16":
+  part = "abcdefgh"
+  var builder = text.new_capacity_builder(1024)
+  var i = 0
+  while i < 128:
+    text.capacity_builder_append(builder, part)
+    i = i + 1
+  var checksum = 0
+  var run = 0
+  while run < 16:
+    built = text.capacity_builder_build(builder)
+    checksum = checksum + built.length()
+    run = run + 1
+  assertEqual(checksum, 16384)

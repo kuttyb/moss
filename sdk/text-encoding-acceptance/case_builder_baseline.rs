@@ -60,6 +60,10 @@ fn reserved_string_builder(count: usize) -> String {
     result
 }
 
+fn reusable_reserved_builder_build(builder: &String) -> String {
+    builder.clone()
+}
+
 fn main() {
     measure("Rust ASCII lower short 16 code points", || {
         let value = "AbCdEfGhIjKlMnOp";
@@ -130,7 +134,51 @@ fn main() {
                 black_box(built);
             },
         );
+        measure(
+            &format!("Rust capacity builder finish {count} segments"),
+            || {
+                let part = String::from("abcdefgh");
+                let mut builder = String::with_capacity(count * 8);
+                for _ in 0..count {
+                    black_box(builder.push_str(black_box(&part)));
+                }
+                let built = black_box(builder);
+                assert_eq!(built.chars().count(), count * 8);
+                assert_eq!(built.chars().nth(0), Some('a'));
+                assert_eq!(built.chars().nth(count * 8 - 1), Some('h'));
+            },
+        );
     }
+
+    measure(
+        "Rust capacity builder append preconstructed input 128 segments",
+        || {
+            let part = String::from("abcdefgh");
+            let mut builder = String::with_capacity(1_024);
+            for _ in 0..128 {
+                black_box(builder.push_str(black_box(&part)));
+            }
+            assert_eq!(black_box(&builder).chars().count(), 1_024);
+        },
+    );
+    let part = String::from("abcdefgh");
+    let mut reusable_builder = String::with_capacity(1_024);
+    for _ in 0..128 {
+        reusable_builder.push_str(&part);
+    }
+    measure(
+        "Rust capacity builder reusable build preconstructed 128 segments x16",
+        || {
+            let mut checksum = 0;
+            for _ in 0..16 {
+                let built = black_box(reusable_reserved_builder_build(
+                    black_box(&reusable_builder),
+                ));
+                checksum += built.chars().count();
+            }
+            assert_eq!(checksum, 16_384);
+        },
+    );
 
     measure(
         "Rust profile equivalent builder build preconstructed 128 segments x16",

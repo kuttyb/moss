@@ -44,6 +44,11 @@ characters unchanged.
 | `to_ascii_upper(value) -> String` | Map `a`–`z`; preserve every other code point. |
 | `join(parts, separator) -> String` | Join String parts with the separator. |
 | `concat(parts) -> String` | Join String parts without a separator. |
+| `new_capacity_builder(capacity_bytes) -> String` | Create a String-backed builder with an initial UTF-8 byte-capacity hint; nonpositive hints behave as zero. |
+| `capacity_builder_append(builder, part)` | Append without replacing the builder; the builder is mutated and the part is read. |
+| `capacity_builder_append_line(builder, line)` | Append the line followed by LF. |
+| `capacity_builder_build(builder) -> String` | Return an independent snapshot while leaving the builder reusable. |
+| `capacity_builder_finish(builder) -> String` | Consume the builder and return its accumulated String without a final copy. |
 
 Search and slicing use compiler-owned String primitives that preserve Moss's
 Unicode code-point index contract while avoiding per-code-point String vectors.
@@ -74,6 +79,32 @@ backend, the corrected release-provider benchmark measured the builder faster
 than repeated `String +` for its 128-segment workload. This remains a
 workload-specific result, not an unconditional performance guarantee. See the
 Team T performance report for the measured tradeoff.
+
+### Capacity-aware builder
+
+The additive capacity-aware builder stores text directly in a mutable `String`.
+Its capacity argument is an initial **UTF-8 byte** capacity hint, not a
+code-point count and not an output limit. A hint less than or equal to zero is
+accepted as zero. Appending preserves the exact String contents and does not
+change Moss's code-point index semantics elsewhere.
+
+Use `capacity_builder_build` when the builder must remain reusable: it returns
+an independent snapshot and therefore performs a final String copy. Prefer
+`capacity_builder_finish` when construction is complete; it consumes the
+builder and returns its backing String without that final copy.
+
+```moss
+var builder = text.new_capacity_builder(64)
+text.capacity_builder_append(builder, "hello")
+text.capacity_builder_append(builder, " ")
+text.capacity_builder_append(builder, "Moss")
+result = text.capacity_builder_finish(builder)
+```
+
+The original vector-backed builder API remains available with the same
+segment-count and code-point-length inspection contract. The two builder forms
+are intentionally separate because changing `new_builder()`'s return value
+would break source and source-free ABI consumers.
 
 ## Validation
 
