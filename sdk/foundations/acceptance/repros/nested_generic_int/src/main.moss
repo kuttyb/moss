@@ -1,0 +1,6 @@
+module app
+import collections
+
+fn main():
+  values = [2, 4]
+  assert(not collections.contains(values, 3))
