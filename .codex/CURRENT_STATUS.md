@@ -1,5 +1,24 @@
 # Moss current status
 
+## Phase 24 agent-feedback policy/onboarding workstream — 2026-10-12
+
+The `phase24-feedback-policy` worktree now defines the repository-wide
+developer-experience policy, valid example records, summary template, and Team T
+project guidance under `agent-feedback/`. `AGENTS.md` and the
+`moss-agent-workflow` skill require ongoing capture for ordinary Moss/SDK/compiler/
+runtime/ecosystem work while preserving the separate SWARM experimental protocol;
+work qualifying for both cross-links evidence instead of duplicating issue stores.
+The AGENTS Git boundary now positively authorizes remote pushes only on explicit
+user direction, replacing its earlier no-push wording.
+
+Focused validation passes: `./moss agent bootstrap --json` reports `moss-0.1`;
+`python3 tests/tooling/check_agent_skills.py` passes bootstrap, Margo discovery,
+drift, and live-example checks; both example JSONL lines parse and independently
+match the in-progress schema/validator contract; and `git diff --check` passed
+before this status update. This workstream does not own `SCHEMA.json`, the
+validator, or `tests/run.sh`; combined feedback validation and independent review
+remain integration responsibilities. No push was performed from this worktree.
+
 ## Phase 24 Foundations SDK independent Architect final adversarial GO; L7 merge gate — 2026-10-12
 
 Exact reviewed implementation: `23d625ba09d20490b8c5e98beddcd246b2bac416`
