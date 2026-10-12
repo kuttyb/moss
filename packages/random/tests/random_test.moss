@@ -157,3 +157,38 @@ test "long deterministic sequence consistency":
     i = i + 1
   # Average of 1000 uniform (0, 1) floats should be between 450 and 550
   assertEqual(sum > 450.0 and sum < 550.0, true)
+
+test "uniform float range and inverted range error contract":
+  var rng = random.new_rng(42)
+
+  # 1. Valid range returns value in [low, high]
+  var u = 0.0
+  try:
+    u = random.uniform(rng, 5.0, 10.0)
+  recover random.RandomError.InvalidRange:
+    u = 0.0
+  assertEqual(u >= 5.0 and u <= 10.0, true)
+
+  # 2. Point interval (low == high) returns low
+  var u_point = 0.0
+  try:
+    u_point = random.uniform(rng, 7.5, 7.5)
+  recover random.RandomError.InvalidRange:
+    u_point = 0.0
+  assertEqual(u_point, 7.5)
+
+  # 3. Inverted range (low > high) raises RandomError.InvalidRange
+  var caught_inv = false
+  try:
+    random.uniform(rng, 10.0, 5.0)
+  recover random.RandomError.InvalidRange:
+    caught_inv = true
+  assertEqual(caught_inv, true)
+
+  # 4. rng_uniform alias raises RandomError.InvalidRange on inverted range
+  var caught_alias = false
+  try:
+    random.rng_uniform(rng, 100.0, -10.0)
+  recover random.RandomError.InvalidRange:
+    caught_alias = true
+  assertEqual(caught_alias, true)

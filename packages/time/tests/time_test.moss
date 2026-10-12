@@ -412,3 +412,55 @@ test "iso 8601 extended year formatting":
   # Greater than 9999 uses +YYYYY
   dt2 = time.make_datetime(12345, 1, 15, 0, 0, 0, 0)
   assertEqual(time.datetime_to_iso8601(dt2), "+12345-01-15T00:00:00.000Z")
+
+test "direct record construction boundary validation and extreme years":
+  # 1. Direct record construction with April 31 rejected at conversion boundary
+  dt_bad_apr = time.DateTime(year: 2024, month: 4, day: 31, hour: 12, minute: 0, second: 0, millisecond: 0)
+  var caught_apr = false
+  try:
+    time.datetime_to_timestamp(dt_bad_apr)
+  recover time.TimeError.InvalidDate:
+    caught_apr = true
+  assertEqual(caught_apr, true)
+
+  # 2. Direct record construction with Feb 29 1900 rejected at conversion boundary
+  dt_bad_feb = time.DateTime(year: 1900, month: 2, day: 29, hour: 0, minute: 0, second: 0, millisecond: 0)
+  var caught_feb = false
+  try:
+    time.datetime_to_timestamp(dt_bad_feb)
+  recover time.TimeError.InvalidDate:
+    caught_feb = true
+  assertEqual(caught_feb, true)
+
+  # 3. Direct record construction with month out of bounds (month = 13)
+  dt_bad_month = time.DateTime(year: 2024, month: 13, day: 1, hour: 0, minute: 0, second: 0, millisecond: 0)
+  var caught_month = false
+  try:
+    time.datetime_to_timestamp(dt_bad_month)
+  recover time.TimeError.InvalidDate:
+    caught_month = true
+  assertEqual(caught_month, true)
+
+  # 4. Direct record construction with negative time fields
+  dt_bad_hour = time.DateTime(year: 2024, month: 1, day: 1, hour: -1, minute: 0, second: 0, millisecond: 0)
+  var caught_hour = false
+  try:
+    time.datetime_to_timestamp(dt_bad_hour)
+  recover time.TimeError.InvalidDate:
+    caught_hour = true
+  assertEqual(caught_hour, true)
+
+  # 5. Direct record construction with extreme positive year (INT64_MAX)
+  dt_ext_max = time.DateTime(year: 9223372036854775807, month: 1, day: 1, hour: 0, minute: 0, second: 0, millisecond: 0)
+  ts_ext_max = time.datetime_to_timestamp(dt_ext_max)
+  assertEqual(ts_ext_max.epoch_millis, 9223372036854775807)
+
+  # 6. Direct record construction with extreme negative year (INT64_MIN)
+  dt_ext_min = time.DateTime(year: -9223372036854775808, month: 1, day: 1, hour: 0, minute: 0, second: 0, millisecond: 0)
+  ts_ext_min = time.datetime_to_timestamp(dt_ext_min)
+  assertEqual(ts_ext_min.epoch_millis, -9223372036854775808)
+
+  # 7. ISO formatting for INT64_MIN year
+  dt_min_iso = time.DateTime(year: -9223372036854775808, month: 1, day: 1, hour: 0, minute: 0, second: 0, millisecond: 0)
+  iso_min = time.datetime_to_iso8601(dt_min_iso)
+  assertEqual(iso_min, "-9223372036854775808-01-01T00:00:00.000Z")

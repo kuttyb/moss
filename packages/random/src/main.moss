@@ -190,10 +190,15 @@ export fn rng_randbool(rng: Rng) -> Bool:
   return rng.randbool()
 
 export fn uniform(rng: Rng, low: Float, high: Float) -> Float:
-  if low >= high:
+  if low > high:
+    raise RandomError.InvalidRange
+  if low == high:
     return low
   f = rng.next_float()
   return low + (high - low) * f
+
+export fn rng_uniform(rng: Rng, low: Float, high: Float) -> Float:
+  return uniform(rng, low, high)
 
 # Safe choice: returns item at random index or raises RandomError.EmptyCollection
 export fn choice(items: Vector[Int], rng: Rng) -> Int:

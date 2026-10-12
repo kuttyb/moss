@@ -139,7 +139,9 @@ export fn signum_int(x: Int) -> Int:
 # --- Rounding Functions (Exact 2^52 Constant Shift Identity) ---
 
 export fn trunc(x: Float) -> Float:
-  if not is_finite(x) or is_nan(x) or x == 0.0:
+  if not is_finite(x) or is_nan(x):
+    return x
+  if x == 0.0:
     return x
   let m = 4503599627370496.0
   if x >= m or x <= 0.0 - m:
@@ -153,41 +155,65 @@ export fn trunc(x: Float) -> Float:
     r = (x - m) + m
     if r < x:
       r = r + 1.0
+    if r == 0.0:
+      return (0.0 - 1.0) * 0.0
   return r
 
 export fn floor(x: Float) -> Float:
+  if not is_finite(x) or is_nan(x):
+    return x
+  if x == 0.0:
+    return x
   t = trunc(x)
   if x < 0.0 and x != t:
     return t - 1.0
   return t
 
 export fn ceil(x: Float) -> Float:
+  if not is_finite(x) or is_nan(x):
+    return x
+  if x == 0.0:
+    return x
   t = trunc(x)
   if x > 0.0 and x != t:
     return t + 1.0
+  if x < 0.0 and t == 0.0:
+    return (0.0 - 1.0) * 0.0
   return t
 
 export fn round(x: Float) -> Float:
   if not is_finite(x) or is_nan(x):
+    return x
+  if x == 0.0:
     return x
   t = trunc(x)
   var diff = x - t
   if diff < 0.0:
     diff = 0.0 - diff
   if diff < 0.5:
+    if t == 0.0 and x < 0.0:
+      return (0.0 - 1.0) * 0.0
     return t
   if diff > 0.5:
     if x > 0.0:
       return t + 1.0
-    return t - 1.0
+    res = t - 1.0
+    if res == 0.0 and x < 0.0:
+      return (0.0 - 1.0) * 0.0
+    return res
   # Exact halfway case: round ties to even
   half_t = trunc(t / 2.0)
   is_even = (t - half_t * 2.0) == 0.0
   if is_even:
+    if t == 0.0 and x < 0.0:
+      return (0.0 - 1.0) * 0.0
     return t
   if x > 0.0:
     return t + 1.0
-  return t - 1.0
+  res = t - 1.0
+  if res == 0.0 and x < 0.0:
+    return (0.0 - 1.0) * 0.0
+  return res
 
 # --- Transcendental Functions ---
 
