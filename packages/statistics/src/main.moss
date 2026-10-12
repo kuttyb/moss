@@ -38,13 +38,38 @@ export type RunningStats:
 
 export fn kahan_sum(v: Vector[Float]) -> Float:
   let n = v |> count
-  var sum = 0.0
-  var c = 0.0
+  if n == 0:
+    return 0.0
+  var has_nan = false
+  var has_pos_inf = false
+  var has_neg_inf = false
   var i = 0
   while i < n:
     let x = v[i]
     if math.is_nan(x):
-      return math.nan()
+      has_nan = true
+    else:
+      if math.is_infinite(x):
+        if x > 0.0:
+          has_pos_inf = true
+        else:
+          has_neg_inf = true
+    i = i + 1
+  if has_nan:
+    return math.nan()
+  if has_pos_inf and has_neg_inf:
+    return math.nan()
+  if has_pos_inf:
+    return math.infinity()
+  if has_neg_inf:
+    return math.neg_infinity()
+
+  # Neumaier compensated summation for finite floats
+  var sum = 0.0
+  var c = 0.0
+  i = 0
+  while i < n:
+    let x = v[i]
     let t = sum + x
     if math.abs(sum) >= math.abs(x):
       c = c + ((sum - t) + x)
@@ -145,6 +170,8 @@ export fn variance(v: Vector[Float], sample: Bool) -> Float:
     raise StatsError.InsufficientData
 
   let m = mean(v)
+  if math.is_nan(m) or math.is_infinite(m):
+    return math.nan()
 
   # Two-pass mean-centered algorithm with Kahan compensation
   var sum_sq = 0.0
@@ -198,6 +225,8 @@ export fn covariance(x: Vector[Float], y: Vector[Float], sample: Bool) -> Float:
 
   let mx = mean(x)
   let my = mean(y)
+  if math.is_nan(mx) or math.is_infinite(mx) or math.is_nan(my) or math.is_infinite(my):
+    return math.nan()
 
   var sum_prod = 0.0
   var c = 0.0
@@ -227,24 +256,27 @@ export fn correlation(x: Vector[Float], y: Vector[Float]) -> Float:
   let sx = std_dev(x, true)
   let sy = std_dev(y, true)
 
+  if math.is_nan(sx) or math.is_nan(sy):
+    return math.nan()
+
   if sx == 0.0 or sy == 0.0:
     raise StatsError.ZeroVariance
 
   let cov = covariance(x, y, true)
-  let r = cov / (sx * sy)
+  if math.is_nan(cov):
+    return math.nan()
 
-  # Architect mandate: clamp strictly to [-1.0, 1.0] to guard against roundoff
+  let r = cov / (sx * sy)
   return math.clamp(r, 0.0 - 1.0, 1.0)
 
 # --- Float Heapsort & Order Statistics ---
 
-fn sift_down_floats(v: Vector[Float], start: Int, end_idx: Int):
+fn sift_down(v: Vector[Float], start: Int, end_idx: Int):
   var root = start
   while (root * 2 + 1) <= end_idx:
     var child = root * 2 + 1
-    let right = child + 1
-    if right <= end_idx and v[child] < v[right]:
-      child = right
+    if (child + 1) <= end_idx and v[child] < v[child + 1]:
+      child = child + 1
     if v[root] < v[child]:
       let tmp = v[root]
       v[root] = v[child]
@@ -276,29 +308,30 @@ export fn sort_floats(v: Vector[Float]) -> Vector[Float]:
     res.push(v[i])
     i = i + 1
 
-  var start = (n - 2) / 2
-  while start >= 0:
-    sift_down_floats(res, start, n - 1)
-    start = start - 1
+  # Heapify
+  var p = (n - 2) / 2
+  while p >= 0:
+    sift_down(res, p, n - 1)
+    p = p - 1
 
+  # Extract max iteratively
   var end_idx = n - 1
   while end_idx > 0:
     let tmp = res[0]
     res[0] = res[end_idx]
     res[end_idx] = tmp
     end_idx = end_idx - 1
-    sift_down_floats(res, 0, end_idx)
+    sift_down(res, 0, end_idx)
 
   return res
 
-fn float_to_int_nonneg(x: Float) -> Int:
+fn float_to_int_nonneg(f: Float) -> Int:
   var low = 0
-  var high = 9223372036854775807
+  var high = 1000000000
   var ans = 0
   while low <= high:
-    let mid = (low + high) / 2
-    let mf = mid * 1.0
-    if mf <= x:
+    let mid = low + (high - low) / 2
+    if (mid * 1.0) <= f:
       ans = mid
       low = mid + 1
     else:
@@ -326,7 +359,14 @@ export fn quantile(v: Vector[Float], q: Float) -> Float:
 
   let val_i = sorted[i]
   let val_next = sorted[i + 1]
-  return val_i + f * (val_next - val_i)
+
+  # Overflow-safe convex interpolation: (1-f)*a + f*b guards against
+  # intermediate overflow when val_next - val_i > MAX_FLOAT (e.g. [-1e308, 1e308])
+  if val_i == val_next or f == 0.0:
+    return val_i
+  if f == 1.0:
+    return val_next
+  return (1.0 - f) * val_i + f * val_next
 
 export fn median(v: Vector[Float]) -> Float:
   return quantile(v, 0.5)
@@ -348,7 +388,9 @@ export fn new_running_stats() -> RunningStats:
 
 export fn running_update(s: RunningStats, x: Float):
   if math.is_nan(x):
-    return
+    raise StatsError.InvalidValue
+  if s.count < 0 or s.count >= 9223372036854775807:
+    raise StatsError.InvalidValue
   s.count = s.count + 1
   let delta = x - s.mean_val
   s.mean_val = s.mean_val + delta / (s.count * 1.0)
@@ -381,6 +423,11 @@ export fn running_std_dev(s: RunningStats, sample: Bool) -> Float:
   return math.sqrt_val(var_val)
 
 export fn running_combine(a: RunningStats, b: RunningStats) -> RunningStats:
+  if a.count < 0 or b.count < 0:
+    raise StatsError.InvalidValue
+  if a.count > 0 and b.count > 9223372036854775807 - a.count:
+    raise StatsError.InvalidValue
+
   if a.count == 0:
     return RunningStats(count: b.count, mean_val: b.mean_val, m2: b.m2, min_val: b.min_val, max_val: b.max_val)
   if b.count == 0:
@@ -392,7 +439,7 @@ export fn running_combine(a: RunningStats, b: RunningStats) -> RunningStats:
   let delta = b.mean_val - a.mean_val
   let new_mean = a.mean_val + delta * (nb / n_total)
 
-  # Architect mandate: float scaling (na / n_total) * nb protects against 64-bit int overflow
+  # Float scaling (na / n_total) * nb protects against 64-bit int overflow
   let new_m2 = a.m2 + b.m2 + delta * delta * ((na / n_total) * nb)
   let new_min = math.min(a.min_val, b.min_val)
   let new_max = math.max(a.max_val, b.max_val)

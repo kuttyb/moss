@@ -5,8 +5,7 @@ import math
 
 # ============================================================================
 # Moss Phase 24 — Package B: moss.sparse
-# Compressed Sparse Row (CSR) and Compressed Sparse Column (CSC) representations,
-# coordinate triplet assembly with additive duplicate summation, SpMV, and SpMM.
+# Compressed Sparse Row (CSR) & Column (CSC) formats, SpMV, SpMM, and conversions.
 # ============================================================================
 
 # --- Types & Error Contracts ---
@@ -14,7 +13,6 @@ import math
 export enum SparseError:
   InvalidDimensions
   DimensionMismatch
-  InvalidStructure
   IndexOutOfBounds
 
 export type Triplet:
@@ -36,23 +34,34 @@ export type CscMatrix:
   row_indices: Vector[Int]
   values: Vector[Float]
 
-# --- Triplet Sorting & CSR Assembly ---
+# --- Sorting & Triplet Assembly Helpers ---
 
-fn triplet_less(a: Triplet, b: Triplet) -> Bool:
-  if a.row < b.row:
-    return true
-  if a.row > b.row:
-    return false
-  return a.col < b.col
-
-fn sift_down_triplets(triplets, start: Int, end_idx: Int):
+fn sift_down_triplets(triplets: Vector[Triplet], start: Int, end_idx: Int):
   var root = start
   while (root * 2 + 1) <= end_idx:
     var child = root * 2 + 1
-    let right = child + 1
-    if right <= end_idx and triplet_less(triplets[child], triplets[right]):
-      child = right
-    if triplet_less(triplets[root], triplets[child]):
+    if (child + 1) <= end_idx:
+      let c1 = triplets[child]
+      let c2 = triplets[child + 1]
+      var take_right = false
+      if c2.row > c1.row:
+        take_right = true
+      else:
+        if c2.row == c1.row and c2.col > c1.col:
+          take_right = true
+      if take_right:
+        child = child + 1
+
+    let root_item = triplets[root]
+    let child_item = triplets[child]
+    var swap_needed = false
+    if child_item.row > root_item.row:
+      swap_needed = true
+    else:
+      if child_item.row == root_item.row and child_item.col > root_item.col:
+        swap_needed = true
+
+    if swap_needed:
       let tmp = triplets[root]
       triplets[root] = triplets[child]
       triplets[child] = tmp
@@ -60,14 +69,14 @@ fn sift_down_triplets(triplets, start: Int, end_idx: Int):
     else:
       return
 
-fn heapsort_triplets(triplets):
+fn heapsort_triplets(triplets: Vector[Triplet]):
   let count_t = triplets |> count
   if count_t <= 1:
     return
-  var start = (count_t - 2) / 2
-  while start >= 0:
-    sift_down_triplets(triplets, start, count_t - 1)
-    start = start - 1
+  var p = (count_t - 2) / 2
+  while p >= 0:
+    sift_down_triplets(triplets, p, count_t - 1)
+    p = p - 1
   var end_idx = count_t - 1
   while end_idx > 0:
     let tmp = triplets[0]
@@ -79,11 +88,11 @@ fn heapsort_triplets(triplets):
 export fn from_triplets(rows: Int, cols: Int, in_triplets: Vector[Triplet]) -> CsrMatrix:
   if rows <= 0 or cols <= 0:
     raise SparseError.InvalidDimensions
-  let n_t = in_triplets |> count
+  let n = in_triplets |> count
   var i = 0
-  while i < n_t:
-    let t = in_triplets[i]
-    if t.row < 0 or t.row >= rows or t.col < 0 or t.col >= cols:
+  while i < n:
+    let tr = in_triplets[i]
+    if tr.row < 0 or tr.row >= rows or tr.col < 0 or tr.col >= cols:
       raise SparseError.IndexOutOfBounds
     i = i + 1
 
@@ -93,34 +102,36 @@ export fn from_triplets(rows: Int, cols: Int, in_triplets: Vector[Triplet]) -> C
   var col_indices = Vector[Int]()
   var values = Vector[Float]()
 
-  row_ptrs.push(0)
   var current_row = 0
+  row_ptrs.push(0)
+
   var current_col = 0 - 1
   var current_val = 0.0
   var has_entry = false
 
   var k = 0
-  while k < n_t:
-    let t = in_triplets[k]
-    if not has_entry:
-      while current_row < t.row:
-        row_ptrs.push(col_indices |> count)
-        current_row = current_row + 1
-      current_col = t.col
-      current_val = t.value
-      has_entry = true
-    else:
-      if t.row == current_row and t.col == current_col:
-        # Architect mandate: duplicate coordinates MUST be summed
-        current_val = current_val + t.value
-      else:
+  while k < n:
+    let tr = in_triplets[k]
+    while current_row < tr.row:
+      if has_entry:
         col_indices.push(current_col)
         values.push(current_val)
-        while current_row < t.row:
-          row_ptrs.push(col_indices |> count)
-          current_row = current_row + 1
-        current_col = t.col
-        current_val = t.value
+        has_entry = false
+      row_ptrs.push(col_indices |> count)
+      current_row = current_row + 1
+      current_col = 0 - 1
+      current_val = 0.0
+
+    if has_entry and tr.col == current_col:
+      current_val = current_val + tr.value
+    else:
+      if has_entry:
+        col_indices.push(current_col)
+        values.push(current_val)
+      current_col = tr.col
+      current_val = tr.value
+      has_entry = true
+
     k = k + 1
 
   if has_entry:
@@ -200,14 +211,20 @@ export fn validate_csc(m: CscMatrix) -> Bool:
   return true
 
 export fn nnz(m: CsrMatrix) -> Int:
+  if not validate_csr(m):
+    raise SparseError.InvalidDimensions
   return m.values |> count
 
 export fn density(m: CsrMatrix) -> Float:
+  if not validate_csr(m):
+    raise SparseError.InvalidDimensions
   let count_nnz = m.values |> count
   let denom = (m.rows * 1.0) * (m.cols * 1.0)
   return (count_nnz * 1.0) / denom
 
 export fn csr_get(m: CsrMatrix, r: Int, c: Int) -> Float:
+  if not validate_csr(m):
+    raise SparseError.InvalidDimensions
   if r < 0 or r >= m.rows or c < 0 or c >= m.cols:
     raise SparseError.IndexOutOfBounds
   let start_idx = m.row_ptrs[r]
@@ -226,6 +243,8 @@ export fn csr_get(m: CsrMatrix, r: Int, c: Int) -> Float:
   return 0.0
 
 export fn csr_eliminate_zeros(m: CsrMatrix, tol: Float) -> CsrMatrix:
+  if not validate_csr(m):
+    raise SparseError.InvalidDimensions
   var row_ptrs = Vector[Int]()
   var col_indices = Vector[Int]()
   var values = Vector[Float]()
@@ -250,6 +269,8 @@ export fn csr_eliminate_zeros(m: CsrMatrix, tol: Float) -> CsrMatrix:
 export fn from_dense(m: linalg.Matrix) -> CsrMatrix:
   if m.rows <= 0 or m.cols <= 0:
     raise SparseError.InvalidDimensions
+  if (m.data |> count) != m.rows * m.cols:
+    raise SparseError.InvalidDimensions
   var row_ptrs = Vector[Int]()
   var col_indices = Vector[Int]()
   var values = Vector[Float]()
@@ -268,6 +289,8 @@ export fn from_dense(m: linalg.Matrix) -> CsrMatrix:
   return CsrMatrix(rows: m.rows, cols: m.cols, row_ptrs: row_ptrs, col_indices: col_indices, values: values)
 
 export fn to_dense(m: CsrMatrix) -> linalg.Matrix:
+  if not validate_csr(m):
+    raise SparseError.InvalidDimensions
   var dense = linalg.zeros(m.rows, m.cols)
   var r = 0
   while r < m.rows:
@@ -283,6 +306,8 @@ export fn to_dense(m: CsrMatrix) -> linalg.Matrix:
 # --- Structural Conversions & Transpose ---
 
 export fn csr_to_csc(m: CsrMatrix) -> CscMatrix:
+  if not validate_csr(m):
+    raise SparseError.InvalidDimensions
   let nnz_count = m.values |> count
   var col_counts = Vector[Int]()
   var c = 0
@@ -332,6 +357,8 @@ export fn csr_to_csc(m: CsrMatrix) -> CscMatrix:
   return CscMatrix(rows: m.rows, cols: m.cols, col_ptrs: col_ptrs, row_indices: row_indices, values: values)
 
 export fn csc_to_csr(m: CscMatrix) -> CsrMatrix:
+  if not validate_csc(m):
+    raise SparseError.InvalidDimensions
   let nnz_count = m.values |> count
   var row_counts = Vector[Int]()
   var r = 0
@@ -381,6 +408,8 @@ export fn csc_to_csr(m: CscMatrix) -> CsrMatrix:
   return CsrMatrix(rows: m.rows, cols: m.cols, row_ptrs: row_ptrs, col_indices: col_indices, values: values)
 
 export fn csr_transpose(m: CsrMatrix) -> CsrMatrix:
+  if not validate_csr(m):
+    raise SparseError.InvalidDimensions
   let nnz_count = m.values |> count
   var col_counts = Vector[Int]()
   var c = 0
@@ -432,6 +461,8 @@ export fn csr_transpose(m: CsrMatrix) -> CsrMatrix:
 # --- Arithmetic & Matrix Operations ---
 
 export fn csr_scale(m: CsrMatrix, s: Float) -> CsrMatrix:
+  if not validate_csr(m):
+    raise SparseError.InvalidDimensions
   var new_vals = Vector[Float]()
   let total_nnz = m.values |> count
   var i = 0
@@ -456,6 +487,8 @@ export fn csr_scale(m: CsrMatrix, s: Float) -> CsrMatrix:
   return CsrMatrix(rows: m.rows, cols: m.cols, row_ptrs: new_row_ptrs, col_indices: new_col_indices, values: new_vals)
 
 export fn csr_mat_vec_mul(m: CsrMatrix, v: Vector[Float]) -> Vector[Float]:
+  if not validate_csr(m):
+    raise SparseError.InvalidDimensions
   let v_len = v |> count
   if m.cols != v_len:
     raise SparseError.DimensionMismatch
@@ -475,6 +508,8 @@ export fn csr_mat_vec_mul(m: CsrMatrix, v: Vector[Float]) -> Vector[Float]:
   return res
 
 export fn csr_mat_add(a: CsrMatrix, b: CsrMatrix) -> CsrMatrix:
+  if not validate_csr(a) or not validate_csr(b):
+    raise SparseError.InvalidDimensions
   if a.rows != b.rows or a.cols != b.cols:
     raise SparseError.DimensionMismatch
   var row_ptrs = Vector[Int]()
@@ -520,6 +555,8 @@ export fn csr_mat_add(a: CsrMatrix, b: CsrMatrix) -> CsrMatrix:
   return CsrMatrix(rows: a.rows, cols: a.cols, row_ptrs: row_ptrs, col_indices: col_indices, values: values)
 
 export fn csr_mat_mul(a: CsrMatrix, b: CsrMatrix) -> CsrMatrix:
+  if not validate_csr(a) or not validate_csr(b):
+    raise SparseError.InvalidDimensions
   if a.cols != b.rows:
     raise SparseError.DimensionMismatch
   var row_ptrs = Vector[Int]()
@@ -568,16 +605,15 @@ export fn csr_mat_mul(a: CsrMatrix, b: CsrMatrix) -> CsrMatrix:
       cols_in_row[j + 1] = key
       i = i + 1
 
-    var idx = 0
-    while idx < n_cols_row:
-      let col_idx = cols_in_row[idx]
+    i = 0
+    while i < n_cols_row:
+      let col_idx = cols_in_row[i]
       let val = acc[col_idx]
-      if val != 0.0:
-        col_indices.push(col_idx)
-        values.push(val)
+      col_indices.push(col_idx)
+      values.push(val)
       acc[col_idx] = 0.0
       visited[col_idx] = false
-      idx = idx + 1
+      i = i + 1
 
     row_ptrs.push(col_indices |> count)
     r = r + 1

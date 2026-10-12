@@ -188,3 +188,47 @@ test "singular and non square error handling":
   recover linalg.LinalgError.NonSquareMatrix:
     caught_non_square = true
   assert(caught_non_square)
+
+test "IEEE 754 non-finite mat_mul and norms":
+  let a_data = [0.0, 1.0, 0.0, 2.0]
+  let a = linalg.from_vector(2, 2, a_data)
+  let inf_val = math.infinity()
+  let nan_val = math.nan()
+  let b_data = [inf_val, 3.0, nan_val, 4.0]
+  let b = linalg.from_vector(2, 2, b_data)
+  let prod = linalg.mat_mul(a, b)
+  assert(math.is_nan(linalg.matrix_get(prod, 0, 0)))
+  assertEqual(linalg.matrix_get(prod, 0, 1), 4.0)
+
+  var v_inf = [1.0, inf_val, 3.0]
+  assertEqual(linalg.vec_norm(v_inf), inf_val)
+  assertEqual(linalg.vec_norm_l1(v_inf), inf_val)
+  assertEqual(linalg.vec_norm_inf(v_inf), inf_val)
+
+  var v_nan = [1.0, nan_val, 3.0]
+  assert(math.is_nan(linalg.vec_norm(v_nan)))
+  assert(math.is_nan(linalg.vec_norm_l1(v_nan)))
+  assert(math.is_nan(linalg.vec_norm_inf(v_nan)))
+
+  let m_inf = linalg.from_vector(2, 2, [1.0, 2.0, inf_val, 4.0])
+  assertEqual(linalg.mat_norm_frobenius(m_inf), inf_val)
+
+  let m_nan = linalg.from_vector(2, 2, [1.0, 2.0, nan_val, 4.0])
+  assert(math.is_nan(linalg.mat_norm_frobenius(m_nan)))
+
+test "malformed direct matrix construction validation":
+  let bad_len_matrix = linalg.Matrix(rows: 2, cols: 2, data: [1.0, 2.0])
+  var caught_bad_len = false
+  try:
+    ignored = linalg.matrix_get(bad_len_matrix, 0, 0)
+  recover linalg.LinalgError.InvalidDimensions:
+    caught_bad_len = true
+  assert(caught_bad_len)
+
+  let bad_dim_matrix = linalg.Matrix(rows: 0, cols: 3, data: Vector[Float]())
+  var caught_bad_dim = false
+  try:
+    ignored = linalg.transpose(bad_dim_matrix)
+  recover linalg.LinalgError.InvalidDimensions:
+    caught_bad_dim = true
+  assert(caught_bad_dim)

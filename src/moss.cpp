@@ -31268,17 +31268,17 @@ static void parse_test_failure_detail(ProjectTestResult& result) {
 
 static vector<ProjectTestResult> run_project_tests(
     const ProjectManifest& manifest, const string& filter,
-    const AffectedTestPlan* affected = nullptr) {
+    const AffectedTestPlan* affected = nullptr, bool release = false) {
   vector<ProjectTestResult> results;
   auto sources = project_declaration_sources(manifest, "tests");
-  std::filesystem::path directory = manifest.root / "build" / "test";
+  std::filesystem::path directory = manifest.root / "build" / (release ? "test_release" : "test");
   std::set<string> selected_ids;
   if (affected)
     for (const auto& entry : affected->selected_by_source)
       selected_ids.insert(entry.second.begin(), entry.second.end());
   if (affected && selected_ids.empty()) return results;
   NativeArtifact artifact = compile_native_artifact(
-      manifest, sources, directory, false, true, ProgramGenerationMode::Tests,
+      manifest, sources, directory, release, !release, ProgramGenerationMode::Tests,
       tooling_name(manifest.name) + "_tests", filter,
       affected ? &selected_ids : nullptr);
   if (artifact.tests.empty()) {
@@ -31347,11 +31347,12 @@ static vector<ProjectTestResult> run_project_tests(
 
 static int report_project_tests(const ProjectManifest& manifest,
                                 const string& filter, bool json,
-                                bool affected_only = false) {
+                                bool affected_only = false,
+                                bool release = false) {
   std::optional<AffectedTestPlan> affected;
   if (affected_only) affected = select_affected_tests(manifest, filter);
   vector<ProjectTestResult> results = run_project_tests(
-      manifest, filter, affected ? &*affected : nullptr);
+      manifest, filter, affected ? &*affected : nullptr, release);
   size_t passed = static_cast<size_t>(std::count_if(
       results.begin(), results.end(),
       [](const ProjectTestResult& result) { return result.passed; }));
@@ -32986,6 +32987,7 @@ static int run_project_command(int argc, char** argv) {
     if (command == "test") {
       string filter;
       bool affected = false;
+      bool release = false;
       for (int index = 2; index < argc; ++index) {
         string argument = argv[index];
         if (argument == "--json") continue;
@@ -32993,12 +32995,16 @@ static int run_project_command(int argc, char** argv) {
           affected = true;
           continue;
         }
+        if (argument == "--release") {
+          release = true;
+          continue;
+        }
         if (!filter.empty())
           throw ProjectError("TEST_DISCOVERY_ERROR",
                              "moss test accepts at most one filter");
         filter = argument;
       }
-      return report_project_tests(manifest, filter, json, affected);
+      return report_project_tests(manifest, filter, json, affected, release);
     }
     if (command == "bench") {
       string filter;

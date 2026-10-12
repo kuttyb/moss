@@ -120,3 +120,20 @@ test "eliminate zeros":
   assertEqual(sparse.csr_get(pruned, 0, 0), 5.0)
   assertEqual(sparse.csr_get(pruned, 0, 1), 0.0)
   assertEqual(sparse.csr_get(pruned, 1, 1), 2.0)
+
+test "malformed sparse record validation":
+  let bad_rp_csr = sparse.CsrMatrix(rows: 2, cols: 2, row_ptrs: [0], col_indices: Vector[Int](), values: Vector[Float]())
+  var caught_bad_rp = false
+  try:
+    ignored = sparse.csr_get(bad_rp_csr, 0, 0)
+  recover sparse.SparseError.InvalidDimensions:
+    caught_bad_rp = true
+  assert(caught_bad_rp)
+
+  let bad_len_csr = sparse.CsrMatrix(rows: 2, cols: 2, row_ptrs: [0, 1, 1], col_indices: [0], values: Vector[Float]())
+  var caught_bad_len = false
+  try:
+    ignored = sparse.to_dense(bad_len_csr)
+  recover sparse.SparseError.InvalidDimensions:
+    caught_bad_len = true
+  assert(caught_bad_len)

@@ -167,3 +167,31 @@ test "streaming welford and chan golub leveque merge":
   assertEqual(statistics.running_count(merged), 8)
   assertEqual(statistics.running_mean(merged), 5.0)
   assert(math.abs(statistics.running_variance(merged, true) - statistics.variance(v, true)) < 0.00000001)
+
+test "extreme finite quantile interpolation overflow safety":
+  # Direct L7 challenge: quantile([-1e308, 1e308], 0.5) must not overflow
+  let neg_huge = 0.0 - 100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000.0
+  let pos_huge = 100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000.0
+  var extreme_vec = Vector[Float]()
+  extreme_vec.push(neg_huge)
+  extreme_vec.push(pos_huge)
+  let q_mid = statistics.quantile(extreme_vec, 0.5)
+  assertEqual(q_mid, 0.0)
+
+test "streaming update nan rejection and count validation":
+  var s = statistics.new_running_stats()
+  statistics.running_update(s, 10.0)
+  var caught_nan = false
+  try:
+    statistics.running_update(s, math.nan())
+  recover statistics.StatsError.InvalidValue:
+    caught_nan = true
+  assert(caught_nan)
+  assertEqual(statistics.running_count(s), 1)
+
+  # Summation with infinities
+  var v_inf = Vector[Float]()
+  v_inf.push(10.0)
+  v_inf.push(math.infinity())
+  v_inf.push(20.0)
+  assertEqual(statistics.sum(v_inf), math.infinity())

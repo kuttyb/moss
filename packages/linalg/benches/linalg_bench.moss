@@ -13,6 +13,18 @@ fn make_matrix(rows: Int, cols: Int) -> linalg.Matrix:
     i = i + 1
   return linalg.Matrix(rows: rows, cols: cols, data: data)
 
+fn bench_frobenius(m: linalg.Matrix) -> Float:
+  try:
+    return linalg.mat_norm_frobenius(m)
+  recover linalg.LinalgError.InvalidDimensions:
+    return 0.0
+
+fn bench_clone(m: linalg.Matrix) -> linalg.Matrix:
+  try:
+    return linalg.matrix_clone(m)
+  recover linalg.LinalgError.InvalidDimensions:
+    return make_matrix(1, 1)
+
 bench "linalg vector euclidean norm 1000d":
   var v = Vector[Float]()
   var x = 0.0
@@ -46,8 +58,8 @@ bench "linalg vector scale 1000d":
 
 bench "linalg matrix frobenius norm 50x50":
   var m = make_matrix(50, 50)
-  var fnorm = linalg.mat_norm_frobenius(m)
+  var fnorm = bench_frobenius(m)
 
 bench "linalg matrix clone 100x100":
   var m = make_matrix(100, 100)
-  var cloned = linalg.matrix_clone(m)
+  var cloned = bench_clone(m)
