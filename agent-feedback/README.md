@@ -158,7 +158,7 @@ version is `1.0`. Every record contains:
 - `evidence`: a nonempty array of repository-relative paths, exact commands,
   diagnostic codes, query results, or commit references.
 - `resolution`: an object with `status` (`resolved`, `unresolved`, `workaround`,
-  or `explained`) and a concise `summary`.
+  or `explanation`) and a concise `summary`.
 - `commit`: the related full 40-hex commit SHA, or `null` when one is not yet
   available.
 

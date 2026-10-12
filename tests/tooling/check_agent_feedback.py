@@ -30,7 +30,7 @@ CATEGORIES = (
     "tooling-negative",
     "performance-observation",
 )
-RESOLUTION_STATUSES = ("resolved", "unresolved", "workaround", "explained")
+RESOLUTION_STATUSES = ("resolved", "unresolved", "workaround", "explanation")
 SEVERITIES = ("low", "medium", "high", "critical")
 TOOL_HELPFULNESS = ("helpful", "partially-helpful", "unhelpful")
 REQUIRED_FIELDS = (
@@ -284,7 +284,7 @@ def validate_repository(root: Path) -> list[str]:
     if not feedback_root.exists():
         return errors + [f"{FEEDBACK_DIR}: feedback directory does not exist"]
     seen: dict[str, tuple[Path, int]] = {}
-    for path in sorted(feedback_root.rglob(OBSERVATIONS_FILE)):
+    for path in sorted(feedback_root.rglob("*.jsonl")):
         components, organization_errors = organization_components(path, root, feedback_root)
         errors.extend(organization_errors)
         try:
@@ -354,7 +354,7 @@ def self_test() -> None:
             "id": "phase24-team-t-validation-002",
             "category": "tooling-negative",
             "observation": "A deliberately malformed record was rejected without subjective scoring.",
-            "resolution": {"status": "explained", "summary": "The rejection was structurally required."},
+            "resolution": {"status": "explanation", "summary": "The rejection was structurally required."},
             "tool_helpfulness": "unhelpful",
         })
 
@@ -375,6 +375,9 @@ def self_test() -> None:
         invalid_category = copy.deepcopy(positive)
         invalid_category["category"] = "praise"
         check([encode(invalid_category)], "invalid category 'praise'")
+        unsupported_version = copy.deepcopy(positive)
+        unsupported_version["schema_version"] = "2.0"
+        check([encode(unsupported_version)], "schema_version must be '1.0'")
         check([encode(positive), encode(positive)], "duplicate id")
         unknown = copy.deepcopy(positive)
         unknown["sentiment_score"] = 10
@@ -397,8 +400,29 @@ def self_test() -> None:
             raise AssertionError(f"expected invalid path error; got {found}")
         misplaced.unlink()
 
+        wrong_name = workstream / "feedback.jsonl"
+        wrong_name.write_text(encode(positive) + "\n", encoding="utf-8")
+        found = validate_repository(root)
+        if not any("feedback file must be" in message for message in found):
+            raise AssertionError(f"expected wrong filename error; got {found}")
+        wrong_name.unlink()
+
+        second_workstream = (feedback_root / "phase24" / "team-t-text-encoding" /
+                             "utf8-codec")
+        second_workstream.mkdir(parents=True)
+        second_observations = second_workstream / OBSERVATIONS_FILE
+        observations.write_text(encode(positive) + "\n", encoding="utf-8")
+        duplicate = copy.deepcopy(positive)
+        duplicate["workstream"] = "utf8-codec"
+        second_observations.write_text(encode(duplicate) + "\n", encoding="utf-8")
+        found = validate_repository(root)
+        if not any("duplicate id; first seen at" in message for message in found):
+            raise AssertionError(f"expected cross-file duplicate error; got {found}")
+        second_observations.unlink()
+
         example = feedback_root / EXAMPLE_PATH
         example.parent.mkdir(parents=True)
+        observations.write_text("", encoding="utf-8")
         example.write_text(encode(positive) + "\n", encoding="utf-8")
         if validate_repository(root):
             raise AssertionError("canonical example path should be structurally validated and path-exempt")

@@ -78,7 +78,7 @@
       "properties": {
         "status": {
           "type": "string",
-          "enum": ["resolved", "unresolved", "workaround", "explained"]
+          "enum": ["resolved", "unresolved", "workaround", "explanation"]
         },
         "summary": {
           "$ref": "#/$defs/nonempty_string"
