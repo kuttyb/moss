@@ -1,5 +1,18 @@
 # Moss current status
 
+## Phase 24 Team T argument-order ownership repair — 2026-10-12
+
+Full `make check` on integrated `64e9f8e` exposed a false positive in the
+ordinary-call nested access repair: an earlier nested WRITE was incorrectly
+treated as overlapping a later direct WRITE even though left-to-right argument
+evaluation completes the nested operation first. Overlap checking is now
+directional. It permits nested-earlier/direct-later access and continues to
+reject direct-earlier/nested-later access because the earlier outer borrow
+remains live during later argument evaluation. Focused String regressions cover
+both orderings, and the Phase 21 source-backed/source-free standard WRITE-order
+test remains the semantic oracle. Coordinator integration and renewed
+exact-SHA Architect review remain pending.
+
 ## Phase 24 Team T source-free nested alias repair — 2026-10-12
 
 The post-`ca6cd0d` Architect case showed that ordinary/imported call overlap

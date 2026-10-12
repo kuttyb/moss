@@ -10,6 +10,13 @@ fn identity(value: String) -> String:
 fn string_length(value: String) -> Int:
   return value.length()
 
+fn append_then_length(target: String) -> Int:
+  target.append("!")
+  return target.length()
+
+fn append_after(before: Int, target: String):
+  target.append("?")
+
 fn main():
   left = "moss"
   right = "🙂"
@@ -38,4 +45,8 @@ fn main():
   append_part(disjoint, identity(other))
   disjoint.reserve(string_length(other))
   assertEqual(disjoint, "left-right")
+
+  var ordered = "x"
+  append_after(append_then_length(ordered), ordered)
+  assertEqual(ordered, "x!?")
   echo "string concat ok"

@@ -100,6 +100,15 @@ with tempfile.TemporaryDirectory(dir=ROOT / "tmp") as directory:
          'fn main():\n'
          '  var value = "x"\n'
          '  append_part(value, identity(value))\n', 'identity(value)'),
+        ('fn append_then_length(target: String) -> Int:\n'
+         '  target.append("!")\n'
+         '  return target.length()\n\n'
+         'fn append_before(target: String, after: Int):\n'
+         '  target.append("?")\n\n'
+         'fn main():\n'
+         '  var value = "x"\n'
+         '  append_before(value, append_then_length(value))\n',
+         'append_then_length(value)'),
     ]:
         invalid = pathlib.Path(directory) / "nested-invalid.moss"
         invalid.write_text(body, encoding="utf-8")

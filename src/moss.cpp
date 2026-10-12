@@ -7760,10 +7760,19 @@ class Checker {
     for (size_t left = 0; left < accesses.size(); ++left) {
       for (size_t right = left + 1; right < accesses.size(); ++right) {
         // Nested accesses happen while constructing owned argument values and
-        // finish before the outer call begins. Compare them with direct outer
-        // borrows, but do not invent overlap between two sequential nested
-        // computations.
+        // finish before the outer call begins. Two nested computations are
+        // sequential, and a nested access in an earlier argument finishes
+        // before a later direct outer borrow begins. A direct borrow from an
+        // earlier argument, however, remains live while later arguments are
+        // evaluated and must conflict with their nested accesses.
         if (accesses[left].nested && accesses[right].nested) continue;
+        if (accesses[left].nested != accesses[right].nested) {
+          const Access& nested = accesses[left].nested
+                                     ? accesses[left] : accesses[right];
+          const Access& direct = accesses[left].nested
+                                     ? accesses[right] : accesses[left];
+          if (nested.argument_index < direct.argument_index) continue;
+        }
         if (!storage_locations_overlap(accesses[left].location,
                                        accesses[right].location))
           continue;
