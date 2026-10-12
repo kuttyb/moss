@@ -58,9 +58,20 @@ native release, and Fast Debug all passed. The Architect's first review had
 correctly rejected `a2f0cd7` because the documented Rust baseline was hidden
 by `*.rs` ignore rules and absent from Git; `1c01a89` tracks and reproduces it.
 
-That verdict predates the L7 benchmark-stabilization request. The stabilized
-candidate must receive a separate exact-SHA Architect verdict after the full
-suite below passes; the final delivery commit records that result.
+The L7 stabilization pass first froze `817ec4f5...`; the independent Architect
+issued NO-GO after finding unmatched Rust result counts/mutation barriers and a
+release verifier that was not bound to the rlibs actually copied into the
+benchmark. Those findings are preserved in feedback. Engineering repaired all
+three defects, reran the measurements, and froze corrected candidate
+`c78184c736e8da8228a5057de21d4fa292d6705f`.
+
+The independent Team T L6 Architect then issued **GO** for exact SHA
+`c78184c736e8da8228a5057de21d4fa292d6705f`. It independently reran the exact
+release benchmark and strict Rust reference, hash-matched all six linked
+provider rlibs, and passed fresh exact error-payload cases in native debug,
+native release, Fast Debug, and a separately constructed compiled-only ABI-v9
+consumer. Its attributable evidence is recorded in
+`PHASE_24_TEXT_ENCODING_STABILIZATION_ARCHITECT_REVIEW.md`.
 
 The stabilization pass also verifies every `Utf8Error` variant's exact index
 and payload in package tests, Fast Debug, and a compiled-only ABI-v9 consumer.
@@ -68,6 +79,10 @@ UTF-8 validation now validates directly instead of allocating and discarding a
 decoded scalar vector. Text search uses the built-in split implementation,
 which removes the former per-search character-vector scan and substantially
 reduces ASCII case-conversion work.
+
+**Engineering L6 verdict: GO at `c78184c736e8da8228a5057de21d4fa292d6705f`.**
+
+**Independent Architect L6 verdict: GO at `c78184c736e8da8228a5057de21d4fa292d6705f`.**
 
 ## Limitations and deferrals
 

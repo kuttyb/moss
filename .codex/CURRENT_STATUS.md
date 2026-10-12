@@ -1,6 +1,33 @@
 # Moss current status
 
-## Phase 24 Team T Text & Encoding complete — 2026-10-12
+## Phase 24 Team T L7 stabilization complete — 2026-10-12
+
+The focused stabilization implementation is frozen at exact SHA
+`c78184c736e8da8228a5057de21d4fa292d6705f` on `phase24-text`. Benchmarks now
+use `margo bench --release --json`, identical asserted Moss/Rust workloads,
+matching builder/vector mutation barriers, and a verifier that SHA-256 binds
+all six `build/bench` provider rlibs to release artifacts. Search, ASCII case,
+and validation bottlenecks were profiled; avoidable search/case work and the
+throwaway validation decode allocation were removed. Exact `Utf8Error`
+variant/index/payload contracts now cross source-free ABI-v9 boundaries.
+
+The first stabilization candidate `817ec4f5...` received an attributable
+Architect **NO-GO** for unmatched benchmark work and insufficient artifact
+provenance. After repair, the independent Team T L6 Architect issued **GO** for
+exact corrected SHA `c78184c736e8da8228a5057de21d4fa292d6705f`, independently
+rerunning optimized/provider-bound benchmarks and fresh native debug/release,
+Fast Debug, and compiled-only ABI-v9 error cases. The original mixed-profile
+measurements remain explicitly invalidated in the feedback trail.
+
+Coordinator gates pass: full Team T acceptance with the 66-valid/15-invalid
+Python oracle in all three modes; corrected Moss and strict Rust benchmarks;
+all six provider hash bindings; feedback validation; `TMPDIR="$PWD/tmp" make
+check` (all Moss v0.1 tests, 54/54 Executor tests); `make examples`; and
+`git diff --check`. **Engineering L6: GO. Independent Architect L6: GO at
+`c78184c`.** Team I alone may integrate this branch; no direct merge to
+`phase24-integration` or `main` is authorized.
+
+## Phase 24 Team T original delivery — 2026-10-12
 
 `phase24-text` was forked from feedback-enabled integration SHA
 `610f2d632b53541cc31153174e37e1b1640d6f01`. It delivers `moss.text`, the

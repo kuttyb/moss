@@ -128,5 +128,19 @@ issue was identified during this work.
   `a2f0cd7` candidate remains NO-GO because it was not reproducible from Git.
 
 This disposition predates the L7 stabilization request. A new independently
-attributable exact-SHA performance and error-contract review is required before
-the stabilized branch is delivered.
+attributable exact-SHA performance and error-contract review was therefore
+required before delivery.
+
+## Stabilization review disposition
+
+- Reviewer role: Independent Team T L6 Architect.
+- Rejected stabilization commit: `817ec4f5e59110a5bf71139e2226e7cdd3f403e1`
+  (**NO-GO**) for unmatched reference work/barriers and verifier provenance.
+- Exact corrected commit: `c78184c736e8da8228a5057de21d4fa292d6705f`.
+- Fresh checks: release root and six linked provider rlibs, strict Rust
+  reference, native debug/release/Fast Debug exact error payloads, and a fresh
+  compiled-only ABI-v9 consumer.
+- Preserved limitations: split materializes the whole input; scalar Rust rows
+  are diagnostic; typed-error benchmarks use the process-amortized workaround;
+  String interoperability remains unavailable.
+- Overall assessment: **GO** for the exact corrected implementation candidate.
