@@ -37,7 +37,7 @@ linked provider rlibs to their release artifacts. Rust uses rustc 1.98.1 with
 samples, and 1,000 iterations. Times below are p25 / median / p75 nanoseconds
 from the Coordinator's final pre-review run.
 
-| Preconstructed operation | Moss | Idiomatic Rust | Median ratio |
+| Amortized end-to-end operation | Moss | Idiomatic Rust | Median ratio |
 | --- | ---: | ---: | ---: |
 | find 256 code points x128 | 37,249 / 38,731 / 40,194 | 25,275 / 27,827 / 30,530 | 1.39x |
 | long ASCII early/late/absent find x128 | 172,807 / 192,415 / 200,206 | 112,953 / 125,867 / 129,425 | 1.53x |
@@ -47,13 +47,16 @@ from the Coordinator's final pre-review run.
 | long multibyte slice x128 | 162,346 / 175,346 / 183,452 | 131,138 / 134,937 / 142,155 | 1.30x |
 | isolated ASCII lower x16 | 155 / 160 / 164 | 162 / 163 / 165 | 0.98x |
 
-Independent V runs found multibyte search at 2.02x and, on an earlier run,
-2.21x. A fresh same-crate `#[inline(never)]` Rust control was only 1.03x its
-ordinary control. The generated Moss provider already contains the same native
-`find` plus prefix `chars().count()` algorithm. The residual result therefore
-straddles, but is not demonstrated to remain within, the 2x ceiling. It is
-reported as an evidence-backed stable-ABI/measurement exception rather than a
-parity claim.
+These Margo rows construct their asserted inputs inside every timed benchmark
+invocation. Repeating the operation 128 times amortizes that setup but does not
+make the rows operation-only; the earlier `prebuilt` names are therefore
+misleading. Independent V runs found the multibyte end-to-end row at 2.02x and
+2.21x, while Architect runs found 1.63x–1.94x. The Architect added an
+interleaved cross-rlib control that builds inputs before timing and calls the
+actual optimized `moss.text` provider. Across five warmed runs, native
+`String.find` measured 1.11x–1.17x the identical local Rust algorithm. The
+primitive meets the target; the volatile end-to-end row records general String
+construction and harness composition as well as search.
 
 The process-amortized codec harness measured Moss encode/decode/validate at
 597/727/635 ns median, representation-matched `Vec<i64>` Rust at 577/608/594
@@ -101,10 +104,18 @@ exception and the Architect's treatment of multibyte search around 2x. Its
 fresh tests and full evidence are in
 `docs/PHASE_24_TEXT_ENCODING_PERF_VALIDATION_V.md`.
 
+The independent Architect then issued correctness, semantics, optimized
+provider provenance, ABI-v9, and String/UTF-8 primitive **GO** for exact
+engineering SHA `c5f55df73389e4959c097d1145aee09c8f1937dd`. Its overall
+verdict is **CONDITIONAL GO / unconditional HOLD** pending explicit L7
+acceptance of the retained-segment builder exception. The exact review and
+operation-only cross-rlib evidence are in
+`docs/PHASE_24_TEXT_ENCODING_PERF_ARCHITECT.md`.
+
 ## Engineering disposition
 
 Engineering L6: **conditional GO** for integration review. Correctness and
-representation-matched primary operations meet the target. Unconditional
-performance acceptance is withheld for the two explicit exceptions above.
-The independent Architect verdict and exact final SHA are recorded separately
-after this candidate is frozen.
+representation-matched primary operations meet the target. Operation-only
+String search meets the idiomatic target. Unconditional performance acceptance
+is withheld for the retained-segment builder exception. Team I may review the
+branch, but L7 must disposition that exception before unconditional acceptance.

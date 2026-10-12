@@ -49,3 +49,20 @@ rustc --edition=2021 -D warnings -O -C debuginfo=1 case_builder_allocations.rs -
 
 See `docs/PHASE_24_TEXT_ENCODING_CASE_BUILDER_PERFORMANCE.md` for the matched
 workloads, results, and remaining builder-representation exception.
+
+The x128 Margo search/slice rows amortize input setup but still construct their
+inputs inside each timed benchmark invocation; they are end-to-end rows, not
+strictly operation-only despite historical `prebuilt` names. The independent
+cross-rlib control constructs inputs before timing and compares the actual
+optimized `moss.text` provider with the identical local Rust search:
+
+```sh
+rustc --edition=2021 -D warnings -O -C debuginfo=1 \
+  cross_rlib_find_baseline.rs \
+  -L dependency=../text/build/release \
+  -L dependency=../foundations/core/build/release \
+  --extern moss_text=../text/build/release/libmoss_text.rlib \
+  --extern moss_core=../foundations/core/build/release/libmoss_core.rlib \
+  -o ../../tmp/team-t-cross-rlib-find
+../../tmp/team-t-cross-rlib-find
+```

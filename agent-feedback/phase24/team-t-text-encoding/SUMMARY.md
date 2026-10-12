@@ -159,6 +159,15 @@ This disagreement is preserved in
 `docs/PHASE_24_TEXT_ENCODING_PERF_VALIDATION_V.md`; the Coordinator does not
 convert it into an unconditional parity claim.
 
+The independent Architect subsequently showed that the Margo rows named
+`prebuilt` still construct inputs inside each timed invocation; their x128 loop
+amortizes but does not exclude setup. A new interleaved operation-only control
+against the actual optimized `moss.text` rlib measured native search at
+1.11x–1.17x identical local Rust. This resolves the primitive-search concern
+without erasing the end-to-end concatenation evidence. The Architect retains
+**CONDITIONAL GO / unconditional HOLD** solely for explicit L7 disposition of
+the reserved-builder representation gap.
+
 ## Stabilization review disposition
 
 - Reviewer role: Independent Team T L6 Architect.
