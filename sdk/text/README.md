@@ -68,8 +68,9 @@ echo text.builder_build(builder)
 The representation is intentionally the existing `Vector[String]`; Moss v0.1
 does not provide an opaque public SDK type. It offers explicit batched
 composition, not a mutable String or Unicode rope. On the current native
-backend, measured repeated `String +` is faster for the 128-segment benchmark,
-so the builder is not advertised as an unconditional performance win. See the
+backend, the corrected release-provider benchmark measured the builder faster
+than repeated `String +` for its 128-segment workload. This remains a
+workload-specific result, not an unconditional performance guarantee. See the
 Team T performance report for the measured tradeoff.
 
 ## Validation

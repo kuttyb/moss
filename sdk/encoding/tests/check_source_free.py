@@ -32,18 +32,88 @@ with tempfile.TemporaryDirectory(prefix="encoding-source-free-", dir=SCRATCH) as
     ):
         for name in names:
             shutil.copy2(source / name, provider / name)
+    for interface in (provider / "encoding.mossi", provider / "bytes.mossi"):
+        assert "native_abi 9" in interface.read_text(encoding="utf-8"), interface
     (app / "Moss.toml").write_text(
         '[package]\nname = "encoding_source_free_smoke"\nversion = "0.1.0"\n\n'
         '[build]\nsource = "src"\n', encoding="utf-8")
-    (app / "src" / "main.moss").write_text(
-        'module app\nimport encoding\n\nfn main():\n'
-        '  try:\n'
-        '    encoded = encoding.encode_utf8([0, 127, 128578])\n'
-        '    echo encoded |> count\n'
-        '    decoded = encoding.decode_utf8(encoded)\n'
-        '    echo decoded[2]\n'
-        '  recover error:\n'
-        '    echo -1\n', encoding="utf-8")
+    (app / "src" / "main.moss").write_text('''module app
+import encoding
+
+fn same_ints(left: Vector[Int], right: Vector[Int]) -> Bool:
+  if (left |> count) != (right |> count):
+    return false
+  var i = 0
+  while i < (left |> count):
+    if left[i] != right[i]:
+      return false
+    i = i + 1
+  return true
+
+fn decode_error_fingerprint(values: Vector[Int]) -> Vector[Int]:
+  try:
+    decoded = encoding.decode_utf8(values)
+    return [0, decoded |> count]
+  recover encoding.Utf8Error.InvalidByte(index, value):
+    return [1, index, value]
+  recover encoding.Utf8Error.UnexpectedContinuation(index, value):
+    return [2, index, value]
+  recover encoding.Utf8Error.InvalidLeadingByte(index, value):
+    return [3, index, value]
+  recover encoding.Utf8Error.TruncatedSequence(index, expected_bytes, available_bytes):
+    return [4, index, expected_bytes, available_bytes]
+  recover encoding.Utf8Error.InvalidContinuation(index, value):
+    return [5, index, value]
+  recover encoding.Utf8Error.OverlongEncoding(index, scalar):
+    return [6, index, scalar]
+  recover encoding.Utf8Error.SurrogateScalar(index, scalar):
+    return [7, index, scalar]
+  recover encoding.Utf8Error.InvalidScalar(index, scalar):
+    return [8, index, scalar]
+
+fn encode_error_fingerprint(values: Vector[Int]) -> Vector[Int]:
+  try:
+    encoded = encoding.encode_utf8(values)
+    return [0, encoded |> count]
+  recover encoding.Utf8Error.InvalidByte(index, value):
+    return [1, index, value]
+  recover encoding.Utf8Error.UnexpectedContinuation(index, value):
+    return [2, index, value]
+  recover encoding.Utf8Error.InvalidLeadingByte(index, value):
+    return [3, index, value]
+  recover encoding.Utf8Error.TruncatedSequence(index, expected_bytes, available_bytes):
+    return [4, index, expected_bytes, available_bytes]
+  recover encoding.Utf8Error.InvalidContinuation(index, value):
+    return [5, index, value]
+  recover encoding.Utf8Error.OverlongEncoding(index, scalar):
+    return [6, index, scalar]
+  recover encoding.Utf8Error.SurrogateScalar(index, scalar):
+    return [7, index, scalar]
+  recover encoding.Utf8Error.InvalidScalar(index, scalar):
+    return [8, index, scalar]
+
+fn main():
+  try:
+    encoded = encoding.encode_utf8([0, 127, 128578])
+    assertEqual(encoded |> count, 6)
+    decoded = encoding.decode_utf8(encoded)
+    assertEqual(decoded[2], 128578)
+    assert(same_ints(decode_error_fingerprint([-1]), [1, 0, -1]))
+    assert(same_ints(decode_error_fingerprint([65, 256]), [1, 1, 256]))
+    assert(same_ints(decode_error_fingerprint([65, 128]), [2, 1, 128]))
+    assert(same_ints(decode_error_fingerprint([65, 255]), [3, 1, 255]))
+    assert(same_ints(decode_error_fingerprint([65, 226, 130]), [4, 1, 3, 2]))
+    assert(same_ints(decode_error_fingerprint([65, 226, 40, 161]), [5, 2, 40]))
+    assert(same_ints(decode_error_fingerprint([65, 192, 128]), [6, 1, 0]))
+    assert(same_ints(decode_error_fingerprint([65, 237, 160, 128]), [7, 1, 55296]))
+    assert(same_ints(decode_error_fingerprint([65, 244, 144, 128, 128]), [8, 1, 1114112]))
+    assert(same_ints(encode_error_fingerprint([65, -1]), [8, 1, -1]))
+    assert(same_ints(encode_error_fingerprint([65, 1114112]), [8, 1, 1114112]))
+    assert(same_ints(encode_error_fingerprint([65, 55296]), [7, 1, 55296]))
+    echo "source-free UTF-8 error contracts ok"
+  recover error:
+    echo "unexpected propagated UTF-8 error"
+''', encoding="utf-8")
     source_free_env = ENV | {"MOSS_MODULE_PATH": str(provider)}
     checked = subprocess.run([str(MOSS), "check", "src/main.moss", "--json"],
                              cwd=app, env=source_free_env, check=True,
@@ -54,5 +124,5 @@ with tempfile.TemporaryDirectory(prefix="encoding-source-free-", dir=SCRATCH) as
     result = subprocess.run([str(app / "build" / "debug" / "encoding_source_free_smoke")],
                             cwd=app, env=source_free_env, check=True,
                             capture_output=True, text=True)
-    assert result.stdout == "6\n128578\n", result.stdout
-print("Compiled-only moss.encoding provider: check, build, run passed")
+    assert result.stdout == "source-free UTF-8 error contracts ok\n", result.stdout
+print("Compiled-only ABI-v9 moss.encoding provider: exact error contracts passed")

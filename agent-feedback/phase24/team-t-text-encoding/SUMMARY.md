@@ -59,11 +59,26 @@ build-directory race were excluded from feedback.
 
 ## Performance and workflow
 
-The Margo release harness measured text search, slicing, concatenation,
-segment-building, and UTF-8 validation with five warmups, 31 samples, and 1,000
-iterations. At 128 segments, repeated `String +` measured 7,252 ns median and
-the segment builder 14,184 ns, so the builder documentation makes no speed or
-quadratic-avoidance claim (`phase24-team-t-text-encoding-performance-001`).
+The initial performance record is preserved but invalidated: plain
+`margo bench --json` optimized the benchmark root while leaving path providers
+in debug profile, and its Rust comparison moved equivalent setup outside the
+timed region. The corrected harness uses `margo bench --release --json`,
+recursively verifies all six path providers' release manifests, and embeds
+assertions for identical contents, lengths, search positions, slice ranges,
+and results (`phase24-team-t-text-encoding-performance-004`). No timing was
+invented for the investigation.
+
+On the corrected 128-segment workload, repeated `String +` measured 7,431 ns
+median and the vector-backed builder 5,643 ns. This is a workload-specific
+result, not a general quadratic-complexity claim. Profiling also separated
+representation cost from SDK work: Moss `chars()` and slices materialize owned
+`String` vectors, while the matched Rust owned-String baselines were materially
+slower than scalar Rust references. Replacing the SDK's manual `find` scan with
+the built-in split path cut the repeated-search median from 290,986 ns to
+16,176 ns in the final run; it also removed repeated alphabet-vector
+construction from ASCII
+case conversion. Direct UTF-8 validation no longer allocates a decoded scalar
+vector (`phase24-team-t-text-encoding-performance-005`).
 
 Typed-error encode/decode could not run inside the normal benchmark lowering;
 a documented process-amortized harness was used instead, without subtracting
@@ -90,11 +105,14 @@ reproduced from the corrected Git tree
    `phase24-team-t-text-encoding-utf8-codec-001`).
 5. Narrow generated-Rust ignore rules or explicitly exempt maintained Rust
    reference sources (`phase24-team-t-text-encoding-performance-003`).
+6. Make Margo's cross-package benchmark profile behavior explicit or diagnose
+   a release benchmark whose path providers are still debug-built
+   (`phase24-team-t-text-encoding-performance-004`).
 
 These observations do not duplicate SWARM records; no matching existing SWARM
 issue was identified during this work.
 
-## Review disposition
+## Original review disposition
 
 - Reviewer role: Independent Team T L6 Architect.
 - Exact reviewed commit: `1c01a899819d495347fd99e05500bb50e50e7da1`.
@@ -106,3 +124,7 @@ issue was identified during this work.
   benchmark lowering remain explicit limitations.
 - Overall assessment: **GO** for the exact implementation candidate. The prior
   `a2f0cd7` candidate remains NO-GO because it was not reproducible from Git.
+
+This disposition predates the L7 stabilization request. A new independently
+attributable exact-SHA performance and error-contract review is required before
+the stabilized branch is delivered.

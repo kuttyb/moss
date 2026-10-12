@@ -12,7 +12,17 @@ Run from this directory:
 ../../margo debug
 ../../margo test
 ../../margo test --interp
+../../margo bench --release --json
+python3 validate_release_benchmarks.py
 ```
 
 All application modes print `text encoding acceptance ok`; the package tests
 cover valid composition and invalid encoding boundaries.
+
+The explicit benchmark `--release` flag is required: Moss always optimizes the
+benchmark root, but Margo uses that flag to select optimized path-dependency
+providers. `validate_release_benchmarks.py` runs the corrected command and
+checks every reachable provider's `.mossbuild` metadata for the release profile
+and `-O`. Both Moss and Rust benchmark sources construct identical workloads
+inside each timed body and assert their lengths, contents, result positions,
+and checksums before a measurement can be accepted.
