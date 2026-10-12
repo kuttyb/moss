@@ -1,0 +1,137 @@
+module random
+
+# ============================================================================
+# Moss Phase 24 — Package B: moss.random
+# High-quality deterministic pseudorandom number generator SDK (MRG32k3a).
+#
+# Algorithm: MRG32k3a (Pierre L'Ecuyer, 1999)
+# Combines two 3rd-order multiple recursive generators using pure integer
+# modulo arithmetic. Period: ~ 2^191 (~ 3.1 x 10^57).
+#
+# ADVANTAGES FOR MOSS:
+# 1. Strictly zero bitwise operations required (no &, |, ^, <<, >>).
+# 2. All intermediate products (< 6.03 x 10^15) fit within signed 64-bit Int.
+# 3. No low-order bit periodicity (unlike raw LCGs). Passes TestU01 BigCrush.
+#
+# SECURITY NOTICE:
+# moss.random is an algorithmic pseudo-random number generator designed for
+# simulations, randomized algorithms, and testing. It is NOT cryptographically
+# secure and MUST NOT be used for keys, tokens, or security credentials.
+# ============================================================================
+
+export type Rng:
+  x1: Int
+  x2: Int
+  x3: Int
+  y1: Int
+  y2: Int
+  y3: Int
+
+  fn next_step() -> Int:
+    # Recurrence 1: x_n = (1403580 * x_{n-2} - 810728 * x_{n-3}) mod 4294967087
+    var p1 = (1403580 * x2 - 810728 * x3) % 4294967087
+    if p1 < 0:
+      p1 = p1 + 4294967087
+
+    # Recurrence 2: y_n = (527612 * y_{n-1} - 1370589 * y_{n-3}) mod 4294944443
+    var p2 = (527612 * y1 - 1370589 * y3) % 4294944443
+    if p2 < 0:
+      p2 = p2 + 4294944443
+
+    # Shift state
+    x3 = x2
+    x2 = x1
+    x1 = p1
+
+    y3 = y2
+    y2 = y1
+    y1 = p2
+
+    # Combination: z_n = (x_n - y_n) mod 4294967087
+    var z = (p1 - p2) % 4294967087
+    if z <= 0:
+      z = z + 4294967087
+    return z
+
+  fn next_float() -> Float:
+    z = next_step()
+    return (z * 1.0) / 4294967088.0
+
+  fn next_int() -> Int:
+    return next_step()
+
+  fn randint(min: Int, max: Int) -> Int:
+    if min >= max:
+      return min
+    range_size = max - min + 1
+    # Unbiased rejection sampling
+    limit = 4294967086 - (4294967086 % range_size)
+    var val = next_step()
+    while val > limit:
+      val = next_step()
+    return min + ((val - 1) % range_size)
+
+  fn randbool() -> Bool:
+    return next_float() < 0.5
+
+# ----------------------------------------------------------------------------
+# Factory constructor
+# ----------------------------------------------------------------------------
+
+export fn new_rng(seed: Int) -> Rng:
+  var s = seed
+  if s <= 0:
+    s = 123456789
+  var s_pos = s
+  if s_pos < 0:
+    s_pos = 123456789
+  var rx1 = (s_pos * 10007) % 4294967086 + 1
+  var rx2 = (s_pos * 20011) % 4294967086 + 1
+  var rx3 = (s_pos * 30013) % 4294967086 + 1
+  var ry1 = (s_pos * 40009) % 4294944442 + 1
+  var ry2 = (s_pos * 50021) % 4294944442 + 1
+  var ry3 = (s_pos * 60017) % 4294944442 + 1
+  return Rng(x1 = rx1, x2 = rx2, x3 = rx3, y1 = ry1, y2 = ry2, y3 = ry3)
+
+# ----------------------------------------------------------------------------
+# Exported helper functions for module callers
+# ----------------------------------------------------------------------------
+
+export fn rng_next_int(rng: Rng) -> Int:
+  return rng.next_int()
+
+export fn rng_next_float(rng: Rng) -> Float:
+  return rng.next_float()
+
+export fn rng_randint(rng: Rng, min: Int, max: Int) -> Int:
+  return rng.randint(min, max)
+
+export fn rng_randbool(rng: Rng) -> Bool:
+  return rng.randbool()
+
+export fn uniform(rng: Rng, low: Float, high: Float) -> Float:
+  if low >= high:
+    return low
+  f = rng.next_float()
+  return low + (high - low) * f
+
+export fn choice(items: Vector[Int], rng: Rng) -> Int:
+  cnt = items |> count
+  if cnt == 0:
+    return 0
+  idx = rng.randint(0, cnt - 1)
+  return items[idx]
+
+export fn shuffle(items: Vector[Int], rng: Rng) -> Vector[Int]:
+  var result = Vector[Int]()
+  for item in items:
+    result.push(item)
+  n = result |> count
+  var i = n - 1
+  while i > 0:
+    j = rng.randint(0, i)
+    temp = result[i]
+    result[i] = result[j]
+    result[j] = temp
+    i = i - 1
+  return result

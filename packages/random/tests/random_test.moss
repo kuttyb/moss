@@ -1,0 +1,72 @@
+# ============================================================================
+# Moss Phase 24 — Tests for moss.random (MRG32k3a)
+# ============================================================================
+
+import random
+
+test "mrg32k3a determinism and repeatability":
+  var rng1 = random.new_rng(42)
+  var rng2 = random.new_rng(42)
+
+  v1 = random.rng_next_int(rng1)
+  v2 = random.rng_next_int(rng2)
+  assertEqual(v1, v2)
+
+  f1 = random.rng_next_float(rng1)
+  f2 = random.rng_next_float(rng2)
+  assertEqual(f1, f2)
+
+  b1 = random.rng_randbool(rng1)
+  b2 = random.rng_randbool(rng2)
+  assertEqual(b1, b2)
+
+test "mrg32k3a float range and uniformity":
+  var rng = random.new_rng(12345)
+  var i = 0
+  while i < 100:
+    val = random.rng_next_float(rng)
+    assertEqual(val > 0.0, true)
+    assertEqual(val < 1.0, true)
+    i = i + 1
+
+test "randint bounded range and rejection sampling":
+  var rng = random.new_rng(98765)
+  var i = 0
+  while i < 100:
+    val = random.rng_randint(rng, 10, 20)
+    assertEqual(val >= 10, true)
+    assertEqual(val <= 20, true)
+    i = i + 1
+
+test "uniform float range":
+  var rng = random.new_rng(555)
+  var i = 0
+  while i < 50:
+    u = random.uniform(rng, 5.0, 15.0)
+    assertEqual(u >= 5.0, true)
+    assertEqual(u <= 15.0, true)
+    i = i + 1
+
+test "choice from collection":
+  var rng = random.new_rng(777)
+  items = [10, 20, 30, 40, 50]
+  c = random.choice(items, rng)
+  found = (c == 10) or (c == 20) or (c == 30) or (c == 40) or (c == 50)
+  assertEqual(found, true)
+
+test "fisher-yates shuffle elements preservation":
+  var rng = random.new_rng(888)
+  original = [1, 2, 3, 4, 5]
+  shuffled = random.shuffle(original, rng)
+  assertEqual(shuffled |> count, 5)
+
+  # Check that sum is preserved
+  var orig_sum = 0
+  for x in original:
+    orig_sum = orig_sum + x
+
+  var shuf_sum = 0
+  for y in shuffled:
+    shuf_sum = shuf_sum + y
+
+  assertEqual(orig_sum, shuf_sum)

@@ -1,0 +1,81 @@
+module math_test
+import math
+
+test "math constants":
+  assert(math.pi() > 3.1415 and math.pi() < 3.1416)
+  assert(math.e() > 2.7182 and math.e() < 2.7183)
+  assert(math.tau() > 6.2831 and math.tau() < 6.2832)
+  assert(math.is_infinite(math.infinity()))
+  assert(math.is_infinite(math.neg_infinity()))
+  assert(math.is_nan_val(math.nan()))
+
+test "math abs and signum":
+  assertEqual(math.abs(-5.5), 5.5)
+  assertEqual(math.abs(3.2), 3.2)
+  assertEqual(math.abs_int(-42), 42)
+  assertEqual(math.abs_int(100), 100)
+  assertEqual(math.abs_int(0), 0)
+  assertEqual(math.signum(10.5), 1.0)
+  assertEqual(math.signum(-0.5), -1.0)
+  assertEqual(math.signum(0.0), 0.0)
+  assertEqual(math.signum_int(10), 1)
+  assertEqual(math.signum_int(-99), -1)
+  assertEqual(math.signum_int(0), 0)
+
+test "math min max and clamp":
+  assertEqual(math.min(2.0, 5.0), 2.0)
+  assertEqual(math.max(2.0, 5.0), 5.0)
+  assertEqual(math.min_int(-10, 20), -10)
+  assertEqual(math.max_int(-10, 20), 20)
+  assertEqual(math.clamp(15.0, 0.0, 10.0), 10.0)
+  assertEqual(math.clamp(-5.0, 0.0, 10.0), 0.0)
+  assertEqual(math.clamp(5.0, 0.0, 10.0), 5.0)
+  assertEqual(math.clamp_int(15, 0, 10), 10)
+  assertEqual(math.clamp_int(-5, 0, 10), 0)
+  assertEqual(math.clamp_int(5, 0, 10), 5)
+
+test "math floor ceil trunc round":
+  assertEqual(math.trunc(3.7), 3.0)
+  assertEqual(math.trunc(-3.7), -3.0)
+  assertEqual(math.floor(3.7), 3.0)
+  assertEqual(math.floor(-3.2), -4.0)
+  assertEqual(math.ceil(3.2), 4.0)
+  assertEqual(math.ceil(-3.7), -3.0)
+  # Rounding: round half to even
+  assertEqual(math.round(2.5), 2.0)
+  assertEqual(math.round(3.5), 4.0)
+  assertEqual(math.round(2.3), 2.0)
+  assertEqual(math.round(2.7), 3.0)
+
+test "math sqrt and hypot":
+  assertEqual(math.sqrt_val(16.0), 4.0)
+  assertEqual(math.sqrt_val(2.0) > 1.414 and math.sqrt_val(2.0) < 1.415, true)
+  assertEqual(math.hypot(3.0, 4.0), 5.0)
+  assertEqual(math.hypot(0.0, 0.0), 0.0)
+
+test "math exp ln and powers":
+  assertEqual(math.exp(0.0), 1.0)
+  assert(math.abs(math.exp(1.0) - math.e()) < 0.0001)
+  assertEqual(math.ln(1.0), 0.0)
+  assert(math.abs(math.ln(math.e()) - 1.0) < 0.0001)
+  assertEqual(math.pow_int(2, 10), 1024)
+  assertEqual(math.pow_int(3, 3), 27)
+  assertEqual(math.pow_int(5, 0), 1)
+  assert(math.abs(math.pow(2.0, 3.0) - 8.0) < 0.0001)
+
+test "math trigonometry":
+  assert(math.abs(math.sin(0.0)) < 0.00001)
+  assert(math.abs(math.sin(math.pi() / 2.0) - 1.0) < 0.0001)
+  assert(math.abs(math.cos(0.0) - 1.0) < 0.00001)
+  assert(math.abs(math.cos(math.pi()) - (-1.0)) < 0.0001)
+  assert(math.abs(math.atan(1.0) - (math.pi() / 4.0)) < 0.0001)
+  assert(math.abs(math.atan2(1.0, 1.0) - (math.pi() / 4.0)) < 0.0001)
+
+test "math hyperbolics":
+  assertEqual(math.sinh(0.0), 0.0)
+  assertEqual(math.cosh(0.0), 1.0)
+  assertEqual(math.tanh(0.0), 0.0)
+
+test "math angle conversions":
+  assert(math.abs(math.deg_to_rad(180.0) - math.pi()) < 0.0001)
+  assert(math.abs(math.rad_to_deg(math.pi()) - 180.0) < 0.0001)

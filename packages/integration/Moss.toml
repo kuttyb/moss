@@ -1,0 +1,11 @@
+[package]
+name = "moss.integration"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+math = { path = "../math" }
+random = { path = "../random" }
+time = { path = "../time" }

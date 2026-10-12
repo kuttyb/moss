@@ -1,0 +1,286 @@
+module time
+
+# ============================================================================
+# Moss Phase 24 — Package C: moss.time
+# Foundational time measurement, duration arithmetic, and ISO 8601 formatting.
+# ============================================================================
+
+export type Duration:
+  nanos: Int
+
+export type Instant:
+  nanos: Int
+
+export type Timestamp:
+  epoch_millis: Int
+
+export type DateTime:
+  year: Int
+  month: Int
+  day: Int
+  hour: Int
+  minute: Int
+  second: Int
+  millisecond: Int
+
+# ----------------------------------------------------------------------------
+# Duration constructors and conversions
+# ----------------------------------------------------------------------------
+
+export fn duration_zero() -> Duration:
+  return Duration(nanos = 0)
+
+export fn duration_from_nanos(n: Int) -> Duration:
+  return Duration(nanos = n)
+
+export fn duration_from_micros(us: Int) -> Duration:
+  return Duration(nanos = us * 1000)
+
+export fn duration_from_millis(ms: Int) -> Duration:
+  return Duration(nanos = ms * 1000000)
+
+export fn duration_from_seconds(s: Int) -> Duration:
+  return Duration(nanos = s * 1000000000)
+
+export fn duration_from_minutes(m: Int) -> Duration:
+  return Duration(nanos = m * 60000000000)
+
+export fn duration_from_hours(h: Int) -> Duration:
+  return Duration(nanos = h * 3600000000000)
+
+export fn duration_nanos(d: Duration) -> Int:
+  return d.nanos
+
+export fn duration_micros(d: Duration) -> Int:
+  return d.nanos / 1000
+
+export fn duration_millis(d: Duration) -> Int:
+  return d.nanos / 1000000
+
+export fn duration_seconds(d: Duration) -> Int:
+  return d.nanos / 1000000000
+
+export fn duration_minutes(d: Duration) -> Int:
+  return d.nanos / 60000000000
+
+export fn duration_hours(d: Duration) -> Int:
+  return d.nanos / 3600000000000
+
+# ----------------------------------------------------------------------------
+# Duration arithmetic and predicates
+# ----------------------------------------------------------------------------
+
+export fn duration_add(a: Duration, b: Duration) -> Duration:
+  return Duration(nanos = a.nanos + b.nanos)
+
+export fn duration_sub(a: Duration, b: Duration) -> Duration:
+  return Duration(nanos = a.nanos - b.nanos)
+
+export fn duration_scale(d: Duration, factor: Int) -> Duration:
+  return Duration(nanos = d.nanos * factor)
+
+export fn duration_div(d: Duration, divisor: Int) -> Duration:
+  return Duration(nanos = d.nanos / divisor)
+
+export fn duration_abs(d: Duration) -> Duration:
+  if d.nanos < 0:
+    return Duration(nanos = 0 - d.nanos)
+  return d
+
+export fn duration_is_zero(d: Duration) -> Bool:
+  return d.nanos == 0
+
+export fn duration_is_negative(d: Duration) -> Bool:
+  return d.nanos < 0
+
+export fn duration_eq(a: Duration, b: Duration) -> Bool:
+  return a.nanos == b.nanos
+
+export fn duration_lt(a: Duration, b: Duration) -> Bool:
+  return a.nanos < b.nanos
+
+export fn duration_gt(a: Duration, b: Duration) -> Bool:
+  return a.nanos > b.nanos
+
+export fn duration_lte(a: Duration, b: Duration) -> Bool:
+  return a.nanos <= b.nanos
+
+export fn duration_gte(a: Duration, b: Duration) -> Bool:
+  return a.nanos >= b.nanos
+
+# ----------------------------------------------------------------------------
+# Instant (Monotonic time point)
+# Represents ticks/nanoseconds relative to an arbitrary, process-local epoch.
+# Safe for elapsed interval calculation; not for calendar dates.
+# ----------------------------------------------------------------------------
+
+export fn make_instant(nanos: Int) -> Instant:
+  return Instant(nanos = nanos)
+
+export fn instant_nanos(inst: Instant) -> Int:
+  return inst.nanos
+
+export fn instant_diff(a: Instant, b: Instant) -> Duration:
+  return Duration(nanos = a.nanos - b.nanos)
+
+export fn instant_add_duration(a: Instant, d: Duration) -> Instant:
+  return Instant(nanos = a.nanos + d.nanos)
+
+export fn instant_sub_duration(a: Instant, d: Duration) -> Instant:
+  return Instant(nanos = a.nanos - d.nanos)
+
+export fn instant_elapsed(start: Instant, now: Instant) -> Duration:
+  return Duration(nanos = now.nanos - start.nanos)
+
+export fn instant_eq(a: Instant, b: Instant) -> Bool:
+  return a.nanos == b.nanos
+
+export fn instant_lt(a: Instant, b: Instant) -> Bool:
+  return a.nanos < b.nanos
+
+export fn instant_gt(a: Instant, b: Instant) -> Bool:
+  return a.nanos > b.nanos
+
+# ----------------------------------------------------------------------------
+# Timestamp (Wall-clock time, UTC Unix epoch milliseconds)
+# ----------------------------------------------------------------------------
+
+export fn timestamp_from_unix_millis(ms: Int) -> Timestamp:
+  return Timestamp(epoch_millis = ms)
+
+export fn timestamp_from_unix_seconds(s: Int) -> Timestamp:
+  return Timestamp(epoch_millis = s * 1000)
+
+export fn timestamp_unix_millis(ts: Timestamp) -> Int:
+  return ts.epoch_millis
+
+export fn timestamp_unix_seconds(ts: Timestamp) -> Int:
+  return ts.epoch_millis / 1000
+
+export fn timestamp_add_duration(ts: Timestamp, d: Duration) -> Timestamp:
+  ms = d.nanos / 1000000
+  return Timestamp(epoch_millis = ts.epoch_millis + ms)
+
+export fn timestamp_sub_duration(ts: Timestamp, d: Duration) -> Timestamp:
+  ms = d.nanos / 1000000
+  return Timestamp(epoch_millis = ts.epoch_millis - ms)
+
+export fn timestamp_diff(a: Timestamp, b: Timestamp) -> Duration:
+  diff_ms = a.epoch_millis - b.epoch_millis
+  return Duration(nanos = diff_ms * 1000000)
+
+export fn timestamp_eq(a: Timestamp, b: Timestamp) -> Bool:
+  return a.epoch_millis == b.epoch_millis
+
+export fn timestamp_lt(a: Timestamp, b: Timestamp) -> Bool:
+  return a.epoch_millis < b.epoch_millis
+
+export fn timestamp_gt(a: Timestamp, b: Timestamp) -> Bool:
+  return a.epoch_millis > b.epoch_millis
+
+# ----------------------------------------------------------------------------
+# Calendar date arithmetic (Howard Hinnant Euclidean proleptic Gregorian)
+# ----------------------------------------------------------------------------
+
+export fn make_datetime(year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int, millisecond: Int) -> DateTime:
+  return DateTime(year = year, month = month, day = day, hour = hour, minute = minute, second = second, millisecond = millisecond)
+
+export fn timestamp_to_datetime(ts: Timestamp) -> DateTime:
+  var total_ms = ts.epoch_millis
+  var days = total_ms / 86400000
+  var rem_ms = total_ms % 86400000
+  if rem_ms < 0:
+    rem_ms = rem_ms + 86400000
+    days = days - 1
+
+  hour = rem_ms / 3600000
+  rem_hour = rem_ms % 3600000
+  minute = rem_hour / 60000
+  rem_min = rem_hour % 60000
+  second = rem_min / 1000
+  millisecond = rem_min % 1000
+
+  z = days + 719468
+  var era = z / 146097
+  if z < 0:
+    era = (z - 146096) / 146097
+  doe = z - era * 146097
+  yoe = (doe - (doe / 1460) + (doe / 36524) - (doe / 146096)) / 365
+  var y = yoe + era * 400
+  doy = doe - (365 * yoe + (yoe / 4) - (yoe / 100))
+  mp = (5 * doy + 2) / 153
+  day = doy - (153 * mp + 2) / 5 + 1
+  var month = mp + 3
+  if mp >= 10:
+    month = mp - 9
+  if month <= 2:
+    y = y + 1
+
+  return DateTime(year = y, month = month, day = day, hour = hour, minute = minute, second = second, millisecond = millisecond)
+
+export fn datetime_to_timestamp(dt: DateTime) -> Timestamp:
+  var y = dt.year
+  var m = dt.month
+  if m <= 2:
+    y = y - 1
+  var era = y / 400
+  if y < 0:
+    era = (y - 399) / 400
+  yoe = y - era * 400
+  var month_offset = m - 3
+  if m <= 2:
+    month_offset = m + 9
+  doy = (153 * month_offset + 2) / 5 + dt.day - 1
+  doe = yoe * 365 + (yoe / 4) - (yoe / 100) + doy
+  days = era * 146097 + doe - 719468
+  epoch_millis = days * 86400000 + dt.hour * 3600000 + dt.minute * 60000 + dt.second * 1000 + dt.millisecond
+  return Timestamp(epoch_millis = epoch_millis)
+
+# ----------------------------------------------------------------------------
+# ISO 8601 String Formatting
+# ----------------------------------------------------------------------------
+
+fn pad_digit(d: Int) -> String:
+  digits = "0123456789"
+  if d >= 0 and d <= 9:
+    return digits.char_at(d)
+  return "0"
+
+fn pad2(n: Int) -> String:
+  var val = n
+  if val < 0:
+    val = 0 - val
+  d1 = (val / 10) % 10
+  d2 = val % 10
+  return pad_digit(d1) + pad_digit(d2)
+
+fn pad3(n: Int) -> String:
+  var val = n
+  if val < 0:
+    val = 0 - val
+  d1 = (val / 100) % 10
+  d2 = (val / 10) % 10
+  d3 = val % 10
+  return pad_digit(d1) + pad_digit(d2) + pad_digit(d3)
+
+fn pad4(n: Int) -> String:
+  var val = n
+  var is_neg = false
+  if val < 0:
+    is_neg = true
+    val = 0 - val
+  d1 = (val / 1000) % 10
+  d2 = (val / 100) % 10
+  d3 = (val / 10) % 10
+  d4 = val % 10
+  res = pad_digit(d1) + pad_digit(d2) + pad_digit(d3) + pad_digit(d4)
+  if is_neg:
+    return "-" + res
+  return res
+
+export fn datetime_to_iso8601(dt: DateTime) -> String:
+  return pad4(dt.year) + "-" + pad2(dt.month) + "-" + pad2(dt.day) + "T" + pad2(dt.hour) + ":" + pad2(dt.minute) + ":" + pad2(dt.second) + "." + pad3(dt.millisecond) + "Z"
+
+export fn timestamp_to_iso8601(ts: Timestamp) -> String:
+  dt = timestamp_to_datetime(ts)
+  return datetime_to_iso8601(dt)
