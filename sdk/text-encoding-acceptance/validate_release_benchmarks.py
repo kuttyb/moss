@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run Team T benchmarks and prove every path provider uses release artifacts."""
 
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -35,6 +36,14 @@ def dependency_closure() -> list[Path]:
     return sorted(ordered)
 
 
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def assert_release_metadata(package: Path) -> dict[str, object]:
     metadata_files = sorted((package / "build" / "release").glob("*.mossbuild"))
     if not metadata_files:
@@ -49,7 +58,29 @@ def assert_release_metadata(package: Path) -> dict[str, object]:
         assert profile == "release", (metadata_file, profile)
         assert "-O" in flags, (metadata_file, flags)
         verified.append(str(metadata_file.relative_to(REPO)))
-    return {"package": str(package.relative_to(REPO)), "metadata": verified}
+    manifest = tomllib.loads((package / "Moss.toml").read_text(encoding="utf-8"))
+    project = manifest.get("package", manifest.get("project"))
+    package_name = project["name"]
+    artifact_name = "lib" + package_name.replace(".", "_").replace("-", "_") + ".rlib"
+    release_artifact = package / "build" / "release" / artifact_name
+    benchmark_artifact = PROJECT / "build" / "bench" / artifact_name
+    assert release_artifact.is_file(), release_artifact
+    assert benchmark_artifact.is_file(), benchmark_artifact
+    release_hash = sha256(release_artifact)
+    benchmark_hash = sha256(benchmark_artifact)
+    assert benchmark_hash == release_hash, (
+        benchmark_artifact,
+        benchmark_hash,
+        release_artifact,
+        release_hash,
+    )
+    return {
+        "package": str(package.relative_to(REPO)),
+        "metadata": verified,
+        "release_artifact": str(release_artifact.relative_to(REPO)),
+        "benchmark_artifact": str(benchmark_artifact.relative_to(REPO)),
+        "sha256": release_hash,
+    }
 
 
 completed = subprocess.run(

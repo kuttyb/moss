@@ -151,29 +151,31 @@ fn make_case_input() -> (String, String) {
 fn make_ascii_bytes() -> Vec<i64> {
     let mut values = Vec::new();
     for i in 0..1_024 {
-        values.push(65 + i % 26);
+        black_box(values.push(black_box(65 + i % 26)));
     }
     values
 }
 
-fn repeated_concat(count: usize) -> usize {
+fn repeated_concat(count: usize) -> String {
     let mut result = String::new();
     for _ in 0..count {
         result = result + "abcdefgh";
     }
-    assert_eq!(result.chars().count(), 1_024);
-    result.chars().count()
+    result
 }
 
-fn segment_builder(count: usize) -> usize {
+fn builder_append(parts: &mut Vec<String>, segment: &String) {
+    parts.push(segment.clone());
+}
+
+fn segment_builder(count: usize) -> (Vec<String>, String) {
     let mut parts = Vec::<String>::new();
     for _ in 0..count {
-        parts.push("abcdefgh".to_owned());
+        let segment = "abcdefgh".to_owned();
+        black_box(builder_append(black_box(&mut parts), black_box(&segment)));
     }
-    assert_eq!(parts.len(), 128);
     let built = parts.join("");
-    assert_eq!(built.chars().count(), 1_024);
-    built.chars().count()
+    (parts, built)
 }
 
 fn measure(label: &str, mut body: impl FnMut()) {
@@ -242,10 +244,18 @@ fn main() {
         assert_eq!(black_box(scalar_ascii_lower(black_box(&value))), expected);
     });
     measure("Rust repeated concat 128 segments", || {
-        black_box(repeated_concat(128));
+        let result = repeated_concat(128);
+        let result_length = result.chars().count();
+        assert_eq!(result_length, 1_024);
+        black_box(&result);
     });
     measure("Rust segment builder 128 segments", || {
-        black_box(segment_builder(128));
+        let (parts, built) = segment_builder(128);
+        assert_eq!(parts.len(), 128);
+        let built_length = built.chars().count();
+        assert_eq!(built_length, 1_024);
+        black_box(&parts);
+        black_box(&built);
     });
     measure("Rust same UTF-8 validation 1024 ASCII bytes", || {
         let values = make_ascii_bytes();

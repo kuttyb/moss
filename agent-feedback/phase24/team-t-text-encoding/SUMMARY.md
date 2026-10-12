@@ -68,17 +68,19 @@ assertions for identical contents, lengths, search positions, slice ranges,
 and results (`phase24-team-t-text-encoding-performance-004`). No timing was
 invented for the investigation.
 
-On the corrected 128-segment workload, repeated `String +` measured 7,431 ns
-median and the vector-backed builder 5,643 ns. This is a workload-specific
+On the final corrected 128-segment workload, repeated `String +` measured
+8,400 ns median and the vector-backed builder 5,926 ns. This is a workload-specific
 result, not a general quadratic-complexity claim. Profiling also separated
 representation cost from SDK work: Moss `chars()` and slices materialize owned
 `String` vectors, while the matched Rust owned-String baselines were materially
 slower than scalar Rust references. Replacing the SDK's manual `find` scan with
-the built-in split path cut the repeated-search median from 290,986 ns to
-16,176 ns in the final run; it also removed repeated alphabet-vector
+the built-in split path cut the late-single-match repeated-search median from
+290,986 ns to 14,501 ns in the final run; it also removed repeated alphabet-vector
 construction from ASCII
 case conversion. Direct UTF-8 validation no longer allocates a decoded scalar
-vector (`phase24-team-t-text-encoding-performance-005`).
+vector. The independent review also established that split still scans and
+materializes the complete input, so this is not an early-exit search claim
+(`phase24-team-t-text-encoding-performance-005` and `-006`).
 
 Typed-error encode/decode could not run inside the normal benchmark lowering;
 a documented process-amortized harness was used instead, without subtracting

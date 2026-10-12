@@ -23,6 +23,8 @@ The explicit benchmark `--release` flag is required: Moss always optimizes the
 benchmark root, but Margo uses that flag to select optimized path-dependency
 providers. `validate_release_benchmarks.py` runs the corrected command and
 checks every reachable provider's `.mossbuild` metadata for the release profile
-and `-O`. Both Moss and Rust benchmark sources construct identical workloads
+and `-O`, then SHA-256 matches each rlib copied into `build/bench` to that
+provider's release artifact. Both Moss and Rust benchmark sources construct identical workloads
 inside each timed body and assert their lengths, contents, result positions,
-and checksums before a measurement can be accepted.
+and checksums before a measurement can be accepted. The Rust reference also
+mirrors benchmark-lowering barriers around builder appends and vector pushes.

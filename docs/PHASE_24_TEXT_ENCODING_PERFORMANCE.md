@@ -26,7 +26,9 @@ python3 validate_release_benchmarks.py
 
 The verifier reruns the benchmark and checks the benchmark root plus all six
 path providers (`moss.text`, `moss.encoding`, `moss.core`, `moss.bytes`,
-`moss.collections`, and `moss.algorithms`) for release metadata and `-O`.
+`moss.collections`, and `moss.algorithms`) for release metadata and `-O`. It
+also SHA-256 matches every provider rlib copied into `build/bench` to the
+corresponding release artifact, so stale neighboring metadata cannot pass.
 
 ## Workload equivalence contract
 
@@ -44,6 +46,10 @@ Assertions and checksums execute in the timed bodies. This adds work, but it is
 the same logical work in both implementations and makes workload drift fail
 loudly. Repeated-operation profiling cases reuse one asserted input and execute
 8 find, 16 slice, 4 case-conversion, or 64 validation operations per body.
+The Rust builder and integer-vector construction also mirror the explicit
+`black_box` barriers that Moss benchmark lowering inserts around mutating
+append/push statements. Concatenation and builder result lengths are each
+counted exactly once in both bodies.
 
 ## Corrected Moss release-provider results
 
@@ -52,14 +58,14 @@ nanoseconds per complete benchmark body.
 
 | Workload | p25 | median | p75 |
 | --- | ---: | ---: | ---: |
-| Text find, 256 code points | 13,718 | 15,018 | 17,740 |
-| Text slice, 128 of 256 code points | 16,602 | 18,584 | 20,879 |
-| ASCII lower, 256 code points | 29,170 | 31,093 | 32,506 |
-| Repeated `String +`, 128 segments | 7,085 | 7,731 | 8,976 |
-| Segment builder, 128 segments | 5,415 | 5,589 | 6,548 |
-| Strict UTF-8 validation, 1,024 ASCII bytes | 1,913 | 2,038 | 2,282 |
+| Text find, 256 code points | 14,025 | 16,154 | 18,467 |
+| Text slice, 128 of 256 code points | 15,941 | 17,001 | 19,910 |
+| ASCII lower, 256 code points | 28,946 | 30,848 | 34,713 |
+| Repeated `String +`, 128 segments | 7,256 | 8,400 | 8,927 |
+| Segment builder, 128 segments | 5,512 | 5,926 | 6,879 |
+| Strict UTF-8 validation, 1,024 ASCII bytes | 1,923 | 2,030 | 2,625 |
 
-The corrected builder is about 28% faster than repeated concatenation on this
+The corrected builder is about 29% faster than repeated concatenation on this
 workload, reversing the invalid mixed-profile result. It remains a composition
 abstraction rather than a universal speed guarantee.
 
@@ -81,20 +87,20 @@ implementation.
 
 | Workload | p25 | median | p75 |
 | --- | ---: | ---: | ---: |
-| Owned-String find | 418 | 461 | 488 |
-| Owned-String slice | 5,242 | 5,720 | 6,877 |
-| Owned-String ASCII lower | 17,582 | 19,626 | 21,636 |
-| Scalar text find | 422 | 440 | 792 |
-| Scalar text slice | 571 | 575 | 591 |
-| Scalar ASCII lower | 815 | 899 | 948 |
-| Repeated concat | 397 | 443 | 459 |
-| Segment builder | 1,245 | 1,259 | 1,296 |
-| Same strict integer UTF-8 validator | 1,079 | 1,097 | 1,119 |
-| Rust standard UTF-8 validator | 997 | 1,012 | 1,088 |
+| Owned-String find | 409 | 427 | 481 |
+| Owned-String slice | 5,274 | 5,499 | 6,010 |
+| Owned-String ASCII lower | 17,557 | 18,500 | 20,446 |
+| Scalar text find | 395 | 401 | 580 |
+| Scalar text slice | 559 | 567 | 617 |
+| Scalar ASCII lower | 424 | 438 | 699 |
+| Repeated concat | 460 | 508 | 548 |
+| Segment builder | 2,291 | 2,473 | 2,707 |
+| Same strict integer UTF-8 validator | 1,135 | 1,219 | 1,353 |
+| Rust standard UTF-8 validator | 1,089 | 1,141 | 1,263 |
 
 These rows show that owned per-code-point Strings account for a large portion
 of slicing and casing cost: even in optimized Rust, owned-String slice is about
-10x its scalar counterpart and owned-String casing about 22x. The compiler's
+10x its scalar counterpart and owned-String casing about 42x. The compiler's
 semantic type query confirms that Moss `String.chars()` produces
 `Vector[String]`, not a compact scalar vector. Remaining Moss-versus-owned-Rust
 differences include Moss collection calls, cloning/joining, and runtime String
@@ -106,16 +112,16 @@ The repeated cases amortize setup. Median batch times were:
 
 | Batch | Moss | Rust owned/same algorithm | Approximate Moss operation |
 | --- | ---: | ---: | ---: |
-| Find x8 | 16,176 ns | 2,290 ns | 2,022 ns |
-| Slice x16 | 166,344 ns | 96,754 ns | 10,397 ns |
-| ASCII lower x4 | 116,596 ns | 74,685 ns | 29,149 ns |
-| Strict validation x64 | 67,033 ns | 20,487 ns | 1,047 ns |
+| Find x8 | 14,501 ns | 2,182 ns | 1,813 ns |
+| Slice x16 | 145,951 ns | 93,039 ns | 9,122 ns |
+| ASCII lower x4 | 115,055 ns | 77,934 ns | 28,764 ns |
+| Strict validation x64 | 65,394 ns | 21,408 ns | 1,022 ns |
 
 The per-operation column is the batch median divided by its fixed count; it is
-not a separately sampled distribution. Search retains an approximately 7.1x
-gap after setup, while slice and casing are within about 1.7x and 1.6x of the
+not a separately sampled distribution. Search retains an approximately 6.6x
+gap after setup, while slice and casing are within about 1.6x and 1.5x of the
 Rust implementation using the same owned-String strategy. Validation is about
-3.3x the same arithmetic Rust loop after setup.
+3.1x the same arithmetic Rust loop after setup.
 
 No system profiler was available in this environment, so the investigation
 used release-profile decomposition, semantic type queries, source-level
@@ -125,13 +131,17 @@ intermediates for these manual loops.
 
 ## SDK optimizations from the investigation
 
-- `text.find` now uses the built-in split primitive and measures the first
+- For the measured late-single-match workload, `text.find` now uses the built-in split primitive and measures the first
   prefix instead of materializing both inputs as `Vector[String]` and scanning
-  every candidate. The prebuilt x8 median fell from 290,986 ns to 16,176 ns
+  every candidate. The prebuilt x8 median fell from 290,986 ns to 14,501 ns
   (about 94%). Empty-pattern and overlapping first-match contracts still pass.
+  This is not a general early-exit optimization: split scans and materializes
+  all fields, and an independent 4,096-character probe found abundant early
+  matches slower than an absent pattern. A dedicated substring primitive would
+  be needed to avoid that representation cost.
 - ASCII case conversion now reuses that optimized first-match path rather than
   rebuilding a 26-element alphabet vector for every input code point. The
-  corrected 256-code-point end-to-end median fell from 194,667 ns to 31,093 ns
+  corrected 256-code-point end-to-end median fell from 194,667 ns to 30,848 ns
   (about 85%).
 - `validate_utf8` now validates directly rather than allocating the decoded
   scalar vector and discarding it. Exact decoder error behavior remains in
