@@ -22,9 +22,13 @@ SWARM, shell, and whitespace checks pass. On the same candidate,
 `TMPDIR="$PWD/tmp" make check` exited 0 with 54/54 executor tests and
 `all Moss v0.1 tests passed`; `make examples` built every positive example.
 
-Branch publication and the authorized feedback-only merge into the freshly
-fetched `phase24-integration` remain. After that merge is pushed, record its
-exact SHA and fork Team T's `phase24-text` branch from that remote commit.
+The bootstrap branch is published at `b647586b463758c0dc7cc43db4f1e6280d274ef5`.
+After a fresh fetch confirmed that Team I's backplane still pointed to `e563401`,
+the authorized feedback-only ordinary merge was created and pushed as
+`d62010e960f0db9b798a5b1ac37a9197d07b633d`. Post-merge feedback, skill,
+SWARM, ancestry, and whitespace validation passed. Team I retains routine
+integration ownership. Team T must fork `phase24-text` from the current remote
+integration tip containing this merge and record that exact fork point.
 
 ## Phase 24 Foundations SDK independent Architect final adversarial GO; L7 merge gate — 2026-10-12
 
