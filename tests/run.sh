@@ -54,6 +54,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_borrowed_view_writ
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_generic_specialization.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_imported_generic_expressions.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 sdk/foundations/acceptance/run_all.py
+PYTHONDONTWRITEBYTECODE=1 python3 sdk/text-encoding-acceptance/run_all.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_adversarial_architect.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_builtin_generic_typing.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tools/check_swarm_feedback.py --self-test

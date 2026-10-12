@@ -204,8 +204,7 @@ export fn concat(parts: Vector[String]) -> String:
 export fn new_builder() -> Vector[String]:
   return Vector[String]()
 
-# Appends an independent segment. Building performs one final join instead of
-# repeatedly copying the complete accumulated String.
+# Appends an independent segment. Building batches segments into one final join.
 export fn builder_append(builder: Vector[String], part: String):
   builder.push(part + "")
 

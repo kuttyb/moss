@@ -47,8 +47,7 @@ characters unchanged.
 
 Search is a straightforward code-point comparison with worst-case
 `O(value.length * pattern.length)` work. Transformations accumulate parts and
-perform one final `join`; they do not repeatedly concatenate the complete
-result.
+perform one final `join`.
 
 ## TextBuilder
 
@@ -67,9 +66,11 @@ echo text.builder_build(builder)
 ```
 
 The representation is intentionally the existing `Vector[String]`; Moss v0.1
-does not provide an opaque public SDK type. This avoids the quadratic whole-result copying pattern of repeated
-`result = result + next_part`. It is a segment builder, not a mutable String or
-Unicode rope.
+does not provide an opaque public SDK type. It offers explicit batched
+composition, not a mutable String or Unicode rope. On the current native
+backend, measured repeated `String +` is faster for the 128-segment benchmark,
+so the builder is not advertised as an unconditional performance win. See the
+Team T performance report for the measured tradeoff.
 
 ## Validation
 

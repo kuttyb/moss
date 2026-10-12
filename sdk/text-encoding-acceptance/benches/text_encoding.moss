@@ -1,0 +1,36 @@
+import text
+import encoding
+
+bench "text find 256 code points":
+  value = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"
+  text.find(value, "aaaaab")
+
+bench "text slice 256 code points":
+  value = "é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂é🙂"
+  sliced = text.slice(value, 64, 128)
+  sliced.length()
+
+bench "repeated concat 128 segments":
+  var result = ""
+  var i = 0
+  while i < 128:
+    result = result + "abcdefgh"
+    i = i + 1
+  result.length()
+
+bench "segment builder 128 segments":
+  var builder = text.new_builder()
+  var i = 0
+  while i < 128:
+    text.builder_append(builder, "abcdefgh")
+    i = i + 1
+  built = text.builder_build(builder)
+  built.length()
+
+bench "UTF-8 validate 1024 ASCII bytes":
+  var values = Vector[Int]()
+  var i = 0
+  while i < 1024:
+    values.push(65 + i % 26)
+    i = i + 1
+  encoding.validate_utf8(values)

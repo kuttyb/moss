@@ -9,4 +9,4 @@ fn main():
     decoded = encoding.decode_utf8(bytes)
     echo decoded[5]
   recover error:
-    echo -1
+    echo 0 - 1

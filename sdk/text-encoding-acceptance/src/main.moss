@@ -1,0 +1,42 @@
+module app
+import text
+import encoding
+import core
+import bytes
+import collections
+import algorithms
+
+fn verify() -> Bool:
+  value = "  Moss é🙂  "
+  assert(text.starts_with(value, "  Moss"))
+  assert(text.ends_with(value, "🙂  "))
+  assertEqual(text.trim_ascii(value), "Moss é🙂")
+  assertEqual(text.find(value, "é🙂"), 7)
+  assert(core.valid_slice(7, 2, value.length()))
+  assertEqual(text.slice(value, 7, 2), "é🙂")
+
+  scalars = [77, 111, 115, 115, 32, 233, 128578]
+  encoded = encoding.encode_utf8(scalars)
+  assert(bytes.all_bytes(encoded))
+  assert(encoding.validate_utf8(encoded))
+  decoded = encoding.decode_utf8(encoded)
+  assertEqual(collections.index_of(decoded, 128578), 6)
+
+  var order_probe = [128578, 32, 233, 77]
+  algorithms.sort_int(order_probe)
+  assertEqual(order_probe[0], 32)
+  assertEqual(order_probe[3], 128578)
+
+  var builder = text.new_builder()
+  text.builder_append(builder, "Moss")
+  text.builder_append(builder, " ")
+  text.builder_append(builder, "é🙂")
+  assertEqual(text.builder_build(builder), "Moss é🙂")
+  return true
+
+fn main():
+  try:
+    if verify():
+      echo "text encoding acceptance ok"
+  recover error:
+    echo "text encoding acceptance error"

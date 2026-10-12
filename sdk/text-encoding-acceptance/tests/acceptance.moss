@@ -1,0 +1,41 @@
+module app
+import text
+import encoding
+import bytes
+import collections
+
+fn same_ints(left: Vector[Int], right: Vector[Int]) -> Bool:
+  if (left |> count) != (right |> count):
+    return false
+  var i = 0
+  while i < (left |> count):
+    if left[i] != right[i]:
+      return false
+    i = i + 1
+  return true
+
+test "cross-package text and UTF-8 composition":
+  try:
+    scalars = [0, 65, 769, 20013, 128578, 1114111]
+    encoded = encoding.encode_utf8(scalars)
+    assert(bytes.all_bytes(encoded))
+    decoded = encoding.decode_utf8(encoded)
+    assert(same_ints(decoded, scalars))
+    assertEqual(collections.index_of(decoded, 20013), 3)
+    assertEqual(text.slice("é🙂", 1, 2), "́🙂")
+  recover error:
+    assert(false)
+
+test "safe text edge contracts":
+  assertEqual(text.find("", ""), 0)
+  assertEqual(text.rfind("", ""), 0)
+  assertEqual(text.replace_all("aaaa", "aa", ""), "")
+  assertEqual(text.slice("abc", 3, 0), "")
+  assert(not text.valid_slice("abc", 3, 1))
+
+test "strict invalid UTF-8 remains a value-level result":
+  assert(not encoding.validate_utf8([-1]))
+  assert(not encoding.validate_utf8([256]))
+  assert(not encoding.validate_utf8([192, 128]))
+  assert(not encoding.validate_utf8([237, 160, 128]))
+  assert(not encoding.validate_utf8([244, 144, 128, 128]))
