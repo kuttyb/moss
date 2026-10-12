@@ -24,6 +24,10 @@ with tempfile.TemporaryDirectory(prefix="phase24-generic-expressions-", dir=SCRA
         '[build]\nsource = "src"\n', encoding="utf-8")
     (provider / "src" / "probe.moss").write_text(
         'module probe\n'
+        'export type Box:\n'
+        '  value: Int\n'
+        'export fn make(value) -> Box:\n'
+        '  return Box(value: value)\n'
         'export fn contains(items, target) -> Bool:\n'
         '  var i = 0\n'
         '  while i < (items |> count):\n'
@@ -50,7 +54,8 @@ with tempfile.TemporaryDirectory(prefix="phase24-generic-expressions-", dir=SCRA
         '  assert(not probe.contains(values, "green"))\n'
         '  flags = [not probe.contains(values, "green")]\n'
         '  assert(flags[0])\n'
-        '  echo 0 - probe.index_of(values, "blue")\n', encoding="utf-8")
+        '  echo 0 - probe.index_of(values, "blue")\n'
+        '  echo probe.make(7).value\n', encoding="utf-8")
 
     env = os.environ.copy()
     env.update(MOSS=str(MOSS), MARGO_HOME=str(work / "margo-home"), TMPDIR=str(SCRATCH))
@@ -60,7 +65,7 @@ with tempfile.TemporaryDirectory(prefix="phase24-generic-expressions-", dir=SCRA
                                 capture_output=True, text=True)
         if result.returncode:
             raise AssertionError(f"margo {' '.join(args)} failed:\n{result.stdout}\n{result.stderr}")
-        if args[0] in ("run", "debug") and result.stdout != "-1\n":
+        if args[0] in ("run", "debug") and result.stdout != "-1\n7\n":
             raise AssertionError(f"margo {' '.join(args)}: {result.stdout!r}")
 
 print("Phase 24 imported generic expression specializations passed")

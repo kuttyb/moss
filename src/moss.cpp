@@ -8650,6 +8650,30 @@ class Checker {
         return;
       }
 
+    // A computed object's field access evaluates its base, which may contain
+    // an imported generic call that needs a consumer-side specialization.
+    // Confirm a declared field before descending so qualified module names
+    // and enum cases retain their call-resolution paths below.
+    if (auto dot = value.rfind('.'); dot != string::npos) {
+      const string base = trim(value.substr(0, dot));
+      const string field = trim(value.substr(dot + 1));
+      if (plain_identifier(field)) {
+        auto base_type = inferred_expr_type(base, env);
+        if (base_type) {
+          auto object = objects_.find(canonical_type_name(*base_type));
+          if (object != objects_.end() &&
+              std::any_of(object->second->fields.begin(),
+                          object->second->fields.end(),
+                          [&](const Field& candidate) {
+                            return candidate.name == field;
+                          })) {
+            collect_local_call_sites(line, base, env, implicit_owner, calls);
+            return;
+          }
+        }
+      }
+    }
+
     string receiver, method_name;
     vector<string> arguments;
     if (parse_member_call(value, receiver, method_name, arguments)) {
