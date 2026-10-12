@@ -1,0 +1,5 @@
+fn finish(value: String) -> String:
+  return value
+
+fn main():
+  pass

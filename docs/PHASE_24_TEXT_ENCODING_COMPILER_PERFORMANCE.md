@@ -39,8 +39,17 @@ Four read-only String built-ins remove the demonstrated representation detours:
   `moss.text`.
 - `ascii_lower()` and `ascii_upper()` use Rust's ASCII-only String transforms;
   non-ASCII Unicode scalars are unchanged.
-- `String + ""` and `"" + String` lower to a direct clone. General String
-  concatenation retains its established semantics and lowering.
+- `String + ""` and `"" + String` lower to a direct clone. Nonempty String
+  concatenation now evaluates every operand once in source order, reserves the
+  exact combined UTF-8 byte length, and appends each operand without formatting.
+  Flat chains use one result buffer. A simple writable-local assignment whose
+  first operand is its target reuses that target buffer only when no later
+  operand mentions the target; self-aliasing forms retain independent-result
+  construction.
+- Writable `reserve(additional_bytes)` and `append(part)` String primitives
+  provide capacity-aware construction without unsafe access. Reserve requests
+  at or below zero are no-ops. The receiver is WRITE and the append part READ,
+  so ordinary ownership overlap rules reject `value.append(value)`.
 
 The compiler-owned descriptor table is the common type/effect/completion
 surface. Native lowering and Fast Debug have matching implementations. Bootstrap,
@@ -69,6 +78,20 @@ case was already 141,069 ns versus 142,102 ns (0.99x). This isolated the two
 code-point-index branches per ASCII byte in the general `char_indices` path.
 The guarded `is_ascii()` path above removes that avoidable traversal without
 changing the multibyte algorithm or exposing byte indexing to Moss source.
+
+## Focused concatenation follow-up
+
+The asserted release workload `repeated concat 128 segments` builds exactly
+1,024 ASCII bytes. With the focused lowering it measured p25/median/p75
+153/155/181 ns through
+`MOSS=../../moss ../../margo bench 'repeated concat 128 segments' --release --json`.
+The maintained optimized Rust workload measured 257/267/323 ns, making Moss
+0.58x the Rust median in this run. The generated benchmark body contains one
+`reserve(8)` and direct literal `push_str` per loop iteration and no `format!`,
+temporary literal String, or intermediate result assignment. This row
+demonstrates buffer reuse but is not presented as
+a universal speedup; allocation counts belong to the separately instrumented
+capacity-builder comparison, and no allocation count is inferred from timings.
 
 ## Coordination risk
 

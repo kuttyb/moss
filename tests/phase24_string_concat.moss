@@ -1,6 +1,9 @@
 fn suffix(tag: String) -> String:
   return "[" + tag + "]"
 
+fn append_part(target: String, part: String):
+  target.append(part)
+
 fn main():
   left = "moss"
   right = "🙂"
@@ -19,7 +22,7 @@ fn main():
 
   var builder = ""
   builder.reserve(64)
-  builder.append("Moss")
+  append_part(builder, "Moss")
   builder.append("🙂")
   builder.reserve(-1)
   assertEqual(builder, "Moss🙂")

@@ -18135,9 +18135,16 @@ class Generator {
         collect(e);
         std::ostringstream joined;
         joined << "{ ";
-        for (size_t index = 0; index < operands.size(); ++index)
-          joined << "let __moss_concat_" << index << " = &("
-                 << expr(operands[index], d, locals, types) << "); ";
+        for (size_t index = 0; index < operands.size(); ++index) {
+          const string operand = trim(operands[index]);
+          const bool literal = operand.size() >= 2 &&
+              operand.front() == '"' && operand.back() == '"';
+          joined << "let __moss_concat_" << index << " = ";
+          if (literal) joined << operand << "; ";
+          else
+            joined << "&(" << expr(operands[index], d, locals, types)
+                   << "); ";
+        }
         joined << "let mut __moss_concat_result = String::with_capacity(";
         for (size_t index = 0; index < operands.size(); ++index) {
           if (index) joined << ".saturating_add(";
@@ -18147,7 +18154,9 @@ class Generator {
         joined << "); ";
         for (size_t index = 0; index < operands.size(); ++index)
           joined << "__moss_concat_result.push_str(__moss_concat_" << index
-                 << ".as_str()); ";
+                 << (trim(operands[index]).size() >= 2 &&
+                     trim(operands[index]).front() == '"' &&
+                     trim(operands[index]).back() == '"' ? "); " : ".as_str()); ");
         joined << "__moss_concat_result }";
         return joined.str();
       }
@@ -18474,9 +18483,17 @@ class Generator {
           if (member_name == "append" && member_arguments.size() == 1)
             return "{ let __moss_string = &mut (" +
                 write_call_place(member_receiver, d, locals, types) +
-                "); let __moss_part = &(" +
-                expr(member_arguments[0], d, locals, types) +
-                "); __moss_string.push_str(__moss_part.as_str()); }";
+                "); let __moss_part = " + [&]() {
+                  const string part = trim(member_arguments[0]);
+                  return part.size() >= 2 && part.front() == '"' &&
+                      part.back() == '"' ? part : "&(" +
+                      expr(member_arguments[0], d, locals, types) + ")";
+                }() + "; __moss_string.push_str(" + [&]() {
+                  const string part = trim(member_arguments[0]);
+                  return string("__moss_part") +
+                      (part.size() >= 2 && part.front() == '"' &&
+                       part.back() == '"' ? "" : ".as_str()");
+                }() + "); }";
           if (member_name == "split" && member_arguments.size() == 1)
             return "{ let __moss_separator = " + expr(member_arguments[0], d, locals, types) +
                 "; if __moss_separator.is_empty() { std::process::abort(); } " + source +
@@ -19753,8 +19770,13 @@ class Generator {
                 false, false,
                 "bench:" + benchmark.name);
       benchmark_body_ = previous_benchmark_body;
+      std::set<string> consumed_locals;
+      for (const auto& statement : benchmark.body)
+        consumed_locals.insert(statement.ownership_consumed_bindings.begin(),
+                               statement.ownership_consumed_bindings.end());
       for (const auto& local : locals)
-        o << "    std::hint::black_box(&" << local << ");\n";
+        if (!consumed_locals.count(local))
+          o << "    std::hint::black_box(&" << local << ");\n";
       o << "}\n";
       tooling_end(o, 0, benchmark.semantic_identity);
       o << "\n";
@@ -20768,10 +20790,16 @@ class Generator {
               if (reuse_string_buffer) {
                 std::ostringstream reused;
                 reused << "{ ";
-                for (size_t operand = 1; operand < concat_operands.size(); ++operand)
-                  reused << "let __moss_append_" << operand << " = &("
-                         << expr(concat_operands[operand], d, locals, &types)
-                         << "); ";
+                for (size_t operand = 1; operand < concat_operands.size(); ++operand) {
+                  const string part = trim(concat_operands[operand]);
+                  const bool literal = part.size() >= 2 &&
+                      part.front() == '"' && part.back() == '"';
+                  reused << "let __moss_append_" << operand << " = ";
+                  if (literal) reused << part << "; ";
+                  else
+                    reused << "&(" << expr(concat_operands[operand], d, locals, &types)
+                           << "); ";
+                }
                 string place = write_call_place(s.a, d, locals, &types);
                 reused << "(" << place << ").reserve(";
                 for (size_t operand = 1; operand < concat_operands.size(); ++operand) {
@@ -20783,7 +20811,11 @@ class Generator {
                 reused << "); ";
                 for (size_t operand = 1; operand < concat_operands.size(); ++operand)
                   reused << "(" << place << ").push_str(__moss_append_"
-                         << operand << ".as_str()); ";
+                         << operand
+                         << (trim(concat_operands[operand]).size() >= 2 &&
+                             trim(concat_operands[operand]).front() == '"' &&
+                             trim(concat_operands[operand]).back() == '"'
+                                 ? "); " : ".as_str()); ");
                 reused << "}";
                 assigned = reused.str();
               } else {

@@ -7,6 +7,8 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 MOSS = ROOT / "moss"
 SOURCE = ROOT / "tests" / "phase24_string_concat.moss"
+BENCH_PROJECT = (ROOT / "tests" / "tooling" / "fixtures" /
+                 "phase24_string_concat_bench")
 
 
 def run(*args):
@@ -16,6 +18,13 @@ def run(*args):
 
 checked = run("check", SOURCE, "--json")
 assert checked.returncode == 0, checked.stderr
+effects = run("effects", "append_part", "--source", SOURCE, "--json")
+assert effects.returncode == 0, effects.stderr
+effect_payload = __import__("json").loads(effects.stdout)["result"]
+parameters = effect_payload["ownership_facts"]["parameters"]
+assert [(item["name"], item["effect"]) for item in parameters] == [
+    ("target", "WRITE"), ("part", "READ")
+], parameters
 interpreted = run("run", "--interp", SOURCE)
 assert interpreted.returncode == 0, interpreted.stderr
 assert interpreted.stdout.strip() == "string concat ok", interpreted.stdout
@@ -30,7 +39,10 @@ with tempfile.TemporaryDirectory(dir=ROOT / "tmp") as directory:
     assert "__moss_concat_result.push_str" in rust
     assert "__moss_append_1" in rust
     assert ").reserve(__moss_append_1.len().saturating_add(" in rust
-    assert "__moss_string.push_str(__moss_part.as_str())" in rust
+    assert 'let __moss_part = "🙂"; __moss_string.push_str(__moss_part)' in rust
+    assert '"-".to_string()' not in rust
+    assert 'let __moss_append_1 = "-"' in rust
+    assert 'let __moss_concat_0 = "["' in rust
 
     executable = pathlib.Path(directory) / "concat-bin"
     native = subprocess.run(["rustc", "--edition", "2021", "-O", generated,
@@ -41,6 +53,16 @@ with tempfile.TemporaryDirectory(dir=ROOT / "tmp") as directory:
                               capture_output=True)
     assert executed.returncode == 0, executed.stderr
     assert executed.stdout.strip() == "string concat ok", executed.stdout
+
+    benchmark = subprocess.run([str(MOSS), "bench", "--json"],
+                               cwd=BENCH_PROJECT, text=True,
+                               capture_output=True)
+    assert benchmark.returncode == 0, benchmark.stderr
+    benchmark_rust = (BENCH_PROJECT / "build" / "bench" /
+                      "phase24_string_concat_bench_benches.rs")
+    benchmark_text = benchmark_rust.read_text(encoding="utf-8")
+    assert "finish(builder)" in benchmark_text
+    assert "black_box(&builder)" not in benchmark_text
 
     for body, diagnostic in [
         ('fn main():\n  value = "x"\n  value.append(value)\n',
