@@ -53,6 +53,14 @@ fn scalar_text_find(value: &str, pattern: &str) -> i64 {
     }
 }
 
+// A same-crate non-inlined control isolates the effect of losing cross-call
+// optimization. Moss package exports are stable ABI-v9 symbols in separate
+// rlibs, so the ordinary inlined control alone cannot attribute that cost.
+#[inline(never)]
+fn noinline_scalar_text_find(value: &str, pattern: &str) -> i64 {
+    scalar_text_find(black_box(value), black_box(pattern))
+}
+
 fn scalar_text_slice(value: &str, start: usize, length: usize) -> String {
     value.chars().skip(start).take(length).collect()
 }
@@ -431,6 +439,33 @@ fn main() {
                     black_box(&late_pattern),
                 ));
                 checksum += black_box(scalar_text_find(
+                    black_box(&value),
+                    black_box(&absent_pattern),
+                ));
+            }
+            assert_eq!(value.chars().count(), 1_028);
+            assert_eq!(value.chars().nth(1_024), Some('界'));
+            assert_eq!(checksum, 130_944);
+        },
+    );
+    measure(
+        "Rust noinline scalar profile text find multibyte early late no match x128",
+        || {
+            let value = make_long_multibyte_find_input();
+            let early_pattern = "é🙂".to_owned();
+            let late_pattern = "界end".to_owned();
+            let absent_pattern = "absent".to_owned();
+            let mut checksum = 0_i64;
+            for _ in 0..128 {
+                checksum += black_box(noinline_scalar_text_find(
+                    black_box(&value),
+                    black_box(&early_pattern),
+                ));
+                checksum += black_box(noinline_scalar_text_find(
+                    black_box(&value),
+                    black_box(&late_pattern),
+                ));
+                checksum += black_box(noinline_scalar_text_find(
                     black_box(&value),
                     black_box(&absent_pattern),
                 ));

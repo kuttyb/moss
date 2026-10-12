@@ -1,5 +1,20 @@
 # Moss current status
 
+## Phase 24 Team T performance sprint — independent V review — 2026-10-12
+
+Independent validation reviewed implementation SHA
+`85a9138bb1a324f3b0b759f739fb358566854285`. Optimized-provider provenance,
+workload assertions, generated Rust, native/Fast Debug semantics, compiled-only
+ABI-v9 behavior, and the three-mode 66-valid/15-invalid UTF-8 oracle pass.
+Fresh permanent mixed-Unicode String and exact UTF-8 offset cases also pass.
+
+V issues correctness/methodology GO but performance HOLD / conditional NO-GO:
+fresh multibyte search measurements straddled the 2x idiomatic-Rust ceiling,
+and the retained-segment builder's gap to reserved Rust remains an explicit
+representation exception requiring L7 disposition. Full evidence and commands
+are in `docs/PHASE_24_TEXT_ENCODING_PERF_VALIDATION_V.md`. Coordinator and the
+independent Architect own final integration disposition; V does not push.
+
 ## Phase 24 Team T ASCII case and builder performance workstream complete — 2026-10-12
 
 P2 replaced the SDK's per-code-point ASCII casing vectors/searches with direct

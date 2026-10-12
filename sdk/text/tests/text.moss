@@ -56,6 +56,17 @@ test "slice preserves exact Unicode scalar boundaries":
   assertEqual(text.slice("é🙂é界", -1, 1), "")
   assertEqual(text.slice("é🙂é界", 0, -1), "")
 
+test "adversarial builtins preserve mixed scalar semantics":
+  value = "🙂é🙂éneedle"
+  assertEqual(text.find(value, "needle"), 5)
+  assertEqual(text.find(value, "é"), 3)
+  assertEqual(text.find(value, "́n"), 4)
+  assertEqual(text.slice("🙂éé界AZ", 2, 3), "é界")
+  assertEqual(text.slice("abc", 9223372036854775807, 1), "")
+  assertEqual(text.slice("abc", -9223372036854775807, 1), "")
+  assertEqual(text.to_ascii_lower("İßΣＡAz"), "İßΣＡaz")
+  assertEqual(text.to_ascii_upper("İßΣＡAz"), "İßΣＡAZ")
+
 test "ASCII trim and case preserve non ASCII":
   assertEqual(text.trim_ascii(" \t\nMoss\r "), "Moss")
   assertEqual(text.trim_ascii(""), "")
