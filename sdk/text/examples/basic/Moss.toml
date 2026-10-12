@@ -1,0 +1,9 @@
+[package]
+name = "text_demo"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+"moss.text" = { path = "../.." }
