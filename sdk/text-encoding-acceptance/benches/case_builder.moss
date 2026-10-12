@@ -1,0 +1,90 @@
+import text
+
+# Focused P2 performance cases. Each case asserts the complete workload so the
+# matched Rust baselines cannot silently drift.
+
+bench "ASCII lower short 16 code points":
+  value = "AbCdEfGhIjKlMnOp"
+  expected = "abcdefghijklmnop"
+  assertEqual(value.length(), 16)
+  assertEqual(expected.length(), 16)
+  assertEqual(text.to_ascii_lower(value), expected)
+
+bench "ASCII upper multibyte 256 code points":
+  var value = ""
+  var expected = ""
+  var i = 0
+  while i < 32:
+    value = value + "aé🙂zBCdE"
+    expected = expected + "Aé🙂ZBCDE"
+    i = i + 1
+  assertEqual(value.length(), 256)
+  assertEqual(expected.length(), 256)
+  assertEqual(text.to_ascii_upper(value), expected)
+
+bench "profile ASCII lower prebuilt 4096 code points x16":
+  var value = ""
+  var expected = ""
+  var i = 0
+  while i < 512:
+    value = value + "AbCdEfGh"
+    expected = expected + "abcdefgh"
+    i = i + 1
+  var lowered = ""
+  var run = 0
+  while run < 16:
+    lowered = text.to_ascii_lower(value)
+    run = run + 1
+  assertEqual(value.length(), 4096)
+  assertEqual(expected.length(), 4096)
+  assertEqual(lowered, expected)
+
+bench "isolated ASCII lower literal 64 code points x16":
+  value = "AbCdEfGhAbCdEfGhAbCdEfGhAbCdEfGhAbCdEfGhAbCdEfGhAbCdEfGhAbCdEfGh"
+  expected = "abcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh"
+  var lowered = ""
+  var run = 0
+  while run < 16:
+    lowered = text.to_ascii_lower(value)
+    run = run + 1
+  assertEqual(value.length(), 64)
+  assertEqual(expected.length(), 64)
+  assertEqual(lowered, expected)
+
+bench "segment builder 8 segments":
+  var builder = text.new_builder()
+  var i = 0
+  while i < 8:
+    text.builder_append(builder, "abcdefgh")
+    i = i + 1
+  built = text.builder_build(builder)
+  assertEqual(text.builder_segment_count(builder), 8)
+  assertEqual(built.length(), 64)
+  assertEqual(built, "abcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh")
+
+bench "segment builder 1024 segments":
+  var builder = text.new_builder()
+  var i = 0
+  while i < 1024:
+    text.builder_append(builder, "abcdefgh")
+    i = i + 1
+  built = text.builder_build(builder)
+  assertEqual(text.builder_segment_count(builder), 1024)
+  assertEqual(built.length(), 8192)
+  assertEqual(built.char_at(0), "a")
+  assertEqual(built.char_at(8191), "h")
+
+bench "profile builder build preconstructed 128 segments x16":
+  var builder = text.new_builder()
+  var i = 0
+  while i < 128:
+    text.builder_append(builder, "abcdefgh")
+    i = i + 1
+  var checksum = 0
+  var run = 0
+  while run < 16:
+    built = text.builder_build(builder)
+    checksum = checksum + built.length()
+    run = run + 1
+  assertEqual(text.builder_segment_count(builder), 128)
+  assertEqual(checksum, 16384)

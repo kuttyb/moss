@@ -1,5 +1,28 @@
 # Moss current status
 
+## Phase 24 Team T ASCII case and builder performance workstream complete — 2026-10-12
+
+P2 replaced the SDK's per-code-point ASCII casing vectors/searches with direct
+wrappers over P4's compiler-owned String operations, preserved all exported
+signatures, added Unicode/empty/punctuation coverage through native, Fast
+Debug, and compiled-only ABI-v9 consumers, and removed an avoidable builder
+length-inspection clone. Isolated ASCII casing is 1.02x matched idiomatic Rust.
+The public vector builder is 1.09x/1.47x/1.05x representation-matched Rust at
+8/128/1024 segments and 0.98x for repeated build.
+
+A capacity-reserved Rust String remains 5.81x–18.45x faster because it performs
+one allocation and does not retain Moss's independently owned, countable
+segments. The tracked allocation reference measured 263 allocations for the
+matched 128-segment Rust contract versus one for reserved Rust; no Moss
+allocation count is claimed. Dynamic-input casing also preserves a 12x–22x
+end-to-end general-concatenation gap, separately from the 1.02x isolated
+operation. These evidence-backed representation/construction exceptions need
+L7 disposition rather than a weakened baseline or silent public-contract
+change. Focused tests, all three acceptance execution modes, release-provider
+benchmark verification, strict Rust references, feedback validation, and
+whitespace checks pass. Team T's coordinator owns integration; P2 does not
+push or merge.
+
 ## Phase 24 Team T UTF-8 performance workstream complete — 2026-10-12
 
 P3 removed non-inlined per-byte `moss.bytes` calls and the encoder's fallible

@@ -34,3 +34,18 @@ The codec harness asserts identical 256-emoji contents and materialized output
 checksums. It reports both idiomatic Rust UTF-8 operations and matching
 `Vec<i64>` algorithms so representation cost is not confused with generated
 code overhead. See `docs/PHASE_24_TEXT_ENCODING_UTF8_PERFORMANCE.md`.
+
+The focused casing/builder corpus is in `benches/case_builder.moss`. Its two
+tracked Rust references separate the equivalent `Vec<String>` segment contract
+from an aspirational capacity-reserved `String` builder and count Rust
+allocations in a separate, untimed run:
+
+```sh
+rustc --edition=2021 -D warnings -O -C debuginfo=1 case_builder_baseline.rs -o ../../tmp/team-t-case-builder
+../../tmp/team-t-case-builder
+rustc --edition=2021 -D warnings -O -C debuginfo=1 case_builder_allocations.rs -o ../../tmp/team-t-case-builder-allocations
+../../tmp/team-t-case-builder-allocations
+```
+
+See `docs/PHASE_24_TEXT_ENCODING_CASE_BUILDER_PERFORMANCE.md` for the matched
+workloads, results, and remaining builder-representation exception.

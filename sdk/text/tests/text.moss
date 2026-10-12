@@ -63,6 +63,12 @@ test "ASCII trim and case preserve non ASCII":
   assertEqual(text.trim_ascii(" Moss "), " Moss ")
   assertEqual(text.to_ascii_lower("AZ-é🙂"), "az-é🙂")
   assertEqual(text.to_ascii_upper("az-é🙂"), "AZ-é🙂")
+  assertEqual(text.to_ascii_lower(""), "")
+  assertEqual(text.to_ascii_upper(""), "")
+  assertEqual(text.to_ascii_lower("0123!@#$"), "0123!@#$")
+  assertEqual(text.to_ascii_upper("0123!@#$"), "0123!@#$")
+  assertEqual(text.to_ascii_lower("AÉZ中🙂a"), "aÉz中🙂a")
+  assertEqual(text.to_ascii_upper("aÉz中🙂A"), "AÉZ中🙂A")
 
 test "replacement is non overlapping and empty safe":
   assertEqual(text.replace_all("aaaa", "aa", "b"), "bb")

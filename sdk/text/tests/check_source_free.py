@@ -39,6 +39,8 @@ with tempfile.TemporaryDirectory(prefix="text-source-free-", dir=SCRATCH) as tem
         'module app\nimport text\n\nfn main():\n'
         '  echo text.find("aé🙂z", "é🙂")\n'
         '  echo text.slice("aé🙂z", 1, 2)\n'
+        '  echo text.to_ascii_lower("AZ-é🙂")\n'
+        '  echo text.to_ascii_upper("az-é🙂")\n'
         '  var builder = text.new_builder()\n'
         '  text.builder_append(builder, "Moss")\n'
         '  text.builder_append(builder, "🙂")\n'
@@ -53,5 +55,5 @@ with tempfile.TemporaryDirectory(prefix="text-source-free-", dir=SCRATCH) as tem
     result = subprocess.run([str(app / "build" / "debug" / "text_source_free_smoke")],
                             cwd=app, env=source_free_env, check=True,
                             capture_output=True, text=True)
-    assert result.stdout == "1\né🙂\nMoss🙂\n", result.stdout
+    assert result.stdout == "1\né🙂\naz-é🙂\nAZ-é🙂\nMoss🙂\n", result.stdout
 print("Compiled-only moss.text provider: check, build, run passed")

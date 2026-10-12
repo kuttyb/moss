@@ -45,9 +45,10 @@ characters unchanged.
 | `join(parts, separator) -> String` | Join String parts with the separator. |
 | `concat(parts) -> String` | Join String parts without a separator. |
 
-Search is a straightforward code-point comparison with worst-case
-`O(value.length * pattern.length)` work. Transformations accumulate parts and
-perform one final `join`.
+Search and slicing use compiler-owned String primitives that preserve Moss's
+Unicode code-point index contract while avoiding per-code-point String vectors.
+ASCII case conversion similarly delegates to compiler-owned, Unicode-preserving
+String operations: only ASCII `A`-`Z`/`a`-`z` are mapped.
 
 ## TextBuilder
 
@@ -55,7 +56,8 @@ perform one final `join`.
 `builder_append` or `builder_append_line`, inspect them with
 `builder_segment_count` and `builder_codepoint_length`, then call
 `builder_build` for one final join. The builder copies each appended segment so
-the caller retains its String.
+the caller retains its String; the native lowering recognizes the required
+empty-concatenation clone directly instead of routing it through formatting.
 
 ```moss
 var builder = text.new_builder()
