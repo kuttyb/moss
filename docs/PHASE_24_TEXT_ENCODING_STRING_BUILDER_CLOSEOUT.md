@@ -70,17 +70,21 @@ The workstream's final sequential p25 / median / p75 results were:
 | Finish 128 segments | 381 / 392 / 409 | 276 / 278 / 283 | 1.41x |
 | Finish 1,024 segments | 2,340 / 2,401 / 2,675 | 1,758 / 1,857 / 2,121 | 1.29x |
 | Append preconstructed part 128 times | 252 / 273 / 386 | 195 / 200 / 205 | 1.36x |
-| Reusable 1,024-byte snapshot x16 | 878 / 888 / 1,031 | 720 / 727 / 827 | 1.22x |
+| Reusable 1,024-byte snapshot x16 | **invalid historical row** | **invalid historical row** | setup mismatch |
 
-A three-run median-of-medians check kept every ratio at or below 1.49x. A
-fresh integrated Coordinator run measured 128-segment finish at 419 ns in both
-Moss and Rust, append-only at 271/255 ns, and reusable snapshots at 898/779 ns.
+The old reusable-snapshot result is retained only as invalid historical
+evidence: Moss constructed the builder inside timing while Rust constructed it
+outside. The repaired end-to-end workload constructs the owned part, reserves
+and fills 128 segments, and takes sixteen snapshots inside both timed bodies.
+Three optimized runs measured Moss/Rust median ratios of 1.45x, 1.15x, and
+0.79x (median-of-medians 1.14x). A final integrated run measured 932/943 ns.
 
 Rust allocation instrumentation measured one exactly reserved output buffer
-plus one preconstructed owned part for finish, and sixteen output allocations
-for sixteen reusable snapshots. For 128 segments this was 2 allocations /
-1,032 requested bytes for finish and 16 allocations / 16,384 bytes for the
-snapshots. Moss allocation counts are not claimed because the environment has
+plus one owned part for finish. For 128 segments this was 2 allocations / 1,032
+requested bytes. The separate snapshot-only allocation measurement constructs
+its builder before counting and reports 16 allocations / 16,384 bytes for the
+sixteen independent outputs; that intentionally narrower scope is not timing
+evidence. Moss allocation counts are not claimed because the environment has
 no supported Moss native allocation counter; generated Rust inspection is
 structural evidence only.
 
@@ -99,11 +103,17 @@ structural evidence only.
   54/54 Executor tests, and `all Moss v0.1 tests passed`.
 - `make examples`: all positive examples built; the intentional negative
   example was skipped.
+- Wrapped self-aliases such as `value.append(identity(value))` and nested
+  reserve reads now fail during Moss checking with
+  `OWNERSHIP_CONFLICTING_ACCESS`; legal disjoint controls pass native and Fast
+  Debug.
 
 ## Engineering disposition
 
-Engineering L6: **GO** for the focused assignment. Nonempty concatenation and
-the additive capacity-aware builder meet the requested performance target in
-the reproduced workloads without changing the existing builder contract.
-Final acceptance remains subject to the separately attributable exact-SHA
-Architect review.
+Engineering L6: **GO** for independent exact-SHA review. Nonempty
+concatenation and the additive capacity-aware builder meet the requested
+performance target in the reproduced workloads without changing the existing
+builder contract. Both blockers from the first Architect review—the wrapped
+mutable alias and mismatched reusable-builder timing boundary—are repaired and
+covered by permanent checks. Final acceptance remains subject to a fresh,
+separately attributable Architect verdict on the frozen candidate.

@@ -1,5 +1,24 @@
 # Moss current status
 
+## Phase 24 Team T focused String/builder repaired candidate — 2026-10-12
+
+Engineering is **GO for renewed exact-SHA Architect review**. The combined tree
+contains both first-review repairs: wrapped receiver aliases for mutable String
+builtins are rejected with structured ownership diagnostics, and the reusable
+builder benchmark now times identical end-to-end setup and snapshot work in
+Moss and Rust. The invalid historical 1.22x row remains explicitly preserved.
+Three corrected benchmark runs were 1.45x, 1.15x, and 0.79x Rust
+(median-of-medians 1.14x); the final integrated run was 932/943 ns.
+
+On the combined tree, focused String checks, six-provider optimized release
+benchmark verification, strict Rust baselines and allocator instrumentation,
+full Team T native debug/release/Fast Debug and source-free ABI-v9 acceptance,
+the 66-valid/15-invalid three-mode UTF-8 oracle, agent feedback/skill checks,
+full `TMPDIR="$PWD/tmp" make check` (54/54 Executor tests; all Moss v0.1 tests),
+and `make examples` pass. GCC strict C++17 syntax passes; `clang++` is not
+installed in this environment. A fresh independent Architect must review the
+new frozen commit before final delivery.
+
 ## Phase 24 Team T reusable-build benchmark repair — 2026-10-12
 
 The Architect's benchmark blocker at `f52f752` is repaired. The old reusable
