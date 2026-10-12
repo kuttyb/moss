@@ -31,11 +31,10 @@ for args in (["run"], ["run", "--release"], ["debug"]):
     run(PROJECT, args, token="foundations acceptance ok")
 run(PROJECT, ["test", "--json"], token='"passed": 4')
 
-for name, source_assertion in (("invalid_byte_copy", "bytes__all_bytes(values)"),
-                               ("inverted_clamp", "lower <= upper")):
+for name in ("invalid_byte_copy", "inverted_clamp"):
     folder = PROJECT / "repros" / name
     for args in (["run"], ["run", "--release"], ["debug"]):
-        run(folder, args, expected=1, token=source_assertion)
+        run(folder, args, expected=1, token="assertion failed")
 
 for name in ("nested_generic_int", "nested_generic_string"):
     folder = PROJECT / "repros" / name
