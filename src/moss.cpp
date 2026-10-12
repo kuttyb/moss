@@ -18404,6 +18404,9 @@ class Generator {
                 "; let __moss_start = " + expr(member_arguments[0], d, locals, types) +
                 "; let __moss_length = " + expr(member_arguments[1], d, locals, types) +
                 "; if __moss_start < 0 || __moss_length < 0 { String::new() } else if let Some(__moss_end) = __moss_start.checked_add(__moss_length) { "
+                "if __moss_source.is_ascii() { "
+                "if __moss_end <= __moss_source.len() as i64 { __moss_source[__moss_start as usize..__moss_end as usize].to_string() } else { String::new() } "
+                "} else { "
                 "let mut __moss_start_byte = None; let mut __moss_end_byte = None; let mut __moss_index = 0_i64; "
                 "for (__moss_byte, _) in __moss_source.char_indices() { "
                 "if __moss_index == __moss_start { __moss_start_byte = Some(__moss_byte); } "
@@ -18412,7 +18415,7 @@ class Generator {
                 "if __moss_index == __moss_start && __moss_start_byte.is_none() { __moss_start_byte = Some(__moss_source.len()); } "
                 "if __moss_index == __moss_end && __moss_end_byte.is_none() { __moss_end_byte = Some(__moss_source.len()); } "
                 "match (__moss_start_byte, __moss_end_byte) { (Some(__moss_from), Some(__moss_to)) => __moss_source[__moss_from..__moss_to].to_string(), _ => String::new() } "
-                "} else { String::new() } }";
+                "} } else { String::new() } }";
           if (member_name == "ascii_lower" && member_arguments.empty())
             return source + ".to_ascii_lowercase()";
           if (member_name == "ascii_upper" && member_arguments.empty())

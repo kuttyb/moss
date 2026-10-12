@@ -33,8 +33,10 @@ Four read-only String built-ins remove the demonstrated representation detours:
   byte prefix to a Unicode code-point count. Empty pattern is zero; absence is
   `-1`.
 - `slice(start, length) -> String` validates signed code-point bounds, walks
-  `char_indices` once to two UTF-8 boundaries, and makes one owned substring
-  copy. Invalid bounds return the empty String, matching `moss.text`.
+  ASCII input by direct byte offsets (where bytes and code points are identical),
+  otherwise walks `char_indices` once to two UTF-8 boundaries, and makes one
+  owned substring copy. Invalid bounds return the empty String, matching
+  `moss.text`.
 - `ascii_lower()` and `ascii_upper()` use Rust's ASCII-only String transforms;
   non-ASCII Unicode scalars are unchanged.
 - `String + ""` and `"" + String` lower to a direct clone. General String
@@ -60,6 +62,13 @@ inside this focused sprint.
 Consequently, the SDK's local byte-range check is the narrow UTF-8 validation
 optimization. It retains meaningful `moss.bytes` interoperability elsewhere and
 avoids pretending the compiler can inline through the current stable export.
+
+P1's first integrated bound-pattern matrix found long ASCII slice x128 at
+270,433 ns versus 127,786 ns for idiomatic Rust (2.12x), while the multibyte
+case was already 141,069 ns versus 142,102 ns (0.99x). This isolated the two
+code-point-index branches per ASCII byte in the general `char_indices` path.
+The guarded `is_ascii()` path above removes that avoidable traversal without
+changing the multibyte algorithm or exposing byte indexing to Moss source.
 
 ## Coordination risk
 

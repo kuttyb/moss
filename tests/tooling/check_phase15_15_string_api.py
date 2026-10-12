@@ -48,6 +48,7 @@ with tempfile.TemporaryDirectory(dir=ROOT / 'tmp') as directory:
     assert compiled.returncode == 0, compiled.stderr
     rust = generated.read_text(encoding='utf-8')
     assert '.find(__moss_pattern.as_str())' in rust, 'find did not use native str::find'
+    assert '.is_ascii()' in rust, 'slice omitted its code-point-safe ASCII byte fast path'
     assert '.char_indices()' in rust, 'slice did not traverse UTF-8 boundaries directly'
     assert '.to_ascii_lowercase()' in rust and '.to_ascii_uppercase()' in rust
     assert 'format!("{}{}", text, "".to_string())' not in rust
