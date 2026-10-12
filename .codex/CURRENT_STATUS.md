@@ -1,5 +1,21 @@
 # Moss current status
 
+## Phase 24 Team M: Independent Architect L6 Review — NO-GO — 2026-10-12
+
+Exact reviewed candidate commit: `129a81fa54a4f3d9b7f6d76bb376a9f85c3d9256` on `phase24-math`.
+Independent Architect L6 completed evaluation and rendered an attributable **NO-GO** in `docs/team_m/ARCHITECT_REVIEW.md`.
+
+While Team M achieved clean execution of 23 existing unit tests, verified compiler lowering in `src/moss.cpp` (full `TMPDIR="$PWD/tmp" make check` passed), and unblocked environment operations, deep architectural and numerical falsification revealed 7 critical blockers:
+1. `moss.math`: `atan(x)` range reduction for $|x| > 1.0$ is inverted, returning $0.4636$ instead of $1.1071$ at $x=2.0$ (error > 58%), cascading into `asin` ($0.99 \to 1.7123 > \pi/2$), `acos` ($0.99 \to -0.1415 < 0$), and `atan2`.
+2. `moss.math`: `exp(x)` truncates to $0.0$ at $x < -708.3964$, missing IEEE-754 subnormals down to $-744.44$, and overflows to $\infty$ at $709.78$ due to unsplit $2^{1024}$ float overflow, failing to return finite results up to $709.7827$. Missing split $2^k$ scaling and split $\ln(2)$.
+3. `moss.random`: Violates Phase 21 error semantics (missing `export enum RandomError { InvalidRange, EmptyCollection }`), silently returning $0$ on empty choice and $min$ on inverted ranges.
+4. `moss.random`: Two-draw sampler outcome constant `total_outcomes = (m_half + 1) * m` mismatches generated domain $[0, A \cdot M - 1]$, failing rejection sampling and injecting modulo bias into large integer ranges.
+5. `moss.time`: Violates Phase 21 error semantics (missing `export enum TimeError { DivisionByZero, InvalidDate }`), silently returning $0$ on duration division by zero.
+6. `moss.time`: Core duration and timestamp arithmetic (`duration_add`, `sub`, `scale`, `instant_add_duration`, `timestamp_diff`) does NOT saturate, silently wrapping around $2^{63}-1$ to negative values under signed two's complement integer arithmetic.
+7. `moss.time`: Incomplete Gregorian calendar validation allows April 31 and Feb 29 on century non-leap year 1900, which silently mutate on roundtrip (April 31 $\to$ May 1, Feb 29 1900 $\to$ March 1).
+
+**Independent Architect L6 Verdict: NO-GO FOR MERGE INTO `main`.** Remediation roadmap defined in `docs/team_m/ARCHITECT_REVIEW.md`.
+
 ## Phase 24 Team M: Post-L7 Review Repairs & Live Validation Verified — 2026-10-12
 
 Following L7 NO-GO merge gate on HEAD `4abed3451dfd8a475ed6641bcf6bf0cb7b6f6c1c` on `phase24-math`,
