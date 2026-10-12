@@ -284,21 +284,25 @@ export fn days_in_month(year: Int, month: Int) -> Int:
     return 28
   return 0
 
+export fn validate_datetime(dt: DateTime):
+  if dt.month < 1 or dt.month > 12:
+    raise TimeError.InvalidDate
+  if dt.hour < 0 or dt.hour > 23:
+    raise TimeError.InvalidDate
+  if dt.minute < 0 or dt.minute > 59:
+    raise TimeError.InvalidDate
+  if dt.second < 0 or dt.second > 59:
+    raise TimeError.InvalidDate
+  if dt.millisecond < 0 or dt.millisecond > 999:
+    raise TimeError.InvalidDate
+  max_day = days_in_month(dt.year, dt.month)
+  if dt.day < 1 or dt.day > max_day:
+    raise TimeError.InvalidDate
+
 export fn make_datetime(year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int, millisecond: Int) -> DateTime:
-  if month < 1 or month > 12:
-    raise TimeError.InvalidDate
-  if hour < 0 or hour > 23:
-    raise TimeError.InvalidDate
-  if minute < 0 or minute > 59:
-    raise TimeError.InvalidDate
-  if second < 0 or second > 59:
-    raise TimeError.InvalidDate
-  if millisecond < 0 or millisecond > 999:
-    raise TimeError.InvalidDate
-  max_day = days_in_month(year, month)
-  if day < 1 or day > max_day:
-    raise TimeError.InvalidDate
-  return DateTime(year = year, month = month, day = day, hour = hour, minute = minute, second = second, millisecond = millisecond)
+  dt = DateTime(year = year, month = month, day = day, hour = hour, minute = minute, second = second, millisecond = millisecond)
+  validate_datetime(dt)
+  return dt
 
 export fn timestamp_to_datetime(ts: Timestamp) -> DateTime:
   var total_ms = ts.epoch_millis
@@ -334,6 +338,18 @@ export fn timestamp_to_datetime(ts: Timestamp) -> DateTime:
   return DateTime(year = y, month = month, day = day, hour = hour, minute = minute, second = second, millisecond = millisecond)
 
 export fn datetime_to_timestamp(dt: DateTime) -> Timestamp:
+  validate_datetime(dt)
+
+  # Extreme-year overflow guard:
+  # The representable Unix epoch millisecond range is [-292277026, 292277026].
+  # Years beyond these bounds would cause intermediate integer overflow in era * 146097.
+  let max_year = 292277026
+  let min_year = 0 - 292277026
+  if dt.year > max_year:
+    return Timestamp(epoch_millis = 9223372036854775807)
+  if dt.year < min_year:
+    return Timestamp(epoch_millis = -9223372036854775808)
+
   var y = dt.year
   var m = dt.month
   if m <= 2:
@@ -381,8 +397,8 @@ fn pad3(n: Int) -> String:
   return pad_digit(d1) + pad_digit(d2) + pad_digit(d3)
 
 fn format_year(year: Int) -> String:
-  if year == (-9223372036854775807 - 1):
-    return "(-9223372036854775807 - 1)"
+  if year == -9223372036854775808:
+    return "-9223372036854775808"
   var y = year
   var is_neg = false
   if y < 0:

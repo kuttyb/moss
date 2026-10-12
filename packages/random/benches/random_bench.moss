@@ -2,16 +2,18 @@ import random
 
 bench "mrg32k3a next int generation":
   var rng = random.new_rng(12345)
+  var sum = 0
   var i = 0
   while i < 1000:
-    v = random.rng_next_int(rng)
+    sum = sum + random.rng_next_int(rng)
     i = i + 1
 
 bench "mrg32k3a next float generation":
   var rng = random.new_rng(12345)
+  var sum = 0.0
   var i = 0
   while i < 1000:
-    f = random.rng_next_float(rng)
+    sum = sum + random.rng_next_float(rng)
     i = i + 1
 
 bench "fisher yates shuffle 100 elements":
@@ -21,4 +23,7 @@ bench "fisher yates shuffle 100 elements":
   while i < 100:
     vec.push(i)
     i = i + 1
-  shuffled = random.shuffle(vec, rng)
+  var trial = 0
+  while trial < 10:
+    shuffled = random.shuffle(vec, rng)
+    trial = trial + 1

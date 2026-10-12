@@ -16,14 +16,32 @@ import sys
 from pathlib import Path
 
 # Paths
-REPO_ROOT = Path("/home/owner/daji/code/moss2").resolve()
+REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKTREE_ROOT = REPO_ROOT
 MARGO_BIN = REPO_ROOT / "margo"
-HARNESS_DIR = Path(__file__).resolve().parent / "harness"
+HARNESS_DIR = REPO_ROOT / "tmp" / "adversarial_oracle_harness"
+
+
+def ensure_harness():
+    HARNESS_DIR.mkdir(parents=True, exist_ok=True)
+    (HARNESS_DIR / "src").mkdir(parents=True, exist_ok=True)
+    manifest = HARNESS_DIR / "Moss.toml"
+    manifest_content = """[package]
+name = "adversarial_oracle_harness"
+version = "0.1.0"
+
+[dependencies]
+"moss.math" = { path = "../../packages/math" }
+"moss.random" = { path = "../../packages/random" }
+"moss.time" = { path = "../../packages/time" }
+"""
+    if not manifest.exists() or manifest.read_text(encoding="utf-8") != manifest_content:
+        manifest.write_text(manifest_content, encoding="utf-8")
 
 
 def run_moss_probe(moss_code: str, timeout: int = 10) -> tuple[int, str, str]:
     """Compile and execute a Moss probe in the oracle harness package."""
+    ensure_harness()
     main_moss_path = HARNESS_DIR / "src" / "main.moss"
     main_moss_path.parent.mkdir(parents=True, exist_ok=True)
     with open(main_moss_path, "w", encoding="utf-8") as f:

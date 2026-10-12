@@ -67,11 +67,38 @@ test "trunc floor ceil":
   assertEqual(math.ceil(3.2), 4.0)
   assertEqual(math.ceil(-3.2), 0.0 - 3.0)
 
+  # Signed zero reciprocal comparisons:
+  # 1.0 / -0.0 is -inf (< 0.0), 1.0 / +0.0 is +inf (> 0.0)
+  # trunc:
+  assertEqual(1.0 / math.trunc(-0.0) < 0.0, true)
+  assertEqual(1.0 / math.trunc(-0.5) < 0.0, true)
+  assertEqual(1.0 / math.trunc(0.0) > 0.0, true)
+  assertEqual(1.0 / math.trunc(0.5) > 0.0, true)
+
+  # floor:
+  assertEqual(1.0 / math.floor(-0.0) < 0.0, true)
+  assertEqual(1.0 / math.floor(0.0) > 0.0, true)
+  assertEqual(math.floor(-0.5), 0.0 - 1.0)
+
+  # ceil:
+  assertEqual(1.0 / math.ceil(-0.0) < 0.0, true)
+  assertEqual(1.0 / math.ceil(-0.5) < 0.0, true)
+  assertEqual(1.0 / math.ceil(0.0) > 0.0, true)
+  assertEqual(math.ceil(0.5), 1.0)
+
 test "round ties to even":
   assertEqual(math.round(2.5), 2.0)
   assertEqual(math.round(3.5), 4.0)
   assertEqual(math.round(-2.5), 0.0 - 2.0)
   assertEqual(math.round(-3.5), 0.0 - 4.0)
+
+  # Signed zero reciprocal comparisons for round:
+  assertEqual(1.0 / math.round(-0.0) < 0.0, true)
+  assertEqual(1.0 / math.round(-0.2) < 0.0, true)
+  assertEqual(1.0 / math.round(-0.5) < 0.0, true)
+  assertEqual(1.0 / math.round(0.0) > 0.0, true)
+  assertEqual(1.0 / math.round(0.2) > 0.0, true)
+  assertEqual(1.0 / math.round(0.5) > 0.0, true)
 
 test "atan range reduction and reconstruction accuracy":
   a1 = math.atan(1.0)

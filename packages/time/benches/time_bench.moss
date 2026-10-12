@@ -1,15 +1,32 @@
 import time
 
 bench "duration arithmetic and conversion":
-  d1 = time.duration_from_seconds(10)
-  d2 = time.duration_from_millis(500)
-  sum = time.duration_add(d1, d2)
-  ms = time.duration_millis(sum)
+  var total_ms = 0
+  var i = 0
+  while i < 1000:
+    d1 = time.duration_from_seconds(i)
+    d2 = time.duration_from_millis(i * 3)
+    sum = time.duration_add(d1, d2)
+    total_ms = total_ms + time.duration_millis(sum)
+    i = i + 1
 
 bench "hinnant civil calendar decomposition":
-  ts = time.timestamp_from_unix_millis(1700000000000)
-  dt = time.timestamp_to_datetime(ts)
+  var total_day = 0
+  var ts = time.timestamp_from_unix_millis(1700000000000)
+  step = time.duration_from_millis(86400000)
+  var i = 0
+  while i < 1000:
+    dt = time.timestamp_to_datetime(ts)
+    total_day = total_day + dt.day
+    ts = time.timestamp_add_duration(ts, step)
+    i = i + 1
 
 bench "iso 8601 formatting":
-  dt = time.DateTime(year: 2026, month: 10, day: 12, hour: 12, minute: 30, second: 45, millisecond: 123)
-  iso = time.datetime_to_iso8601(dt)
+  var i = 0
+  var year = 2000
+  while i < 50:
+    dt = time.DateTime(year: year, month: (i % 12) + 1, day: (i % 28) + 1, hour: i % 24, minute: i % 60, second: i % 60, millisecond: i * 10)
+    iso = time.datetime_to_iso8601(dt)
+    year = year + 1
+    i = i + 1
+

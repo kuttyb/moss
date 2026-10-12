@@ -1,20 +1,49 @@
 import math
 
 bench "math scalar abs and clamp":
-  x = math.abs(-123.456)
-  c = math.clamp(x, 0.0, 100.0)
+  var acc = 0.0
+  var x = -500.0
+  var i = 0
+  while i < 1000:
+    acc = acc + math.clamp(math.abs(x), 10.0, 100.0)
+    x = x + 1.001
+    i = i + 1
 
 bench "math float round ties to even":
-  r1 = math.round(2.5)
-  r2 = math.round(3.5)
+  var acc = 0.0
+  var x = -500.5
+  var i = 0
+  while i < 1000:
+    acc = acc + math.round(x) + math.trunc(x)
+    x = x + 1.002
+    i = i + 1
 
 bench "math sin and cos polynomial":
-  s = math.sin(0.785398)
-  c = math.cos(0.785398)
+  var acc = 0.0
+  var theta = -3.14159
+  var i = 0
+  while i < 1000:
+    acc = acc + math.sin(theta) + math.cos(theta)
+    theta = theta + 0.0062831853
+    i = i + 1
 
 bench "math exp and ln":
-  e = math.exp(1.5)
-  l = math.ln(e)
+  var acc = 0.0
+  var x = 0.01
+  var i = 0
+  while i < 1000:
+    acc = acc + math.ln(math.exp(x))
+    x = x + 0.005
+    i = i + 1
 
 bench "math hypot scaled":
-  h = math.hypot(3000.0, 4000.0)
+  var acc = 0.0
+  var a = 3.0
+  var b = 4.0
+  var i = 0
+  while i < 1000:
+    acc = acc + math.hypot(a, b)
+    a = a + 1.5
+    b = b + 2.5
+    i = i + 1
+
