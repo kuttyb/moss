@@ -24,8 +24,12 @@ with tempfile.TemporaryDirectory(dir=ROOT / 'tmp') as directory:
     for source, expected in [
         ('fn main():\n  x = "hi".char_at("0")\n', 'String char_at expects int'),
         ('fn main():\n  x = "hi".split(1)\n', 'String split expects string'),
+        ('fn main():\n  x = "hi".find(1)\n', 'String find expects string'),
+        ('fn main():\n  x = "hi".slice("0", 1)\n', 'String slice expects int'),
+        ('fn main():\n  x = "hi".slice(0, "1")\n', 'String slice expects int'),
+        ('fn main():\n  x = "hi".ascii_lower(1)\n', 'expects 0 arguments'),
         ('fn main():\n  x = "hi".join([1])\n', 'String join expects vector[string]'),
-        ('fn main():\n  x = "hi".length(1)\n', 'expects no argument'),
+        ('fn main():\n  x = "hi".length(1)\n', 'expects 0 arguments'),
     ]:
         path = base / 'invalid.moss'
         path.write_text(source)
@@ -39,4 +43,12 @@ with tempfile.TemporaryDirectory(dir=ROOT / 'tmp') as directory:
         path.write_text(source)
         result = run('run', '--interp', path)
         assert result.returncode != 0 and expected in result.stderr, result
+    generated = base / 'string_api.rs'
+    compiled = run(positive, '-o', generated)
+    assert compiled.returncode == 0, compiled.stderr
+    rust = generated.read_text(encoding='utf-8')
+    assert '.find(__moss_pattern.as_str())' in rust, 'find did not use native str::find'
+    assert '.char_indices()' in rust, 'slice did not traverse UTF-8 boundaries directly'
+    assert '.to_ascii_lowercase()' in rust and '.to_ascii_uppercase()' in rust
+    assert 'format!("{}{}", text, "".to_string())' not in rust
 print('Phase 15.15 String API Fast Debug checks passed')

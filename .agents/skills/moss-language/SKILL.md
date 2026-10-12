@@ -139,6 +139,7 @@ accepted operand types are compiler-defined. `String` supports `+`
 concatenation and `==`/`!=` equality, but not `<`, `<=`, `>`, or
 `>=` ordering.
 Its read-only methods are `length()`, `char_at(index)`, `chars()`,
+`find(pattern)`, `slice(start, length)`, `ascii_lower()`, `ascii_upper()`,
 `split(separator)`, and `join(parts)` on the separator. Positions count
 zero-based Unicode code points. `parse_int(String)` and `parse_float(String)`
 raise `ParseError` variants; `to_int(Float)` raises `ConversionError` variants.

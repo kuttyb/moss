@@ -381,6 +381,10 @@ static const vector<BuiltinOperationDescriptor>& builtin_operations() {
       {BuiltinReceiverFamily::String, "length", "length()", "int", Effect::Read, {}, {}},
       {BuiltinReceiverFamily::String, "char_at", "char_at(index)", "string", Effect::Read, {Effect::Read}, {"int"}, true},
       {BuiltinReceiverFamily::String, "chars", "chars()", "vector[string]", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::String, "find", "find(pattern)", "int", Effect::Read, {Effect::Read}, {"string"}},
+      {BuiltinReceiverFamily::String, "slice", "slice(start, length)", "string", Effect::Read, {Effect::Read, Effect::Read}, {"int", "int"}},
+      {BuiltinReceiverFamily::String, "ascii_lower", "ascii_lower()", "string", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::String, "ascii_upper", "ascii_upper()", "string", Effect::Read, {}, {}},
       {BuiltinReceiverFamily::String, "split", "split(separator)", "vector[string]", Effect::Read, {Effect::Read}, {"string"}, true},
       {BuiltinReceiverFamily::String, "join", "join(parts)", "string", Effect::Read, {Effect::Read}, {"vector[string]"}},
   };
@@ -18096,6 +18100,10 @@ class Generator {
           left_type && right_type &&
           canonical_type_name(*left_type) == "string" &&
           canonical_type_name(*right_type) == "string";
+      if (string_concatenation && trim(binary->right) == "\"\"")
+        return "(" + left + ").clone()";
+      if (string_concatenation && trim(binary->left) == "\"\"")
+        return "(" + right + ").clone()";
       if (string_concatenation)
         return "format!(\"{}{}\", " + left + ", " + right + ")";
       bool integer_operation = left_type && right_type &&
@@ -18385,6 +18393,30 @@ class Generator {
             return "{ let __moss_index = " + expr(member_arguments[0], d, locals, types) +
                 "; if __moss_index < 0 { std::process::abort(); } " + source +
                 ".chars().nth(__moss_index as usize).unwrap_or_else(|| std::process::abort()).to_string() }";
+          if (member_name == "find" && member_arguments.size() == 1)
+            return "{ let __moss_source = &" + source + "; let __moss_pattern = " +
+                expr(member_arguments[0], d, locals, types) +
+                "; match __moss_source.find(__moss_pattern.as_str()) { "
+                "Some(__moss_byte) => __moss_source[..__moss_byte].chars().count() as i64, "
+                "None => -1_i64 } }";
+          if (member_name == "slice" && member_arguments.size() == 2)
+            return "{ let __moss_source = &" + source +
+                "; let __moss_start = " + expr(member_arguments[0], d, locals, types) +
+                "; let __moss_length = " + expr(member_arguments[1], d, locals, types) +
+                "; if __moss_start < 0 || __moss_length < 0 { String::new() } else if let Some(__moss_end) = __moss_start.checked_add(__moss_length) { "
+                "let mut __moss_start_byte = None; let mut __moss_end_byte = None; let mut __moss_index = 0_i64; "
+                "for (__moss_byte, _) in __moss_source.char_indices() { "
+                "if __moss_index == __moss_start { __moss_start_byte = Some(__moss_byte); } "
+                "if __moss_index == __moss_end { __moss_end_byte = Some(__moss_byte); break; } "
+                "__moss_index += 1; } "
+                "if __moss_index == __moss_start && __moss_start_byte.is_none() { __moss_start_byte = Some(__moss_source.len()); } "
+                "if __moss_index == __moss_end && __moss_end_byte.is_none() { __moss_end_byte = Some(__moss_source.len()); } "
+                "match (__moss_start_byte, __moss_end_byte) { (Some(__moss_from), Some(__moss_to)) => __moss_source[__moss_from..__moss_to].to_string(), _ => String::new() } "
+                "} else { String::new() } }";
+          if (member_name == "ascii_lower" && member_arguments.empty())
+            return source + ".to_ascii_lowercase()";
+          if (member_name == "ascii_upper" && member_arguments.empty())
+            return source + ".to_ascii_uppercase()";
           if (member_name == "split" && member_arguments.size() == 1)
             return "{ let __moss_separator = " + expr(member_arguments[0], d, locals, types) +
                 "; if __moss_separator.is_empty() { std::process::abort(); } " + source +
@@ -23452,7 +23484,7 @@ static void write_bootstrap_json(std::ostream& out,
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"pass\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"],\"exhaustive_enum_match\":\"match expression: / match consume <owned enum expression>:\"},"
          "\"enums\":{\"declaration\":\"enum Name: with closed named-field cases\",\"construction\":\"Name.Case(field: value)\",\"read_match\":\"match expression:\",\"consume_match\":\"match consume <owned enum expression>:\",\"pattern_ownership_modifiers\":false,\"replace\":\"replace(place, replacement)\"},"
-         "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"}},"
+         "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"find(pattern)\",\"slice(start, length)\",\"ascii_lower()\",\"ascii_upper()\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"}},"
          "\"numeric\":{\"float_predicates\":[\"is_nan(Float) -> Bool\",\"is_finite(Float) -> Bool\"],"
          "\"parsing\":[\"parse_int(String) -> Int raises ParseError.Invalid|Overflow\","
          "\"parse_float(String) -> Float raises ParseError.Invalid\"],"

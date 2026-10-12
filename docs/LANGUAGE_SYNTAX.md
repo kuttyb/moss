@@ -309,10 +309,14 @@ the operand types.
 
 `String` supports built-in `+` concatenation and `==`/`!=` equality.
 The read-only String methods are `length() -> Int`, `char_at(Int) -> String`,
-`chars() -> Vector[String]`, `split(String) -> Vector[String]`, and
+`chars() -> Vector[String]`, `find(String) -> Int`,
+`slice(Int, Int) -> String`, `ascii_lower() -> String`,
+`ascii_upper() -> String`, `split(String) -> Vector[String]`, and
 `join(Vector[String]) -> String` (called on the separator). Character positions
-are zero-based Unicode code-point positions. `char_at` fails on an invalid
-position, and `split` fails on an empty separator. Numeric text uses the
+are zero-based Unicode code-point positions. `find` returns `-1` when absent;
+`slice` returns an empty String for invalid bounds; ASCII case conversion leaves
+non-ASCII scalars unchanged. `char_at` fails on an invalid position, and `split`
+fails on an empty separator. Numeric text uses the
 raising built-ins `parse_int(text)` and `parse_float(text)`; checked Float to Int
 conversion uses `to_int(value)`. Their accepted spellings and typed errors are
 specified in [Phase 21 §13](MOSS_PHASE_21_ERROR_HANDLING.md#13-float-numeric-parsing-and-conversion-p21-12).

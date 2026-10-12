@@ -155,12 +155,19 @@ fn main():
   echo text.length()          # 3
   echo text.char_at(1)        # é
   letters = text.chars()      # Vector[String]
+  echo text.find("é🙂")       # 1 (code-point index)
+  echo text.slice(1, 2)       # é🙂
+  echo "MÖSS".ascii_lower()  # mÖss
   fields = "a,b,".split(",") # ["a", "b", ""]
   echo ",".join(fields)       # a,b,
 ```
 
 `char_at` requires a valid nonnegative position; `split` requires a nonempty
 separator. Invalid inputs fail under current runtime precondition behavior.
+`find` returns the first code-point position, `-1` when absent, and `0` for an
+empty pattern. `slice` takes a code-point start and length; invalid bounds return
+the empty String. `ascii_lower` and `ascii_upper` change ASCII letters only and
+preserve every other Unicode scalar.
 `join` accepts `Vector[String]` and returns an empty String for an empty vector.
 String numeric parsing and recoverable invalid-input behavior are described above.
 

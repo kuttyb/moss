@@ -1021,6 +1021,47 @@ class FastInterpreter {
               for (const auto& c : characters()) result.push_back(Value::string_value(c));
               return Value::vector_value(std::move(result));
             }
+            if (method_name == "find" && method_args.size() == 1) {
+              Value pattern = eval(method_args[0], frame, line, output);
+              if (pattern.kind != Value::Kind::String)
+                throw RuntimeError(line, "String find requires a String pattern");
+              size_t byte = receiver.string.find(pattern.string);
+              if (byte == std::string::npos) return Value::int_value(-1);
+              int64_t index = 0;
+              for (size_t i = 0; i < byte; ++i)
+                if ((static_cast<unsigned char>(receiver.string[i]) & 0xc0) != 0x80)
+                  ++index;
+              return Value::int_value(index);
+            }
+            if (method_name == "slice" && method_args.size() == 2) {
+              Value start = eval(method_args[0], frame, line, output);
+              Value length = eval(method_args[1], frame, line, output);
+              if (start.kind != Value::Kind::Int || length.kind != Value::Kind::Int)
+                throw RuntimeError(line, "String slice requires Int start and length");
+              auto chars = characters();
+              if (start.integer < 0 || length.integer < 0 ||
+                  static_cast<uint64_t>(start.integer) > chars.size() ||
+                  static_cast<uint64_t>(length.integer) >
+                      chars.size() - static_cast<uint64_t>(start.integer))
+                return Value::string_value("");
+              std::string result;
+              const size_t begin = static_cast<size_t>(start.integer);
+              const size_t end = begin + static_cast<size_t>(length.integer);
+              for (size_t index = begin; index < end; ++index) result += chars[index];
+              return Value::string_value(std::move(result));
+            }
+            if (method_name == "ascii_lower" && method_args.empty()) {
+              std::string result = receiver.string;
+              for (char& byte : result)
+                if (byte >= 'A' && byte <= 'Z') byte = static_cast<char>(byte + ('a' - 'A'));
+              return Value::string_value(std::move(result));
+            }
+            if (method_name == "ascii_upper" && method_args.empty()) {
+              std::string result = receiver.string;
+              for (char& byte : result)
+                if (byte >= 'a' && byte <= 'z') byte = static_cast<char>(byte - ('a' - 'A'));
+              return Value::string_value(std::move(result));
+            }
             if (method_name == "split" && method_args.size() == 1) {
               Value separator = eval(method_args[0], frame, line, output);
               if (separator.kind != Value::Kind::String || separator.string.empty())

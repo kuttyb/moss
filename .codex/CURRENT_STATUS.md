@@ -12,6 +12,25 @@ full Team T acceptance, optimized-provider benchmark verification, and
 feedback validation pass. Team T's coordinator owns integration into
 `phase24-text-perf`; P3 does not push or merge.
 
+## Phase 24 Team T performance sprint — P4 compiler/runtime checkpoint — 2026-10-12
+
+P4 added compiler-owned read-only `String.find`, `String.slice`,
+`String.ascii_lower`, and `String.ascii_upper` operations with matching native
+and Fast Debug semantics, code-point indices/bounds, bootstrap discovery,
+documentation, completion, and generated-Rust tests. Empty String concatenation
+now lowers to a direct clone rather than general formatting. The generated-code
+audit and fixed-base measurements are recorded in
+`docs/PHASE_24_TEXT_ENCODING_COMPILER_PERFORMANCE.md`.
+
+Focused native `rustc -D warnings`, Fast Debug, String typing/lowering,
+builtin-generic, semantic completion, skill, feedback, `moss.text` native/Fast
+Debug, and compiled-only provider checks pass. A release `#[inline]` experiment
+was reverted: Rust rejects inline hints on ABI-v9 `#[export_name]` functions;
+a two-symbol inline implementation/export wrapper is explicitly deferred rather
+than weakening source-free compatibility. Team I must reconcile newer
+mixed-Int/Float edits in `src/moss.cpp`; they are in a separate lowering region
+but share the file. No P4 implementation work remains.
+
 ## Phase 24 Team T L7 stabilization complete — 2026-10-12
 
 The focused stabilization implementation is frozen at exact SHA
