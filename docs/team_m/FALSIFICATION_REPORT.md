@@ -415,3 +415,40 @@ Three independent Python harnesses were implemented in `tmp/worktrees/adversaria
 4. **`moss.time` Repair Priorities**:
    - Add month-aware day validation in `make_datetime` (30 days for Apr/Jun/Sep/Nov; 28/29 for Feb based on 400-year leap rule).
    - Implement saturating arithmetic for `duration_abs(INT64_MIN)` and overflow-checked arithmetic across duration operations.
+
+---
+
+## 8. Post-Repair Adversarial Re-Evaluation & Verification
+
+**Evaluation Date:** 2026-10-12  
+**Candidate Commit SHA:** `2eee39ae2780389303846bd7029243d039e1c467` (and HEAD `f2c2ad695fbafdb86c676b4008925f1cab295d11`) on branch `phase24-math`  
+**Reviewer:** Independent Adversarial Numerical Reviewer  
+**Execution Command:** `python3 tests/oracles/verify_repairs.py`  
+**Verdict:** **ZERO FALSIFICATIONS — GO FOR MERGE REVIEW BY L7**
+
+### 8.1 Re-Testing Results Against Previous Counterexamples
+
+| Prior Counterexample | Input / Condition | Prior Status (`129a81f`) | Re-Test Result (`2eee39a`) | Parity with Reference |
+|---|---|---|---|---|
+| `atan(2.0)` | $x = 2.0$ | $0.4636$ (Falsified) | $1.1071487177940905$ | $< 1$ ULP vs Python `math.atan` |
+| `atan(1.5)` | $x = 1.5$ | $0.5880$ (Falsified) | $0.982793723247329$ | $< 1$ ULP vs Python `math.atan` |
+| `atan(3.0)` | $x = 3.0$ | $0.3217$ (Falsified) | $1.2490457723982544$ | $< 1$ ULP vs Python `math.atan` |
+| `atan(-2.0)` | $x = -2.0$ | $-0.4636$ (Falsified) | $-1.1071487177940905$ | $< 1$ ULP vs Python `math.atan` |
+| `exp(-710.0)` | $x = -710.0$ | $0.0$ (Falsified) | $4.47628622567513 \times 10^{-309}$ | $< 1$ ULP vs Python `math.exp` |
+| `exp(709.5)` | $x = 709.5$ | $+\infty$ (Falsified) | $1.35498631931463 \times 10^{308}$ | $< 1$ ULP vs Python `math.exp` |
+| `hypot(inf, nan)` | $(\infty, \text{NaN})$ | $\text{NaN}$ (Falsified) | $+\infty$ | IEEE-754 compliant |
+| `min(-0.0, 0.0)` | $(-0.0, 0.0)$ | $+0.0$ (Falsified) | $-0.0$ | IEEE-754-2019 compliant |
+| `randint` signed overflow | $max - min > 2^{63}-1$ | Hang / infinite loop | Raises `RandomError.InvalidRange` | Checked bounds protection |
+| 2-draw sampler void | $M < range \le AM$ | $4.29 \times 10^9$ unreachable | Exact bijection on $[0, AM-1]$ | 0 modulo bias mathematically proven |
+| `choice([])` | Empty collection | Returned `0` (Falsified) | Raises `RandomError.EmptyCollection` | Phase 21 error totality |
+| April 31 | `make_datetime` | Mutated to May 1 | Raises `TimeError.InvalidDate` | Gregorian leap/month totality |
+| Feb 29 1900 | `make_datetime` | Mutated to March 1 | Raises `TimeError.InvalidDate` | Secular 100-year non-leap totality |
+| `duration_abs(INT64_MIN)` | `INT64_MIN` | Returned negative | Saturates to `INT64_MAX` | Saturating arithmetic |
+| `duration_div(d, 0)` | Divisor 0 | Returned 0 duration | Raises `TimeError.DivisionByZero` | Phase 21 error totality |
+
+### 8.2 Final Attributable Adversarial Verdict
+
+The independent test harnesses in `tests/oracles/` confirm zero falsifications across all tested boundaries, extreme floating-point magnitudes, subnormals, signed zeros, integer ranges, and temporal calendar conversions. All reported defects from L7 have been successfully addressed.
+
+# **GO FOR MERGE REVIEW BY L7**
+
