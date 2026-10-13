@@ -1,5 +1,6 @@
 import ndarray
 import linalg
+import math
 
 test "scalar and filled constructors follow rank zero and row major contracts":
   let scalar = ndarray.scalar(7.5)
@@ -289,3 +290,295 @@ test "matrix conversion copies and rejects unsupported shapes":
   recover ndarray.NdArrayError.DataLengthMismatch:
     caught_data = true
   assert(caught_data)
+
+test "trailing-axis broadcasting covers singleton expansion and all arithmetic":
+  let left = ndarray.from_flat([2, 3, 1], [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+  let right = ndarray.from_flat([1, 4], [10.0, 20.0, 30.0, 40.0])
+
+  let added = ndarray.add(left, right)
+  assertEqual(added.shape[0], 2)
+  assertEqual(added.shape[1], 3)
+  assertEqual(added.shape[2], 4)
+  assertEqual(ndarray.get(added, [0, 0, 0]), 11.0)
+  assertEqual(ndarray.get(added, [0, 1, 2]), 32.0)
+  assertEqual(ndarray.get(added, [1, 2, 3]), 46.0)
+
+  let subtracted = ndarray.subtract(left, right)
+  assertEqual(ndarray.get(subtracted, [0, 0, 0]), -9.0)
+  assertEqual(ndarray.get(subtracted, [1, 2, 3]), -34.0)
+
+  let multiplied = ndarray.multiply(left, right)
+  assertEqual(ndarray.get(multiplied, [0, 1, 2]), 60.0)
+  assertEqual(ndarray.get(multiplied, [1, 2, 3]), 240.0)
+
+  let divided = ndarray.divide(right, left)
+  assertEqual(ndarray.get(divided, [0, 0, 0]), 10.0)
+  assertEqual(ndarray.get(divided, [1, 2, 3]), 40.0 / 6.0)
+
+test "rank-zero and scalar arithmetic broadcast while returning copies":
+  let values = ndarray.from_flat([2, 2], [1.0, 2.0, 4.0, 8.0])
+  let scalar_added = ndarray.add(ndarray.scalar(2.0), values)
+  assertEqual(ndarray.get(scalar_added, [0, 0]), 3.0)
+  assertEqual(ndarray.get(scalar_added, [1, 1]), 10.0)
+
+  let added = ndarray.add_scalar(values, 3.0)
+  let subtracted = ndarray.subtract_scalar(values, 1.0)
+  let multiplied = ndarray.multiply_scalar(values, 2.0)
+  let divided = ndarray.divide_scalar(values, 2.0)
+  assertEqual(ndarray.get(added, [1, 1]), 11.0)
+  assertEqual(ndarray.get(subtracted, [0, 0]), 0.0)
+  assertEqual(ndarray.get(multiplied, [1, 0]), 8.0)
+  assertEqual(ndarray.get(divided, [0, 1]), 1.0)
+
+  var mutable_result = added
+  ndarray.set(mutable_result, [0, 0], 99.0)
+  assertEqual(ndarray.get(values, [0, 0]), 1.0)
+
+  let scalar_result = ndarray.multiply(ndarray.scalar(3.0), ndarray.scalar(4.0))
+  assertEqual(ndarray.rank(scalar_result), 0)
+  assertEqual(ndarray.get(scalar_result, Vector[Int]()), 12.0)
+
+test "broadcasting rejects mismatches and preserves zero extents":
+  let empty = ndarray.add(ndarray.zeros([2, 0, 3]), ndarray.ones([1, 3]))
+  assertEqual(empty.shape[0], 2)
+  assertEqual(empty.shape[1], 0)
+  assertEqual(empty.shape[2], 3)
+  assertEqual(ndarray.element_count(empty), 0)
+
+  let zero_with_one = ndarray.add(ndarray.zeros([0]), ndarray.ones([1]))
+  assertEqual(zero_with_one.shape[0], 0)
+  assertEqual(ndarray.element_count(zero_with_one), 0)
+
+  var caught_mismatch = false
+  try:
+    ignored_mismatch = ndarray.add(ndarray.zeros([2, 3]), ndarray.zeros([2, 4]))
+  recover ndarray.NdArrayError.BroadcastMismatch:
+    caught_mismatch = true
+  assert(caught_mismatch)
+
+  var caught_zero_mismatch = false
+  try:
+    ignored_zero_mismatch = ndarray.add(ndarray.zeros([0]), ndarray.zeros([2]))
+  recover ndarray.NdArrayError.BroadcastMismatch:
+    caught_zero_mismatch = true
+  assert(caught_zero_mismatch)
+
+  var caught_output_overflow = false
+  try:
+    ignored_output_overflow = ndarray.add(ndarray.zeros([0, 9223372036854775807, 1]), ndarray.zeros([1, 1, 2]))
+  recover ndarray.NdArrayError.Overflow:
+    caught_output_overflow = true
+  assert(caught_output_overflow)
+
+  let nan_result = ndarray.add(ndarray.scalar(math.nan()), ndarray.ones([2]))
+  assert(math.is_nan(ndarray.get(nan_result, [0])))
+  assert(math.is_nan(ndarray.get(nan_result, [1])))
+
+test "slice copy supports full interior stepped and empty slices":
+  let array = ndarray.from_flat([3, 4], [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0])
+
+  var full = ndarray.slice_copy(array, [0, 0], [3, 4], [1, 1])
+  assertEqual(ndarray.get(full, [2, 3]), 11.0)
+  ndarray.set(full, [0, 0], 99.0)
+  assertEqual(ndarray.get(array, [0, 0]), 0.0)
+
+  let interior = ndarray.slice_copy(array, [1, 1], [3, 4], [1, 2])
+  assertEqual(interior.shape[0], 2)
+  assertEqual(interior.shape[1], 2)
+  assertEqual(ndarray.get(interior, [0, 0]), 5.0)
+  assertEqual(ndarray.get(interior, [0, 1]), 7.0)
+  assertEqual(ndarray.get(interior, [1, 0]), 9.0)
+  assertEqual(ndarray.get(interior, [1, 1]), 11.0)
+
+  let stepped = ndarray.slice_copy(array, [0, 0], [3, 4], [2, 3])
+  assertEqual(ndarray.get(stepped, [0, 0]), 0.0)
+  assertEqual(ndarray.get(stepped, [0, 1]), 3.0)
+  assertEqual(ndarray.get(stepped, [1, 0]), 8.0)
+  assertEqual(ndarray.get(stepped, [1, 1]), 11.0)
+
+  let empty = ndarray.slice_copy(array, [1, 2], [1, 4], [1, 1])
+  assertEqual(empty.shape[0], 0)
+  assertEqual(empty.shape[1], 2)
+  assertEqual(ndarray.element_count(empty), 0)
+
+  let scalar_slice = ndarray.slice_copy(ndarray.scalar(7.0), Vector[Int](), Vector[Int](), Vector[Int]())
+  assertEqual(ndarray.get(scalar_slice, Vector[Int]()), 7.0)
+
+test "subarray copy and invalid slices enforce bounds":
+  let array = ndarray.from_flat([3, 4], [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0])
+  let subarray = ndarray.subarray_copy(array, [1, 1], [2, 2])
+  assertEqual(ndarray.get(subarray, [0, 0]), 5.0)
+  assertEqual(ndarray.get(subarray, [0, 1]), 6.0)
+  assertEqual(ndarray.get(subarray, [1, 0]), 9.0)
+  assertEqual(ndarray.get(subarray, [1, 1]), 10.0)
+
+  var caught_rank = false
+  try:
+    ignored_rank = ndarray.slice_copy(array, [0], [1], [1])
+  recover ndarray.NdArrayError.SliceOutOfBounds:
+    caught_rank = true
+  assert(caught_rank)
+
+  var caught_negative = false
+  try:
+    ignored_negative = ndarray.slice_copy(array, [-1, 0], [1, 1], [1, 1])
+  recover ndarray.NdArrayError.SliceOutOfBounds:
+    caught_negative = true
+  assert(caught_negative)
+
+  var caught_reversed = false
+  try:
+    ignored_reversed = ndarray.slice_copy(array, [2, 0], [1, 1], [1, 1])
+  recover ndarray.NdArrayError.SliceOutOfBounds:
+    caught_reversed = true
+  assert(caught_reversed)
+
+  var caught_stop = false
+  try:
+    ignored_stop = ndarray.slice_copy(array, [0, 0], [3, 5], [1, 1])
+  recover ndarray.NdArrayError.SliceOutOfBounds:
+    caught_stop = true
+  assert(caught_stop)
+
+  var caught_step = false
+  try:
+    ignored_step = ndarray.slice_copy(array, [0, 0], [3, 4], [1, 0])
+  recover ndarray.NdArrayError.SliceOutOfBounds:
+    caught_step = true
+  assert(caught_step)
+
+  var caught_subarray = false
+  try:
+    ignored_subarray = ndarray.subarray_copy(array, [2, 3], [2, 2])
+  recover ndarray.NdArrayError.SliceOutOfBounds:
+    caught_subarray = true
+  assert(caught_subarray)
+
+test "axis reductions remove first middle and last axes":
+  let array = ndarray.from_flat([2, 3, 4], [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0])
+
+  let first = ndarray.sum_axis(array, 0)
+  assertEqual(first.shape[0], 3)
+  assertEqual(first.shape[1], 4)
+  assertEqual(ndarray.get(first, [0, 0]), 14.0)
+  assertEqual(ndarray.get(first, [2, 3]), 36.0)
+
+  let middle = ndarray.sum_axis(array, 1)
+  assertEqual(middle.shape[0], 2)
+  assertEqual(middle.shape[1], 4)
+  assertEqual(ndarray.get(middle, [0, 0]), 15.0)
+  assertEqual(ndarray.get(middle, [1, 3]), 60.0)
+
+  let last = ndarray.sum_axis(array, 2)
+  assertEqual(last.shape[0], 2)
+  assertEqual(last.shape[1], 3)
+  assertEqual(ndarray.get(last, [0, 0]), 10.0)
+  assertEqual(ndarray.get(last, [1, 2]), 90.0)
+
+  let minimum = ndarray.min_axis(array, 1)
+  let maximum = ndarray.max_axis(array, 1)
+  let mean = ndarray.mean_axis(array, 2)
+  assertEqual(ndarray.get(minimum, [1, 3]), 16.0)
+  assertEqual(ndarray.get(maximum, [0, 2]), 11.0)
+  assertEqual(ndarray.get(mean, [0, 0]), 2.5)
+  assertEqual(ndarray.get(mean, [1, 2]), 22.5)
+
+test "rank-one reductions produce scalars and compensated sums":
+  let values = ndarray.from_flat([3], [1.0, 2.0, 3.0])
+  let total = ndarray.sum_axis(values, 0)
+  let minimum = ndarray.min_axis(values, 0)
+  let maximum = ndarray.max_axis(values, 0)
+  let mean = ndarray.mean_axis(values, 0)
+  assertEqual(ndarray.rank(total), 0)
+  assertEqual(ndarray.get(total, Vector[Int]()), 6.0)
+  assertEqual(ndarray.get(minimum, Vector[Int]()), 1.0)
+  assertEqual(ndarray.get(maximum, Vector[Int]()), 3.0)
+  assertEqual(ndarray.get(mean, Vector[Int]()), 2.0)
+
+  let cancellation = ndarray.sum_axis(ndarray.from_flat([3], [10000000000000000.0, 1.0, -10000000000000000.0]), 0)
+  assertEqual(ndarray.get(cancellation, Vector[Int]()), 1.0)
+
+test "empty reductions and NaN propagation follow the frozen contract":
+  let empty_lanes = ndarray.zeros([2, 0, 3])
+  let sums = ndarray.sum_axis(empty_lanes, 1)
+  assertEqual(sums.shape[0], 2)
+  assertEqual(sums.shape[1], 3)
+  assertEqual(ndarray.get(sums, [1, 2]), 0.0)
+
+  var caught_min = false
+  try:
+    ignored_min = ndarray.min_axis(empty_lanes, 1)
+  recover ndarray.NdArrayError.EmptyReduction:
+    caught_min = true
+  assert(caught_min)
+
+  var caught_max = false
+  try:
+    ignored_max = ndarray.max_axis(empty_lanes, 1)
+  recover ndarray.NdArrayError.EmptyReduction:
+    caught_max = true
+  assert(caught_max)
+
+  var caught_mean = false
+  try:
+    ignored_mean = ndarray.mean_axis(empty_lanes, 1)
+  recover ndarray.NdArrayError.EmptyReduction:
+    caught_mean = true
+  assert(caught_mean)
+
+  let no_output_cells = ndarray.min_axis(ndarray.zeros([0, 0]), 0)
+  assertEqual(no_output_cells.shape[0], 0)
+  assertEqual(ndarray.element_count(no_output_cells), 0)
+
+  let with_nan = ndarray.from_flat([2, 2], [1.0, math.nan(), 3.0, 5.0])
+  assert(math.is_nan(ndarray.get(ndarray.sum_axis(with_nan, 1), [0])))
+  assert(math.is_nan(ndarray.get(ndarray.min_axis(with_nan, 1), [0])))
+  assert(math.is_nan(ndarray.get(ndarray.max_axis(with_nan, 1), [0])))
+  assert(math.is_nan(ndarray.get(ndarray.mean_axis(with_nan, 1), [0])))
+  assertEqual(ndarray.get(ndarray.mean_axis(with_nan, 1), [1]), 4.0)
+
+test "new public operations validate inputs and reduction axes":
+  let malformed = ndarray.NdArray(shape: [2], strides: [2], data: [1.0, 2.0])
+
+  var caught_arithmetic = false
+  try:
+    ignored_arithmetic = ndarray.add_scalar(malformed, 1.0)
+  recover ndarray.NdArrayError.InvalidShape:
+    caught_arithmetic = true
+  assert(caught_arithmetic)
+
+  var caught_slice = false
+  try:
+    ignored_slice = ndarray.slice_copy(malformed, [0], [1], [1])
+  recover ndarray.NdArrayError.InvalidShape:
+    caught_slice = true
+  assert(caught_slice)
+
+  var caught_reduction = false
+  try:
+    ignored_reduction = ndarray.sum_axis(malformed, 0)
+  recover ndarray.NdArrayError.InvalidShape:
+    caught_reduction = true
+  assert(caught_reduction)
+
+  let values = ndarray.ones([2, 2])
+  var caught_negative_axis = false
+  try:
+    ignored_negative_axis = ndarray.sum_axis(values, -1)
+  recover ndarray.NdArrayError.InvalidAxis:
+    caught_negative_axis = true
+  assert(caught_negative_axis)
+
+  var caught_upper_axis = false
+  try:
+    ignored_upper_axis = ndarray.max_axis(values, 2)
+  recover ndarray.NdArrayError.InvalidAxis:
+    caught_upper_axis = true
+  assert(caught_upper_axis)
+
+  var caught_scalar_axis = false
+  try:
+    ignored_scalar_axis = ndarray.mean_axis(ndarray.scalar(1.0), 0)
+  recover ndarray.NdArrayError.InvalidAxis:
+    caught_scalar_axis = true
+  assert(caught_scalar_axis)

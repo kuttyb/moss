@@ -1,6 +1,7 @@
 module ndarray
 
 import linalg
+import math
 
 export enum NdArrayError:
   InvalidShape
@@ -96,6 +97,204 @@ fn checked_offset(array: NdArray, indices: Vector[Int]) -> Int:
     i = i + 1
   return offset
 
+fn aligned_dimension(shape: Vector[Int], output_axis: Int, output_rank: Int) -> Int:
+  let source_axis = output_axis - (output_rank - (shape |> count))
+  if source_axis < 0:
+    return 1
+  return shape[source_axis]
+
+fn broadcast_shape(left: NdArray, right: NdArray) -> Vector[Int]:
+  let left_rank = left.shape |> count
+  let right_rank = right.shape |> count
+  var output_rank = left_rank
+  if right_rank > output_rank:
+    output_rank = right_rank
+
+  var output_shape = Vector[Int]()
+  var axis = 0
+  while axis < output_rank:
+    let left_dimension = aligned_dimension(left.shape, axis, output_rank)
+    let right_dimension = aligned_dimension(right.shape, axis, output_rank)
+    if left_dimension == right_dimension:
+      output_shape.push(left_dimension)
+    else:
+      if left_dimension == 1:
+        output_shape.push(right_dimension)
+      else:
+        if right_dimension == 1:
+          output_shape.push(left_dimension)
+        else:
+          raise NdArrayError.BroadcastMismatch
+    axis = axis + 1
+  return output_shape
+
+fn broadcast_offset(array: NdArray, output_shape: Vector[Int], output_strides: Vector[Int], flat_index: Int) -> Int:
+  let output_rank = output_shape |> count
+  let input_rank = array.shape |> count
+  let leading_axes = output_rank - input_rank
+  var remaining = flat_index
+  var offset = 0
+  var output_axis = 0
+  while output_axis < output_rank:
+    let coordinate = remaining / output_strides[output_axis]
+    remaining = remaining % output_strides[output_axis]
+    let input_axis = output_axis - leading_axes
+    if input_axis >= 0:
+      if array.shape[input_axis] != 1:
+        offset = offset + coordinate * array.strides[input_axis]
+    output_axis = output_axis + 1
+  return offset
+
+fn binary_elementwise(left: NdArray, right: NdArray, operation: Int) -> NdArray:
+  require_valid(left)
+  require_valid(right)
+  let output_shape = broadcast_shape(left, right)
+  let info = shape_info(output_shape)
+  var output_data = Vector[Float]()
+  var flat_index = 0
+  while flat_index < info.count:
+    let left_offset = broadcast_offset(left, output_shape, info.strides, flat_index)
+    let right_offset = broadcast_offset(right, output_shape, info.strides, flat_index)
+    var value = 0.0
+    if operation == 0:
+      value = left.data[left_offset] + right.data[right_offset]
+    else:
+      if operation == 1:
+        value = left.data[left_offset] - right.data[right_offset]
+      else:
+        if operation == 2:
+          value = left.data[left_offset] * right.data[right_offset]
+        else:
+          value = left.data[left_offset] / right.data[right_offset]
+    output_data.push(value)
+    flat_index = flat_index + 1
+  return NdArray(shape: output_shape, strides: info.strides, data: output_data)
+
+fn scalar_elementwise(array: NdArray, value: Float, operation: Int) -> NdArray:
+  require_valid(array)
+  var output_data = Vector[Float]()
+  let length = array.data |> count
+  var i = 0
+  while i < length:
+    var result = 0.0
+    if operation == 0:
+      result = array.data[i] + value
+    else:
+      if operation == 1:
+        result = array.data[i] - value
+      else:
+        if operation == 2:
+          result = array.data[i] * value
+        else:
+          result = array.data[i] / value
+    output_data.push(result)
+    i = i + 1
+  return NdArray(shape: copy_int_vector(array.shape), strides: copy_int_vector(array.strides), data: output_data)
+
+fn reduction_shape(shape: Vector[Int], axis: Int) -> Vector[Int]:
+  var output_shape = Vector[Int]()
+  let rank_value = shape |> count
+  var i = 0
+  while i < rank_value:
+    if i != axis:
+      output_shape.push(shape[i])
+    i = i + 1
+  return output_shape
+
+fn reduction_base_offset(array: NdArray, axis: Int, output_strides: Vector[Int], flat_index: Int) -> Int:
+  let rank_value = array.shape |> count
+  var remaining = flat_index
+  var source_axis = 0
+  var output_axis = 0
+  var offset = 0
+  while source_axis < rank_value:
+    if source_axis != axis:
+      let coordinate = remaining / output_strides[output_axis]
+      remaining = remaining % output_strides[output_axis]
+      offset = offset + coordinate * array.strides[source_axis]
+      output_axis = output_axis + 1
+    source_axis = source_axis + 1
+  return offset
+
+fn reduction_lane_sum(array: NdArray, offset: Int, stride: Int, length: Int) -> Float:
+  var has_nan = false
+  var has_positive_infinity = false
+  var has_negative_infinity = false
+  var i = 0
+  while i < length:
+    let value = array.data[offset + i * stride]
+    if math.is_nan(value):
+      has_nan = true
+    else:
+      if math.is_infinite(value):
+        if value > 0.0:
+          has_positive_infinity = true
+        else:
+          has_negative_infinity = true
+    i = i + 1
+
+  if has_nan or (has_positive_infinity and has_negative_infinity):
+    return math.nan()
+  if has_positive_infinity:
+    return math.infinity()
+  if has_negative_infinity:
+    return math.neg_infinity()
+
+  var sum = 0.0
+  var compensation = 0.0
+  i = 0
+  while i < length:
+    let value = array.data[offset + i * stride]
+    let next_sum = sum + value
+    if math.abs(sum) >= math.abs(value):
+      compensation = compensation + ((sum - next_sum) + value)
+    else:
+      compensation = compensation + ((value - next_sum) + sum)
+    sum = next_sum
+    i = i + 1
+  return sum + compensation
+
+fn reduce_axis(array: NdArray, axis: Int, operation: Int) -> NdArray:
+  require_valid(array)
+  let rank_value = array.shape |> count
+  if axis < 0 or axis >= rank_value:
+    raise NdArrayError.InvalidAxis
+
+  let output_shape = reduction_shape(array.shape, axis)
+  let info = shape_info(output_shape)
+  let reduction_length = array.shape[axis]
+  if reduction_length == 0 and operation != 0 and info.count > 0:
+    raise NdArrayError.EmptyReduction
+
+  var output_data = Vector[Float]()
+  var flat_index = 0
+  while flat_index < info.count:
+    let offset = reduction_base_offset(array, axis, info.strides, flat_index)
+    let stride = array.strides[axis]
+    if operation == 0:
+      output_data.push(reduction_lane_sum(array, offset, stride, reduction_length))
+    else:
+      if operation == 3:
+        let total = reduction_lane_sum(array, offset, stride, reduction_length)
+        output_data.push(total / (reduction_length * 1.0))
+      else:
+        var value = array.data[offset]
+        var i = 1
+        while i < reduction_length:
+          let candidate = array.data[offset + i * stride]
+          if math.is_nan(candidate):
+            value = candidate
+          else:
+            if not math.is_nan(value):
+              if operation == 1:
+                value = math.min(value, candidate)
+              else:
+                value = math.max(value, candidate)
+          i = i + 1
+        output_data.push(value)
+    flat_index = flat_index + 1
+  return NdArray(shape: output_shape, strides: info.strides, data: output_data)
+
 export fn validate(array: NdArray) -> Bool:
   let rank_value = array.shape |> count
   if (array.strides |> count) != rank_value:
@@ -182,6 +381,98 @@ export fn reshape(array: NdArray, shape: Vector[Int]) -> NdArray:
   if info.count != (array.data |> count):
     raise NdArrayError.ReshapeSizeMismatch
   return NdArray(shape: copy_int_vector(shape), strides: info.strides, data: copy_float_vector(array.data))
+
+export fn add(left: NdArray, right: NdArray) -> NdArray:
+  return binary_elementwise(left, right, 0)
+
+export fn subtract(left: NdArray, right: NdArray) -> NdArray:
+  return binary_elementwise(left, right, 1)
+
+export fn multiply(left: NdArray, right: NdArray) -> NdArray:
+  return binary_elementwise(left, right, 2)
+
+export fn divide(left: NdArray, right: NdArray) -> NdArray:
+  return binary_elementwise(left, right, 3)
+
+export fn add_scalar(array: NdArray, value: Float) -> NdArray:
+  return scalar_elementwise(array, value, 0)
+
+export fn subtract_scalar(array: NdArray, value: Float) -> NdArray:
+  return scalar_elementwise(array, value, 1)
+
+export fn multiply_scalar(array: NdArray, value: Float) -> NdArray:
+  return scalar_elementwise(array, value, 2)
+
+export fn divide_scalar(array: NdArray, value: Float) -> NdArray:
+  return scalar_elementwise(array, value, 3)
+
+export fn slice_copy(array: NdArray, starts: Vector[Int], stops: Vector[Int], steps: Vector[Int]) -> NdArray:
+  require_valid(array)
+  let rank_value = array.shape |> count
+  if (starts |> count) != rank_value or (stops |> count) != rank_value or (steps |> count) != rank_value:
+    raise NdArrayError.SliceOutOfBounds
+
+  var output_shape = Vector[Int]()
+  var axis = 0
+  while axis < rank_value:
+    let start = starts[axis]
+    let stop = stops[axis]
+    let step = steps[axis]
+    if start < 0 or stop < start or stop > array.shape[axis] or step <= 0:
+      raise NdArrayError.SliceOutOfBounds
+    let distance = stop - start
+    var dimension = distance / step
+    if distance % step != 0:
+      dimension = dimension + 1
+    output_shape.push(dimension)
+    axis = axis + 1
+
+  let info = shape_info(output_shape)
+  var output_data = Vector[Float]()
+  var flat_index = 0
+  while flat_index < info.count:
+    var remaining = flat_index
+    var source_offset = 0
+    axis = 0
+    while axis < rank_value:
+      let coordinate = remaining / info.strides[axis]
+      remaining = remaining % info.strides[axis]
+      let source_coordinate = starts[axis] + coordinate * steps[axis]
+      source_offset = source_offset + source_coordinate * array.strides[axis]
+      axis = axis + 1
+    output_data.push(array.data[source_offset])
+    flat_index = flat_index + 1
+  return NdArray(shape: output_shape, strides: info.strides, data: output_data)
+
+export fn subarray_copy(array: NdArray, origin: Vector[Int], shape: Vector[Int]) -> NdArray:
+  require_valid(array)
+  let rank_value = array.shape |> count
+  if (origin |> count) != rank_value or (shape |> count) != rank_value:
+    raise NdArrayError.SliceOutOfBounds
+  var stops = Vector[Int]()
+  var steps = Vector[Int]()
+  var axis = 0
+  while axis < rank_value:
+    let start = origin[axis]
+    let dimension = shape[axis]
+    if start < 0 or dimension < 0 or start > array.shape[axis] or dimension > array.shape[axis] - start:
+      raise NdArrayError.SliceOutOfBounds
+    stops.push(start + dimension)
+    steps.push(1)
+    axis = axis + 1
+  return slice_copy(array, origin, stops, steps)
+
+export fn sum_axis(array: NdArray, axis: Int) -> NdArray:
+  return reduce_axis(array, axis, 0)
+
+export fn min_axis(array: NdArray, axis: Int) -> NdArray:
+  return reduce_axis(array, axis, 1)
+
+export fn max_axis(array: NdArray, axis: Int) -> NdArray:
+  return reduce_axis(array, axis, 2)
+
+export fn mean_axis(array: NdArray, axis: Int) -> NdArray:
+  return reduce_axis(array, axis, 3)
 
 export fn permute_axes(array: NdArray, axes: Vector[Int]) -> NdArray:
   require_valid(array)
