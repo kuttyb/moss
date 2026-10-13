@@ -268,6 +268,177 @@ test "forged malformed documents fail validation and public access":
   duplicate_doc.int_values[key_two] = 7
   assert(not cbor.validate_doc(duplicate_doc))
 
+test "edge owners must match child parent metadata":
+  var array_doc = cbor.new_doc()
+  array_root = cbor.add_array(array_doc)
+  left = cbor.add_array(array_doc)
+  right = cbor.add_array(array_doc)
+  left_child = cbor.add_int(array_doc, 1)
+  right_child = cbor.add_int(array_doc, 2)
+  cbor.array_push(array_doc, array_root, left)
+  cbor.array_push(array_doc, array_root, right)
+  cbor.array_push(array_doc, left, left_child)
+  cbor.array_push(array_doc, right, right_child)
+  cbor.set_root(array_doc, array_root)
+  array_doc.parents[left_child] = right
+  array_doc.parents[right_child] = left
+  assert(not cbor.validate_doc(array_doc))
+  assert(not cbor.validate_complete(array_doc))
+
+  var caught_array_access = false
+  try:
+    ignored_array_child = cbor.array_get(array_doc, left, 0)
+  recover cbor.CborError.InvalidDocument(code, index):
+    caught_array_access = code == 1 and index == -1
+  assert(caught_array_access)
+
+  var caught_array_encode = false
+  try:
+    ignored_array_bytes = cbor.encode(array_doc)
+  recover cbor.CborError.InvalidDocument(code, index):
+    caught_array_encode = code == 2 and index == array_root
+  assert(caught_array_encode)
+
+  var key_doc = cbor.new_doc()
+  key_root = cbor.add_array(key_doc)
+  key_left = cbor.add_map(key_doc)
+  key_right = cbor.add_map(key_doc)
+  left_key = cbor.add_int(key_doc, 3)
+  left_value = cbor.add_null(key_doc)
+  right_key = cbor.add_int(key_doc, 4)
+  right_value = cbor.add_null(key_doc)
+  cbor.array_push(key_doc, key_root, key_left)
+  cbor.array_push(key_doc, key_root, key_right)
+  cbor.map_set(key_doc, key_left, left_key, left_value)
+  cbor.map_set(key_doc, key_right, right_key, right_value)
+  cbor.set_root(key_doc, key_root)
+  key_doc.parents[left_key] = key_right
+  key_doc.parents[right_key] = key_left
+  assert(not cbor.validate_doc(key_doc))
+  assert(not cbor.validate_complete(key_doc))
+
+  var caught_key_access = false
+  try:
+    ignored_key = cbor.map_key(key_doc, key_left, 0)
+  recover cbor.CborError.InvalidDocument(code, index):
+    caught_key_access = code == 1 and index == -1
+  assert(caught_key_access)
+
+  var caught_key_encode = false
+  try:
+    ignored_key_bytes = cbor.encode(key_doc)
+  recover cbor.CborError.InvalidDocument(code, index):
+    caught_key_encode = code == 2 and index == key_root
+  assert(caught_key_encode)
+
+  var value_doc = cbor.new_doc()
+  value_root = cbor.add_array(value_doc)
+  value_left = cbor.add_map(value_doc)
+  value_right = cbor.add_map(value_doc)
+  first_key = cbor.add_int(value_doc, 5)
+  left_map_value = cbor.add_null(value_doc)
+  second_key = cbor.add_int(value_doc, 6)
+  right_map_value = cbor.add_null(value_doc)
+  cbor.array_push(value_doc, value_root, value_left)
+  cbor.array_push(value_doc, value_root, value_right)
+  cbor.map_set(value_doc, value_left, first_key, left_map_value)
+  cbor.map_set(value_doc, value_right, second_key, right_map_value)
+  cbor.set_root(value_doc, value_root)
+  value_doc.parents[left_map_value] = value_right
+  value_doc.parents[right_map_value] = value_left
+  assert(not cbor.validate_doc(value_doc))
+  assert(not cbor.validate_complete(value_doc))
+
+  var caught_value_access = false
+  try:
+    ignored_value = cbor.map_value(value_doc, value_left, 0)
+  recover cbor.CborError.InvalidDocument(code, index):
+    caught_value_access = code == 1 and index == -1
+  assert(caught_value_access)
+
+  var caught_value_encode = false
+  try:
+    ignored_value_bytes = cbor.encode(value_doc)
+  recover cbor.CborError.InvalidDocument(code, index):
+    caught_value_encode = code == 2 and index == value_root
+  assert(caught_value_encode)
+
+test "designated roots cannot be attached and failed mutations are atomic":
+  var array_doc = cbor.new_doc()
+  array = cbor.add_array(array_doc)
+  array_root = cbor.add_int(array_doc, 7)
+  cbor.set_root(array_doc, array_root)
+  var caught_array_root = false
+  try:
+    cbor.array_push(array_doc, array, array_root)
+  recover cbor.CborError.InvalidRoot(root):
+    caught_array_root = root == array_root
+  assert(caught_array_root)
+  assertEqual(cbor.node_count(array_doc), 2)
+  assertEqual(array_doc.root, array_root)
+  assertEqual(cbor.parent_of(array_doc, array_root), -1)
+  assertEqual(cbor.edge_count(array_doc), 0)
+  assertEqual(cbor.array_length(array_doc, array), 0)
+
+  ordinary_array_child = cbor.add_null(array_doc)
+  cbor.array_push(array_doc, array, ordinary_array_child)
+  assertEqual(cbor.parent_of(array_doc, ordinary_array_child), array)
+  assertEqual(cbor.edge_count(array_doc), 1)
+  assertEqual(cbor.array_length(array_doc, array), 1)
+  assert(cbor.validate_doc(array_doc))
+
+  var key_doc = cbor.new_doc()
+  key_map = cbor.add_map(key_doc)
+  key_root = cbor.add_int(key_doc, 8)
+  key_value = cbor.add_null(key_doc)
+  cbor.set_root(key_doc, key_root)
+  var caught_key_root = false
+  try:
+    cbor.map_set(key_doc, key_map, key_root, key_value)
+  recover cbor.CborError.InvalidRoot(root):
+    caught_key_root = root == key_root
+  assert(caught_key_root)
+  assertEqual(cbor.node_count(key_doc), 3)
+  assertEqual(key_doc.root, key_root)
+  assertEqual(cbor.parent_of(key_doc, key_root), -1)
+  assertEqual(cbor.parent_of(key_doc, key_value), -1)
+  assertEqual(cbor.edge_count(key_doc), 0)
+  assertEqual(cbor.map_length(key_doc, key_map), 0)
+
+  ordinary_key = cbor.add_int(key_doc, 9)
+  cbor.map_set(key_doc, key_map, ordinary_key, key_value)
+  assertEqual(cbor.parent_of(key_doc, ordinary_key), key_map)
+  assertEqual(cbor.parent_of(key_doc, key_value), key_map)
+  assertEqual(cbor.edge_count(key_doc), 1)
+  assertEqual(cbor.map_length(key_doc, key_map), 1)
+  assert(cbor.validate_doc(key_doc))
+
+  var value_doc = cbor.new_doc()
+  value_map = cbor.add_map(value_doc)
+  value_key = cbor.add_int(value_doc, 10)
+  value_root = cbor.add_null(value_doc)
+  cbor.set_root(value_doc, value_root)
+  var caught_value_root = false
+  try:
+    cbor.map_set(value_doc, value_map, value_key, value_root)
+  recover cbor.CborError.InvalidRoot(root):
+    caught_value_root = root == value_root
+  assert(caught_value_root)
+  assertEqual(cbor.node_count(value_doc), 3)
+  assertEqual(value_doc.root, value_root)
+  assertEqual(cbor.parent_of(value_doc, value_key), -1)
+  assertEqual(cbor.parent_of(value_doc, value_root), -1)
+  assertEqual(cbor.edge_count(value_doc), 0)
+  assertEqual(cbor.map_length(value_doc, value_map), 0)
+
+  ordinary_value = cbor.add_bool(value_doc, true)
+  cbor.map_set(value_doc, value_map, value_key, ordinary_value)
+  assertEqual(cbor.parent_of(value_doc, value_key), value_map)
+  assertEqual(cbor.parent_of(value_doc, ordinary_value), value_map)
+  assertEqual(cbor.edge_count(value_doc), 1)
+  assertEqual(cbor.map_length(value_doc, value_map), 1)
+  assert(cbor.validate_doc(value_doc))
+
 test "complete root contract rejects detached nodes":
   var empty = cbor.new_doc()
   assert(cbor.validate_doc(empty))

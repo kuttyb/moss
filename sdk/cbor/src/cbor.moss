@@ -239,9 +239,13 @@ export fn validate_doc(doc: CborDoc) -> Bool:
         if kind == kind_array():
           if key != -1 or value < 0 or value >= node_count:
             return false
+          if doc.parents[value] != node:
+            return false
           parent_refs[value] = parent_refs[value] + 1
         else:
           if key < 0 or key >= node_count or value < 0 or value >= node_count or key == value:
+            return false
+          if doc.parents[key] != node or doc.parents[value] != node:
             return false
           key_kind = doc.kinds[key]
           if key_kind != kind_int() and key_kind != kind_text():
@@ -429,6 +433,8 @@ fn is_ancestor(doc: CborDoc, possible_ancestor: Int, node: Int) -> Bool:
 
 fn require_attachable(doc: CborDoc, parent: Int, child: Int):
   require_node(doc, child)
+  if child == doc.root:
+    raise CborError.InvalidRoot(root: child)
   current_parent = doc.parents[child]
   if current_parent != -1:
     raise CborError.AlreadyParented(node: child, parent: current_parent)

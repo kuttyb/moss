@@ -53,7 +53,8 @@ This linked design keeps a parent's traversal correct when descendants and
 later siblings are created in an interleaved order.
 
 Builders create initially detached nodes. `array_push` and `map_set` attach
-them exactly once, and `set_root` selects the one unparented root. `validate_doc`
+them exactly once, but never attach a node already designated by `set_root`;
+such attempts raise `CborError.InvalidRoot` before mutation. `set_root` selects the one unparented root. `validate_doc`
 checks a structurally valid construction forest. `validate_complete` additionally
 requires every node to be reachable from the selected root; traversal and
 `encode` enforce the appropriate validation before indexing.
