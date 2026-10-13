@@ -1,5 +1,24 @@
 # Moss current status
 
+## Phase 24 Team R Data Utils SDK Delivery Complete — 2026-10-12
+
+Team R (`moss.hash`, `moss.compress`, `moss.regex`, `moss.data_utils_integration`) completed implementation, testing, differential oracles, and benchmarking on `phase24-data-utils`:
+1. **Implementation Baseline:**
+   - Compiler R0a/R0b accepted baseline (`43757790ef3af52204c90bbd9dabcefc4470e965` on `phase24-integration`).
+   - Exact implementation SHA: `40d4ae20ab4a4fbe776decab2400ad444e134803`.
+2. **Delivered Packages:**
+   - `moss.hash`: RFC 1950 Adler-32, IEEE 802.3 CRC-32, FNV-1a 32-bit, NIST FIPS 180-4 SHA-256 with streaming and one-shot APIs, using direct native 64-bit bitwise operators (`&`, `|`, `^`, `~`, `<<`, `>>`).
+   - `moss.compress`: Interoperable raw LZ4 block compression/decompression, documented size-prefixed LZ4 convention, and RFC 1951 raw DEFLATE uncompressed stored blocks with decompression bomb and bound protections.
+   - `moss.regex`: Linear-time non-backtracking Thompson NFA regular expression engine with iterative Shunting-Yard compilation, epsilon closure simulation, full match/search/find_all/replace/split APIs, and verified immunity against catastrophic backtracking (ReDoS).
+   - `moss.data_utils_integration`: End-to-end integration pipeline combining regex pattern extraction, cryptographic/checksum hashing, and LZ4 compression into an authenticated archive record with verification and restoration.
+3. **Validation & Quality Gates:**
+   - In-Tree Unit Tests: 27 unique test cases (81 executions across Native Debug, Fast Debug, and Native Release) all passed (100% parity).
+   - Differential Oracles: 17 differential tests and source-free ABI-v9 checks in `tests/tooling/check_phase24_data_utils_oracles.py` passed against Python `zlib`, `hashlib`, `re`, and reference implementations.
+   - Benchmarks: Native release benchmarks recorded for all packages (`margo bench`).
+   - Repository Quality Gates: `TMPDIR="$PWD/tmp" make check` passed (54/54 executor tests; all Moss v0.1 tests passed); `make examples` built all programs; `python3 tests/tooling/check_agent_feedback.py` passed; `git diff --check` passed cleanly.
+4. **Handoff Status:**
+   - Ready for Team I integration into `phase24-integration`. Branch remains strictly isolated on `phase24-data-utils`; zero commits merged into `main`.
+
 ## Phase 24 Compiler R0a/R0b Integration & Team R Baseline — 2026-10-12
 
 Team I completed compiler integration for:
