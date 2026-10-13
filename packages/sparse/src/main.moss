@@ -88,6 +88,11 @@ fn heapsort_triplets(triplets: Vector[Triplet]):
 export fn from_triplets(rows: Int, cols: Int, in_triplets: Vector[Triplet]) -> CsrMatrix:
   if rows <= 0 or cols <= 0:
     raise SparseError.InvalidDimensions
+  let max_int = 9223372036854775807
+  if rows >= max_int or cols >= max_int:
+    raise SparseError.InvalidDimensions
+  if rows > max_int / cols:
+    raise SparseError.InvalidDimensions
   let n = in_triplets |> count
   var i = 0
   while i < n:
@@ -147,7 +152,10 @@ export fn from_triplets(rows: Int, cols: Int, in_triplets: Vector[Triplet]) -> C
 # --- Validation & Structural Properties ---
 
 export fn validate_csr(m: CsrMatrix) -> Bool:
-  if m.rows <= 0 or m.cols <= 0:
+  let max_int = 9223372036854775807
+  if m.rows <= 0 or m.cols <= 0 or m.rows >= max_int or m.cols >= max_int:
+    return false
+  if m.rows > max_int / m.cols:
     return false
   let expected_rp_len = m.rows + 1
   if (m.row_ptrs |> count) != expected_rp_len:
@@ -179,7 +187,10 @@ export fn validate_csr(m: CsrMatrix) -> Bool:
   return true
 
 export fn validate_csc(m: CscMatrix) -> Bool:
-  if m.rows <= 0 or m.cols <= 0:
+  let max_int = 9223372036854775807
+  if m.rows <= 0 or m.cols <= 0 or m.rows >= max_int or m.cols >= max_int:
+    return false
+  if m.rows > max_int / m.cols:
     return false
   let expected_cp_len = m.cols + 1
   if (m.col_ptrs |> count) != expected_cp_len:
@@ -267,7 +278,10 @@ export fn csr_eliminate_zeros(m: CsrMatrix, tol: Float) -> CsrMatrix:
 # --- Dense Interoperability ---
 
 export fn from_dense(m: linalg.Matrix) -> CsrMatrix:
-  if m.rows <= 0 or m.cols <= 0:
+  let max_int = 9223372036854775807
+  if m.rows <= 0 or m.cols <= 0 or m.rows >= max_int or m.cols >= max_int:
+    raise SparseError.InvalidDimensions
+  if m.rows > max_int / m.cols:
     raise SparseError.InvalidDimensions
   if (m.data |> count) != m.rows * m.cols:
     raise SparseError.InvalidDimensions
@@ -559,6 +573,9 @@ export fn csr_mat_mul(a: CsrMatrix, b: CsrMatrix) -> CsrMatrix:
     raise SparseError.InvalidDimensions
   if a.cols != b.rows:
     raise SparseError.DimensionMismatch
+  let max_int = 9223372036854775807
+  if a.rows > max_int / b.cols:
+    raise SparseError.InvalidDimensions
   var row_ptrs = Vector[Int]()
   var col_indices = Vector[Int]()
   var values = Vector[Float]()

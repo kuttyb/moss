@@ -92,7 +92,7 @@ fn bench_dense_mat_mul_50x50() {
     let mut b = vec![0.0f64; n * n];
     for i in 0..(n * n) {
         a[i] = (i as f64) * 0.01;
-        b[i] = (i as f64) * 0.02;
+        b[i] = (i as f64) * 0.01;
     }
     let a = black_box(a);
     let b = black_box(b);
@@ -106,18 +106,28 @@ fn bench_dense_mat_mul_50x50() {
             }
         }
     }
-    black_box(c[0]);
+    black_box(&c);
 }
 
 // -----------------------------------------------------------------------------
 // Sparse Matrix Benchmarks
 // -----------------------------------------------------------------------------
 
+#[derive(Debug)]
 struct Csr {
     rows: usize,
     cols: usize,
     row_ptrs: Vec<usize>,
     col_indices: Vec<usize>,
+    values: Vec<f64>,
+}
+
+#[derive(Debug)]
+struct Csc {
+    rows: usize,
+    cols: usize,
+    col_ptrs: Vec<usize>,
+    row_indices: Vec<usize>,
     values: Vec<f64>,
 }
 
@@ -156,7 +166,14 @@ fn bench_sparse_scale_500x500() {
     for &v in &csr.values {
         scaled_values.push(v * 3.5);
     }
-    black_box(scaled_values.len());
+    let res = Csr {
+        rows: csr.rows,
+        cols: csr.cols,
+        row_ptrs: csr.row_ptrs.clone(),
+        col_indices: csr.col_indices.clone(),
+        values: scaled_values,
+    };
+    black_box(&res);
 }
 
 fn bench_sparse_transpose_200x200() {
@@ -193,7 +210,14 @@ fn bench_sparse_transpose_200x200() {
             next_pos[col] += 1;
         }
     }
-    black_box(t_values.len());
+    let res = Csr {
+        rows: n_cols,
+        cols: n_rows,
+        row_ptrs: t_row_ptrs,
+        col_indices: t_col_indices,
+        values: t_values,
+    };
+    black_box(&res);
 }
 
 fn bench_sparse_to_csc_200x200() {
@@ -230,7 +254,14 @@ fn bench_sparse_to_csc_200x200() {
             next_pos[col] += 1;
         }
     }
-    black_box(values.len());
+    let res = Csc {
+        rows: n_rows,
+        cols: n_cols,
+        col_ptrs,
+        row_indices,
+        values,
+    };
+    black_box(&res);
 }
 
 // -----------------------------------------------------------------------------

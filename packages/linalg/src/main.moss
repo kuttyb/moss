@@ -520,10 +520,52 @@ export fn lu_factorize(a: Matrix) -> LUDecomposition:
   
   return LUDecomposition(lu: lu, pivots: pivots, num_swaps: num_swaps)
 
+export fn validate_lu(decomp: LUDecomposition) -> Bool:
+  if not is_valid_matrix(decomp.lu):
+    return false
+  if decomp.lu.rows != decomp.lu.cols:
+    return false
+  let n = decomp.lu.rows
+  if (decomp.pivots |> count) != n:
+    return false
+  var visited = Vector[Bool]()
+  var vi = 0
+  while vi < n:
+    visited.push(false)
+    vi = vi + 1
+  var pi = 0
+  while pi < n:
+    let p = decomp.pivots[pi]
+    if p < 0 or p >= n:
+      return false
+    if visited[p]:
+      return false
+    visited[p] = true
+    pi = pi + 1
+  return true
+
 export fn lu_solve(decomp: LUDecomposition, b: Vector[Float]) -> Vector[Float]:
   if not is_valid_matrix(decomp.lu):
     raise LinalgError.InvalidDimensions
+  if decomp.lu.rows != decomp.lu.cols:
+    raise LinalgError.NonSquareMatrix
   let n = decomp.lu.rows
+  if (decomp.pivots |> count) != n:
+    raise LinalgError.InvalidDimensions
+  var visited = Vector[Bool]()
+  var vi = 0
+  while vi < n:
+    visited.push(false)
+    vi = vi + 1
+  var pi = 0
+  while pi < n:
+    let p = decomp.pivots[pi]
+    if p < 0 or p >= n:
+      raise LinalgError.InvalidDimensions
+    if visited[p]:
+      raise LinalgError.InvalidDimensions
+    visited[p] = true
+    pi = pi + 1
   let b_len = b |> count
   if n != b_len:
     raise LinalgError.DimensionMismatch

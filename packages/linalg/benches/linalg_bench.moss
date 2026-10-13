@@ -63,3 +63,16 @@ bench "linalg matrix frobenius norm 50x50":
 bench "linalg matrix clone 100x100":
   var m = make_matrix(100, 100)
   var cloned = bench_clone(m)
+
+fn bench_mat_mul(a: linalg.Matrix, b: linalg.Matrix) -> linalg.Matrix:
+  try:
+    return linalg.mat_mul(a, b)
+  recover linalg.LinalgError.DimensionMismatch:
+    return make_matrix(1, 1)
+  recover linalg.LinalgError.InvalidDimensions:
+    return make_matrix(1, 1)
+
+bench "linalg matrix multiplication 50x50":
+  var a = make_matrix(50, 50)
+  var b = make_matrix(50, 50)
+  var c = bench_mat_mul(a, b)

@@ -232,3 +232,41 @@ test "malformed direct matrix construction validation":
   recover linalg.LinalgError.InvalidDimensions:
     caught_bad_dim = true
   assert(caught_bad_dim)
+
+test "malformed LU decomposition validation":
+  let non_square_m = linalg.from_vector(2, 3, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+  let bad_non_square_decomp = linalg.LUDecomposition(lu: non_square_m, pivots: [0, 1], num_swaps: 0)
+  assert(not linalg.validate_lu(bad_non_square_decomp))
+  var caught_non_square_lu = false
+  try:
+    ignored = linalg.lu_solve(bad_non_square_decomp, [1.0, 2.0])
+  recover linalg.LinalgError.NonSquareMatrix:
+    caught_non_square_lu = true
+  assert(caught_non_square_lu)
+
+  let bad_len_decomp = linalg.LUDecomposition(lu: linalg.from_vector(2, 2, [1.0, 2.0, 3.0, 4.0]), pivots: [0], num_swaps: 0)
+  assert(not linalg.validate_lu(bad_len_decomp))
+  var caught_bad_len_lu = false
+  try:
+    ignored = linalg.lu_solve(bad_len_decomp, [1.0, 2.0])
+  recover linalg.LinalgError.InvalidDimensions:
+    caught_bad_len_lu = true
+  assert(caught_bad_len_lu)
+
+  let bad_piv_decomp = linalg.LUDecomposition(lu: linalg.from_vector(2, 2, [1.0, 2.0, 3.0, 4.0]), pivots: [0, 5], num_swaps: 0)
+  assert(not linalg.validate_lu(bad_piv_decomp))
+  var caught_bad_piv_lu = false
+  try:
+    ignored = linalg.lu_solve(bad_piv_decomp, [1.0, 2.0])
+  recover linalg.LinalgError.InvalidDimensions:
+    caught_bad_piv_lu = true
+  assert(caught_bad_piv_lu)
+
+  let dup_piv_decomp = linalg.LUDecomposition(lu: linalg.from_vector(2, 2, [1.0, 2.0, 3.0, 4.0]), pivots: [0, 0], num_swaps: 0)
+  assert(not linalg.validate_lu(dup_piv_decomp))
+  var caught_dup_piv_lu = false
+  try:
+    ignored = linalg.lu_solve(dup_piv_decomp, [1.0, 2.0])
+  recover linalg.LinalgError.InvalidDimensions:
+    caught_dup_piv_lu = true
+  assert(caught_dup_piv_lu)

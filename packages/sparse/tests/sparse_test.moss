@@ -137,3 +137,46 @@ test "malformed sparse record validation":
   recover sparse.SparseError.InvalidDimensions:
     caught_bad_len = true
   assert(caught_bad_len)
+
+test "extreme dimension overflow protection":
+  let extreme_csr = sparse.CsrMatrix(rows: 9223372036854775807, cols: 2, row_ptrs: [0], col_indices: Vector[Int](), values: Vector[Float]())
+  assert(not sparse.validate_csr(extreme_csr))
+
+  let extreme_mult_csr = sparse.CsrMatrix(rows: 4000000000, cols: 4000000000, row_ptrs: [0], col_indices: Vector[Int](), values: Vector[Float]())
+  assert(not sparse.validate_csr(extreme_mult_csr))
+
+  let extreme_csc = sparse.CscMatrix(rows: 2, cols: 9223372036854775807, col_ptrs: [0], row_indices: Vector[Int](), values: Vector[Float]())
+  assert(not sparse.validate_csc(extreme_csc))
+
+  let extreme_mult_csc = sparse.CscMatrix(rows: 4000000000, cols: 4000000000, col_ptrs: [0], row_indices: Vector[Int](), values: Vector[Float]())
+  assert(not sparse.validate_csc(extreme_mult_csc))
+
+  var caught_triplets_max = false
+  try:
+    ignored1 = sparse.from_triplets(9223372036854775807, 2, Vector[sparse.Triplet]())
+  recover sparse.SparseError.InvalidDimensions:
+    caught_triplets_max = true
+  assert(caught_triplets_max)
+
+  var caught_triplets_mul = false
+  try:
+    ignored2 = sparse.from_triplets(4000000000, 4000000000, Vector[sparse.Triplet]())
+  recover sparse.SparseError.InvalidDimensions:
+    caught_triplets_mul = true
+  assert(caught_triplets_mul)
+
+  var caught_dense_max = false
+  try:
+    let extreme_dense = linalg.Matrix(rows: 9223372036854775807, cols: 1, data: Vector[Float]())
+    ignored3 = sparse.from_dense(extreme_dense)
+  recover sparse.SparseError.InvalidDimensions:
+    caught_dense_max = true
+  assert(caught_dense_max)
+
+  var caught_dense_mul = false
+  try:
+    let extreme_dense2 = linalg.Matrix(rows: 4000000000, cols: 4000000000, data: Vector[Float]())
+    ignored4 = sparse.from_dense(extreme_dense2)
+  recover sparse.SparseError.InvalidDimensions:
+    caught_dense_mul = true
+  assert(caught_dense_mul)

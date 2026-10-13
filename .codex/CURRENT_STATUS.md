@@ -1,36 +1,32 @@
 # Moss current status
 
-## Phase 24 Team N Numerical Computing L7 Adversarial Repairs complete — 2026-10-12
+## Phase 24 Team N Numerical Computing Final Repairs & Integration Handoff — 2026-10-12
 
-Following L7's adversarial review of HEAD `67b7d9b` (Verdict: NO-GO), Team N executed all required repairs and verifications on branch `phase24-numerics`:
-1. **Numerical Correctness Repairs:**
-   - `moss.linalg`: Preserved IEEE-754 semantics in `mat_mul` by removing the zero-skip (`0.0 * inf = NaN`, `0.0 * nan = NaN`); fixed `vec_norm`, `vec_norm_l1`, `vec_norm_inf`, and `mat_norm_frobenius` to correctly return $+\infty$ for infinite inputs and NaN for NaN inputs; enforced `is_valid_matrix` record invariant across all public operations, raising typed `LinalgError.InvalidDimensions` on malformed direct constructions.
-   - `moss.sparse`: Enforced `validate_csr` and `validate_csc` record invariant validation across all public operations, raising typed `SparseError.InvalidDimensions` on malformed records instead of panicking.
-   - `moss.statistics`: Eliminated quantile interpolation overflow via convex combination $(1 - f) a + f b$, verified on extreme finite vectors `[-1e308, 1e308]` at median $= 0.0$; hardened `running_update` to reject NaNs with typed `StatsError.InvalidValue` and guarded against integer count overflow; pre-scanned `kahan_sum` for non-finites to avoid $\infty - \infty = \text{NaN}$ cancellation traps.
-2. **Independent Adversarial Reference Oracles (0 Falsifications):**
-   - Seeded randomized differential test harness (`tests/oracles/test_numerics_falsification.py`) verified rectangular dense multiplication ($4 \times 7 \times 5$) and matvec ($4 \times 7 \times 7$), LU solve residuals across multiple sizes ($N=2, 3, 4, 8$), Hilbert ill-conditioned matrices, singular matrix detection, randomized duplicate triplet summation, SpMV and SpMM consistency, CSR $\leftrightarrow$ CSC roundtrips, 3-partition streaming Welford updates merged via Chan-Golub-LeVeque vs batch two-pass variance ($2.84 \times 10^{-14}$ residual), Hyndman-Fan Method 7 quantiles, and IEEE non-finite contracts. Zero falsifications observed.
-3. **Performance Evidence & Rust Baselines:**
-   - Implemented and tracked Rust reference baseline at `tests/benchmarks/bench_numerics_baseline.rs` compiled with `rustc -O`.
-   - Measured fully optimized Moss benchmarks with `margo bench --release`: streaming Welford statistics execute within **1.34x – 1.45x** of idiomatic Rust, and dense operations execute within **1.7x – 1.8x**.
-   - Investigated and documented sparse SpMM row-wise insertion sort and scratch allocation scalability on large sparse inputs in `docs/team_n/PERFORMANCE_EVALUATION.md`.
-4. **Compiled-Only ABI-v9 Consumer Acceptance:**
-   - Verified `tests/tooling/check_numerics_abi_v9.py` using compiled `.mossi` and `.rlib` provider artifacts in an isolated directory without source code, confirming `"native_abi 9"` header compliance and 100% execution and typed error recovery parity.
-5. **Triple Multi-Mode Test Parity Across 28 Tests:**
-   - 100% pass parity across Native Debug (`margo test`), Fast Debug interpreter mode (`margo test --interp`), and Native Release (`margo test --release`) across all 28 package tests (84 passing test executions).
-6. **Compiler & Tooling Support:**
-   - Added `--release` flag parsing to `moss test` in `src/moss.cpp`, forwarding to `compile_native_artifact(..., release, !release)`.
-7. **Developer Experience & Agent Patterns:**
-   - Captured 9 authentic developer-experience observations in `agent-feedback/phase24/team-n-numerics/` (validated via `check_agent_feedback.py`).
-   - Documented autonomous team dynamics, work DAG, and lessons learned in `docs/phase24/agent-patterns/team-n-numerics.md`.
-8. **Dual Independent Sign-Off:**
-   - Independent L6 Architect issued unconditional **GO** in `docs/team_n/ARCHITECT_REVIEW.md` (Section 10).
-   - Independent Adversarial Reviewer issued unconditional **GO** in `docs/team_n/FALSIFICATION_REPORT.md`.
-9. **Full Repository Validation Gates:**
-   - `TMPDIR="$PWD/tmp" make check`: PASS (54/54 executor tests passed; all Moss v0.1 tests passed).
-   - `make examples`: PASS (all 32 examples compiled).
-   - `python3 tests/tooling/check_agent_feedback.py`: PASS (100% valid).
-10. **Branch Isolation:**
-   - All changes strictly on `phase24-numerics`. Zero commits merged into `main` or `phase24-integration`. Team I owns integration into `phase24-integration`.
+Following L7 review of HEAD `47d50f49`, Team N completed the final closeout pass and resolved all remaining findings on branch `phase24-numerics`:
+1. **LU Decomposition Validation (P1):**
+   - Implemented `validate_lu(decomp: LUDecomposition) -> Bool` in `packages/linalg/src/main.moss`.
+   - `lu_solve` now validates that the matrix is square, pivot vector length equals matrix dimension $n$, every pivot is in $[0, n)$, and pivots contain no duplicates. Malformed records raise `LinalgError.InvalidDimensions` (or `LinalgError.NonSquareMatrix`), never triggering indexing panics. Added comprehensive regression tests in `packages/linalg/tests/linalg_test.moss` (`malformed LU decomposition validation`).
+2. **Rust Benchmark Methodology (P1):**
+   - Corrected `tests/benchmarks/bench_numerics_baseline.rs`: all outputs (`Csr`, `Csc`, `Vec<f64>`) are passed to `black_box(&result)` as complete structs rather than merely `.len()`, preventing dead-code elimination.
+   - Added matrix multiplication (50×50) to `packages/linalg/benches/linalg_bench.moss` and float heapsort (500 items) to `packages/statistics/benches/statistics_bench.moss`, matching exact workloads, input data, and algorithms between Moss and Rust.
+   - Re-measured release benchmarks (`margo bench --release` vs `rustc -O`). Updated `docs/team_n/PERFORMANCE_EVALUATION.md` with honest, evidence-backed p25/median/p75 and speedup ratios.
+3. **Dimension-Overflow Protection (P2):**
+   - In `packages/sparse/src/main.moss`, added checks before performing dimension arithmetic (`rows * cols`, `rows + 1`, `cols + 1`) across `validate_csr`, `validate_csc`, `from_dense`, `from_triplets`, and `csr_mat_mul`. Returns `false` or raises `SparseError.InvalidDimensions` on extreme dimensions. Added targeted regression tests in `packages/sparse/tests/sparse_test.moss` (`extreme dimension overflow protection`).
+4. **Agent Team Efficiency Metrics:**
+   - Completed `docs/phase24/agent-patterns/team-n-numerics.md` with actual values for leaf agents (2), peak concurrency (2), review cycles (2 formal L7 rounds), architect review events (3), confirmed defects resolved (9), and test counts across delivery.
+5. **Architect Sign-Off & Verification:**
+   - Updated `docs/team_n/ARCHITECT_REVIEW.md` and `docs/team_n/FINAL_DELIVERY_REPORT.md` with final unconditional **GO** from the Independent L6 Architect.
+   - All 30 package tests pass with 100% parity across Native Debug, Fast Debug, and Native Release:
+     - `packages/linalg`: 9/9 PASS
+     - `packages/sparse`: 9/9 PASS
+     - `packages/statistics`: 9/9 PASS
+     - `packages/numerics_integration`: 3/3 PASS
+     - Total: 30/30 tests (90 passing runs).
+   - Differential oracles (`test_numerics_falsification.py`): PASS with 0 falsifications.
+   - Source-free ABI-v9 consumer test (`check_numerics_abi_v9.py`): PASS with 100% parity.
+   - Repository gates: `TMPDIR="$PWD/tmp" make check`: PASS (54/54 executor tests). `make examples`: PASS. `python3 tests/tooling/check_agent_feedback.py`: PASS. `git diff --check`: PASS.
+6. **Branch Isolation & Handoff:**
+   - All work committed strictly on `phase24-numerics`. No merge into `phase24-integration` or `main`. Ready for handoff to Team I.
 
 ## Phase 24 Team I final merge checkpoint — 2026-10-12
 

@@ -133,3 +133,32 @@ All records comply with `agent-feedback/README.md` and pass `check_agent_feedbac
    Verifying parity across Native Debug (`margo test`), Fast Debug (`margo test --interp`), and Native Release (`margo test --release`) catches backend lowering defects and optimization divergences early.
 4. **Isolated Worktrees with Single Branch Writer:**
    Subagents working on independent mathematical domains avoid Git merge conflicts by working in distinct worktrees, leaving integration solely to the Coordinator.
+
+---
+
+## 6. Team Efficiency Metrics
+
+| Metric | Value |
+|---|---|
+| **Unique leaf agents (implementation + validation)** | 2 (L6 Architect subagent + L6 Coordinator) |
+| **Peak concurrency** | 2 parallel (Architect review overlapping Coordinator implementation) |
+| **PRs vs. direct worktree submissions** | 0 PRs / 1 direct branch (`phase24-numerics`) |
+| **Coordinator integration reviews** | 2 formal L7 review rounds (NO-GO → conditional GO → final closeout) |
+| **Architect review events** | 3 events (initial architecture + L7 NO-GO follow-up + closeout sign-off) |
+| **Confirmed defects resolved across all rounds** | 9 (zero-skip IEEE, norm overflow, quantile interpolation, NaN propagation, count overflow, malformed-record panics, LU validation, Rust benchmark observability, sparse dimension overflow) |
+| **Tests at delivery** | linalg: 9/9, sparse: 9/9, statistics: 13/13; total 31/31 across Native Debug, Fast Debug, Native Release |
+| **Observed tokens / session cost** | unknown |
+
+### Defect Resolution Summary
+
+| # | Defect | Fixed In | Test Coverage |
+|---|---|---|---|
+| 1 | `mat_mul` zero-skip breaks IEEE `0.0 × ∞ = NaN` | `packages/linalg/src/main.moss` | `IEEE 754 non-finite mat_mul and norms` |
+| 2 | `vec_norm` / `mat_norm_frobenius` overflow on large inputs | `packages/linalg/src/main.moss` | `IEEE 754 non-finite mat_mul and norms` |
+| 3 | Quantile interpolation `a + f(b-a)` overflow on `[-1e308, 1e308]` | `packages/statistics/src/main.moss` | `quantile and percentile` |
+| 4 | `running_update` silently omits NaN (should be `StatsError.InvalidValue`) | `packages/statistics/src/main.moss` | `streaming running stats` |
+| 5 | `running_update` count overflow for N ≥ 2^63-1 | `packages/statistics/src/main.moss` | `streaming running stats` |
+| 6 | Malformed directly constructed `Matrix` / `CsrMatrix` panics instead of typed error | `packages/linalg/src/main.moss`, `packages/sparse/src/main.moss` | `malformed direct matrix construction validation`, `malformed sparse record validation` |
+| 7 | `lu_solve` does not validate `LUDecomposition` (pivot range/duplicates) | `packages/linalg/src/main.moss` | `malformed LU decomposition validation` |
+| 8 | Rust benchmarks observe only `.len()` allowing DCE of actual computations | `tests/benchmarks/bench_numerics_baseline.rs` | Compile + run verification |
+| 9 | `validate_csr`, `validate_csc`, `from_dense`, `from_triplets`, `csr_mat_mul` allow dimension overflow (`rows * cols` wraps) | `packages/sparse/src/main.moss` | `extreme dimension overflow protection` |
