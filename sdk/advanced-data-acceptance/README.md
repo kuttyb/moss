@@ -23,10 +23,17 @@ Appendix A. The dependency-free validator freezes their IDs, encodings,
 provenance, supported-subset selection, and the optional oracle version. The
 ordinary acceptance gate never installs or imports a network dependency.
 
+`validate_ndarray_tables_oracle.py` uses Python reference implementations,
+seed `240024`, and no Moss implementation code to derive expected broadcasting,
+reduction, slicing, permutation, sorting, distinct, grouping, aggregation,
+categorical ordering, and duplicate/null-key join results. It generates a
+public-API-only Moss consumer and verifies the independent expectations in
+Native Debug, Native Release, and Fast Debug.
+
 ## Commands
 
-Run every bounded gate (Native Debug, Native Release, Fast Debug, fixed vectors,
-and compiled-only ABI-v9):
+Run every bounded gate (Native Debug, Native Release, Fast Debug, independent
+ndarray/table oracle, fixed vectors, and compiled-only ABI-v9):
 
 ```sh
 python3 sdk/advanced-data-acceptance/run_all.py
@@ -62,8 +69,10 @@ fixed RFC encoding.
 `.mossi`/`.rlib` pairs: the five Team A modules plus all required transitive
 providers. It checks every copied interface for `native_abi 9`, verifies copy
 digests, rejects provider `.moss` files, then checks, builds, and executes a
-consumer whose manifest has no source dependencies. There are no globs and no
-parallel Margo invocations.
+consumer whose manifest has no source dependencies. The consumer exercises
+exported records and mutators plus typed error-variant payload recovery from all
+five Team A modules, including failed-mutation atomicity. There are no globs
+and no parallel Margo invocations.
 
 The acceptance workload is intentionally small and deterministic. It makes no
 throughput, allocation, asymptotic superiority, zero-copy, accelerator, or

@@ -50,6 +50,50 @@ fn main():
     root = cbor.root_id(decoded)
     assertEqual(cbor.int_value(decoded, cbor.array_get(decoded, root, 2)), 22)
     assertEqual(cbor.encode(decoded), [131, 6, 14, 22])
+
+    var ndarray_typed = false
+    try:
+      ignored_axis = ndarray.sum_axis(ndarray.ones([1]), 1)
+    recover ndarray.NdArrayError.InvalidAxis:
+      ndarray_typed = true
+    assert(ndarray_typed)
+
+    var full_deque = datastructures.new_int_bounded_deque(1)
+    datastructures.int_deque_push_back(full_deque, 7)
+    var datastructures_typed = false
+    try:
+      datastructures.int_deque_push_back(full_deque, 8)
+    recover datastructures.DataStructureError.Full(capacity):
+      datastructures_typed = capacity == 1
+    assert(datastructures_typed)
+    assertEqual(datastructures.int_deque_values(full_deque), [7])
+
+    limit_left0 = tables.new_table(1)
+    limit_left = tables.add_column(limit_left0, tables.int_column("limit_key", false, [1], [true]))
+    limit_right0 = tables.new_table(1)
+    limit_right = tables.add_column(limit_right0, tables.int_column("limit_key", false, [1], [true]))
+    var tables_typed = false
+    try:
+      ignored_join = tables.inner_join_int(limit_left, limit_right, "limit_key", "limit_key", "_right", 0)
+    recover tables.TableError.OutputLimitExceeded(limit):
+      tables_typed = limit == 0
+    assert(tables_typed)
+
+    var short_reader = binary.new_reader([1])
+    var binary_typed = false
+    try:
+      ignored_u16 = binary.read_u16_be(short_reader)
+    recover binary.BinaryError.UnexpectedEof(offset, requested, available):
+      binary_typed = offset == 0 and requested == 2 and available == 1
+    assert(binary_typed)
+    assertEqual(binary.reader_cursor(short_reader), 0)
+
+    var cbor_typed = false
+    try:
+      ignored_float = cbor.decode([249, 60, 0])
+    recover cbor.CborError.UnsupportedFloat(index, width):
+      cbor_typed = index == 0 and width == 16
+    assert(cbor_typed)
     echo "advanced data ABI-v9 source-free ok"
   recover:
     assert(false)

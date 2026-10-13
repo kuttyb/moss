@@ -130,20 +130,26 @@ or fusion. Those may be compiler optimizations only when semantics are unchanged
 ## 4. `moss.datastructures`
 
 Because Moss v0.1 cannot declare a user-defined generic heap/deque/map type, the
-Phase 24 baseline is deliberately closed and useful rather than falsely generic:
+Phase 24 baseline is deliberately concrete and useful rather than falsely
+generic. The initial freeze described a closed `DataValue` union, but Moss has
+no source-level sum type that can store unrelated primitive payloads without
+duplicating every operation. Following independent review finding
+`A-ARCH-FINAL-001`, the Team corrected that over-broad design contract to the
+typed baseline explicitly permitted by the Phase mission:
 
 ```text
-DataValue = Int | Float | Bool | String
 IntMinHeap / IntMaxHeap
-IntPriorityQueue(priority: Int, sequence: Int, value: DataValue)
-BoundedDeque(value: DataValue)
+StableIntPriorityQueue(priority: Int, sequence: Int, value: Int)
+IntBoundedDeque(value: Int)
 DisjointSet
-IntOrderedSet / StringOrderedSet
-IntOrderedMap / StringOrderedMap (DataValue values)
+IntSortedSet / IntSortedMap(Int values)
+StringInsertionSet / StringInsertionMap(Int values)
 ```
 
-- Heap `push`/`pop` are `O(log n)` and `peek` is `O(1)`. Empty `peek`/`pop`
-  raise a typed error. Max capacity and growth overflow are checked.
+- Heap sift `push`/`pop` are `O(log n)` and underlying `peek` is `O(1)`, but
+  exported records are forgeable and every public operation first performs
+  `O(n)` validation. Empty `peek`/`pop` raise a typed error. Max capacity and
+  growth overflow are checked.
 - Priority order is integer priority; equal priorities are FIFO by a checked,
   monotonic insertion sequence. Min-priority dequeue is the default and is
   stable. Sequence exhaustion is a typed overflow, not wraparound.
@@ -153,14 +159,18 @@ IntOrderedMap / StringOrderedMap (DataValue values)
 - Disjoint-set indices are fixed at construction. `find` uses iterative path
   compression; `union` uses size or rank balancing. Negative/stale indices are
   errors. Amortized complexity is inverse-Ackermann.
-- “Ordered” means insertion ordered, not key sorted. Sets/maps use a typed Map
-  for average `O(1)` lookup plus an order vector. Insert/replace retains the
-  existing position, deletion is `O(n)`, and reinsertion appends at the end.
-  Empty structures and duplicate inserts have documented deterministic results.
+- Int sets/maps retain ascending key order and use binary search internally;
+  public validation and vector insertion/removal make their end-to-end
+  operations `O(n)`. String sets/maps retain first-insertion order, use linear
+  key lookup, and append a removed then reinserted key. Their forgeable-record
+  uniqueness validation is `O(n^2)`. Empty structures and duplicate inserts
+  have documented deterministic results.
 
 Untyped helper functions may specialize statically where ABI-v9 tests prove the
-contract, but exported storage types must remain concrete. A future true generic
-nominal type is a language feature, not a Phase 24 library workaround.
+contract, but exported storage types remain concrete. Additional Float, Bool,
+or String-valued queue/deque/map families are future additive typed APIs rather
+than a fabricated dynamic union. A future true generic nominal type is a
+language feature, not a Phase 24 library workaround.
 
 ## 5. `moss.tables`
 
@@ -364,9 +374,10 @@ acceptance. A GO requires evidence for all applicable gates:
 3. **Arena ownership:** the prior global contiguous-range pattern is forbidden.
    Edge ownership, reachability, duplicate parentage, and nested sibling order
    need adversarial tests before API stability is claimed.
-4. **Closed rather than generic data structures:** concrete closed values are the
-   Phase 24 contract. A request for generic nominal declarations is a language
-   proposal and must not stall the useful typed baseline.
+4. **Concrete rather than generic data structures:** the documented Int and
+   String-key typed families are the Phase 24 baseline. A request for generic
+   nominal declarations or a heterogeneous runtime value is a language proposal
+   and must not stall that useful baseline.
 5. **Output amplification:** duplicate joins, broadcasts, reshapes, and hostile
    CBOR lengths can request enormous allocations. Limits and checked output-size
    arithmetic are correctness requirements, not optional hardening.

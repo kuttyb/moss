@@ -38,6 +38,7 @@ def main() -> None:
     )
 
     run([sys.executable, "validate_cbor_fixtures.py"], PROJECT, env)
+    run([sys.executable, "validate_ndarray_tables_oracle.py"], PROJECT, env)
     run([str(MARGO), "run"], PROJECT, env)
     run([str(MARGO), "--release", "run"], PROJECT, env)
     run([str(MARGO), "debug"], PROJECT, env)
@@ -46,7 +47,10 @@ def main() -> None:
         run([sys.executable, "cbor2_oracle.py"], PROJECT, env)
 
     suffix = " plus live cbor2" if args.live_cbor2 else ""
-    print(f"Advanced-data acceptance passed: 7 scenarios, 12 RFC vectors{suffix}")
+    print(
+        "Advanced-data acceptance passed: 7 scenarios, seeded ndarray/table "
+        f"oracle, 12 RFC vectors{suffix}"
+    )
 
 
 if __name__ == "__main__":
