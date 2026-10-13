@@ -68,6 +68,13 @@ test "L7 parent cycles are rejected":
   cbor.array_push(doc, outer, inner)
   assert(cbor.validate_doc(doc))
 
+  doc.edge_parents = [outer, inner]
+  doc.edge_next = [-1, -1]
+  doc.edge_keys = [-1, -1]
+  doc.edge_values = [inner, outer]
+  doc.first_edges[inner] = 1
+  doc.last_edges[inner] = 1
+  doc.container_counts[inner] = 1
   doc.parents[outer] = inner
   assert(not cbor.validate_doc(doc))
   var caught = false
