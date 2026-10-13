@@ -1,0 +1,207 @@
+module csv
+import core
+import text
+import parse
+import fmt
+
+export enum CsvError:
+  UnexpectedQuote(line: Int, col: Int)
+  UnterminatedQuote(line: Int, col: Int)
+  TrailingQuote(line: Int, col: Int)
+
+export fn read_all(input: String, delimiter: String) -> Vector[Vector[String]]:
+  var delim = delimiter
+  if delim == "":
+    delim = ","
+  var cursor = parse.new_cursor()
+  var rows = Vector[Vector[String]]()
+  var current_row = Vector[String]()
+  var field_parts = Vector[String]()
+
+  quote = "\""
+  carriage_return = "\r"
+  line_feed = "\n"
+
+  if input == "":
+    return rows
+
+  var at_field_start = true
+
+  while not parse.is_eof(input, cursor):
+    if at_field_start:
+      ch = parse.peek(input, cursor)
+      if ch == quote:
+        parse.advance(input, cursor)
+        var inside_quotes = true
+        while inside_quotes:
+          if parse.is_eof(input, cursor):
+            raise CsvError.UnterminatedQuote(line: cursor.line, col: cursor.col)
+          c = parse.peek(input, cursor)
+          if c == quote:
+            parse.advance(input, cursor)
+            if not parse.is_eof(input, cursor) and parse.peek(input, cursor) == quote:
+              parse.advance(input, cursor)
+              esc_q = "\""
+              field_parts.push(esc_q)
+            else:
+              inside_quotes = false
+          else:
+            parse.advance(input, cursor)
+            field_parts.push(c)
+
+        if parse.is_eof(input, cursor):
+          current_row.push("".join(field_parts))
+          field_parts = Vector[String]()
+          rows.push(current_row)
+          current_row = Vector[String]()
+          at_field_start = false
+        else:
+          post = parse.peek(input, cursor)
+          if post == delim:
+            parse.advance(input, cursor)
+            current_row.push("".join(field_parts))
+            field_parts = Vector[String]()
+            at_field_start = true
+          else:
+            if post == carriage_return or post == line_feed:
+              parse.advance(input, cursor)
+              if post == carriage_return and not parse.is_eof(input, cursor) and parse.peek(input, cursor) == line_feed:
+                parse.advance(input, cursor)
+              current_row.push("".join(field_parts))
+              field_parts = Vector[String]()
+              rows.push(current_row)
+              current_row = Vector[String]()
+              at_field_start = true
+            else:
+              raise CsvError.TrailingQuote(line: cursor.line, col: cursor.col)
+      else:
+        if ch == delim:
+          parse.advance(input, cursor)
+          current_row.push("")
+          at_field_start = true
+        else:
+          if ch == carriage_return or ch == line_feed:
+            parse.advance(input, cursor)
+            if ch == carriage_return and not parse.is_eof(input, cursor) and parse.peek(input, cursor) == line_feed:
+              parse.advance(input, cursor)
+            current_row.push("")
+            rows.push(current_row)
+            current_row = Vector[String]()
+            at_field_start = true
+          else:
+            parse.advance(input, cursor)
+            field_parts.push(ch)
+            at_field_start = false
+    else:
+      ch = parse.peek(input, cursor)
+      if ch == delim:
+        parse.advance(input, cursor)
+        current_row.push("".join(field_parts))
+        field_parts = Vector[String]()
+        at_field_start = true
+      else:
+        if ch == carriage_return or ch == line_feed:
+          parse.advance(input, cursor)
+          if ch == carriage_return and not parse.is_eof(input, cursor) and parse.peek(input, cursor) == line_feed:
+            parse.advance(input, cursor)
+          current_row.push("".join(field_parts))
+          field_parts = Vector[String]()
+          rows.push(current_row)
+          current_row = Vector[String]()
+          at_field_start = true
+        else:
+          if ch == quote:
+            raise CsvError.UnexpectedQuote(line: cursor.line, col: cursor.col)
+          else:
+            parse.advance(input, cursor)
+            field_parts.push(ch)
+
+  if at_field_start:
+    if (current_row |> count) > 0:
+      current_row.push("")
+      rows.push(current_row)
+  else:
+    if (field_parts |> count) > 0 or (current_row |> count) > 0:
+      current_row.push("".join(field_parts))
+      rows.push(current_row)
+
+  return rows
+
+export fn read_tsv(input: String) -> Vector[Vector[String]]:
+  return read_all(input, "\t")
+
+export fn write_all(rows: Vector[Vector[String]], delimiter: String) -> String:
+  var delim = delimiter
+  if delim == "":
+    delim = ","
+  var buffer = Vector[String]()
+  num_rows = rows |> count
+  var r = 0
+  while r < num_rows:
+    row = rows[r]
+    num_cols = row |> count
+    var c = 0
+    while c < num_cols:
+      if c > 0:
+        sep = delim + ""
+        buffer.push(sep)
+      field = row[c]
+      d_copy = delim + ""
+      buffer.push(fmt.escape_csv_field(field, d_copy))
+      c = c + 1
+    buffer.push("\r\n")
+    r = r + 1
+  return "".join(buffer)
+
+export fn write_all_lf(rows: Vector[Vector[String]], delimiter: String) -> String:
+  var delim = delimiter
+  if delim == "":
+    delim = ","
+  var buffer = Vector[String]()
+  num_rows = rows |> count
+  var r = 0
+  while r < num_rows:
+    row = rows[r]
+    num_cols = row |> count
+    var c = 0
+    while c < num_cols:
+      if c > 0:
+        sep = delim + ""
+        buffer.push(sep)
+      field = row[c]
+      d_copy = delim + ""
+      buffer.push(fmt.escape_csv_field(field, d_copy))
+      c = c + 1
+    buffer.push("\n")
+    r = r + 1
+  return "".join(buffer)
+
+export fn write_tsv(rows: Vector[Vector[String]]) -> String:
+  return write_all(rows, "\t")
+
+export fn validate(input: String, delimiter: String) -> Bool:
+  try:
+    checked_rows = read_all(input, delimiter)
+    return true
+  recover:
+    return false
+
+export fn row_count(table: Vector[Vector[String]]) -> Int:
+  return table |> count
+
+export fn col_count(table: Vector[Vector[String]], row_idx: Int) -> Int:
+  num_rows = table |> count
+  if row_idx < 0 or row_idx >= num_rows:
+    return 0
+  row = table[row_idx]
+  return row |> count
+
+export fn get_field(table: Vector[Vector[String]], row_idx: Int, col_idx: Int) -> String:
+  num_rows = table |> count
+  if row_idx < 0 or row_idx >= num_rows:
+    return ""
+  row = table[row_idx]
+  num_cols = row |> count
+  if col_idx < 0 or col_idx >= num_cols:
+    return ""
+  return row[col_idx] + ""

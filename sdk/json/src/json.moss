@@ -1,0 +1,757 @@
+module json
+import core
+import text
+import encoding
+import parse
+import fmt
+
+export fn kind_null() -> Int:
+  return 0
+
+export fn kind_bool() -> Int:
+  return 1
+
+export fn kind_number() -> Int:
+  return 2
+
+export fn kind_string() -> Int:
+  return 3
+
+export fn kind_array() -> Int:
+  return 4
+
+export fn kind_object() -> Int:
+  return 5
+
+export type JsonDoc:
+  kinds: Vector[Int]
+  bool_vals: Vector[Bool]
+  int_vals: Vector[Int]
+  float_vals: Vector[Float]
+  str_vals: Vector[String]
+  child_starts: Vector[Int]
+  child_counts: Vector[Int]
+  arr_children: Vector[Int]
+  obj_keys: Vector[String]
+  obj_vals: Vector[Int]
+  root: Int
+
+export enum JsonError:
+  UnexpectedToken(line: Int, col: Int)
+  UnexpectedEof(line: Int, col: Int)
+  InvalidNumber(line: Int, col: Int)
+  InvalidStringEscape(line: Int, col: Int)
+  InvalidUnicodeEscape(line: Int, col: Int)
+  UnsupportedUnicodeEscape(line: Int, col: Int, scalar: Int)
+  TrailingCharacters(line: Int, col: Int)
+  MaxDepthExceeded(line: Int, col: Int, depth: Int)
+  DuplicateKey(line: Int, col: Int)
+
+fn push_int(vec: Vector[Int], val: Int):
+  vec.push(val)
+
+fn push_bool(vec: Vector[Bool], val: Bool):
+  vec.push(val)
+
+fn push_float(vec: Vector[Float], val: Float):
+  vec.push(val)
+
+fn push_string(vec: Vector[String], val: String):
+  vec.push(val)
+
+export fn new_doc() -> JsonDoc:
+  return JsonDoc(kinds: Vector[Int](), bool_vals: Vector[Bool](), int_vals: Vector[Int](), float_vals: Vector[Float](), str_vals: Vector[String](), child_starts: Vector[Int](), child_counts: Vector[Int](), arr_children: Vector[Int](), obj_keys: Vector[String](), obj_vals: Vector[Int](), root: 0 - 1)
+
+fn push_node(doc: JsonDoc, kind: Int, b: Bool, i: Int, f: Float, s: String, start: Int, count: Int) -> Int:
+  id = doc.kinds |> count
+  push_int(doc.kinds, kind)
+  push_bool(doc.bool_vals, b)
+  push_int(doc.int_vals, i)
+  push_float(doc.float_vals, f)
+  push_string(doc.str_vals, s)
+  push_int(doc.child_starts, start)
+  push_int(doc.child_counts, count)
+  return id
+
+export fn add_null(doc: JsonDoc) -> Int:
+  return push_node(doc, kind_null(), false, 0, 0.0, "", 0, 0)
+
+export fn add_bool(doc: JsonDoc, val: Bool) -> Int:
+  return push_node(doc, kind_bool(), val, 0, 0.0, "", 0, 0)
+
+export fn add_number(doc: JsonDoc, int_val: Int, float_val: Float, raw: String) -> Int:
+  return push_node(doc, kind_number(), false, int_val, float_val, raw, 0, 0)
+
+export fn add_string(doc: JsonDoc, val: String) -> Int:
+  return push_node(doc, kind_string(), false, 0, 0.0, val, 0, 0)
+
+export fn add_array(doc: JsonDoc) -> Int:
+  start = doc.arr_children |> count
+  return push_node(doc, kind_array(), false, 0, 0.0, "", start, 0)
+
+export fn add_object(doc: JsonDoc) -> Int:
+  start = doc.obj_keys |> count
+  return push_node(doc, kind_object(), false, 0, 0.0, "", start, 0)
+
+export fn array_push(doc: JsonDoc, arr_id: Int, child_id: Int):
+  push_int(doc.arr_children, child_id)
+  doc.child_counts[arr_id] = doc.child_counts[arr_id] + 1
+
+export fn object_set(doc: JsonDoc, obj_id: Int, key: String, child_id: Int):
+  push_string(doc.obj_keys, key)
+  push_int(doc.obj_vals, child_id)
+  doc.child_counts[obj_id] = doc.child_counts[obj_id] + 1
+
+export fn add_int(doc: JsonDoc, val: Int) -> Int:
+  return add_number(doc, val, 0.0, fmt.format_int(val))
+
+export fn array_push_string(doc: JsonDoc, arr_id: Int, val: String) -> Int:
+  str_id = add_string(doc, val)
+  array_push(doc, arr_id, str_id)
+  return str_id
+
+export fn array_push_int(doc: JsonDoc, arr_id: Int, val: Int) -> Int:
+  num_id = add_int(doc, val)
+  array_push(doc, arr_id, num_id)
+  return num_id
+
+export fn array_push_bool(doc: JsonDoc, arr_id: Int, val: Bool) -> Int:
+  b_id = add_bool(doc, val)
+  array_push(doc, arr_id, b_id)
+  return b_id
+
+export fn array_push_null(doc: JsonDoc, arr_id: Int) -> Int:
+  n_id = add_null(doc)
+  array_push(doc, arr_id, n_id)
+  return n_id
+
+export fn object_set_string(doc: JsonDoc, obj_id: Int, key: String, val: String) -> Int:
+  str_id = add_string(doc, val)
+  object_set(doc, obj_id, key, str_id)
+  return str_id
+
+export fn object_set_int(doc: JsonDoc, obj_id: Int, key: String, val: Int) -> Int:
+  num_id = add_int(doc, val)
+  object_set(doc, obj_id, key, num_id)
+  return num_id
+
+export fn object_set_bool(doc: JsonDoc, obj_id: Int, key: String, val: Bool) -> Int:
+  b_id = add_bool(doc, val)
+  object_set(doc, obj_id, key, b_id)
+  return b_id
+
+export fn object_set_null(doc: JsonDoc, obj_id: Int, key: String) -> Int:
+  n_id = add_null(doc)
+  object_set(doc, obj_id, key, n_id)
+  return n_id
+
+export fn node_kind(doc: JsonDoc, id: Int) -> Int:
+  return doc.kinds[id]
+
+export fn is_null(doc: JsonDoc, id: Int) -> Bool:
+  return doc.kinds[id] == kind_null()
+
+export fn get_bool(doc: JsonDoc, id: Int) -> Bool:
+  return doc.bool_vals[id]
+
+export fn get_number_int(doc: JsonDoc, id: Int) -> Int:
+  return doc.int_vals[id]
+
+export fn get_number_float(doc: JsonDoc, id: Int) -> Float:
+  return doc.float_vals[id]
+
+export fn get_number_str(doc: JsonDoc, id: Int) -> String:
+  return doc.str_vals[id] + ""
+
+export fn get_string(doc: JsonDoc, id: Int) -> String:
+  return doc.str_vals[id] + ""
+
+export fn array_length(doc: JsonDoc, id: Int) -> Int:
+  return doc.child_counts[id]
+
+export fn array_get(doc: JsonDoc, id: Int, index: Int) -> Int:
+  count = doc.child_counts[id]
+  if index < 0 or index >= count:
+    return 0 - 1
+  return doc.arr_children[doc.child_starts[id] + index]
+
+export fn object_length(doc: JsonDoc, id: Int) -> Int:
+  return doc.child_counts[id]
+
+export fn object_key(doc: JsonDoc, id: Int, index: Int) -> String:
+  count = doc.child_counts[id]
+  if index < 0 or index >= count:
+    return ""
+  return doc.obj_keys[doc.child_starts[id] + index] + ""
+
+export fn object_val(doc: JsonDoc, id: Int, index: Int) -> Int:
+  count = doc.child_counts[id]
+  if index < 0 or index >= count:
+    return 0 - 1
+  return doc.obj_vals[doc.child_starts[id] + index]
+
+export fn object_get(doc: JsonDoc, id: Int, key: String) -> Int:
+  count = doc.child_counts[id]
+  start = doc.child_starts[id]
+  var i = 0
+  while i < count:
+    if doc.obj_keys[start + i] == key:
+      return doc.obj_vals[start + i]
+    i = i + 1
+  return 0 - 1
+
+export fn object_has(doc: JsonDoc, id: Int, key: String) -> Bool:
+  return object_get(doc, id, key) >= 0
+
+fn ascii_code_to_string(code: Int) -> String:
+  if code == 0:
+    return ""
+  if code == 9:
+    return "\t"
+  if code == 10:
+    return "\n"
+  if code == 13:
+    return "\r"
+  printable = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+  if code >= 32 and code <= 126:
+    return printable.char_at(code - 32)
+  return ""
+
+fn parse_string_literal(input: String, cursor: parse.Cursor) -> String:
+  quote = "\""
+  backslash = "\\"
+  parse.advance(input, cursor)
+  var parts = Vector[String]()
+  while not parse.is_eof(input, cursor):
+    ch = parse.advance(input, cursor)
+    if ch == quote:
+      return "".join(parts)
+    if ch == backslash:
+      if parse.is_eof(input, cursor):
+        raise JsonError.UnexpectedEof(line: cursor.line, col: cursor.col)
+      esc = parse.advance(input, cursor)
+      if esc == quote:
+        q_char = "\""
+        parts.push(q_char)
+      else:
+        if esc == backslash:
+          bs_char = "\\"
+          parts.push(bs_char)
+        else:
+          if esc == "/":
+            parts.push("/")
+          else:
+            if esc == "b":
+              parts.push("\x08")
+            else:
+              if esc == "f":
+                parts.push("\x0c")
+              else:
+                if esc == "n":
+                  parts.push("\n")
+                else:
+                  if esc == "r":
+                    parts.push("\r")
+                  else:
+                    if esc == "t":
+                      parts.push("\t")
+                    else:
+                      if esc == "u":
+                        start_pos = parse.position(cursor)
+                        var hex_parts = Vector[String]()
+                        var k = 0
+                        while k < 4 and not parse.is_eof(input, cursor):
+                          h = parse.advance(input, cursor)
+                          if not parse.is_hex_digit(h):
+                            raise JsonError.InvalidUnicodeEscape(line: start_pos.line, col: start_pos.col)
+                          hex_parts.push(h)
+                          k = k + 1
+                        if (hex_parts |> count) < 4:
+                          raise JsonError.InvalidUnicodeEscape(line: start_pos.line, col: start_pos.col)
+                        c0 = parse.hex_value(hex_parts[0])
+                        c1 = parse.hex_value(hex_parts[1])
+                        c2 = parse.hex_value(hex_parts[2])
+                        c3 = parse.hex_value(hex_parts[3])
+                        var scalar = c0 * 4096 + c1 * 256 + c2 * 16 + c3
+                        if scalar >= 55296 and scalar <= 56319:
+                          if parse.consume_if(input, cursor, "\\u"):
+                            var low_hex = Vector[String]()
+                            var m = 0
+                            while m < 4 and not parse.is_eof(input, cursor):
+                              lh = parse.advance(input, cursor)
+                              if not parse.is_hex_digit(lh):
+                                raise JsonError.InvalidUnicodeEscape(line: start_pos.line, col: start_pos.col)
+                              low_hex.push(lh)
+                              m = m + 1
+                            if (low_hex |> count) < 4:
+                              raise JsonError.InvalidUnicodeEscape(line: start_pos.line, col: start_pos.col)
+                            l0 = parse.hex_value(low_hex[0])
+                            l1 = parse.hex_value(low_hex[1])
+                            l2 = parse.hex_value(low_hex[2])
+                            l3 = parse.hex_value(low_hex[3])
+                            low_scalar = l0 * 4096 + l1 * 256 + l2 * 16 + l3
+                            if low_scalar < 56320 or low_scalar > 57343:
+                              raise JsonError.InvalidUnicodeEscape(line: start_pos.line, col: start_pos.col)
+                            scalar = 65536 + (scalar - 55296) * 1024 + (low_scalar - 56320)
+                          else:
+                            raise JsonError.InvalidUnicodeEscape(line: start_pos.line, col: start_pos.col)
+                        else:
+                          if scalar >= 56320 and scalar <= 57343:
+                            raise JsonError.InvalidUnicodeEscape(line: start_pos.line, col: start_pos.col)
+                        if scalar < 128:
+                          parts.push(ascii_code_to_string(scalar))
+                        else:
+                          raise JsonError.UnsupportedUnicodeEscape(line: start_pos.line, col: start_pos.col, scalar: scalar)
+                      else:
+                        raise JsonError.InvalidStringEscape(line: cursor.line, col: cursor.col)
+    else:
+      line_feed = "\n"
+      carriage_return = "\r"
+      tab = "\t"
+      if ch == line_feed or ch == carriage_return:
+        raise JsonError.InvalidStringEscape(line: cursor.line, col: cursor.col)
+      parts.push(ch)
+  raise JsonError.UnexpectedEof(line: cursor.line, col: cursor.col)
+
+fn parse_number_literal(input: String, cursor: parse.Cursor, doc: JsonDoc) -> Int:
+  start_pos = parse.position(cursor)
+  var parts = Vector[String]()
+  if parse.peek(input, cursor) == "-":
+    parts.push(parse.advance(input, cursor))
+  if parse.is_eof(input, cursor):
+    raise JsonError.InvalidNumber(line: start_pos.line, col: start_pos.col)
+  
+  first_digit = parse.advance(input, cursor)
+  if not parse.is_digit(first_digit):
+    raise JsonError.InvalidNumber(line: start_pos.line, col: start_pos.col)
+  is_zero = first_digit == "0"
+  parts.push(first_digit)
+
+  if is_zero:
+    if not parse.is_eof(input, cursor) and parse.is_digit(parse.peek(input, cursor)):
+      raise JsonError.InvalidNumber(line: start_pos.line, col: start_pos.col)
+  else:
+    while not parse.is_eof(input, cursor) and parse.is_digit(parse.peek(input, cursor)):
+      parts.push(parse.advance(input, cursor))
+
+  var is_flt = false
+  if not parse.is_eof(input, cursor) and parse.peek(input, cursor) == ".":
+    is_flt = true
+    parts.push(parse.advance(input, cursor))
+    if parse.is_eof(input, cursor) or not parse.is_digit(parse.peek(input, cursor)):
+      raise JsonError.InvalidNumber(line: start_pos.line, col: start_pos.col)
+    while not parse.is_eof(input, cursor) and parse.is_digit(parse.peek(input, cursor)):
+      parts.push(parse.advance(input, cursor))
+
+  if not parse.is_eof(input, cursor):
+    exp = parse.peek(input, cursor)
+    if exp == "e" or exp == "E":
+      is_flt = true
+      parts.push(parse.advance(input, cursor))
+      if not parse.is_eof(input, cursor):
+        sign = parse.peek(input, cursor)
+        if sign == "+" or sign == "-":
+          parts.push(parse.advance(input, cursor))
+      if parse.is_eof(input, cursor) or not parse.is_digit(parse.peek(input, cursor)):
+        raise JsonError.InvalidNumber(line: start_pos.line, col: start_pos.col)
+      while not parse.is_eof(input, cursor) and parse.is_digit(parse.peek(input, cursor)):
+        parts.push(parse.advance(input, cursor))
+
+  raw_str = "".join(parts)
+  var int_val = 0
+  var flt_val = 0.0
+  if not is_flt:
+    int_val = parse_int(raw_str)
+    flt_val = int_val * 1.0
+  else:
+    flt_val = parse_float(raw_str)
+  return add_number(doc, int_val, flt_val, raw_str)
+
+export fn parse(input: String) -> JsonDoc:
+  cursor = parse.new_cursor()
+  doc = new_doc()
+  parse.skip_whitespace(input, cursor)
+  if parse.is_eof(input, cursor):
+    raise JsonError.UnexpectedEof(line: cursor.line, col: cursor.col)
+
+  quote = "\""
+  first_char = parse.peek(input, cursor)
+  if first_char != "{" and first_char != "[":
+    var root_id = 0
+    if first_char == quote:
+      s = parse_string_literal(input, cursor)
+      root_id = add_string(doc, s)
+    else:
+      if first_char == "t":
+        if not parse.consume_if(input, cursor, "true"):
+          raise JsonError.UnexpectedToken(line: cursor.line, col: cursor.col)
+        root_id = add_bool(doc, true)
+      else:
+        if first_char == "f":
+          if not parse.consume_if(input, cursor, "false"):
+            raise JsonError.UnexpectedToken(line: cursor.line, col: cursor.col)
+          root_id = add_bool(doc, false)
+        else:
+          if first_char == "n":
+            if not parse.consume_if(input, cursor, "null"):
+              raise JsonError.UnexpectedToken(line: cursor.line, col: cursor.col)
+            root_id = add_null(doc)
+          else:
+            if first_char == "-" or parse.is_digit(first_char):
+              root_id = parse_number_literal(input, cursor, doc)
+            else:
+              raise JsonError.UnexpectedToken(line: cursor.line, col: cursor.col)
+    parse.skip_whitespace(input, cursor)
+    if not parse.is_eof(input, cursor):
+      raise JsonError.TrailingCharacters(line: cursor.line, col: cursor.col)
+    doc.root = root_id
+    return doc
+
+  var stack = Vector[Int]()
+  var stack_is_obj = Vector[Bool]()
+  var stack_expect_comma = Vector[Bool]()
+
+  var root_id = 0
+  if first_char == "{":
+    parse.advance(input, cursor)
+    root_id = add_object(doc)
+    stack.push(root_id)
+    stack_is_obj.push(true)
+    stack_expect_comma.push(false)
+  else:
+    parse.advance(input, cursor)
+    root_id = add_array(doc)
+    stack.push(root_id)
+    stack_is_obj.push(false)
+    stack_expect_comma.push(false)
+
+  doc.root = root_id
+
+  while (stack |> count) > 0:
+    top_idx = (stack |> count) - 1
+    curr_id = stack[top_idx]
+    is_obj = stack_is_obj[top_idx]
+    expect_comma = stack_expect_comma[top_idx]
+
+    parse.skip_whitespace(input, cursor)
+    if parse.is_eof(input, cursor):
+      raise JsonError.UnexpectedEof(line: cursor.line, col: cursor.col)
+
+    ch = parse.peek(input, cursor)
+    if is_obj and ch == "}":
+      parse.advance(input, cursor)
+      stack.pop()
+      stack_is_obj.pop()
+      stack_expect_comma.pop()
+      if (stack |> count) > 0:
+        parent_idx = (stack |> count) - 1
+        stack_expect_comma[parent_idx] = true
+    else:
+      if not is_obj and ch == "]":
+        parse.advance(input, cursor)
+        stack.pop()
+        stack_is_obj.pop()
+        stack_expect_comma.pop()
+        if (stack |> count) > 0:
+          parent_idx = (stack |> count) - 1
+          stack_expect_comma[parent_idx] = true
+      else:
+        if expect_comma:
+          if ch != ",":
+            raise JsonError.UnexpectedToken(line: cursor.line, col: cursor.col)
+          parse.advance(input, cursor)
+          parse.skip_whitespace(input, cursor)
+          stack_expect_comma[top_idx] = false
+          if parse.is_eof(input, cursor):
+            raise JsonError.UnexpectedEof(line: cursor.line, col: cursor.col)
+          ch = parse.peek(input, cursor)
+          if (is_obj and ch == "}") or (not is_obj and ch == "]"):
+            raise JsonError.UnexpectedToken(line: cursor.line, col: cursor.col)
+
+        var key = ""
+        if is_obj:
+          if ch != quote:
+            raise JsonError.UnexpectedToken(line: cursor.line, col: cursor.col)
+          key = parse_string_literal(input, cursor)
+          parse.skip_whitespace(input, cursor)
+          if parse.is_eof(input, cursor):
+            raise JsonError.UnexpectedEof(line: cursor.line, col: cursor.col)
+          if parse.peek(input, cursor) != ":":
+            raise JsonError.UnexpectedToken(line: cursor.line, col: cursor.col)
+          parse.advance(input, cursor)
+          parse.skip_whitespace(input, cursor)
+          if parse.is_eof(input, cursor):
+            raise JsonError.UnexpectedEof(line: cursor.line, col: cursor.col)
+          ch = parse.peek(input, cursor)
+
+        if ch == "{":
+          if (stack |> count) >= 512:
+            raise JsonError.MaxDepthExceeded(line: cursor.line, col: cursor.col, depth: 512)
+          parse.advance(input, cursor)
+          new_obj = add_object(doc)
+          if is_obj:
+            object_set(doc, curr_id, key, new_obj)
+            doc.child_starts[new_obj] = doc.obj_keys |> count
+          else:
+            array_push(doc, curr_id, new_obj)
+            doc.child_starts[new_obj] = doc.obj_keys |> count
+          stack_expect_comma[top_idx] = true
+          stack.push(new_obj)
+          stack_is_obj.push(true)
+          stack_expect_comma.push(false)
+        else:
+          if ch == "[":
+            if (stack |> count) >= 512:
+              raise JsonError.MaxDepthExceeded(line: cursor.line, col: cursor.col, depth: 512)
+            parse.advance(input, cursor)
+            new_arr = add_array(doc)
+            if is_obj:
+              object_set(doc, curr_id, key, new_arr)
+              doc.child_starts[new_arr] = doc.arr_children |> count
+            else:
+              array_push(doc, curr_id, new_arr)
+              doc.child_starts[new_arr] = doc.arr_children |> count
+            stack_expect_comma[top_idx] = true
+            stack.push(new_arr)
+            stack_is_obj.push(false)
+            stack_expect_comma.push(false)
+          else:
+            var val_id = 0
+            if ch == quote:
+              s = parse_string_literal(input, cursor)
+              val_id = add_string(doc, s)
+            else:
+              if ch == "t":
+                if not parse.consume_if(input, cursor, "true"):
+                  raise JsonError.UnexpectedToken(line: cursor.line, col: cursor.col)
+                val_id = add_bool(doc, true)
+              else:
+                if ch == "f":
+                  if not parse.consume_if(input, cursor, "false"):
+                    raise JsonError.UnexpectedToken(line: cursor.line, col: cursor.col)
+                  val_id = add_bool(doc, false)
+                else:
+                  if ch == "n":
+                    if not parse.consume_if(input, cursor, "null"):
+                      raise JsonError.UnexpectedToken(line: cursor.line, col: cursor.col)
+                    val_id = add_null(doc)
+                  else:
+                    if ch == "-" or parse.is_digit(ch):
+                      val_id = parse_number_literal(input, cursor, doc)
+                    else:
+                      raise JsonError.UnexpectedToken(line: cursor.line, col: cursor.col)
+            if is_obj:
+              object_set(doc, curr_id, key, val_id)
+            else:
+              array_push(doc, curr_id, val_id)
+            stack_expect_comma[top_idx] = true
+
+  parse.skip_whitespace(input, cursor)
+  if not parse.is_eof(input, cursor):
+    raise JsonError.TrailingCharacters(line: cursor.line, col: cursor.col)
+  return doc
+
+export fn stringify(doc: JsonDoc) -> String:
+  if doc.root < 0:
+    return ""
+  root = doc.root
+  root_kind = doc.kinds[root]
+  if root_kind == kind_null():
+    return "null"
+  if root_kind == kind_bool():
+    if doc.bool_vals[root]:
+      return "true"
+    return "false"
+  if root_kind == kind_number():
+    return doc.str_vals[root] + ""
+  if root_kind == kind_string():
+    return fmt.quote_json_string(doc.str_vals[root])
+
+  var buffer = Vector[String]()
+  var stack_id = Vector[Int]()
+  var stack_idx = Vector[Int]()
+  var stack_is_obj = Vector[Bool]()
+
+  if root_kind == kind_array():
+    buffer.push("[")
+    stack_id.push(root)
+    stack_idx.push(0)
+    stack_is_obj.push(false)
+  else:
+    buffer.push("{")
+    stack_id.push(root)
+    stack_idx.push(0)
+    stack_is_obj.push(true)
+
+  while (stack_id |> count) > 0:
+    top = (stack_id |> count) - 1
+    curr_id = stack_id[top]
+    idx = stack_idx[top]
+    is_obj = stack_is_obj[top]
+    total = doc.child_counts[curr_id]
+
+    if idx >= total:
+      stack_id.pop()
+      stack_idx.pop()
+      stack_is_obj.pop()
+      if is_obj:
+        buffer.push("}")
+      else:
+        buffer.push("]")
+    else:
+      if idx > 0:
+        buffer.push(",")
+      stack_idx[top] = idx + 1
+      var child_id = 0
+      if is_obj:
+        key = object_key(doc, curr_id, idx)
+        buffer.push(fmt.quote_json_string(key))
+        buffer.push(":")
+        child_id = object_val(doc, curr_id, idx)
+      else:
+        child_id = array_get(doc, curr_id, idx)
+
+      ckind = doc.kinds[child_id]
+      if ckind == kind_null():
+        buffer.push("null")
+      else:
+        if ckind == kind_bool():
+          if doc.bool_vals[child_id]:
+            buffer.push("true")
+          else:
+            buffer.push("false")
+        else:
+          if ckind == kind_number():
+            buffer.push(doc.str_vals[child_id] + "")
+          else:
+            if ckind == kind_string():
+              buffer.push(fmt.quote_json_string(doc.str_vals[child_id]))
+            else:
+              if ckind == kind_array():
+                buffer.push("[")
+                stack_id.push(child_id)
+                stack_idx.push(0)
+                stack_is_obj.push(false)
+              else:
+                if ckind == kind_object():
+                  buffer.push("{")
+                  stack_id.push(child_id)
+                  stack_idx.push(0)
+                  stack_is_obj.push(true)
+
+  return "".join(buffer)
+
+export fn stringify_pretty(doc: JsonDoc, indent_str: String) -> String:
+  if doc.root < 0:
+    return ""
+  root = doc.root
+  root_kind = doc.kinds[root]
+  if root_kind == kind_null():
+    return "null"
+  if root_kind == kind_bool():
+    if doc.bool_vals[root]:
+      return "true"
+    return "false"
+  if root_kind == kind_number():
+    return doc.str_vals[root] + ""
+  if root_kind == kind_string():
+    return fmt.quote_json_string(doc.str_vals[root])
+
+  var buffer = Vector[String]()
+  var stack_id = Vector[Int]()
+  var stack_idx = Vector[Int]()
+  var stack_is_obj = Vector[Bool]()
+
+  if root_kind == kind_array():
+    if doc.child_counts[root] == 0:
+      return "[]"
+    buffer.push("[\n")
+    stack_id.push(root)
+    stack_idx.push(0)
+    stack_is_obj.push(false)
+  else:
+    if doc.child_counts[root] == 0:
+      return "{}"
+    buffer.push("{\n")
+    stack_id.push(root)
+    stack_idx.push(0)
+    stack_is_obj.push(true)
+
+  while (stack_id |> count) > 0:
+    top = (stack_id |> count) - 1
+    curr_id = stack_id[top]
+    idx = stack_idx[top]
+    is_obj = stack_is_obj[top]
+    total = doc.child_counts[curr_id]
+
+    if idx >= total:
+      stack_id.pop()
+      stack_idx.pop()
+      stack_is_obj.pop()
+      depth = stack_id |> count
+      buffer.push("\n")
+      buffer.push(fmt.repeat_string(indent_str, depth))
+      if is_obj:
+        buffer.push("}")
+      else:
+        buffer.push("]")
+    else:
+      if idx > 0:
+        buffer.push(",\n")
+      depth = stack_id |> count
+      buffer.push(fmt.repeat_string(indent_str, depth))
+      stack_idx[top] = idx + 1
+      var child_id = 0
+      if is_obj:
+        key = object_key(doc, curr_id, idx)
+        buffer.push(fmt.quote_json_string(key))
+        buffer.push(": ")
+        child_id = object_val(doc, curr_id, idx)
+      else:
+        child_id = array_get(doc, curr_id, idx)
+
+      ckind = doc.kinds[child_id]
+      if ckind == kind_null():
+        buffer.push("null")
+      else:
+        if ckind == kind_bool():
+          if doc.bool_vals[child_id]:
+            buffer.push("true")
+          else:
+            buffer.push("false")
+        else:
+          if ckind == kind_number():
+            buffer.push(doc.str_vals[child_id] + "")
+          else:
+            if ckind == kind_string():
+              buffer.push(fmt.quote_json_string(doc.str_vals[child_id]))
+            else:
+              if ckind == kind_array():
+                child_total = doc.child_counts[child_id]
+                if child_total == 0:
+                  buffer.push("[]")
+                else:
+                  buffer.push("[\n")
+                  stack_id.push(child_id)
+                  stack_idx.push(0)
+                  stack_is_obj.push(false)
+              else:
+                if ckind == kind_object():
+                  child_total = doc.child_counts[child_id]
+                  if child_total == 0:
+                    buffer.push("{}")
+                  else:
+                    buffer.push("{\n")
+                    stack_id.push(child_id)
+                    stack_idx.push(0)
+                    stack_is_obj.push(true)
+
+  return "".join(buffer)
+
+export fn validate(json_text: String) -> Bool:
+  try:
+    doc = parse(json_text)
+    return true
+  recover:
+    return false
+

@@ -1,0 +1,14 @@
+[package]
+name = "data_acceptance"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+"moss.core" = { path = "../foundations/core" }
+"moss.text" = { path = "../text" }
+"moss.parse" = { path = "../parse" }
+"moss.fmt" = { path = "../fmt" }
+"moss.json" = { path = "../json" }
+"moss.csv" = { path = "../csv" }

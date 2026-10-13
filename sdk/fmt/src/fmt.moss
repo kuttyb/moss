@@ -1,0 +1,158 @@
+module fmt
+import core
+import text
+
+export type Formatter:
+  indent_str: String
+  level: Int
+
+export fn new_formatter(indent: String) -> Formatter:
+  return Formatter(indent_str: indent + "", level: 0)
+
+export fn new_buffer() -> Vector[String]:
+  return Vector[String]()
+
+export fn indent(formatter: Formatter):
+  formatter.level = formatter.level + 1
+
+export fn dedent(formatter: Formatter):
+  if formatter.level > 0:
+    formatter.level = formatter.level - 1
+
+export fn write(buffer: Vector[String], s: String):
+  buffer.push(s + "")
+
+export fn write_indent(buffer: Vector[String], formatter: Formatter):
+  var i = 0
+  while i < formatter.level:
+    buffer.push(formatter.indent_str + "")
+    i = i + 1
+
+export fn write_line(buffer: Vector[String], formatter: Formatter, s: String):
+  write_indent(buffer, formatter)
+  buffer.push(s + "")
+  buffer.push("\n")
+
+export fn write_newline(buffer: Vector[String]):
+  buffer.push("\n")
+
+export fn finish(buffer: Vector[String]) -> String:
+  return "".join(buffer)
+
+export fn repeat_string(s: String, count: Int) -> String:
+  if count <= 0:
+    return ""
+  var parts = Vector[String]()
+  var i = 0
+  while i < count:
+    parts.push(s + "")
+    i = i + 1
+  return "".join(parts)
+
+export fn pad_left(s: String, width: Int, pad_char: String) -> String:
+  len = s.length()
+  if len >= width:
+    return s + ""
+  needed = width - len
+  padding = repeat_string(pad_char, needed)
+  return padding + s
+
+export fn pad_right(s: String, width: Int, pad_char: String) -> String:
+  len = s.length()
+  if len >= width:
+    return s + ""
+  needed = width - len
+  padding = repeat_string(pad_char, needed)
+  return s + padding
+
+export fn to_hex_char(val: Int) -> String:
+  hex_digits = "0123456789abcdef"
+  if val >= 0 and val < 16:
+    return hex_digits.char_at(val)
+  return "0"
+
+export fn format_hex_u16(val: Int) -> String:
+  var v = val
+  if v < 0:
+    v = 0
+  if v > 65535:
+    v = 65535
+  d0 = v % 16
+  v = v / 16
+  d1 = v % 16
+  v = v / 16
+  d2 = v % 16
+  v = v / 16
+  d3 = v % 16
+  return to_hex_char(d3) + to_hex_char(d2) + to_hex_char(d1) + to_hex_char(d0)
+
+export fn format_int(val: Int) -> String:
+  if val == 0:
+    return "0"
+  var is_neg = false
+  var v = val
+  if v < 0:
+    is_neg = true
+    v = 0 - v
+  digits = "0123456789"
+  var chars = Vector[String]()
+  while v > 0:
+    d = v % 10
+    v = v / 10
+    chars.push(digits.char_at(d))
+  var res = Vector[String]()
+  if is_neg:
+    res.push("-")
+  var i = (chars |> count) - 1
+  while i >= 0:
+    res.push(chars[i])
+    i = i - 1
+  return "".join(res)
+
+export fn escape_json_char(ch: String) -> String:
+  quote = "\""
+  backslash = "\\"
+  line_feed = "\n"
+  carriage_return = "\r"
+  tab = "\t"
+  if ch == quote:
+    return "\\\""
+  if ch == backslash:
+    return "\\\\"
+  if ch == line_feed:
+    return "\\n"
+  if ch == carriage_return:
+    return "\\r"
+  if ch == tab:
+    return "\\t"
+  return ch + ""
+
+export fn escape_json_string(value: String) -> String:
+  chars = value.chars()
+  count_chars = chars |> count
+  var parts = Vector[String]()
+  var i = 0
+  while i < count_chars:
+    parts.push(escape_json_char(chars[i]))
+    i = i + 1
+  return "".join(parts)
+
+export fn quote_json_string(value: String) -> String:
+  quote = "\""
+  escaped = escape_json_string(value)
+  return quote + escaped + quote
+
+export fn escape_csv_field(value: String, delimiter: String) -> String:
+  quote = "\""
+  line_feed = "\n"
+  carriage_return = "\r"
+  needs_quote = text.contains(value, delimiter) or text.contains(value, quote) or text.contains(value, line_feed) or text.contains(value, carriage_return)
+  if not needs_quote:
+    return value + ""
+  escaped = text.replace_all(value, quote, "\"\"")
+  return quote + escaped + quote
+
+export fn quote_csv_field_always(value: String) -> String:
+  quote = "\""
+  escaped = text.replace_all(value, quote, "\"\"")
+  return quote + escaped + quote

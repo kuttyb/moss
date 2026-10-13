@@ -1,0 +1,29 @@
+import json
+import csv
+import fmt
+
+bench "json stringify 100 key object":
+  doc = json.new_doc()
+  root = json.add_object(doc)
+  doc.root = root
+  var i = 0
+  while i < 100:
+    k = fmt.format_int(i)
+    ignored = json.object_set_int(doc, root, "key" + k, i)
+    i = i + 1
+  s = json.stringify(doc)
+  assert(s.length() > 0)
+
+bench "csv write 100 rows 5 columns":
+  var rows = Vector[Vector[String]]()
+  var r = 0
+  while r < 100:
+    var row = Vector[String]()
+    var c = 0
+    while c < 5:
+      row.push("val" + fmt.format_int(r) + "_" + fmt.format_int(c))
+      c = c + 1
+    rows.push(row)
+    r = r + 1
+  out = csv.write_all_lf(rows, ",")
+  assert(out.length() > 0)

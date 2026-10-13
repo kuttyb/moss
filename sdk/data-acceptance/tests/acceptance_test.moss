@@ -1,0 +1,198 @@
+import json
+import csv
+import fmt
+
+test "acceptance: json deep nesting 100 levels":
+  var s = ""
+  var i = 0
+  while i < 100:
+    s = "[" + s
+    i = i + 1
+  s = s + "null"
+  var j = 0
+  while j < 100:
+    s = s + "]"
+    j = j + 1
+  doc = json.parse(s)
+  assertEqual(json.node_kind(doc, doc.root), json.kind_array())
+
+test "acceptance: json adversarial malformed inputs":
+  assert(not json.validate(""))
+
+  open_brace = "{"
+  assert(not json.validate(open_brace))
+
+  close_brace = "}"
+  assert(not json.validate(close_brace))
+
+  assert(not json.validate("["))
+  assert(not json.validate("]"))
+
+  brace_comma_brace = "{" + "," + "}"
+  assert(not json.validate(brace_comma_brace))
+
+  assert(not json.validate("[1,]"))
+
+  trailing = "true extra"
+  assert(not json.validate(trailing))
+
+  bad_escape_bs = "\"\\x\""
+  assert(not json.validate(bad_escape_bs))
+
+  q = "\""
+  unclosed_str = q + "unclosed"
+  assert(not json.validate(unclosed_str))
+
+test "acceptance: json unicode boundary cases":
+  q = "\""
+  bs = "\\"
+  ascii_escape = q + bs + "u0041" + bs + "u007A" + q
+  doc_ascii = json.parse(ascii_escape)
+  val_ascii = json.get_string(doc_ascii, doc_ascii.root)
+  assertEqual(val_ascii, "Az")
+
+  null_escape = q + bs + "u0000" + q
+  doc_null = json.parse(null_escape)
+  null_val = json.get_string(doc_null, doc_null.root)
+  assertEqual(null_val.length(), 0)
+
+  high_bmp = q + bs + "uFFFF" + q
+  assert(not json.validate(high_bmp))
+
+test "acceptance: json empty object and array":
+  q = "\""
+  empty_obj_str = "{" + "}"
+  doc_empty_obj = json.parse(empty_obj_str)
+  assertEqual(json.node_kind(doc_empty_obj, doc_empty_obj.root), json.kind_object())
+  assertEqual(json.object_length(doc_empty_obj, doc_empty_obj.root), 0)
+
+  doc_empty_arr = json.parse("[]")
+  assertEqual(json.node_kind(doc_empty_arr, doc_empty_arr.root), json.kind_array())
+  assertEqual(json.array_length(doc_empty_arr, doc_empty_arr.root), 0)
+
+  compact_empty_obj = json.stringify(doc_empty_obj)
+  expected_empty_obj = "{" + "}"
+  assertEqual(compact_empty_obj, expected_empty_obj)
+  compact_empty_arr = json.stringify(doc_empty_arr)
+  assertEqual(compact_empty_arr, "[]")
+
+test "acceptance: json stringify round-trip":
+  q = "\""
+  original = "{" + q + "a" + q + ":1," + q + "b" + q + ":[true,null,3.14]," + q + "c" + q + ":{" + q + "d" + q + ":" + q + "e" + q + "}}"
+  doc = json.parse(original)
+  re_stringified = json.stringify(doc)
+  doc2 = json.parse(re_stringified)
+  re_stringified2 = json.stringify(doc2)
+  assertEqual(re_stringified, re_stringified2)
+
+test "acceptance: json max depth boundary":
+  var s = ""
+  var i = 0
+  while i < 511:
+    s = "[" + s
+    i = i + 1
+  s = s + "null"
+  var j = 0
+  while j < 511:
+    s = s + "]"
+    j = j + 1
+  assert(json.validate(s))
+
+  var s2 = ""
+  var k = 0
+  while k < 513:
+    s2 = "[" + s2
+    k = k + 1
+  s2 = s2 + "null"
+  var m = 0
+  while m < 513:
+    s2 = s2 + "]"
+    m = m + 1
+  assert(not json.validate(s2))
+
+test "acceptance: csv adversarial and edge cases":
+  q = "\""
+  unclosed_csv = q + "unclosed"
+  assert(not csv.validate(unclosed_csv, ","))
+
+  trailing_csv = q + "trailing" + q + "garbage,123"
+  assert(not csv.validate(trailing_csv, ","))
+
+  unexpected_q_csv = "ab" + q + "cd,123"
+  assert(not csv.validate(unexpected_q_csv, ","))
+
+  assert(csv.validate("", ","))
+  assert(csv.validate(",", ","))
+
+  just_lf = "a\nb"
+  table_lf = csv.read_all(just_lf, ",")
+  assertEqual(csv.row_count(table_lf), 2)
+
+  single_quoted_empty = "\"\""
+  table_sq = csv.read_all(single_quoted_empty, ",")
+  assertEqual(csv.row_count(table_sq), 1)
+  assertEqual(csv.get_field(table_sq, 0, 0), "")
+
+test "acceptance: csv roundtrip with embedded delimiters newlines and quotes":
+  q = "\""
+  var rows = Vector[Vector[String]]()
+  var r0 = Vector[String]()
+  r0.push("has, comma")
+  r0.push("has\nnewline")
+  r0.push("has " + q + "quotes" + q)
+  rows.push(r0)
+  csv_text = csv.write_all(rows, ",")
+  parsed = csv.read_all(csv_text, ",")
+  assertEqual(csv.row_count(parsed), 1)
+  assertEqual(csv.get_field(parsed, 0, 0), "has, comma")
+  assertEqual(csv.get_field(parsed, 0, 1), "has\nnewline")
+  q2 = "\""
+  expected_with_quotes = "has " + q2 + "quotes" + q2
+  assertEqual(csv.get_field(parsed, 0, 2), expected_with_quotes)
+
+test "acceptance: csv tsv roundtrip":
+  var rows = Vector[Vector[String]]()
+  var r1 = Vector[String]()
+  r1.push("col1")
+  r1.push("col2")
+  rows.push(r1)
+  var r2 = Vector[String]()
+  r2.push("alpha")
+  r2.push("beta\tgamma")
+  rows.push(r2)
+  tsv_text = csv.write_tsv(rows)
+  parsed = csv.read_tsv(tsv_text)
+  assertEqual(csv.row_count(parsed), 2)
+  assertEqual(csv.get_field(parsed, 1, 0), "alpha")
+  expected_tab = "beta\tgamma"
+  assertEqual(csv.get_field(parsed, 1, 1), expected_tab)
+
+test "acceptance: fmt integer formatting":
+  assertEqual(fmt.format_int(0), "0")
+  assertEqual(fmt.format_int(1), "1")
+  assertEqual(fmt.format_int(-1), "-1")
+  assertEqual(fmt.format_int(999999999), "999999999")
+  neg_large = fmt.format_int(0 - 123456789)
+  assertEqual(neg_large, "-123456789")
+
+test "acceptance: json build and pretty-print symmetry":
+  doc = json.new_doc()
+  root = json.add_array(doc)
+  doc.root = root
+  i1 = json.add_int(doc, 1)
+  json.array_push(doc, root, i1)
+  i2 = json.add_bool(doc, true)
+  json.array_push(doc, root, i2)
+  i3 = json.add_null(doc)
+  json.array_push(doc, root, i3)
+  q = "\""
+  i4 = json.add_string(doc, "test")
+  json.array_push(doc, root, i4)
+
+  compact = json.stringify(doc)
+  assertEqual(compact, "[1,true,null," + q + "test" + q + "]")
+
+  pretty = json.stringify_pretty(doc, "  ")
+  nl = "\n"
+  expected_pretty = "[" + nl + "  1," + nl + "  true," + nl + "  null," + nl + "  " + q + "test" + q + nl + "]"
+  assertEqual(pretty, expected_pretty)
