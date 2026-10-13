@@ -4,6 +4,8 @@
 **Baseline:** `phase24-integration` at `5394e93ceedccf21e577556325e598ff4d8c4d9c`
 **Initial reviewed implementation:** `cdcadb26b9b46d332f5f577886c359d44ce839c0` (**NO-GO**)
 **Repair implementation:** `3ea1092359cb82b537bbf33595b3d75836df8e79`
+**Exact reviewed repair candidate:** `c80cf8ac51a9fa264b271b5a56c89ea2068ff4b7` (**GO**)
+**Delivery with GO report:** `85eb047bc44bd83cd51ec48edcd601bd257effe1`
 **Integration owner:** Team I
 
 ## Delivered scope
@@ -116,6 +118,9 @@ preserved in `TEAM_A_ARCHITECT_FINAL_ACCEPTANCE.md`. It found four gaps:
 4. the tracked compiled-only consumer did not recover typed variants/payloads.
 
 Repair implementation `3ea1092359cb82b537bbf33595b3d75836df8e79`
-corrects items 1, 2, and 4. The Team efficiency report corrects item 3. The
-repair candidate requires a fresh exact-SHA Architect verdict before delivery;
-the earlier NO-GO is not superseded or rewritten until that review occurs.
+corrects items 1, 2, and 4. The Team efficiency report corrects item 3. A fresh
+independent Architect then issued **GO** for exact candidate
+`c80cf8ac51a9fa264b271b5a56c89ea2068ff4b7`, independently verifying all four
+findings fixed with zero net-new defects. The attributable repair report is
+preserved in `TEAM_A_ARCHITECT_REPAIR_ACCEPTANCE.md`; its report-only commit is
+the sole diff from the reviewed candidate to delivery state `85eb047`.
