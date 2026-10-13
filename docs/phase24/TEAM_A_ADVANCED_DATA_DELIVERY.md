@@ -6,7 +6,9 @@
 **Repair implementation:** `3ea1092359cb82b537bbf33595b3d75836df8e79`
 **Exact reviewed repair candidate:** `c80cf8ac51a9fa264b271b5a56c89ea2068ff4b7` (**GO**)
 **Delivery with GO report:** `85eb047bc44bd83cd51ec48edcd601bd257effe1`
-**L7 corrective implementation:** `58340e636738331b84c5be1e42556ee612a73449`
+**L7 corrective implementation:** `debf99f068735630ca28a7d5ee4fc343832ac094`
+**Exact reviewed corrective candidate:** `142b75009c229a318f46b52670f3d7b8aaca848b` (**GO**)
+**Delivery with corrective GO report:** `cd0c5ae26549cd2c9e65f7df6285cebc79006c34`
 **Integration owner:** Team I
 
 ## Delivered scope
@@ -128,9 +130,12 @@ The compiled-only ABI-v9 consumer now directly recovers corrective
 and document validity remain unchanged. All 103 package tests pass in each of
 Native Debug, Native Release, and Fast Debug; normal and live-oracle acceptance,
 the standalone semantic oracle, source-free ABI-v9 gate, `make check`, and
-`make examples` pass. A fresh exact-SHA corrective Architect decision remains
-the final acceptance step and will be preserved separately from both earlier
-Architect reports.
+`make examples` pass. A fresh independent Architect issued **GO** for exact
+candidate `142b75009c229a318f46b52670f3d7b8aaca848b`, after rerunning both
+primary reproducers, all 34 CBOR tests in three modes, source-free ABI-v9,
+12 fixed RFC vectors, and 24 pinned `cbor2 5.7.1` comparisons. Its report is
+preserved in `TEAM_A_ARCHITECT_L7_CORRECTIVE_ACCEPTANCE.md` without replacing
+either earlier Architect report.
 
 ## Independent review and repair
 

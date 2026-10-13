@@ -1,6 +1,6 @@
 # Moss current status
 
-## Phase 24 Team A L7 CBOR corrections awaiting exact-SHA Architect review — 2026-10-13
+## Phase 24 Team A L7 CBOR corrections accepted — 2026-10-13
 
 Branch `phase24-advanced-data` preserves all five delivered SDK packages and
 adds the two L7-requested CBOR corrections. Implementation commit
@@ -21,8 +21,14 @@ direction. `TMPDIR="$PWD/tmp" make check` passes with 54/54 Executor tests,
 61/61 editor tests, and `all Moss v0.1 tests passed`; `make examples` passes.
 L7-A-001 and L7-A-002 are confirmed L7-origin findings and are fixed with
 passing regressions, bringing the historical resolved-defect ledger from seven
-to nine. A fresh independent Architect must still review the exact frozen
-corrective candidate before push and final handoff.
+to nine. A fresh independent Architect issued **GO** for exact frozen candidate
+`142b75009c229a318f46b52670f3d7b8aaca848b`, independently rerunning the
+two primary reproducers, the 34-test CBOR suite in all three modes, source-free
+ABI-v9 recovery, 12 RFC vectors, and 24 pinned `cbor2 5.7.1` comparisons.
+The attributable report is preserved in
+`docs/phase24/TEAM_A_ARCHITECT_L7_CORRECTIVE_ACCEPTANCE.md`; report-only state
+is `cd0c5ae26549cd2c9e65f7df6285cebc79006c34`. No merge into
+`phase24-integration` or `main` has occurred.
 
 ## Phase 24 Team A advanced-data accepted for Team I handoff — 2026-10-13
 
