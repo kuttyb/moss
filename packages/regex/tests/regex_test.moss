@@ -1,0 +1,108 @@
+module regex_test
+
+import regex
+
+test "regex basic literals and concatenation":
+  assert(regex.is_match("abc", "abc"))
+  assert(not regex.is_match("abc", "abd"))
+  assert(regex.is_match("hello", "hello world"))
+
+test "regex alternation":
+  assert(regex.is_match("cat|dog", "cat"))
+  assert(regex.is_match("cat|dog", "dog"))
+  assert(not regex.is_match("cat|dog", "bird"))
+
+test "regex quantifiers":
+  assert(regex.is_match("a*", ""))
+  assert(regex.is_match("a*", "aaaa"))
+  assert(regex.is_match("a+", "a"))
+  assert(regex.is_match("a+", "aaa"))
+  assert(regex.is_match("colou?r", "color"))
+  assert(regex.is_match("colou?r", "colour"))
+
+test "regex grouping and nested expressions":
+  assert(regex.is_match("(ab)+", "ab"))
+  assert(regex.is_match("(ab)+", "ababab"))
+  let fm = regex.full_match("(ab)+", "aba")
+  match fm:
+    case NoMatch:
+      assert(true)
+    case Matched(start, end):
+      assert(false)
+
+  assert(regex.is_match("(a|b)*c", "abac"))
+
+
+test "regex character classes and ranges":
+  assert(regex.is_match("[0-9]+", "42"))
+  assert(regex.is_match("[a-z]+", "moss"))
+  assert(regex.is_match("[^0-9]+", "abc"))
+  assert(not regex.is_match("^[0-9]+$", "abc"))
+
+test "regex predefined classes":
+  assert(regex.is_match("\\d+", "987"))
+  assert(regex.is_match("\\w+", "hello_123"))
+  assert(regex.is_match("\\s+", "   \t"))
+
+test "regex anchors":
+  assert(regex.is_match("^abc$", "abc"))
+  assert(not regex.is_match("^abc$", "zabc"))
+  assert(not regex.is_match("^abc$", "abcz"))
+
+test "regex search and match spans":
+  let res = regex.search("world", "hello world")
+  match res:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 6)
+      assertEqual(end, 11)
+
+
+test "regex find_all":
+  let spans = regex.find_all("[0-9]+", "item 12 and 345 end")
+  assertEqual(spans |> count, 2)
+  assertEqual(spans[0].text, "12")
+  assertEqual(spans[0].start, 5)
+  assertEqual(spans[0].end, 7)
+  assertEqual(spans[1].text, "345")
+  assertEqual(spans[1].start, 12)
+  assertEqual(spans[1].end, 15)
+
+test "regex replace and replace_all":
+  let rep1 = regex.replace("[0-9]+", "NUM", "count 42 and 99")
+  assertEqual(rep1, "count NUM and 99")
+
+  let rep_all = regex.replace_all("[0-9]+", "#", "a1 b22 c333")
+  assertEqual(rep_all, "a# b# c#")
+
+test "regex split":
+  let parts = regex.split("[,;]", "alpha,beta;gamma,delta")
+  assertEqual(parts |> count, 4)
+  assertEqual(parts[0], "alpha")
+  assertEqual(parts[1], "beta")
+  assertEqual(parts[2], "gamma")
+  assertEqual(parts[3], "delta")
+
+test "regex redos immunity adversarial":
+  # Catastrophic backtracking patterns run in O(M*N) time
+  let re = regex.compile("(a+)+b")
+  let adversary = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  assert(not regex.regex_is_match(re, adversary))
+  assert(regex.regex_is_match(re, adversary + "b"))
+
+
+test "regex error contracts":
+  var caught_paren = false
+  try:
+    var dummy1 = regex.compile("(abc")
+  recover regex.RegexError.UnclosedParenthesis:
+    caught_paren = true
+  assert(caught_paren)
+
+  var caught_bracket = false
+  try:
+    var dummy2 = regex.compile("[a-z")
+  recover regex.RegexError.UnclosedBracket:
+    caught_bracket = true
+  assert(caught_bracket)
