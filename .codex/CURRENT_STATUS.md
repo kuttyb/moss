@@ -1,5 +1,28 @@
 # Moss current status
 
+## Phase 24 Team I consolidated checkpoint — 2026-10-12
+
+The final accepted Team T performance and Team N numerical deliveries are
+merged on `phase24-integration`. The current integration tip is
+`bea649a42bd39c87035ba3a1baca603311ca8e05`; it includes normal merge commits
+`f4c4ad3d77ddea8e2fa2060a9368c31ad45f7ed4` (Team T performance, source
+`0d8d1b6cf75ecf72f90be5bab9fc821c3219f584`, reviewed implementation
+`63a7089bdad2f7739c9b234669657dc1a43ae981`) and `bea649a42bd39c87035ba3a1baca603311ca8e05`
+(Team N, source `234ff9e2e3e1a03de64be4276f2aef64ba8c6d73`). Team N's corrected
+delivery has unconditional Architect GO; no completed remote Team D or H
+delivery was available.
+
+Validation at this tip is complete: `TMPDIR="$PWD/tmp" make check`,
+`make examples`, strict C++17 syntax, Team T full acceptance and release
+provider validator, all Team N package suites in native/Fast Debug/release,
+numerical differential and ABI-v9 checks, Team M repair oracle, and corrected
+release benchmark workloads pass. The checkpoint is **AMBER** because Moss
+allocation counts remain unmeasured, Team M's real-clock `.now()` remains
+deferred, and the independent whole-system Architect review is reserved for
+final Phase 24 acceptance. A parallel Margo package run exposed shared-artifact
+linker races; serial reruns passed and the workflow limitation is recorded in
+the integration issue ledger. No merge into `main` occurred.
+
 ## Phase 24 Team N Numerical Computing Final Repairs & Integration Handoff — 2026-10-12
 
 Following L7 review of HEAD `47d50f49`, Team N completed the final closeout pass and resolved all remaining findings on branch `phase24-numerics`:
