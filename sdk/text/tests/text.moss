@@ -22,6 +22,16 @@ test "first last and overlapping search":
   assert(text.contains("café🙂", "fé"))
   assert(not text.contains("café🙂", "xyz"))
 
+test "find preserves code point indices across search positions":
+  assertEqual(text.find("needle then text", "needle"), 0)
+  assertEqual(text.find("prefix then needle", "needle"), 12)
+  assertEqual(text.find("prefix without match", "needle"), -1)
+  assertEqual(text.find("é🙂xé🙂needle", "needle"), 5)
+  assertEqual(text.find("aé🙂bé🙂c", "é🙂"), 1)
+  assertEqual(text.find("éclair", "́c"), 1)
+  assertEqual(text.find("🙂", "🙂"), 0)
+  assertEqual(text.find("🙂", ""), 0)
+
 test "exact Unicode code point slicing":
   value = "aé🙂z"
   assert(text.valid_slice(value, 1, 2))
@@ -33,6 +43,30 @@ test "exact Unicode code point slicing":
   assertEqual(text.slice("é", 0, 1), "e")
   assertEqual(text.slice("é", 1, 1), "́")
 
+test "slice preserves exact Unicode scalar boundaries":
+  assertEqual(text.slice("abcdef", 0, 6), "abcdef")
+  assertEqual(text.slice("abcdef", 2, 3), "cde")
+  assertEqual(text.slice("abcdef", 6, 0), "")
+  assertEqual(text.slice("é🙂é界", 0, 5), "é🙂é界")
+  assertEqual(text.slice("é🙂é界", 1, 3), "🙂é")
+  assertEqual(text.slice("é🙂é界", 4, 1), "界")
+  assertEqual(text.slice("é🙂é界", 5, 0), "")
+  assertEqual(text.slice("é🙂é界", 5, 1), "")
+  assertEqual(text.slice("é🙂é界", 0, 6), "")
+  assertEqual(text.slice("é🙂é界", -1, 1), "")
+  assertEqual(text.slice("é🙂é界", 0, -1), "")
+
+test "adversarial builtins preserve mixed scalar semantics":
+  value = "🙂é🙂éneedle"
+  assertEqual(text.find(value, "needle"), 5)
+  assertEqual(text.find(value, "é"), 3)
+  assertEqual(text.find(value, "́n"), 4)
+  assertEqual(text.slice("🙂éé界AZ", 2, 3), "é界")
+  assertEqual(text.slice("abc", 9223372036854775807, 1), "")
+  assertEqual(text.slice("abc", -9223372036854775807, 1), "")
+  assertEqual(text.to_ascii_lower("İßΣＡAz"), "İßΣＡaz")
+  assertEqual(text.to_ascii_upper("İßΣＡAz"), "İßΣＡAZ")
+
 test "ASCII trim and case preserve non ASCII":
   assertEqual(text.trim_ascii(" \t\nMoss\r "), "Moss")
   assertEqual(text.trim_ascii(""), "")
@@ -40,6 +74,12 @@ test "ASCII trim and case preserve non ASCII":
   assertEqual(text.trim_ascii(" Moss "), " Moss ")
   assertEqual(text.to_ascii_lower("AZ-é🙂"), "az-é🙂")
   assertEqual(text.to_ascii_upper("az-é🙂"), "AZ-é🙂")
+  assertEqual(text.to_ascii_lower(""), "")
+  assertEqual(text.to_ascii_upper(""), "")
+  assertEqual(text.to_ascii_lower("0123!@#$"), "0123!@#$")
+  assertEqual(text.to_ascii_upper("0123!@#$"), "0123!@#$")
+  assertEqual(text.to_ascii_lower("AÉZ中🙂a"), "aÉz中🙂a")
+  assertEqual(text.to_ascii_upper("aÉz中🙂A"), "AÉZ中🙂A")
 
 test "replacement is non overlapping and empty safe":
   assertEqual(text.replace_all("aaaa", "aa", "b"), "bb")
@@ -73,3 +113,24 @@ test "builder composes segments once":
   assertEqual(text.builder_build(builder), "Moss é🙂")
   text.builder_append_line(builder, "!")
   assertEqual(text.builder_build(builder), "Moss é🙂!\n")
+
+test "capacity builder reserves appends snapshots and finishes":
+  var builder = text.new_capacity_builder(32)
+  text.capacity_builder_append(builder, "Moss")
+  text.capacity_builder_append(builder, " ")
+  text.capacity_builder_append(builder, "é🙂")
+  snapshot = text.capacity_builder_build(builder)
+  assertEqual(snapshot, "Moss é🙂")
+  text.capacity_builder_append_line(builder, "!")
+  assertEqual(snapshot, "Moss é🙂")
+  assertEqual(text.capacity_builder_build(builder), "Moss é🙂!\n")
+  finished = text.capacity_builder_finish(builder)
+  assertEqual(finished, "Moss é🙂!\n")
+
+test "capacity builder accepts empty and nonpositive reservations":
+  var zero = text.new_capacity_builder(0)
+  text.capacity_builder_append(zero, "")
+  assertEqual(text.capacity_builder_finish(zero), "")
+  var negative = text.new_capacity_builder(-64)
+  text.capacity_builder_append(negative, "é🙂")
+  assertEqual(text.capacity_builder_finish(negative), "é🙂")

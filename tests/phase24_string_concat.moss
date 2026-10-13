@@ -1,0 +1,52 @@
+fn suffix(tag: String) -> String:
+  return "[" + tag + "]"
+
+fn append_part(target: String, part: String):
+  target.append(part)
+
+fn identity(value: String) -> String:
+  return value + ""
+
+fn string_length(value: String) -> Int:
+  return value.length()
+
+fn append_then_length(target: String) -> Int:
+  target.append("!")
+  return target.length()
+
+fn append_after(before: Int, target: String):
+  target.append("?")
+
+fn main():
+  left = "moss"
+  right = "🙂"
+  combined = left + "-" + right
+  assertEqual(combined, "moss-🙂")
+  assertEqual(left, "moss")
+  assertEqual(right, "🙂")
+
+  var reused = "seed"
+  reused = reused + "-" + suffix("é")
+  assertEqual(reused, "seed-[é]")
+
+  var aliased = "ab"
+  aliased = aliased + aliased
+  assertEqual(aliased, "abab")
+
+  var builder = ""
+  builder.reserve(64)
+  append_part(builder, "Moss")
+  builder.append("🙂")
+  builder.reserve(-1)
+  assertEqual(builder, "Moss🙂")
+
+  var disjoint = "left"
+  other = "-right"
+  append_part(disjoint, identity(other))
+  disjoint.reserve(string_length(other))
+  assertEqual(disjoint, "left-right")
+
+  var ordered = "x"
+  append_after(append_then_length(ordered), ordered)
+  assertEqual(ordered, "x!?")
+  echo "string concat ok"

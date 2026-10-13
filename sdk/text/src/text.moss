@@ -32,12 +32,7 @@ export fn ends_with(value: String, suffix: String) -> Bool:
 
 # Returns the first code-point index, or -1. An empty pattern matches at zero.
 export fn find(value: String, pattern: String) -> Int:
-  if pattern.length() == 0:
-    return 0
-  parts = value.split(pattern)
-  if (parts |> count) == 1:
-    return 0 - 1
-  return parts[0].length()
+  return value.find(pattern)
 
 # Returns the last code-point index, or -1. An empty pattern matches at the end.
 export fn rfind(value: String, pattern: String) -> Int:
@@ -66,18 +61,7 @@ export fn valid_slice(value: String, start: Int, length: Int) -> Bool:
 # Call valid_slice first when a valid empty slice must be distinguished from an
 # invalid request.
 export fn slice(value: String, start: Int, length: Int) -> String:
-  total = value.length()
-  if not core.valid_slice(start, length, total):
-    return ""
-  if length == 0:
-    return ""
-  chars = value.chars()
-  var parts = Vector[String]()
-  var i = 0
-  while i < length:
-    parts.push(chars[start + i])
-    i = i + 1
-  return "".join(parts)
+  return value.slice(start, length)
 
 export fn is_ascii_whitespace(character: String) -> Bool:
   space = " "
@@ -153,38 +137,10 @@ export fn tokens_ascii(value: String) -> Vector[String]:
   return tokens
 
 export fn to_ascii_lower(value: String) -> String:
-  upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-  lower = "abcdefghijklmnopqrstuvwxyz"
-  chars = value.chars()
-  length = chars |> count
-  var parts = Vector[String]()
-  var i = 0
-  while i < length:
-    character = chars[i]
-    index = find(upper, character)
-    if index >= 0:
-      parts.push(lower.char_at(index))
-    else:
-      parts.push(character)
-    i = i + 1
-  return "".join(parts)
+  return value.ascii_lower()
 
 export fn to_ascii_upper(value: String) -> String:
-  lower = "abcdefghijklmnopqrstuvwxyz"
-  upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-  chars = value.chars()
-  length = chars |> count
-  var parts = Vector[String]()
-  var i = 0
-  while i < length:
-    character = chars[i]
-    index = find(lower, character)
-    if index >= 0:
-      parts.push(upper.char_at(index))
-    else:
-      parts.push(character)
-    i = i + 1
-  return "".join(parts)
+  return value.ascii_upper()
 
 export fn join(parts: Vector[String], separator: String) -> String:
   return separator.join(parts)
@@ -211,10 +167,32 @@ export fn builder_codepoint_length(builder: Vector[String]) -> Int:
   count = builder |> count
   var i = 0
   while i < count:
-    part = builder[i]
-    total = total + part.length()
+    total = total + builder[i].length()
     i = i + 1
   return total
 
 export fn builder_build(builder: Vector[String]) -> String:
   return "".join(builder)
+
+# Creates a String-backed builder with an initial UTF-8 byte-capacity hint.
+# Nonpositive hints are accepted as zero. This additive builder complements the
+# segment-preserving Vector[String] builder above; it does not replace it.
+export fn new_capacity_builder(capacity_bytes: Int) -> String:
+  var builder = ""
+  builder.reserve(capacity_bytes)
+  return builder
+
+export fn capacity_builder_append(builder: String, part: String):
+  builder.append(part)
+
+export fn capacity_builder_append_line(builder: String, line: String):
+  builder.append(line)
+  builder.append("\n")
+
+# Returns an independent snapshot and leaves the builder reusable.
+export fn capacity_builder_build(builder: String) -> String:
+  return builder + ""
+
+# Consumes the builder and returns its backing String without a final copy.
+export fn capacity_builder_finish(builder: String) -> String:
+  return builder

@@ -1,0 +1,6 @@
+bench "consumed builder sink":
+  var builder = ""
+  builder.reserve(16)
+  builder.append("moss")
+  result = finish(builder)
+  assertEqual(result, "moss")

@@ -78,10 +78,11 @@ bench "profile text find prebuilt 256 code points x8":
     value = value + "a"
     i = i + 1
   value = value + "b"
+  pattern = "aaaaab"
   var checksum = 0
   var run = 0
   while run < 8:
-    checksum = checksum + text.find(value, "aaaaab")
+    checksum = checksum + text.find(value, pattern)
     run = run + 1
   assertEqual(value.length(), 256)
   assertEqual(checksum, 2000)
@@ -100,6 +101,111 @@ bench "profile text slice prebuilt 256 code points x16":
     run = run + 1
   assertEqual(value.length(), 256)
   assertEqual(total, 2048)
+
+bench "profile text find prebuilt 256 code points x128":
+  var value = ""
+  var i = 0
+  while i < 255:
+    value = value + "a"
+    i = i + 1
+  value = value + "b"
+  pattern = "aaaaab"
+  var checksum = 0
+  var run = 0
+  while run < 128:
+    checksum = checksum + text.find(value, pattern)
+    run = run + 1
+  assertEqual(value.length(), 256)
+  assertEqual(checksum, 32000)
+
+bench "profile text slice prebuilt 256 code points x128":
+  var value = ""
+  var i = 0
+  while i < 128:
+    value = value + "é🙂"
+    i = i + 1
+  var total = 0
+  var run = 0
+  while run < 128:
+    sliced = text.slice(value, 64, 128)
+    total = total + sliced.length()
+    run = run + 1
+  assertEqual(value.length(), 256)
+  assertEqual(total, 16384)
+
+bench "profile text find long ASCII early late no match x128":
+  var value = ""
+  var i = 0
+  while i < 1024:
+    value = value + "a"
+    i = i + 1
+  value = value + "needle"
+  early_pattern = "aaa"
+  late_pattern = "needle"
+  absent_pattern = "absent"
+  var checksum = 0
+  var run = 0
+  while run < 128:
+    checksum = checksum + text.find(value, early_pattern)
+    checksum = checksum + text.find(value, late_pattern)
+    checksum = checksum + text.find(value, absent_pattern)
+    run = run + 1
+  assertEqual(value.length(), 1030)
+  assertEqual(value.char_at(1024), "n")
+  assertEqual(checksum, 130944)
+
+bench "profile text find multibyte early late no match x128":
+  var value = ""
+  var i = 0
+  while i < 512:
+    value = value + "é🙂"
+    i = i + 1
+  value = value + "界end"
+  early_pattern = "é🙂"
+  late_pattern = "界end"
+  absent_pattern = "absent"
+  var checksum = 0
+  var run = 0
+  while run < 128:
+    checksum = checksum + text.find(value, early_pattern)
+    checksum = checksum + text.find(value, late_pattern)
+    checksum = checksum + text.find(value, absent_pattern)
+    run = run + 1
+  assertEqual(value.length(), 1028)
+  assertEqual(value.char_at(1024), "界")
+  assertEqual(checksum, 130944)
+
+bench "profile text slice long ASCII x128":
+  var value = ""
+  var i = 0
+  while i < 2048:
+    value = value + "x"
+    i = i + 1
+  var total = 0
+  var run = 0
+  while run < 128:
+    sliced = text.slice(value, 512, 1024)
+    total = total + sliced.length()
+    run = run + 1
+  assertEqual(value.length(), 2048)
+  assertEqual(total, 131072)
+
+bench "profile text slice long multibyte x128":
+  var value = ""
+  var i = 0
+  while i < 512:
+    value = value + "é🙂"
+    i = i + 1
+  var total = 0
+  var run = 0
+  while run < 128:
+    sliced = text.slice(value, 255, 512)
+    assertEqual(sliced.char_at(0), "🙂")
+    assertEqual(sliced.char_at(511), "é")
+    total = total + sliced.length()
+    run = run + 1
+  assertEqual(value.length(), 1024)
+  assertEqual(total, 65536)
 
 bench "profile ASCII lower prebuilt 256 code points x4":
   var value = ""

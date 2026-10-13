@@ -78,6 +78,13 @@ test "UTF-8 rejects malformed bytes and sequences":
   assert(not validate_utf8([194]))
   assert(not validate_utf8([245, 128, 128, 128]))
 
+test "UTF-8 adversarial offsets remain exact":
+  assert(same_ints(decode_error_fingerprint([65, 240, 159, 153]), [4, 1, 4, 3]))
+  assert(same_ints(decode_error_fingerprint([65, 240, 159, 153, 65]), [5, 4, 65]))
+  assert(same_ints(decode_error_fingerprint([224, 159, 191]), [6, 0, 2047]))
+  assert(same_ints(decode_utf8([244, 143, 191, 191]), [1114111]))
+  assert(validate_utf8([244, 143, 191, 191]))
+
 test "UTF-8 encoder rejects non-scalars":
   assert(same_ints(encode_error_fingerprint([65, -1]), [8, 1, -1]))
   assert(same_ints(encode_error_fingerprint([65, 1114112]), [8, 1, 1114112]))

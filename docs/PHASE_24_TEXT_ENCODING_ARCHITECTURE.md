@@ -17,9 +17,9 @@ backend failure, never as the source of Moss semantics.
 | Capability | Result | Evidence and consequence |
 | --- | --- | --- |
 | String code-point traversal | Supported | `length`, `char_at`, and `chars` agree in native and Fast Debug for `"aé🙂z"`; indices count Unicode code points. |
-| Code-point slicing | SDK-feasible | Validate `start`/`length`, collect one-code-point Strings from `chars()`, then join once. Compute `remaining = total - start` before clamping to avoid integer overflow. |
+| Code-point slicing | Native primitive added by the performance sprint | `String.slice(start, length)` traverses UTF-8 boundaries without materializing one-String-per-scalar vectors, makes one result copy, and preserves the SDK invalid-bounds-to-empty contract in native and Fast Debug. |
 | Efficient composition | SDK-feasible | Accumulate `Vector[String]` segments and call `"".join(parts)` once. There is no reserve/capacity API, mutable String, byte builder, or opaque public SDK type. |
-| String UTF-8 bytes | Unsupported | Bootstrap and receiver completion list exactly `char_at`, `chars`, `join`, `length`, and `split`; `text.bytes()` reports `TYPE_MISMATCH` for invalid builtin `string.bytes`. |
+| String UTF-8 bytes | Unsupported | Bootstrap and receiver completion expose no byte-view/conversion method; `text.bytes()` reports `TYPE_MISMATCH` for invalid builtin `string.bytes`. The performance-sprint `find`, `slice`, and ASCII case primitives preserve the String abstraction. |
 | Unicode scalar integer to String | Unsupported | `chr`, `char`, and a static `String.from_codepoint` spelling are unresolved; `String` is not a value namespace. Existing literal code points can be recovered only through String traversal. |
 | Byte vector to String | Unsupported | `string_from_utf8` and `String.from_utf8` are unresolved. The formal design explicitly leaves byte/text conversion semantics open. |
 | Malformed UTF-8 in the pure codec | Supported as data | `Vector[Int]` represents untrusted bytes and typed `Utf8Error` cases carry byte/scalar indices and values. No replacement decoding is performed. |

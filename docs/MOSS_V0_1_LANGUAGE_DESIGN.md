@@ -96,6 +96,20 @@ outside the set, including bitwise `&`, `|`, and `^`, shifts `<<` and `>>`, and
 symbolic `&&` and `||`, are rejected by the frontend rather than passed through
 to generated Rust.
 
+Read-only `String` operations count positions in Unicode code points. In
+addition to `length`, `char_at`, `chars`, `split`, and separator `join`, the
+native-backed `find(pattern)` returns the first code-point index or `-1`, and
+`slice(start, length)` returns one owned code-point slice (or the empty String
+for invalid bounds). `ascii_lower()` and `ascii_upper()` transform ASCII letters
+only and preserve all other Unicode scalars. These are safe closed built-ins;
+they expose neither byte offsets nor an unsafe String view.
+
+Writable String construction has two additional closed built-ins:
+`reserve(additional_bytes)` supplies a non-semantic UTF-8 byte-capacity hint
+(nonpositive values are no-ops), and `append(part)` extends the receiver while
+reading but not consuming `part`. Normal ownership overlap checks reject using
+the same String as both the WRITE receiver and READ part.
+
 Boolean expressions use the word operators `not`, `and`, `xor`, and `or`.
 Operands are statically `Bool`; `and` and `or` short-circuit, while `xor`
 evaluates both operands and is true exactly when one operand is true. Their
