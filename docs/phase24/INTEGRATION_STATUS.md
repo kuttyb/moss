@@ -26,6 +26,8 @@ remaining limitations and pending Teams are explicitly recorded in
 
 | Structured Data | `phase24-data` | `8b4b2cff7ce062992cdbfdfbf57ab407093d904e` (Architect GO at `e8543918c249fd90b20f6eabbc9769d969b8e8ae`) | `moss.parse`, `moss.fmt`, `moss.json`, `moss.csv`, acceptance/differential suites | Merged by `04b7683b6b6c0900e3079be60116514ba3d41564`; known D-001/D-002 limitations retained |
 
+| Host Services | `phase24-host` | `2845390534272e330a0ecc7c9e970d1815eb0588` (no Team H-specific commits) | Phase 20 FileIO/Executor preservation review | Pending Team H delivery; no eligible team-specific implementation was published |
+
 The normal merge commits are `a2864a55414fd3f21619a500fcda4c37f91c4467` (Team M),
 `ee4973f5556b3cd07204e877157e35fd49ad1874` (Team T),
 `f4c4ad3d77ddea8e2fa2060a9368c31ad45f7ed4` (Team T performance), and
@@ -127,5 +129,7 @@ Teams; Team I owns confirmation on future integration commits.
    `-O` baseline; do not generalize across packages.
 3. Team I fixed the data acceptance runners' hard-coded checkout path; retain
    the path-relative form for reproducible clones.
-4. Conduct the independent whole-system Architect review on the final Phase 24
+4. Recheck `phase24-host` for a completed, independently reviewed Team H
+   submission before the final Phase 24 acceptance milestone.
+5. Conduct the independent whole-system Architect review on the final Phase 24
    acceptance SHA.
