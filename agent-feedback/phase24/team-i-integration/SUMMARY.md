@@ -26,6 +26,11 @@ compiler's focused source-backed, Fast Debug, native, and source-free ABI-v9
 gates validated the two Teams' shared lowering behavior without creating a
 duplicate broad proof campaign.
 
+`phase24-team-i-integration-merge-validation-008` records the integration of
+Team D's corrective delivery, confirming that the singly-linked tape AST
+representation resolved P24-D-003 nested container corruption without
+regressing compiler or SDK suites.
+
 ## Friction, surprises, and unresolved questions
 
 `phase24-team-i-integration-merge-validation-001` records that ignored

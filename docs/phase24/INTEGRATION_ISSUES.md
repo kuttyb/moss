@@ -161,20 +161,63 @@ confirms them after merge.
 
 - Owner: Team D
 - Severity: high (correctness)
-- Status: confirmed open; `moss.json` RED for final acceptance
-- Reproducer: on the combined tree, parse `[[1],2]` and
-  `{"a":{"x":1},"b":2}` and inspect child IDs, object keys, lookups, and
-  compact serialization. The first outer array element reports child `1` for
-  both descendants and serializes as `[[1],1]`; the nested object lookup loses
-  `b` and the interpreter reports `vector index out of bounds`.
-- Evidence: `tmp/json-nested-probe/src/main.moss`, `../../margo debug`, output
-  `2, 1, 1, 1, [[1],1], 2, a, x, 1` followed by the bounds error.
-- Impact: parsing can succeed while semantic child traversal, lookup, and
-  round-trip serialization return incorrect values or fail. Existing validity
-  and differential tests do not cover interleaved descendant ranges.
-- Required disposition: Team D must repair the child-range invariant, add
-  semantic nested-container tests, and submit a new exact-SHA independent
-  Architect review. Team I will not patch the JSON implementation locally.
+- Status: resolved by Team D corrective delivery `6ef17f1c2edc1022f00f77a35bec051b1b9cdab3` (published tip `db5f6663e94f3711db3b55a611d13f1508f97368`), merged at `8b54293`
+- Reproducer: on the earlier tree, parsing `[[1],2]` and
+  `{"a":{"x":1},"b":2}` resulted in interleaved descendant corruption: the
+  first outer array element reported child `1` for both descendants and
+  serialized as `[[1],1]`; nested object lookup lost `b` and ended with
+  interpreter vector bounds failure.
+- Historical evidence: `tmp/json-nested-probe/src/main.moss`, `../../margo debug`, output
+  `2, 1, 1, 1, [[1],1], 2, a, x, 1` followed by bounds error.
+- Verification & Resolution: Team D re-architected the tape AST child indexing
+  to use singly-linked entry nodes (`first_child`, `next_sibling`) preserving
+  exact parent boundaries across interleaving. Verified on combined tree:
+  `[[1],2]` parses and stringifies to `[[1],2]`; `{"a":{"x":1},"b":2}` preserves
+  both keys and lookups; nested sibling containers `[[1,2],[3,4],5]` preserve
+  order and identity; compact and pretty round-trips match; 16/16 unit tests
+  pass in native and Fast Debug; 103/103 differential tests pass.
+
+### P24-D-004 — Linked-entry JSON serialization repeatedly traverses children from head (O(n²))
+
+- Owner: Team D
+- Severity: medium (performance follow-up)
+- Status: open / assigned to Team D
+- Observation: In `sdk/json/src/json.moss`, `array_get` and `object_key`/`object_val`
+  traverse the singly linked sibling list starting from `first_child` on each
+  indexed lookup. Serializing or iterating an array or object with $n$ elements
+  executes $\sum_{i=0}^{n-1} i = O(n^2)$ step traversals.
+- Impact: Wide JSON arrays and objects exhibit quadratic serialization time.
+- Assigned repair: Team D should implement direct iterative cursor/entry
+  traversal or tail-cached traversal helpers for $O(n)$ linear serialization.
+
+### P24-D-005 — Public JSON builder APIs permit construction of cyclic node graphs
+
+- Owner: Team D
+- Severity: medium (robustness / invariant follow-up)
+- Status: open / assigned to Team D
+- Observation: Public builder APIs (`array_push`, `object_set`) allow arbitrary
+  `node_id` references to be linked as children without cycle detection.
+  Constructing a cycle causes recursive serialization (`stringify`) or traversal
+  loops.
+- Impact: Unbounded recursion or infinite loops on cyclically linked builder nodes.
+- Assigned repair: Team D should define and enforce an acyclic graph invariant
+  or bounded cycle/depth rejection rule in builder mutation APIs.
+
+### P24-D-006 — Differential oracle textual AST representation uses unescaped delimiters
+
+- Owner: Team D
+- Severity: low (test harness robustness follow-up)
+- Status: open / assigned to Team D
+- Observation: In `tests/differential/run_differential_tests.py`, the textual AST
+  serialization uses unescaped semicolons, colons, and commas (e.g. `parts.push(key + "=" + ...)`).
+  Strings containing these delimiter characters could cause AST parsing ambiguities
+  in the differential harness. Furthermore, the test harness currently executes
+  probes via `margo debug` (Fast Debug) rather than dual-engine (native and Fast Debug).
+- Impact: Fragility for arbitrary string corpora containing delimiter characters;
+  differential pass counts reflect Fast Debug execution only.
+- Assigned repair: Team D should make the oracle AST protocol robust with
+  properly escaped payload tokens, and extend the differential harness to execute
+  and report independent native and Fast Debug differential passes.
 
 ### P24-H-001 — Host runtime packages remain primitive-gated
 

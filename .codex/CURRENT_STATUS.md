@@ -1,5 +1,33 @@
 # Moss current status
 
+## Phase 24 Team I consolidated checkpoint: Team D corrective delivery merged — 2026-10-13
+
+Team I integrated Team D's corrective delivery from `origin/phase24-data`
+(tip `db5f6663e94f3711db3b55a611d13f1508f97368`, reviewed implementation
+`6ef17f1c2edc1022f00f77a35bec051b1b9cdab3` with independent Architect GO)
+via merge commit `8b54293` into `phase24-integration`.
+
+P24-D-003 is resolved: the singly-linked tape AST child indexing eliminates
+descendant interleaving bugs; `[[1],2]` parses and serializes to `[[1],2]`,
+`{"a":{"x":1},"b":2}` preserves both lookups, nested sibling containers preserve
+child ordering, compact and pretty serialization round-trip, escaped control
+characters round-trip while unescaped control characters are rejected, and
+`fmt.format_int(INT64_MIN)` formats `-9223372036854775808`. All 16/16 unit tests
+pass in native and Fast Debug. The differential test suite passes 103/103 cases
+against Python stdlib via Fast Debug.
+
+Full combined-tree regression passed cleanly:
+- Compiler: R0a bitwise, R0b same-module type resolution, imported generic expressions, and Foundations adversarial gates pass.
+- Foundations: full acceptance in O0, release, Fast Debug, and source-free ABI-v9.
+- Text & Encoding: 12/12 Text, 5/5 Encoding, 3/3 cross-package, 66-valid/15-invalid Python UTF-8 corpus, and release benchmark validator pass.
+- Numerics: Math (18/18), Random (8/8), Time (11/11), Integration (2/2), Linear Algebra (9/9), Sparse (9/9), Statistics (9/9), Numerics Integration (3/3), differential oracles, ABI-v9, and repair verifications pass.
+- Host: Path differential/source-free, Filesystem native/negative/source-free/adversarial, and Host I/O feasibility boundary pass.
+- Repository: `TMPDIR="$PWD/tmp" make check` (all Moss v0.1 tests, 54/54 Executor runtime tests), `make examples` (all 32 showcase programs), `check_agent_feedback.py`, and `git diff --check` pass.
+
+All delivered SDK packages are GREEN. The whole Phase 24 release remains AMBER /
+provisional pending Team R delivery (`phase24-data-utils`) and the final whole-system
+Architect review. No merge into `main` occurred.
+
 ## Phase 24 Team H Host Services — bounded-read closeout complete
 
 The reviewed implementation candidate is
