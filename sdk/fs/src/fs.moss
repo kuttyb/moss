@@ -6,6 +6,8 @@ module fs
 
 export enum FsError:
   InvalidOffset
+  InvalidLimit
+  LimitExceeded
 
 fn copy_range(data: Range) -> Vector[Int]:
   result = Vector[Int]()
@@ -40,6 +42,32 @@ export fn read_all(path: String) -> Vector[Int]:
   while not done:
     data = file.read(offset, 4096)
     length = data.length()
+    append_range(result, data)
+    if length < 4096:
+      done = true
+    else:
+      offset = offset + 4096
+  file.close()
+  return result
+
+# Read until EOF while never allocating more than max_bytes of owned storage.
+# Each request remains the fixed 4096-byte FileIO operation required by Moss
+# v0.1. If another byte would exceed the limit, raise before copying that Range
+# into the result. A zero limit accepts an empty file and rejects a nonempty
+# file without allocating file contents.
+export fn read_limited(path: String, max_bytes: Int) -> Vector[Int]:
+  if max_bytes < 0:
+    raise FsError.InvalidLimit
+  file = FileIO.open(path, ro)
+  result = Vector[Int]()
+  offset = 0
+  done = false
+  while not done:
+    data = file.read(offset, 4096)
+    length = data.length()
+    if (result |> count) + length > max_bytes:
+      file.close()
+      raise FsError.LimitExceeded
     append_range(result, data)
     if length < 4096:
       done = true

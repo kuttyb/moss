@@ -1,6 +1,6 @@
 # Moss current status
 
-## Phase 24 Team H Host Services — delivered
+## Phase 24 Team H Host Services — bounded-read closeout in progress
 
 The reviewed implementation candidate is
 `db41c09d3086629bddc37c5aeabb585161dfdd53`; the independent Team H L6
@@ -10,10 +10,14 @@ Architect issued **GO** for Team I integration in
 published on `origin/phase24-host` as `c3fc90a1b946136a5f72b30a327e954b6839c2fa`.
 
 The branch is complete for its honest source-only scope: `moss.path` and the
-bounded regular-file `moss.fs` subset are delivered; `moss.io` remains a
-feasibility report because cross-package FileIO capability ABI is blocked; and
+bounded regular-file `moss.fs` subset are delivered; this closeout adds
+`fs.read_limited(path, max_bytes)` with tag-only `InvalidLimit` and
+`LimitExceeded` errors, unique repository-local fixture directories, and the
+Architect's path/FileIO edge regressions as a permanent gate. `moss.io` remains
+a feasibility report because cross-package FileIO capability ABI is blocked;
 metadata/mutation, environment, and process APIs remain primitive-gated. Full
-repository checks and examples passed. Team I owns any subsequent integration.
+repository checks and examples are being rerun before a short exact-SHA
+Architect reconfirmation. Team I owns any subsequent integration.
 
 ## Phase 24 Team H Host Services — implementation candidate
 

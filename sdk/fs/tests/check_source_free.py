@@ -15,13 +15,14 @@ SCRATCH = ROOT / "tmp"
 SCRATCH.mkdir(exist_ok=True)
 ENV = os.environ.copy()
 ENV.update(MOSS=str(MOSS), MARGO_HOME=str(SCRATCH / "margo-host-fs-source-free"), TMPDIR=str(SCRATCH))
-fixture = SCRATCH / "phase24-host-fs-input.bin"
-fixture.write_bytes(b"Moss host services\n")
 subprocess.run([str(MARGO), "build", "--json"], cwd=PACKAGE, env=ENV,
                check=True, capture_output=True, text=True)
 
 with tempfile.TemporaryDirectory(prefix="host-fs-source-free-", dir=SCRATCH) as temporary:
     work = Path(temporary)
+    fixture = work / "input.bin"
+    fixture.write_bytes(b"Moss host services\n")
+    input_path = fixture.relative_to(ROOT).as_posix()
     provider = work / "provider"
     app = work / "app"
     provider.mkdir()
@@ -31,12 +32,12 @@ with tempfile.TemporaryDirectory(prefix="host-fs-source-free-", dir=SCRATCH) as 
     (app / "Moss.toml").write_text(
         '[package]\nname = "host_fs_source_free"\nversion = "0.1.0"\n\n'
         '[build]\nsource = "src"\n', encoding="utf-8")
-    (app / "src" / "main.moss").write_text('''module app
+    (app / "src" / "main.moss").write_text(f'''module app
 import fs
 
 fn main():
   try:
-    data = fs.read_prefix("tmp/phase24-host-fs-input.bin", 0)
+    data = fs.read_limited("{input_path}", 64)
     assert((data |> count) > 0)
     echo data[0]
   recover:
