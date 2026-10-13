@@ -1,0 +1,8 @@
+module app
+import hostio
+
+fn main():
+  try:
+    echo hostio.read_first("input.bin")
+  recover:
+    echo -1

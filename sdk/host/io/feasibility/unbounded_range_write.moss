@@ -1,0 +1,13 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn write_range(file: FileIO, offset: Int, data: Range):
+  file.write(offset, data)
+
+fn main():
+  pass

@@ -1,0 +1,39 @@
+import path
+
+test "absolute and relative classification":
+  assert(path.is_absolute("/tmp/moss"))
+  assert(path.is_relative("tmp/moss"))
+  assert(path.is_relative(""))
+
+test "components and normalization":
+  parts = path.components("/a//./b/../c/")
+  assertEqual(parts |> count, 5)
+  assertEqual(parts[0], "a")
+  assertEqual(parts[1], ".")
+  assertEqual(parts[2], "b")
+  assertEqual(parts[3], "..")
+  assertEqual(parts[4], "c")
+  assertEqual(path.normalize("/a//./b/../c/"), "/a/c")
+  assertEqual(path.normalize("a/../../b"), "../b")
+  assertEqual(path.normalize("/../../b"), "/b")
+  assertEqual(path.normalize(""), ".")
+  assertEqual(path.normalize("./"), ".")
+
+test "join and lexical boundaries":
+  assertEqual(path.join("/var/log", "app.txt"), "/var/log/app.txt")
+  assertEqual(path.join("/var/log", "/etc/hosts"), "/etc/hosts")
+  assertEqual(path.join("a", "../b"), "b")
+  assert(path.has_prefix("/var/log/app.txt", "/var"))
+  assert(not path.has_prefix("/var/log/app.txt", "/va"))
+  assert(path.has_suffix("/var/log/app.txt", "log/app.txt"))
+  assert(not path.has_suffix("/var/log/app.txt", "p.txt"))
+
+test "basename dirname and extensions":
+  assertEqual(path.basename("/var/log/app.tar.gz"), "app.tar.gz")
+  assertEqual(path.dirname("/var/log/app.tar.gz"), "/var/log")
+  assertEqual(path.basename("/"), "/")
+  assertEqual(path.dirname("file"), ".")
+  assertEqual(path.extension("app.tar.gz"), "gz")
+  assertEqual(path.stem("app.tar.gz"), "app.tar")
+  assertEqual(path.extension(".env"), "")
+  assertEqual(path.stem(".env"), ".env")

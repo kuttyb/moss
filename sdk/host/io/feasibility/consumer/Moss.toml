@@ -1,0 +1,9 @@
+[package]
+name = "hostio-consumer-reproducer"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+"moss.hostio-reproducer" = { path = "../provider" }

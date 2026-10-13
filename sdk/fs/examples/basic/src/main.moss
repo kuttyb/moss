@@ -1,0 +1,13 @@
+module app
+import fs
+
+fn main():
+  try:
+    data = fs.read_prefix("tmp/input.bin", 0)
+    echo data |> count
+  recover FileError.NotFound:
+    echo "input is absent"
+  recover fs.FsError.InvalidOffset:
+    echo "invalid offset"
+  recover:
+    echo "file read failed"

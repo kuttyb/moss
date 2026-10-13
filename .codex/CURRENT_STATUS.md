@@ -1,63 +1,82 @@
 # Moss current status
 
+## Phase 24 Team H Host Services — bounded-read closeout complete
+
+The reviewed implementation candidate is
+`db41c09d3086629bddc37c5aeabb585161dfdd53`; the independent Team H L6
+Architect issued **GO** for Team I integration in
+`docs/phase24/TEAM_H_HOST_ARCHITECT_FINAL_REVIEW.md` (report commit
+`32d6c2e18dcf849e78f6288c4d41c8168afb060a`). The report-only tip is now
+published on `origin/phase24-host` as `c3fc90a1b946136a5f72b30a327e954b6839c2fa`.
+
+The branch is complete for its honest source-only scope: `moss.path` and the
+bounded regular-file `moss.fs` subset are delivered; this closeout adds
+`fs.read_limited(path, max_bytes)` with tag-only `InvalidLimit` and
+`LimitExceeded` errors, unique repository-local fixture directories, and the
+Architect's path/FileIO edge regressions as a permanent gate. `moss.io` remains
+a feasibility report because cross-package FileIO capability ABI is blocked;
+metadata/mutation, environment, and process APIs remain primitive-gated. Full
+repository checks and examples passed. The focused Architect confirmation is
+**GO** for exact implementation SHA `4d04481fceb5c258670c566ed27de879fa0cddfe`
+in `docs/phase24/TEAM_H_HOST_ARCHITECT_CLOSEOUT_CONFIRMATION.md` (report commit
+`638c67cf1f3cf845c4252cbe0d8d61aca6b578c4`). Team I owns any subsequent
+integration.
+
 ## Phase 24 Team I consolidated checkpoint — 2026-10-12
 
-The final accepted Team D structured-data, Team T performance, and Team N
-numerical deliveries are merged on `phase24-integration`. The current
-source integration tip is `04b7683b6b6c0900e3079be60116514ba3d41564`; the
-subsequent status and runner-portability commits are included in the final
-branch tip. It includes
-normal merge commits
-`f4c4ad3d77ddea8e2fa2060a9368c31ad45f7ed4` (Team T performance, source
-`0d8d1b6cf75ecf72f90be5bab9fc821c3219f584`, reviewed implementation
-`63a7089bdad2f7739c9b234669657dc1a43ae981`) and `bea649a42bd39c87035ba3a1baca603311ca8e05`
-(Team N, source `234ff9e2e3e1a03de64be4276f2aef64ba8c6d73`). Team N's corrected
-delivery has unconditional Architect GO. Team D source
-`8b4b2cff7ce062992cdbfdfbf57ab407093d904e` is merged by the current tip after
-Architect GO at `e8543918c249fd90b20f6eabbc9769d969b8e8ae`; its Unicode scalar
-and raising-benchmark limitations remain explicitly tracked. No completed
-remote Team H delivery was available.
+The accepted Team D structured-data, Team T performance, Team N numerical, and
+Team H path/filesystem deliveries are merged on `phase24-integration`. Team H
+source is `ca78d4a74aa6d0aa86da0bdaa610d6b405fa0c52`, with Architect-reviewed
+implementation `4d04481fceb5c258670c566ed27de879fa0cddfe`.
 
-Validation at this tip is complete: `TMPDIR="$PWD/tmp" make check`,
-`make examples`, strict C++17 syntax, Team T full acceptance and release
-provider validator, all Team N package suites in native/Fast Debug/release,
-numerical differential and ABI-v9 checks, Team M repair oracle, and corrected
-release benchmark workloads pass. Team D parse/fmt/json/csv and data acceptance
-tests pass in native/Fast Debug, with 46/46 differential cases and compiled-only
-ABI-v9 validation. The checkpoint is **AMBER** because Moss
-allocation counts remain unmeasured, Team M's real-clock `.now()` remains
-deferred, and the independent whole-system Architect review is reserved for
-final Phase 24 acceptance. A parallel Margo package run exposed shared-artifact
-linker races; serial reruns passed and the workflow limitation is recorded in
-the integration issue ledger. No merge into `main` occurred.
+R0b same-module type resolution (`16d07cf`) and R0a integer bitwise/shift
+operators (`8a24f42`) were already merged through `293a6d8` and `8e0624a`;
+their focused regressions pass after rebuilding `./moss`. Team H delivers
+`moss.path` and bounded regular-file `moss.fs`; `moss.io`, `moss.env`, and
+`moss.process` remain explicitly deferred pending host-runtime primitives.
 
-## Phase 24 Team N Numerical Computing Final Repairs & Integration Handoff — 2026-10-12
+The nested JSON probe is still required before status can be finalized. Keep
+P24-D-003 RED if semantic child/key/lookup checks reproduce the known
+non-contiguous descendant bug; retain P24-D-001 and P24-D-002 as open Team D
+limitations. Team R's `96b9413` remains a feasibility checkpoint, and no
+accepted Team A or corrective Team D delivery is available yet. No merge into
+`main` occurred.
 
-Following L7 review of HEAD `47d50f49`, Team N completed the final closeout pass and resolved all remaining findings on branch `phase24-numerics`:
-1. **LU Decomposition Validation (P1):**
-   - Implemented `validate_lu(decomp: LUDecomposition) -> Bool` in `packages/linalg/src/main.moss`.
-   - `lu_solve` now validates that the matrix is square, pivot vector length equals matrix dimension $n$, every pivot is in $[0, n)$, and pivots contain no duplicates. Malformed records raise `LinalgError.InvalidDimensions` (or `LinalgError.NonSquareMatrix`), never triggering indexing panics. Added comprehensive regression tests in `packages/linalg/tests/linalg_test.moss` (`malformed LU decomposition validation`).
-2. **Rust Benchmark Methodology (P1):**
-   - Corrected `tests/benchmarks/bench_numerics_baseline.rs`: all outputs (`Csr`, `Csc`, `Vec<f64>`) are passed to `black_box(&result)` as complete structs rather than merely `.len()`, preventing dead-code elimination.
-   - Added matrix multiplication (50×50) to `packages/linalg/benches/linalg_bench.moss` and float heapsort (500 items) to `packages/statistics/benches/statistics_bench.moss`, matching exact workloads, input data, and algorithms between Moss and Rust.
-   - Re-measured release benchmarks (`margo bench --release` vs `rustc -O`). Updated `docs/team_n/PERFORMANCE_EVALUATION.md` with honest, evidence-backed p25/median/p75 and speedup ratios.
-3. **Dimension-Overflow Protection (P2):**
-   - In `packages/sparse/src/main.moss`, added checks before performing dimension arithmetic (`rows * cols`, `rows + 1`, `cols + 1`) across `validate_csr`, `validate_csc`, `from_dense`, `from_triplets`, and `csr_mat_mul`. Returns `false` or raises `SparseError.InvalidDimensions` on extreme dimensions. Added targeted regression tests in `packages/sparse/tests/sparse_test.moss` (`extreme dimension overflow protection`).
-4. **Agent Team Efficiency Metrics:**
-   - Completed `docs/phase24/agent-patterns/team-n-numerics.md` with actual values for leaf agents (2), peak concurrency (2), review cycles (2 formal L7 rounds), architect review events (3), confirmed defects resolved (9), and test counts across delivery.
-5. **Architect Sign-Off & Verification:**
-   - Updated `docs/team_n/ARCHITECT_REVIEW.md` and `docs/team_n/FINAL_DELIVERY_REPORT.md` with final unconditional **GO** from the Independent L6 Architect.
-   - All 30 package tests pass with 100% parity across Native Debug, Fast Debug, and Native Release:
-     - `packages/linalg`: 9/9 PASS
-     - `packages/sparse`: 9/9 PASS
-     - `packages/statistics`: 9/9 PASS
-     - `packages/numerics_integration`: 3/3 PASS
-     - Total: 30/30 tests (90 passing runs).
-   - Differential oracles (`test_numerics_falsification.py`): PASS with 0 falsifications.
-   - Source-free ABI-v9 consumer test (`check_numerics_abi_v9.py`): PASS with 100% parity.
-   - Repository gates: `TMPDIR="$PWD/tmp" make check`: PASS (54/54 executor tests). `make examples`: PASS. `python3 tests/tooling/check_agent_feedback.py`: PASS. `git diff --check`: PASS.
-6. **Branch Isolation & Handoff:**
-   - All work committed strictly on `phase24-numerics`. No merge into `phase24-integration` or `main`. Ready for handoff to Team I.
+## Phase 24 Team H Host Services — implementation candidate
+
+The `phase24-host` branch is based on `2845390534272e330a0ecc7c9e970d1815eb0588`
+and now contains the Team H architecture freeze plus the path/fs and I/O
+feasibility handoffs. `moss.path` and the bounded regular-file subset of
+`moss.fs` are implemented. The `moss.io` workstream preserves native probes
+and a permanent report instead of publishing an unsupported cross-package
+FileIO API. `moss.env`, `moss.process`, filesystem metadata/mutation, and
+general byte writes remain explicitly deferred pending host-runtime primitives.
+
+Integrated package, source-free, negative, feedback, full repository, and
+example validation passed on the current candidate. The independent Team H
+Architect must issue the final exact-SHA verdict before the feature branch is
+published for Team I; no merge to `phase24-integration` or `main` is allowed
+from this worktree.
+
+## Phase 24 Team H I/O-services feasibility — 2026-10-12
+
+The `phase24-host-io` worktree is based exactly on Team H host base
+`2845390534272e330a0ecc7c9e970d1815eb0588`. Native probes confirm fixed
+4096-byte FileIO reads, borrowed Range checksums, bounded 65536-byte EOF
+collection, explicit-offset Range writes, and an imported provider that keeps
+FileIO internal behind a path/value API. A permanent negative provider proves
+that passing FileIO itself across packages fails with `BUILD_BACKEND_ERROR` /
+Rust E0308 because consumer `moss_fileio::FileIO` and provider
+`moss_hostcap::FileIO` are distinct types. Generic unbounded Range writes are
+correctly rejected with `FILEIO_UNBOUNDED_REQUEST`.
+
+Environment and process probes return `UNKNOWN_SYMBOL_OR_TYPE`; FileIO remains
+unsupported in Fast Debug. No fake `moss.io`, `moss.env`, or `moss.process`
+package was published. The feasibility report proposes the smallest canonical
+FileIO ABI and direct non-shell environment/process runtime contracts. Run
+`python3 sdk/host/io/check_feasibility.py` for the complete positive/negative
+gate. Source-free FileIO-capability validation and meaningful I/O benchmarks
+remain blocked pending the runtime/ABI decisions.
 
 ## Phase 24 Team I final merge checkpoint — 2026-10-12
 

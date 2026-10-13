@@ -1,0 +1,10 @@
+module app
+import hostcap
+
+fn main():
+  try:
+    file = FileIO.open("input.bin", ro)
+    echo hostcap.read_first(file)
+    file.close()
+  recover:
+    echo -1
