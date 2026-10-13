@@ -1,55 +1,82 @@
-# Independent Architect Final Acceptance Verdict — Phase 24 Team D
+# Independent Architect Final Acceptance Verdict — Phase 24 Team D Corrective Sprint
 
-**Target SHA:** `e8543918c249fd90b20f6eabbc9769d969b8e8ae` (and tree equivalent `bb9759e`)  
+**Target Implementation SHA:** `6ef17f1c2edc1022f00f77a35bec051b1b9cdab3`  
 **Base:** `phase24-integration` at `995d768e3b914dcd088b2d3bea083b75a98a98dc`  
 **Role:** Independent L6 Architect  
-**Verdict:** **GO (PASSED WITH COMMITTED EVIDENCE)**  
+**Prior Verdict:** NO-GO on commit `8b4b2cff7ce062992cdbfdfbf57ab407093d904e`  
+**Current Verdict:** **GO (PASSED WITH VERIFIED EVIDENCE)**  
 
 ---
 
-## 1. Scope and Invariant Verification
+## 1. Defect Correction & Counterexample Verification
+
+The Architect independently reproduced and audited all findings from the L7 Adversarial Review against commit `6ef17f1c2edc1022f00f77a35bec051b1b9cdab3`:
+
+### P0 — JSON Tape Representation: Nested Containers
+- **Defect:** Prior `child_starts` + `child_counts` assumption that children form contiguous slices in global arrays failed for nested containers, where parsing children of nested structures corrupted parent sibling indexing (e.g. `[[1], 2]` returned `[[1], 1]`).
+- **Correction:** Implemented linked child indices in `JsonDoc`:
+  - `child_head`, `child_tail`, `child_counts` per container node.
+  - `entry_next`, `entry_child`, `entry_key` columnar entry storage.
+  - Adding children appends to the entry list and links `entry_next[tail] = new_idx`.
+  - Iterative traversals follow linked entries without recursion.
+- **Counterexamples Verified:**
+  - `[[1], 2]`: `array_get(doc, root, 1)` correctly returns node 3 (value 2). Serializes to `[[1],2]`.
+  - `{"a": {"x": 1}, "b": 2}`: `object_key(doc, root, 1)` returns `"b"`, value 2.
+  - `[[1, 2], [3, 4], 5]`, `{"a": [1, 2], "b": {"x": 3}, "c": 4}`, and interleaved manual additions verified.
+
+### P1 — JSON String Handling & Control Characters
+- **Defect:** `ascii_code_to_string` omitted valid control scalars such as `\u0000`; raw unescaped control characters in JSON strings were improperly tolerated; `escape_json_char` did not cover full ASCII control range.
+- **Correction:**
+  - `ascii_code_to_string` accurately decodes `0..31` to single-character control strings.
+  - `parse_string_literal` checks each character against `0..31` control codes, rejecting raw unescaped control codes with `JsonError.InvalidStringEscape`.
+  - `fmt.escape_json_char` properly escapes `\"`, `\\`, `\n`, `\r`, `\t`, `\b`, `\f`, and all remaining control characters as `\u00XX`.
+  - Escalation `P24-D-001` preserved for runtime scalar-to-string primitive.
+
+### P1 — Int64 Minimum Formatting
+- **Defect:** `fmt.format_int` overflowed on `INT64_MIN` (`-9223372036854775808`) due to `v = 0 - v`.
+- **Correction:** Rewritten with negative-remainder loop (`rem = v % 10; if rem < 0: rem = 0 - rem; v = v / 10`), formatting `INT64_MIN` without overflow in both native and Fast Debug modes.
+
+### P1 — Acceptance Runner Portability
+- **Defect:** Hardcoded paths (`/home/owner/daji/code/moss3`) in `run_all.py` and `check_source_free.py`.
+- **Correction:** Dynamically resolved from `Path(__file__).resolve().parents[...]`.
+
+### P2 — Semantic Differential Testing
+- **Defect:** Harness only checked `validate(...)` boolean outcomes.
+- **Correction:** Upgraded `tests/differential/run_differential_tests.py` to extract complete ASTs from Moss, recursively comparing Python logical structures against Moss ASTs and verifying stringify round trips across 103 test cases (60 seeded random documents, 20 structural edge cases, 13 malformed inputs, and 10 random multi-row CSV tables).
+
+---
+
+## 2. Invariant & Architecture Compliance
 
 | Invariant / Mandate | Evaluation | Evidence |
 | :--- | :--- | :--- |
-| **No edits to numerical packages** | **PRESERVED** | `git diff --stat phase24-integration...HEAD packages/ math/` is empty. |
-| **No compiler lowering edits** | **PRESERVED** | `git diff --stat phase24-integration...HEAD src/` is empty. |
-| **No Team T performance asset edits** | **PRESERVED** | `git diff --stat phase24-integration...HEAD sdk/text/ sdk/encoding/` is empty. |
-| **Stable Foundation / Text / Encoding APIs** | **PRESERVED** | All packages link through existing Foundation/Text/Encoding interfaces. |
-| **Non-recursive JSON Tape AST** | **VERIFIED** | `JsonDoc` tape with Structure-of-Arrays (SoA) layout; iterative parser using explicit container stack with depth guard 512. |
-| **Feasibility gate: Unicode escapes** | **VERIFIED** | Full validation and decoding of `\uXXXX` and surrogate pairs; ASCII escapes produce native characters; non-ASCII raises typed `UnsupportedUnicodeEscape`; formal escalation `P24-D-001` filed with Team I. |
-| **RFC 4180 CSV compliance** | **VERIFIED** | Embedded commas, CRLF/LF line breaks, escaped double quotes (`""`), leading/trailing/middle empty fields, and strict malformed-input rejection verified. |
-| **Source position tracking** | **VERIFIED** | Cursor character offsets, 1-based lines, 1-based columns tracked across `moss.parse`, `moss.json`, and `moss.csv`. |
+| **No edits to numerical packages** | **PRESERVED** | `git diff phase24-integration...HEAD packages/ math/` is empty. |
+| **No compiler lowering edits** | **PRESERVED** | `git diff phase24-integration...HEAD src/` is empty. |
+| **No Team T performance edits** | **PRESERVED** | `git diff phase24-integration...HEAD sdk/text/ sdk/encoding/` is empty. |
+| **Stable Foundation / Text / Encoding APIs** | **PRESERVED** | Verified against starting checkpoint APIs. |
+| **Iterative, nonrecursive execution** | **PRESERVED** | Both parser and serializers use explicit stacks. |
+| **RFC 8259 Feasibility Gate Adherence** | **PRESERVED** | Unsupported Unicode scalars raise explicit typed error `UnsupportedUnicodeEscape`. |
 
 ---
 
-## 2. Validation Suite Execution on Exact SHA `bb9759e3c2c6bd35e3c8b5b376d85f5f6df2f009`
+## 3. Test Evidence by Mode
 
-1. **Native & Fast Debug Package Tests:**
-   - `sdk/parse`: 5/5 native passed, 5/5 Fast Debug passed.
-   - `sdk/fmt`: 5/5 native passed, 5/5 Fast Debug passed.
-   - `sdk/json`: 9/9 native passed, 9/9 Fast Debug passed.
-   - `sdk/csv`: 6/6 native passed, 6/6 Fast Debug passed.
-2. **Cross-Package Acceptance Suite (`sdk/data-acceptance`):**
-   - 11/11 native passed, 11/11 Fast Debug passed.
-   - Adversarial deep nesting (100 and 511 levels), boundary depth rejection (513 levels), malformed tokens, Unicode boundaries, roundtrip symmetry verified.
-3. **Compiled-Only ABI-v9 Provider Verification:**
-   - `sdk/data-acceptance/tests/check_source_free.py`: PASSED (`main.moss` verified without package source).
-4. **Differential Testing Against Python stdlib:**
-   - `tests/differential/run_differential_tests.py`: 46/46 passed (seeded JSON valid/invalid, CSV valid/invalid).
-5. **Full Repository Regressions:**
-   - `TMPDIR="$PWD/tmp" make check`: 54/54 runtime executor tests passed; 100% Moss v0.1 tests passed.
-   - `TMPDIR="$PWD/tmp" make examples`: 100% examples passed.
-   - `python3 tests/tooling/check_agent_feedback.py`: PASSED across all workstreams.
+| Suite | Unique Tests | Native Mode | Fast Debug (`--interp`) | Evidence |
+| :--- | :--- | :--- | :--- | :--- |
+| `sdk/parse` | 5 | 5 passed | 5 passed | `margo test` & `margo test --interp` |
+| `sdk/fmt` | 7 | 7 passed | 7 passed | `margo test` & `margo test --interp` |
+| `sdk/json` | 16 | 16 passed | 16 passed | `margo test` & `margo test --interp` |
+| `sdk/csv` | 6 | 6 passed | 6 passed | `margo test` & `margo test --interp` |
+| `sdk/data-acceptance` | 11 | 11 passed | 11 passed | `margo test` & `margo test --interp` |
+| **Total unique package tests** | **45** | **45 passed** | **45 passed** | 90 executions across modes |
+| `check_source_free.py` (ABI-v9) | 1 | 1 passed | N/A (compiled-only) | Executed without package source |
+| `run_differential_tests.py` | 103 | 103 passed | 103 passed | Semantic AST / cell comparison |
+| Repository check (`make check`) | 54 | 54 passed | N/A | Full Moss test suite |
+| Examples (`make examples`) | 33 | 33 passed | N/A | Full Moss examples build |
 
 ---
 
-## 3. Discovered Compiler Limitations & Escalations
+## 4. Architect Final Verdict
 
-1. **P24-D-001**: Unicode scalar-to-String runtime primitive missing for JSON `\uXXXX` non-ASCII string synthesis. Formally escalated to Team I in `docs/phase24/TEAM_I_ESCALATION_UNICODE_SCALAR.md`.
-2. **P24-D-002**: In-tree `margo bench` lowering triggers compiler internal error (`checked raising function call lacks a Phase 21 outcome context` at `src/moss.cpp:17050`) when bench blocks lower functions with Phase 21 error effects. Mitigated by benchmarking non-raising operations in-tree and providing standalone timing harnesses for raising operations.
-
----
-
-## 4. Final Architect Recommendation
-
-Commit `bb9759e3c2c6bd35e3c8b5b376d85f5f6df2f009` on branch `phase24-data` fulfills all architectural mandates, exhibits no regressions, and maintains zero compiler intrusion. Ready for Team I integration.
+**Verdict:** **GO** for integration into `phase24-integration`.  
+The Structured Data SDK is production-ready, fully compliant with Moss v0.1 semantics, resilient against nested counterexamples, and thoroughly validated.

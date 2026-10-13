@@ -29,11 +29,12 @@ export type JsonDoc:
   int_vals: Vector[Int]
   float_vals: Vector[Float]
   str_vals: Vector[String]
-  child_starts: Vector[Int]
+  child_head: Vector[Int]
+  child_tail: Vector[Int]
   child_counts: Vector[Int]
-  arr_children: Vector[Int]
-  obj_keys: Vector[String]
-  obj_vals: Vector[Int]
+  entry_next: Vector[Int]
+  entry_child: Vector[Int]
+  entry_key: Vector[String]
   root: Int
 
 export enum JsonError:
@@ -60,46 +61,64 @@ fn push_string(vec: Vector[String], val: String):
   vec.push(val)
 
 export fn new_doc() -> JsonDoc:
-  return JsonDoc(kinds: Vector[Int](), bool_vals: Vector[Bool](), int_vals: Vector[Int](), float_vals: Vector[Float](), str_vals: Vector[String](), child_starts: Vector[Int](), child_counts: Vector[Int](), arr_children: Vector[Int](), obj_keys: Vector[String](), obj_vals: Vector[Int](), root: 0 - 1)
+  return JsonDoc(kinds: Vector[Int](), bool_vals: Vector[Bool](), int_vals: Vector[Int](), float_vals: Vector[Float](), str_vals: Vector[String](), child_head: Vector[Int](), child_tail: Vector[Int](), child_counts: Vector[Int](), entry_next: Vector[Int](), entry_child: Vector[Int](), entry_key: Vector[String](), root: 0 - 1)
 
-fn push_node(doc: JsonDoc, kind: Int, b: Bool, i: Int, f: Float, s: String, start: Int, count: Int) -> Int:
+fn push_node(doc: JsonDoc, kind: Int, b: Bool, i: Int, f: Float, s: String) -> Int:
   id = doc.kinds |> count
   push_int(doc.kinds, kind)
   push_bool(doc.bool_vals, b)
   push_int(doc.int_vals, i)
   push_float(doc.float_vals, f)
   push_string(doc.str_vals, s)
-  push_int(doc.child_starts, start)
-  push_int(doc.child_counts, count)
+  push_int(doc.child_head, 0 - 1)
+  push_int(doc.child_tail, 0 - 1)
+  push_int(doc.child_counts, 0)
   return id
 
 export fn add_null(doc: JsonDoc) -> Int:
-  return push_node(doc, kind_null(), false, 0, 0.0, "", 0, 0)
+  return push_node(doc, kind_null(), false, 0, 0.0, "")
 
 export fn add_bool(doc: JsonDoc, val: Bool) -> Int:
-  return push_node(doc, kind_bool(), val, 0, 0.0, "", 0, 0)
+  return push_node(doc, kind_bool(), val, 0, 0.0, "")
 
 export fn add_number(doc: JsonDoc, int_val: Int, float_val: Float, raw: String) -> Int:
-  return push_node(doc, kind_number(), false, int_val, float_val, raw, 0, 0)
+  return push_node(doc, kind_number(), false, int_val, float_val, raw)
 
 export fn add_string(doc: JsonDoc, val: String) -> Int:
-  return push_node(doc, kind_string(), false, 0, 0.0, val, 0, 0)
+  return push_node(doc, kind_string(), false, 0, 0.0, val)
 
 export fn add_array(doc: JsonDoc) -> Int:
-  start = doc.arr_children |> count
-  return push_node(doc, kind_array(), false, 0, 0.0, "", start, 0)
+  return push_node(doc, kind_array(), false, 0, 0.0, "")
 
 export fn add_object(doc: JsonDoc) -> Int:
-  start = doc.obj_keys |> count
-  return push_node(doc, kind_object(), false, 0, 0.0, "", start, 0)
+  return push_node(doc, kind_object(), false, 0, 0.0, "")
 
 export fn array_push(doc: JsonDoc, arr_id: Int, child_id: Int):
-  push_int(doc.arr_children, child_id)
+  entry_idx = doc.entry_child |> count
+  push_int(doc.entry_child, child_id)
+  push_string(doc.entry_key, "")
+  push_int(doc.entry_next, 0 - 1)
+  if doc.child_head[arr_id] < 0:
+    doc.child_head[arr_id] = entry_idx
+    doc.child_tail[arr_id] = entry_idx
+  else:
+    tail = doc.child_tail[arr_id]
+    doc.entry_next[tail] = entry_idx
+    doc.child_tail[arr_id] = entry_idx
   doc.child_counts[arr_id] = doc.child_counts[arr_id] + 1
 
 export fn object_set(doc: JsonDoc, obj_id: Int, key: String, child_id: Int):
-  push_string(doc.obj_keys, key)
-  push_int(doc.obj_vals, child_id)
+  entry_idx = doc.entry_child |> count
+  push_int(doc.entry_child, child_id)
+  push_string(doc.entry_key, key + "")
+  push_int(doc.entry_next, 0 - 1)
+  if doc.child_head[obj_id] < 0:
+    doc.child_head[obj_id] = entry_idx
+    doc.child_tail[obj_id] = entry_idx
+  else:
+    tail = doc.child_tail[obj_id]
+    doc.entry_next[tail] = entry_idx
+    doc.child_tail[obj_id] = entry_idx
   doc.child_counts[obj_id] = doc.child_counts[obj_id] + 1
 
 export fn add_int(doc: JsonDoc, val: Int) -> Int:
@@ -173,7 +192,14 @@ export fn array_get(doc: JsonDoc, id: Int, index: Int) -> Int:
   count = doc.child_counts[id]
   if index < 0 or index >= count:
     return 0 - 1
-  return doc.arr_children[doc.child_starts[id] + index]
+  var curr = doc.child_head[id]
+  var i = 0
+  while i < index and curr >= 0:
+    curr = doc.entry_next[curr]
+    i = i + 1
+  if curr >= 0:
+    return doc.entry_child[curr]
+  return 0 - 1
 
 export fn object_length(doc: JsonDoc, id: Int) -> Int:
   return doc.child_counts[id]
@@ -182,40 +208,130 @@ export fn object_key(doc: JsonDoc, id: Int, index: Int) -> String:
   count = doc.child_counts[id]
   if index < 0 or index >= count:
     return ""
-  return doc.obj_keys[doc.child_starts[id] + index] + ""
+  var curr = doc.child_head[id]
+  var i = 0
+  while i < index and curr >= 0:
+    curr = doc.entry_next[curr]
+    i = i + 1
+  if curr >= 0:
+    return doc.entry_key[curr] + ""
+  return ""
 
 export fn object_val(doc: JsonDoc, id: Int, index: Int) -> Int:
   count = doc.child_counts[id]
   if index < 0 or index >= count:
     return 0 - 1
-  return doc.obj_vals[doc.child_starts[id] + index]
+  var curr = doc.child_head[id]
+  var i = 0
+  while i < index and curr >= 0:
+    curr = doc.entry_next[curr]
+    i = i + 1
+  if curr >= 0:
+    return doc.entry_child[curr]
+  return 0 - 1
 
 export fn object_get(doc: JsonDoc, id: Int, key: String) -> Int:
-  count = doc.child_counts[id]
-  start = doc.child_starts[id]
-  var i = 0
-  while i < count:
-    if doc.obj_keys[start + i] == key:
-      return doc.obj_vals[start + i]
-    i = i + 1
+  var curr = doc.child_head[id]
+  while curr >= 0:
+    if doc.entry_key[curr] == key:
+      return doc.entry_child[curr]
+    curr = doc.entry_next[curr]
   return 0 - 1
 
 export fn object_has(doc: JsonDoc, id: Int, key: String) -> Bool:
   return object_get(doc, id, key) >= 0
 
 fn ascii_code_to_string(code: Int) -> String:
-  if code == 0:
-    return ""
-  if code == 9:
-    return "\t"
-  if code == 10:
-    return "\n"
-  if code == 13:
-    return "\r"
+  var table = Vector[String]()
+  table.push("\x00")
+  table.push("\x01")
+  table.push("\x02")
+  table.push("\x03")
+  table.push("\x04")
+  table.push("\x05")
+  table.push("\x06")
+  table.push("\x07")
+  table.push("\x08")
+  table.push("\t")
+  table.push("\n")
+  table.push("\x0b")
+  table.push("\x0c")
+  table.push("\r")
+  table.push("\x0e")
+  table.push("\x0f")
+  table.push("\x10")
+  table.push("\x11")
+  table.push("\x12")
+  table.push("\x13")
+  table.push("\x14")
+  table.push("\x15")
+  table.push("\x16")
+  table.push("\x17")
+  table.push("\x18")
+  table.push("\x19")
+  table.push("\x1a")
+  table.push("\x1b")
+  table.push("\x1c")
+  table.push("\x1d")
+  table.push("\x1e")
+  table.push("\x1f")
+  if code >= 0 and code < 32:
+    return table[code]
   printable = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
   if code >= 32 and code <= 126:
     return printable.char_at(code - 32)
+  if code == 127:
+    return "\x7f"
   return ""
+
+fn is_raw_control_char(ch: String) -> Bool:
+  c_lf = "\n"
+  if ch == c_lf:
+    return true
+  c_cr = "\r"
+  if ch == c_cr:
+    return true
+  c_tab = "\t"
+  if ch == c_tab:
+    return true
+  var table = Vector[String]()
+  table.push("\x00")
+  table.push("\x01")
+  table.push("\x02")
+  table.push("\x03")
+  table.push("\x04")
+  table.push("\x05")
+  table.push("\x06")
+  table.push("\x07")
+  table.push("\x08")
+  table.push("\x0b")
+  table.push("\x0c")
+  table.push("\x0e")
+  table.push("\x0f")
+  table.push("\x10")
+  table.push("\x11")
+  table.push("\x12")
+  table.push("\x13")
+  table.push("\x14")
+  table.push("\x15")
+  table.push("\x16")
+  table.push("\x17")
+  table.push("\x18")
+  table.push("\x19")
+  table.push("\x1a")
+  table.push("\x1b")
+  table.push("\x1c")
+  table.push("\x1d")
+  table.push("\x1e")
+  table.push("\x1f")
+  var i = 0
+  n = table |> count
+  while i < n:
+    target = table[i]
+    if ch == target:
+      return true
+    i = i + 1
+  return false
 
 fn parse_string_literal(input: String, cursor: parse.Cursor) -> String:
   quote = "\""
@@ -305,10 +421,7 @@ fn parse_string_literal(input: String, cursor: parse.Cursor) -> String:
                       else:
                         raise JsonError.InvalidStringEscape(line: cursor.line, col: cursor.col)
     else:
-      line_feed = "\n"
-      carriage_return = "\r"
-      tab = "\t"
-      if ch == line_feed or ch == carriage_return:
+      if is_raw_control_char(ch):
         raise JsonError.InvalidStringEscape(line: cursor.line, col: cursor.col)
       parts.push(ch)
   raise JsonError.UnexpectedEof(line: cursor.line, col: cursor.col)
@@ -491,10 +604,8 @@ export fn parse(input: String) -> JsonDoc:
           new_obj = add_object(doc)
           if is_obj:
             object_set(doc, curr_id, key, new_obj)
-            doc.child_starts[new_obj] = doc.obj_keys |> count
           else:
             array_push(doc, curr_id, new_obj)
-            doc.child_starts[new_obj] = doc.obj_keys |> count
           stack_expect_comma[top_idx] = true
           stack.push(new_obj)
           stack_is_obj.push(true)
@@ -507,10 +618,8 @@ export fn parse(input: String) -> JsonDoc:
             new_arr = add_array(doc)
             if is_obj:
               object_set(doc, curr_id, key, new_arr)
-              doc.child_starts[new_arr] = doc.arr_children |> count
             else:
               array_push(doc, curr_id, new_arr)
-              doc.child_starts[new_arr] = doc.arr_children |> count
             stack_expect_comma[top_idx] = true
             stack.push(new_arr)
             stack_is_obj.push(false)
