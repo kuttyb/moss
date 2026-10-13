@@ -1,0 +1,127 @@
+module compress_test
+
+import compress
+
+fn make_repeated_bytes(b: Int, count_val: Int) -> Vector[Int]:
+  var res = Vector[Int]()
+  var i = 0
+  while i < count_val:
+    res.push(b)
+    i = i + 1
+  return res
+
+fn make_all_byte_values() -> Vector[Int]:
+  var res = Vector[Int]()
+  var b = 0
+  while b < 256:
+    res.push(b)
+    b = b + 1
+  return res
+
+test "lz4 raw block roundtrip empty and small":
+  var empty_bytes = Vector[Int]()
+  var comp_empty = compress.compress_lz4_block(empty_bytes)
+  var decomp_empty = compress.decompress_lz4_block(comp_empty, 100)
+  assertEqual(decomp_empty |> count, 0)
+
+  var small = Vector[Int]()
+  small.push(72)
+  small.push(101)
+  small.push(108)
+  small.push(108)
+  small.push(111)
+  var comp_small = compress.compress_lz4_block(small)
+
+  var decomp_small = compress.decompress_lz4_block(comp_small, 100)
+  assertEqual(decomp_small |> count, 5)
+  assertEqual(decomp_small[0], 72)
+  assertEqual(decomp_small[4], 111)
+
+test "lz4 raw block roundtrip repetitive and overlapping matches":
+  var rep50 = make_repeated_bytes(65, 50)
+  var comp_rep50 = compress.compress_lz4_block(rep50)
+  var decomp_rep50 = compress.decompress_lz4_block(comp_rep50, 100)
+  assertEqual(decomp_rep50 |> count, 50)
+  assertEqual(decomp_rep50[0], 65)
+  assertEqual(decomp_rep50[49], 65)
+
+  var rep300 = make_repeated_bytes(98, 300)
+  var comp_rep300 = compress.compress_lz4_block(rep300)
+  var decomp_rep300 = compress.decompress_lz4_block(comp_rep300, 1000)
+  assertEqual(decomp_rep300 |> count, 300)
+  assertEqual(decomp_rep300[299], 98)
+
+test "lz4 all byte values 0 to 255":
+  var all_bytes = make_all_byte_values()
+  var comp_all = compress.compress_lz4_block(all_bytes)
+  var decomp_all = compress.decompress_lz4_block(comp_all, 500)
+  assertEqual(decomp_all |> count, 256)
+  assertEqual(decomp_all[0], 0)
+  assertEqual(decomp_all[255], 255)
+
+test "lz4 size prefixed convention":
+  var data = make_repeated_bytes(42, 80)
+  var comp = compress.compress_lz4_size_prefixed(data)
+  var decomp = compress.decompress_lz4_size_prefixed(comp, 200)
+  assertEqual(decomp |> count, 80)
+  assertEqual(decomp[0], 42)
+
+test "lz4 decompression bomb limit":
+  var rep50 = make_repeated_bytes(65, 50)
+  var comp = compress.compress_lz4_block(rep50)
+  var caught_bomb = false
+  try:
+    var dummy = compress.decompress_lz4_block(comp, 20)
+  recover compress.CompressError.DecompressedSizeExceeded:
+    caught_bomb = true
+  assert(caught_bomb)
+
+test "lz4 corrupt stream rejection":
+  # Offset 0 is invalid
+  var bad_offset = Vector[Int]()
+  bad_offset.push(31) # lit_len=1, match_len=15
+  bad_offset.push(65) # literal 'A'
+  bad_offset.push(0)  # offset lo = 0
+  bad_offset.push(0)  # offset hi = 0
+  var caught_offset = false
+  try:
+    var dummy1 = compress.decompress_lz4_block(bad_offset, 100)
+  recover compress.CompressError.InvalidOffset:
+    caught_offset = true
+  assert(caught_offset)
+
+  # Truncated input
+  var truncated = Vector[Int]()
+  truncated.push(48) # lit_len = 3, but no literal bytes follow
+  var caught_trunc = false
+  try:
+    var dummy2 = compress.decompress_lz4_block(truncated, 100)
+  recover compress.CompressError.TruncatedInput:
+    caught_trunc = true
+  assert(caught_trunc)
+
+test "deflate stored blocks roundtrip and errors":
+  var empty_bytes = Vector[Int]()
+  var def_empty = compress.deflate_stored(empty_bytes)
+  var inf_empty = compress.inflate_stored(def_empty, 100)
+  assertEqual(inf_empty |> count, 0)
+
+  var data = make_repeated_bytes(77, 120)
+  var def_data = compress.deflate_stored(data)
+  var inf_data = compress.inflate_stored(def_data, 200)
+  assertEqual(inf_data |> count, 120)
+  assertEqual(inf_data[0], 77)
+
+  # NLEN mismatch corrupt stream
+  var corrupt_def = Vector[Int]()
+  corrupt_def.push(1) # BFINAL=1, BTYPE=0
+  corrupt_def.push(5) # LEN = 5
+  corrupt_def.push(0)
+  corrupt_def.push(0) # NLEN wrong!
+  corrupt_def.push(0)
+  var caught_corrupt = false
+  try:
+    var dummy3 = compress.inflate_stored(corrupt_def, 100)
+  recover compress.CompressError.CorruptedStream:
+    caught_corrupt = true
+  assert(caught_corrupt)

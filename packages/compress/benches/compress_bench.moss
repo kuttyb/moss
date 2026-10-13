@@ -1,0 +1,44 @@
+module compress_bench
+
+import compress
+
+fn make_repeated_bytes(b: Int, count_val: Int) -> Vector[Int]:
+  var res = Vector[Int]()
+  var i = 0
+  while i < count_val:
+    res.push(b)
+    i = i + 1
+  return res
+
+fn bench_compress_lz4(data: Vector[Int]) -> Vector[Int]:
+  try:
+    return compress.compress_lz4_block(data)
+  recover compress.CompressError.InvalidByte:
+    return Vector[Int]()
+
+fn bench_decompress_lz4(data: Vector[Int], max_size: Int) -> Vector[Int]:
+  try:
+    return compress.decompress_lz4_block(data, max_size)
+  recover compress.CompressError.InvalidByte:
+    return Vector[Int]()
+  recover compress.CompressError.TruncatedInput:
+    return Vector[Int]()
+  recover compress.CompressError.InvalidOffset:
+    return Vector[Int]()
+  recover compress.CompressError.DecompressedSizeExceeded:
+    return Vector[Int]()
+
+bench "lz4 compress 500 bytes repetitive":
+  var data = make_repeated_bytes(65, 500)
+  var i = 0
+  while i < 100:
+    var comp = bench_compress_lz4(data)
+    i = i + 1
+
+bench "lz4 decompress 500 bytes repetitive":
+  var data = make_repeated_bytes(65, 500)
+  var comp = bench_compress_lz4(data)
+  var i = 0
+  while i < 100:
+    var decomp = bench_decompress_lz4(comp, 1000)
+    i = i + 1
