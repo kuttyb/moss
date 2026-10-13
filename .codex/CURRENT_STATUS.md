@@ -1,5 +1,35 @@
 # Moss current status
 
+## Phase 24 Team A advanced-data Architect repairs ready for re-review — 2026-10-13
+
+Branch `phase24-advanced-data` delivers `moss.ndarray`,
+`moss.datastructures`, `moss.tables`, `moss.binary`, and `moss.cbor` from
+required baseline `5394e93ceedccf21e577556325e598ff4d8c4d9c`. The initial
+implementation `cdcadb26b9b46d332f5f577886c359d44ce839c0` received an
+independent Architect **NO-GO**, preserved in
+`docs/phase24/TEAM_A_ARCHITECT_FINAL_ACCEPTANCE.md`, for four contract and
+acceptance gaps.
+
+Repair implementation `3ea1092359cb82b537bbf33595b3d75836df8e79`
+aligns the over-broad initial data-structure freeze with the mission-authorized
+concrete Int and String-key typed baseline, adds a seeded independent Python
+ndarray/table semantic oracle in Native Debug/Release/Fast Debug, and extends
+the exact 14-provider compiled-only ABI-v9 consumer with typed variant/payload
+recovery and failed-mutation atomicity for all five Team A modules. The required
+Team efficiency closeout and delivery report are prepared with the original
+NO-GO and all seven attributable Coordinator/Architect defects preserved.
+
+Repaired full acceptance passes: the semantic oracle in all three modes; seven
+public cross-package scenarios in all three modes; 12 fixed RFC 8949 vectors;
+typed source-free ABI-v9 execution for all five modules; and 12 pinned
+`cbor2 5.7.1` to Moss plus 12 Moss to `cbor2` comparisons. Earlier validation
+on the unchanged package implementations passed 101 unique tests in each of
+Native Debug, Native Release, and Fast Debug, two ndarray examples in all three
+modes, `TMPDIR="$PWD/tmp" make check`, and `make examples`. Final repository
+gates and an exact-SHA independent repair verdict remain to run after the
+closeout commit. No merge into `phase24-integration` or `main` and no push have
+occurred.
+
 ## Phase 24 Team A A3 ndarray examples complete — 2026-10-12
 
 Branch `phase24-advanced-data-a3-examples` adds two public-API-only runnable
