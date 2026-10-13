@@ -309,20 +309,61 @@ the operand types.
 
 `String` supports built-in `+` concatenation and `==`/`!=` equality.
 The read-only String methods are `length() -> Int`, `char_at(Int) -> String`,
-`chars() -> Vector[String]`, `split(String) -> Vector[String]`, and
+`chars() -> Vector[String]`, `find(String) -> Int`,
+`slice(Int, Int) -> String`, `ascii_lower() -> String`,
+`ascii_upper() -> String`, `split(String) -> Vector[String]`, and
 `join(Vector[String]) -> String` (called on the separator). Character positions
-are zero-based Unicode code-point positions. `char_at` fails on an invalid
-position, and `split` fails on an empty separator. Numeric text uses the
+are zero-based Unicode code-point positions. `find` returns `-1` when absent;
+`slice` returns an empty String for invalid bounds; ASCII case conversion leaves
+non-ASCII scalars unchanged. `char_at` fails on an invalid position, and `split`
+fails on an empty separator. Numeric text uses the
 raising built-ins `parse_int(text)` and `parse_float(text)`; checked Float to Int
 conversion uses `to_int(value)`. Their accepted spellings and typed errors are
 specified in [Phase 21 §13](MOSS_PHASE_21_ERROR_HANDLING.md#13-float-numeric-parsing-and-conversion-p21-12).
 Lexicographic ordering is intentionally not a v0.1 operator surface:
 `String < String`, `<=`, `>`, and `>=` are rejected by the frontend.
 
+Writable Strings additionally support `reserve(Int) -> Unit`, a UTF-8-byte
+capacity hint whose nonpositive requests are no-ops, and
+`append(String) -> Unit`. The receiver is inferred WRITE and the append part is
+READ, so overlapping `value.append(value)` is rejected by the ordinary
+ownership rule.
+
 Binary operators outside the closed set are rejected by the frontend rather than
-passed through to generated Rust. v0.1 has no bitwise `&`, `|`, or `^`, no shifts
-`<<` or `>>`, and no symbolic `&&` or `||`; Boolean logic uses the word operators
-below.
+passed through to generated Rust. Symbolic Boolean `&&` and `||` do not exist;
+Boolean logic uses the word operators below.
+
+### Bitwise and shift operators
+
+Moss provides bitwise operations and shifts on signed 64-bit integers (`Int`):
+
+- Bitwise AND: `a & b`
+- Bitwise OR: `a | b`
+- Bitwise XOR: `a ^ b`
+- Bitwise NOT: `~a`
+- Shift left: `a << b`
+- Shift right: `a >> b` (arithmetic shift, preserving sign)
+
+All operands must statically be `Int`. Non-`Int` operands are rejected with `TYPE_MISMATCH`.
+Bitwise operations operate on two's-complement 64-bit integer bit representations.
+Shift operations are total and well-defined across all shift amounts:
+- Left shift `a << b`: if `b < 0 || b >= 64`, returns `0`.
+- Right shift `a >> b`: arithmetic shift; if `b < 0 || b >= 64`, returns `-1` if `a < 0` else `0`.
+
+Precedence from highest to lowest among operators:
+
+1. Prefix unary `~`, `-`
+2. Multiplicative `*`, `/`, `%`
+3. Additive `+`, `-`
+4. Shifts `<<`, `>>`
+5. Bitwise AND `&`
+6. Bitwise XOR `^`
+7. Bitwise OR `|`
+8. Comparisons `==`, `!=`, `<`, `<=`, `>`, `>=`
+9. Prefix unary `not`
+10. Boolean `and`
+11. Boolean `xor`
+12. Boolean `or`
 
 ### Boolean operators
 

@@ -1,0 +1,83 @@
+import parse
+
+test "cursor initialization and navigation":
+  input = "abc\ndef"
+  cur = parse.new_cursor()
+  assertEqual(cur.line, 1)
+  assertEqual(cur.col, 1)
+  assertEqual(parse.peek(input, cur), "a")
+  assertEqual(parse.peek_at(input, cur, 1), "b")
+  assertEqual(parse.peek_at(input, cur, 2), "c")
+  assertEqual(parse.peek_at(input, cur, 3), "\n")
+  assertEqual(parse.peek_at(input, cur, 4), "d")
+  assertEqual(parse.peek_at(input, cur, 10), "")
+
+  ch1 = parse.advance(input, cur)
+  assertEqual(ch1, "a")
+  assertEqual(cur.line, 1)
+  assertEqual(cur.col, 2)
+
+  ch2 = parse.advance(input, cur)
+  assertEqual(ch2, "b")
+  ch3 = parse.advance(input, cur)
+  assertEqual(ch3, "c")
+  assertEqual(cur.line, 1)
+  assertEqual(cur.col, 4)
+
+  nl = parse.advance(input, cur)
+  assertEqual(nl, "\n")
+  assertEqual(cur.line, 2)
+  assertEqual(cur.col, 1)
+
+  ch4 = parse.advance(input, cur)
+  assertEqual(ch4, "d")
+  assertEqual(cur.line, 2)
+  assertEqual(cur.col, 2)
+
+test "cursor matches and consume":
+  input = "true and false"
+  cur = parse.new_cursor()
+  assert(parse.matches(input, cur, "true"))
+  assert(not parse.matches(input, cur, "false"))
+  assert(parse.consume_if(input, cur, "true"))
+  assertEqual(cur.col, 5)
+
+  parse.skip_whitespace(input, cur)
+  assertEqual(parse.peek(input, cur), "a")
+  assert(parse.consume_if(input, cur, "and"))
+
+  parse.skip_whitespace(input, cur)
+  assert(parse.consume_if(input, cur, "false"))
+  assert(parse.is_eof(input, cur))
+
+test "cursor character predicates and extraction":
+  input = "1234abcd \t56"
+  cur = parse.new_cursor()
+  digits = parse.take_while_digits(input, cur)
+  assertEqual(digits, "1234")
+
+  hexes = parse.take_while_hex(input, cur)
+  assertEqual(hexes, "abcd")
+
+  spaces = parse.skip_horizontal_spaces(input, cur)
+  assertEqual(spaces, 2)
+
+  remaining_digits = parse.take_while_digits(input, cur)
+  assertEqual(remaining_digits, "56")
+  assert(parse.is_eof(input, cur))
+
+test "cursor hex value conversion":
+  assertEqual(parse.hex_value("0"), 0)
+  assertEqual(parse.hex_value("9"), 9)
+  assertEqual(parse.hex_value("a"), 10)
+  assertEqual(parse.hex_value("F"), 15)
+  assertEqual(parse.hex_value("z"), 0 - 1)
+
+test "cursor position and span slicing":
+  input = "hello world"
+  cur = parse.new_cursor()
+  start_pos = parse.position(cur)
+  parse.advance_n(input, cur, 5)
+  end_pos = parse.position(cur)
+  sliced = parse.slice_span(input, start_pos, end_pos)
+  assertEqual(sliced, "hello")

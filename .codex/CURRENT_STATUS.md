@@ -1,21 +1,82 @@
 # Moss current status
 
+## Phase 24 Compiler R0a/R0b Integration & Team R Baseline — 2026-10-12
+
+Team I completed compiler integration for:
+- **Workstream R0b:** Same-module type resolution (`phase24-compiler-type-resolution`, `16d07cf8703c47e72b19b598608395d94960eb18`).
+- **Workstream R0a:** Integer bitwise & shift operators (`phase24-compiler-bitwise`, `8a24f422b69766c8db83f7035b9caff6452416b7`).
+- **Combined compiler gate:** Successfully integrated into `phase24-integration` at commit `43757790ef3af52204c90bbd9dabcefc4470e965`. All 54 Phase 20 executor tests, discriminating precedence tests, ABI-v9 checks, `TMPDIR="$PWD/tmp" make check`, and `make examples` passed.
+
 ## Phase 24 Team R Feasibility & Initial Architectural Review complete — 2026-10-12
 
-Team R (`moss.regex`, `moss.compress`, `moss.hash`) launched on feature branch `phase24-data-utils` from base `2845390534272e330a0ecc7c9e970d1815eb0588` (`phase24-integration`):
+Team R (`moss.regex`, `moss.compress`, `moss.hash`) launched on feature branch `phase24-data-utils`:
 1. **Initial Feasibility Assessment:**
-   - Identified and verified core Moss v0.1 physical constraints: absence of bitwise operators (`&`, `|`, `^`, `<<`, `>>`), absence of hex integer literals (`0x...`), absence of ordinary recursion, string code-point indexing, and `Vector[Int]` byte representations ($0 \le b \le 255$).
-   - Formulated concrete arithmetic and table-driven emulation strategies: division/modulo shifts and masks, 256-entry byte XOR lookup tables for CRC-32 and FNV-1a, and iterative Shunting-Yard/worklist stacks for Thompson NFA regex and LZ4 block processing.
-   - Tested and confirmed LZ4 block roundtripping and Python interop, Adler-32, CRC-32, and FNV-1a on both Native and Fast Debug execution.
+   - Identified and verified core Moss v0.1 physical constraints: string code-point indexing, absence of ordinary recursion, `Vector[Int]` byte representations ($0 \le b \le 255$).
+   - Transitioning from arithmetic XOR emulation to newly integrated native 64-bit bitwise operators (`&`, `|`, `^`, `~`, `<<`, `>>`).
 2. **Independent L6 Architect Review:**
-   - Independent L6 Architect issued **CONDITIONAL APPROVAL (GO WITH STRICT GATING REQUIREMENTS)** in `docs/team_r/ARCHITECT_REVIEW.md`.
-   - Froze concrete API contracts, Phase 21 closed error enums (`RegexError`, `CompressError`, `HashError`), and 10 mandatory adversarial falsification gates (`[FALSIFY-01]` through `[FALSIFY-10]`).
-3. **Repository Feedback & Package Scaffolding:**
-   - Initialized package manifests for `moss.regex`, `moss.compress`, `moss.hash`, and `moss.data_utils_integration`.
-   - Recorded developer-experience observations in `agent-feedback/phase24/team-r-data-utils/feasibility/observations.jsonl`, verified via `python3 tests/tooling/check_agent_feedback.py`.
-4. **Branch Status:**
-   - All work maintained on `phase24-data-utils`. Pushed upstream for L7 review.
+   - Independent L6 Architect issued Conditional Approval in `docs/team_r/ARCHITECT_REVIEW.md`.
+   - Amending architecture freeze with native bitwise operators, corrected reference vectors, and strict LZ4 block framing distinctions.
+3. **Branch Status:**
+   - Compiler R0a/R0b baseline merged into `phase24-data-utils`. Full implementation underway.
 
+## Phase 24 Team I consolidated checkpoint — 2026-10-12
+
+The final accepted Team D structured-data, Team T performance, and Team N
+numerical deliveries are merged on `phase24-integration`. The current
+source integration tip is `04b7683b6b6c0900e3079be60116514ba3d41564`; the
+subsequent status and runner-portability commits are included in the final
+branch tip. It includes
+normal merge commits
+`f4c4ad3d77ddea8e2fa2060a9368c31ad45f7ed4` (Team T performance, source
+`0d8d1b6cf75ecf72f90be5bab9fc821c3219f584`, reviewed implementation
+`63a7089bdad2f7739c9b234669657dc1a43ae981`) and `bea649a42bd39c87035ba3a1baca603311ca8e05`
+(Team N, source `234ff9e2e3e1a03de64be4276f2aef64ba8c6d73`). Team N's corrected
+delivery has unconditional Architect GO. Team D source
+`8b4b2cff7ce062992cdbfdfbf57ab407093d904e` is merged by the current tip after
+Architect GO at `e8543918c249fd90b20f6eabbc9769d969b8e8ae`; its Unicode scalar
+and raising-benchmark limitations remain explicitly tracked. No completed
+remote Team H delivery was available.
+
+Validation at this tip is complete: `TMPDIR="$PWD/tmp" make check`,
+`make examples`, strict C++17 syntax, Team T full acceptance and release
+provider validator, all Team N package suites in native/Fast Debug/release,
+numerical differential and ABI-v9 checks, Team M repair oracle, and corrected
+release benchmark workloads pass. Team D parse/fmt/json/csv and data acceptance
+tests pass in native/Fast Debug, with 46/46 differential cases and compiled-only
+ABI-v9 validation. The checkpoint is **AMBER** because Moss
+allocation counts remain unmeasured, Team M's real-clock `.now()` remains
+deferred, and the independent whole-system Architect review is reserved for
+final Phase 24 acceptance. A parallel Margo package run exposed shared-artifact
+linker races; serial reruns passed and the workflow limitation is recorded in
+the integration issue ledger. No merge into `main` occurred.
+
+## Phase 24 Team N Numerical Computing Final Repairs & Integration Handoff — 2026-10-12
+
+Following L7 review of HEAD `47d50f49`, Team N completed the final closeout pass and resolved all remaining findings on branch `phase24-numerics`:
+1. **LU Decomposition Validation (P1):**
+   - Implemented `validate_lu(decomp: LUDecomposition) -> Bool` in `packages/linalg/src/main.moss`.
+   - `lu_solve` now validates that the matrix is square, pivot vector length equals matrix dimension $n$, every pivot is in $[0, n)$, and pivots contain no duplicates. Malformed records raise `LinalgError.InvalidDimensions` (or `LinalgError.NonSquareMatrix`), never triggering indexing panics. Added comprehensive regression tests in `packages/linalg/tests/linalg_test.moss` (`malformed LU decomposition validation`).
+2. **Rust Benchmark Methodology (P1):**
+   - Corrected `tests/benchmarks/bench_numerics_baseline.rs`: all outputs (`Csr`, `Csc`, `Vec<f64>`) are passed to `black_box(&result)` as complete structs rather than merely `.len()`, preventing dead-code elimination.
+   - Added matrix multiplication (50×50) to `packages/linalg/benches/linalg_bench.moss` and float heapsort (500 items) to `packages/statistics/benches/statistics_bench.moss`, matching exact workloads, input data, and algorithms between Moss and Rust.
+   - Re-measured release benchmarks (`margo bench --release` vs `rustc -O`). Updated `docs/team_n/PERFORMANCE_EVALUATION.md` with honest, evidence-backed p25/median/p75 and speedup ratios.
+3. **Dimension-Overflow Protection (P2):**
+   - In `packages/sparse/src/main.moss`, added checks before performing dimension arithmetic (`rows * cols`, `rows + 1`, `cols + 1`) across `validate_csr`, `validate_csc`, `from_dense`, `from_triplets`, and `csr_mat_mul`. Returns `false` or raises `SparseError.InvalidDimensions` on extreme dimensions. Added targeted regression tests in `packages/sparse/tests/sparse_test.moss` (`extreme dimension overflow protection`).
+4. **Agent Team Efficiency Metrics:**
+   - Completed `docs/phase24/agent-patterns/team-n-numerics.md` with actual values for leaf agents (2), peak concurrency (2), review cycles (2 formal L7 rounds), architect review events (3), confirmed defects resolved (9), and test counts across delivery.
+5. **Architect Sign-Off & Verification:**
+   - Updated `docs/team_n/ARCHITECT_REVIEW.md` and `docs/team_n/FINAL_DELIVERY_REPORT.md` with final unconditional **GO** from the Independent L6 Architect.
+   - All 30 package tests pass with 100% parity across Native Debug, Fast Debug, and Native Release:
+     - `packages/linalg`: 9/9 PASS
+     - `packages/sparse`: 9/9 PASS
+     - `packages/statistics`: 9/9 PASS
+     - `packages/numerics_integration`: 3/3 PASS
+     - Total: 30/30 tests (90 passing runs).
+   - Differential oracles (`test_numerics_falsification.py`): PASS with 0 falsifications.
+   - Source-free ABI-v9 consumer test (`check_numerics_abi_v9.py`): PASS with 100% parity.
+   - Repository gates: `TMPDIR="$PWD/tmp" make check`: PASS (54/54 executor tests). `make examples`: PASS. `python3 tests/tooling/check_agent_feedback.py`: PASS. `git diff --check`: PASS.
+6. **Branch Isolation & Handoff:**
+   - All work committed strictly on `phase24-numerics`. No merge into `phase24-integration` or `main`. Ready for handoff to Team I.
 
 ## Phase 24 Team I final merge checkpoint — 2026-10-12
 

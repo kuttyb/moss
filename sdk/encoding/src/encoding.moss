@@ -1,5 +1,4 @@
 module encoding
-import bytes
 
 export enum Utf8Error:
   InvalidByte(index: Int, value: Int)
@@ -16,7 +15,7 @@ export fn is_unicode_scalar(value: Int) -> Bool:
 
 fn require_byte(values: Vector[Int], index: Int) -> Int:
   value = values[index]
-  if not bytes.is_byte(value):
+  if value < 0 or value > 255:
     raise Utf8Error.InvalidByte(index: index, value: value)
   return value
 
@@ -89,7 +88,7 @@ export fn validate_utf8(values: Vector[Int]) -> Bool:
   var i = 0
   while i < n:
     first = values[i]
-    if not bytes.is_byte(first):
+    if first < 0 or first > 255:
       return false
     if first <= 127:
       i = i + 1
@@ -116,7 +115,7 @@ export fn validate_utf8(values: Vector[Int]) -> Bool:
       if n - i < width:
         return false
       second = values[i + 1]
-      if not bytes.is_byte(second) or second < 128 or second > 191:
+      if second < 128 or second > 191:
         return false
 
       scalar = 0
@@ -124,13 +123,13 @@ export fn validate_utf8(values: Vector[Int]) -> Bool:
         scalar = (first - 192) * 64 + (second - 128)
       else:
         third = values[i + 2]
-        if not bytes.is_byte(third) or third < 128 or third > 191:
+        if third < 128 or third > 191:
           return false
         if width == 3:
           scalar = (first - 224) * 4096 + (second - 128) * 64 + (third - 128)
         else:
           fourth = values[i + 3]
-          if not bytes.is_byte(fourth) or fourth < 128 or fourth > 191:
+          if fourth < 128 or fourth > 191:
             return false
           scalar = (first - 240) * 262144 + (second - 128) * 4096 + (third - 128) * 64 + (fourth - 128)
 
@@ -142,11 +141,6 @@ export fn validate_utf8(values: Vector[Int]) -> Bool:
         return false
       i = i + width
   return true
-
-fn append_encoded_byte(values: Vector[Int], value: Int):
-  if not bytes.is_byte(value):
-    raise Utf8Error.InvalidByte(index: values |> count, value: value)
-  values.push(value)
 
 export fn encode_utf8(scalars: Vector[Int]) -> Vector[Int]:
   var result = Vector[Int]()
@@ -160,20 +154,20 @@ export fn encode_utf8(scalars: Vector[Int]) -> Vector[Int]:
       raise Utf8Error.SurrogateScalar(index: i, scalar: scalar)
 
     if scalar <= 127:
-      append_encoded_byte(result, scalar)
+      result.push(scalar)
     else:
       if scalar <= 2047:
-        append_encoded_byte(result, 192 + scalar / 64)
-        append_encoded_byte(result, 128 + scalar % 64)
+        result.push(192 + scalar / 64)
+        result.push(128 + scalar % 64)
       else:
         if scalar <= 65535:
-          append_encoded_byte(result, 224 + scalar / 4096)
-          append_encoded_byte(result, 128 + (scalar / 64) % 64)
-          append_encoded_byte(result, 128 + scalar % 64)
+          result.push(224 + scalar / 4096)
+          result.push(128 + (scalar / 64) % 64)
+          result.push(128 + scalar % 64)
         else:
-          append_encoded_byte(result, 240 + scalar / 262144)
-          append_encoded_byte(result, 128 + (scalar / 4096) % 64)
-          append_encoded_byte(result, 128 + (scalar / 64) % 64)
-          append_encoded_byte(result, 128 + scalar % 64)
+          result.push(240 + scalar / 262144)
+          result.push(128 + (scalar / 4096) % 64)
+          result.push(128 + (scalar / 64) % 64)
+          result.push(128 + scalar % 64)
     i = i + 1
   return result

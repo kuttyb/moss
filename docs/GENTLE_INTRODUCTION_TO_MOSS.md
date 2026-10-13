@@ -145,9 +145,10 @@ overload or redefine them. `String` has three built-in operator forms:
 concatenation with `+`, equality with `==`, and inequality with `!=`.
 String ordering with `<`, `<=`, `>`, or `>=` is not part of v0.1.
 
-String methods read their inputs and return independent values. Character
-positions are zero-based Unicode code-point positions (like Python), not UTF-8
-byte offsets or grapheme clusters. A character is a one-code-point `String`:
+String inspection and transformation methods read their inputs and return
+independent values. Character positions are zero-based Unicode code-point
+positions (like Python), not UTF-8 byte offsets or grapheme clusters. A
+character is a one-code-point `String`:
 
 ```moss
 fn main():
@@ -155,17 +156,32 @@ fn main():
   echo text.length()          # 3
   echo text.char_at(1)        # é
   letters = text.chars()      # Vector[String]
+  echo text.find("é🙂")       # 1 (code-point index)
+  echo text.slice(1, 2)       # é🙂
+  echo "MÖSS".ascii_lower()  # mÖss
   fields = "a,b,".split(",") # ["a", "b", ""]
   echo ",".join(fields)       # a,b,
 ```
 
+For allocation-aware construction, a writable String also supports
+`reserve(additional_bytes)` and `append(part)`. Capacity is measured in UTF-8
+bytes and is not observable; nonpositive reserve requests are no-ops. `append`
+reads but does not consume its part, and overlapping access such as
+`text.append(text)` is rejected. Use `text = text + text` for an intentional
+self-copy.
+
 `char_at` requires a valid nonnegative position; `split` requires a nonempty
 separator. Invalid inputs fail under current runtime precondition behavior.
+`find` returns the first code-point position, `-1` when absent, and `0` for an
+empty pattern. `slice` takes a code-point start and length; invalid bounds return
+the empty String. `ascii_lower` and `ascii_upper` change ASCII letters only and
+preserve every other Unicode scalar.
 `join` accepts `Vector[String]` and returns an empty String for an empty vector.
 String numeric parsing and recoverable invalid-input behavior are described above.
 
-There are no bitwise or shift operators (`&`, `|`, `^`, `<<`, `>>`) in v0.1, and
-Boolean logic uses words rather than `&&` and `||` (Section 2).
+Integer bitwise and shift operators (`&`, `|`, `^`, `~`, `<<`, `>>`) operate strictly
+on 64-bit signed `Int` values with total two's-complement semantics. Boolean logic
+uses word operators (`not`, `and`, `or`, `xor`) rather than symbolic `&&` or `||` (Section 2).
 
 ---
 

@@ -92,9 +92,25 @@ Moss v0.1 does not support user-defined operator overloading. The operator set
 and each accepted operand-type combination are closed compiler-defined language
 rules. In particular, `String` supports built-in `+` concatenation and
 `==`/`!=` equality, but no relational ordering operators. Binary operators
-outside the set, including bitwise `&`, `|`, and `^`, shifts `<<` and `>>`, and
-symbolic `&&` and `||`, are rejected by the frontend rather than passed through
-to generated Rust.
+outside the set, including symbolic `&&` and `||`, are rejected by the frontend
+rather than passed through to generated Rust. Integer bitwise operations (`&`, `|`,
+`^`, unary `~`) and shifts (`<<`, `>>`) operate strictly on signed 64-bit `Int`
+operands with total, well-defined two's-complement semantics (shifts by `< 0` or
+`>= 64` yield 0 for `<<`, and sign-extension for `>>`).
+
+Read-only `String` operations count positions in Unicode code points. In
+addition to `length`, `char_at`, `chars`, `split`, and separator `join`, the
+native-backed `find(pattern)` returns the first code-point index or `-1`, and
+`slice(start, length)` returns one owned code-point slice (or the empty String
+for invalid bounds). `ascii_lower()` and `ascii_upper()` transform ASCII letters
+only and preserve all other Unicode scalars. These are safe closed built-ins;
+they expose neither byte offsets nor an unsafe String view.
+
+Writable String construction has two additional closed built-ins:
+`reserve(additional_bytes)` supplies a non-semantic UTF-8 byte-capacity hint
+(nonpositive values are no-ops), and `append(part)` extends the receiver while
+reading but not consuming `part`. Normal ownership overlap checks reject using
+the same String as both the WRITE receiver and READ part.
 
 Boolean expressions use the word operators `not`, `and`, `xor`, and `or`.
 Operands are statically `Bool`; `and` and `or` short-circuit, while `xor`

@@ -1,0 +1,6 @@
+[project]
+name = "phase24-string-concat-bench"
+version = "0.1.0"
+
+[build]
+source = "src"

@@ -1,0 +1,171 @@
+module parse
+import core
+import text
+
+export type SourcePos:
+  offset: Int
+  line: Int
+  col: Int
+
+export type SourceSpan:
+  start: SourcePos
+  end: SourcePos
+
+export type Cursor:
+  offset: Int
+  line: Int
+  col: Int
+
+export enum ParseError:
+  UnexpectedChar(line: Int, col: Int)
+  UnexpectedEof(line: Int, col: Int)
+  InvalidNumber(line: Int, col: Int)
+  Custom(line: Int, col: Int, code: Int)
+
+export fn new_cursor() -> Cursor:
+  return Cursor(offset: 0, line: 1, col: 1)
+
+export fn new_cursor_at(offset: Int, line: Int, col: Int) -> Cursor:
+  return Cursor(offset: offset, line: line, col: col)
+
+export fn is_eof(input: String, cursor: Cursor) -> Bool:
+  return cursor.offset >= input.length()
+
+export fn remaining(input: String, cursor: Cursor) -> Int:
+  rem = input.length() - cursor.offset
+  if rem < 0:
+    return 0
+  return rem
+
+export fn position(cursor: Cursor) -> SourcePos:
+  return SourcePos(offset: cursor.offset, line: cursor.line, col: cursor.col)
+
+export fn peek(input: String, cursor: Cursor) -> String:
+  if cursor.offset >= input.length():
+    return ""
+  return input.char_at(cursor.offset)
+
+export fn peek_at(input: String, cursor: Cursor, lookahead: Int) -> String:
+  pos = cursor.offset + lookahead
+  if pos >= input.length() or pos < 0:
+    return ""
+  return input.char_at(pos)
+
+export fn advance(input: String, cursor: Cursor) -> String:
+  if cursor.offset >= input.length():
+    return ""
+  ch = input.char_at(cursor.offset)
+  cursor.offset = cursor.offset + 1
+  line_feed = "\n"
+  if ch == line_feed:
+    cursor.line = cursor.line + 1
+    cursor.col = 1
+  else:
+    cursor.col = cursor.col + 1
+  return ch
+
+export fn advance_n(input: String, cursor: Cursor, n: Int):
+  var i = 0
+  total = input.length()
+  while i < n and cursor.offset < total:
+    advance(input, cursor)
+    i = i + 1
+
+export fn matches(input: String, cursor: Cursor, pattern: String) -> Bool:
+  pattern_len = pattern.length()
+  total = input.length()
+  if cursor.offset + pattern_len > total:
+    return false
+  var i = 0
+  while i < pattern_len:
+    if input.char_at(cursor.offset + i) != pattern.char_at(i):
+      return false
+    i = i + 1
+  return true
+
+export fn consume_if(input: String, cursor: Cursor, expected: String) -> Bool:
+  if matches(input, cursor, expected):
+    advance_n(input, cursor, expected.length())
+    return true
+  return false
+
+export fn expect(input: String, cursor: Cursor, expected: String):
+  cursor.offset = cursor.offset
+  if not consume_if(input, cursor, expected):
+    if is_eof(input, cursor):
+      raise ParseError.UnexpectedEof(line: cursor.line, col: cursor.col)
+    raise ParseError.UnexpectedChar(line: cursor.line, col: cursor.col)
+
+export fn is_digit(ch: String) -> Bool:
+  if ch.length() != 1:
+    return false
+  return text.contains("0123456789", ch)
+
+export fn is_hex_digit(ch: String) -> Bool:
+  if ch.length() != 1:
+    return false
+  return text.contains("0123456789abcdefABCDEF", ch)
+
+export fn hex_value(ch: String) -> Int:
+  if ch.length() != 1:
+    return 0 - 1
+  lower = "0123456789abcdef"
+  return text.find(lower, text.to_ascii_lower(ch))
+
+export fn is_ascii_alpha(ch: String) -> Bool:
+  if ch.length() != 1:
+    return false
+  return text.contains("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", ch)
+
+export fn is_ascii_alphanumeric(ch: String) -> Bool:
+  return is_ascii_alpha(ch) or is_digit(ch)
+
+export fn is_whitespace(ch: String) -> Bool:
+  return text.is_ascii_whitespace(ch)
+
+export fn skip_whitespace(input: String, cursor: Cursor) -> Int:
+  var count_skipped = 0
+  while not is_eof(input, cursor) and is_whitespace(peek(input, cursor)):
+    advance(input, cursor)
+    count_skipped = count_skipped + 1
+  return count_skipped
+
+export fn skip_horizontal_spaces(input: String, cursor: Cursor) -> Int:
+  var count_skipped = 0
+  space = " "
+  tab = "\t"
+  while not is_eof(input, cursor):
+    ch = peek(input, cursor)
+    if ch == space or ch == tab:
+      advance(input, cursor)
+      count_skipped = count_skipped + 1
+    else:
+      return count_skipped
+  return count_skipped
+
+export fn take_while_digits(input: String, cursor: Cursor) -> String:
+  var parts = Vector[String]()
+  while not is_eof(input, cursor) and is_digit(peek(input, cursor)):
+    parts.push(advance(input, cursor))
+  return "".join(parts)
+
+export fn take_while_hex(input: String, cursor: Cursor) -> String:
+  var parts = Vector[String]()
+  while not is_eof(input, cursor) and is_hex_digit(peek(input, cursor)):
+    parts.push(advance(input, cursor))
+  return "".join(parts)
+
+export fn take_until(input: String, cursor: Cursor, stop_char: String) -> String:
+  var parts = Vector[String]()
+  while not is_eof(input, cursor):
+    ch = peek(input, cursor)
+    if ch == stop_char:
+      return "".join(parts)
+    parts.push(advance(input, cursor))
+  return "".join(parts)
+
+export fn slice_span(input: String, start_pos: SourcePos, end_pos: SourcePos) -> String:
+  length = end_pos.offset - start_pos.offset
+  if length <= 0:
+    return ""
+  return text.slice(input, start_pos.offset, length)

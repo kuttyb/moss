@@ -381,6 +381,12 @@ static const vector<BuiltinOperationDescriptor>& builtin_operations() {
       {BuiltinReceiverFamily::String, "length", "length()", "int", Effect::Read, {}, {}},
       {BuiltinReceiverFamily::String, "char_at", "char_at(index)", "string", Effect::Read, {Effect::Read}, {"int"}, true},
       {BuiltinReceiverFamily::String, "chars", "chars()", "vector[string]", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::String, "find", "find(pattern)", "int", Effect::Read, {Effect::Read}, {"string"}},
+      {BuiltinReceiverFamily::String, "slice", "slice(start, length)", "string", Effect::Read, {Effect::Read, Effect::Read}, {"int", "int"}},
+      {BuiltinReceiverFamily::String, "ascii_lower", "ascii_lower()", "string", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::String, "ascii_upper", "ascii_upper()", "string", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::String, "reserve", "reserve(additional_bytes)", "unit", Effect::Write, {Effect::Read}, {"int"}},
+      {BuiltinReceiverFamily::String, "append", "append(part)", "unit", Effect::Write, {Effect::Read}, {"string"}},
       {BuiltinReceiverFamily::String, "split", "split(separator)", "vector[string]", Effect::Read, {Effect::Read}, {"string"}, true},
       {BuiltinReceiverFamily::String, "join", "join(parts)", "string", Effect::Read, {Effect::Read}, {"vector[string]"}},
   };
@@ -2400,20 +2406,29 @@ class Checker {
       }
       derive_expression_constraints(function, ii);
     }
-    for (const auto& ops : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"}, {"+", "-", "*", "/", "%"}})
+    for (const auto& ops : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+                                                  {"|"}, {"^"}, {"&"}, {"<<", ">>"},
+                                                  {"+", "-", "*", "/", "%"}})
       if (auto binary = split_binary(e, ops)) {
         auto left_type = constraint_expression_type(function, binary->first);
         auto right_type = constraint_expression_type(function, binary->second);
         string left_expected = right_type.value_or("");
         string right_expected = left_type.value_or("");
         bool comparison = ops.front() == "==";
-        if (!comparison && !expected_result.empty() && expected_result != "$function_result") {
+        bool bitwise = ops.front() == "|" || ops.front() == "^" || ops.front() == "&" || ops.front() == "<<";
+        if (bitwise) {
+          left_expected = "int";
+          right_expected = "int";
+        } else if (!comparison && !expected_result.empty() && expected_result != "$function_result") {
           if (left_expected.empty()) left_expected = expected_result;
           if (right_expected.empty()) right_expected = expected_result;
         }
         derive_expression_constraints(function, binary->first, left_expected);
         derive_expression_constraints(function, binary->second, right_expected);
       }
+    if (!e.empty() && e.front() == '~') {
+      derive_expression_constraints(function, trim(e.substr(1)), "int");
+    }
     string callee; vector<string> call_args;
     if (parse_simple_call(e, callee, call_args) && !member_call) {
       for (const auto& parameter : function.params)
@@ -4044,6 +4059,34 @@ class Checker {
         if (i + op.size() > expression.size() ||
             expression.compare(i, op.size(), op) != 0)
           continue;
+        if (op == "|") {
+          if (i + 1 < expression.size() && (expression[i + 1] == '>' || expression[i + 1] == '|' || expression[i + 1] == '='))
+            continue;
+          if (i > 0 && expression[i - 1] == '|')
+            continue;
+        }
+        if (op == "&") {
+          if (i + 1 < expression.size() && (expression[i + 1] == '&' || expression[i + 1] == '='))
+            continue;
+          if (i > 0 && expression[i - 1] == '&')
+            continue;
+        }
+        if (op == "^") {
+          if (i + 1 < expression.size() && expression[i + 1] == '=')
+            continue;
+        }
+        if (op == "<") {
+          if (i + 1 < expression.size() && (expression[i + 1] == '<' || expression[i + 1] == '='))
+            continue;
+          if (i > 0 && expression[i - 1] == '<')
+            continue;
+        }
+        if (op == ">") {
+          if (i + 1 < expression.size() && (expression[i + 1] == '>' || expression[i + 1] == '='))
+            continue;
+          if (i > 0 && (expression[i - 1] == '>' || expression[i - 1] == '|'))
+            continue;
+        }
         if ((op == "+" || op == "-") && [&] {
               size_t before = i;
               while (before > 0 && std::isspace(static_cast<unsigned char>(expression[before - 1])))
@@ -4058,7 +4101,8 @@ class Checker {
               return prior == '(' || prior == '[' || prior == '{' || prior == ',' ||
                   prior == ':' || prior == '+' || prior == '-' || prior == '*' ||
                   prior == '/' || prior == '%' || prior == '=' || prior == '<' ||
-                  prior == '>' || prior == '!' || prior == '|';
+                  prior == '>' || prior == '!' || prior == '|' || prior == '&' ||
+                  prior == '^' || prior == '~';
             }())
           continue;
         if (i + op.size() <= expression.size())
@@ -4215,6 +4259,16 @@ class Checker {
     }
     if (auto comparison = split_binary(e, {"==", "!=", "<=", ">=", "<", ">"}))
       return string("bool");
+    for (const auto& ops : vector<vector<string>>{{"|"}, {"^"}, {"&"}, {"<<", ">>"}}) {
+      if (auto binary = split_binary(e, ops)) {
+        auto left = inferred_expr_type(binary->first, env);
+        auto right = inferred_expr_type(binary->second, env);
+        return left && right &&
+                canonical_type_name(*left) == "int" &&
+                canonical_type_name(*right) == "int"
+            ? std::optional<string>("int") : std::nullopt;
+      }
+    }
     if (auto arithmetic = split_binary(e, {"+", "-", "*", "/", "%"})) {
       auto left = inferred_expr_type(arithmetic->first, env);
       auto right = inferred_expr_type(arithmetic->second, env);
@@ -4229,6 +4283,11 @@ class Checker {
             (*right == "int" || *right == "float"))
           return (*left == "float" || *right == "float") ? "float" : "int";
       }
+    }
+    if (!e.empty() && e.front() == '~') {
+      auto operand = inferred_expr_type(trim(e.substr(1)), env);
+      return operand && canonical_type_name(*operand) == "int"
+          ? std::optional<string>("int") : std::nullopt;
     }
     string index_base, index_expr;
     if (parse_index(e, index_base, index_expr)) {
@@ -6032,6 +6091,7 @@ class Checker {
     std::map<string,StorageLocation> aliases;
     StateLeafEffects effects;
     bool ignore_recovery = false;
+    bool allow_unresolved_methods = false;
     bool recording = true;
   };
   mutable LeafEffectCapture* leaf_effect_capture_ = nullptr;
@@ -7689,27 +7749,90 @@ class Checker {
     return "READ";
   }
 
+  vector<std::pair<StorageLocation, Effect>> expression_storage_accesses(
+      const string& expression, const OwnershipEnv& env) const {
+    LeafEffectCapture capture;
+    // This is a supplemental ownership-overlap query run before every generic
+    // function has necessarily acquired a concrete specialization. Unknown
+    // receiver methods cannot name a checked concrete storage root here; walk
+    // their receiver/arguments conservatively instead of enforcing the stricter
+    // synchronization-summary invariant used by the normal effect pipeline.
+    capture.allow_unresolved_methods = true;
+    for (const auto& binding : env.types)
+      if (!binding.second.empty() &&
+          !contains_internal_placeholder(binding.second))
+        capture.roots[binding.first] = binding.second;
+    vector<Effect> unused_effects;
+    Effect unused_receiver = Effect::Read;
+    {
+      LeafCaptureScope scope(leaf_effect_capture_, &capture);
+      analyze_effect_expression(expression, env.types, {}, unused_effects,
+                                unused_receiver, {}, Effect::Read);
+    }
+    vector<std::pair<StorageLocation, Effect>> result;
+    auto append = [&](const StateLeafSet& leaves, Effect effect) {
+      for (const auto& leaf : leaves) {
+        size_t dot = leaf.find('.');
+        StorageLocation location{
+            dot == string::npos ? leaf : leaf.substr(0, dot), {}};
+        while (dot != string::npos) {
+          size_t next = leaf.find('.', dot + 1);
+          location.path.push_back(leaf.substr(
+              dot + 1, next == string::npos ? string::npos : next - dot - 1));
+          dot = next;
+        }
+        result.emplace_back(std::move(location), effect);
+      }
+    };
+    append(capture.effects.reads, Effect::Read);
+    append(capture.effects.writes, Effect::Write);
+    append(capture.effects.consumes, Effect::Consume);
+    return result;
+  }
+
   void check_conflicting_call_accesses(
       int line, const string& call_name, const vector<string>& expressions,
-      const vector<Effect>& effects, const OwnershipEnv& env) const {
+      const vector<Effect>& effects, const OwnershipEnv& env,
+      bool include_nested_accesses = false) const {
     struct Access {
       StorageLocation location;
       Effect effect;
       string expression;
       size_t argument_index = 0;
+      bool nested = false;
     };
     vector<Access> accesses;
     for (size_t index = 0; index < expressions.size(); ++index) {
       auto location = storage_location(expressions[index], env.types);
-      if (!location) continue;
-      auto type = inferred_expr_type(expressions[index], env.types);
-      if (!type || !transfer_type(*type)) continue;
-      accesses.push_back(Access{*location,
-          index < effects.size() ? effects[index] : Effect::Read,
-          expressions[index], index});
+      if (location) {
+        auto type = inferred_expr_type(expressions[index], env.types);
+        if (type && transfer_type(*type))
+          accesses.push_back(Access{*location,
+              index < effects.size() ? effects[index] : Effect::Read,
+              expressions[index], index, false});
+        continue;
+      }
+      if (!include_nested_accesses) continue;
+      for (const auto& nested : expression_storage_accesses(expressions[index], env))
+        accesses.push_back(Access{nested.first, nested.second,
+                                  expressions[index], index, true});
     }
     for (size_t left = 0; left < accesses.size(); ++left) {
       for (size_t right = left + 1; right < accesses.size(); ++right) {
+        // Nested accesses happen while constructing owned argument values and
+        // finish before the outer call begins. Two nested computations are
+        // sequential, and a nested access in an earlier argument finishes
+        // before a later direct outer borrow begins. A direct borrow from an
+        // earlier argument, however, remains live while later arguments are
+        // evaluated and must conflict with their nested accesses.
+        if (accesses[left].nested && accesses[right].nested) continue;
+        if (accesses[left].nested != accesses[right].nested) {
+          const Access& nested = accesses[left].nested
+                                     ? accesses[left] : accesses[right];
+          const Access& direct = accesses[left].nested
+                                     ? accesses[right] : accesses[left];
+          if (nested.argument_index < direct.argument_index) continue;
+        }
         if (!storage_locations_overlap(accesses[left].location,
                                        accesses[right].location))
           continue;
@@ -7913,6 +8036,7 @@ class Checker {
       }
       for (const auto& operators :
            vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+                                  {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                   {"+", "-", "*", "/", "%"}}) {
         if (auto binary = split_binary(value, operators)) {
           analyze_effect_expression(binary->first, env, params, parameter_effects,
@@ -7924,6 +8048,11 @@ class Checker {
       }
       if (starts_with(value, "not ")) {
         analyze_effect_expression(value.substr(4), env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Read);
+        return;
+      }
+      if (!value.empty() && value.front() == '~') {
+        analyze_effect_expression(trim(value.substr(1)), env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
         return;
       }
@@ -8100,7 +8229,8 @@ class Checker {
                                     receiver_effect, receiver_fields, Effect::Read);
         return;
       }
-      synchronization_require(!leaf_effect_capture_,
+      synchronization_require(!leaf_effect_capture_ ||
+                                  leaf_effect_capture_->allow_unresolved_methods,
                               "unresolved concrete method effect target");
       // An unresolved call with no bounded concrete candidate is diagnosed by
       // ordinary static dispatch checking; keep the effect walk conservative.
@@ -8202,6 +8332,7 @@ class Checker {
 
     for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
                                                          {"==", "!=", "<=", ">=", "<", ">"},
+                                                         {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                          {"+", "-", "*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
         analyze_effect_expression(binary->first, env, params, parameter_effects,
@@ -8210,6 +8341,11 @@ class Checker {
                                   receiver_effect, receiver_fields, Effect::Read);
         return;
       }
+    }
+    if (!value.empty() && value.front() == '~') {
+      analyze_effect_expression(trim(value.substr(1)), env, params, parameter_effects,
+                                receiver_effect, receiver_fields, Effect::Read);
+      return;
     }
 
     string base, index;
@@ -8233,6 +8369,7 @@ class Checker {
 
     for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
                                                          {"==", "!=", "<=", ">=", "<", ">"},
+                                                         {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                          {"+", "-", "*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
         analyze_effect_expression(binary->first, env, params, parameter_effects,
@@ -8637,11 +8774,17 @@ class Checker {
                                implicit_owner, calls);
       return;
     }
+    if (!value.empty() && value.front() == '~') {
+      collect_local_call_sites(line, trim(value.substr(1)), env,
+                               implicit_owner, calls);
+      return;
+    }
     // Split at the outer operator before looking for a trailing call.  For
     // example, `0 - lib.lookup(xs)` ends in `lookup(...)`; treating the whole
     // expression as one member call loses the imported lookup specialization.
     for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
                                                          {"==", "!=", "<=", ">=", "<", ">"},
+                                                         {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                          {"+", "-", "*", "/", "%"}})
       if (auto binary = split_binary(value, operators)) {
         collect_local_call_sites(line, binary->first, env, implicit_owner, calls);
@@ -9997,9 +10140,15 @@ class Checker {
     }
 
     string value = normalize_pipeline(original);
+    if (!value.empty() && value.front() == '~') {
+      return observable_expression_effects(
+          trim(value.substr(1)), env, domain_fields, implicit_object, parameters,
+          proven_indices, root_ingress);
+    }
     for (const auto& operators :
          vector<vector<string>>{{" or "}, {" xor "}, {" and "},
                                 {"==", "!=", "<=", ">=", "<", ">"},
+                                {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                 {"+", "-"}, {"*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
         effects.merge(observable_expression_effects(
@@ -11581,8 +11730,13 @@ class Checker {
             "INVALID_TYPED_VECTOR_CONSTRUCTOR");
       return;
     }
+    if (!value.empty() && value.front() == '~') {
+      check_ownership_expression(line, trim(value.substr(1)), env, Effect::Read);
+      return;
+    }
     for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
                                                          {"==", "!=", "<=", ">=", "<", ">"},
+                                                         {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                          {"+", "-", "*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
         check_ownership_expression(line, binary->first, env, Effect::Read);
@@ -11679,6 +11833,15 @@ class Checker {
         const auto* builtin = builtin_operation(concrete, method);
         if (builtin && concrete == "string" &&
             builtin->argument_effects.size() == arguments.size()) {
+          vector<string> access_expressions{receiver};
+          vector<Effect> access_effects{builtin->receiver_effect};
+          for (size_t index = 0; index < arguments.size(); ++index) {
+            access_expressions.push_back(arguments[index]);
+            access_effects.push_back(builtin->argument_effects.at(index));
+          }
+          check_conflicting_call_accesses(line, method, access_expressions,
+                                          access_effects, env,
+                                          builtin->receiver_effect != Effect::Read);
           check_ownership_expression(line, receiver, env, builtin->receiver_effect);
           for (size_t index = 0; index < arguments.size(); ++index)
             check_ownership_expression(line, arguments[index], env,
@@ -11819,7 +11982,8 @@ class Checker {
           effects.push_back(concrete_function_parameter_effect(
               *function->second, index,
               concrete_argument_types(call_arguments, env.types)));
-        check_conflicting_call_accesses(line, callee, call_arguments, effects, env);
+        check_conflicting_call_accesses(line, callee, call_arguments, effects,
+                                        env, true);
       } else if (current_object_) {
         vector<string> argument_types;
         for (const auto& argument : call_arguments)
@@ -13349,7 +13513,7 @@ class Checker {
       return;
     }
     for (const auto& op :
-         vector<string>{"&&", "||", "<<", ">>", "&", "|", "^"}) {
+         vector<string>{"&&", "||"}) {
       if (split_binary(value, {op}))
         err(line, "binary '" + op + "' expression is not supported",
             "UNSUPPORTED_EXPRESSION_OPERATOR");
@@ -13395,8 +13559,59 @@ class Checker {
         return;
       }
     }
-    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
-                                                         {"+", "-", "*", "/", "%"}}) {
+    if (auto binary = split_binary(value, {"==", "!=", "<=", ">=", "<", ">"})) {
+      check_expression(line, binary->first, env);
+      check_expression(line, binary->second, env);
+      auto left_type = inferred_expr_type(binary->first, env);
+      auto right_type = inferred_expr_type(binary->second, env);
+      if ((left_type && contains_enum_type(*left_type)) ||
+          (right_type && contains_enum_type(*right_type)))
+        err(line, "enum equality and ordering are not supported; use an exhaustive match",
+            "ENUM_OPERATOR_UNSUPPORTED");
+      if (binary->first.empty() || binary->second.empty())
+        err(line, "invalid comparison expression");
+      if ((left_type && unresolved_semantic_type(*left_type)) ||
+          (right_type && unresolved_semantic_type(*right_type))) return;
+      if (left_type && right_type) {
+        string lt = canonical_type_name(*left_type);
+        string rt = canonical_type_name(*right_type);
+        if ((lt == "Range" || rt == "Range") && lt != rt) {
+          err(line, "Range equality requires two Range operands",
+              "TYPE_MISMATCH");
+        }
+      }
+      return;
+    }
+    for (const auto& op : vector<string>{"|", "^", "&"}) {
+      if (auto binary = split_binary(value, {op})) {
+        check_expression(line, binary->first, env);
+        check_expression(line, binary->second, env);
+        auto left_type = inferred_expr_type(binary->first, env);
+        auto right_type = inferred_expr_type(binary->second, env);
+        if ((left_type && unresolved_semantic_type(*left_type)) ||
+            (right_type && unresolved_semantic_type(*right_type))) return;
+        if (!left_type || !right_type ||
+            canonical_type_name(*left_type) != "int" ||
+            canonical_type_name(*right_type) != "int")
+          err(line, "bitwise operator '" + op + "' requires Int operands", "TYPE_MISMATCH");
+        return;
+      }
+    }
+    if (auto binary = split_binary(value, {"<<", ">>"})) {
+      string op = split_binary(value, {"<<"}) ? "<<" : ">>";
+      check_expression(line, binary->first, env);
+      check_expression(line, binary->second, env);
+      auto left_type = inferred_expr_type(binary->first, env);
+      auto right_type = inferred_expr_type(binary->second, env);
+      if ((left_type && unresolved_semantic_type(*left_type)) ||
+          (right_type && unresolved_semantic_type(*right_type))) return;
+      if (!left_type || !right_type ||
+          canonical_type_name(*left_type) != "int" ||
+          canonical_type_name(*right_type) != "int")
+        err(line, "shift operator '" + op + "' requires Int operands", "TYPE_MISMATCH");
+      return;
+    }
+    for (const auto& operators : vector<vector<string>>{{"+", "-", "*", "/", "%"}}) {
         if (auto binary = split_binary(value, operators)) {
           check_expression(line, binary->first, env);
           check_expression(line, binary->second, env);
@@ -13412,17 +13627,8 @@ class Checker {
           // decided when this expression is checked in a concrete TypeEnv.
           if ((left_type && unresolved_semantic_type(*left_type)) ||
               (right_type && unresolved_semantic_type(*right_type))) return;
-          if (split_binary(value, {"==", "!=", "<=", ">=", "<", ">"})) {
-            if (left_type && right_type) {
-              string lt = canonical_type_name(*left_type);
-              string rt = canonical_type_name(*right_type);
-              if ((lt == "Range" || rt == "Range") && lt != rt) {
-                err(line, "Range equality requires two Range operands",
-                    "TYPE_MISMATCH");
-              }
-            }
-          } else if ((left_type && canonical_type_name(*left_type) == "Range") ||
-                     (right_type && canonical_type_name(*right_type) == "Range")) {
+          if ((left_type && canonical_type_name(*left_type) == "Range") ||
+              (right_type && canonical_type_name(*right_type) == "Range")) {
             err(line, "Range arithmetic is unsupported", "TYPE_MISMATCH");
           }
           if (split_binary(value, {"%"})) {
@@ -13435,6 +13641,15 @@ class Checker {
           }
           return;
         }
+    }
+    if (!value.empty() && value.front() == '~') {
+      string operand = trim(value.substr(1));
+      check_expression(line, operand, env);
+      auto operand_type = inferred_expr_type(operand, env);
+      if (operand_type && unresolved_semantic_type(*operand_type)) return;
+      if (!operand_type || canonical_type_name(*operand_type) != "int")
+        err(line, "bitwise operator '~' requires an Int operand", "TYPE_MISMATCH");
+      return;
     }
     {
       string callee;
@@ -15608,8 +15823,15 @@ class Generator {
       // symbol; no dependency implementation is copied here.
       o << "use " << crate << "::*;\n";
     }
-    if (!rust_dependencies_.empty()) o << "\n";
     o << "fn __moss_require_send<T: Send>() {}\n\n";
+    o << "#[inline(always)]\n"
+         "fn __moss_shl(value: i64, shift: i64) -> i64 {\n"
+         "    if shift < 0 || shift >= 64 { 0 } else { value.wrapping_shl(shift as u32) }\n"
+         "}\n\n"
+         "#[inline(always)]\n"
+         "fn __moss_shr(value: i64, shift: i64) -> i64 {\n"
+         "    if shift < 0 || shift >= 64 { if value < 0 { -1 } else { 0 } } else { value.wrapping_shr(shift as u32) }\n"
+         "}\n\n";
 
     o << handler_runtime_rust();
     o << float_format_runtime_rust();
@@ -16493,6 +16715,34 @@ class Generator {
         if (index + op.size() > expression.size() ||
             expression.compare(index, op.size(), op) != 0)
           continue;
+        if (op == "|") {
+          if (index + 1 < expression.size() && (expression[index + 1] == '>' || expression[index + 1] == '|' || expression[index + 1] == '='))
+            continue;
+          if (index > 0 && expression[index - 1] == '|')
+            continue;
+        }
+        if (op == "&") {
+          if (index + 1 < expression.size() && (expression[index + 1] == '&' || expression[index + 1] == '='))
+            continue;
+          if (index > 0 && expression[index - 1] == '&')
+            continue;
+        }
+        if (op == "^") {
+          if (index + 1 < expression.size() && expression[index + 1] == '=')
+            continue;
+        }
+        if (op == "<") {
+          if (index + 1 < expression.size() && (expression[index + 1] == '<' || expression[index + 1] == '='))
+            continue;
+          if (index > 0 && expression[index - 1] == '<')
+            continue;
+        }
+        if (op == ">") {
+          if (index + 1 < expression.size() && (expression[index + 1] == '>' || expression[index + 1] == '='))
+            continue;
+          if (index > 0 && (expression[index - 1] == '>' || expression[index - 1] == '|'))
+            continue;
+        }
         string left = trim(expression.substr(0, index));
         string right = trim(expression.substr(index + op.size()));
         if (left.empty() || right.empty()) continue;
@@ -16511,7 +16761,8 @@ class Generator {
           if (previous == '(' || previous == '[' || previous == '{' ||
               previous == ',' || previous == '+' || previous == '-' ||
               previous == '*' || previous == '/' || previous == '%' || previous == '<' ||
-              previous == '>' || previous == '=' || previous == '!')
+              previous == '>' || previous == '=' || previous == '!' ||
+              previous == '|' || previous == '&' || previous == '^' || previous == '~')
             continue;
         }
         return GeneratedBinaryExpression{left, op, right};
@@ -16840,6 +17091,16 @@ class Generator {
         generated_split_binary(value, {" and "}) ||
         generated_split_binary(value, {"==", "!=", "<=", ">=", "<", ">"}))
       return string("bool");
+    for (const auto& ops : vector<vector<string>>{{"|"}, {"^"}, {"&"}, {"<<", ">>"}}) {
+      if (auto binary = generated_split_binary(value, ops)) {
+        auto left = generated_expr_type(binary->left, types);
+        auto right = generated_expr_type(binary->right, types);
+        if (left && right &&
+            canonical_type_name(*left) == "int" &&
+            canonical_type_name(*right) == "int")
+          return string("int");
+      }
+    }
     for (const auto& operators : vector<vector<string>>{{"+", "-"}, {"*", "/", "%"}}) {
       auto binary = generated_split_binary(value, operators);
       if (!binary) continue;
@@ -16858,6 +17119,11 @@ class Generator {
       if (operand && (canonical_type_name(*operand) == "int" ||
                       canonical_type_name(*operand) == "float"))
         return operand;
+    }
+    if (!value.empty() && value.front() == '~') {
+      auto operand = generated_expr_type(trim(value.substr(1)), types);
+      if (operand && canonical_type_name(*operand) == "int")
+        return string("int");
     }
     return std::nullopt;
   }
@@ -18089,6 +18355,35 @@ class Generator {
       }
       return "(" + left + ") " + comparison->op + " (" + right + ")";
     }
+    if (auto binary = generated_split_binary(e, {"|"})) {
+      string left = expr(binary->left, d, locals, types);
+      string right = expr(binary->right, d, locals, types);
+      left = value_from_borrowed_message_parameter(binary->left, left, types);
+      right = value_from_borrowed_message_parameter(binary->right, right, types);
+      return "(" + left + ") | (" + right + ")";
+    }
+    if (auto binary = generated_split_binary(e, {"^"})) {
+      string left = expr(binary->left, d, locals, types);
+      string right = expr(binary->right, d, locals, types);
+      left = value_from_borrowed_message_parameter(binary->left, left, types);
+      right = value_from_borrowed_message_parameter(binary->right, right, types);
+      return "(" + left + ") ^ (" + right + ")";
+    }
+    if (auto binary = generated_split_binary(e, {"&"})) {
+      string left = expr(binary->left, d, locals, types);
+      string right = expr(binary->right, d, locals, types);
+      left = value_from_borrowed_message_parameter(binary->left, left, types);
+      right = value_from_borrowed_message_parameter(binary->right, right, types);
+      return "(" + left + ") & (" + right + ")";
+    }
+    if (auto binary = generated_split_binary(e, {"<<", ">>"})) {
+      string left = expr(binary->left, d, locals, types);
+      string right = expr(binary->right, d, locals, types);
+      left = value_from_borrowed_message_parameter(binary->left, left, types);
+      right = value_from_borrowed_message_parameter(binary->right, right, types);
+      string fn_name = binary->op == "<<" ? "__moss_shl" : "__moss_shr";
+      return fn_name + "(" + left + ", " + right + ")";
+    }
     for (const auto& operators : vector<vector<string>>{{"+", "-"}, {"*", "/", "%"}}) {
       auto binary = generated_split_binary(e, operators);
       if (!binary) continue;
@@ -18102,8 +18397,56 @@ class Generator {
           left_type && right_type &&
           canonical_type_name(*left_type) == "string" &&
           canonical_type_name(*right_type) == "string";
-      if (string_concatenation)
-        return "format!(\"{}{}\", " + left + ", " + right + ")";
+      if (string_concatenation && trim(binary->right) == "\"\"")
+        return "(" + left + ").clone()";
+      if (string_concatenation && trim(binary->left) == "\"\"")
+        return "(" + right + ").clone()";
+      if (string_concatenation) {
+        vector<string> operands;
+        std::function<void(string)> collect = [&](string source) {
+          source = strip_redundant_outer_parentheses(std::move(source));
+          auto nested = generated_split_binary(source, {"+"});
+          auto nested_left = nested
+              ? generated_expr_type(nested->left, types) : std::nullopt;
+          auto nested_right = nested
+              ? generated_expr_type(nested->right, types) : std::nullopt;
+          if (nested && nested_left && nested_right &&
+              canonical_type_name(*nested_left) == "string" &&
+              canonical_type_name(*nested_right) == "string") {
+            collect(nested->left);
+            collect(nested->right);
+          } else {
+            operands.push_back(std::move(source));
+          }
+        };
+        collect(e);
+        std::ostringstream joined;
+        joined << "{ ";
+        for (size_t index = 0; index < operands.size(); ++index) {
+          const string operand = trim(operands[index]);
+          const bool literal = operand.size() >= 2 &&
+              operand.front() == '"' && operand.back() == '"';
+          joined << "let __moss_concat_" << index << " = ";
+          if (literal) joined << operand << "; ";
+          else
+            joined << "&(" << expr(operands[index], d, locals, types)
+                   << "); ";
+        }
+        joined << "let mut __moss_concat_result = String::with_capacity(";
+        for (size_t index = 0; index < operands.size(); ++index) {
+          if (index) joined << ".saturating_add(";
+          joined << "__moss_concat_" << index << ".len()";
+        }
+        for (size_t index = 1; index < operands.size(); ++index) joined << ")";
+        joined << "); ";
+        for (size_t index = 0; index < operands.size(); ++index)
+          joined << "__moss_concat_result.push_str(__moss_concat_" << index
+                 << (trim(operands[index]).size() >= 2 &&
+                     trim(operands[index]).front() == '"' &&
+                     trim(operands[index]).back() == '"' ? "); " : ".as_str()); ");
+        joined << "__moss_concat_result }";
+        return joined.str();
+      }
       bool integer_operation = left_type && right_type &&
           canonical_type_name(*left_type) == "int" &&
           canonical_type_name(*right_type) == "int";
@@ -18129,6 +18472,11 @@ class Generator {
           left = "((" + left + ") as f64)";
       }
       return "(" + left + ") " + binary->op + " (" + right + ")";
+    }
+    if (!e.empty() && e.front() == '~') {
+      string operand = expr(trim(e.substr(1)), d, locals, types);
+      operand = value_from_borrowed_message_parameter(trim(e.substr(1)), operand, types);
+      return "!(" + operand + ")";
     }
     // Only classify a quoted source form as a single literal after top-level
     // operators have had a chance to split it. Expressions such as
@@ -18397,6 +18745,53 @@ class Generator {
             return "{ let __moss_index = " + expr(member_arguments[0], d, locals, types) +
                 "; if __moss_index < 0 { std::process::abort(); } " + source +
                 ".chars().nth(__moss_index as usize).unwrap_or_else(|| std::process::abort()).to_string() }";
+          if (member_name == "find" && member_arguments.size() == 1)
+            return "{ let __moss_source = &" + source + "; let __moss_pattern = " +
+                expr(member_arguments[0], d, locals, types) +
+                "; match __moss_source.find(__moss_pattern.as_str()) { "
+                "Some(__moss_byte) => __moss_source[..__moss_byte].chars().count() as i64, "
+                "None => -1_i64 } }";
+          if (member_name == "slice" && member_arguments.size() == 2)
+            return "{ let __moss_source = &" + source +
+                "; let __moss_start = " + expr(member_arguments[0], d, locals, types) +
+                "; let __moss_length = " + expr(member_arguments[1], d, locals, types) +
+                "; if __moss_start < 0 || __moss_length < 0 { String::new() } else if let Some(__moss_end) = __moss_start.checked_add(__moss_length) { "
+                "if __moss_source.is_ascii() { "
+                "if __moss_end <= __moss_source.len() as i64 { __moss_source[__moss_start as usize..__moss_end as usize].to_string() } else { String::new() } "
+                "} else { "
+                "let mut __moss_start_byte = None; let mut __moss_end_byte = None; let mut __moss_index = 0_i64; "
+                "for (__moss_byte, _) in __moss_source.char_indices() { "
+                "if __moss_index == __moss_start { __moss_start_byte = Some(__moss_byte); } "
+                "if __moss_index == __moss_end { __moss_end_byte = Some(__moss_byte); break; } "
+                "__moss_index += 1; } "
+                "if __moss_index == __moss_start && __moss_start_byte.is_none() { __moss_start_byte = Some(__moss_source.len()); } "
+                "if __moss_index == __moss_end && __moss_end_byte.is_none() { __moss_end_byte = Some(__moss_source.len()); } "
+                "match (__moss_start_byte, __moss_end_byte) { (Some(__moss_from), Some(__moss_to)) => __moss_source[__moss_from..__moss_to].to_string(), _ => String::new() } "
+                "} } else { String::new() } }";
+          if (member_name == "ascii_lower" && member_arguments.empty())
+            return source + ".to_ascii_lowercase()";
+          if (member_name == "ascii_upper" && member_arguments.empty())
+            return source + ".to_ascii_uppercase()";
+          if (member_name == "reserve" && member_arguments.size() == 1)
+            return "{ let __moss_string = &mut (" +
+                write_call_place(member_receiver, d, locals, types) +
+                "); let __moss_additional = " +
+                expr(member_arguments[0], d, locals, types) +
+                "; if __moss_additional > 0 { __moss_string.reserve(__moss_additional as usize); } }";
+          if (member_name == "append" && member_arguments.size() == 1)
+            return "{ let __moss_string = &mut (" +
+                write_call_place(member_receiver, d, locals, types) +
+                "); let __moss_part = " + [&]() {
+                  const string part = trim(member_arguments[0]);
+                  return part.size() >= 2 && part.front() == '"' &&
+                      part.back() == '"' ? part : "&(" +
+                      expr(member_arguments[0], d, locals, types) + ")";
+                }() + "; __moss_string.push_str(" + [&]() {
+                  const string part = trim(member_arguments[0]);
+                  return string("__moss_part") +
+                      (part.size() >= 2 && part.front() == '"' &&
+                       part.back() == '"' ? "" : ".as_str()");
+                }() + "); }";
           if (member_name == "split" && member_arguments.size() == 1)
             return "{ let __moss_separator = " + expr(member_arguments[0], d, locals, types) +
                 "; if __moss_separator.is_empty() { std::process::abort(); } " + source +
@@ -19673,8 +20068,13 @@ class Generator {
                 false, false,
                 "bench:" + benchmark.name);
       benchmark_body_ = previous_benchmark_body;
+      std::set<string> consumed_locals;
+      for (const auto& statement : benchmark.body)
+        consumed_locals.insert(statement.ownership_consumed_bindings.begin(),
+                               statement.ownership_consumed_bindings.end());
       for (const auto& local : locals)
-        o << "    std::hint::black_box(&" << local << ");\n";
+        if (!consumed_locals.count(local))
+          o << "    std::hint::black_box(&" << local << ");\n";
       o << "}\n";
       tooling_end(o, 0, benchmark.semantic_identity);
       o << "\n";
@@ -20656,11 +21056,76 @@ class Generator {
             else if (is_object_view(s.a, d, locals, &types))
               o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
             else {
-              string assigned = expr(s.b, d, locals, &types,
-                  statement_functional_pipeline_id(s, functional_context, 0));
+              string assigned;
+              vector<string> concat_operands;
+              std::function<void(string)> collect_concat = [&](string source) {
+                source = strip_redundant_outer_parentheses(std::move(source));
+                auto binary = generated_split_binary(source, {"+"});
+                auto left_type = binary
+                    ? generated_expr_type(binary->left, &types) : std::nullopt;
+                auto right_type = binary
+                    ? generated_expr_type(binary->right, &types) : std::nullopt;
+                if (binary && left_type && right_type &&
+                    canonical_type_name(*left_type) == "string" &&
+                    canonical_type_name(*right_type) == "string") {
+                  collect_concat(binary->left);
+                  collect_concat(binary->right);
+                } else {
+                  concat_operands.push_back(std::move(source));
+                }
+              };
+              collect_concat(s.b);
+              bool reuse_string_buffer = plain_identifier(s.a) &&
+                  locals.count(s.a) && concat_operands.size() > 1 &&
+                  trim(concat_operands.front()) == trim(s.a) &&
+                  canonical_type_name(types.count(s.a) ? types.at(s.a) : "") ==
+                      "string";
+              for (size_t operand = 1;
+                   reuse_string_buffer && operand < concat_operands.size();
+                   ++operand)
+                if (expression_mentions_identifier(concat_operands[operand], s.a))
+                  reuse_string_buffer = false;
+              if (reuse_string_buffer) {
+                std::ostringstream reused;
+                reused << "{ ";
+                for (size_t operand = 1; operand < concat_operands.size(); ++operand) {
+                  const string part = trim(concat_operands[operand]);
+                  const bool literal = part.size() >= 2 &&
+                      part.front() == '"' && part.back() == '"';
+                  reused << "let __moss_append_" << operand << " = ";
+                  if (literal) reused << part << "; ";
+                  else
+                    reused << "&(" << expr(concat_operands[operand], d, locals, &types)
+                           << "); ";
+                }
+                string place = write_call_place(s.a, d, locals, &types);
+                reused << "(" << place << ").reserve(";
+                for (size_t operand = 1; operand < concat_operands.size(); ++operand) {
+                  if (operand > 1) reused << ".saturating_add(";
+                  reused << "__moss_append_" << operand << ".len()";
+                }
+                for (size_t operand = 2; operand < concat_operands.size(); ++operand)
+                  reused << ")";
+                reused << "); ";
+                for (size_t operand = 1; operand < concat_operands.size(); ++operand)
+                  reused << "(" << place << ").push_str(__moss_append_"
+                         << operand
+                         << (trim(concat_operands[operand]).size() >= 2 &&
+                             trim(concat_operands[operand]).front() == '"' &&
+                             trim(concat_operands[operand]).back() == '"'
+                                 ? "); " : ".as_str()); ");
+                reused << "}";
+                assigned = reused.str();
+              } else {
+                assigned = expr(s.b, d, locals, &types,
+                    statement_functional_pipeline_id(s, functional_context, 0));
+              }
               if (map_assignment && borrowed_function_parameters_.count(trim(s.b)))
                 assigned = "(" + assigned + ").clone()";
-              o << indent(level) << lhs << " = " << assigned << ";\n";
+              if (reuse_string_buffer)
+                o << indent(level) << assigned << ";\n";
+              else
+                o << indent(level) << lhs << " = " << assigned << ";\n";
             }
             if (plain_identifier(s.a)) forget_domain_instance_binding(s.a);
           }
@@ -23464,7 +23929,7 @@ static void write_bootstrap_json(std::ostream& out,
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"pass\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"],\"exhaustive_enum_match\":\"match expression: / match consume <owned enum expression>:\"},"
          "\"enums\":{\"declaration\":\"enum Name: with closed named-field cases\",\"construction\":\"Name.Case(field: value)\",\"read_match\":\"match expression:\",\"consume_match\":\"match consume <owned enum expression>:\",\"pattern_ownership_modifiers\":false,\"replace\":\"replace(place, replacement)\"},"
-         "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"}},"
+         "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"bitwise\":[\"&\",\"|\",\"^\",\"~\",\"<<\",\">>\"],\"bitwise_precedence_high_to_low\":[\"~\",\"<<, >>\",\"&\",\"^\",\"|\"],\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"find(pattern)\",\"slice(start, length)\",\"ascii_lower()\",\"ascii_upper()\",\"reserve(additional_bytes)\",\"append(part)\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"}},"
          "\"numeric\":{\"float_predicates\":[\"is_nan(Float) -> Bool\",\"is_finite(Float) -> Bool\"],"
          "\"parsing\":[\"parse_int(String) -> Int raises ParseError.Invalid|Overflow\","
          "\"parse_float(String) -> Float raises ParseError.Invalid\"],"
@@ -26379,6 +26844,14 @@ static string rewrite_module_type(string type, const string& module,
       while (member_end < type.size() &&
              (std::isalnum(static_cast<unsigned char>(type[member_end])) || type[member_end] == '_')) ++member_end;
       string name = type.substr(member, member_end - member);
+      if (token == module) {
+        auto local_types = module_type_names(modules.at(module));
+        if (local_types.count(name)) {
+          result += module_symbol(module, name);
+          i = member_end;
+          continue;
+        }
+      }
       auto imported = public_exports.find(token);
       if (imported != public_exports.end() && imported->second.count(name)) {
         result += module_symbol(token, name);
@@ -26492,9 +26965,7 @@ static string rewrite_module_expression(
     if (!member && !(sibling_methods && sibling_methods->count(token)) &&
         !(locals && locals->count(token)) &&
         token.find("__") == string::npos &&
-        (functions.count(token) ||
-         (types.count(token) && after < expression.size() &&
-          (expression[after] == '(' || expression[after] == '.'))))
+        (functions.count(token) || types.count(token)))
       result += module_symbol(module, token);
     else
       result += token;
@@ -31268,17 +31739,17 @@ static void parse_test_failure_detail(ProjectTestResult& result) {
 
 static vector<ProjectTestResult> run_project_tests(
     const ProjectManifest& manifest, const string& filter,
-    const AffectedTestPlan* affected = nullptr) {
+    const AffectedTestPlan* affected = nullptr, bool release = false) {
   vector<ProjectTestResult> results;
   auto sources = project_declaration_sources(manifest, "tests");
-  std::filesystem::path directory = manifest.root / "build" / "test";
+  std::filesystem::path directory = manifest.root / "build" / (release ? "test_release" : "test");
   std::set<string> selected_ids;
   if (affected)
     for (const auto& entry : affected->selected_by_source)
       selected_ids.insert(entry.second.begin(), entry.second.end());
   if (affected && selected_ids.empty()) return results;
   NativeArtifact artifact = compile_native_artifact(
-      manifest, sources, directory, false, true, ProgramGenerationMode::Tests,
+      manifest, sources, directory, release, !release, ProgramGenerationMode::Tests,
       tooling_name(manifest.name) + "_tests", filter,
       affected ? &selected_ids : nullptr);
   if (artifact.tests.empty()) {
@@ -31347,11 +31818,12 @@ static vector<ProjectTestResult> run_project_tests(
 
 static int report_project_tests(const ProjectManifest& manifest,
                                 const string& filter, bool json,
-                                bool affected_only = false) {
+                                bool affected_only = false,
+                                bool release = false) {
   std::optional<AffectedTestPlan> affected;
   if (affected_only) affected = select_affected_tests(manifest, filter);
   vector<ProjectTestResult> results = run_project_tests(
-      manifest, filter, affected ? &*affected : nullptr);
+      manifest, filter, affected ? &*affected : nullptr, release);
   size_t passed = static_cast<size_t>(std::count_if(
       results.begin(), results.end(),
       [](const ProjectTestResult& result) { return result.passed; }));
@@ -32986,6 +33458,7 @@ static int run_project_command(int argc, char** argv) {
     if (command == "test") {
       string filter;
       bool affected = false;
+      bool release = false;
       for (int index = 2; index < argc; ++index) {
         string argument = argv[index];
         if (argument == "--json") continue;
@@ -32993,12 +33466,16 @@ static int run_project_command(int argc, char** argv) {
           affected = true;
           continue;
         }
+        if (argument == "--release") {
+          release = true;
+          continue;
+        }
         if (!filter.empty())
           throw ProjectError("TEST_DISCOVERY_ERROR",
                              "moss test accepts at most one filter");
         filter = argument;
       }
-      return report_project_tests(manifest, filter, json, affected);
+      return report_project_tests(manifest, filter, json, affected, release);
     }
     if (command == "bench") {
       string filter;

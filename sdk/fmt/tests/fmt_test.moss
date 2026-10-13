@@ -1,0 +1,46 @@
+import fmt
+
+test "formatter builder indentation and lines":
+  f = fmt.new_formatter("  ")
+  buf = fmt.new_buffer()
+  fmt.write_line(buf, f, "{")
+  fmt.indent(f)
+  fmt.write_indent(buf, f)
+  fmt.write(buf, "\"name\": ")
+  fmt.write(buf, "\"moss\"")
+  fmt.write_newline(buf)
+  fmt.dedent(f)
+  fmt.write_line(buf, f, "}")
+  output = fmt.finish(buf)
+  expected = "{\n  \"name\": \"moss\"\n}\n"
+  assertEqual(output, expected)
+
+test "string padding and repeat":
+  assertEqual(fmt.repeat_string("ab", 3), "ababab")
+  assertEqual(fmt.repeat_string("x", 0), "")
+  assertEqual(fmt.pad_left("42", 5, "0"), "00042")
+  assertEqual(fmt.pad_right("hi", 4, " "), "hi  ")
+  assertEqual(fmt.pad_left("longer", 4, " "), "longer")
+
+test "hex formatting u16":
+  assertEqual(fmt.format_hex_u16(0), "0000")
+  assertEqual(fmt.format_hex_u16(65), "0041")
+  assertEqual(fmt.format_hex_u16(8364), "20ac")
+  assertEqual(fmt.format_hex_u16(65535), "ffff")
+
+test "json string escaping":
+  raw = "hello \"world\"\nline 2\ttab\\slash"
+  escaped = fmt.escape_json_string(raw)
+  expected = "hello \\\"world\\\"\\nline 2\\ttab\\\\slash"
+  assertEqual(escaped, expected)
+
+  quoted = fmt.quote_json_string("simple")
+  quote = "\""
+  assertEqual(quoted, quote + "simple" + quote)
+
+test "csv field escaping":
+  quote = "\""
+  assertEqual(fmt.escape_csv_field("simple", ","), "simple")
+  assertEqual(fmt.escape_csv_field("has,comma", ","), quote + "has,comma" + quote)
+  assertEqual(fmt.escape_csv_field("line1\nline2", ","), quote + "line1\nline2" + quote)
+  assertEqual(fmt.quote_csv_field_always("simple"), quote + "simple" + quote)

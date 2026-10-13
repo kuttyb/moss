@@ -1,0 +1,162 @@
+import json
+
+test "json parse primitives":
+  doc1 = json.parse("true")
+  assert(json.get_bool(doc1, doc1.root))
+
+  doc2 = json.parse("false")
+  assert(not json.get_bool(doc2, doc2.root))
+
+  doc3 = json.parse("null")
+  assert(json.is_null(doc3, doc3.root))
+
+  doc4 = json.parse("42")
+  assertEqual(json.get_number_int(doc4, doc4.root), 42)
+
+  doc5 = json.parse("-17.5")
+  assertEqual(json.get_number_str(doc5, doc5.root), "-17.5")
+
+  q = "\""
+  doc6 = json.parse(q + "hello world" + q)
+  assertEqual(json.get_string(doc6, doc6.root), "hello world")
+
+test "json parse array":
+  q = "\""
+  doc = json.parse("[1, 2, " + q + "three" + q + ", true, null]")
+  root = doc.root
+  assertEqual(json.node_kind(doc, root), json.kind_array())
+  assertEqual(json.array_length(doc, root), 5)
+  assertEqual(json.get_number_int(doc, json.array_get(doc, root, 0)), 1)
+  assertEqual(json.get_number_int(doc, json.array_get(doc, root, 1)), 2)
+  assertEqual(json.get_string(doc, json.array_get(doc, root, 2)), "three")
+  assert(json.get_bool(doc, json.array_get(doc, root, 3)))
+  assert(json.is_null(doc, json.array_get(doc, root, 4)))
+
+test "json parse object and nesting":
+  q = "\""
+  json_text = "{" + q + "name" + q + ": " + q + "Moss" + q + ", " + q + "version" + q + ": 1, " + q + "active" + q + ": true, " + q + "tags" + q + ": [" + q + "data" + q + ", " + q + "sdk" + q + "], " + q + "nested" + q + ": {" + q + "key" + q + ": " + q + "value" + q + "}}"
+  doc = json.parse(json_text)
+  root = doc.root
+  assertEqual(json.node_kind(doc, root), json.kind_object())
+  assertEqual(json.object_length(doc, root), 5)
+
+  name_id = json.object_get(doc, root, "name")
+  assertEqual(json.get_string(doc, name_id), "Moss")
+
+  ver_id = json.object_get(doc, root, "version")
+  assertEqual(json.get_number_int(doc, ver_id), 1)
+
+  active_id = json.object_get(doc, root, "active")
+  assert(json.get_bool(doc, active_id))
+
+  tags_id = json.object_get(doc, root, "tags")
+  assertEqual(json.array_length(doc, tags_id), 2)
+  assertEqual(json.get_string(doc, json.array_get(doc, tags_id, 0)), "data")
+  assertEqual(json.get_string(doc, json.array_get(doc, tags_id, 1)), "sdk")
+
+  nested_id = json.object_get(doc, root, "nested")
+  key_id = json.object_get(doc, nested_id, "key")
+  assertEqual(json.get_string(doc, key_id), "value")
+
+test "json string escaping and unicode escapes":
+  q = "\""
+  bs = "\\"
+  esc_str = "hello " + bs + q + "world" + bs + q + " " + bs + "n " + bs + "t " + bs + bs + " " + bs + "/"
+  raw_json = "{" + q + "escaped" + q + ": " + q + esc_str + q + "}"
+  doc = json.parse(raw_json)
+  root = doc.root
+  esc_id = json.object_get(doc, root, "escaped")
+  expected = "hello " + q + "world" + q + " \n \t \\ /"
+  assertEqual(json.get_string(doc, esc_id), expected)
+
+  u_str = bs + "u0041" + bs + "u0042"
+  raw_u = "{" + q + "unicode" + q + ": " + q + u_str + q + "}"
+  doc2 = json.parse(raw_u)
+  uni_id = json.object_get(doc2, doc2.root, "unicode")
+  assertEqual(json.get_string(doc2, uni_id), "AB")
+
+test "json manual tape construction":
+  doc = json.new_doc()
+  obj = json.add_object(doc)
+  doc.root = obj
+  str_id = json.add_string(doc, "manual")
+  num_id = json.add_number(doc, 100, 100.0, "100")
+  json.object_set(doc, obj, "name", str_id)
+  json.object_set(doc, obj, "count", num_id)
+
+  assertEqual(json.object_length(doc, obj), 2)
+  assertEqual(json.get_string(doc, json.object_get(doc, obj, "name")), "manual")
+  assertEqual(json.get_number_int(doc, json.object_get(doc, obj, "count")), 100)
+
+test "json stringify compact":
+  q = "\""
+  d_prims = json.parse("true")
+  assertEqual(json.stringify(d_prims), "true")
+
+  d_num = json.parse("123.45")
+  assertEqual(json.stringify(d_num), "123.45")
+
+  d_str = json.parse(q + "hello \\\"world\\\"" + q)
+  assertEqual(json.stringify(d_str), q + "hello \\\"world\\\"" + q)
+
+  arr_text = "[1,2," + q + "test" + q + ",null]"
+  d_arr = json.parse(arr_text)
+  assertEqual(json.stringify(d_arr), arr_text)
+
+  obj_text = "{" + q + "a" + q + ":1," + q + "b" + q + ":[2,3]}"
+  d_obj = json.parse(obj_text)
+  assertEqual(json.stringify(d_obj), obj_text)
+
+test "json stringify pretty":
+  q = "\""
+  obj_text = "{" + q + "a" + q + ":1," + q + "b" + q + ":[2]}"
+  doc = json.parse(obj_text)
+  expected = "{\n  " + q + "a" + q + ": 1,\n  " + q + "b" + q + ": [\n    2\n  ]\n}"
+  assertEqual(json.stringify_pretty(doc, "  "), expected)
+
+  doc_empty = json.parse("{" + q + "arr" + q + ":[]," + q + "obj" + q + ":{}}")
+  expected_empty = "{\n  " + q + "arr" + q + ": [],\n  " + q + "obj" + q + ": {}\n}"
+  assertEqual(json.stringify_pretty(doc_empty, "  "), expected_empty)
+
+test "json validate":
+  q = "\""
+  assert(json.validate("true"))
+  assert(json.validate("123"))
+  assert(json.validate(q + "test" + q))
+  assert(json.validate("[1, 2, 3]"))
+
+  valid_obj = "{" + q + "key" + q + ": 42}"
+  is_valid_obj = json.validate(valid_obj)
+  assert(is_valid_obj)
+
+  empty_str = ""
+  assert(not json.validate(empty_str))
+
+  unclosed_brace = "{"
+  is_bad_brace = json.validate(unclosed_brace)
+  assert(not is_bad_brace)
+
+  assert(not json.validate("[1, 2,]"))
+  assert(not json.validate("bad_token"))
+  assert(not json.validate("12.3.4"))
+
+test "json convenience builders":
+  doc = json.new_doc()
+  root = json.add_object(doc)
+  doc.root = root
+  s1 = json.object_set_string(doc, root, "title", "Test")
+  s2 = json.object_set_int(doc, root, "code", 200)
+  s3 = json.object_set_bool(doc, root, "ok", true)
+  s4 = json.object_set_null(doc, root, "extra")
+
+  arr = json.add_array(doc)
+  json.object_set(doc, root, "items", arr)
+  a1 = json.array_push_int(doc, arr, 10)
+  a2 = json.array_push_int(doc, arr, 20)
+  a3 = json.array_push_string(doc, arr, "done")
+
+  q = "\""
+  expected = "{" + q + "title" + q + ":" + q + "Test" + q + "," + q + "code" + q + ":200," + q + "ok" + q + ":true," + q + "extra" + q + ":null," + q + "items" + q + ":[10,20," + q + "done" + q + "]}"
+  assertEqual(json.stringify(doc), expected)
+
+

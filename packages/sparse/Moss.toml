@@ -1,0 +1,10 @@
+[package]
+name = "moss.sparse"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+linalg = { path = "../linalg" }
+math = { path = "../math" }

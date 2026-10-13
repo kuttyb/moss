@@ -1,8 +1,10 @@
 # moss.encoding
 
 `moss.encoding` provides strict, pure UTF-8 conversion between owned
-`Vector[Int]` byte buffers and Unicode scalar integers. It depends on
-`moss.bytes` and validates every untrusted byte before interpreting it.
+`Vector[Int]` byte buffers and Unicode scalar integers. It uses the shared
+`Vector[Int]` byte representation and validates every untrusted byte
+before interpreting it. Byte-range checks stay local to the codec's hot loops;
+calling a separately compiled predicate once per byte prevents native inlining.
 
 ## Public API
 
