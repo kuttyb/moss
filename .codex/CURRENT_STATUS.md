@@ -42,6 +42,35 @@ No new developer-experience observation was warranted, so no feedback record
 was added. There is no unfinished implementation work in this bounded leaf
 scope.
 
+## Phase 24 Team A A11 reciprocal CBOR decoder ready — 2026-10-12
+
+Branch `phase24-advanced-data-a11-cbor-decoder`, based on
+`b9c6ea4049530abd503c97c0d32c444efc45c3a7`, now extends `sdk/cbor` with an
+atomic iterative RFC 8949 decoder. It supports exact Moss-Int major 0/1 values,
+definite byte/text strings with strict UTF-8, arrays, maps, null, and Bool. The
+explicit container stack preserves linked-edge ownership for interleaved nested
+structures, rejects detached/discarded children on successful returns, and
+enforces exact one-item input, depth, combined item, payload, input, and
+deterministic arena-allocation limits with checked cursor/length arithmetic.
+
+Malformed/truncated input, trailing data, reserved additional information,
+indefinite lengths, tags, unsupported simple values, invalid/duplicate map
+keys, and out-of-range integers return typed `CborError` variants. Float16 and
+Float32 return `UnsupportedFloat`; Float64 remains explicitly capability-gated
+because Moss has no checked bit-preserving binary64 conversion. Tags,
+indefinite forms, bignums, non-Int/text keys, other simple values, and all
+floats remain outside the supported subset.
+
+Independent fixed RFC vectors, malformed and negative contracts, all 1/2/4/8
+additional-argument widths, nested interleaving, cumulative limits, integer
+boundaries, and semantic encode/decode round trips are covered. The final
+candidate passes 24/24 tests in Native Debug, Native Release, and Fast Debug;
+canonical formatting; `python3 tests/tooling/check_agent_feedback.py`; and
+`git diff --check`. A native test-lowering helper omission encountered during
+development is recorded under
+`agent-feedback/phase24/team-a-advanced-data/cbor-decoder/` with the multi-file
+same-module workaround. No push was performed.
+
 ## Phase 24 Team I consolidated checkpoint — 2026-10-12
 
 The final accepted Team D structured-data, Team T performance, and Team N

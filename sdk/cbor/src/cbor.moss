@@ -18,6 +18,18 @@ export enum CborError:
   DepthLimit(depth: Int, limit: Int)
   OutputLimit(requested: Int, limit: Int)
   UnsupportedValue(node: Int, kind: Int)
+  UnexpectedEof(index: Int, requested: Int, remaining: Int)
+  TrailingData(index: Int, remaining: Int)
+  ReservedAdditionalInfo(index: Int, additional: Int)
+  IndefiniteLength(index: Int, major: Int)
+  UnexpectedBreak(index: Int)
+  IntegerOutOfRange(index: Int, major: Int)
+  LengthOutOfRange(index: Int, major: Int)
+  UnsupportedTag(index: Int)
+  UnsupportedSimple(index: Int, value: Int)
+  UnsupportedFloat(index: Int, width: Int)
+  InputLimit(requested: Int, limit: Int)
+  AllocationLimit(requested: Int, limit: Int)
   FloatCapabilityUnavailable
 
 export type CborDoc:
@@ -41,6 +53,10 @@ export type CborDoc:
   item_limit: Int
   output_limit: Int
   payload_limit: Int
+
+type DecodedArgument:
+  value: Int
+  next_cursor: Int
 
 fn push_int(values: Vector[Int], value: Int):
   values.push(value)
@@ -86,6 +102,12 @@ export fn default_output_limit() -> Int:
 
 export fn default_payload_limit() -> Int:
   return 16777216
+
+export fn default_input_limit() -> Int:
+  return 67108864
+
+export fn default_allocation_limit() -> Int:
+  return 67108864
 
 fn is_valid_kind(kind: Int) -> Bool:
   return kind >= kind_null() and kind <= kind_map()
@@ -752,3 +774,328 @@ export fn encode(doc: CborDoc) -> Vector[Int]:
   if (result |> count) != expected:
     raise CborError.InvalidDocument(code: 4, index: result |> count)
   return result
+
+fn maximum_int_value() -> Int:
+  return 9223372036854775807
+
+fn node_allocation_units() -> Int:
+  return 10
+
+fn edge_allocation_units() -> Int:
+  return 4
+
+fn checked_decode_allocation(current: Int, amount: Int, limit: Int) -> Int:
+  if amount > limit - current:
+    raise CborError.AllocationLimit(requested: limit + 1, limit: limit)
+  return current + amount
+
+fn require_decode_limits(max_depth: Int, item_limit: Int, input_limit: Int, allocation_limit: Int, payload_limit: Int):
+  require_limits(max_depth, item_limit, default_output_limit(), payload_limit)
+  if input_limit <= 0 or input_limit > default_input_limit():
+    raise CborError.InvalidLimits(value: input_limit, maximum: default_input_limit())
+  if allocation_limit <= 0 or allocation_limit > default_allocation_limit():
+    raise CborError.InvalidLimits(value: allocation_limit, maximum: default_allocation_limit())
+  if payload_limit > input_limit:
+    raise CborError.InvalidLimits(value: payload_limit, maximum: input_limit)
+  if payload_limit > allocation_limit:
+    raise CborError.InvalidLimits(value: payload_limit, maximum: allocation_limit)
+
+fn require_decode_input(values: Vector[Int], input_limit: Int):
+  length = values |> count
+  if length > input_limit:
+    raise CborError.InputLimit(requested: length, limit: input_limit)
+  var index = 0
+  while index < length:
+    value = values[index]
+    if not bytes.is_byte(value):
+      raise CborError.InvalidByte(index: index, value: value)
+    index = index + 1
+
+fn require_wire_bytes(values: Vector[Int], cursor: Int, requested: Int):
+  remaining = (values |> count) - cursor
+  if requested > remaining:
+    raise CborError.UnexpectedEof(index: cursor, requested: requested, remaining: remaining)
+
+fn additional_width(additional: Int) -> Int:
+  if additional == 24:
+    return 1
+  if additional == 25:
+    return 2
+  if additional == 26:
+    return 4
+  if additional == 27:
+    return 8
+  return 0
+
+fn read_argument(values: Vector[Int], cursor: Int, additional: Int, head_index: Int, major: Int) -> DecodedArgument:
+  if additional <= 23:
+    return DecodedArgument(value: additional, next_cursor: cursor)
+  width = additional_width(additional)
+  require_wire_bytes(values, cursor, width)
+  if width == 8 and values[cursor] >= 128:
+    if major == 0 or major == 1:
+      raise CborError.IntegerOutOfRange(index: head_index, major: major)
+    raise CborError.LengthOutOfRange(index: head_index, major: major)
+  var value = 0
+  var offset = 0
+  maximum = maximum_int_value()
+  while offset < width:
+    byte = values[cursor + offset]
+    if value > (maximum - byte) / 256:
+      if major == 0 or major == 1:
+        raise CborError.IntegerOutOfRange(index: head_index, major: major)
+      raise CborError.LengthOutOfRange(index: head_index, major: major)
+    value = value * 256 + byte
+    offset = offset + 1
+  return DecodedArgument(value: value, next_cursor: cursor + width)
+
+fn cursor_after_argument(values: Vector[Int], cursor: Int, additional: Int) -> Int:
+  width = additional_width(additional)
+  require_wire_bytes(values, cursor, width)
+  return cursor + width
+
+fn validate_utf8_range(values: Vector[Int], start: Int, length: Int) -> Bool:
+  var offset = 0
+  while offset < length:
+    first = values[start + offset]
+    if first <= 127:
+      offset = offset + 1
+    else:
+      if first >= 128 and first <= 191:
+        return false
+      width = 0
+      minimum = 0
+      if first >= 192 and first <= 223:
+        width = 2
+        minimum = 128
+      else:
+        if first >= 224 and first <= 239:
+          width = 3
+          minimum = 2048
+        else:
+          if first >= 240 and first <= 247:
+            width = 4
+            minimum = 65536
+          else:
+            return false
+      if length - offset < width:
+        return false
+      second = values[start + offset + 1]
+      if second < 128 or second > 191:
+        return false
+      scalar = 0
+      if width == 2:
+        scalar = (first - 192) * 64 + (second - 128)
+      else:
+        third = values[start + offset + 2]
+        if third < 128 or third > 191:
+          return false
+        if width == 3:
+          scalar = (first - 224) * 4096 + (second - 128) * 64 + (third - 128)
+        else:
+          fourth = values[start + offset + 3]
+          if fourth < 128 or fourth > 191:
+            return false
+          scalar = (first - 240) * 262144 + (second - 128) * 4096 + (third - 128) * 64 + (fourth - 128)
+      if scalar < minimum or (scalar >= 55296 and scalar <= 57343) or scalar > 1114111:
+        return false
+      offset = offset + width
+  return true
+
+fn push_decoded_node(doc: CborDoc, kind: Int, bool_value: Bool, int_value: Int) -> Int:
+  require_node_capacity(doc)
+  return push_node(doc, kind, bool_value, int_value, 0.0, 0, 0)
+
+fn push_decoded_payload(doc: CborDoc, values: Vector[Int], start: Int, length: Int, kind: Int) -> Int:
+  require_node_capacity(doc)
+  if length > doc.payload_limit:
+    raise CborError.ResourceLimit(kind: 1, requested: length, limit: doc.payload_limit)
+  current = doc.payload_bytes |> count
+  if length > doc.output_limit - current:
+    raise CborError.OutputLimit(requested: doc.output_limit + 1, limit: doc.output_limit)
+  if kind == kind_text() and not validate_utf8_range(values, start, length):
+    raise CborError.InvalidUtf8(node: -1)
+  var offset = 0
+  while offset < length:
+    push_int(doc.payload_bytes, values[start + offset])
+    offset = offset + 1
+  return push_node(doc, kind, false, 0, 0.0, current, length)
+
+fn require_declared_container_capacity(doc: CborDoc, length: Int, kind: Int, allocation_used: Int, allocation_limit: Int):
+  item_units = 2
+  allocation_units = node_allocation_units() + edge_allocation_units()
+  if kind == kind_map():
+    item_units = 3
+    allocation_units = node_allocation_units() * 2 + edge_allocation_units()
+  current_items = (doc.kinds |> count) + (doc.edge_parents |> count)
+  if length > (doc.item_limit - current_items) / item_units:
+    raise CborError.ResourceLimit(kind: 0, requested: doc.item_limit + 1, limit: doc.item_limit)
+  if length > (allocation_limit - allocation_used) / allocation_units:
+    raise CborError.AllocationLimit(requested: allocation_limit + 1, limit: allocation_limit)
+
+fn append_decoded_array_edge(doc: CborDoc, parent: Int, child: Int):
+  require_edge_capacity(doc)
+  append_edge(doc, parent, -1, child)
+  doc.parents[child] = parent
+
+fn append_decoded_map_edge(doc: CborDoc, parent: Int, key: Int, value: Int):
+  require_unique_key(doc, parent, key)
+  require_edge_capacity(doc)
+  append_edge(doc, parent, key, value)
+  doc.parents[key] = parent
+  doc.parents[value] = parent
+
+fn require_supported_additional(head_index: Int, major: Int, additional: Int):
+  if additional >= 28 and additional <= 30:
+    raise CborError.ReservedAdditionalInfo(index: head_index, additional: additional)
+  if additional == 31:
+    if major >= 2 and major <= 5:
+      raise CborError.IndefiniteLength(index: head_index, major: major)
+    if major == 7:
+      raise CborError.UnexpectedBreak(index: head_index)
+    raise CborError.ReservedAdditionalInfo(index: head_index, additional: additional)
+
+export fn decode(values: Vector[Int]) -> CborDoc:
+  return decode_with_limits(values, default_max_depth(), default_item_limit(), default_input_limit(), default_allocation_limit(), default_payload_limit())
+
+export fn decode_with_limits(values: Vector[Int], max_depth: Int, item_limit: Int, input_limit: Int, allocation_limit: Int, payload_limit: Int) -> CborDoc:
+  require_decode_limits(max_depth, item_limit, input_limit, allocation_limit, payload_limit)
+  require_decode_input(values, input_limit)
+  input_length = values |> count
+  var doc = new_doc_with_limits(max_depth, item_limit, default_output_limit(), payload_limit)
+  var cursor = 0
+  var allocation_used = 0
+  var stack_containers = Vector[Int]()
+  var stack_remaining = Vector[Int]()
+  var stack_pending_keys = Vector[Int]()
+  var complete = false
+  while not complete:
+    if cursor >= input_length:
+      raise CborError.UnexpectedEof(index: cursor, requested: 1, remaining: 0)
+    depth = (stack_containers |> count) + 1
+    if depth > max_depth:
+      raise CborError.DepthLimit(depth: depth, limit: max_depth)
+
+    head_index = cursor
+    head = values[cursor]
+    cursor = cursor + 1
+    major = head / 32
+    additional = head % 32
+    require_supported_additional(head_index, major, additional)
+
+    var node = -1
+    var container_length = -1
+    if major == 0:
+      decoded_argument = read_argument(values, cursor, additional, head_index, major)
+      cursor = decoded_argument.next_cursor
+      allocation_used = checked_decode_allocation(allocation_used, node_allocation_units(), allocation_limit)
+      node = push_decoded_node(doc, kind_int(), false, decoded_argument.value)
+    else:
+      if major == 1:
+        decoded_argument = read_argument(values, cursor, additional, head_index, major)
+        cursor = decoded_argument.next_cursor
+        allocation_used = checked_decode_allocation(allocation_used, node_allocation_units(), allocation_limit)
+        node = push_decoded_node(doc, kind_int(), false, -1 - decoded_argument.value)
+      else:
+        if major == 2 or major == 3:
+          decoded_argument = read_argument(values, cursor, additional, head_index, major)
+          cursor = decoded_argument.next_cursor
+          length = decoded_argument.value
+          if length > payload_limit:
+            raise CborError.ResourceLimit(kind: 1, requested: length, limit: payload_limit)
+          require_wire_bytes(values, cursor, length)
+          payload_kind = kind_bytes()
+          if major == 3:
+            payload_kind = kind_text()
+          allocation_after_node = checked_decode_allocation(allocation_used, node_allocation_units(), allocation_limit)
+          allocation_used = checked_decode_allocation(allocation_after_node, length, allocation_limit)
+          node = push_decoded_payload(doc, values, cursor, length, payload_kind)
+          cursor = cursor + length
+        else:
+          if major == 4 or major == 5:
+            decoded_argument = read_argument(values, cursor, additional, head_index, major)
+            cursor = decoded_argument.next_cursor
+            container_length = decoded_argument.value
+            container_kind = kind_array()
+            if major == 5:
+              container_kind = kind_map()
+            allocation_used = checked_decode_allocation(allocation_used, node_allocation_units(), allocation_limit)
+            node = push_decoded_node(doc, container_kind, false, 0)
+            require_declared_container_capacity(doc, container_length, container_kind, allocation_used, allocation_limit)
+          else:
+            if major == 6:
+              cursor = cursor_after_argument(values, cursor, additional)
+              raise CborError.UnsupportedTag(index: head_index)
+            if additional <= 19 or additional == 23:
+              raise CborError.UnsupportedSimple(index: head_index, value: additional)
+            if additional == 20:
+              allocation_used = checked_decode_allocation(allocation_used, node_allocation_units(), allocation_limit)
+              node = push_decoded_node(doc, kind_bool(), false, 0)
+            else:
+              if additional == 21:
+                allocation_used = checked_decode_allocation(allocation_used, node_allocation_units(), allocation_limit)
+                node = push_decoded_node(doc, kind_bool(), true, 0)
+              else:
+                if additional == 22:
+                  allocation_used = checked_decode_allocation(allocation_used, node_allocation_units(), allocation_limit)
+                  node = push_decoded_node(doc, kind_null(), false, 0)
+                else:
+                  if additional == 24:
+                    require_wire_bytes(values, cursor, 1)
+                    simple_value = values[cursor]
+                    cursor = cursor + 1
+                    raise CborError.UnsupportedSimple(index: head_index, value: simple_value)
+                  width = additional_width(additional)
+                  require_wire_bytes(values, cursor, width)
+                  cursor = cursor + width
+                  if additional == 25:
+                    raise CborError.UnsupportedFloat(index: head_index, width: 16)
+                  if additional == 26:
+                    raise CborError.UnsupportedFloat(index: head_index, width: 32)
+                  raise CborError.FloatCapabilityUnavailable
+
+    frame_count = stack_containers |> count
+    if frame_count == 0:
+      doc.root = node
+    else:
+      frame = frame_count - 1
+      parent = stack_containers[frame]
+      if doc.kinds[parent] == kind_array():
+        allocation_used = checked_decode_allocation(allocation_used, edge_allocation_units(), allocation_limit)
+        append_decoded_array_edge(doc, parent, node)
+        stack_remaining[frame] = stack_remaining[frame] - 1
+      else:
+        pending_key = stack_pending_keys[frame]
+        if pending_key == -1:
+          key_kind = doc.kinds[node]
+          if key_kind != kind_int() and key_kind != kind_text():
+            raise CborError.UnsupportedValue(node: node, kind: key_kind)
+          stack_pending_keys[frame] = node
+        else:
+          allocation_used = checked_decode_allocation(allocation_used, edge_allocation_units(), allocation_limit)
+          append_decoded_map_edge(doc, parent, pending_key, node)
+          stack_pending_keys[frame] = -1
+          stack_remaining[frame] = stack_remaining[frame] - 1
+
+    if container_length > 0:
+      push_int(stack_containers, node)
+      push_int(stack_remaining, container_length)
+      push_int(stack_pending_keys, -1)
+
+    var collapsing = true
+    while collapsing:
+      active = stack_containers |> count
+      if active > 0 and stack_remaining[active - 1] == 0:
+        ignored_container = stack_containers.pop()
+        ignored_remaining = stack_remaining.pop()
+        ignored_key = stack_pending_keys.pop()
+      else:
+        collapsing = false
+    if (stack_containers |> count) == 0 and doc.root != -1:
+      complete = true
+
+  if cursor != input_length:
+    raise CborError.TrailingData(index: cursor, remaining: input_length - cursor)
+  if not validate_complete(doc):
+    raise CborError.InvalidDocument(code: 5, index: doc.root)
+  return doc
