@@ -1,0 +1,62 @@
+module fs
+
+# Phase 24 host-service surface currently exposes regular-file operations only.
+# A read request is deliberately fixed and bounded because Moss v0.1 requires
+# every FileIO read size to have a compiler-proven finite bound.
+
+export enum FsError:
+  InvalidOffset
+
+fn copy_range(data: Range) -> Vector[Int]:
+  result = Vector[Int]()
+  for byte in data:
+    result.push(byte)
+  return result
+
+fn append_range(target: Vector[Int], data: Range):
+  for byte in data:
+    target.push(byte)
+
+# Read at most 4096 bytes from an explicit byte offset. A short result means
+# EOF was reached. FileIO raises its typed FileError variants to the caller;
+# this helper does not turn an error into an empty vector.
+export fn read_prefix(path: String, offset: Int) -> Vector[Int]:
+  if offset < 0:
+    raise FsError.InvalidOffset
+  file = FileIO.open(path, ro)
+  data = file.read(offset, 4096)
+  result = copy_range(data)
+  file.close()
+  return result
+
+# Read until EOF using repeated 4096-byte requests. The individual request is
+# statically bounded; the returned owned vector is as large as the file, so
+# callers should prefer read_prefix when a bounded result is sufficient.
+export fn read_all(path: String) -> Vector[Int]:
+  file = FileIO.open(path, ro)
+  result = Vector[Int]()
+  offset = 0
+  done = false
+  while not done:
+    data = file.read(offset, 4096)
+    length = data.length()
+    append_range(result, data)
+    if length < 4096:
+      done = true
+    else:
+      offset = offset + 4096
+  file.close()
+  return result
+
+# Copy at most 4096 bytes from source offset zero to destination offset zero.
+# The destination is opened with `create`, which creates a missing regular file
+# but intentionally does not truncate an existing one. Source and destination
+# must be distinct live file identities under the FileIO contract.
+export fn copy_prefix(source: String, destination: String):
+  input = FileIO.open(source, ro)
+  output = FileIO.open(destination, create)
+  data = input.read(0, 4096)
+  output.write(0, data)
+  output.sync()
+  input.close()
+  output.close()
