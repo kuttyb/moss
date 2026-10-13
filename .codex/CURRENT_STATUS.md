@@ -4,7 +4,9 @@
 
 The final accepted Team D structured-data, Team T performance, and Team N
 numerical deliveries are merged on `phase24-integration`. The current
-integration tip is `8ca9c529bc9ebd0a4f41eef8d8938220265cf03d`; it includes
+source integration tip is `04b7683b6b6c0900e3079be60116514ba3d41564`; the
+subsequent status and runner-portability commits are included in the final
+branch tip. It includes
 normal merge commits
 `f4c4ad3d77ddea8e2fa2060a9368c31ad45f7ed4` (Team T performance, source
 `0d8d1b6cf75ecf72f90be5bab9fc821c3219f584`, reviewed implementation

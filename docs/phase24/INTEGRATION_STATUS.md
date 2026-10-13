@@ -3,7 +3,7 @@
 ## Checkpoint
 
 - State: **AMBER**
-- Integrated implementation SHA: `8ca9c529bc9ebd0a4f41eef8d8938220265cf03d`
+- Integrated implementation SHA: `04b7683b6b6c0900e3079be60116514ba3d41564`
 - Branch: `phase24-integration`
 - Integration date: 2026-10-12
 - Whole-system Architect review: deferred to the final Phase 24 acceptance milestone by coordinator direction
@@ -52,7 +52,9 @@ Focused source-backed, Fast Debug, native, and source-free ABI-v9 gates passed.
 
 ## Executed validation
 
-All commands below were executed against the final merged tree at `8ca9c52`.
+All commands below were executed against the final merged source tree at
+`04b7683`; the subsequent status and runner-portability commits are included
+in the final branch tip.
 
 | Command or suite | Result |
 | --- | --- |
