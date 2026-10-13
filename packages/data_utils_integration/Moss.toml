@@ -1,0 +1,12 @@
+[package]
+name = "moss.data_utils_integration"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+bytes = { path = "../../sdk/foundations/bytes" }
+regex = { path = "../regex" }
+compress = { path = "../compress" }
+hash = { path = "../hash" }
