@@ -1,0 +1,291 @@
+import ndarray
+import linalg
+
+test "scalar and filled constructors follow rank zero and row major contracts":
+  let scalar = ndarray.scalar(7.5)
+  assert(ndarray.validate(scalar))
+  assertEqual(ndarray.rank(scalar), 0)
+  assertEqual(ndarray.element_count(scalar), 1)
+  assertEqual(ndarray.get(scalar, Vector[Int]()), 7.5)
+
+  let zero = ndarray.zeros([2, 3])
+  assertEqual(ndarray.rank(zero), 2)
+  assertEqual(ndarray.size(zero, 0), 2)
+  assertEqual(ndarray.size(zero, 1), 3)
+  assertEqual(zero.strides[0], 3)
+  assertEqual(zero.strides[1], 1)
+  assertEqual(ndarray.get(zero, [1, 2]), 0.0)
+
+  let one = ndarray.ones([2, 1, 2])
+  assertEqual(ndarray.element_count(one), 4)
+  assertEqual(ndarray.get(one, [1, 0, 1]), 1.0)
+
+  let filled = ndarray.full([2, 2], -3.25)
+  assertEqual(ndarray.get(filled, [0, 1]), -3.25)
+  assertEqual(ndarray.get(filled, [1, 0]), -3.25)
+
+test "zero extents are empty with canonical suffix strides":
+  let empty = ndarray.zeros([2, 0, 3])
+  assert(ndarray.validate(empty))
+  assertEqual(ndarray.element_count(empty), 0)
+  assertEqual(empty.strides[0], 0)
+  assertEqual(empty.strides[1], 3)
+  assertEqual(empty.strides[2], 1)
+
+  let empty_flat = ndarray.flatten(empty)
+  assertEqual(empty_flat |> count, 0)
+
+test "from flat and shape accessors return owned copies":
+  var source_shape = [2, 2]
+  var source_data = [1.0, 2.0, 3.0, 4.0]
+  let array = ndarray.from_flat(source_shape, source_data)
+  source_shape[0] = 1
+  source_data[0] = 99.0
+  assertEqual(array.shape[0], 2)
+  assertEqual(ndarray.get(array, [0, 0]), 1.0)
+
+  var copied_shape = ndarray.shape_copy(array)
+  copied_shape[0] = 9
+  assertEqual(array.shape[0], 2)
+
+test "shape and data errors are precise":
+  var caught_negative = false
+  try:
+    ignored_negative = ndarray.zeros([2, -1])
+  recover ndarray.NdArrayError.InvalidShape:
+    caught_negative = true
+  assert(caught_negative)
+
+  var caught_overflow = false
+  try:
+    ignored_overflow = ndarray.zeros([9223372036854775807, 2])
+  recover ndarray.NdArrayError.Overflow:
+    caught_overflow = true
+  assert(caught_overflow)
+
+  var caught_suffix_overflow = false
+  try:
+    ignored_suffix_overflow = ndarray.zeros([0, 9223372036854775807, 2])
+  recover ndarray.NdArrayError.Overflow:
+    caught_suffix_overflow = true
+  assert(caught_suffix_overflow)
+
+  var caught_length = false
+  try:
+    ignored_length = ndarray.from_flat([2, 2], [1.0, 2.0, 3.0])
+  recover ndarray.NdArrayError.DataLengthMismatch:
+    caught_length = true
+  assert(caught_length)
+
+test "checked indexing and mutation cover rank and bounds":
+  var array = ndarray.from_flat([2, 3, 4], [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0])
+  assertEqual(ndarray.get(array, [1, 2, 3]), 23.0)
+  ndarray.set(array, [0, 1, 2], 42.0)
+  assertEqual(ndarray.get(array, [0, 1, 2]), 42.0)
+
+  var caught_rank = false
+  try:
+    ignored_rank = ndarray.get(array, [0, 1])
+  recover ndarray.NdArrayError.IndexRankMismatch:
+    caught_rank = true
+  assert(caught_rank)
+
+  var caught_negative = false
+  try:
+    ignored_negative = ndarray.get(array, [0, -1, 0])
+  recover ndarray.NdArrayError.IndexOutOfBounds:
+    caught_negative = true
+  assert(caught_negative)
+
+  var caught_upper = false
+  try:
+    ignored_upper = ndarray.get(array, [2, 0, 0])
+  recover ndarray.NdArrayError.IndexOutOfBounds:
+    caught_upper = true
+  assert(caught_upper)
+
+  let empty = ndarray.zeros([2, 0, 3])
+  var caught_empty = false
+  try:
+    ignored_empty = ndarray.get(empty, [0, 0, 0])
+  recover ndarray.NdArrayError.IndexOutOfBounds:
+    caught_empty = true
+  assert(caught_empty)
+
+  var caught_axis = false
+  try:
+    ignored_axis = ndarray.size(array, 3)
+  recover ndarray.NdArrayError.InvalidAxis:
+    caught_axis = true
+  assert(caught_axis)
+
+test "forged records are rejected before indexing or mutation":
+  let bad_stride_length = ndarray.NdArray(shape: [2, 2], strides: [2], data: [1.0, 2.0, 3.0, 4.0])
+  assert(not ndarray.validate(bad_stride_length))
+  var caught_stride_length = false
+  try:
+    ignored_stride_length = ndarray.rank(bad_stride_length)
+  recover ndarray.NdArrayError.InvalidShape:
+    caught_stride_length = true
+  assert(caught_stride_length)
+
+  let bad_stride = ndarray.NdArray(shape: [2, 2], strides: [1, 2], data: [1.0, 2.0, 3.0, 4.0])
+  assert(not ndarray.validate(bad_stride))
+  var caught_stride = false
+  try:
+    ignored_stride = ndarray.get(bad_stride, [0, 0])
+  recover ndarray.NdArrayError.InvalidShape:
+    caught_stride = true
+  assert(caught_stride)
+
+  let bad_data = ndarray.NdArray(shape: [2, 2], strides: [2, 1], data: [1.0])
+  assert(not ndarray.validate(bad_data))
+  var caught_data = false
+  try:
+    ignored_data = ndarray.flatten(bad_data)
+  recover ndarray.NdArrayError.DataLengthMismatch:
+    caught_data = true
+  assert(caught_data)
+
+  let bad_negative = ndarray.NdArray(shape: [-1], strides: [1], data: Vector[Float]())
+  assert(not ndarray.validate(bad_negative))
+  var caught_negative = false
+  try:
+    ignored_negative = ndarray.element_count(bad_negative)
+  recover ndarray.NdArrayError.InvalidShape:
+    caught_negative = true
+  assert(caught_negative)
+
+  let bad_overflow = ndarray.NdArray(shape: [9223372036854775807, 2], strides: [2, 1], data: Vector[Float]())
+  assert(not ndarray.validate(bad_overflow))
+  var caught_overflow = false
+  try:
+    ignored_overflow = ndarray.rank(bad_overflow)
+  recover ndarray.NdArrayError.Overflow:
+    caught_overflow = true
+  assert(caught_overflow)
+
+  var stable = ndarray.from_flat([2], [1.0, 2.0])
+  var caught_set = false
+  try:
+    ndarray.set(stable, [2], 99.0)
+  recover ndarray.NdArrayError.IndexOutOfBounds:
+    caught_set = true
+  assert(caught_set)
+  assertEqual(ndarray.get(stable, [0]), 1.0)
+  assertEqual(ndarray.get(stable, [1]), 2.0)
+
+test "clone flatten and reshape always copy":
+  let original = ndarray.from_flat([2, 2], [1.0, 2.0, 3.0, 4.0])
+  var cloned = ndarray.array_clone(original)
+  ndarray.set(cloned, [0, 0], 9.0)
+  assertEqual(ndarray.get(original, [0, 0]), 1.0)
+
+  var flat = ndarray.flatten(original)
+  flat[0] = 8.0
+  assertEqual(ndarray.get(original, [0, 0]), 1.0)
+
+  var reshaped = ndarray.reshape(original, [4, 1])
+  ndarray.set(reshaped, [0, 0], 7.0)
+  assertEqual(ndarray.get(original, [0, 0]), 1.0)
+  assertEqual(ndarray.get(reshaped, [3, 0]), 4.0)
+
+  let scalar = ndarray.reshape(ndarray.from_flat([1], [5.0]), Vector[Int]())
+  assertEqual(ndarray.rank(scalar), 0)
+  assertEqual(ndarray.get(scalar, Vector[Int]()), 5.0)
+
+  let empty = ndarray.reshape(ndarray.zeros([2, 0]), [0, 10])
+  assertEqual(empty.strides[0], 10)
+  assertEqual(empty.strides[1], 1)
+
+  var caught_mismatch = false
+  try:
+    ignored_mismatch = ndarray.reshape(original, [3])
+  recover ndarray.NdArrayError.ReshapeSizeMismatch:
+    caught_mismatch = true
+  assert(caught_mismatch)
+
+test "axis permutation and transpose preserve semantic coordinates":
+  let array = ndarray.from_flat([2, 3, 4], [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0])
+  let permuted = ndarray.permute_axes(array, [1, 2, 0])
+  assertEqual(permuted.shape[0], 3)
+  assertEqual(permuted.shape[1], 4)
+  assertEqual(permuted.shape[2], 2)
+  assertEqual(ndarray.get(permuted, [2, 3, 1]), 23.0)
+  assertEqual(ndarray.get(permuted, [0, 1, 0]), 1.0)
+
+  let restored = ndarray.permute_axes(permuted, [2, 0, 1])
+  assertEqual(ndarray.get(restored, [1, 2, 3]), 23.0)
+
+  let matrix_array = ndarray.from_flat([2, 3], [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+  let transposed = ndarray.transpose(matrix_array)
+  assertEqual(transposed.shape[0], 3)
+  assertEqual(transposed.shape[1], 2)
+  assertEqual(ndarray.get(transposed, [2, 1]), 6.0)
+
+  let scalar = ndarray.scalar(2.0)
+  let scalar_permuted = ndarray.permute_axes(scalar, Vector[Int]())
+  assertEqual(ndarray.get(scalar_permuted, Vector[Int]()), 2.0)
+
+test "invalid permutations and transpose rank are typed errors":
+  let array = ndarray.zeros([2, 3, 4])
+  var caught_length = false
+  try:
+    ignored_length = ndarray.permute_axes(array, [0, 1])
+  recover ndarray.NdArrayError.InvalidPermutation:
+    caught_length = true
+  assert(caught_length)
+
+  var caught_duplicate = false
+  try:
+    ignored_duplicate = ndarray.permute_axes(array, [0, 0, 2])
+  recover ndarray.NdArrayError.InvalidPermutation:
+    caught_duplicate = true
+  assert(caught_duplicate)
+
+  var caught_axis = false
+  try:
+    ignored_axis = ndarray.permute_axes(array, [0, 1, 3])
+  recover ndarray.NdArrayError.InvalidPermutation:
+    caught_axis = true
+  assert(caught_axis)
+
+  var caught_transpose = false
+  try:
+    ignored_transpose = ndarray.transpose(array)
+  recover ndarray.NdArrayError.InvalidPermutation:
+    caught_transpose = true
+  assert(caught_transpose)
+
+test "matrix conversion copies and rejects unsupported shapes":
+  var matrix = linalg.from_vector(2, 3, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+  let array = ndarray.from_matrix(matrix)
+  linalg.matrix_set(matrix, 0, 0, 99.0)
+  assertEqual(ndarray.get(array, [0, 0]), 1.0)
+
+  var round_trip = ndarray.to_matrix(array)
+  assertEqual(linalg.matrix_get(round_trip, 1, 2), 6.0)
+  linalg.matrix_set(round_trip, 0, 1, 88.0)
+  assertEqual(ndarray.get(array, [0, 1]), 2.0)
+
+  var caught_rank = false
+  try:
+    ignored_rank = ndarray.to_matrix(ndarray.scalar(1.0))
+  recover ndarray.NdArrayError.MatrixRankMismatch:
+    caught_rank = true
+  assert(caught_rank)
+
+  var caught_empty = false
+  try:
+    ignored_empty = ndarray.to_matrix(ndarray.zeros([2, 0]))
+  recover ndarray.NdArrayError.MatrixEmptyDimension:
+    caught_empty = true
+  assert(caught_empty)
+
+  let malformed_matrix = linalg.Matrix(rows: 2, cols: 2, data: [1.0])
+  var caught_data = false
+  try:
+    ignored_data = ndarray.from_matrix(malformed_matrix)
+  recover ndarray.NdArrayError.DataLengthMismatch:
+    caught_data = true
+  assert(caught_data)
