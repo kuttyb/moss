@@ -1,0 +1,55 @@
+module advanced_data_source_free
+
+import binary
+import cbor
+import csv
+import datastructures
+import linalg
+import ndarray
+import tables
+
+fn main():
+  try:
+    tensor = ndarray.from_flat([2, 2, 2], [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+    reduced = ndarray.sum_axis(ndarray.multiply_scalar(tensor, 2.0), 2)
+    matrix = ndarray.to_matrix(reduced)
+    round_trip = ndarray.from_matrix(matrix)
+    assertEqual(ndarray.flatten(round_trip), [6.0, 14.0, 22.0, 30.0])
+    assertEqual(linalg.matrix_get(matrix, 1, 1), 30.0)
+
+    left0 = tables.new_table(4)
+    left1 = tables.add_column(left0, tables.int_column("key", false, [2, 1, 2, 1], [true, true, true, true]))
+    left = tables.add_column(left1, tables.int_column("value", false, [6, 14, 22, 30], [true, true, true, true]))
+    sorted = tables.sort_by(left, "value", false)
+    assertEqual(tables.int_values(sorted, "value").values, [30, 22, 14, 6])
+    groups = tables.group_by_int(left, "key")
+    assertEqual(tables.group_sum_int(left, groups, "value").values, [28, 44])
+    right0 = tables.new_table(3)
+    right1 = tables.add_column(right0, tables.int_column("rkey", false, [1, 1, 2], [true, true, true]))
+    right = tables.add_column(right1, tables.int_column("weight", false, [10, 11, 20], [true, true, true]))
+    joined = tables.inner_join_int(left, right, "key", "rkey", "_right", 10)
+    assertEqual(tables.table_row_count(joined), 6)
+
+    var queue = datastructures.new_priority_queue()
+    datastructures.priority_queue_push(queue, 1, 10)
+    datastructures.priority_queue_push(queue, 1, 11)
+    assertEqual(datastructures.priority_queue_pop(queue).value, 10)
+    assertEqual(datastructures.priority_queue_pop(queue).value, 11)
+    var deque = datastructures.new_int_bounded_deque(2)
+    datastructures.int_deque_push_back(deque, 6)
+    datastructures.int_deque_push_front(deque, 14)
+    assertEqual(datastructures.int_deque_values(deque), [14, 6])
+    var sets = datastructures.new_union_find(4)
+    assert(datastructures.union_find_union(sets, 0, 2))
+    assert(datastructures.union_find_same(sets, 0, 2))
+
+    var writer = binary.new_writer_with_limits(8, 4)
+    binary.write_length_delimited(writer, [1, 2, 3])
+    assertEqual(binary.writer_output(writer), [3, 1, 2, 3])
+    decoded = cbor.decode([131, 6, 14, 22])
+    root = cbor.root_id(decoded)
+    assertEqual(cbor.int_value(decoded, cbor.array_get(decoded, root, 2)), 22)
+    assertEqual(cbor.encode(decoded), [131, 6, 14, 22])
+    echo "advanced data ABI-v9 source-free ok"
+  recover:
+    assert(false)
