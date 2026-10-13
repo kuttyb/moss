@@ -23,9 +23,11 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import pty
 import random
 import re
 import shutil
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -445,6 +447,25 @@ def check_regex_oracle():
             ("^foo", "barfoo", False, -1, -1),
             ("bar$", "foobar", True, 3, 6),
             ("bar$", "foobaz", False, -1, -1),
+            # Reconverging alternation states
+            ("((a|ba)|(b|ab))c", "abc", True, 0, 3),
+            ("(a?|b?)c", "ac", True, 0, 2),
+            ("(a?|b?)c", "c", True, 0, 1),
+            ("((a|b)|(c|d))e", "be", True, 0, 2),
+            ("(a|aa)*b", "aaab", True, 0, 4),
+            # Earlier origins arriving after later ones
+            ("a*b", "caab", True, 1, 4),
+            ("(a*|b*)c", "ac", True, 0, 2),
+            ("(ab|b)", "bab", True, 0, 1),
+            ("(a|b)+", "xabcy", True, 1, 3),
+            # Nested quantifiers
+            ("(a+)+", "aaa", True, 0, 3),
+            ("((a?)+)?", "a", True, 0, 1),
+            ("(a|b+)*", "abbba", True, 0, 5),
+            ("((ab)*|c)+", "ababcab", True, 0, 7),
+            # Empty and overlapping matches
+            ("a*", "b", True, 0, 0),
+            ("aba", "ababa", True, 0, 3),
         ]
 
         moss_src = [
@@ -471,16 +492,35 @@ def check_regex_oracle():
                 moss_src.append(f'      assert(false)')
             moss_src.append(f'  echo "REGEX_CASE_{idx}_OK"')
 
-        # Adversarial input-scaling linear complexity measurement
-        # Check lengths 10, 50, 100, 500 on (a+)+b adversarial pattern
-        for n in [10, 50, 100, 500]:
-            adversary = "a" * n
-            moss_src.append(f'  # Linear scale probe length {n}')
-            moss_src.append(f'  let adv_{n} = "{adversary}"')
-            moss_src.append(f'  let re_adv_{n} = regex.compile("(a+)+b")')
-            moss_src.append(f'  let adv_match_{n} = regex.regex_is_match(re_adv_{n}, adv_{n})')
-            moss_src.append(f'  assert(not adv_match_{n})')
-            moss_src.append(f'  echo "ADV_N_OK_{n}"')
+        # High-level API validation on complex expressions
+        moss_src.extend([
+            '  # APIs: find_all, replace_all, split on complex patterns',
+            '  let f_spans = regex.find_all("(cat|dog)+", "catdogcat and dogcat")',
+            '  assertEqual(f_spans |> count, 2)',
+            '  assertEqual(f_spans[0].start, 0)',
+            '  assertEqual(f_spans[0].end, 9)',
+            '  assertEqual(f_spans[1].start, 14)',
+            '  assertEqual(f_spans[1].end, 20)',
+            '  echo "REGEX_API_FIND_ALL_OK"',
+            '',
+            '  let r_text = regex.replace_all("(cat|dog)+", "PET", "catdogcat and dogcat")',
+            '  assertEqual(r_text, "PET and PET")',
+            '  echo "REGEX_API_REPLACE_ALL_OK"',
+            '',
+            '  let sp_parts = regex.split("(cat|dog)+", "catdogcat and dogcat")',
+            '  assertEqual(sp_parts |> count, 3)',
+            '  assertEqual(sp_parts[0], "")',
+            '  assertEqual(sp_parts[1], " and ")',
+            '  assertEqual(sp_parts[2], "")',
+            '  echo "REGEX_API_SPLIT_OK"',
+            '',
+            '  let sp_empty = regex.split("a*", "b")',
+            '  assertEqual(sp_empty |> count, 3)',
+            '  assertEqual(sp_empty[0], "")',
+            '  assertEqual(sp_empty[1], "b")',
+            '  assertEqual(sp_empty[2], "")',
+            '  echo "REGEX_API_SPLIT_EMPTY_OK"',
+        ])
 
         moss_src.extend([
             '',
@@ -507,18 +547,194 @@ def check_regex_oracle():
 
         (app_dir / "src" / "main.moss").write_text("\n".join(moss_src) + "\n", encoding="utf-8")
 
-        t0 = time.perf_counter()
         rc, stdout, stderr = run_moss_app(app_dir)
-        t_total = time.perf_counter() - t0
         assert rc == 0, f"Moss regex probe failed:\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
 
         for idx in range(len(test_cases)):
             assert f"REGEX_CASE_{idx}_OK" in stdout, f"Missing REGEX_CASE_{idx}_OK"
 
-        for n in [10, 50, 100, 500]:
-            assert f"ADV_N_OK_{n}" in stdout, f"Missing ADV_N_OK_{n}"
+        assert "REGEX_API_FIND_ALL_OK" in stdout
+        assert "REGEX_API_REPLACE_ALL_OK" in stdout
+        assert "REGEX_API_SPLIT_OK" in stdout
+        assert "REGEX_API_SPLIT_EMPTY_OK" in stdout
+        print("      moss.regex differential oracle checks passed (reconverging NFA, origin arrival, APIs).")
 
-        print(f"      moss.regex differential & linear complexity checks passed ({t_total*1000:.1f}ms total).")
+    # -----------------------------------------------------------------------
+    # Task 2: Actual Linear Runtime-Scaling Experiment
+    # -----------------------------------------------------------------------
+    print("      Running Task 2 live runtime-scaling experiment (precompiled regex, 1K..16K inputs)...")
+    with tempfile.TemporaryDirectory(prefix="regex-scaling-", dir=SCRATCH) as td:
+        scale_dir = Path(td)
+        (scale_dir / "src").mkdir(parents=True)
+        (scale_dir / "Moss.toml").write_text(
+            f'[package]\nname = "regex_scaling_probe"\nversion = "0.1.0"\n[build]\nsource = "src"\n\n'
+            f'[dependencies]\n"moss.regex" = {{ path = "{ROOT / "packages" / "regex"}" }}\n',
+            encoding="utf-8"
+        )
+
+        scaling_moss_code = """module main
+import regex
+
+fn build_adversary(n: Int) -> String:
+  var s = "a"
+  var cur = 1
+  while cur * 2 <= n:
+    s = s + s
+    cur = cur * 2
+  while cur < n:
+    s = s + "a"
+    cur = cur + 1
+  return s
+
+fn run_probe_samples(re: regex.Regex, text: String, reps: Int, label: String):
+  var s = 0
+  while s < 5:
+    echo "START", label, s
+    var i = 0
+    while i < reps:
+      let _m = regex.regex_is_match(re, text)
+      i = i + 1
+    echo "END", label, s
+    s = s + 1
+
+export fn main():
+  try:
+    # 1. Compile once, outside timed regions (precompiled Regex objects)
+    let re_a_star_b = regex.compile("a*b")
+    let re_alt_star_b = regex.compile("(a|aa)*b")
+    let re_plus_plus_b = regex.compile("(a+)+b")
+
+    # 2. Preconstruct test inputs outside timed regions (1K, 2K, 4K, 8K, 16K)
+    let t_1024 = build_adversary(1024)
+    let t_2048 = build_adversary(2048)
+    let t_4096 = build_adversary(4096)
+    let t_8192 = build_adversary(8192)
+    let t_16384 = build_adversary(16384)
+
+    # Pattern 1: a*b
+    run_probe_samples(re_a_star_b, t_1024, 10, "a_star_b_1024")
+    run_probe_samples(re_a_star_b, t_2048, 10, "a_star_b_2048")
+    run_probe_samples(re_a_star_b, t_4096, 10, "a_star_b_4096")
+    run_probe_samples(re_a_star_b, t_8192, 10, "a_star_b_8192")
+    run_probe_samples(re_a_star_b, t_16384, 10, "a_star_b_16384")
+
+    # Pattern 2: (a|aa)*b
+    run_probe_samples(re_alt_star_b, t_1024, 10, "alt_star_b_1024")
+    run_probe_samples(re_alt_star_b, t_2048, 10, "alt_star_b_2048")
+    run_probe_samples(re_alt_star_b, t_4096, 10, "alt_star_b_4096")
+    run_probe_samples(re_alt_star_b, t_8192, 10, "alt_star_b_8192")
+    run_probe_samples(re_alt_star_b, t_16384, 10, "alt_star_b_16384")
+
+    # Pattern 3: (a+)+b
+    run_probe_samples(re_plus_plus_b, t_1024, 10, "plus_plus_b_1024")
+    run_probe_samples(re_plus_plus_b, t_2048, 10, "plus_plus_b_2048")
+    run_probe_samples(re_plus_plus_b, t_4096, 10, "plus_plus_b_4096")
+    run_probe_samples(re_plus_plus_b, t_8192, 10, "plus_plus_b_8192")
+    run_probe_samples(re_plus_plus_b, t_16384, 10, "plus_plus_b_16384")
+
+    echo "ALL_BENCHMARKS_DONE"
+  recover regex.RegexError.UnexpectedToken:
+    assert(false)
+  recover regex.RegexError.UnclosedParenthesis:
+    assert(false)
+  recover regex.RegexError.UnclosedBracket:
+    assert(false)
+  recover regex.RegexError.DanglingRepetition:
+    assert(false)
+  recover regex.RegexError.InvalidRange:
+    assert(false)
+  recover regex.RegexError.InvalidEscape:
+    assert(false)
+  recover regex.RegexError.PatternTooComplex:
+    assert(false)
+  recover regex.RegexError.UnsupportedFeature:
+    assert(false)
+"""
+        (scale_dir / "src" / "main.moss").write_text(scaling_moss_code, encoding="utf-8")
+
+        build_res = subprocess.run([str(MARGO), "build", "--release"], cwd=str(scale_dir), capture_output=True, text=True)
+        assert build_res.returncode == 0, f"Scaling probe release build failed:\n{build_res.stdout}\n{build_res.stderr}"
+
+        bin_path = scale_dir / "build" / "release" / "regex_scaling_probe"
+        assert bin_path.is_file(), f"Missing compiled binary at {bin_path}"
+
+        # Execute with pseudo-terminal for real-time per-block timing
+        master, slave = pty.openpty()
+        proc = subprocess.Popen([str(bin_path)], stdin=slave, stdout=slave, stderr=slave, close_fds=True)
+        os.close(slave)
+
+        measurements = {}
+        active_start = {}
+        buf = ""
+
+        while True:
+            try:
+                raw = os.read(master, 1024)
+                if not raw:
+                    break
+                buf += raw.decode("utf-8", errors="replace")
+                while "\n" in buf:
+                    line, buf = buf.split("\n", 1)
+                    line = line.strip()
+                    if line.startswith("START"):
+                        parts = line.split()
+                        if len(parts) >= 3:
+                            label = parts[1]
+                            s_idx = parts[2]
+                            active_start[(label, s_idx)] = time.perf_counter()
+                    elif line.startswith("END"):
+                        t_now = time.perf_counter()
+                        parts = line.split()
+                        if len(parts) >= 3:
+                            label = parts[1]
+                            s_idx = parts[2]
+                            t_start = active_start.get((label, s_idx))
+                            if t_start:
+                                per_match_ms = (t_now - t_start) / 10.0 * 1000.0
+                                measurements.setdefault(label, []).append(per_match_ms)
+                    elif line == "ALL_BENCHMARKS_DONE":
+                        break
+            except OSError:
+                break
+
+        os.close(master)
+        proc.wait()
+        assert proc.returncode == 0, f"Scaling probe process exited with {proc.returncode}"
+
+        # Print scaling results and validate linear trend
+        sizes = [1024, 2048, 4096, 8192, 16384]
+        patterns = [
+            ("a*b", "a_star_b"),
+            ("(a|aa)*b", "alt_star_b"),
+            ("(a+)+b", "plus_plus_b"),
+        ]
+
+        print("      -------------------------------------------------------------------------")
+        print(f"      {'Pattern':<16s} {'Size':>6s} {'Median Time (ms)':>18s} {'Ratio (2x N)':>14s}")
+        print("      -------------------------------------------------------------------------")
+
+        for pat_name, pat_prefix in patterns:
+            prev_median = None
+            for sz in sizes:
+                key = f"{pat_prefix}_{sz}"
+                assert key in measurements and len(measurements[key]) >= 5, f"Missing measurements for {key}"
+                med = statistics.median(measurements[key])
+                ratio_str = "-"
+                if prev_median is not None and prev_median > 0:
+                    ratio = med / prev_median
+                    ratio_str = f"{ratio:.2f}x"
+                    # Linear growth check: doubling input size should increase time by ~2x (bounded by [1.0, 3.5])
+                    assert 1.0 <= ratio <= 3.5, f"Non-linear scaling detected for {pat_name} at size {sz}: ratio={ratio:.2f}x"
+                print(f"      {pat_name:<16s} {sz:>6d} {med:>18.4f} {ratio_str:>14s}")
+                prev_median = med
+            print("      -------------------------------------------------------------------------")
+
+        # Validate pattern complexity cost: (a|aa)*b > a*b due to state count
+        med_simple_16k = statistics.median(measurements["a_star_b_16384"])
+        med_complex_16k = statistics.median(measurements["alt_star_b_16384"])
+        assert med_complex_16k >= med_simple_16k * 0.9, "State-count complexity cost failed"
+
+        print("      Runtime-scaling experiment successfully validated linear O(N) scaling.")
 
 
 # ---------------------------------------------------------------------------

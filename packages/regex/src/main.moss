@@ -767,6 +767,10 @@ fn run_nfa_search_from(re: Regex, chars_vec: Vector[String], start_scan: Int) ->
             state_origins[o2] = s_orig
             active_states.push(o2)
             worklist.push(o2)
+          else:
+            if s_orig < state_origins[o2]:
+              state_origins[o2] = s_orig
+              worklist.push(o2)
       else:
         if k == 5: # ANCHOR_START
           if pos == 0:

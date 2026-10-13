@@ -27,11 +27,21 @@ fn compile_dummy() -> regex.Regex:
 fn bench_compile(pattern: String) -> regex.Regex:
   try:
     return regex.compile(pattern)
+  recover regex.RegexError.UnexpectedToken:
+    return compile_dummy()
   recover regex.RegexError.UnclosedParenthesis:
     return compile_dummy()
   recover regex.RegexError.UnclosedBracket:
     return compile_dummy()
+  recover regex.RegexError.DanglingRepetition:
+    return compile_dummy()
+  recover regex.RegexError.InvalidRange:
+    return compile_dummy()
   recover regex.RegexError.InvalidEscape:
+    return compile_dummy()
+  recover regex.RegexError.PatternTooComplex:
+    return compile_dummy()
+  recover regex.RegexError.UnsupportedFeature:
     return compile_dummy()
 
 bench "regex compilation 20 states":

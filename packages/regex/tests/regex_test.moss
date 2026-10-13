@@ -141,3 +141,385 @@ test "regex error contracts":
   recover regex.RegexError.UnexpectedToken:
     caught_trailing_alt = true
   assert(caught_trailing_alt)
+
+test "regex alternation reconverging on shared NFA states":
+  let r1 = regex.search("(a|ab)c", "abc")
+  match r1:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 3)
+
+  let r2 = regex.search("(ab|a)c", "abc")
+  match r2:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 3)
+
+  let r3 = regex.search("((a|ba)|(b|ab))c", "abc")
+  match r3:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 3)
+
+  let r4 = regex.search("(a?|b?)c", "ac")
+  match r4:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 2)
+
+  let r5 = regex.search("(a?|b?)c", "bc")
+  match r5:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 2)
+
+  let r6 = regex.search("(a?|b?)c", "c")
+  match r6:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 1)
+
+  let r7 = regex.search("((a|b)|(c|d))e", "be")
+  match r7:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 2)
+
+  let r8 = regex.search("((a|b)|(c|d))e", "de")
+  match r8:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 2)
+
+  let r9 = regex.search("(a|aa)*b", "aaab")
+  match r9:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 4)
+
+  let r10 = regex.search("((a|b)*|c*)d", "abacabd")
+  match r10:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 4)
+      assertEqual(end, 7)
+
+  let r10_full = regex.search("((a|b)*|c*)d", "abad")
+  match r10_full:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 4)
+
+  let r11 = regex.search("(a|a)b", "ab")
+  match r11:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 2)
+
+test "regex earlier origins arriving after later ones":
+  let r1 = regex.search("a*b", "caab")
+  match r1:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 1)
+      assertEqual(end, 4)
+
+  let r2 = regex.search("(a*|b*)c", "ac")
+  match r2:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 2)
+
+  let r3 = regex.search("(ab|b)", "bab")
+  match r3:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 1)
+
+  let r4 = regex.search("(a|b)+", "xabcy")
+  match r4:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 1)
+      assertEqual(end, 3)
+
+  let r4_star = regex.search("(a|b)*", "xabcy")
+  match r4_star:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 0)
+
+  let r5 = regex.search("b+c", "abbbc")
+  match r5:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 1)
+      assertEqual(end, 5)
+
+  let r6 = regex.search("(a|b*)*c", "bbac")
+  match r6:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 4)
+
+test "regex nested quantifiers":
+  let r1 = regex.full_match("(a*)*", "aaa")
+  match r1:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 3)
+
+  let r2 = regex.full_match("(a*)*", "")
+  match r2:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 0)
+
+  let r3 = regex.full_match("(a+)+", "aaa")
+  match r3:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 3)
+
+  let r4 = regex.full_match("(a?)+", "a")
+  match r4:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 1)
+
+  let r5 = regex.full_match("(a*)+", "aaa")
+  match r5:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 3)
+
+  let r6 = regex.full_match("(a?)*", "aaa")
+  match r6:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 3)
+
+  let r7 = regex.full_match("(a+)*", "aaa")
+  match r7:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 3)
+
+  let r8 = regex.full_match("((a?)+)?", "a")
+  match r8:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 1)
+
+  let r9 = regex.full_match("(a+)?", "aaa")
+  match r9:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 3)
+
+  let r10 = regex.full_match("(a+)?", "")
+  match r10:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 0)
+
+  let r11 = regex.full_match("(a|b+)*", "abbba")
+  match r11:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 5)
+
+  let r12 = regex.full_match("((ab)*|c)+", "ababcab")
+  match r12:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 7)
+
+  let r13 = regex.full_match("(a+)+b", "aaab")
+  match r13:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 4)
+
+test "regex empty matches and overlapping matches":
+  let r1 = regex.search("a*", "b")
+  match r1:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 0)
+
+  let r2 = regex.search("^", "abc")
+  match r2:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 0)
+
+  let r3 = regex.search("$", "abc")
+  match r3:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 3)
+      assertEqual(end, 3)
+
+  let spans_empty = regex.find_all("a*", "b")
+  assertEqual(spans_empty |> count, 2)
+  assertEqual(spans_empty[0].start, 0)
+  assertEqual(spans_empty[0].end, 0)
+  assertEqual(spans_empty[0].text, "")
+  assertEqual(spans_empty[1].start, 1)
+  assertEqual(spans_empty[1].end, 1)
+  assertEqual(spans_empty[1].text, "")
+
+  let spans_a = regex.find_all("a*", "a")
+  assertEqual(spans_a |> count, 2)
+  assertEqual(spans_a[0].start, 0)
+  assertEqual(spans_a[0].end, 1)
+  assertEqual(spans_a[0].text, "a")
+  assertEqual(spans_a[1].start, 1)
+  assertEqual(spans_a[1].end, 1)
+  assertEqual(spans_a[1].text, "")
+
+  let rep1 = regex.replace_all("a*", "X", "b")
+  assertEqual(rep1, "XbX")
+
+  let rep2 = regex.replace_all("a*", "X", "ab")
+  assertEqual(rep2, "XXbX")
+
+  let sp1 = regex.split("a*", "b")
+  assertEqual(sp1 |> count, 3)
+  assertEqual(sp1[0], "")
+  assertEqual(sp1[1], "b")
+  assertEqual(sp1[2], "")
+
+  let r4 = regex.search("aba", "ababa")
+  match r4:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 3)
+
+  let spans_overlap = regex.find_all("aba", "ababa")
+  assertEqual(spans_overlap |> count, 1)
+  assertEqual(spans_overlap[0].start, 0)
+  assertEqual(spans_overlap[0].end, 3)
+  assertEqual(spans_overlap[0].text, "aba")
+
+test "regex search find_all replace_all and split comprehensive":
+  let text = "catdogcat and dogcat"
+  let s_res = regex.search("(cat|dog)+", text)
+  match s_res:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 9)
+
+  let f_spans = regex.find_all("(cat|dog)+", text)
+  assertEqual(f_spans |> count, 2)
+  assertEqual(f_spans[0].start, 0)
+  assertEqual(f_spans[0].end, 9)
+  assertEqual(f_spans[0].text, "catdogcat")
+  assertEqual(f_spans[1].start, 14)
+  assertEqual(f_spans[1].end, 20)
+  assertEqual(f_spans[1].text, "dogcat")
+
+  let r_all = regex.replace_all("(cat|dog)+", "PET", "catdogcat and dogcat")
+  assertEqual(r_all, "PET and PET")
+
+  let sp_res = regex.split("(cat|dog)+", "catdogcat and dogcat")
+  assertEqual(sp_res |> count, 3)
+  assertEqual(sp_res[0], "")
+  assertEqual(sp_res[1], " and ")
+  assertEqual(sp_res[2], "")
+
+  let digits_text = "abc123def456ghi"
+  let d_spans = regex.find_all("[0-9]+", digits_text)
+  assertEqual(d_spans |> count, 2)
+  assertEqual(d_spans[0].text, "123")
+  assertEqual(d_spans[1].text, "456")
+
+  let d_rep = regex.replace_all("[0-9]+", "#", "abc123def456ghi")
+  assertEqual(d_rep, "abc#def#ghi")
+
+  let d_split = regex.split("[0-9]+", "abc123def456ghi")
+  assertEqual(d_split |> count, 3)
+  assertEqual(d_split[0], "abc")
+  assertEqual(d_split[1], "def")
+  assertEqual(d_split[2], "ghi")
+
+  let alt_longest_res = regex.search("a|ab", "ab")
+  match alt_longest_res:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 2)
+
+  let alt_rep = regex.replace_all("a|ab", "Z", "ab")
+  assertEqual(alt_rep, "Z")
