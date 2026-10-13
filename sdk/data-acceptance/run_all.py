@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 PROJECT = Path(__file__).resolve().parent
-REPO = Path("/home/owner/daji/code/moss3")
+REPO = Path(__file__).resolve().parents[2]
 MARGO = REPO / "margo"
 PARSE = REPO / "sdk" / "parse"
 FMT = REPO / "sdk" / "fmt"

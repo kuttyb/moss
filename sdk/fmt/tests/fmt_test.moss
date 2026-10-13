@@ -44,3 +44,29 @@ test "csv field escaping":
   assertEqual(fmt.escape_csv_field("has,comma", ","), quote + "has,comma" + quote)
   assertEqual(fmt.escape_csv_field("line1\nline2", ","), quote + "line1\nline2" + quote)
   assertEqual(fmt.quote_csv_field_always("simple"), quote + "simple" + quote)
+
+test "format_int boundaries and int64 min":
+  assertEqual(fmt.format_int(0), "0")
+  assertEqual(fmt.format_int(1), "1")
+  assertEqual(fmt.format_int(-1), "-1")
+  assertEqual(fmt.format_int(42), "42")
+  assertEqual(fmt.format_int(-42), "-42")
+  assertEqual(fmt.format_int(1000000), "1000000")
+  assertEqual(fmt.format_int(-1000000), "-1000000")
+  assertEqual(fmt.format_int(9223372036854775807), "9223372036854775807")
+  int64_min = 0 - 9223372036854775807 - 1
+  assertEqual(fmt.format_int(int64_min), "-9223372036854775808")
+
+test "json string escaping control characters":
+  var ctrl_in = Vector[String]()
+  ctrl_in.push("a")
+  ctrl_in.push("\n")
+  ctrl_in.push("b")
+  ctrl_in.push("\t")
+  ctrl_in.push("c")
+  ctrl_in.push("\r")
+  ctrl_in.push("d")
+  s = "".join(ctrl_in)
+  escaped = fmt.escape_json_string(s)
+  expected = "a\\nb\\tc\\rd"
+  assertEqual(escaped, expected)

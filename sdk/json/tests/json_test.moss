@@ -159,4 +159,114 @@ test "json convenience builders":
   expected = "{" + q + "title" + q + ":" + q + "Test" + q + "," + q + "code" + q + ":200," + q + "ok" + q + ":true," + q + "extra" + q + ":null," + q + "items" + q + ":[10,20," + q + "done" + q + "]}"
   assertEqual(json.stringify(doc), expected)
 
+test "json counterexample nested array [[1],2]":
+  doc = json.parse("[[1],2]")
+  root = doc.root
+  assertEqual(json.array_length(doc, root), 2)
+  sub = json.array_get(doc, root, 0)
+  assertEqual(json.node_kind(doc, sub), json.kind_array())
+  assertEqual(json.array_length(doc, sub), 1)
+  assertEqual(json.get_number_int(doc, json.array_get(doc, sub, 0)), 1)
+  elem1 = json.array_get(doc, root, 1)
+  assertEqual(json.get_number_int(doc, elem1), 2)
+  assertEqual(json.stringify(doc), "[[1],2]")
+
+test "json counterexample nested object with sibling":
+  q = "\""
+  json_src = "{" + q + "a" + q + ":{" + q + "x" + q + ":1}," + q + "b" + q + ":2}"
+  doc = json.parse(json_src)
+  root = doc.root
+  assertEqual(json.object_length(doc, root), 2)
+  assertEqual(json.object_key(doc, root, 0), "a")
+  assertEqual(json.object_key(doc, root, 1), "b")
+  sub = json.object_get(doc, root, "a")
+  assertEqual(json.node_kind(doc, sub), json.kind_object())
+  assertEqual(json.object_length(doc, sub), 1)
+  assertEqual(json.object_key(doc, sub, 0), "x")
+  assertEqual(json.get_number_int(doc, json.object_get(doc, sub, "x")), 1)
+  assertEqual(json.get_number_int(doc, json.object_get(doc, root, "b")), 2)
+  assertEqual(json.stringify(doc), json_src)
+
+test "json nested containers [[1,2],[3,4],5]":
+  doc = json.parse("[[1,2],[3,4],5]")
+  root = doc.root
+  assertEqual(json.array_length(doc, root), 3)
+  sub0 = json.array_get(doc, root, 0)
+  sub1 = json.array_get(doc, root, 1)
+  assertEqual(json.array_length(doc, sub0), 2)
+  assertEqual(json.get_number_int(doc, json.array_get(doc, sub0, 0)), 1)
+  assertEqual(json.get_number_int(doc, json.array_get(doc, sub0, 1)), 2)
+  assertEqual(json.array_length(doc, sub1), 2)
+  assertEqual(json.get_number_int(doc, json.array_get(doc, sub1, 0)), 3)
+  assertEqual(json.get_number_int(doc, json.array_get(doc, sub1, 1)), 4)
+  assertEqual(json.get_number_int(doc, json.array_get(doc, root, 2)), 5)
+  assertEqual(json.stringify(doc), "[[1,2],[3,4],5]")
+
+test "json nested mixed containers and roundtrip":
+  q = "\""
+  json_src = "{" + q + "a" + q + ":[1,2]," + q + "b" + q + ":{" + q + "x" + q + ":3}," + q + "c" + q + ":4}"
+  doc = json.parse(json_src)
+  root = doc.root
+  assertEqual(json.object_length(doc, root), 3)
+  arr_a = json.object_get(doc, root, "a")
+  assertEqual(json.array_length(doc, arr_a), 2)
+  assertEqual(json.get_number_int(doc, json.array_get(doc, arr_a, 0)), 1)
+  assertEqual(json.get_number_int(doc, json.array_get(doc, arr_a, 1)), 2)
+  obj_b = json.object_get(doc, root, "b")
+  assertEqual(json.object_length(doc, obj_b), 1)
+  assertEqual(json.get_number_int(doc, json.object_get(doc, obj_b, "x")), 3)
+  assertEqual(json.get_number_int(doc, json.object_get(doc, root, "c")), 4)
+  assertEqual(json.stringify(doc), json_src)
+
+test "json interleaved manual container construction":
+  doc = json.new_doc()
+  arr0 = json.add_array(doc)
+  arr1 = json.add_array(doc)
+  doc.root = arr0
+  json.array_push_int(doc, arr0, 100)
+  json.array_push_int(doc, arr1, 200)
+  json.array_push(doc, arr0, arr1)
+  json.array_push_int(doc, arr0, 300)
+  json.array_push_int(doc, arr1, 400)
+
+  assertEqual(json.array_length(doc, arr0), 3)
+  assertEqual(json.get_number_int(doc, json.array_get(doc, arr0, 0)), 100)
+  sub = json.array_get(doc, arr0, 1)
+  assertEqual(sub, arr1)
+  assertEqual(json.array_length(doc, sub), 2)
+  assertEqual(json.get_number_int(doc, json.array_get(doc, sub, 0)), 200)
+  assertEqual(json.get_number_int(doc, json.array_get(doc, sub, 1)), 400)
+  assertEqual(json.get_number_int(doc, json.array_get(doc, arr0, 2)), 300)
+  assertEqual(json.stringify(doc), "[100,[200,400],300]")
+
+test "json raw unescaped control character rejection":
+  q = "\""
+  var tab_str = Vector[String]()
+  tab_str.push(q + "")
+  tab_str.push("\t")
+  tab_str.push(q + "")
+  assert(not json.validate("".join(tab_str)))
+
+  var lf_str = Vector[String]()
+  lf_str.push(q + "")
+  lf_str.push("\n")
+  lf_str.push(q + "")
+  assert(not json.validate("".join(lf_str)))
+
+  var cr_str = Vector[String]()
+  cr_str.push(q + "")
+  cr_str.push("\r")
+  cr_str.push(q + "")
+  assert(not json.validate("".join(cr_str)))
+
+test "json int64 min and boundary values":
+  doc = json.new_doc()
+  root = json.add_array(doc)
+  doc.root = root
+  int64_min = 0 - 9223372036854775807 - 1
+  json.array_push_int(doc, root, 0)
+  json.array_push_int(doc, root, 9223372036854775807)
+  json.array_push_int(doc, root, int64_min)
+  assertEqual(json.stringify(doc), "[0,9223372036854775807,-9223372036854775808]")
+
 

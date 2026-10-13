@@ -93,13 +93,14 @@ export fn format_int(val: Int) -> String:
   var v = val
   if v < 0:
     is_neg = true
-    v = 0 - v
   digits = "0123456789"
   var chars = Vector[String]()
-  while v > 0:
-    d = v % 10
+  while v != 0:
+    var rem = v % 10
+    if rem < 0:
+      rem = 0 - rem
+    chars.push(digits.char_at(rem))
     v = v / 10
-    chars.push(digits.char_at(d))
   var res = Vector[String]()
   if is_neg:
     res.push("-")
@@ -115,6 +116,8 @@ export fn escape_json_char(ch: String) -> String:
   line_feed = "\n"
   carriage_return = "\r"
   tab = "\t"
+  backspace = "\x08"
+  formfeed = "\x0c"
   if ch == quote:
     return "\\\""
   if ch == backslash:
@@ -125,6 +128,52 @@ export fn escape_json_char(ch: String) -> String:
     return "\\r"
   if ch == tab:
     return "\\t"
+  if ch == backspace:
+    return "\\b"
+  if ch == formfeed:
+    return "\\f"
+
+  var ctrl_chars = Vector[String]()
+  ctrl_chars.push("\x00")
+  ctrl_chars.push("\x01")
+  ctrl_chars.push("\x02")
+  ctrl_chars.push("\x03")
+  ctrl_chars.push("\x04")
+  ctrl_chars.push("\x05")
+  ctrl_chars.push("\x06")
+  ctrl_chars.push("\x07")
+  ctrl_chars.push("\x08")
+  ctrl_chars.push("\t")
+  ctrl_chars.push("\n")
+  ctrl_chars.push("\x0b")
+  ctrl_chars.push("\x0c")
+  ctrl_chars.push("\r")
+  ctrl_chars.push("\x0e")
+  ctrl_chars.push("\x0f")
+  ctrl_chars.push("\x10")
+  ctrl_chars.push("\x11")
+  ctrl_chars.push("\x12")
+  ctrl_chars.push("\x13")
+  ctrl_chars.push("\x14")
+  ctrl_chars.push("\x15")
+  ctrl_chars.push("\x16")
+  ctrl_chars.push("\x17")
+  ctrl_chars.push("\x18")
+  ctrl_chars.push("\x19")
+  ctrl_chars.push("\x1a")
+  ctrl_chars.push("\x1b")
+  ctrl_chars.push("\x1c")
+  ctrl_chars.push("\x1d")
+  ctrl_chars.push("\x1e")
+  ctrl_chars.push("\x1f")
+
+  var i = 0
+  while i < 32:
+    target = ctrl_chars[i]
+    if ch == target:
+      return "\\u" + format_hex_u16(i)
+    i = i + 1
+
   return ch + ""
 
 export fn escape_json_string(value: String) -> String:
