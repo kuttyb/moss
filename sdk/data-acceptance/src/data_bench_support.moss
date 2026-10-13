@@ -1,0 +1,51 @@
+module data_bench_support
+import core
+import text
+import json
+import csv
+import fmt
+
+export fn make_json_object(n: Int) -> String:
+  doc = json.new_doc()
+  root = json.add_object(doc)
+  doc.root = root
+  digits = "0123456789"
+  var i = 0
+  while i < n:
+    k = digits.char_at(i % 10)
+    key = "key" + k + fmt.format_int(i)
+    v = json.object_set_int(doc, root, key, i)
+    i = i + 1
+  return json.stringify(doc)
+
+export fn count_json_keys(input: String) -> Int:
+  doc = json.parse(input)
+  return json.object_length(doc, doc.root)
+
+export fn roundtrip_json(input: String) -> String:
+  doc = json.parse(input)
+  return json.stringify(doc)
+
+export fn make_csv_table(rows: Int, cols: Int) -> String:
+  var all_rows = Vector[Vector[String]]()
+  digits = "0123456789"
+  var r = 0
+  while r < rows:
+    var row = Vector[String]()
+    var c = 0
+    while c < cols:
+      rk = digits.char_at(r % 10)
+      ck = digits.char_at(c % 10)
+      row.push("cell" + rk + ck)
+      c = c + 1
+    all_rows.push(row)
+    r = r + 1
+  return csv.write_all_lf(all_rows, ",")
+
+export fn count_csv_rows(input: String) -> Int:
+  table = csv.read_all(input, ",")
+  return csv.row_count(table)
+
+export fn roundtrip_csv(input: String) -> String:
+  table = csv.read_all(input, ",")
+  return csv.write_all_lf(table, ",")
