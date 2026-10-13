@@ -1,5 +1,25 @@
 # Moss current status
 
+## Phase 24 Team H I/O-services feasibility — 2026-10-12
+
+The `phase24-host-io` worktree is based exactly on Team H host base
+`2845390534272e330a0ecc7c9e970d1815eb0588`. Native probes confirm fixed
+4096-byte FileIO reads, borrowed Range checksums, bounded 65536-byte EOF
+collection, explicit-offset Range writes, and an imported provider that keeps
+FileIO internal behind a path/value API. A permanent negative provider proves
+that passing FileIO itself across packages fails with `BUILD_BACKEND_ERROR` /
+Rust E0308 because consumer `moss_fileio::FileIO` and provider
+`moss_hostcap::FileIO` are distinct types. Generic unbounded Range writes are
+correctly rejected with `FILEIO_UNBOUNDED_REQUEST`.
+
+Environment and process probes return `UNKNOWN_SYMBOL_OR_TYPE`; FileIO remains
+unsupported in Fast Debug. No fake `moss.io`, `moss.env`, or `moss.process`
+package was published. The feasibility report proposes the smallest canonical
+FileIO ABI and direct non-shell environment/process runtime contracts. Run
+`python3 sdk/host/io/check_feasibility.py` for the complete positive/negative
+gate. Source-free FileIO-capability validation and meaningful I/O benchmarks
+remain blocked pending the runtime/ABI decisions.
+
 ## Phase 24 Team I final merge checkpoint — 2026-10-12
 
 Team I merged the final source tips `phase24-math`

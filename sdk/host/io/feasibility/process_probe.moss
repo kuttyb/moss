@@ -1,0 +1,2 @@
+fn main():
+  echo Process.run("true", Vector[String]())
