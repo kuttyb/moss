@@ -6,6 +6,7 @@
 **Repair implementation:** `3ea1092359cb82b537bbf33595b3d75836df8e79`
 **Exact reviewed repair candidate:** `c80cf8ac51a9fa264b271b5a56c89ea2068ff4b7` (**GO**)
 **Delivery with GO report:** `85eb047bc44bd83cd51ec48edcd601bd257effe1`
+**L7 corrective implementation:** `58340e636738331b84c5be1e42556ee612a73449`
 **Integration owner:** Team I
 
 ## Delivered scope
@@ -46,8 +47,8 @@
 | `moss.datastructures` | 23 | 23/23 | 23/23 | 23/23 |
 | `moss.tables` | 24 | 24/24 | 24/24 | 24/24 |
 | `moss.binary` | 9 | 9/9 | 9/9 | 9/9 |
-| `moss.cbor` | 24 | 24/24 | 24/24 | 24/24 |
-| Total package tests | 101 | 101/101 | 101/101 | 101/101 |
+| `moss.cbor` | 34 | 34/34 | 34/34 | 34/34 |
+| Total package tests | 103 | 103/103 | 103/103 | 103/103 |
 
 Additional acceptance passed:
 
@@ -103,6 +104,33 @@ No compiler/runtime source was changed, no new testing framework was built,
 and no full performance-optimization claim is made. The branch has not been
 merged into `phase24-integration` or `main`; Team I retains integration
 ownership.
+
+## L7 corrective review
+
+L7 issued a conditional **NO-GO** for reviewed branch state `b3ebec62` after
+finding two CBOR invariants that the earlier acceptance did not exercise.
+Corrective implementation `debf99f068735630ca28a7d5ee4fc343832ac094`
+now requires every linked array child and map key/value to name the edge owner
+in `parents[]`, and rejects attachment of a node already designated as the
+document root through typed `CborError.InvalidRoot` before mutation.
+
+Two implementation regressions cover swapped nested-array parents, mismatched
+map key/value ownership, typed malformed-record access/encoding failures, and
+root attachment as an array child, map key, and map value with unchanged
+state. Independent adversarial commits `a6ecc79` and `76baf87` add eight more
+forged-record tests for incoming-edge multiplicity, a true ownership-consistent
+parent cycle, edge cycles, disconnected roots, map ownership, successful
+mutator validity, and failed-mutation atomicity. The independent verifier found
+no additional production defect.
+
+The compiled-only ABI-v9 consumer now directly recovers corrective
+`InvalidRoot` and verifies root identity, parent, edge count, container length,
+and document validity remain unchanged. All 103 package tests pass in each of
+Native Debug, Native Release, and Fast Debug; normal and live-oracle acceptance,
+the standalone semantic oracle, source-free ABI-v9 gate, `make check`, and
+`make examples` pass. A fresh exact-SHA corrective Architect decision remains
+the final acceptance step and will be preserved separately from both earlier
+Architect reports.
 
 ## Independent review and repair
 

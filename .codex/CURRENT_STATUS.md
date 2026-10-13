@@ -1,5 +1,29 @@
 # Moss current status
 
+## Phase 24 Team A L7 CBOR corrections awaiting exact-SHA Architect review — 2026-10-13
+
+Branch `phase24-advanced-data` preserves all five delivered SDK packages and
+adds the two L7-requested CBOR corrections. Implementation commit
+`debf99f068735630ca28a7d5ee4fc343832ac094` makes linked edge ownership agree
+with each child's public `parents[]` entry and rejects attachment of the
+designated root through typed `CborError.InvalidRoot` before mutation.
+Independent adversarial commits `a6ecc79` and `76baf87` add eight forged-record
+tests, including a true ownership-consistent parent cycle; the verifier found
+no net-new production defect. Commit `58340e6` adds direct corrective typed
+error recovery to the compiled-only ABI-v9 consumer.
+
+The five package suites pass 103/103 unique tests in Native Debug, Native
+Release, and Fast Debug (309 executions). Normal and pinned `cbor2 5.7.1`
+live-oracle acceptance pass: seven cross-package scenarios in all three modes,
+the seeded ndarray/table oracle in all three modes, 12 RFC vectors, 14 exact
+source-free ABI-v9 provider pairs, and 12 comparisons in each CBOR oracle
+direction. `TMPDIR="$PWD/tmp" make check` passes with 54/54 Executor tests,
+61/61 editor tests, and `all Moss v0.1 tests passed`; `make examples` passes.
+L7-A-001 and L7-A-002 are confirmed L7-origin findings and are fixed with
+passing regressions, bringing the historical resolved-defect ledger from seven
+to nine. A fresh independent Architect must still review the exact frozen
+corrective candidate before push and final handoff.
+
 ## Phase 24 Team A advanced-data accepted for Team I handoff — 2026-10-13
 
 Branch `phase24-advanced-data` delivers `moss.ndarray`,
