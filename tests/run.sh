@@ -53,6 +53,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_standard_error_nam
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_borrowed_view_write.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_generic_specialization.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_imported_generic_expressions.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_same_module_type_resolution.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 sdk/foundations/acceptance/run_all.py
 PYTHONDONTWRITEBYTECODE=1 python3 sdk/text-encoding-acceptance/run_all.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_adversarial_architect.py "$compiler"
