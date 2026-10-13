@@ -118,6 +118,22 @@ confirms them after merge.
 - Impact: the reported 1–2 ns rows and unobserved RNG measurements are not SDK
   operation timings and are excluded from integration performance claims.
 
+### P24-D-001 — Unicode scalar-to-String runtime primitive missing for JSON \uXXXX synthesis
+
+- Owner: Team D / Team I
+- Severity: high (language/runtime capability)
+- Status: submitted to Team I
+- Reproducer: inspect `docs/phase24/TEAM_I_ESCALATION_UNICODE_SCALAR.md`. Moss v0.1 has no `string_from_scalar(Int)` or `string_from_utf8(Vector[Int])` primitive.
+- Impact: JSON `\uXXXX` and surrogate pairs are validated and decoded to integer scalars and ASCII strings; full non-ASCII string synthesis is deferred pending Team I runtime hook, with no false compliance claimed.
+
+### P24-D-002 — Compiler internal error when bench block lowers functions with Phase 21 typed raise effects
+
+- Owner: Team D / Team I
+- Severity: medium (tooling limitation)
+- Status: submitted to Team I
+- Reproducer: invoking any function with a declared/inferred `raise` effect (such as `json.parse` or `csv.read_all`) inside a `bench "..."` block causes the compiler to throw `internal error: checked raising function call lacks a Phase 21 outcome context` in `src/moss.cpp:17050` (`benchmark_body_` path lacks `phase21_result_context_`).
+- Impact: Microbenchmarks for raising functions are measured via executable standalone release timing harnesses (`measure_benchmarks.py`) rather than in-tree `margo bench`. Per AGENTS.md rule, compiler internals (`src/moss.cpp`) were not modified.
+
 ## Resolved during integration
 
 ### P24-I-001 — Math branch based on an older integration snapshot
