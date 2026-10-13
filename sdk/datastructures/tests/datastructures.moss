@@ -1,0 +1,307 @@
+import datastructures
+
+test "min heap heapify duplicates extremes and reuse":
+  var source = [5, -4, 5, 0, -9223372036854775808, 9223372036854775807, -4]
+  var heap = datastructures.min_heap_from(source)
+  assert(datastructures.min_heap_validate(heap))
+  assertEqual(datastructures.min_heap_len(heap), 7)
+  assertEqual(datastructures.min_heap_peek(heap), -9223372036854775808)
+  assertEqual(datastructures.min_heap_pop(heap), -9223372036854775808)
+  assertEqual(datastructures.min_heap_pop(heap), -4)
+  assertEqual(datastructures.min_heap_pop(heap), -4)
+  assertEqual(datastructures.min_heap_pop(heap), 0)
+  assertEqual(datastructures.min_heap_pop(heap), 5)
+  assertEqual(datastructures.min_heap_pop(heap), 5)
+  assertEqual(datastructures.min_heap_pop(heap), 9223372036854775807)
+  assert(datastructures.min_heap_is_empty(heap))
+  var caught_empty = false
+  try:
+    value = datastructures.min_heap_pop(heap)
+  recover datastructures.DataStructureError.Empty:
+    caught_empty = true
+  assert(caught_empty)
+  datastructures.min_heap_push(heap, 9)
+  datastructures.min_heap_push(heap, -1)
+  assertEqual(datastructures.min_heap_pop(heap), -1)
+  assertEqual(datastructures.min_heap_pop(heap), 9)
+  assertEqual(source |> count, 7)
+  assertEqual(source[0], 5)
+
+test "max heap heapify duplicates extremes and reuse":
+  var heap = datastructures.max_heap_from([5, -4, 5, 0, -9223372036854775808, 9223372036854775807, -4])
+  assert(datastructures.max_heap_validate(heap))
+  assertEqual(datastructures.max_heap_len(heap), 7)
+  assertEqual(datastructures.max_heap_peek(heap), 9223372036854775807)
+  assertEqual(datastructures.max_heap_pop(heap), 9223372036854775807)
+  assertEqual(datastructures.max_heap_pop(heap), 5)
+  assertEqual(datastructures.max_heap_pop(heap), 5)
+  assertEqual(datastructures.max_heap_pop(heap), 0)
+  assertEqual(datastructures.max_heap_pop(heap), -4)
+  assertEqual(datastructures.max_heap_pop(heap), -4)
+  assertEqual(datastructures.max_heap_pop(heap), -9223372036854775808)
+  assert(datastructures.max_heap_is_empty(heap))
+  var caught_empty = false
+  try:
+    value = datastructures.max_heap_peek(heap)
+  recover datastructures.DataStructureError.Empty:
+    caught_empty = true
+  assert(caught_empty)
+  datastructures.max_heap_push(heap, -7)
+  assertEqual(datastructures.max_heap_pop(heap), -7)
+
+test "heap forged records are rejected before indexing":
+  var malformed_min = datastructures.IntMinHeap(data: [5, 1, 2])
+  assert(not datastructures.min_heap_validate(malformed_min))
+  var caught_min = false
+  try:
+    value = datastructures.min_heap_pop(malformed_min)
+  recover datastructures.DataStructureError.InvalidState:
+    caught_min = true
+  assert(caught_min)
+  assertEqual(malformed_min.data, [5, 1, 2])
+
+  var malformed_max = datastructures.IntMaxHeap(data: [1, 5, 2])
+  assert(not datastructures.max_heap_validate(malformed_max))
+  var caught_max = false
+  try:
+    value = datastructures.max_heap_peek(malformed_max)
+  recover datastructures.DataStructureError.InvalidState:
+    caught_max = true
+  assert(caught_max)
+  assertEqual(malformed_max.data, [1, 5, 2])
+
+test "heaps preserve order across repeated duplicate mutations":
+  var min_heap = datastructures.new_min_heap()
+  var max_heap = datastructures.new_max_heap()
+  var i = 0
+  while i < 128:
+    value = (i * 37) % 23 - 11
+    datastructures.min_heap_push(min_heap, value)
+    datastructures.max_heap_push(max_heap, value)
+    assert(datastructures.min_heap_validate(min_heap))
+    assert(datastructures.max_heap_validate(max_heap))
+    i = i + 1
+
+  var previous_min = datastructures.min_heap_pop(min_heap)
+  while not datastructures.min_heap_is_empty(min_heap):
+    current = datastructures.min_heap_pop(min_heap)
+    assert(previous_min <= current)
+    previous_min = current
+
+  var previous_max = datastructures.max_heap_pop(max_heap)
+  while not datastructures.max_heap_is_empty(max_heap):
+    current = datastructures.max_heap_pop(max_heap)
+    assert(previous_max >= current)
+    previous_max = current
+
+test "stable priority queue orders priority then insertion":
+  var queue = datastructures.new_priority_queue()
+  assert(datastructures.priority_queue_is_empty(queue))
+  datastructures.priority_queue_push(queue, 2, 20)
+  datastructures.priority_queue_push(queue, 1, 10)
+  datastructures.priority_queue_push(queue, 1, 11)
+  datastructures.priority_queue_push(queue, 0, 0)
+  datastructures.priority_queue_push(queue, 1, 12)
+  datastructures.priority_queue_push(queue, -1, -10)
+  assert(datastructures.priority_queue_validate(queue))
+  assertEqual(datastructures.priority_queue_len(queue), 6)
+
+  peeked = datastructures.priority_queue_peek(queue)
+  assertEqual(peeked.priority, -1)
+  assertEqual(peeked.value, -10)
+
+  first = datastructures.priority_queue_pop(queue)
+  second = datastructures.priority_queue_pop(queue)
+  third = datastructures.priority_queue_pop(queue)
+  fourth = datastructures.priority_queue_pop(queue)
+  fifth = datastructures.priority_queue_pop(queue)
+  sixth = datastructures.priority_queue_pop(queue)
+  assertEqual(first.value, -10)
+  assertEqual(second.value, 0)
+  assertEqual(third.value, 10)
+  assertEqual(fourth.value, 11)
+  assertEqual(fifth.value, 12)
+  assertEqual(sixth.value, 20)
+  var caught_empty = false
+  try:
+    item = datastructures.priority_queue_pop(queue)
+  recover datastructures.DataStructureError.Empty:
+    caught_empty = true
+  assert(caught_empty)
+
+test "priority queue sequence overflow is atomic":
+  var queue = datastructures.StableIntPriorityQueue(priorities: Vector[Int](), sequences: Vector[Int](), values: Vector[Int](), next_sequence: 9223372036854775807)
+  assert(datastructures.priority_queue_validate(queue))
+  var caught = false
+  try:
+    datastructures.priority_queue_push(queue, 1, 7)
+  recover datastructures.DataStructureError.SequenceOverflow:
+    caught = true
+  assert(caught)
+  assertEqual(queue.priorities |> count, 0)
+  assertEqual(queue.sequences |> count, 0)
+  assertEqual(queue.values |> count, 0)
+  assertEqual(queue.next_sequence, 9223372036854775807)
+
+test "priority queue preserves a large equal priority fifo batch":
+  var queue = datastructures.new_priority_queue()
+  var i = 0
+  while i < 64:
+    datastructures.priority_queue_push(queue, 7, i)
+    i = i + 1
+  i = 0
+  while i < 64:
+    item = datastructures.priority_queue_pop(queue)
+    assertEqual(item.priority, 7)
+    assertEqual(item.value, i)
+    i = i + 1
+  assert(datastructures.priority_queue_is_empty(queue))
+
+test "priority queue forged records are rejected atomically":
+  var mismatched = datastructures.StableIntPriorityQueue(priorities: [1], sequences: Vector[Int](), values: [9], next_sequence: 1)
+  assert(not datastructures.priority_queue_validate(mismatched))
+  var caught_mismatch = false
+  try:
+    datastructures.priority_queue_push(mismatched, 0, 8)
+  recover datastructures.DataStructureError.InvalidState:
+    caught_mismatch = true
+  assert(caught_mismatch)
+  assertEqual(mismatched.priorities, [1])
+  assertEqual(mismatched.values, [9])
+
+  var duplicate = datastructures.StableIntPriorityQueue(priorities: [1, 1], sequences: [0, 0], values: [10, 11], next_sequence: 1)
+  assert(not datastructures.priority_queue_validate(duplicate))
+  var caught_duplicate = false
+  try:
+    item = datastructures.priority_queue_pop(duplicate)
+  recover datastructures.DataStructureError.InvalidState:
+    caught_duplicate = true
+  assert(caught_duplicate)
+
+  var bad_order = datastructures.StableIntPriorityQueue(priorities: [5, 1], sequences: [0, 1], values: [50, 10], next_sequence: 2)
+  assert(not datastructures.priority_queue_validate(bad_order))
+  var caught_order = false
+  try:
+    item = datastructures.priority_queue_pop(bad_order)
+  recover datastructures.DataStructureError.InvalidState:
+    caught_order = true
+  assert(caught_order)
+
+test "deque rejects zero and negative capacities":
+  var zero_value = 99
+  try:
+    deque = datastructures.new_int_bounded_deque(0)
+  recover datastructures.DataStructureError.InvalidCapacity(capacity):
+    zero_value = capacity
+  assertEqual(zero_value, 0)
+
+  var negative_value = 99
+  try:
+    deque = datastructures.new_int_bounded_deque(-7)
+  recover datastructures.DataStructureError.InvalidCapacity(capacity):
+    negative_value = capacity
+  assertEqual(negative_value, -7)
+
+test "capacity one deque and typed full empty errors":
+  var deque = datastructures.new_int_bounded_deque(1)
+  assertEqual(datastructures.int_deque_capacity(deque), 1)
+  assert(datastructures.int_deque_is_empty(deque))
+  var caught_empty = false
+  try:
+    value = datastructures.int_deque_pop_front(deque)
+  recover datastructures.DataStructureError.Empty:
+    caught_empty = true
+  assert(caught_empty)
+  datastructures.int_deque_push_back(deque, 7)
+  assert(datastructures.int_deque_is_full(deque))
+  assertEqual(datastructures.int_deque_peek_front(deque), 7)
+  assertEqual(datastructures.int_deque_peek_back(deque), 7)
+  var full_capacity = -1
+  try:
+    datastructures.int_deque_push_front(deque, 8)
+  recover datastructures.DataStructureError.Full(capacity):
+    full_capacity = capacity
+  assertEqual(full_capacity, 1)
+  assertEqual(datastructures.int_deque_values(deque), [7])
+  assertEqual(datastructures.int_deque_pop_back(deque), 7)
+  datastructures.int_deque_push_front(deque, 9)
+  assertEqual(datastructures.int_deque_pop_front(deque), 9)
+
+test "deque wraparound both ends indexing clear and reuse":
+  var deque = datastructures.new_int_bounded_deque(3)
+  datastructures.int_deque_push_back(deque, 1)
+  datastructures.int_deque_push_back(deque, 2)
+  datastructures.int_deque_push_back(deque, 3)
+  assertEqual(datastructures.int_deque_pop_front(deque), 1)
+  datastructures.int_deque_push_back(deque, 4)
+  assertEqual(datastructures.int_deque_values(deque), [2, 3, 4])
+  assertEqual(datastructures.int_deque_at(deque, 0), 2)
+  assertEqual(datastructures.int_deque_at(deque, 2), 4)
+  assertEqual(datastructures.int_deque_pop_back(deque), 4)
+  datastructures.int_deque_push_front(deque, 1)
+  assertEqual(datastructures.int_deque_values(deque), [1, 2, 3])
+  assertEqual(datastructures.int_deque_peek_front(deque), 1)
+  assertEqual(datastructures.int_deque_peek_back(deque), 3)
+
+  var copied = datastructures.int_deque_values(deque)
+  copied[0] = 99
+  assertEqual(datastructures.int_deque_peek_front(deque), 1)
+
+  datastructures.int_deque_clear(deque)
+  assert(datastructures.int_deque_is_empty(deque))
+  datastructures.int_deque_push_front(deque, 8)
+  datastructures.int_deque_push_back(deque, 9)
+  assertEqual(datastructures.int_deque_values(deque), [8, 9])
+
+test "deque repeated cycles wrap without growing storage":
+  var deque = datastructures.new_int_bounded_deque(4)
+  var i = 0
+  while i < 100:
+    datastructures.int_deque_push_back(deque, i)
+    assertEqual(datastructures.int_deque_pop_front(deque), i)
+    datastructures.int_deque_push_front(deque, 0 - i)
+    assertEqual(datastructures.int_deque_pop_back(deque), 0 - i)
+    assert(datastructures.int_deque_validate(deque))
+    i = i + 1
+  assertEqual(deque.data |> count, 4)
+  assert(datastructures.int_deque_is_empty(deque))
+
+test "deque invalid index and forged state are typed errors":
+  var deque = datastructures.new_int_bounded_deque(2)
+  datastructures.int_deque_push_back(deque, 4)
+  var bad_index = 99
+  var bad_length = 99
+  try:
+    value = datastructures.int_deque_at(deque, -1)
+  recover datastructures.DataStructureError.InvalidIndex(index, length):
+    bad_index = index
+    bad_length = length
+  assertEqual(bad_index, -1)
+  assertEqual(bad_length, 1)
+
+  var malformed = datastructures.IntBoundedDeque(data: [0, 0], head: 2, size: 1, capacity: 2)
+  assert(not datastructures.int_deque_validate(malformed))
+  var caught_head = false
+  try:
+    value = datastructures.int_deque_pop_front(malformed)
+  recover datastructures.DataStructureError.InvalidState:
+    caught_head = true
+  assert(caught_head)
+
+  var bad_size = datastructures.IntBoundedDeque(data: [0, 0], head: 0, size: 3, capacity: 2)
+  assert(not datastructures.int_deque_validate(bad_size))
+  var caught_size = false
+  try:
+    value = datastructures.int_deque_pop_front(bad_size)
+  recover datastructures.DataStructureError.InvalidState:
+    caught_size = true
+  assert(caught_size)
+
+  var bad_storage = datastructures.IntBoundedDeque(data: [0], head: 0, size: 0, capacity: 2)
+  assert(not datastructures.int_deque_validate(bad_storage))
+  var caught_storage = false
+  try:
+    value = datastructures.int_deque_pop_front(bad_storage)
+  recover datastructures.DataStructureError.InvalidState:
+    caught_storage = true
+  assert(caught_storage)
