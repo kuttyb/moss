@@ -1,0 +1,272 @@
+module linalg_test
+
+import linalg
+import math
+
+test "matrix creation and access":
+  var z = linalg.zeros(2, 3)
+  assertEqual(z.rows, 2)
+  assertEqual(z.cols, 3)
+  assertEqual(linalg.matrix_get(z, 0, 0), 0.0)
+  assertEqual(linalg.matrix_get(z, 1, 2), 0.0)
+
+  var o = linalg.ones(2, 2)
+  assertEqual(linalg.matrix_get(o, 0, 0), 1.0)
+  assertEqual(linalg.matrix_get(o, 1, 1), 1.0)
+
+  var id = linalg.identity(3)
+  assertEqual(linalg.matrix_get(id, 0, 0), 1.0)
+  assertEqual(linalg.matrix_get(id, 0, 1), 0.0)
+  assertEqual(linalg.matrix_get(id, 1, 1), 1.0)
+  assertEqual(linalg.matrix_get(id, 2, 2), 1.0)
+
+  linalg.matrix_set(z, 0, 1, 42.0)
+  assertEqual(linalg.matrix_get(z, 0, 1), 42.0)
+
+test "matrix error contracts":
+  var caught_invalid_dim = false
+  try:
+    ignored1 = linalg.zeros(0, 5)
+  recover linalg.LinalgError.InvalidDimensions:
+    caught_invalid_dim = true
+  assert(caught_invalid_dim)
+
+  var caught_negative_dim = false
+  try:
+    ignored2 = linalg.zeros(0 - 2, 4)
+  recover linalg.LinalgError.InvalidDimensions:
+    caught_negative_dim = true
+  assert(caught_negative_dim)
+
+  var caught_oob = false
+  let m = linalg.zeros(2, 2)
+  try:
+    ignored3 = linalg.matrix_get(m, 2, 0)
+  recover linalg.LinalgError.IndexOutOfBounds:
+    caught_oob = true
+  assert(caught_oob)
+
+test "vector operations":
+  var a = Vector[Float]()
+  a.push(3.0)
+  a.push(4.0)
+  var b = Vector[Float]()
+  b.push(1.0)
+  b.push(2.0)
+
+  let dot = linalg.vec_dot(a, b)
+  assertEqual(dot, 11.0)
+
+  let n2 = linalg.vec_norm(a)
+  assertEqual(n2, 5.0)
+
+  let n1 = linalg.vec_norm_l1(a)
+  assertEqual(n1, 7.0)
+
+  let ninf = linalg.vec_norm_inf(a)
+  assertEqual(ninf, 4.0)
+
+  let sum_v = linalg.vec_add(a, b)
+  assertEqual(sum_v[0], 4.0)
+  assertEqual(sum_v[1], 6.0)
+
+  let sub_v = linalg.vec_sub(a, b)
+  assertEqual(sub_v[0], 2.0)
+  assertEqual(sub_v[1], 2.0)
+
+  let scaled = linalg.vec_scale(a, 2.0)
+  assertEqual(scaled[0], 6.0)
+  assertEqual(scaled[1], 8.0)
+
+  let outer = linalg.vec_outer(a, b)
+  assertEqual(outer.rows, 2)
+  assertEqual(outer.cols, 2)
+  assertEqual(linalg.matrix_get(outer, 0, 0), 3.0)
+  assertEqual(linalg.matrix_get(outer, 0, 1), 6.0)
+  assertEqual(linalg.matrix_get(outer, 1, 0), 4.0)
+  assertEqual(linalg.matrix_get(outer, 1, 1), 8.0)
+
+test "matrix arithmetic and multiplication":
+  var a_data = Vector[Float]()
+  a_data.push(1.0)
+  a_data.push(2.0)
+  a_data.push(3.0)
+  a_data.push(4.0)
+  let a = linalg.from_vector(2, 2, a_data)
+
+  var b_data = Vector[Float]()
+  b_data.push(5.0)
+  b_data.push(6.0)
+  b_data.push(7.0)
+  b_data.push(8.0)
+  let b = linalg.from_vector(2, 2, b_data)
+
+  let add_m = linalg.mat_add(a, b)
+  assertEqual(linalg.matrix_get(add_m, 0, 0), 6.0)
+  assertEqual(linalg.matrix_get(add_m, 1, 1), 12.0)
+
+  let sub_m = linalg.mat_sub(b, a)
+  assertEqual(linalg.matrix_get(sub_m, 0, 0), 4.0)
+  assertEqual(linalg.matrix_get(sub_m, 1, 1), 4.0)
+
+  let tr = linalg.transpose(a)
+  assertEqual(linalg.matrix_get(tr, 0, 1), 3.0)
+  assertEqual(linalg.matrix_get(tr, 1, 0), 2.0)
+
+  # [1 2; 3 4] * [1; 2] = [1*1 + 2*2; 3*1 + 4*2] = [5; 11]
+  var v = Vector[Float]()
+  v.push(1.0)
+  v.push(2.0)
+  let mv = linalg.mat_vec_mul(a, v)
+  assertEqual(mv[0], 5.0)
+  assertEqual(mv[1], 11.0)
+
+  # [1 2; 3 4] * [5 6; 7 8] = [19 22; 43 50]
+  let mm = linalg.mat_mul(a, b)
+  assertEqual(linalg.matrix_get(mm, 0, 0), 19.0)
+  assertEqual(linalg.matrix_get(mm, 0, 1), 22.0)
+  assertEqual(linalg.matrix_get(mm, 1, 0), 43.0)
+  assertEqual(linalg.matrix_get(mm, 1, 1), 50.0)
+
+  let tr_val = linalg.trace(a)
+  assertEqual(tr_val, 5.0)
+
+test "lu factorize solve determinant and invert":
+  # A = [2 1; 5 7], det = 14 - 5 = 9
+  var a_data = Vector[Float]()
+  a_data.push(2.0)
+  a_data.push(1.0)
+  a_data.push(5.0)
+  a_data.push(7.0)
+  let a = linalg.from_vector(2, 2, a_data)
+
+  let det = linalg.determinant(a)
+  assert(math.abs(det - 9.0) < 0.00000001)
+
+  let log_det = linalg.matrix_log_det(a)
+  assertEqual(log_det.sign, 1.0)
+  assert(math.abs(log_det.log_abs_det - math.ln(9.0)) < 0.00000001)
+
+  # Solve A * x = [11; 28] -> x = [7; -3] (2*7 + 1*(-3) = 11, 5*7 + 7*(-3) = 14 != 28; wait, 5*7 + 7*(-3) = 14)
+  # Let's check: 2*x + 1*y = 11, 5*x + 7*y = 28 -> y = 11 - 2x -> 5x + 7(11-2x) = 28 -> 5x + 77 - 14x = 28 -> -9x = -49 -> x = 49/9.
+  # If x = [2, 3], A * x = [2*2 + 1*3 = 7, 5*2 + 7*3 = 31]
+  var b = Vector[Float]()
+  b.push(7.0)
+  b.push(31.0)
+  let x = linalg.solve(a, b)
+  assert(math.abs(x[0] - 2.0) < 0.00000001)
+  assert(math.abs(x[1] - 3.0) < 0.00000001)
+
+  let inv = linalg.invert(a)
+  let prod = linalg.mat_mul(a, inv)
+  assert(math.abs(linalg.matrix_get(prod, 0, 0) - 1.0) < 0.00000001)
+  assert(math.abs(linalg.matrix_get(prod, 0, 1) - 0.0) < 0.00000001)
+  assert(math.abs(linalg.matrix_get(prod, 1, 0) - 0.0) < 0.00000001)
+  assert(math.abs(linalg.matrix_get(prod, 1, 1) - 1.0) < 0.00000001)
+
+test "singular and non square error handling":
+  # Singular matrix [1 2; 2 4]
+  var s_data = Vector[Float]()
+  s_data.push(1.0)
+  s_data.push(2.0)
+  s_data.push(2.0)
+  s_data.push(4.0)
+  let sing = linalg.from_vector(2, 2, s_data)
+
+  var caught_singular = false
+  try:
+    ignored4 = linalg.lu_factorize(sing)
+  recover linalg.LinalgError.SingularMatrix:
+    caught_singular = true
+  assert(caught_singular)
+
+  # Non-square matrix 2x3
+  let rect = linalg.zeros(2, 3)
+  var caught_non_square = false
+  try:
+    ignored5 = linalg.lu_factorize(rect)
+  recover linalg.LinalgError.NonSquareMatrix:
+    caught_non_square = true
+  assert(caught_non_square)
+
+test "IEEE 754 non-finite mat_mul and norms":
+  let a_data = [0.0, 1.0, 0.0, 2.0]
+  let a = linalg.from_vector(2, 2, a_data)
+  let inf_val = math.infinity()
+  let nan_val = math.nan()
+  let b_data = [inf_val, 3.0, nan_val, 4.0]
+  let b = linalg.from_vector(2, 2, b_data)
+  let prod = linalg.mat_mul(a, b)
+  assert(math.is_nan(linalg.matrix_get(prod, 0, 0)))
+  assertEqual(linalg.matrix_get(prod, 0, 1), 4.0)
+
+  var v_inf = [1.0, inf_val, 3.0]
+  assertEqual(linalg.vec_norm(v_inf), inf_val)
+  assertEqual(linalg.vec_norm_l1(v_inf), inf_val)
+  assertEqual(linalg.vec_norm_inf(v_inf), inf_val)
+
+  var v_nan = [1.0, nan_val, 3.0]
+  assert(math.is_nan(linalg.vec_norm(v_nan)))
+  assert(math.is_nan(linalg.vec_norm_l1(v_nan)))
+  assert(math.is_nan(linalg.vec_norm_inf(v_nan)))
+
+  let m_inf = linalg.from_vector(2, 2, [1.0, 2.0, inf_val, 4.0])
+  assertEqual(linalg.mat_norm_frobenius(m_inf), inf_val)
+
+  let m_nan = linalg.from_vector(2, 2, [1.0, 2.0, nan_val, 4.0])
+  assert(math.is_nan(linalg.mat_norm_frobenius(m_nan)))
+
+test "malformed direct matrix construction validation":
+  let bad_len_matrix = linalg.Matrix(rows: 2, cols: 2, data: [1.0, 2.0])
+  var caught_bad_len = false
+  try:
+    ignored = linalg.matrix_get(bad_len_matrix, 0, 0)
+  recover linalg.LinalgError.InvalidDimensions:
+    caught_bad_len = true
+  assert(caught_bad_len)
+
+  let bad_dim_matrix = linalg.Matrix(rows: 0, cols: 3, data: Vector[Float]())
+  var caught_bad_dim = false
+  try:
+    ignored = linalg.transpose(bad_dim_matrix)
+  recover linalg.LinalgError.InvalidDimensions:
+    caught_bad_dim = true
+  assert(caught_bad_dim)
+
+test "malformed LU decomposition validation":
+  let non_square_m = linalg.from_vector(2, 3, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+  let bad_non_square_decomp = linalg.LUDecomposition(lu: non_square_m, pivots: [0, 1], num_swaps: 0)
+  assert(not linalg.validate_lu(bad_non_square_decomp))
+  var caught_non_square_lu = false
+  try:
+    ignored = linalg.lu_solve(bad_non_square_decomp, [1.0, 2.0])
+  recover linalg.LinalgError.NonSquareMatrix:
+    caught_non_square_lu = true
+  assert(caught_non_square_lu)
+
+  let bad_len_decomp = linalg.LUDecomposition(lu: linalg.from_vector(2, 2, [1.0, 2.0, 3.0, 4.0]), pivots: [0], num_swaps: 0)
+  assert(not linalg.validate_lu(bad_len_decomp))
+  var caught_bad_len_lu = false
+  try:
+    ignored = linalg.lu_solve(bad_len_decomp, [1.0, 2.0])
+  recover linalg.LinalgError.InvalidDimensions:
+    caught_bad_len_lu = true
+  assert(caught_bad_len_lu)
+
+  let bad_piv_decomp = linalg.LUDecomposition(lu: linalg.from_vector(2, 2, [1.0, 2.0, 3.0, 4.0]), pivots: [0, 5], num_swaps: 0)
+  assert(not linalg.validate_lu(bad_piv_decomp))
+  var caught_bad_piv_lu = false
+  try:
+    ignored = linalg.lu_solve(bad_piv_decomp, [1.0, 2.0])
+  recover linalg.LinalgError.InvalidDimensions:
+    caught_bad_piv_lu = true
+  assert(caught_bad_piv_lu)
+
+  let dup_piv_decomp = linalg.LUDecomposition(lu: linalg.from_vector(2, 2, [1.0, 2.0, 3.0, 4.0]), pivots: [0, 0], num_swaps: 0)
+  assert(not linalg.validate_lu(dup_piv_decomp))
+  var caught_dup_piv_lu = false
+  try:
+    ignored = linalg.lu_solve(dup_piv_decomp, [1.0, 2.0])
+  recover linalg.LinalgError.InvalidDimensions:
+    caught_dup_piv_lu = true
+  assert(caught_dup_piv_lu)

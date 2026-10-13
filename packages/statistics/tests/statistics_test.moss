@@ -1,0 +1,197 @@
+module statistics_test
+
+import statistics
+import math
+
+test "kahan summation and catastrophic cancellation resilience":
+  var v = Vector[Float]()
+  v.push(10000000000000000.0) # 1e16
+  v.push(1.0)
+  v.push(0.0 - 10000000000000000.0)
+  v.push(2.0)
+  let s = statistics.kahan_sum(v)
+  assertEqual(s, 3.0)
+
+test "descriptive statistics mean variance and std dev":
+  var v = Vector[Float]()
+  v.push(2.0)
+  v.push(4.0)
+  v.push(4.0)
+  v.push(4.0)
+  v.push(5.0)
+  v.push(5.0)
+  v.push(7.0)
+  v.push(9.0)
+
+  assertEqual(statistics.min_value(v), 2.0)
+  assertEqual(statistics.max_value(v), 9.0)
+  assertEqual(statistics.data_range(v), 7.0)
+  assertEqual(statistics.mean(v), 5.0)
+
+  let pop_var = statistics.variance(v, false)
+  assertEqual(pop_var, 4.0)
+
+  let sample_var = statistics.variance(v, true)
+  assert(math.abs(sample_var - (32.0 / 7.0)) < 0.00000001)
+
+  let sample_sd = statistics.std_dev(v, true)
+  assert(math.abs(sample_sd - math.sqrt_val(32.0 / 7.0)) < 0.00000001)
+
+  let summ = statistics.summary(v)
+  assertEqual(summ.count, 8)
+  assertEqual(summ.mean_val, 5.0)
+  assertEqual(summ.min_val, 2.0)
+  assertEqual(summ.max_val, 9.0)
+
+test "weighted mean":
+  var v = Vector[Float]()
+  v.push(10.0)
+  v.push(20.0)
+  v.push(30.0)
+  var w = Vector[Float]()
+  w.push(1.0)
+  w.push(2.0)
+  w.push(3.0)
+
+  let wm = statistics.weighted_mean(v, w)
+  assert(math.abs(wm - (140.0 / 6.0)) < 0.00000001)
+
+test "bivariate covariance and correlation":
+  var x = Vector[Float]()
+  x.push(1.0)
+  x.push(2.0)
+  x.push(3.0)
+  x.push(4.0)
+  x.push(5.0)
+
+  var y = Vector[Float]()
+  y.push(2.0)
+  y.push(4.0)
+  y.push(6.0)
+  y.push(8.0)
+  y.push(10.0)
+
+  let cov = statistics.covariance(x, y, true)
+  assertEqual(cov, 5.0)
+
+  let corr = statistics.correlation(x, y)
+  assert(math.abs(corr - 1.0) < 0.00000001)
+
+test "zero variance correlation error":
+  var x = Vector[Float]()
+  x.push(5.0)
+  x.push(5.0)
+  x.push(5.0)
+  var y = Vector[Float]()
+  y.push(1.0)
+  y.push(2.0)
+  y.push(3.0)
+
+  var caught_zero_var = false
+  try:
+    ignored1 = statistics.correlation(x, y)
+  recover statistics.StatsError.ZeroVariance:
+    caught_zero_var = true
+  assert(caught_zero_var)
+
+test "heapsort quantiles median and iqr":
+  var v = Vector[Float]()
+  v.push(3.0)
+  v.push(1.0)
+  v.push(4.0)
+  v.push(1.0)
+  v.push(5.0)
+  v.push(9.0)
+  v.push(2.0)
+  v.push(6.0)
+
+  let sorted = statistics.sort_floats(v)
+  assertEqual(sorted[0], 1.0)
+  assertEqual(sorted[1], 1.0)
+  assertEqual(sorted[2], 2.0)
+  assertEqual(sorted[3], 3.0)
+  assertEqual(sorted[4], 4.0)
+  assertEqual(sorted[5], 5.0)
+  assertEqual(sorted[6], 6.0)
+  assertEqual(sorted[7], 9.0)
+
+  assertEqual(statistics.quantile(v, 0.0), 1.0)
+  assertEqual(statistics.quantile(v, 1.0), 9.0)
+
+  # Method 7 median on [1, 1, 2, 3, 4, 5, 6, 9]:
+  # h = 7 * 0.5 = 3.5. i = 3, f = 0.5. s[3] = 3.0, s[4] = 4.0. median = 3.5.
+  let med = statistics.median(v)
+  assertEqual(med, 3.5)
+
+  let pct50 = statistics.percentile(v, 50.0)
+  assertEqual(pct50, 3.5)
+
+  let range_iqr = statistics.iqr(v)
+  assert(range_iqr > 0.0)
+
+test "streaming welford and chan golub leveque merge":
+  var v = Vector[Float]()
+  v.push(2.0)
+  v.push(4.0)
+  v.push(4.0)
+  v.push(4.0)
+  v.push(5.0)
+  v.push(5.0)
+  v.push(7.0)
+  v.push(9.0)
+
+  # Streaming Welford
+  var s = statistics.new_running_stats()
+  var i = 0
+  while i < 8:
+    statistics.running_update(s, v[i])
+    i = i + 1
+
+  assertEqual(statistics.running_count(s), 8)
+  assertEqual(statistics.running_mean(s), 5.0)
+  assert(math.abs(statistics.running_variance(s, true) - statistics.variance(v, true)) < 0.00000001)
+
+  # Parallel split merge: first 4 and second 4
+  var sa = statistics.new_running_stats()
+  i = 0
+  while i < 4:
+    statistics.running_update(sa, v[i])
+    i = i + 1
+
+  var sb = statistics.new_running_stats()
+  while i < 8:
+    statistics.running_update(sb, v[i])
+    i = i + 1
+
+  let merged = statistics.running_combine(sa, sb)
+  assertEqual(statistics.running_count(merged), 8)
+  assertEqual(statistics.running_mean(merged), 5.0)
+  assert(math.abs(statistics.running_variance(merged, true) - statistics.variance(v, true)) < 0.00000001)
+
+test "extreme finite quantile interpolation overflow safety":
+  # Direct L7 challenge: quantile([-1e308, 1e308], 0.5) must not overflow
+  let neg_huge = 0.0 - 100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000.0
+  let pos_huge = 100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000.0
+  var extreme_vec = Vector[Float]()
+  extreme_vec.push(neg_huge)
+  extreme_vec.push(pos_huge)
+  let q_mid = statistics.quantile(extreme_vec, 0.5)
+  assertEqual(q_mid, 0.0)
+
+test "streaming update nan rejection and count validation":
+  var s = statistics.new_running_stats()
+  statistics.running_update(s, 10.0)
+  var caught_nan = false
+  try:
+    statistics.running_update(s, math.nan())
+  recover statistics.StatsError.InvalidValue:
+    caught_nan = true
+  assert(caught_nan)
+  assertEqual(statistics.running_count(s), 1)
+
+  # Summation with infinities
+  var v_inf = Vector[Float]()
+  v_inf.push(10.0)
+  v_inf.push(math.infinity())
+  v_inf.push(20.0)
+  assertEqual(statistics.sum(v_inf), math.infinity())

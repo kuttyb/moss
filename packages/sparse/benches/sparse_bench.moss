@@ -1,0 +1,60 @@
+module sparse_bench
+
+import sparse
+
+fn make_csr(n: Int) -> sparse.CsrMatrix:
+  var row_ptrs = Vector[Int]()
+  var col_indices = Vector[Int]()
+  var values = Vector[Float]()
+  var r = 0
+  var offset = 0
+  row_ptrs.push(0)
+  var x = 1.0
+  while r < n:
+    col_indices.push(r)
+    values.push(x * 0.5)
+    offset = offset + 1
+    if r + 1 < n:
+      col_indices.push(r + 1)
+      values.push(x * 0.25)
+      offset = offset + 1
+    row_ptrs.push(offset)
+    x = x + 1.0
+    r = r + 1
+  return sparse.CsrMatrix(rows: n, cols: n, row_ptrs: row_ptrs, col_indices: col_indices, values: values)
+
+fn bench_transpose(m: sparse.CsrMatrix) -> sparse.CsrMatrix:
+  try:
+    return sparse.csr_transpose(m)
+  recover sparse.SparseError.InvalidDimensions:
+    return make_csr(0)
+
+fn bench_to_csc(m: sparse.CsrMatrix) -> sparse.CscMatrix:
+  try:
+    return sparse.csr_to_csc(m)
+  recover sparse.SparseError.InvalidDimensions:
+    return sparse.CscMatrix(rows: 0, cols: 0, col_ptrs: Vector[Int](), row_indices: Vector[Int](), values: Vector[Float]())
+
+fn bench_scale(m: sparse.CsrMatrix, s: Float) -> sparse.CsrMatrix:
+  try:
+    return sparse.csr_scale(m, s)
+  recover sparse.SparseError.InvalidDimensions:
+    return make_csr(0)
+
+bench "sparse csr transpose 200x200":
+  var m = make_csr(200)
+  var mt = bench_transpose(m)
+
+bench "sparse csr to csc conversion 200x200":
+  var m = make_csr(200)
+  var csc = bench_to_csc(m)
+
+bench "sparse csr scale 500x500":
+  var m = make_csr(500)
+  var scaled = bench_scale(m, 3.5)
+
+bench "sparse csr structural inspection 500x500":
+  var m = make_csr(500)
+  var n = m.values |> count
+  var rows = m.rows
+  var cols = m.cols

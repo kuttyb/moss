@@ -1,0 +1,9 @@
+[package]
+name = "moss.linalg"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+math = { path = "../math" }

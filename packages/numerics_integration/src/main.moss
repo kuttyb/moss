@@ -1,0 +1,51 @@
+module numerics_integration
+
+import linalg
+import sparse
+import statistics
+import math
+
+# ============================================================================
+# Moss Phase 24 — Package D: moss.numerics_integration
+# Cross-package end-to-end numerical pipelines, regression analysis,
+# sparse-dense consistency validation, and statistical spectral diagnostics.
+# ============================================================================
+
+export type RegressionResult:
+  beta: Vector[Float]
+  residuals: Vector[Float]
+  residual_summary: statistics.StatsSummary
+
+export fn solve_linear_regression(x: linalg.Matrix, y: Vector[Float]) -> RegressionResult:
+  let xt = linalg.transpose(x)
+  let xtx = linalg.mat_mul(xt, x)
+  let xty = linalg.mat_vec_mul(xt, y)
+  let beta = linalg.solve(xtx, xty)
+
+  let y_pred = linalg.mat_vec_mul(x, beta)
+  let residuals = linalg.vec_sub(y, y_pred)
+  let res_summary = statistics.summary(residuals)
+
+  return RegressionResult(beta: beta, residuals: residuals, residual_summary: res_summary)
+
+export fn verify_sparse_dense_consistency(sp: sparse.CsrMatrix, v: Vector[Float]) -> Float:
+  let y_sp = sparse.csr_mat_vec_mul(sp, v)
+  let dense = sparse.to_dense(sp)
+  let y_dense = linalg.mat_vec_mul(dense, v)
+  let diff = linalg.vec_sub(y_sp, y_dense)
+  return linalg.vec_norm_inf(diff)
+
+export fn analyze_sparse_spectrum_diagonal(sp: sparse.CsrMatrix) -> statistics.StatsSummary:
+  let spt = sparse.csr_transpose(sp)
+  let c_sp = sparse.csr_mat_mul(sp, spt)
+  let c_dense = sparse.to_dense(c_sp)
+  let n = c_dense.rows
+  var diag = Vector[Float]()
+  var i = 0
+  while i < n:
+    diag.push(linalg.matrix_get(c_dense, i, i))
+    i = i + 1
+  return statistics.summary(diag)
+
+fn main():
+  echo "moss.numerics_integration initialized"

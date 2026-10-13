@@ -1,0 +1,78 @@
+module linalg_bench
+
+import linalg
+
+fn make_matrix(rows: Int, cols: Int) -> linalg.Matrix:
+  var data = Vector[Float]()
+  var x = 0.0
+  var i = 0
+  let total = rows * cols
+  while i < total:
+    data.push(x * 0.01)
+    x = x + 1.0
+    i = i + 1
+  return linalg.Matrix(rows: rows, cols: cols, data: data)
+
+fn bench_frobenius(m: linalg.Matrix) -> Float:
+  try:
+    return linalg.mat_norm_frobenius(m)
+  recover linalg.LinalgError.InvalidDimensions:
+    return 0.0
+
+fn bench_clone(m: linalg.Matrix) -> linalg.Matrix:
+  try:
+    return linalg.matrix_clone(m)
+  recover linalg.LinalgError.InvalidDimensions:
+    return make_matrix(1, 1)
+
+bench "linalg vector euclidean norm 1000d":
+  var v = Vector[Float]()
+  var x = 0.0
+  var i = 0
+  while i < 1000:
+    v.push(x * 0.05)
+    x = x + 1.0
+    i = i + 1
+  var n = linalg.vec_norm(v)
+
+bench "linalg vector manhattan and inf norm 1000d":
+  var v = Vector[Float]()
+  var x = -500.0
+  var i = 0
+  while i < 1000:
+    v.push(x * 0.1)
+    x = x + 1.0
+    i = i + 1
+  var l1 = linalg.vec_norm_l1(v)
+  var linf = linalg.vec_norm_inf(v)
+
+bench "linalg vector scale 1000d":
+  var v = Vector[Float]()
+  var x = 1.0
+  var i = 0
+  while i < 1000:
+    v.push(x)
+    x = x + 1.0
+    i = i + 1
+  var scaled = linalg.vec_scale(v, 2.5)
+
+bench "linalg matrix frobenius norm 50x50":
+  var m = make_matrix(50, 50)
+  var fnorm = bench_frobenius(m)
+
+bench "linalg matrix clone 100x100":
+  var m = make_matrix(100, 100)
+  var cloned = bench_clone(m)
+
+fn bench_mat_mul(a: linalg.Matrix, b: linalg.Matrix) -> linalg.Matrix:
+  try:
+    return linalg.mat_mul(a, b)
+  recover linalg.LinalgError.DimensionMismatch:
+    return make_matrix(1, 1)
+  recover linalg.LinalgError.InvalidDimensions:
+    return make_matrix(1, 1)
+
+bench "linalg matrix multiplication 50x50":
+  var a = make_matrix(50, 50)
+  var b = make_matrix(50, 50)
+  var c = bench_mat_mul(a, b)

@@ -1,0 +1,666 @@
+module linalg
+
+import math
+
+# ============================================================================
+# Moss Phase 24 — Package A: moss.linalg
+# Dense linear algebra, vectors, matrices, norms, and LU solver.
+# ============================================================================
+
+# --- Types and Error Contracts ---
+
+export enum LinalgError:
+  InvalidDimensions
+  DimensionMismatch
+  NonSquareMatrix
+  SingularMatrix
+  IndexOutOfBounds
+
+export type Matrix:
+  rows: Int
+  cols: Int
+  data: Vector[Float]
+
+export type LUDecomposition:
+  lu: Matrix
+  pivots: Vector[Int]
+  num_swaps: Int
+
+export type LogDet:
+  sign: Float
+  log_abs_det: Float
+
+# --- Enforceable Record Validation ---
+
+fn is_valid_matrix(m: Matrix) -> Bool:
+  if m.rows <= 0 or m.cols <= 0:
+    return false
+  if m.rows > 9223372036854775807 / m.cols:
+    return false
+  let expected_len = m.rows * m.cols
+  if (m.data |> count) != expected_len:
+    return false
+  return true
+
+# --- Constructors & Accessors ---
+
+export fn zeros(rows: Int, cols: Int) -> Matrix:
+  if rows <= 0 or cols <= 0:
+    raise LinalgError.InvalidDimensions
+  if rows > 9223372036854775807 / cols:
+    raise LinalgError.InvalidDimensions
+  let total = rows * cols
+  var data = Vector[Float]()
+  var i = 0
+  while i < total:
+    data.push(0.0)
+    i = i + 1
+  return Matrix(rows: rows, cols: cols, data: data)
+
+export fn ones(rows: Int, cols: Int) -> Matrix:
+  if rows <= 0 or cols <= 0:
+    raise LinalgError.InvalidDimensions
+  if rows > 9223372036854775807 / cols:
+    raise LinalgError.InvalidDimensions
+  let total = rows * cols
+  var data = Vector[Float]()
+  var i = 0
+  while i < total:
+    data.push(1.0)
+    i = i + 1
+  return Matrix(rows: rows, cols: cols, data: data)
+
+export fn identity(n: Int) -> Matrix:
+  if n <= 0:
+    raise LinalgError.InvalidDimensions
+  var m = zeros(n, n)
+  var i = 0
+  while i < n:
+    let idx = i * n + i
+    m.data[idx] = 1.0
+    i = i + 1
+  return m
+
+export fn from_vector(rows: Int, cols: Int, data: Vector[Float]) -> Matrix:
+  if rows <= 0 or cols <= 0:
+    raise LinalgError.InvalidDimensions
+  if rows > 9223372036854775807 / cols:
+    raise LinalgError.InvalidDimensions
+  let expected = rows * cols
+  let actual = data |> count
+  if actual != expected:
+    raise LinalgError.DimensionMismatch
+  var cloned_data = Vector[Float]()
+  var i = 0
+  while i < actual:
+    cloned_data.push(data[i])
+    i = i + 1
+  return Matrix(rows: rows, cols: cols, data: cloned_data)
+
+export fn matrix_clone(m: Matrix) -> Matrix:
+  if not is_valid_matrix(m):
+    raise LinalgError.InvalidDimensions
+  var cloned_data = Vector[Float]()
+  let total = m.data |> count
+  var i = 0
+  while i < total:
+    cloned_data.push(m.data[i])
+    i = i + 1
+  return Matrix(rows: m.rows, cols: m.cols, data: cloned_data)
+
+export fn matrix_get(m: Matrix, r: Int, c: Int) -> Float:
+  if not is_valid_matrix(m):
+    raise LinalgError.InvalidDimensions
+  if r < 0 or r >= m.rows or c < 0 or c >= m.cols:
+    raise LinalgError.IndexOutOfBounds
+  let idx = r * m.cols + c
+  return m.data[idx]
+
+export fn matrix_set(m: Matrix, r: Int, c: Int, val: Float):
+  if not is_valid_matrix(m):
+    raise LinalgError.InvalidDimensions
+  if r < 0 or r >= m.rows or c < 0 or c >= m.cols:
+    raise LinalgError.IndexOutOfBounds
+  let idx = r * m.cols + c
+  m.data[idx] = val
+
+export fn get(m: Matrix, r: Int, c: Int) -> Float:
+  return matrix_get(m, r, c)
+
+export fn set(m: Matrix, r: Int, c: Int, val: Float):
+  matrix_set(m, r, c, val)
+
+export fn matrix_rows(m: Matrix) -> Int:
+  if not is_valid_matrix(m):
+    raise LinalgError.InvalidDimensions
+  return m.rows
+
+export fn matrix_cols(m: Matrix) -> Int:
+  if not is_valid_matrix(m):
+    raise LinalgError.InvalidDimensions
+  return m.cols
+
+# --- Vector Operations ---
+
+export fn vec_dot(a: Vector[Float], b: Vector[Float]) -> Float:
+  let n = a |> count
+  let b_len = b |> count
+  if n != b_len:
+    raise LinalgError.DimensionMismatch
+  var sum = 0.0
+  var i = 0
+  while i < n:
+    sum = sum + a[i] * b[i]
+    i = i + 1
+  return sum
+
+export fn vec_norm(v: Vector[Float]) -> Float:
+  let n = v |> count
+  if n == 0:
+    return 0.0
+  var has_inf = false
+  var has_nan = false
+  var max_val = 0.0
+  var i = 0
+  while i < n:
+    let x = v[i]
+    if math.is_infinite(x):
+      has_inf = true
+    else:
+      if math.is_nan(x):
+        has_nan = true
+      else:
+        let av = math.abs(x)
+        if av > max_val:
+          max_val = av
+    i = i + 1
+  if has_inf:
+    return math.infinity()
+  if has_nan:
+    return math.nan()
+  if max_val == 0.0:
+    return 0.0
+  var sum_sq = 0.0
+  i = 0
+  while i < n:
+    let scaled = v[i] / max_val
+    sum_sq = sum_sq + scaled * scaled
+    i = i + 1
+  return max_val * math.sqrt_val(sum_sq)
+
+export fn vec_norm_l1(v: Vector[Float]) -> Float:
+  let n = v |> count
+  if n == 0:
+    return 0.0
+  var has_inf = false
+  var has_nan = false
+  var sum = 0.0
+  var i = 0
+  while i < n:
+    let x = v[i]
+    if math.is_infinite(x):
+      has_inf = true
+    else:
+      if math.is_nan(x):
+        has_nan = true
+      else:
+        sum = sum + math.abs(x)
+    i = i + 1
+  if has_inf:
+    return math.infinity()
+  if has_nan:
+    return math.nan()
+  return sum
+
+export fn vec_norm_inf(v: Vector[Float]) -> Float:
+  let n = v |> count
+  if n == 0:
+    return 0.0
+  var has_inf = false
+  var has_nan = false
+  var max_val = 0.0
+  var i = 0
+  while i < n:
+    let x = v[i]
+    if math.is_infinite(x):
+      has_inf = true
+    else:
+      if math.is_nan(x):
+        has_nan = true
+      else:
+        let av = math.abs(x)
+        if av > max_val:
+          max_val = av
+    i = i + 1
+  if has_inf:
+    return math.infinity()
+  if has_nan:
+    return math.nan()
+  return max_val
+
+export fn vec_add(a: Vector[Float], b: Vector[Float]) -> Vector[Float]:
+  let n = a |> count
+  let b_len = b |> count
+  if n != b_len:
+    raise LinalgError.DimensionMismatch
+  var res = Vector[Float]()
+  var i = 0
+  while i < n:
+    res.push(a[i] + b[i])
+    i = i + 1
+  return res
+
+export fn vec_sub(a: Vector[Float], b: Vector[Float]) -> Vector[Float]:
+  let n = a |> count
+  let b_len = b |> count
+  if n != b_len:
+    raise LinalgError.DimensionMismatch
+  var res = Vector[Float]()
+  var i = 0
+  while i < n:
+    res.push(a[i] - b[i])
+    i = i + 1
+  return res
+
+export fn vec_scale(v: Vector[Float], s: Float) -> Vector[Float]:
+  let n = v |> count
+  var res = Vector[Float]()
+  var i = 0
+  while i < n:
+    res.push(v[i] * s)
+    i = i + 1
+  return res
+
+export fn vec_outer(a: Vector[Float], b: Vector[Float]) -> Matrix:
+  let m = a |> count
+  let n = b |> count
+  if m == 0 or n == 0:
+    raise LinalgError.InvalidDimensions
+  var res = zeros(m, n)
+  var r = 0
+  while r < m:
+    let ar = a[r]
+    var c = 0
+    while c < n:
+      let idx = r * n + c
+      res.data[idx] = ar * b[c]
+      c = c + 1
+    r = r + 1
+  return res
+
+# --- Matrix Arithmetic & Transformations ---
+
+export fn mat_add(a: Matrix, b: Matrix) -> Matrix:
+  if not is_valid_matrix(a) or not is_valid_matrix(b):
+    raise LinalgError.InvalidDimensions
+  if a.rows != b.rows or a.cols != b.cols:
+    raise LinalgError.DimensionMismatch
+  let total = a.rows * a.cols
+  var data = Vector[Float]()
+  var i = 0
+  while i < total:
+    data.push(a.data[i] + b.data[i])
+    i = i + 1
+  return Matrix(rows: a.rows, cols: a.cols, data: data)
+
+export fn mat_sub(a: Matrix, b: Matrix) -> Matrix:
+  if not is_valid_matrix(a) or not is_valid_matrix(b):
+    raise LinalgError.InvalidDimensions
+  if a.rows != b.rows or a.cols != b.cols:
+    raise LinalgError.DimensionMismatch
+  let total = a.rows * a.cols
+  var data = Vector[Float]()
+  var i = 0
+  while i < total:
+    data.push(a.data[i] - b.data[i])
+    i = i + 1
+  return Matrix(rows: a.rows, cols: a.cols, data: data)
+
+export fn mat_scale(a: Matrix, s: Float) -> Matrix:
+  if not is_valid_matrix(a):
+    raise LinalgError.InvalidDimensions
+  let total = a.rows * a.cols
+  var data = Vector[Float]()
+  var i = 0
+  while i < total:
+    data.push(a.data[i] * s)
+    i = i + 1
+  return Matrix(rows: a.rows, cols: a.cols, data: data)
+
+export fn transpose(a: Matrix) -> Matrix:
+  if not is_valid_matrix(a):
+    raise LinalgError.InvalidDimensions
+  let r_count = a.rows
+  let c_count = a.cols
+  var res = zeros(c_count, r_count)
+  var r = 0
+  while r < r_count:
+    var c = 0
+    while c < c_count:
+      let in_idx = r * c_count + c
+      let out_idx = c * r_count + r
+      res.data[out_idx] = a.data[in_idx]
+      c = c + 1
+    r = r + 1
+  return res
+
+export fn mat_vec_mul(a: Matrix, v: Vector[Float]) -> Vector[Float]:
+  if not is_valid_matrix(a):
+    raise LinalgError.InvalidDimensions
+  let v_len = v |> count
+  if a.cols != v_len:
+    raise LinalgError.DimensionMismatch
+  let rows = a.rows
+  let cols = a.cols
+  var res = Vector[Float]()
+  var r = 0
+  while r < rows:
+    var sum = 0.0
+    var c = 0
+    let row_offset = r * cols
+    while c < cols:
+      let idx = row_offset + c
+      sum = sum + a.data[idx] * v[c]
+      c = c + 1
+    res.push(sum)
+    r = r + 1
+  return res
+
+export fn mat_mul(a: Matrix, b: Matrix) -> Matrix:
+  if not is_valid_matrix(a) or not is_valid_matrix(b):
+    raise LinalgError.InvalidDimensions
+  if a.cols != b.rows:
+    raise LinalgError.DimensionMismatch
+  let m = a.rows
+  let k_len = a.cols
+  let n = b.cols
+  var res = zeros(m, n)
+  var i = 0
+  while i < m:
+    let i_offset = i * k_len
+    var k = 0
+    while k < k_len:
+      let aik = a.data[i_offset + k]
+      let k_offset = k * n
+      var j = 0
+      while j < n:
+        let bkj = b.data[k_offset + j]
+        let idx = i * n + j
+        # Strict IEEE-754: No zero-skip so 0.0 * inf = NaN and 0.0 * NaN = NaN are preserved
+        res.data[idx] = res.data[idx] + aik * bkj
+        j = j + 1
+      k = k + 1
+    i = i + 1
+  return res
+
+export fn trace(a: Matrix) -> Float:
+  if not is_valid_matrix(a):
+    raise LinalgError.InvalidDimensions
+  if a.rows != a.cols:
+    raise LinalgError.NonSquareMatrix
+  let n = a.rows
+  var sum = 0.0
+  var i = 0
+  while i < n:
+    let idx = i * n + i
+    sum = sum + a.data[idx]
+    i = i + 1
+  return sum
+
+export fn mat_norm_frobenius(a: Matrix) -> Float:
+  if not is_valid_matrix(a):
+    raise LinalgError.InvalidDimensions
+  let total = a.rows * a.cols
+  if total == 0:
+    return 0.0
+  var has_inf = false
+  var has_nan = false
+  var max_val = 0.0
+  var i = 0
+  while i < total:
+    let x = a.data[i]
+    if math.is_infinite(x):
+      has_inf = true
+    else:
+      if math.is_nan(x):
+        has_nan = true
+      else:
+        let av = math.abs(x)
+        if av > max_val:
+          max_val = av
+    i = i + 1
+  if has_inf:
+    return math.infinity()
+  if has_nan:
+    return math.nan()
+  if max_val == 0.0:
+    return 0.0
+  var sum_sq = 0.0
+  i = 0
+  while i < total:
+    let scaled = a.data[i] / max_val
+    sum_sq = sum_sq + scaled * scaled
+    i = i + 1
+  return max_val * math.sqrt_val(sum_sq)
+
+# --- Factorization & Solvers ---
+
+export fn lu_factorize(a: Matrix) -> LUDecomposition:
+  if not is_valid_matrix(a):
+    raise LinalgError.InvalidDimensions
+  if a.rows != a.cols:
+    raise LinalgError.NonSquareMatrix
+  let n = a.rows
+  if n == 0:
+    raise LinalgError.InvalidDimensions
+  
+  var max_a = 0.0
+  let total = n * n
+  var idx = 0
+  while idx < total:
+    let av = math.abs(a.data[idx])
+    if av > max_a:
+      max_a = av
+    idx = idx + 1
+  if max_a == 0.0:
+    raise LinalgError.SingularMatrix
+  
+  let tol = 0.00000000000001 * max_a
+
+  var lu = matrix_clone(a)
+  var pivots = Vector[Int]()
+  var i = 0
+  while i < n:
+    pivots.push(i)
+    i = i + 1
+  
+  var num_swaps = 0
+  var k = 0
+  while k < n:
+    var p = k
+    var max_pivot = math.abs(matrix_get(lu, k, k))
+    var r = k + 1
+    while r < n:
+      let val = math.abs(matrix_get(lu, r, k))
+      if val > max_pivot:
+        max_pivot = val
+        p = r
+      r = r + 1
+    
+    if max_pivot <= tol:
+      raise LinalgError.SingularMatrix
+    
+    if p != k:
+      var c = 0
+      while c < n:
+        let tmp = matrix_get(lu, k, c)
+        let p_val = matrix_get(lu, p, c)
+        matrix_set(lu, k, c, p_val)
+        matrix_set(lu, p, c, tmp)
+        c = c + 1
+      let tmp_p = pivots[k]
+      pivots[k] = pivots[p]
+      pivots[p] = tmp_p
+      num_swaps = num_swaps + 1
+    
+    let pivot_val = matrix_get(lu, k, k)
+    var row_i = k + 1
+    while row_i < n:
+      let factor = matrix_get(lu, row_i, k) / pivot_val
+      matrix_set(lu, row_i, k, factor)
+      var col_j = k + 1
+      while col_j < n:
+        let cur = matrix_get(lu, row_i, col_j)
+        let top = matrix_get(lu, k, col_j)
+        matrix_set(lu, row_i, col_j, cur - factor * top)
+        col_j = col_j + 1
+      row_i = row_i + 1
+    
+    k = k + 1
+  
+  return LUDecomposition(lu: lu, pivots: pivots, num_swaps: num_swaps)
+
+export fn validate_lu(decomp: LUDecomposition) -> Bool:
+  if not is_valid_matrix(decomp.lu):
+    return false
+  if decomp.lu.rows != decomp.lu.cols:
+    return false
+  let n = decomp.lu.rows
+  if (decomp.pivots |> count) != n:
+    return false
+  var visited = Vector[Bool]()
+  var vi = 0
+  while vi < n:
+    visited.push(false)
+    vi = vi + 1
+  var pi = 0
+  while pi < n:
+    let p = decomp.pivots[pi]
+    if p < 0 or p >= n:
+      return false
+    if visited[p]:
+      return false
+    visited[p] = true
+    pi = pi + 1
+  return true
+
+export fn lu_solve(decomp: LUDecomposition, b: Vector[Float]) -> Vector[Float]:
+  if not is_valid_matrix(decomp.lu):
+    raise LinalgError.InvalidDimensions
+  if decomp.lu.rows != decomp.lu.cols:
+    raise LinalgError.NonSquareMatrix
+  let n = decomp.lu.rows
+  if (decomp.pivots |> count) != n:
+    raise LinalgError.InvalidDimensions
+  var visited = Vector[Bool]()
+  var vi = 0
+  while vi < n:
+    visited.push(false)
+    vi = vi + 1
+  var pi = 0
+  while pi < n:
+    let p = decomp.pivots[pi]
+    if p < 0 or p >= n:
+      raise LinalgError.InvalidDimensions
+    if visited[p]:
+      raise LinalgError.InvalidDimensions
+    visited[p] = true
+    pi = pi + 1
+  let b_len = b |> count
+  if n != b_len:
+    raise LinalgError.DimensionMismatch
+  
+  var y = Vector[Float]()
+  var i = 0
+  while i < n:
+    y.push(0.0)
+    i = i + 1
+  
+  i = 0
+  while i < n:
+    let piv_idx = decomp.pivots[i]
+    var sum = b[piv_idx]
+    var j = 0
+    while j < i:
+      let lij = matrix_get(decomp.lu, i, j)
+      sum = sum - lij * y[j]
+      j = j + 1
+    y[i] = sum
+    i = i + 1
+  
+  var x = Vector[Float]()
+  i = 0
+  while i < n:
+    x.push(0.0)
+    i = i + 1
+  
+  var ri = n - 1
+  while ri >= 0:
+    var sum = y[ri]
+    var j = ri + 1
+    while j < n:
+      let uij = matrix_get(decomp.lu, ri, j)
+      sum = sum - uij * x[j]
+      j = j + 1
+    let uii = matrix_get(decomp.lu, ri, ri)
+    if math.abs(uii) == 0.0:
+      raise LinalgError.SingularMatrix
+    x[ri] = sum / uii
+    ri = ri - 1
+  
+  return x
+
+export fn solve(a: Matrix, b: Vector[Float]) -> Vector[Float]:
+  let decomp = lu_factorize(a)
+  return lu_solve(decomp, b)
+
+export fn determinant(a: Matrix) -> Float:
+  let decomp = lu_factorize(a)
+  let n = a.rows
+  var det = 1.0
+  if (decomp.num_swaps % 2) != 0:
+    det = 0.0 - 1.0
+  var i = 0
+  while i < n:
+    det = det * matrix_get(decomp.lu, i, i)
+    i = i + 1
+  return det
+
+export fn matrix_log_det(a: Matrix) -> LogDet:
+  let decomp = lu_factorize(a)
+  let n = a.rows
+  var sign = 1.0
+  if (decomp.num_swaps % 2) != 0:
+    sign = 0.0 - 1.0
+  var log_abs_det = 0.0
+  var i = 0
+  while i < n:
+    let diag = matrix_get(decomp.lu, i, i)
+    if diag < 0.0:
+      sign = 0.0 - sign
+    log_abs_det = log_abs_det + math.ln(math.abs(diag))
+    i = i + 1
+  return LogDet(sign: sign, log_abs_det: log_abs_det)
+
+export fn invert(a: Matrix) -> Matrix:
+  let decomp = lu_factorize(a)
+  let n = a.rows
+  var inv = zeros(n, n)
+  var col = 0
+  while col < n:
+    var e_col = Vector[Float]()
+    var i = 0
+    while i < n:
+      if i == col:
+        e_col.push(1.0)
+      else:
+        e_col.push(0.0)
+      i = i + 1
+    let sol = lu_solve(decomp, e_col)
+    var r = 0
+    while r < n:
+      let idx = r * n + col
+      inv.data[idx] = sol[r]
+      r = r + 1
+    col = col + 1
+  return inv
