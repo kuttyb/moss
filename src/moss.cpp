@@ -2406,20 +2406,29 @@ class Checker {
       }
       derive_expression_constraints(function, ii);
     }
-    for (const auto& ops : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"}, {"+", "-", "*", "/", "%"}})
+    for (const auto& ops : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+                                                  {"|"}, {"^"}, {"&"}, {"<<", ">>"},
+                                                  {"+", "-", "*", "/", "%"}})
       if (auto binary = split_binary(e, ops)) {
         auto left_type = constraint_expression_type(function, binary->first);
         auto right_type = constraint_expression_type(function, binary->second);
         string left_expected = right_type.value_or("");
         string right_expected = left_type.value_or("");
         bool comparison = ops.front() == "==";
-        if (!comparison && !expected_result.empty() && expected_result != "$function_result") {
+        bool bitwise = ops.front() == "|" || ops.front() == "^" || ops.front() == "&" || ops.front() == "<<";
+        if (bitwise) {
+          left_expected = "int";
+          right_expected = "int";
+        } else if (!comparison && !expected_result.empty() && expected_result != "$function_result") {
           if (left_expected.empty()) left_expected = expected_result;
           if (right_expected.empty()) right_expected = expected_result;
         }
         derive_expression_constraints(function, binary->first, left_expected);
         derive_expression_constraints(function, binary->second, right_expected);
       }
+    if (!e.empty() && e.front() == '~') {
+      derive_expression_constraints(function, trim(e.substr(1)), "int");
+    }
     string callee; vector<string> call_args;
     if (parse_simple_call(e, callee, call_args) && !member_call) {
       for (const auto& parameter : function.params)
@@ -4050,6 +4059,34 @@ class Checker {
         if (i + op.size() > expression.size() ||
             expression.compare(i, op.size(), op) != 0)
           continue;
+        if (op == "|") {
+          if (i + 1 < expression.size() && (expression[i + 1] == '>' || expression[i + 1] == '|' || expression[i + 1] == '='))
+            continue;
+          if (i > 0 && expression[i - 1] == '|')
+            continue;
+        }
+        if (op == "&") {
+          if (i + 1 < expression.size() && (expression[i + 1] == '&' || expression[i + 1] == '='))
+            continue;
+          if (i > 0 && expression[i - 1] == '&')
+            continue;
+        }
+        if (op == "^") {
+          if (i + 1 < expression.size() && expression[i + 1] == '=')
+            continue;
+        }
+        if (op == "<") {
+          if (i + 1 < expression.size() && (expression[i + 1] == '<' || expression[i + 1] == '='))
+            continue;
+          if (i > 0 && expression[i - 1] == '<')
+            continue;
+        }
+        if (op == ">") {
+          if (i + 1 < expression.size() && (expression[i + 1] == '>' || expression[i + 1] == '='))
+            continue;
+          if (i > 0 && (expression[i - 1] == '>' || expression[i - 1] == '|'))
+            continue;
+        }
         if ((op == "+" || op == "-") && [&] {
               size_t before = i;
               while (before > 0 && std::isspace(static_cast<unsigned char>(expression[before - 1])))
@@ -4064,7 +4101,8 @@ class Checker {
               return prior == '(' || prior == '[' || prior == '{' || prior == ',' ||
                   prior == ':' || prior == '+' || prior == '-' || prior == '*' ||
                   prior == '/' || prior == '%' || prior == '=' || prior == '<' ||
-                  prior == '>' || prior == '!' || prior == '|';
+                  prior == '>' || prior == '!' || prior == '|' || prior == '&' ||
+                  prior == '^' || prior == '~';
             }())
           continue;
         if (i + op.size() <= expression.size())
@@ -4221,6 +4259,16 @@ class Checker {
     }
     if (auto comparison = split_binary(e, {"==", "!=", "<=", ">=", "<", ">"}))
       return string("bool");
+    for (const auto& ops : vector<vector<string>>{{"|"}, {"^"}, {"&"}, {"<<", ">>"}}) {
+      if (auto binary = split_binary(e, ops)) {
+        auto left = inferred_expr_type(binary->first, env);
+        auto right = inferred_expr_type(binary->second, env);
+        return left && right &&
+                canonical_type_name(*left) == "int" &&
+                canonical_type_name(*right) == "int"
+            ? std::optional<string>("int") : std::nullopt;
+      }
+    }
     if (auto arithmetic = split_binary(e, {"+", "-", "*", "/", "%"})) {
       auto left = inferred_expr_type(arithmetic->first, env);
       auto right = inferred_expr_type(arithmetic->second, env);
@@ -4235,6 +4283,11 @@ class Checker {
             (*right == "int" || *right == "float"))
           return (*left == "float" || *right == "float") ? "float" : "int";
       }
+    }
+    if (!e.empty() && e.front() == '~') {
+      auto operand = inferred_expr_type(trim(e.substr(1)), env);
+      return operand && canonical_type_name(*operand) == "int"
+          ? std::optional<string>("int") : std::nullopt;
     }
     string index_base, index_expr;
     if (parse_index(e, index_base, index_expr)) {
@@ -7983,6 +8036,7 @@ class Checker {
       }
       for (const auto& operators :
            vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+                                  {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                   {"+", "-", "*", "/", "%"}}) {
         if (auto binary = split_binary(value, operators)) {
           analyze_effect_expression(binary->first, env, params, parameter_effects,
@@ -7994,6 +8048,11 @@ class Checker {
       }
       if (starts_with(value, "not ")) {
         analyze_effect_expression(value.substr(4), env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Read);
+        return;
+      }
+      if (!value.empty() && value.front() == '~') {
+        analyze_effect_expression(trim(value.substr(1)), env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
         return;
       }
@@ -8273,6 +8332,7 @@ class Checker {
 
     for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
                                                          {"==", "!=", "<=", ">=", "<", ">"},
+                                                         {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                          {"+", "-", "*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
         analyze_effect_expression(binary->first, env, params, parameter_effects,
@@ -8281,6 +8341,11 @@ class Checker {
                                   receiver_effect, receiver_fields, Effect::Read);
         return;
       }
+    }
+    if (!value.empty() && value.front() == '~') {
+      analyze_effect_expression(trim(value.substr(1)), env, params, parameter_effects,
+                                receiver_effect, receiver_fields, Effect::Read);
+      return;
     }
 
     string base, index;
@@ -8304,6 +8369,7 @@ class Checker {
 
     for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
                                                          {"==", "!=", "<=", ">=", "<", ">"},
+                                                         {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                          {"+", "-", "*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
         analyze_effect_expression(binary->first, env, params, parameter_effects,
@@ -8708,11 +8774,17 @@ class Checker {
                                implicit_owner, calls);
       return;
     }
+    if (!value.empty() && value.front() == '~') {
+      collect_local_call_sites(line, trim(value.substr(1)), env,
+                               implicit_owner, calls);
+      return;
+    }
     // Split at the outer operator before looking for a trailing call.  For
     // example, `0 - lib.lookup(xs)` ends in `lookup(...)`; treating the whole
     // expression as one member call loses the imported lookup specialization.
     for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
                                                          {"==", "!=", "<=", ">=", "<", ">"},
+                                                         {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                          {"+", "-", "*", "/", "%"}})
       if (auto binary = split_binary(value, operators)) {
         collect_local_call_sites(line, binary->first, env, implicit_owner, calls);
@@ -10068,9 +10140,15 @@ class Checker {
     }
 
     string value = normalize_pipeline(original);
+    if (!value.empty() && value.front() == '~') {
+      return observable_expression_effects(
+          trim(value.substr(1)), env, domain_fields, implicit_object, parameters,
+          proven_indices, root_ingress);
+    }
     for (const auto& operators :
          vector<vector<string>>{{" or "}, {" xor "}, {" and "},
                                 {"==", "!=", "<=", ">=", "<", ">"},
+                                {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                 {"+", "-"}, {"*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
         effects.merge(observable_expression_effects(
@@ -11652,8 +11730,13 @@ class Checker {
             "INVALID_TYPED_VECTOR_CONSTRUCTOR");
       return;
     }
+    if (!value.empty() && value.front() == '~') {
+      check_ownership_expression(line, trim(value.substr(1)), env, Effect::Read);
+      return;
+    }
     for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
                                                          {"==", "!=", "<=", ">=", "<", ">"},
+                                                         {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                          {"+", "-", "*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
         check_ownership_expression(line, binary->first, env, Effect::Read);
@@ -13430,7 +13513,7 @@ class Checker {
       return;
     }
     for (const auto& op :
-         vector<string>{"&&", "||", "<<", ">>", "&", "|", "^"}) {
+         vector<string>{"&&", "||"}) {
       if (split_binary(value, {op}))
         err(line, "binary '" + op + "' expression is not supported",
             "UNSUPPORTED_EXPRESSION_OPERATOR");
@@ -13476,8 +13559,59 @@ class Checker {
         return;
       }
     }
-    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
-                                                         {"+", "-", "*", "/", "%"}}) {
+    if (auto binary = split_binary(value, {"==", "!=", "<=", ">=", "<", ">"})) {
+      check_expression(line, binary->first, env);
+      check_expression(line, binary->second, env);
+      auto left_type = inferred_expr_type(binary->first, env);
+      auto right_type = inferred_expr_type(binary->second, env);
+      if ((left_type && contains_enum_type(*left_type)) ||
+          (right_type && contains_enum_type(*right_type)))
+        err(line, "enum equality and ordering are not supported; use an exhaustive match",
+            "ENUM_OPERATOR_UNSUPPORTED");
+      if (binary->first.empty() || binary->second.empty())
+        err(line, "invalid comparison expression");
+      if ((left_type && unresolved_semantic_type(*left_type)) ||
+          (right_type && unresolved_semantic_type(*right_type))) return;
+      if (left_type && right_type) {
+        string lt = canonical_type_name(*left_type);
+        string rt = canonical_type_name(*right_type);
+        if ((lt == "Range" || rt == "Range") && lt != rt) {
+          err(line, "Range equality requires two Range operands",
+              "TYPE_MISMATCH");
+        }
+      }
+      return;
+    }
+    for (const auto& op : vector<string>{"|", "^", "&"}) {
+      if (auto binary = split_binary(value, {op})) {
+        check_expression(line, binary->first, env);
+        check_expression(line, binary->second, env);
+        auto left_type = inferred_expr_type(binary->first, env);
+        auto right_type = inferred_expr_type(binary->second, env);
+        if ((left_type && unresolved_semantic_type(*left_type)) ||
+            (right_type && unresolved_semantic_type(*right_type))) return;
+        if (!left_type || !right_type ||
+            canonical_type_name(*left_type) != "int" ||
+            canonical_type_name(*right_type) != "int")
+          err(line, "bitwise operator '" + op + "' requires Int operands", "TYPE_MISMATCH");
+        return;
+      }
+    }
+    if (auto binary = split_binary(value, {"<<", ">>"})) {
+      string op = split_binary(value, {"<<"}) ? "<<" : ">>";
+      check_expression(line, binary->first, env);
+      check_expression(line, binary->second, env);
+      auto left_type = inferred_expr_type(binary->first, env);
+      auto right_type = inferred_expr_type(binary->second, env);
+      if ((left_type && unresolved_semantic_type(*left_type)) ||
+          (right_type && unresolved_semantic_type(*right_type))) return;
+      if (!left_type || !right_type ||
+          canonical_type_name(*left_type) != "int" ||
+          canonical_type_name(*right_type) != "int")
+        err(line, "shift operator '" + op + "' requires Int operands", "TYPE_MISMATCH");
+      return;
+    }
+    for (const auto& operators : vector<vector<string>>{{"+", "-", "*", "/", "%"}}) {
         if (auto binary = split_binary(value, operators)) {
           check_expression(line, binary->first, env);
           check_expression(line, binary->second, env);
@@ -13493,17 +13627,8 @@ class Checker {
           // decided when this expression is checked in a concrete TypeEnv.
           if ((left_type && unresolved_semantic_type(*left_type)) ||
               (right_type && unresolved_semantic_type(*right_type))) return;
-          if (split_binary(value, {"==", "!=", "<=", ">=", "<", ">"})) {
-            if (left_type && right_type) {
-              string lt = canonical_type_name(*left_type);
-              string rt = canonical_type_name(*right_type);
-              if ((lt == "Range" || rt == "Range") && lt != rt) {
-                err(line, "Range equality requires two Range operands",
-                    "TYPE_MISMATCH");
-              }
-            }
-          } else if ((left_type && canonical_type_name(*left_type) == "Range") ||
-                     (right_type && canonical_type_name(*right_type) == "Range")) {
+          if ((left_type && canonical_type_name(*left_type) == "Range") ||
+              (right_type && canonical_type_name(*right_type) == "Range")) {
             err(line, "Range arithmetic is unsupported", "TYPE_MISMATCH");
           }
           if (split_binary(value, {"%"})) {
@@ -13516,6 +13641,15 @@ class Checker {
           }
           return;
         }
+    }
+    if (!value.empty() && value.front() == '~') {
+      string operand = trim(value.substr(1));
+      check_expression(line, operand, env);
+      auto operand_type = inferred_expr_type(operand, env);
+      if (operand_type && unresolved_semantic_type(*operand_type)) return;
+      if (!operand_type || canonical_type_name(*operand_type) != "int")
+        err(line, "bitwise operator '~' requires an Int operand", "TYPE_MISMATCH");
+      return;
     }
     {
       string callee;
@@ -15689,8 +15823,15 @@ class Generator {
       // symbol; no dependency implementation is copied here.
       o << "use " << crate << "::*;\n";
     }
-    if (!rust_dependencies_.empty()) o << "\n";
     o << "fn __moss_require_send<T: Send>() {}\n\n";
+    o << "#[inline(always)]\n"
+         "fn __moss_shl(value: i64, shift: i64) -> i64 {\n"
+         "    if shift < 0 || shift >= 64 { 0 } else { value.wrapping_shl(shift as u32) }\n"
+         "}\n\n"
+         "#[inline(always)]\n"
+         "fn __moss_shr(value: i64, shift: i64) -> i64 {\n"
+         "    if shift < 0 || shift >= 64 { if value < 0 { -1 } else { 0 } } else { value.wrapping_shr(shift as u32) }\n"
+         "}\n\n";
 
     o << handler_runtime_rust();
     o << float_format_runtime_rust();
@@ -16574,6 +16715,34 @@ class Generator {
         if (index + op.size() > expression.size() ||
             expression.compare(index, op.size(), op) != 0)
           continue;
+        if (op == "|") {
+          if (index + 1 < expression.size() && (expression[index + 1] == '>' || expression[index + 1] == '|' || expression[index + 1] == '='))
+            continue;
+          if (index > 0 && expression[index - 1] == '|')
+            continue;
+        }
+        if (op == "&") {
+          if (index + 1 < expression.size() && (expression[index + 1] == '&' || expression[index + 1] == '='))
+            continue;
+          if (index > 0 && expression[index - 1] == '&')
+            continue;
+        }
+        if (op == "^") {
+          if (index + 1 < expression.size() && expression[index + 1] == '=')
+            continue;
+        }
+        if (op == "<") {
+          if (index + 1 < expression.size() && (expression[index + 1] == '<' || expression[index + 1] == '='))
+            continue;
+          if (index > 0 && expression[index - 1] == '<')
+            continue;
+        }
+        if (op == ">") {
+          if (index + 1 < expression.size() && (expression[index + 1] == '>' || expression[index + 1] == '='))
+            continue;
+          if (index > 0 && (expression[index - 1] == '>' || expression[index - 1] == '|'))
+            continue;
+        }
         string left = trim(expression.substr(0, index));
         string right = trim(expression.substr(index + op.size()));
         if (left.empty() || right.empty()) continue;
@@ -16592,7 +16761,8 @@ class Generator {
           if (previous == '(' || previous == '[' || previous == '{' ||
               previous == ',' || previous == '+' || previous == '-' ||
               previous == '*' || previous == '/' || previous == '%' || previous == '<' ||
-              previous == '>' || previous == '=' || previous == '!')
+              previous == '>' || previous == '=' || previous == '!' ||
+              previous == '|' || previous == '&' || previous == '^' || previous == '~')
             continue;
         }
         return GeneratedBinaryExpression{left, op, right};
@@ -16921,6 +17091,16 @@ class Generator {
         generated_split_binary(value, {" and "}) ||
         generated_split_binary(value, {"==", "!=", "<=", ">=", "<", ">"}))
       return string("bool");
+    for (const auto& ops : vector<vector<string>>{{"|"}, {"^"}, {"&"}, {"<<", ">>"}}) {
+      if (auto binary = generated_split_binary(value, ops)) {
+        auto left = generated_expr_type(binary->left, types);
+        auto right = generated_expr_type(binary->right, types);
+        if (left && right &&
+            canonical_type_name(*left) == "int" &&
+            canonical_type_name(*right) == "int")
+          return string("int");
+      }
+    }
     for (const auto& operators : vector<vector<string>>{{"+", "-"}, {"*", "/", "%"}}) {
       auto binary = generated_split_binary(value, operators);
       if (!binary) continue;
@@ -16939,6 +17119,11 @@ class Generator {
       if (operand && (canonical_type_name(*operand) == "int" ||
                       canonical_type_name(*operand) == "float"))
         return operand;
+    }
+    if (!value.empty() && value.front() == '~') {
+      auto operand = generated_expr_type(trim(value.substr(1)), types);
+      if (operand && canonical_type_name(*operand) == "int")
+        return string("int");
     }
     return std::nullopt;
   }
@@ -18170,6 +18355,35 @@ class Generator {
       }
       return "(" + left + ") " + comparison->op + " (" + right + ")";
     }
+    if (auto binary = generated_split_binary(e, {"|"})) {
+      string left = expr(binary->left, d, locals, types);
+      string right = expr(binary->right, d, locals, types);
+      left = value_from_borrowed_message_parameter(binary->left, left, types);
+      right = value_from_borrowed_message_parameter(binary->right, right, types);
+      return "(" + left + ") | (" + right + ")";
+    }
+    if (auto binary = generated_split_binary(e, {"^"})) {
+      string left = expr(binary->left, d, locals, types);
+      string right = expr(binary->right, d, locals, types);
+      left = value_from_borrowed_message_parameter(binary->left, left, types);
+      right = value_from_borrowed_message_parameter(binary->right, right, types);
+      return "(" + left + ") ^ (" + right + ")";
+    }
+    if (auto binary = generated_split_binary(e, {"&"})) {
+      string left = expr(binary->left, d, locals, types);
+      string right = expr(binary->right, d, locals, types);
+      left = value_from_borrowed_message_parameter(binary->left, left, types);
+      right = value_from_borrowed_message_parameter(binary->right, right, types);
+      return "(" + left + ") & (" + right + ")";
+    }
+    if (auto binary = generated_split_binary(e, {"<<", ">>"})) {
+      string left = expr(binary->left, d, locals, types);
+      string right = expr(binary->right, d, locals, types);
+      left = value_from_borrowed_message_parameter(binary->left, left, types);
+      right = value_from_borrowed_message_parameter(binary->right, right, types);
+      string fn_name = binary->op == "<<" ? "__moss_shl" : "__moss_shr";
+      return fn_name + "(" + left + ", " + right + ")";
+    }
     for (const auto& operators : vector<vector<string>>{{"+", "-"}, {"*", "/", "%"}}) {
       auto binary = generated_split_binary(e, operators);
       if (!binary) continue;
@@ -18258,6 +18472,11 @@ class Generator {
           left = "((" + left + ") as f64)";
       }
       return "(" + left + ") " + binary->op + " (" + right + ")";
+    }
+    if (!e.empty() && e.front() == '~') {
+      string operand = expr(trim(e.substr(1)), d, locals, types);
+      operand = value_from_borrowed_message_parameter(trim(e.substr(1)), operand, types);
+      return "!(" + operand + ")";
     }
     // Only classify a quoted source form as a single literal after top-level
     // operators have had a chance to split it. Expressions such as
@@ -23710,7 +23929,7 @@ static void write_bootstrap_json(std::ostream& out,
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"pass\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"],\"exhaustive_enum_match\":\"match expression: / match consume <owned enum expression>:\"},"
          "\"enums\":{\"declaration\":\"enum Name: with closed named-field cases\",\"construction\":\"Name.Case(field: value)\",\"read_match\":\"match expression:\",\"consume_match\":\"match consume <owned enum expression>:\",\"pattern_ownership_modifiers\":false,\"replace\":\"replace(place, replacement)\"},"
-         "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"find(pattern)\",\"slice(start, length)\",\"ascii_lower()\",\"ascii_upper()\",\"reserve(additional_bytes)\",\"append(part)\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"}},"
+         "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"bitwise\":[\"&\",\"|\",\"^\",\"~\",\"<<\",\">>\"],\"bitwise_precedence_high_to_low\":[\"~\",\"<<, >>\",\"&\",\"^\",\"|\"],\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"find(pattern)\",\"slice(start, length)\",\"ascii_lower()\",\"ascii_upper()\",\"reserve(additional_bytes)\",\"append(part)\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"}},"
          "\"numeric\":{\"float_predicates\":[\"is_nan(Float) -> Bool\",\"is_finite(Float) -> Bool\"],"
          "\"parsing\":[\"parse_int(String) -> Int raises ParseError.Invalid|Overflow\","
          "\"parse_float(String) -> Float raises ParseError.Invalid\"],"

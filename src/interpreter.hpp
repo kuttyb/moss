@@ -425,6 +425,34 @@ class FastInterpreter {
       if (parens || brackets || braces) continue;
       for (const auto& op : operators) {
         if (pos + op.size() <= input.size() && input.compare(pos, op.size(), op) == 0) {
+          if (op == "|") {
+            if (pos + 1 < input.size() && (input[pos + 1] == '>' || input[pos + 1] == '|' || input[pos + 1] == '='))
+              continue;
+            if (pos > 0 && input[pos - 1] == '|')
+              continue;
+          }
+          if (op == "&") {
+            if (pos + 1 < input.size() && (input[pos + 1] == '&' || input[pos + 1] == '='))
+              continue;
+            if (pos > 0 && input[pos - 1] == '&')
+              continue;
+          }
+          if (op == "^") {
+            if (pos + 1 < input.size() && input[pos + 1] == '=')
+              continue;
+          }
+          if (op == "<") {
+            if (pos + 1 < input.size() && (input[pos + 1] == '<' || input[pos + 1] == '='))
+              continue;
+            if (pos > 0 && input[pos - 1] == '<')
+              continue;
+          }
+          if (op == ">") {
+            if (pos + 1 < input.size() && (input[pos + 1] == '>' || input[pos + 1] == '='))
+              continue;
+            if (pos > 0 && (input[pos - 1] == '>' || input[pos - 1] == '|'))
+              continue;
+          }
           if (op == "-" || op == "+") {
             size_t before = pos;
             while (before > 0 && std::isspace(static_cast<unsigned char>(input[before - 1])))
@@ -435,7 +463,8 @@ class FastInterpreter {
                 previous == ',' || previous == ':' || previous == '+' ||
                 previous == '-' || previous == '*' || previous == '/' ||
                 previous == '%' || previous == '=' || previous == '<' ||
-                previous == '>' || previous == '!' || previous == '|')
+                previous == '>' || previous == '!' || previous == '|' ||
+                previous == '&' || previous == '^' || previous == '~')
               continue;
           }
           return std::make_pair(trim_copy(input.substr(0, pos)),
@@ -466,6 +495,34 @@ class FastInterpreter {
       if (parens || brackets || braces) continue;
       for (const auto& op : operators) {
         if (pos + op.size() > whole.size() || whole.compare(pos, op.size(), op) != 0) continue;
+        if (op == "|") {
+          if (pos + 1 < whole.size() && (whole[pos + 1] == '>' || whole[pos + 1] == '|' || whole[pos + 1] == '='))
+            continue;
+          if (pos > 0 && whole[pos - 1] == '|')
+            continue;
+        }
+        if (op == "&") {
+          if (pos + 1 < whole.size() && (whole[pos + 1] == '&' || whole[pos + 1] == '='))
+            continue;
+          if (pos > 0 && whole[pos - 1] == '&')
+            continue;
+        }
+        if (op == "^") {
+          if (pos + 1 < whole.size() && whole[pos + 1] == '=')
+            continue;
+        }
+        if (op == "<") {
+          if (pos + 1 < whole.size() && (whole[pos + 1] == '<' || whole[pos + 1] == '='))
+            continue;
+          if (pos > 0 && whole[pos - 1] == '<')
+            continue;
+        }
+        if (op == ">") {
+          if (pos + 1 < whole.size() && (whole[pos + 1] == '>' || whole[pos + 1] == '='))
+            continue;
+          if (pos > 0 && (whole[pos - 1] == '>' || whole[pos - 1] == '|'))
+            continue;
+        }
         if (trim_copy(whole.substr(0, pos)) == left &&
             trim_copy(whole.substr(pos + op.size())) == right)
           return op;
@@ -800,10 +857,26 @@ class FastInterpreter {
 
     if (auto binary = split_operator(e, {"==", "!=", "<=", ">=", "<", ">"}))
       return compare(binary->first, binary->second, e, frame, line, output);
+    if (auto binary = split_operator(e, {"|"}))
+      return bitwise(binary->first, binary->second, e, frame, line, output);
+    if (auto binary = split_operator(e, {"^"}))
+      return bitwise(binary->first, binary->second, e, frame, line, output);
+    if (auto binary = split_operator(e, {"&"}))
+      return bitwise(binary->first, binary->second, e, frame, line, output);
+    if (auto binary = split_operator(e, {"<<", ">>"}))
+      return bitwise(binary->first, binary->second, e, frame, line, output);
     if (auto binary = split_operator(e, {"+", "-"}))
       return arithmetic(binary->first, binary->second, e, frame, line, output);
     if (auto binary = split_operator(e, {"*", "/", "%"}))
       return arithmetic(binary->first, binary->second, e, frame, line, output);
+    if (!e.empty() && e.front() == '~') {
+      auto sub = trim_copy(e.substr(1));
+      if (sub.empty()) throw RuntimeError(line, "expected expression after '~'");
+      Value value = eval(sub, frame, line, output);
+      if (value.kind != Value::Kind::Int)
+        throw RuntimeError(line, "bitwise NOT requires Int operand");
+      return Value::int_value(~value.integer);
+    }
     if (!e.empty() && e.front() == '-' && e.size() > 1) {
       Value value = eval(e.substr(1), frame, line, output);
       if (value.kind == Value::Kind::Int) return Value::int_value(wrapping_sub(0, value.integer));
@@ -1233,6 +1306,33 @@ class FastInterpreter {
     if (op == ">") return Value::boolean_value(l > r);
     if (op == "<=") return Value::boolean_value(l <= r);
     return Value::boolean_value(l >= r);
+  }
+
+  static inline std::int64_t moss_shl(std::int64_t value, std::int64_t shift) {
+    if (shift < 0 || shift >= 64) return 0;
+    return static_cast<std::int64_t>(static_cast<std::uint64_t>(value) << static_cast<std::uint32_t>(shift));
+  }
+
+  static inline std::int64_t moss_shr(std::int64_t value, std::int64_t shift) {
+    if (shift < 0 || shift >= 64) return value < 0 ? -1 : 0;
+    return value >> shift;
+  }
+
+  Value bitwise(const std::string& left_text, const std::string& right_text,
+                const std::string& whole, Frame& frame, int line,
+                std::ostream& output) {
+    std::string op = operator_between(whole, left_text, right_text,
+                                      {"|", "^", "&", "<<", ">>"});
+    auto left = eval(left_text, frame, line, output);
+    auto right = eval(right_text, frame, line, output);
+    if (left.kind != Value::Kind::Int || right.kind != Value::Kind::Int)
+      throw RuntimeError(line, "bitwise operations require Int operands");
+    if (op == "|") return Value::int_value(left.integer | right.integer);
+    if (op == "^") return Value::int_value(left.integer ^ right.integer);
+    if (op == "&") return Value::int_value(left.integer & right.integer);
+    if (op == "<<") return Value::int_value(moss_shl(left.integer, right.integer));
+    if (op == ">>") return Value::int_value(moss_shr(left.integer, right.integer));
+    throw RuntimeError(line, "unknown bitwise operator: " + op);
   }
 
   Value arithmetic(const std::string& left_text, const std::string& right_text,

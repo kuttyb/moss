@@ -92,9 +92,11 @@ Moss v0.1 does not support user-defined operator overloading. The operator set
 and each accepted operand-type combination are closed compiler-defined language
 rules. In particular, `String` supports built-in `+` concatenation and
 `==`/`!=` equality, but no relational ordering operators. Binary operators
-outside the set, including bitwise `&`, `|`, and `^`, shifts `<<` and `>>`, and
-symbolic `&&` and `||`, are rejected by the frontend rather than passed through
-to generated Rust.
+outside the set, including symbolic `&&` and `||`, are rejected by the frontend
+rather than passed through to generated Rust. Integer bitwise operations (`&`, `|`,
+`^`, unary `~`) and shifts (`<<`, `>>`) operate strictly on signed 64-bit `Int`
+operands with total, well-defined two's-complement semantics (shifts by `< 0` or
+`>= 64` yield 0 for `<<`, and sign-extension for `>>`).
 
 Read-only `String` operations count positions in Unicode code points. In
 addition to `length`, `char_at`, `chars`, `split`, and separator `join`, the
