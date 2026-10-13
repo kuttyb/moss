@@ -159,6 +159,17 @@ confirms them after merge.
 
 ## Resolved during integration
 
+### P24-I-003 — Team D acceptance runners used a stale absolute checkout path
+
+- Owner: Team I
+- Severity: low (reproducibility)
+- Status: resolved by path-relative runner fix
+- Observation: `sdk/data-acceptance/run_all.py` and its compiled-only helper
+  hard-coded `/home/owner/daji/code/moss3`, so a fresh clone could not execute
+  the documented acceptance command.
+- Resolution: derive the repository root from each script's location; the
+  combined-tree package, source-free, and differential gates now run in place.
+
 ### P24-I-002 — shared Margo build artifacts require serial package validation
 
 - Owner: Team I

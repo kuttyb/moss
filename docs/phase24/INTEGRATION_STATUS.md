@@ -3,14 +3,15 @@
 ## Checkpoint
 
 - State: **AMBER**
-- Integrated implementation SHA: `bea649a42bd39c87035ba3a1baca603311ca8e05`
+- Integrated implementation SHA: `04b7683b6b6c0900e3079be60116514ba3d41564`
 - Branch: `phase24-integration`
 - Integration date: 2026-10-12
 - Whole-system Architect review: deferred to the final Phase 24 acceptance milestone by coordinator direction
 
-This is the consolidated Phase 24 SDK checkpoint. Accepted Team T performance
-and Team N numerical deliveries are integrated; the remaining limitations and
-pending Teams are explicitly recorded in [INTEGRATION_ISSUES.md](INTEGRATION_ISSUES.md).
+This is the consolidated Phase 24 SDK checkpoint. Accepted Team D structured
+data, Team T performance, and Team N numerical deliveries are integrated; the
+remaining limitations and pending Teams are explicitly recorded in
+[INTEGRATION_ISSUES.md](INTEGRATION_ISSUES.md).
 
 ## Integrated sources
 
@@ -23,10 +24,13 @@ pending Teams are explicitly recorded in [INTEGRATION_ISSUES.md](INTEGRATION_ISS
 | Text performance | `phase24-text-perf` | `0d8d1b6cf75ecf72f90be5bab9fc821c3219f584` (reviewed implementation `63a7089bdad2f7739c9b234669657dc1a43ae981`) | String search/slice/case performance, capacity builders, ownership regressions, release validators | Merged by `f4c4ad3d77ddea8e2fa2060a9368c31ad45f7ed4` |
 | Numerics | `phase24-numerics` | `234ff9e2e3a1e03de64be4276f2aef64ba8c6d73` | `moss.linalg`, `moss.sparse`, `moss.statistics`, integration, oracles, release benchmarks | Merged by `bea649a42bd39c87035ba3a1baca603311ca8e05` after unconditional Architect GO |
 
+| Structured Data | `phase24-data` | `8b4b2cff7ce062992cdbfdfbf57ab407093d904e` (Architect GO at `e8543918c249fd90b20f6eabbc9769d969b8e8ae`) | `moss.parse`, `moss.fmt`, `moss.json`, `moss.csv`, acceptance/differential suites | Merged by `04b7683b6b6c0900e3079be60116514ba3d41564`; known D-001/D-002 limitations retained |
+
 The normal merge commits are `a2864a55414fd3f21619a500fcda4c37f91c4467` (Team M),
 `ee4973f5556b3cd07204e877157e35fd49ad1874` (Team T),
 `f4c4ad3d77ddea8e2fa2060a9368c31ad45f7ed4` (Team T performance), and
-`bea649a42bd39c87035ba3a1baca603311ca8e05` (Team N). No merge into `main`
+`bea649a42bd39c87035ba3a1baca603311ca8e05` (Team N), and
+`04b7683b6b6c0900e3079be60116514ba3d41564` (Team D). No merge into `main`
 was performed.
 
 ## Merge and compiler reconciliation
@@ -36,7 +40,9 @@ The original Text and Math merges are preserved. Team T performance had one
 history; `src/moss.cpp` merged automatically with the existing numeric lowering,
 imported-generic support, and Team T String ownership changes intact. Team N then
 merged cleanly; its compiler delta adds `moss test --release` support without
-replacing the combined compiler.
+replacing the combined compiler. Team D merged conflict-free and made no
+compiler or numerical edits; its Architect GO and two documented limitations
+are retained in the issue ledger.
 
 The integrated compiler retains the Foundations traversal/lowering support for
 imported generic calls, nested expressions, record-field projections, and indexed
@@ -46,7 +52,7 @@ Focused source-backed, Fast Debug, native, and source-free ABI-v9 gates passed.
 
 ## Executed validation
 
-All commands below were executed against the final merged tree at `bea649a`.
+All commands below were executed against the final merged tree at `04b7683`.
 
 | Command or suite | Result |
 | --- | --- |
@@ -62,6 +68,9 @@ All commands below were executed against the final merged tree at `bea649a`.
 | `../../margo test` in `packages/math`, `sdk/text`, and `sdk/encoding` | PASS: Math 18/18, Text 7/7, Encoding 4/4 |
 | `../../margo test` in `packages/random`, `packages/time`, and `packages/integration` | PASS: Random 8/8, Time 11/11, integration 2/2 |
 | Team N package tests | PASS: linalg 9/9, sparse 9/9, statistics 9/9, numerics integration 3/3 in native debug, Fast Debug, and release |
+| Team D package tests | PASS: parse 5/5, fmt 5/5, json 9/9, csv 6/6, each native and Fast Debug; data acceptance 11/11 in both modes |
+| `python3 sdk/data-acceptance/tests/check_source_free.py` | PASS: compiled-only `moss.json`/`moss.csv` ABI-v9 provider check |
+| `python3 tests/differential/run_differential_tests.py` | PASS: 46/46 JSON/CSV differential cases against Python stdlib |
 | `python3 tests/oracles/test_numerics_falsification.py` | PASS: zero differential falsifications |
 | `python3 tests/tooling/check_numerics_abi_v9.py` | PASS: compiled-only ABI-v9 consumer, 100% parity |
 | `python3 tests/oracles/verify_repairs.py` | PASS: zero falsifications; harness confined to `tmp/adversarial_oracle_harness` |
@@ -100,6 +109,11 @@ Teams; Team I owns confirmation on future integration commits.
   deferred pending intrinsic approval.
 - Layer B String/UTF-8 interoperability remains deferred because Moss v0.1 has no
   supported String/UTF-8 byte conversion or scalar String constructor.
+- Team D P24-D-001 remains open: non-ASCII JSON `\\uXXXX` synthesis requires a
+  scalar-to-String runtime primitive; validation reports the typed limitation.
+- Team D P24-D-002 remains open as a tooling limitation: raising functions cannot
+  currently be invoked inside in-tree `bench` blocks, so timing uses standalone
+  release harnesses.
 - The independent whole-system Architect review remains pending for final Phase 24
   acceptance; these package and repository gates do not substitute for that review.
 
@@ -109,5 +123,7 @@ Teams; Team I owns confirmation on future integration commits.
    allocation ratios without direct measurement.
 2. Keep Team N benchmark comparisons tied to their corrected workloads and Rust
    `-O` baseline; do not generalize across packages.
-3. Conduct the independent whole-system Architect review on the final Phase 24
+3. Team I fixed the data acceptance runners' hard-coded checkout path; retain
+   the path-relative form for reproducible clones.
+4. Conduct the independent whole-system Architect review on the final Phase 24
    acceptance SHA.

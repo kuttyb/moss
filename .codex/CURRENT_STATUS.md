@@ -2,21 +2,27 @@
 
 ## Phase 24 Team I consolidated checkpoint — 2026-10-12
 
-The final accepted Team T performance and Team N numerical deliveries are
-merged on `phase24-integration`. The current integration tip is
-`bea649a42bd39c87035ba3a1baca603311ca8e05`; it includes normal merge commits
+The final accepted Team D structured-data, Team T performance, and Team N
+numerical deliveries are merged on `phase24-integration`. The current
+integration tip is `04b7683b6b6c0900e3079be60116514ba3d41564`; it includes
+normal merge commits
 `f4c4ad3d77ddea8e2fa2060a9368c31ad45f7ed4` (Team T performance, source
 `0d8d1b6cf75ecf72f90be5bab9fc821c3219f584`, reviewed implementation
 `63a7089bdad2f7739c9b234669657dc1a43ae981`) and `bea649a42bd39c87035ba3a1baca603311ca8e05`
 (Team N, source `234ff9e2e3e1a03de64be4276f2aef64ba8c6d73`). Team N's corrected
-delivery has unconditional Architect GO; no completed remote Team D or H
-delivery was available.
+delivery has unconditional Architect GO. Team D source
+`8b4b2cff7ce062992cdbfdfbf57ab407093d904e` is merged by the current tip after
+Architect GO at `e8543918c249fd90b20f6eabbc9769d969b8e8ae`; its Unicode scalar
+and raising-benchmark limitations remain explicitly tracked. No completed
+remote Team H delivery was available.
 
 Validation at this tip is complete: `TMPDIR="$PWD/tmp" make check`,
 `make examples`, strict C++17 syntax, Team T full acceptance and release
 provider validator, all Team N package suites in native/Fast Debug/release,
 numerical differential and ABI-v9 checks, Team M repair oracle, and corrected
-release benchmark workloads pass. The checkpoint is **AMBER** because Moss
+release benchmark workloads pass. Team D parse/fmt/json/csv and data acceptance
+tests pass in native/Fast Debug, with 46/46 differential cases and compiled-only
+ABI-v9 validation. The checkpoint is **AMBER** because Moss
 allocation counts remain unmeasured, Team M's real-clock `.now()` remains
 deferred, and the independent whole-system Architect review is reserved for
 final Phase 24 acceptance. A parallel Margo package run exposed shared-artifact

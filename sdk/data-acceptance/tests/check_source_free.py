@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 
 PACKAGE = Path(__file__).resolve().parents[1]
-ROOT = Path("/home/owner/daji/code/moss3")
+ROOT = PACKAGE.parents[1]
 MOSS = ROOT / "moss"
 MARGO = ROOT / "margo"
 CORE = ROOT / "sdk" / "foundations" / "core"
