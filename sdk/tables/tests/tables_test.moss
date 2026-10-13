@@ -1,0 +1,310 @@
+module tables_test
+
+import tables
+
+test "all four column types and owned accessors":
+  var source_ints = [10, 20, 30]
+  var source_strings = ["alpha", "hidden", "gamma"]
+  ints = tables.int_column("id", false, source_ints, [true, true, true])
+  floats = tables.float_column("score", true, [1.5, 99.0, 3.5], [true, false, true])
+  bools = tables.bool_column("active", true, [true, true, false], [true, false, true])
+  strings = tables.string_column("name", true, source_strings, [true, false, true])
+
+  assert(tables.validate_column(ints))
+  assert(tables.validate_column(floats))
+  assert(tables.validate_column(bools))
+  assert(tables.validate_column(strings))
+  assertEqual(floats.floats[1], 0.0)
+  assert(not bools.bools[1])
+  assertEqual(strings.strings[1], "")
+
+  table0 = tables.new_table(3)
+  table1 = tables.add_column(table0, ints)
+  table2 = tables.add_column(table1, floats)
+  table3 = tables.add_column(table2, bools)
+  table4 = tables.add_column(table3, strings)
+  assert(tables.validate_table(table4))
+  assertEqual(tables.table_row_count(table4), 3)
+  assertEqual(tables.column_count(table4), 4)
+  assertEqual(tables.column_index(table4, "score"), 1)
+  assertEqual(tables.column_name(table4, 2), "active")
+  assertEqual(tables.column_kind(table4, 3), tables.kind_string())
+  assert(tables.column_nullable(table4, 1))
+
+  source_ints[0] = 999
+  source_strings[0] = "changed"
+  int_result = tables.int_values(table4, "id")
+  float_result = tables.float_values(table4, "score")
+  bool_result = tables.bool_values(table4, "active")
+  string_result = tables.string_values(table4, "name")
+  assertEqual(int_result.values[0], 10)
+  assertEqual(float_result.values[2], 3.5)
+  assert(not float_result.validity[1])
+  assert(bool_result.values[0])
+  assertEqual(string_result.values[0], "alpha")
+
+  int_result.values[0] = 777
+  int_again = tables.int_values(table4, "id")
+  assertEqual(int_again.values[0], 10)
+
+test "zero rows and zero columns retain explicit row count":
+  empty = tables.new_table(0)
+  assert(tables.validate_table(empty))
+  assertEqual(tables.table_row_count(empty), 0)
+  assertEqual(tables.column_count(empty), 0)
+
+  rows_only = tables.new_table(4)
+  selected_none = tables.select_columns(rows_only, Vector[String]())
+  assertEqual(tables.table_row_count(selected_none), 4)
+  assertEqual(tables.column_count(selected_none), 0)
+  filtered = tables.filter_mask(rows_only, [true, false, true, false])
+  assertEqual(tables.table_row_count(filtered), 2)
+  assertEqual(tables.column_count(filtered), 0)
+  dropped = tables.drop_missing_rows(rows_only)
+  assertEqual(tables.table_row_count(dropped), 4)
+
+  empty_column = tables.int_column("empty", true, Vector[Int](), Vector[Bool]())
+  with_empty = tables.add_column(empty, empty_column)
+  assert(tables.validate_table(with_empty))
+  assertEqual(tables.int_values(with_empty, "empty").values |> count, 0)
+
+test "column add replace remove and projection":
+  base = tables.new_table(2)
+  ids = tables.int_column("id", false, [1, 2], [true, true])
+  names = tables.string_column("name", false, ["one", "two"], [true, true])
+  table1 = tables.add_column(base, ids)
+  table2 = tables.add_column(table1, names)
+
+  replacement = tables.int_column("id", false, [11, 22], [true, true])
+  replaced = tables.replace_column(table2, replacement)
+  assertEqual(tables.int_values(replaced, "id").values[1], 22)
+  assertEqual(tables.int_values(table2, "id").values[1], 2)
+
+  projected = tables.select_columns(replaced, ["name", "id"])
+  assertEqual(tables.column_name(projected, 0), "name")
+  assertEqual(tables.column_name(projected, 1), "id")
+
+  removed = tables.remove_column(projected, "name")
+  assertEqual(tables.column_count(removed), 1)
+  assertEqual(tables.table_row_count(removed), 2)
+  no_columns = tables.remove_column(removed, "id")
+  assertEqual(tables.column_count(no_columns), 0)
+  assertEqual(tables.table_row_count(no_columns), 2)
+
+test "row selection filtering and missing operations":
+  table0 = tables.new_table(4)
+  table1 = tables.add_column(table0, tables.int_column("id", false, [10, 20, 30, 40], [true, true, true, true]))
+  table2 = tables.add_column(table1, tables.float_column("score", true, [1.0, 9.0, 3.0, 9.0], [true, false, true, false]))
+  table3 = tables.add_column(table2, tables.bool_column("flag", true, [true, true, false, true], [true, false, true, true]))
+  table4 = tables.add_column(table3, tables.string_column("label", true, ["a", "x", "c", "d"], [true, false, true, true]))
+
+  assert(not tables.is_missing(table4, "score", 0))
+  assert(tables.is_missing(table4, "score", 1))
+  selected = tables.select_rows(table4, [3, 1, 1])
+  assertEqual(tables.table_row_count(selected), 3)
+  selected_ids = tables.int_values(selected, "id")
+  assertEqual(selected_ids.values[0], 40)
+  assertEqual(selected_ids.values[1], 20)
+  assertEqual(selected_ids.values[2], 20)
+
+  filtered = tables.filter_mask(table4, [false, true, true, false])
+  assertEqual(tables.table_row_count(filtered), 2)
+  assertEqual(tables.int_values(filtered, "id").values[1], 30)
+
+  complete = tables.drop_missing_rows(table4)
+  assertEqual(tables.table_row_count(complete), 2)
+  assertEqual(tables.int_values(complete, "id").values[0], 10)
+  assertEqual(tables.int_values(complete, "id").values[1], 30)
+
+  filled_int_source = tables.add_column(tables.new_table(2), tables.int_column("v", true, [5, 99], [true, false]))
+  filled_int = tables.fill_missing_int(filled_int_source, "v", 7)
+  assertEqual(tables.int_values(filled_int, "v").values[1], 7)
+  assert(tables.int_values(filled_int, "v").validity[1])
+  assert(tables.is_missing(filled_int_source, "v", 1))
+
+  filled_float = tables.fill_missing_float(table4, "score", 2.5)
+  assertEqual(tables.float_values(filled_float, "score").values[1], 2.5)
+  filled_bool = tables.fill_missing_bool(table4, "flag", false)
+  assert(not tables.bool_values(filled_bool, "flag").values[1])
+  assert(tables.bool_values(filled_bool, "flag").validity[1])
+  filled_string = tables.fill_missing_string(table4, "label", "unknown")
+  assertEqual(tables.string_values(filled_string, "label").values[1], "unknown")
+
+test "clone produces independent owned storage":
+  base = tables.add_column(tables.new_table(2), tables.int_column("id", false, [4, 5], [true, true]))
+  var copied = tables.clone(base)
+  copied.columns[0].ints[0] = 99
+  assertEqual(tables.int_values(copied, "id").values[0], 99)
+  assertEqual(tables.int_values(base, "id").values[0], 4)
+
+test "constructor and schema errors are typed":
+  var caught_negative_rows = false
+  try:
+    ignored = tables.new_table(0 - 1)
+  recover tables.TableError.InvalidRowCount(row_count):
+    assertEqual(row_count, -1)
+    caught_negative_rows = true
+  assert(caught_negative_rows)
+
+  var caught_empty_name = false
+  try:
+    ignored = tables.int_column("", false, [1], [true])
+  recover tables.TableError.EmptyColumnName:
+    caught_empty_name = true
+  assert(caught_empty_name)
+
+  var caught_length = false
+  try:
+    ignored = tables.bool_column("b", true, [true], [true, false])
+  recover tables.TableError.ColumnLengthMismatch(values_length, validity_length):
+    assertEqual(values_length, 1)
+    assertEqual(validity_length, 2)
+    caught_length = true
+  assert(caught_length)
+
+  var caught_nonnullable = false
+  try:
+    ignored = tables.string_column("s", false, ["x"], [false])
+  recover tables.TableError.NonNullableMissing(index):
+    assertEqual(index, 0)
+    caught_nonnullable = true
+  assert(caught_nonnullable)
+
+  base = tables.add_column(tables.new_table(2), tables.int_column("id", false, [1, 2], [true, true]))
+  var caught_duplicate = false
+  try:
+    ignored = tables.add_column(base, tables.int_column("id", false, [3, 4], [true, true]))
+  recover tables.TableError.DuplicateColumnName:
+    caught_duplicate = true
+  assert(caught_duplicate)
+
+  var caught_row_mismatch = false
+  try:
+    ignored = tables.add_column(base, tables.float_column("f", false, [1.0], [true]))
+  recover tables.TableError.TableRowCountMismatch(expected, actual):
+    assertEqual(expected, 2)
+    assertEqual(actual, 1)
+    caught_row_mismatch = true
+  assert(caught_row_mismatch)
+
+test "lookup type and row selection errors are typed":
+  table = tables.add_column(tables.new_table(2), tables.int_column("id", false, [1, 2], [true, true]))
+  var caught_missing = false
+  try:
+    ignored = tables.column_index(table, "absent")
+  recover tables.TableError.ColumnNotFound:
+    caught_missing = true
+  assert(caught_missing)
+
+  var caught_type = false
+  try:
+    ignored = tables.string_values(table, "id")
+  recover tables.TableError.WrongColumnType(expected_kind, actual_kind):
+    assertEqual(expected_kind, tables.kind_string())
+    assertEqual(actual_kind, tables.kind_int())
+    caught_type = true
+  assert(caught_type)
+
+  var caught_column_index = false
+  try:
+    ignored = tables.column_name(table, 1)
+  recover tables.TableError.ColumnIndexOutOfBounds(index, count):
+    assertEqual(index, 1)
+    assertEqual(count, 1)
+    caught_column_index = true
+  assert(caught_column_index)
+
+  var caught_row_index = false
+  try:
+    ignored = tables.select_rows(table, [0, 2])
+  recover tables.TableError.RowIndexOutOfBounds(index, row_count):
+    assertEqual(index, 2)
+    assertEqual(row_count, 2)
+    caught_row_index = true
+  assert(caught_row_index)
+
+  var caught_mask = false
+  try:
+    ignored = tables.filter_mask(table, [true])
+  recover tables.TableError.MaskLengthMismatch(expected, actual):
+    assertEqual(expected, 2)
+    assertEqual(actual, 1)
+    caught_mask = true
+  assert(caught_mask)
+
+test "forged records are rejected before indexing":
+  bad_kind = tables.Column(name: "bad", kind: 9, nullable: false, validity: [true], ints: [1], floats: Vector[Float](), bools: Vector[Bool](), strings: Vector[String]())
+  assert(not tables.validate_column(bad_kind))
+  var caught_kind = false
+  try:
+    ignored = tables.add_column(tables.new_table(1), bad_kind)
+  recover tables.TableError.InvalidColumnKind(kind):
+    assertEqual(kind, 9)
+    caught_kind = true
+  assert(caught_kind)
+
+  bad_storage = tables.Column(name: "bad", kind: tables.kind_int(), nullable: false, validity: [true], ints: [1], floats: [2.0], bools: Vector[Bool](), strings: Vector[String]())
+  assert(not tables.validate_column(bad_storage))
+  var caught_storage = false
+  try:
+    ignored = tables.add_column(tables.new_table(1), bad_storage)
+  recover tables.TableError.UnexpectedStorage(kind):
+    assertEqual(kind, tables.kind_int())
+    caught_storage = true
+  assert(caught_storage)
+
+  bad_filler = tables.Column(name: "bad", kind: tables.kind_int(), nullable: true, validity: [false], ints: [8], floats: Vector[Float](), bools: Vector[Bool](), strings: Vector[String]())
+  assert(not tables.validate_column(bad_filler))
+  var bad_columns = [bad_filler]
+  bad_table = tables.Table(columns: bad_columns, row_count: 1)
+  assert(not tables.validate_table(bad_table))
+  var caught_filler = false
+  try:
+    ignored = tables.table_row_count(bad_table)
+  recover tables.TableError.NonCanonicalMissing(index):
+    assertEqual(index, 0)
+    caught_filler = true
+  assert(caught_filler)
+
+  short_column = tables.int_column("short", false, [1], [true])
+  var short_columns = [short_column]
+  short_table = tables.Table(columns: short_columns, row_count: 2)
+  assert(not tables.validate_table(short_table))
+  var caught_short = false
+  try:
+    ignored = tables.column_count(short_table)
+  recover tables.TableError.TableRowCountMismatch(expected, actual):
+    assertEqual(expected, 2)
+    assertEqual(actual, 1)
+    caught_short = true
+  assert(caught_short)
+
+  first = tables.int_column("dup", false, [1], [true])
+  second = tables.string_column("dup", false, ["x"], [true])
+  var duplicate_columns = [first, second]
+  duplicate_table = tables.Table(columns: duplicate_columns, row_count: 1)
+  assert(not tables.validate_table(duplicate_table))
+  var caught_forged_duplicate = false
+  try:
+    ignored = tables.table_row_count(duplicate_table)
+  recover tables.TableError.DuplicateColumnName:
+    caught_forged_duplicate = true
+  assert(caught_forged_duplicate)
+
+test "duplicate projections and wrong fill type fail":
+  table = tables.add_column(tables.new_table(1), tables.int_column("id", false, [1], [true]))
+  var caught_projection_duplicate = false
+  try:
+    ignored = tables.select_columns(table, ["id", "id"])
+  recover tables.TableError.DuplicateColumnName:
+    caught_projection_duplicate = true
+  assert(caught_projection_duplicate)
+
+  var caught_fill_type = false
+  try:
+    ignored = tables.fill_missing_float(table, "id", 1.0)
+  recover tables.TableError.WrongColumnType(expected_kind, actual_kind):
+    assertEqual(expected_kind, tables.kind_float())
+    assertEqual(actual_kind, tables.kind_int())
+    caught_fill_type = true
+  assert(caught_fill_type)
