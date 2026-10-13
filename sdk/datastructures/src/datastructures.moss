@@ -33,6 +33,25 @@ export type IntBoundedDeque:
   size: Int
   capacity: Int
 
+export type UnionFind:
+  parents: Vector[Int]
+  sizes: Vector[Int]
+  set_count: Int
+
+export type IntSortedSet:
+  values: Vector[Int]
+
+export type IntSortedMap:
+  keys: Vector[Int]
+  values: Vector[Int]
+
+export type StringInsertionSet:
+  values: Vector[String]
+
+export type StringInsertionMap:
+  keys: Vector[String]
+  values: Vector[Int]
+
 fn copy_ints(values: Vector[Int]) -> Vector[Int]:
   var result = Vector[Int]()
   n = values |> count
@@ -42,11 +61,24 @@ fn copy_ints(values: Vector[Int]) -> Vector[Int]:
     i = i + 1
   return result
 
+fn copy_strings(values: Vector[String]) -> Vector[String]:
+  var result = Vector[String]()
+  n = values |> count
+  var i = 0
+  while i < n:
+    copied = values[i] + ""
+    result.push(copied)
+    i = i + 1
+  return result
+
 fn int_vector_push(values: Vector[Int], value: Int):
   values.push(value)
 
 fn int_vector_pop(values: Vector[Int]) -> Int:
   return values.pop()
+
+fn string_vector_push(values: Vector[String], value: String):
+  values.push(value)
 
 fn require_min_heap(heap: IntMinHeap):
   if not min_heap_validate(heap):
@@ -489,3 +521,452 @@ export fn int_deque_values(deque: IntBoundedDeque) -> Vector[Int]:
     result.push(deque.data[deque_storage_index(deque, i)])
     i = i + 1
   return result
+
+export fn union_find_validate(sets: UnionFind) -> Bool:
+  n = sets.parents |> count
+  if (sets.sizes |> count) != n:
+    return false
+  if sets.set_count < 0 or sets.set_count > n:
+    return false
+
+  var root_count = 0
+  var i = 0
+  while i < n:
+    parent = sets.parents[i]
+    if parent < 0 or parent >= n:
+      return false
+    if parent == i:
+      root_count = root_count + 1
+    i = i + 1
+  if root_count != sets.set_count:
+    return false
+
+  var actual_sizes = zeros(n)
+  i = 0
+  while i < n:
+    var current = i
+    var steps = 0
+    while sets.parents[current] != current:
+      current = sets.parents[current]
+      steps = steps + 1
+      if steps >= n:
+        return false
+    actual_sizes[current] = actual_sizes[current] + 1
+    i = i + 1
+
+  i = 0
+  while i < n:
+    if sets.parents[i] == i:
+      if sets.sizes[i] != actual_sizes[i] or sets.sizes[i] <= 0:
+        return false
+    else:
+      if sets.sizes[i] != 0:
+        return false
+    i = i + 1
+  return true
+
+fn require_union_find(sets: UnionFind):
+  if not union_find_validate(sets):
+    raise DataStructureError.InvalidState
+
+fn require_union_find_index(sets: UnionFind, item: Int):
+  n = sets.parents |> count
+  if item < 0 or item >= n:
+    raise DataStructureError.InvalidIndex(index: item, length: n)
+
+fn union_find_root_unchecked(sets: UnionFind, item: Int) -> Int:
+  var root = item
+  while sets.parents[root] != root:
+    root = sets.parents[root]
+
+  var current = item
+  while current != root:
+    parent = sets.parents[current]
+    sets.parents[current] = root
+    current = parent
+  return root
+
+export fn new_union_find(size: Int) -> UnionFind:
+  if size < 0:
+    raise DataStructureError.InvalidSize(size: size)
+  var parents = Vector[Int]()
+  var sizes = Vector[Int]()
+  var i = 0
+  while i < size:
+    parents.push(i)
+    sizes.push(1)
+    i = i + 1
+  return UnionFind(parents: parents, sizes: sizes, set_count: size)
+
+export fn union_find_len(sets: UnionFind) -> Int:
+  require_union_find(sets)
+  return sets.parents |> count
+
+export fn union_find_set_count(sets: UnionFind) -> Int:
+  require_union_find(sets)
+  return sets.set_count
+
+export fn union_find_find(sets: UnionFind, item: Int) -> Int:
+  require_union_find(sets)
+  require_union_find_index(sets, item)
+  return union_find_root_unchecked(sets, item)
+
+export fn union_find_same(sets: UnionFind, left: Int, right: Int) -> Bool:
+  require_union_find(sets)
+  require_union_find_index(sets, left)
+  require_union_find_index(sets, right)
+  left_root = union_find_root_unchecked(sets, left)
+  right_root = union_find_root_unchecked(sets, right)
+  return left_root == right_root
+
+export fn union_find_union(sets: UnionFind, left: Int, right: Int) -> Bool:
+  require_union_find(sets)
+  require_union_find_index(sets, left)
+  require_union_find_index(sets, right)
+  left_root = union_find_root_unchecked(sets, left)
+  right_root = union_find_root_unchecked(sets, right)
+  if left_root == right_root:
+    return false
+
+  if sets.sizes[left_root] < sets.sizes[right_root]:
+    sets.parents[left_root] = right_root
+    sets.sizes[right_root] = sets.sizes[right_root] + sets.sizes[left_root]
+    sets.sizes[left_root] = 0
+  else:
+    sets.parents[right_root] = left_root
+    sets.sizes[left_root] = sets.sizes[left_root] + sets.sizes[right_root]
+    sets.sizes[right_root] = 0
+  sets.set_count = sets.set_count - 1
+  return true
+
+export fn union_find_component_size(sets: UnionFind, item: Int) -> Int:
+  require_union_find(sets)
+  require_union_find_index(sets, item)
+  root = union_find_root_unchecked(sets, item)
+  return sets.sizes[root]
+
+fn int_lower_bound(values: Vector[Int], value: Int) -> Int:
+  var low = 0
+  var high = values |> count
+  while low < high:
+    middle = low + (high - low) / 2
+    if values[middle] < value:
+      low = middle + 1
+    else:
+      high = middle
+  return low
+
+export fn int_sorted_set_validate(collection: IntSortedSet) -> Bool:
+  n = collection.values |> count
+  var i = 1
+  while i < n:
+    if collection.values[i - 1] >= collection.values[i]:
+      return false
+    i = i + 1
+  return true
+
+fn require_int_sorted_set(collection: IntSortedSet):
+  if not int_sorted_set_validate(collection):
+    raise DataStructureError.InvalidState
+
+export fn new_int_sorted_set() -> IntSortedSet:
+  return IntSortedSet(values: Vector[Int]())
+
+export fn int_sorted_set_len(collection: IntSortedSet) -> Int:
+  require_int_sorted_set(collection)
+  return collection.values |> count
+
+export fn int_sorted_set_contains(collection: IntSortedSet, value: Int) -> Bool:
+  require_int_sorted_set(collection)
+  position = int_lower_bound(collection.values, value)
+  n = collection.values |> count
+  return position < n and collection.values[position] == value
+
+export fn int_sorted_set_add(collection: IntSortedSet, value: Int) -> Bool:
+  require_int_sorted_set(collection)
+  n = collection.values |> count
+  position = int_lower_bound(collection.values, value)
+  if position < n and collection.values[position] == value:
+    return false
+  if n == 9223372036854775807:
+    raise DataStructureError.CapacityOverflow
+  int_vector_push(collection.values, value)
+  var i = n
+  while i > position:
+    collection.values[i] = collection.values[i - 1]
+    i = i - 1
+  collection.values[position] = value
+  return true
+
+export fn int_sorted_set_remove(collection: IntSortedSet, value: Int) -> Bool:
+  require_int_sorted_set(collection)
+  n = collection.values |> count
+  position = int_lower_bound(collection.values, value)
+  if position >= n or collection.values[position] != value:
+    return false
+  var i = position
+  while i < n - 1:
+    collection.values[i] = collection.values[i + 1]
+    i = i + 1
+  discarded = int_vector_pop(collection.values)
+  return true
+
+export fn int_sorted_set_at(collection: IntSortedSet, index: Int) -> Int:
+  require_int_sorted_set(collection)
+  n = collection.values |> count
+  if index < 0 or index >= n:
+    raise DataStructureError.InvalidIndex(index: index, length: n)
+  return collection.values[index]
+
+export fn int_sorted_set_values(collection: IntSortedSet) -> Vector[Int]:
+  require_int_sorted_set(collection)
+  return copy_ints(collection.values)
+
+export fn int_sorted_map_validate(mapping: IntSortedMap) -> Bool:
+  n = mapping.keys |> count
+  if (mapping.values |> count) != n:
+    return false
+  var i = 1
+  while i < n:
+    if mapping.keys[i - 1] >= mapping.keys[i]:
+      return false
+    i = i + 1
+  return true
+
+fn require_int_sorted_map(mapping: IntSortedMap):
+  if not int_sorted_map_validate(mapping):
+    raise DataStructureError.InvalidState
+
+export fn new_int_sorted_map() -> IntSortedMap:
+  return IntSortedMap(keys: Vector[Int](), values: Vector[Int]())
+
+export fn int_sorted_map_len(mapping: IntSortedMap) -> Int:
+  require_int_sorted_map(mapping)
+  return mapping.keys |> count
+
+export fn int_sorted_map_contains(mapping: IntSortedMap, key: Int) -> Bool:
+  require_int_sorted_map(mapping)
+  position = int_lower_bound(mapping.keys, key)
+  n = mapping.keys |> count
+  return position < n and mapping.keys[position] == key
+
+export fn int_sorted_map_get(mapping: IntSortedMap, key: Int) -> Int:
+  require_int_sorted_map(mapping)
+  position = int_lower_bound(mapping.keys, key)
+  n = mapping.keys |> count
+  if position >= n or mapping.keys[position] != key:
+    raise DataStructureError.NotFound
+  return mapping.values[position]
+
+export fn int_sorted_map_get_or(mapping: IntSortedMap, key: Int, fallback: Int) -> Int:
+  require_int_sorted_map(mapping)
+  position = int_lower_bound(mapping.keys, key)
+  n = mapping.keys |> count
+  if position >= n or mapping.keys[position] != key:
+    return fallback
+  return mapping.values[position]
+
+export fn int_sorted_map_put(mapping: IntSortedMap, key: Int, value: Int) -> Bool:
+  require_int_sorted_map(mapping)
+  n = mapping.keys |> count
+  position = int_lower_bound(mapping.keys, key)
+  if position < n and mapping.keys[position] == key:
+    mapping.values[position] = value
+    return false
+  if n == 9223372036854775807:
+    raise DataStructureError.CapacityOverflow
+  int_vector_push(mapping.keys, key)
+  int_vector_push(mapping.values, value)
+  var i = n
+  while i > position:
+    mapping.keys[i] = mapping.keys[i - 1]
+    mapping.values[i] = mapping.values[i - 1]
+    i = i - 1
+  mapping.keys[position] = key
+  mapping.values[position] = value
+  return true
+
+export fn int_sorted_map_remove(mapping: IntSortedMap, key: Int) -> Bool:
+  require_int_sorted_map(mapping)
+  n = mapping.keys |> count
+  position = int_lower_bound(mapping.keys, key)
+  if position >= n or mapping.keys[position] != key:
+    return false
+  var i = position
+  while i < n - 1:
+    mapping.keys[i] = mapping.keys[i + 1]
+    mapping.values[i] = mapping.values[i + 1]
+    i = i + 1
+  discarded_key = int_vector_pop(mapping.keys)
+  discarded_value = int_vector_pop(mapping.values)
+  return true
+
+export fn int_sorted_map_key_at(mapping: IntSortedMap, index: Int) -> Int:
+  require_int_sorted_map(mapping)
+  n = mapping.keys |> count
+  if index < 0 or index >= n:
+    raise DataStructureError.InvalidIndex(index: index, length: n)
+  return mapping.keys[index]
+
+export fn int_sorted_map_value_at(mapping: IntSortedMap, index: Int) -> Int:
+  require_int_sorted_map(mapping)
+  n = mapping.values |> count
+  if index < 0 or index >= n:
+    raise DataStructureError.InvalidIndex(index: index, length: n)
+  return mapping.values[index]
+
+fn string_index(values: Vector[String], value: String) -> Int:
+  n = values |> count
+  var i = 0
+  while i < n:
+    if values[i] == value:
+      return i
+    i = i + 1
+  return 0 - 1
+
+fn unique_strings(values: Vector[String]) -> Bool:
+  n = values |> count
+  var i = 0
+  while i < n:
+    var j = i + 1
+    while j < n:
+      if values[i] == values[j]:
+        return false
+      j = j + 1
+    i = i + 1
+  return true
+
+export fn string_insertion_set_validate(collection: StringInsertionSet) -> Bool:
+  return unique_strings(collection.values)
+
+fn require_string_insertion_set(collection: StringInsertionSet):
+  if not string_insertion_set_validate(collection):
+    raise DataStructureError.InvalidState
+
+export fn new_string_insertion_set() -> StringInsertionSet:
+  return StringInsertionSet(values: Vector[String]())
+
+export fn string_insertion_set_len(collection: StringInsertionSet) -> Int:
+  require_string_insertion_set(collection)
+  return collection.values |> count
+
+export fn string_insertion_set_contains(collection: StringInsertionSet, value: String) -> Bool:
+  require_string_insertion_set(collection)
+  return string_index(collection.values, value) >= 0
+
+export fn string_insertion_set_add(collection: StringInsertionSet, value: String) -> Bool:
+  require_string_insertion_set(collection)
+  if string_index(collection.values, value) >= 0:
+    return false
+  if (collection.values |> count) == 9223372036854775807:
+    raise DataStructureError.CapacityOverflow
+  copied = value + ""
+  string_vector_push(collection.values, copied)
+  return true
+
+export fn string_insertion_set_remove(collection: StringInsertionSet, value: String) -> Bool:
+  require_string_insertion_set(collection)
+  position = string_index(collection.values, value)
+  if position < 0:
+    return false
+  var kept = Vector[String]()
+  n = collection.values |> count
+  var i = 0
+  while i < n:
+    if i != position:
+      copied = collection.values[i] + ""
+      kept.push(copied)
+    i = i + 1
+  collection.values = kept
+  return true
+
+export fn string_insertion_set_at(collection: StringInsertionSet, index: Int) -> String:
+  require_string_insertion_set(collection)
+  n = collection.values |> count
+  if index < 0 or index >= n:
+    raise DataStructureError.InvalidIndex(index: index, length: n)
+  return collection.values[index] + ""
+
+export fn string_insertion_set_values(collection: StringInsertionSet) -> Vector[String]:
+  require_string_insertion_set(collection)
+  return copy_strings(collection.values)
+
+export fn string_insertion_map_validate(mapping: StringInsertionMap) -> Bool:
+  if (mapping.keys |> count) != (mapping.values |> count):
+    return false
+  return unique_strings(mapping.keys)
+
+fn require_string_insertion_map(mapping: StringInsertionMap):
+  if not string_insertion_map_validate(mapping):
+    raise DataStructureError.InvalidState
+
+export fn new_string_insertion_map() -> StringInsertionMap:
+  return StringInsertionMap(keys: Vector[String](), values: Vector[Int]())
+
+export fn string_insertion_map_len(mapping: StringInsertionMap) -> Int:
+  require_string_insertion_map(mapping)
+  return mapping.keys |> count
+
+export fn string_insertion_map_contains(mapping: StringInsertionMap, key: String) -> Bool:
+  require_string_insertion_map(mapping)
+  return string_index(mapping.keys, key) >= 0
+
+export fn string_insertion_map_get(mapping: StringInsertionMap, key: String) -> Int:
+  require_string_insertion_map(mapping)
+  position = string_index(mapping.keys, key)
+  if position < 0:
+    raise DataStructureError.NotFound
+  return mapping.values[position]
+
+export fn string_insertion_map_get_or(mapping: StringInsertionMap, key: String, fallback: Int) -> Int:
+  require_string_insertion_map(mapping)
+  position = string_index(mapping.keys, key)
+  if position < 0:
+    return fallback
+  return mapping.values[position]
+
+export fn string_insertion_map_put(mapping: StringInsertionMap, key: String, value: Int) -> Bool:
+  require_string_insertion_map(mapping)
+  position = string_index(mapping.keys, key)
+  if position >= 0:
+    mapping.values[position] = value
+    return false
+  if (mapping.keys |> count) == 9223372036854775807:
+    raise DataStructureError.CapacityOverflow
+  copied = key + ""
+  string_vector_push(mapping.keys, copied)
+  int_vector_push(mapping.values, value)
+  return true
+
+export fn string_insertion_map_remove(mapping: StringInsertionMap, key: String) -> Bool:
+  require_string_insertion_map(mapping)
+  position = string_index(mapping.keys, key)
+  if position < 0:
+    return false
+  var kept_keys = Vector[String]()
+  var kept_values = Vector[Int]()
+  n = mapping.keys |> count
+  var i = 0
+  while i < n:
+    if i != position:
+      copied = mapping.keys[i] + ""
+      kept_keys.push(copied)
+      kept_values.push(mapping.values[i])
+    i = i + 1
+  mapping.keys = kept_keys
+  mapping.values = kept_values
+  return true
+
+export fn string_insertion_map_key_at(mapping: StringInsertionMap, index: Int) -> String:
+  require_string_insertion_map(mapping)
+  n = mapping.keys |> count
+  if index < 0 or index >= n:
+    raise DataStructureError.InvalidIndex(index: index, length: n)
+  return mapping.keys[index] + ""
+
+export fn string_insertion_map_value_at(mapping: StringInsertionMap, index: Int) -> Int:
+  require_string_insertion_map(mapping)
+  n = mapping.values |> count
+  if index < 0 or index >= n:
+    raise DataStructureError.InvalidIndex(index: index, length: n)
+  return mapping.values[index]
