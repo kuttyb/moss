@@ -94,6 +94,22 @@ fn main():
     recover cbor.CborError.UnsupportedFloat(index, width):
       cbor_typed = index == 0 and width == 16
     assert(cbor_typed)
+
+    var cbor_root_doc = cbor.new_doc()
+    cbor_parent = cbor.add_array(cbor_root_doc)
+    cbor_root = cbor.add_int(cbor_root_doc, 9)
+    cbor.set_root(cbor_root_doc, cbor_root)
+    var cbor_root_typed = false
+    try:
+      cbor.array_push(cbor_root_doc, cbor_parent, cbor_root)
+    recover cbor.CborError.InvalidRoot(root):
+      cbor_root_typed = root == cbor_root
+    assert(cbor_root_typed)
+    assertEqual(cbor_root_doc.root, cbor_root)
+    assertEqual(cbor.parent_of(cbor_root_doc, cbor_root), -1)
+    assertEqual(cbor.edge_count(cbor_root_doc), 0)
+    assertEqual(cbor.array_length(cbor_root_doc, cbor_parent), 0)
+    assert(cbor.validate_doc(cbor_root_doc))
     echo "advanced data ABI-v9 source-free ok"
   recover:
     assert(false)
