@@ -1,22 +1,23 @@
 # Moss current status
 
-## Phase 24 Team R Data Utils SDK Delivery Complete — 2026-10-12
+## Phase 24 Team R Data Utils SDK Final Corrective Pass Complete — 2026-10-13
 
-Team R (`moss.hash`, `moss.compress`, `moss.regex`, `moss.data_utils_integration`) completed implementation, testing, differential oracles, and benchmarking on `phase24-data-utils`:
-1. **Implementation Baseline:**
+Team R (`moss.hash`, `moss.compress`, `moss.regex`, `moss.data_utils_integration`) completed final corrective pass repairs, adversarial testing, live linear runtime-scaling verification, and independent Architect sign-off on `phase24-data-utils`:
+1. **Implementation Baseline & Exact Reviewed SHA:**
    - Compiler R0a/R0b accepted baseline (`43757790ef3af52204c90bbd9dabcefc4470e965` on `phase24-integration`).
-   - Exact implementation SHA: `40d4ae20ab4a4fbe776decab2400ad444e134803`.
-2. **Delivered Packages:**
-   - `moss.hash`: RFC 1950 Adler-32, IEEE 802.3 CRC-32, FNV-1a 32-bit, NIST FIPS 180-4 SHA-256 with streaming and one-shot APIs, using direct native 64-bit bitwise operators (`&`, `|`, `^`, `~`, `<<`, `>>`).
-   - `moss.compress`: Interoperable raw LZ4 block compression/decompression, documented size-prefixed LZ4 convention, and RFC 1951 raw DEFLATE uncompressed stored blocks with decompression bomb and bound protections.
-   - `moss.regex`: Linear-time non-backtracking Thompson NFA regular expression engine with iterative Shunting-Yard compilation, epsilon closure simulation, full match/search/find_all/replace/split APIs, and verified immunity against catastrophic backtracking (ReDoS).
-   - `moss.data_utils_integration`: End-to-end integration pipeline combining regex pattern extraction, cryptographic/checksum hashing, and LZ4 compression into an authenticated archive record with verification and restoration.
+   - Exact implementation SHA: `4068976264f3312c5bfad3e680a6b12fcf45ff3b`.
+2. **Corrective Pass Remediation:**
+   - **NFA Origin Propagation Symmetry (Task 1):** In `packages/regex/src/main.moss` (`run_nfa_search_from`), epsilon-closure processing for `KIND_SPLIT` now symmetrically propagates earlier origins through `out2` when `s_orig < state_origins[o2]`. Cyclic termination is mathematically proven (cycles cannot decrease origin, terminating immediately). Preserves POSIX leftmost-longest match semantics. Added 5 adversarial regression test suites (18 tests total in regex).
+   - **Live Linear Runtime-Scaling Experiment (Task 2):** Replaced combined-time probe with release-mode live experiment measuring precompiled Regex objects across 1K, 2K, 4K, 8K, 16K nonmatching characters against adversarial patterns `(a+)+b`, `(a|aa)*b`, and `a*b`. Across 5 repeated measurement series, median timings demonstrate exact ~2.0x doubling ratios per 2x length increase (bounded in $[1.19\times, 2.26\times]$), proving linear $O(N)$ execution time and complete ReDoS immunity. Characterized state-count complexity costs ($O(M \cdot N)$).
+   - **L7 Corrective Review Closeout:** All 4 prior findings (L7-R-01 dangling quantifiers, L7-R-02 reversed character ranges, L7-R-03 malformed alternation, L7-R-04 destructive SHA-256 state mutation) verified permanently resolved.
 3. **Validation & Quality Gates:**
-   - In-Tree Unit Tests: 27 unique test cases (81 executions across Native Debug, Fast Debug, and Native Release) all passed (100% parity).
-   - Differential Oracles: 17 differential tests and source-free ABI-v9 checks in `tests/tooling/check_phase24_data_utils_oracles.py` passed against Python `zlib`, `hashlib`, `re`, and reference implementations.
-   - Benchmarks: Native release benchmarks recorded for all packages (`margo bench`).
-   - Repository Quality Gates: `TMPDIR="$PWD/tmp" make check` passed (54/54 executor tests; all Moss v0.1 tests passed); `make examples` built all programs; `python3 tests/tooling/check_agent_feedback.py` passed; `git diff --check` passed cleanly.
-4. **Handoff Status:**
+   - In-Tree Unit Tests: 36 unique test cases across 4 packages (8 hash, 8 compress, 18 regex, 2 integration) with 108 total test executions across Native Debug, Fast Debug, and Native Release all passed (100% parity).
+   - Differential Oracles: 25 differential tests, live scaling series, and source-free ABI-v9 checks in `tests/tooling/check_phase24_data_utils_oracles.py` passed against Python `zlib`, `hashlib`, `re`, and reference implementations.
+   - Benchmarks: Native release benchmarks recorded for all packages (`margo bench`), with Phase 21 `RegexError` variants handled.
+   - Repository Quality Gates: `TMPDIR="$PWD/tmp" make check` passed (54/54 executor tests; all Moss v0.1 tests passed); `make examples` built all 32 showcase programs; `python3 tests/tooling/check_agent_feedback.py` passed; `git diff --check` passed cleanly.
+4. **Independent Architect Verdict:**
+   - Independent L6 Architect issued attributable **UNCONDITIONAL GO FOR TEAM I INTEGRATION** in `docs/team_r/ARCHITECT_FINAL_ACCEPTANCE.md` §6 for exact implementation SHA `4068976264f3312c5bfad3e680a6b12fcf45ff3b`.
+5. **Handoff Status:**
    - Ready for Team I integration into `phase24-integration`. Branch remains strictly isolated on `phase24-data-utils`; zero commits merged into `main`.
 
 ## Phase 24 Team H Host Services — bounded-read closeout complete

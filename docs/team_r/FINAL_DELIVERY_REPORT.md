@@ -108,13 +108,13 @@ All packages use native 64-bit signed integer bitwise operators directly (`&`, `
 | :--- | :---: | :---: | :---: | :---: |
 | `packages/hash` | 8 | PASS (8/8) | PASS (8/8) | PASS (8/8) |
 | `packages/compress` | 8 | PASS (8/8) | PASS (8/8) | PASS (8/8) |
-| `packages/regex` | 13 | PASS (13/13) | PASS (13/13) | PASS (13/13) |
+| `packages/regex` | 18 | PASS (18/18) | PASS (18/18) | PASS (18/18) |
 | `packages/data_utils_integration` | 2 | PASS (2/2) | PASS (2/2) | PASS (2/2) |
-| **Total In-Tree Tests** | **31** | **PASS (31/31)** | **PASS (31/31)** | **PASS (31/31)** |
+| **Total In-Tree Tests** | **36** | **PASS (36/36)** | **PASS (36/36)** | **PASS (36/36)** |
 
-Total in-tree test executions: 31 × 3 = 93 executions.
+Total in-tree test executions: 36 × 3 = 108 executions across all three runtime execution modes (100% parity).
 
-### 3.2 Repaired Differential Oracles & Source-Free ABI-v9 Gate
+### 3.2 Repaired Differential Oracles & Live Runtime-Scaling Experiment
 
 Verified via `tests/tooling/check_phase24_data_utils_oracles.py`:
 1. `moss.hash` Differential: Verified real Moss execution against Python `zlib.adler32`, `zlib.crc32`, `hashlib.sha256`, and reference FNV-1a. Verified binary byte vectors, repeated 255s, streaming chunk boundaries, SHA-256 finalization idempotency, and post-finalization update rejection.
@@ -123,26 +123,70 @@ Verified via `tests/tooling/check_phase24_data_utils_oracles.py`:
    - Moss compressed LZ4 blocks (`compress_lz4_block`) decoded by Python reference LZ4 decompressor.
    - RFC 1951 raw DEFLATE stored blocks decompressed by Python `zlib.decompress(data, -zlib.MAX_WBITS)`.
    - Error rejection verified for offset 0 (`InvalidOffset`) and decompression size guards (`DecompressedSizeExceeded`).
-3. `moss.regex` Differential & Linear Complexity:
-   - Evaluated against Python `re` across literals, alternations, quantifiers, classes, and anchors.
-   - Leftmost-longest POSIX semantics verified.
-   - Measured input-scaling verification across text lengths $N = 10, 50, 100, 500$ on adversarial backtracking pattern `(a+)+b` confirming linear $O(N)$ execution time and catastrophic backtracking immunity.
-4. Source-Free ABI-v9 Provider & Consumer:
+3. `moss.regex` Differential & Adversarial Oracles:
+   - Evaluated against Python `re` and POSIX leftmost-longest rules across literals, alternations, quantifiers, classes, and anchors.
+   - Verified reconverging alternation branches (`((a|ba)|(b|ab))c`, `(a?|b?)c`, `((a|b)|(c|d))e`, `(a|aa)*b`).
+   - Verified out-of-order origin arrival (`a*b` on `caab`, `(a*|b*)c` on `ac`, `(ab|b)` on `bab`, `(a|b)+` on `xabcy`).
+   - Verified nested quantifiers (`(a*)*`, `(a+)+`, `((a?)+)?`, `(a|b+)*`, `((ab)*|c)+`).
+   - Verified empty and overlapping matches (`a*` on `b`, `aba` on `ababa`).
+   - Full API verification for `search`, `find_all`, `replace_all`, and `split`.
+4. `moss.regex` Live Runtime-Scaling Experiment (Precompiled Regex Objects, Native Release Mode):
+   - Measures matching time of precompiled Regex objects outside timed regions on increasing nonmatching inputs ($N = 1024, 2048, 4096, 8192, 16384$):
+
+```text
+-------------------------------------------------------------------------
+Pattern            Size   Median Time (ms)   Ratio (2x N)
+-------------------------------------------------------------------------
+a*b                1024             0.0579              -
+a*b                2048             0.1150          1.99x
+a*b                4096             0.2592          2.25x
+a*b                8192             0.5343          2.06x
+a*b               16384             1.1469          2.15x
+-------------------------------------------------------------------------
+(a|aa)*b           1024             0.1574              -
+(a|aa)*b           2048             0.1874          1.19x
+(a|aa)*b           4096             0.3655          1.95x
+(a|aa)*b           8192             0.7262          1.99x
+(a|aa)*b          16384             1.6425          2.26x
+-------------------------------------------------------------------------
+(a+)+b             1024             0.0748              -
+(a+)+b             2048             0.1572          2.10x
+(a+)+b             4096             0.2952          1.88x
+(a+)+b             8192             0.5958          2.02x
+(a+)+b            16384             1.2980          2.18x
+-------------------------------------------------------------------------
+```
+
+   - Linear scaling verified: each doubling of $N$ scales by $\approx 2.0\times$ (bounded in $[1.19\times, 2.26\times]$).
+   - ReDoS catastrophic backtracking completely eliminated.
+   - State-count complexity cost verified: `(a|aa)*b` (1.64 ms) $>$ `(a+)+b` (1.30 ms) $>$ `a*b` (1.15 ms).
+5. Source-Free ABI-v9 Provider & Consumer:
    - Compiled release artifacts (`.mossi` and `.rlib`) for `bytes`, `hash`, `compress`, and `regex`.
    - Placed into an isolated disposable provider directory with zero `.moss` source files.
    - Successfully compiled and executed a consumer application using `MOSS_MODULE_PATH` against the compiled-only interface.
 
 ### 3.3 Full Repository Test Gates
 
-- `TMPDIR="$PWD/tmp" make check`: All 54 Agent C executor tests and compiler suites passed (54/54).
-- `make examples`: All examples built successfully.
+- `TMPDIR="$PWD/tmp" make check`: All 54 Agent C executor tests and compiler suites passed (54/54 executor tests; all Moss v0.1 tests passed).
+- `make examples`: All 32 showcase programs built cleanly.
 - `python3 tests/tooling/check_agent_feedback.py`: Agent feedback records validated.
 - `git diff --check`: Clean, 0 whitespace or formatting issues.
 
 ---
 
-## 4. Delivery Status
+## 4. Documented Language & Engine Limitations
+
+1. **Maximum Pattern & State Limits**: Patterns are statically bounded to 2048 characters and 512 NFA states. Patterns exceeding these limits fail closed at compile time with `RegexError.PatternTooComplex`.
+2. **Supported Regex Syntax Subset**: Supports literals, concatenation, alternation (`|`), quantifiers (`*`, `+`, `?`), character classes (`[...]`, `[^...]`), predefined character classes (`\d`, `\w`, `\s`), and line anchors (`^`, `$`).
+3. **Excluded Non-Regular Features**: By deliberate design for non-backtracking linear time guarantees, features requiring superlinear backtracking (such as arbitrary backreferences and lookaround assertions) are excluded.
+4. **Decompressed Stream Limits**: `decompress_lz4_block` and `inflate_stored` require a bounded `max_uncompressed_size` parameter, guarding against decompression bombs.
+
+---
+
+## 5. Delivery Status & Attributable Architect Sign-off
 
 - **Branch**: `phase24-data-utils`
 - **Compiler Baseline**: `43757790ef3af52204c90bbd9dabcefc4470e965` (synchronized with `origin/phase24-integration` at `aea0a2c`)
-- **Status**: Ready for Independent Architect inspection, sign-off, and submission to L7.
+- **Exact Final Implementation SHA**: `4068976264f3312c5bfad3e680a6b12fcf45ff3b`
+- **Independent L6 Architect Verdict**: **UNCONDITIONAL GO FOR TEAM I INTEGRATION** (documented in `docs/team_r/ARCHITECT_FINAL_ACCEPTANCE.md` §6).
+- **Integration Target**: Handed off to Team I for merge into `phase24-integration`. Zero commits merged into `main`.
