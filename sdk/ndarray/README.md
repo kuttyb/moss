@@ -96,6 +96,31 @@ Matrix conversion requires two positive extents because `linalg.Matrix` does
 not represent empty dimensions. `to_matrix` rejects non-rank-two arrays with
 `MatrixRankMismatch` and empty axes with `MatrixEmptyDimension`.
 
+## Higher-level examples
+
+The runnable examples use only exported `ndarray` and `linalg` APIs:
+
+- `examples/batched_normalization` normalizes a 3D batch along its trailing
+  axis, then applies per-channel gain and bias through broadcasting.
+- `examples/tensor_transforms` applies channel-wise arithmetic to a 4D tensor,
+  takes a stepped copy slice, permutes and reshapes axes, transposes the rank-2
+  result, and round-trips it through `linalg.Matrix`.
+
+Run each example in native Debug, native Release, or Fast Debug:
+
+```sh
+(cd examples/batched_normalization && ../../../../margo run)
+(cd examples/batched_normalization && ../../../../margo --release run)
+(cd examples/batched_normalization && ../../../../margo debug)
+
+(cd examples/tensor_transforms && ../../../../margo run)
+(cd examples/tensor_transforms && ../../../../margo --release run)
+(cd examples/tensor_transforms && ../../../../margo debug)
+```
+
+These are eager, owned, device-agnostic source workflows. They make no GPU or
+accelerator execution claim.
+
 ## Validation
 
 From this directory:

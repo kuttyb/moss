@@ -1,5 +1,23 @@
 # Moss current status
 
+## Phase 24 Team A A3 ndarray examples complete — 2026-10-12
+
+Branch `phase24-advanced-data-a3-examples` adds two public-API-only runnable
+examples under `sdk/ndarray/examples`: 3D batched trailing-axis normalization
+with broadcast affine operations, and a 4D broadcast/slice/axis-permutation/
+reshape/transpose pipeline with `linalg.Matrix` round-trip. Focused workflow
+tests cover the same compositions, and the package README documents Debug,
+Release, and Fast Debug commands plus device-agnostic semantics with no GPU or
+accelerator claim.
+
+Validation on the completed source passes: `../../margo test`,
+`../../margo --release test`, and `../../margo --interp test` each pass 21/21
+tests from `sdk/ndarray`; both examples pass `margo run`, `margo --release run`,
+and `margo debug`; structured `moss check --json` and dependency-aware
+`moss fmt --check --json` pass for the tests and examples; developer-feedback
+validation and `git diff --check` pass. No implementation work remains for the
+A3 scope.
+
 ## Phase 24 Team A bounded FlatBuffers/Arrow feasibility — 2026-10-12
 
 The bounded A9–A11 assessment is complete on branch
