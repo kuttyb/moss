@@ -510,3 +510,261 @@ test "String joins empty sides limits and suffix collisions are checked":
   recover tables.TableError.DuplicateColumnName:
     caught_collision = true
   assert(caught_collision)
+
+test "csv schema validation is closed and typed":
+  schema = tables.csv_schema([tables.csv_field("id", tables.kind_int(), false), tables.csv_field("name", tables.kind_string(), true)], true, ",", "NA")
+  assert(tables.validate_csv_schema(schema))
+
+  var duplicate_caught = false
+  try:
+    ignored = tables.csv_schema([tables.csv_field("id", tables.kind_int(), false), tables.csv_field("id", tables.kind_int(), false)], true, ",", "NA")
+  recover tables.CsvAdapterError.DuplicateFieldName(index):
+    assertEqual(index, 1)
+    duplicate_caught = true
+  assert(duplicate_caught)
+
+  var empty_fields = [tables.csv_field("id", tables.kind_int(), false)]
+  ignored_field = empty_fields.pop()
+  var empty_caught = false
+  try:
+    ignored = tables.csv_schema(empty_fields, false, ",", "")
+  recover tables.CsvAdapterError.EmptySchema:
+    empty_caught = true
+  assert(empty_caught)
+
+  var delimiter_caught = false
+  try:
+    ignored = tables.csv_schema([tables.csv_field("id", tables.kind_int(), false)], false, "||", "NA")
+  recover tables.CsvAdapterError.InvalidDelimiter:
+    delimiter_caught = true
+  assert(delimiter_caught)
+
+  forged = tables.CsvSchema(fields: [tables.CsvField(name: "x", kind: 99, nullable: false)], has_header: false, delimiter: ",", missing_token: "NA")
+  assert(not tables.validate_csv_schema(forged))
+  var kind_caught = false
+  try:
+    ignored = tables.csv_import("x", forged)
+  recover tables.CsvAdapterError.InvalidFieldKind(index, kind):
+    assertEqual(index, 0)
+    assertEqual(kind, 99)
+    kind_caught = true
+  assert(kind_caught)
+
+test "csv import parses all four kinds and quoted fields in row order":
+  schema = tables.csv_schema([tables.csv_field("id", tables.kind_int(), false), tables.csv_field("score", tables.kind_float(), true), tables.csv_field("active", tables.kind_bool(), false), tables.csv_field("name", tables.kind_string(), false)], true, ",", "NA")
+  input = "id,score,active,name\r\n2,1.5,true,\"Doe, \"\"D\"\"\"\r\n1,NA,false,\"line 1\nline 2\"\r\n"
+  table = tables.csv_import(input, schema)
+  assertEqual(tables.table_row_count(table), 2)
+  assertEqual(tables.int_values(table, "id").values, [2, 1])
+  scores = tables.float_values(table, "score")
+  assertEqual(scores.values[0], 1.5)
+  assert(not scores.validity[1])
+  assertEqual(tables.bool_values(table, "active").values, [true, false])
+  assertEqual(tables.string_values(table, "name").values[0], "Doe, \"D\"")
+  assertEqual(tables.string_values(table, "name").values[1], "line 1\nline 2")
+
+test "csv import validates headers and row widths":
+  schema = tables.csv_schema([tables.csv_field("id", tables.kind_int(), false), tables.csv_field("name", tables.kind_string(), false)], true, ",", "NA")
+  var missing_header_caught = false
+  try:
+    ignored = tables.csv_import("", schema)
+  recover tables.CsvAdapterError.MissingHeader:
+    missing_header_caught = true
+  assert(missing_header_caught)
+
+  var header_width_caught = false
+  try:
+    ignored = tables.csv_import("id\r\n", schema)
+  recover tables.CsvAdapterError.HeaderWidthMismatch(expected, actual):
+    assertEqual(expected, 2)
+    assertEqual(actual, 1)
+    header_width_caught = true
+  assert(header_width_caught)
+
+  var header_name_caught = false
+  try:
+    ignored = tables.csv_import("name,id\r\n", schema)
+  recover tables.CsvAdapterError.HeaderNameMismatch(index):
+    assertEqual(index, 0)
+    header_name_caught = true
+  assert(header_name_caught)
+
+  var row_width_caught = false
+  try:
+    ignored = tables.csv_import("id,name\r\n1\r\n", schema)
+  recover tables.CsvAdapterError.RowWidthMismatch(row, expected, actual):
+    assertEqual(row, 0)
+    assertEqual(expected, 2)
+    assertEqual(actual, 1)
+    row_width_caught = true
+  assert(row_width_caught)
+
+test "csv import rejects invalid numbers booleans and nonnullable missing":
+  schema = tables.csv_schema([tables.csv_field("i", tables.kind_int(), false), tables.csv_field("f", tables.kind_float(), false), tables.csv_field("b", tables.kind_bool(), false)], false, ",", "NA")
+  var int_caught = false
+  try:
+    ignored = tables.csv_import("12x,1.0,true", schema)
+  recover tables.CsvAdapterError.InvalidCell(row, column, kind):
+    assertEqual(row, 0)
+    assertEqual(column, 0)
+    assertEqual(kind, tables.kind_int())
+    int_caught = true
+  assert(int_caught)
+
+  var float_caught = false
+  try:
+    ignored = tables.csv_import("12,1x,true", schema)
+  recover tables.CsvAdapterError.InvalidCell(row, column, kind):
+    assertEqual(row, 0)
+    assertEqual(column, 1)
+    assertEqual(kind, tables.kind_float())
+    float_caught = true
+  assert(float_caught)
+
+  var bool_caught = false
+  try:
+    ignored = tables.csv_import("12,1.0,TRUE", schema)
+  recover tables.CsvAdapterError.InvalidCell(row, column, kind):
+    assertEqual(row, 0)
+    assertEqual(column, 2)
+    assertEqual(kind, tables.kind_bool())
+    bool_caught = true
+  assert(bool_caught)
+
+  var missing_caught = false
+  try:
+    ignored = tables.csv_import("NA,1.0,true", schema)
+  recover tables.CsvAdapterError.NonNullableMissing(row, column):
+    assertEqual(row, 0)
+    assertEqual(column, 0)
+    missing_caught = true
+  assert(missing_caught)
+
+test "csv missing token escaping distinguishes present collisions":
+  schema = tables.csv_schema([tables.csv_field("id", tables.kind_int(), false), tables.csv_field("note", tables.kind_string(), true)], false, ",", "NA")
+  input = "1,NA\n2,\\NA\n3,\\\\lead"
+  table = tables.csv_import(input, schema)
+  notes = tables.string_values(table, "note")
+  assert(not notes.validity[0])
+  assert(notes.validity[1])
+  assertEqual(notes.values[1], "NA")
+  assertEqual(notes.values[2], "\\lead")
+
+  int_schema = tables.csv_schema([tables.csv_field("id", tables.kind_int(), false)], false, ",", "7")
+  int_table = tables.add_column(tables.new_table(1), tables.int_column("id", false, [7], [true]))
+  encoded = tables.csv_export(int_table, int_schema)
+  assertEqual(encoded, "\\7\r\n")
+  decoded = tables.csv_import(encoded, int_schema)
+  assertEqual(tables.int_values(decoded, "id").values[0], 7)
+
+test "csv supported columns round trip with quoting and missing values":
+  schema = tables.csv_schema([tables.csv_field("id", tables.kind_int(), false), tables.csv_field("active", tables.kind_bool(), false), tables.csv_field("note", tables.kind_string(), true)], true, ",", "MISSING")
+  table0 = tables.new_table(4)
+  table1 = tables.add_column(table0, tables.int_column("id", false, [7, -9, 10, 11], [true, true, true, true]))
+  table2 = tables.add_column(table1, tables.bool_column("active", false, [true, false, true, false], [true, true, true, true]))
+  table3 = tables.add_column(table2, tables.string_column("note", true, ["a,b \"q\"\nline", "MISSING", "\\lead", "ignored"], [true, true, true, false]))
+  encoded = tables.csv_export(table3, schema)
+  decoded = tables.csv_import(encoded, schema)
+  assertEqual(tables.int_values(decoded, "id").values, [7, -9, 10, 11])
+  assertEqual(tables.bool_values(decoded, "active").values, [true, false, true, false])
+  notes = tables.string_values(decoded, "note")
+  assertEqual(notes.values[0], "a,b \"q\"\nline")
+  assertEqual(notes.values[1], "MISSING")
+  assertEqual(notes.values[2], "\\lead")
+  assert(notes.validity[0])
+  assert(notes.validity[1])
+  assert(notes.validity[2])
+  assert(not notes.validity[3])
+
+test "csv empty inputs and empty tables retain explicit schema":
+  no_header = tables.csv_schema([tables.csv_field("id", tables.kind_int(), false)], false, ",", "NA")
+  empty = tables.csv_import("", no_header)
+  assertEqual(tables.table_row_count(empty), 0)
+  assertEqual(tables.column_count(empty), 1)
+  assertEqual(tables.csv_export(empty, no_header), "")
+
+  with_header = tables.csv_schema([tables.csv_field("id", tables.kind_int(), false)], true, ",", "NA")
+  header_only = tables.add_column(tables.new_table(0), tables.int_column("id", false, Vector[Int](), Vector[Bool]()))
+  encoded = tables.csv_export(header_only, with_header)
+  assertEqual(encoded, "id\r\n")
+  decoded = tables.csv_import(encoded, with_header)
+  assertEqual(tables.table_row_count(decoded), 0)
+  assertEqual(tables.column_count(decoded), 1)
+
+  float_header = tables.csv_schema([tables.csv_field("value", tables.kind_float(), true)], true, ",", "NA")
+  empty_float = tables.add_column(tables.new_table(0), tables.float_column("value", true, Vector[Float](), Vector[Bool]()))
+  assertEqual(tables.csv_export(empty_float, float_header), "value\r\n")
+
+test "csv export rejects schema mismatch and unsupported exact formatting":
+  int_table = tables.add_column(tables.new_table(1), tables.int_column("id", false, [1], [true]))
+  count_schema = tables.csv_schema([tables.csv_field("id", tables.kind_int(), false), tables.csv_field("name", tables.kind_string(), false)], false, ",", "NA")
+  var count_caught = false
+  try:
+    ignored = tables.csv_export(int_table, count_schema)
+  recover tables.CsvAdapterError.TableColumnCountMismatch(expected, actual):
+    assertEqual(expected, 2)
+    assertEqual(actual, 1)
+    count_caught = true
+  assert(count_caught)
+
+  name_schema = tables.csv_schema([tables.csv_field("other", tables.kind_int(), false)], false, ",", "NA")
+  var name_caught = false
+  try:
+    ignored = tables.csv_export(int_table, name_schema)
+  recover tables.CsvAdapterError.TableColumnNameMismatch(column):
+    assertEqual(column, 0)
+    name_caught = true
+  assert(name_caught)
+
+  kind_schema = tables.csv_schema([tables.csv_field("id", tables.kind_float(), false)], false, ",", "NA")
+  var kind_caught = false
+  try:
+    ignored = tables.csv_export(int_table, kind_schema)
+  recover tables.CsvAdapterError.TableColumnKindMismatch(column, expected, actual):
+    assertEqual(column, 0)
+    assertEqual(expected, tables.kind_float())
+    assertEqual(actual, tables.kind_int())
+    kind_caught = true
+  assert(kind_caught)
+
+  nullable_schema = tables.csv_schema([tables.csv_field("id", tables.kind_int(), true)], false, ",", "NA")
+  var nullable_caught = false
+  try:
+    ignored = tables.csv_export(int_table, nullable_schema)
+  recover tables.CsvAdapterError.TableColumnNullabilityMismatch(column, expected, actual):
+    assertEqual(column, 0)
+    assert(expected)
+    assert(not actual)
+    nullable_caught = true
+  assert(nullable_caught)
+
+  float_table = tables.add_column(tables.new_table(1), tables.float_column("value", false, [1.5], [true]))
+  float_schema = tables.csv_schema([tables.csv_field("value", tables.kind_float(), false)], false, ",", "NA")
+  var float_caught = false
+  try:
+    ignored = tables.csv_export(float_table, float_schema)
+  recover tables.CsvAdapterError.UnsupportedFormatting(row, column, kind):
+    assertEqual(row, 0)
+    assertEqual(column, 0)
+    assertEqual(kind, tables.kind_float())
+    float_caught = true
+  assert(float_caught)
+
+  min_table = tables.add_column(tables.new_table(1), tables.int_column("id", false, [(-9223372036854775807 - 1)], [true]))
+  min_schema = tables.csv_schema([tables.csv_field("id", tables.kind_int(), false)], false, ",", "NA")
+  var min_caught = false
+  try:
+    ignored = tables.csv_export(min_table, min_schema)
+  recover tables.CsvAdapterError.UnsupportedFormatting(row, column, kind):
+    assertEqual(row, 0)
+    assertEqual(column, 0)
+    assertEqual(kind, tables.kind_int())
+    min_caught = true
+  assert(min_caught)
+
+  missing_float = tables.add_column(tables.new_table(1), tables.float_column("value", true, [9.0], [false]))
+  missing_float_schema = tables.csv_schema([tables.csv_field("value", tables.kind_float(), true)], false, ",", "NA")
+  missing_encoded = tables.csv_export(missing_float, missing_float_schema)
+  assertEqual(missing_encoded, "NA\r\n")
+  missing_decoded = tables.csv_import(missing_encoded, missing_float_schema)
+  assert(not tables.float_values(missing_decoded, "value").validity[0])

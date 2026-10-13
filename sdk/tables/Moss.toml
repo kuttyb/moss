@@ -4,3 +4,7 @@ version = "0.1.0"
 
 [build]
 source = "src"
+
+[dependencies]
+"moss.csv" = { path = "../csv" }
+"moss.fmt" = { path = "../fmt" }

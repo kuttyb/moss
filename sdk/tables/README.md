@@ -1,8 +1,9 @@
 # moss.tables
 
 `moss.tables` is the Phase 24 typed columnar table and relational-operations
-package. It intentionally has no package dependencies. CSV adapters remain a
-separate later workstream.
+package. Its explicit-schema CSV adapter depends on the public `moss.csv` and
+`moss.fmt` packages; the typed/relational table representation remains
+unchanged.
 
 ## Data contract
 
@@ -118,4 +119,68 @@ output)` for matching, followed by `O(c*output)` owned result construction;
 schema validation and collision checks add `O(c^2)`. No API claims borrowed or
 zero-copy output.
 
-CSV and JSON adapters are not implemented by this workstream.
+## Explicit-schema CSV adapter
+
+`CsvField` fixes a nonempty name, one of the four table kinds, and nullability.
+`CsvSchema` fixes a nonempty ordered field vector, whether an exact header is
+required/emitted, one explicit delimiter, and a caller-chosen missing token.
+Construct these records with `csv_field` and `csv_schema`; forged public records
+are revalidated by `csv_import` and `csv_export`, and `validate_csv_schema`
+provides a non-raising check. A delimiter must be exactly one Unicode code point
+and cannot be quote, carriage return, or line feed. Zero-field schemas are
+rejected because CSV cannot preserve the row count of a zero-column table.
+
+`csv_import(text, schema)` calls the public `csv.read_all` parser, then requires
+the exact schema width for every record. When `has_header` is true, the first
+record must exist and must match every schema name in order. Error row and
+column indexes are zero-based data coordinates; the header has separate typed
+errors. Int and Float cells use the language's complete `parse_int` and
+`parse_float` grammars, Bool accepts only lowercase `true` or `false`, and
+String preserves the decoded CSV field. Malformed quoting remains a public
+`csv.CsvError`; schema, shape, typed-cell, and nullability failures use
+`CsvAdapterError`. Row order is never changed.
+
+Missingness is a value-level contract because `csv.read_all` intentionally
+returns decoded fields and does not retain whether a field was quoted. An
+unescaped field exactly equal to `missing_token` is missing, even if it was
+quoted in the CSV source. Backslash is the adapter escape prefix: a present
+field equal to the missing token, or any present field beginning with
+backslash, is prefixed with one additional backslash on export; import removes
+one leading backslash before typed parsing. For example, with missing token
+`NA`, `NA` is missing, `\NA` is present `NA`, and `\\name` is present `\name`.
+This also makes the empty missing token unambiguous: an empty field is missing
+and `\` is a present empty String.
+
+`csv_export(table, schema)` first validates the table and requires exact column
+count, order, names, kinds, and nullability. It emits the configured header and
+delegates quoting plus CRLF record termination to `csv.write_all`. Missing cells
+always emit the missing token. Present Int values use `fmt.format_int`, Bool
+uses exact lowercase literals, and String uses its exact value before collision
+escaping. The current formatter cannot represent the minimum Int value, so that
+cell raises `CsvAdapterError.UnsupportedFormatting` rather than emitting a
+wrong value.
+
+Float import is supported, as are missing-only or zero-row Float exports. A
+present Float export raises `CsvAdapterError.UnsupportedFormatting`: the public
+`moss.fmt` API has no exact Float formatter with Native Debug, Native Release,
+and Fast Debug parity. The adapter does not approximate Float text and does not
+use an implicit numeric coercion. A headerless empty input imports as a
+zero-row table with all schema columns; an empty input with a required header
+raises `MissingHeader`. A header-only table round trips with zero rows.
+
+CSV adapter validation is `O(c^2 + c*r)` for `c` fields and `r` rows, including
+public schema/table validation. Import additionally stores the decoded CSV
+matrix before constructing owned table columns. Export constructs an owned
+String matrix before `csv.write_all`. No CSV API claims streaming or borrowed
+storage.
+
+## JSON scope
+
+No table JSON adapter is claimed. The public `moss.json` representation is a
+nested arena that preserves arrays, objects, scalar kinds, nulls, and original
+number lexemes, while `Table` is a flat, four-kind column schema with a separate
+validity bitmap. Without an explicit orientation and nested-value policy, a
+shortcut such as “array of objects” would lose or reject nested arrays/objects,
+conflate absent keys with JSON null, and fail to preserve numeric lexemes.
+Those semantics are not established by this CSV workstream, so no unsafe JSON
+conversion is exposed.

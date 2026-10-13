@@ -18,6 +18,31 @@ and `margo debug`; structured `moss check --json` and dependency-aware
 validation and `git diff --check` pass. No implementation work remains for the
 A3 scope.
 
+## Phase 24 Team A A8 typed CSV adapters — 2026-10-12
+
+Implementation is complete on branch `phase24-advanced-data-a8-csv-adapters`
+from baseline `7773a3006faf6b247fe808de54f6a8ec01ea95ba`. `moss.tables` now exports
+explicit `CsvField`/`CsvSchema` contracts, validation, `csv_import`,
+`csv_export`, and closed `CsvAdapterError` failures through a same-module
+`csv_adapter.moss` source file. Margo's build metadata confirms both
+`tables.moss` and `csv_adapter.moss` are included in the emitted `tables`
+module. Import validates headers and widths, strictly parses all four table
+kinds, preserves row order, and uses a documented backslash escape to separate
+present values from the caller-chosen missing token. Export validates exact
+table/schema correspondence and delegates quoting to public `moss.csv`.
+
+All 24 package tests pass after formatting in Native Debug, Native Release, and
+Fast Debug. Canonical formatter checks report `would_change: false` for the new
+source and expanded tests; `python3 tests/tooling/check_agent_feedback.py` and
+`git diff --check` pass. The public `moss.fmt` API has no exact Float formatter
+with three-mode parity, and `fmt.format_int` cannot represent minimum Int, so
+present cells in those cases raise `CsvAdapterError.UnsupportedFormatting`;
+Float import and missing-only/zero-row Float export remain supported. No JSON
+adapter is claimed because nested arrays/objects, absent keys versus null, and
+original numeric lexemes cannot be preserved by the flat Table model without a
+separate explicit contract. No Team D package, compiler, or shared test
+infrastructure was modified.
+
 ## Phase 24 Team A bounded FlatBuffers/Arrow feasibility — 2026-10-12
 
 The bounded A9–A11 assessment is complete on branch
