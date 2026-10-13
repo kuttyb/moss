@@ -1,5 +1,29 @@
 # Moss current status
 
+## Phase 24 Team A bounded FlatBuffers/Arrow feasibility — 2026-10-12
+
+The bounded A9–A11 assessment is complete on branch
+`phase24-advanced-data-buffer-feasibility`. The new
+`docs/phase24/TEAM_A_FLATBUFFERS_ARROW_FEASIBILITY.md` records that current
+`moss.binary` supports correct owned bytewise construction and concrete
+integer access, while fixed-schema FlatBuffers and a narrow signed-integer/Bool
+Arrow IPC proof of concept are feasible only with explicit copies and limits.
+General schema generation, exact Float fields, native String adapters, packed
+and aligned byte storage, source-visible borrowed views, upper-half `UInt64`,
+zero-copy FlatBuffers, and production Arrow IPC remain blocked capabilities.
+No FlatBuffers/Arrow implementation, schema generator, compiler/runtime change,
+or public API was added.
+
+Validation completed at baseline
+`0d5784241a43caba87e8f024d4b10e20b4a996ea`: live bootstrap confirmed
+`moss-0.1`; `moss.binary` passed 9/9 tests in Native Debug, Native Release, and
+Fast Debug; current Float-bit and String-byte probes reproduced the already
+documented capability-request boundary; ownership queries confirmed the
+reader/writer access modes; and `git diff --check` passed before closeout.
+No new developer-experience observation was warranted, so no feedback record
+was added. There is no unfinished implementation work in this bounded leaf
+scope.
+
 ## Phase 24 Team I consolidated checkpoint — 2026-10-12
 
 The final accepted Team D structured-data, Team T performance, and Team N
