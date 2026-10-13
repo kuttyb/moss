@@ -26379,6 +26379,14 @@ static string rewrite_module_type(string type, const string& module,
       while (member_end < type.size() &&
              (std::isalnum(static_cast<unsigned char>(type[member_end])) || type[member_end] == '_')) ++member_end;
       string name = type.substr(member, member_end - member);
+      if (token == module) {
+        auto local_types = module_type_names(modules.at(module));
+        if (local_types.count(name)) {
+          result += module_symbol(module, name);
+          i = member_end;
+          continue;
+        }
+      }
       auto imported = public_exports.find(token);
       if (imported != public_exports.end() && imported->second.count(name)) {
         result += module_symbol(token, name);
@@ -26492,9 +26500,7 @@ static string rewrite_module_expression(
     if (!member && !(sibling_methods && sibling_methods->count(token)) &&
         !(locals && locals->count(token)) &&
         token.find("__") == string::npos &&
-        (functions.count(token) ||
-         (types.count(token) && after < expression.size() &&
-          (expression[after] == '(' || expression[after] == '.'))))
+        (functions.count(token) || types.count(token)))
       result += module_symbol(module, token);
     else
       result += token;
