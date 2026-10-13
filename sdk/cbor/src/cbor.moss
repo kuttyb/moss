@@ -1,0 +1,754 @@
+module cbor
+import binary
+import bytes
+import encoding
+
+export enum CborError:
+  InvalidLimits(value: Int, maximum: Int)
+  InvalidDocument(code: Int, index: Int)
+  InvalidNode(node: Int, count: Int)
+  InvalidRoot(root: Int)
+  WrongKind(node: Int, expected: Int, actual: Int)
+  AlreadyParented(node: Int, parent: Int)
+  Cycle(parent: Int, child: Int)
+  DuplicateKey(map: Int, key: Int)
+  InvalidByte(index: Int, value: Int)
+  InvalidUtf8(node: Int)
+  ResourceLimit(kind: Int, requested: Int, limit: Int)
+  DepthLimit(depth: Int, limit: Int)
+  OutputLimit(requested: Int, limit: Int)
+  UnsupportedValue(node: Int, kind: Int)
+  FloatCapabilityUnavailable
+
+export type CborDoc:
+  kinds: Vector[Int]
+  bool_values: Vector[Bool]
+  int_values: Vector[Int]
+  float_values: Vector[Float]
+  payload_starts: Vector[Int]
+  payload_counts: Vector[Int]
+  payload_bytes: Vector[Int]
+  first_edges: Vector[Int]
+  last_edges: Vector[Int]
+  container_counts: Vector[Int]
+  parents: Vector[Int]
+  edge_parents: Vector[Int]
+  edge_next: Vector[Int]
+  edge_keys: Vector[Int]
+  edge_values: Vector[Int]
+  root: Int
+  max_depth: Int
+  item_limit: Int
+  output_limit: Int
+  payload_limit: Int
+
+fn push_int(values: Vector[Int], value: Int):
+  values.push(value)
+
+fn push_bool(values: Vector[Bool], value: Bool):
+  values.push(value)
+
+fn push_float(values: Vector[Float], value: Float):
+  values.push(value)
+
+export fn kind_null() -> Int:
+  return 0
+
+export fn kind_bool() -> Int:
+  return 1
+
+export fn kind_int() -> Int:
+  return 2
+
+export fn kind_float() -> Int:
+  return 3
+
+export fn kind_text() -> Int:
+  return 4
+
+export fn kind_bytes() -> Int:
+  return 5
+
+export fn kind_array() -> Int:
+  return 6
+
+export fn kind_map() -> Int:
+  return 7
+
+export fn default_max_depth() -> Int:
+  return 64
+
+export fn default_item_limit() -> Int:
+  return 1000000
+
+export fn default_output_limit() -> Int:
+  return 67108864
+
+export fn default_payload_limit() -> Int:
+  return 16777216
+
+fn is_valid_kind(kind: Int) -> Bool:
+  return kind >= kind_null() and kind <= kind_map()
+
+fn is_container_kind(kind: Int) -> Bool:
+  return kind == kind_array() or kind == kind_map()
+
+fn is_payload_kind(kind: Int) -> Bool:
+  return kind == kind_text() or kind == kind_bytes()
+
+fn valid_limits(doc: CborDoc) -> Bool:
+  if doc.max_depth <= 0 or doc.max_depth > default_max_depth():
+    return false
+  if doc.item_limit <= 0 or doc.item_limit > default_item_limit():
+    return false
+  if doc.output_limit <= 0 or doc.output_limit > default_output_limit():
+    return false
+  if doc.payload_limit <= 0 or doc.payload_limit > default_payload_limit():
+    return false
+  if doc.payload_limit > doc.output_limit:
+    return false
+  return true
+
+fn same_node_vector_lengths(doc: CborDoc, count: Int) -> Bool:
+  return (doc.bool_values |> count) == count and (doc.int_values |> count) == count and (doc.float_values |> count) == count and (doc.payload_starts |> count) == count and (doc.payload_counts |> count) == count and (doc.first_edges |> count) == count and (doc.last_edges |> count) == count and (doc.container_counts |> count) == count and (doc.parents |> count) == count
+
+fn same_edge_vector_lengths(doc: CborDoc, count: Int) -> Bool:
+  return (doc.edge_next |> count) == count and (doc.edge_keys |> count) == count and (doc.edge_values |> count) == count
+
+export fn validate_doc(doc: CborDoc) -> Bool:
+  if not valid_limits(doc):
+    return false
+  node_count = doc.kinds |> count
+  edge_count = doc.edge_parents |> count
+  if not same_node_vector_lengths(doc, node_count):
+    return false
+  if not same_edge_vector_lengths(doc, edge_count):
+    return false
+  if node_count > doc.item_limit:
+    return false
+  if edge_count > doc.item_limit - node_count:
+    return false
+  if not bytes.all_bytes(doc.payload_bytes):
+    return false
+  payload_total = doc.payload_bytes |> count
+  if payload_total > doc.output_limit:
+    return false
+  if doc.root < -1 or doc.root >= node_count:
+    return false
+
+  var expected_payload = 0
+  var node = 0
+  while node < node_count:
+    kind = doc.kinds[node]
+    if not is_valid_kind(kind):
+      return false
+    payload_start = doc.payload_starts[node]
+    payload_count = doc.payload_counts[node]
+    if is_payload_kind(kind):
+      if payload_start != expected_payload or payload_count < 0 or payload_count > doc.payload_limit:
+        return false
+      if payload_start > payload_total or payload_count > payload_total - payload_start:
+        return false
+      expected_payload = expected_payload + payload_count
+      if kind == kind_text():
+        var text_data = Vector[Int]()
+        var text_index = 0
+        while text_index < payload_count:
+          push_int(text_data, doc.payload_bytes[payload_start + text_index])
+          text_index = text_index + 1
+        if not encoding.validate_utf8(text_data):
+          return false
+    else:
+      if payload_start != 0 or payload_count != 0:
+        return false
+    parent = doc.parents[node]
+    if parent < -1 or parent >= node_count or parent == node:
+      return false
+    node = node + 1
+  if expected_payload != payload_total:
+    return false
+  if doc.root >= 0 and doc.parents[doc.root] != -1:
+    return false
+
+  var edge_seen = Vector[Bool]()
+  var edge_index = 0
+  while edge_index < edge_count:
+    push_bool(edge_seen, false)
+    edge_parent = doc.edge_parents[edge_index]
+    next = doc.edge_next[edge_index]
+    if edge_parent < 0 or edge_parent >= node_count:
+      return false
+    if next < -1 or next >= edge_count or next == edge_index:
+      return false
+    edge_index = edge_index + 1
+
+  var parent_refs = Vector[Int]()
+  node = 0
+  while node < node_count:
+    push_int(parent_refs, 0)
+    node = node + 1
+
+  node = 0
+  while node < node_count:
+    kind = doc.kinds[node]
+    child_count = doc.container_counts[node]
+    first = doc.first_edges[node]
+    last = doc.last_edges[node]
+    if is_container_kind(kind):
+      if child_count < 0:
+        return false
+      if child_count == 0:
+        if first != -1 or last != -1:
+          return false
+      else:
+        if first < 0 or first >= edge_count or last < 0 or last >= edge_count:
+          return false
+      current = first
+      var traversed = 0
+      var previous = -1
+      while traversed < child_count:
+        if current < 0 or current >= edge_count:
+          return false
+        if edge_seen[current] or doc.edge_parents[current] != node:
+          return false
+        edge_seen[current] = true
+        key = doc.edge_keys[current]
+        value = doc.edge_values[current]
+        if kind == kind_array():
+          if key != -1 or value < 0 or value >= node_count:
+            return false
+          parent_refs[value] = parent_refs[value] + 1
+        else:
+          if key < 0 or key >= node_count or value < 0 or value >= node_count or key == value:
+            return false
+          key_kind = doc.kinds[key]
+          if key_kind != kind_int() and key_kind != kind_text():
+            return false
+          var prior_edge = first
+          var prior_count = 0
+          while prior_count < traversed:
+            if same_key(doc, doc.edge_keys[prior_edge], key):
+              return false
+            prior_edge = doc.edge_next[prior_edge]
+            prior_count = prior_count + 1
+          parent_refs[key] = parent_refs[key] + 1
+          parent_refs[value] = parent_refs[value] + 1
+        previous = current
+        current = doc.edge_next[current]
+        traversed = traversed + 1
+      if previous != last or current != -1:
+        return false
+    else:
+      if child_count != 0 or first != -1 or last != -1:
+        return false
+    node = node + 1
+
+  edge_index = 0
+  while edge_index < edge_count:
+    if not edge_seen[edge_index]:
+      return false
+    edge_index = edge_index + 1
+
+  node = 0
+  while node < node_count:
+    parent = doc.parents[node]
+    if parent == -1:
+      if parent_refs[node] != 0:
+        return false
+    else:
+      if parent_refs[node] != 1 or not is_container_kind(doc.kinds[parent]):
+        return false
+    var ancestor = node
+    var steps = 0
+    while doc.parents[ancestor] != -1:
+      ancestor = doc.parents[ancestor]
+      steps = steps + 1
+      if steps > node_count:
+        return false
+    node = node + 1
+  return true
+
+export fn validate_complete(doc: CborDoc) -> Bool:
+  if not validate_doc(doc):
+    return false
+  node_count = doc.kinds |> count
+  if node_count == 0 or doc.root < 0:
+    return false
+  var node = 0
+  while node < node_count:
+    var ancestor = node
+    while doc.parents[ancestor] != -1:
+      ancestor = doc.parents[ancestor]
+    if ancestor != doc.root:
+      return false
+    node = node + 1
+  return true
+
+fn require_doc(doc: CborDoc):
+  if not validate_doc(doc):
+    raise CborError.InvalidDocument(code: 1, index: -1)
+
+fn require_complete(doc: CborDoc):
+  if not validate_complete(doc):
+    raise CborError.InvalidDocument(code: 2, index: doc.root)
+
+fn require_node(doc: CborDoc, node: Int):
+  count = doc.kinds |> count
+  if node < 0 or node >= count:
+    raise CborError.InvalidNode(node: node, count: count)
+
+fn require_kind(doc: CborDoc, node: Int, expected: Int):
+  require_node(doc, node)
+  actual = doc.kinds[node]
+  if actual != expected:
+    raise CborError.WrongKind(node: node, expected: expected, actual: actual)
+
+fn require_limits(max_depth: Int, item_limit: Int, output_limit: Int, payload_limit: Int):
+  if max_depth <= 0 or max_depth > default_max_depth():
+    raise CborError.InvalidLimits(value: max_depth, maximum: default_max_depth())
+  if item_limit <= 0 or item_limit > default_item_limit():
+    raise CborError.InvalidLimits(value: item_limit, maximum: default_item_limit())
+  if output_limit <= 0 or output_limit > default_output_limit():
+    raise CborError.InvalidLimits(value: output_limit, maximum: default_output_limit())
+  if payload_limit <= 0 or payload_limit > default_payload_limit() or payload_limit > output_limit:
+    raise CborError.InvalidLimits(value: payload_limit, maximum: default_payload_limit())
+
+export fn new_doc() -> CborDoc:
+  return new_doc_with_limits(default_max_depth(), default_item_limit(), default_output_limit(), default_payload_limit())
+
+export fn new_doc_with_limits(max_depth: Int, item_limit: Int, output_limit: Int, payload_limit: Int) -> CborDoc:
+  require_limits(max_depth, item_limit, output_limit, payload_limit)
+  return CborDoc(kinds: Vector[Int](), bool_values: Vector[Bool](), int_values: Vector[Int](), float_values: Vector[Float](), payload_starts: Vector[Int](), payload_counts: Vector[Int](), payload_bytes: Vector[Int](), first_edges: Vector[Int](), last_edges: Vector[Int](), container_counts: Vector[Int](), parents: Vector[Int](), edge_parents: Vector[Int](), edge_next: Vector[Int](), edge_keys: Vector[Int](), edge_values: Vector[Int](), root: -1, max_depth: max_depth, item_limit: item_limit, output_limit: output_limit, payload_limit: payload_limit)
+
+fn require_node_capacity(doc: CborDoc):
+  node_count = doc.kinds |> count
+  edge_count = doc.edge_parents |> count
+  if node_count >= doc.item_limit - edge_count:
+    raise CborError.ResourceLimit(kind: 0, requested: node_count + edge_count + 1, limit: doc.item_limit)
+
+fn push_node(doc: CborDoc, kind: Int, bool_value: Bool, int_value: Int, float_value: Float, payload_start: Int, payload_count: Int) -> Int:
+  node = doc.kinds |> count
+  push_int(doc.kinds, kind)
+  push_bool(doc.bool_values, bool_value)
+  push_int(doc.int_values, int_value)
+  push_float(doc.float_values, float_value)
+  push_int(doc.payload_starts, payload_start)
+  push_int(doc.payload_counts, payload_count)
+  push_int(doc.first_edges, -1)
+  push_int(doc.last_edges, -1)
+  push_int(doc.container_counts, 0)
+  push_int(doc.parents, -1)
+  return node
+
+fn add_scalar_node(doc: CborDoc, kind: Int, bool_value: Bool, int_value: Int) -> Int:
+  require_doc(doc)
+  require_node_capacity(doc)
+  return push_node(doc, kind, bool_value, int_value, 0.0, 0, 0)
+
+export fn add_null(doc: CborDoc) -> Int:
+  return add_scalar_node(doc, kind_null(), false, 0)
+
+export fn add_bool(doc: CborDoc, value: Bool) -> Int:
+  return add_scalar_node(doc, kind_bool(), value, 0)
+
+export fn add_int(doc: CborDoc, value: Int) -> Int:
+  return add_scalar_node(doc, kind_int(), false, value)
+
+export fn add_float(doc: CborDoc, value: Float) -> Int:
+  require_doc(doc)
+  raise CborError.FloatCapabilityUnavailable
+
+fn require_payload_bytes(values: Vector[Int]):
+  count = values |> count
+  var index = 0
+  while index < count:
+    value = values[index]
+    if not bytes.is_byte(value):
+      raise CborError.InvalidByte(index: index, value: value)
+    index = index + 1
+
+fn add_payload_node(doc: CborDoc, kind: Int, values: Vector[Int]) -> Int:
+  require_doc(doc)
+  require_node_capacity(doc)
+  require_payload_bytes(values)
+  count = values |> count
+  if count > doc.payload_limit:
+    raise CborError.ResourceLimit(kind: 1, requested: count, limit: doc.payload_limit)
+  current = doc.payload_bytes |> count
+  if count > doc.output_limit - current:
+    raise CborError.OutputLimit(requested: current + count, limit: doc.output_limit)
+  if kind == kind_text() and not encoding.validate_utf8(values):
+    raise CborError.InvalidUtf8(node: -1)
+  var index = 0
+  while index < count:
+    push_int(doc.payload_bytes, values[index])
+    index = index + 1
+  return push_node(doc, kind, false, 0, 0.0, current, count)
+
+export fn add_text_bytes(doc: CborDoc, values: Vector[Int]) -> Int:
+  return add_payload_node(doc, kind_text(), values)
+
+export fn add_byte_string(doc: CborDoc, values: Vector[Int]) -> Int:
+  return add_payload_node(doc, kind_bytes(), values)
+
+export fn add_array(doc: CborDoc) -> Int:
+  return add_scalar_node(doc, kind_array(), false, 0)
+
+export fn add_map(doc: CborDoc) -> Int:
+  return add_scalar_node(doc, kind_map(), false, 0)
+
+fn is_ancestor(doc: CborDoc, possible_ancestor: Int, node: Int) -> Bool:
+  var current = node
+  while current != -1:
+    if current == possible_ancestor:
+      return true
+    current = doc.parents[current]
+  return false
+
+fn require_attachable(doc: CborDoc, parent: Int, child: Int):
+  require_node(doc, child)
+  current_parent = doc.parents[child]
+  if current_parent != -1:
+    raise CborError.AlreadyParented(node: child, parent: current_parent)
+  if is_ancestor(doc, child, parent):
+    raise CborError.Cycle(parent: parent, child: child)
+
+fn require_edge_capacity(doc: CborDoc):
+  node_count = doc.kinds |> count
+  edge_count = doc.edge_parents |> count
+  if edge_count >= doc.item_limit - node_count:
+    raise CborError.ResourceLimit(kind: 0, requested: node_count + edge_count + 1, limit: doc.item_limit)
+
+fn append_edge(doc: CborDoc, parent: Int, key: Int, value: Int):
+  edge = doc.edge_parents |> count
+  push_int(doc.edge_parents, parent)
+  push_int(doc.edge_next, -1)
+  push_int(doc.edge_keys, key)
+  push_int(doc.edge_values, value)
+  last = doc.last_edges[parent]
+  if last == -1:
+    doc.first_edges[parent] = edge
+  else:
+    doc.edge_next[last] = edge
+  doc.last_edges[parent] = edge
+  doc.container_counts[parent] = doc.container_counts[parent] + 1
+
+export fn array_push(doc: CborDoc, array: Int, child: Int):
+  require_doc(doc)
+  require_kind(doc, array, kind_array())
+  require_attachable(doc, array, child)
+  require_edge_capacity(doc)
+  append_edge(doc, array, -1, child)
+  doc.parents[child] = array
+
+fn same_text_key(doc: CborDoc, left: Int, right: Int) -> Bool:
+  left_count = doc.payload_counts[left]
+  if left_count != doc.payload_counts[right]:
+    return false
+  left_start = doc.payload_starts[left]
+  right_start = doc.payload_starts[right]
+  var index = 0
+  while index < left_count:
+    if doc.payload_bytes[left_start + index] != doc.payload_bytes[right_start + index]:
+      return false
+    index = index + 1
+  return true
+
+fn same_key(doc: CborDoc, left: Int, right: Int) -> Bool:
+  left_kind = doc.kinds[left]
+  if left_kind != doc.kinds[right]:
+    return false
+  if left_kind == kind_int():
+    return doc.int_values[left] == doc.int_values[right]
+  if left_kind == kind_text():
+    return same_text_key(doc, left, right)
+  return false
+
+fn require_unique_key(doc: CborDoc, map: Int, key: Int):
+  current = doc.first_edges[map]
+  remaining = doc.container_counts[map]
+  while remaining > 0:
+    existing = doc.edge_keys[current]
+    if same_key(doc, existing, key):
+      raise CborError.DuplicateKey(map: map, key: key)
+    current = doc.edge_next[current]
+    remaining = remaining - 1
+
+export fn map_set(doc: CborDoc, map: Int, key: Int, value: Int):
+  require_doc(doc)
+  require_kind(doc, map, kind_map())
+  require_node(doc, key)
+  key_kind = doc.kinds[key]
+  if key_kind != kind_int() and key_kind != kind_text():
+    raise CborError.UnsupportedValue(node: key, kind: key_kind)
+  require_attachable(doc, map, key)
+  require_attachable(doc, map, value)
+  if key == value:
+    raise CborError.InvalidDocument(code: 3, index: key)
+  require_unique_key(doc, map, key)
+  require_edge_capacity(doc)
+  append_edge(doc, map, key, value)
+  doc.parents[key] = map
+  doc.parents[value] = map
+
+export fn set_root(doc: CborDoc, node: Int):
+  require_doc(doc)
+  require_node(doc, node)
+  if doc.parents[node] != -1:
+    raise CborError.InvalidRoot(root: node)
+  if doc.root != -1 and doc.root != node:
+    raise CborError.InvalidRoot(root: doc.root)
+  doc.root = node
+
+export fn node_count(doc: CborDoc) -> Int:
+  require_doc(doc)
+  return doc.kinds |> count
+
+export fn edge_count(doc: CborDoc) -> Int:
+  require_doc(doc)
+  return doc.edge_parents |> count
+
+export fn root_id(doc: CborDoc) -> Int:
+  require_complete(doc)
+  return doc.root
+
+export fn node_kind(doc: CborDoc, node: Int) -> Int:
+  require_doc(doc)
+  require_node(doc, node)
+  return doc.kinds[node]
+
+export fn parent_of(doc: CborDoc, node: Int) -> Int:
+  require_doc(doc)
+  require_node(doc, node)
+  return doc.parents[node]
+
+export fn bool_value(doc: CborDoc, node: Int) -> Bool:
+  require_doc(doc)
+  require_kind(doc, node, kind_bool())
+  return doc.bool_values[node]
+
+export fn int_value(doc: CborDoc, node: Int) -> Int:
+  require_doc(doc)
+  require_kind(doc, node, kind_int())
+  return doc.int_values[node]
+
+export fn float_value(doc: CborDoc, node: Int) -> Float:
+  require_doc(doc)
+  require_kind(doc, node, kind_float())
+  raise CborError.FloatCapabilityUnavailable
+
+fn payload_copy(doc: CborDoc, node: Int) -> Vector[Int]:
+  start = doc.payload_starts[node]
+  count = doc.payload_counts[node]
+  var result = Vector[Int]()
+  var index = 0
+  while index < count:
+    push_int(result, doc.payload_bytes[start + index])
+    index = index + 1
+  return result
+
+export fn text_bytes(doc: CborDoc, node: Int) -> Vector[Int]:
+  require_doc(doc)
+  require_kind(doc, node, kind_text())
+  return payload_copy(doc, node)
+
+export fn text_scalars(doc: CborDoc, node: Int) -> Vector[Int]:
+  data = text_bytes(doc, node)
+  return encoding.decode_utf8(data)
+
+export fn byte_string(doc: CborDoc, node: Int) -> Vector[Int]:
+  require_doc(doc)
+  require_kind(doc, node, kind_bytes())
+  return payload_copy(doc, node)
+
+fn edge_at(doc: CborDoc, container: Int, index: Int) -> Int:
+  count = doc.container_counts[container]
+  if index < 0 or index >= count:
+    raise CborError.InvalidNode(node: index, count: count)
+  current = doc.first_edges[container]
+  var position = 0
+  while position < index:
+    current = doc.edge_next[current]
+    position = position + 1
+  return current
+
+export fn array_length(doc: CborDoc, array: Int) -> Int:
+  require_doc(doc)
+  require_kind(doc, array, kind_array())
+  return doc.container_counts[array]
+
+export fn array_get(doc: CborDoc, array: Int, index: Int) -> Int:
+  require_doc(doc)
+  require_kind(doc, array, kind_array())
+  edge = edge_at(doc, array, index)
+  return doc.edge_values[edge]
+
+export fn map_length(doc: CborDoc, map: Int) -> Int:
+  require_doc(doc)
+  require_kind(doc, map, kind_map())
+  return doc.container_counts[map]
+
+export fn map_key(doc: CborDoc, map: Int, index: Int) -> Int:
+  require_doc(doc)
+  require_kind(doc, map, kind_map())
+  edge = edge_at(doc, map, index)
+  return doc.edge_keys[edge]
+
+export fn map_value(doc: CborDoc, map: Int, index: Int) -> Int:
+  require_doc(doc)
+  require_kind(doc, map, kind_map())
+  edge = edge_at(doc, map, index)
+  return doc.edge_values[edge]
+
+fn head_size(argument: Int) -> Int:
+  if argument <= 23:
+    return 1
+  if argument <= 255:
+    return 2
+  if argument <= 65535:
+    return 3
+  if argument <= 4294967295:
+    return 5
+  return 9
+
+fn checked_output_size(current: Int, amount: Int, limit: Int) -> Int:
+  if amount > limit - current:
+    raise CborError.OutputLimit(requested: current + amount, limit: limit)
+  return current + amount
+
+fn push_container_tasks(doc: CborDoc, node: Int, depth: Int, stack_nodes: Vector[Int], stack_depths: Vector[Int]):
+  var edges = Vector[Int]()
+  current = doc.first_edges[node]
+  remaining = doc.container_counts[node]
+  while remaining > 0:
+    push_int(edges, current)
+    current = doc.edge_next[current]
+    remaining = remaining - 1
+  var index = edges |> count
+  if doc.kinds[node] == kind_array():
+    while index > 0:
+      index = index - 1
+      edge = edges[index]
+      push_int(stack_nodes, doc.edge_values[edge])
+      push_int(stack_depths, depth + 1)
+  else:
+    while index > 0:
+      index = index - 1
+      edge = edges[index]
+      push_int(stack_nodes, doc.edge_values[edge])
+      push_int(stack_depths, depth + 1)
+      push_int(stack_nodes, doc.edge_keys[edge])
+      push_int(stack_depths, depth + 1)
+
+export fn encoded_size(doc: CborDoc) -> Int:
+  require_complete(doc)
+  var stack_nodes = Vector[Int]()
+  var stack_depths = Vector[Int]()
+  push_int(stack_nodes, doc.root)
+  push_int(stack_depths, 1)
+  var total = 0
+  while (stack_nodes |> count) > 0:
+    node = stack_nodes.pop()
+    depth = stack_depths.pop()
+    if depth > doc.max_depth:
+      raise CborError.DepthLimit(depth: depth, limit: doc.max_depth)
+    kind = doc.kinds[node]
+    if kind == kind_null() or kind == kind_bool():
+      total = checked_output_size(total, 1, doc.output_limit)
+    else:
+      if kind == kind_int():
+        value = doc.int_values[node]
+        argument = value
+        if value < 0:
+          argument = -1 - value
+        total = checked_output_size(total, head_size(argument), doc.output_limit)
+      else:
+        if kind == kind_text() or kind == kind_bytes():
+          count = doc.payload_counts[node]
+          total = checked_output_size(total, head_size(count), doc.output_limit)
+          total = checked_output_size(total, count, doc.output_limit)
+        else:
+          if kind == kind_array() or kind == kind_map():
+            count = doc.container_counts[node]
+            total = checked_output_size(total, head_size(count), doc.output_limit)
+            push_container_tasks(doc, node, depth, stack_nodes, stack_depths)
+          else:
+            if kind == kind_float():
+              raise CborError.FloatCapabilityUnavailable
+            raise CborError.UnsupportedValue(node: node, kind: kind)
+  return total
+
+fn write_head(writer: binary.ByteWriter, major: Int, argument: Int):
+  prefix = major * 32
+  if argument <= 23:
+    binary.write_byte(writer, prefix + argument)
+  else:
+    if argument <= 255:
+      binary.write_byte(writer, prefix + 24)
+      binary.write_byte(writer, argument)
+    else:
+      if argument <= 65535:
+        binary.write_byte(writer, prefix + 25)
+        binary.write_u16_be(writer, argument)
+      else:
+        if argument <= 4294967295:
+          binary.write_byte(writer, prefix + 26)
+          binary.write_u32_be(writer, argument)
+        else:
+          binary.write_byte(writer, prefix + 27)
+          binary.write_u64_be(writer, argument)
+
+export fn encode(doc: CborDoc) -> Vector[Int]:
+  expected = encoded_size(doc)
+  var writer = binary.new_writer_with_limits(doc.output_limit, doc.payload_limit)
+  var stack_nodes = Vector[Int]()
+  var stack_depths = Vector[Int]()
+  push_int(stack_nodes, doc.root)
+  push_int(stack_depths, 1)
+  while (stack_nodes |> count) > 0:
+    node = stack_nodes.pop()
+    depth = stack_depths.pop()
+    kind = doc.kinds[node]
+    if kind == kind_null():
+      binary.write_byte(writer, 246)
+    else:
+      if kind == kind_bool():
+        if doc.bool_values[node]:
+          binary.write_byte(writer, 245)
+        else:
+          binary.write_byte(writer, 244)
+      else:
+        if kind == kind_int():
+          value = doc.int_values[node]
+          if value >= 0:
+            write_head(writer, 0, value)
+          else:
+            write_head(writer, 1, -1 - value)
+        else:
+          if kind == kind_bytes():
+            count = doc.payload_counts[node]
+            write_head(writer, 2, count)
+            data = payload_copy(doc, node)
+            binary.write_bytes(writer, data)
+          else:
+            if kind == kind_text():
+              count = doc.payload_counts[node]
+              write_head(writer, 3, count)
+              data = payload_copy(doc, node)
+              binary.write_bytes(writer, data)
+            else:
+              if kind == kind_array():
+                write_head(writer, 4, doc.container_counts[node])
+                push_container_tasks(doc, node, depth, stack_nodes, stack_depths)
+              else:
+                if kind == kind_map():
+                  write_head(writer, 5, doc.container_counts[node])
+                  push_container_tasks(doc, node, depth, stack_nodes, stack_depths)
+                else:
+                  if kind == kind_float():
+                    raise CborError.FloatCapabilityUnavailable
+                  raise CborError.UnsupportedValue(node: node, kind: kind)
+  result = binary.writer_output(writer)
+  if (result |> count) != expected:
+    raise CborError.InvalidDocument(code: 4, index: result |> count)
+  return result

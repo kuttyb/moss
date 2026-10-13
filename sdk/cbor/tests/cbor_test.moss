@@ -1,0 +1,391 @@
+module cbor_test
+import cbor
+
+fn same_ints(left: Vector[Int], right: Vector[Int]) -> Bool:
+  if (left |> count) != (right |> count):
+    return false
+  count = left |> count
+  var index = 0
+  while index < count:
+    if left[index] != right[index]:
+      return false
+    index = index + 1
+  return true
+
+fn encode_int(value: Int) -> Vector[Int]:
+  var doc = cbor.new_doc()
+  node = cbor.add_int(doc, value)
+  cbor.set_root(doc, node)
+  return cbor.encode(doc)
+
+test "RFC 8949 primitive and shortest integer encodings":
+  var null_doc = cbor.new_doc()
+  null_node = cbor.add_null(null_doc)
+  cbor.set_root(null_doc, null_node)
+  assert(same_ints(cbor.encode(null_doc), [246]))
+
+  var false_doc = cbor.new_doc()
+  false_node = cbor.add_bool(false_doc, false)
+  cbor.set_root(false_doc, false_node)
+  assert(same_ints(cbor.encode(false_doc), [244]))
+
+  var true_doc = cbor.new_doc()
+  true_node = cbor.add_bool(true_doc, true)
+  cbor.set_root(true_doc, true_node)
+  assert(same_ints(cbor.encode(true_doc), [245]))
+
+  assert(same_ints(encode_int(0), [0]))
+  assert(same_ints(encode_int(23), [23]))
+  assert(same_ints(encode_int(24), [24, 24]))
+  assert(same_ints(encode_int(255), [24, 255]))
+  assert(same_ints(encode_int(256), [25, 1, 0]))
+  assert(same_ints(encode_int(65535), [25, 255, 255]))
+  assert(same_ints(encode_int(65536), [26, 0, 1, 0, 0]))
+  assert(same_ints(encode_int(4294967296), [27, 0, 0, 0, 1, 0, 0, 0, 0]))
+  assert(same_ints(encode_int(9223372036854775807), [27, 127, 255, 255, 255, 255, 255, 255, 255]))
+  assert(same_ints(encode_int(-1), [32]))
+  assert(same_ints(encode_int(-24), [55]))
+  assert(same_ints(encode_int(-25), [56, 24]))
+  assert(same_ints(encode_int(-1000), [57, 3, 231]))
+  assert(same_ints(encode_int((-9223372036854775807 - 1)), [59, 127, 255, 255, 255, 255, 255, 255, 255]))
+
+test "empty definite-length payloads and containers":
+  var text_doc = cbor.new_doc()
+  text = cbor.add_text_bytes(text_doc, Vector[Int]())
+  cbor.set_root(text_doc, text)
+  assert(same_ints(cbor.encode(text_doc), [96]))
+
+  var bytes_doc = cbor.new_doc()
+  data = cbor.add_byte_string(bytes_doc, Vector[Int]())
+  cbor.set_root(bytes_doc, data)
+  assert(same_ints(cbor.encode(bytes_doc), [64]))
+
+  var array_doc = cbor.new_doc()
+  array = cbor.add_array(array_doc)
+  cbor.set_root(array_doc, array)
+  assertEqual(cbor.array_length(array_doc, array), 0)
+  assert(same_ints(cbor.encode(array_doc), [128]))
+
+  var map_doc = cbor.new_doc()
+  mapping = cbor.add_map(map_doc)
+  cbor.set_root(map_doc, mapping)
+  assertEqual(cbor.map_length(map_doc, mapping), 0)
+  assert(same_ints(cbor.encode(map_doc), [160]))
+
+test "owned UTF-8 text and byte strings":
+  var text_source = [97, 195, 169, 240, 159, 153, 130, 122]
+  var doc = cbor.new_doc()
+  text = cbor.add_text_bytes(doc, text_source)
+  text_source[0] = 120
+  cbor.set_root(doc, text)
+  assert(same_ints(cbor.text_bytes(doc, text), [97, 195, 169, 240, 159, 153, 130, 122]))
+  assert(same_ints(cbor.text_scalars(doc, text), [97, 233, 128578, 122]))
+  assert(same_ints(cbor.encode(doc), [104, 97, 195, 169, 240, 159, 153, 130, 122]))
+
+  var snapshot = cbor.text_bytes(doc, text)
+  snapshot[0] = 99
+  assertEqual(cbor.text_bytes(doc, text)[0], 97)
+
+  var bytes_doc = cbor.new_doc()
+  data = cbor.add_byte_string(bytes_doc, [1, 2, 255])
+  cbor.set_root(bytes_doc, data)
+  assert(same_ints(cbor.byte_string(bytes_doc, data), [1, 2, 255]))
+  assert(same_ints(cbor.encode(bytes_doc), [67, 1, 2, 255]))
+
+test "linked edges preserve interleaved nested ownership":
+  var doc = cbor.new_doc()
+  root = cbor.add_array(doc)
+  nested = cbor.add_array(doc)
+  cbor.array_push(doc, root, nested)
+
+  one = cbor.add_int(doc, 1)
+  cbor.array_push(doc, nested, one)
+
+  mapping = cbor.add_map(doc)
+  cbor.array_push(doc, root, mapping)
+  key = cbor.add_int(doc, 2)
+  value = cbor.add_int(doc, 3)
+  cbor.map_set(doc, mapping, key, value)
+
+  four = cbor.add_int(doc, 4)
+  cbor.array_push(doc, root, four)
+  cbor.set_root(doc, root)
+
+  assert(cbor.validate_complete(doc))
+  assertEqual(cbor.array_length(doc, root), 3)
+  assertEqual(cbor.array_get(doc, root, 0), nested)
+  assertEqual(cbor.array_get(doc, root, 1), mapping)
+  assertEqual(cbor.array_get(doc, root, 2), four)
+  assertEqual(cbor.array_get(doc, nested, 0), one)
+  assertEqual(cbor.map_key(doc, mapping, 0), key)
+  assertEqual(cbor.map_value(doc, mapping, 0), value)
+  assertEqual(cbor.parent_of(doc, one), nested)
+  assertEqual(cbor.parent_of(doc, mapping), root)
+  assert(same_ints(cbor.encode(doc), [131, 129, 1, 161, 2, 3, 4]))
+
+test "maps preserve insertion order with Int and text keys":
+  var doc = cbor.new_doc()
+  root = cbor.add_map(doc)
+  int_key = cbor.add_int(doc, 1)
+  int_value = cbor.add_int(doc, 2)
+  cbor.map_set(doc, root, int_key, int_value)
+  text_key = cbor.add_text_bytes(doc, [97])
+  bool_value = cbor.add_bool(doc, true)
+  cbor.map_set(doc, root, text_key, bool_value)
+  cbor.set_root(doc, root)
+  assertEqual(cbor.map_length(doc, root), 2)
+  assertEqual(cbor.map_key(doc, root, 0), int_key)
+  assertEqual(cbor.map_value(doc, root, 1), bool_value)
+  assert(same_ints(cbor.encode(doc), [162, 1, 2, 97, 97, 245]))
+
+test "duplicate map keys are typed and atomic":
+  var int_doc = cbor.new_doc()
+  int_map = cbor.add_map(int_doc)
+  first_key = cbor.add_int(int_doc, 7)
+  first_value = cbor.add_null(int_doc)
+  cbor.map_set(int_doc, int_map, first_key, first_value)
+  duplicate_key = cbor.add_int(int_doc, 7)
+  duplicate_value = cbor.add_null(int_doc)
+  var caught_int = false
+  try:
+    cbor.map_set(int_doc, int_map, duplicate_key, duplicate_value)
+  recover cbor.CborError.DuplicateKey(map, key):
+    caught_int = map == int_map and key == duplicate_key
+  assert(caught_int)
+  assertEqual(cbor.map_length(int_doc, int_map), 1)
+  assertEqual(cbor.parent_of(int_doc, duplicate_key), -1)
+  assertEqual(cbor.parent_of(int_doc, duplicate_value), -1)
+
+  var text_doc = cbor.new_doc()
+  text_map = cbor.add_map(text_doc)
+  first_text = cbor.add_text_bytes(text_doc, [195, 169])
+  value_one = cbor.add_int(text_doc, 1)
+  cbor.map_set(text_doc, text_map, first_text, value_one)
+  duplicate_text = cbor.add_text_bytes(text_doc, [195, 169])
+  value_two = cbor.add_int(text_doc, 2)
+  var caught_text = false
+  try:
+    cbor.map_set(text_doc, text_map, duplicate_text, value_two)
+  recover cbor.CborError.DuplicateKey(map, key):
+    caught_text = map == text_map and key == duplicate_text
+  assert(caught_text)
+  assertEqual(cbor.map_length(text_doc, text_map), 1)
+
+test "parent ownership cycles and key kinds are rejected":
+  var doc = cbor.new_doc()
+  first = cbor.add_array(doc)
+  second = cbor.add_array(doc)
+  child = cbor.add_int(doc, 9)
+  cbor.array_push(doc, first, child)
+
+  var caught_parent = false
+  try:
+    cbor.array_push(doc, second, child)
+  recover cbor.CborError.AlreadyParented(node, parent):
+    caught_parent = node == child and parent == first
+  assert(caught_parent)
+  assertEqual(cbor.array_length(doc, second), 0)
+
+  cbor.array_push(doc, first, second)
+  var caught_cycle = false
+  try:
+    cbor.array_push(doc, second, first)
+  recover cbor.CborError.Cycle(parent, child):
+    caught_cycle = parent == second and child == first
+  assert(caught_cycle)
+
+  var key_doc = cbor.new_doc()
+  mapping = cbor.add_map(key_doc)
+  bad_key = cbor.add_bool(key_doc, true)
+  value = cbor.add_null(key_doc)
+  var caught_key = false
+  try:
+    cbor.map_set(key_doc, mapping, bad_key, value)
+  recover cbor.CborError.UnsupportedValue(node, kind):
+    caught_key = node == bad_key and kind == cbor.kind_bool()
+  assert(caught_key)
+  assertEqual(cbor.map_length(key_doc, mapping), 0)
+
+test "malformed UTF-8 and byte values are rejected before mutation":
+  var doc = cbor.new_doc()
+  var caught_byte = false
+  try:
+    ignored1 = cbor.add_byte_string(doc, [1, 256, 2])
+  recover cbor.CborError.InvalidByte(index, value):
+    caught_byte = index == 1 and value == 256
+  assert(caught_byte)
+  assertEqual(cbor.node_count(doc), 0)
+
+  var caught_utf8 = false
+  try:
+    ignored2 = cbor.add_text_bytes(doc, [226, 130])
+  recover cbor.CborError.InvalidUtf8(node):
+    caught_utf8 = node == -1
+  assert(caught_utf8)
+  assertEqual(cbor.node_count(doc), 0)
+
+  var caught_overlong = false
+  try:
+    ignored3 = cbor.add_text_bytes(doc, [192, 128])
+  recover cbor.CborError.InvalidUtf8(node):
+    caught_overlong = node == -1
+  assert(caught_overlong)
+  assertEqual(cbor.node_count(doc), 0)
+
+test "forged malformed documents fail validation and public access":
+  var doc = cbor.new_doc()
+  root = cbor.add_array(doc)
+  child = cbor.add_int(doc, 1)
+  cbor.array_push(doc, root, child)
+  cbor.set_root(doc, root)
+  assert(cbor.validate_complete(doc))
+  doc.parents[child] = -1
+  assert(not cbor.validate_doc(doc))
+
+  var caught = false
+  try:
+    ignored = cbor.node_kind(doc, root)
+  recover cbor.CborError.InvalidDocument(code, index):
+    caught = code == 1 and index == -1
+  assert(caught)
+
+  var forged_cycle = cbor.new_doc()
+  left = cbor.add_array(forged_cycle)
+  right = cbor.add_array(forged_cycle)
+  cbor.array_push(forged_cycle, left, right)
+  forged_cycle.parents[left] = right
+  assert(not cbor.validate_doc(forged_cycle))
+
+  var duplicate_doc = cbor.new_doc()
+  duplicate_map = cbor.add_map(duplicate_doc)
+  key_one = cbor.add_int(duplicate_doc, 7)
+  value_one = cbor.add_null(duplicate_doc)
+  cbor.map_set(duplicate_doc, duplicate_map, key_one, value_one)
+  key_two = cbor.add_int(duplicate_doc, 8)
+  value_two = cbor.add_null(duplicate_doc)
+  cbor.map_set(duplicate_doc, duplicate_map, key_two, value_two)
+  cbor.set_root(duplicate_doc, duplicate_map)
+  duplicate_doc.int_values[key_two] = 7
+  assert(not cbor.validate_doc(duplicate_doc))
+
+test "complete root contract rejects detached nodes":
+  var empty = cbor.new_doc()
+  assert(cbor.validate_doc(empty))
+  assert(not cbor.validate_complete(empty))
+
+  var doc = cbor.new_doc()
+  root = cbor.add_null(doc)
+  detached = cbor.add_int(doc, 1)
+  cbor.set_root(doc, root)
+  assert(cbor.validate_doc(doc))
+  assert(not cbor.validate_complete(doc))
+  var caught = false
+  try:
+    ignored = cbor.encode(doc)
+  recover cbor.CborError.InvalidDocument(code, index):
+    caught = code == 2 and index == root
+  assert(caught)
+
+test "Float64 remains capability gated":
+  var doc = cbor.new_doc()
+  var caught_add = false
+  try:
+    ignored = cbor.add_float(doc, 1.5)
+  recover cbor.CborError.FloatCapabilityUnavailable:
+    caught_add = true
+  assert(caught_add)
+  assertEqual(cbor.node_count(doc), 0)
+
+  var forged = cbor.new_doc()
+  node = cbor.add_int(forged, 1)
+  forged.kinds[node] = cbor.kind_float()
+  forged.float_values[node] = 1.0
+  cbor.set_root(forged, node)
+  assert(cbor.validate_complete(forged))
+  var caught_value = false
+  try:
+    ignored_value = cbor.float_value(forged, node)
+  recover cbor.CborError.FloatCapabilityUnavailable:
+    caught_value = true
+  assert(caught_value)
+  var caught_encode = false
+  try:
+    ignored_bytes = cbor.encode(forged)
+  recover cbor.CborError.FloatCapabilityUnavailable:
+    caught_encode = true
+  assert(caught_encode)
+
+test "depth item payload and output limits are enforced":
+  var depth_doc = cbor.new_doc_with_limits(2, 20, 32, 16)
+  outer = cbor.add_array(depth_doc)
+  inner = cbor.add_array(depth_doc)
+  leaf = cbor.add_null(depth_doc)
+  cbor.array_push(depth_doc, outer, inner)
+  cbor.array_push(depth_doc, inner, leaf)
+  cbor.set_root(depth_doc, outer)
+  var caught_depth = false
+  try:
+    ignored1 = cbor.encode(depth_doc)
+  recover cbor.CborError.DepthLimit(depth, limit):
+    caught_depth = depth == 3 and limit == 2
+  assert(caught_depth)
+
+  var item_doc = cbor.new_doc_with_limits(64, 4, 32, 16)
+  item_root = cbor.add_array(item_doc)
+  first = cbor.add_int(item_doc, 1)
+  cbor.array_push(item_doc, item_root, first)
+  second = cbor.add_int(item_doc, 2)
+  var caught_item = false
+  try:
+    cbor.array_push(item_doc, item_root, second)
+  recover cbor.CborError.ResourceLimit(kind, requested, limit):
+    caught_item = kind == 0 and requested == 5 and limit == 4
+  assert(caught_item)
+  assertEqual(cbor.array_length(item_doc, item_root), 1)
+  assertEqual(cbor.parent_of(item_doc, second), -1)
+
+  var payload_doc = cbor.new_doc_with_limits(64, 20, 8, 2)
+  var caught_payload = false
+  try:
+    ignored2 = cbor.add_byte_string(payload_doc, [1, 2, 3])
+  recover cbor.CborError.ResourceLimit(kind, requested, limit):
+    caught_payload = kind == 1 and requested == 3 and limit == 2
+  assert(caught_payload)
+  assertEqual(cbor.node_count(payload_doc), 0)
+
+  var output_doc = cbor.new_doc_with_limits(64, 20, 2, 2)
+  output_root = cbor.add_int(output_doc, 1000)
+  cbor.set_root(output_doc, output_root)
+  var caught_output = false
+  try:
+    ignored3 = cbor.encode(output_doc)
+  recover cbor.CborError.OutputLimit(requested, limit):
+    caught_output = requested == 3 and limit == 2
+  assert(caught_output)
+
+test "wrong kinds indices and root replacement are typed":
+  var doc = cbor.new_doc()
+  int_node = cbor.add_int(doc, 5)
+  other = cbor.add_null(doc)
+  cbor.set_root(doc, int_node)
+
+  var caught_kind = false
+  try:
+    ignored1 = cbor.bool_value(doc, int_node)
+  recover cbor.CborError.WrongKind(node, expected, actual):
+    caught_kind = node == int_node and expected == cbor.kind_bool() and actual == cbor.kind_int()
+  assert(caught_kind)
+
+  var caught_index = false
+  try:
+    ignored2 = cbor.node_kind(doc, 99)
+  recover cbor.CborError.InvalidNode(node, count):
+    caught_index = node == 99 and count == 2
+  assert(caught_index)
+
+  var caught_root = false
+  try:
+    cbor.set_root(doc, other)
+  recover cbor.CborError.InvalidRoot(root):
+    caught_root = root == int_node
+  assert(caught_root)

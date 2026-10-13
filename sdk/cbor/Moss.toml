@@ -1,0 +1,11 @@
+[package]
+name = "moss.cbor"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+"moss.binary" = { path = "../binary" }
+"moss.encoding" = { path = "../encoding" }
+"moss.bytes" = { path = "../foundations/bytes" }
