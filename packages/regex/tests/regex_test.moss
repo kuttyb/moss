@@ -106,3 +106,38 @@ test "regex error contracts":
   recover regex.RegexError.UnclosedBracket:
     caught_bracket = true
   assert(caught_bracket)
+
+  var caught_dangling = false
+  try:
+    var dummy3 = regex.compile("*abc")
+  recover regex.RegexError.DanglingRepetition:
+    caught_dangling = true
+  assert(caught_dangling)
+
+  var caught_stacked_quant = false
+  try:
+    var dummy4 = regex.compile("a**")
+  recover regex.RegexError.DanglingRepetition:
+    caught_stacked_quant = true
+  assert(caught_stacked_quant)
+
+  var caught_invalid_range = false
+  try:
+    var dummy5 = regex.compile("[z-a]")
+  recover regex.RegexError.InvalidRange:
+    caught_invalid_range = true
+  assert(caught_invalid_range)
+
+  var caught_leading_alt = false
+  try:
+    var dummy6 = regex.compile("|abc")
+  recover regex.RegexError.UnexpectedToken:
+    caught_leading_alt = true
+  assert(caught_leading_alt)
+
+  var caught_trailing_alt = false
+  try:
+    var dummy7 = regex.compile("abc|")
+  recover regex.RegexError.UnexpectedToken:
+    caught_trailing_alt = true
+  assert(caught_trailing_alt)

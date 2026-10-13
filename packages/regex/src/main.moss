@@ -79,14 +79,15 @@ fn expand_range(start_ch: String, end_ch: String) -> String:
   let p_end = printable.find(end_ch)
   if p_start < 0 or p_end < 0:
     return start_ch + end_ch
-  var low = p_start
-  var high = p_end
-  if low > high:
-    let tmp = low
-    low = high
-    high = tmp
-  let len_range = high - low + 1
-  return printable.slice(low, len_range)
+  if p_start > p_end:
+    return ""
+  let len_range = p_end - p_start + 1
+  return printable.slice(p_start, len_range)
+
+fn is_repeatable_atom(tok_kind: Int) -> Bool:
+  if tok_kind == 1 or tok_kind == 2 or tok_kind == 3 or tok_kind == 16:
+    return true
+  return false
 
 # =========================================================================
 # 1. Tokenizer & Shunting-Yard Parser (Infix to Postfix)
@@ -119,6 +120,8 @@ fn op_precedence(tok_kind: Int) -> Int:
 export fn compile(pattern: String) -> Regex:
   let chars_vec = pattern.chars()
   let n = chars_vec |> count
+  if n > 2048:
+    raise RegexError.PatternTooComplex(state_count: n)
 
   # Raw tokens
   var raw_kinds = Vector[Int]()
@@ -133,18 +136,47 @@ export fn compile(pattern: String) -> Regex:
       add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 15, "(", "", false)
     else:
       if c == ")":
+        let num_r = raw_kinds |> count
+        if num_r > 0:
+          let prev_k = raw_kinds[num_r - 1]
+          if prev_k == 11:
+            raise RegexError.UnexpectedToken(index: i)
         add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 16, ")", "", false)
       else:
         if c == "|":
+          let num_r = raw_kinds |> count
+          if num_r == 0:
+            raise RegexError.UnexpectedToken(index: i)
+          let prev_k = raw_kinds[num_r - 1]
+          if prev_k == 11 or prev_k == 15:
+            raise RegexError.UnexpectedToken(index: i)
           add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 11, "|", "", false)
         else:
           if c == "*":
+            let num_r = raw_kinds |> count
+            if num_r == 0:
+              raise RegexError.DanglingRepetition(index: i)
+            let prev_k = raw_kinds[num_r - 1]
+            if not is_repeatable_atom(prev_k):
+              raise RegexError.DanglingRepetition(index: i)
             add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 12, "*", "", false)
           else:
             if c == "+":
+              let num_r = raw_kinds |> count
+              if num_r == 0:
+                raise RegexError.DanglingRepetition(index: i)
+              let prev_k = raw_kinds[num_r - 1]
+              if not is_repeatable_atom(prev_k):
+                raise RegexError.DanglingRepetition(index: i)
               add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 13, "+", "", false)
             else:
               if c == "?":
+                let num_r = raw_kinds |> count
+                if num_r == 0:
+                  raise RegexError.DanglingRepetition(index: i)
+                let prev_k = raw_kinds[num_r - 1]
+                if not is_repeatable_atom(prev_k):
+                  raise RegexError.DanglingRepetition(index: i)
                 add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 14, "?", "", false)
               else:
                 if c == "^":
@@ -202,7 +234,12 @@ export fn compile(pattern: String) -> Regex:
                                 class_builder = class_builder + chars_vec[i]
                               else:
                                 if (i + 2) < n and chars_vec[i + 1] == "-" and chars_vec[i + 2] != "]":
-                                  let rng = expand_range(cur_c, chars_vec[i + 2])
+                                  let printable_ref = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+                                  let p_start = printable_ref.find(chars_vec[i])
+                                  let p_end = printable_ref.find(chars_vec[i + 2])
+                                  if p_start >= 0 and p_end >= 0 and p_start > p_end:
+                                    raise RegexError.InvalidRange(index: i)
+                                  let rng = expand_range(chars_vec[i], chars_vec[i + 2])
                                   class_builder = class_builder + rng
                                   i = i + 2
                                 else:
@@ -213,6 +250,12 @@ export fn compile(pattern: String) -> Regex:
                         else:
                           add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 1, c, "", false)
     i = i + 1
+
+  let total_raw = raw_kinds |> count
+  if total_raw > 0:
+    let last_k = raw_kinds[total_raw - 1]
+    if last_k == 11:
+      raise RegexError.UnexpectedToken(index: n - 1)
 
 
   # Insert explicit concatenation
@@ -542,6 +585,8 @@ export fn compile(pattern: String) -> Regex:
       pi = pi + 1
 
   let total_states_count = st_kinds |> count
+  if total_states_count > 512:
+    raise RegexError.PatternTooComplex(state_count: total_states_count)
   return Regex(pattern: pattern, start_state: start_state, match_state: match_id, num_states: total_states_count, kinds: st_kinds, chars: st_chars, classes: st_classes, negs: st_negs, outs: st_outs, out1s: st_out1s)
 
 
@@ -663,24 +708,185 @@ fn run_nfa_from(re: Regex, chars_vec: Vector[String], start_idx: Int) -> Int:
 
   return best_end
 
+fn make_origins_vec(num_states: Int) -> Vector[Int]:
+  var v = Vector[Int]()
+  var i = 0
+  while i < num_states:
+    v.push(0 - 1)
+    i = i + 1
+  return v
+
+# Single-pass unanchored Thompson NFA search with origin tracking
+# Enforces leftmost-longest semantics without repeated NFA restarts
+fn run_nfa_search_from(re: Regex, chars_vec: Vector[String], start_scan: Int) -> MatchResult:
+  let text_len = chars_vec |> count
+  var best_match_origin = 0 - 1
+  var best_match_end = 0 - 1
+
+  var active_states = Vector[Int]()
+  var state_origins = make_origins_vec(re.num_states)
+
+  var pos = start_scan
+  while pos <= text_len:
+    # 1. Inject start_state at pos if no match found yet
+    # Leftmost rule: once best_match_origin is established, any new thread at pos >= best_match_origin cannot win
+    if best_match_origin < 0:
+      if state_origins[re.start_state] < 0:
+        state_origins[re.start_state] = pos
+        active_states.push(re.start_state)
+      else:
+        if pos < state_origins[re.start_state]:
+          state_origins[re.start_state] = pos
+
+    # 2. Epsilon closure on active_states
+    var worklist = Vector[Int]()
+    var ai = 0
+    while ai < (active_states |> count):
+      worklist.push(active_states[ai])
+      ai = ai + 1
+
+    while (worklist |> count) > 0:
+      let st_id = worklist.pop()
+      let s_orig = state_origins[st_id]
+      let k = re.kinds[st_id]
+
+      if k == 4: # SPLIT
+        let o1 = re.outs[st_id]
+        let o2 = re.out1s[st_id]
+        if o1 >= 0:
+          if state_origins[o1] < 0:
+            state_origins[o1] = s_orig
+            active_states.push(o1)
+            worklist.push(o1)
+          else:
+            if s_orig < state_origins[o1]:
+              state_origins[o1] = s_orig
+              worklist.push(o1)
+        if o2 >= 0:
+          if state_origins[o2] < 0:
+            state_origins[o2] = s_orig
+            active_states.push(o2)
+            worklist.push(o2)
+      else:
+        if k == 5: # ANCHOR_START
+          if pos == 0:
+            let o = re.outs[st_id]
+            if o >= 0:
+              if state_origins[o] < 0:
+                state_origins[o] = s_orig
+                active_states.push(o)
+                worklist.push(o)
+              else:
+                if s_orig < state_origins[o]:
+                  state_origins[o] = s_orig
+                  worklist.push(o)
+        else:
+          if k == 6: # ANCHOR_END
+            if pos == text_len:
+              let o = re.outs[st_id]
+              if o >= 0:
+                if state_origins[o] < 0:
+                  state_origins[o] = s_orig
+                  active_states.push(o)
+                  worklist.push(o)
+                else:
+                  if s_orig < state_origins[o]:
+                    state_origins[o] = s_orig
+                    worklist.push(o)
+
+    # 3. Check if match_state reached
+    let m_orig = state_origins[re.match_state]
+    if m_orig >= 0:
+      if best_match_origin < 0:
+        best_match_origin = m_orig
+        best_match_end = pos
+      else:
+        if m_orig < best_match_origin:
+          best_match_origin = m_orig
+          best_match_end = pos
+        else:
+          if m_orig == best_match_origin:
+            best_match_end = pos
+      state_origins[re.match_state] = 0 - 1
+
+    # 4. If we reached end of text, break
+    if pos == text_len:
+      pos = pos + 1
+    else:
+      # 5. Character transition on chars_vec[pos]
+      var next_active_states = Vector[Int]()
+      var next_state_origins = make_origins_vec(re.num_states)
+
+      var si = 0
+      while si < (active_states |> count):
+        let st_id = active_states[si]
+        let s_orig = state_origins[st_id]
+
+        var should_advance = false
+        if s_orig >= 0 and st_id != re.match_state:
+          if best_match_origin < 0 or s_orig <= best_match_origin:
+            should_advance = true
+
+        if should_advance:
+          let k = re.kinds[st_id]
+          var matched = false
+          if k == 1:
+            if char_matches(re.chars[st_id], chars_vec[pos]):
+              matched = true
+          else:
+            if k == 2:
+              if not (chars_vec[pos] == "\n"):
+                matched = true
+            else:
+              if k == 3:
+                let in_cls = char_in_class(re.classes[st_id], chars_vec[pos])
+                if re.negs[st_id]:
+                  matched = not in_cls
+                else:
+                  matched = in_cls
+
+          if matched:
+            let out_id = re.outs[st_id]
+            if out_id >= 0:
+              if next_state_origins[out_id] < 0:
+                next_state_origins[out_id] = s_orig
+                next_active_states.push(out_id)
+              else:
+                if s_orig < next_state_origins[out_id]:
+                  next_state_origins[out_id] = s_orig
+
+        si = si + 1
+
+      if best_match_origin >= 0 and (next_active_states |> count) == 0:
+        return MatchResult.Matched(start: best_match_origin, end: best_match_end)
+
+      active_states = next_active_states
+      state_origins = next_state_origins
+      pos = pos + 1
+
+  if best_match_origin >= 0:
+    return MatchResult.Matched(start: best_match_origin, end: best_match_end)
+  return MatchResult.NoMatch
+
 # =========================================================================
 # 4. Public High-Level Matching API
 # =========================================================================
 
-export fn regex_is_match(re: Regex, text: String) -> Bool:
+export fn regex_search(re: Regex, text: String) -> MatchResult:
   let chars_vec = text.chars()
-  let n = chars_vec |> count
-  var pos = 0
-  while pos <= n:
-    let end_idx = run_nfa_from(re, chars_vec, pos)
-    if end_idx >= 0:
-      return true
-    pos = pos + 1
-  return false
+  return run_nfa_search_from(re, chars_vec, 0)
 
 export fn is_match(pattern: String, text: String) -> Bool:
   let re = compile(pattern)
   return regex_is_match(re, text)
+
+export fn regex_is_match(re: Regex, text: String) -> Bool:
+  let res = regex_search(re, text)
+  match res:
+    case NoMatch:
+      return false
+    case Matched(start, end):
+      return true
 
 export fn regex_full_match(re: Regex, text: String) -> MatchResult:
   let chars_vec = text.chars()
@@ -694,17 +900,6 @@ export fn full_match(pattern: String, text: String) -> MatchResult:
   let re = compile(pattern)
   return regex_full_match(re, text)
 
-export fn regex_search(re: Regex, text: String) -> MatchResult:
-  let chars_vec = text.chars()
-  let n = chars_vec |> count
-  var pos = 0
-  while pos <= n:
-    let end_idx = run_nfa_from(re, chars_vec, pos)
-    if end_idx >= 0:
-      return MatchResult.Matched(start: pos, end: end_idx)
-    pos = pos + 1
-  return MatchResult.NoMatch
-
 export fn search(pattern: String, text: String) -> MatchResult:
   let re = compile(pattern)
   return regex_search(re, text)
@@ -715,17 +910,18 @@ export fn regex_find_all(re: Regex, text: String) -> Vector[MatchSpan]:
   let n = chars_vec |> count
   var pos = 0
   while pos <= n:
-    let end_idx = run_nfa_from(re, chars_vec, pos)
-    if end_idx >= 0 and end_idx >= pos:
-      let len_match = end_idx - pos
-      let sub = text.slice(pos, len_match)
-      result.push(MatchSpan(start: pos, end: end_idx, text: sub))
-      if end_idx > pos:
-        pos = end_idx
-      else:
-        pos = pos + 1
-    else:
-      pos = pos + 1
+    let match_res = run_nfa_search_from(re, chars_vec, pos)
+    match match_res:
+      case NoMatch:
+        return result
+      case Matched(start, end):
+        let len_match = end - start
+        let sub = text.slice(start, len_match)
+        result.push(MatchSpan(start: start, end: end, text: sub))
+        if end > start:
+          pos = end
+        else:
+          pos = start + 1
   return result
 
 export fn find_all(pattern: String, text: String) -> Vector[MatchSpan]:

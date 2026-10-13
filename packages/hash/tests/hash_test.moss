@@ -68,3 +68,34 @@ test "hash error validation":
 
     caught = true
   assert(caught)
+
+test "sha256 digest idempotency":
+  var acc = hash.new_sha256()
+  hash.sha256_update(acc, hash.string_to_bytes("hello world"))
+  let d1 = hash.sha256_hexdigest(acc)
+  let d2 = hash.sha256_hexdigest(acc)
+  assertEqual(d1, "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9")
+  assertEqual(d1, d2)
+
+test "sha256 finalization and update after finalization":
+  var acc = hash.new_sha256()
+  hash.sha256_update(acc, hash.string_to_bytes("finalized test"))
+  hash.sha256_finalize(acc)
+  let d1 = hash.sha256_hexdigest(acc)
+  let d2 = hash.sha256_hexdigest(acc)
+  assertEqual(d1, d2)
+
+  var caught_finalized = false
+  try:
+    hash.sha256_update(acc, hash.string_to_bytes("more"))
+  recover hash.HashError.CorruptedState:
+    caught_finalized = true
+  assert(caught_finalized)
+
+test "string_to_bytes invalid character fails":
+  var caught_invalid = false
+  try:
+    var dummy = hash.string_to_bytes("hello€world")
+  recover hash.HashError.InvalidByte:
+    caught_invalid = true
+  assert(caught_invalid)

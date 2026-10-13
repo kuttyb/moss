@@ -45,6 +45,8 @@ export fn decompress_lz4_block(src: Vector[Int], max_uncompressed_size: Int) -> 
         let s = src[ip]
         ip = ip + 1
         lit_len = lit_len + s
+        if ((dst |> count) + lit_len) > max_uncompressed_size:
+          raise CompressError.DecompressedSizeExceeded
         if s < 255:
           reading_ext = false
 
@@ -85,6 +87,8 @@ export fn decompress_lz4_block(src: Vector[Int], max_uncompressed_size: Int) -> 
         let s2 = src[ip]
         ip = ip + 1
         match_len = match_len + s2
+        if ((dst |> count) + match_len) > max_uncompressed_size:
+          raise CompressError.DecompressedSizeExceeded
         if s2 < 255:
           reading_match_ext = false
 
@@ -146,8 +150,12 @@ export fn compress_lz4_block(src: Vector[Int]) -> Vector[Int]:
     let b1 = src[ip + 1]
     let b2 = src[ip + 2]
     let b3 = src[ip + 3]
-    let val = (b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)) & 4294967295
-    let h = ((val * 2654435761) >> 19) & (table_size - 1)
+    let v_lo = b0 | (b1 << 8)
+    let v_hi = b2 | (b3 << 8)
+    let lo_prod = v_lo * 33841
+    let mid_prod = (v_lo * 40503 + v_hi * 33841) & 65535
+    let prod32 = (lo_prod + (mid_prod << 16)) & 4294967295
+    let h = (prod32 >> 19) & (table_size - 1)
     let match_ref = table[h]
     table[h] = ip
 

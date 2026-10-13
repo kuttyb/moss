@@ -5,7 +5,7 @@ import bytes
 export enum HashError:
   InvalidByte(index: Int, value: Int)
   EmptyInput
-  CorruptedState(message: String)
+  CorruptedState(code: Int)
 
 # Stateful Accumulators
 export type Adler32:
@@ -29,6 +29,7 @@ export type Sha256:
   h7: Int
   total_len: Int
   buffer: Vector[Int]
+  is_finalized: Bool
 
 # Constants
 fn MASK32() -> Int:
@@ -169,21 +170,23 @@ export fn string_to_bytes(s: String) -> Vector[Int]:
   var result = Vector[Int]()
   let chars_list = s.chars()
   let n = chars_list |> count
-  let printable = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+  let lookup_table = "\n\r\t !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
   var i = 0
   while i < n:
+    let pos = lookup_table.find(chars_list[i])
+    if pos < 0:
+      raise HashError.InvalidByte(index: i, value: 0 - 1)
     var b = 0
-    let pos = printable.find(chars_list[i])
-    if pos >= 0:
-      b = pos + 32
+    if pos == 0:
+      b = 10
     else:
-      let ch = chars_list[i]
-      if ch == "\n":
-        b = 10
-      if ch == "\r":
+      if pos == 1:
         b = 13
-      if ch == "\t":
-        b = 9
+      else:
+        if pos == 2:
+          b = 9
+        else:
+          b = pos + 29
     result.push(b)
     i = i + 1
 
@@ -286,7 +289,7 @@ fn sha256_k_constants() -> Vector[Int]:
   return k
 
 export fn new_sha256() -> Sha256:
-  return Sha256(h0: 1779033703, h1: 3144134277, h2: 1013904242, h3: 2773480762, h4: 1359893119, h5: 2600822924, h6: 528734635, h7: 1541459225, total_len: 0, buffer: Vector[Int]())
+  return Sha256(h0: 1779033703, h1: 3144134277, h2: 1013904242, h3: 2773480762, h4: 1359893119, h5: 2600822924, h6: 528734635, h7: 1541459225, total_len: 0, buffer: Vector[Int](), is_finalized: false)
 
 
 fn sha256_process_block(acc: Sha256, block: Vector[Int]):
@@ -340,6 +343,8 @@ fn sha256_process_block(acc: Sha256, block: Vector[Int]):
   acc.h7 = (acc.h7 + h) & 4294967295
 
 export fn sha256_update(acc: Sha256, chunk: Vector[Int]):
+  if acc.is_finalized:
+    raise HashError.CorruptedState(code: 1)
   validate_bytes(chunk)
   n = chunk |> count
   acc.total_len = acc.total_len + n
@@ -352,21 +357,18 @@ export fn sha256_update(acc: Sha256, chunk: Vector[Int]):
       sha256_process_block(acc, blk)
     i = i + 1
 
-
-
-export fn sha256_digest(acc: Sha256) -> Vector[Int]:
-  # Finalize padding into temporary buffer
+export fn sha256_finalize(acc: Sha256):
+  if acc.is_finalized:
+    return
   var final_buf = Vector[Int]()
   buf_len = acc.buffer |> count
   var i = 0
   while i < buf_len:
     final_buf.push(acc.buffer[i])
     i = i + 1
-  # append 0x80
   final_buf.push(128)
   while ((final_buf |> count) % 64) != 56:
     final_buf.push(0)
-  # append 64-bit length in bits (big-endian)
   total_bits = acc.total_len * 8
   final_buf.push(((total_bits >> 56) & 255))
   final_buf.push(((total_bits >> 48) & 255))
@@ -388,16 +390,40 @@ export fn sha256_digest(acc: Sha256) -> Vector[Int]:
     sha256_process_block(acc, blk)
     b_idx = b_idx + 64
 
+  acc.buffer = Vector[Int]()
+  acc.is_finalized = true
+
+export fn sha256_digest(acc: Sha256) -> Vector[Int]:
+  var target_h0 = acc.h0
+  var target_h1 = acc.h1
+  var target_h2 = acc.h2
+  var target_h3 = acc.h3
+  var target_h4 = acc.h4
+  var target_h5 = acc.h5
+  var target_h6 = acc.h6
+  var target_h7 = acc.h7
+  if not acc.is_finalized:
+    var target_acc = Sha256(h0: acc.h0, h1: acc.h1, h2: acc.h2, h3: acc.h3, h4: acc.h4, h5: acc.h5, h6: acc.h6, h7: acc.h7, total_len: acc.total_len, buffer: clone_int_vec(acc.buffer), is_finalized: false)
+    sha256_finalize(target_acc)
+    target_h0 = target_acc.h0
+    target_h1 = target_acc.h1
+    target_h2 = target_acc.h2
+    target_h3 = target_acc.h3
+    target_h4 = target_acc.h4
+    target_h5 = target_acc.h5
+    target_h6 = target_acc.h6
+    target_h7 = target_acc.h7
+
   var digest = Vector[Int]()
   var h_vals = Vector[Int]()
-  h_vals.push(acc.h0)
-  h_vals.push(acc.h1)
-  h_vals.push(acc.h2)
-  h_vals.push(acc.h3)
-  h_vals.push(acc.h4)
-  h_vals.push(acc.h5)
-  h_vals.push(acc.h6)
-  h_vals.push(acc.h7)
+  h_vals.push(target_h0)
+  h_vals.push(target_h1)
+  h_vals.push(target_h2)
+  h_vals.push(target_h3)
+  h_vals.push(target_h4)
+  h_vals.push(target_h5)
+  h_vals.push(target_h6)
+  h_vals.push(target_h7)
   var w_idx = 0
   while w_idx < 8:
     word = h_vals[w_idx]

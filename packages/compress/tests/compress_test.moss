@@ -125,3 +125,12 @@ test "deflate stored blocks roundtrip and errors":
   recover compress.CompressError.CorruptedStream:
     caught_corrupt = true
   assert(caught_corrupt)
+
+test "lz4 high-byte pattern repeated 255 values":
+  # Tests 4-byte hash with 0xFFFFFFFF preventing signed Int64 overflow
+  var rep255 = make_repeated_bytes(255, 150)
+  var comp_rep255 = compress.compress_lz4_block(rep255)
+  var decomp_rep255 = compress.decompress_lz4_block(comp_rep255, 300)
+  assertEqual(decomp_rep255 |> count, 150)
+  assertEqual(decomp_rep255[0], 255)
+  assertEqual(decomp_rep255[149], 255)
