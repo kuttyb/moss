@@ -1,8 +1,8 @@
 # moss.tables
 
-`moss.tables` is the Phase 24 typed columnar table core. It intentionally has no
-package dependencies; CSV adapters and relational operations are separate later
-workstreams.
+`moss.tables` is the Phase 24 typed columnar table and relational-operations
+package. It intentionally has no package dependencies. CSV adapters remain a
+separate later workstream.
 
 ## Data contract
 
@@ -45,16 +45,77 @@ removes a row when any column is missing; therefore all rows of a zero-column
 table are retained. Filling a missing value sets its validity bit to true and
 leaves the column's nullable schema flag unchanged.
 
+## Filtering and ordering
+
+Typed filters are `filter_int_equal`, `filter_int_range`,
+`filter_float_equal`, `filter_float_range`, `filter_bool_equal`, and
+`filter_string_equal`. Ranges are inclusive. Missing values never match a typed
+predicate; use `filter_missing` or `filter_present` explicitly. Every filter is
+stable and returns an owned table.
+
+`sort_by` is a stable bottom-up mergesort for Int, Float, and Bool columns.
+Missing values are always last in both directions. Float NaNs follow all
+non-NaN values and precede missing values in both directions. Equal values,
+including signed zero and NaNs, retain input order. Native String ordering is
+not defined by Moss v0.1, so String `sort_by` raises
+`TableError.UnsupportedOrdering`. `sort_string_by_order` provides explicit
+categorical ordering; duplicate categories and present values absent from the
+category list are typed errors.
+
+`distinct_int` and `distinct_string` retain the first row for every key. All
+missing keys form one distinct value at their first occurrence.
+
+## Grouping and aggregation
+
+`group_by_int` and `group_by_string` return a validated `GroupIndex` whose
+groups occur in first-seen order and whose linked rows remain in source order.
+All missing keys form one group. `group_count_rows` counts every linked row;
+`group_count_present` counts present values in any named column.
+
+Typed numeric aggregate functions provide Int and Float sum, mean, minimum, and
+maximum. Missing inputs are ignored. An all-missing group has a canonical zero
+payload and a false validity bit. Int sum raises `TableError.IntegerOverflow`
+instead of wrapping. Int mean returns `FloatColumnValues`; Float aggregates
+preserve IEEE-754 NaN propagation.
+
+Because `GroupIndex` is a public record, `validate_group_index` checks storage
+lengths, key uniqueness, the single missing-key group, exact row ownership,
+link bounds, cycles, and source-row coverage before public consumers traverse
+it. Aggregation also requires the table row count to match the grouped source.
+
+## Joins
+
+`inner_join_int`, `left_join_int`, `inner_join_string`, and
+`left_join_string` retain all left columns and append every right column except
+the right key. Output order is stable left-row then right-row order. Duplicate
+keys produce the full Cartesian set of matches. Missing keys never match,
+including missing-to-missing. A left join emits one row with missing right-side
+values for each unmatched left row and marks appended right columns nullable.
+
+When an appended right name collides with a left name, the supplied
+`right_suffix` is required. The suffixed result must itself be unique; otherwise
+the join raises `DuplicateColumnName`. `max_output_rows` is checked before each
+row pair is appended. Negative limits and exceeded limits are distinct typed
+errors.
+
 ## Complexity
 
 Let `r` be row count, `c` column count, and `n` the number of selected output
 rows. Column construction and typed access are `O(r)`. Validation is `O(c*r +
 c^2)` because public records require complete storage checks and duplicate-name
-validation. Name lookup is `O(c)`. Whole-table cloning and add/remove/replace are
-`O(c*r)`. Column projection is `O(k*c + k*r)` for `k` requested columns. Row
-selection is `O(c*n)`, while mask filtering and missing-row dropping are
-`O(c*r)`. Missing-value fill is `O(c*r)` because the returned table owns all
-column storage.
+validation. Name lookup is `O(c)`. Whole-table cloning and add/remove/replace
+are `O(c*r)`. Column projection is `O(k*c + k*r)` for `k` requested columns.
+Row selection is `O(c*n)`, while mask and typed filtering are `O(c*r)` because
+the returned table owns every selected column. Missing-value fill is `O(c*r)`.
 
-This package does not yet implement sorting, grouping, joins, aggregation, CSV,
-or JSON adapters.
+Sort is `O(r log r + c*r)` time and `O(r + c*r)` owned output space. Distinct
+is expected `O(r + c*n)` time from typed hash maps. Group construction is
+expected `O(r)` plus public validation; validating a forged `GroupIndex` is
+`O(r + g^2)` because it proves key uniqueness without trusting map state.
+Aggregates are `O(r + g^2 + c*r)` including table/group validation and the
+owned column snapshot. For fixed schemas, joins are expected `O(left + right +
+output)` for matching, followed by `O(c*output)` owned result construction;
+schema validation and collision checks add `O(c^2)`. No API claims borrowed or
+zero-copy output.
+
+CSV and JSON adapters are not implemented by this workstream.

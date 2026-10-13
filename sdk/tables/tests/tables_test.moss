@@ -308,3 +308,205 @@ test "duplicate projections and wrong fill type fail":
     assertEqual(actual_kind, tables.kind_int())
     caught_fill_type = true
   assert(caught_fill_type)
+
+test "typed filters preserve row order and missing semantics":
+  table0 = tables.new_table(6)
+  table1 = tables.add_column(table0, tables.int_column("i", true, [(-9223372036854775807 - 1), 0, 5, 5, 9223372036854775807, 0], [true, false, true, true, true, true]))
+  table2 = tables.add_column(table1, tables.float_column("f", true, [-0.0, 9.0, 2.5, 2.5, 8.0, 0.0], [true, false, true, true, true, true]))
+  table3 = tables.add_column(table2, tables.bool_column("b", true, [true, false, false, true, true, false], [true, false, true, true, true, true]))
+  table = tables.add_column(table3, tables.string_column("s", true, ["a", "", "b", "a", "c", "a"], [true, false, true, true, true, true]))
+
+  assertEqual(tables.table_row_count(tables.filter_int_equal(table, "i", 5)), 2)
+  assertEqual(tables.int_values(tables.filter_int_range(table, "i", -1, 5), "i").values, [5, 5, 0])
+  assertEqual(tables.table_row_count(tables.filter_float_equal(table, "f", 0.0)), 2)
+  assertEqual(tables.table_row_count(tables.filter_float_range(table, "f", -0.0, 2.5)), 4)
+  assertEqual(tables.int_values(tables.filter_bool_equal(table, "b", false), "i").values, [5, 0])
+  assertEqual(tables.int_values(tables.filter_string_equal(table, "s", "a"), "i").values, [(-9223372036854775807 - 1), 5, 0])
+  assertEqual(tables.table_row_count(tables.filter_missing(table, "s")), 1)
+  assertEqual(tables.table_row_count(tables.filter_present(table, "s")), 5)
+
+test "stable sorting handles numbers bool NaN signed zero and missing":
+  nan = 0.0 / 0.0
+  table0 = tables.new_table(7)
+  table1 = tables.add_column(table0, tables.int_column("row", false, [0, 1, 2, 3, 4, 5, 6], [true, true, true, true, true, true, true]))
+  table2 = tables.add_column(table1, tables.float_column("value", true, [nan, -0.0, 0.0, 2.0, 99.0, -1.0, nan], [true, true, true, true, false, true, true]))
+  table = tables.add_column(table2, tables.bool_column("flag", true, [true, false, false, true, true, false, true], [true, true, true, true, false, true, true]))
+
+  ascending = tables.sort_by(table, "value", true)
+  assertEqual(tables.int_values(ascending, "row").values, [5, 1, 2, 3, 0, 6, 4])
+  descending = tables.sort_by(table, "value", false)
+  assertEqual(tables.int_values(descending, "row").values, [3, 1, 2, 5, 0, 6, 4])
+  bool_sorted = tables.sort_by(table, "flag", true)
+  assertEqual(tables.int_values(bool_sorted, "row").values, [1, 2, 5, 0, 3, 6, 4])
+
+  int_table0 = tables.new_table(5)
+  int_table1 = tables.add_column(int_table0, tables.int_column("row", false, [0, 1, 2, 3, 4], [true, true, true, true, true]))
+  int_table = tables.add_column(int_table1, tables.int_column("value", true, [9223372036854775807, (-9223372036854775807 - 1), 0, (-9223372036854775807 - 1), 0], [true, true, true, true, false]))
+  assertEqual(tables.int_values(tables.sort_by(int_table, "value", true), "row").values, [1, 3, 2, 0, 4])
+
+  strings = tables.add_column(tables.new_table(4), tables.string_column("grade", true, ["medium", "low", "high", ""], [true, true, true, false]))
+  var unsupported = false
+  try:
+    ignored = tables.sort_by(strings, "grade", true)
+  recover tables.TableError.UnsupportedOrdering(kind):
+    assertEqual(kind, tables.kind_string())
+    unsupported = true
+  assert(unsupported)
+  categorical = tables.sort_string_by_order(strings, "grade", ["low", "medium", "high"], false)
+  assertEqual(tables.string_values(categorical, "grade").values, ["high", "medium", "low", ""])
+  assert(not tables.string_values(categorical, "grade").validity[3])
+  var duplicate_category = false
+  try:
+    ignored_duplicate = tables.sort_string_by_order(strings, "grade", ["low", "low", "medium", "high"], true)
+  recover tables.TableError.DuplicateCategory:
+    duplicate_category = true
+  assert(duplicate_category)
+  var missing_category = false
+  try:
+    ignored_missing = tables.sort_string_by_order(strings, "grade", ["low", "medium"], true)
+  recover tables.TableError.CategoryNotFound:
+    missing_category = true
+  assert(missing_category)
+
+test "distinct Int and String preserve first occurrence including missing":
+  ints0 = tables.new_table(7)
+  ints1 = tables.add_column(ints0, tables.int_column("key", true, [2, 0, 2, 1, 0, 1, 3], [true, false, true, true, false, true, true]))
+  ints = tables.add_column(ints1, tables.int_column("row", false, [0, 1, 2, 3, 4, 5, 6], [true, true, true, true, true, true, true]))
+  distinct_ints = tables.distinct_int(ints, "key")
+  assertEqual(tables.int_values(distinct_ints, "row").values, [0, 1, 3, 6])
+
+  strings0 = tables.new_table(6)
+  strings1 = tables.add_column(strings0, tables.string_column("key", true, ["b", "", "b", "a", "", "c"], [true, false, true, true, false, true]))
+  strings = tables.add_column(strings1, tables.int_column("row", false, [0, 1, 2, 3, 4, 5], [true, true, true, true, true, true]))
+  distinct_strings = tables.distinct_string(strings, "key")
+  assertEqual(tables.int_values(distinct_strings, "row").values, [0, 1, 3, 5])
+
+test "grouping is first seen linked and aggregates ignore missing":
+  table0 = tables.new_table(6)
+  table1 = tables.add_column(table0, tables.int_column("key", true, [2, 0, 2, 1, 0, 1], [true, false, true, true, false, true]))
+  table2 = tables.add_column(table1, tables.int_column("ival", true, [10, 0, -3, 0, 0, 7], [true, false, true, false, false, true]))
+  table = tables.add_column(table2, tables.float_column("fval", true, [1.5, 0.0, 2.5, 0.0, 0.0, -4.0], [true, false, true, false, false, true]))
+  groups = tables.group_by_int(table, "key")
+  assert(tables.validate_group_index(groups))
+  assertEqual(tables.group_count(groups), 3)
+  assertEqual(tables.group_int_keys(groups).values, [2, 0, 1])
+  assertEqual(tables.group_int_keys(groups).validity, [true, false, true])
+  assertEqual(tables.group_count_rows(groups), [2, 2, 2])
+  assertEqual(tables.group_count_present(table, groups, "ival"), [2, 0, 1])
+  isum = tables.group_sum_int(table, groups, "ival")
+  assertEqual(isum.values, [7, 0, 7])
+  assertEqual(isum.validity, [true, false, true])
+  imean = tables.group_mean_int(table, groups, "ival")
+  assertEqual(imean.values, [3.5, 0.0, 7.0])
+  assertEqual(imean.validity, [true, false, true])
+  assertEqual(tables.group_min_int(table, groups, "ival").values, [-3, 0, 7])
+  assertEqual(tables.group_max_int(table, groups, "ival").values, [10, 0, 7])
+  assertEqual(tables.group_sum_float(table, groups, "fval").values, [4.0, 0.0, -4.0])
+  assertEqual(tables.group_mean_float(table, groups, "fval").validity, [true, false, true])
+  assertEqual(tables.group_min_float(table, groups, "fval").values, [1.5, 0.0, -4.0])
+  assertEqual(tables.group_max_float(table, groups, "fval").values, [2.5, 0.0, -4.0])
+
+  string_table = tables.add_column(tables.new_table(5), tables.string_column("key", true, ["x", "y", "x", "", "y"], [true, true, true, false, true]))
+  string_groups = tables.group_by_string(string_table, "key")
+  assertEqual(tables.group_string_keys(string_groups).values, ["x", "y", ""])
+  assertEqual(tables.group_count_rows(string_groups), [2, 2, 1])
+
+test "group integer sum overflow and malformed index are typed":
+  overflow0 = tables.new_table(2)
+  overflow1 = tables.add_column(overflow0, tables.int_column("key", false, [1, 1], [true, true]))
+  overflow = tables.add_column(overflow1, tables.int_column("value", false, [9223372036854775807, 1], [true, true]))
+  groups = tables.group_by_int(overflow, "key")
+  var caught_overflow = false
+  try:
+    ignored = tables.group_sum_int(overflow, groups, "value")
+  recover tables.TableError.IntegerOverflow:
+    caught_overflow = true
+  assert(caught_overflow)
+
+  bad = tables.GroupIndex(key_kind: tables.kind_int(), key_validity: [true], int_keys: [1], string_keys: Vector[String](), first_rows: [0], last_rows: [0], sizes: [2], next_rows: [-1], source_row_count: 1)
+  assert(not tables.validate_group_index(bad))
+  var caught_bad = false
+  try:
+    ignored_bad = tables.group_count(bad)
+  recover tables.TableError.InvalidGroupIndex:
+    caught_bad = true
+  assert(caught_bad)
+
+test "Int joins are stable many to many and null keys never match":
+  left0 = tables.new_table(5)
+  left1 = tables.add_column(left0, tables.int_column("key", true, [1, 2, 1, 0, 3], [true, true, true, false, true]))
+  left = tables.add_column(left1, tables.int_column("tag", false, [10, 20, 11, 40, 30], [true, true, true, true, true]))
+  right0 = tables.new_table(5)
+  right1 = tables.add_column(right0, tables.int_column("rkey", true, [1, 1, 2, 0, 4], [true, true, true, false, true]))
+  right2 = tables.add_column(right1, tables.int_column("value", false, [100, 101, 200, 999, 400], [true, true, true, true, true]))
+  right = tables.add_column(right2, tables.int_column("tag", false, [7, 8, 9, 10, 11], [true, true, true, true, true]))
+
+  inner = tables.inner_join_int(left, right, "key", "rkey", "_right", 20)
+  assertEqual(tables.table_row_count(inner), 5)
+  assertEqual(tables.int_values(inner, "tag").values, [10, 10, 20, 11, 11])
+  assertEqual(tables.int_values(inner, "value").values, [100, 101, 200, 100, 101])
+  assertEqual(tables.int_values(inner, "tag_right").values, [7, 8, 9, 7, 8])
+
+  outer = tables.left_join_int(left, right, "key", "rkey", "_right", 20)
+  assertEqual(tables.table_row_count(outer), 7)
+  assertEqual(tables.int_values(outer, "tag").values, [10, 10, 20, 11, 11, 40, 30])
+  right_values = tables.int_values(outer, "value")
+  assertEqual(right_values.values, [100, 101, 200, 100, 101, 0, 0])
+  assertEqual(right_values.validity, [true, true, true, true, true, false, false])
+
+test "String joins empty sides limits and suffix collisions are checked":
+  left0 = tables.new_table(3)
+  left1 = tables.add_column(left0, tables.string_column("key", true, ["a", "", "b"], [true, false, true]))
+  left = tables.add_column(left1, tables.int_column("left_value", false, [1, 2, 3], [true, true, true]))
+  right0 = tables.new_table(3)
+  right1 = tables.add_column(right0, tables.string_column("key2", true, ["a", "a", ""], [true, true, false]))
+  right = tables.add_column(right1, tables.int_column("right_value", false, [10, 11, 99], [true, true, true]))
+  inner = tables.inner_join_string(left, right, "key", "key2", "_r", 10)
+  assertEqual(tables.int_values(inner, "left_value").values, [1, 1])
+  assertEqual(tables.int_values(inner, "right_value").values, [10, 11])
+  outer = tables.left_join_string(left, right, "key", "key2", "_r", 10)
+  assertEqual(tables.int_values(outer, "left_value").values, [1, 1, 2, 3])
+  assertEqual(tables.int_values(outer, "right_value").validity, [true, true, false, false])
+
+  empty_right0 = tables.new_table(0)
+  empty_right1 = tables.add_column(empty_right0, tables.string_column("key2", false, Vector[String](), Vector[Bool]()))
+  empty_right = tables.add_column(empty_right1, tables.int_column("right_value", false, Vector[Int](), Vector[Bool]()))
+  empty_inner = tables.inner_join_string(left, empty_right, "key", "key2", "_r", 10)
+  assertEqual(tables.table_row_count(empty_inner), 0)
+  empty_left_join = tables.left_join_string(left, empty_right, "key", "key2", "_r", 10)
+  assertEqual(tables.table_row_count(empty_left_join), 3)
+  assertEqual(tables.int_values(empty_left_join, "right_value").validity, [false, false, false])
+
+  empty_left0 = tables.new_table(0)
+  empty_left1 = tables.add_column(empty_left0, tables.string_column("key", false, Vector[String](), Vector[Bool]()))
+  empty_left = tables.add_column(empty_left1, tables.int_column("left_value", false, Vector[Int](), Vector[Bool]()))
+  assertEqual(tables.table_row_count(tables.left_join_string(empty_left, right, "key", "key2", "_r", 10)), 0)
+
+  var caught_limit = false
+  try:
+    ignored_limit = tables.inner_join_string(left, right, "key", "key2", "_r", 1)
+  recover tables.TableError.OutputLimitExceeded(limit):
+    assertEqual(limit, 1)
+    caught_limit = true
+  assert(caught_limit)
+  var caught_negative_limit = false
+  try:
+    ignored_negative_limit = tables.inner_join_string(left, right, "key", "key2", "_r", -1)
+  recover tables.TableError.InvalidOutputLimit(limit):
+    assertEqual(limit, -1)
+    caught_negative_limit = true
+  assert(caught_negative_limit)
+
+  collision_left0 = tables.new_table(1)
+  collision_left1 = tables.add_column(collision_left0, tables.int_column("key", false, [1], [true]))
+  collision_left2 = tables.add_column(collision_left1, tables.int_column("value", false, [1], [true]))
+  collision_left = tables.add_column(collision_left2, tables.int_column("value_r", false, [2], [true]))
+  collision_right0 = tables.new_table(1)
+  collision_right1 = tables.add_column(collision_right0, tables.int_column("rkey", false, [1], [true]))
+  collision_right = tables.add_column(collision_right1, tables.int_column("value", false, [3], [true]))
+  var caught_collision = false
+  try:
+    ignored_collision = tables.inner_join_int(collision_left, collision_right, "key", "rkey", "_r", 10)
+  recover tables.TableError.DuplicateColumnName:
+    caught_collision = true
+  assert(caught_collision)
