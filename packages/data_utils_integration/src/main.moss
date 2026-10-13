@@ -1,0 +1,53 @@
+module data_utils_integration
+
+import regex
+import compress
+import hash
+
+# ============================================================================
+# Moss Phase 24 — moss.data_utils_integration
+# Cross-package end-to-end pipelines combining regex parsing,
+# LZ4 compression, and cryptographic/checksum hashing.
+# ============================================================================
+
+export type ArchivedRecord:
+  record_id: String
+  raw_size: Int
+  compressed_size: Int
+  sha256_hash: String
+  crc32_checksum: Int
+  compressed_data: Vector[Int]
+
+# Ingestion pipeline: extracts field matching pattern, compresses, and hashes
+export fn archive_text(pattern: String, raw_text: String) -> ArchivedRecord:
+  let matches = regex.find_all(pattern, raw_text)
+  var payload = raw_text
+  if (matches |> count) > 0:
+    payload = matches[0].text
+
+
+  let raw_bytes = hash.string_to_bytes(payload)
+  let raw_len = raw_bytes |> count
+  let c32 = hash.crc32(raw_bytes)
+  let s256 = hash.sha256_hex(raw_bytes)
+
+  let comp = compress.compress_lz4_size_prefixed(raw_bytes)
+  let comp_len = comp |> count
+
+  return ArchivedRecord(record_id: payload, raw_size: raw_len, compressed_size: comp_len, sha256_hash: s256, crc32_checksum: c32, compressed_data: comp)
+
+# Verification pipeline: decompresses and validates both CRC-32 and SHA-256
+export fn verify_and_restore(record: ArchivedRecord) -> Vector[Int]:
+  let decomp = compress.decompress_lz4_size_prefixed(record.compressed_data, record.raw_size + 1000)
+  assert((decomp |> count) == record.raw_size)
+
+  let c32 = hash.crc32(decomp)
+  assert(c32 == record.crc32_checksum)
+
+  let s256 = hash.sha256_hex(decomp)
+  assert(s256 == record.sha256_hash)
+
+  return decomp
+
+fn main():
+  echo "moss.data_utils_integration initialized"

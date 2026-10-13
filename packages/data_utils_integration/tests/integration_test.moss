@@ -1,0 +1,48 @@
+module integration_test
+
+import data_utils_integration
+import regex
+import compress
+import hash
+
+test "cross-package archive and restore pipeline":
+  let log_entry = "2026-10-12 [PAYLOAD] The quick brown fox jumps over the lazy dog 1234567890 [END]"
+  let pattern = "The quick brown fox jumps over the lazy dog 1234567890"
+
+  let record = data_utils_integration.archive_text(pattern, log_entry)
+  assertEqual(record.record_id, "The quick brown fox jumps over the lazy dog 1234567890")
+
+  assert(record.raw_size > 0)
+  assert(record.compressed_size > 0)
+  assert(record.sha256_hash.length() == 64)
+
+
+  # Restore and verify checksum/hash integrity
+  let restored = data_utils_integration.verify_and_restore(record)
+  assertEqual(restored |> count, record.raw_size)
+
+test "cross-package compression and hashing of repeated pattern":
+  # Generate repeated pattern, compress, hash, and roundtrip
+  var raw_bytes = Vector[Int]()
+  var i = 0
+  while i < 200:
+    raw_bytes.push(65) # 'A'
+    i = i + 1
+
+  let c32 = hash.crc32(raw_bytes)
+  let a32 = hash.adler32(raw_bytes)
+  let s256 = hash.sha256_hex(raw_bytes)
+
+  let comp = compress.compress_lz4_block(raw_bytes)
+  assert((comp |> count) < (raw_bytes |> count))
+
+  let decomp = compress.decompress_lz4_block(comp, 500)
+  assertEqual(decomp |> count, 200)
+
+  let restored_c32 = hash.crc32(decomp)
+  let restored_a32 = hash.adler32(decomp)
+  let restored_s256 = hash.sha256_hex(decomp)
+
+  assertEqual(c32, restored_c32)
+  assertEqual(a32, restored_a32)
+  assertEqual(s256, restored_s256)
