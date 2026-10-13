@@ -320,9 +320,40 @@ Lexicographic ordering is intentionally not a v0.1 operator surface:
 `String < String`, `<=`, `>`, and `>=` are rejected by the frontend.
 
 Binary operators outside the closed set are rejected by the frontend rather than
-passed through to generated Rust. v0.1 has no bitwise `&`, `|`, or `^`, no shifts
-`<<` or `>>`, and no symbolic `&&` or `||`; Boolean logic uses the word operators
-below.
+passed through to generated Rust. Symbolic Boolean `&&` and `||` do not exist;
+Boolean logic uses the word operators below.
+
+### Bitwise and shift operators
+
+Moss provides bitwise operations and shifts on signed 64-bit integers (`Int`):
+
+- Bitwise AND: `a & b`
+- Bitwise OR: `a | b`
+- Bitwise XOR: `a ^ b`
+- Bitwise NOT: `~a`
+- Shift left: `a << b`
+- Shift right: `a >> b` (arithmetic shift, preserving sign)
+
+All operands must statically be `Int`. Non-`Int` operands are rejected with `TYPE_MISMATCH`.
+Bitwise operations operate on two's-complement 64-bit integer bit representations.
+Shift operations are total and well-defined across all shift amounts:
+- Left shift `a << b`: if `b < 0 || b >= 64`, returns `0`.
+- Right shift `a >> b`: arithmetic shift; if `b < 0 || b >= 64`, returns `-1` if `a < 0` else `0`.
+
+Precedence from highest to lowest among operators:
+
+1. Prefix unary `~`, `-`
+2. Multiplicative `*`, `/`, `%`
+3. Additive `+`, `-`
+4. Shifts `<<`, `>>`
+5. Bitwise AND `&`
+6. Bitwise XOR `^`
+7. Bitwise OR `|`
+8. Comparisons `==`, `!=`, `<`, `<=`, `>`, `>=`
+9. Prefix unary `not`
+10. Boolean `and`
+11. Boolean `xor`
+12. Boolean `or`
 
 ### Boolean operators
 

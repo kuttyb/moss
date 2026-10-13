@@ -164,8 +164,9 @@ separator. Invalid inputs fail under current runtime precondition behavior.
 `join` accepts `Vector[String]` and returns an empty String for an empty vector.
 String numeric parsing and recoverable invalid-input behavior are described above.
 
-There are no bitwise or shift operators (`&`, `|`, `^`, `<<`, `>>`) in v0.1, and
-Boolean logic uses words rather than `&&` and `||` (Section 2).
+Integer bitwise and shift operators (`&`, `|`, `^`, `~`, `<<`, `>>`) operate strictly
+on 64-bit signed `Int` values with total two's-complement semantics. Boolean logic
+uses word operators (`not`, `and`, `or`, `xor`) rather than symbolic `&&` or `||` (Section 2).
 
 ---
 

@@ -53,6 +53,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_standard_error_nam
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_borrowed_view_write.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_generic_specialization.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_imported_generic_expressions.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_bitwise_operations.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 sdk/foundations/acceptance/run_all.py
 PYTHONDONTWRITEBYTECODE=1 python3 sdk/text-encoding-acceptance/run_all.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_adversarial_architect.py "$compiler"
@@ -354,14 +355,18 @@ run_case swarm_023_pipeline_context_identity tests/swarm_023_pipeline_context_id
 run_case swarm_023_pipeline_test_context tests/swarm_023_pipeline_test_context.moss 'test context'
 run_case swarm_025_fast_debug_sibling_method tests/swarm_025_fast_debug_sibling_method.moss '25'
 reject_case swarm_026_in_expression "binary 'in' expression is not supported"
-reject_case swarm_036_bitwise_and "binary '&' expression is not supported"
-reject_case swarm_036_bitwise_or "binary '|' expression is not supported"
-reject_case swarm_036_bitwise_xor "binary '^' expression is not supported"
+run_case swarm_036_bitwise_and tests/swarm_036_bitwise_and.moss '2'
+run_case swarm_036_bitwise_or tests/swarm_036_bitwise_or.moss '7'
+run_case swarm_036_bitwise_xor tests/swarm_036_bitwise_xor.moss '5'
+run_case swarm_036_parenthesized_rhs tests/swarm_036_parenthesized_rhs.moss '2'
+run_case swarm_036_shift_left tests/swarm_036_shift_left.moss '6'
+run_case swarm_036_shift_right tests/swarm_036_shift_right.moss '3'
 reject_case swarm_036_symbolic_and "binary '&&' expression is not supported"
 reject_case swarm_036_symbolic_or "binary '||' expression is not supported"
-reject_case swarm_036_shift_left "binary '<<' expression is not supported"
-reject_case swarm_036_shift_right "binary '>>' expression is not supported"
-reject_case swarm_036_parenthesized_rhs "binary '&' expression is not supported"
+reject_case swarm_036_bitwise_and_type "bitwise operator '&' requires Int operands"
+reject_case swarm_036_bitwise_or_type "bitwise operator '|' requires Int operands"
+reject_case swarm_036_shift_type "shift operator '<<' requires Int operands"
+reject_case swarm_036_bitwise_not_type "bitwise operator '~' requires an Int operand"
 run_case swarm_036_word_boolean_operators tests/swarm_036_word_boolean_operators.moss '1'
 run_case swarm_037_boolean_operators tests/swarm_037_boolean_operators.moss "$(printf 'true\nfalse\ntrue\ntrue\nfalse\ntrue\ntrue\ntrue\nfalse\nfalse\ntrue')"
 reject_case swarm_049_string_lt "String ordering operators"
