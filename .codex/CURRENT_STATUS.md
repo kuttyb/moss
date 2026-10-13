@@ -1,5 +1,21 @@
 # Moss current status
 
+## Phase 24 Team H Host Services — implementation candidate
+
+The `phase24-host` branch is based on `2845390534272e330a0ecc7c9e970d1815eb0588`
+and now contains the Team H architecture freeze plus the path/fs and I/O
+feasibility handoffs. `moss.path` and the bounded regular-file subset of
+`moss.fs` are implemented. The `moss.io` workstream preserves native probes
+and a permanent report instead of publishing an unsupported cross-package
+FileIO API. `moss.env`, `moss.process`, filesystem metadata/mutation, and
+general byte writes remain explicitly deferred pending host-runtime primitives.
+
+Integrated package, source-free, negative, feedback, full repository, and
+example validation passed on the current candidate. The independent Team H
+Architect must issue the final exact-SHA verdict before the feature branch is
+published for Team I; no merge to `phase24-integration` or `main` is allowed
+from this worktree.
+
 ## Phase 24 Team H I/O-services feasibility — 2026-10-12
 
 The `phase24-host-io` worktree is based exactly on Team H host base
