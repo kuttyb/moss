@@ -42,6 +42,15 @@ limitations. Team R's `96b9413` remains a feasibility checkpoint, and no
 accepted Team A or corrective Team D delivery is available yet. No merge into
 `main` occurred.
 
+The probe was run against the integrated tree and reproduced P24-D-003: parsing
+`[[1],2]` produced `[[1],1]`, while `{"a":{"x":1},"b":2}` lost the `b`
+lookup and ended with an interpreter vector-bounds error. Team D owns the
+correction and must provide semantic regressions plus an exact-SHA Architect GO.
+Team H acceptance passed path differential/source-free checks, fs native
+debug/release/Fast Debug/negative/source-free/adversarial checks, and the host
+I/O feasibility boundary probes. The combined R0 type-resolution and bitwise
+regressions pass after rebuilding `./moss`.
+
 ## Phase 24 Team H Host Services — implementation candidate
 
 The `phase24-host` branch is based on `2845390534272e330a0ecc7c9e970d1815eb0588`

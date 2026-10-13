@@ -157,6 +157,37 @@ confirms them after merge.
 - Reproducer: invoking any function with a declared/inferred `raise` effect (such as `json.parse` or `csv.read_all`) inside a `bench "..."` block causes the compiler to throw `internal error: checked raising function call lacks a Phase 21 outcome context` in `src/moss.cpp:17050` (`benchmark_body_` path lacks `phase21_result_context_`).
 - Impact: Microbenchmarks for raising functions are measured via executable standalone release timing harnesses (`measure_benchmarks.py`) rather than in-tree `margo bench`. Per AGENTS.md rule, compiler internals (`src/moss.cpp`) were not modified.
 
+### P24-D-003 — JSON nested-container child ranges interleave incorrectly
+
+- Owner: Team D
+- Severity: high (correctness)
+- Status: confirmed open; `moss.json` RED for final acceptance
+- Reproducer: on the combined tree, parse `[[1],2]` and
+  `{"a":{"x":1},"b":2}` and inspect child IDs, object keys, lookups, and
+  compact serialization. The first outer array element reports child `1` for
+  both descendants and serializes as `[[1],1]`; the nested object lookup loses
+  `b` and the interpreter reports `vector index out of bounds`.
+- Evidence: `tmp/json-nested-probe/src/main.moss`, `../../margo debug`, output
+  `2, 1, 1, 1, [[1],1], 2, a, x, 1` followed by the bounds error.
+- Impact: parsing can succeed while semantic child traversal, lookup, and
+  round-trip serialization return incorrect values or fail. Existing validity
+  and differential tests do not cover interleaved descendant ranges.
+- Required disposition: Team D must repair the child-range invariant, add
+  semantic nested-container tests, and submit a new exact-SHA independent
+  Architect review. Team I will not patch the JSON implementation locally.
+
+### P24-H-001 — Host runtime packages remain primitive-gated
+
+- Owner: Team H / runtime maintainers
+- Severity: accepted documented limitation
+- Status: pending runtime capability work
+- Scope: Team H intentionally delivers lexical `moss.path` and bounded regular
+  file `moss.fs`; `moss.io`, `moss.env`, `moss.process`, metadata/mutation, and
+  general byte writes remain deferred.
+- Evidence: `python3 sdk/host/io/check_feasibility.py` passes the supported
+  path-only provider and reproduces the expected cross-package FileIO capability
+  boundary blocker.
+
 ## Resolved during integration
 
 ### P24-I-003 — Team D acceptance runners used a stale absolute checkout path
