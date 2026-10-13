@@ -1,0 +1,9 @@
+module app
+import path
+
+fn main():
+  value = path.normalize("/var/./log/../tmp/moss.txt")
+  echo value
+  echo path.dirname(value)
+  echo path.basename(value)
+  echo path.extension(value)

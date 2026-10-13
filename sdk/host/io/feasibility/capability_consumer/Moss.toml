@@ -1,0 +1,9 @@
+[package]
+name = "hostio-capability-consumer"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+"moss.hostio-capability-reproducer" = { path = "../capability_provider" }

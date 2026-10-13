@@ -1,0 +1,16 @@
+module hostio
+
+export enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+export fn read_first(path: String) -> Int:
+  file = FileIO.open(path, ro)
+  data = file.read(0, 1)
+  result = data[0]
+  file.close()
+  return result

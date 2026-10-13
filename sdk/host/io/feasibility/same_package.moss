@@ -1,0 +1,61 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+enum IoError:
+  InvalidOffset(value: Int)
+  LimitExceeded(max_bytes: Int)
+
+fn checksum_range(data: Range) -> Int:
+  var checksum = 0
+  for byte in data:
+    checksum = (checksum + byte) % 2147483647
+  return checksum
+
+fn read_chunk_4096(file: FileIO, offset: Int) -> Vector[Int]:
+  data = file.read(offset, 4096)
+  var result = Vector[Int]()
+  for byte in data:
+    result.push(byte)
+  return result
+
+fn collect_to_eof_65536(file: FileIO, offset: Int) -> Vector[Int]:
+  var result = Vector[Int]()
+  var chunk = 0
+  while chunk < 16:
+    data = file.read(offset + chunk * 4096, 4096)
+    length = data.length()
+    for byte in data:
+      result.push(byte)
+    if length < 4096:
+      return result
+    chunk = chunk + 1
+  extra = file.read(offset + 65536, 1)
+  if extra.length() > 0:
+    raise IoError.LimitExceeded(max_bytes: 65536)
+  return result
+
+fn copy_chunk_4096(source: FileIO, destination: FileIO) -> Int:
+  data = source.read(0, 4096)
+  destination.write(3, data)
+  return data.length()
+
+fn main():
+  try:
+    source = FileIO.open("tmp/phase24-host-io-supported.bin", ro)
+    bytes = read_chunk_4096(source, 0)
+    echo bytes |> count
+    range = source.read(0, 4096)
+    echo checksum_range(range)
+    all = collect_to_eof_65536(source, 0)
+    echo all |> count
+    destination = FileIO.open("tmp/phase24-host-io-copy.bin", create)
+    echo copy_chunk_4096(source, destination)
+    destination.close()
+    source.close()
+  recover:
+    echo "unexpected"

@@ -1,0 +1,5 @@
+module hostcap
+
+export fn read_first(file: FileIO) -> Int:
+  data = file.read(0, 1)
+  return data[0]
