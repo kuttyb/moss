@@ -1,0 +1,10 @@
+[package]
+name = "ndarray-tensor-transforms"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+ndarray = { path = "../.." }
+linalg = { path = "../../../../packages/linalg" }

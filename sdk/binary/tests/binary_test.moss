@@ -1,0 +1,366 @@
+module binary_test
+import binary
+
+fn same_ints(left: Vector[Int], right: Vector[Int]) -> Bool:
+  if (left |> count) != (right |> count):
+    return false
+  n = left |> count
+  var i = 0
+  while i < n:
+    if left[i] != right[i]:
+      return false
+    i = i + 1
+  return true
+
+test "owned byte storage and basic cursor operations":
+  var source = [10, 20, 30]
+  var reader = binary.new_reader(source)
+  source[0] = 99
+  assertEqual(binary.reader_cursor(reader), 0)
+  assertEqual(binary.reader_remaining(reader), 3)
+  assertEqual(binary.read_byte(reader), 10)
+  assert(same_ints(binary.read_bytes(reader, 2), [20, 30]))
+  assertEqual(binary.reader_remaining(reader), 0)
+  binary.require_finished(reader)
+
+  var input_copy = binary.reader_input(reader)
+  input_copy[0] = 77
+  assertEqual(binary.reader_input(reader)[0], 10)
+
+  var writer = binary.new_writer()
+  binary.write_byte(writer, 1)
+  binary.write_bytes(writer, [2, 3])
+  assertEqual(binary.writer_length(writer), 3)
+  var output = binary.writer_output(writer)
+  assert(same_ints(output, [1, 2, 3]))
+  output[0] = 88
+  assertEqual(binary.writer_output(writer)[0], 1)
+
+test "unsigned fixed-width endian encodings":
+  var writer = binary.new_writer()
+  binary.write_u16_be(writer, 4660)
+  binary.write_u16_le(writer, 4660)
+  binary.write_u32_be(writer, 305419896)
+  binary.write_u32_le(writer, 305419896)
+  binary.write_u64_be(writer, 9223372036854775807)
+  binary.write_u64_le(writer, 9223372036854775807)
+  expected = [18, 52, 52, 18, 18, 52, 86, 120, 120, 86, 52, 18, 127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127]
+  assert(same_ints(binary.writer_output(writer), expected))
+
+  var reader = binary.new_reader(expected)
+  assertEqual(binary.read_u16_be(reader), 4660)
+  assertEqual(binary.read_u16_le(reader), 4660)
+  assertEqual(binary.read_u32_be(reader), 305419896)
+  assertEqual(binary.read_u32_le(reader), 305419896)
+  assertEqual(binary.read_u64_be(reader), 9223372036854775807)
+  assertEqual(binary.read_u64_le(reader), 9223372036854775807)
+  binary.require_finished(reader)
+
+test "signed fixed-width extremes in both byte orders":
+  var writer = binary.new_writer()
+  binary.write_i16_be(writer, -32768)
+  binary.write_i16_le(writer, -32768)
+  binary.write_i16_be(writer, 32767)
+  binary.write_i16_le(writer, 32767)
+  binary.write_i32_be(writer, -2147483648)
+  binary.write_i32_le(writer, -2147483648)
+  binary.write_i32_be(writer, 2147483647)
+  binary.write_i32_le(writer, 2147483647)
+  binary.write_i64_be(writer, (-9223372036854775807 - 1))
+  binary.write_i64_le(writer, (-9223372036854775807 - 1))
+  binary.write_i64_be(writer, 9223372036854775807)
+  binary.write_i64_le(writer, 9223372036854775807)
+  binary.write_i64_be(writer, -1)
+  binary.write_i64_le(writer, -1)
+
+  var reader = binary.new_reader(binary.writer_output(writer))
+  assertEqual(binary.read_i16_be(reader), -32768)
+  assertEqual(binary.read_i16_le(reader), -32768)
+  assertEqual(binary.read_i16_be(reader), 32767)
+  assertEqual(binary.read_i16_le(reader), 32767)
+  assertEqual(binary.read_i32_be(reader), -2147483648)
+  assertEqual(binary.read_i32_le(reader), -2147483648)
+  assertEqual(binary.read_i32_be(reader), 2147483647)
+  assertEqual(binary.read_i32_le(reader), 2147483647)
+  assertEqual(binary.read_i64_be(reader), (-9223372036854775807 - 1))
+  assertEqual(binary.read_i64_le(reader), (-9223372036854775807 - 1))
+  assertEqual(binary.read_i64_be(reader), 9223372036854775807)
+  assertEqual(binary.read_i64_le(reader), 9223372036854775807)
+  assertEqual(binary.read_i64_be(reader), -1)
+  assertEqual(binary.read_i64_le(reader), -1)
+  binary.require_finished(reader)
+
+test "fixed-width failures are typed and atomic":
+  var negative_length = binary.new_reader([1, 2])
+  var caught_length = false
+  try:
+    ignored0 = binary.read_bytes(negative_length, -1)
+  recover binary.BinaryError.InvalidLength(offset, length):
+    caught_length = offset == 0 and length == -1
+  assert(caught_length)
+  assertEqual(binary.reader_cursor(negative_length), 0)
+
+  var short_reader = binary.new_reader([1, 2, 3])
+  var caught_eof = false
+  try:
+    ignored1 = binary.read_u32_be(short_reader)
+  recover binary.BinaryError.UnexpectedEof(offset, requested, available):
+    caught_eof = offset == 0 and requested == 4 and available == 3
+  assert(caught_eof)
+  assertEqual(binary.reader_cursor(short_reader), 0)
+
+  var overflow_reader = binary.new_reader([255, 255, 255, 255, 255, 255, 255, 255])
+  var caught_overflow = false
+  try:
+    ignored2 = binary.read_u64_be(overflow_reader)
+  recover binary.BinaryError.Overflow(offset):
+    caught_overflow = offset == 0
+  assert(caught_overflow)
+  assertEqual(binary.reader_cursor(overflow_reader), 0)
+
+  var writer = binary.new_writer()
+  binary.write_byte(writer, 9)
+  var caught_unsigned = false
+  try:
+    binary.write_u16_be(writer, -1)
+  recover binary.BinaryError.InvalidValue(offset, value, width):
+    caught_unsigned = offset == 1 and value == -1 and width == 2
+  assert(caught_unsigned)
+  assert(same_ints(binary.writer_output(writer), [9]))
+
+  var caught_signed = false
+  try:
+    binary.write_i16_le(writer, 32768)
+  recover binary.BinaryError.InvalidValue(offset, value, width):
+    caught_signed = offset == 1 and value == 32768 and width == 2
+  assert(caught_signed)
+  assert(same_ints(binary.writer_output(writer), [9]))
+
+  var caught_bad_byte = false
+  try:
+    binary.write_bytes(writer, [1, 256, 2])
+  recover binary.BinaryError.InvalidByte(offset, value):
+    caught_bad_byte = offset == 1 and value == 256
+  assert(caught_bad_byte)
+  assert(same_ints(binary.writer_output(writer), [9]))
+
+  var capacity_writer = binary.new_writer_with_limits(3, 3)
+  binary.write_byte(capacity_writer, 5)
+  var caught_capacity = false
+  try:
+    binary.write_u32_be(capacity_writer, 1)
+  recover binary.BinaryError.LimitExceeded(offset, requested, limit):
+    caught_capacity = offset == 1 and requested == 4 and limit == 3
+  assert(caught_capacity)
+  assert(same_ints(binary.writer_output(capacity_writer), [5]))
+
+test "canonical unsigned varints":
+  var writer = binary.new_writer()
+  binary.write_uvarint(writer, 0)
+  binary.write_uvarint(writer, 127)
+  binary.write_uvarint(writer, 128)
+  binary.write_uvarint(writer, 300)
+  binary.write_uvarint(writer, 9223372036854775807)
+  expected = [0, 127, 128, 1, 172, 2, 255, 255, 255, 255, 255, 255, 255, 255, 127]
+  assert(same_ints(binary.writer_output(writer), expected))
+
+  var reader = binary.new_reader(expected)
+  assertEqual(binary.read_uvarint(reader), 0)
+  assertEqual(binary.read_uvarint(reader), 127)
+  assertEqual(binary.read_uvarint(reader), 128)
+  assertEqual(binary.read_uvarint(reader), 300)
+  assertEqual(binary.read_uvarint(reader), 9223372036854775807)
+  binary.require_finished(reader)
+
+  var invalid_writer = binary.new_writer()
+  var caught_negative = false
+  try:
+    binary.write_uvarint(invalid_writer, -1)
+  recover binary.BinaryError.InvalidValue(offset, value, width):
+    caught_negative = offset == 0 and value == -1 and width == 0
+  assert(caught_negative)
+  assertEqual(binary.writer_length(invalid_writer), 0)
+
+test "varint malformed overlong overflow and truncation are atomic":
+  var truncated = binary.new_reader([128])
+  var caught_truncated = false
+  try:
+    ignored1 = binary.read_uvarint(truncated)
+  recover binary.BinaryError.UnexpectedEof(offset, requested, available):
+    caught_truncated = offset == 0 and requested == 2 and available == 1
+  assert(caught_truncated)
+  assertEqual(binary.reader_cursor(truncated), 0)
+
+  var overlong = binary.new_reader([128, 0])
+  var caught_overlong = false
+  try:
+    ignored2 = binary.read_uvarint(overlong)
+  recover binary.BinaryError.OverlongVarint(offset, bytes_read):
+    caught_overlong = offset == 0 and bytes_read == 2
+  assert(caught_overlong)
+  assertEqual(binary.reader_cursor(overlong), 0)
+
+  var malformed = binary.new_reader([128, 128, 128, 128, 128, 128, 128, 128, 128, 128])
+  var caught_malformed = false
+  try:
+    ignored3 = binary.read_uvarint(malformed)
+  recover binary.BinaryError.MalformedVarint(offset, bytes_read):
+    caught_malformed = offset == 0 and bytes_read == 10
+  assert(caught_malformed)
+  assertEqual(binary.reader_cursor(malformed), 0)
+
+  var overflow = binary.new_reader([128, 128, 128, 128, 128, 128, 128, 128, 128, 1])
+  var caught_overflow = false
+  try:
+    ignored4 = binary.read_uvarint(overflow)
+  recover binary.BinaryError.Overflow(offset):
+    caught_overflow = offset == 0
+  assert(caught_overflow)
+  assertEqual(binary.reader_cursor(overflow), 0)
+
+test "length-delimited values and resource limits":
+  var writer = binary.new_writer_with_limits(16, 8)
+  binary.write_length_delimited(writer, [10, 20, 30])
+  binary.write_length_delimited(writer, Vector[Int]())
+  assert(same_ints(binary.writer_output(writer), [3, 10, 20, 30, 0]))
+
+  var reader = binary.new_reader_with_limits(binary.writer_output(writer), 16, 8)
+  assert(same_ints(binary.read_length_delimited(reader), [10, 20, 30]))
+  assertEqual(binary.read_length_delimited(reader) |> count, 0)
+  binary.require_finished(reader)
+
+  var truncated = binary.new_reader([3, 1, 2])
+  var caught_eof = false
+  try:
+    ignored1 = binary.read_length_delimited(truncated)
+  recover binary.BinaryError.UnexpectedEof(offset, requested, available):
+    caught_eof = offset == 1 and requested == 3 and available == 2
+  assert(caught_eof)
+  assertEqual(binary.reader_cursor(truncated), 0)
+
+  var limited_reader = binary.new_reader_with_limits([3, 1, 2, 3], 4, 2)
+  var caught_read_limit = false
+  try:
+    ignored2 = binary.read_length_delimited(limited_reader)
+  recover binary.BinaryError.LimitExceeded(offset, requested, limit):
+    caught_read_limit = offset == 0 and requested == 3 and limit == 2
+  assert(caught_read_limit)
+  assertEqual(binary.reader_cursor(limited_reader), 0)
+
+  var limited_writer = binary.new_writer_with_limits(4, 2)
+  binary.write_byte(limited_writer, 7)
+  var caught_payload_limit = false
+  try:
+    binary.write_length_delimited(limited_writer, [1, 2, 3])
+  recover binary.BinaryError.LimitExceeded(offset, requested, limit):
+    caught_payload_limit = offset == 1 and requested == 3 and limit == 2
+  assert(caught_payload_limit)
+  assert(same_ints(binary.writer_output(limited_writer), [7]))
+
+  var output_limited = binary.new_writer_with_limits(3, 3)
+  binary.write_byte(output_limited, 7)
+  var caught_output_limit = false
+  try:
+    binary.write_length_delimited(output_limited, [1, 2])
+  recover binary.BinaryError.LimitExceeded(offset, requested, limit):
+    caught_output_limit = offset == 1 and requested == 3 and limit == 3
+  assert(caught_output_limit)
+  assert(same_ints(binary.writer_output(output_limited), [7]))
+
+test "constructor limits invalid bytes and trailing input":
+  assertEqual(binary.default_total_limit(), 67108864)
+  assertEqual(binary.default_payload_limit(), 16777216)
+
+  var caught_input_limit = false
+  try:
+    ignored1 = binary.new_reader_with_limits([1], 0, 1)
+  recover binary.BinaryError.InvalidInputLimit(limit, maximum):
+    caught_input_limit = limit == 0 and maximum == 67108864
+  assert(caught_input_limit)
+
+  var caught_output_limit = false
+  try:
+    ignored2 = binary.new_writer_with_limits(67108865, 1)
+  recover binary.BinaryError.InvalidOutputLimit(limit, maximum):
+    caught_output_limit = limit == 67108865 and maximum == 67108864
+  assert(caught_output_limit)
+
+  var caught_payload_limit = false
+  try:
+    ignored3 = binary.new_reader_with_limits([1], 2, 3)
+  recover binary.BinaryError.InvalidPayloadLimit(limit, maximum):
+    caught_payload_limit = limit == 3 and maximum == 2
+  assert(caught_payload_limit)
+
+  var caught_input_size = false
+  try:
+    ignored4 = binary.new_reader_with_limits([1, 2, 3], 2, 2)
+  recover binary.BinaryError.LimitExceeded(offset, requested, limit):
+    caught_input_size = offset == 0 and requested == 3 and limit == 2
+  assert(caught_input_size)
+
+  var caught_byte = false
+  try:
+    ignored5 = binary.new_reader([1, -1])
+  recover binary.BinaryError.InvalidByte(offset, value):
+    caught_byte = offset == 1 and value == -1
+  assert(caught_byte)
+
+  var trailing = binary.new_reader([1, 2])
+  assertEqual(binary.read_byte(trailing), 1)
+  var caught_trailing = false
+  try:
+    binary.require_finished(trailing)
+  recover binary.BinaryError.TrailingInput(offset, remaining):
+    caught_trailing = offset == 1 and remaining == 1
+  assert(caught_trailing)
+  assertEqual(binary.reader_cursor(trailing), 1)
+
+test "forged public records fail validation before access":
+  var bad_byte_reader = binary.ByteReader(data: [1, 999], cursor: 0, input_limit: 4, payload_limit: 2)
+  assert(not binary.validate_reader(bad_byte_reader))
+  var caught_byte = false
+  try:
+    ignored1 = binary.read_byte(bad_byte_reader)
+  recover binary.BinaryError.InvalidByte(offset, value):
+    caught_byte = offset == 1 and value == 999
+  assert(caught_byte)
+  assertEqual(bad_byte_reader.cursor, 0)
+
+  var bad_cursor = binary.ByteReader(data: [1], cursor: -1, input_limit: 4, payload_limit: 2)
+  assert(not binary.validate_reader(bad_cursor))
+  var caught_cursor = false
+  try:
+    ignored2 = binary.reader_remaining(bad_cursor)
+  recover binary.BinaryError.InvalidState(offset, length, limit):
+    caught_cursor = offset == -1 and length == 1 and limit == 4
+  assert(caught_cursor)
+
+  var bad_reader_limit = binary.ByteReader(data: [1, 2, 3], cursor: 0, input_limit: 2, payload_limit: 2)
+  assert(not binary.validate_reader(bad_reader_limit))
+  var caught_reader_state = false
+  try:
+    ignored3 = binary.read_byte(bad_reader_limit)
+  recover binary.BinaryError.InvalidState(offset, length, limit):
+    caught_reader_state = offset == 0 and length == 3 and limit == 2
+  assert(caught_reader_state)
+
+  var bad_writer_byte = binary.ByteWriter(data: [1, 300], output_limit: 4, payload_limit: 2)
+  assert(not binary.validate_writer(bad_writer_byte))
+  var caught_writer_byte = false
+  try:
+    binary.write_byte(bad_writer_byte, 2)
+  recover binary.BinaryError.InvalidByte(offset, value):
+    caught_writer_byte = offset == 1 and value == 300
+  assert(caught_writer_byte)
+  assertEqual(bad_writer_byte.data |> count, 2)
+
+  var bad_writer_limit = binary.ByteWriter(data: [1, 2, 3], output_limit: 2, payload_limit: 2)
+  assert(not binary.validate_writer(bad_writer_limit))
+  var caught_writer_state = false
+  try:
+    binary.write_byte(bad_writer_limit, 4)
+  recover binary.BinaryError.InvalidState(offset, length, limit):
+    caught_writer_state = offset == 3 and length == 3 and limit == 2
+  assert(caught_writer_state)
+  assertEqual(bad_writer_limit.data |> count, 3)

@@ -1,0 +1,1588 @@
+module tables
+
+export fn kind_int() -> Int:
+  return 0
+
+export fn kind_float() -> Int:
+  return 1
+
+export fn kind_bool() -> Int:
+  return 2
+
+export fn kind_string() -> Int:
+  return 3
+
+export enum TableError:
+  InvalidRowCount(row_count: Int)
+  EmptyColumnName
+  InvalidColumnKind(kind: Int)
+  ColumnLengthMismatch(values_length: Int, validity_length: Int)
+  TableRowCountMismatch(expected: Int, actual: Int)
+  NonNullableMissing(index: Int)
+  NonCanonicalMissing(index: Int)
+  UnexpectedStorage(kind: Int)
+  DuplicateColumnName
+  ColumnNotFound
+  ColumnIndexOutOfBounds(index: Int, count: Int)
+  WrongColumnType(expected_kind: Int, actual_kind: Int)
+  RowIndexOutOfBounds(index: Int, row_count: Int)
+  MaskLengthMismatch(expected: Int, actual: Int)
+  UnsupportedOrdering(kind: Int)
+  DuplicateCategory
+  CategoryNotFound
+  InvalidGroupIndex
+  GroupRowCountMismatch(expected: Int, actual: Int)
+  IntegerOverflow
+  InvalidOutputLimit(limit: Int)
+  OutputLimitExceeded(limit: Int)
+
+export type Column:
+  name: String
+  kind: Int
+  nullable: Bool
+  validity: Vector[Bool]
+  ints: Vector[Int]
+  floats: Vector[Float]
+  bools: Vector[Bool]
+  strings: Vector[String]
+
+export type Table:
+  columns: Vector[Column]
+  row_count: Int
+
+export type IntColumnValues:
+  values: Vector[Int]
+  validity: Vector[Bool]
+
+export type FloatColumnValues:
+  values: Vector[Float]
+  validity: Vector[Bool]
+
+export type BoolColumnValues:
+  values: Vector[Bool]
+  validity: Vector[Bool]
+
+export type StringColumnValues:
+  values: Vector[String]
+  validity: Vector[Bool]
+
+export type GroupIndex:
+  key_kind: Int
+  key_validity: Vector[Bool]
+  int_keys: Vector[Int]
+  string_keys: Vector[String]
+  first_rows: Vector[Int]
+  last_rows: Vector[Int]
+  sizes: Vector[Int]
+  next_rows: Vector[Int]
+  source_row_count: Int
+
+fn empty_columns() -> Vector[Column]:
+  placeholder = Column(name: "_", kind: 0, nullable: false, validity: Vector[Bool](), ints: Vector[Int](), floats: Vector[Float](), bools: Vector[Bool](), strings: Vector[String]())
+  var columns = [placeholder]
+  ignored = columns.pop()
+  return columns
+
+fn push_column(columns: Vector[Column], column: Column):
+  columns.push(column)
+
+fn copy_ints(values: Vector[Int]) -> Vector[Int]:
+  var result = Vector[Int]()
+  var i = 0
+  n = values |> count
+  while i < n:
+    result.push(values[i])
+    i = i + 1
+  return result
+
+fn copy_floats(values: Vector[Float]) -> Vector[Float]:
+  var result = Vector[Float]()
+  var i = 0
+  n = values |> count
+  while i < n:
+    result.push(values[i])
+    i = i + 1
+  return result
+
+fn copy_bools(values: Vector[Bool]) -> Vector[Bool]:
+  var result = Vector[Bool]()
+  var i = 0
+  n = values |> count
+  while i < n:
+    result.push(values[i])
+    i = i + 1
+  return result
+
+fn copy_strings(values: Vector[String]) -> Vector[String]:
+  var result = Vector[String]()
+  var i = 0
+  n = values |> count
+  while i < n:
+    result.push(values[i] + "")
+    i = i + 1
+  return result
+
+fn empty_int_bool_map():
+  var result = Map()
+  result[0] = false
+  var found = false
+  ignored = result.delete(0, false, found)
+  return result
+
+fn empty_string_bool_map():
+  var result = Map()
+  result[""] = false
+  var found = false
+  ignored = result.delete("", false, found)
+  return result
+
+fn empty_int_int_map():
+  var result = Map()
+  result[0] = 0
+  var found = false
+  ignored = result.delete(0, 0, found)
+  return result
+
+fn empty_string_int_map():
+  var result = Map()
+  result[""] = 0
+  var found = false
+  ignored = result.delete("", 0, found)
+  return result
+
+fn selected_length(column: Column) -> Int:
+  if column.kind == kind_int():
+    return column.ints |> count
+  if column.kind == kind_float():
+    return column.floats |> count
+  if column.kind == kind_bool():
+    return column.bools |> count
+  if column.kind == kind_string():
+    return column.strings |> count
+  return 0 - 1
+
+fn has_only_selected_storage(column: Column) -> Bool:
+  int_count = column.ints |> count
+  float_count = column.floats |> count
+  bool_count = column.bools |> count
+  string_count = column.strings |> count
+  if column.kind == kind_int():
+    return float_count == 0 and bool_count == 0 and string_count == 0
+  if column.kind == kind_float():
+    return int_count == 0 and bool_count == 0 and string_count == 0
+  if column.kind == kind_bool():
+    return int_count == 0 and float_count == 0 and string_count == 0
+  if column.kind == kind_string():
+    return int_count == 0 and float_count == 0 and bool_count == 0
+  return false
+
+fn missing_filler_is_canonical(column: Column, index: Int) -> Bool:
+  if column.kind == kind_int():
+    return column.ints[index] == 0
+  if column.kind == kind_float():
+    return column.floats[index] == 0.0
+  if column.kind == kind_bool():
+    return not column.bools[index]
+  if column.kind == kind_string():
+    return column.strings[index] == ""
+  return false
+
+export fn validate_column(column: Column) -> Bool:
+  if column.name.length() == 0:
+    return false
+  if column.kind < kind_int() or column.kind > kind_string():
+    return false
+  if not has_only_selected_storage(column):
+    return false
+  value_count = selected_length(column)
+  validity_count = column.validity |> count
+  if value_count != validity_count:
+    return false
+  var i = 0
+  while i < value_count:
+    if not column.validity[i]:
+      if not column.nullable:
+        return false
+      if not missing_filler_is_canonical(column, i):
+        return false
+    i = i + 1
+  return true
+
+fn require_valid_column(column: Column):
+  if column.name.length() == 0:
+    raise TableError.EmptyColumnName
+  if column.kind < kind_int() or column.kind > kind_string():
+    raise TableError.InvalidColumnKind(kind: column.kind)
+  if not has_only_selected_storage(column):
+    raise TableError.UnexpectedStorage(kind: column.kind)
+  value_count = selected_length(column)
+  validity_count = column.validity |> count
+  if value_count != validity_count:
+    raise TableError.ColumnLengthMismatch(values_length: value_count, validity_length: validity_count)
+  var i = 0
+  while i < value_count:
+    if not column.validity[i]:
+      if not column.nullable:
+        raise TableError.NonNullableMissing(index: i)
+      if not missing_filler_is_canonical(column, i):
+        raise TableError.NonCanonicalMissing(index: i)
+    i = i + 1
+
+fn clone_column_unchecked(column: Column) -> Column:
+  return Column(name: column.name + "", kind: column.kind, nullable: column.nullable, validity: copy_bools(column.validity), ints: copy_ints(column.ints), floats: copy_floats(column.floats), bools: copy_bools(column.bools), strings: copy_strings(column.strings))
+
+fn find_column_index_unchecked(table: Table, name: String) -> Int:
+  var i = 0
+  n = table.columns |> count
+  while i < n:
+    if table.columns[i].name == name:
+      return i
+    i = i + 1
+  return 0 - 1
+
+fn require_valid_table(table: Table):
+  if table.row_count < 0:
+    raise TableError.InvalidRowCount(row_count: table.row_count)
+  column_total = table.columns |> count
+  var i = 0
+  while i < column_total:
+    require_valid_column(table.columns[i])
+    actual = selected_length(table.columns[i])
+    if actual != table.row_count:
+      raise TableError.TableRowCountMismatch(expected: table.row_count, actual: actual)
+    var j = 0
+    while j < i:
+      if table.columns[j].name == table.columns[i].name:
+        raise TableError.DuplicateColumnName
+      j = j + 1
+    i = i + 1
+
+export fn validate_table(table: Table) -> Bool:
+  if table.row_count < 0:
+    return false
+  column_total = table.columns |> count
+  var i = 0
+  while i < column_total:
+    if not validate_column(table.columns[i]):
+      return false
+    if selected_length(table.columns[i]) != table.row_count:
+      return false
+    var j = 0
+    while j < i:
+      if table.columns[j].name == table.columns[i].name:
+        return false
+      j = j + 1
+    i = i + 1
+  return true
+
+export fn new_table(rows: Int) -> Table:
+  if rows < 0:
+    raise TableError.InvalidRowCount(row_count: rows)
+  return Table(columns: empty_columns(), row_count: rows)
+
+export fn int_column(name: String, nullable: Bool, values: Vector[Int], validity: Vector[Bool]) -> Column:
+  if name.length() == 0:
+    raise TableError.EmptyColumnName
+  value_count = values |> count
+  validity_count = validity |> count
+  if value_count != validity_count:
+    raise TableError.ColumnLengthMismatch(values_length: value_count, validity_length: validity_count)
+  var copied_values = Vector[Int]()
+  var copied_validity = Vector[Bool]()
+  var i = 0
+  while i < value_count:
+    present = validity[i]
+    if not nullable and not present:
+      raise TableError.NonNullableMissing(index: i)
+    if present:
+      copied_values.push(values[i])
+    else:
+      copied_values.push(0)
+    copied_validity.push(present)
+    i = i + 1
+  return Column(name: name + "", kind: kind_int(), nullable: nullable, validity: copied_validity, ints: copied_values, floats: Vector[Float](), bools: Vector[Bool](), strings: Vector[String]())
+
+export fn float_column(name: String, nullable: Bool, values: Vector[Float], validity: Vector[Bool]) -> Column:
+  if name.length() == 0:
+    raise TableError.EmptyColumnName
+  value_count = values |> count
+  validity_count = validity |> count
+  if value_count != validity_count:
+    raise TableError.ColumnLengthMismatch(values_length: value_count, validity_length: validity_count)
+  var copied_values = Vector[Float]()
+  var copied_validity = Vector[Bool]()
+  var i = 0
+  while i < value_count:
+    present = validity[i]
+    if not nullable and not present:
+      raise TableError.NonNullableMissing(index: i)
+    if present:
+      copied_values.push(values[i])
+    else:
+      copied_values.push(0.0)
+    copied_validity.push(present)
+    i = i + 1
+  return Column(name: name + "", kind: kind_float(), nullable: nullable, validity: copied_validity, ints: Vector[Int](), floats: copied_values, bools: Vector[Bool](), strings: Vector[String]())
+
+export fn bool_column(name: String, nullable: Bool, values: Vector[Bool], validity: Vector[Bool]) -> Column:
+  if name.length() == 0:
+    raise TableError.EmptyColumnName
+  value_count = values |> count
+  validity_count = validity |> count
+  if value_count != validity_count:
+    raise TableError.ColumnLengthMismatch(values_length: value_count, validity_length: validity_count)
+  var copied_values = Vector[Bool]()
+  var copied_validity = Vector[Bool]()
+  var i = 0
+  while i < value_count:
+    present = validity[i]
+    if not nullable and not present:
+      raise TableError.NonNullableMissing(index: i)
+    if present:
+      copied_values.push(values[i])
+    else:
+      copied_values.push(false)
+    copied_validity.push(present)
+    i = i + 1
+  return Column(name: name + "", kind: kind_bool(), nullable: nullable, validity: copied_validity, ints: Vector[Int](), floats: Vector[Float](), bools: copied_values, strings: Vector[String]())
+
+export fn string_column(name: String, nullable: Bool, values: Vector[String], validity: Vector[Bool]) -> Column:
+  if name.length() == 0:
+    raise TableError.EmptyColumnName
+  value_count = values |> count
+  validity_count = validity |> count
+  if value_count != validity_count:
+    raise TableError.ColumnLengthMismatch(values_length: value_count, validity_length: validity_count)
+  var copied_values = Vector[String]()
+  var copied_validity = Vector[Bool]()
+  var i = 0
+  while i < value_count:
+    present = validity[i]
+    if not nullable and not present:
+      raise TableError.NonNullableMissing(index: i)
+    if present:
+      copied_values.push(values[i] + "")
+    else:
+      copied_values.push("")
+    copied_validity.push(present)
+    i = i + 1
+  return Column(name: name + "", kind: kind_string(), nullable: nullable, validity: copied_validity, ints: Vector[Int](), floats: Vector[Float](), bools: Vector[Bool](), strings: copied_values)
+
+export fn table_row_count(table: Table) -> Int:
+  require_valid_table(table)
+  return table.row_count
+
+export fn column_count(table: Table) -> Int:
+  require_valid_table(table)
+  return table.columns |> count
+
+export fn column_index(table: Table, name: String) -> Int:
+  require_valid_table(table)
+  index = find_column_index_unchecked(table, name)
+  if index < 0:
+    raise TableError.ColumnNotFound
+  return index
+
+export fn column_name(table: Table, index: Int) -> String:
+  require_valid_table(table)
+  n = table.columns |> count
+  if index < 0 or index >= n:
+    raise TableError.ColumnIndexOutOfBounds(index: index, count: n)
+  return table.columns[index].name + ""
+
+export fn column_kind(table: Table, index: Int) -> Int:
+  require_valid_table(table)
+  n = table.columns |> count
+  if index < 0 or index >= n:
+    raise TableError.ColumnIndexOutOfBounds(index: index, count: n)
+  return table.columns[index].kind
+
+export fn column_nullable(table: Table, index: Int) -> Bool:
+  require_valid_table(table)
+  n = table.columns |> count
+  if index < 0 or index >= n:
+    raise TableError.ColumnIndexOutOfBounds(index: index, count: n)
+  return table.columns[index].nullable
+
+export fn int_values(table: Table, name: String) -> IntColumnValues:
+  require_valid_table(table)
+  index = find_column_index_unchecked(table, name)
+  if index < 0:
+    raise TableError.ColumnNotFound
+  if table.columns[index].kind != kind_int():
+    raise TableError.WrongColumnType(expected_kind: kind_int(), actual_kind: table.columns[index].kind)
+  return IntColumnValues(values: copy_ints(table.columns[index].ints), validity: copy_bools(table.columns[index].validity))
+
+export fn float_values(table: Table, name: String) -> FloatColumnValues:
+  require_valid_table(table)
+  index = find_column_index_unchecked(table, name)
+  if index < 0:
+    raise TableError.ColumnNotFound
+  if table.columns[index].kind != kind_float():
+    raise TableError.WrongColumnType(expected_kind: kind_float(), actual_kind: table.columns[index].kind)
+  return FloatColumnValues(values: copy_floats(table.columns[index].floats), validity: copy_bools(table.columns[index].validity))
+
+export fn bool_values(table: Table, name: String) -> BoolColumnValues:
+  require_valid_table(table)
+  index = find_column_index_unchecked(table, name)
+  if index < 0:
+    raise TableError.ColumnNotFound
+  if table.columns[index].kind != kind_bool():
+    raise TableError.WrongColumnType(expected_kind: kind_bool(), actual_kind: table.columns[index].kind)
+  return BoolColumnValues(values: copy_bools(table.columns[index].bools), validity: copy_bools(table.columns[index].validity))
+
+export fn string_values(table: Table, name: String) -> StringColumnValues:
+  require_valid_table(table)
+  index = find_column_index_unchecked(table, name)
+  if index < 0:
+    raise TableError.ColumnNotFound
+  if table.columns[index].kind != kind_string():
+    raise TableError.WrongColumnType(expected_kind: kind_string(), actual_kind: table.columns[index].kind)
+  return StringColumnValues(values: copy_strings(table.columns[index].strings), validity: copy_bools(table.columns[index].validity))
+
+fn clone_table_unchecked(table: Table) -> Table:
+  var columns = empty_columns()
+  var i = 0
+  n = table.columns |> count
+  while i < n:
+    columns.push(clone_column_unchecked(table.columns[i]))
+    i = i + 1
+  return Table(columns: columns, row_count: table.row_count)
+
+export fn clone_table(table: Table) -> Table:
+  require_valid_table(table)
+  return clone_table_unchecked(table)
+
+export fn clone(table: Table) -> Table:
+  require_valid_table(table)
+  return clone_table_unchecked(table)
+
+export fn add_column(table: Table, column: Column) -> Table:
+  require_valid_table(table)
+  require_valid_column(column)
+  if selected_length(column) != table.row_count:
+    raise TableError.TableRowCountMismatch(expected: table.row_count, actual: selected_length(column))
+  if find_column_index_unchecked(table, column.name) >= 0:
+    raise TableError.DuplicateColumnName
+  var result = clone_table_unchecked(table)
+  push_column(result.columns, clone_column_unchecked(column))
+  return result
+
+export fn remove_column(table: Table, name: String) -> Table:
+  require_valid_table(table)
+  remove_index = find_column_index_unchecked(table, name)
+  if remove_index < 0:
+    raise TableError.ColumnNotFound
+  var columns = empty_columns()
+  var i = 0
+  n = table.columns |> count
+  while i < n:
+    if i != remove_index:
+      columns.push(clone_column_unchecked(table.columns[i]))
+    i = i + 1
+  return Table(columns: columns, row_count: table.row_count)
+
+export fn replace_column(table: Table, column: Column) -> Table:
+  require_valid_table(table)
+  require_valid_column(column)
+  replace_index = find_column_index_unchecked(table, column.name)
+  if replace_index < 0:
+    raise TableError.ColumnNotFound
+  actual = selected_length(column)
+  if actual != table.row_count:
+    raise TableError.TableRowCountMismatch(expected: table.row_count, actual: actual)
+  var columns = empty_columns()
+  var i = 0
+  n = table.columns |> count
+  while i < n:
+    if i == replace_index:
+      columns.push(clone_column_unchecked(column))
+    else:
+      columns.push(clone_column_unchecked(table.columns[i]))
+    i = i + 1
+  return Table(columns: columns, row_count: table.row_count)
+
+export fn select_columns(table: Table, names: Vector[String]) -> Table:
+  require_valid_table(table)
+  var columns = empty_columns()
+  var i = 0
+  name_count = names |> count
+  while i < name_count:
+    name = names[i]
+    var j = 0
+    while j < i:
+      if names[j] == name:
+        raise TableError.DuplicateColumnName
+      j = j + 1
+    index = find_column_index_unchecked(table, name)
+    if index < 0:
+      raise TableError.ColumnNotFound
+    columns.push(clone_column_unchecked(table.columns[index]))
+    i = i + 1
+  return Table(columns: columns, row_count: table.row_count)
+
+fn select_column_rows_unchecked(column: Column, indices: Vector[Int]) -> Column:
+  var validity = Vector[Bool]()
+  var ints = Vector[Int]()
+  var floats = Vector[Float]()
+  var bools = Vector[Bool]()
+  var strings = Vector[String]()
+  var i = 0
+  n = indices |> count
+  while i < n:
+    index = indices[i]
+    validity.push(column.validity[index])
+    if column.kind == kind_int():
+      ints.push(column.ints[index])
+    else:
+      if column.kind == kind_float():
+        floats.push(column.floats[index])
+      else:
+        if column.kind == kind_bool():
+          bools.push(column.bools[index])
+        else:
+          strings.push(column.strings[index] + "")
+    i = i + 1
+  return Column(name: column.name + "", kind: column.kind, nullable: column.nullable, validity: validity, ints: ints, floats: floats, bools: bools, strings: strings)
+
+fn select_rows_unchecked(table: Table, indices: Vector[Int]) -> Table:
+  var columns = empty_columns()
+  var i = 0
+  n = table.columns |> count
+  while i < n:
+    columns.push(select_column_rows_unchecked(table.columns[i], indices))
+    i = i + 1
+  return Table(columns: columns, row_count: indices |> count)
+
+export fn select_rows(table: Table, indices: Vector[Int]) -> Table:
+  require_valid_table(table)
+  var i = 0
+  n = indices |> count
+  while i < n:
+    index = indices[i]
+    if index < 0 or index >= table.row_count:
+      raise TableError.RowIndexOutOfBounds(index: index, row_count: table.row_count)
+    i = i + 1
+  return select_rows_unchecked(table, indices)
+
+export fn filter_mask(table: Table, mask: Vector[Bool]) -> Table:
+  require_valid_table(table)
+  mask_count = mask |> count
+  if mask_count != table.row_count:
+    raise TableError.MaskLengthMismatch(expected: table.row_count, actual: mask_count)
+  var indices = Vector[Int]()
+  var i = 0
+  while i < mask_count:
+    if mask[i]:
+      indices.push(i)
+    i = i + 1
+  return select_rows_unchecked(table, indices)
+
+export fn is_missing(table: Table, name: String, row: Int) -> Bool:
+  require_valid_table(table)
+  if row < 0 or row >= table.row_count:
+    raise TableError.RowIndexOutOfBounds(index: row, row_count: table.row_count)
+  index = find_column_index_unchecked(table, name)
+  if index < 0:
+    raise TableError.ColumnNotFound
+  return not table.columns[index].validity[row]
+
+export fn drop_missing_rows(table: Table) -> Table:
+  require_valid_table(table)
+  var indices = Vector[Int]()
+  var row = 0
+  column_total = table.columns |> count
+  while row < table.row_count:
+    var keep = true
+    var column_index_value = 0
+    while column_index_value < column_total:
+      if not table.columns[column_index_value].validity[row]:
+        keep = false
+      column_index_value = column_index_value + 1
+    if keep:
+      indices.push(row)
+    row = row + 1
+  return select_rows_unchecked(table, indices)
+
+fn replace_at_unchecked(table: Table, replace_index: Int, replacement: Column) -> Table:
+  var columns = empty_columns()
+  var i = 0
+  n = table.columns |> count
+  while i < n:
+    if i == replace_index:
+      columns.push(clone_column_unchecked(replacement))
+    else:
+      columns.push(clone_column_unchecked(table.columns[i]))
+    i = i + 1
+  return Table(columns: columns, row_count: table.row_count)
+
+export fn fill_missing_int(table: Table, name: String, value: Int) -> Table:
+  require_valid_table(table)
+  index = find_column_index_unchecked(table, name)
+  if index < 0:
+    raise TableError.ColumnNotFound
+  column = clone_column_unchecked(table.columns[index])
+  if column.kind != kind_int():
+    raise TableError.WrongColumnType(expected_kind: kind_int(), actual_kind: column.kind)
+  var values = Vector[Int]()
+  var validity = Vector[Bool]()
+  var i = 0
+  while i < table.row_count:
+    if column.validity[i]:
+      values.push(column.ints[i])
+    else:
+      values.push(value)
+    validity.push(true)
+    i = i + 1
+  replacement = Column(name: column.name + "", kind: kind_int(), nullable: column.nullable, validity: validity, ints: values, floats: Vector[Float](), bools: Vector[Bool](), strings: Vector[String]())
+  return replace_at_unchecked(table, index, replacement)
+
+export fn fill_missing_float(table: Table, name: String, value: Float) -> Table:
+  require_valid_table(table)
+  index = find_column_index_unchecked(table, name)
+  if index < 0:
+    raise TableError.ColumnNotFound
+  column = clone_column_unchecked(table.columns[index])
+  if column.kind != kind_float():
+    raise TableError.WrongColumnType(expected_kind: kind_float(), actual_kind: column.kind)
+  var values = Vector[Float]()
+  var validity = Vector[Bool]()
+  var i = 0
+  while i < table.row_count:
+    if column.validity[i]:
+      values.push(column.floats[i])
+    else:
+      values.push(value)
+    validity.push(true)
+    i = i + 1
+  replacement = Column(name: column.name + "", kind: kind_float(), nullable: column.nullable, validity: validity, ints: Vector[Int](), floats: values, bools: Vector[Bool](), strings: Vector[String]())
+  return replace_at_unchecked(table, index, replacement)
+
+export fn fill_missing_bool(table: Table, name: String, value: Bool) -> Table:
+  require_valid_table(table)
+  index = find_column_index_unchecked(table, name)
+  if index < 0:
+    raise TableError.ColumnNotFound
+  column = clone_column_unchecked(table.columns[index])
+  if column.kind != kind_bool():
+    raise TableError.WrongColumnType(expected_kind: kind_bool(), actual_kind: column.kind)
+  var values = Vector[Bool]()
+  var validity = Vector[Bool]()
+  var i = 0
+  while i < table.row_count:
+    if column.validity[i]:
+      values.push(column.bools[i])
+    else:
+      values.push(value)
+    validity.push(true)
+    i = i + 1
+  replacement = Column(name: column.name + "", kind: kind_bool(), nullable: column.nullable, validity: validity, ints: Vector[Int](), floats: Vector[Float](), bools: values, strings: Vector[String]())
+  return replace_at_unchecked(table, index, replacement)
+
+export fn fill_missing_string(table: Table, name: String, value: String) -> Table:
+  require_valid_table(table)
+  index = find_column_index_unchecked(table, name)
+  if index < 0:
+    raise TableError.ColumnNotFound
+  column = clone_column_unchecked(table.columns[index])
+  if column.kind != kind_string():
+    raise TableError.WrongColumnType(expected_kind: kind_string(), actual_kind: column.kind)
+  var values = Vector[String]()
+  var validity = Vector[Bool]()
+  var i = 0
+  while i < table.row_count:
+    if column.validity[i]:
+      values.push(column.strings[i] + "")
+    else:
+      values.push(value + "")
+    validity.push(true)
+    i = i + 1
+  replacement = Column(name: column.name + "", kind: kind_string(), nullable: column.nullable, validity: validity, ints: Vector[Int](), floats: Vector[Float](), bools: Vector[Bool](), strings: values)
+  return replace_at_unchecked(table, index, replacement)
+
+fn require_named_column(table: Table, name: String, expected_kind: Int) -> Int:
+  index = find_column_index_unchecked(table, name)
+  if index < 0:
+    raise TableError.ColumnNotFound
+  actual_kind = table.columns[index].kind
+  if actual_kind != expected_kind:
+    raise TableError.WrongColumnType(expected_kind: expected_kind, actual_kind: actual_kind)
+  return index
+
+export fn filter_int_equal(table: Table, name: String, value: Int) -> Table:
+  require_valid_table(table)
+  index = require_named_column(table, name, kind_int())
+  column = clone_column_unchecked(table.columns[index])
+  var rows = Vector[Int]()
+  var row = 0
+  while row < table.row_count:
+    if column.validity[row] and column.ints[row] == value:
+      rows.push(row)
+    row = row + 1
+  return select_rows_unchecked(table, rows)
+
+export fn filter_int_range(table: Table, name: String, minimum: Int, maximum: Int) -> Table:
+  require_valid_table(table)
+  index = require_named_column(table, name, kind_int())
+  column = clone_column_unchecked(table.columns[index])
+  var rows = Vector[Int]()
+  var row = 0
+  while row < table.row_count:
+    if column.validity[row] and column.ints[row] >= minimum and column.ints[row] <= maximum:
+      rows.push(row)
+    row = row + 1
+  return select_rows_unchecked(table, rows)
+
+export fn filter_float_equal(table: Table, name: String, value: Float) -> Table:
+  require_valid_table(table)
+  index = require_named_column(table, name, kind_float())
+  column = clone_column_unchecked(table.columns[index])
+  var rows = Vector[Int]()
+  var row = 0
+  while row < table.row_count:
+    if column.validity[row] and column.floats[row] == value:
+      rows.push(row)
+    row = row + 1
+  return select_rows_unchecked(table, rows)
+
+export fn filter_float_range(table: Table, name: String, minimum: Float, maximum: Float) -> Table:
+  require_valid_table(table)
+  index = require_named_column(table, name, kind_float())
+  column = clone_column_unchecked(table.columns[index])
+  var rows = Vector[Int]()
+  var row = 0
+  while row < table.row_count:
+    value = column.floats[row]
+    if column.validity[row] and value >= minimum and value <= maximum:
+      rows.push(row)
+    row = row + 1
+  return select_rows_unchecked(table, rows)
+
+export fn filter_bool_equal(table: Table, name: String, value: Bool) -> Table:
+  require_valid_table(table)
+  index = require_named_column(table, name, kind_bool())
+  column = clone_column_unchecked(table.columns[index])
+  var rows = Vector[Int]()
+  var row = 0
+  while row < table.row_count:
+    if column.validity[row] and column.bools[row] == value:
+      rows.push(row)
+    row = row + 1
+  return select_rows_unchecked(table, rows)
+
+export fn filter_string_equal(table: Table, name: String, value: String) -> Table:
+  require_valid_table(table)
+  index = require_named_column(table, name, kind_string())
+  column = clone_column_unchecked(table.columns[index])
+  var rows = Vector[Int]()
+  var row = 0
+  while row < table.row_count:
+    if column.validity[row] and column.strings[row] == value:
+      rows.push(row)
+    row = row + 1
+  return select_rows_unchecked(table, rows)
+
+export fn filter_missing(table: Table, name: String) -> Table:
+  require_valid_table(table)
+  index = find_column_index_unchecked(table, name)
+  if index < 0:
+    raise TableError.ColumnNotFound
+  column = clone_column_unchecked(table.columns[index])
+  var rows = Vector[Int]()
+  var row = 0
+  while row < table.row_count:
+    if not column.validity[row]:
+      rows.push(row)
+    row = row + 1
+  return select_rows_unchecked(table, rows)
+
+export fn filter_present(table: Table, name: String) -> Table:
+  require_valid_table(table)
+  index = find_column_index_unchecked(table, name)
+  if index < 0:
+    raise TableError.ColumnNotFound
+  column = clone_column_unchecked(table.columns[index])
+  var rows = Vector[Int]()
+  var row = 0
+  while row < table.row_count:
+    if column.validity[row]:
+      rows.push(row)
+    row = row + 1
+  return select_rows_unchecked(table, rows)
+
+fn row_precedes(column: Column, left: Int, right: Int, ascending: Bool) -> Bool:
+  left_valid = column.validity[left]
+  right_valid = column.validity[right]
+  if left_valid and not right_valid:
+    return true
+  if not left_valid:
+    return false
+  if not right_valid:
+    return false
+  if column.kind == kind_int():
+    if ascending:
+      return column.ints[left] < column.ints[right]
+    return column.ints[left] > column.ints[right]
+  if column.kind == kind_float():
+    left_nan = is_nan(column.floats[left])
+    right_nan = is_nan(column.floats[right])
+    if left_nan:
+      return false
+    if right_nan:
+      return true
+    if ascending:
+      return column.floats[left] < column.floats[right]
+    return column.floats[left] > column.floats[right]
+  if column.kind == kind_bool():
+    if column.bools[left] == column.bools[right]:
+      return false
+    if ascending:
+      return not column.bools[left]
+    return column.bools[left]
+  return false
+
+fn stable_order(column: Column, row_count_value: Int, ascending: Bool) -> Vector[Int]:
+  var order = Vector[Int]()
+  var row = 0
+  while row < row_count_value:
+    order.push(row)
+    row = row + 1
+  var width = 1
+  while width < row_count_value:
+    var merged = Vector[Int]()
+    var start = 0
+    while start < row_count_value:
+      remaining = row_count_value - start
+      var middle = row_count_value
+      if width < remaining:
+        middle = start + width
+      var finish = row_count_value
+      after_middle = row_count_value - middle
+      if width < after_middle:
+        finish = middle + width
+      var left = start
+      var right = middle
+      while left < middle and right < finish:
+        if row_precedes(column, order[right], order[left], ascending):
+          merged.push(order[right])
+          right = right + 1
+        else:
+          merged.push(order[left])
+          left = left + 1
+      while left < middle:
+        merged.push(order[left])
+        left = left + 1
+      while right < finish:
+        merged.push(order[right])
+        right = right + 1
+      start = finish
+    order = merged
+    if width > row_count_value / 2:
+      width = row_count_value
+    else:
+      width = width * 2
+  return order
+
+export fn sort_by(table: Table, name: String, ascending: Bool) -> Table:
+  require_valid_table(table)
+  index = find_column_index_unchecked(table, name)
+  if index < 0:
+    raise TableError.ColumnNotFound
+  column = clone_column_unchecked(table.columns[index])
+  if column.kind == kind_string():
+    raise TableError.UnsupportedOrdering(kind: kind_string())
+  order = stable_order(column, table.row_count, ascending)
+  return select_rows_unchecked(table, order)
+
+export fn sort_string_by_order(table: Table, name: String, categories: Vector[String], ascending: Bool) -> Table:
+  require_valid_table(table)
+  index = require_named_column(table, name, kind_string())
+  var ranks = empty_string_int_map()
+  var category = 0
+  category_count = categories |> count
+  while category < category_count:
+    value = categories[category]
+    if ranks.get(value, -1) >= 0:
+      raise TableError.DuplicateCategory
+    ranks[value] = category
+    category = category + 1
+  source = clone_column_unchecked(table.columns[index])
+  var row_ranks = Vector[Int]()
+  var row = 0
+  while row < table.row_count:
+    if source.validity[row]:
+      rank = ranks.get(source.strings[row], -1)
+      if rank < 0:
+        raise TableError.CategoryNotFound
+      row_ranks.push(rank)
+    else:
+      row_ranks.push(0)
+    row = row + 1
+  rank_column = Column(name: "rank", kind: kind_int(), nullable: source.nullable, validity: copy_bools(source.validity), ints: row_ranks, floats: Vector[Float](), bools: Vector[Bool](), strings: Vector[String]())
+  order = stable_order(rank_column, table.row_count, ascending)
+  return select_rows_unchecked(table, order)
+
+export fn distinct_int(table: Table, name: String) -> Table:
+  require_valid_table(table)
+  index = require_named_column(table, name, kind_int())
+  column = clone_column_unchecked(table.columns[index])
+  var seen = empty_int_bool_map()
+  var saw_missing = false
+  var rows = Vector[Int]()
+  var row = 0
+  while row < table.row_count:
+    if column.validity[row]:
+      value = column.ints[row]
+      if not seen.get(value, false):
+        seen[value] = true
+        rows.push(row)
+    else:
+      if not saw_missing:
+        saw_missing = true
+        rows.push(row)
+    row = row + 1
+  return select_rows_unchecked(table, rows)
+
+export fn distinct_string(table: Table, name: String) -> Table:
+  require_valid_table(table)
+  index = require_named_column(table, name, kind_string())
+  column = clone_column_unchecked(table.columns[index])
+  var seen = empty_string_bool_map()
+  var saw_missing = false
+  var rows = Vector[Int]()
+  var row = 0
+  while row < table.row_count:
+    if column.validity[row]:
+      value = column.strings[row]
+      if not seen.get(value, false):
+        seen[value] = true
+        rows.push(row)
+    else:
+      if not saw_missing:
+        saw_missing = true
+        rows.push(row)
+    row = row + 1
+  return select_rows_unchecked(table, rows)
+
+export fn validate_group_index(groups: GroupIndex) -> Bool:
+  if groups.source_row_count < 0:
+    return false
+  if groups.key_kind != kind_int() and groups.key_kind != kind_string():
+    return false
+  group_total = groups.sizes |> count
+  if (groups.key_validity |> count) != group_total:
+    return false
+  if (groups.first_rows |> count) != group_total or (groups.last_rows |> count) != group_total:
+    return false
+  if (groups.next_rows |> count) != groups.source_row_count:
+    return false
+  if groups.key_kind == kind_int():
+    if (groups.int_keys |> count) != group_total or (groups.string_keys |> count) != 0:
+      return false
+  else:
+    if (groups.string_keys |> count) != group_total or (groups.int_keys |> count) != 0:
+      return false
+  var seen = Vector[Bool]()
+  var row = 0
+  while row < groups.source_row_count:
+    if groups.next_rows[row] < -1 or groups.next_rows[row] >= groups.source_row_count:
+      return false
+    seen.push(false)
+    row = row + 1
+  var group = 0
+  var visited_total = 0
+  var missing_groups = 0
+  while group < group_total:
+    if groups.sizes[group] <= 0:
+      return false
+    if groups.first_rows[group] < 0 or groups.first_rows[group] >= groups.source_row_count:
+      return false
+    if groups.last_rows[group] < 0 or groups.last_rows[group] >= groups.source_row_count:
+      return false
+    if not groups.key_validity[group]:
+      missing_groups = missing_groups + 1
+      if missing_groups > 1:
+        return false
+      if groups.key_kind == kind_int() and groups.int_keys[group] != 0:
+        return false
+      if groups.key_kind == kind_string() and groups.string_keys[group] != "":
+        return false
+    else:
+      var earlier = 0
+      while earlier < group:
+        if groups.key_validity[earlier]:
+          if groups.key_kind == kind_int() and groups.int_keys[earlier] == groups.int_keys[group]:
+            return false
+          if groups.key_kind == kind_string() and groups.string_keys[earlier] == groups.string_keys[group]:
+            return false
+        earlier = earlier + 1
+    var current = groups.first_rows[group]
+    var in_group = 0
+    var observed_last = 0 - 1
+    while current >= 0:
+      if current >= groups.source_row_count or seen[current]:
+        return false
+      seen[current] = true
+      observed_last = current
+      in_group = in_group + 1
+      visited_total = visited_total + 1
+      if in_group > groups.sizes[group]:
+        return false
+      current = groups.next_rows[current]
+    if in_group != groups.sizes[group] or observed_last != groups.last_rows[group]:
+      return false
+    group = group + 1
+  if visited_total != groups.source_row_count:
+    return false
+  return true
+
+fn require_valid_group_index(groups: GroupIndex):
+  if not validate_group_index(groups):
+    raise TableError.InvalidGroupIndex
+
+fn append_group_row(first_rows: Vector[Int], last_rows: Vector[Int], sizes: Vector[Int], next_rows: Vector[Int], group: Int, row: Int):
+  if sizes[group] == 0:
+    first_rows[group] = row
+  else:
+    previous = last_rows[group]
+    next_rows[previous] = row
+  last_rows[group] = row
+  sizes[group] = sizes[group] + 1
+
+export fn group_by_int(table: Table, name: String) -> GroupIndex:
+  require_valid_table(table)
+  index = require_named_column(table, name, kind_int())
+  column = clone_column_unchecked(table.columns[index])
+  var key_validity = Vector[Bool]()
+  var int_keys = Vector[Int]()
+  var first_rows = Vector[Int]()
+  var last_rows = Vector[Int]()
+  var sizes = Vector[Int]()
+  var next_rows = Vector[Int]()
+  var row = 0
+  while row < table.row_count:
+    next_rows.push(0 - 1)
+    row = row + 1
+  var groups_by_key = empty_int_int_map()
+  var missing_group = 0 - 1
+  row = 0
+  while row < table.row_count:
+    var group = 0 - 1
+    if column.validity[row]:
+      value = column.ints[row]
+      group = groups_by_key.get(value, -1)
+      if group < 0:
+        group = sizes |> count
+        if group == 9223372036854775807:
+          raise TableError.IntegerOverflow
+        groups_by_key[value] = group
+        key_validity.push(true)
+        int_keys.push(value)
+        first_rows.push(0 - 1)
+        last_rows.push(0 - 1)
+        sizes.push(0)
+    else:
+      group = missing_group
+      if group < 0:
+        group = sizes |> count
+        if group == 9223372036854775807:
+          raise TableError.IntegerOverflow
+        missing_group = group
+        key_validity.push(false)
+        int_keys.push(0)
+        first_rows.push(0 - 1)
+        last_rows.push(0 - 1)
+        sizes.push(0)
+    append_group_row(first_rows, last_rows, sizes, next_rows, group, row)
+    row = row + 1
+  return GroupIndex(key_kind: kind_int(), key_validity: key_validity, int_keys: int_keys, string_keys: Vector[String](), first_rows: first_rows, last_rows: last_rows, sizes: sizes, next_rows: next_rows, source_row_count: table.row_count)
+
+export fn group_by_string(table: Table, name: String) -> GroupIndex:
+  require_valid_table(table)
+  index = require_named_column(table, name, kind_string())
+  column = clone_column_unchecked(table.columns[index])
+  var key_validity = Vector[Bool]()
+  var string_keys = Vector[String]()
+  var first_rows = Vector[Int]()
+  var last_rows = Vector[Int]()
+  var sizes = Vector[Int]()
+  var next_rows = Vector[Int]()
+  var row = 0
+  while row < table.row_count:
+    next_rows.push(0 - 1)
+    row = row + 1
+  var groups_by_key = empty_string_int_map()
+  var missing_group = 0 - 1
+  row = 0
+  while row < table.row_count:
+    var group = 0 - 1
+    if column.validity[row]:
+      value = column.strings[row]
+      group = groups_by_key.get(value, -1)
+      if group < 0:
+        group = sizes |> count
+        if group == 9223372036854775807:
+          raise TableError.IntegerOverflow
+        groups_by_key[value] = group
+        key_validity.push(true)
+        string_keys.push(value + "")
+        first_rows.push(0 - 1)
+        last_rows.push(0 - 1)
+        sizes.push(0)
+    else:
+      group = missing_group
+      if group < 0:
+        group = sizes |> count
+        if group == 9223372036854775807:
+          raise TableError.IntegerOverflow
+        missing_group = group
+        key_validity.push(false)
+        string_keys.push("")
+        first_rows.push(0 - 1)
+        last_rows.push(0 - 1)
+        sizes.push(0)
+    append_group_row(first_rows, last_rows, sizes, next_rows, group, row)
+    row = row + 1
+  return GroupIndex(key_kind: kind_string(), key_validity: key_validity, int_keys: Vector[Int](), string_keys: string_keys, first_rows: first_rows, last_rows: last_rows, sizes: sizes, next_rows: next_rows, source_row_count: table.row_count)
+
+export fn group_count(groups: GroupIndex) -> Int:
+  require_valid_group_index(groups)
+  return groups.sizes |> count
+
+export fn group_count_rows(groups: GroupIndex) -> Vector[Int]:
+  require_valid_group_index(groups)
+  return copy_ints(groups.sizes)
+
+export fn group_int_keys(groups: GroupIndex) -> IntColumnValues:
+  require_valid_group_index(groups)
+  if groups.key_kind != kind_int():
+    raise TableError.WrongColumnType(expected_kind: kind_int(), actual_kind: groups.key_kind)
+  return IntColumnValues(values: copy_ints(groups.int_keys), validity: copy_bools(groups.key_validity))
+
+export fn group_string_keys(groups: GroupIndex) -> StringColumnValues:
+  require_valid_group_index(groups)
+  if groups.key_kind != kind_string():
+    raise TableError.WrongColumnType(expected_kind: kind_string(), actual_kind: groups.key_kind)
+  return StringColumnValues(values: copy_strings(groups.string_keys), validity: copy_bools(groups.key_validity))
+
+fn require_group_table(groups: GroupIndex, table: Table):
+  require_valid_group_index(groups)
+  require_valid_table(table)
+  if groups.source_row_count != table.row_count:
+    raise TableError.GroupRowCountMismatch(expected: groups.source_row_count, actual: table.row_count)
+
+export fn group_count_present(table: Table, groups: GroupIndex, name: String) -> Vector[Int]:
+  require_group_table(groups, table)
+  index = find_column_index_unchecked(table, name)
+  if index < 0:
+    raise TableError.ColumnNotFound
+  column = clone_column_unchecked(table.columns[index])
+  var counts = Vector[Int]()
+  var group = 0
+  group_total = groups.sizes |> count
+  while group < group_total:
+    var present = 0
+    var row = groups.first_rows[group]
+    while row >= 0:
+      if column.validity[row]:
+        present = present + 1
+      row = groups.next_rows[row]
+    counts.push(present)
+    group = group + 1
+  return counts
+
+fn checked_add_int(left: Int, right: Int) -> Int:
+  if right > 0 and left > 0:
+    remaining = 9223372036854775807 - left
+    if right > remaining:
+      raise TableError.IntegerOverflow
+  if right < 0 and left < 0:
+    remaining = (-9223372036854775807 - 1) - left
+    if right < remaining:
+      raise TableError.IntegerOverflow
+  return left + right
+
+export fn group_sum_int(table: Table, groups: GroupIndex, name: String) -> IntColumnValues:
+  require_group_table(groups, table)
+  index = require_named_column(table, name, kind_int())
+  column = clone_column_unchecked(table.columns[index])
+  var values = Vector[Int]()
+  var validity = Vector[Bool]()
+  var group = 0
+  group_total = groups.sizes |> count
+  while group < group_total:
+    var total = 0
+    var present = false
+    var row = groups.first_rows[group]
+    while row >= 0:
+      if column.validity[row]:
+        total = checked_add_int(total, column.ints[row])
+        present = true
+      row = groups.next_rows[row]
+    values.push(total)
+    validity.push(present)
+    group = group + 1
+  return IntColumnValues(values: values, validity: validity)
+
+export fn group_sum_float(table: Table, groups: GroupIndex, name: String) -> FloatColumnValues:
+  require_group_table(groups, table)
+  index = require_named_column(table, name, kind_float())
+  column = clone_column_unchecked(table.columns[index])
+  var values = Vector[Float]()
+  var validity = Vector[Bool]()
+  var group = 0
+  group_total = groups.sizes |> count
+  while group < group_total:
+    var total = 0.0
+    var present = false
+    var row = groups.first_rows[group]
+    while row >= 0:
+      if column.validity[row]:
+        total = total + column.floats[row]
+        present = true
+      row = groups.next_rows[row]
+    values.push(total)
+    validity.push(present)
+    group = group + 1
+  return FloatColumnValues(values: values, validity: validity)
+
+export fn group_mean_int(table: Table, groups: GroupIndex, name: String) -> FloatColumnValues:
+  require_group_table(groups, table)
+  index = require_named_column(table, name, kind_int())
+  column = clone_column_unchecked(table.columns[index])
+  var values = Vector[Float]()
+  var validity = Vector[Bool]()
+  var group = 0
+  group_total = groups.sizes |> count
+  while group < group_total:
+    var total = 0.0
+    var present_count = 0
+    var row = groups.first_rows[group]
+    while row >= 0:
+      if column.validity[row]:
+        total = total + column.ints[row] * 1.0
+        present_count = present_count + 1
+      row = groups.next_rows[row]
+    if present_count > 0:
+      values.push(total / (present_count * 1.0))
+      validity.push(true)
+    else:
+      values.push(0.0)
+      validity.push(false)
+    group = group + 1
+  return FloatColumnValues(values: values, validity: validity)
+
+export fn group_mean_float(table: Table, groups: GroupIndex, name: String) -> FloatColumnValues:
+  require_group_table(groups, table)
+  index = require_named_column(table, name, kind_float())
+  column = clone_column_unchecked(table.columns[index])
+  var values = Vector[Float]()
+  var validity = Vector[Bool]()
+  var group = 0
+  group_total = groups.sizes |> count
+  while group < group_total:
+    var total = 0.0
+    var present_count = 0
+    var row = groups.first_rows[group]
+    while row >= 0:
+      if column.validity[row]:
+        total = total + column.floats[row]
+        present_count = present_count + 1
+      row = groups.next_rows[row]
+    if present_count > 0:
+      values.push(total / (present_count * 1.0))
+      validity.push(true)
+    else:
+      values.push(0.0)
+      validity.push(false)
+    group = group + 1
+  return FloatColumnValues(values: values, validity: validity)
+
+fn group_extreme_int(table: Table, groups: GroupIndex, name: String, minimum: Bool) -> IntColumnValues:
+  require_group_table(groups, table)
+  index = require_named_column(table, name, kind_int())
+  column = clone_column_unchecked(table.columns[index])
+  var values = Vector[Int]()
+  var validity = Vector[Bool]()
+  var group = 0
+  group_total = groups.sizes |> count
+  while group < group_total:
+    var result = 0
+    var present = false
+    var row = groups.first_rows[group]
+    while row >= 0:
+      if column.validity[row]:
+        value = column.ints[row]
+        if not present or (minimum and value < result) or (not minimum and value > result):
+          result = value
+        present = true
+      row = groups.next_rows[row]
+    values.push(result)
+    validity.push(present)
+    group = group + 1
+  return IntColumnValues(values: values, validity: validity)
+
+fn group_extreme_float(table: Table, groups: GroupIndex, name: String, minimum: Bool) -> FloatColumnValues:
+  require_group_table(groups, table)
+  index = require_named_column(table, name, kind_float())
+  column = clone_column_unchecked(table.columns[index])
+  var values = Vector[Float]()
+  var validity = Vector[Bool]()
+  var group = 0
+  group_total = groups.sizes |> count
+  while group < group_total:
+    var result = 0.0
+    var present = false
+    var row = groups.first_rows[group]
+    while row >= 0:
+      if column.validity[row]:
+        value = column.floats[row]
+        if not present or is_nan(value) or (not is_nan(result) and minimum and value < result) or (not is_nan(result) and not minimum and value > result):
+          result = value
+        present = true
+      row = groups.next_rows[row]
+    values.push(result)
+    validity.push(present)
+    group = group + 1
+  return FloatColumnValues(values: values, validity: validity)
+
+export fn group_min_int(table: Table, groups: GroupIndex, name: String) -> IntColumnValues:
+  return group_extreme_int(table, groups, name, true)
+
+export fn group_max_int(table: Table, groups: GroupIndex, name: String) -> IntColumnValues:
+  return group_extreme_int(table, groups, name, false)
+
+export fn group_min_float(table: Table, groups: GroupIndex, name: String) -> FloatColumnValues:
+  return group_extreme_float(table, groups, name, true)
+
+export fn group_max_float(table: Table, groups: GroupIndex, name: String) -> FloatColumnValues:
+  return group_extreme_float(table, groups, name, false)
+
+fn contains_string(values: Vector[String], value: String) -> Bool:
+  var i = 0
+  n = values |> count
+  while i < n:
+    if values[i] == value:
+      return true
+    i = i + 1
+  return false
+
+fn right_join_names(left: Table, right: Table, right_key_index: Int, suffix: String) -> Vector[String]:
+  var left_names = Vector[String]()
+  var used = Vector[String]()
+  var i = 0
+  left_count = left.columns |> count
+  while i < left_count:
+    left_names.push(left.columns[i].name + "")
+    used.push(left.columns[i].name + "")
+    i = i + 1
+  var names = Vector[String]()
+  i = 0
+  right_count = right.columns |> count
+  while i < right_count:
+    if i != right_key_index:
+      original = right.columns[i].name + ""
+      var output_name = original + ""
+      if contains_string(left_names, output_name):
+        if suffix.length() == 0:
+          raise TableError.DuplicateColumnName
+        output_name = original + suffix
+      if contains_string(used, output_name):
+        raise TableError.DuplicateColumnName
+      used.push(output_name + "")
+      names.push(output_name + "")
+    i = i + 1
+  return names
+
+fn append_join_pair(left_rows: Vector[Int], right_rows: Vector[Int], left_row: Int, right_row: Int, limit: Int):
+  current = left_rows |> count
+  if current == 9223372036854775807:
+    raise TableError.IntegerOverflow
+  if current >= limit:
+    raise TableError.OutputLimitExceeded(limit: limit)
+  left_rows.push(left_row)
+  right_rows.push(right_row)
+
+fn joined_right_column(column: Column, output_name: String, right_rows: Vector[Int], force_nullable: Bool) -> Column:
+  var validity = Vector[Bool]()
+  var ints = Vector[Int]()
+  var floats = Vector[Float]()
+  var bools = Vector[Bool]()
+  var strings = Vector[String]()
+  var i = 0
+  n = right_rows |> count
+  while i < n:
+    row = right_rows[i]
+    var present = false
+    if row >= 0:
+      present = column.validity[row]
+    validity.push(present)
+    if column.kind == kind_int():
+      if present:
+        ints.push(column.ints[row])
+      else:
+        ints.push(0)
+    else:
+      if column.kind == kind_float():
+        if present:
+          floats.push(column.floats[row])
+        else:
+          floats.push(0.0)
+      else:
+        if column.kind == kind_bool():
+          if present:
+            bools.push(column.bools[row])
+          else:
+            bools.push(false)
+        else:
+          if present:
+            strings.push(column.strings[row] + "")
+          else:
+            strings.push("")
+    i = i + 1
+  return Column(name: output_name + "", kind: column.kind, nullable: force_nullable or column.nullable, validity: validity, ints: ints, floats: floats, bools: bools, strings: strings)
+
+fn assemble_join(left: Table, right: Table, right_key_index: Int, names: Vector[String], left_rows: Vector[Int], right_rows: Vector[Int], left_join: Bool) -> Table:
+  var result = select_rows_unchecked(left, left_rows)
+  var right_column_index = 0
+  var name_index = 0
+  right_count = right.columns |> count
+  while right_column_index < right_count:
+    if right_column_index != right_key_index:
+      column = joined_right_column(right.columns[right_column_index], names[name_index], right_rows, left_join)
+      push_column(result.columns, column)
+      name_index = name_index + 1
+    right_column_index = right_column_index + 1
+  return result
+
+fn require_output_limit(limit: Int):
+  if limit < 0:
+    raise TableError.InvalidOutputLimit(limit: limit)
+
+export fn inner_join_int(left: Table, right: Table, left_key: String, right_key: String, right_suffix: String, max_output_rows: Int) -> Table:
+  require_valid_table(left)
+  require_valid_table(right)
+  require_output_limit(max_output_rows)
+  left_key_index = require_named_column(left, left_key, kind_int())
+  right_key_index = require_named_column(right, right_key, kind_int())
+  names = right_join_names(left, right, right_key_index, right_suffix)
+  right_groups = group_by_int(right, right_key)
+  var group_lookup = empty_int_int_map()
+  var group = 0
+  group_total = right_groups.sizes |> count
+  while group < group_total:
+    if right_groups.key_validity[group]:
+      group_lookup[right_groups.int_keys[group]] = group
+    group = group + 1
+  left_column = clone_column_unchecked(left.columns[left_key_index])
+  var left_rows = Vector[Int]()
+  var right_rows = Vector[Int]()
+  var left_row = 0
+  while left_row < left.row_count:
+    if left_column.validity[left_row]:
+      match_group = group_lookup.get(left_column.ints[left_row], -1)
+      if match_group >= 0:
+        var right_row = right_groups.first_rows[match_group]
+        while right_row >= 0:
+          append_join_pair(left_rows, right_rows, left_row, right_row, max_output_rows)
+          right_row = right_groups.next_rows[right_row]
+    left_row = left_row + 1
+  return assemble_join(left, right, right_key_index, names, left_rows, right_rows, false)
+
+export fn left_join_int(left: Table, right: Table, left_key: String, right_key: String, right_suffix: String, max_output_rows: Int) -> Table:
+  require_valid_table(left)
+  require_valid_table(right)
+  require_output_limit(max_output_rows)
+  left_key_index = require_named_column(left, left_key, kind_int())
+  right_key_index = require_named_column(right, right_key, kind_int())
+  names = right_join_names(left, right, right_key_index, right_suffix)
+  right_groups = group_by_int(right, right_key)
+  var group_lookup = empty_int_int_map()
+  var group = 0
+  group_total = right_groups.sizes |> count
+  while group < group_total:
+    if right_groups.key_validity[group]:
+      group_lookup[right_groups.int_keys[group]] = group
+    group = group + 1
+  left_column = clone_column_unchecked(left.columns[left_key_index])
+  var left_rows = Vector[Int]()
+  var right_rows = Vector[Int]()
+  var left_row = 0
+  while left_row < left.row_count:
+    var matched = false
+    if left_column.validity[left_row]:
+      match_group = group_lookup.get(left_column.ints[left_row], -1)
+      if match_group >= 0:
+        var right_row = right_groups.first_rows[match_group]
+        while right_row >= 0:
+          append_join_pair(left_rows, right_rows, left_row, right_row, max_output_rows)
+          matched = true
+          right_row = right_groups.next_rows[right_row]
+    if not matched:
+      append_join_pair(left_rows, right_rows, left_row, -1, max_output_rows)
+    left_row = left_row + 1
+  return assemble_join(left, right, right_key_index, names, left_rows, right_rows, true)
+
+export fn inner_join_string(left: Table, right: Table, left_key: String, right_key: String, right_suffix: String, max_output_rows: Int) -> Table:
+  require_valid_table(left)
+  require_valid_table(right)
+  require_output_limit(max_output_rows)
+  left_key_index = require_named_column(left, left_key, kind_string())
+  right_key_index = require_named_column(right, right_key, kind_string())
+  names = right_join_names(left, right, right_key_index, right_suffix)
+  right_groups = group_by_string(right, right_key)
+  var group_lookup = empty_string_int_map()
+  var group = 0
+  group_total = right_groups.sizes |> count
+  while group < group_total:
+    if right_groups.key_validity[group]:
+      group_lookup[right_groups.string_keys[group]] = group
+    group = group + 1
+  left_column = clone_column_unchecked(left.columns[left_key_index])
+  var left_rows = Vector[Int]()
+  var right_rows = Vector[Int]()
+  var left_row = 0
+  while left_row < left.row_count:
+    if left_column.validity[left_row]:
+      match_group = group_lookup.get(left_column.strings[left_row], -1)
+      if match_group >= 0:
+        var right_row = right_groups.first_rows[match_group]
+        while right_row >= 0:
+          append_join_pair(left_rows, right_rows, left_row, right_row, max_output_rows)
+          right_row = right_groups.next_rows[right_row]
+    left_row = left_row + 1
+  return assemble_join(left, right, right_key_index, names, left_rows, right_rows, false)
+
+export fn left_join_string(left: Table, right: Table, left_key: String, right_key: String, right_suffix: String, max_output_rows: Int) -> Table:
+  require_valid_table(left)
+  require_valid_table(right)
+  require_output_limit(max_output_rows)
+  left_key_index = require_named_column(left, left_key, kind_string())
+  right_key_index = require_named_column(right, right_key, kind_string())
+  names = right_join_names(left, right, right_key_index, right_suffix)
+  right_groups = group_by_string(right, right_key)
+  var group_lookup = empty_string_int_map()
+  var group = 0
+  group_total = right_groups.sizes |> count
+  while group < group_total:
+    if right_groups.key_validity[group]:
+      group_lookup[right_groups.string_keys[group]] = group
+    group = group + 1
+  left_column = clone_column_unchecked(left.columns[left_key_index])
+  var left_rows = Vector[Int]()
+  var right_rows = Vector[Int]()
+  var left_row = 0
+  while left_row < left.row_count:
+    var matched = false
+    if left_column.validity[left_row]:
+      match_group = group_lookup.get(left_column.strings[left_row], -1)
+      if match_group >= 0:
+        var right_row = right_groups.first_rows[match_group]
+        while right_row >= 0:
+          append_join_pair(left_rows, right_rows, left_row, right_row, max_output_rows)
+          matched = true
+          right_row = right_groups.next_rows[right_row]
+    if not matched:
+      append_join_pair(left_rows, right_rows, left_row, -1, max_output_rows)
+    left_row = left_row + 1
+  return assemble_join(left, right, right_key_index, names, left_rows, right_rows, true)

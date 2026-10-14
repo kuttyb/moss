@@ -1,5 +1,170 @@
 # Moss current status
 
+## Phase 24 Team A L7 CBOR corrections accepted — 2026-10-13
+
+Branch `phase24-advanced-data` preserves all five delivered SDK packages and
+adds the two L7-requested CBOR corrections. Implementation commit
+`debf99f068735630ca28a7d5ee4fc343832ac094` makes linked edge ownership agree
+with each child's public `parents[]` entry and rejects attachment of the
+designated root through typed `CborError.InvalidRoot` before mutation.
+Independent adversarial commits `a6ecc79` and `76baf87` add eight forged-record
+tests, including a true ownership-consistent parent cycle; the verifier found
+no net-new production defect. Commit `58340e6` adds direct corrective typed
+error recovery to the compiled-only ABI-v9 consumer.
+
+The five package suites pass 111 unique tests in Native Debug, Native
+Release, and Fast Debug (333 executions; corrected by Team I from Team A's
+reported 103/309 arithmetic discrepancy: ndarray 21, datastructures 23, tables 24,
+binary 9, cbor 34 = 111). Normal and pinned `cbor2 5.7.1`
+live-oracle acceptance pass: seven cross-package scenarios in all three modes,
+the seeded ndarray/table oracle in all three modes, 12 RFC vectors, 14 exact
+source-free ABI-v9 provider pairs, and 12 comparisons in each CBOR oracle
+direction. `TMPDIR="$PWD/tmp" make check` passes with 54/54 Executor tests,
+61/61 editor tests, and `all Moss v0.1 tests passed`; `make examples` passes.
+L7-A-001 and L7-A-002 are confirmed L7-origin findings and are fixed with
+passing regressions, bringing the historical resolved-defect ledger from seven
+to nine. A fresh independent Architect issued **GO** for exact frozen candidate
+`142b75009c229a318f46b52670f3d7b8aaca848b`, independently rerunning the
+two primary reproducers, the 34-test CBOR suite in all three modes, source-free
+ABI-v9 recovery, 12 RFC vectors, and 24 pinned `cbor2 5.7.1` comparisons.
+The attributable report is preserved in
+`docs/phase24/TEAM_A_ARCHITECT_L7_CORRECTIVE_ACCEPTANCE.md`; report-only state
+is `cd0c5ae26549cd2c9e65f7df6285cebc79006c34`. No merge into
+`phase24-integration` or `main` has occurred.
+
+## Phase 24 Team A advanced-data accepted for Team I handoff — 2026-10-13
+
+Branch `phase24-advanced-data` delivers `moss.ndarray`,
+`moss.datastructures`, `moss.tables`, `moss.binary`, and `moss.cbor` from
+required baseline `5394e93ceedccf21e577556325e598ff4d8c4d9c`. The initial
+implementation `cdcadb26b9b46d332f5f577886c359d44ce839c0` received an
+independent Architect **NO-GO**, preserved in
+`docs/phase24/TEAM_A_ARCHITECT_FINAL_ACCEPTANCE.md`, for four contract and
+acceptance gaps.
+
+Repair implementation `3ea1092359cb82b537bbf33595b3d75836df8e79`
+aligns the over-broad initial data-structure freeze with the mission-authorized
+concrete Int and String-key typed baseline, adds a seeded independent Python
+ndarray/table semantic oracle in Native Debug/Release/Fast Debug, and extends
+the exact 14-provider compiled-only ABI-v9 consumer with typed variant/payload
+recovery and failed-mutation atomicity for all five Team A modules. The required
+Team efficiency closeout and delivery report preserve the original NO-GO and
+all seven attributable Coordinator/Architect defects. A fresh independent
+Architect issued **GO** for exact candidate
+`c80cf8ac51a9fa264b271b5a56c89ea2068ff4b7`, carrying repair implementation
+`3ea1092359cb82b537bbf33595b3d75836df8e79`, after independently verifying all
+four earlier findings fixed with zero net-new defects. The GO report is the
+only change in delivery state `85eb047bc44bd83cd51ec48edcd601bd257effe1`.
+
+Repaired full acceptance passes: the semantic oracle in all three modes; seven
+public cross-package scenarios in all three modes; 12 fixed RFC 8949 vectors;
+typed source-free ABI-v9 execution for all five modules; and 12 pinned
+`cbor2 5.7.1` to Moss plus 12 Moss to `cbor2` comparisons. The unchanged
+package implementations passed 101 unique tests in each of Native Debug,
+Native Release, and Fast Debug, plus two ndarray examples in all three modes.
+On the exact GO candidate, `TMPDIR="$PWD/tmp" make check` passed with 54/54
+Executor tests, 61/61 editor tests, and `all Moss v0.1 tests passed`;
+`make examples`, feedback validation, and whitespace checks pass. No merge into
+`phase24-integration` or `main` has occurred. The authorized
+`phase24-advanced-data` feature branch is published to its configured `origin`;
+local and remote refs were verified equal before session closeout.
+
+## Phase 24 Team A A3 ndarray examples complete — 2026-10-12
+
+Branch `phase24-advanced-data-a3-examples` adds two public-API-only runnable
+examples under `sdk/ndarray/examples`: 3D batched trailing-axis normalization
+with broadcast affine operations, and a 4D broadcast/slice/axis-permutation/
+reshape/transpose pipeline with `linalg.Matrix` round-trip. Focused workflow
+tests cover the same compositions, and the package README documents Debug,
+Release, and Fast Debug commands plus device-agnostic semantics with no GPU or
+accelerator claim.
+
+Validation on the completed source passes: `../../margo test`,
+`../../margo --release test`, and `../../margo --interp test` each pass 21/21
+tests from `sdk/ndarray`; both examples pass `margo run`, `margo --release run`,
+and `margo debug`; structured `moss check --json` and dependency-aware
+`moss fmt --check --json` pass for the tests and examples; developer-feedback
+validation and `git diff --check` pass. No implementation work remains for the
+A3 scope.
+
+## Phase 24 Team A A8 typed CSV adapters — 2026-10-12
+
+Implementation is complete on branch `phase24-advanced-data-a8-csv-adapters`
+from baseline `7773a3006faf6b247fe808de54f6a8ec01ea95ba`. `moss.tables` now exports
+explicit `CsvField`/`CsvSchema` contracts, validation, `csv_import`,
+`csv_export`, and closed `CsvAdapterError` failures through a same-module
+`csv_adapter.moss` source file. Margo's build metadata confirms both
+`tables.moss` and `csv_adapter.moss` are included in the emitted `tables`
+module. Import validates headers and widths, strictly parses all four table
+kinds, preserves row order, and uses a documented backslash escape to separate
+present values from the caller-chosen missing token. Export validates exact
+table/schema correspondence and delegates quoting to public `moss.csv`.
+
+All 24 package tests pass after formatting in Native Debug, Native Release, and
+Fast Debug. Canonical formatter checks report `would_change: false` for the new
+source and expanded tests; `python3 tests/tooling/check_agent_feedback.py` and
+`git diff --check` pass. The public `moss.fmt` API has no exact Float formatter
+with three-mode parity, and `fmt.format_int` cannot represent minimum Int, so
+present cells in those cases raise `CsvAdapterError.UnsupportedFormatting`;
+Float import and missing-only/zero-row Float export remain supported. No JSON
+adapter is claimed because nested arrays/objects, absent keys versus null, and
+original numeric lexemes cannot be preserved by the flat Table model without a
+separate explicit contract. No Team D package, compiler, or shared test
+infrastructure was modified.
+
+## Phase 24 Team A bounded FlatBuffers/Arrow feasibility — 2026-10-12
+
+The bounded A9–A11 assessment is complete on branch
+`phase24-advanced-data-buffer-feasibility`. The new
+`docs/phase24/TEAM_A_FLATBUFFERS_ARROW_FEASIBILITY.md` records that current
+`moss.binary` supports correct owned bytewise construction and concrete
+integer access, while fixed-schema FlatBuffers and a narrow signed-integer/Bool
+Arrow IPC proof of concept are feasible only with explicit copies and limits.
+General schema generation, exact Float fields, native String adapters, packed
+and aligned byte storage, source-visible borrowed views, upper-half `UInt64`,
+zero-copy FlatBuffers, and production Arrow IPC remain blocked capabilities.
+No FlatBuffers/Arrow implementation, schema generator, compiler/runtime change,
+or public API was added.
+
+Validation completed at baseline
+`0d5784241a43caba87e8f024d4b10e20b4a996ea`: live bootstrap confirmed
+`moss-0.1`; `moss.binary` passed 9/9 tests in Native Debug, Native Release, and
+Fast Debug; current Float-bit and String-byte probes reproduced the already
+documented capability-request boundary; ownership queries confirmed the
+reader/writer access modes; and `git diff --check` passed before closeout.
+No new developer-experience observation was warranted, so no feedback record
+was added. There is no unfinished implementation work in this bounded leaf
+scope.
+
+## Phase 24 Team A A11 reciprocal CBOR decoder ready — 2026-10-12
+
+Branch `phase24-advanced-data-a11-cbor-decoder`, based on
+`b9c6ea4049530abd503c97c0d32c444efc45c3a7`, now extends `sdk/cbor` with an
+atomic iterative RFC 8949 decoder. It supports exact Moss-Int major 0/1 values,
+definite byte/text strings with strict UTF-8, arrays, maps, null, and Bool. The
+explicit container stack preserves linked-edge ownership for interleaved nested
+structures, rejects detached/discarded children on successful returns, and
+enforces exact one-item input, depth, combined item, payload, input, and
+deterministic arena-allocation limits with checked cursor/length arithmetic.
+
+Malformed/truncated input, trailing data, reserved additional information,
+indefinite lengths, tags, unsupported simple values, invalid/duplicate map
+keys, and out-of-range integers return typed `CborError` variants. Float16 and
+Float32 return `UnsupportedFloat`; Float64 remains explicitly capability-gated
+because Moss has no checked bit-preserving binary64 conversion. Tags,
+indefinite forms, bignums, non-Int/text keys, other simple values, and all
+floats remain outside the supported subset.
+
+Independent fixed RFC vectors, malformed and negative contracts, all 1/2/4/8
+additional-argument widths, nested interleaving, cumulative limits, integer
+boundaries, and semantic encode/decode round trips are covered. The final
+candidate passes 24/24 tests in Native Debug, Native Release, and Fast Debug;
+canonical formatting; `python3 tests/tooling/check_agent_feedback.py`; and
+`git diff --check`. A native test-lowering helper omission encountered during
+development is recorded under
+`agent-feedback/phase24/team-a-advanced-data/cbor-decoder/` with the multi-file
+same-module workaround. No push was performed.
+
 ## Phase 24 Team I consolidated checkpoint: Team D corrective delivery merged — 2026-10-13
 
 Team I integrated Team D's corrective delivery from `origin/phase24-data`
@@ -48,8 +213,6 @@ repository checks and examples passed. The focused Architect confirmation is
 **GO** for exact implementation SHA `4d04481fceb5c258670c566ed27de879fa0cddfe`
 in `docs/phase24/TEAM_H_HOST_ARCHITECT_CLOSEOUT_CONFIRMATION.md` (report commit
 `638c67cf1f3cf845c4252cbe0d8d61aca6b578c4`). Team I owns any subsequent
-integration.
-
 ## Phase 24 Team I consolidated checkpoint — 2026-10-12
 
 The accepted Team D structured-data, Team T performance, Team N numerical, and

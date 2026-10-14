@@ -1,0 +1,211 @@
+module cbor_l7_adversarial_test
+import cbor
+
+test "L7 wrong parent metadata fails despite consistent edge counts":
+  var doc = cbor.new_doc()
+  root = cbor.add_array(doc)
+  assert(cbor.validate_doc(doc))
+  left = cbor.add_array(doc)
+  assert(cbor.validate_doc(doc))
+  right = cbor.add_array(doc)
+  assert(cbor.validate_doc(doc))
+  left_child = cbor.add_int(doc, 11)
+  assert(cbor.validate_doc(doc))
+  right_child = cbor.add_int(doc, 22)
+  assert(cbor.validate_doc(doc))
+  cbor.array_push(doc, root, left)
+  assert(cbor.validate_doc(doc))
+  cbor.array_push(doc, root, right)
+  assert(cbor.validate_doc(doc))
+  cbor.array_push(doc, left, left_child)
+  assert(cbor.validate_doc(doc))
+  cbor.array_push(doc, right, right_child)
+  assert(cbor.validate_doc(doc))
+  cbor.set_root(doc, root)
+  assert(cbor.validate_doc(doc))
+  assertEqual(cbor.edge_count(doc), 4)
+
+  doc.parents[left_child] = right
+  doc.parents[right_child] = left
+  assert(not cbor.validate_doc(doc))
+  var caught = false
+  try:
+    ignored = cbor.array_get(doc, left, 0)
+  recover cbor.CborError.InvalidDocument(code, index):
+    caught = code == 1 and index == -1
+  assert(caught)
+
+test "L7 multiple incoming edges are rejected":
+  var doc = cbor.new_doc()
+  root = cbor.add_array(doc)
+  assert(cbor.validate_doc(doc))
+  first = cbor.add_null(doc)
+  assert(cbor.validate_doc(doc))
+  second = cbor.add_null(doc)
+  assert(cbor.validate_doc(doc))
+  cbor.array_push(doc, root, first)
+  assert(cbor.validate_doc(doc))
+  cbor.array_push(doc, root, second)
+  assert(cbor.validate_doc(doc))
+  cbor.set_root(doc, root)
+  assert(cbor.validate_doc(doc))
+
+  doc.edge_values[1] = first
+  assert(not cbor.validate_doc(doc))
+  var caught = false
+  try:
+    ignored = cbor.parent_of(doc, first)
+  recover cbor.CborError.InvalidDocument(code, index):
+    caught = code == 1 and index == -1
+  assert(caught)
+
+test "L7 parent cycles are rejected":
+  var doc = cbor.new_doc()
+  outer = cbor.add_array(doc)
+  assert(cbor.validate_doc(doc))
+  inner = cbor.add_array(doc)
+  assert(cbor.validate_doc(doc))
+  cbor.array_push(doc, outer, inner)
+  assert(cbor.validate_doc(doc))
+
+  doc.edge_parents = [outer, inner]
+  doc.edge_next = [-1, -1]
+  doc.edge_keys = [-1, -1]
+  doc.edge_values = [inner, outer]
+  doc.first_edges[inner] = 1
+  doc.last_edges[inner] = 1
+  doc.container_counts[inner] = 1
+  doc.parents[outer] = inner
+  assert(not cbor.validate_doc(doc))
+  var caught = false
+  try:
+    ignored = cbor.node_kind(doc, outer)
+  recover cbor.CborError.InvalidDocument(code, index):
+    caught = code == 1 and index == -1
+  assert(caught)
+
+test "L7 edge cycles are rejected":
+  var doc = cbor.new_doc()
+  root = cbor.add_array(doc)
+  assert(cbor.validate_doc(doc))
+  first = cbor.add_null(doc)
+  assert(cbor.validate_doc(doc))
+  second = cbor.add_null(doc)
+  assert(cbor.validate_doc(doc))
+  cbor.array_push(doc, root, first)
+  assert(cbor.validate_doc(doc))
+  cbor.array_push(doc, root, second)
+  assert(cbor.validate_doc(doc))
+
+  doc.edge_next[1] = 0
+  assert(not cbor.validate_doc(doc))
+  var caught = false
+  try:
+    ignored = cbor.array_length(doc, root)
+  recover cbor.CborError.InvalidDocument(code, index):
+    caught = code == 1 and index == -1
+  assert(caught)
+
+test "L7 orphan and disconnected designated root are incomplete":
+  var doc = cbor.new_doc()
+  designated = cbor.add_null(doc)
+  assert(cbor.validate_doc(doc))
+  disconnected = cbor.add_array(doc)
+  assert(cbor.validate_doc(doc))
+  orphan = cbor.add_int(doc, 9)
+  assert(cbor.validate_doc(doc))
+  cbor.array_push(doc, disconnected, orphan)
+  assert(cbor.validate_doc(doc))
+  cbor.set_root(doc, designated)
+  assert(cbor.validate_doc(doc))
+  assert(not cbor.validate_complete(doc))
+  var caught = false
+  try:
+    ignored = cbor.encode(doc)
+  recover cbor.CborError.InvalidDocument(code, index):
+    caught = code == 2 and index == designated
+  assert(caught)
+
+test "L7 inconsistent map key ownership is rejected":
+  var doc = cbor.new_doc()
+  left = cbor.add_map(doc)
+  assert(cbor.validate_doc(doc))
+  right = cbor.add_map(doc)
+  assert(cbor.validate_doc(doc))
+  left_key = cbor.add_int(doc, 1)
+  assert(cbor.validate_doc(doc))
+  left_value = cbor.add_null(doc)
+  assert(cbor.validate_doc(doc))
+  right_key = cbor.add_int(doc, 2)
+  assert(cbor.validate_doc(doc))
+  right_value = cbor.add_null(doc)
+  assert(cbor.validate_doc(doc))
+  cbor.map_set(doc, left, left_key, left_value)
+  assert(cbor.validate_doc(doc))
+  cbor.map_set(doc, right, right_key, right_value)
+  assert(cbor.validate_doc(doc))
+
+  doc.parents[left_key] = right
+  doc.parents[right_key] = left
+  assert(not cbor.validate_doc(doc))
+  var caught = false
+  try:
+    ignored = cbor.map_key(doc, left, 0)
+  recover cbor.CborError.InvalidDocument(code, index):
+    caught = code == 1 and index == -1
+  assert(caught)
+
+test "L7 inconsistent map value ownership is rejected":
+  var doc = cbor.new_doc()
+  left = cbor.add_map(doc)
+  assert(cbor.validate_doc(doc))
+  right = cbor.add_map(doc)
+  assert(cbor.validate_doc(doc))
+  left_key = cbor.add_int(doc, 3)
+  assert(cbor.validate_doc(doc))
+  left_value = cbor.add_bool(doc, true)
+  assert(cbor.validate_doc(doc))
+  right_key = cbor.add_int(doc, 4)
+  assert(cbor.validate_doc(doc))
+  right_value = cbor.add_bool(doc, false)
+  assert(cbor.validate_doc(doc))
+  cbor.map_set(doc, left, left_key, left_value)
+  assert(cbor.validate_doc(doc))
+  cbor.map_set(doc, right, right_key, right_value)
+  assert(cbor.validate_doc(doc))
+
+  doc.parents[left_value] = right
+  doc.parents[right_value] = left
+  assert(not cbor.validate_doc(doc))
+  var caught = false
+  try:
+    ignored = cbor.map_value(doc, left, 0)
+  recover cbor.CborError.InvalidDocument(code, index):
+    caught = code == 1 and index == -1
+  assert(caught)
+
+test "L7 failed designated-root attachment is atomic":
+  var doc = cbor.new_doc()
+  parent = cbor.add_array(doc)
+  assert(cbor.validate_doc(doc))
+  root = cbor.add_int(doc, 77)
+  assert(cbor.validate_doc(doc))
+  cbor.set_root(doc, root)
+  assert(cbor.validate_doc(doc))
+
+  before_nodes = cbor.node_count(doc)
+  before_edges = cbor.edge_count(doc)
+  before_length = cbor.array_length(doc, parent)
+  before_parent = cbor.parent_of(doc, root)
+  var caught = false
+  try:
+    cbor.array_push(doc, parent, root)
+  recover cbor.CborError.InvalidRoot(root):
+    caught = root == 1
+  assert(caught)
+  assertEqual(cbor.node_count(doc), before_nodes)
+  assertEqual(cbor.edge_count(doc), before_edges)
+  assertEqual(cbor.array_length(doc, parent), before_length)
+  assertEqual(cbor.parent_of(doc, root), before_parent)
+  assertEqual(doc.root, root)
+  assert(cbor.validate_doc(doc))

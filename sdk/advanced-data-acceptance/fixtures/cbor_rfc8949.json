@@ -1,0 +1,28 @@
+{
+  "contract_version": 1,
+  "provenance": {
+    "standard": "RFC 8949",
+    "section": "Appendix A. Examples of Encoded CBOR Data Items",
+    "url": "https://www.rfc-editor.org/rfc/rfc8949.html#appendix-A",
+    "selection": "Definite-length values in the Moss CBOR supported subset; Float, tags, indefinite lengths, non-Int/text map keys, and other simple values are excluded."
+  },
+  "oracle": {
+    "implementation": "cbor2",
+    "version": "5.7.1",
+    "ordinary_checks_require_oracle": false
+  },
+  "vectors": [
+    {"id": "uint-0", "kind": "int", "value": 0, "hex": "00"},
+    {"id": "uint-23", "kind": "int", "value": 23, "hex": "17"},
+    {"id": "uint-24", "kind": "int", "value": 24, "hex": "1818"},
+    {"id": "uint-1000", "kind": "int", "value": 1000, "hex": "1903e8"},
+    {"id": "negative-1", "kind": "int", "value": -1, "hex": "20"},
+    {"id": "negative-1000", "kind": "int", "value": -1000, "hex": "3903e7"},
+    {"id": "bytes-01020304", "kind": "bytes", "value_hex": "01020304", "hex": "4401020304"},
+    {"id": "text-ietf", "kind": "text", "value": "IETF", "hex": "6449455446"},
+    {"id": "array-1-2-3", "kind": "array", "value": [1, 2, 3], "hex": "83010203"},
+    {"id": "array-bool-null", "kind": "array", "value": [true, false, null], "hex": "83f5f4f6"},
+    {"id": "nested-map", "kind": "map", "value": {"a": 1, "b": [true, null, [2, 3]]}, "hex": "a2616101616283f5f6820203"},
+    {"id": "text-umlaut", "kind": "text", "value": "ü", "hex": "62c3bc"}
+  ]
+}

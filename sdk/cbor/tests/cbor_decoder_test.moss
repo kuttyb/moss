@@ -1,0 +1,353 @@
+module cbor_test
+import cbor
+
+fn decoded_int(input: Vector[Int]) -> Int:
+  doc = cbor.decode(input)
+  return cbor.int_value(doc, cbor.root_id(doc))
+
+test "decoder fixed RFC 8949 integer vectors and boundaries":
+  assertEqual(decoded_int([0]), 0)
+  assertEqual(decoded_int([23]), 23)
+  assertEqual(decoded_int([24, 24]), 24)
+  assertEqual(decoded_int([24, 255]), 255)
+  assertEqual(decoded_int([25, 1, 0]), 256)
+  assertEqual(decoded_int([25, 255, 255]), 65535)
+  assertEqual(decoded_int([26, 0, 1, 0, 0]), 65536)
+  assertEqual(decoded_int([26, 255, 255, 255, 255]), 4294967295)
+  assertEqual(decoded_int([27, 127, 255, 255, 255, 255, 255, 255, 255]), 9223372036854775807)
+  assertEqual(decoded_int([32]), -1)
+  assertEqual(decoded_int([55]), -24)
+  assertEqual(decoded_int([56, 24]), -25)
+  assertEqual(decoded_int([57, 3, 231]), -1000)
+  assertEqual(decoded_int([59, 127, 255, 255, 255, 255, 255, 255, 255]), (-9223372036854775807 - 1))
+
+  nonpreferred = cbor.decode([24, 0])
+  assertEqual(cbor.int_value(nonpreferred, cbor.root_id(nonpreferred)), 0)
+  assert(same_ints(cbor.encode(nonpreferred), [0]))
+
+test "decoder fixed RFC payload primitive and container vectors":
+  bytes_doc = cbor.decode([68, 1, 2, 3, 4])
+  assert(same_ints(cbor.byte_string(bytes_doc, cbor.root_id(bytes_doc)), [1, 2, 3, 4]))
+
+  text_doc = cbor.decode([100, 73, 69, 84, 70])
+  assert(same_ints(cbor.text_bytes(text_doc, cbor.root_id(text_doc)), [73, 69, 84, 70]))
+
+  unicode_doc = cbor.decode([98, 195, 188])
+  assert(same_ints(cbor.text_scalars(unicode_doc, cbor.root_id(unicode_doc)), [252]))
+
+  primitive_doc = cbor.decode([131, 245, 244, 246])
+  primitive_root = cbor.root_id(primitive_doc)
+  assertEqual(cbor.array_length(primitive_doc, primitive_root), 3)
+  assert(cbor.bool_value(primitive_doc, cbor.array_get(primitive_doc, primitive_root, 0)))
+  assert(not cbor.bool_value(primitive_doc, cbor.array_get(primitive_doc, primitive_root, 1)))
+  assertEqual(cbor.node_kind(primitive_doc, cbor.array_get(primitive_doc, primitive_root, 2)), cbor.kind_null())
+
+  map_doc = cbor.decode([162, 97, 97, 1, 97, 98, 131, 245, 246, 130, 2, 3])
+  map_root = cbor.root_id(map_doc)
+  assertEqual(cbor.map_length(map_doc, map_root), 2)
+  assert(same_ints(cbor.text_bytes(map_doc, cbor.map_key(map_doc, map_root, 0)), [97]))
+  assertEqual(cbor.int_value(map_doc, cbor.map_value(map_doc, map_root, 0)), 1)
+  nested = cbor.map_value(map_doc, map_root, 1)
+  assertEqual(cbor.array_length(map_doc, nested), 3)
+  inner = cbor.array_get(map_doc, nested, 2)
+  assertEqual(cbor.int_value(map_doc, cbor.array_get(map_doc, inner, 0)), 2)
+  assertEqual(cbor.int_value(map_doc, cbor.array_get(map_doc, inner, 1)), 3)
+  assert(same_ints(cbor.encode(map_doc), [162, 97, 97, 1, 97, 98, 131, 245, 246, 130, 2, 3]))
+
+test "decoder advances past every additional argument width":
+  integer_doc = cbor.decode([132, 24, 24, 25, 1, 0, 26, 0, 1, 0, 0, 27, 0, 0, 0, 1, 0, 0, 0, 0])
+  integer_root = cbor.root_id(integer_doc)
+  assertEqual(cbor.int_value(integer_doc, cbor.array_get(integer_doc, integer_root, 0)), 24)
+  assertEqual(cbor.int_value(integer_doc, cbor.array_get(integer_doc, integer_root, 1)), 256)
+  assertEqual(cbor.int_value(integer_doc, cbor.array_get(integer_doc, integer_root, 2)), 65536)
+  assertEqual(cbor.int_value(integer_doc, cbor.array_get(integer_doc, integer_root, 3)), 4294967296)
+
+  nested_doc = cbor.decode([132, 88, 2, 1, 2, 121, 0, 2, 104, 105, 154, 0, 0, 0, 1, 0, 187, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2])
+  nested_root = cbor.root_id(nested_doc)
+  assert(same_ints(cbor.byte_string(nested_doc, cbor.array_get(nested_doc, nested_root, 0)), [1, 2]))
+  assert(same_ints(cbor.text_bytes(nested_doc, cbor.array_get(nested_doc, nested_root, 1)), [104, 105]))
+  nested_array = cbor.array_get(nested_doc, nested_root, 2)
+  assertEqual(cbor.int_value(nested_doc, cbor.array_get(nested_doc, nested_array, 0)), 0)
+  nested_map = cbor.array_get(nested_doc, nested_root, 3)
+  assertEqual(cbor.int_value(nested_doc, cbor.map_key(nested_doc, nested_map, 0)), 1)
+  assertEqual(cbor.int_value(nested_doc, cbor.map_value(nested_doc, nested_map, 0)), 2)
+
+test "decoder linked ownership survives nested interleaving":
+  doc = cbor.decode([131, 129, 1, 161, 2, 3, 4])
+  root = cbor.root_id(doc)
+  nested = cbor.array_get(doc, root, 0)
+  mapping = cbor.array_get(doc, root, 1)
+  tail = cbor.array_get(doc, root, 2)
+  one = cbor.array_get(doc, nested, 0)
+  key = cbor.map_key(doc, mapping, 0)
+  value = cbor.map_value(doc, mapping, 0)
+
+  assert(cbor.validate_complete(doc))
+  assertEqual(cbor.node_count(doc), 7)
+  assertEqual(cbor.edge_count(doc), 5)
+  assertEqual(cbor.parent_of(doc, nested), root)
+  assertEqual(cbor.parent_of(doc, mapping), root)
+  assertEqual(cbor.parent_of(doc, tail), root)
+  assertEqual(cbor.parent_of(doc, one), nested)
+  assertEqual(cbor.parent_of(doc, key), mapping)
+  assertEqual(cbor.parent_of(doc, value), mapping)
+  assert(same_ints(cbor.encode(doc), [131, 129, 1, 161, 2, 3, 4]))
+
+test "decoder rejects truncation trailing data reserved and indefinite forms":
+  var caught_empty = false
+  try:
+    ignored_empty = cbor.decode(Vector[Int]())
+  recover cbor.CborError.UnexpectedEof(index, requested, remaining):
+    caught_empty = index == 0 and requested == 1 and remaining == 0
+  assert(caught_empty)
+
+  var caught_argument = false
+  try:
+    ignored_argument = cbor.decode([25, 1])
+  recover cbor.CborError.UnexpectedEof(index, requested, remaining):
+    caught_argument = index == 1 and requested == 2 and remaining == 1
+  assert(caught_argument)
+
+  var caught_payload = false
+  try:
+    ignored_payload = cbor.decode([67, 1, 2])
+  recover cbor.CborError.UnexpectedEof(index, requested, remaining):
+    caught_payload = index == 1 and requested == 3 and remaining == 2
+  assert(caught_payload)
+
+  var caught_container = false
+  try:
+    ignored_container = cbor.decode([130, 1])
+  recover cbor.CborError.UnexpectedEof(index, requested, remaining):
+    caught_container = index == 2 and requested == 1 and remaining == 0
+  assert(caught_container)
+
+  var caught_trailing = false
+  try:
+    ignored_trailing = cbor.decode([0, 1])
+  recover cbor.CborError.TrailingData(index, remaining):
+    caught_trailing = index == 1 and remaining == 1
+  assert(caught_trailing)
+
+  var caught_reserved = false
+  try:
+    ignored_reserved = cbor.decode([28])
+  recover cbor.CborError.ReservedAdditionalInfo(index, additional):
+    caught_reserved = index == 0 and additional == 28
+  assert(caught_reserved)
+
+  var caught_indefinite = false
+  try:
+    ignored_indefinite = cbor.decode([159, 255])
+  recover cbor.CborError.IndefiniteLength(index, major):
+    caught_indefinite = index == 0 and major == 4
+  assert(caught_indefinite)
+
+  var caught_break = false
+  try:
+    ignored_break = cbor.decode([255])
+  recover cbor.CborError.UnexpectedBreak(index):
+    caught_break = index == 0
+  assert(caught_break)
+
+test "decoder rejects unsupported tags simple values and floats explicitly":
+  var caught_tag = false
+  try:
+    ignored_tag = cbor.decode([192, 0])
+  recover cbor.CborError.UnsupportedTag(index):
+    caught_tag = index == 0
+  assert(caught_tag)
+
+  var caught_simple = false
+  try:
+    ignored_simple = cbor.decode([247])
+  recover cbor.CborError.UnsupportedSimple(index, value):
+    caught_simple = index == 0 and value == 23
+  assert(caught_simple)
+
+  var caught_extended_simple = false
+  try:
+    ignored_extended_simple = cbor.decode([248, 32])
+  recover cbor.CborError.UnsupportedSimple(index, value):
+    caught_extended_simple = index == 0 and value == 32
+  assert(caught_extended_simple)
+
+  var caught_float16 = false
+  try:
+    ignored_float16 = cbor.decode([249, 60, 0])
+  recover cbor.CborError.UnsupportedFloat(index, width):
+    caught_float16 = index == 0 and width == 16
+  assert(caught_float16)
+
+  var caught_float32 = false
+  try:
+    ignored_float32 = cbor.decode([250, 63, 192, 0, 0])
+  recover cbor.CborError.UnsupportedFloat(index, width):
+    caught_float32 = index == 0 and width == 32
+  assert(caught_float32)
+
+  var caught_float64 = false
+  try:
+    ignored_float64 = cbor.decode([251, 63, 248, 0, 0, 0, 0, 0, 0])
+  recover cbor.CborError.FloatCapabilityUnavailable:
+    caught_float64 = true
+  assert(caught_float64)
+
+test "decoder enforces exact Moss Int range":
+  var caught_positive = false
+  try:
+    ignored_positive = cbor.decode([27, 128, 0, 0, 0, 0, 0, 0, 0])
+  recover cbor.CborError.IntegerOutOfRange(index, major):
+    caught_positive = index == 0 and major == 0
+  assert(caught_positive)
+
+  var caught_negative = false
+  try:
+    ignored_negative = cbor.decode([59, 128, 0, 0, 0, 0, 0, 0, 0])
+  recover cbor.CborError.IntegerOutOfRange(index, major):
+    caught_negative = index == 0 and major == 1
+  assert(caught_negative)
+
+  var caught_length = false
+  try:
+    ignored_length = cbor.decode([91, 128, 0, 0, 0, 0, 0, 0, 0])
+  recover cbor.CborError.LengthOutOfRange(index, major):
+    caught_length = index == 0 and major == 2
+  assert(caught_length)
+
+test "decoder applies strict UTF-8 validation":
+  var caught_overlong = false
+  try:
+    ignored_overlong = cbor.decode([98, 192, 128])
+  recover cbor.CborError.InvalidUtf8(node):
+    caught_overlong = node == -1
+  assert(caught_overlong)
+
+  var caught_surrogate = false
+  try:
+    ignored_surrogate = cbor.decode([99, 237, 160, 128])
+  recover cbor.CborError.InvalidUtf8(node):
+    caught_surrogate = node == -1
+  assert(caught_surrogate)
+
+  var caught_high = false
+  try:
+    ignored_high = cbor.decode([100, 244, 144, 128, 128])
+  recover cbor.CborError.InvalidUtf8(node):
+    caught_high = node == -1
+  assert(caught_high)
+
+  var caught_utf8_truncated = false
+  try:
+    ignored_utf8_truncated = cbor.decode([98, 226, 130])
+  recover cbor.CborError.InvalidUtf8(node):
+    caught_utf8_truncated = node == -1
+  assert(caught_utf8_truncated)
+
+  var caught_continuation = false
+  try:
+    ignored_continuation = cbor.decode([99, 226, 40, 161])
+  recover cbor.CborError.InvalidUtf8(node):
+    caught_continuation = node == -1
+  assert(caught_continuation)
+
+test "decoder rejects invalid and duplicate map keys":
+  var caught_kind = false
+  try:
+    ignored_kind = cbor.decode([161, 245, 0])
+  recover cbor.CborError.UnsupportedValue(node, kind):
+    caught_kind = node == 1 and kind == cbor.kind_bool()
+  assert(caught_kind)
+
+  var caught_int_duplicate = false
+  try:
+    ignored_int_duplicate = cbor.decode([162, 1, 0, 24, 1, 2])
+  recover cbor.CborError.DuplicateKey(map, key):
+    caught_int_duplicate = map == 0 and key == 3
+  assert(caught_int_duplicate)
+
+  var caught_text_duplicate = false
+  try:
+    ignored_text_duplicate = cbor.decode([162, 97, 97, 0, 97, 97, 1])
+  recover cbor.CborError.DuplicateKey(map, key):
+    caught_text_duplicate = map == 0 and key == 3
+  assert(caught_text_duplicate)
+
+test "decoder depth item payload input and allocation limits":
+  var caught_depth = false
+  try:
+    ignored_depth = cbor.decode_with_limits([129, 129, 246], 2, 20, 16, 128, 16)
+  recover cbor.CborError.DepthLimit(depth, limit):
+    caught_depth = depth == 3 and limit == 2
+  assert(caught_depth)
+
+  var caught_items = false
+  try:
+    ignored_items = cbor.decode_with_limits([130, 0, 1], 64, 4, 16, 128, 16)
+  recover cbor.CborError.ResourceLimit(kind, requested, limit):
+    caught_items = kind == 0 and requested == 5 and limit == 4
+  assert(caught_items)
+
+  var caught_payload = false
+  try:
+    ignored_payload = cbor.decode_with_limits([67, 1, 2, 3], 64, 20, 16, 128, 2)
+  recover cbor.CborError.ResourceLimit(kind, requested, limit):
+    caught_payload = kind == 1 and requested == 3 and limit == 2
+  assert(caught_payload)
+
+  var caught_input = false
+  try:
+    ignored_input = cbor.decode_with_limits([0, 1], 64, 20, 1, 128, 1)
+  recover cbor.CborError.InputLimit(requested, limit):
+    caught_input = requested == 2 and limit == 1
+  assert(caught_input)
+
+  var caught_scalar_allocation = false
+  try:
+    ignored_scalar_allocation = cbor.decode_with_limits([0], 64, 20, 16, 9, 1)
+  recover cbor.CborError.AllocationLimit(requested, limit):
+    caught_scalar_allocation = requested == 10 and limit == 9
+  assert(caught_scalar_allocation)
+
+  var caught_container_allocation = false
+  try:
+    ignored_container_allocation = cbor.decode_with_limits([129, 0], 64, 20, 16, 23, 1)
+  recover cbor.CborError.AllocationLimit(requested, limit):
+    caught_container_allocation = requested == 24 and limit == 23
+  assert(caught_container_allocation)
+
+  var caught_cumulative_allocation = false
+  try:
+    ignored_cumulative_allocation = cbor.decode_with_limits([130, 67, 1, 2, 3, 67, 4, 5, 6], 64, 20, 16, 41, 3)
+  recover cbor.CborError.AllocationLimit(requested, limit):
+    caught_cumulative_allocation = requested == 42 and limit == 41
+  assert(caught_cumulative_allocation)
+
+test "encoder decoder semantic round trip":
+  var original = cbor.new_doc()
+  root = cbor.add_map(original)
+  int_key = cbor.add_int(original, -7)
+  values = cbor.add_array(original)
+  cbor.map_set(original, root, int_key, values)
+  text = cbor.add_text_bytes(original, [240, 159, 153, 130])
+  cbor.array_push(original, values, text)
+  bytes_value = cbor.add_byte_string(original, [0, 127, 128, 255])
+  cbor.array_push(original, values, bytes_value)
+  truth = cbor.add_bool(original, true)
+  cbor.array_push(original, values, truth)
+  text_key = cbor.add_text_bytes(original, [107])
+  null_value = cbor.add_null(original)
+  cbor.map_set(original, root, text_key, null_value)
+  cbor.set_root(original, root)
+
+  wire = cbor.encode(original)
+  decoded = cbor.decode(wire)
+  decoded_root = cbor.root_id(decoded)
+  decoded_values = cbor.map_value(decoded, decoded_root, 0)
+  assert(cbor.validate_complete(decoded))
+  assertEqual(cbor.int_value(decoded, cbor.map_key(decoded, decoded_root, 0)), -7)
+  assert(same_ints(cbor.text_scalars(decoded, cbor.array_get(decoded, decoded_values, 0)), [128578]))
+  assert(same_ints(cbor.byte_string(decoded, cbor.array_get(decoded, decoded_values, 1)), [0, 127, 128, 255]))
+  assert(cbor.bool_value(decoded, cbor.array_get(decoded, decoded_values, 2)))
+  assertEqual(cbor.node_kind(decoded, cbor.map_value(decoded, decoded_root, 1)), cbor.kind_null())
+  assert(same_ints(cbor.encode(decoded), wire))

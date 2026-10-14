@@ -1,0 +1,276 @@
+module advanced_data_acceptance
+
+import binary
+import cbor
+import csv
+import datastructures
+import linalg
+import ndarray
+import tables
+
+fn same_ints(left: Vector[Int], right: Vector[Int]) -> Bool:
+  if (left |> count) != (right |> count):
+    return false
+  var i = 0
+  while i < (left |> count):
+    if left[i] != right[i]:
+      return false
+    i = i + 1
+  return true
+
+fn transformed_totals() -> ndarray.NdArray:
+  source = ndarray.from_flat([2, 2, 3], [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0])
+  transformed = ndarray.add_scalar(ndarray.multiply_scalar(source, 2.0), 1.0)
+  return ndarray.sum_axis(transformed, 2)
+
+fn result_table() -> tables.Table:
+  totals = transformed_totals()
+  table0 = tables.new_table(4)
+  table1 = tables.add_column(table0, tables.int_column("group", false, [2, 1, 2, 1], [true, true, true, true]))
+  table2 = tables.add_column(table1, tables.int_column("row", false, [0, 1, 2, 3], [true, true, true, true]))
+  return tables.add_column(table2, tables.float_column("total", false, ndarray.flatten(totals), [true, true, true, true]))
+
+fn join_right_table() -> tables.Table:
+  table0 = tables.new_table(3)
+  table1 = tables.add_column(table0, tables.int_column("key", false, [1, 1, 2], [true, true, true]))
+  return tables.add_column(table1, tables.int_column("weight", false, [100, 101, 200], [true, true, true]))
+
+fn verify_ndarray_tables_and_matrix():
+  totals = transformed_totals()
+  assertEqual(ndarray.shape_copy(totals), [2, 2])
+  assertEqual(ndarray.flatten(totals), [15.0, 33.0, 51.0, 69.0])
+
+  matrix = ndarray.to_matrix(totals)
+  assertEqual(linalg.matrix_rows(matrix), 2)
+  assertEqual(linalg.matrix_cols(matrix), 2)
+  assertEqual(linalg.matrix_get(matrix, 1, 0), 51.0)
+  round_trip = ndarray.from_matrix(matrix)
+  assertEqual(ndarray.shape_copy(round_trip), [2, 2])
+  assertEqual(ndarray.flatten(round_trip), [15.0, 33.0, 51.0, 69.0])
+
+  table = result_table()
+  sorted = tables.sort_by(table, "total", false)
+  assertEqual(tables.int_values(sorted, "row").values, [3, 2, 1, 0])
+
+  groups = tables.group_by_int(table, "group")
+  assertEqual(tables.group_int_keys(groups).values, [2, 1])
+  assertEqual(tables.group_count_rows(groups), [2, 2])
+  assertEqual(tables.group_sum_float(table, groups, "total").values, [66.0, 102.0])
+  assertEqual(tables.group_mean_float(table, groups, "total").values, [33.0, 51.0])
+
+  joined = tables.inner_join_int(table, join_right_table(), "group", "key", "_right", 10)
+  assertEqual(tables.table_row_count(joined), 6)
+  assertEqual(tables.int_values(joined, "row").values, [0, 1, 1, 2, 3, 3])
+  assertEqual(tables.int_values(joined, "weight").values, [200, 100, 101, 200, 100, 101])
+  pass
+
+fn verify_csv_adapter():
+  schema = tables.csv_schema([tables.csv_field("id", tables.kind_int(), false), tables.csv_field("label", tables.kind_string(), true)], true, ",", "NA")
+  table0 = tables.new_table(3)
+  table1 = tables.add_column(table0, tables.int_column("id", false, [15, 33, 51], [true, true, true]))
+  table = tables.add_column(table1, tables.string_column("label", true, ["alpha", "NA", "ignored"], [true, true, false]))
+  encoded = tables.csv_export(table, schema)
+  decoded = tables.csv_import(encoded, schema)
+  assertEqual(tables.int_values(decoded, "id").values, [15, 33, 51])
+  labels = tables.string_values(decoded, "label")
+  assertEqual(labels.values[0], "alpha")
+  assertEqual(labels.values[1], "NA")
+  assert(labels.validity[0])
+  assert(labels.validity[1])
+  assert(not labels.validity[2])
+  pass
+
+fn verify_data_structure_workflow():
+  var queue = datastructures.new_priority_queue()
+  datastructures.priority_queue_push(queue, 2, 20)
+  datastructures.priority_queue_push(queue, 1, 10)
+  datastructures.priority_queue_push(queue, 1, 11)
+  datastructures.priority_queue_push(queue, 3, 30)
+  first = datastructures.priority_queue_pop(queue)
+  second = datastructures.priority_queue_pop(queue)
+  assertEqual(first.value, 10)
+  assertEqual(second.value, 11)
+  assert(datastructures.priority_queue_validate(queue))
+
+  var deque = datastructures.new_int_bounded_deque(3)
+  datastructures.int_deque_push_back(deque, first.value)
+  datastructures.int_deque_push_back(deque, second.value)
+  datastructures.int_deque_push_back(deque, 12)
+  assertEqual(datastructures.int_deque_pop_front(deque), 10)
+  datastructures.int_deque_push_back(deque, 13)
+  assertEqual(datastructures.int_deque_values(deque), [11, 12, 13])
+  assertEqual(datastructures.int_deque_pop_back(deque), 13)
+  datastructures.int_deque_push_front(deque, 10)
+  assertEqual(datastructures.int_deque_values(deque), [10, 11, 12])
+
+  var sets = datastructures.new_union_find(4)
+  assert(datastructures.union_find_union(sets, 0, 2))
+  assert(datastructures.union_find_union(sets, 1, 3))
+  assert(datastructures.union_find_same(sets, 0, 2))
+  assert(not datastructures.union_find_same(sets, 0, 1))
+  assertEqual(datastructures.union_find_component_size(sets, 3), 2)
+  assertEqual(datastructures.union_find_set_count(sets), 2)
+  assert(datastructures.union_find_validate(sets))
+  pass
+
+fn verify_binary_contract():
+  var writer = binary.new_writer_with_limits(16, 8)
+  binary.write_length_delimited(writer, [1, 2, 3, 255])
+  wire = binary.writer_output(writer)
+  assertEqual(wire, [4, 1, 2, 3, 255])
+  var reader = binary.new_reader_with_limits(wire, 16, 8)
+  assertEqual(binary.read_length_delimited(reader), [1, 2, 3, 255])
+  binary.require_finished(reader)
+  pass
+
+fn semantic_cbor_doc() -> cbor.CborDoc:
+  totals = transformed_totals()
+  table = result_table()
+  groups = tables.group_by_int(table, "group")
+  group_sums = tables.group_sum_float(table, groups, "total")
+  joined = tables.inner_join_int(table, join_right_table(), "group", "key", "_right", 10)
+
+  var doc = cbor.new_doc()
+  root = cbor.add_map(doc)
+
+  totals_key = cbor.add_text_bytes(doc, [116, 111, 116, 97, 108, 115])
+  totals_array = cbor.add_array(doc)
+  cbor.map_set(doc, root, totals_key, totals_array)
+  total0 = cbor.add_int(doc, to_int(ndarray.get(totals, [0, 0])))
+  cbor.array_push(doc, totals_array, total0)
+  total1 = cbor.add_int(doc, to_int(ndarray.get(totals, [0, 1])))
+  cbor.array_push(doc, totals_array, total1)
+  total2 = cbor.add_int(doc, to_int(ndarray.get(totals, [1, 0])))
+  cbor.array_push(doc, totals_array, total2)
+  total3 = cbor.add_int(doc, to_int(ndarray.get(totals, [1, 1])))
+  cbor.array_push(doc, totals_array, total3)
+
+  groups_key = cbor.add_text_bytes(doc, [103, 114, 111, 117, 112, 95, 115, 117, 109, 115])
+  groups_array = cbor.add_array(doc)
+  cbor.map_set(doc, root, groups_key, groups_array)
+  group0 = cbor.add_int(doc, to_int(group_sums.values[0]))
+  cbor.array_push(doc, groups_array, group0)
+  group1 = cbor.add_int(doc, to_int(group_sums.values[1]))
+  cbor.array_push(doc, groups_array, group1)
+
+  rows_key = cbor.add_text_bytes(doc, [106, 111, 105, 110, 95, 114, 111, 119, 115])
+  rows_value = cbor.add_int(doc, tables.table_row_count(joined))
+  cbor.map_set(doc, root, rows_key, rows_value)
+  cbor.set_root(doc, root)
+  return doc
+
+fn verify_cbor_semantics():
+  original = semantic_cbor_doc()
+  wire = cbor.encode(original)
+  decoded = cbor.decode(wire)
+  root = cbor.root_id(decoded)
+  assert(cbor.validate_complete(decoded))
+  assertEqual(cbor.map_length(decoded, root), 3)
+
+  totals = cbor.map_value(decoded, root, 0)
+  assertEqual(cbor.array_length(decoded, totals), 4)
+  assertEqual(cbor.int_value(decoded, cbor.array_get(decoded, totals, 0)), 15)
+  assertEqual(cbor.int_value(decoded, cbor.array_get(decoded, totals, 3)), 69)
+  group_sums = cbor.map_value(decoded, root, 1)
+  assertEqual(cbor.int_value(decoded, cbor.array_get(decoded, group_sums, 0)), 66)
+  assertEqual(cbor.int_value(decoded, cbor.array_get(decoded, group_sums, 1)), 102)
+  assertEqual(cbor.int_value(decoded, cbor.map_value(decoded, root, 2)), 6)
+  assert(same_ints(cbor.encode(decoded), wire))
+  pass
+
+fn canonical_round_trip(wire: Vector[Int]) -> Bool:
+  decoded = cbor.decode(wire)
+  return same_ints(cbor.encode(decoded), wire)
+
+fn verify_rfc8949_vectors():
+  assert(canonical_round_trip([0]))
+  assert(canonical_round_trip([23]))
+  assert(canonical_round_trip([24, 24]))
+  assert(canonical_round_trip([25, 3, 232]))
+  assert(canonical_round_trip([32]))
+  assert(canonical_round_trip([57, 3, 231]))
+  assert(canonical_round_trip([68, 1, 2, 3, 4]))
+  assert(canonical_round_trip([100, 73, 69, 84, 70]))
+  assert(canonical_round_trip([131, 1, 2, 3]))
+  assert(canonical_round_trip([131, 245, 244, 246]))
+  assert(canonical_round_trip([162, 97, 97, 1, 97, 98, 131, 245, 246, 130, 2, 3]))
+  assert(canonical_round_trip([98, 195, 188]))
+  pass
+
+fn verify_typed_negative_contracts():
+  table = result_table()
+  var join_limit = false
+  try:
+    ignored_join = tables.inner_join_int(table, join_right_table(), "group", "key", "_right", 5)
+  recover tables.TableError.OutputLimitExceeded(limit):
+    join_limit = limit == 5
+  assert(join_limit)
+
+  var limited_writer = binary.new_writer_with_limits(3, 3)
+  binary.write_byte(limited_writer, 7)
+  var binary_limit = false
+  try:
+    binary.write_length_delimited(limited_writer, [1, 2])
+  recover binary.BinaryError.LimitExceeded(offset, requested, limit):
+    binary_limit = offset == 1 and requested == 3 and limit == 3
+  assert(binary_limit)
+  assertEqual(binary.writer_output(limited_writer), [7])
+
+  var output_doc = cbor.new_doc_with_limits(64, 20, 3, 3)
+  output_root = cbor.add_byte_string(output_doc, [1, 2, 3])
+  cbor.set_root(output_doc, output_root)
+  var cbor_output_limit = false
+  try:
+    ignored_output = cbor.encode(output_doc)
+  recover cbor.CborError.OutputLimit(requested, limit):
+    cbor_output_limit = requested == 4 and limit == 3
+  assert(cbor_output_limit)
+
+  var item_doc = cbor.new_doc_with_limits(64, 4, 32, 16)
+  item_root = cbor.add_array(item_doc)
+  first = cbor.add_int(item_doc, 1)
+  cbor.array_push(item_doc, item_root, first)
+  second = cbor.add_int(item_doc, 2)
+  var item_limit = false
+  try:
+    cbor.array_push(item_doc, item_root, second)
+  recover cbor.CborError.ResourceLimit(kind, requested, limit):
+    item_limit = kind == 0 and requested == 5 and limit == 4
+  assert(item_limit)
+
+  var float_doc = cbor.new_doc()
+  var float_add = false
+  try:
+    ignored_float = cbor.add_float(float_doc, 1.5)
+  recover cbor.CborError.FloatCapabilityUnavailable:
+    float_add = true
+  assert(float_add)
+  assertEqual(cbor.node_count(float_doc), 0)
+
+  var float16_decode = false
+  try:
+    ignored_float16 = cbor.decode([249, 60, 0])
+  recover cbor.CborError.UnsupportedFloat(index, width):
+    float16_decode = index == 0 and width == 16
+  assert(float16_decode)
+
+  var float64_decode = false
+  try:
+    ignored_float64 = cbor.decode([251, 63, 248, 0, 0, 0, 0, 0, 0])
+  recover cbor.CborError.FloatCapabilityUnavailable:
+    float64_decode = true
+  assert(float64_decode)
+  pass
+
+fn main():
+  try:
+    verify_ndarray_tables_and_matrix()
+    verify_csv_adapter()
+    verify_data_structure_workflow()
+    verify_binary_contract()
+    verify_cbor_semantics()
+    verify_rfc8949_vectors()
+    verify_typed_negative_contracts()
+    echo "advanced data acceptance ok: 7 scenarios, 12 RFC vectors"
+  recover:
+    assert(false)

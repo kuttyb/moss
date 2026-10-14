@@ -1,0 +1,312 @@
+module tables
+import csv
+import fmt
+
+enum ParseError:
+  Invalid
+  Overflow
+
+export type CsvField:
+  name: String
+  kind: Int
+  nullable: Bool
+
+export type CsvSchema:
+  fields: Vector[CsvField]
+  has_header: Bool
+  delimiter: String
+  missing_token: String
+
+type DecodedCsvCell:
+  missing: Bool
+  value: String
+
+export enum CsvAdapterError:
+  EmptySchema
+  EmptyFieldName(index: Int)
+  InvalidFieldKind(index: Int, kind: Int)
+  DuplicateFieldName(index: Int)
+  InvalidDelimiter
+  MissingHeader
+  HeaderWidthMismatch(expected: Int, actual: Int)
+  HeaderNameMismatch(index: Int)
+  RowWidthMismatch(row: Int, expected: Int, actual: Int)
+  InvalidCell(row: Int, column: Int, kind: Int)
+  NonNullableMissing(row: Int, column: Int)
+  TableColumnCountMismatch(expected: Int, actual: Int)
+  TableColumnNameMismatch(column: Int)
+  TableColumnKindMismatch(column: Int, expected: Int, actual: Int)
+  TableColumnNullabilityMismatch(column: Int, expected: Bool, actual: Bool)
+  UnsupportedFormatting(row: Int, column: Int, kind: Int)
+
+fn empty_csv_fields() -> Vector[CsvField]:
+  placeholder = CsvField(name: "_", kind: kind_int(), nullable: false)
+  var fields = [placeholder]
+  ignored = fields.pop()
+  return fields
+
+fn copy_csv_fields(fields: Vector[CsvField]) -> Vector[CsvField]:
+  var result = empty_csv_fields()
+  var i = 0
+  n = fields |> count
+  while i < n:
+    result.push(CsvField(name: fields[i].name + "", kind: fields[i].kind, nullable: fields[i].nullable))
+    i = i + 1
+  return result
+
+fn valid_csv_delimiter(delimiter: String) -> Bool:
+  if delimiter.length() != 1:
+    return false
+  quote = "\""
+  carriage_return = "\r"
+  line_feed = "\n"
+  if delimiter == quote:
+    return false
+  if delimiter == carriage_return:
+    return false
+  if delimiter == line_feed:
+    return false
+  return true
+
+fn require_valid_csv_schema(schema: CsvSchema):
+  field_count = schema.fields |> count
+  if field_count == 0:
+    raise CsvAdapterError.EmptySchema
+  if not valid_csv_delimiter(schema.delimiter):
+    raise CsvAdapterError.InvalidDelimiter
+  var i = 0
+  while i < field_count:
+    if schema.fields[i].name.length() == 0:
+      raise CsvAdapterError.EmptyFieldName(index: i)
+    if schema.fields[i].kind < kind_int() or schema.fields[i].kind > kind_string():
+      raise CsvAdapterError.InvalidFieldKind(index: i, kind: schema.fields[i].kind)
+    var j = 0
+    while j < i:
+      if schema.fields[j].name == schema.fields[i].name:
+        raise CsvAdapterError.DuplicateFieldName(index: i)
+      j = j + 1
+    i = i + 1
+
+export fn csv_field(name: String, kind: Int, nullable: Bool) -> CsvField:
+  field = CsvField(name: name + "", kind: kind, nullable: nullable)
+  if field.name.length() == 0:
+    raise CsvAdapterError.EmptyFieldName(index: 0)
+  if field.kind < kind_int() or field.kind > kind_string():
+    raise CsvAdapterError.InvalidFieldKind(index: 0, kind: field.kind)
+  return field
+
+export fn csv_schema(fields: Vector[CsvField], has_header: Bool, delimiter: String, missing_token: String) -> CsvSchema:
+  schema = CsvSchema(fields: copy_csv_fields(fields), has_header: has_header, delimiter: delimiter + "", missing_token: missing_token + "")
+  require_valid_csv_schema(schema)
+  return schema
+
+export fn validate_csv_schema(schema: CsvSchema) -> Bool:
+  try:
+    require_valid_csv_schema(schema)
+    return true
+  recover:
+    return false
+
+fn decode_csv_cell(value: String, missing_token: String) -> DecodedCsvCell:
+  if value == missing_token:
+    return DecodedCsvCell(missing: true, value: "")
+  if value.length() > 0 and value.char_at(0) == "\\":
+    return DecodedCsvCell(missing: false, value: value.slice(1, value.length() - 1))
+  return DecodedCsvCell(missing: false, value: value + "")
+
+fn encode_present_csv_cell(value: String, missing_token: String) -> String:
+  if value == missing_token:
+    return "\\" + value
+  if value.length() > 0 and value.char_at(0) == "\\":
+    return "\\" + value
+  return value + ""
+
+fn parse_csv_int(value: String, row: Int, column: Int) -> Int:
+  try:
+    return parse_int(value)
+  recover ParseError.Invalid:
+    raise CsvAdapterError.InvalidCell(row: row, column: column, kind: kind_int())
+  recover ParseError.Overflow:
+    raise CsvAdapterError.InvalidCell(row: row, column: column, kind: kind_int())
+
+fn parse_csv_float(value: String, row: Int, column: Int) -> Float:
+  try:
+    return parse_float(value)
+  recover ParseError.Invalid:
+    raise CsvAdapterError.InvalidCell(row: row, column: column, kind: kind_float())
+  recover ParseError.Overflow:
+    raise CsvAdapterError.InvalidCell(row: row, column: column, kind: kind_float())
+
+fn parse_csv_bool(value: String, row: Int, column: Int) -> Bool:
+  if value == "true":
+    return true
+  if value == "false":
+    return false
+  raise CsvAdapterError.InvalidCell(row: row, column: column, kind: kind_bool())
+
+fn require_csv_shape(rows: Vector[Vector[String]], schema: CsvSchema) -> Int:
+  field_count = schema.fields |> count
+  total_rows = rows |> count
+  var data_start = 0
+  if schema.has_header:
+    if total_rows == 0:
+      raise CsvAdapterError.MissingHeader
+    actual_header_width = rows[0] |> count
+    if actual_header_width != field_count:
+      raise CsvAdapterError.HeaderWidthMismatch(expected: field_count, actual: actual_header_width)
+    var column = 0
+    while column < field_count:
+      if rows[0][column] != schema.fields[column].name:
+        raise CsvAdapterError.HeaderNameMismatch(index: column)
+      column = column + 1
+    data_start = 1
+  var source_row = data_start
+  while source_row < total_rows:
+    actual_width = rows[source_row] |> count
+    if actual_width != field_count:
+      raise CsvAdapterError.RowWidthMismatch(row: source_row - data_start, expected: field_count, actual: actual_width)
+    source_row = source_row + 1
+  return data_start
+
+export fn csv_import(input: String, schema: CsvSchema) -> Table:
+  require_valid_csv_schema(schema)
+  delimiter = schema.delimiter + ""
+  rows = csv.read_all(input, delimiter)
+  data_start = require_csv_shape(rows, schema)
+  row_count_value = (rows |> count) - data_start
+  var table = new_table(row_count_value)
+  field_count = schema.fields |> count
+  var column = 0
+  while column < field_count:
+    if schema.fields[column].kind == kind_int():
+      var int_values = Vector[Int]()
+      var int_validity = Vector[Bool]()
+      var int_row = 0
+      while int_row < row_count_value:
+        int_decoded = decode_csv_cell(rows[data_start + int_row][column], schema.missing_token)
+        if int_decoded.missing:
+          if not schema.fields[column].nullable:
+            raise CsvAdapterError.NonNullableMissing(row: int_row, column: column)
+          int_values.push(0)
+          int_validity.push(false)
+        else:
+          int_values.push(parse_csv_int(int_decoded.value, int_row, column))
+          int_validity.push(true)
+        int_row = int_row + 1
+      table = add_column(table, int_column(schema.fields[column].name, schema.fields[column].nullable, int_values, int_validity))
+    else:
+      if schema.fields[column].kind == kind_float():
+        var float_values = Vector[Float]()
+        var float_validity = Vector[Bool]()
+        var float_row = 0
+        while float_row < row_count_value:
+          float_decoded = decode_csv_cell(rows[data_start + float_row][column], schema.missing_token)
+          if float_decoded.missing:
+            if not schema.fields[column].nullable:
+              raise CsvAdapterError.NonNullableMissing(row: float_row, column: column)
+            float_values.push(0.0)
+            float_validity.push(false)
+          else:
+            float_values.push(parse_csv_float(float_decoded.value, float_row, column))
+            float_validity.push(true)
+          float_row = float_row + 1
+        table = add_column(table, float_column(schema.fields[column].name, schema.fields[column].nullable, float_values, float_validity))
+      else:
+        if schema.fields[column].kind == kind_bool():
+          var bool_values = Vector[Bool]()
+          var bool_validity = Vector[Bool]()
+          var bool_row = 0
+          while bool_row < row_count_value:
+            bool_decoded = decode_csv_cell(rows[data_start + bool_row][column], schema.missing_token)
+            if bool_decoded.missing:
+              if not schema.fields[column].nullable:
+                raise CsvAdapterError.NonNullableMissing(row: bool_row, column: column)
+              bool_values.push(false)
+              bool_validity.push(false)
+            else:
+              bool_values.push(parse_csv_bool(bool_decoded.value, bool_row, column))
+              bool_validity.push(true)
+            bool_row = bool_row + 1
+          table = add_column(table, bool_column(schema.fields[column].name, schema.fields[column].nullable, bool_values, bool_validity))
+        else:
+          var string_values = Vector[String]()
+          var string_validity = Vector[Bool]()
+          var string_row = 0
+          while string_row < row_count_value:
+            string_decoded = decode_csv_cell(rows[data_start + string_row][column], schema.missing_token)
+            if string_decoded.missing:
+              if not schema.fields[column].nullable:
+                raise CsvAdapterError.NonNullableMissing(row: string_row, column: column)
+              string_values.push("")
+              string_validity.push(false)
+            else:
+              string_values.push(string_decoded.value + "")
+              string_validity.push(true)
+            string_row = string_row + 1
+          table = add_column(table, string_column(schema.fields[column].name, schema.fields[column].nullable, string_values, string_validity))
+    column = column + 1
+  return table
+
+fn require_table_csv_schema(table: Table, schema: CsvSchema):
+  table_columns = column_count(table)
+  schema_columns = schema.fields |> count
+  if table_columns != schema_columns:
+    raise CsvAdapterError.TableColumnCountMismatch(expected: schema_columns, actual: table_columns)
+  var column = 0
+  while column < schema_columns:
+    if table.columns[column].name != schema.fields[column].name:
+      raise CsvAdapterError.TableColumnNameMismatch(column: column)
+    if table.columns[column].kind != schema.fields[column].kind:
+      raise CsvAdapterError.TableColumnKindMismatch(column: column, expected: schema.fields[column].kind, actual: table.columns[column].kind)
+    if table.columns[column].nullable != schema.fields[column].nullable:
+      raise CsvAdapterError.TableColumnNullabilityMismatch(column: column, expected: schema.fields[column].nullable, actual: table.columns[column].nullable)
+    column = column + 1
+
+fn format_csv_int(value: Int, row: Int, column: Int) -> String:
+  if value == (-9223372036854775807 - 1):
+    raise CsvAdapterError.UnsupportedFormatting(row: row, column: column, kind: kind_int())
+  return fmt.format_int(value)
+
+fn format_csv_bool(value: Bool) -> String:
+  if value:
+    return "true"
+  return "false"
+
+fn formatted_csv_cell(table: Table, schema: CsvSchema, row: Int, column: Int) -> String:
+  if not table.columns[column].validity[row]:
+    return schema.missing_token + ""
+  if table.columns[column].kind == kind_int():
+    text = format_csv_int(table.columns[column].ints[row], row, column)
+    return encode_present_csv_cell(text, schema.missing_token)
+  if table.columns[column].kind == kind_float():
+    raise CsvAdapterError.UnsupportedFormatting(row: row, column: column, kind: kind_float())
+  if table.columns[column].kind == kind_bool():
+    text = format_csv_bool(table.columns[column].bools[row])
+    return encode_present_csv_cell(text, schema.missing_token)
+  text = table.columns[column].strings[row] + ""
+  return encode_present_csv_cell(text, schema.missing_token)
+
+export fn csv_export(table: Table, schema: CsvSchema) -> String:
+  require_valid_csv_schema(schema)
+  require_table_csv_schema(table, schema)
+  delimiter = schema.delimiter + ""
+  var rows = Vector[Vector[String]]()
+  field_count = schema.fields |> count
+  if schema.has_header:
+    var header = Vector[String]()
+    var column = 0
+    while column < field_count:
+      header.push(schema.fields[column].name + "")
+      column = column + 1
+    rows.push(header)
+  row_count_value = table.row_count
+  var row = 0
+  while row < row_count_value:
+    var fields = Vector[String]()
+    var column = 0
+    while column < field_count:
+      fields.push(formatted_csv_cell(table, schema, row, column))
+      column = column + 1
+    rows.push(fields)
+    row = row + 1
+  return csv.write_all(rows, delimiter)

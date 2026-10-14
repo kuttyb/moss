@@ -1,0 +1,28 @@
+module app
+
+import ndarray
+
+fn run():
+  let batches = ndarray.from_flat([2, 2, 3], [1.0, 1.0, 2.0, 2.0, 2.0, 4.0, 3.0, 1.0, 4.0, 4.0, 4.0, 8.0])
+  let lane_totals = ndarray.sum_axis(batches, 2)
+  let denominators = ndarray.reshape(lane_totals, [2, 2, 1])
+  let normalized = ndarray.divide(batches, denominators)
+
+  let channel_gain = ndarray.from_flat([3], [2.0, 4.0, 8.0])
+  let channel_bias = ndarray.from_flat([1, 1, 3], [0.5, 1.0, 1.5])
+  let affine = ndarray.add(ndarray.multiply(normalized, channel_gain), channel_bias)
+
+  let normalized_totals = ndarray.sum_axis(normalized, 2)
+  assertEqual(ndarray.get(normalized_totals, [0, 0]), 1.0)
+  assertEqual(ndarray.get(normalized_totals, [1, 1]), 1.0)
+  assertEqual(ndarray.get(affine, [1, 0, 0]), 1.25)
+  assertEqual(ndarray.get(affine, [1, 1, 2]), 5.5)
+
+  echo "normalized 3D batch", ndarray.get(normalized, [1, 1, 2])
+  echo "broadcast affine output", ndarray.get(affine, [1, 1, 2])
+
+fn main():
+  try:
+    run()
+  recover:
+    echo "batched normalization failed"

@@ -1,0 +1,555 @@
+module binary
+import bytes
+
+export enum BinaryError:
+  InvalidByte(offset: Int, value: Int)
+  InvalidInputLimit(limit: Int, maximum: Int)
+  InvalidOutputLimit(limit: Int, maximum: Int)
+  InvalidPayloadLimit(limit: Int, maximum: Int)
+  InvalidState(offset: Int, length: Int, limit: Int)
+  InvalidLength(offset: Int, length: Int)
+  InvalidValue(offset: Int, value: Int, width: Int)
+  UnexpectedEof(offset: Int, requested: Int, available: Int)
+  MalformedVarint(offset: Int, bytes_read: Int)
+  OverlongVarint(offset: Int, bytes_read: Int)
+  Overflow(offset: Int)
+  TrailingInput(offset: Int, remaining: Int)
+  LimitExceeded(offset: Int, requested: Int, limit: Int)
+
+export type ByteReader:
+  data: Vector[Int]
+  cursor: Int
+  input_limit: Int
+  payload_limit: Int
+
+export type ByteWriter:
+  data: Vector[Int]
+  output_limit: Int
+  payload_limit: Int
+
+type DecodedVarint:
+  value: Int
+  next_cursor: Int
+  bytes_read: Int
+
+fn push_int(values: Vector[Int], value: Int):
+  values.push(value)
+
+export fn default_total_limit() -> Int:
+  return 67108864
+
+export fn default_payload_limit() -> Int:
+  return 16777216
+
+fn maximum_int() -> Int:
+  return 9223372036854775807
+
+fn minimum_int() -> Int:
+  return (-9223372036854775807 - 1)
+
+fn require_input_limits(input_limit: Int, payload_limit: Int):
+  maximum = default_total_limit()
+  if input_limit <= 0 or input_limit > maximum:
+    raise BinaryError.InvalidInputLimit(limit: input_limit, maximum: maximum)
+  var payload_maximum = default_payload_limit()
+  if input_limit < payload_maximum:
+    payload_maximum = input_limit
+  if payload_limit <= 0 or payload_limit > payload_maximum:
+    raise BinaryError.InvalidPayloadLimit(limit: payload_limit, maximum: payload_maximum)
+
+fn require_output_limits(output_limit: Int, payload_limit: Int):
+  maximum = default_total_limit()
+  if output_limit <= 0 or output_limit > maximum:
+    raise BinaryError.InvalidOutputLimit(limit: output_limit, maximum: maximum)
+  var payload_maximum = default_payload_limit()
+  if output_limit < payload_maximum:
+    payload_maximum = output_limit
+  if payload_limit <= 0 or payload_limit > payload_maximum:
+    raise BinaryError.InvalidPayloadLimit(limit: payload_limit, maximum: payload_maximum)
+
+fn require_bytes(values: Vector[Int]):
+  n = values |> count
+  var i = 0
+  while i < n:
+    value = values[i]
+    if not bytes.is_byte(value):
+      raise BinaryError.InvalidByte(offset: i, value: value)
+    i = i + 1
+
+export fn validate_reader(reader: ByteReader) -> Bool:
+  n = reader.data |> count
+  if reader.input_limit <= 0 or reader.input_limit > default_total_limit():
+    return false
+  if reader.payload_limit <= 0 or reader.payload_limit > default_payload_limit():
+    return false
+  if reader.payload_limit > reader.input_limit or n > reader.input_limit:
+    return false
+  if reader.cursor < 0 or reader.cursor > n:
+    return false
+  return bytes.all_bytes(reader.data)
+
+export fn validate_writer(writer: ByteWriter) -> Bool:
+  n = writer.data |> count
+  if writer.output_limit <= 0 or writer.output_limit > default_total_limit():
+    return false
+  if writer.payload_limit <= 0 or writer.payload_limit > default_payload_limit():
+    return false
+  if writer.payload_limit > writer.output_limit or n > writer.output_limit:
+    return false
+  return bytes.all_bytes(writer.data)
+
+fn require_reader(reader: ByteReader):
+  require_input_limits(reader.input_limit, reader.payload_limit)
+  n = reader.data |> count
+  if n > reader.input_limit:
+    raise BinaryError.InvalidState(offset: reader.cursor, length: n, limit: reader.input_limit)
+  if reader.cursor < 0 or reader.cursor > n:
+    raise BinaryError.InvalidState(offset: reader.cursor, length: n, limit: reader.input_limit)
+  require_bytes(reader.data)
+
+fn require_writer(writer: ByteWriter):
+  require_output_limits(writer.output_limit, writer.payload_limit)
+  n = writer.data |> count
+  if n > writer.output_limit:
+    raise BinaryError.InvalidState(offset: n, length: n, limit: writer.output_limit)
+  require_bytes(writer.data)
+
+export fn new_reader(values: Vector[Int]) -> ByteReader:
+  return new_reader_with_limits(values, default_total_limit(), default_payload_limit())
+
+export fn new_reader_with_limits(values: Vector[Int], input_limit: Int, payload_limit: Int) -> ByteReader:
+  require_input_limits(input_limit, payload_limit)
+  n = values |> count
+  if n > input_limit:
+    raise BinaryError.LimitExceeded(offset: 0, requested: n, limit: input_limit)
+  require_bytes(values)
+  owned = bytes.copy_bytes(values)
+  return ByteReader(data: owned, cursor: 0, input_limit: input_limit, payload_limit: payload_limit)
+
+export fn new_writer() -> ByteWriter:
+  return new_writer_with_limits(default_total_limit(), default_payload_limit())
+
+export fn new_writer_with_limits(output_limit: Int, payload_limit: Int) -> ByteWriter:
+  require_output_limits(output_limit, payload_limit)
+  return ByteWriter(data: Vector[Int](), output_limit: output_limit, payload_limit: payload_limit)
+
+export fn reader_cursor(reader: ByteReader) -> Int:
+  require_reader(reader)
+  return reader.cursor
+
+export fn reader_remaining(reader: ByteReader) -> Int:
+  require_reader(reader)
+  return (reader.data |> count) - reader.cursor
+
+export fn reader_input(reader: ByteReader) -> Vector[Int]:
+  require_reader(reader)
+  return bytes.copy_bytes(reader.data)
+
+export fn writer_length(writer: ByteWriter) -> Int:
+  require_writer(writer)
+  return writer.data |> count
+
+export fn writer_output(writer: ByteWriter) -> Vector[Int]:
+  require_writer(writer)
+  return bytes.copy_bytes(writer.data)
+
+export fn require_finished(reader: ByteReader):
+  require_reader(reader)
+  remaining = (reader.data |> count) - reader.cursor
+  if remaining != 0:
+    raise BinaryError.TrailingInput(offset: reader.cursor, remaining: remaining)
+
+fn require_available(reader: ByteReader, requested: Int):
+  if requested < 0:
+    raise BinaryError.InvalidLength(offset: reader.cursor, length: requested)
+  available = (reader.data |> count) - reader.cursor
+  if requested > available:
+    raise BinaryError.UnexpectedEof(offset: reader.cursor, requested: requested, available: available)
+
+export fn read_byte(reader: ByteReader) -> Int:
+  require_reader(reader)
+  require_available(reader, 1)
+  value = reader.data[reader.cursor]
+  reader.cursor = reader.cursor + 1
+  return value
+
+export fn read_bytes(reader: ByteReader, length: Int) -> Vector[Int]:
+  require_reader(reader)
+  require_available(reader, length)
+  var result = Vector[Int]()
+  var i = 0
+  while i < length:
+    result.push(reader.data[reader.cursor + i])
+    i = i + 1
+  reader.cursor = reader.cursor + length
+  return result
+
+fn decode_unsigned_be(reader: ByteReader, width: Int) -> Int:
+  require_reader(reader)
+  require_available(reader, width)
+  start = reader.cursor
+  var value = 0
+  var i = 0
+  maximum = maximum_int()
+  while i < width:
+    byte = reader.data[start + i]
+    if value > (maximum - byte) / 256:
+      raise BinaryError.Overflow(offset: start)
+    value = value * 256 + byte
+    i = i + 1
+  reader.cursor = start + width
+  return value
+
+fn decode_unsigned_le(reader: ByteReader, width: Int) -> Int:
+  require_reader(reader)
+  require_available(reader, width)
+  start = reader.cursor
+  var value = 0
+  var i = width
+  maximum = maximum_int()
+  while i > 0:
+    i = i - 1
+    byte = reader.data[start + i]
+    if value > (maximum - byte) / 256:
+      raise BinaryError.Overflow(offset: start)
+    value = value * 256 + byte
+  reader.cursor = start + width
+  return value
+
+fn decode_signed_be(reader: ByteReader, width: Int) -> Int:
+  require_reader(reader)
+  require_available(reader, width)
+  start = reader.cursor
+  first = reader.data[start]
+  var value = first
+  if first >= 128:
+    value = first - 256
+  var i = 1
+  while i < width:
+    value = value * 256 + reader.data[start + i]
+    i = i + 1
+  reader.cursor = start + width
+  return value
+
+fn decode_signed_le(reader: ByteReader, width: Int) -> Int:
+  require_reader(reader)
+  require_available(reader, width)
+  start = reader.cursor
+  first = reader.data[start + width - 1]
+  var value = first
+  if first >= 128:
+    value = first - 256
+  var i = width - 1
+  while i > 0:
+    i = i - 1
+    value = value * 256 + reader.data[start + i]
+  reader.cursor = start + width
+  return value
+
+export fn read_u16_be(reader: ByteReader) -> Int:
+  return decode_unsigned_be(reader, 2)
+
+export fn read_u16_le(reader: ByteReader) -> Int:
+  return decode_unsigned_le(reader, 2)
+
+export fn read_u32_be(reader: ByteReader) -> Int:
+  return decode_unsigned_be(reader, 4)
+
+export fn read_u32_le(reader: ByteReader) -> Int:
+  return decode_unsigned_le(reader, 4)
+
+export fn read_u64_be(reader: ByteReader) -> Int:
+  return decode_unsigned_be(reader, 8)
+
+export fn read_u64_le(reader: ByteReader) -> Int:
+  return decode_unsigned_le(reader, 8)
+
+export fn read_i16_be(reader: ByteReader) -> Int:
+  return decode_signed_be(reader, 2)
+
+export fn read_i16_le(reader: ByteReader) -> Int:
+  return decode_signed_le(reader, 2)
+
+export fn read_i32_be(reader: ByteReader) -> Int:
+  return decode_signed_be(reader, 4)
+
+export fn read_i32_le(reader: ByteReader) -> Int:
+  return decode_signed_le(reader, 4)
+
+export fn read_i64_be(reader: ByteReader) -> Int:
+  return decode_signed_be(reader, 8)
+
+export fn read_i64_le(reader: ByteReader) -> Int:
+  return decode_signed_le(reader, 8)
+
+fn ensure_writer_capacity(writer: ByteWriter, requested: Int):
+  current = writer.data |> count
+  available = writer.output_limit - current
+  if requested > available:
+    raise BinaryError.LimitExceeded(offset: current, requested: requested, limit: writer.output_limit)
+
+fn append_staged(writer: ByteWriter, staged: Vector[Int]):
+  require_writer(writer)
+  require_bytes(staged)
+  requested = staged |> count
+  ensure_writer_capacity(writer, requested)
+  var i = 0
+  while i < requested:
+    push_int(writer.data, staged[i])
+    i = i + 1
+
+export fn write_byte(writer: ByteWriter, value: Int):
+  require_writer(writer)
+  if not bytes.is_byte(value):
+    raise BinaryError.InvalidByte(offset: writer.data |> count, value: value)
+  ensure_writer_capacity(writer, 1)
+  push_int(writer.data, value)
+
+export fn write_bytes(writer: ByteWriter, values: Vector[Int]):
+  require_writer(writer)
+  require_bytes(values)
+  requested = values |> count
+  ensure_writer_capacity(writer, requested)
+  var i = 0
+  while i < requested:
+    push_int(writer.data, values[i])
+    i = i + 1
+
+fn unsigned_maximum(width: Int) -> Int:
+  if width == 2:
+    return 65535
+  if width == 4:
+    return 4294967295
+  return maximum_int()
+
+fn signed_minimum(width: Int) -> Int:
+  if width == 2:
+    return 0 - 32768
+  if width == 4:
+    return 0 - 2147483648
+  return minimum_int()
+
+fn signed_maximum(width: Int) -> Int:
+  if width == 2:
+    return 32767
+  if width == 4:
+    return 2147483647
+  return maximum_int()
+
+fn power_256(exponent: Int) -> Int:
+  var result = 1
+  var i = 0
+  while i < exponent:
+    result = result * 256
+    i = i + 1
+  return result
+
+fn encode_unsigned_be(value: Int, width: Int, offset: Int) -> Vector[Int]:
+  if value < 0 or value > unsigned_maximum(width):
+    raise BinaryError.InvalidValue(offset: offset, value: value, width: width)
+  var result = Vector[Int]()
+  var divisor = power_256(width - 1)
+  var i = 0
+  while i < width:
+    result.push((value / divisor) % 256)
+    if i + 1 < width:
+      divisor = divisor / 256
+    i = i + 1
+  return result
+
+fn encode_unsigned_le(value: Int, width: Int, offset: Int) -> Vector[Int]:
+  if value < 0 or value > unsigned_maximum(width):
+    raise BinaryError.InvalidValue(offset: offset, value: value, width: width)
+  var result = Vector[Int]()
+  var current = value
+  var i = 0
+  while i < width:
+    result.push(current % 256)
+    current = current / 256
+    i = i + 1
+  return result
+
+fn encode_signed_le(value: Int, width: Int, offset: Int) -> Vector[Int]:
+  if value < signed_minimum(width) or value > signed_maximum(width):
+    raise BinaryError.InvalidValue(offset: offset, value: value, width: width)
+  var result = Vector[Int]()
+  var current = value
+  var i = 0
+  while i < width:
+    var byte = current % 256
+    if byte < 0:
+      byte = byte + 256
+    result.push(byte)
+    current = (current - byte) / 256
+    i = i + 1
+  return result
+
+fn encode_signed_be(value: Int, width: Int, offset: Int) -> Vector[Int]:
+  little = encode_signed_le(value, width, offset)
+  var result = Vector[Int]()
+  var i = width
+  while i > 0:
+    i = i - 1
+    result.push(little[i])
+  return result
+
+export fn write_u16_be(writer: ByteWriter, value: Int):
+  require_writer(writer)
+  staged = encode_unsigned_be(value, 2, writer.data |> count)
+  append_staged(writer, staged)
+
+export fn write_u16_le(writer: ByteWriter, value: Int):
+  require_writer(writer)
+  staged = encode_unsigned_le(value, 2, writer.data |> count)
+  append_staged(writer, staged)
+
+export fn write_u32_be(writer: ByteWriter, value: Int):
+  require_writer(writer)
+  staged = encode_unsigned_be(value, 4, writer.data |> count)
+  append_staged(writer, staged)
+
+export fn write_u32_le(writer: ByteWriter, value: Int):
+  require_writer(writer)
+  staged = encode_unsigned_le(value, 4, writer.data |> count)
+  append_staged(writer, staged)
+
+export fn write_u64_be(writer: ByteWriter, value: Int):
+  require_writer(writer)
+  staged = encode_unsigned_be(value, 8, writer.data |> count)
+  append_staged(writer, staged)
+
+export fn write_u64_le(writer: ByteWriter, value: Int):
+  require_writer(writer)
+  staged = encode_unsigned_le(value, 8, writer.data |> count)
+  append_staged(writer, staged)
+
+export fn write_i16_be(writer: ByteWriter, value: Int):
+  require_writer(writer)
+  staged = encode_signed_be(value, 2, writer.data |> count)
+  append_staged(writer, staged)
+
+export fn write_i16_le(writer: ByteWriter, value: Int):
+  require_writer(writer)
+  staged = encode_signed_le(value, 2, writer.data |> count)
+  append_staged(writer, staged)
+
+export fn write_i32_be(writer: ByteWriter, value: Int):
+  require_writer(writer)
+  staged = encode_signed_be(value, 4, writer.data |> count)
+  append_staged(writer, staged)
+
+export fn write_i32_le(writer: ByteWriter, value: Int):
+  require_writer(writer)
+  staged = encode_signed_le(value, 4, writer.data |> count)
+  append_staged(writer, staged)
+
+export fn write_i64_be(writer: ByteWriter, value: Int):
+  require_writer(writer)
+  staged = encode_signed_be(value, 8, writer.data |> count)
+  append_staged(writer, staged)
+
+export fn write_i64_le(writer: ByteWriter, value: Int):
+  require_writer(writer)
+  staged = encode_signed_le(value, 8, writer.data |> count)
+  append_staged(writer, staged)
+
+fn encode_uvarint(value: Int, offset: Int) -> Vector[Int]:
+  if value < 0:
+    raise BinaryError.InvalidValue(offset: offset, value: value, width: 0)
+  var result = Vector[Int]()
+  var current = value
+  var done = false
+  while not done:
+    byte = current % 128
+    current = current / 128
+    if current == 0:
+      result.push(byte)
+      done = true
+    else:
+      result.push(byte + 128)
+  return result
+
+fn decode_uvarint_at(values: Vector[Int], start: Int) -> DecodedVarint:
+  total = values |> count
+  var position = start
+  var result = 0
+  var factor = 1
+  var used = 0
+  maximum = maximum_int()
+  while used < 10:
+    if position >= total:
+      raise BinaryError.UnexpectedEof(offset: start, requested: used + 1, available: total - start)
+    byte = values[position]
+    payload = byte % 128
+    continuation = byte >= 128
+    if used == 9:
+      if continuation:
+        raise BinaryError.MalformedVarint(offset: start, bytes_read: 10)
+      if payload == 0:
+        raise BinaryError.OverlongVarint(offset: start, bytes_read: 10)
+      raise BinaryError.Overflow(offset: start)
+    if payload > (maximum - result) / factor:
+      raise BinaryError.Overflow(offset: start)
+    result = result + payload * factor
+    used = used + 1
+    if not continuation:
+      if used > 1 and payload == 0:
+        raise BinaryError.OverlongVarint(offset: start, bytes_read: used)
+      return DecodedVarint(value: result, next_cursor: position + 1, bytes_read: used)
+    position = position + 1
+    if used < 9:
+      factor = factor * 128
+  raise BinaryError.MalformedVarint(offset: start, bytes_read: used)
+
+export fn read_uvarint(reader: ByteReader) -> Int:
+  require_reader(reader)
+  decoded = decode_uvarint_at(reader.data, reader.cursor)
+  reader.cursor = decoded.next_cursor
+  return decoded.value
+
+export fn write_uvarint(writer: ByteWriter, value: Int):
+  require_writer(writer)
+  staged = encode_uvarint(value, writer.data |> count)
+  append_staged(writer, staged)
+
+export fn read_length_delimited(reader: ByteReader) -> Vector[Int]:
+  require_reader(reader)
+  start = reader.cursor
+  decoded = decode_uvarint_at(reader.data, start)
+  length = decoded.value
+  if length > reader.payload_limit:
+    raise BinaryError.LimitExceeded(offset: start, requested: length, limit: reader.payload_limit)
+  total = reader.data |> count
+  available = total - decoded.next_cursor
+  if length > available:
+    raise BinaryError.UnexpectedEof(offset: decoded.next_cursor, requested: length, available: available)
+  var result = Vector[Int]()
+  var i = 0
+  while i < length:
+    result.push(reader.data[decoded.next_cursor + i])
+    i = i + 1
+  reader.cursor = decoded.next_cursor + length
+  return result
+
+export fn write_length_delimited(writer: ByteWriter, values: Vector[Int]):
+  require_writer(writer)
+  require_bytes(values)
+  length = values |> count
+  if length > writer.payload_limit:
+    raise BinaryError.LimitExceeded(offset: writer.data |> count, requested: length, limit: writer.payload_limit)
+  prefix = encode_uvarint(length, writer.data |> count)
+  prefix_length = prefix |> count
+  current = writer.data |> count
+  available = writer.output_limit - current
+  if prefix_length > available or length > available - prefix_length:
+    raise BinaryError.LimitExceeded(offset: current, requested: prefix_length + length, limit: writer.output_limit)
+  var staged = Vector[Int]()
+  var i = 0
+  while i < prefix_length:
+    staged.push(prefix[i])
+    i = i + 1
+  i = 0
+  while i < length:
+    staged.push(values[i])
+    i = i + 1
+  append_staged(writer, staged)

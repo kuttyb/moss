@@ -1,0 +1,73 @@
+import linalg
+import ndarray
+
+test "3D batches normalize along the trailing axis before broadcast affine operations":
+  let batches = ndarray.from_flat([2, 2, 3], [1.0, 1.0, 2.0, 2.0, 2.0, 4.0, 3.0, 1.0, 4.0, 4.0, 4.0, 8.0])
+  let lane_totals = ndarray.sum_axis(batches, 2)
+  let denominators = ndarray.reshape(lane_totals, [2, 2, 1])
+  let normalized = ndarray.divide(batches, denominators)
+
+  assertEqual(ndarray.rank(normalized), 3)
+  assertEqual(ndarray.size(normalized, 0), 2)
+  assertEqual(ndarray.size(normalized, 1), 2)
+  assertEqual(ndarray.size(normalized, 2), 3)
+  assertEqual(ndarray.get(normalized, [0, 0, 0]), 0.25)
+  assertEqual(ndarray.get(normalized, [1, 0, 1]), 0.125)
+  assertEqual(ndarray.get(normalized, [1, 1, 2]), 0.5)
+
+  let normalized_totals = ndarray.sum_axis(normalized, 2)
+  assertEqual(ndarray.get(normalized_totals, [0, 0]), 1.0)
+  assertEqual(ndarray.get(normalized_totals, [0, 1]), 1.0)
+  assertEqual(ndarray.get(normalized_totals, [1, 0]), 1.0)
+  assertEqual(ndarray.get(normalized_totals, [1, 1]), 1.0)
+
+  let channel_gain = ndarray.from_flat([3], [2.0, 4.0, 8.0])
+  let channel_bias = ndarray.from_flat([1, 1, 3], [0.5, 1.0, 1.5])
+  let affine = ndarray.add(ndarray.multiply(normalized, channel_gain), channel_bias)
+  assertEqual(ndarray.get(affine, [1, 0, 0]), 1.25)
+  assertEqual(ndarray.get(affine, [1, 0, 1]), 1.5)
+  assertEqual(ndarray.get(affine, [1, 1, 2]), 5.5)
+
+test "4D broadcast slice permutation reshape transpose and Matrix round trip compose":
+  let tensor = ndarray.from_flat([2, 1, 2, 3], [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0])
+  let channel_gain = ndarray.from_flat([3], [1.0, 10.0, 100.0])
+  let channel_bias = ndarray.from_flat([1, 1, 1, 3], [1.0, 2.0, 3.0])
+  let adjusted = ndarray.add(ndarray.multiply(tensor, channel_gain), channel_bias)
+
+  assertEqual(ndarray.rank(adjusted), 4)
+  assertEqual(ndarray.get(adjusted, [0, 0, 0, 0]), 2.0)
+  assertEqual(ndarray.get(adjusted, [1, 0, 1, 2]), 1203.0)
+
+  let selected = ndarray.slice_copy(adjusted, [0, 0, 0, 0], [2, 1, 2, 3], [1, 1, 1, 2])
+  assertEqual(ndarray.size(selected, 0), 2)
+  assertEqual(ndarray.size(selected, 1), 1)
+  assertEqual(ndarray.size(selected, 2), 2)
+  assertEqual(ndarray.size(selected, 3), 2)
+  assertEqual(ndarray.get(selected, [1, 0, 1, 1]), 1203.0)
+
+  let permuted = ndarray.permute_axes(selected, [2, 0, 3, 1])
+  assertEqual(ndarray.size(permuted, 0), 2)
+  assertEqual(ndarray.size(permuted, 1), 2)
+  assertEqual(ndarray.size(permuted, 2), 2)
+  assertEqual(ndarray.size(permuted, 3), 1)
+  assertEqual(ndarray.get(permuted, [1, 1, 1, 0]), 1203.0)
+
+  let matrix_array = ndarray.reshape(permuted, [4, 2])
+  let transposed = ndarray.transpose(matrix_array)
+  assertEqual(ndarray.size(transposed, 0), 2)
+  assertEqual(ndarray.size(transposed, 1), 4)
+  assertEqual(ndarray.get(transposed, [0, 3]), 11.0)
+  assertEqual(ndarray.get(transposed, [1, 3]), 1203.0)
+
+  let matrix = ndarray.to_matrix(transposed)
+  assertEqual(linalg.matrix_rows(matrix), 2)
+  assertEqual(linalg.matrix_cols(matrix), 4)
+  assertEqual(linalg.matrix_get(matrix, 0, 3), 11.0)
+  assertEqual(linalg.matrix_get(matrix, 1, 3), 1203.0)
+
+  let round_trip = ndarray.from_matrix(matrix)
+  assertEqual(ndarray.rank(round_trip), 2)
+  assertEqual(ndarray.size(round_trip, 0), 2)
+  assertEqual(ndarray.size(round_trip, 1), 4)
+  assertEqual(ndarray.get(round_trip, [0, 0]), 2.0)
+  assertEqual(ndarray.get(round_trip, [1, 3]), 1203.0)

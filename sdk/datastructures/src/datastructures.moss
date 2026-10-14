@@ -1,0 +1,972 @@
+module datastructures
+
+export enum DataStructureError:
+  Empty
+  Full(capacity: Int)
+  InvalidCapacity(capacity: Int)
+  InvalidIndex(index: Int, length: Int)
+  InvalidSize(size: Int)
+  NotFound
+  SequenceOverflow
+  CapacityOverflow
+  InvalidState
+
+export type IntMinHeap:
+  data: Vector[Int]
+
+export type IntMaxHeap:
+  data: Vector[Int]
+
+export type PriorityItem:
+  priority: Int
+  value: Int
+
+export type StableIntPriorityQueue:
+  priorities: Vector[Int]
+  sequences: Vector[Int]
+  values: Vector[Int]
+  next_sequence: Int
+
+export type IntBoundedDeque:
+  data: Vector[Int]
+  head: Int
+  size: Int
+  capacity: Int
+
+export type UnionFind:
+  parents: Vector[Int]
+  sizes: Vector[Int]
+  set_count: Int
+
+export type IntSortedSet:
+  values: Vector[Int]
+
+export type IntSortedMap:
+  keys: Vector[Int]
+  values: Vector[Int]
+
+export type StringInsertionSet:
+  values: Vector[String]
+
+export type StringInsertionMap:
+  keys: Vector[String]
+  values: Vector[Int]
+
+fn copy_ints(values: Vector[Int]) -> Vector[Int]:
+  var result = Vector[Int]()
+  n = values |> count
+  var i = 0
+  while i < n:
+    result.push(values[i])
+    i = i + 1
+  return result
+
+fn copy_strings(values: Vector[String]) -> Vector[String]:
+  var result = Vector[String]()
+  n = values |> count
+  var i = 0
+  while i < n:
+    copied = values[i] + ""
+    result.push(copied)
+    i = i + 1
+  return result
+
+fn int_vector_push(values: Vector[Int], value: Int):
+  values.push(value)
+
+fn int_vector_pop(values: Vector[Int]) -> Int:
+  return values.pop()
+
+fn string_vector_push(values: Vector[String], value: String):
+  values.push(value)
+
+fn require_min_heap(heap: IntMinHeap):
+  if not min_heap_validate(heap):
+    raise DataStructureError.InvalidState
+
+fn require_max_heap(heap: IntMaxHeap):
+  if not max_heap_validate(heap):
+    raise DataStructureError.InvalidState
+
+fn min_sift_up(data: Vector[Int], start: Int):
+  value = data[start]
+  var position = start
+  while position > 0:
+    parent = (position - 1) / 2
+    parent_value = data[parent]
+    if parent_value <= value:
+      data[position] = value
+      return
+    data[position] = parent_value
+    position = parent
+  data[position] = value
+
+fn min_sift_down(data: Vector[Int], start: Int, length: Int):
+  value = data[start]
+  var position = start
+  while position < length / 2:
+    left = position * 2 + 1
+    right = left + 1
+    var child = left
+    if right < length and data[right] < data[left]:
+      child = right
+    child_value = data[child]
+    if value <= child_value:
+      data[position] = value
+      return
+    data[position] = child_value
+    position = child
+  data[position] = value
+
+fn max_sift_up(data: Vector[Int], start: Int):
+  value = data[start]
+  var position = start
+  while position > 0:
+    parent = (position - 1) / 2
+    parent_value = data[parent]
+    if parent_value >= value:
+      data[position] = value
+      return
+    data[position] = parent_value
+    position = parent
+  data[position] = value
+
+fn max_sift_down(data: Vector[Int], start: Int, length: Int):
+  value = data[start]
+  var position = start
+  while position < length / 2:
+    left = position * 2 + 1
+    right = left + 1
+    var child = left
+    if right < length and data[right] > data[left]:
+      child = right
+    child_value = data[child]
+    if value >= child_value:
+      data[position] = value
+      return
+    data[position] = child_value
+    position = child
+  data[position] = value
+
+export fn new_min_heap() -> IntMinHeap:
+  return IntMinHeap(data: Vector[Int]())
+
+export fn min_heap_from(values: Vector[Int]) -> IntMinHeap:
+  var data = copy_ints(values)
+  length = data |> count
+  var start = length / 2
+  while start > 0:
+    start = start - 1
+    min_sift_down(data, start, length)
+  return IntMinHeap(data: data)
+
+export fn min_heap_validate(heap: IntMinHeap) -> Bool:
+  n = heap.data |> count
+  var child = 1
+  while child < n:
+    parent = (child - 1) / 2
+    if heap.data[parent] > heap.data[child]:
+      return false
+    child = child + 1
+  return true
+
+export fn min_heap_len(heap: IntMinHeap) -> Int:
+  require_min_heap(heap)
+  return heap.data |> count
+
+export fn min_heap_is_empty(heap: IntMinHeap) -> Bool:
+  require_min_heap(heap)
+  return (heap.data |> count) == 0
+
+export fn min_heap_peek(heap: IntMinHeap) -> Int:
+  require_min_heap(heap)
+  if (heap.data |> count) == 0:
+    raise DataStructureError.Empty
+  return heap.data[0]
+
+export fn min_heap_push(heap: IntMinHeap, value: Int):
+  require_min_heap(heap)
+  n = heap.data |> count
+  if n == 9223372036854775807:
+    raise DataStructureError.CapacityOverflow
+  int_vector_push(heap.data, value)
+  min_sift_up(heap.data, n)
+
+export fn min_heap_pop(heap: IntMinHeap) -> Int:
+  require_min_heap(heap)
+  n = heap.data |> count
+  if n == 0:
+    raise DataStructureError.Empty
+  result = heap.data[0]
+  replacement = heap.data[n - 1]
+  discarded = int_vector_pop(heap.data)
+  if n > 1:
+    heap.data[0] = replacement
+    min_sift_down(heap.data, 0, n - 1)
+  return result
+
+export fn new_max_heap() -> IntMaxHeap:
+  return IntMaxHeap(data: Vector[Int]())
+
+export fn max_heap_from(values: Vector[Int]) -> IntMaxHeap:
+  var data = copy_ints(values)
+  length = data |> count
+  var start = length / 2
+  while start > 0:
+    start = start - 1
+    max_sift_down(data, start, length)
+  return IntMaxHeap(data: data)
+
+export fn max_heap_validate(heap: IntMaxHeap) -> Bool:
+  n = heap.data |> count
+  var child = 1
+  while child < n:
+    parent = (child - 1) / 2
+    if heap.data[parent] < heap.data[child]:
+      return false
+    child = child + 1
+  return true
+
+export fn max_heap_len(heap: IntMaxHeap) -> Int:
+  require_max_heap(heap)
+  return heap.data |> count
+
+export fn max_heap_is_empty(heap: IntMaxHeap) -> Bool:
+  require_max_heap(heap)
+  return (heap.data |> count) == 0
+
+export fn max_heap_peek(heap: IntMaxHeap) -> Int:
+  require_max_heap(heap)
+  if (heap.data |> count) == 0:
+    raise DataStructureError.Empty
+  return heap.data[0]
+
+export fn max_heap_push(heap: IntMaxHeap, value: Int):
+  require_max_heap(heap)
+  n = heap.data |> count
+  if n == 9223372036854775807:
+    raise DataStructureError.CapacityOverflow
+  int_vector_push(heap.data, value)
+  max_sift_up(heap.data, n)
+
+export fn max_heap_pop(heap: IntMaxHeap) -> Int:
+  require_max_heap(heap)
+  n = heap.data |> count
+  if n == 0:
+    raise DataStructureError.Empty
+  result = heap.data[0]
+  replacement = heap.data[n - 1]
+  discarded = int_vector_pop(heap.data)
+  if n > 1:
+    heap.data[0] = replacement
+    max_sift_down(heap.data, 0, n - 1)
+  return result
+
+fn priority_precedes(left_priority: Int, left_sequence: Int, right_priority: Int, right_sequence: Int) -> Bool:
+  if left_priority < right_priority:
+    return true
+  if left_priority > right_priority:
+    return false
+  return left_sequence < right_sequence
+
+fn new_sequence_set() -> Map[Int, Bool]:
+  var result = Map()
+  result[0] = false
+  return result
+
+export fn priority_queue_validate(queue: StableIntPriorityQueue) -> Bool:
+  n = queue.priorities |> count
+  if (queue.sequences |> count) != n or (queue.values |> count) != n:
+    return false
+  if queue.next_sequence < 0:
+    return false
+
+  var seen = new_sequence_set()
+  var i = 0
+  while i < n:
+    sequence = queue.sequences[i]
+    if sequence < 0 or sequence >= queue.next_sequence:
+      return false
+    if seen.get(sequence, false):
+      return false
+    seen[sequence] = true
+    if i > 0:
+      parent = (i - 1) / 2
+      if priority_precedes(queue.priorities[i], sequence, queue.priorities[parent], queue.sequences[parent]):
+        return false
+    i = i + 1
+  return true
+
+fn require_priority_queue(queue: StableIntPriorityQueue):
+  if not priority_queue_validate(queue):
+    raise DataStructureError.InvalidState
+
+fn priority_move(queue: StableIntPriorityQueue, target: Int, source: Int):
+  queue.priorities[target] = queue.priorities[source]
+  queue.sequences[target] = queue.sequences[source]
+  queue.values[target] = queue.values[source]
+
+fn priority_sift_up(queue: StableIntPriorityQueue, start: Int):
+  priority = queue.priorities[start]
+  sequence = queue.sequences[start]
+  value = queue.values[start]
+  var position = start
+  while position > 0:
+    parent = (position - 1) / 2
+    if not priority_precedes(priority, sequence, queue.priorities[parent], queue.sequences[parent]):
+      queue.priorities[position] = priority
+      queue.sequences[position] = sequence
+      queue.values[position] = value
+      return
+    priority_move(queue, position, parent)
+    position = parent
+  queue.priorities[position] = priority
+  queue.sequences[position] = sequence
+  queue.values[position] = value
+
+fn priority_sift_down(queue: StableIntPriorityQueue, start: Int, length: Int):
+  priority = queue.priorities[start]
+  sequence = queue.sequences[start]
+  value = queue.values[start]
+  var position = start
+  while position < length / 2:
+    left = position * 2 + 1
+    right = left + 1
+    var child = left
+    if right < length:
+      if priority_precedes(queue.priorities[right], queue.sequences[right], queue.priorities[left], queue.sequences[left]):
+        child = right
+    if not priority_precedes(queue.priorities[child], queue.sequences[child], priority, sequence):
+      queue.priorities[position] = priority
+      queue.sequences[position] = sequence
+      queue.values[position] = value
+      return
+    priority_move(queue, position, child)
+    position = child
+  queue.priorities[position] = priority
+  queue.sequences[position] = sequence
+  queue.values[position] = value
+
+export fn new_priority_queue() -> StableIntPriorityQueue:
+  return StableIntPriorityQueue(priorities: Vector[Int](), sequences: Vector[Int](), values: Vector[Int](), next_sequence: 0)
+
+export fn priority_queue_len(queue: StableIntPriorityQueue) -> Int:
+  require_priority_queue(queue)
+  return queue.priorities |> count
+
+export fn priority_queue_is_empty(queue: StableIntPriorityQueue) -> Bool:
+  require_priority_queue(queue)
+  return (queue.priorities |> count) == 0
+
+export fn priority_queue_push(queue: StableIntPriorityQueue, priority: Int, value: Int):
+  require_priority_queue(queue)
+  if queue.next_sequence == 9223372036854775807:
+    raise DataStructureError.SequenceOverflow
+  n = queue.priorities |> count
+  if n == 9223372036854775807:
+    raise DataStructureError.CapacityOverflow
+  sequence = queue.next_sequence
+  int_vector_push(queue.priorities, priority)
+  int_vector_push(queue.sequences, sequence)
+  int_vector_push(queue.values, value)
+  queue.next_sequence = sequence + 1
+  priority_sift_up(queue, n)
+
+export fn priority_queue_peek(queue: StableIntPriorityQueue) -> PriorityItem:
+  require_priority_queue(queue)
+  if (queue.priorities |> count) == 0:
+    raise DataStructureError.Empty
+  return PriorityItem(priority: queue.priorities[0], value: queue.values[0])
+
+export fn priority_queue_pop(queue: StableIntPriorityQueue) -> PriorityItem:
+  require_priority_queue(queue)
+  n = queue.priorities |> count
+  if n == 0:
+    raise DataStructureError.Empty
+  result = PriorityItem(priority: queue.priorities[0], value: queue.values[0])
+  last = n - 1
+  replacement_priority = queue.priorities[last]
+  replacement_sequence = queue.sequences[last]
+  replacement_value = queue.values[last]
+  discarded_priority = int_vector_pop(queue.priorities)
+  discarded_sequence = int_vector_pop(queue.sequences)
+  discarded_value = int_vector_pop(queue.values)
+  if last > 0:
+    queue.priorities[0] = replacement_priority
+    queue.sequences[0] = replacement_sequence
+    queue.values[0] = replacement_value
+    priority_sift_down(queue, 0, last)
+  return result
+
+fn zeros(length: Int) -> Vector[Int]:
+  var values = Vector[Int]()
+  var i = 0
+  while i < length:
+    values.push(0)
+    i = i + 1
+  return values
+
+export fn int_deque_validate(deque: IntBoundedDeque) -> Bool:
+  if deque.capacity <= 0:
+    return false
+  if (deque.data |> count) != deque.capacity:
+    return false
+  if deque.head < 0 or deque.head >= deque.capacity:
+    return false
+  if deque.size < 0 or deque.size > deque.capacity:
+    return false
+  return true
+
+fn require_int_deque(deque: IntBoundedDeque):
+  if not int_deque_validate(deque):
+    raise DataStructureError.InvalidState
+
+fn deque_storage_index(deque: IntBoundedDeque, logical_index: Int) -> Int:
+  remaining = deque.capacity - deque.head
+  if logical_index < remaining:
+    return deque.head + logical_index
+  return logical_index - remaining
+
+export fn new_int_bounded_deque(capacity: Int) -> IntBoundedDeque:
+  if capacity <= 0:
+    raise DataStructureError.InvalidCapacity(capacity: capacity)
+  return IntBoundedDeque(data: zeros(capacity), head: 0, size: 0, capacity: capacity)
+
+export fn int_deque_len(deque: IntBoundedDeque) -> Int:
+  require_int_deque(deque)
+  return deque.size
+
+export fn int_deque_capacity(deque: IntBoundedDeque) -> Int:
+  require_int_deque(deque)
+  return deque.capacity
+
+export fn int_deque_is_empty(deque: IntBoundedDeque) -> Bool:
+  require_int_deque(deque)
+  return deque.size == 0
+
+export fn int_deque_is_full(deque: IntBoundedDeque) -> Bool:
+  require_int_deque(deque)
+  return deque.size == deque.capacity
+
+export fn int_deque_push_front(deque: IntBoundedDeque, value: Int):
+  require_int_deque(deque)
+  if deque.size == deque.capacity:
+    raise DataStructureError.Full(capacity: deque.capacity)
+  new_head = deque.head - 1
+  if deque.head == 0:
+    new_head = deque.capacity - 1
+  deque.data[new_head] = value
+  deque.head = new_head
+  deque.size = deque.size + 1
+
+export fn int_deque_push_back(deque: IntBoundedDeque, value: Int):
+  require_int_deque(deque)
+  if deque.size == deque.capacity:
+    raise DataStructureError.Full(capacity: deque.capacity)
+  index = deque_storage_index(deque, deque.size)
+  deque.data[index] = value
+  deque.size = deque.size + 1
+
+export fn int_deque_peek_front(deque: IntBoundedDeque) -> Int:
+  require_int_deque(deque)
+  if deque.size == 0:
+    raise DataStructureError.Empty
+  return deque.data[deque.head]
+
+export fn int_deque_peek_back(deque: IntBoundedDeque) -> Int:
+  require_int_deque(deque)
+  if deque.size == 0:
+    raise DataStructureError.Empty
+  index = deque_storage_index(deque, deque.size - 1)
+  return deque.data[index]
+
+export fn int_deque_pop_front(deque: IntBoundedDeque) -> Int:
+  require_int_deque(deque)
+  if deque.size == 0:
+    raise DataStructureError.Empty
+  result = deque.data[deque.head]
+  if deque.head == deque.capacity - 1:
+    deque.head = 0
+  else:
+    deque.head = deque.head + 1
+  deque.size = deque.size - 1
+  return result
+
+export fn int_deque_pop_back(deque: IntBoundedDeque) -> Int:
+  require_int_deque(deque)
+  if deque.size == 0:
+    raise DataStructureError.Empty
+  index = deque_storage_index(deque, deque.size - 1)
+  result = deque.data[index]
+  deque.size = deque.size - 1
+  return result
+
+export fn int_deque_at(deque: IntBoundedDeque, index: Int) -> Int:
+  require_int_deque(deque)
+  if index < 0 or index >= deque.size:
+    raise DataStructureError.InvalidIndex(index: index, length: deque.size)
+  storage_index = deque_storage_index(deque, index)
+  return deque.data[storage_index]
+
+export fn int_deque_clear(deque: IntBoundedDeque):
+  require_int_deque(deque)
+  deque.head = 0
+  deque.size = 0
+
+export fn int_deque_values(deque: IntBoundedDeque) -> Vector[Int]:
+  require_int_deque(deque)
+  var result = Vector[Int]()
+  var i = 0
+  while i < deque.size:
+    result.push(deque.data[deque_storage_index(deque, i)])
+    i = i + 1
+  return result
+
+export fn union_find_validate(sets: UnionFind) -> Bool:
+  n = sets.parents |> count
+  if (sets.sizes |> count) != n:
+    return false
+  if sets.set_count < 0 or sets.set_count > n:
+    return false
+
+  var root_count = 0
+  var i = 0
+  while i < n:
+    parent = sets.parents[i]
+    if parent < 0 or parent >= n:
+      return false
+    if parent == i:
+      root_count = root_count + 1
+    i = i + 1
+  if root_count != sets.set_count:
+    return false
+
+  var actual_sizes = zeros(n)
+  i = 0
+  while i < n:
+    var current = i
+    var steps = 0
+    while sets.parents[current] != current:
+      current = sets.parents[current]
+      steps = steps + 1
+      if steps >= n:
+        return false
+    actual_sizes[current] = actual_sizes[current] + 1
+    i = i + 1
+
+  i = 0
+  while i < n:
+    if sets.parents[i] == i:
+      if sets.sizes[i] != actual_sizes[i] or sets.sizes[i] <= 0:
+        return false
+    else:
+      if sets.sizes[i] != 0:
+        return false
+    i = i + 1
+  return true
+
+fn require_union_find(sets: UnionFind):
+  if not union_find_validate(sets):
+    raise DataStructureError.InvalidState
+
+fn require_union_find_index(sets: UnionFind, item: Int):
+  n = sets.parents |> count
+  if item < 0 or item >= n:
+    raise DataStructureError.InvalidIndex(index: item, length: n)
+
+fn union_find_root_unchecked(sets: UnionFind, item: Int) -> Int:
+  var root = item
+  while sets.parents[root] != root:
+    root = sets.parents[root]
+
+  var current = item
+  while current != root:
+    parent = sets.parents[current]
+    sets.parents[current] = root
+    current = parent
+  return root
+
+export fn new_union_find(size: Int) -> UnionFind:
+  if size < 0:
+    raise DataStructureError.InvalidSize(size: size)
+  var parents = Vector[Int]()
+  var sizes = Vector[Int]()
+  var i = 0
+  while i < size:
+    parents.push(i)
+    sizes.push(1)
+    i = i + 1
+  return UnionFind(parents: parents, sizes: sizes, set_count: size)
+
+export fn union_find_len(sets: UnionFind) -> Int:
+  require_union_find(sets)
+  return sets.parents |> count
+
+export fn union_find_set_count(sets: UnionFind) -> Int:
+  require_union_find(sets)
+  return sets.set_count
+
+export fn union_find_find(sets: UnionFind, item: Int) -> Int:
+  require_union_find(sets)
+  require_union_find_index(sets, item)
+  return union_find_root_unchecked(sets, item)
+
+export fn union_find_same(sets: UnionFind, left: Int, right: Int) -> Bool:
+  require_union_find(sets)
+  require_union_find_index(sets, left)
+  require_union_find_index(sets, right)
+  left_root = union_find_root_unchecked(sets, left)
+  right_root = union_find_root_unchecked(sets, right)
+  return left_root == right_root
+
+export fn union_find_union(sets: UnionFind, left: Int, right: Int) -> Bool:
+  require_union_find(sets)
+  require_union_find_index(sets, left)
+  require_union_find_index(sets, right)
+  left_root = union_find_root_unchecked(sets, left)
+  right_root = union_find_root_unchecked(sets, right)
+  if left_root == right_root:
+    return false
+
+  if sets.sizes[left_root] < sets.sizes[right_root]:
+    sets.parents[left_root] = right_root
+    sets.sizes[right_root] = sets.sizes[right_root] + sets.sizes[left_root]
+    sets.sizes[left_root] = 0
+  else:
+    sets.parents[right_root] = left_root
+    sets.sizes[left_root] = sets.sizes[left_root] + sets.sizes[right_root]
+    sets.sizes[right_root] = 0
+  sets.set_count = sets.set_count - 1
+  return true
+
+export fn union_find_component_size(sets: UnionFind, item: Int) -> Int:
+  require_union_find(sets)
+  require_union_find_index(sets, item)
+  root = union_find_root_unchecked(sets, item)
+  return sets.sizes[root]
+
+fn int_lower_bound(values: Vector[Int], value: Int) -> Int:
+  var low = 0
+  var high = values |> count
+  while low < high:
+    middle = low + (high - low) / 2
+    if values[middle] < value:
+      low = middle + 1
+    else:
+      high = middle
+  return low
+
+export fn int_sorted_set_validate(collection: IntSortedSet) -> Bool:
+  n = collection.values |> count
+  var i = 1
+  while i < n:
+    if collection.values[i - 1] >= collection.values[i]:
+      return false
+    i = i + 1
+  return true
+
+fn require_int_sorted_set(collection: IntSortedSet):
+  if not int_sorted_set_validate(collection):
+    raise DataStructureError.InvalidState
+
+export fn new_int_sorted_set() -> IntSortedSet:
+  return IntSortedSet(values: Vector[Int]())
+
+export fn int_sorted_set_len(collection: IntSortedSet) -> Int:
+  require_int_sorted_set(collection)
+  return collection.values |> count
+
+export fn int_sorted_set_contains(collection: IntSortedSet, value: Int) -> Bool:
+  require_int_sorted_set(collection)
+  position = int_lower_bound(collection.values, value)
+  n = collection.values |> count
+  return position < n and collection.values[position] == value
+
+export fn int_sorted_set_add(collection: IntSortedSet, value: Int) -> Bool:
+  require_int_sorted_set(collection)
+  n = collection.values |> count
+  position = int_lower_bound(collection.values, value)
+  if position < n and collection.values[position] == value:
+    return false
+  if n == 9223372036854775807:
+    raise DataStructureError.CapacityOverflow
+  int_vector_push(collection.values, value)
+  var i = n
+  while i > position:
+    collection.values[i] = collection.values[i - 1]
+    i = i - 1
+  collection.values[position] = value
+  return true
+
+export fn int_sorted_set_remove(collection: IntSortedSet, value: Int) -> Bool:
+  require_int_sorted_set(collection)
+  n = collection.values |> count
+  position = int_lower_bound(collection.values, value)
+  if position >= n or collection.values[position] != value:
+    return false
+  var i = position
+  while i < n - 1:
+    collection.values[i] = collection.values[i + 1]
+    i = i + 1
+  discarded = int_vector_pop(collection.values)
+  return true
+
+export fn int_sorted_set_at(collection: IntSortedSet, index: Int) -> Int:
+  require_int_sorted_set(collection)
+  n = collection.values |> count
+  if index < 0 or index >= n:
+    raise DataStructureError.InvalidIndex(index: index, length: n)
+  return collection.values[index]
+
+export fn int_sorted_set_values(collection: IntSortedSet) -> Vector[Int]:
+  require_int_sorted_set(collection)
+  return copy_ints(collection.values)
+
+export fn int_sorted_map_validate(mapping: IntSortedMap) -> Bool:
+  n = mapping.keys |> count
+  if (mapping.values |> count) != n:
+    return false
+  var i = 1
+  while i < n:
+    if mapping.keys[i - 1] >= mapping.keys[i]:
+      return false
+    i = i + 1
+  return true
+
+fn require_int_sorted_map(mapping: IntSortedMap):
+  if not int_sorted_map_validate(mapping):
+    raise DataStructureError.InvalidState
+
+export fn new_int_sorted_map() -> IntSortedMap:
+  return IntSortedMap(keys: Vector[Int](), values: Vector[Int]())
+
+export fn int_sorted_map_len(mapping: IntSortedMap) -> Int:
+  require_int_sorted_map(mapping)
+  return mapping.keys |> count
+
+export fn int_sorted_map_contains(mapping: IntSortedMap, key: Int) -> Bool:
+  require_int_sorted_map(mapping)
+  position = int_lower_bound(mapping.keys, key)
+  n = mapping.keys |> count
+  return position < n and mapping.keys[position] == key
+
+export fn int_sorted_map_get(mapping: IntSortedMap, key: Int) -> Int:
+  require_int_sorted_map(mapping)
+  position = int_lower_bound(mapping.keys, key)
+  n = mapping.keys |> count
+  if position >= n or mapping.keys[position] != key:
+    raise DataStructureError.NotFound
+  return mapping.values[position]
+
+export fn int_sorted_map_get_or(mapping: IntSortedMap, key: Int, fallback: Int) -> Int:
+  require_int_sorted_map(mapping)
+  position = int_lower_bound(mapping.keys, key)
+  n = mapping.keys |> count
+  if position >= n or mapping.keys[position] != key:
+    return fallback
+  return mapping.values[position]
+
+export fn int_sorted_map_put(mapping: IntSortedMap, key: Int, value: Int) -> Bool:
+  require_int_sorted_map(mapping)
+  n = mapping.keys |> count
+  position = int_lower_bound(mapping.keys, key)
+  if position < n and mapping.keys[position] == key:
+    mapping.values[position] = value
+    return false
+  if n == 9223372036854775807:
+    raise DataStructureError.CapacityOverflow
+  int_vector_push(mapping.keys, key)
+  int_vector_push(mapping.values, value)
+  var i = n
+  while i > position:
+    mapping.keys[i] = mapping.keys[i - 1]
+    mapping.values[i] = mapping.values[i - 1]
+    i = i - 1
+  mapping.keys[position] = key
+  mapping.values[position] = value
+  return true
+
+export fn int_sorted_map_remove(mapping: IntSortedMap, key: Int) -> Bool:
+  require_int_sorted_map(mapping)
+  n = mapping.keys |> count
+  position = int_lower_bound(mapping.keys, key)
+  if position >= n or mapping.keys[position] != key:
+    return false
+  var i = position
+  while i < n - 1:
+    mapping.keys[i] = mapping.keys[i + 1]
+    mapping.values[i] = mapping.values[i + 1]
+    i = i + 1
+  discarded_key = int_vector_pop(mapping.keys)
+  discarded_value = int_vector_pop(mapping.values)
+  return true
+
+export fn int_sorted_map_key_at(mapping: IntSortedMap, index: Int) -> Int:
+  require_int_sorted_map(mapping)
+  n = mapping.keys |> count
+  if index < 0 or index >= n:
+    raise DataStructureError.InvalidIndex(index: index, length: n)
+  return mapping.keys[index]
+
+export fn int_sorted_map_value_at(mapping: IntSortedMap, index: Int) -> Int:
+  require_int_sorted_map(mapping)
+  n = mapping.values |> count
+  if index < 0 or index >= n:
+    raise DataStructureError.InvalidIndex(index: index, length: n)
+  return mapping.values[index]
+
+fn string_index(values: Vector[String], value: String) -> Int:
+  n = values |> count
+  var i = 0
+  while i < n:
+    if values[i] == value:
+      return i
+    i = i + 1
+  return 0 - 1
+
+fn unique_strings(values: Vector[String]) -> Bool:
+  n = values |> count
+  var i = 0
+  while i < n:
+    var j = i + 1
+    while j < n:
+      if values[i] == values[j]:
+        return false
+      j = j + 1
+    i = i + 1
+  return true
+
+export fn string_insertion_set_validate(collection: StringInsertionSet) -> Bool:
+  return unique_strings(collection.values)
+
+fn require_string_insertion_set(collection: StringInsertionSet):
+  if not string_insertion_set_validate(collection):
+    raise DataStructureError.InvalidState
+
+export fn new_string_insertion_set() -> StringInsertionSet:
+  return StringInsertionSet(values: Vector[String]())
+
+export fn string_insertion_set_len(collection: StringInsertionSet) -> Int:
+  require_string_insertion_set(collection)
+  return collection.values |> count
+
+export fn string_insertion_set_contains(collection: StringInsertionSet, value: String) -> Bool:
+  require_string_insertion_set(collection)
+  return string_index(collection.values, value) >= 0
+
+export fn string_insertion_set_add(collection: StringInsertionSet, value: String) -> Bool:
+  require_string_insertion_set(collection)
+  if string_index(collection.values, value) >= 0:
+    return false
+  if (collection.values |> count) == 9223372036854775807:
+    raise DataStructureError.CapacityOverflow
+  copied = value + ""
+  string_vector_push(collection.values, copied)
+  return true
+
+export fn string_insertion_set_remove(collection: StringInsertionSet, value: String) -> Bool:
+  require_string_insertion_set(collection)
+  position = string_index(collection.values, value)
+  if position < 0:
+    return false
+  var kept = Vector[String]()
+  n = collection.values |> count
+  var i = 0
+  while i < n:
+    if i != position:
+      copied = collection.values[i] + ""
+      kept.push(copied)
+    i = i + 1
+  collection.values = kept
+  return true
+
+export fn string_insertion_set_at(collection: StringInsertionSet, index: Int) -> String:
+  require_string_insertion_set(collection)
+  n = collection.values |> count
+  if index < 0 or index >= n:
+    raise DataStructureError.InvalidIndex(index: index, length: n)
+  return collection.values[index] + ""
+
+export fn string_insertion_set_values(collection: StringInsertionSet) -> Vector[String]:
+  require_string_insertion_set(collection)
+  return copy_strings(collection.values)
+
+export fn string_insertion_map_validate(mapping: StringInsertionMap) -> Bool:
+  if (mapping.keys |> count) != (mapping.values |> count):
+    return false
+  return unique_strings(mapping.keys)
+
+fn require_string_insertion_map(mapping: StringInsertionMap):
+  if not string_insertion_map_validate(mapping):
+    raise DataStructureError.InvalidState
+
+export fn new_string_insertion_map() -> StringInsertionMap:
+  return StringInsertionMap(keys: Vector[String](), values: Vector[Int]())
+
+export fn string_insertion_map_len(mapping: StringInsertionMap) -> Int:
+  require_string_insertion_map(mapping)
+  return mapping.keys |> count
+
+export fn string_insertion_map_contains(mapping: StringInsertionMap, key: String) -> Bool:
+  require_string_insertion_map(mapping)
+  return string_index(mapping.keys, key) >= 0
+
+export fn string_insertion_map_get(mapping: StringInsertionMap, key: String) -> Int:
+  require_string_insertion_map(mapping)
+  position = string_index(mapping.keys, key)
+  if position < 0:
+    raise DataStructureError.NotFound
+  return mapping.values[position]
+
+export fn string_insertion_map_get_or(mapping: StringInsertionMap, key: String, fallback: Int) -> Int:
+  require_string_insertion_map(mapping)
+  position = string_index(mapping.keys, key)
+  if position < 0:
+    return fallback
+  return mapping.values[position]
+
+export fn string_insertion_map_put(mapping: StringInsertionMap, key: String, value: Int) -> Bool:
+  require_string_insertion_map(mapping)
+  position = string_index(mapping.keys, key)
+  if position >= 0:
+    mapping.values[position] = value
+    return false
+  if (mapping.keys |> count) == 9223372036854775807:
+    raise DataStructureError.CapacityOverflow
+  copied = key + ""
+  string_vector_push(mapping.keys, copied)
+  int_vector_push(mapping.values, value)
+  return true
+
+export fn string_insertion_map_remove(mapping: StringInsertionMap, key: String) -> Bool:
+  require_string_insertion_map(mapping)
+  position = string_index(mapping.keys, key)
+  if position < 0:
+    return false
+  var kept_keys = Vector[String]()
+  var kept_values = Vector[Int]()
+  n = mapping.keys |> count
+  var i = 0
+  while i < n:
+    if i != position:
+      copied = mapping.keys[i] + ""
+      kept_keys.push(copied)
+      kept_values.push(mapping.values[i])
+    i = i + 1
+  mapping.keys = kept_keys
+  mapping.values = kept_values
+  return true
+
+export fn string_insertion_map_key_at(mapping: StringInsertionMap, index: Int) -> String:
+  require_string_insertion_map(mapping)
+  n = mapping.keys |> count
+  if index < 0 or index >= n:
+    raise DataStructureError.InvalidIndex(index: index, length: n)
+  return mapping.keys[index] + ""
+
+export fn string_insertion_map_value_at(mapping: StringInsertionMap, index: Int) -> Int:
+  require_string_insertion_map(mapping)
+  n = mapping.values |> count
+  if index < 0 or index >= n:
+    raise DataStructureError.InvalidIndex(index: index, length: n)
+  return mapping.values[index]

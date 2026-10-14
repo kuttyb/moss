@@ -1,0 +1,554 @@
+import datastructures
+
+test "min heap heapify duplicates extremes and reuse":
+  var source = [5, -4, 5, 0, -9223372036854775808, 9223372036854775807, -4]
+  var heap = datastructures.min_heap_from(source)
+  assert(datastructures.min_heap_validate(heap))
+  assertEqual(datastructures.min_heap_len(heap), 7)
+  assertEqual(datastructures.min_heap_peek(heap), -9223372036854775808)
+  assertEqual(datastructures.min_heap_pop(heap), -9223372036854775808)
+  assertEqual(datastructures.min_heap_pop(heap), -4)
+  assertEqual(datastructures.min_heap_pop(heap), -4)
+  assertEqual(datastructures.min_heap_pop(heap), 0)
+  assertEqual(datastructures.min_heap_pop(heap), 5)
+  assertEqual(datastructures.min_heap_pop(heap), 5)
+  assertEqual(datastructures.min_heap_pop(heap), 9223372036854775807)
+  assert(datastructures.min_heap_is_empty(heap))
+  var caught_empty = false
+  try:
+    value = datastructures.min_heap_pop(heap)
+  recover datastructures.DataStructureError.Empty:
+    caught_empty = true
+  assert(caught_empty)
+  datastructures.min_heap_push(heap, 9)
+  datastructures.min_heap_push(heap, -1)
+  assertEqual(datastructures.min_heap_pop(heap), -1)
+  assertEqual(datastructures.min_heap_pop(heap), 9)
+  assertEqual(source |> count, 7)
+  assertEqual(source[0], 5)
+
+test "max heap heapify duplicates extremes and reuse":
+  var heap = datastructures.max_heap_from([5, -4, 5, 0, -9223372036854775808, 9223372036854775807, -4])
+  assert(datastructures.max_heap_validate(heap))
+  assertEqual(datastructures.max_heap_len(heap), 7)
+  assertEqual(datastructures.max_heap_peek(heap), 9223372036854775807)
+  assertEqual(datastructures.max_heap_pop(heap), 9223372036854775807)
+  assertEqual(datastructures.max_heap_pop(heap), 5)
+  assertEqual(datastructures.max_heap_pop(heap), 5)
+  assertEqual(datastructures.max_heap_pop(heap), 0)
+  assertEqual(datastructures.max_heap_pop(heap), -4)
+  assertEqual(datastructures.max_heap_pop(heap), -4)
+  assertEqual(datastructures.max_heap_pop(heap), -9223372036854775808)
+  assert(datastructures.max_heap_is_empty(heap))
+  var caught_empty = false
+  try:
+    value = datastructures.max_heap_peek(heap)
+  recover datastructures.DataStructureError.Empty:
+    caught_empty = true
+  assert(caught_empty)
+  datastructures.max_heap_push(heap, -7)
+  assertEqual(datastructures.max_heap_pop(heap), -7)
+
+test "heap forged records are rejected before indexing":
+  var malformed_min = datastructures.IntMinHeap(data: [5, 1, 2])
+  assert(not datastructures.min_heap_validate(malformed_min))
+  var caught_min = false
+  try:
+    value = datastructures.min_heap_pop(malformed_min)
+  recover datastructures.DataStructureError.InvalidState:
+    caught_min = true
+  assert(caught_min)
+  assertEqual(malformed_min.data, [5, 1, 2])
+
+  var malformed_max = datastructures.IntMaxHeap(data: [1, 5, 2])
+  assert(not datastructures.max_heap_validate(malformed_max))
+  var caught_max = false
+  try:
+    value = datastructures.max_heap_peek(malformed_max)
+  recover datastructures.DataStructureError.InvalidState:
+    caught_max = true
+  assert(caught_max)
+  assertEqual(malformed_max.data, [1, 5, 2])
+
+test "heaps preserve order across repeated duplicate mutations":
+  var min_heap = datastructures.new_min_heap()
+  var max_heap = datastructures.new_max_heap()
+  var i = 0
+  while i < 128:
+    value = (i * 37) % 23 - 11
+    datastructures.min_heap_push(min_heap, value)
+    datastructures.max_heap_push(max_heap, value)
+    assert(datastructures.min_heap_validate(min_heap))
+    assert(datastructures.max_heap_validate(max_heap))
+    i = i + 1
+
+  var previous_min = datastructures.min_heap_pop(min_heap)
+  while not datastructures.min_heap_is_empty(min_heap):
+    current = datastructures.min_heap_pop(min_heap)
+    assert(previous_min <= current)
+    previous_min = current
+
+  var previous_max = datastructures.max_heap_pop(max_heap)
+  while not datastructures.max_heap_is_empty(max_heap):
+    current = datastructures.max_heap_pop(max_heap)
+    assert(previous_max >= current)
+    previous_max = current
+
+test "stable priority queue orders priority then insertion":
+  var queue = datastructures.new_priority_queue()
+  assert(datastructures.priority_queue_is_empty(queue))
+  datastructures.priority_queue_push(queue, 2, 20)
+  datastructures.priority_queue_push(queue, 1, 10)
+  datastructures.priority_queue_push(queue, 1, 11)
+  datastructures.priority_queue_push(queue, 0, 0)
+  datastructures.priority_queue_push(queue, 1, 12)
+  datastructures.priority_queue_push(queue, -1, -10)
+  assert(datastructures.priority_queue_validate(queue))
+  assertEqual(datastructures.priority_queue_len(queue), 6)
+
+  peeked = datastructures.priority_queue_peek(queue)
+  assertEqual(peeked.priority, -1)
+  assertEqual(peeked.value, -10)
+
+  first = datastructures.priority_queue_pop(queue)
+  second = datastructures.priority_queue_pop(queue)
+  third = datastructures.priority_queue_pop(queue)
+  fourth = datastructures.priority_queue_pop(queue)
+  fifth = datastructures.priority_queue_pop(queue)
+  sixth = datastructures.priority_queue_pop(queue)
+  assertEqual(first.value, -10)
+  assertEqual(second.value, 0)
+  assertEqual(third.value, 10)
+  assertEqual(fourth.value, 11)
+  assertEqual(fifth.value, 12)
+  assertEqual(sixth.value, 20)
+  var caught_empty = false
+  try:
+    item = datastructures.priority_queue_pop(queue)
+  recover datastructures.DataStructureError.Empty:
+    caught_empty = true
+  assert(caught_empty)
+
+test "priority queue sequence overflow is atomic":
+  var queue = datastructures.StableIntPriorityQueue(priorities: Vector[Int](), sequences: Vector[Int](), values: Vector[Int](), next_sequence: 9223372036854775807)
+  assert(datastructures.priority_queue_validate(queue))
+  var caught = false
+  try:
+    datastructures.priority_queue_push(queue, 1, 7)
+  recover datastructures.DataStructureError.SequenceOverflow:
+    caught = true
+  assert(caught)
+  assertEqual(queue.priorities |> count, 0)
+  assertEqual(queue.sequences |> count, 0)
+  assertEqual(queue.values |> count, 0)
+  assertEqual(queue.next_sequence, 9223372036854775807)
+
+test "priority queue preserves a large equal priority fifo batch":
+  var queue = datastructures.new_priority_queue()
+  var i = 0
+  while i < 64:
+    datastructures.priority_queue_push(queue, 7, i)
+    i = i + 1
+  i = 0
+  while i < 64:
+    item = datastructures.priority_queue_pop(queue)
+    assertEqual(item.priority, 7)
+    assertEqual(item.value, i)
+    i = i + 1
+  assert(datastructures.priority_queue_is_empty(queue))
+
+test "priority queue forged records are rejected atomically":
+  var mismatched = datastructures.StableIntPriorityQueue(priorities: [1], sequences: Vector[Int](), values: [9], next_sequence: 1)
+  assert(not datastructures.priority_queue_validate(mismatched))
+  var caught_mismatch = false
+  try:
+    datastructures.priority_queue_push(mismatched, 0, 8)
+  recover datastructures.DataStructureError.InvalidState:
+    caught_mismatch = true
+  assert(caught_mismatch)
+  assertEqual(mismatched.priorities, [1])
+  assertEqual(mismatched.values, [9])
+
+  var duplicate = datastructures.StableIntPriorityQueue(priorities: [1, 1], sequences: [0, 0], values: [10, 11], next_sequence: 1)
+  assert(not datastructures.priority_queue_validate(duplicate))
+  var caught_duplicate = false
+  try:
+    item = datastructures.priority_queue_pop(duplicate)
+  recover datastructures.DataStructureError.InvalidState:
+    caught_duplicate = true
+  assert(caught_duplicate)
+
+  var bad_order = datastructures.StableIntPriorityQueue(priorities: [5, 1], sequences: [0, 1], values: [50, 10], next_sequence: 2)
+  assert(not datastructures.priority_queue_validate(bad_order))
+  var caught_order = false
+  try:
+    item = datastructures.priority_queue_pop(bad_order)
+  recover datastructures.DataStructureError.InvalidState:
+    caught_order = true
+  assert(caught_order)
+
+test "deque rejects zero and negative capacities":
+  var zero_value = 99
+  try:
+    deque = datastructures.new_int_bounded_deque(0)
+  recover datastructures.DataStructureError.InvalidCapacity(capacity):
+    zero_value = capacity
+  assertEqual(zero_value, 0)
+
+  var negative_value = 99
+  try:
+    deque = datastructures.new_int_bounded_deque(-7)
+  recover datastructures.DataStructureError.InvalidCapacity(capacity):
+    negative_value = capacity
+  assertEqual(negative_value, -7)
+
+test "capacity one deque and typed full empty errors":
+  var deque = datastructures.new_int_bounded_deque(1)
+  assertEqual(datastructures.int_deque_capacity(deque), 1)
+  assert(datastructures.int_deque_is_empty(deque))
+  var caught_empty = false
+  try:
+    value = datastructures.int_deque_pop_front(deque)
+  recover datastructures.DataStructureError.Empty:
+    caught_empty = true
+  assert(caught_empty)
+  datastructures.int_deque_push_back(deque, 7)
+  assert(datastructures.int_deque_is_full(deque))
+  assertEqual(datastructures.int_deque_peek_front(deque), 7)
+  assertEqual(datastructures.int_deque_peek_back(deque), 7)
+  var full_capacity = -1
+  try:
+    datastructures.int_deque_push_front(deque, 8)
+  recover datastructures.DataStructureError.Full(capacity):
+    full_capacity = capacity
+  assertEqual(full_capacity, 1)
+  assertEqual(datastructures.int_deque_values(deque), [7])
+  assertEqual(datastructures.int_deque_pop_back(deque), 7)
+  datastructures.int_deque_push_front(deque, 9)
+  assertEqual(datastructures.int_deque_pop_front(deque), 9)
+
+test "deque wraparound both ends indexing clear and reuse":
+  var deque = datastructures.new_int_bounded_deque(3)
+  datastructures.int_deque_push_back(deque, 1)
+  datastructures.int_deque_push_back(deque, 2)
+  datastructures.int_deque_push_back(deque, 3)
+  assertEqual(datastructures.int_deque_pop_front(deque), 1)
+  datastructures.int_deque_push_back(deque, 4)
+  assertEqual(datastructures.int_deque_values(deque), [2, 3, 4])
+  assertEqual(datastructures.int_deque_at(deque, 0), 2)
+  assertEqual(datastructures.int_deque_at(deque, 2), 4)
+  assertEqual(datastructures.int_deque_pop_back(deque), 4)
+  datastructures.int_deque_push_front(deque, 1)
+  assertEqual(datastructures.int_deque_values(deque), [1, 2, 3])
+  assertEqual(datastructures.int_deque_peek_front(deque), 1)
+  assertEqual(datastructures.int_deque_peek_back(deque), 3)
+
+  var copied = datastructures.int_deque_values(deque)
+  copied[0] = 99
+  assertEqual(datastructures.int_deque_peek_front(deque), 1)
+
+  datastructures.int_deque_clear(deque)
+  assert(datastructures.int_deque_is_empty(deque))
+  datastructures.int_deque_push_front(deque, 8)
+  datastructures.int_deque_push_back(deque, 9)
+  assertEqual(datastructures.int_deque_values(deque), [8, 9])
+
+test "deque repeated cycles wrap without growing storage":
+  var deque = datastructures.new_int_bounded_deque(4)
+  var i = 0
+  while i < 100:
+    datastructures.int_deque_push_back(deque, i)
+    assertEqual(datastructures.int_deque_pop_front(deque), i)
+    datastructures.int_deque_push_front(deque, 0 - i)
+    assertEqual(datastructures.int_deque_pop_back(deque), 0 - i)
+    assert(datastructures.int_deque_validate(deque))
+    i = i + 1
+  assertEqual(deque.data |> count, 4)
+  assert(datastructures.int_deque_is_empty(deque))
+
+test "deque invalid index and forged state are typed errors":
+  var deque = datastructures.new_int_bounded_deque(2)
+  datastructures.int_deque_push_back(deque, 4)
+  var bad_index = 99
+  var bad_length = 99
+  try:
+    value = datastructures.int_deque_at(deque, -1)
+  recover datastructures.DataStructureError.InvalidIndex(index, length):
+    bad_index = index
+    bad_length = length
+  assertEqual(bad_index, -1)
+  assertEqual(bad_length, 1)
+
+  var malformed = datastructures.IntBoundedDeque(data: [0, 0], head: 2, size: 1, capacity: 2)
+  assert(not datastructures.int_deque_validate(malformed))
+  var caught_head = false
+  try:
+    value = datastructures.int_deque_pop_front(malformed)
+  recover datastructures.DataStructureError.InvalidState:
+    caught_head = true
+  assert(caught_head)
+
+  var bad_size = datastructures.IntBoundedDeque(data: [0, 0], head: 0, size: 3, capacity: 2)
+  assert(not datastructures.int_deque_validate(bad_size))
+  var caught_size = false
+  try:
+    value = datastructures.int_deque_pop_front(bad_size)
+  recover datastructures.DataStructureError.InvalidState:
+    caught_size = true
+  assert(caught_size)
+
+  var bad_storage = datastructures.IntBoundedDeque(data: [0], head: 0, size: 0, capacity: 2)
+  assert(not datastructures.int_deque_validate(bad_storage))
+  var caught_storage = false
+  try:
+    value = datastructures.int_deque_pop_front(bad_storage)
+  recover datastructures.DataStructureError.InvalidState:
+    caught_storage = true
+  assert(caught_storage)
+
+test "union find supports zero size and rejects negative size":
+  var empty = datastructures.new_union_find(0)
+  assert(datastructures.union_find_validate(empty))
+  assertEqual(datastructures.union_find_len(empty), 0)
+  assertEqual(datastructures.union_find_set_count(empty), 0)
+
+  var bad_size = 0
+  try:
+    invalid = datastructures.new_union_find(-4)
+  recover datastructures.DataStructureError.InvalidSize(size):
+    bad_size = size
+  assertEqual(bad_size, -4)
+
+  var stale_index = -1
+  var stale_length = -1
+  try:
+    root = datastructures.union_find_find(empty, 0)
+  recover datastructures.DataStructureError.InvalidIndex(index, length):
+    stale_index = index
+    stale_length = length
+  assertEqual(stale_index, 0)
+  assertEqual(stale_length, 0)
+
+test "union find balances by size compresses paths and handles duplicate unions":
+  var sets = datastructures.new_union_find(7)
+  assert(datastructures.union_find_union(sets, 0, 1))
+  assert(datastructures.union_find_union(sets, 2, 3))
+  assert(datastructures.union_find_union(sets, 0, 2))
+  assertEqual(sets.parents[3], 2)
+  assertEqual(datastructures.union_find_find(sets, 3), 0)
+  assertEqual(sets.parents[3], 0)
+  assert(datastructures.union_find_same(sets, 1, 3))
+  assert(not datastructures.union_find_same(sets, 0, 6))
+  assertEqual(datastructures.union_find_component_size(sets, 2), 4)
+  assertEqual(datastructures.union_find_set_count(sets), 4)
+  assert(not datastructures.union_find_union(sets, 3, 1))
+  assertEqual(datastructures.union_find_set_count(sets), 4)
+  assert(datastructures.union_find_validate(sets))
+
+  var negative_index = 0
+  try:
+    same = datastructures.union_find_same(sets, -1, 0)
+  recover datastructures.DataStructureError.InvalidIndex(index, length):
+    negative_index = index
+  assertEqual(negative_index, -1)
+
+  var high_index = 0
+  try:
+    changed = datastructures.union_find_union(sets, 0, 7)
+  recover datastructures.DataStructureError.InvalidIndex(index, length):
+    high_index = index
+  assertEqual(high_index, 7)
+
+test "union find rejects forged cycles sizes roots and counts":
+  var cycle = datastructures.UnionFind(parents: [1, 0], sizes: [0, 2], set_count: 1)
+  assert(not datastructures.union_find_validate(cycle))
+  var caught_cycle = false
+  try:
+    root = datastructures.union_find_find(cycle, 0)
+  recover datastructures.DataStructureError.InvalidState:
+    caught_cycle = true
+  assert(caught_cycle)
+
+  var wrong_size = datastructures.UnionFind(parents: [0, 0], sizes: [1, 0], set_count: 1)
+  assert(not datastructures.union_find_validate(wrong_size))
+  var wrong_parent = datastructures.UnionFind(parents: [0, 2], sizes: [1, 1], set_count: 2)
+  assert(not datastructures.union_find_validate(wrong_parent))
+  var wrong_count = datastructures.UnionFind(parents: [0, 1], sizes: [1, 1], set_count: 1)
+  assert(not datastructures.union_find_validate(wrong_count))
+
+test "int sorted set handles extremes duplicates and every removal position":
+  var collection = datastructures.new_int_sorted_set()
+  assert(datastructures.int_sorted_set_add(collection, 0))
+  assert(datastructures.int_sorted_set_add(collection, 9223372036854775807))
+  assert(datastructures.int_sorted_set_add(collection, -9223372036854775808))
+  assert(datastructures.int_sorted_set_add(collection, 10))
+  assert(datastructures.int_sorted_set_add(collection, -10))
+  assert(not datastructures.int_sorted_set_add(collection, 0))
+  assertEqual(datastructures.int_sorted_set_values(collection), [-9223372036854775808, -10, 0, 10, 9223372036854775807])
+  assert(datastructures.int_sorted_set_contains(collection, -10))
+  assert(not datastructures.int_sorted_set_contains(collection, 9))
+  assertEqual(datastructures.int_sorted_set_at(collection, 2), 0)
+
+  assert(datastructures.int_sorted_set_remove(collection, -9223372036854775808))
+  assert(datastructures.int_sorted_set_remove(collection, 0))
+  assert(datastructures.int_sorted_set_remove(collection, 9223372036854775807))
+  assert(not datastructures.int_sorted_set_remove(collection, 99))
+  assertEqual(datastructures.int_sorted_set_values(collection), [-10, 10])
+  assert(datastructures.int_sorted_set_validate(collection))
+
+  var copied = datastructures.int_sorted_set_values(collection)
+  copied[0] = 44
+  assertEqual(datastructures.int_sorted_set_at(collection, 0), -10)
+
+test "int sorted set invalid indices and forged order are rejected":
+  var collection = datastructures.new_int_sorted_set()
+  var bad_index = 0
+  var bad_length = -1
+  try:
+    value = datastructures.int_sorted_set_at(collection, -1)
+  recover datastructures.DataStructureError.InvalidIndex(index, length):
+    bad_index = index
+    bad_length = length
+  assertEqual(bad_index, -1)
+  assertEqual(bad_length, 0)
+
+  var duplicate = datastructures.IntSortedSet(values: [1, 1])
+  assert(not datastructures.int_sorted_set_validate(duplicate))
+  var caught = false
+  try:
+    present = datastructures.int_sorted_set_contains(duplicate, 1)
+  recover datastructures.DataStructureError.InvalidState:
+    caught = true
+  assert(caught)
+  var descending = datastructures.IntSortedSet(values: [2, 1])
+  assert(not datastructures.int_sorted_set_validate(descending))
+
+test "int sorted map inserts replaces removes and enumerates deterministically":
+  var mapping = datastructures.new_int_sorted_map()
+  assert(datastructures.int_sorted_map_put(mapping, 0, 1))
+  assert(datastructures.int_sorted_map_put(mapping, 9223372036854775807, 2))
+  assert(datastructures.int_sorted_map_put(mapping, -9223372036854775808, 3))
+  assert(datastructures.int_sorted_map_put(mapping, 10, 4))
+  assert(datastructures.int_sorted_map_put(mapping, -10, 5))
+  assert(not datastructures.int_sorted_map_put(mapping, 0, 99))
+  assertEqual(datastructures.int_sorted_map_len(mapping), 5)
+  assertEqual(datastructures.int_sorted_map_key_at(mapping, 0), -9223372036854775808)
+  assertEqual(datastructures.int_sorted_map_key_at(mapping, 2), 0)
+  assertEqual(datastructures.int_sorted_map_value_at(mapping, 2), 99)
+  assertEqual(datastructures.int_sorted_map_get(mapping, -10), 5)
+  assertEqual(datastructures.int_sorted_map_get_or(mapping, 8, 77), 77)
+  assert(datastructures.int_sorted_map_contains(mapping, 10))
+
+  assert(datastructures.int_sorted_map_remove(mapping, -9223372036854775808))
+  assert(datastructures.int_sorted_map_remove(mapping, 0))
+  assert(datastructures.int_sorted_map_remove(mapping, 9223372036854775807))
+  assert(not datastructures.int_sorted_map_remove(mapping, 123))
+  assertEqual(datastructures.int_sorted_map_key_at(mapping, 0), -10)
+  assertEqual(datastructures.int_sorted_map_key_at(mapping, 1), 10)
+  assert(datastructures.int_sorted_map_validate(mapping))
+
+  var missing = false
+  try:
+    value = datastructures.int_sorted_map_get(mapping, 0)
+  recover datastructures.DataStructureError.NotFound:
+    missing = true
+  assert(missing)
+
+test "int sorted map rejects malformed parallel storage and order":
+  var mismatch = datastructures.IntSortedMap(keys: [1], values: Vector[Int]())
+  assert(not datastructures.int_sorted_map_validate(mismatch))
+  var caught = false
+  try:
+    length = datastructures.int_sorted_map_len(mismatch)
+  recover datastructures.DataStructureError.InvalidState:
+    caught = true
+  assert(caught)
+  var duplicate = datastructures.IntSortedMap(keys: [1, 1], values: [2, 3])
+  assert(not datastructures.int_sorted_map_validate(duplicate))
+  var descending = datastructures.IntSortedMap(keys: [2, 1], values: [2, 1])
+  assert(not datastructures.int_sorted_map_validate(descending))
+
+test "string insertion set preserves first insertion order and owned values":
+  var collection = datastructures.new_string_insertion_set()
+  var cat = "猫"
+  assert(datastructures.string_insertion_set_add(collection, cat))
+  cat.append("!")
+  assert(datastructures.string_insertion_set_add(collection, ""))
+  assert(datastructures.string_insertion_set_add(collection, "βeta"))
+  assert(not datastructures.string_insertion_set_add(collection, "猫"))
+  assertEqual(datastructures.string_insertion_set_len(collection), 3)
+  assertEqual(datastructures.string_insertion_set_at(collection, 0), "猫")
+  assertEqual(datastructures.string_insertion_set_at(collection, 1), "")
+  assertEqual(datastructures.string_insertion_set_at(collection, 2), "βeta")
+  assert(datastructures.string_insertion_set_contains(collection, "βeta"))
+
+  assert(datastructures.string_insertion_set_remove(collection, ""))
+  assert(datastructures.string_insertion_set_add(collection, ""))
+  assertEqual(datastructures.string_insertion_set_at(collection, 0), "猫")
+  assertEqual(datastructures.string_insertion_set_at(collection, 1), "βeta")
+  assertEqual(datastructures.string_insertion_set_at(collection, 2), "")
+  assert(not datastructures.string_insertion_set_remove(collection, "missing"))
+
+  var copied = datastructures.string_insertion_set_values(collection)
+  copied[0] = "changed"
+  assertEqual(datastructures.string_insertion_set_at(collection, 0), "猫")
+  assert(datastructures.string_insertion_set_validate(collection))
+
+test "string insertion map update retains position and reinsert appends":
+  var mapping = datastructures.new_string_insertion_map()
+  var cat = "猫"
+  assert(datastructures.string_insertion_map_put(mapping, cat, 1))
+  cat.append("!")
+  assert(datastructures.string_insertion_map_put(mapping, "", 2))
+  assert(datastructures.string_insertion_map_put(mapping, "β", 3))
+  assert(not datastructures.string_insertion_map_put(mapping, "猫", 9))
+  assertEqual(datastructures.string_insertion_map_key_at(mapping, 0), "猫")
+  assertEqual(datastructures.string_insertion_map_value_at(mapping, 0), 9)
+  assertEqual(datastructures.string_insertion_map_get(mapping, "β"), 3)
+  assertEqual(datastructures.string_insertion_map_get_or(mapping, "missing", 88), 88)
+  assert(datastructures.string_insertion_map_contains(mapping, ""))
+
+  assert(datastructures.string_insertion_map_remove(mapping, ""))
+  assert(datastructures.string_insertion_map_put(mapping, "", 7))
+  assertEqual(datastructures.string_insertion_map_key_at(mapping, 0), "猫")
+  assertEqual(datastructures.string_insertion_map_key_at(mapping, 1), "β")
+  assertEqual(datastructures.string_insertion_map_key_at(mapping, 2), "")
+  assertEqual(datastructures.string_insertion_map_value_at(mapping, 2), 7)
+  assert(not datastructures.string_insertion_map_remove(mapping, "missing"))
+  assert(datastructures.string_insertion_map_validate(mapping))
+
+  var missing = false
+  try:
+    value = datastructures.string_insertion_map_get(mapping, "absent")
+  recover datastructures.DataStructureError.NotFound:
+    missing = true
+  assert(missing)
+
+test "string insertion records reject duplicates mismatches and bad indices":
+  var duplicate_set = datastructures.StringInsertionSet(values: ["x", "x"])
+  assert(not datastructures.string_insertion_set_validate(duplicate_set))
+  var caught_set = false
+  try:
+    length = datastructures.string_insertion_set_len(duplicate_set)
+  recover datastructures.DataStructureError.InvalidState:
+    caught_set = true
+  assert(caught_set)
+
+  var mismatch = datastructures.StringInsertionMap(keys: ["x"], values: Vector[Int]())
+  assert(not datastructures.string_insertion_map_validate(mismatch))
+  var duplicate_map = datastructures.StringInsertionMap(keys: ["x", "x"], values: [1, 2])
+  assert(not datastructures.string_insertion_map_validate(duplicate_map))
+  var caught_map = false
+  try:
+    present = datastructures.string_insertion_map_contains(duplicate_map, "x")
+  recover datastructures.DataStructureError.InvalidState:
+    caught_map = true
+  assert(caught_map)
+
+  var bad_index = 0
+  var empty = datastructures.new_string_insertion_map()
+  try:
+    key = datastructures.string_insertion_map_key_at(empty, 0)
+  recover datastructures.DataStructureError.InvalidIndex(index, length):
+    bad_index = index
+  assertEqual(bad_index, 0)

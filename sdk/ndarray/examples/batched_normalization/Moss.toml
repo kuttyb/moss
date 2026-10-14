@@ -1,0 +1,9 @@
+[package]
+name = "ndarray-batched-normalization"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+ndarray = { path = "../.." }
