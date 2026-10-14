@@ -1,0 +1,375 @@
+module compress
+import bytes
+
+export enum CompressError:
+  InvalidByte(index: Int, value: Int)
+  TruncatedInput
+  InvalidOffset(offset: Int)
+  DecompressedSizeExceeded
+  CorruptedStream(code: Int)
+
+
+fn push_int(vec: Vector[Int], val: Int):
+  vec.push(val)
+
+fn validate_bytes(src: Vector[Int]):
+  let n = src |> count
+  var i = 0
+  while i < n:
+    let b = src[i]
+    if not bytes.is_byte(b):
+      raise CompressError.InvalidByte(index: i, value: b)
+    i = i + 1
+
+# =========================================================================
+# 1. Raw LZ4 Block Decompressor
+# =========================================================================
+
+export fn decompress_lz4_block(src: Vector[Int], max_uncompressed_size: Int) -> Vector[Int]:
+  validate_bytes(src)
+  var dst = Vector[Int]()
+  let src_len = src |> count
+  var ip = 0
+
+  while ip < src_len:
+    let token = src[ip]
+    ip = ip + 1
+
+    # Extract literal length
+    var lit_len = (token >> 4) & 15
+    if lit_len == 15:
+      var reading_ext = true
+      while reading_ext:
+        if ip >= src_len:
+          raise CompressError.TruncatedInput
+        let s = src[ip]
+        ip = ip + 1
+        lit_len = lit_len + s
+        if ((dst |> count) + lit_len) > max_uncompressed_size:
+          raise CompressError.DecompressedSizeExceeded
+        if s < 255:
+          reading_ext = false
+
+    if (ip + lit_len) > src_len:
+      raise CompressError.TruncatedInput
+
+    if ((dst |> count) + lit_len) > max_uncompressed_size:
+      raise CompressError.DecompressedSizeExceeded
+
+    # Copy literals
+    var lit_i = 0
+    while lit_i < lit_len:
+      dst.push(src[ip + lit_i])
+      lit_i = lit_i + 1
+    ip = ip + lit_len
+
+    # End of block condition: last sequence has no match
+    if ip == src_len:
+      return dst
+
+    # Read offset (2 bytes little-endian)
+    if (ip + 2) > src_len:
+      raise CompressError.TruncatedInput
+    let offset = src[ip] | (src[ip + 1] << 8)
+    ip = ip + 2
+
+    let cur_dst_len = dst |> count
+    if offset <= 0 or offset > cur_dst_len:
+      raise CompressError.InvalidOffset(offset: offset)
+
+    # Extract match length
+    var match_len = (token & 15) + 4
+    if (token & 15) == 15:
+      var reading_match_ext = true
+      while reading_match_ext:
+        if ip >= src_len:
+          raise CompressError.TruncatedInput
+        let s2 = src[ip]
+        ip = ip + 1
+        match_len = match_len + s2
+        if ((dst |> count) + match_len) > max_uncompressed_size:
+          raise CompressError.DecompressedSizeExceeded
+        if s2 < 255:
+          reading_match_ext = false
+
+    if ((dst |> count) + match_len) > max_uncompressed_size:
+      raise CompressError.DecompressedSizeExceeded
+
+    # Copy match (supports overlapping offsets)
+    var m_i = 0
+    while m_i < match_len:
+      let copy_pos = (dst |> count) - offset
+      let b = dst[copy_pos]
+      dst.push(b)
+      m_i = m_i + 1
+
+  return dst
+
+# =========================================================================
+# 2. Raw LZ4 Block Compressor
+# =========================================================================
+
+export fn compress_lz4_block(src: Vector[Int]) -> Vector[Int]:
+  validate_bytes(src)
+  let src_len = src |> count
+  var dst = Vector[Int]()
+
+  if src_len == 0:
+    return dst
+
+  # If input is very small, emit a single literal sequence
+  if src_len < 13:
+    let token = min_int(src_len, 15) << 4
+    dst.push(token)
+    if src_len >= 15:
+      var rem = src_len - 15
+      while rem >= 255:
+        dst.push(255)
+        rem = rem - 255
+      dst.push(rem)
+    var i = 0
+    while i < src_len:
+      dst.push(src[i])
+      i = i + 1
+    return dst
+
+  # Hash table for 4-byte match positions
+  let table_size = 4096
+  var table = Vector[Int]()
+  var t_init = 0
+  while t_init < table_size:
+    table.push(0 - 1)
+    t_init = t_init + 1
+
+  var anchor = 0
+  var ip = 0
+  let limit = src_len - 12
+
+  while ip <= limit:
+    let b0 = src[ip]
+    let b1 = src[ip + 1]
+    let b2 = src[ip + 2]
+    let b3 = src[ip + 3]
+    let v_lo = b0 | (b1 << 8)
+    let v_hi = b2 | (b3 << 8)
+    let lo_prod = v_lo * 33841
+    let mid_prod = (v_lo * 40503 + v_hi * 33841) & 65535
+    let prod32 = (lo_prod + (mid_prod << 16)) & 4294967295
+    let h = (prod32 >> 19) & (table_size - 1)
+    let match_ref = table[h]
+    table[h] = ip
+
+    var found_match = false
+    if match_ref >= 0 and (ip - match_ref) <= 65535 and match_ref < ip:
+      let r0 = src[match_ref]
+      let r1 = src[match_ref + 1]
+      let r2 = src[match_ref + 2]
+      let r3 = src[match_ref + 3]
+      if r0 == b0 and r1 == b1 and r2 == b2 and r3 == b3:
+        # Match found! Extend forward
+        found_match = true
+        var match_pos = match_ref + 4
+
+        var cur = ip + 4
+        let max_cur = src_len - 5
+        var extending = true
+        while extending:
+          if cur < max_cur and src[cur] == src[match_pos]:
+            cur = cur + 1
+            match_pos = match_pos + 1
+          else:
+            extending = false
+
+        let match_len = cur - ip
+        let lit_len = ip - anchor
+        let lit_nibble = min_int(lit_len, 15)
+        let match_nibble = min_int(match_len - 4, 15)
+        let token = (lit_nibble << 4) | match_nibble
+        dst.push(token)
+
+        # Literal length extension
+        if lit_len >= 15:
+          var rem = lit_len - 15
+          while rem >= 255:
+            dst.push(255)
+            rem = rem - 255
+          dst.push(rem)
+
+        # Emit literals
+        var l_idx = 0
+        while l_idx < lit_len:
+          dst.push(src[anchor + l_idx])
+          l_idx = l_idx + 1
+
+        # Emit 16-bit little-endian offset
+        let offset = ip - match_ref
+        dst.push((offset & 255))
+
+        dst.push(((offset >> 8) & 255))
+
+        # Match length extension
+        if (match_len - 4) >= 15:
+          var m_rem = (match_len - 4) - 15
+          while m_rem >= 255:
+            dst.push(255)
+            m_rem = m_rem - 255
+          dst.push(m_rem)
+
+        anchor = cur
+        ip = cur
+
+    if not found_match:
+      ip = ip + 1
+
+
+  # Emit trailing literals
+  if anchor < src_len:
+    let lit_len = src_len - anchor
+    let token = min_int(lit_len, 15) << 4
+    dst.push(token)
+    if lit_len >= 15:
+      var rem = lit_len - 15
+      while rem >= 255:
+        dst.push(255)
+        rem = rem - 255
+      dst.push(rem)
+    var l_idx = 0
+    while l_idx < lit_len:
+      dst.push(src[anchor + l_idx])
+      l_idx = l_idx + 1
+
+  return dst
+
+fn min_int(a: Int, b: Int) -> Int:
+  if a < b:
+    return a
+  return b
+
+# =========================================================================
+# 3. Size-prefixed LZ4 Helpers (Documented Convention)
+# =========================================================================
+
+export fn compress_lz4_size_prefixed(src: Vector[Int]) -> Vector[Int]:
+  validate_bytes(src)
+  let orig_size = src |> count
+  var dst = Vector[Int]()
+  # 4-byte little-endian uncompressed length
+  dst.push((orig_size & 255))
+  dst.push(((orig_size >> 8) & 255))
+  dst.push(((orig_size >> 16) & 255))
+  dst.push(((orig_size >> 24) & 255))
+
+  let block = compress_lz4_block(src)
+  let block_len = block |> count
+  var i = 0
+  while i < block_len:
+    dst.push(block[i])
+    i = i + 1
+  return dst
+
+export fn decompress_lz4_size_prefixed(src: Vector[Int], max_uncompressed_size: Int) -> Vector[Int]:
+  validate_bytes(src)
+  let n = src |> count
+  if n < 4:
+    raise CompressError.TruncatedInput
+  let orig_size = src[0] | (src[1] << 8) | (src[2] << 16) | (src[3] << 24)
+  if orig_size < 0 or orig_size > max_uncompressed_size:
+    raise CompressError.DecompressedSizeExceeded
+
+  # Extract block
+  var raw_block = Vector[Int]()
+  var i = 4
+  while i < n:
+    raw_block.push(src[i])
+    i = i + 1
+
+  let decomp = decompress_lz4_block(raw_block, orig_size)
+  if (decomp |> count) != orig_size:
+    raise CompressError.CorruptedStream(code: 1)
+  return decomp
+
+
+# =========================================================================
+# 4. Raw DEFLATE Stored Blocks (RFC 1951, BTYPE=00)
+# =========================================================================
+
+export fn deflate_stored(src: Vector[Int]) -> Vector[Int]:
+  validate_bytes(src)
+  var dst = Vector[Int]()
+  let n = src |> count
+  if n == 0:
+    # 1 block: BFINAL=1, BTYPE=00, LEN=0, NLEN=0xFFFF
+    dst.push(1)
+    dst.push(0)
+    dst.push(0)
+    dst.push(255)
+    dst.push(255)
+    return dst
+
+  var ip = 0
+  while ip < n:
+    let remaining = n - ip
+    var chunk_len = remaining
+    if chunk_len > 65535:
+      chunk_len = 65535
+    var bfinal = 0
+    if (ip + chunk_len) == n:
+      bfinal = 1
+    # BFINAL (bit 0) | BTYPE (bits 1-2)
+    let hdr = bfinal
+    dst.push(hdr)
+    # LEN (little-endian 16-bit)
+    dst.push((chunk_len & 255))
+    dst.push(((chunk_len >> 8) & 255))
+    # NLEN (one's complement)
+    let nlen = (chunk_len ^ 65535) & 65535
+    dst.push((nlen & 255))
+    dst.push(((nlen >> 8) & 255))
+
+    var c = 0
+    while c < chunk_len:
+      dst.push(src[ip + c])
+      c = c + 1
+    ip = ip + chunk_len
+
+  return dst
+
+export fn inflate_stored(src: Vector[Int], max_uncompressed_size: Int) -> Vector[Int]:
+  validate_bytes(src)
+  var dst = Vector[Int]()
+  let n = src |> count
+  var ip = 0
+  var bfinal = 0
+
+  while bfinal == 0:
+    if (ip + 5) > n:
+      raise CompressError.TruncatedInput
+    let hdr = src[ip]
+    ip = ip + 1
+    bfinal = hdr & 1
+    let btype = (hdr >> 1) & 3
+    if btype != 0:
+      raise CompressError.CorruptedStream(code: 2)
+
+    let chunk_len = src[ip] | (src[ip + 1] << 8)
+    ip = ip + 2
+    let nlen = src[ip] | (src[ip + 1] << 8)
+    ip = ip + 2
+
+    if ((chunk_len ^ 65535) & 65535) != nlen:
+      raise CompressError.CorruptedStream(code: 3)
+
+
+    if (ip + chunk_len) > n:
+      raise CompressError.TruncatedInput
+
+    if ((dst |> count) + chunk_len) > max_uncompressed_size:
+      raise CompressError.DecompressedSizeExceeded
+
+    var c = 0
+    while c < chunk_len:
+      dst.push(src[ip + c])
+      c = c + 1
+    ip = ip + chunk_len
+
+  return dst

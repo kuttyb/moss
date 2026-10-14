@@ -1,0 +1,101 @@
+module hash_test
+
+import hash
+
+test "adler32 golden vectors":
+  var empty_bytes = hash.string_to_bytes("")
+  assertEqual(hash.adler32(empty_bytes), 1)
+
+  var digits_bytes = hash.string_to_bytes("123456789")
+  assertEqual(hash.adler32(digits_bytes), 152961502)
+
+  # Incremental vs one-shot
+  var acc = hash.new_adler32()
+  hash.adler32_update(acc, hash.string_to_bytes("1234"))
+  hash.adler32_update(acc, hash.string_to_bytes("56789"))
+  assertEqual(hash.adler32_digest(acc), 152961502)
+
+test "crc32 golden vectors":
+  var empty_bytes = hash.string_to_bytes("")
+  assertEqual(hash.crc32(empty_bytes), 0)
+
+  var digits_bytes = hash.string_to_bytes("123456789")
+  assertEqual(hash.crc32(digits_bytes), 3421780262)
+
+  # Incremental vs one-shot
+  var acc = hash.new_crc32()
+  hash.crc32_update(acc, hash.string_to_bytes("12345"))
+  hash.crc32_update(acc, hash.string_to_bytes("6789"))
+  assertEqual(hash.crc32_digest(acc), 3421780262)
+
+test "fnv1a golden vectors":
+  var empty_bytes = hash.string_to_bytes("")
+  assertEqual(hash.fnv1a(empty_bytes), 2166136261)
+
+  var foobar_bytes = hash.string_to_bytes("foobar")
+  assertEqual(hash.fnv1a(foobar_bytes), 3214735720)
+
+  # Incremental vs one-shot
+  var acc = hash.new_fnv1a()
+  hash.fnv1a_update(acc, hash.string_to_bytes("foo"))
+  hash.fnv1a_update(acc, hash.string_to_bytes("bar"))
+  assertEqual(hash.fnv1a_digest(acc), 3214735720)
+
+test "sha256 golden vectors":
+  var empty_bytes = hash.string_to_bytes("")
+  assertEqual(hash.sha256_hex(empty_bytes), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+
+  var abc_bytes = hash.string_to_bytes("abc")
+  assertEqual(hash.sha256_hex(abc_bytes), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+
+  var long_bytes = hash.string_to_bytes("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")
+  assertEqual(hash.sha256_hex(long_bytes), "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1")
+
+  # Streaming matches one-shot
+  var acc = hash.new_sha256()
+  hash.sha256_update(acc, hash.string_to_bytes("a"))
+  hash.sha256_update(acc, hash.string_to_bytes("bc"))
+  assertEqual(hash.sha256_hexdigest(acc), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+
+test "hash error validation":
+  var invalid_bytes = Vector[Int]()
+  invalid_bytes.push(65)
+  invalid_bytes.push(300)
+  var caught = false
+  try:
+    var dummy = hash.crc32(invalid_bytes)
+  recover hash.HashError.InvalidByte:
+
+    caught = true
+  assert(caught)
+
+test "sha256 digest idempotency":
+  var acc = hash.new_sha256()
+  hash.sha256_update(acc, hash.string_to_bytes("hello world"))
+  let d1 = hash.sha256_hexdigest(acc)
+  let d2 = hash.sha256_hexdigest(acc)
+  assertEqual(d1, "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9")
+  assertEqual(d1, d2)
+
+test "sha256 finalization and update after finalization":
+  var acc = hash.new_sha256()
+  hash.sha256_update(acc, hash.string_to_bytes("finalized test"))
+  hash.sha256_finalize(acc)
+  let d1 = hash.sha256_hexdigest(acc)
+  let d2 = hash.sha256_hexdigest(acc)
+  assertEqual(d1, d2)
+
+  var caught_finalized = false
+  try:
+    hash.sha256_update(acc, hash.string_to_bytes("more"))
+  recover hash.HashError.CorruptedState:
+    caught_finalized = true
+  assert(caught_finalized)
+
+test "string_to_bytes invalid character fails":
+  var caught_invalid = false
+  try:
+    var dummy = hash.string_to_bytes("hello€world")
+  recover hash.HashError.InvalidByte:
+    caught_invalid = true
+  assert(caught_invalid)

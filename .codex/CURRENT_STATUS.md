@@ -1,5 +1,25 @@
 # Moss current status
 
+## Phase 24 Team R Data Utils SDK Final Corrective Pass Complete — 2026-10-13
+
+Team R (`moss.hash`, `moss.compress`, `moss.regex`, `moss.data_utils_integration`) completed final corrective pass repairs, adversarial testing, live linear runtime-scaling verification, and independent Architect sign-off on `phase24-data-utils`:
+1. **Implementation Baseline & Exact Reviewed SHA:**
+   - Compiler R0a/R0b accepted baseline (`43757790ef3af52204c90bbd9dabcefc4470e965` on `phase24-integration`).
+   - Exact implementation SHA: `4068976a9a4d1bb046b69fbc35708d8b51f831e4` (confirmed by Team I; Team R's authored report transcribed `4068976264f3312c5bfad3e680a6b12fcf45ff3b`).
+2. **Corrective Pass Remediation:**
+   - **NFA Origin Propagation Symmetry (Task 1):** In `packages/regex/src/main.moss` (`run_nfa_search_from`), epsilon-closure processing for `KIND_SPLIT` now symmetrically propagates earlier origins through `out2` when `s_orig < state_origins[o2]`. Cyclic termination is mathematically proven (cycles cannot decrease origin, terminating immediately). Preserves POSIX leftmost-longest match semantics. Added 5 adversarial regression test suites (18 tests total in regex).
+   - **Live Linear Runtime-Scaling Experiment (Task 2):** Replaced combined-time probe with release-mode live experiment measuring precompiled Regex objects across 1K, 2K, 4K, 8K, 16K nonmatching characters against adversarial patterns `(a+)+b`, `(a|aa)*b`, and `a*b`. Across 5 repeated measurement series, median timings demonstrate exact ~2.0x doubling ratios per 2x length increase (bounded in $[1.19\times, 2.26\times]$), proving linear $O(N)$ execution time and complete ReDoS immunity. Characterized state-count complexity costs ($O(M \cdot N)$).
+   - **L7 Corrective Review Closeout:** All 4 prior findings (L7-R-01 dangling quantifiers, L7-R-02 reversed character ranges, L7-R-03 malformed alternation, L7-R-04 destructive SHA-256 state mutation) verified permanently resolved.
+3. **Validation & Quality Gates:**
+   - In-Tree Unit Tests: 36 unique test cases across 4 packages (8 hash, 8 compress, 18 regex, 2 integration) with 108 total test executions across Native Debug, Fast Debug, and Native Release all passed (100% parity).
+   - Differential Oracles: 25 differential tests, live scaling series, and source-free ABI-v9 checks in `tests/tooling/check_phase24_data_utils_oracles.py` passed against Python `zlib`, `hashlib`, `re`, and reference implementations.
+   - Benchmarks: Native release benchmarks recorded for all packages (`margo bench`), with Phase 21 `RegexError` variants handled.
+   - Repository Quality Gates: `TMPDIR="$PWD/tmp" make check` passed (54/54 executor tests; all Moss v0.1 tests passed); `make examples` built all 32 showcase programs; `python3 tests/tooling/check_agent_feedback.py` passed; `git diff --check` passed cleanly.
+4. **Independent Architect Verdict:**
+   - Independent L6 Architect issued attributable **UNCONDITIONAL GO FOR TEAM I INTEGRATION** in `docs/team_r/ARCHITECT_FINAL_ACCEPTANCE.md` §6 for exact implementation SHA `4068976a9a4d1bb046b69fbc35708d8b51f831e4` (with erratum noted for the transcribed SHA).
+5. **Handoff Status:**
+   - Ready for Team I integration into `phase24-integration`. Branch remains strictly isolated on `phase24-data-utils`; zero commits merged into `main`.
+
 ## Phase 24 Team A L7 CBOR corrections accepted — 2026-10-13
 
 Branch `phase24-advanced-data` preserves all five delivered SDK packages and
@@ -213,6 +233,27 @@ repository checks and examples passed. The focused Architect confirmation is
 **GO** for exact implementation SHA `4d04481fceb5c258670c566ed27de879fa0cddfe`
 in `docs/phase24/TEAM_H_HOST_ARCHITECT_CLOSEOUT_CONFIRMATION.md` (report commit
 `638c67cf1f3cf845c4252cbe0d8d61aca6b578c4`). Team I owns any subsequent
+integration.
+
+## Phase 24 Compiler R0a/R0b Integration & Team R Baseline — 2026-10-12
+
+Team I completed compiler integration for:
+- **Workstream R0b:** Same-module type resolution (`phase24-compiler-type-resolution`, `16d07cf8703c47e72b19b598608395d94960eb18`).
+- **Workstream R0a:** Integer bitwise & shift operators (`phase24-compiler-bitwise`, `8a24f422b69766c8db83f7035b9caff6452416b7`).
+- **Combined compiler gate:** Successfully integrated into `phase24-integration` at commit `43757790ef3af52204c90bbd9dabcefc4470e965`. All 54 Phase 20 executor tests, discriminating precedence tests, ABI-v9 checks, `TMPDIR="$PWD/tmp" make check`, and `make examples` passed.
+
+## Phase 24 Team R Feasibility & Initial Architectural Review complete — 2026-10-12
+
+Team R (`moss.regex`, `moss.compress`, `moss.hash`) launched on feature branch `phase24-data-utils`:
+1. **Initial Feasibility Assessment:**
+   - Identified and verified core Moss v0.1 physical constraints: string code-point indexing, absence of ordinary recursion, `Vector[Int]` byte representations ($0 \le b \le 255$).
+   - Transitioning from arithmetic XOR emulation to newly integrated native 64-bit bitwise operators (`&`, `|`, `^`, `~`, `<<`, `>>`).
+2. **Independent L6 Architect Review:**
+   - Independent L6 Architect issued Conditional Approval in `docs/team_r/ARCHITECT_REVIEW.md`.
+   - Amending architecture freeze with native bitwise operators, corrected reference vectors, and strict LZ4 block framing distinctions.
+3. **Branch Status:**
+   - Compiler R0a/R0b baseline merged into `phase24-data-utils`. Full implementation underway.
+
 ## Phase 24 Team I consolidated checkpoint — 2026-10-12
 
 The accepted Team D structured-data, Team T performance, Team N numerical, and

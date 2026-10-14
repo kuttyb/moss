@@ -1,0 +1,67 @@
+module regex_bench
+
+import regex
+
+fn compile_dummy() -> regex.Regex:
+  var kinds = Vector[Int]()
+  kinds.push(1)
+  kinds.push(0)
+  var chars = Vector[String]()
+  chars.push("a")
+  chars.push("")
+  var classes = Vector[String]()
+  classes.push("")
+  classes.push("")
+  var negs = Vector[Bool]()
+  negs.push(false)
+  negs.push(false)
+  var outs = Vector[Int]()
+  outs.push(1)
+  outs.push(0 - 1)
+  var out1s = Vector[Int]()
+  out1s.push(0 - 1)
+  out1s.push(0 - 1)
+  return regex.Regex(pattern: "a", start_state: 0, match_state: 1, num_states: 2, kinds: kinds, chars: chars, classes: classes, negs: negs, outs: outs, out1s: out1s)
+
+
+fn bench_compile(pattern: String) -> regex.Regex:
+  try:
+    return regex.compile(pattern)
+  recover regex.RegexError.UnexpectedToken:
+    return compile_dummy()
+  recover regex.RegexError.UnclosedParenthesis:
+    return compile_dummy()
+  recover regex.RegexError.UnclosedBracket:
+    return compile_dummy()
+  recover regex.RegexError.DanglingRepetition:
+    return compile_dummy()
+  recover regex.RegexError.InvalidRange:
+    return compile_dummy()
+  recover regex.RegexError.InvalidEscape:
+    return compile_dummy()
+  recover regex.RegexError.PatternTooComplex:
+    return compile_dummy()
+  recover regex.RegexError.UnsupportedFeature:
+    return compile_dummy()
+
+bench "regex compilation 20 states":
+  var i = 0
+  while i < 100:
+    var _re = bench_compile("(abc|def)+[0-9]*xyz")
+    i = i + 1
+
+bench "regex match email pattern":
+  var re = bench_compile("[a-zA-Z0-9_]+@[a-zA-Z0-9]+\\.[a-z]+")
+  var text = "contact us at developer@example.org for questions"
+  var i = 0
+  while i < 100:
+    var _m = regex.regex_is_match(re, text)
+    i = i + 1
+
+bench "regex adversarial redos immunity":
+  var re = bench_compile("(a+)+b")
+  var text = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  var i = 0
+  while i < 50:
+    var _m = regex.regex_is_match(re, text)
+    i = i + 1

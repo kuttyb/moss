@@ -1,0 +1,30 @@
+module hash_bench
+
+import hash
+
+fn bench_crc32(data: Vector[Int]) -> Int:
+  try:
+    return hash.crc32(data)
+  recover hash.HashError.InvalidByte:
+    return 0
+
+fn bench_sha256(data: Vector[Int]) -> String:
+  try:
+    return hash.sha256_hex(data)
+  recover hash.HashError.InvalidByte:
+    return ""
+
+bench "crc32 benchmark":
+  var data = hash.string_to_bytes("The quick brown fox jumps over the lazy dog 1234567890")
+  var i = 0
+  var sum = 0
+  while i < 100:
+    sum = sum + bench_crc32(data)
+    i = i + 1
+
+bench "sha256 benchmark":
+  var data = hash.string_to_bytes("The quick brown fox jumps over the lazy dog 1234567890")
+  var i = 0
+  while i < 50:
+    var _h = bench_sha256(data)
+    i = i + 1

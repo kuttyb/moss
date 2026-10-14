@@ -1,0 +1,478 @@
+module hash
+import bytes
+
+# Closed Phase 21 error enum
+export enum HashError:
+  InvalidByte(index: Int, value: Int)
+  EmptyInput
+  CorruptedState(code: Int)
+
+# Stateful Accumulators
+export type Adler32:
+  a: Int
+  b: Int
+
+export type Crc32:
+  crc: Int
+
+export type Fnv1a:
+  hash: Int
+
+export type Sha256:
+  h0: Int
+  h1: Int
+  h2: Int
+  h3: Int
+  h4: Int
+  h5: Int
+  h6: Int
+  h7: Int
+  total_len: Int
+  buffer: Vector[Int]
+  is_finalized: Bool
+
+# Constants
+fn MASK32() -> Int:
+  return 4294967295
+
+fn MOD_ADLER() -> Int:
+  return 65521
+
+fn FNV_OFFSET_BASIS() -> Int:
+  return 2166136261
+
+fn FNV_PRIME() -> Int:
+  return 16777619
+
+fn push_int(vec: Vector[Int], val: Int):
+  vec.push(val)
+
+fn clone_int_vec(v: Vector[Int]) -> Vector[Int]:
+  var res = Vector[Int]()
+  let n = v |> count
+  var i = 0
+  while i < n:
+    res.push(v[i])
+    i = i + 1
+  return res
+
+# Validate input bytes
+fn validate_bytes(src: Vector[Int]):
+
+
+  n = src |> count
+  var i = 0
+  while i < n:
+    b = src[i]
+    if not bytes.is_byte(b):
+      raise HashError.InvalidByte(index: i, value: b)
+    i = i + 1
+
+# =========================================================================
+# 1. Adler-32 (RFC 1950)
+# =========================================================================
+
+export fn new_adler32() -> Adler32:
+  return Adler32(a: 1, b: 0)
+
+export fn adler32_update(acc: Adler32, chunk: Vector[Int]):
+  validate_bytes(chunk)
+  n = chunk |> count
+  var a = acc.a
+  var b = acc.b
+  var i = 0
+  while i < n:
+    a = (a + chunk[i]) % 65521
+    b = (b + a) % 65521
+    i = i + 1
+  acc.a = a
+  acc.b = b
+
+export fn adler32_digest(acc: Adler32) -> Int:
+  return ((acc.b << 16) | acc.a) & 4294967295
+
+export fn adler32(src: Vector[Int]) -> Int:
+  var acc = new_adler32()
+  adler32_update(acc, src)
+  return adler32_digest(acc)
+
+# =========================================================================
+# 2. CRC-32 (IEEE 802.3)
+# =========================================================================
+
+fn make_crc_table() -> Vector[Int]:
+  var table = Vector[Int]()
+  var byte_val = 0
+  while byte_val < 256:
+    var c = byte_val
+    var bit = 0
+    while bit < 8:
+      if (c & 1) != 0:
+        c = 3988292384 ^ ((c >> 1) & 2147483647)
+      else:
+        c = (c >> 1) & 2147483647
+      bit = bit + 1
+    table.push(c)
+    byte_val = byte_val + 1
+  return table
+
+export fn new_crc32() -> Crc32:
+  return Crc32(crc: 4294967295)
+
+export fn crc32_update(acc: Crc32, chunk: Vector[Int]):
+  validate_bytes(chunk)
+  var table = make_crc_table()
+  var crc = acc.crc
+  n = chunk |> count
+  var i = 0
+  while i < n:
+    idx = (crc ^ chunk[i]) & 255
+    crc = table[idx] ^ ((crc >> 8) & 16777215)
+    i = i + 1
+  acc.crc = crc
+
+export fn crc32_digest(acc: Crc32) -> Int:
+  return (acc.crc ^ 4294967295) & 4294967295
+
+export fn crc32(src: Vector[Int]) -> Int:
+  var acc = new_crc32()
+  crc32_update(acc, src)
+  return crc32_digest(acc)
+
+# =========================================================================
+# 3. FNV-1a 32-bit
+# =========================================================================
+
+export fn new_fnv1a() -> Fnv1a:
+  return Fnv1a(hash: 2166136261)
+
+export fn fnv1a_update(acc: Fnv1a, chunk: Vector[Int]):
+  validate_bytes(chunk)
+  n = chunk |> count
+  var h = acc.hash
+  var i = 0
+  while i < n:
+    h = h ^ chunk[i]
+    h = (h * 16777619) & 4294967295
+    i = i + 1
+  acc.hash = h
+
+export fn fnv1a_digest(acc: Fnv1a) -> Int:
+  return acc.hash & 4294967295
+
+export fn fnv1a(src: Vector[Int]) -> Int:
+  var acc = new_fnv1a()
+  fnv1a_update(acc, src)
+  return fnv1a_digest(acc)
+
+# Helper to convert String to ASCII Vector[Int]
+export fn string_to_bytes(s: String) -> Vector[Int]:
+  var result = Vector[Int]()
+  let chars_list = s.chars()
+  let n = chars_list |> count
+  let lookup_table = "\n\r\t !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+  var i = 0
+  while i < n:
+    let pos = lookup_table.find(chars_list[i])
+    if pos < 0:
+      raise HashError.InvalidByte(index: i, value: 0 - 1)
+    var b = 0
+    if pos == 0:
+      b = 10
+    else:
+      if pos == 1:
+        b = 13
+      else:
+        if pos == 2:
+          b = 9
+        else:
+          b = pos + 29
+    result.push(b)
+    i = i + 1
+
+  return result
+
+
+# =========================================================================
+# 4. SHA-256 (NIST FIPS 180-4)
+# =========================================================================
+
+fn rotr(x: Int, n: Int) -> Int:
+  return (((x >> n) & 4294967295) | ((x << (32 - n)) & 4294967295)) & 4294967295
+
+fn ch_op(x: Int, y: Int, z: Int) -> Int:
+  return ((x & y) ^ ((~x) & z)) & 4294967295
+
+fn maj_op(x: Int, y: Int, z: Int) -> Int:
+  return ((x & y) ^ (x & z) ^ (y & z)) & 4294967295
+
+fn sigma0(x: Int) -> Int:
+  return (rotr(x, 2) ^ rotr(x, 13) ^ rotr(x, 22)) & 4294967295
+
+fn sigma1(x: Int) -> Int:
+  return (rotr(x, 6) ^ rotr(x, 11) ^ rotr(x, 25)) & 4294967295
+
+fn gamma0(x: Int) -> Int:
+  return (rotr(x, 7) ^ rotr(x, 18) ^ ((x >> 3) & 536870911)) & 4294967295
+
+fn gamma1(x: Int) -> Int:
+  return (rotr(x, 17) ^ rotr(x, 19) ^ ((x >> 10) & 4194303)) & 4294967295
+
+fn sha256_k_constants() -> Vector[Int]:
+  var k = Vector[Int]()
+  k.push(1116352408)
+  k.push(1899447441)
+  k.push(3049323471)
+  k.push(3921009573)
+  k.push(961987163)
+  k.push(1508970993)
+  k.push(2453635748)
+  k.push(2870763221)
+  k.push(3624381080)
+  k.push(310598401)
+  k.push(607225278)
+  k.push(1426881987)
+  k.push(1925078388)
+  k.push(2162078206)
+  k.push(2614888103)
+  k.push(3248222580)
+  k.push(3835390401)
+  k.push(4022224774)
+  k.push(264347078)
+  k.push(604807628)
+  k.push(770255983)
+  k.push(1249150122)
+  k.push(1555081692)
+  k.push(1996064986)
+  k.push(2554220882)
+  k.push(2821834349)
+  k.push(2952996808)
+  k.push(3210313671)
+  k.push(3336571891)
+  k.push(3584528711)
+  k.push(113926993)
+  k.push(338241895)
+  k.push(666307205)
+  k.push(773529912)
+  k.push(1294757372)
+  k.push(1396182291)
+  k.push(1695183700)
+  k.push(1986661051)
+  k.push(2177026350)
+  k.push(2456956037)
+  k.push(2730485921)
+  k.push(2820302411)
+  k.push(3259730800)
+  k.push(3345764771)
+  k.push(3516065817)
+  k.push(3600352804)
+  k.push(4094571909)
+  k.push(275423344)
+  k.push(430227734)
+  k.push(506948616)
+  k.push(659060556)
+  k.push(883997877)
+  k.push(958139571)
+  k.push(1322822218)
+  k.push(1537002063)
+  k.push(1747873779)
+  k.push(1955562222)
+  k.push(2024104815)
+  k.push(2227730452)
+  k.push(2361852424)
+  k.push(2428436474)
+  k.push(2756734187)
+  k.push(3204031479)
+  k.push(3329325298)
+
+
+  return k
+
+export fn new_sha256() -> Sha256:
+  return Sha256(h0: 1779033703, h1: 3144134277, h2: 1013904242, h3: 2773480762, h4: 1359893119, h5: 2600822924, h6: 528734635, h7: 1541459225, total_len: 0, buffer: Vector[Int](), is_finalized: false)
+
+
+fn sha256_process_block(acc: Sha256, block: Vector[Int]):
+  var w = Vector[Int]()
+  var t = 0
+  while t < 16:
+    j = t * 4
+    word = ((block[j] << 24) | (block[j + 1] << 16) | (block[j + 2] << 8) | block[j + 3]) & 4294967295
+    w.push(word)
+    t = t + 1
+  while t < 64:
+    w15 = w[t - 15]
+    w2 = w[t - 2]
+    w16 = w[t - 16]
+    w7 = w[t - 7]
+    word = (gamma1(w2) + w7 + gamma0(w15) + w16) & 4294967295
+    w.push(word)
+    t = t + 1
+
+  var a = acc.h0
+  var b = acc.h1
+  var c = acc.h2
+  var d = acc.h3
+  var e = acc.h4
+  var f = acc.h5
+  var g = acc.h6
+  var h = acc.h7
+  var k = sha256_k_constants()
+
+  var i = 0
+  while i < 64:
+    t1 = (h + sigma1(e) + ch_op(e, f, g) + k[i] + w[i]) & 4294967295
+    t2 = (sigma0(a) + maj_op(a, b, c)) & 4294967295
+    h = g
+    g = f
+    f = e
+    e = (d + t1) & 4294967295
+    d = c
+    c = b
+    b = a
+    a = (t1 + t2) & 4294967295
+    i = i + 1
+
+  acc.h0 = (acc.h0 + a) & 4294967295
+  acc.h1 = (acc.h1 + b) & 4294967295
+  acc.h2 = (acc.h2 + c) & 4294967295
+  acc.h3 = (acc.h3 + d) & 4294967295
+  acc.h4 = (acc.h4 + e) & 4294967295
+  acc.h5 = (acc.h5 + f) & 4294967295
+  acc.h6 = (acc.h6 + g) & 4294967295
+  acc.h7 = (acc.h7 + h) & 4294967295
+
+export fn sha256_update(acc: Sha256, chunk: Vector[Int]):
+  if acc.is_finalized:
+    raise HashError.CorruptedState(code: 1)
+  validate_bytes(chunk)
+  n = chunk |> count
+  acc.total_len = acc.total_len + n
+  var i = 0
+  while i < n:
+    push_int(acc.buffer, chunk[i])
+    if (acc.buffer |> count) == 64:
+      var blk = clone_int_vec(acc.buffer)
+      acc.buffer = Vector[Int]()
+      sha256_process_block(acc, blk)
+    i = i + 1
+
+export fn sha256_finalize(acc: Sha256):
+  if acc.is_finalized:
+    return
+  var final_buf = Vector[Int]()
+  buf_len = acc.buffer |> count
+  var i = 0
+  while i < buf_len:
+    final_buf.push(acc.buffer[i])
+    i = i + 1
+  final_buf.push(128)
+  while ((final_buf |> count) % 64) != 56:
+    final_buf.push(0)
+  total_bits = acc.total_len * 8
+  final_buf.push(((total_bits >> 56) & 255))
+  final_buf.push(((total_bits >> 48) & 255))
+  final_buf.push(((total_bits >> 40) & 255))
+  final_buf.push(((total_bits >> 32) & 255))
+  final_buf.push(((total_bits >> 24) & 255))
+  final_buf.push(((total_bits >> 16) & 255))
+  final_buf.push(((total_bits >> 8) & 255))
+  final_buf.push((total_bits & 255))
+
+  total_final = final_buf |> count
+  var b_idx = 0
+  while b_idx < total_final:
+    var blk = Vector[Int]()
+    var j = 0
+    while j < 64:
+      blk.push(final_buf[b_idx + j])
+      j = j + 1
+    sha256_process_block(acc, blk)
+    b_idx = b_idx + 64
+
+  acc.buffer = Vector[Int]()
+  acc.is_finalized = true
+
+export fn sha256_digest(acc: Sha256) -> Vector[Int]:
+  var target_h0 = acc.h0
+  var target_h1 = acc.h1
+  var target_h2 = acc.h2
+  var target_h3 = acc.h3
+  var target_h4 = acc.h4
+  var target_h5 = acc.h5
+  var target_h6 = acc.h6
+  var target_h7 = acc.h7
+  if not acc.is_finalized:
+    var target_acc = Sha256(h0: acc.h0, h1: acc.h1, h2: acc.h2, h3: acc.h3, h4: acc.h4, h5: acc.h5, h6: acc.h6, h7: acc.h7, total_len: acc.total_len, buffer: clone_int_vec(acc.buffer), is_finalized: false)
+    sha256_finalize(target_acc)
+    target_h0 = target_acc.h0
+    target_h1 = target_acc.h1
+    target_h2 = target_acc.h2
+    target_h3 = target_acc.h3
+    target_h4 = target_acc.h4
+    target_h5 = target_acc.h5
+    target_h6 = target_acc.h6
+    target_h7 = target_acc.h7
+
+  var digest = Vector[Int]()
+  var h_vals = Vector[Int]()
+  h_vals.push(target_h0)
+  h_vals.push(target_h1)
+  h_vals.push(target_h2)
+  h_vals.push(target_h3)
+  h_vals.push(target_h4)
+  h_vals.push(target_h5)
+  h_vals.push(target_h6)
+  h_vals.push(target_h7)
+  var w_idx = 0
+  while w_idx < 8:
+    word = h_vals[w_idx]
+    digest.push(((word >> 24) & 255))
+    digest.push(((word >> 16) & 255))
+    digest.push(((word >> 8) & 255))
+    digest.push((word & 255))
+    w_idx = w_idx + 1
+  return digest
+
+fn byte_to_hex(b: Int) -> String:
+  var hex_chars = Vector[String]()
+  hex_chars.push("0")
+  hex_chars.push("1")
+  hex_chars.push("2")
+  hex_chars.push("3")
+  hex_chars.push("4")
+  hex_chars.push("5")
+  hex_chars.push("6")
+  hex_chars.push("7")
+  hex_chars.push("8")
+  hex_chars.push("9")
+  hex_chars.push("a")
+  hex_chars.push("b")
+  hex_chars.push("c")
+  hex_chars.push("d")
+  hex_chars.push("e")
+  hex_chars.push("f")
+
+  hi = (b >> 4) & 15
+  lo = b & 15
+  return hex_chars[hi] + hex_chars[lo]
+
+export fn sha256_hexdigest(acc: Sha256) -> String:
+  digest_bytes = sha256_digest(acc)
+  var result = ""
+  n = digest_bytes |> count
+  var i = 0
+  while i < n:
+    result = result + byte_to_hex(digest_bytes[i])
+    i = i + 1
+  return result
+
+export fn sha256(src: Vector[Int]) -> Vector[Int]:
+  var acc = new_sha256()
+  sha256_update(acc, src)
+  return sha256_digest(acc)
+
+export fn sha256_hex(src: Vector[Int]) -> String:
+  var acc = new_sha256()
+  sha256_update(acc, src)
+  return sha256_hexdigest(acc)
