@@ -2,59 +2,37 @@
 
 ## Checkpoint
 
-- State: **AMBER** (all delivered SDK packages **GREEN**; whole Phase 24 provisional pending Team R delivery and final whole-system Architect review)
-- Integrated implementation SHA: `8b54293` (merge of `origin/phase24-data`)
+- State: **GREEN** (All Phase 24 SDK packages integrated, verified, and passing combined validation matrix)
 - Branch: `phase24-integration`
 - Integration date: 2026-10-13
-- Whole-system Architect review: deferred to the final Phase 24 acceptance milestone by coordinator direction
+- Starting HEAD: `fa9b05e7877138a888936c413bf4583fd448a7a4`
+- Final aggregate delivery tips:
+  - Team A — Advanced Data: `7f30436990f730b8556592b7d5b54e6bac9ccc18` (merged via `35deb9c`)
+  - Team R — Data Utilities: `9794122db5dc2aade42cc259879dffb16200f54b` (merged via `624abff`)
+- Provenance erratum commit: `8fdd93e`
 
-This is the consolidated Phase 24 SDK checkpoint incorporating Team D's corrective delivery.
-The previous nested JSON container correctness defect (P24-D-003) is verified resolved on the
-combined tree. All delivered package gates pass (Foundations, Text/Encoding, Text Performance,
-Math/Random/Time, Numerics, Host Services, and Structured Data). Outstanding non-blocking
-follow-ups, deferred capabilities, and pending Team R delivery are tracked in
-[INTEGRATION_ISSUES.md](INTEGRATION_ISSUES.md).
+This is the consolidated Phase 24 Aggregate SDK Integration checkpoint incorporating all approved deliveries from Teams C, T, M, N, D, H, A, and R into `phase24-integration`.
+All 9 newly integrated packages across Team A (`moss.ndarray`, `moss.datastructures`, `moss.tables`, `moss.binary`, `moss.cbor`) and Team R (`moss.hash`, `moss.compress`, `moss.regex`, `moss.data_utils_integration`) are verified on the combined tree in Native Debug, Native Release, and Fast Debug.
+All historical components, compiler fixes (R0a bitwise, R0b type resolution, imported generic expressions), and regression gates remain 100% green.
 
 ## Integrated sources
 
 | Component | Source branch | Source SHA | Delivered scope | Integration state |
 | --- | --- | --- | --- | --- |
-| Foundations | `phase24-core` | `14a4b835e0d493562d0dfaa9d16768b1b0ad38b5` | `moss.core`, `moss.bytes`, `moss.collections`, `moss.algorithms` | Already present; preserved |
-| Feedback infrastructure | `phase24-agent-feedback-bootstrap` | `b647586b463758c0dc7cc43db4f1e6280d274ef5` | Policy, schema, validator, workflow hooks | Already present; preserved |
-| Text and Encoding | `phase24-text` | `4a9b9be12fd230dcbd0b176d539937c29248d2f4` | `moss.text`, `moss.encoding`, acceptance and benchmark assets | Merged by `ee4973f5556b3cd07204e877157e35fd49ad1874` |
-| Math, Random, and Time | `phase24-math` | `dd24df3bc653cd9d5fa93af9f5f25a9d9c3ff9bf` | `moss.math`, `moss.random`, `moss.time`, Team M integration/oracles | Merged by `a2864a55414fd3f21619a500fcda4c37f91c4467` |
-| Text performance | `phase24-text-perf` | `0d8d1b6cf75ecf72f90be5bab9fc821c3219f584` (reviewed implementation `63a7089bdad2f7739c9b234669657dc1a43ae981`) | String search/slice/case performance, capacity builders, ownership regressions, release validators | Merged by `f4c4ad3d77ddea8e2fa2060a9368c31ad45f7ed4` |
-| Numerics | `phase24-numerics` | `234ff9e2e3a1e03de64be4276f2aef64ba8c6d73` | `moss.linalg`, `moss.sparse`, `moss.statistics`, integration, oracles, release benchmarks | Merged by `bea649a42bd39c87035ba3a1baca603311ca8e05` after unconditional Architect GO |
-| Host Services | `phase24-host` | `ca78d4a74aa6d0aa86da0bdaa610d6b405fa0c52` (Architect GO for implementation `4d04481fceb5c258670c566ed27de879fa0cddfe`) | `moss.path`, bounded regular-file `moss.fs`, host-I/O feasibility probes | Merged by `289d2e0fc2e951b1410d5fae1c3c83fb2c4014cc`; `moss.io`, env, process deferred |
-| R0b Type Resolution | `phase24-compiler-type-resolution` | `16d07cf8703c47e72b19b598608395d94960eb18` | Same-module type resolution | Already merged by `293a6d8`; regression passes |
-| R0a Bitwise | `phase24-compiler-bitwise` | `8a24f422b69766c8db83f7035b9caff6452416b7` | Integer bitwise and shift operators | Already merged by `8e0624a`; regression passes |
-| Structured Data (Corrective) | `phase24-data` | `db5f6663e94f3711db3b55a611d13f1508f97368` (reviewed implementation `6ef17f1c2edc1022f00f77a35bec051b1b9cdab3`) | Corrective sprint: singly-linked tape AST child indexing, INT64_MIN format fix, test harness portability | Merged by `8b54293`; P24-D-003 resolved |
-| Data Utilities (Regex, Compress, Hash) | `phase24-data-utils` | `96b9413f10add541baff4e77d3a66afb16d82c45` | Architecture and package scaffolding | PENDING: not yet eligible; awaiting complete implementation |
+| Foundations | `phase24-core` | `14a4b835e0d493562d0dfaa9d16768b1b0ad38b5` | `moss.core`, `moss.bytes`, `moss.collections`, `moss.algorithms` | Preserved |
+| Feedback infrastructure | `phase24-agent-feedback-bootstrap` | `b647586b463758c0dc7cc43db4f1e6280d274ef5` | Policy, schema, validator, workflow hooks | Preserved |
+| Text and Encoding | `phase24-text` | `4a9b9be12fd230dcbd0b176d539937c29248d2f4` | `moss.text`, `moss.encoding`, acceptance and benchmark assets | Preserved (merged by `ee4973f5556b`) |
+| Math, Random, and Time | `phase24-math` | `dd24df3bc653cd9d5fa93af9f5f25a9d9c3ff9bf` | `moss.math`, `moss.random`, `moss.time`, Team M integration/oracles | Preserved (merged by `a2864a55414f`) |
+| Text performance | `phase24-text-perf` | `0d8d1b6cf75ecf72f90be5bab9fc821c3219f584` | String search/slice/case performance, capacity builders, release validators | Preserved (merged by `f4c4ad3d77dd`) |
+| Numerics | `phase24-numerics` | `234ff9e2e3a1e03de64be4276f2aef64ba8c6d73` | `moss.linalg`, `moss.sparse`, `moss.statistics`, integration, oracles, benchmarks | Preserved (merged by `bea649a42bd3`) |
+| Host Services | `phase24-host` | `ca78d4a74aa6d0aa86da0bdaa610d6b405fa0c52` | `moss.path`, bounded regular-file `moss.fs`, host-I/O feasibility probes | Preserved (merged by `289d2e0fc2e9`) |
+| R0b Type Resolution | `phase24-compiler-type-resolution` | `16d07cf8703c47e72b19b598608395d94960eb18` | Same-module type resolution | Preserved (merged by `293a6d8`) |
+| R0a Bitwise | `phase24-compiler-bitwise` | `8a24f422b69766c8db83f7035b9caff6452416b7` | Integer bitwise and shift operators | Preserved (merged by `8e0624a`) |
+| Structured Data (Corrective) | `phase24-data` | `db5f6663e94f3711db3b55a611d13f1508f97368` | Corrective sprint: singly-linked tape AST child indexing, INT64_MIN format fix | Preserved (merged by `8b54293`) |
+| Advanced Data | `phase24-advanced-data` | `7f30436990f730b8556592b7d5b54e6bac9ccc18` | `moss.ndarray`, `moss.datastructures`, `moss.tables`, `moss.binary`, `moss.cbor` | Merged by `35deb9c` |
+| Data Utilities | `phase24-data-utils` | `9794122db5dc2aade42cc259879dffb16200f54b` | `moss.hash`, `moss.compress`, `moss.regex`, `moss.data_utils_integration` | Merged by `624abff` |
 
-The normal merge commits are `a2864a55414fd3f21619a500fcda4c37f91c4467` (Team M),
-`ee4973f5556b3cd07204e877157e35fd49ad1874` (Team T),
-`f4c4ad3d77ddea8e2fa2060a9368c31ad45f7ed4` (Team T performance),
-`bea649a42bd39c87035ba3a1baca603311ca8e05` (Team N),
-`04b7683b6b6c0900e3079be60116514ba3d41564` (Team D initial),
-`289d2e0fc2e951b1410d5fae1c3c83fb2c4014cc` (Team H), and
-`8b54293` (Team D corrective delivery). R0b/R0a were merged by `293a6d8`/`8e0624a`.
-No merge into `main` was performed.
-
-## Merge and compiler reconciliation
-
-Team D's corrective delivery tip `db5f666` was merged into `phase24-integration`
-from starting HEAD `630ae96423f6b25f7b57f0915a26d52d9937f380` via three-way merge
-`8b54293`. Merge conflicts occurred only in `sdk/data-acceptance/run_all.py` and
-`sdk/data-acceptance/tests/check_source_free.py` where both sides had introduced
-path-relative repository root resolution (`PROJECT.parents[1]` vs `Path(__file__).resolve().parents[2]`);
-the conflict was resolved cleanly preserving path-relative derivation. Documentation
-files (`docs/phase24/ARCHITECT_FINAL_ACCEPTANCE.md` and `docs/phase24/agent-patterns/team-d-data.md`)
-merged without conflict, preserving Team D's corrective sprint audit and L7 verification records.
-
-All existing compiler modifications (Foundations imported generic calls/expressions,
-Team M Float/Int mixed lowering, Team T String search/slice/case/capacity checks,
-Team N release test runner flags, R0a bitwise/shifts, and R0b same-module type resolution)
-remain fully functional and verified.
+Sequential three-way non-fast-forward merges into `phase24-integration` were performed without squash, cherry-pick, rebase, reset, or replacement. No merge into `main` was performed.
 
 ## Package status
 
@@ -66,79 +44,53 @@ remain fully functional and verified.
 | Numerics | GREEN | `moss.linalg`, `moss.sparse`, `moss.statistics`, numerics integration; 30 unit tests, differential oracles, and ABI-v9 pass |
 | `moss.parse`, `moss.fmt`, `moss.csv` | GREEN | 5/5 parse, 7/7 fmt, 6/6 csv tests pass in native and Fast Debug; INT64_MIN formatting verified |
 | `moss.json` | GREEN | P24-D-003 resolved; 16/16 unit tests pass in native and Fast Debug; nested containers, siblings, round-trips, control chars verified |
-| `moss.path`, bounded `moss.fs` | GREEN | Team H exact-SHA delivery; native debug/release, Fast Debug boundary, negative, adversarial, and source-free gates pass |
+| `moss.path`, bounded `moss.fs` | GREEN | Native debug/release, Fast Debug boundary, negative, adversarial, and source-free gates pass |
+| `moss.ndarray` | GREEN | 21/21 tests in Native Debug, Native Release, Fast Debug (63 executions); 2 runnable examples |
+| `moss.datastructures` | GREEN | 23/23 tests in Native Debug, Native Release, Fast Debug (69 executions) |
+| `moss.tables` | GREEN | 24/24 tests in Native Debug, Native Release, Fast Debug (72 executions); CSV adapter verified |
+| `moss.binary` | GREEN | 9/9 tests in Native Debug, Native Release, Fast Debug (27 executions); LE/BE bytewise conversions |
+| `moss.cbor` | GREEN | 34/34 tests in Native Debug, Native Release, Fast Debug (102 executions); L7 parent-pointer and invalid-root cycle fixes verified |
+| `moss.hash` | GREEN | 8/8 tests in Native Debug, Native Release, Fast Debug (24 executions); FNV-1a, CRC-32, SHA-256 |
+| `moss.compress` | GREEN | 8/8 tests in Native Debug, Native Release, Fast Debug (24 executions); Deflate/Inflate RFC 1951, Adler32, Zlib |
+| `moss.regex` | GREEN | 18/18 tests in Native Debug, Native Release, Fast Debug (54 executions); NFA Thompson construction, ReDoS-immune linear scaling |
+| `moss.data_utils_integration` | GREEN | 2/2 tests in Native Debug, Native Release, Fast Debug (6 executions); combined cross-package pipeline |
 | `moss.io`, `moss.env`, `moss.process` | PENDING | Deferred pending host-runtime primitives; feasibility probes preserve the capability boundary |
-| Team R Data Utils | PENDING | Architecture and scaffolding only; awaiting complete implementation and independent Architect GO |
 
 ## Executed validation
 
-All suites below were executed serially against the integrated combined tree:
+All test suites and validation oracles were executed serially on the combined tree:
 
 | Command or suite | Result |
 | --- | --- |
-| `python3 sdk/data-acceptance/run_all.py` | PASS: parse 5/5, fmt 7/7, json 16/16, csv 6/6 native & Fast Debug; cross-package acceptance 11/11 native & Fast Debug; ABI-v9 provider; 103/103 differential tests |
-| `python3 tests/differential/run_differential_tests.py` | PASS: 103/103 differential semantic tests (60 valid JSON docs, 11 edge/counterexamples, 13 invalid JSON, 7 valid CSV, 12 invalid CSV, 10 random CSV tables) via `margo debug` |
-| JSON explicit counterexamples | PASS: `[[1],2]` -> `[[1],2]`; `{"a":{"x":1},"b":2}` -> preserved lookups; sibling preservation; compact/pretty round-trips; control chars; `fmt.format_int(INT64_MIN)` -> `-9223372036854775808` |
-| `python3 tests/tooling/check_phase24_bitwise_operations.py ./moss` | PASS: diagnostics, native/Fast Debug execution, imported types, specialization, ownership/effects, and ABI paths |
-| `python3 tests/tooling/check_phase24_same_module_type_resolution.py ./moss` | PASS: same-module type resolution |
-| `python3 tests/tooling/check_phase24_imported_generic_expressions.py ./moss` | PASS: source-backed and source-free generic expressions |
-| `python3 tests/tooling/check_phase24_adversarial_architect.py` | PASS: Foundations adversarial compiler regression gate (0 failures) |
+| Team A Package Tests (5 packages x 3 modes) | PASS: ndarray 21/21, datastructures 23/23, tables 24/24, binary 9/9, cbor 34/34 across Native Debug, Native Release, Fast Debug (111 unique, 333 executions) |
+| `python3 sdk/advanced-data-acceptance/run_all.py` | PASS: 12 RFC 8949 vectors, seeded ndarray/table semantic oracle in 3 modes, 7 cross-package scenarios in 3 modes, 14-provider source-free ABI-v9 |
+| Team R Package Tests (4 packages x 3 modes) | PASS: hash 8/8, compress 8/8, regex 18/18, data_utils_integration 2/2 across Native Debug, Native Release, Fast Debug (36 unique, 108 executions) |
+| `python3 tests/tooling/check_phase24_data_utils_oracles.py` | PASS: hash differential, compress bidirectional roundtrips, regex NFA differential & 1K..16K live linear scaling experiment ($O(N)$), source-free ABI-v9 |
+| Compiler regression gates | PASS: `check_phase24_bitwise_operations.py`, `check_phase24_same_module_type_resolution.py`, `check_phase24_imported_generic_expressions.py`, `check_phase24_adversarial_architect.py` (0 failures) |
 | `python3 sdk/foundations/acceptance/run_all.py --full` | PASS: O0/release/Fast Debug, negative contracts, 44 sort/search plus 8 byte oracle cases, source-free ABI-v9 |
 | `python3 sdk/text-encoding-acceptance/run_all.py --full` | PASS: Text 12/12, Encoding 5/5, cross-package 3/3; native debug/release, Fast Debug, compiled-only providers, Python UTF-8 corpus (66 valid, 15 invalid) |
 | `python3 sdk/text-encoding-acceptance/validate_release_benchmarks.py` | PASS: release profile, `-O`, six provider hashes, matched workloads |
-| Numerics packages (`margo test` in math, random, time, integration) | PASS: math 18/18, random 8/8, time 11/11, integration 2/2 |
+| Math, Random, Time (`margo test` in math, random, time, integration) | PASS: math 18/18, random 8/8, time 11/11, integration 2/2; `verify_repairs.py` passed |
 | Numerics packages (`margo test` in linalg, sparse, statistics, numerics_integration) | PASS: linalg 9/9, sparse 9/9, statistics 9/9, numerics_integration 3/3 |
 | `python3 tests/oracles/test_numerics_falsification.py` | PASS: zero differential falsifications |
 | `python3 tests/tooling/check_numerics_abi_v9.py` | PASS: compiled-only ABI-v9 consumer, 100% parity |
-| `python3 tests/oracles/verify_repairs.py` | PASS: zero falsifications across math, random, and time repairs |
-| `python3 sdk/path/tests/check_differential.py` | PASS: POSIX lexical normalization cases |
-| `python3 sdk/path/tests/check_source_free.py` | PASS: compiled-only ABI-v9 moss.path provider |
-| `python3 sdk/fs/tests/check_native.py` | PASS: native debug/release and Fast Debug boundary |
-| `python3 sdk/fs/tests/check_negative.py` | PASS: unbounded FileIO rejected (`FILEIO_UNBOUNDED_REQUEST`) |
-| `python3 sdk/fs/tests/check_source_free.py` | PASS: compiled-only ABI-v9 moss.fs provider |
-| `python3 sdk/fs/tests/check_adversarial.py` | PASS: native debug/release path/FileIO boundary regressions |
-| `python3 sdk/host/io/check_feasibility.py` | PASS: supported path-only provider and expected capability boundary blocker |
-| `TMPDIR="$PWD/tmp" make check` | PASS: all Moss v0.1 tests, including 54/54 Executor runtime tests |
+| Host Services (`sdk/path`, `sdk/fs`, `check_feasibility.py`) | PASS: differential, native debug/release, negative, source-free, adversarial, feasibility blocker checks |
+| Structured Data (`sdk/data-acceptance/run_all.py`) | PASS: parse 5/5, fmt 7/7, json 16/16, csv 6/6 native & Fast Debug; cross-package 11/11; ABI-v9; 103/103 differential tests |
+| `python3 tests/differential/run_differential_tests.py` | PASS: 103/103 differential semantic tests via Fast Debug |
+| `TMPDIR="$PWD/tmp" make check` | PASS: 54/54 Executor runtime tests, all Moss v0.1 tests |
 | `make examples` | PASS: all 32 positive showcase examples |
 | `python3 tests/tooling/check_agent_feedback.py` | PASS: repository-wide developer experience feedback validation |
 | `git diff --check` | PASS: zero whitespace or git formatting warnings |
 
-## Review and issue disposition
+## Editorial corrections and provenance reconciliations
 
-The critical JSON nested-container corruption defect (P24-D-003) is resolved.
-Team D's corrective delivery was independently approved by the Team D L6 Architect
-at `6ef17f1c2edc1022f00f77a35bec051b1b9cdab3`. Combined-tree regression confirmed
-full correctness across native and Fast Debug execution.
+1. **Team A Test Count Arithmetic (P24-A-001):**
+   - Team A reported 103 unique tests and 309 executions.
+   - Actual test declarations: `moss.ndarray` (21), `moss.datastructures` (23), `moss.tables` (24), `moss.binary` (9), `moss.cbor` (34) = **111 unique tests**, **111 per mode**, **333 total executions** across Native Debug, Native Release, and Fast Debug.
+   - The discrepancy arose from an arithmetic transcription error when 10 new CBOR cases were added to the historical 101 tests.
+   - Reconciled in `docs/phase24/TEAM_A_ADVANCED_DATA_DELIVERY.md`, `docs/phase24/agent-patterns/team-a-advanced-data.md`, `.codex/CURRENT_STATUS.md`, and this report. Historical Architect review records remain unedited.
 
-Validation evidence correction noted: The differential test harness executes
-exclusively via `margo debug` (Fast Debug) and establishes 103 semantic Fast Debug
-differential passes; it does not establish 103 native differential passes. Dual-engine
-execution is assigned as a follow-up to Team D (P24-D-006).
-
-Three new non-blocking follow-ups are tracked for Team D:
-- P24-D-004: O(n²) serialization on wide containers due to head-traversal linked entries.
-- P24-D-005: Absence of cycle detection in public builder APIs.
-- P24-D-006: Unescaped delimiter handling in differential AST representation and dual-engine reporting.
-
-## Remaining known limitations
-
-- `moss.time.now()` remains deferred pending host-runtime intrinsic approval.
-- Text Layer B String/UTF-8 interoperability remains deferred (no scalar String constructor or String/byte conversion in Moss v0.1).
-- Host `moss.io`, `moss.env`, and `moss.process` remain deferred pending host-runtime primitives.
-- Direct Moss allocation measurements remain unavailable for Text builder benchmark claims.
-- Team D P24-D-001 remains open: non-ASCII JSON `\uXXXX` synthesis requires a scalar-to-String runtime primitive.
-- Team D P24-D-002 remains open as a tooling limitation: raising functions cannot currently execute in standard `bench` blocks.
-- Team R implementation is pending: `moss.regex`, `moss.compress`, `moss.hash`, and `moss.data_utils_integration` are currently scaffolding only.
-- The independent whole-system Phase 24 Architect review remains reserved for final acceptance after Team R integration.
-
-## Next actions
-
-1. Maintain `phase24-integration` updated with all approved deliveries.
-2. Monitor Team R progress on `phase24-data-utils`.
-3. When Team R publishes an implementation-complete SHA, verify:
-   - Architecture accounts for native bitwise operators and type-resolution fixes.
-   - All 4 packages have executable implementations, tests, benchmarks, and reference oracles.
-   - The ten architectural falsification gates pass.
-   - Cross-package integration passes.
-   - Independent Architect issues an attributable GO at the exact implementation SHA.
-4. Merge Team R delivery into `phase24-integration` and conduct the independent whole-system Architect review for final Phase 24 milestone acceptance.
+2. **Team R Architect Implementation SHA Erratum (P24-R-001):**
+   - Team R's authored report transcribed implementation SHA `4068976264f3312c5bfad3e680a6b12fcf45ff3b`.
+   - The actual Git implementation commit implementing the NFA split-origin correction and runtime-scaling verification is `4068976a9a4d1bb046b69fbc35708d8b51f831e4`, an exact ancestor of delivery HEAD `9794122db5dc2aade42cc259879dffb16200f54b` (intervening commits are documentation/status-only).
+   - Erratum recorded in Section 7 of `docs/team_r/ARCHITECT_FINAL_ACCEPTANCE.md` and `docs/phase24/agent-patterns/team-r-data-utils.md`. The Architect's authored text and verdict were preserved verbatim.

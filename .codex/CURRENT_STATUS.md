@@ -1,5 +1,29 @@
 # Moss current status
 
+## Phase 24 Aggregate SDK Integration Complete (Teams A & R Integrated) — 2026-10-13
+
+Team I completed the aggregate integration of all approved Phase 24 SDK deliveries into `phase24-integration`, incorporating Team A (`phase24-advanced-data`) and Team R (`phase24-data-utils`) alongside all previously integrated components:
+
+1. **Merge Execution & Provenance:**
+   - **Target branch:** `phase24-integration` (starting HEAD: `fa9b05e7877138a888936c413bf4583fd448a7a4`).
+   - **Team A Merge:** Merged `origin/phase24-advanced-data` (`7f30436990f730b8556592b7d5b54e6bac9ccc18`) via sequential `--no-ff` commit `35deb9c`.
+   - **Team R Merge:** Merged `origin/phase24-data-utils` (`9794122db5dc2aade42cc259879dffb16200f54b`) via sequential `--no-ff` commit `624abff`.
+   - Normal three-way sequential non-fast-forward merges performed; zero squashing, cherry-picking, rebasing, resetting, or whole-file replacement. Zero merges into `main`. All newer Team I work, ABI contracts, and compiler fixes preserved intact.
+
+2. **Mandatory Documentation & Provenance Corrections:**
+   - **Team A Test Count Arithmetic (P24-A-001):** Reconciled Team A's reported 103 unique tests and 309 executions to the actual verified count of **111 unique tests**, **111 per mode**, and **333 total executions** across Native Debug, Native Release, and Fast Debug (`moss.ndarray`: 21, `moss.datastructures`: 23, `moss.tables`: 24, `moss.binary`: 9, `moss.cbor`: 34). Reconciled in `docs/phase24/TEAM_A_ADVANCED_DATA_DELIVERY.md`, `docs/phase24/agent-patterns/team-a-advanced-data.md`, and aggregate status reports without rewriting historical review text.
+   - **Team R Architect Implementation SHA Erratum (P24-R-001):** Confirmed the actual Git implementation commit implementing the NFA split-origin correction and runtime-scaling verification is `4068976a9a4d1bb046b69fbc35708d8b51f831e4`, an exact ancestor of delivery HEAD `9794122d` (intervening commits are documentation/status-only). Recorded formal Section 7 erratum in `docs/team_r/ARCHITECT_FINAL_ACCEPTANCE.md` and `docs/phase24/agent-patterns/team-r-data-utils.md` (`8fdd93e`) without altering the Architect's authored text or verdict.
+
+3. **Focused & Combined Matrix Validation:**
+   - **Team A Packages:** 111/111 passed in Native Debug, Native Release, and Fast Debug (333 total executions); `sdk/advanced-data-acceptance/run_all.py` passed (12 RFC 8949 vectors, seeded ndarray/table semantic oracle in 3 modes, 7 cross-package scenarios in 3 modes, 14 source-free ABI-v9 providers).
+   - **Team R Packages:** 36/36 passed in Native Debug, Native Release, and Fast Debug (108 total executions: hash 8, compress 8, regex 18, data_utils_integration 2); `tests/tooling/check_phase24_data_utils_oracles.py` passed (hash differential, compress bidirectional roundtrips, regex NFA differential & live linear scaling experiment, source-free ABI-v9).
+   - **Compiler & Language Gates:** `check_phase24_bitwise_operations.py`, `check_phase24_same_module_type_resolution.py`, `check_phase24_imported_generic_expressions.py`, and `check_phase24_adversarial_architect.py` all passed (0 regressions).
+   - **Full Combined SDK Matrix:** Foundations acceptance (`--full`), Text & Encoding acceptance (`--full` & release benchmarks), Math/Random/Time (37 unit tests & repair verification), Numerics (30 unit tests, falsification oracles, ABI-v9 consumer), Host Services (7 path/fs suites), Structured Data (`run_all.py` & 103 differential tests) all passed.
+   - **Repository Quality Gates:** `TMPDIR="$PWD/tmp" make check` passed (54/54 executor tests, all Moss v0.1 tests); `make examples` passed (32/32 examples); `python3 tests/tooling/check_agent_feedback.py` passed; `git diff --check` passed cleanly.
+
+4. **Aggregate SDK State:**
+   - **State:** **GREEN**. All 19 packages across 8 delivered areas (Foundations, Text & Encoding, Math/Random/Time, Numerics, Host Services, Structured Data, Advanced Data, Data Utilities) are fully integrated, verified, and operational on `phase24-integration`.
+
 ## Phase 24 Team R Data Utils SDK Final Corrective Pass Complete — 2026-10-13
 
 Team R (`moss.hash`, `moss.compress`, `moss.regex`, `moss.data_utils_integration`) completed final corrective pass repairs, adversarial testing, live linear runtime-scaling verification, and independent Architect sign-off on `phase24-data-utils`:

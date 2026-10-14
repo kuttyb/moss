@@ -265,3 +265,30 @@ confirms them after merge.
 - Resolution: normal three-way merge preserved those assets. Team I verified
   their files and gates after the merge; the only content conflict was the
   additive `.codex/CURRENT_STATUS.md` history.
+
+### P24-A-001 — Team A test count arithmetic discrepancy
+
+- Owner: Team A / Team I
+- Severity: low (documentation / arithmetic discrepancy)
+- Status: resolved by Team I editorial reconciliation
+- Observation: Team A's final delivery reports undercounted declared tests due to
+  an arithmetic transcription error, reporting 103 instead of the actual 111 unique
+  tests across 5 packages, 333 across 3 modes.
+- Resolution: Verified in-tree test declarations (`moss.ndarray`: 21, `moss.datastructures`: 23,
+  `moss.tables`: 24, `moss.binary`: 9, `moss.cbor`: 34; sum = 111) and fresh runner output
+  (111 passed per mode, 333 total). Reconciled in `docs/phase24/TEAM_A_ADVANCED_DATA_DELIVERY.md`,
+  `docs/phase24/agent-patterns/team-a-advanced-data.md`, `.codex/CURRENT_STATUS.md`, and
+  `docs/phase24/INTEGRATION_STATUS.md`. Preserved historical 101-test baseline and 10 CBOR additions.
+
+### P24-R-001 — Team R Architect report implementation SHA transcription discrepancy
+
+- Owner: Team R / Team I
+- Severity: medium (provenance integrity)
+- Status: resolved by Team R Section 7 erratum in integration
+- Observation: Team R's authored report transcribed implementation SHA
+  `4068976264f3312c5bfad3e680a6b12fcf45ff3b`, which does not exist in git history.
+- Resolution: Verified actual Git implementation commit implementing the NFA split-origin
+  correction and runtime-scaling verification is `4068976a9a4d1bb046b69fbc35708d8b51f831e4`,
+  an exact ancestor of delivery HEAD `9794122db5dc2aade42cc259879dffb16200f54b`. Recorded
+  formal Section 7 erratum in `docs/team_r/ARCHITECT_FINAL_ACCEPTANCE.md` and updated
+  `docs/phase24/agent-patterns/team-r-data-utils.md` without altering the Architect's authored text.
