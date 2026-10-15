@@ -22,10 +22,18 @@ evidence, outstanding limitations, and coordination requests are in
   ABI-v10 cut and shared runtime crate.
 - Migrated: in-repo SDK `char_at`/`chars` callers broken by `983acb2`.
 
-Open: joint ABI-v10 decisions with L7/Team G; Map/Set user and Float keys;
-#12 open-receiver admission (joint with Team G G2); native `==` on structs;
-independent L6 Architect implementation review; push of the corrected branch.
-Validation status for the final SHA is recorded in the repair report.
+Validated at implementation SHA `511b259b60c22748d5fa508d8bd9ff406d7c1bf4`:
+`TMPDIR="$PWD/tmp" make check` passed (Executor 54/54, editor 61/61, all
+Moss v0.1 tests) and `make examples` passed (32), in a clean worktree. The
+independent L6 Architect reviewed three SHAs (`5920e38`, `6ee8fee`, `8e70b9c`,
+all CONDITIONAL GO) and found 12 net-new defects, all fixed with regressions;
+the remaining conditions (012 fix and the validation record) are met at
+`511b259`. The branch is ready for L7 re-review and is not merged anywhere.
+
+Open: joint ABI-v10 decisions with L7/Team G (default indexed String, shared
+runtime crate); Map/Set user and Float keys (Team G `MossMap<K,V>`); #12
+open-receiver admission (joint with Team G G2); pre-existing native `==` on
+structs, named message arguments, and `Map().get` on a never-inserted map.
 
 ## Phase 25 Team S Semantics & Engines (G1, G4, G3) Progress — 2026-10-15
 

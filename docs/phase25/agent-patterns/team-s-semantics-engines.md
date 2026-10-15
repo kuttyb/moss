@@ -40,3 +40,23 @@
 | #12d | high | `src/moss.cpp` statement call | Local collection-member call statements dispatch correctly | open |
 | #14 | medium | `src/moss.cpp` bench codegen | Raising function calls in benchmark bodies lower with Phase 21 outcome | open |
 | #15 | high | `src/moss.cpp` member dispatch | Local `h.data.push(x)` statement dispatches/mutates as permitted code | open |
+
+## L7 repair pass closeout (2026-10-15)
+
+This section covers the repair pass after the L7 **NO-GO** of
+`983acb2135d2aea6f5aecc9aa35005525c2f40f4`. The earlier rows above are
+preserved as history.
+
+| Category | Report |
+| --- | --- |
+| **Leaf agents** | 0. The L6 Coordinator made every repair directly (git history: all repair commits are Coordinator-authored). |
+| **Peak leaf concurrency** | 0. |
+| **Non-leaf reviewers/managers** | 1 L6 Coordinator; 1 Independent L6 Architect (one separately instantiated reviewer agent, resumed for each pass); 0 adversarial reviewers. |
+| **Submissions** | 0 PRs; 1 non-PR handoff: final branch delivery `511b259b60c22748d5fa508d8bd9ff406d7c1bf4` plus a docs-only validation commit, pushed to `origin/phase25-semantics-engines`. Integration: not requested (awaiting L7). |
+| **Coordinator reviews** | not applicable (no leaf submissions). |
+| **Other review events** | L7: 1 (NO-GO of `983acb2`, the input to this pass). Architect: 3 events, all on Coordinator request. `5920e385b3c3805a48ec89fafa4ebb4b041a9e70` CONDITIONAL GO; `6ee8fee312f4b99eafc447cff189a0ead59d52c0` CONDITIONAL GO; `8e70b9c6a006d2d81fa83bb1e58103a1adedd957` CONDITIONAL GO. The third verdict states that a 012-only source change with green `make check`/`make examples` is ready for L7 re-review without another pass. |
+| **Defects** | L7-origin: 7 review items (repair report §1–7). Coordinator-discovered: Fast Debug block scoping; branch-join, `on_fail` capture, and consumed-reinit regressions (found by `make check`); ledger #10 still broken at `983acb2`; sort WRITE effect/lowering/purity; `Char` not declarable; Char delimiter literals; escaped-quote scanners; FileIO preflight; `match` constructor scrutinee; SDK `char_at` migration break; cross-crate `MossString` identity. Architect net-new: 12 (P25-S-ARCH-001..012), all fixed with regressions; 012 was a regression introduced by the 010 fix. Open (not repaired, listed as limitations): native `==` on structs, named message arguments, `Map().get` on a never-inserted map. Joint/blocked: #12 open receiver, Map/Set user and Float keys, default indexed String. |
+| **Test evidence** | Phase 25 suites, cases reporting PASS at `511b259`: `check_phase25_l7_repairs.py` 48, `check_phase25_indexed_string.py` 3, `check_phase25_g1_regressions.py` 10, `check_phase25_g3_ordering.py` 4, `check_phase25_g4_unicode.py` 3, for 68 in total. Differential cases run in Fast Debug, Native Debug, and Native Release; `rejected` cases are checker-only. `tests/phase25/ledger/run_ledger.py`: 13 reproducers × 3 compilers. Repository: `make check` and `make examples` (see repair report §Validation). |
+| **Review provenance** | Last Architect-reviewed implementation SHA: `8e70b9c6a006d2d81fa83bb1e58103a1adedd957`. Delivered implementation SHA: `511b259b60c22748d5fa508d8bd9ff406d7c1bf4`. The intervening diff is the 012 lexer fix (4 lines in `src/moss.cpp`), its regression, and documents, which is the change scope the Architect pre-cleared. |
+| **Usage** | Architect reviewer agent, platform-reported: 185,059 + 222,962 + 242,245 tokens across the three passes. Coordinator: unknown. |
+| **Value** | The Architect found 12 confirmed defects that Coordinator testing had missed. Examples: native rustc failures for sort keys that consume their argument (typed and untyped), user-function shadowing of builtins, unvalidated escapes, and an escape-validation regression in comments. Each came with a minimal reproducer. It also corrected five inaccurate claims in the repair report. Repeated `make check` runs found three scoping regressions and four stale generated-code assertions that targeted suites missed. |

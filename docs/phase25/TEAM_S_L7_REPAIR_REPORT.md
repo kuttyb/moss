@@ -2,7 +2,7 @@
 
 **Branch:** `phase25-semantics-engines`
 **Reviewed SHA (L7 NO-GO):** `983acb2135d2aea6f5aecc9aa35005525c2f40f4`
-**Submission SHA:** recorded in the final section after the last validation run
+**Submission implementation SHA:** `511b259b60c22748d5fa508d8bd9ff406d7c1bf4` (the delivery HEAD adds only this report's validation text and status/closeout documents)
 **Baseline:** `fa3a340a0a6652568b97869489da1a84038b9857`
 **Language/compiler:** `moss-0.1` / `0.1.0`, `rustc 1.98.1 (48a229cea 2026-09-01)`
 
@@ -304,7 +304,30 @@ note on later commits were corrected as the Architect reported.
 
 ## Validation
 
-VALIDATION_SECTION
+All results below are for implementation SHA
+`511b259b60c22748d5fa508d8bd9ff406d7c1bf4`, built in a clean worktree at that
+SHA with `rustc 1.98.1 (48a229cea 2026-09-01)` on x86_64 Linux (WSL2).
+
+| command | result |
+|---|---|
+| `make` | built |
+| `TMPDIR="$PWD/tmp" make check` | **passed**: Executor 54/54, editor 61/61, "all Moss v0.1 tests passed", including every Phase 20–25 tooling suite and the SDK acceptance runs in Native Debug, Native Release, and Fast Debug |
+| `TMPDIR="$PWD/tmp" make examples` | **passed**: 32 optimized examples generated and built |
+| `python3 tests/tooling/check_phase25_l7_repairs.py ./moss` | passed, 48 cases (differential cases in all three engines) |
+| `python3 tests/tooling/check_phase25_indexed_string.py ./moss` | passed, 3 checks (12,800 randomized comparisons; staged/plain/Fast Debug parity; fail-closed mixing) |
+| `python3 tests/tooling/check_phase25_g1_regressions.py` / `g3_ordering` / `g4_unicode` | passed (10 / 4 / 3 cases) |
+| `python3 tests/phase25/ledger/run_ledger.py` (baseline, reviewed, repaired) | table in §6; every entry passes when repaired except #12, the joint open-receiver item |
+| `python3 tests/tooling/check_agent_feedback.py`, `check_agent_skills.py` | passed |
+| `git diff --check` | clean |
+
+The benchmark was measured at `7bf962d287`; the String lowering it measures
+is unchanged at the submission SHA (see the benchmark document).
+
+The independent Architect's last verdict, **CONDITIONAL GO** on
+`8e70b9c6a006d2d81fa83bb1e58103a1adedd957`, had two conditions: fix
+P25-S-ARCH-012 with a regression, and complete this section from finished
+logs. Both are met at `511b259`, which differs from the reviewed SHA only by
+that fix, its regression, and documents. L7 alone decides G5 integration.
 
 ## Coordination requests
 
