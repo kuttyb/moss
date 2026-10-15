@@ -5,8 +5,10 @@
 **Team G branch read:** `origin/phase25-generic-types` at `97b7d422b3d5075831bb6f471d4d3017c4dbb4b8`
 **Builds on (frozen G0, L7 GO):** `TYPE_IR_CONTRACT.md` §4.2, §8; `ABI_V10_DESIGN.md` §3.5;
 `TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md` (all on the Team G branch)
-**Status:** Team S proposal. Each numbered item becomes binding when Team G's
-Coordinator records concurrence in the table at the end. Nothing here changes
+**Status:** L7 approved the architecture (one compiler-owned `moss_runtime`
+crate; Set stays in Phase 25), 2026-10-15. Team S proposal for the details.
+Each numbered item becomes binding when Team G's Coordinator records
+concurrence in the table at the end. Nothing here changes
 the frozen G0 contracts; where G0 left a detail open, this document proposes
 the detail.
 
@@ -214,10 +216,68 @@ in pending mode.
 `tests/phase25/key_protocol/` is the failing reproducer. Team S adds no local
 inference workaround for it.
 
+## L7 decision (2026-10-15)
+
+L7 approved:
+- **One compiler-owned shared Rust runtime crate, `moss_runtime`.**
+- **Ownership:** Team G owns crate construction, identity, linking, cache
+  integration, and `MossMap<K,V>`. Team S owns the String runtime and the
+  scalar key-protocol implementations that move into the crate.
+- **Runtime identity:** every provider and consumer uses the same runtime
+  identity, and ABI-v10 validates runtime compatibility before linking.
+- **Set** stays in Phase 25 and shares the Map key-proof and kernel.
+- **ABI-v10:** no independent switch on the Team S branch. Joint
+  implementation starts when Team G supplies the runtime foundation.
+- **Concurrence:** the Team G Coordinator must review items 1–5 and record
+  concurrence, naming any conflict with the frozen G0 contract.
+
+L7 deferred **item 6**, imported generic effect/purity summaries. Team S keeps
+the failing reproducer and does not build a workaround. The reproducer is S3
+limitation L1: an untyped member-calling sort key imported from a path
+dependency is rejected as `SORT_KEY_IMPURE`, "unresolved effect", because the
+`.mossi` summary carries no effect for the open specialization. It is in
+`tests/tooling/check_phase25_s3_key_protocol.py` ("Untyped member-calling key:
+same package vs path dependency").
+
+Effect information the summary needs:
+- for each exported generic callable and each concrete specialization a
+  consumer instantiates, the observable-effect record that the checker already
+  computes for local code: may-panic, may-raise, divergence, message, domain
+  access, I/O/executor, and parameter READ/WRITE/CONSUME;
+- the record keyed by the specialization key and covered by the semantic hash.
+
+## Team S review of Team G checkpoint `a50fa30c8420538534471c4404afb0c645ae9b0c`
+
+Team S built `a50fa30` and probed it against this agreement. These are
+observations for the Team G Coordinator, not concurrence.
+
+| Item | Observation at `a50fa30` | Possible conflict |
+|---|---|---|
+| 1 runtime crate | No `moss_runtime` yet; generated crates still embed the prelude. | None. Joint work starts when Team G supplies it. |
+| 2 KeyProof | `RequirementKind::MapKey` exists in `src/type_ir.hpp`. There is no `MapKeyProof` record or proof-target binding yet. | None, if `MapKey` requirements resolve to the §2 built-in targets and nominal `isequal`/`hash` methods. |
+| 3 String/Char ABI | Unchanged (v9). | None. |
+| 4 member admission | Ledger #12 (`var v = []` then `v.push(1)` then `echo v \|> count`) now passes check and prints `1` in Fast Debug and Native Debug. There is no `MemberDispatchRequirement` record in `type_ir.hpp`; `Requirement{kind: Method}` carries subject, arguments, result, and a single `access`. | **Ownership overlap.** G0 assigns admission and target selection to Team S. Team G's G2 already admits the open receiver. Proposal: Team S's `admit_member` (§4) becomes the admission function behind `Requirement{kind: Method}`. Per-argument access (`argument_access`) must be added, because a single `access` cannot express a `WRITE` receiver with `READ` arguments. The Team G Coordinator should confirm or amend this. |
+| 5 trigger | G2 gates pass per Team G's status. A full `make check` at `a50fa30` is not reported there, and `moss_runtime` and `MapKeyProof` do not exist yet. | Trigger not yet met (§5 conditions 1–3). |
+| S1.5 handoff | `09b`, `09e` → `TYPE_AMBIGUOUS_OPEN_RESULT` (fail-closed, as intended). `09d` works in both engines. **`09c` `echo Map().get(1, 2)` still passes check and fails in rustc (E0061)**, while Fast Debug prints `2`. | Team G defect to fix in Option B. |
+
+## Concurrence checklist for the Team G Coordinator
+
+For each item, record in the table below: concur, concur with amendment
+(state it), or conflict with frozen G0 (cite the section).
+
+1. `moss_runtime` placement and ownership (§1).
+2. Built-in KeyProof targets equal the Team S scalar lowering; hashes are
+   deterministic and unseeded (§2).
+3. ABI-v10 Char/String records, provider identity, and the six cross-crate
+   tests (§3).
+4. The `admit_member` interface and the per-argument access addition to
+   `Requirement` (§4 and the table above).
+5. The integration trigger (§5), including a full `make check` at the Team G SHA.
+
 ## Concurrence
 
 | Party | Item(s) | Verdict | SHA | Notes |
 |---|---|---|---|---|
 | Team S L6 Coordinator | 1–5 | Proposed | this document's commit | — |
 | Team G L6 Coordinator | 1–5 | **pending** | — | — |
-| L7 | §3 4 GiB failure form; Set scope | **pending** | — | Set remains a Phase 25 deliverable unless L7 defers it |
+| L7 | Architecture (runtime crate, ownership, Set in Phase 25) | **Approved** | reviewed checkpoint `c2e106c` | 2026-10-15 decision; details still need Team G concurrence. §3 4 GiB failure form still open. |
