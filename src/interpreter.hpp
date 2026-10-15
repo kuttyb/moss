@@ -1039,6 +1039,9 @@ class FastInterpreter {
       return Value::int_value(~value.integer);
     }
     if (!e.empty() && e.front() == '-' && e.size() > 1) {
+      // The checker admits the magnitude 2^63 only as this negation.
+      if (trim_copy(e.substr(1)) == "9223372036854775808")
+        return Value::int_value(std::numeric_limits<std::int64_t>::min());
       Value value = eval(e.substr(1), frame, line, output);
       if (value.kind == Value::Kind::Int) return Value::int_value(wrapping_sub(0, value.integer));
       if (value.kind == Value::Kind::Float) return Value::float_value(-value.floating);

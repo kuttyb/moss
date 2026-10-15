@@ -1917,6 +1917,59 @@ static string canonicalize_char_literals(const string& line, int line_no,
       out += line.substr(i);
       break;
     }
+    if (std::isdigit(static_cast<unsigned char>(c)) &&
+        (i == 0 || !(std::isalnum(static_cast<unsigned char>(line[i - 1])) ||
+                     line[i - 1] == '_' || line[i - 1] == '.'))) {
+      // A decimal Int literal must fit Moss's 64-bit Int. Only the negated
+      // magnitude 2^63 (Int minimum) may exceed Int maximum. Float forms and
+      // other spellings are left to the existing literal handling.
+      size_t end = i;
+      while (end < line.size() &&
+             (std::isdigit(static_cast<unsigned char>(line[end])) || line[end] == '_'))
+        ++end;
+      const bool other_form = end < line.size() &&
+          (std::isalnum(static_cast<unsigned char>(line[end])) || line[end] == '.');
+      string digits;
+      for (size_t k = i; k < end; ++k) if (line[k] != '_') digits.push_back(line[k]);
+      digits.erase(0, std::min(digits.find_first_not_of('0'), digits.size() - 1));
+      const string max_magnitude = "9223372036854775808";
+      const bool exceeds = digits.size() > max_magnitude.size() ||
+          (digits.size() == max_magnitude.size() && digits >= max_magnitude);
+      if (!other_form && exceeds) {
+        bool negated = false;
+        if (digits == max_magnitude) {
+          size_t k = i;
+          while (k > 0 && line[k - 1] == ' ') --k;
+          if (k > 0 && line[k - 1] == '-') {
+            size_t before = k - 1;
+            while (before > 0 && line[before - 1] == ' ') --before;
+            if (before == 0 ||
+                string("([{,=:+-*/%<>!&|^~").find(line[before - 1]) != string::npos) {
+              negated = true;
+            } else if (std::isalpha(static_cast<unsigned char>(line[before - 1]))) {
+              size_t word = before;
+              while (word > 0 && (std::isalnum(static_cast<unsigned char>(line[word - 1])) ||
+                                  line[word - 1] == '_'))
+                --word;
+              static const std::set<string> keywords = {
+                  "echo", "return", "reply", "and", "or", "xor", "not", "in",
+                  "if", "while", "raise"};
+              negated = keywords.count(line.substr(word, before - word)) != 0;
+            }
+          }
+        }
+        if (!negated) {
+          CompileError error(line_no, "integer literal '" + line.substr(i, end - i) +
+                             "' does not fit in Int (-9223372036854775808 through "
+                             "9223372036854775807)", "INT_LITERAL_OUT_OF_RANGE");
+          error.source_file = source_file;
+          throw error;
+        }
+      }
+      out += line.substr(i, end - i);
+      i = end - 1;
+      continue;
+    }
     if (c != '\'') { out.push_back(c); continue; }
     uint32_t codepoint = 0;
     size_t end = string::npos;  // index of the closing quote
@@ -19047,6 +19100,19 @@ class Generator {
           left = "((" + left + ") as f64)";
       }
       return "(" + left + ") " + binary->op + " (" + right + ")";
+    }
+    // Moss Int arithmetic wraps; Rust's `-x` panics on Int min in debug.
+    if (e.size() > 1 && e.front() == '-') {
+      const string inner = trim(e.substr(1));
+      if (!inner.empty() && std::isdigit(static_cast<unsigned char>(inner.front())) &&
+          generated_integer_literal(inner))
+        return "-" + inner + "_i64";
+      auto operand_type = generated_expr_type(inner, types);
+      if (operand_type && canonical_type_name(*operand_type) == "int") {
+        string operand = expr(inner, d, locals, types);
+        operand = value_from_borrowed_message_parameter(inner, operand, types);
+        return "(" + operand + ").wrapping_neg()";
+      }
     }
     if (!e.empty() && e.front() == '~') {
       string operand = expr(trim(e.substr(1)), d, locals, types);
