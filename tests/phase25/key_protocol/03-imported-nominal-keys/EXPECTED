@@ -1,0 +1,15 @@
+title: Map keyed by a provider-owned nominal type with custom isequal/hash methods
+covers: 2 (imported nominal keys)
+layout: packages
+entry: app
+expect: stdout
+current: known-failing accepted-rustc-fails
+defect: P25-S3-D2: a Map keyed by a record/nominal type passes moss check; native rustc rejects the HashMap (no Eq/Hash) and Fast Debug ignores custom isequal/hash
+owner: Team G G2/G3 MossMap<K,V> + Team S key proof
+---
+2
+37
+45
+0
+true
+true

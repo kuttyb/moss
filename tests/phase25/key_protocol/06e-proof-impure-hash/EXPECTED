@@ -1,0 +1,9 @@
+title: Malformed key proof: hash performs I/O
+covers: 4 (malformed/impure proofs fail at checking)
+layout: standalone
+expect: reject PROVISIONAL
+expect-note: any checker diagnostic before native emission; the G0 contracts freeze no code
+current: known-failing accepted-rustc-fails
+defect: P25-S3-D2: a Map keyed by a record/nominal type passes moss check; native rustc rejects the HashMap (no Eq/Hash) and Fast Debug ignores custom isequal/hash
+owner: Team G G2 KeyProof checking + Team S protocol validation
+---

@@ -1,0 +1,13 @@
+title: Map and Set keyed by one nominal type agree on key identity
+covers: 6 (Map and Set use the same key protocol)
+layout: standalone
+set-api: PROVISIONAL - pending Team G G2 Set API
+expect: stdout
+current: fail-closed UNKNOWN_SYMBOL_OR_TYPE
+owner: Team G G2 Set kernel + MossMap<K,V> + Team S key proof
+---
+true
+2
+2
+2
+2

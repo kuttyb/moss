@@ -1,0 +1,29 @@
+# PROVISIONAL Set API (pending Team G G2 Set API).
+type Name:
+  text: String
+
+  fn isequal(other: Name) -> Bool:
+    return text.ascii_lower() == other.text.ascii_lower()
+
+  fn hash() -> Int:
+    return text.ascii_lower().hash()
+
+fn main():
+  var m = Map()
+  var s = Set()
+  m[Name(text: "Ada")] = 1
+  s.insert(Name(text: "ADA"))
+  s.insert(Name(text: "Grace"))
+  m[Name(text: "grace")] = 2
+  s.insert(Name(text: "ada"))
+  echo s.contains(Name(text: "ada"))
+  echo m.get(Name(text: "GRACE"), 0)
+  let mk = m.keys()
+  let sv = s.values()
+  echo mk |> count
+  echo sv |> count
+  var agree = 0
+  for k in mk:
+    if s.contains(k):
+      agree = agree + 1
+  echo agree

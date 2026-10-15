@@ -1,0 +1,26 @@
+module registry
+
+export type Name:
+  text: String
+
+  fn isequal(other: Name) -> Bool:
+    return text.ascii_lower() == other.text.ascii_lower()
+
+  fn hash() -> Int:
+    return text.ascii_lower().hash()
+
+export fn name(text: String) -> Name:
+  return Name(text: text)
+
+export domain Registry:
+  table: Map[Name, Int]
+
+  fn Put(k: Name, v: Int):
+    table[k] = v
+
+  fn Get(k: Name) -> Int:
+    reply table.get(k, -1)
+
+  fn Count() -> Int:
+    let ks = table.keys()
+    reply ks |> count

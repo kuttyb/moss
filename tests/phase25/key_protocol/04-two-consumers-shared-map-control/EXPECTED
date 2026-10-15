@@ -1,0 +1,12 @@
+title: Control: the same four-package topology with String keys runs today
+covers: 3 (topology control; no key proof needed)
+layout: packages
+entry: app
+expect: stdout
+current: passes
+owner: none (control)
+---
+1
+2
+2
+1

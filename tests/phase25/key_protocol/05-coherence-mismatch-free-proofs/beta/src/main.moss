@@ -1,0 +1,12 @@
+module beta
+
+import keyprov
+
+fn isequal(a: keyprov.Code, b: keyprov.Code) -> Bool:
+  return a.value == b.value
+
+fn hash(k: keyprov.Code) -> Int:
+  return k.value.hash()
+
+export fn seen(m: Map[keyprov.Code, Int], text: String) -> Bool:
+  return m.get(keyprov.Code(value: text), 0) == 1

@@ -1,0 +1,4 @@
+# S1.5 unpinned empty Map: never-inserted Map: get(key, default) is the only use (K=String, V=Int).
+fn main():
+  var m = Map()
+  echo m.get("k", 0)

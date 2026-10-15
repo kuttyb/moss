@@ -1,0 +1,8 @@
+# S1.5 unpinned empty Map: Option B open result: fresh() -> Map() pinned by the caller.
+fn fresh():
+  return Map()
+
+fn main():
+  var m = fresh()
+  m["x"] = 3
+  echo m["x"]

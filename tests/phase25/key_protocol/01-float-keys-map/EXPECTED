@@ -1,0 +1,17 @@
+title: Map[Float, String]: signed zeros are separate keys, NaNs are one key
+covers: 1 (Float keys, Map)
+layout: standalone
+expect: stdout
+current: fail-closed FLOAT_MAP_KEY_UNSUPPORTED
+owner: Team G G2/G3 MossMap<K,V> + Team S Float key proof
+---
+4
+positive zero
+negative zero
+nan b
+nan b
+missing
+negative zero
+true
+gone
+positive zero

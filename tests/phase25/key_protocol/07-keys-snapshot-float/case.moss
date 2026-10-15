@@ -1,0 +1,23 @@
+# keys() is an eager owned snapshot: later inserts/deletes do not change it.
+fn main():
+  var m = Map()
+  m[-0.0] = 1
+  m[0.0] = 2
+  let snapshot = m.keys()
+  m[2.5] = 3
+  var found = false
+  let old = m.delete(-0.0, 0, found)
+  m[0.0] = 20
+  echo snapshot |> count
+  var negative = 0
+  var positive = 0
+  for k in snapshot:
+    if isequal(k, -0.0):
+      negative = negative + 1
+    if isequal(k, 0.0):
+      positive = positive + 1
+  echo negative
+  echo positive
+  let later = m.keys()
+  echo later |> count
+  echo old
