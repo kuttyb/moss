@@ -14329,14 +14329,21 @@ class Checker {
     }
     if (!value.empty() && value.front() == '-' &&
         !split_binary(value, {"+", "-", "*", "/", "%"})) {
+      // Prefix '-' applies to its whole postfix operand: `-s.length()` negates
+      // the call result, so the operand is checked as one expression
+      // (P25-S-ARCH-021) rather than letting member-call parsing see `-s`.
       string operand = trim(value.substr(1));
-      auto operand_type = inferred_expr_type(operand, env);
-      if (operand_type) {
-        string type = canonical_type_name(*operand_type);
-        if ((builtin_equality_type(type) || contains_record_type(type)) &&
-            type != "int" && type != "float")
-          err(line, "unary '-' requires an Int or Float operand, found '" + type + "'",
-              "TYPE_MISMATCH");
+      if (!operand.empty() && operand.front() != '-') {
+        check_expression(line, operand, env);
+        auto operand_type = inferred_expr_type(operand, env);
+        if (operand_type) {
+          string type = canonical_type_name(*operand_type);
+          if ((builtin_equality_type(type) || contains_record_type(type)) &&
+              type != "int" && type != "float")
+            err(line, "unary '-' requires an Int or Float operand, found '" + type + "'",
+                "TYPE_MISMATCH");
+        }
+        return;
       }
     }
     for (const auto& operators : vector<vector<string>>{{"+", "-", "*", "/", "%"}}) {

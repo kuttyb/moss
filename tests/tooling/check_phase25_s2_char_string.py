@@ -168,6 +168,14 @@ def test_architect_next_cycle_findings():
     engines("fn main():\n  x = 3\n  echo 1 + 2.5 * x - 4 / 2\n  echo 5 - -x\n"
             "  echo \"a\" + \"b\" + 'c'.to_string()\n",
             "013 numeric and String + String still valid", "6.5\n8\nabc\n")
+    engines("type P:\n  n: Int\n\n  fn get() -> Int:\n    return n\n\n"
+            "fn big() -> Int:\n  return 7\n\n"
+            "fn main():\n  s = \"abc\"\n  c = 'a'\n  v = [4, 5]\n  p = P(n: 4)\n"
+            "  echo -s.length()\n  echo -c.codepoint()\n  echo -s.find(\"b\")\n"
+            "  echo 10 + -s.length()\n  if -s.length() < 0:\n    echo \"neg\"\n"
+            "  echo -p.get()\n  echo -big()\n  echo -(big() + 1)\n  echo -v[0]\n  echo - -3\n",
+            "021/020 prefix minus negates the whole postfix operand",
+            "-3\n-97\n-1\n7\nneg\n-4\n-7\n-8\n-4\n3\n")
     color = "enum Color:\n  Red\n  Blue\n\n"
     rejected(color + "fn main():\n  var inner = Map()\n  inner[\"a\"] = 1\n  var m = Map()\n"
              "  m[inner] = 1\n  echo 1\n", "014 Map as a Map key", "MAP_KEY_TYPE_UNSUPPORTED")
