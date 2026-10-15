@@ -176,6 +176,18 @@ def test_architect_next_cycle_findings():
             "  echo -p.get()\n  echo -big()\n  echo -(big() + 1)\n  echo -v[0]\n  echo - -3\n",
             "021/020 prefix minus negates the whole postfix operand",
             "-3\n-97\n-1\n7\nneg\n-4\n-7\n-8\n-4\n3\n")
+    engines("type P:\n  v: Vector[Float]\n\nfn first(w: Vector[Float]) -> Float:\n  return -w[0]\n\n"
+            "fn main():\n  v = [1.5, 2.5]\n  echo -v[0]\n  var m = Map()\n  m[\"a\"] = 2.25\n"
+            "  echo -m[\"a\"]\n  p = P(v: [3.5])\n  echo -p.v[0]\n  w = [[1.0, 4.5]]\n"
+            "  echo -w[0][1]\n  echo 1.0 + -v[0]\n  echo first(v)\n  echo -0.0\n  x = 2.0\n"
+            "  echo -x\n  echo -(x + 1.0)\n",
+            "022 prefix minus on indexed/member Float operands",
+            "-1.5\n-2.25\n-3.5\n-4.5\n-0.5\n-1.5\n-0.0\n-2.0\n-3.0\n")
+    engines("domain D:\n  n = 5\n\n  fn Neg(s: String) -> Int:\n    k = -s.length()\n"
+            "    n = -n\n    reply k + n\n\n  fn Len(s: String) -> Int:\n    reply -s.length()\n\n"
+            "fn main():\n  d = D()\n  echo message d.Neg(\"abc\")\n  echo message d.Neg(\"ab\")\n"
+            "  echo message d.Len(\"abcd\")\n",
+            "023 prefix minus in handler effects", "-8\n3\n-4\n")
     color = "enum Color:\n  Red\n  Blue\n\n"
     rejected(color + "fn main():\n  var inner = Map()\n  inner[\"a\"] = 1\n  var m = Map()\n"
              "  m[inner] = 1\n  echo 1\n", "014 Map as a Map key", "MAP_KEY_TYPE_UNSUPPORTED")

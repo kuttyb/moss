@@ -8393,6 +8393,18 @@ class Checker {
       const vector<Param>& params, vector<Effect>& parameter_effects,
       Effect& receiver_effect, const std::set<string>& receiver_fields,
       Effect requested = Effect::Read) const {
+    {
+      // Prefix '-' reads its whole postfix operand (P25-S-ARCH-023): walk
+      // `s.length()` for `-s.length()` rather than a method on `-s`.
+      string trimmed = trim(expression);
+      if (trimmed.size() > 1 && trimmed.front() == '-' && trimmed[1] != '-' &&
+          !split_binary(trimmed, {"+", "-", "*", "/", "%", "==", "!=", "<", ">",
+                                  "<=", ">=", " and ", " or ", " xor "})) {
+        analyze_effect_expression(trim(trimmed.substr(1)), env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Read);
+        return;
+      }
+    }
     if (leaf_effect_capture_) {
       if (auto pipeline = parse_functional_pipeline(expression)) {
         auto source_type = inferred_expr_type(pipeline->source, env);
@@ -19405,6 +19417,15 @@ class Generator {
         string operand = expr(inner, d, locals, types);
         operand = value_from_borrowed_message_parameter(inner, operand, types);
         return "(" + operand + ").wrapping_neg()";
+      }
+      // Float: negate the whole postfix operand (P25-S-ARCH-022), so `-v[0]`
+      // is `-(v[0])`, never `(-v)[0]`.
+      if (operand_type && canonical_type_name(*operand_type) == "float" &&
+          !std::isdigit(static_cast<unsigned char>(inner.front())) && inner.front() != '.' &&
+          inner.front() != '(') {
+        string operand = expr(inner, d, locals, types);
+        operand = value_from_borrowed_message_parameter(inner, operand, types);
+        return "-(" + operand + ")";
       }
     }
     if (!e.empty() && e.front() == '~') {
