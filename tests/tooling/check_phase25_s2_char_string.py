@@ -243,6 +243,9 @@ def test_invalid_expression():
     for text in ("x = if 1 == 1: 1 else: 2", "x = foo bar", "x = 1 2", "echo if true",
                  "x = (while true)", "x = return 1", "x = [1 2]"):
         rejected(f"fn main():\n  {text}\n  echo 0\n", text, "INVALID_EXPRESSION", 2)
+    for text in ('x = "a" in m', 'x = "a" not in m'):
+        rejected(f"fn main():\n  var m = Map()\n  m[\"a\"] = 1\n  {text}\n  echo 0\n", text,
+                 "UNSUPPORTED_EXPRESSION_OPERATOR", 4)
     engines("fn first(values: Vector[Int]) -> Int:\n  return values [0]\n\n"
             "fn main():\n  v = [4, 5]\n  echo v [1]\n  echo first (v)\n  echo 1.5e-3 < 2\n"
             "  echo not true and false\n  echo \"a b\" + \"c\"\n",

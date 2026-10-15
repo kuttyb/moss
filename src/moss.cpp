@@ -14005,7 +14005,8 @@ class Checker {
   // expression (`foo bar`, `1 2`, `if c`), which no Moss expression form
   // allows. Word operators and the `message` prefix are not operands.
   static std::optional<std::pair<string, string>> juxtaposed_operands(const string& expression) {
-    static const std::set<string> word_operators{"and", "or", "xor", "not", "message"};
+    // `in` keeps its dedicated UNSUPPORTED_EXPRESSION_OPERATOR diagnostic.
+    static const std::set<string> word_operators{"and", "or", "xor", "not", "message", "in"};
     auto is_word = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; };
     string previous;          // last top-level token when it ends an operand
     bool previous_operand = false;
