@@ -179,6 +179,28 @@ typed empty-vector constructor, not general generic nominal construction. Local
 type annotations such as `var values: Vector[Int] = []` are not supported in
 v0.1; use inferred locals and `Vector[Int]()` instead.
 
+Facts the Phase 24 SDK swarm repeatedly rediscovered:
+
+- Mixed `Int`/`Float` operands in `+`, `-`, `*`, `/` and comparisons convert the
+  `Int` to `Float`; `%` is `Int`-only and `Int / Int` truncates.
+- An empty `[]`, `Map()` or `Queue()` takes its types from later use, and every
+  control-flow path must agree: a first assignment only inside a loop body or one
+  branch is rejected. Only `Vector[T]()` is a typed empty constructor.
+- An omitted field type is inferred once per program, and an exported package
+  type must be resolvable inside its package. There are no generic user types
+  yet, so library types annotate their fields.
+- Ownership is per binding: moving one non-Copy field consumes the whole value.
+  A mutating call on a local's field as a statement (`h.data.push(x)` with `h`
+  local) is rejected with "local member calls are not implemented"; the same call
+  through a parameter or inside a method works. That limitation is a tracked
+  defect; report it rather than designing around it.
+- String positions are code points over UTF-8: `length()`, `char_at()` and
+  `slice()` are O(n) per call, so index loops over long text are quadratic, and
+  `chars()` allocates one String per character.
+- Fast Debug currently diverges on `for`, `Float.to_string()` and `Int` ordering
+  above 2^53. These are defects, not limits to code around; validate such code
+  natively and record the divergence.
+
 ```moss
 fn adjusted(value: Int) -> Int:
   return value + 1

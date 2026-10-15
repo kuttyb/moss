@@ -41,14 +41,18 @@ fn distance(a: Point, b: Point) -> Float:
   sqrt(dx * dx + dy * dy)
 ```
 
-The same function may omit annotations when its complete meaning is inferable:
+A function may omit annotations when operations on its parameters determine
+their meaning:
 
 ```moss
-fn distance(a, b):
-  dx = a.x - b.x
-  dy = a.y - b.y
-  sqrt(dx * dx + dy * dy)
+fn scaled(value, factor):
+  value * factor
 ```
+
+Field access is the exception. Reading `a.x` requires a concrete parameter type,
+so `distance` above keeps its `Point` annotations; an untyped `fn distance(a, b)`
+is rejected with `UNTYPED_FIELD_ACCESS` (see [Typing](#typing)). Behavior shared by
+several types goes through methods instead.
 
 Inference is static and whole-program where necessary. Literal types, operators,
 field projections, constructors, function results, and declared domain handlers provide
@@ -61,6 +65,12 @@ Inference will grow incrementally; a construct is accepted only when the compile
 materialize a concrete type for the generated Rust representation. In particular,
 parameters of methods declared inside a `type` must currently be annotated; the checker
 does not yet infer them from call sites.
+
+### No recursion
+
+Ordinary recursion, direct or mutual, is rejected in v0.1 with
+`RECURSION_CYCLE`. Use loops, explicit work stacks, or index-based (arena)
+representations for trees and parsers.
 
 ### Local bindings
 
@@ -107,6 +117,14 @@ else:
 # label is visible here because both branches bind it
 ```
 
+An empty collection literal or constructor (`[]`, `Map()`, `Queue()`) takes its
+element types from later use, and every control-flow path must agree. A binding
+whose element types are first established only inside a loop body or a single
+branch is rejected with `conflicting concrete types across control-flow paths`,
+because that path may not run. `Vector[T]()` is the only typed empty
+constructor; `Map[K, V]()` and `Queue[T]()` do not exist, and a return
+annotation does not type an empty `[]` or `Map()` in a `return`.
+
 ## Value types
 
 The preferred type declaration is an indented block:
@@ -132,7 +150,21 @@ type Quote:
 
 An omitted field type is an inference request, not a dynamic field. Ambiguous or unused
 fields must fail compilation until an annotation or an unambiguous constraint is
-provided. The legacy `type Quote = object` spelling remains accepted during migration
+provided. The request is resolved once for the whole program: every construction
+of `Quote` must agree, so a type cannot hold an `Int` in one place and a `Float`
+in another (`conflicting inferred types`). A type exported from a package must
+be resolvable inside that package alone; consumers cannot fill an omitted field,
+so exported library types annotate their fields. Moss v0.1 therefore has no
+generic user-defined types.
+
+Ownership is tracked per binding, not per field. Moving a non-Copy field out of
+a value consumes the whole binding, so building a new value from two vector
+fields of the same source fails with `OWNERSHIP_USE_AFTER_CONSUME` after the first
+move; clone the fields that must survive. A mutating method called as a
+statement on a field of a local binding (`h.data.push(x)` where `h` is a local)
+is currently rejected with `local member calls are not implemented`; the same
+call through a parameter (`fn add(h: Heap, x: Int): h.data.push(x)`) or inside
+a method of the type works. This local-binding limitation is a tracked defect. The legacy `type Quote = object` spelling remains accepted during migration
 and has the same value-object semantics.
 
 Domain state uses the same value-binding convention. An initializer normally supplies
@@ -306,6 +338,11 @@ Moss v0.1 has a closed compiler-defined operator set. A user-defined `type`
 cannot declare, overload, or replace the meaning of an operator. Accepted
 operator/type combinations are language rules rather than methods discovered on
 the operand types.
+
+When `+`, `-`, `*`, `/`, or a comparison has one `Int` operand and one `Float`
+operand, the `Int` is converted to `Float` (exact for magnitudes up to 2^53) and
+the result is a `Float` or `Bool`. Integer remainder `%` accepts only `Int`
+operands, and `Int / Int` stays truncating integer division.
 
 `String` supports built-in `+` concatenation and `==`/`!=` equality.
 The read-only String methods are `length() -> Int`, `char_at(Int) -> String`,

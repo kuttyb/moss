@@ -140,6 +140,10 @@ Ordinary `x = value` remains the usual inferred binding form.
 Integer arithmetic uses `+`, `-`, `*`, `/`, and `%`. The `%` operator is
 integer remainder and follows the same truncating signed-division model as `/`.
 
+Mixing `Int` and `Float` in `+`, `-`, `*`, `/`, or a comparison converts the
+`Int` to `Float`: `3 * 1.5` is `4.5` and `2.0 > 1` is `true`. `%` accepts only
+`Int` operands, and `7 / 2` stays integer division (`3`).
+
 Moss v0.1 has a closed set of built-in operators; user-defined types cannot
 overload or redefine them. `String` has three built-in operator forms:
 concatenation with `+`, equality with `==`, and inequality with `!=`.
@@ -178,6 +182,15 @@ the empty String. `ascii_lower` and `ascii_upper` change ASCII letters only and
 preserve every other Unicode scalar.
 `join` accepts `Vector[String]` and returns an empty String for an empty vector.
 String numeric parsing and recoverable invalid-input behavior are described above.
+
+Know the current cost of positions. Strings are stored as UTF-8, so `length()`,
+`char_at(i)`, `slice`, and the position `find` returns each walk the text: they
+cost time proportional to the String's length on every call. A loop such as
+`while i < text.length(): c = text.char_at(i)` is therefore quadratic; a 32,000-
+character scan already takes about 100 ms. `chars()` allocates one String per
+character. For long text, prefer `find`, `split`, and one `chars()` call over
+index loops, and hoist `length()` out of loop conditions. Constant-time positions
+and a scalar `Char` type are planned for Phase 25.
 
 Integer bitwise and shift operators (`&`, `|`, `^`, `~`, `<<`, `>>`) operate strictly
 on 64-bit signed `Int` values with total two's-complement semantics. Boolean logic
@@ -383,6 +396,14 @@ Method parameters currently need a type annotation, like `amount: Int` here.
 Field types, locals, and method results are still inferred, and ordinary
 top-level functions can leave their parameters untyped (Section 3).
 
+An omitted field type is inferred once for the whole program, not per value.
+`type Box:` with an untyped `item` field works when every `Box` holds the same
+type, but `Box(item: 1)` and `Box(item: 2.5)` in one program are rejected as
+conflicting. A type exported from a package must have field types that the
+package itself determines, so library types annotate their fields. Moss v0.1 has
+no generic user-defined types yet; generic functions (Section 8) are the
+supported way to write code once for many types.
+
 Construct it by naming its fields:
 
 ```moss
@@ -551,7 +572,13 @@ fn main():
   echo prior  # 9
 ```
 
-The key and value types are inferred from use.
+The key and value types are inferred from use. That use must happen on every
+path: if the only assignment to an empty `Map()` sits inside a loop that might
+run zero times, or inside one branch of an `if`, the compiler reports
+`conflicting concrete types across control-flow paths`. Give the map its first
+entry where every path sees it. For an empty vector whose element type no later
+use fixes, write `Vector[Int]()`; there is no `Map[K, V]()` or `Queue[T]()`
+constructor.
 `get(key, default)` is the safe/defaulted lookup; `map[key]` remains strict and
 expects the key to exist. `keys()` and `values()` produce ordinary eager `Vector`
 snapshots. Map iteration order is unspecified. Map supports indexed writes
@@ -684,6 +711,24 @@ The useful beginner rule is:
 > Moss does not silently deep-copy large values, and it does not silently create unrestricted aliases to them.
 
 The compiler keeps track of who owns a value and reports mistakes before the program runs.
+
+Ownership is tracked per variable, not per field. Moving one non-Copy field out
+of a value consumes the whole variable:
+
+```moss
+type Pair:
+  a: Vector[Int]
+  b: Vector[Int]
+
+fn swap(p: Pair) -> Pair:
+  return Pair(a: p.b, b: p.a)   # rejected: moving p.b consumes p
+```
+
+Clone the field you still need before the first move. Mutating a field in
+place through a parameter works (`fn add(p: Pair, x: Int): p.a.push(x)`), but
+the same statement on a local variable's field (`p.a.push(x)` where `p` is a
+local) is currently rejected with `local member calls are not implemented`; move
+that update into a function that takes the value as a parameter.
 
 You do not write Rust-style lifetime or borrow annotations in Moss source.
 
@@ -1327,7 +1372,8 @@ margo test
 ```
 
 `moss test` remains available as the direct compiler/project compatibility
-path.
+path. `margo test --release` builds the package and its dependencies with the
+optimized profile before running the same tests.
 
 To run the project's tests through Fast Debug instead of a native build, use:
 
@@ -1434,6 +1480,15 @@ including those reached through object fields, and the current eager functional
 pipeline surface execute directly in Fast Debug.
 
 FileIO requires native execution; Fast Debug does not perform FileIO operations.
+
+Fast Debug is meant to be a full peer of native execution: a program that passes
+`moss check` should produce the same results in both. These known differences are
+defects being fixed in Phase 25, not intended behavior:
+
+- `for` loops do not run in Fast Debug.
+- `Float.to_string()` fails in Fast Debug ("method receiver is not a Moss object").
+- Ordering comparisons (`<`, `>`, and so on) between `Int` values larger than
+  2^53 can give the wrong answer in Fast Debug; `==` and arithmetic are correct.
 
 A program accepted and executed by Fast Debug has passed Moss's own static checks. Native compilation additionally passes the generated Rust through Rust's type and borrow checker before machine code is produced.
 

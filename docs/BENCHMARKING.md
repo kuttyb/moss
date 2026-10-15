@@ -426,6 +426,22 @@ addition to satisfying Moss's compatibility check.
 - Do not use automated tests that depend on real-time nanosecond thresholds;
   test harness structure and methodology deterministically instead.
 
+Phase 24 comparisons against Rust were invalid until these were enforced:
+
+- Run with optimized dependency providers, not only an optimized benchmark
+  root; check the profile of every linked provider.
+- Construct the same inputs inside both the Moss and the Rust timed regions, or
+  outside both, and assert equal results so the workloads match.
+- Vary inputs and accumulate results so the optimizer cannot constant-fold a
+  call on literal arguments down to a few nanoseconds.
+- Bind repeated literal arguments (such as a search pattern) once; a literal
+  inside a timed loop allocates a new owned String on every iteration.
+
+A benchmark body that calls a function with typed raise effects currently fails
+to build with `internal error: checked raising function call lacks a Phase 21
+outcome context`. Benchmark the non-raising core of the operation until this
+tracked defect is fixed.
+
 ## Troubleshooting
 
 | Code | Meaning |

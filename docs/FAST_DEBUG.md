@@ -168,5 +168,13 @@ Unsupported iteration constructs, including `for` traversal, still produce
 construct-specific interpreter errors. Current eager functional pipelines run
 in Fast Debug. There is no blanket domain/message/reply restriction or automatic native
 Moss fallback. Source-free providers remain supported by production, while Fast
-Debug requires their source. Phase 10.6F records [production measurements and trace-size observations](PERFORMANCE_10_6F.md);
+Debug requires their source.
+
+Fast Debug is a full peer of native execution: a program that passes `moss
+check` must produce the same results in both engines. Phase 24 dogfooding found
+divergences that are tracked as Phase 25 defects, not as intended limits:
+`for` traversal is unsupported; `Float.to_string()` fails with "method receiver
+is not a Moss object"; and ordering comparisons between `Int` values above 2^53
+can return the wrong result (equality and arithmetic are correct). Until these
+are fixed, validate code that depends on them natively. Phase 10.6F records [production measurements and trace-size observations](PERFORMANCE_10_6F.md);
 concurrency correctness remains covered by the production harness.

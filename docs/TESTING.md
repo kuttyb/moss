@@ -62,6 +62,9 @@ If a test needs application-local declarations, place that test in the
 configured application source beside those declarations. This is a current
 project-model limitation, not a requirement to duplicate generated Rust.
 
+`margo test --release` builds the package and its path dependencies with the
+optimized profile and runs the same tests.
+
 Ordinary `moss build` and `moss build --release` do not include test files or
 generate a test harness. Test declarations are included only when `moss test`
 builds its combined target under `build/test/`.
