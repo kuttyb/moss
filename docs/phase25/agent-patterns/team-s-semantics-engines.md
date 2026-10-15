@@ -80,3 +80,22 @@ earlier sections are preserved as history.
 | **Review provenance** | Architect-reviewed implementation SHA: `b6d45cf5a761caea2df50b64d4357669647ffac0`. Post-review implementation SHA: `baefd1fbd763ba0ec1d4955c6bad64f4bb71ac94` (ARCH-013..017 fixes in `bd843db`, `%` follow-up in `baefd1f`). The same Architect closure-verified `baefd1f` (second event, CONDITIONAL GO: 013–017 and DOC-1..7 fixed; net-new P25-S-ARCH-021). Delivered SHA `3577dbce6080aa1320a2b60e31d926866fbb3f54` fixes 021 (and 020) and passed `make check`/`make examples`; that last fix is not Architect-reviewed. Docs-only commits after that do not change it. |
 | **Usage** | Platform-reported subagent tokens: S1 233,451; S3 277,110; S4 357,573; Architect 292,980 cumulative over both events. Coordinator: unknown. |
 | **Value** | Parallel leaves covered three independent areas at once. S4's 324-program sweep found 12 defects, including two silent wrong-output native bugs (S4-003, S4-007). The Architect found a silent wrong-output Fast Debug defect (ARCH-013) and an incomplete interim fix (ARCH-014) that Coordinator and leaf testing had missed. The repo-wide `moss check` diff against the starting compiler caught each new rule's false positives before review. |
+
+## L7 parallel-execution cycle closeout (S-A, S-B, S-C, S-D) — 2026-10-15
+
+Starting checkpoint: `c2e106c0da3debde6b0334c23d45635f2b498cd6`. Earlier
+sections are preserved as history.
+
+| Category | Report |
+| --- | --- |
+| **Leaf agents** | 3 actual instances, each separately instantiated in its own git worktree: S-A (`s-a-numeric-literals`, `9f79e09`), S-B (`s-b-check-display`, `6365b89`), S-C (`s-c-safe-arithmetic`, `83419f6`). Planned slots: 3. |
+| **Peak leaf concurrency** | 3. All three were launched together and reported over overlapping intervals; S-C finished first and S-B last. |
+| **Non-leaf reviewers/managers** | 1 L6 Coordinator. 1 independent L6 Architect: the same separately instantiated reviewer as the previous cycle, resumed for each event. 0 adversarial reviewers. |
+| **Submissions** | 0 PRs. 3 non-PR leaf handoffs, all integrated by `--no-ff` merge with 0 conflicts and 0 Coordinator change-request rounds. 0 rejected, 0 deferred. 1 consolidated Team delivery: the pushed branch. |
+| **Coordinator reviews** | 3/3 handoffs reviewed (report read, merged, all Phase 25 suites rerun on the combined tree, negative-case and repo-wide verdict diff). |
+| **Other review events** | Architect: 3 planned events in this cycle. Unary-minus repair at `3577dbce6080aa1320a2b60e31d926866fbb3f54`: CONDITIONAL GO. Consolidated S-A/B/C at `906b99d4068d1c2bbc92548249d8abb24eaea11f`: CONDITIONAL GO. Closure check at `8d62f0a43915ef0e616b449270c227b0e3162c26`: see Addendum 4 of `docs/phase25/TEAM_S_NEXT_CYCLE_ARCHITECT_REVIEW.md`; the result was pending when this row was written. L7: 1 (the decision that started this cycle). |
+| **Defects** | **Leaf-discovered and fixed:** S-A 12 literal defects; S-B ARCH-019 plus SB-1..4; S-C the S3-L2 arithmetic part. **Architect net-new:** P25-S-ARCH-022..026. 022–025 were fixed by the Coordinator (`cff9a96`, `8d62f0a`) with regressions; 026 is tracked. **Coordinator self-inflicted, caught before commit:** a `+2.5` false positive in the first 024 fix, found by the S-A suite. A cleanup command (`git checkout -- tests`) also briefly reverted an uncommitted Coordinator regression edit. It was reapplied before commit, and the cleanup was narrowed to cache snapshot paths. |
+| **Test evidence** | S-A 68 accepted × 3 engines plus 63 rejected; S-B 7 accepted programs × 6 engine/mode runs plus 18 rejected in two check modes; S-C 23 cases; S2 extended with the 022–025 cases. `make check` and `make examples` passed at `906b99d` and at `8d62f0a`. |
+| **Review provenance** | Consolidated Architect-reviewed SHA: `906b99d`. Delivered implementation SHA: `8d62f0a`; the diff is the 024/025 fixes, their regressions, and the contract doc. The Architect closure check was requested at exactly `8d62f0a`. |
+| **Usage** | Platform-reported subagent tokens: S-A 188,529; S-B 276,017; S-C 170,192; Architect 371,511 cumulative across all its events. Coordinator: unknown. |
+| **Value** | Three disjoint workstreams proceeded in parallel with conflict-free merges. The Architect's targeted adversarial passes found five net-new issues that the leaf suites missed. One was a high-severity checker-authority gap (024) that predates the cycle. Another was a fail-open introduced by the Coordinator's own repair (022). |
