@@ -544,16 +544,18 @@ class FastInterpreter {
 
   static std::optional<std::pair<std::string, std::string>> split_operator(
       const std::string& input, const std::vector<std::string>& operators) {
-    int parens = 0, brackets = 0, braces = 0; bool quoted = false; bool escaped = false;
+    int parens = 0, brackets = 0, braces = 0; bool quoted = false;
     for (size_t pos = input.size(); pos-- > 0;) {
       char c = input[pos];
-      if (quoted) {
-        if (escaped) escaped = false;
-        else if (c == '\\') escaped = true;
-        else if (c == '"') quoted = false;
+      if (c == '"') {
+        // Scanning backwards: a quote preceded by an odd run of backslashes
+        // is escaped string content.
+        size_t slashes = 0;
+        while (slashes < pos && input[pos - 1 - slashes] == '\\') ++slashes;
+        if (slashes % 2 == 0) quoted = !quoted;
         continue;
       }
-      if (c == '"') { quoted = true; continue; }
+      if (quoted) continue;
       if (c == ')') ++parens; else if (c == '(') --parens;
       else if (c == ']') ++brackets; else if (c == '[') --brackets;
       else if (c == '}') ++braces; else if (c == '{') --braces;
@@ -673,8 +675,12 @@ class FastInterpreter {
     if (lp == std::string::npos || value.back() != ')') return false;
     int depth = 0; bool quoted = false;
     for (size_t i = lp; i < value.size(); ++i) {
-      if (value[i] == '"') quoted = !quoted;
-      if (quoted) continue;
+      if (quoted) {
+        if (value[i] == '\\') ++i;
+        else if (value[i] == '"') quoted = false;
+        continue;
+      }
+      if (value[i] == '"') { quoted = true; continue; }
       if (value[i] == '(') ++depth;
       else if (value[i] == ')' && --depth == 0 && i + 1 != value.size()) return false;
     }
@@ -686,8 +692,12 @@ class FastInterpreter {
     int p = 0, b = 0, s = 0; size_t start = 0; quoted = false;
     for (size_t i = 0; i < inside.size(); ++i) {
       char c = inside[i];
-      if (c == '"') quoted = !quoted;
-      if (quoted) continue;
+      if (quoted) {
+        if (c == '\\') ++i;
+        else if (c == '"') quoted = false;
+        continue;
+      }
+      if (c == '"') { quoted = true; continue; }
       if (c == '(') ++p; else if (c == ')') --p;
       else if (c == '[') ++b; else if (c == ']') --b;
       else if (c == '{') ++s; else if (c == '}') --s;
@@ -704,7 +714,14 @@ class FastInterpreter {
     int p = 0, b = 0, s = 0; bool quoted = false;
     for (size_t i = input.size(); i-- > 0;) {
       char c = input[i];
-      if (c == '"') quoted = !quoted;
+      if (c == '"') {
+        // Scanning backwards: a quote preceded by an odd run of backslashes
+        // is escaped string content.
+        size_t slashes = 0;
+        while (slashes < i && input[i - 1 - slashes] == '\\') ++slashes;
+        if (slashes % 2 == 0) quoted = !quoted;
+        continue;
+      }
       if (quoted) continue;
       if (c == ')') ++p; else if (c == '(') --p;
       else if (c == ']') ++b; else if (c == '[') --b;
@@ -773,8 +790,12 @@ class FastInterpreter {
     int parens = 0, brackets = 0; bool quoted = false; size_t start = 0;
     for (size_t i = 0; i + 1 < input.size(); ++i) {
       char c = input[i];
-      if (c == '"') quoted = !quoted;
-      if (quoted) continue;
+      if (quoted) {
+        if (c == '\\') ++i;
+        else if (c == '"') quoted = false;
+        continue;
+      }
+      if (c == '"') { quoted = true; continue; }
       if (c == '(') ++parens; else if (c == ')') --parens;
       else if (c == '[') ++brackets; else if (c == ']') --brackets;
       if (!parens && !brackets && c == '|' && input[i + 1] == '>') {
@@ -1559,8 +1580,13 @@ class FastInterpreter {
   static std::vector<std::string> split_arguments(const std::string& input) {
     std::vector<std::string> result; int p = 0, b = 0, s = 0; bool quoted = false; size_t start = 0;
     for (size_t i = 0; i < input.size(); ++i) {
-      char c = input[i]; if (c == '"') quoted = !quoted;
-      if (quoted) continue;
+      char c = input[i];
+      if (quoted) {
+        if (c == '\\') ++i;
+        else if (c == '"') quoted = false;
+        continue;
+      }
+      if (c == '"') { quoted = true; continue; }
       if (c == '(') ++p; else if (c == ')') --p; else if (c == '[') ++b; else if (c == ']') --b;
       else if (c == '{') ++s; else if (c == '}') --s;
       else if (c == ',' && p == 0 && b == 0 && s == 0) {

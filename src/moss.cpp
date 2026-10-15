@@ -26848,6 +26848,9 @@ static BackendToolchainIdentity inspect_backend_toolchain(
   else
     identity.profile = debug_build ? "debug" : "reference";
   identity.compile_flags = {"--edition=2021", "-D", "warnings"};
+  if (indexed_strings_staged())
+    identity.compile_flags.insert(identity.compile_flags.end(),
+                                  {"--cfg", "moss_string_indexed_v1"});
   if (optimized) {
     identity.compile_flags.insert(
         identity.compile_flags.end(), {"-O", "-C", "debuginfo=1"});
@@ -28516,6 +28519,15 @@ static ParsedModuleUnit load_module_interface(
   verify_source_free_provider_binding(file, text);
   if (text.find("\nnative_abi " + std::to_string(kNativeAbiVersion) + "\n") == string::npos)
     throw CompileError(0, "compiled provider uses an incompatible native calling convention; rebuild its .mossi provider");
+  const bool provider_indexed =
+      text.find("\n" + string(kIndexedStringRecord) + "\n") != string::npos;
+  if (provider_indexed != indexed_strings_staged())
+    throw CompileError(0, string("compiled provider uses the ") +
+                       (provider_indexed ? "staged indexed-v1" : "plain") +
+                       " String representation but this build uses the " +
+                       (indexed_strings_staged() ? "staged indexed-v1" : "plain") +
+                       " representation; rebuild the provider with the same MOSS_STAGED_STRING_REPR",
+                       "STRING_REPRESENTATION_MISMATCH");
   // The producer already records separate hashes for the native contract and
   // semantic exports.  Validate them before trusting source-free metadata;
   // otherwise a changed failure-arm symbol can link and abort at runtime.
@@ -31349,6 +31361,7 @@ static vector<std::filesystem::path> write_module_interfaces(
            << "module_id " << manifest.name << "::" << entry.first << "\n"
            << "compiler " << kCompilerVersion << "\n"
            << "native_abi " << kNativeAbiVersion << "\n"
+           << (indexed_strings_staged() ? string(kIndexedStringRecord) + "\n" : string())
            << "backend_fingerprint " << backend.fingerprint << "\n"
            << "backend_rustc " << backend.version_verbose << "\n"
            << "concrete_interface_hash "
@@ -31557,6 +31570,21 @@ static NativeArtifact compile_native_artifact(
   source_fingerprint = stable_hash(source_key.str());
   cache_text = backend_cache_metadata(
       artifact.backend_toolchain, source_fingerprint);
+  // Each module crate embeds its own runtime, so a staged MossString would be
+  // a distinct Rust type per crate. Cross-crate indexed Strings need the
+  // compiler-owned shared runtime crate of the joint ABI-v10 design. Reject
+  // before any interface or crate is written.
+  if (indexed_strings_staged() && unit.program.explicit_module) {
+    const auto modules = module_topological_order(unit.program);
+    if (modules.size() > 1 ||
+        std::any_of(modules.begin(), modules.end(), [&](const string& module) {
+          return !module_dependencies(unit.program, module).empty();
+        }))
+      throw ProjectError(
+          "STRING_REPRESENTATION_STAGED_SINGLE_CRATE",
+          "MOSS_STAGED_STRING_REPR=indexed-v1 supports single-module builds only; "
+          "multi-module builds need the shared ABI-v10 runtime crate");
+  }
   vector<std::filesystem::path> preexisting_interfaces = artifact.module_interfaces;
   vector<string> local_module_names = module_names_for_program(unit.program);
   const auto emitted_interfaces = write_module_interfaces(

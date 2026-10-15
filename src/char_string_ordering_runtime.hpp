@@ -210,7 +210,7 @@ impl MossString {
 
     #[inline]
     fn offset(byte: usize) -> u32 {
-        u32::try_from(byte).unwrap_or_else(|_| panic!("String exceeds the 4 GiB indexed offset limit"))
+        <u32 as std::convert::TryFrom<usize>>::try_from(byte).unwrap_or_else(|_| panic!("String exceeds the 4 GiB indexed offset limit"))
     }
 
     // Appends `part`, scanning only `part`; amortized O(part.len()).
