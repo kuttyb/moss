@@ -1825,6 +1825,72 @@ class Parser {
   }
 };
 
+// Moss expressions are scanned textually, so a Char literal holding a
+// delimiter ('"', ',', '(', '#', '+', ...) would be read as syntax. Rewrite
+// every Char literal other than an ASCII letter/digit/underscore to the
+// equivalent '\u{HEX}' spelling before any other scanning. Malformed literals
+// are left untouched for the checker to diagnose.
+static string canonicalize_char_literals(const string& line) {
+  string out;
+  out.reserve(line.size());
+  bool in_string = false, escaped = false;
+  for (size_t i = 0; i < line.size(); ++i) {
+    const char c = line[i];
+    if (in_string) {
+      out.push_back(c);
+      if (escaped) escaped = false;
+      else if (c == '\\') escaped = true;
+      else if (c == '"') in_string = false;
+      continue;
+    }
+    if (c == '"') { in_string = true; out.push_back(c); continue; }
+    if (c != '\'') { out.push_back(c); continue; }
+    uint32_t codepoint = 0;
+    size_t end = string::npos;  // index of the closing quote
+    if (i + 1 < line.size() && line[i + 1] == '\\' && i + 2 < line.size()) {
+      const char e = line[i + 2];
+      if (e == 'u' && i + 3 < line.size() && line[i + 3] == '{') {
+        size_t close = line.find('}', i + 4);
+        if (close != string::npos && close > i + 4 && close - (i + 4) <= 6 &&
+            close + 1 < line.size() && line[close + 1] == '\'') {
+          bool hex = true;
+          for (size_t k = i + 4; k < close; ++k)
+            hex = hex && std::isxdigit(static_cast<unsigned char>(line[k]));
+          if (hex) {
+            codepoint = static_cast<uint32_t>(std::stoul(line.substr(i + 4, close - (i + 4)), nullptr, 16));
+            end = close + 1;
+          }
+        }
+      } else if (i + 3 < line.size() && line[i + 3] == '\'') {
+        const string simple = "nrt0'\\\"";
+        const uint32_t values[] = {'\n', '\r', '\t', 0, '\'', '\\', '"'};
+        size_t which = simple.find(e);
+        if (which != string::npos) { codepoint = values[which]; end = i + 3; }
+      }
+    } else if (i + 1 < line.size()) {
+      const unsigned char b0 = static_cast<unsigned char>(line[i + 1]);
+      size_t width = b0 < 0x80 ? 1 : (b0 & 0xE0) == 0xC0 ? 2 : (b0 & 0xF0) == 0xE0 ? 3
+                   : (b0 & 0xF8) == 0xF0 ? 4 : 0;
+      if (width && b0 != '\'' && i + 1 + width < line.size() && line[i + 1 + width] == '\'') {
+        codepoint = width == 1 ? b0 : b0 & (0x7F >> width);
+        for (size_t k = 1; k < width; ++k)
+          codepoint = (codepoint << 6) | (static_cast<unsigned char>(line[i + 1 + k]) & 0x3F);
+        end = i + 1 + width;
+      }
+    }
+    if (end == string::npos) { out.push_back(c); continue; }
+    if (codepoint < 0x80 && (std::isalnum(static_cast<int>(codepoint)) || codepoint == '_')) {
+      out += line.substr(i, end - i + 1);
+    } else {
+      char buffer[16];
+      std::snprintf(buffer, sizeof buffer, "'\\u{%X}'", codepoint);
+      out += buffer;
+    }
+    i = end;
+  }
+  return out;
+}
+
 static vector<Line> lex_lines(std::istream& in, const string& source_file = {}) {
   vector<Line> out;
   string raw;
@@ -1841,6 +1907,7 @@ static vector<Line> lex_lines(std::istream& in, const string& source_file = {}) 
       throw error;
     }
 
+    raw = canonicalize_char_literals(raw);
     // Strip comments outside strings.
     bool in_str = false, esc = false;
     size_t cut = raw.size();
@@ -17303,6 +17370,7 @@ class Generator {
         return enum_name;
     }
     if (value == "true" || value == "false") return string("bool");
+    if (is_single_char_literal(value)) return string("char");
     if (value == "None") return string("_none");
     if (is_single_string_literal(value))
       return string("string");
@@ -21104,7 +21172,8 @@ class Generator {
           string match_callee;
           vector<string> match_arguments;
           bool struct_literal = false;
-          if (s.b == "consume" && parse_simple_call(s.a, match_callee, match_arguments)) {
+          // A Rust struct literal is not allowed as a bare scrutinee.
+          if (parse_simple_call(s.a, match_callee, match_arguments)) {
             for (const auto& candidate : declaration.cases) {
               const string suffix = declaration.name + "." + candidate.name;
               if (!candidate.fields.empty() &&

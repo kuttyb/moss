@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <exception>
 #include <charconv>
 #include <cctype>
 #include <cstdint>
@@ -298,10 +299,34 @@ class FastInterpreter {
 
   struct BlockScope {
     Frame& frame;
-    explicit BlockScope(Frame& f) : frame(f) { frame.scopes.emplace_back(); }
+    // Names bound in every alternative of the enclosing compound statement:
+    // native lowering hoists them, so they outlive this block.
+    // A block left by a raise did not complete its path, so its joined names
+    // are discarded (the exceptional edge snapshot keeps them for on_fail).
+    const std::set<std::string>* keep = nullptr;
+    int uncaught = 0;
+    explicit BlockScope(Frame& f, const std::set<std::string>* joined = nullptr)
+        : frame(f), keep(joined), uncaught(std::uncaught_exceptions()) {
+      frame.scopes.emplace_back();
+    }
     ~BlockScope() {
       auto scope = std::move(frame.scopes.back());
       frame.scopes.pop_back();
+      if (keep && std::uncaught_exceptions() == uncaught) {
+        std::vector<Frame::ScopedBinding> dropped;
+        for (auto& item : scope) {
+          if (!keep->count(item.name) || item.value || item.alias) {
+            dropped.push_back(std::move(item));
+            continue;
+          }
+          if (!frame.scopes.empty()) {
+            bool known = false;
+            for (const auto& outer : frame.scopes.back()) known = known || outer.name == item.name;
+            if (!known) frame.scopes.back().push_back(std::move(item));
+          }
+        }
+        scope = std::move(dropped);
+      }
       for (auto item = scope.rbegin(); item != scope.rend(); ++item) {
         frame.locals.erase(item->name);
         frame.local_types.erase(item->name);
@@ -325,10 +350,14 @@ class FastInterpreter {
     Value value;
     int line = 0;
     std::string source_file;
+    // Bindings visible at the raise point whose blocks have since unwound;
+    // on_fail captures read them at the exceptional edge.
+    std::unordered_map<std::string, Value> edge_locals;
   };
 
   const Program& program_;
   Options options_;
+  std::unordered_map<const Stmt*, std::set<std::string>> joined_cache_;
   std::vector<TraceEvent> trace_;
   std::vector<int> event_stack_;
   std::vector<int> call_stack_;
@@ -1882,10 +1911,100 @@ class FastInterpreter {
     } else throw RuntimeError(line, "unsupported assignment target '" + name + "'");
   }
 
+  // Static candidates for names a block binds at its own level, including the
+  // joins of nested if/else, match, and try/recover statements.
+  std::set<std::string> block_binders(const std::vector<Stmt>& statements,
+                                      size_t begin, size_t end) {
+    std::set<std::string> out;
+    if (begin >= end) return out;
+    const int level = statements[begin].indent;
+    for (size_t i = begin; i < end;) {
+      const Stmt& statement = statements[i];
+      if (statement.indent != level) { ++i; continue; }
+      if ((statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
+           (statement.kind == Stmt::Kind::Assign && identifier(statement.a))) &&
+          statement.a != "_")
+        out.insert(statement.a);
+      if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::Match ||
+          statement.kind == Stmt::Kind::Try) {
+        const auto& joined = joined_binders(statements, i, end);
+        out.insert(joined.begin(), joined.end());
+      }
+      ++i;
+    }
+    return out;
+  }
+
+  // Names bound by every alternative of the compound statement at `index`.
+  const std::set<std::string>& joined_binders(const std::vector<Stmt>& statements,
+                                              size_t index, size_t end) {
+    auto cached = joined_cache_.find(&statements[index]);
+    if (cached != joined_cache_.end()) return cached->second;
+    const Stmt& statement = statements[index];
+    const auto block_end = [&](size_t from, int indent) {
+      while (from < end && statements[from].indent > indent) ++from;
+      return from;
+    };
+    std::vector<std::set<std::string>> alternatives;
+    if (statement.kind == Stmt::Kind::If) {
+      size_t body_end = block_end(index + 1, statement.indent);
+      alternatives.push_back(block_binders(statements, index + 1, body_end));
+      if (body_end < end && statements[body_end].kind == Stmt::Kind::Else &&
+          statements[body_end].indent == statement.indent)
+        alternatives.push_back(block_binders(statements, body_end + 1,
+                                             block_end(body_end + 1, statement.indent)));
+      else
+        alternatives.emplace_back();
+    } else if (statement.kind == Stmt::Kind::Match) {
+      size_t cursor = index + 1;
+      while (cursor < end && statements[cursor].indent == statement.indent + 1) {
+        size_t arm_end = block_end(cursor + 1, statements[cursor].indent);
+        alternatives.push_back(block_binders(statements, cursor + 1, arm_end));
+        cursor = arm_end;
+      }
+    } else if (statement.kind == Stmt::Kind::Try) {
+      size_t try_end = block_end(index + 1, statement.indent);
+      alternatives.push_back(block_binders(statements, index + 1, try_end));
+      size_t cursor = try_end;
+      while (cursor < end && statements[cursor].kind == Stmt::Kind::Recover &&
+             statements[cursor].indent == statement.indent) {
+        size_t arm_end = block_end(cursor + 1, statement.indent);
+        alternatives.push_back(block_binders(statements, cursor + 1, arm_end));
+        cursor = arm_end;
+      }
+    }
+    std::set<std::string> joined;
+    if (!alternatives.empty()) {
+      joined = alternatives.front();
+      for (size_t k = 1; k < alternatives.size(); ++k) {
+        std::set<std::string> next;
+        for (const auto& name : joined) if (alternatives[k].count(name)) next.insert(name);
+        joined = std::move(next);
+      }
+    }
+    return joined_cache_.emplace(&statements[index], std::move(joined)).first->second;
+  }
+
   Flow execute_block(const std::vector<Stmt>& statements, Frame& frame,
-                     std::ostream& output, size_t begin, size_t end) {
-    BlockScope scope(frame);
-    return execute(statements, frame, output, begin, end);
+                     std::ostream& output, size_t begin, size_t end,
+                     const std::set<std::string>* joined = nullptr) {
+    BlockScope scope(frame, joined);
+    try {
+      return execute(statements, frame, output, begin, end);
+    } catch (RaisedSignal& raised) {
+      record_edge_locals(frame, raised);
+      throw;
+    }
+  }
+
+  // Innermost visible binding wins: deeper blocks unwind (and record) first.
+  static void record_edge_locals(const Frame& frame, RaisedSignal& raised) {
+    if (frame.scopes.empty()) return;
+    for (const auto& entry : frame.scopes.back()) {
+      if (raised.edge_locals.count(entry.name)) continue;
+      auto value = frame.locals.find(entry.name);
+      if (value != frame.locals.end()) raised.edge_locals[entry.name] = value->second;
+    }
   }
 
   Flow execute(const std::vector<Stmt>& statements, Frame& frame,
@@ -1908,7 +2027,8 @@ class FastInterpreter {
             ++after;
         }
         try {
-          Flow flow = execute_block(statements, frame, output, index + 1, try_end);
+          Flow flow = execute_block(statements, frame, output, index + 1, try_end,
+                                    &joined_binders(statements, index, end));
           if (flow.returned) return flow;
         } catch (const RaisedSignal& raised) {
           size_t arm = try_end;
@@ -1963,7 +2083,8 @@ class FastInterpreter {
               selected_errors_.push_back(raised);
               try {
                 Flow flow = execute_block(
-                    statements, frame, output, arm + 1, arm_end);
+                    statements, frame, output, arm + 1, arm_end,
+                    &joined_binders(statements, index, end));
                 selected_errors_.pop_back();
                 restore();
                 if (flow.returned) return flow;
@@ -2034,7 +2155,8 @@ class FastInterpreter {
                 frame.aliases[arm.args[field_index]] = Place{&field->second, nullptr, {}};
               frame.local_types[binding] = item->fields[field_index].type;
             }
-            flow = execute_block(statements, frame, output, cursor + 1, arm_end);
+            flow = execute_block(statements, frame, output, cursor + 1, arm_end,
+                                 &joined_binders(statements, index, end));
             for (const auto& binding : arm.args) {
               frame.locals.erase(binding);
               frame.local_types.erase(binding);
@@ -2071,8 +2193,11 @@ class FastInterpreter {
         {
           EventScope branch_scope(*this, branch_id, false, false, true);
           flow = condition
-              ? execute_block(statements, frame, output, index + 1, body_end)
-              : (after != body_end ? execute_block(statements, frame, output, body_end + 1, else_end) : Flow{});
+              ? execute_block(statements, frame, output, index + 1, body_end,
+                              &joined_binders(statements, index, end))
+              : (after != body_end ? execute_block(statements, frame, output, body_end + 1, else_end,
+                                                   &joined_binders(statements, index, end))
+                                   : Flow{});
         }
         if (flow.returned) return flow;
         index = after;
@@ -2110,6 +2235,7 @@ class FastInterpreter {
         // The loop variable is scoped to the loop, like native `for x in ..`;
         // an outer binding of the same name is restored afterwards.
         BlockScope loop_variable_scope(frame);
+        try {
         const auto run_iteration = [&](Value element) {
           ++iterations;
           frame.locals[statement.a] = std::move(element);
@@ -2153,6 +2279,10 @@ class FastInterpreter {
           const auto elements = *source;
           for (const auto& element : elements)
             if (!run_iteration(element)) break;
+        }
+        } catch (RaisedSignal& raised) {
+          record_edge_locals(frame, raised);
+          throw;
         }
 
         if (flow.returned) return flow;

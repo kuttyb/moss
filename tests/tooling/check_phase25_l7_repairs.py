@@ -179,6 +179,65 @@ fn main():
         "0\n1\n100\n2\n1\n3\n1\n1\n1\n1\n3\n")
 
 
+def test_branch_joins_and_char_delimiters():
+    print("Finding 5: branch joins and Char literals holding delimiters")
+    three_modes("""
+enum Shape:
+  Circle(radius: Int)
+  Square(side: Int)
+
+enum Failure:
+  Bad
+
+fn maybe(flag: Bool):
+  if flag:
+    raise Failure.Bad
+
+fn pick(flag: Bool) -> String:
+  try:
+    let item = "yes"
+    maybe(flag)
+  recover Failure.Bad:
+    let item = "no"
+  return item
+
+fn quotes(s: String) -> Int:
+  var n = 0
+  var i = 0
+  while i < s.length():
+    if s.char_at(i) == '"' or s.char_at(i) == ',' or s.char_at(i) == '#':
+      n = n + 1
+    i = i + 1
+  return n
+
+fn main():
+  let flag = true
+  if flag:
+    let a = 1
+  else:
+    let a = 2
+  echo a
+  let y = 10
+  if flag:
+    let y = 20
+  else:
+    let y = 30
+  echo y
+  match Shape.Square(side: 4):
+    case Circle(radius):
+      let m = radius
+    case Square(side):
+      let m = side
+  echo m
+  echo pick(true)
+  echo pick(false)
+  echo quotes("\\"a\\",b#")
+  echo ','.codepoint()
+  echo '('.to_string()
+""", "joined branch bindings, shadowing, and delimiter Char literals",
+        "1\n10\n4\nno\nyes\n4\n44\n(\n")
+
+
 # --- Ledger #4: parameter-based indexed assignment ------------------------
 
 def test_parameter_indexed_assignment():
@@ -590,6 +649,7 @@ def main():
     print("=== Phase 25 Team S L7 repair regressions ===")
     test_float_ieee_equality()
     test_fast_debug_loops()
+    test_branch_joins_and_char_delimiters()
     test_parameter_indexed_assignment()
     test_constructor_label_collision()
     test_sort_semantics()
