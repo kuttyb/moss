@@ -69,6 +69,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_s1_checker_authori
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_s3_key_protocol.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_s4_fast_debug_adversarial.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_sc_safe_arithmetic.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_sa_numeric_literals.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/phase25/key_protocol/run_fixtures.py --moss "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_builtin_generic_typing.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tools/check_swarm_feedback.py --self-test
