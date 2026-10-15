@@ -109,6 +109,31 @@ Moss is statically checked even when you leave the annotation out. Omitting a
 type does not make the value dynamically typed. Local annotations such as
 `var count: Int = 10` are not part of v0.1; use inference instead.
 
+Numeric literals come in three forms:
+
+```moss
+fn main():
+  population = 8_100_000_000   # decimal Int; `_` separates digits
+  mask = 0xff_ff               # hexadecimal Int; lowercase `0x` prefix
+  ratio = 1_0.5                # decimal Float: also .5, 1., 1e5, 1E-3, 2.5e+10
+```
+
+A `_` must sit between two digits, so `1__0`, `1_`, `1_.5`, and `0x_1` are
+rejected (`INVALID_DIGIT_SEPARATOR`). The prefix must be lowercase: `0X10` is
+rejected, while hexadecimal digits may be either case. `Int` is a signed 64-bit
+integer, so Int literals run from `-9223372036854775808` through
+`9223372036854775807` (`INT_LITERAL_OUT_OF_RANGE` otherwise). The magnitude
+`9223372036854775808` (or `0x8000000000000000`) is accepted only directly after
+unary minus, which is how you write the Int minimum; Moss has no `Int.MIN`
+name. A Float literal that would round to infinity, such as `1e400`, is
+rejected (`FLOAT_LITERAL_OUT_OF_RANGE`); a tiny one such as `1e-400` rounds to
+`0.0`. Binary and octal prefixes (`0b101`, `0o7`), hexadecimal fractions, and
+type suffixes (`3i64`, `1.5f32`) are not Moss syntax
+(`UNSUPPORTED_NUMERIC_LITERAL`); other malformed spellings such as `0x`, `0xG`,
+`1e`, `1e+`, or `2abc` are `INVALID_NUMERIC_LITERAL`. Every engine reads a
+literal through the same specification, so a literal has one value in Fast
+Debug and native builds.
+
 `Float` uses IEEE binary64 values. `is_nan(value)` and `is_finite(value)`
 accept a `Float` and return a `Bool` without raising; use them to distinguish
 NaN and infinity from finite values.

@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "ast.hpp"
+#include "numeric_literal.hpp"
 #include "numeric_runtime.hpp"
 #include "type_placeholders.hpp"
 
@@ -605,6 +606,10 @@ class FastInterpreter {
               continue;
           }
           if (op == "-" || op == "+") {
+            // An exponent sign (`1e-3`) belongs to its numeric literal.
+            if (pos >= 2 && (input[pos - 1] == 'e' || input[pos - 1] == 'E') &&
+                inside_numeric_literal(input, pos))
+              continue;
             size_t before = pos;
             while (before > 0 && std::isspace(static_cast<unsigned char>(input[before - 1])))
               --before;
@@ -1015,15 +1020,12 @@ class FastInterpreter {
       return Value::unit();
     }
 
-    char* end = nullptr;
-    const auto numeric = e.c_str();
-    long long integer = std::strtoll(numeric, &end, 10);
-    if (end && *end == '\0' && e.find_first_of(".eE") == std::string::npos)
-      return Value::int_value(static_cast<std::int64_t>(integer));
-    char* float_end = nullptr;
-    double floating = std::strtod(numeric, &float_end);
-    if (float_end && *float_end == '\0' && e.find_first_of(".eE") != std::string::npos)
-      return Value::float_value(floating);
+    // Numeric literals decode through the shared specification used by the
+    // checker and native lowering (numeric_literal.hpp).
+    if (auto number = decode_numeric_literal_expression(e))
+      return number->kind == NumericLiteral::Kind::Int
+          ? Value::int_value(number->integer)
+          : Value::float_value(number->floating);
 
     if (auto binary = split_operator(e, {"==", "!=", "<=", ">=", "<", ">"}))
       return compare(binary->first, binary->second, e, frame, line, output);
