@@ -277,6 +277,9 @@ class FastInterpreter {
       std::optional<Place> alias;
     };
     std::vector<std::vector<ScopedBinding>> scopes;
+    // Names whose value was consumed but which remain lexically declared;
+    // `name = expr` reinitializes them rather than declaring a new binding.
+    std::set<std::string> consumed;
   };
 
   // Records `name` as declared in the innermost block before it is bound.
@@ -328,6 +331,7 @@ class FastInterpreter {
         scope = std::move(dropped);
       }
       for (auto item = scope.rbegin(); item != scope.rend(); ++item) {
+        frame.consumed.erase(item->name);
         frame.locals.erase(item->name);
         frame.local_types.erase(item->name);
         frame.aliases.erase(item->name);
@@ -1075,7 +1079,10 @@ class FastInterpreter {
             auto type = frame.local_types.find(source);
             if (type == frame.local_types.end() || type->second.empty())
               throw RuntimeError(line, "internal error: replace replacement lacks a checked type");
-            if (!copy_type_name(type->second)) frame.locals.erase(source);
+            if (!copy_type_name(type->second)) {
+              frame.locals.erase(source);
+              frame.consumed.insert(source);
+            }
           }
           auto place = locate(args[0], frame, line, output);
           if (!place.value)
@@ -1904,7 +1911,9 @@ class FastInterpreter {
       }
     } else if (identifier(name)) {
       std::string after = summary(value);
-      declare_local(frame, name);  // implicit `name = expr` binding
+      // An implicit `name = expr` declares, unless it reinitializes a
+      // consumed binding that is still lexically in scope.
+      if (!frame.consumed.erase(name)) declare_local(frame, name);
       frame.locals[name] = std::move(value);
       int event_id = emit("LocalWrite", frame, line, name);
       if (event_id) trace_.back().after = after;
@@ -2106,8 +2115,10 @@ class FastInterpreter {
         if (selected.kind != Value::Kind::Struct || !selected.object ||
             selected.object->case_name.empty())
           throw RuntimeError(statement.line, "match requires an enum value");
-        if (statement.b == "consume" && identifier(statement.a))
+        if (statement.b == "consume" && identifier(statement.a)) {
           frame.locals.erase(statement.a);
+          frame.consumed.insert(statement.a);
+        }
         const EnumType* declaration = nullptr;
         for (const auto& candidate : program_.enums)
           if (candidate.name == selected.object->type) declaration = &candidate;
