@@ -375,3 +375,111 @@ Alternatively, the checker could reject these forms precisely until then.
 ARCH-023 fails closed. It is tracked, not blocking, but it should get a
 stable diagnostic instead of an internal invariant error. It does not block
 starting the joint integration worktree. ARCH-018 and 019 remain tracked.
+
+## Addendum 3 (S-D part 2): consolidated S-A/S-B/S-C at `906b99d4068d1c2bbc92548249d8abb24eaea11f`
+
+**Reviewed SHA:** `906b99d4068d1c2bbc92548249d8abb24eaea11f`. I checked it out
+detached and `make` succeeded.
+
+**Scope:** `git diff 3577dbc 906b99d -- src tests docs`. That covers:
+- `cff9a96`: the ARCH-022/023 fixes;
+- S-A (`9f79e09`): `src/numeric_literal.hpp` and the lexer canonicalization;
+- S-B (`6365b89`): `check_project_semantics`, the echo display contract, and
+  `display_runtime.hpp`;
+- S-C (`83419f6`): proven-safe literal divisors in
+  `observable_expression_effects`.
+
+### Method
+
+Every probe ran in four engines: `moss check --json`, Fast Debug, Native
+Debug, and Native Release, with the outputs compared. I also re-ran
+`moss check` on all 1,876 tracked `.moss` files with the `b6d45cf` and
+`906b99d` compilers and compared the verdicts. Afterwards I restored the
+tracked cache snapshots the scan touched and removed the ignored `.moss/`
+caches.
+
+| Suite | Result |
+|---|---|
+| `check_phase25_sa_numeric_literals.py`, `check_phase25_sb_check_display.py`, `check_phase25_sc_safe_arithmetic.py`, S1, S2, S3, S4, L7 repairs, G1 regressions, `run_fixtures.py` | all exit 0 |
+| Corpus differential `b6d45cf` → `906b99d` | 4 changes. The project `echo_vector` example changed from rejected (`NATIVE_ECHO_DISPLAY_UNSUPPORTED`) to ok, which closes ARCH-019 as intended. Three already-rejected `diag_file` repros changed code only. No other file changed verdict. |
+| Full `make check` / `make examples` | Not re-run by me; the Coordinator reports both passed. |
+
+### ARCH-022 / ARCH-023: closed
+
+- **ARCH-022:** each Float prefix-minus case now prints the same value in all
+  four engines:
+
+  | Case | Output |
+  |---|---|
+  | `-v[0]` | `-1.5` |
+  | `-v[1] * 2.0` | `-5.0` |
+  | `-m["a"]` | `-2.5` |
+  | `-p.v[0]` | `-2.5` |
+  | `-w[0][1]` | `-2.5` |
+  | `1.0 + -v[0]` | `-0.5` |
+  | `return -v[0]` from a `Vector[Float]` parameter | `-3.5` |
+  | Float handler `reply -v[0]` | `-4.5` |
+  | `-g(1.5)` | `-3.0` |
+  | untyped `neg(a) = -a[0]` at Float, at Int, and as a `map` stage | agree |
+
+- **ARCH-023:** a handler doing `reply -s.length()`, or `k = -s.length()` then
+  `reply k`, now checks and prints `-5` in all engines.
+- The earlier Int, Int-minimum, and String/Char/Bool/record rejection cases
+  are unchanged.
+
+### Net-new findings
+
+| ID | Class | Severity | Reproducer (ran) | Engines |
+|---|---|---|---|---|
+| **P25-S-ARCH-024** | Confirmed defect. Pre-existing (same at `b6d45cf`); a checker-authority gap outside S-A/B/C code, found while probing member syntax after numeric literals. | **High** | `type P:\n  n: Int\nfn main():\n  p = P(n: 1)\n  y = p.zz\n  echo y`. Also: `echo p.zz`; `echo p.zz + 1`; `echo p.0`; on primitives, `x = 3` then `echo x.foo`, and `y = x.5`; `echo 1.5.x`; `echo v.0` on a Vector; `echo s.length` (field syntax on a String). | check **ok** for all. Fast Debug: runtime error `unknown field 'zz'` or `field receiver is not a Moss object`. Native: rustc E0609 / E0610. Only a typed `return p.zz` is caught, and only indirectly (`TYPE_INFERENCE_FAILED`). Field access on an unknown field or a non-record receiver is not checked in local/echo positions. This breaks the S1 acceptance criterion. |
+| **P25-S-ARCH-025** | Confirmed defect: the S-B contract is incomplete. Pre-existing (same at `b6d45cf`), but `[]` is explicitly part of the S-B display contract. | Medium | `fn main():\n  echo []` and `fn main():\n  echo [[]]` | check **ok**. Fast Debug prints `[]` / `[[]]`. Native rustc E0277 (`Vec<_>` / `Vec<Vec<_>>` doesn't implement `Display`). `echo_display_class` treats an open `vector` as `Unresolved` and lets it pass, and native lowering then falls back to `{}`. Nested `[[1], [], [2, 3]]` and `Vector[Int]()` work in all engines. Only a literal `[]` with no typed sibling fails. Remedy: a fixed element formatter for a fully open empty literal, or reject it with `ECHO_DISPLAY_UNSUPPORTED`. |
+| **P25-S-ARCH-026** | Diagnostic quality (Low) | Low | `fn main():\n  x = 1\n  echo x + 1__0` | `INVALID_DIGIT_SEPARATOR` reported at line 3, **column 1** (span 3:1–3:1), not at the literal (column 12). Every S-A lexer diagnostic carries the line only. |
+
+### L7-requirement checklist
+
+**S-A, numeric literals**
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| One parser for all engines | **Met** | `scan_numeric_literal` is used by the lexer (validation and canonical rewrite), Fast Debug (`decode_numeric_literal_expression`), and native (`rust_numeric_literal` from the decoded value). These agree in all four engines: `1_000`, `0x10`, `0xff_FF`, `.5`, `1.`, `1.e5`, `1E-3`, `1.5e+10`, `007`, `1e-400` (→ `0.0`), `9_223_372_036_854_775_807`, `-9_223_372_036_854_775_808`, `0x7fffffffffffffff`, `-0x8000000000000000`, `5e-324`, `2.2250738585072014e-308`, `1.7976931348623157e308`. The same holds for literals inside ranges, indices, and Float arithmetic (`.5 + .25`, `2 * .5`, `-.5`). This closes ARCH-018. |
+| Int bounds including minimum | **Met** | `0x8000000000000000`, `x -0x8000000000000000` (binary minus), and `0xFFFF…FFFF` give `INT_LITERAL_OUT_OF_RANGE`. Only the directly negated magnitude 2^63 (decimal or hex) is accepted. `-(0x8000000000000000)` is also rejected (conservative). |
+| `1e400` rejected | **Met** | `FLOAT_LITERAL_OUT_OF_RANGE`, as is `1.7976931348623159e308`. |
+| No other forms | **Met** | `0b101` and `0o17` give `UNSUPPORTED_NUMERIC_LITERAL`. So do `3i64` and `1.5f32`. `0X10`, `0x`, and `1e` give `INVALID_NUMERIC_LITERAL`. `1__0`, `1_`, and `1._5` give `INVALID_DIGIT_SEPARATOR`. Literal text inside Strings, Char literals, and trailing comments is untouched (`"1_000 0x10 1e400 9999…"` prints verbatim; `# 1e400 0b1` is ignored). Identifiers `x1_0` and `_1` are untouched. |
+| Diagnostic placement | Partial | Line is correct; column is not (ARCH-026). Member syntax such as `x.5` and `1.5.x` is not a literal issue, but the checker accepts it (ARCH-024). |
+
+**S-B, check verdicts and Vector echo**
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| Same verdict in standalone and project mode | **Met** | Project `moss check` now runs `check_project_semantics` (no lowering). The corpus differential shows only the intended ARCH-019 flip and no lost rejection in any tracked project file. Lowering-only capability checks (for example multi-module staged indexed String) stay with `margo build`, as designed. |
+| No Rust Debug exposure | **Met for typed Vectors; not met for literal `[]`** | All engines print the same text for these, through `display_runtime.hpp`, in plain and `MOSS_STAGED_STRING_REPR=indexed-v1` native builds: Int/Float vectors (`-0.0`, `1e300`, `2.5e-8`, `NaN`, `inf`); Bool; Char (`é`, `\n`); raw Strings with quotes, commas, emoji, and the empty string; nested vectors with an inner `[]`; `Vector[Int]()`; mixed `echo "s", [1], 2`; `split`, `chars`, `values()`; pipeline results; untyped generics (`show([1.5])`); message results (`Vector[Float]` reply); and Map-held vectors. Exception: `echo []` / `echo [[]]` (ARCH-025). |
+| Consistent semantic rejection | **Met** | `ECHO_DISPLAY_UNSUPPORTED` is reported by check, Fast Debug, and native for: Map (directly and through an untyped generic `show(m)`), Queue, `Vector[P]`, `Vector[enum]`, a callable (`echo f`), and Unit (`echo v.push(1)`). |
+
+**S-C, proven-safe Int division**
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| `x % 10` / `x / 10` purity | **Met** | A sort key `x % 10` is accepted and agrees in all engines (`11`, `35`). |
+| Unknown and zero divisors stay conservative | **Met** | All rejected with `SORT_KEY_IMPURE` (or "unresolved effect", for `x % 1_0 + x / -(2)`): `x / 0x0`, `x / 00`, `10 / x`, `x / (0 - 1)`, untyped `x / 0` at Int, `x / 10 / 0`, `(x / 0) / 10`, `x / 10 * (x % 0)`, `x / (1) - (x / 0)`, `x % 10 / 0`. Literal spellings are decoded before classification. |
+| Int.MIN / -1 | **Met** | All rejected: `x / -0x1`, `x / (-(1))`, `x / - 1`, `x / -(-(-1))`. `x / --1` (= 1) is correctly accepted. |
+| Float vs Int in untyped code | **Met** | An untyped key `x / 0` specialized at Float is accepted (IEEE, no panic) and agrees in all engines. At Int it is rejected. |
+| Key-proof contract preserved | **Met** | S3, L7 repairs, S-C, and `run_fixtures.py` all pass; the `.mossi` `may_panic` cases are in the S-C suite. I found no fusion, speculation, or skip decision that could reorder a panic: each operator split is classified separately, and nested operands keep their own `may_panic`. |
+
+### Verdict (addendum 3)
+
+**CONDITIONAL GO for the L7 checkpoint.**
+
+- S-A and S-C meet every L7 requirement I tested.
+- S-B meets the verdict-parity and semantic-rejection requirements.
+- ARCH-019, ARCH-022, ARCH-023, and ARCH-018 are closed.
+
+Conditions:
+1. **Fix ARCH-025 before the S-B checkpoint is recorded as complete.** The
+   contract lists `[]`, but `echo []` and `echo [[]]` pass check and fail in
+   native rustc.
+2. **ARCH-024 needs an owner and a ledger entry before Team S claims the S1
+   acceptance criterion ("every checker-accepted program runs consistently or
+   is diagnosed before execution").** It is pre-existing and outside S-A/B/C
+   code, so it does not block this checkpoint. But it is the largest remaining
+   class of checker-accepted programs that fail in every engine.
+3. ARCH-026 is tracked (Low). It does not block.
