@@ -14371,12 +14371,15 @@ class Checker {
             }
             bool numeric = (lt == "int" || lt == "float") && (rt == "int" || rt == "float");
             bool concat = op == "+" && lt == "string" && rt == "string";
-            if (!numeric && !concat && builtin_equality_type(lt) && builtin_equality_type(rt))
+            // '%' keeps its dedicated Int-only diagnostic below.
+            if (op != "%" && !numeric && !concat && builtin_equality_type(lt) &&
+                builtin_equality_type(rt))
               err(line, "operator '" + op + "' is not defined for '" + lt + "' and '" + rt +
                   "'" + (lt == "char" || rt == "char"
                              ? "; use c.to_string() to build a String from a Char" : ""),
                   "TYPE_MISMATCH");
-            if (!numeric && !concat && (contains_record_type(lt) || contains_record_type(rt)))
+            if (op != "%" && !numeric && !concat &&
+                (contains_record_type(lt) || contains_record_type(rt)))
               err(line, "operator '" + op + "' is not defined for records", "TYPE_MISMATCH");
           }
           if (split_binary(value, {"%"})) {

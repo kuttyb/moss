@@ -159,6 +159,12 @@ def test_architect_next_cycle_findings():
                         ("c = 'a'\n  echo -c", "013 unary minus on Char"),
                         ("echo -true", "013 unary minus on Bool")):
         rejected(f"fn main():\n  {body}\n", label, "TYPE_MISMATCH")
+    with tempfile.TemporaryDirectory(prefix="p25-s2-", dir=SCRATCH) as td:
+        source = Path(td) / "case.moss"
+        source.write_text('fn main():\n  echo "a" % "b"\n')
+        error = json.loads(run([str(MOSS), "check", str(source), "--json"]).stdout)["error"]
+        assert "integer remainder operands must have type 'Int'" in error["message"], error
+        print("  PASS: 013 '%' keeps its Int-only remainder diagnostic")
     engines("fn main():\n  x = 3\n  echo 1 + 2.5 * x - 4 / 2\n  echo 5 - -x\n"
             "  echo \"a\" + \"b\" + 'c'.to_string()\n",
             "013 numeric and String + String still valid", "6.5\n8\nabc\n")
