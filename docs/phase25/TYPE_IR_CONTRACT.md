@@ -270,6 +270,32 @@ Requirement {
 }
 ```
 
+Member admission and target selection use the same IR; Team S does not create a
+second receiver-variable system:
+
+```text
+MemberDispatchRequirement {
+  requirement_id,
+  receiver: TypeExpr,
+  member_name,
+  argument_types: [TypeExpr],
+  result: Optional<TypeExpr>,
+  receiver_access: AccessMode,
+  argument_access: [AccessMode],
+  admitted_template_or_builtin_family,
+  selected_callable_id: Optional<CallableId>,
+  origin: RequirementOrigin,
+}
+```
+
+Dispatch may admit a member when the receiver's outer constructor is known while
+contained slots remain open. Thus `Vector[alpha].push(Int)` records the `WRITE`
+receiver/argument contract and contributes `alpha = Int`; a known nominal
+template with open fields behaves the same way. Exact target selection follows
+substitution and precedes ownership/effect closure. An entirely unknown receiver
+remains rejected. Team S owns admission and target selection; Team G owns
+unification and closure; the positive ledger #12 test is jointly owned.
+
 `RequirementOrigin` contains module ID, source file provenance, span, enclosing
 callable, and call-expression identity. Imported summaries preserve provider origins.
 Instantiation adds a caller edge rather than replacing the provider origin. Failure
@@ -386,12 +412,14 @@ Directly requiring a consumer to implement Rust `Eq`/`Hash` for a provider-owned
 nominal type violates Rust's orphan rules. Deriving those traits would also bypass
 custom Moss `isequal`/`hash` semantics and incorrectly assume Float `Eq`/`Hash`.
 
-The proposed G0 boundary, pending Team S and L7 concurrence, is an **equivalent static key adapter, not foreign trait
+The proposed G0 boundary, pending Team S implementation-lead and L7 concurrence,
+is a **policy-free compiler-owned map runtime, not a foreign trait
 implementation**:
 
-- Team G provides a provider-owned, representation-stable `MossMap<K,V>` (and Set
-  equivalent if Team S lands one) whose Rust type does not require `K: Eq + Hash` and
-  whose layout is independent of a consumer policy type.
+- Team G provides a representation-stable `MossMap<K,V>` whose Rust type does not
+  require `K: Eq + Hash` and contains no policy type, callback, function pointer,
+  closure, trait object, or vtable. Set, if delivered in Phase 25, reuses the same
+  versioned key proof and kernel; otherwise it is explicitly deferred.
 - Team S defines the Moss key proof and resolves exact `isequal(K,K)->Bool` and
   `hash(K)->Int` call targets, purity, effects, and laws for each concrete `K`.
 - Team G lowers each Map operation to a consumer-side specialized free function keyed
@@ -406,11 +434,27 @@ implementation**:
   source-free consumers instantiate the same adapter specialization without provider
   source.
 
-The implementation may use hash buckets plus stored Moss hash values or a linear
-reference implementation, but representation and complexity must be documented before
-G3. This decision keeps Rust coherence local and static while preserving custom Moss
-semantics. If performance forces a policy type into `MossMap`'s Rust type, that is an
-A1 identity change and must return to L7 rather than landing implicitly.
+The G0 reference implementation stores `(Moss hash, key, value)` entries and
+exposes neutral backend accessors. Consumer-owned specialized operations call the
+two exact proof targets directly. It is intentionally linear; production bucket
+layout and complexity must be documented before G3 without changing the
+policy-free `MossMap<K,V>` identity. If performance forces a policy type into the
+Rust value type, that is an A1 identity change and must return to L7.
+
+The shared semantic protocol is `key-protocol-v1`. Its final source spelling is a
+Team S owner decision, but its proof shape is exact: equality is
+`(READ K, READ K) -> Bool` and hash is `(READ K) -> Int`. Both are deterministic,
+non-mutating, non-consuming, non-raising, non-panicking, non-diverging, and free
+of message, domain-state, I/O, executor, and every other observable effect.
+Reusable acceptance law tests require reflexivity, symmetry, transitivity,
+equal-keys/equal-hash, and stability of the stored key snapshot; this is not a
+claim of general theorem proving.
+
+`Float` receives no Map/Set key proof in Phase 25. Missing or invalid proof fails
+at Moss checking before native emission. Built-in fast paths must be proven
+observationally equivalent and use the same proof identity. A versioned
+`MapKeyProofId`/`SetKeyProofId` participates in operation specialization,
+semantic dependencies, ABI hashes, and cache keys.
 
 ## 9. Semantic API contract
 
@@ -472,8 +516,8 @@ The following are deliberately **not frozen** by this document:
 
 - Team S's exact key method names, signatures, purity/law contract, Map/Set proof
   ownership, and dispatch integration;
-- the shared `MossMap` representation and whether a built-in fast path can preserve
-  identical semantics without adding a policy type to value identity;
+- Team S implementation-lead concurrence on `key-protocol-v1`, law-test ownership,
+  Set delivery/deferment, and joint ledger #12 ownership;
 - L7's final package/module identity rule and collision handling;
 - the cross-team ABI-v10 schema and version-switch milestone;
 - pub backend fields plus Moss-only visibility rather than provider accessors; and
@@ -486,10 +530,11 @@ Silence, branch availability, or implementation feasibility is not acknowledgeme
 
 The following must be answered in the recorded G0 review, not during implementation:
 
-1. **Team S:** confirm the exact Moss method names/signatures, purity rule, and law-test
-   ownership for `isequal`/`hash`, and whether Set shares the same key-proof record.
-2. **Team S + Team G:** freeze the `MossMap` backend representation and complexity
-   promise before G3; confirm no policy type enters its nominal Rust type.
+1. **Team S:** confirm the exact source spelling that resolves to the frozen equality
+   and hash callable shapes, law-test ownership, Set delivery/deferment, and joint #12
+   ownership.
+2. **Team S + Team G:** confirm the policy-free `MossMap<K,V>` representation and
+   freeze the production complexity promise before G3.
 3. **L7:** approve `module-v1:<name>@<version>::<module>` plus graph-level conflicting
    provider rejection, or require a durable package UUID/source identity before code.
 4. **Both Architects:** confirm that pub mechanical Rust fields plus a closed Moss
@@ -501,8 +546,8 @@ The following must be answered in the recorded G0 review, not during implementat
 
 | Reviewer | Verdict | Exact reviewed commit | Notes |
 | --- | --- | --- | --- |
-| Team G independent L6 Architect | Pending | — | Must challenge inference closure, termination, identity, effects, and A1. |
-| Team S independent L6 Architect | Pending | — | Must confirm dispatch and Map/Set key boundary. |
+| Team G independent L6 Architect | NO-GO on draft | `40fd3b6ea1aa89ae5a05e2afe092c8699a56f1f2` | Corrections/proofs require a fresh exact-SHA review. |
+| Team S independent L6 Architect | NO-GO on integrated draft | `8a417edd06e8194fe6c29023c2e21070d710cfa0` | Policy-free proof now exists; corrected contract and Team S owner concurrence remain. |
 | L7 | Pending | — | `GO` is required before shared Type IR/compiler surgery. |
 
 **Author verdict:** ready for joint G0 design review, not yet authorized for shared-IR

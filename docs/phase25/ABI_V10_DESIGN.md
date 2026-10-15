@@ -226,22 +226,38 @@ The Team G/Team S boundary is serialized as:
 
 ```text
 MapKeyProof {
+  proof_id,                       # key-proof-v1 canonical SHA-256 identity
+  protocol_version,               # key-protocol-v1
+  law_contract_version,
   key_type,
   equality_callable_id,
   equality_specialization_key,
+  equality_signature,
+  equality_effects,
   hash_callable_id,
   hash_specialization_key,
+  hash_signature,
+  hash_effects,
   equality_semantic_hash,
   hash_semantic_hash,
-  effects,                         # pure/non-raising requirement from Team S
   provenance_id,
 }
 ```
 
 The record authorizes static calls through the provider-owned `MossMap<K,V>` operation
 specialization described in the Type IR contract. It never authorizes or requests a
-Rust `Eq`/`Hash` impl. Missing proof fails at Moss checking. Float gets no proof merely
-because Rust has a representation.
+Rust `Eq`/`Hash` impl. `proof_id` is an input to Map/Set operation specialization,
+semantic dependencies, interface hashes, and cache keys. `SetKeyProof` uses the
+same record shape and protocol (or Set is explicitly deferred); it cannot invent a
+second key contract. Missing proof fails at Moss checking. Float has no valid proof
+in Phase 25, regardless of Rust representation.
+
+The loader checks the two signatures and separate effect records against
+`key-protocol-v1`: equality is `(READ K, READ K) -> Bool`, hash is
+`(READ K) -> Int`, and neither may mutate, consume, raise, panic, diverge,
+message, touch domain state, perform I/O/executor work, or have another observable
+effect. The law version names the reusable reflexive/symmetric/transitive,
+equal-hash, and snapshot-stability acceptance suite; it is not a runtime policy.
 
 ### 3.6 Provenance
 
@@ -340,7 +356,8 @@ The build cache key includes:
 - backend fingerprint and profile;
 - exact selected `.mossi` and `.rlib` paths and byte hashes;
 - every direct/transitive module ID plus bound binary/semantic hashes;
-- all used template, summary, instance, key-proof, and specialization IDs/hashes; and
+- all used template, summary, instance, key-proof/protocol/law, and specialization
+  IDs/hashes; and
 - consumer source/manifest/lock identities already required by Margo.
 
 A method/body-only change invalidates consumers that depend on its semantic hash but
@@ -410,10 +427,11 @@ rustc/backend fingerprint, profile, command, and output/status for:
 5. method exact-instance annotations and known-open field constraints;
 6. transitive missing-method diagnostic chains;
 7. ownership/effect negatives before rustc;
-8. compiled-only custom nominal Map key proof with custom Moss equality/hash and no
-   orphan impl in generated Rust;
-9. corrupt type key, summary, provenance edge, semantic hash, binary hash, and provider
-   marker negatives;
+8. compiled-only custom nominal Map key proof with custom Moss equality/hash, the same
+   policy-free `MossMap<K,V>` value crossing two consumers, and no orphan impl;
+9. corrupt type key, summary, provenance edge, semantic hash, binary hash, provider
+   marker, weakened key effects, mismatched key-callable hash, Float-proof forgery,
+   and same-layout/different-nominal proof-substitution negatives;
 10. v9 rebuild diagnostics and cache invalidation; and
 11. source-backed native/Fast Debug agreement plus source-free Fast Debug preflight.
 

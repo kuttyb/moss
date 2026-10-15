@@ -1,5 +1,27 @@
 # Moss current status
 
+## Phase 25 Team G integrated G0 review candidate — 2026-10-14
+
+`phase25-generic-types` is based exactly on pinned baseline
+`fa3a340a0a6652568b97869489da1a84038b9857`. G0 now has draft Type IR and ABI-v10
+contracts, independent Team G and Team S boundary NO-GO reviews, forward Option B
+fixtures, and bounded native proofs. No shared compiler/type IR implementation has
+started.
+
+The latest proof uses one policy-free `MossMap<K,V>` value across two independent
+consumer rlibs. Consumer-specialized operations call provider equality/hash functions
+directly and exercise insert, lookup, custom-equivalence overwrite, delete, and owned
+keys without an `Ops` type, stored callback, foreign trait implementation, or dynamic
+dispatch. The earlier adapter and `MossMap<K,V,Ops>` experiments are rejected
+alternatives. The corrected contracts add a shared open-receiver dispatch record,
+versioned separate equality/hash proofs and effects, Map/Set law identity, and the
+Phase 25 Float-key prohibition.
+
+`docs/phase25/TEAM_G_G0_COORDINATOR_DECISION.md` is the authoritative checkpoint.
+Major shared-IR work remains NO-GO pending fresh exact-SHA Architect addenda, Team S
+implementation-owner concurrence, the package-identity decision, and written L7 GO
+naming the reviewed contract. Historical NO-GO reports remain valid review history.
+
 ## Phase 25 Team S independent G0 boundary review — 2026-10-14
 
 The independent Team S L6 Architect reviewed integrated G0 commit
