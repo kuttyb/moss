@@ -3,7 +3,8 @@
 **Branch:** `phase25-semantics-engines` (pushed)
 **Starting SHA:** `ee8dceaa4851fb61a7b726cee05354da6917e38d`
 **Architect-reviewed implementation SHA:** `b6d45cf5a761caea2df50b64d4357669647ffac0` (CONDITIONAL GO)
-**Delivered implementation SHA (Architect findings fixed):** `baefd1fbd763ba0ec1d4955c6bad64f4bb71ac94`
+**Architect closure-verified SHA:** `baefd1fbd763ba0ec1d4955c6bad64f4bb71ac94` (CONDITIONAL GO; 013–017 and DOC-1..7 verified fixed; one condition, ARCH-021)
+**Delivered implementation SHA:** `3577dbce6080aa1320a2b60e31d926866fbb3f54` (ARCH-021 fix)
 **Milestone:** ready for joint G2/G3/G4 integration. This cycle does not complete
 ABI-v10 or Phase 25, and nothing was merged into `main` or `phase25-integration`.
 
@@ -160,7 +161,12 @@ proposal.
 
 ## Validation
 
-**Delivered SHA `baefd1fbd763ba0ec1d4955c6bad64f4bb71ac94`** (clean worktree):
+**Delivered SHA `3577dbce6080aa1320a2b60e31d926866fbb3f54`** (clean worktree): `make check` **passed**
+(Executor 54/54, editor 61/61, all Moss v0.1 tests); `make examples` **passed**
+(32); the 126 `tests/run.sh` negative-diagnostic expectations and the
+repo-wide `moss check` diff against `ee8dcea` are unchanged.
+
+**Closure-verified SHA `baefd1fbd763ba0ec1d4955c6bad64f4bb71ac94`** (clean worktree):
 `TMPDIR="$PWD/tmp" make check` **passed** (Executor 54/54, editor 61/61, "all
 Moss v0.1 tests passed"); `TMPDIR="$PWD/tmp" make examples` **passed** (32).
 All 126 `reject_case`/`reject_source` expectations in `tests/run.sh` were also
@@ -202,12 +208,14 @@ preserved unchanged).
 | P25-S-ARCH-017 | `range(...)` as a value accepted, failed in both engines | **Fixed** `bd843db` (`RANGE_OUTSIDE_FOR`) |
 | P25-S-ARCH-018 | Numeric literal grammar (`1_000`, `0x10`, `1e400`) disagrees by engine | **Tracked**: needs the L7 literal-grammar decision (same as S4 L7 item 1) |
 | P25-S-ARCH-019 | Standalone `check` accepts `echo v` of a collection; project `check` rejects | **Tracked** (Team S); native target diagnostic is consistent, check modes are not |
-| P25-S-ARCH-020 | `-f(x)`, `-(x + 1)` wrongly rejected | **Tracked** (Team S); same as S4 L7 item 6 |
+| P25-S-ARCH-020 | `-f(x)`, `-(x + 1)` wrongly rejected | **Fixed** `3577dbc` (with 021); `-v[0]` also now agrees in all engines |
+| P25-S-ARCH-021 | Closure review at `baefd1f`: the 013 unary rule rejected valid `-s.length()`, `-c.codepoint()`, `-p.get()` (regression) | **Fixed** `3577dbc`: prefix `-` checks its whole postfix operand. Regression: `test_architect_next_cycle_findings` (021/020 case) |
 | DOC-1…DOC-7 | Doc and bootstrap inaccuracies | **Corrected** `bd843db` |
 
 Regressions: `check_phase25_s2_char_string.py::test_architect_next_cycle_findings`.
-The fixes after `b6d45cf` have **not** been Architect-reviewed unless an addendum
-in the review document says so.
+The Architect verified 013–017 and DOC-1..7 at `baefd1f` (addendum in the review
+document) and set one condition: fix ARCH-021 with a regression before
+integration closeout. That fix (`3577dbc`) has not itself been Architect-reviewed.
 
 ## Outstanding limitations
 
@@ -225,11 +233,11 @@ in the review document says so.
      `drop`, a handler parameter `state`) fail in rustc.
   4. `Float.to_string()` vs the Phase 21 §13.2 canonical text.
   5. `recover err:` typing.
-  6. Unary minus on calls and indexes (`-f(x)`).
+  6. ~~Unary minus on calls and indexes~~ (fixed with ARCH-020/021).
   7. Non-Copy shadow before a raise.
   8. Shadowing with a different type in a nested block.
-- **Architect-tracked:** P25-S-ARCH-018 (literal grammar), 019 (check-mode
-  inconsistency for native echo), 020 (`-f(x)` rejected).
+- **Architect-tracked:** P25-S-ARCH-018 (literal grammar) and 019 (check-mode
+  inconsistency for native echo).
 - **Other limitations:**
   - **S3 L1:** an untyped member-calling key from a path dependency is rejected
     as impure (`.mossi` effect summary).
