@@ -1563,16 +1563,30 @@ class FastInterpreter {
     throw RuntimeError(line, "unsupported expression '" + e + "'");
   }
 
+  // Native lowering hands String literals to Rust unchanged, so decode the
+  // same escape set: \n \r \t \0 \\ \' \" \xHH (ASCII) and \u{HEX}.
   static std::string decode_string(const std::string& value) {
     std::string result;
-    bool escaped = false;
-    for (char c : value) {
-      if (escaped) {
-        if (c == 'n') result.push_back('\n'); else if (c == 'r') result.push_back('\r');
-        else if (c == 't') result.push_back('\t'); else result.push_back(c);
-        escaped = false;
-      } else if (c == '\\') escaped = true;
-      else result.push_back(c);
+    for (size_t i = 0; i < value.size(); ++i) {
+      char c = value[i];
+      if (c != '\\' || i + 1 >= value.size()) { result.push_back(c); continue; }
+      char e = value[++i];
+      if (e == 'n') result.push_back('\n');
+      else if (e == 'r') result.push_back('\r');
+      else if (e == 't') result.push_back('\t');
+      else if (e == '0') result.push_back('\0');
+      else if (e == 'x' && i + 2 < value.size() &&
+               std::isxdigit(static_cast<unsigned char>(value[i + 1])) &&
+               std::isxdigit(static_cast<unsigned char>(value[i + 2]))) {
+        result.push_back(static_cast<char>(std::stoi(value.substr(i + 1, 2), nullptr, 16)));
+        i += 2;
+      } else if (e == 'u' && i + 1 < value.size() && value[i + 1] == '{') {
+        size_t close = value.find('}', i + 2);
+        if (close == std::string::npos) { result += "\\u"; continue; }
+        result += utf8_from_codepoint(static_cast<uint32_t>(
+            std::stoul(value.substr(i + 2, close - i - 2), nullptr, 16)));
+        i = close;
+      } else result.push_back(e);
     }
     return result;
   }

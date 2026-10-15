@@ -33,7 +33,7 @@ JSON_OUT = sys.argv[sys.argv.index("--json") + 1] if "--json" in sys.argv else N
 SCRATCH = ROOT / "tmp"
 SCRATCH.mkdir(exist_ok=True)
 RUNS = 5
-# Each fragment is 25 code points / 40 UTF-8 bytes of mixed ASCII, Latin, CJK, emoji.
+# Each fragment is 30 code points / 41 UTF-8 bytes of mixed ASCII, Latin, CJK, emoji.
 FRAGMENT = '{"名前":"値😀","é":[1,2],"k":"ü"},'
 FRAGMENT_CODEPOINTS = len(FRAGMENT)
 SIZES = [1_000, 10_000, 100_000, 1_000_000]

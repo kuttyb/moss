@@ -114,15 +114,19 @@ What Team S delivers toward the canonical design:
   functions. Float has the approved Julia-like semantics: `-0.0 < +0.0 < NaN`,
   `isequal(NaN, NaN)`, `isequal(-0.0, +0.0) == false`, distinct zero hashes,
   and one canonical NaN hash. Operands must share one scalar type
-  (`KEY_PROTOCOL_TYPE`), and a user function named `hash`/`less`/`isequal`
-  is never hijacked.
+  (`KEY_PROTOCOL_TYPE`). A user function named `hash`, `less`, `isequal`,
+  `sort`, `Char`, or `Reverse` takes precedence over the builtin in the
+  checker, Fast Debug, and native lowering (the last three were fixed after
+  the independent Architect review; P25-S-ARCH-002/003/004).
 - **Laws, verified in all three engines over boundary values.** Irreflexive,
   asymmetric, total, and transitive `less`; reflexive, symmetric, and
   transitive `isequal`; equal keys have equal hashes. Native Float laws are
   also checked over NaN sign and payload bit patterns.
-- **`Map[Float, V]` fails closed.** It is rejected with
-  `FLOAT_MAP_KEY_UNSUPPORTED`, in index, assignment, and declared-type
-  positions, until `MossMap<K,V>` exists. Nothing reaches rustc.
+- **`Map[Float, V]` fails closed until `MossMap<K,V>` exists.** Index and
+  assignment positions report `FLOAT_MAP_KEY_UNSUPPORTED`. Declared-type
+  positions (fields, parameters, returns, domain state, typed constructors)
+  are rejected as invalid types (`UNKNOWN_SYMBOL_OR_TYPE` or
+  `INVALID_TYPED_VECTOR_CONSTRUCTOR`). Nothing reaches rustc.
 - **`sort(v)`, `sort(v, by: key)`, `sort(v, by: Reverse(key))`.** These are
   stable sorts under the key type's total `less`. The key must be a named
   function whose specialization has no observable effect (`SORT_KEY_IMPURE`),
@@ -170,7 +174,8 @@ are covered by three-engine regressions in `check_phase25_l7_repairs.py`:
 | `s.char_at(i) == '"'` failed in both engines (Char literal holding a delimiter read as syntax) | Lexer canonicalizes such literals to `'\u{HEX}'` |
 | `s.find("\"c")` and `"b\"" == x` failed in Fast Debug only (scanners ignored escapes; one scanned backwards with forward logic) | Escape-aware scanners in both directions |
 | `match Shape.Square(side: 4):` failed in rustc (unparenthesized struct literal) | Scrutinee always parenthesized |
-| FileIO failed mid-run after earlier output | Static preflight (`FAST_DEBUG_FILEIO`) from `main` reachability before any statement runs |
+| FileIO failed mid-run after earlier output | Static preflight (`FAST_DEBUG_FILEIO`) from `main` reachability, including handler `on_fail` arms, before any statement runs (on_fail arms and string-literal false positives fixed after the Architect review; P25-S-ARCH-006/007) |
+| String escapes `\u{..}`, `\xHH`, `\0`, `\r` decoded differently from Rust in Fast Debug (pre-existing; P25-S-ARCH-008) | Interpreter decodes Rust's escape set |
 
 ## 6. Original ledger reproducers
 
@@ -239,7 +244,37 @@ Fast Debug, and native debug all match the stated behaviour.
 - **Interpreter maps** are vectors of pairs (linear lookup). This is
   pre-existing and not a parity issue.
 - **Fast Debug FileIO preflight** uses identifier reachability, so a
-  same-named but unrelated identifier can make it reject conservatively.
+  same-named but unrelated identifier can make it reject conservatively. It
+  is not applied to `margo test --interp` (test mode), where FileIO still
+  fails at the first FileIO statement.
+- **`MOSS_STAGED_STRING_REPR`** with a value other than `indexed-v1` silently
+  selects the plain representation.
+- **`Map().get` on a map that is never inserted into** passes `moss check` but
+  fails in rustc (pre-existing, not specific to Float keys).
+
+## Independent Architect review
+
+An independent L6 Architect reviewed implementation SHA
+`5920e385b3c3805a48ec89fafa4ebb4b041a9e70` and issued **CONDITIONAL GO for
+L7 re-review** in [`TEAM_S_L7_ARCHITECT_REVIEW.md`](TEAM_S_L7_ARCHITECT_REVIEW.md),
+with eight net-new defects. The review is preserved unchanged. The Architect
+also corrected four claims in this report: the declared-type Float Map codes,
+the "never hijacked" claim, the FileIO preflight timing, and the missing
+validation section. Disposition:
+
+| ID | fix | regression |
+|---|---|---|
+| P25-S-ARCH-001 sort key taking its argument by value failed in rustc | Comparator passes an owned clone to a consuming key; a key that writes its argument is `SORT_KEY_IMPURE` | `test_architect_findings` (001) |
+| P25-S-ARCH-002 user `fn sort` lowered as the builtin natively | Builtin semantics, effects, ownership, and lowering yield to a user function | (002-004) |
+| P25-S-ARCH-003 user `fn Char` diverged (Fast Debug 66, native `A`) | same | (002-004) |
+| P25-S-ARCH-004 user `fn Reverse` rejected by the checker | same | (002-004) |
+| P25-S-ARCH-005 `by:` label rewritten beside a module function named `by` | Leading `name:` in an individually rewritten argument is a label | package regression, three modes |
+| P25-S-ARCH-006 FileIO reachable only from `on_fail` ran before failing | Preflight walks handler failure-arm bodies | (006/007) |
+| P25-S-ARCH-007 FileIO named inside a string literal rejected | Preflight skips string contents; diagnostic reports `main`'s line | (006/007) |
+| P25-S-ARCH-008 Fast Debug string escapes differed from Rust | Rust escape set decoded | (008) |
+
+The benchmark document's fragment size (30 code points / 41 bytes) and its
+note on later commits were corrected as the Architect reported.
 
 ## Validation
 

@@ -1,8 +1,10 @@
 # Phase 25 Team S — Unicode String traversal benchmark (G4)
 
 **Branch:** `phase25-semantics-engines`
-**Measured compiler:** `7bf962d287` (String lowering identical to the
-submission SHA; later commits change Fast Debug and documentation only)
+**Measured compiler:** `7bf962d287`. String method lowering and the String
+runtime helpers are unchanged at the submission SHA; later commits add the
+staged-mode fingerprint, `.mossi` mixing, and single-crate guards in
+`src/moss.cpp`, which do not affect the measured code paths.
 **Toolchain:** `rustc 1.98.1 (48a229cea 2026-09-01)`, x86_64 Linux (WSL2),
 13th Gen Intel Core i9-13900K, 16 logical CPUs
 **Raw data:** [`data/team_s_unicode_traversal.json`](data/team_s_unicode_traversal.json)
@@ -26,7 +28,7 @@ benchmark measures that loop over large Unicode JSON for:
 
 - Release flags identical to `margo --release`:
   `--edition=2021 -O -C debuginfo=1`.
-- Input: a 25-code-point / 40-byte fragment mixing ASCII, Latin-1, CJK, and
+- Input: a 30-code-point / 41-byte fragment mixing ASCII, Latin-1, CJK, and
   an emoji (`{"名前":"値😀","é":[1,2],"k":"ü"},`), appended at run time in a
   loop to 1K, 10K, 100K, and 1M code points (≈1.37 MB at 1M).
 - Per size and representation, two binaries from one source: build only, and

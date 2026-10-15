@@ -483,6 +483,102 @@ fn main():
 """, "user fn hash is not hijacked by the builtin", "7\n")
 
 
+def test_architect_findings():
+    print("Independent Architect findings P25-S-ARCH-001..008")
+    three_modes("""
+type Person:
+  name: String
+  age: Int
+
+fn name_of(p: Person) -> String:
+  return p.name
+
+fn ident(s: String) -> String:
+  return s
+
+fn main():
+  var people = [Person(name: "b", age: 1), Person(name: "a", age: 2)]
+  sort(people, by: name_of)
+  echo people[0].name
+  sort(people, by: Reverse(name_of))
+  echo people[0].name
+  var words = ["z", "y", "x"]
+  sort(words, by: ident)
+  echo words[0]
+  echo words[2]
+""", "001 sort keys that consume their argument", "a\nb\nx\nz\n")
+    three_modes("""
+fn sort(v: Vector[Int]) -> Int:
+  return 7
+
+fn Char(x: Int) -> Int:
+  return x + 1
+
+fn Reverse(x: Int) -> Int:
+  return 0 - x
+
+fn main():
+  var v = [3, 1]
+  echo sort(v)
+  echo Char(65)
+  echo Reverse(5)
+  echo v[0]
+""", "002-004 user functions named sort/Char/Reverse win", "7\n66\n-5\n3\n")
+    three_modes("""
+fn main():
+  echo "\\u{E9}" == "é"
+  echo "\\x41|\\0|\\r".length()
+  echo "\\x41\\u{1F600}"
+  echo "a\\\\b"
+""", "008 String escapes decode as in Rust", "true\n5\nA😀\na\\b\n")
+    with tempfile.TemporaryDirectory(prefix="p25-l7-by-", dir=SCRATCH) as td:
+        project = Path(td)
+        (project / "src").mkdir()
+        (project / "Moss.toml").write_text(
+            '[package]\nname = "bylabel"\nversion = "0.1.0"\n\n[build]\nsource = "src"\n')
+        (project / "src" / "main.moss").write_text(
+            "module app\n\nfn by(x: Int) -> Int:\n  return x\n\nfn neg(x: Int) -> Int:\n"
+            "  return 0 - x\n\nfn main():\n  var v = [1, 3, 2]\n  sort(v, by: neg)\n"
+            "  echo v[0]\n  echo by(4)\n")
+        for args in (["run"], ["--release", "run"], ["debug"]):
+            result = run([str(MARGO), *args], cwd=project)
+            assert result.returncode == 0 and result.stdout == "3\n4\n", (args, result)
+    print("  PASS: 005 statement-call label 'by' beside a module function named by")
+    with tempfile.TemporaryDirectory(prefix="p25-l7-", dir=SCRATCH) as td:
+        source = Path(td) / "strings.moss"
+        source.write_text('fn main():\n  echo "FileIO is not used here"\n')
+        result = run([str(MOSS), "run", "--interp", str(source)])
+        assert result.returncode == 0 and result.stdout == "FileIO is not used here\n", result
+        source.write_text("enum FileError:\n" + FILE_ERRORS + """
+enum Failure:
+  Bad
+
+fn probe_disk() -> Int:
+  try:
+    file = FileIO.open("x.data", ro)
+    file.close()
+    return 1
+  recover:
+    return 2
+
+domain Worker:
+  fn Run() -> Int:
+    raise Failure.Bad
+  on_fail Failure.Bad:
+    reply probe_disk()
+
+fn main():
+  worker = Worker()
+  echo "before"
+  echo message worker.Run()
+""")
+        assert run([str(MOSS), "check", str(source), "--json"]).returncode == 0
+        result = run([str(MOSS), "run", "--interp", str(source)])
+        assert result.returncode == 1 and result.stdout == "", result
+        assert "FAST_DEBUG_FILEIO" in result.stderr
+    print("  PASS: 006/007 preflight scans on_fail arms and ignores string contents")
+
+
 # --- Ordering laws ---------------------------------------------------------
 
 LAW_PROGRAM = """
@@ -697,6 +793,7 @@ def main():
     test_constructor_label_collision()
     test_sort_semantics()
     test_scalar_protocol_types()
+    test_architect_findings()
     test_ordering_laws()
     test_native_float_laws_with_nan_payloads()
     test_char_surface()

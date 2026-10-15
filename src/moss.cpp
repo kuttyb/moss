@@ -4315,6 +4315,9 @@ class Checker {
       return BuiltinCallSemantics{"unit", true};
     if (callee == "assertEqual" && args.size() == 2)
       return BuiltinCallSemantics{"unit", true};
+    // Scalar-protocol and sort builtins yield to a user function of the
+    // same name in every engine.
+    if (functions_.count(callee)) return std::nullopt;
     if (callee == "Char" && args.size() == 1)
       return BuiltinCallSemantics{"char", true};
     if (callee == "less" && args.size() == 2)
@@ -8223,6 +8226,7 @@ class Checker {
       string callee;
       vector<string> arguments;
       if (parse_simple_call(value, callee, arguments) && callee == "sort" &&
+          !functions_.count(callee) &&
           (arguments.size() == 1 || arguments.size() == 2)) {
         // sort writes its Vector place; the key is a pure named callable.
         analyze_effect_expression(arguments[0], env, params, parameter_effects,
@@ -10481,7 +10485,7 @@ class Checker {
     string callee;
     vector<string> arguments_call;
     if (parse_simple_call(value, callee, arguments_call)) {
-      if (callee == "sort" &&
+      if (callee == "sort" && !functions_.count(callee) &&
           (arguments_call.size() == 1 || arguments_call.size() == 2)) {
         auto place = storage_location(arguments_call[0], env);
         if (place && domain_fields.count(place->root)) effects.domain_write = true;
@@ -12110,7 +12114,7 @@ class Checker {
       auto resolved_callee = env.binding_identities.find(callee);
       if (resolved_callee != env.binding_identities.end())
         retain_semantic_use(resolved_callee->second, "binding_use", line);
-      if (callee == "sort" &&
+      if (callee == "sort" && !functions_.count(callee) &&
           (call_arguments.size() == 1 || call_arguments.size() == 2)) {
         check_ownership_expression(line, call_arguments[0], env, Effect::Write);
         return;
@@ -13550,6 +13554,9 @@ class Checker {
     if (!total_order_scalar(key_type))
       err(line, "sort key '" + key + "' must return Int, Float, Char, String, or Bool, found '" +
           (result ? *result : string("unknown")) + "'", "SORT_KEY_UNORDERED");
+    if (!function->second->parameter_effects.empty() &&
+        function->second->parameter_effects.front() == Effect::Write)
+      err(line, "sort key '" + key + "' must not write its argument", "SORT_KEY_IMPURE");
     ObservableEffects effects =
         concrete_function_observable_effects(*function->second, {element});
     string barrier = observable_barrier(effects);
@@ -14104,7 +14111,7 @@ class Checker {
         check_scalar_protocol_call(line, callee, "", args, env);
         return;
       }
-      if (callee == "Reverse")
+      if (callee == "Reverse" && !functions_.count(callee))
         err(line, "Reverse(key) is only valid as the key of sort(v, by: Reverse(key))",
             "SORT_REVERSE_POSITION");
       if (callee == "replace" && args.size() == 2) {
@@ -16994,8 +17001,14 @@ class Generator {
     string compare = reverse
         ? total_order_compare_rust(key_type, "__moss_kb", "__moss_ka")
         : total_order_compare_rust(key_type, "__moss_ka", "__moss_kb");
-    string bind = copy ? "*__moss_a" : "__moss_a";
-    string bind_b = copy ? "*__moss_b" : "__moss_b";
+    // A key that consumes its argument receives an owned copy; the vector
+    // element itself is never moved out during the sort.
+    auto key_function = functions_.find(key);
+    const bool consumes = !copy && key_function != functions_.end() &&
+        !key_function->second->parameter_effects.empty() &&
+        key_function->second->parameter_effects.front() == Effect::Consume;
+    string bind = copy ? "*__moss_a" : consumes ? "(*__moss_a).clone()" : "__moss_a";
+    string bind_b = copy ? "*__moss_b" : consumes ? "(*__moss_b).clone()" : "__moss_b";
     return "(" + target + ").sort_by(|__moss_a, __moss_b| { "
            "let __moss_sort_a = " + bind + "; let __moss_sort_b = " + bind_b + "; "
            "let __moss_ka = " + key_a + "; let __moss_kb = " + key_b + "; " +
@@ -19554,7 +19567,7 @@ class Generator {
           return result + ".sum::<" + rust_type(element_type) + ">()";
         return result + ".sum()";
       }
-      if (builtin == "Char" && builtin_args.size() == 1) {
+      if (builtin == "Char" && builtin_args.size() == 1 && !functions_.count(builtin)) {
         return "__moss_char_from_codepoint(" + expr(builtin_args.front(), d, locals, types) + ")";
       }
       if ((builtin == "less" || builtin == "isequal") && builtin_args.size() == 2 &&
@@ -19567,7 +19580,7 @@ class Generator {
         return scalar_protocol_rust(
             "hash", generated_expr_type(builtin_args[0], types).value_or(""),
             expr(builtin_args.front(), d, locals, types));
-      if (builtin == "sort" &&
+      if (builtin == "sort" && !functions_.count(builtin) &&
           (builtin_args.size() == 1 || builtin_args.size() == 2))
         return sort_call_rust(builtin_args, d, locals, types);
     }
@@ -21766,7 +21779,8 @@ class Generator {
             ++i;
             break;
           }
-          if (s.b.empty() && s.a == "sort" && (s.args.size() == 1 || s.args.size() == 2)) {
+          if (s.b.empty() && s.a == "sort" && !functions_.count(s.a) &&
+              (s.args.size() == 1 || s.args.size() == 2)) {
             o << indent(level) << sort_call_rust(s.args, d, locals, &types) << ";\n";
             ++i;
             break;
@@ -27361,7 +27375,8 @@ struct ParsedModuleUnit {
 static bool named_argument_label(const string& expression, size_t begin, size_t end) {
   size_t before = begin;
   while (before > 0 && std::isspace(static_cast<unsigned char>(expression[before - 1]))) --before;
-  if (before == 0 || (expression[before - 1] != '(' && expression[before - 1] != ',')) return false;
+  // before == 0: a statement-call argument rewritten on its own (`by: key`).
+  if (before > 0 && expression[before - 1] != '(' && expression[before - 1] != ',') return false;
   size_t after = end;
   while (after < expression.size() && std::isspace(static_cast<unsigned char>(expression[after]))) ++after;
   if (after >= expression.size()) return false;
@@ -34376,12 +34391,16 @@ static void reject_fast_debug_fileio(const moss::Program& program) {
   for (const auto& domain : program.domains) {
     for (const auto& field : domain.state)
       if (field.type.find("FileIO") != std::string::npos) direct_fileio[domain.name] = true;
-    for (const auto& handler : domain.handlers) bodies[handler.name].push_back(&handler.body);
+    for (const auto& handler : domain.handlers) {
+      bodies[handler.name].push_back(&handler.body);
+      for (const auto& arm : handler.failure_arms) bodies[handler.name].push_back(&arm.body);
+    }
   }
   std::set<std::string> visited;
   std::vector<const std::vector<moss::Stmt>*> pending{&program.main->body};
-  const auto reject = [] {
-    throw moss::CompileError(0,
+  const int main_line = program.main->line;
+  const auto reject = [main_line] {
+    throw moss::CompileError(main_line,
         "Fast Debug FileIO execution is intentionally unsupported in Phase 20; "
         "run this program with the native backend",
         "FAST_DEBUG_FILEIO");
@@ -34393,6 +34412,12 @@ static void reject_fast_debug_fileio(const moss::Program& program) {
       std::string text = statement.text + " " + statement.a + " " + statement.b;
       for (const auto& argument : statement.args) text += " " + argument;
       for (size_t i = 0; i < text.size();) {
+        if (text[i] == '"') {  // string literal contents name nothing
+          for (++i; i < text.size() && text[i] != '"'; ++i)
+            if (text[i] == '\\') ++i;
+          ++i;
+          continue;
+        }
         if (!(std::isalpha(static_cast<unsigned char>(text[i])) || text[i] == '_')) { ++i; continue; }
         size_t end = i + 1;
         while (end < text.size() &&
