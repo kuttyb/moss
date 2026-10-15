@@ -68,7 +68,7 @@ export fn pad_right(s: String, width: Int, pad_char: String) -> String:
 export fn to_hex_char(val: Int) -> String:
   hex_digits = "0123456789abcdef"
   if val >= 0 and val < 16:
-    return hex_digits.char_at(val)
+    return hex_digits.char_at(val).to_string()
   return "0"
 
 export fn format_hex_u16(val: Int) -> String:
@@ -99,7 +99,7 @@ export fn format_int(val: Int) -> String:
     var rem = v % 10
     if rem < 0:
       rem = 0 - rem
-    chars.push(digits.char_at(rem))
+    chars.push(digits.char_at(rem).to_string())
     v = v / 10
   var res = Vector[String]()
   if is_neg:
@@ -182,7 +182,7 @@ export fn escape_json_string(value: String) -> String:
   var parts = Vector[String]()
   var i = 0
   while i < count_chars:
-    parts.push(escape_json_char(chars[i]))
+    parts.push(escape_json_char(chars[i].to_string()))
     i = i + 1
   return "".join(parts)
 

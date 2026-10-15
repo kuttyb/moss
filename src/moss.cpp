@@ -71,6 +71,19 @@ static constexpr const char* kCompilerVersion = "0.1.0";
 // Team S String/Char records); it is not delivered by changing this number.
 static constexpr int kNativeAbiVersion = 9;
 static constexpr const char* kMossLanguageVersion = "moss-0.1";
+
+// Team S indexed String record staged for the joint ABI-v10 transition. Off by
+// default (MossStr = String, ABI v9); MOSS_STAGED_STRING_REPR=indexed-v1 builds
+// with MossStr = MossString. The choice is part of the backend fingerprint and
+// of every .mossi header, so the two representations never link together.
+static bool indexed_strings_staged() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("MOSS_STAGED_STRING_REPR");
+    return value && string(value) == "indexed-v1";
+  }();
+  return enabled;
+}
+static constexpr const char* kIndexedStringRecord = "string_representation indexed-v1";
 static constexpr int kAgentProtocolVersion = 1;
 static constexpr const char* kAgentSchemaVersion = "moss-agent-1";
 
@@ -16176,7 +16189,7 @@ class Generator {
 
     o << handler_runtime_rust();
     o << float_format_runtime_rust();
-    o << char_string_ordering_runtime_rust();
+    o << char_string_ordering_runtime_rust(indexed_strings_staged());
     if (program_uses_numeric_builtins()) o << numeric_runtime_rust();
     if (program_uses_fileio(p_)) {
       o << fileio_runtime_rust();
@@ -16787,7 +16800,7 @@ class Generator {
     if (x == "float") return "f64";
     if (x == "bool") return "bool";
     if (x == "char") return "char";
-    if (x == "string") return "String";
+    if (x == "string") return "MossStr";
     // Phase 20: runtime-facing semantic names reserved in
     // docs/ROOT_RUNTIME_ABI.md ("Runtime-facing semantic types"). Agent
     // D does not define these Rust types; Agent B's crate does.
@@ -16832,7 +16845,7 @@ class Generator {
     if (t == "int") return "0";
     if (t == "float") return "0.0";
     if (t == "bool") return "false";
-    if (t == "string") return "String::new()";
+    if (t == "string") return "MossStr::new()";
     if (starts_with(t, "seq[")) return "std::vec::Vec::new()";
     if (starts_with(t, "table[")) return "std::collections::HashMap::new()";
     if (starts_with(t, "option[")) return "None";
@@ -18880,7 +18893,7 @@ class Generator {
             joined << "&(" << expr(operands[index], d, locals, types)
                    << "); ";
         }
-        joined << "let mut __moss_concat_result = String::with_capacity(";
+        joined << "let mut __moss_concat_result = MossStr::with_capacity(";
         for (size_t index = 0; index < operands.size(); ++index) {
           if (index) joined << ".saturating_add(";
           joined << "__moss_concat_" << index << ".len()";
@@ -18930,7 +18943,7 @@ class Generator {
     // operators have had a chance to split it. Expressions such as
     // "a" + "b" and "a" == "b" also begin and end with quote characters.
     if (is_single_string_literal(e))
-      return e + ".to_string()";
+      return "MossStr::from(" + e + ")";
     if (is_single_char_literal(e))
       return e;
     if (auto parts = parse_vector_literal(e)) {
@@ -19011,7 +19024,7 @@ class Generator {
           return scalar_protocol_rust("hash", canon_recv,
                                       expr(member_arguments[0], d, locals, types));
         if (member_name == "to_string" && member_arguments.size() == 1) {
-          return "(" + expr(member_arguments[0], d, locals, types) + ").to_string()";
+          return "MossStr::from((" + expr(member_arguments[0], d, locals, types) + ").to_string())";
         }
         if (canon_recv == "char" && member_name == "codepoint" && member_arguments.size() == 1) {
           return "((" + expr(member_arguments[0], d, locals, types) + ") as u32 as i64)";
@@ -19205,7 +19218,7 @@ class Generator {
         if (concrete == "string") {
           string source = "(" + receiver_expression + ")";
           if (member_name == "length" && member_arguments.empty())
-            return source + ".chars().count() as i64";
+            return "__moss_string_length(&" + source + ")";
           if (member_name == "chars" && member_arguments.empty())
             return source + ".chars().collect::<std::vec::Vec<char>>()";
           if (member_name == "char_at" && member_arguments.size() == 1)
@@ -19217,32 +19230,16 @@ class Generator {
           if (member_name == "hash" && member_arguments.empty())
             return scalar_protocol_rust("hash", concrete, source);
           if (member_name == "find" && member_arguments.size() == 1)
-            return "{ let __moss_source = &" + source + "; let __moss_pattern = " +
-                expr(member_arguments[0], d, locals, types) +
-                "; match __moss_source.find(__moss_pattern.as_str()) { "
-                "Some(__moss_byte) => __moss_source[..__moss_byte].chars().count() as i64, "
-                "None => -1_i64 } }";
+            return "{ let __moss_pattern = " + expr(member_arguments[0], d, locals, types) +
+                "; __moss_string_find(&" + source + ", __moss_pattern.as_str()) }";
           if (member_name == "slice" && member_arguments.size() == 2)
-            return "{ let __moss_source = &" + source +
-                "; let __moss_start = " + expr(member_arguments[0], d, locals, types) +
-                "; let __moss_length = " + expr(member_arguments[1], d, locals, types) +
-                "; if __moss_start < 0 || __moss_length < 0 { String::new() } else if let Some(__moss_end) = __moss_start.checked_add(__moss_length) { "
-                "if __moss_source.is_ascii() { "
-                "if __moss_end <= __moss_source.len() as i64 { __moss_source[__moss_start as usize..__moss_end as usize].to_string() } else { String::new() } "
-                "} else { "
-                "let mut __moss_start_byte = None; let mut __moss_end_byte = None; let mut __moss_index = 0_i64; "
-                "for (__moss_byte, _) in __moss_source.char_indices() { "
-                "if __moss_index == __moss_start { __moss_start_byte = Some(__moss_byte); } "
-                "if __moss_index == __moss_end { __moss_end_byte = Some(__moss_byte); break; } "
-                "__moss_index += 1; } "
-                "if __moss_index == __moss_start && __moss_start_byte.is_none() { __moss_start_byte = Some(__moss_source.len()); } "
-                "if __moss_index == __moss_end && __moss_end_byte.is_none() { __moss_end_byte = Some(__moss_source.len()); } "
-                "match (__moss_start_byte, __moss_end_byte) { (Some(__moss_from), Some(__moss_to)) => __moss_source[__moss_from..__moss_to].to_string(), _ => String::new() } "
-                "} } else { String::new() } }";
+            return "__moss_string_slice(&" + source + ", " +
+                expr(member_arguments[0], d, locals, types) + ", " +
+                expr(member_arguments[1], d, locals, types) + ")";
           if (member_name == "ascii_lower" && member_arguments.empty())
-            return source + ".to_ascii_lowercase()";
+            return "MossStr::from(" + source + ".to_ascii_lowercase())";
           if (member_name == "ascii_upper" && member_arguments.empty())
-            return source + ".to_ascii_uppercase()";
+            return "MossStr::from(" + source + ".to_ascii_uppercase())";
           if (member_name == "reserve" && member_arguments.size() == 1)
             return "{ let __moss_string = &mut (" +
                 write_call_place(member_receiver, d, locals, types) +
@@ -19266,14 +19263,14 @@ class Generator {
           if (member_name == "split" && member_arguments.size() == 1)
             return "{ let __moss_separator = " + expr(member_arguments[0], d, locals, types) +
                 "; if __moss_separator.is_empty() { std::process::abort(); } " + source +
-                ".split(__moss_separator.as_str()).map(|s| s.to_string()).collect::<std::vec::Vec<_>>() }";
+                ".split(__moss_separator.as_str()).map(MossStr::from).collect::<std::vec::Vec<MossStr>>() }";
           if (member_name == "join" && member_arguments.size() == 1)
-            return "(" + expr(member_arguments[0], d, locals, types) + ").join(&" + source + ")";
+            return "MossStr::from((" + expr(member_arguments[0], d, locals, types) + ").join(" + source + ".as_str()))";
         }
         if (concrete == "char") {
           string source = "(" + receiver_expression + ")";
           if (member_name == "to_string" && member_arguments.empty())
-            return source + ".to_string()";
+            return "MossStr::from(" + source + ".to_string())";
           if (member_name == "codepoint" && member_arguments.empty())
             return "((" + source + ") as u32 as i64)";
           if ((member_name == "less" || member_name == "isequal") &&
@@ -19286,7 +19283,7 @@ class Generator {
         if (concrete == "int") {
           string source = "(" + receiver_expression + ")";
           if (member_name == "to_string" && member_arguments.empty())
-            return source + ".to_string()";
+            return "MossStr::from(" + source + ".to_string())";
           if ((member_name == "less" || member_name == "isequal") &&
               member_arguments.size() == 1)
             return scalar_protocol_rust(member_name, concrete, source,
@@ -19297,7 +19294,7 @@ class Generator {
         if (concrete == "float") {
           string source = "(" + receiver_expression + ")";
           if (member_name == "to_string" && member_arguments.empty())
-            return source + ".to_string()";
+            return "MossStr::from(" + source + ".to_string())";
           if ((member_name == "less" || member_name == "isequal") &&
               member_arguments.size() == 1)
             return scalar_protocol_rust(member_name, concrete, source,
@@ -19308,7 +19305,7 @@ class Generator {
         if (concrete == "bool") {
           string source = "(" + receiver_expression + ")";
           if (member_name == "to_string" && member_arguments.empty())
-            return source + ".to_string()";
+            return "MossStr::from(" + source + ".to_string())";
           if ((member_name == "less" || member_name == "isequal") &&
               member_arguments.size() == 1)
             return scalar_protocol_rust(member_name, concrete, source,
@@ -21596,7 +21593,7 @@ class Generator {
                 (canonical_type_name(*map_assignment_type) == "map" ||
                  starts_with(canonical_type_name(*map_assignment_type), "map["))) {
               string key = mi.size() >= 2 && mi.front() == '"' && mi.back() == '"'
-                  ? mi + ".to_string()" : expr(mi, d, locals, &types);
+                  ? "MossStr::from(" + mi + ")" : expr(mi, d, locals, &types);
               auto key_type = generated_expr_type(mi, &types);
               if (key_type && !copy_type(*key_type) &&
                   !(mi.size() >= 2 && mi.front() == '"' && mi.back() == '"'))

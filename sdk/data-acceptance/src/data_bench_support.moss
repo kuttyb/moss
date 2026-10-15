@@ -12,7 +12,7 @@ export fn make_json_object(n: Int) -> String:
   digits = "0123456789"
   var i = 0
   while i < n:
-    k = digits.char_at(i % 10)
+    k = digits.char_at(i % 10).to_string()
     key = "key" + k + fmt.format_int(i)
     v = json.object_set_int(doc, root, key, i)
     i = i + 1
@@ -34,8 +34,8 @@ export fn make_csv_table(rows: Int, cols: Int) -> String:
     var row = Vector[String]()
     var c = 0
     while c < cols:
-      rk = digits.char_at(r % 10)
-      ck = digits.char_at(c % 10)
+      rk = digits.char_at(r % 10).to_string()
+      ck = digits.char_at(c % 10).to_string()
       row.push("cell" + rk + ck)
       c = c + 1
     all_rows.push(row)
