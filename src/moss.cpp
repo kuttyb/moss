@@ -34,6 +34,7 @@
 #include "debug_map.hpp"
 #include "diagnostics.hpp"
 #include "type_placeholders.hpp"
+#include "numeric_literal.hpp"
 #include "interpreter.hpp"
 #include "handler_runtime.hpp"
 #include "fileio_runtime.hpp"
@@ -1930,27 +1931,22 @@ static string canonicalize_char_literals(const string& line, int line_no,
       out += line.substr(i);
       break;
     }
-    if (std::isdigit(static_cast<unsigned char>(c)) &&
-        (i == 0 || !(std::isalnum(static_cast<unsigned char>(line[i - 1])) ||
-                     line[i - 1] == '_' || line[i - 1] == '.'))) {
-      // A decimal Int literal must fit Moss's 64-bit Int. Only the negated
-      // magnitude 2^63 (Int minimum) may exceed Int maximum. Float forms and
-      // other spellings are left to the existing literal handling.
-      size_t end = i;
-      while (end < line.size() &&
-             (std::isdigit(static_cast<unsigned char>(line[end])) || line[end] == '_'))
-        ++end;
-      const bool other_form = end < line.size() &&
-          (std::isalnum(static_cast<unsigned char>(line[end])) || line[end] == '.');
-      string digits;
-      for (size_t k = i; k < end; ++k) if (line[k] != '_') digits.push_back(line[k]);
-      digits.erase(0, std::min(digits.find_first_not_of('0'), digits.size() - 1));
-      const string max_magnitude = "9223372036854775808";
-      const bool exceeds = digits.size() > max_magnitude.size() ||
-          (digits.size() == max_magnitude.size() && digits >= max_magnitude);
-      if (!other_form && exceeds) {
+    if (numeric_literal_starts_at(line, i)) {
+      // Every numeric literal is validated and decoded by the shared
+      // specification in numeric_literal.hpp and rewritten to its canonical
+      // decimal spelling, so the checker, Fast Debug, and native lowering all
+      // see one decoded value. Only the negated magnitude 2^63 (Int minimum)
+      // may exceed Int maximum.
+      NumericLiteral literal = scan_numeric_literal(line, i);
+      if (!literal.ok) {
+        CompileError error(line_no, literal.message, literal.code);
+        error.source_file = source_file;
+        throw error;
+      }
+      const size_t end = literal.end;
+      if (!int_literal_in_range(literal, false)) {
         bool negated = false;
-        if (digits == max_magnitude) {
+        if (!literal.magnitude_overflow && literal.magnitude == kNumericIntMinMagnitude) {
           size_t k = i;
           while (k > 0 && line[k - 1] == ' ') --k;
           if (k > 0 && line[k - 1] == '-') {
@@ -1979,7 +1975,7 @@ static string canonicalize_char_literals(const string& line, int line_no,
           throw error;
         }
       }
-      out += line.substr(i, end - i);
+      out += literal.canonical;
       i = end - 1;
       continue;
     }
@@ -17662,9 +17658,15 @@ class Generator {
   }
 
   static string generated_integer_literal_as_float(string expression) {
-    expression = trim(std::move(expression));
-    if (!expression.empty() && expression.front() == '+') expression.erase(expression.begin());
-    return expression + ".0";
+    // An Int literal in a Float context converts exactly as `as f64` does.
+    auto decoded = decode_numeric_literal_expression(expression);
+    if (!decoded || decoded->kind != NumericLiteral::Kind::Int)
+      throw std::runtime_error("internal error: numeric literal '" + expression +
+                               "' was not validated by the lexer");
+    DecodedNumber as_float;
+    as_float.kind = NumericLiteral::Kind::Float;
+    as_float.floating = static_cast<double>(decoded->integer);
+    return rust_numeric_literal(as_float);
   }
 
   static std::optional<GeneratedBinaryExpression> generated_split_binary(
@@ -19265,9 +19267,13 @@ class Generator {
     // Minimal surface rewrites.
     if (e == "true" || e == "false") return e;
     if (e == "None") return "None";
-    if (generated_integer_literal(e)) {
-      if (e.front() == '+') e.erase(e.begin());
-      return e + "_i64";
+    // Numeric literals are emitted from the shared decoder's value as a
+    // canonical suffixed Rust literal (`16_i64`, `2.5_f64`), never from Moss
+    // spelling.
+    if (generated_integer_literal(e) || decimal_float_literal(e)) {
+      if (auto rust = rust_numeric_literal(e)) return *rust;
+      throw std::runtime_error("internal error: numeric literal '" + e +
+                               "' was not validated by the lexer");
     }
     if (auto typed_vector = typed_empty_vector_constructor(e)) {
       string element = trim(typed_vector->substr(7, typed_vector->size() - 8));
@@ -19472,7 +19478,7 @@ class Generator {
       const string inner = trim(e.substr(1));
       if (!inner.empty() && std::isdigit(static_cast<unsigned char>(inner.front())) &&
           generated_integer_literal(inner))
-        return "-" + inner + "_i64";
+        if (auto rust = rust_numeric_literal("-" + inner)) return *rust;
       auto operand_type = generated_expr_type(inner, types);
       if (operand_type && canonical_type_name(*operand_type) == "int") {
         string operand = expr(inner, d, locals, types);
@@ -25092,7 +25098,18 @@ static void write_bootstrap_json(std::ostream& out,
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"pass\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"],\"exhaustive_enum_match\":\"match expression: / match consume <owned enum expression>:\"},"
          "\"enums\":{\"declaration\":\"enum Name: with closed named-field cases\",\"construction\":\"Name.Case(field: value)\",\"read_match\":\"match expression:\",\"consume_match\":\"match consume <owned enum expression>:\",\"pattern_ownership_modifiers\":false,\"replace\":\"replace(place, replacement)\"},"
          "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"bitwise\":[\"&\",\"|\",\"^\",\"~\",\"<<\",\">>\"],\"bitwise_precedence_high_to_low\":[\"~\",\"<<, >>\",\"&\",\"^\",\"|\"],\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"find(pattern)\",\"slice(start, length)\",\"ascii_lower()\",\"ascii_upper()\",\"reserve(additional_bytes)\",\"append(part)\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"},\"char_builtin\":{\"literal\":\"'x' or '\\\\u{HEX}'\",\"constructor\":\"Char(Int) (positional) fails for surrogates and values above 0x10FFFF\",\"equality\":[\"==\",\"!=\"],\"ordering\":[\"<\",\"<=\",\">\",\">=\"],\"methods\":[\"codepoint()\",\"to_string()\",\"less(other)\",\"isequal(other)\",\"hash()\"],\"string_conversion\":\"explicit c.to_string(); Char and String never compare with ==\"},\"equality_operands\":{\"same_type\":true,\"numeric_mixing\":\"Int and Float only\",\"records\":\"unsupported (RECORD_EQUALITY_UNSUPPORTED); compare fields\",\"enums\":\"unsupported (ENUM_OPERATOR_UNSUPPORTED); use match\",\"collections\":\"Vector, Queue, and Map of equality-comparable element types\"}},"
-         "\"numeric\":{\"float_predicates\":[\"is_nan(Float) -> Bool\",\"is_finite(Float) -> Bool\"],"
+         "\"numeric\":{\"literals\":{"
+         "\"int_decimal\":\"digits with optional _ between digits: 1_000\","
+         "\"int_hex\":\"lowercase 0x prefix, hex digits of either case, optional _ between digits: 0xff_FF; 0X is rejected\","
+         "\"float_decimal\":[\"2.5\",\"1_0.5\",\".5\",\"1.\",\"1.e5\",\"1e5\",\"1E-3\",\"1.5e+10\"],"
+         "\"digit_separator\":\"_ only between two digits of one group (integer, fraction, exponent, hex body)\","
+         "\"int_range\":\"-9223372036854775808 through 9223372036854775807; magnitude 9223372036854775808 or 0x8000000000000000 only directly after unary minus\","
+         "\"int_min_name\":null,"
+         "\"float_range\":\"literals that round to infinity are rejected; underflow rounds (1e-400 is 0.0)\","
+         "\"unsupported\":[\"0b binary\",\"0o octal\",\"hexadecimal fractions\",\"type suffixes such as 3i64 or 1.5f32\"],"
+         "\"diagnostics\":[\"INVALID_NUMERIC_LITERAL\",\"INVALID_DIGIT_SEPARATOR\",\"UNSUPPORTED_NUMERIC_LITERAL\",\"INT_LITERAL_OUT_OF_RANGE\",\"FLOAT_LITERAL_OUT_OF_RANGE\"],"
+         "\"engines\":\"one shared literal specification for checker, Fast Debug, and native lowering\"},"
+         "\"float_predicates\":[\"is_nan(Float) -> Bool\",\"is_finite(Float) -> Bool\"],"
          "\"parsing\":[\"parse_int(String) -> Int raises ParseError.Invalid|Overflow\","
          "\"parse_float(String) -> Float raises ParseError.Invalid\"],"
          "\"conversion\":[\"to_int(Float) -> Int raises ConversionError.NonFinite|Overflow\"]},"

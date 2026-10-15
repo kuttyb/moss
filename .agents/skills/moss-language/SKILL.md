@@ -183,6 +183,15 @@ Facts the Phase 24 SDK swarm repeatedly rediscovered:
 
 - Mixed `Int`/`Float` operands in `+`, `-`, `*`, `/` and comparisons convert the
   `Int` to `Float`; `%` is `Int`-only and `Int / Int` truncates.
+- Numeric literals: decimal Int (`1_000`), lowercase-prefix hex Int (`0x10`,
+  `0xff_ff`; `0X10` is rejected), and decimal Float (`2.5`, `1_0.5`, `.5`,
+  `1.`, `1e5`, `1E-3`). `_` must sit between two digits. Int literals range
+  over signed 64-bit; `-9223372036854775808` (or `-0x8000000000000000`) is the
+  only way to spell Int minimum, and `0x8000000000000000` alone is
+  `INT_LITERAL_OUT_OF_RANGE`. There is no `Int.MIN` name. `1e400` is
+  `FLOAT_LITERAL_OUT_OF_RANGE`. `0b`/`0o` prefixes and suffixes such as `3i64`
+  or `1.5f32` are `UNSUPPORTED_NUMERIC_LITERAL`; malformed spellings are
+  `INVALID_NUMERIC_LITERAL` or `INVALID_DIGIT_SEPARATOR`.
 - An empty `[]`, `Map()` or `Queue()` takes its types from later use, and every
   control-flow path must agree: a first assignment only inside a loop body or one
   branch is rejected. Only `Vector[T]()` is a typed empty constructor.
