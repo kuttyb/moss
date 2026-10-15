@@ -151,3 +151,104 @@ ARCH-004, ARCH-007, and the pre-existing ARCH-008 should be listed as known limi
 if they are not fixed. The decision on whether staged indexed-v1 satisfies item 2, and
 on the ABI-v10 cut, belongs to L7 together with Team G. **This verdict concerns only
 readiness for L7 re-review; L7 alone decides G5 integration.**
+
+---
+
+## Addendum: re-review of the Architect-findings repair (2026-10-15)
+
+- **Role:** Independent L6 Architect, Team S (the same reviewer as above; the text
+  above is unchanged).
+- **Reviewed implementation SHA:** `6ee8fee312f4b99eafc447cff189a0ead59d52c0`
+  (`HEAD` of `phase25-semantics-engines`). The diff from `5920e38` is one commit,
+  `6ee8fee`, touching `src/interpreter.hpp`, `src/moss.cpp`, the L7 regression
+  script, the benchmark script, and the docs. This review document was committed in
+  6ee8fee byte-identical to what I wrote.
+- **Binary:** `./moss` was built at 02:54, after the last `src/` edit (02:53), and
+  `make` reported nothing to rebuild. `tmp/wt-ckpt6` is at 6ee8fee, but its `moss`
+  binary was still the 5920e38 build when I looked.
+
+### Commands and outcomes
+
+| command | outcome |
+|---|---|
+| `python3 tests/tooling/check_phase25_l7_repairs.py ./moss` | **pass**, including `test_architect_findings` (001, 002–004, 005, 006/007, 008) |
+| `python3 tests/tooling/check_phase25_indexed_string.py ./moss` | **pass** |
+| `python3 tests/phase25/ledger/run_ledger.py repaired=./moss` | unchanged: all pass except #12 (joint G2) |
+| My original probes `tmp/arch/p/{pk9,pk11,pk12,h2,h3,h4,esc,ue,xe,f1,s1,c1,r1,so1,st1,ch1,sd,o1,o2,hs}.moss` through `run3.sh` | all **AGREE** across Fast Debug, native debug, and native release with correct values. `st1` and `pk12` also agree under `MOSS_STAGED_STRING_REPR=indexed-v1`. `h4` (user `Reverse`) prints `-5` |
+| `fio1.moss` / `fio2.moss` (Fast Debug) | `fio1` runs; `fio2` is rejected before output with `FAST_DEBUG_FILEIO` at `main`'s line |
+| `tmp/arch/pkg` with a module `fn by` plus `sort(v, by: negk)` (`margo run` / `margo debug`) | both print `5 205 8 321` |
+| New adversarial probes (below) | three net-new defects |
+| `make check` / `make examples` for 6ee8fee | **not relied on.** `tmp/wt-ckpt6/tmp/check10.log` was still running (no `EXIT` line) and `examples10.log` did not exist when I looked |
+
+### Adversarial probes of the new fixes
+
+- **Leading-label rule (005).** In package `tmp/arch/pkg2`, a module defines
+  functions `by` and `total` beside a type with fields `by` and `total`. It uses
+  module-function calls as label values, `Box(by = by(4), total = total(...))`,
+  nested `by(by(0))`, `assert(by(0) == 1)`, `assertEqual(total(...), 4)`,
+  try/recover on a module enum with payload, and domain state updated with
+  `count + by(step)`. `margo run` and `margo debug` agree (`217002`, `52`, `5`).
+  I found no case where a real value is skipped. The rule needs a leading
+  identifier followed by `:` or a lone `=`, which is not valid as a value
+  expression. (Named message arguments `message c.Bump(step: 2)` pass check but
+  fail in Fast Debug and rustc. This is pre-existing at fa3a340 and unrelated.)
+- **Arity mismatch with user functions.** User `sort(a, b)`, `Char(a, b)`, and
+  `hash(a, b)` called with the builtin arity give consistent arity or type errors
+  at check, so the user function wins everywhere. User `Reverse`, with one or two
+  parameters, is still the builtin key wrapper inside `sort(v, by: Reverse(k))`.
+  All engines agree on that. It is a coherent rule, but the report should state it.
+- **Consuming keys with nested non-Copy types** (`ck2.moss`):
+  - a struct holding a struct, a `Vector[Struct]`, and a `Map`;
+  - an enum key using `match consume`;
+  - `Vector[Vector[String]]` with a key that moves and pushes;
+  - `Reverse` over a consuming key.
+
+  All agree across the three engines, and a typed WRITE key is
+  `SORT_KEY_IMPURE`, including under `Reverse`. **An untyped consuming key
+  fails** (ARCH-009).
+- **Escape edge cases.** The checker accepts every malformed escape I tried. See
+  ARCH-010 and ARCH-011.
+
+### Net-new defects
+
+| ID | severity | reproducer | engines affected | status |
+|---|---|---|---|---|
+| P25-S-ARCH-009 | Medium | `fn loose(x) -> String:\n  return x\nfn main():\n  var ws = ["b", "c", "a"]\n  sort(ws, by: loose)\n  echo ws[0]`; the same with `by: Reverse(loose)`. check ok, Fast Debug prints `a`, native fails with rustc E0308 (`__moss_specialize_loose_0` expects `MossStr`, found `&String`). The clone decision reads the *unspecialized* function's `parameter_effects`, not the specialization's | native debug and release | Confirmed; the 001 fix is incomplete for specialized (untyped-parameter) keys |
+| P25-S-ARCH-010 | Medium | Malformed String escapes pass `moss check`: `"\x80"`, `"\xZZ"`, `"\x4"`, `"\u{110000}"`, `"\u{D800}"`, `"\u{}"`, `"\u{1F600"`, `"\q"`, `"\u{0000041}"`, `"\u{zz}"`. Native: rustc error in every case. Fast Debug: runs with invented values (`"\u{110000}"` length 0, `"\u{D800}"` length 1 with an invalid internal encoding, `"\xZZ"` length 3) or fails with a raw internal `moss: error: stoul` (`\u{}`, `\u{zz}`, overlong). Char literals behave the same: `'\u{D800}'` and `'\u{110000}'` pass check, Fast Debug yields Char 55296 or 1114112 (non-scalar values), and rustc rejects them | check, Fast Debug, native | Confirmed. The checker gap is pre-existing; the `stoul` leak and the surrogate values come from the 008 decoder and 983acb2's Char work. The checker should reject these with a structured diagnostic |
+| P25-S-ARCH-011 | Medium | `fn main():\n  let c = '\x41'\n  echo c.codepoint()`. Fast Debug prints `92`; native prints `65`. `canonicalize_char_literals` does not handle `\x`, and Fast Debug reads the backslash. `'\q'` also gives Fast Debug `92` while rustc rejects it | Fast Debug vs native divergence (valid program) | Confirmed; present since 983acb2 (baseline Fast Debug rejected the literal) |
+
+### Status of my conditions
+
+| condition | status |
+|---|---|
+| 1. Fix ARCH-001/002/003 with three-engine regressions | **Met for 002/003. 001 is met for typed keys only.** ARCH-009 shows the remaining hole |
+| 2. Fix ARCH-005 with a package regression | **Met** (the package regression runs in three modes; my broader package probe agrees) |
+| 3. FileIO preflight covers `on_fail` arms (ARCH-006) | **Met.** Methods' `result_expression` is still not scanned, and test mode is still exempt; both are now disclosed |
+| 4. Fill the Validation section and Submission SHA; correct inaccuracies 2–5 | **Partly met.** Inaccuracies 2–5 are corrected. `TEAM_S_L7_REPAIR_REPORT.md` still has the literal `VALIDATION_SECTION` placeholder (§Validation) and no Submission SHA. Its new "Independent Architect review" section says the missing validation section was corrected, which is not yet true |
+
+ARCH-004, 007, and 008 were fixed rather than listed as limitations.
+
+### Verdict (addendum)
+
+**CONDITIONAL GO for L7 re-review**, attributable to the Independent L6 Architect,
+Team S, for implementation SHA `6ee8fee312f4b99eafc447cff189a0ead59d52c0`.
+
+All eight earlier findings are addressed in substance, and the fixes hold under my
+probes, with the exceptions below. Before the branch goes to L7:
+
+1. Fix ARCH-009 by deciding clone-vs-borrow from the key's concrete specialization
+   effects, with a three-engine regression for an untyped consuming key.
+2. Fix ARCH-011 by canonicalizing or decoding `'\xHH'` Char literals identically in
+   all engines, with a regression.
+3. Fill §Validation with the finished `make check` and `make examples` results
+   (`EXIT 0` from `check10.log`/`examples10.log`, or later logs) and record the
+   Submission SHA. Remove the claim that this was already done.
+4. ARCH-010: preferably the checker rejects malformed String and Char escapes
+   (invalid `\x`, out-of-range or surrogate or empty or overlong `\u{}`, unknown
+   escapes). At minimum, Fast Debug must not leak a raw `stoul` failure or create
+   non-scalar Char/String contents, and the gap must be listed as a known
+   limitation.
+
+The decisions on item 2 (staged indexed String) and on the ABI-v10 cut remain with
+L7 and Team G. **L7 alone decides G5 integration; this verdict concerns only
+readiness for L7 re-review.**

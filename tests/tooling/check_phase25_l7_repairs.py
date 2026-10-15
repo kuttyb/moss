@@ -577,6 +577,30 @@ fn main():
         assert result.returncode == 1 and result.stdout == "", result
         assert "FAST_DEBUG_FILEIO" in result.stderr
     print("  PASS: 006/007 preflight scans on_fail arms and ignores string contents")
+    three_modes("""
+fn loose(x) -> String:
+  return x
+
+fn width(x) -> Int:
+  return x.length()
+
+fn main():
+  var ws = ["bb", "ccc", "a"]
+  sort(ws, by: loose)
+  echo ws[0]
+  sort(ws, by: Reverse(width))
+  echo ws[0]
+""", "009 untyped sort keys use the concrete specialization's effect", "a\nccc\n")
+    three_modes("""
+fn main():
+  let c = '\\x41'
+  echo c.codepoint()
+  echo c
+  echo '\\x2C'.codepoint()
+""", "011 \\xHH Char literals", "65\nA\n44\n")
+    for literal in ('"\\x80"', '"\\xZZ"', '"\\x4"', '"\\u{110000}"', '"\\u{D800}"', '"\\u{}"',
+                    '"\\u{1F600"', '"\\q"', '"\\u{0000041}"', "'\\u{D800}'", "'\\u{110000}'"):
+        rejected(f"fn main():\n  echo {literal}\n", f"010 escape {literal}", "INVALID_ESCAPE")
 
 
 # --- Ordering laws ---------------------------------------------------------

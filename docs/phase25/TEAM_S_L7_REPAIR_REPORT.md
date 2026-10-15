@@ -251,6 +251,9 @@ Fast Debug, and native debug all match the stated behaviour.
   selects the plain representation.
 - **`Map().get` on a map that is never inserted into** passes `moss check` but
   fails in rustc (pre-existing, not specific to Float keys).
+- **Named message arguments** (`message c.Bump(step: 2)`) pass `moss check` but
+  fail in Fast Debug and rustc. Pre-existing at `fa3a340`; reported by the
+  Architect and not repaired here.
 
 ## Independent Architect review
 
@@ -258,9 +261,10 @@ An independent L6 Architect reviewed implementation SHA
 `5920e385b3c3805a48ec89fafa4ebb4b041a9e70` and issued **CONDITIONAL GO for
 L7 re-review** in [`TEAM_S_L7_ARCHITECT_REVIEW.md`](TEAM_S_L7_ARCHITECT_REVIEW.md),
 with eight net-new defects. The review is preserved unchanged. The Architect
-also corrected four claims in this report: the declared-type Float Map codes,
-the "never hijacked" claim, the FileIO preflight timing, and the missing
-validation section. Disposition:
+also listed four inaccurate claims in this report: the declared-type Float
+Map codes, the "never hijacked" claim, and the FileIO preflight timing (all
+corrected), plus the then-unfilled validation section (filled below from
+finished logs). Disposition:
 
 | ID | fix | regression |
 |---|---|---|
@@ -272,6 +276,20 @@ validation section. Disposition:
 | P25-S-ARCH-006 FileIO reachable only from `on_fail` ran before failing | Preflight walks handler failure-arm bodies | (006/007) |
 | P25-S-ARCH-007 FileIO named inside a string literal rejected | Preflight skips string contents; diagnostic reports `main`'s line | (006/007) |
 | P25-S-ARCH-008 Fast Debug string escapes differed from Rust | Rust escape set decoded | (008) |
+
+The Architect re-reviewed `6ee8fee312f4b99eafc447cff189a0ead59d52c0` and
+issued a second **CONDITIONAL GO** (addendum in the review document), with
+three net-new defects:
+
+| ID | fix | regression |
+|---|---|---|
+| P25-S-ARCH-009 the 001 fix read the unspecialized function's effects, so an untyped consuming key failed in rustc | `sort_key_effect` uses the key's concrete specialization for the element type | (009) |
+| P25-S-ARCH-010 `moss check` accepted malformed String/Char escapes; Fast Debug leaked `stoul` or produced surrogate/out-of-range values | The lexer validates every escape against Rust's set (`INVALID_ESCAPE`, with the source line) | eleven `INVALID_ESCAPE` cases |
+| P25-S-ARCH-011 `'\x41'` was 92 in Fast Debug and 65 natively | Escaped Char literals always canonicalize to `'\u{HEX}'`; `\xHH` is part of the shared escape parser | (011) |
+
+Inside `sort(v, by: Reverse(k))`, `Reverse` is always the builtin key wrapper,
+even when a user function named `Reverse` exists; elsewhere the user function
+wins. All engines apply this rule.
 
 The benchmark document's fragment size (30 code points / 41 bytes) and its
 note on later commits were corrected as the Architect reported.

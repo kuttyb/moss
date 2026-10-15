@@ -518,6 +518,15 @@ static const FunctionSpecialization* concrete_specialization(
   return found == function.specializations.end() ? nullptr : &*found;
 }
 
+// Effect a sort key applies to its element: the concrete specialization's
+// for untyped keys, otherwise the declared function's.
+static Effect sort_key_effect(const Function& function, const string& element) {
+  if (const auto* special = concrete_specialization(function, {element}))
+    if (!special->parameter_effects.empty()) return special->parameter_effects.front();
+  return function.parameter_effects.empty() ? Effect::Read
+                                            : function.parameter_effects.front();
+}
+
 static bool parse_index(const string& text, string& base, string& index) {
   string value = trim(text);
   if (value.empty() || value.back() != ']') return false;
@@ -1843,43 +1852,74 @@ class Parser {
 // every Char literal other than an ASCII letter/digit/underscore to the
 // equivalent '\u{HEX}' spelling before any other scanning. Malformed literals
 // are left untouched for the checker to diagnose.
-static string canonicalize_char_literals(const string& line) {
+// Parses one Rust escape starting at line[at] == '\\'. Native lowering hands
+// String and Char literals to Rust unchanged, so the accepted set is Rust's:
+// \n \r \t \0 \\ \' \" \xHH (at most 0x7F) and \u{1-6 hex} naming a Unicode
+// scalar. Returns the index just past the escape, or npos when invalid.
+static size_t parse_rust_escape(const string& line, size_t at, uint32_t& codepoint) {
+  if (at + 1 >= line.size()) return string::npos;
+  const char e = line[at + 1];
+  const string simple = "nrt0'\\\"";
+  const uint32_t values[] = {'\n', '\r', '\t', 0, '\'', '\\', '"'};
+  if (size_t which = simple.find(e); which != string::npos) {
+    codepoint = values[which];
+    return at + 2;
+  }
+  if (e == 'x') {
+    if (at + 3 >= line.size() || !std::isxdigit(static_cast<unsigned char>(line[at + 2])) ||
+        !std::isxdigit(static_cast<unsigned char>(line[at + 3])))
+      return string::npos;
+    codepoint = static_cast<uint32_t>(std::stoul(line.substr(at + 2, 2), nullptr, 16));
+    return codepoint <= 0x7F ? at + 4 : string::npos;
+  }
+  if (e == 'u' && at + 2 < line.size() && line[at + 2] == '{') {
+    size_t close = line.find('}', at + 3);
+    if (close == string::npos || close == at + 3 || close - (at + 3) > 6) return string::npos;
+    for (size_t k = at + 3; k < close; ++k)
+      if (!std::isxdigit(static_cast<unsigned char>(line[k]))) return string::npos;
+    codepoint = static_cast<uint32_t>(std::stoul(line.substr(at + 3, close - (at + 3)), nullptr, 16));
+    if (codepoint > 0x10FFFF || (codepoint >= 0xD800 && codepoint <= 0xDFFF)) return string::npos;
+    return close + 1;
+  }
+  return string::npos;
+}
+
+static string canonicalize_char_literals(const string& line, int line_no,
+                                         const string& source_file) {
+  const auto invalid = [&](size_t at) {
+    size_t end = std::min(line.size(), at + 10);
+    CompileError error(line_no, "invalid escape '" + line.substr(at, end - at) +
+                       "'; use \\n \\r \\t \\0 \\\\ \\' \\\" \\xHH (ASCII) or \\u{HEX} (a Unicode scalar)",
+                       "INVALID_ESCAPE");
+    error.source_file = source_file;
+    throw error;
+  };
   string out;
   out.reserve(line.size());
-  bool in_string = false, escaped = false;
+  bool in_string = false;
   for (size_t i = 0; i < line.size(); ++i) {
     const char c = line[i];
     if (in_string) {
+      if (c == '\\') {
+        uint32_t ignored = 0;
+        size_t next = parse_rust_escape(line, i, ignored);
+        if (next == string::npos) invalid(i);
+        out += line.substr(i, next - i);
+        i = next - 1;
+        continue;
+      }
       out.push_back(c);
-      if (escaped) escaped = false;
-      else if (c == '\\') escaped = true;
-      else if (c == '"') in_string = false;
+      if (c == '"') in_string = false;
       continue;
     }
     if (c == '"') { in_string = true; out.push_back(c); continue; }
     if (c != '\'') { out.push_back(c); continue; }
     uint32_t codepoint = 0;
     size_t end = string::npos;  // index of the closing quote
-    if (i + 1 < line.size() && line[i + 1] == '\\' && i + 2 < line.size()) {
-      const char e = line[i + 2];
-      if (e == 'u' && i + 3 < line.size() && line[i + 3] == '{') {
-        size_t close = line.find('}', i + 4);
-        if (close != string::npos && close > i + 4 && close - (i + 4) <= 6 &&
-            close + 1 < line.size() && line[close + 1] == '\'') {
-          bool hex = true;
-          for (size_t k = i + 4; k < close; ++k)
-            hex = hex && std::isxdigit(static_cast<unsigned char>(line[k]));
-          if (hex) {
-            codepoint = static_cast<uint32_t>(std::stoul(line.substr(i + 4, close - (i + 4)), nullptr, 16));
-            end = close + 1;
-          }
-        }
-      } else if (i + 3 < line.size() && line[i + 3] == '\'') {
-        const string simple = "nrt0'\\\"";
-        const uint32_t values[] = {'\n', '\r', '\t', 0, '\'', '\\', '"'};
-        size_t which = simple.find(e);
-        if (which != string::npos) { codepoint = values[which]; end = i + 3; }
-      }
+    if (i + 1 < line.size() && line[i + 1] == '\\') {
+      size_t next = parse_rust_escape(line, i + 1, codepoint);
+      if (next == string::npos) invalid(i + 1);
+      if (next < line.size() && line[next] == '\'') end = next;
     } else if (i + 1 < line.size()) {
       const unsigned char b0 = static_cast<unsigned char>(line[i + 1]);
       size_t width = b0 < 0x80 ? 1 : (b0 & 0xE0) == 0xC0 ? 2 : (b0 & 0xF0) == 0xE0 ? 3
@@ -1892,7 +1932,8 @@ static string canonicalize_char_literals(const string& line) {
       }
     }
     if (end == string::npos) { out.push_back(c); continue; }
-    if (codepoint < 0x80 && (std::isalnum(static_cast<int>(codepoint)) || codepoint == '_')) {
+    if (line[i + 1] != '\\' && codepoint < 0x80 &&
+        (std::isalnum(static_cast<int>(codepoint)) || codepoint == '_')) {
       out += line.substr(i, end - i + 1);
     } else {
       char buffer[16];
@@ -1920,7 +1961,7 @@ static vector<Line> lex_lines(std::istream& in, const string& source_file = {}) 
       throw error;
     }
 
-    raw = canonicalize_char_literals(raw);
+    raw = canonicalize_char_literals(raw, no, source_file);
     // Strip comments outside strings.
     bool in_str = false, esc = false;
     size_t cut = raw.size();
@@ -13554,8 +13595,7 @@ class Checker {
     if (!total_order_scalar(key_type))
       err(line, "sort key '" + key + "' must return Int, Float, Char, String, or Bool, found '" +
           (result ? *result : string("unknown")) + "'", "SORT_KEY_UNORDERED");
-    if (!function->second->parameter_effects.empty() &&
-        function->second->parameter_effects.front() == Effect::Write)
+    if (sort_key_effect(*function->second, element) == Effect::Write)
       err(line, "sort key '" + key + "' must not write its argument", "SORT_KEY_IMPURE");
     ObservableEffects effects =
         concrete_function_observable_effects(*function->second, {element});
@@ -17005,8 +17045,7 @@ class Generator {
     // element itself is never moved out during the sort.
     auto key_function = functions_.find(key);
     const bool consumes = !copy && key_function != functions_.end() &&
-        !key_function->second->parameter_effects.empty() &&
-        key_function->second->parameter_effects.front() == Effect::Consume;
+        sort_key_effect(*key_function->second, element) == Effect::Consume;
     string bind = copy ? "*__moss_a" : consumes ? "(*__moss_a).clone()" : "__moss_a";
     string bind_b = copy ? "*__moss_b" : consumes ? "(*__moss_b).clone()" : "__moss_b";
     return "(" + target + ").sort_by(|__moss_a, __moss_b| { "
