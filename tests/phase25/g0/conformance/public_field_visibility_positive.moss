@@ -1,0 +1,7 @@
+# Positive test for Moss-level field visibility across module boundaries.
+import provider_module
+
+fn main():
+  var record = provider_module.make_record(42)
+  # Accessing `pub` field 'id' must succeed across modules:
+  echo record.id

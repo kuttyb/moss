@@ -2,32 +2,52 @@
 
 ## Phase 25 Milestone G2 Implementation & Conformance Complete — 2026-10-15
 
-Milestone G2 implementation on branch `phase25-generic-types` is complete and verified:
+Milestone G2 implementation on branch `phase25-generic-types` is complete and verified according to `docs/phase25/TYPE_IR_CONTRACT.md` and L7 review directives:
 
-1. **Type IR & Visibility Parsing:**
-   - Added `pub` / `export` modifier parsing for fields, types, enums, domains, traits, and functions.
-   - Enforced Moss-level field access control: explicit `pub` modifier enforces encapsulation; non-exported fields are private to their defining module (`FIELD_VISIBILITY_ERROR`).
+1. **Milestone G2-D: Source Syntax & Predictable Field Visibility:**
+   - Retired `struct` keyword alias from declaration parsing; canonical object declarations strictly require `type Name:`.
+   - Enforced predictable Moss-level field access control: unexported fields are private to their defining module (`FIELD_VISIBILITY_ERROR`) evaluated via canonical module identity (`specialization_calling_module`, `module_name_from_symbol`), not fragile source file paths.
    - Maintained backward compatibility: types without explicit `pub` fields default all fields to exported.
-   - In `load_module_interface`, `public_representation field` sets `value.exported = true`.
+   - Verified negative fixture `private_field_visibility_negative.moss` and positive fixture `public_field_visibility_positive.moss`.
 
-2. **Option B Open-Result Summaries & Pinning:**
+2. **Milestone G2-A: Unified Type IR (`src/type_ir.hpp`):**
+   - Implemented normative Type IR algebra per `TYPE_IR_CONTRACT.md` §2 (`TypeKind`, `TypeVarId`, `TypeRef`, `Type` algebra: `Primitive`, `Builtin`, `NominalInstance`, `Enum`, `Domain`, `TraitConstraint`, `InferenceVar`, `Unit`).
+   - Added `NominalTemplate`, `FieldSlot`, `Requirement`, and canonical serialization/deserialization.
+   - Integrated into compiler compilation pipeline.
+
+3. **Milestone G2-B: Generic Nominal Instances & Exact Specialization:**
+   - Decoupled nominal constructor type inference from template mutation; each constructor call produces its own independent canonical `NominalInstance` (`Box[value=int]`, `Box[value=string]`).
+   - Multiple distinct generic instances cleanly coexist in the same program without collision or premature type locking.
+   - Enforced single-monotype local binding contract: incompatible assignments (`b1 = b2`) fail with `TYPE_MISMATCH`.
+   - Enforced nominal inequality: distinct declarations with identical field layouts (`Box` vs `Cell`) are rejected with `TYPE_MISMATCH`.
+   - Native Rust lowering of generic nominals: lowered as `pub struct Box<F0> { pub value: F0 }` with mechanical public backend fields and constructor emission inferred by Rust (`Box { value: 1_i64 }`).
+   - Exact receiver method specialization without `Self` syntax.
+
+4. **Milestone G2-C: Option B Open-Result Summaries & Closure Verification:**
    - Empty collection literals (`[]`) infer open result summaries (`vector`).
-   - Added `check_closed_body_types` to reject unbound open collections at program closure (`main`, `test`, `bench`) with `TYPE_AMBIGUOUS_OPEN_RESULT` and canonical message `"heterogeneous or unresolved collection element type"`.
-   - Preserved contextual specialization for constructor fields, handler replies, and function returns when annotated with concrete collection types.
+   - Open functions (`fresh() -> []`, `relay() -> fresh()`) freshen type variables per call site and compose transitively.
+   - Added `check_closed_body_types` to reject unbound open collections and unclosed nominal types at program closure (`main`, `test`, `bench`) with `TYPE_AMBIGUOUS_OPEN_RESULT`.
 
-3. **Validation & Regression:**
-   - `python3 tests/phase25/g0/check_rust_feasibility.py`: PASS.
-   - `python3 tests/tooling/check_teaching_diagnostics.py ./moss`: PASS.
-   - All `tests/phase25/g0/conformance/` fixtures verified across check, interp, and native lowering:
-     * `local_pin_positive.moss`: PASS (check, interp, native match: `1`)
-     * `open_result_ambiguous.moss`: PASS (rejected with `TYPE_AMBIGUOUS_OPEN_RESULT`)
-     * `open_result_conflict.moss`: PASS (rejected with `TYPE_MISMATCH`)
-     * `open_result_multihop.moss`: PASS (check, interp, native match: `1\none`)
-     * `open_result_zero_iteration.moss`: PASS (check, interp, native match: `0`)
-     * `private_field_visibility_negative.moss`: PASS (rejected with `FIELD_VISIBILITY_ERROR`)
-     * `provider_module.moss`: PASS (module check ok)
-   - Full regression suite `TMPDIR="$PWD/tmp" make check`: PASS (100% of unit, integration, and performance tests pass).
-   - Developer experience observation recorded and validated in `agent-feedback/phase25/team-g-generics/g2-compiler/observations.jsonl`.
+5. **Milestone G2-E: Automated Conformance Runner & Comprehensive Validation:**
+   - Authored automated test suite runner `tests/tooling/check_phase25_conformance.py` covering all 11 gates from `TYPE_IR_CONTRACT.md` Section 10:
+     * Gate 1: `nominal_instance_coexistence.moss` (PASS: interp == native == `1\nhello`), `nominal_inequality_same_layout.moss` (PASS: rejected with `TYPE_MISMATCH`)
+     * Gate 2: `nested_nominal_constructor.moss` (PASS: interp == native == `1\n2`), zero-iteration nominal collection (PASS)
+     * Gate 3: `nominal_instance_assignment_conflict.moss` (PASS: rejected with `TYPE_MISMATCH`), `open_result_conflict.moss` (PASS: rejected with `TYPE_MISMATCH`)
+     * Gate 4: `open_result_multihop.moss` (PASS: interp == native == `1\none`), `open_result_ambiguous.moss` (PASS: rejected with `TYPE_AMBIGUOUS_OPEN_RESULT`)
+     * Gate 6: `unconstrained_receiver_field_negative.moss` (PASS: rejected with `UNTYPED_FIELD_ACCESS`), known-open nominal field access (PASS)
+     * Gate 8: `tests/tooling/check_phase25_recursive_layout.py` (PASS: finite nominal layout cycle checks)
+     * Gate 9: `tests/phase25/g0/check_rust_feasibility.py` (PASS: cross-crate provider identity & public backend fields)
+     * Gate 10: `private_field_visibility_negative.moss` (PASS: rejected with `FIELD_VISIBILITY_ERROR`), `public_field_visibility_positive.moss` (PASS: interp == native == `42`)
+     * Gate 11: 100% semantic output agreement between Fast Debug (interpreter) and native compiled execution.
+   - Wired `check_phase25_conformance.py` into `tests/run.sh`.
+   - Quality gates:
+     * `python3 tests/tooling/check_phase25_conformance.py ./moss`: PASS (100% of gates pass).
+     * `python3 tests/tooling/check_phase25_recursive_layout.py ./moss`: PASS.
+     * `python3 tests/phase25/g0/check_rust_feasibility.py`: PASS.
+     * `python3 tests/tooling/check_teaching_diagnostics.py ./moss`: PASS.
+     * `python3 tests/tooling/check_agent_feedback.py`: PASS.
+     * `git diff --check`: PASS (clean, zero whitespace warnings).
+   - Developer experience observations recorded and validated in `agent-feedback/phase25/team-g-generics/g2-compiler/observations.jsonl`.
 
 ## Phase 25 G2 first compiler gate: finite nominal layouts — 2026-10-14
 

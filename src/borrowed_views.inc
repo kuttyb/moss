@@ -2,7 +2,9 @@
 // share ordinary helper/method bodies. No dynamic dispatch or source trait is added.
   bool view_object_type(const string& type) const {
     auto found = objects_.find(canonical_type_name(type));
-    return found != objects_.end() && !found->second->fields.empty();
+    return found != objects_.end() && !found->second->fields.empty() &&
+        !std::any_of(found->second->fields.begin(), found->second->fields.end(),
+                     [](const Field& f) { return f.inferred || f.type.empty(); });
   }
 
   string access_trait(const string& type) const {

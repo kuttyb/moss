@@ -31,6 +31,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include "ast.hpp"
+#include "type_ir.hpp"
 #include "debug_map.hpp"
 #include "diagnostics.hpp"
 #include "type_placeholders.hpp"
@@ -202,6 +203,34 @@ static vector<string> split_top_level(const string& s, char delim) {
   return out;
 }
 
+static string module_name_from_symbol(const string& symbol) {
+  auto separator = symbol.find("__");
+  return separator == string::npos ? string() : symbol.substr(0, separator);
+}
+
+static bool belongs_to_module(const string& qualified, const string& module) {
+  return qualified == module || starts_with(qualified, module + "__");
+}
+
+static string specialization_calling_module(const Program& program,
+                                            const string& context,
+                                            const string& root_module) {
+  if (starts_with(context, "fn:"))
+    return module_name_from_symbol(context.substr(3));
+  if (starts_with(context, "method:")) {
+    string owner = context.substr(7);
+    size_t dot = owner.find('.');
+    return module_name_from_symbol(dot == string::npos ? owner : owner.substr(0, dot));
+  }
+  if (starts_with(context, "handler:")) {
+    string owner = context.substr(8);
+    size_t dot = owner.find('.');
+    return module_name_from_symbol(dot == string::npos ? owner : owner.substr(0, dot));
+  }
+  // main, test, and benchmark bodies are projected into the root module.
+  return !root_module.empty() ? root_module : program.main_module;
+}
+
 static string canonical_type_name(string type) {
   type = trim(std::move(type));
   if (type == "Int") return "int";
@@ -216,7 +245,16 @@ static string canonical_type_name(string type) {
     string head = canonical_type_name(type.substr(0, bracket));
     auto arguments = split_top_level(type.substr(bracket + 1,
                                                   type.size() - bracket - 2), ',');
-    for (auto& argument : arguments) argument = canonical_type_name(argument);
+    for (auto& argument : arguments) {
+      auto eq = argument.find('=');
+      if (eq != string::npos) {
+        string k = trim(argument.substr(0, eq));
+        string v = canonical_type_name(argument.substr(eq + 1));
+        argument = k + "=" + v;
+      } else {
+        argument = canonical_type_name(argument);
+      }
+    }
     std::ostringstream normalized;
     normalized << head << "[";
     for (size_t index = 0; index < arguments.size(); ++index) {
@@ -227,6 +265,41 @@ static string canonical_type_name(string type) {
     return normalized.str();
   }
   return type;
+}
+
+static bool is_nominal_instance_type(const string& type) {
+  auto bracket = type.find('[');
+  if (bracket == string::npos || !ends_with(type, "]")) return false;
+  auto inside = type.substr(bracket + 1, type.size() - bracket - 2);
+  return inside.find('=') != string::npos;
+}
+
+static string nominal_template_name(const string& type) {
+  auto bracket = type.find('[');
+  if (bracket == string::npos) return canonical_type_name(type);
+  return canonical_type_name(type.substr(0, bracket));
+}
+
+static std::vector<std::pair<string, string>> nominal_field_substitutions(const string& type) {
+  std::vector<std::pair<string, string>> result;
+  auto bracket = type.find('[');
+  if (bracket == string::npos || !ends_with(type, "]")) return result;
+  auto inside = type.substr(bracket + 1, type.size() - bracket - 2);
+  auto parts = split_top_level(inside, ',');
+  for (const auto& part : parts) {
+    auto eq = part.find('=');
+    if (eq != string::npos) {
+      result.emplace_back(trim(part.substr(0, eq)), canonical_type_name(part.substr(eq + 1)));
+    }
+  }
+  return result;
+}
+
+static std::optional<string> nominal_field_type(const string& type, const string& field_name) {
+  for (const auto& sub : nominal_field_substitutions(type)) {
+    if (sub.first == field_name) return sub.second;
+  }
+  return std::nullopt;
 }
 
 static bool standard_error_short_name(const string& name) {
@@ -1022,7 +1095,7 @@ class Parser {
           if (declaration.empty()) fail(L, "pub requires a declaration");
         }
         if (starts_with(declaration, "domain ")) p.domains.push_back(parse_domain(exported));
-        else if (starts_with(declaration, "type ") || starts_with(declaration, "struct ")) p.objects.push_back(parse_object(exported));
+        else if (starts_with(declaration, "type ")) p.objects.push_back(parse_object(exported));
         else if (starts_with(declaration, "enum ")) p.enums.push_back(parse_enum(exported));
         else if (starts_with(declaration, "trait ")) p.traits.push_back(parse_trait(exported));
         else if (starts_with(declaration, "fn ")) {
@@ -1145,7 +1218,6 @@ class Parser {
     if (starts_with(head.text, "pub ")) head.text = trim(head.text.substr(4));
     string rest;
     if (starts_with(head.text, "type ")) rest = trim(head.text.substr(5));
-    else if (starts_with(head.text, "struct ")) rest = trim(head.text.substr(7));
     else rest = trim(head.text);
     auto eq = rest.find('=');
     bool legacy = eq != string::npos;
@@ -1153,7 +1225,7 @@ class Parser {
       if (trim(rest.substr(eq + 1)) != "object")
         fail(head, "object declaration must be 'type Name:' or 'type Name = object'");
     } else if (!ends_with(rest, ":")) {
-      fail(head, "object declaration must be 'type Name:' or 'struct Name:'");
+      fail(head, "object declaration must be 'type Name:'");
     }
     ObjectType o;
     o.header = head.text;
@@ -1182,7 +1254,7 @@ class Parser {
         o.methods.push_back(std::move(m));
         continue;
       }
-      bool field_exported = false;
+      bool field_exported = exported;
       string line_text = L.text;
       if (starts_with(line_text, "pub ")) {
         field_exported = true;
@@ -1198,6 +1270,7 @@ class Parser {
       f.source_file = L.source_file;
       if (c == string::npos) {
         f.name = trim(line_text);
+        f.inferred = true;
       } else {
         f.name = trim(line_text.substr(0, c));
         f.type = canonical_type_name(trim(line_text.substr(c + 1)));
@@ -1205,11 +1278,6 @@ class Parser {
       if (!identifier(f.name)) fail(L, "object field must be 'name' or 'name: type'");
       f.line = L.no;
       o.fields.push_back(std::move(f));
-    }
-    bool any_explicit_pub = std::any_of(o.fields.begin(), o.fields.end(),
-        [](const Field& f) { return f.exported; });
-    if (!any_explicit_pub) {
-      for (auto& f : o.fields) f.exported = true;
     }
     return o;
   }
@@ -1859,8 +1927,8 @@ static const Method* resolve_object_method(
     const ObjectMap& objects, const string& type, const string& name,
     const vector<string>& argument_types, bool unknown_argument_is_wildcard,
     MethodResolutionFailure* failure) {
-  if (failure) *failure = MethodResolutionFailure::None;
-  auto object = objects.find(canonical_type_name(type));
+  string tname = nominal_template_name(type);
+  auto object = objects.find(tname);
   if (object == objects.end()) {
     if (failure) *failure = MethodResolutionFailure::UnknownReceiver;
     return nullptr;
@@ -1876,9 +1944,12 @@ static const Method* resolve_object_method(
     bool compatible = true;
     for (size_t index = 0; index < argument_types.size(); ++index) {
       if (argument_types[index].empty() && unknown_argument_is_wildcard) continue;
-      if (argument_types[index].empty() || method.params[index].type.empty() ||
-          canonical_type_name(method.params[index].type) !=
-              canonical_type_name(argument_types[index])) {
+      string param_type = canonical_type_name(method.params[index].type);
+      if (param_type == tname && is_nominal_instance_type(type)) {
+        param_type = canonical_type_name(type);
+      }
+      if (argument_types[index].empty() || param_type.empty() ||
+          param_type != canonical_type_name(argument_types[index])) {
         compatible = false;
         break;
       }
@@ -2486,6 +2557,21 @@ class Checker {
     return canonical_type_name(actual) == "_none" &&
         starts_with(canonical_type_name(expected), "option[");
   }
+  static bool is_type_compatible(const string& bound_type_raw, const string& new_type_raw) {
+    string bound = canonical_type_name(bound_type_raw);
+    string target = canonical_type_name(new_type_raw);
+    if (bound.empty() || bound == "_value" || starts_with(bound, "_generic:")) return true;
+    if (target.empty() || target == "_value" || starts_with(target, "_generic:")) return true;
+    if (bound == target) return true;
+    if (bound == "vector" && starts_with(target, "vector[")) return true;
+    if (target == "vector" && starts_with(bound, "vector[")) return true;
+    if (bound == "queue" && starts_with(target, "queue[")) return true;
+    if (target == "queue" && starts_with(bound, "queue[")) return true;
+    if (bound == "map" && starts_with(target, "map[")) return true;
+    if (target == "map" && starts_with(bound, "map[")) return true;
+    if (option_none_compatible(target, bound)) return true;
+    return false;
+  }
   bool trait_conforms(const string& type, const string& trait,
                       string* reason = nullptr) const {
     auto it = traits_.find(trait);
@@ -2660,7 +2746,7 @@ class Checker {
           err(field.line,
               "FileIO and scoped ranges cannot be stored in ordinary objects",
               "FILEIO_COLLECTION_ESCAPE");
-        if (!valid_type(field.type)) err(field_source, field.line, "unknown field type '" + field.type + "'");
+        if (!field.inferred && !field.type.empty() && !valid_type(field.type)) err(field_source, field.line, "unknown field type '" + field.type + "'");
         if (!field_names.insert(field.name).second)
           err(field_source, field.line, "duplicate object field '" + field.name + "' in " + object.name);
       }
@@ -2671,7 +2757,8 @@ class Checker {
         string signature = method.name + "/" + std::to_string(method.params.size());
         std::unordered_map<string,string> env;
         env["self"] = object.name;
-        for (const auto& field : object.fields) env[field.name] = field.type;
+        for (const auto& field : object.fields)
+          env[field.name] = (field.inferred || field.type.empty()) ? "_generic:" + field.name : field.type;
         for (const auto& param : method.params) {
           if (param.type.empty())
             err(method_source, method.line, "cannot infer type for parameter '" + param.name +
@@ -3265,7 +3352,16 @@ class Checker {
           starts_with(type, "_generic:") ||
           ((starts_with(type, "vector[") || starts_with(type, "queue[") || starts_with(type, "map[")) &&
            contains_internal_placeholder(type));
-      if (open_collection) {
+      bool open_nominal = false;
+      if (is_nominal_instance_type(type)) {
+        for (const auto& sub : nominal_field_substitutions(type)) {
+          if (sub.second.empty() || sub.second == "_" || contains_internal_placeholder(sub.second) || starts_with(sub.second, "_generic:")) {
+            open_nominal = true;
+            break;
+          }
+        }
+      }
+      if (open_collection || open_nominal) {
         int err_line = fallback_line;
         for (const auto& stmt : body) {
           if (stmt.a == name) {
@@ -4183,7 +4279,32 @@ class Checker {
   std::optional<BuiltinCallSemantics> builtin_call_semantics(
       const string& callee, const vector<string>& args,
       const TypeEnv& env) const {
-    if (objects_.count(callee)) return BuiltinCallSemantics{callee, false};
+    if (objects_.count(callee)) {
+      const ObjectType* obj = objects_.at(callee);
+      bool has_generic_field = std::any_of(obj->fields.begin(), obj->fields.end(),
+          [](const Field& f) { return f.inferred || f.type.empty(); });
+      if (!has_generic_field) return BuiltinCallSemantics{callee, false};
+      std::map<string, string> supplied_types;
+      for (const auto& arg : args) {
+        string fn, fv;
+        if (parse_named_argument(arg, fn, fv)) {
+          auto ft = inferred_expr_type(fv, env);
+          if (ft) supplied_types[fn] = canonical_type_name(*ft);
+        }
+      }
+      string instance_type = callee + "[";
+      bool first = true;
+      for (const auto& f : obj->fields) {
+        if (!f.inferred && !f.type.empty()) continue;
+        if (!first) instance_type += ",";
+        first = false;
+        auto it = supplied_types.find(f.name);
+        string ft = (it != supplied_types.end()) ? it->second : (f.type.empty() ? "_" : canonical_type_name(f.type));
+        instance_type += f.name + "=" + ft;
+      }
+      instance_type += "]";
+      return BuiltinCallSemantics{instance_type, false};
+    }
     if (callee == "Map" && args.empty())
       return BuiltinCallSemantics{"map", false};
     if (callee == "Queue" && args.empty())
@@ -4499,8 +4620,12 @@ class Checker {
       auto base_type = inferred_expr_type(e.substr(0, dot), env);
       string field = trim(e.substr(dot + 1));
       if (base_type) {
-        auto object = objects_.find(canonical_type_name(*base_type));
+        string tname = nominal_template_name(*base_type);
+        auto object = objects_.find(tname);
         if (object != objects_.end()) {
+          if (auto sub_type = nominal_field_type(*base_type, field)) {
+            return canonical_type_name(*sub_type);
+          }
           for (const auto& candidate : object->second->fields)
             if (candidate.name == field && !candidate.type.empty())
               return canonical_type_name(candidate.type);
@@ -4666,6 +4791,11 @@ class Checker {
       // revisits this constructor once the specialization TypeEnv is available.
       if (!actual || contains_internal_placeholder(*actual)) continue;
       string inferred = canonical_type_name(*actual);
+      if (field->inferred) {
+        // Generic field: each constructor call produces its own nominal instance.
+        // Do not mutate template field->type!
+        continue;
+      }
       if (field->type.empty()) field->type = inferred;
       else if ((inferred == "vector" && starts_with(canonical_type_name(field->type), "vector[")) ||
                (inferred == "map" && starts_with(canonical_type_name(field->type), "map[")) ||
@@ -4779,7 +4909,14 @@ class Checker {
         if (auto constructed = domain_constructor(statement.b)) {
           env[statement.a] = *constructed;
         } else if (auto inferred = inferred_expr_type(statement.b, env)) {
-          env[statement.a] = canonical_type_name(*inferred);
+          string cinf = canonical_type_name(*inferred);
+          if (statement.kind == Stmt::Kind::Assign && existing != env.end() &&
+              (cinf == "vector" || cinf == "queue" || cinf == "map") &&
+              starts_with(existing->second, cinf + "[")) {
+            // Keep specialized container type
+          } else {
+            env[statement.a] = cinf;
+          }
         } else if (statement.kind != Stmt::Kind::Assign || existing == env.end()) {
           env[statement.a] = "_value";
         }
@@ -5321,6 +5458,9 @@ class Checker {
       }
     }
     for (const auto& object : p_.objects) {
+      bool is_generic = std::any_of(object.fields.begin(), object.fields.end(),
+          [](const Field& f) { return f.inferred; });
+      if (is_generic) continue;
       for (const auto& field : object.fields) {
         if (field.type.empty()) {
           string field_source = field.source_file.empty() ? object.source_file : field.source_file;
@@ -13929,12 +14069,23 @@ class Checker {
               [&](const Field& f) { return f.name == field_name; });
           if (it == obj->fields.end()) {
             err(line, "type '" + obj->name + "' has no field '" + field_name + "'", "UNKNOWN_FIELD");
-          } else if (!it->exported && !obj->source_file.empty() &&
-                     !current_source_file_.empty() &&
-                     obj->source_file != current_source_file_) {
-            err(line, "field '" + field_name + "' of type '" + obj->name +
-                "' is private to its defining module",
-                "FIELD_VISIBILITY_ERROR");
+          } else if (!it->exported) {
+            string defining_mod = module_name_from_symbol(obj->name);
+            if (defining_mod.empty() && p_.explicit_module && !p_.module_name.empty()) {
+              defining_mod = p_.module_name;
+            }
+            string caller_mod = specialization_calling_module(p_, current_semantic_context_, p_.module_name);
+            bool cross_module = false;
+            if (!defining_mod.empty() || !caller_mod.empty()) {
+              cross_module = (defining_mod != caller_mod);
+            } else if (!obj->source_file.empty() && !current_source_file_.empty()) {
+              cross_module = (obj->source_file != current_source_file_);
+            }
+            if (cross_module) {
+              err(line, "field '" + field_name + "' of type '" + obj->name +
+                  "' is private to its defining module",
+                  "FIELD_VISIBILITY_ERROR");
+            }
           }
         }
       }
@@ -14147,51 +14298,72 @@ class Checker {
                 "' cannot be used as ordinary writable storage");
         FileIOOwnerScope fileio_owner(fileio_owner_initializer_, statement.b);
         check_expression(statement.line, statement.b, current_env);
-        if (statement.kind == Stmt::Kind::Assign &&
-            simple_identifier(statement.a) && !current_env.count(statement.a)) {
-          auto inferred = inferred_expr_type(statement.b, current_env);
-          if (!inferred && starts_with(trim(statement.b), "["))
-            err(statement.line, "heterogeneous or unresolved collection element type");
-        }
         if (statement.kind == Stmt::Kind::Assign) {
-          string base, index_expression;
-          if (parse_index(statement.a, base, index_expression)) {
-            string inner_base, inner_index;
-            if (parse_index(base, inner_base, inner_index)) {
-              err(statement.line,
-                  "nested indexed mutation is not supported; extract the inner collection to a local variable, update it, and write it back",
-                  "UNSUPPORTED_NESTED_INDEX_ASSIGNMENT");
-              return;
-            }
-            auto container = current_env.find(base);
-            auto value_type = inferred_expr_type(statement.b, current_env);
-            if (container != current_env.end() &&
-                (starts_with(container->second, "_generic:") ||
-                 container->second == "map")) {
-              // A generic is checked at its concrete call. A fresh Map()
-              // learns its key/value types from this first assignment.
+          if (simple_identifier(statement.a)) {
+            if (!current_env.count(statement.a)) {
+              auto inferred = inferred_expr_type(statement.b, current_env);
+              if (!inferred && starts_with(trim(statement.b), "["))
+                err(statement.line, "heterogeneous or unresolved collection element type");
             } else {
-              check_expression(statement.line, statement.a, current_env);
-              auto element_type = inferred_expr_type(statement.a, current_env);
-              if (element_type && value_type &&
-                  !contains_internal_placeholder(*element_type) &&
-                  !contains_internal_placeholder(*value_type) &&
-                  !same_type(*element_type, *value_type))
-                err(statement.line, "indexed assignment requires value of type '" +
-                    canonical_type_name(*element_type) + "', found '" +
-                    canonical_type_name(*value_type) + "'");
+              auto bound_type = current_env.at(statement.a);
+              auto rhs_type = inferred_expr_type(statement.b, current_env);
+              if (rhs_type && !is_type_compatible(bound_type, *rhs_type)) {
+                err(statement.line, "assignment type mismatch: cannot assign value of type '" +
+                    canonical_type_name(*rhs_type) + "' to binding '" + statement.a +
+                    "' of type '" + canonical_type_name(bound_type) + "'", "TYPE_MISMATCH");
+              }
             }
-            if (container != current_env.end() && value_type &&
-                container->second == "map" &&
-                !inferred_expr_type(index_expression, current_env))
-              err(statement.line, "cannot infer map key type");
-            if (container != current_env.end() &&
-                (container->second == "map" || starts_with(container->second, "map["))) {
-              auto key_type = inferred_expr_type(index_expression, current_env);
-              if (key_type && enums_.count(canonical_type_name(*key_type)))
+          } else {
+            string base, index_expression;
+            if (parse_index(statement.a, base, index_expression)) {
+              string inner_base, inner_index;
+              if (parse_index(base, inner_base, inner_index)) {
                 err(statement.line,
-                    "enum values cannot be Map keys; enum equality and hashing are unsupported",
-                    "ENUM_MAP_KEY_UNSUPPORTED");
+                    "nested indexed mutation is not supported; extract the inner collection to a local variable, update it, and write it back",
+                    "UNSUPPORTED_NESTED_INDEX_ASSIGNMENT");
+                return;
+              }
+              auto container = current_env.find(base);
+              auto value_type = inferred_expr_type(statement.b, current_env);
+              if (container != current_env.end() &&
+                  (starts_with(container->second, "_generic:") ||
+                   container->second == "map")) {
+                // A generic is checked at its concrete call. A fresh Map()
+                // learns its key/value types from this first assignment.
+              } else {
+                check_expression(statement.line, statement.a, current_env);
+                auto element_type = inferred_expr_type(statement.a, current_env);
+                if (element_type && value_type &&
+                    !contains_internal_placeholder(*element_type) &&
+                    !contains_internal_placeholder(*value_type) &&
+                    !same_type(*element_type, *value_type))
+                  err(statement.line, "indexed assignment requires value of type '" +
+                      canonical_type_name(*element_type) + "', found '" +
+                      canonical_type_name(*value_type) + "'");
+              }
+              if (container != current_env.end() && value_type &&
+                  container->second == "map" &&
+                  !inferred_expr_type(index_expression, current_env))
+                err(statement.line, "cannot infer map key type");
+              if (container != current_env.end() &&
+                  (container->second == "map" || starts_with(container->second, "map["))) {
+                auto key_type = inferred_expr_type(index_expression, current_env);
+                if (key_type && enums_.count(canonical_type_name(*key_type)))
+                  err(statement.line,
+                      "enum values cannot be Map keys; enum equality and hashing are unsupported",
+                      "ENUM_MAP_KEY_UNSUPPORTED");
+              }
+            } else {
+              size_t dot = statement.a.rfind('.');
+              if (dot != string::npos && statement.a.find('(', dot) == string::npos) {
+                auto field_type = inferred_expr_type(statement.a, current_env);
+                auto rhs_type = inferred_expr_type(statement.b, current_env);
+                if (field_type && rhs_type && !is_type_compatible(*field_type, *rhs_type)) {
+                  err(statement.line, "assignment type mismatch: cannot assign value of type '" +
+                      canonical_type_name(*rhs_type) + "' to field '" + statement.a +
+                      "' of type '" + canonical_type_name(*field_type) + "'", "TYPE_MISMATCH");
+                }
+              }
             }
           }
         }
@@ -16044,7 +16216,9 @@ class Generator {
           continue;
         }
       }
-      gen_object_access(o, *entry.second, owns);
+      bool is_generic = std::any_of(entry.second->fields.begin(), entry.second->fields.end(),
+          [](const Field& f) { return f.inferred || f.type.empty(); });
+      if (!is_generic) gen_object_access(o, *entry.second, owns);
     }
     for (const auto& f : p_.functions) gen_function(o, f);
     auto body_owner = [&](const Domain& d) {
@@ -16630,6 +16804,17 @@ class Generator {
     if (x == "unit") return "()";
     if (domains_.count(x))
       return has_domain_specializations(x) ? x + "Handle" : x + "Ref";
+    if (is_nominal_instance_type(x)) {
+      string tname = nominal_template_name(x);
+      auto subs = nominal_field_substitutions(x);
+      string res = tname + "<";
+      for (size_t i = 0; i < subs.size(); ++i) {
+        if (i > 0) res += ", ";
+        res += rust_type(subs[i].second);
+      }
+      res += ">";
+      return res;
+    }
     if (objects_.count(x) || enums_.count(x)) return x;
     if (starts_with(x, "seq[") && ends_with(x, "]"))
       return "std::vec::Vec<" + rust_type(x.substr(4, x.size()-5)) + ">";
@@ -17191,7 +17376,32 @@ class Generator {
     string callee;
     vector<string> call_args;
     if (parse_simple_call(value, callee, call_args)) {
-      if (objects_.count(callee)) return callee;
+      if (objects_.count(callee)) {
+        const ObjectType* obj = objects_.at(callee);
+        bool has_generic_field = std::any_of(obj->fields.begin(), obj->fields.end(),
+            [](const Field& f) { return f.inferred || f.type.empty(); });
+        if (!has_generic_field) return callee;
+        std::map<string, string> supplied_types;
+        for (const auto& arg : call_args) {
+          string fn, fv;
+          if (parse_named_argument(arg, fn, fv)) {
+            auto ft = generated_expr_type(fv, types);
+            if (ft) supplied_types[fn] = canonical_type_name(*ft);
+          }
+        }
+        string instance_type = callee + "[";
+        bool first = true;
+        for (const auto& f : obj->fields) {
+          if (!f.inferred && !f.type.empty()) continue;
+          if (!first) instance_type += ",";
+          first = false;
+          auto it = supplied_types.find(f.name);
+          string ft = (it != supplied_types.end()) ? it->second : (f.type.empty() ? "_" : canonical_type_name(f.type));
+          instance_type += f.name + "=" + ft;
+        }
+        instance_type += "]";
+        return instance_type;
+      }
       if (callee == "sqrt" && call_args.size() == 1) {
         auto argument = generated_expr_type(call_args.front(), types);
         return argument && canonical_type_name(*argument) == "float"
@@ -17236,11 +17446,17 @@ class Generator {
     if (member != string::npos && value.find('(', member) == string::npos) {
       auto base = generated_expr_type(value.substr(0, member), types);
       if (base) {
-        auto object = objects_.find(canonical_type_name(*base));
-        if (object != objects_.end())
+        string tname = nominal_template_name(*base);
+        auto object = objects_.find(tname);
+        if (object != objects_.end()) {
+          string field_name = trim(value.substr(member + 1));
+          if (auto sub_type = nominal_field_type(*base, field_name)) {
+            return canonical_type_name(*sub_type);
+          }
           for (const auto& field : object->second->fields)
-            if (field.name == trim(value.substr(member + 1)))
+            if (field.name == field_name)
               return canonical_type_name(field.type);
+        }
       }
     }
     string index_base, index_expr;
@@ -18705,7 +18921,7 @@ class Generator {
       if (plain_identifier(projection_field)) {
         auto projection_type = generated_expr_type(projection_base, types);
         if (projection_type) {
-          auto object = objects_.find(canonical_type_name(*projection_type));
+          auto object = objects_.find(nominal_template_name(*projection_type));
           if (object != objects_.end()) {
             auto field = std::find_if(object->second->fields.begin(),
                 object->second->fields.end(), [&](const Field& candidate) {
@@ -19633,26 +19849,63 @@ class Generator {
   }
 
   void gen_object(std::ostringstream& o, const ObjectType& t) {
+    bool is_generic = std::any_of(t.fields.begin(), t.fields.end(),
+        [](const Field& f) { return f.inferred || f.type.empty(); });
     string type_identity = "type:" + t.name + "@" + std::to_string(t.line);
     tooling_begin(o, 0, "type", type_identity, t.name);
     source_comment(o, 0, t.line, t.header.empty() ? "type " + t.name : t.header);
     backend_comment(o, 0, "value representation for the Moss object; object ownership stays in Moss");
+
+    string type_params;
+    if (is_generic) {
+      type_params += "<";
+      size_t gi = 0;
+      for (const auto& f : t.fields) {
+        if (f.inferred || f.type.empty()) {
+          if (gi > 0) type_params += ", ";
+          type_params += "F" + std::to_string(gi);
+          gi++;
+        }
+      }
+      type_params += ">";
+    }
+
     o << "#[derive(Clone, Debug)]\n"
-      << ((t.exported || p_.explicit_module) ? "pub " : "") << "struct " << t.name << " {\n";
+      << ((t.exported || p_.explicit_module) ? "pub " : "") << "struct " << t.name << type_params << " {\n";
+    size_t gi = 0;
     for (const auto& f : t.fields) {
       source_comment(o, 4, f.line, f.header.empty() ? f.name + ": " + f.type : f.header);
+      string ftype;
+      if (f.inferred || f.type.empty()) {
+        ftype = "F" + std::to_string(gi++);
+      } else {
+        ftype = rust_type(f.type);
+      }
       o << "    " << ((t.exported || p_.explicit_module) ? "pub " : "")
-        << rust_identifier(f.name) << ": " << rust_type(f.type) << ",\n";
+        << rust_identifier(f.name) << ": " << ftype << ",\n";
     }
     o << "}\n\n";
     tooling_end(o, 0, type_identity);
     // Native provider storage decomposition moves fields without exposing Moss
     // field access or requiring the consumer to read Rust-private fields.
-    o << "impl " << t.name << " {\n    " << ((t.exported || p_.explicit_module) ? "pub " : "") << "fn __moss_into_parts(self) -> (";
-    for (const auto& field : t.fields) o << rust_type(field.type) << ",";
-    o << ") { (";
-    for (const auto& field : t.fields) o << "self." << rust_identifier(field.name) << ",";
-    o << ") }\n}\n";
+    if (is_generic) {
+      o << "impl" << type_params << " " << t.name << type_params << " {\n    "
+        << ((t.exported || p_.explicit_module) ? "pub " : "") << "fn __moss_into_parts(self) -> (";
+      gi = 0;
+      for (const auto& field : t.fields) {
+        if (field.inferred || field.type.empty()) o << "F" << std::to_string(gi++) << ",";
+        else o << rust_type(field.type) << ",";
+      }
+      o << ") { (";
+      for (const auto& field : t.fields) o << "self." << rust_identifier(field.name) << ",";
+      o << ") }\n}\n";
+    } else {
+      o << "impl " << t.name << " {\n    " << ((t.exported || p_.explicit_module) ? "pub " : "") << "fn __moss_into_parts(self) -> (";
+      for (const auto& field : t.fields) o << rust_type(field.type) << ",";
+      o << ") { (";
+      for (const auto& field : t.fields) o << "self." << rust_identifier(field.name) << ",";
+      o << ") }\n}\n";
+    }
     for (const auto& method : t.methods) for (bool view : {false, true}) {
       bool needs_view = false;
       for (size_t i = 0; i < method.params.size(); ++i)
@@ -19665,7 +19918,7 @@ class Generator {
           "method", t.name + "__" + method.name, semantic_identity);
       tooling_begin(o, 0, "method", semantic_identity, generated_symbol,
                     view ? "" : native_symbol);
-      o << "impl " << t.name << " {\n";
+      o << "impl" << (is_generic ? type_params : "") << " " << t.name << (is_generic ? type_params : "") << " {\n";
       source_comment(o, 4, method.line,
                      "fn " + method.name);
       debug_symbol_attributes(o, 4, native_symbol, !view);
@@ -19682,6 +19935,9 @@ class Generator {
         Effect effect = method_effect(method, parameter_index);
         string parameter_type = view && effect != Effect::Consume && view_object_type(p.type)
             ? "impl " + access_trait(p.type) : rust_type(p.type);
+        if (is_generic && p.type == t.name) {
+          parameter_type = t.name + type_params;
+        }
         if (effect != Effect::Consume && (effect == Effect::Write || borrowable_type(p.type))) {
           o << ", " << (effect == Effect::Write ? "" : "") << p.name << ": "
             << (effect == Effect::Write ? "&mut " : "&") << parameter_type;
@@ -19692,7 +19948,11 @@ class Generator {
       if (method.return_type) {
         o << ") -> ";
         if (raises) o << "Result<";
-        o << rust_type(*method.return_type);
+        string ret_type = rust_type(*method.return_type);
+        if (is_generic && *method.return_type == t.name) {
+          ret_type = t.name + type_params;
+        }
+        o << ret_type;
         if (raises) o << ", __MossRaised>";
         o << " {\n";
       } else {
@@ -29883,34 +30143,6 @@ static int run_project_impact(const ProjectManifest& manifest,
             << ", \"dependent_units_invalidated\": "
             << impact.dependent_units_invalidated << "}}\n}\n";
   return 0;
-}
-
-static string module_name_from_symbol(const string& symbol) {
-  auto separator = symbol.find("__");
-  return separator == string::npos ? string() : symbol.substr(0, separator);
-}
-
-static bool belongs_to_module(const string& qualified, const string& module) {
-  return qualified == module || starts_with(qualified, module + "__");
-}
-
-static string specialization_calling_module(const Program& program,
-                                            const string& context,
-                                            const string& root_module) {
-  if (starts_with(context, "fn:"))
-    return module_name_from_symbol(context.substr(3));
-  if (starts_with(context, "method:")) {
-    string owner = context.substr(7);
-    size_t dot = owner.find('.');
-    return module_name_from_symbol(dot == string::npos ? owner : owner.substr(0, dot));
-  }
-  if (starts_with(context, "handler:")) {
-    string owner = context.substr(8);
-    size_t dot = owner.find('.');
-    return module_name_from_symbol(dot == string::npos ? owner : owner.substr(0, dot));
-  }
-  // main, test, and benchmark bodies are projected into the root module.
-  return !root_module.empty() ? root_module : program.main_module;
 }
 
 static bool edge_requires_specialization(const SemanticCallEdge& edge,

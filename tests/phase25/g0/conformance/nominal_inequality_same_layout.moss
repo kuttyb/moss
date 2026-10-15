@@ -1,0 +1,10 @@
+type Box:
+  value
+
+type Cell:
+  value
+
+fn main():
+  var b = Box(value: 1)
+  var c = Cell(value: 1)
+  b = c

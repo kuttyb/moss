@@ -56,6 +56,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_imported_generic_e
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_same_module_type_resolution.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_bitwise_operations.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_recursive_layout.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_conformance.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 sdk/foundations/acceptance/run_all.py
 PYTHONDONTWRITEBYTECODE=1 python3 sdk/text-encoding-acceptance/run_all.py
 PYTHONDONTWRITEBYTECODE=1 python3 sdk/advanced-data-acceptance/run_all.py
