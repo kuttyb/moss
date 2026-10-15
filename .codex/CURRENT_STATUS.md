@@ -1,5 +1,55 @@
 # Moss current status
 
+## Phase 25 Team S next execution cycle (S1–S4, Team G interface) — 2026-10-15
+
+Branch `phase25-semantics-engines`, pushed. Started at `ee8dcea`. Delivered
+implementation SHA: `baefd1fbd763ba0ec1d4955c6bad64f4bb71ac94`. Milestone:
+**ready for joint G2/G3/G4 integration**, not ABI-v10 or Phase 25 completion.
+Not merged into `main` or `phase25-integration`. Full detail:
+`docs/phase25/TEAM_S_NEXT_CYCLE_REPORT.md`.
+
+- **S1 checker authority.** Rejected before execution:
+  - record and mixed-type `==` and arithmetic (`RECORD_EQUALITY_UNSUPPORTED`,
+    `TYPE_MISMATCH`);
+  - named call, message, and builtin arguments;
+  - juxtaposed operands (`INVALID_EXPRESSION`);
+  - Map keys other than Int/Bool/Char/String and Vector/Queue of those;
+  - `range(...)` used as a value.
+
+  The Fast Debug FileIO preflight also runs per test entry point, with fewer
+  false positives. The empty-Map Option B cases are Team G fixtures.
+- **S2.** Char is distinct: transparent `Char == String` and mixed `assertEqual`
+  are removed, and callers are migrated
+  (`docs/phase25/TEAM_S_CHAR_STRING_MIGRATION.md`). A randomized Unicode
+  oracle test passes in 5 engine configurations. The indexed String is still
+  staged, and the benchmark was rerun.
+- **S3.** The scalar key protocol is frozen
+  (`docs/phase25/TEAM_S_KEY_PROTOCOL_V1_SCALARS.md`), with 26 law/purity cases.
+  30 Map/Set fixtures are in `tests/phase25/key_protocol/`, pending activation.
+- **S4.** 324 adversarial programs; 12 defects (P25-S-S4-001..012) fixed.
+- **Team G:** `docs/phase25/TEAM_S_TEAM_G_INTERFACE_AGREEMENT.md`, proposed;
+  Team G concurrence pending.
+
+**Validation:** at `baefd1f`, in a clean worktree,
+`TMPDIR="$PWD/tmp" make check` passed (Executor 54/54, editor 61/61, all Moss
+v0.1 tests) and `make examples` passed (32). New suites:
+`check_phase25_s{1,2,3,4}_*.py` and `tests/phase25/key_protocol/run_fixtures.py`,
+all registered in `tests/run.sh`.
+
+**Review:**
+- The independent Architect reviewed `b6d45cf`: CONDITIONAL GO, findings
+  P25-S-ARCH-013..020 and DOC-1..7.
+- 013–017 and DOC-1..7 are fixed in `bd843db`/`baefd1f`; 018–020 are tracked.
+- Closure verification at `baefd1f` was requested. Check the review document's
+  addendum before claiming it.
+
+**Open:**
+- Team G: MossMap/Set and user/Float keys, ABI-v10 String default and runtime
+  crate, #12, Option B empty Map.
+- L7 decisions: literal grammar, builtin-name precedence, Rust-colliding
+  identifiers, `Float.to_string`, `recover err` typing, unary minus on calls,
+  non-Copy shadow before raise, and the typed `Char(Int)` failure.
+
 ## Phase 25 Team S L7 repair pass (NO-GO of 983acb2) — 2026-10-15
 
 Branch `phase25-semantics-engines` continues on the Team S feature branch after
