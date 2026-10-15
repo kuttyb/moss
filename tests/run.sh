@@ -115,12 +115,17 @@ lowered_rust() {
   runtime_end='^// ─── End Phase 20 Executor Runtime '
   float_start='^// ─── Begin Moss Float Format Runtime '
   float_end='^// ─── End Moss Float Format Runtime '
+  string_start='^// ─── Begin Moss String Runtime '
+  string_end='^// ─── End Moss String Runtime '
   if [ "$(grep -c "$runtime_start" "$1")" -eq 1 ] &&
      [ "$(grep -c "$runtime_end" "$1")" -eq 1 ] &&
      [ "$(grep -c "$float_start" "$1")" -eq 1 ] &&
-     [ "$(grep -c "$float_end" "$1")" -eq 1 ]; then
+     [ "$(grep -c "$float_end" "$1")" -eq 1 ] &&
+     [ "$(grep -c "$string_start" "$1")" -eq 1 ] &&
+     [ "$(grep -c "$string_end" "$1")" -eq 1 ]; then
     sed -e "\#$runtime_start#,\#$runtime_end#d" \
-        -e "\#$float_start#,\#$float_end#d" "$1"
+        -e "\#$float_start#,\#$float_end#d" \
+        -e "\#$string_start#,\#$string_end#d" "$1"
   else
     cat "$1"
   fi
