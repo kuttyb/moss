@@ -1,5 +1,20 @@
 # Moss current status
 
+## Phase 25 Team S independent G0 boundary review — 2026-10-14
+
+The independent Team S L6 Architect reviewed integrated G0 commit
+`6f109124a580c6a76a4050b4c222484a658ee4e1` and recorded a **NO-GO for L7 G0
+authorization** in `docs/phase25/TEAM_S_G0_ARCHITECT_REVIEW.md`. The checked-in
+prototype proves a consumer-local Rust key adapter and the orphan-rule negative,
+but it does not prove either proposed production representation. The review
+recommends freezing a policy-free compiler-owned `MossMap<K,V>`, rejects
+`KeySlot<K,Ops>` as frozen without a compiled-only generic-key proof, requires an
+exact open-receiver member-dispatch record for ledger #12, and requires explicit
+Map/Set law/effect records plus Phase 25 Float-key prohibition. Bootstrap,
+focused Rust feasibility, expected baseline local-member failure, feedback
+validation, and whitespace validation completed; no compiler code changed and
+no push was performed.
+
 ## Phase 25 Team G G0 A1/ABI bounded feasibility — 2026-10-14
 
 On `phase25-g0-feasibility` from pinned baseline
