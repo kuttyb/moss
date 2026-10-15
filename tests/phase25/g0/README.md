@@ -1,10 +1,13 @@
 # Phase 25 Team G G0 fixtures
 
 `check_rust_feasibility.py` is a bounded Rust-only architecture prototype. It
-compiles one provider-owned generic nominal record, two independent consumer
-crates containing specialized free functions, and a final executable that uses
-both consumers. It also proves the selected accessor visibility boundary and
-the Rust orphan-rule failure that a Moss Map key adapter must avoid.
+compiles a compiler-owned shared Map runtime, one provider-owned generic nominal
+record and user key, two independent consumer crates containing specialized
+free functions, and a final executable that passes the same record and Map
+values through both consumers. The Map exercises custom static `isequal`/`hash`
+semantics, insertion, lookup, overwrite, deletion, and an eager owned keys
+snapshot. It also proves the selected accessor visibility boundary and the Rust
+orphan-rule failure that a direct foreign key implementation must avoid.
 
 Run it from the repository root:
 

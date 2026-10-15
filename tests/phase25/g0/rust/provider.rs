@@ -1,5 +1,7 @@
 #![crate_name = "phase25_provider"]
 
+extern crate phase25_moss_map_runtime as map_runtime;
+
 // Prototype only: the defining crate owns the one Rust nominal declaration.
 // Its field stays private; generated public accessors are native ABI surface,
 // not Moss exports.
@@ -19,6 +21,7 @@ pub fn record_replace<T>(record: &mut GenericRecord<T>, value: T) -> T {
     std::mem::replace(&mut record.value, value)
 }
 
+#[derive(Clone)]
 pub struct UserKey {
     code: i64,
 }
@@ -28,9 +31,33 @@ pub fn user_key(code: i64) -> UserKey {
 }
 
 pub fn moss_isequal(left: &UserKey, right: &UserKey) -> bool {
-    left.code == right.code
+    left.code % 10 == right.code % 10
 }
 
 pub fn moss_hash(value: &UserKey) -> i64 {
-    value.code.wrapping_mul(1_000_003)
+    value.code % 10
+}
+
+pub fn user_key_code(value: &UserKey) -> i64 {
+    value.code
+}
+
+// The key-defining provider owns this zero-sized operation identity. The trait
+// is foreign, but the implementing self type is local, so the impl is legal.
+pub struct UserKeyOps;
+
+impl map_runtime::MossKeyOps<UserKey> for UserKeyOps {
+    fn isequal(left: &UserKey, right: &UserKey) -> bool {
+        moss_isequal(left, right)
+    }
+
+    fn hash(value: &UserKey) -> i64 {
+        moss_hash(value)
+    }
+}
+
+pub type UserMap<V> = map_runtime::MossMap<UserKey, V, UserKeyOps>;
+
+pub fn user_map<V>() -> UserMap<V> {
+    UserMap::new()
 }

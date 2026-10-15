@@ -12,10 +12,11 @@ The G0 A1 and Map-key paths have viable static Rust representations. One
 provider crate can own a generic nominal Rust record while independently
 compiled consumer crates own specialized free functions over distinct concrete
 instances. Provider-owned generated accessors allow those functions to
-manipulate the record without making its fields public. A local adapter type can
-invoke custom Moss `isequal` and `hash` semantics while legally implementing
-Rust's foreign `Eq`/`Hash` traits; directly implementing `Hash` for a
-provider-owned key correctly fails Rust's orphan rule.
+manipulate the record without making its fields public. A compiler-owned shared
+`MossMap<K,V,Ops>` representation can cross both consumer boundaries while a
+provider-owned operations marker invokes custom Moss `isequal` and `hash`
+semantics by static dispatch. Directly implementing `Hash` for a provider-owned
+key correctly fails Rust's orphan rule.
 
 This is not L7 G0 authorization for shared-IR work. Team S and both Architects
 still need to approve the exact type identity, adapter placement, visibility,
@@ -36,7 +37,8 @@ It compiles four crates/artifacts:
 4. The application passes one exact `GenericRecord<i64>` value through both
    independently compiled consumers, and also constructs the String instance.
 
-The program prints exactly `84 moss-g0 41`. The same run checks two expected
+The program prints exactly
+`84 moss-g0 map=10,10,11,15,80,1,true`. The same run checks two expected
 compiler failures:
 
 - direct consumer access to `GenericRecord.value` fails with Rust `E0616`;
@@ -75,31 +77,50 @@ Moss export namespace or expose unrelated private declarations.
 
 ## 3. Map key proof and placement
 
-The positive prototype wraps `provider::UserKey` in a consumer-owned
-`UserKeyAdapter`, implements `Eq` and `Hash` for that local type, and statically
-calls provider `moss_isequal`/`moss_hash`. It inserts and retrieves a value from
-`HashMap` and returns `41`. There is no trait object, vtable, Float-derived
-`Eq`, or foreign-trait implementation on the provider key.
+The completed positive prototype adds a separate compiler-owned runtime crate.
+That crate defines the single canonical `MossMap<K,V,Ops>` representation and a
+static `MossKeyOps<K>` contract. The compiled provider owns `UserKey`, the
+zero-sized `UserKeyOps` identity, its implementation of the runtime contract,
+and the canonical `UserMap<V>` alias. This implementation is coherent because
+the provider-owned marker is the implementing self type; it does not implement
+a Rust foreign trait for `UserKey`.
+
+The provider constructs one `UserMap<Int>` value. Its Moss-like custom key
+semantics compare and hash by the final decimal digit, deliberately differing
+from Rust field equality. Consumer A inserts keys 7 and 8 and later overwrites
+the first entry with equivalent key 27. Consumer B reads it through equivalent
+keys 17 and 37 before and after the overwrite, obtains an eager owned keys
+snapshot, deletes key 8 through equivalent key 18, checks the remaining length,
+and confirms equivalent key 28 is absent. The one value crosses both
+independently compiled consumer rlibs, and both function signatures resolve to
+the exact runtime-owned `MossMap<UserKey,i64,UserKeyOps>` Rust type. Observed
+results are initial lookup 10, overwritten value 10, replacement lookup 11,
+key sum 15, deleted value 80, remaining length 1, and missing lookup `true`.
+
+`MossMap` stores each checked Moss hash with its key and uses the provider's
+statically dispatched Moss equality only among equal-hash candidates. This
+prototype uses a vector-backed collision search to isolate representation and
+coherence correctness; it is not a production complexity claim. `keys()`
+returns an eager owned snapshot. There is no trait object, `dyn`, vtable,
+Float-derived `Eq`/`Hash`, consumer-local adapter type, or foreign-trait
+implementation on the provider key.
 
 The negative control implements Rust `Hash` directly for
 `provider::UserKey`; rustc rejects it with `E0117`. Therefore Team G must never
 emit `impl std::hash::Hash for <foreign provider key>` in a consumer.
 
-**Recommended production placement:** use a Moss-owned adapter representation,
-not a direct foreign impl. The shared native collections runtime owns a generic
-`KeySlot<K, Ops>` (and its `Eq`/`Hash` impl); the module defining `K` owns a
-zero-sized `Ops` marker and implements a Moss-runtime `MossKeyOps<K>` trait by
-static calls to that key's resolved `isequal` and `hash` specializations. A
-concrete `Map[K,V]` selects `Ops` deterministically from canonical `K`.
-This keeps the std-trait self type local to the runtime, the Moss key operation
-implementation local to the provider marker, and dispatch static.
+**Recommended production placement:** retain this ownership split. The shared
+native collections runtime owns generic `MossMap<K,V,Ops>`; the module defining
+`K` owns a zero-sized `Ops` marker and implements the runtime's
+`MossKeyOps<K>` contract by static calls to the resolved Moss `isequal` and
+`hash` specializations. A concrete `Map[K,V]` selects `Ops` deterministically
+from canonical `K`. The production runtime may replace the prototype's linear
+bucket storage without changing this nominal representation or static contract.
 
-The prototype's consumer-local newtype proves coherence feasibility but is not
-the final cross-boundary representation. A consumer-local adapter alone would
-give different private Rust `Map` representations in different consumers. The
-shared-runtime `KeySlot<K,Ops>` shape is required if a concrete `Map[K,V]`
-crosses a native artifact boundary. Team S owns Map/Set laws and purity; Team G
-owns the canonical `K -> Ops` identity and ABI hook.
+This closes the consumer-local-adapter identity gap: no consumer defines the
+Map or key adapter representation. Team S owns Map/Set laws, purity, and exact
+collection behavior; Team G owns the canonical `K -> Ops` identity and ABI
+hook.
 
 ### Required escalation triggers
 
@@ -113,7 +134,7 @@ alternatives if any of these occurs:
    Rust paths, field order, layout, or accessor signatures.
 3. A source-free consumer needs to redeclare the provider record or implement a
    Rust foreign trait for the provider key.
-4. `KeySlot<K,Ops>` cannot preserve exact custom Moss equality/hash semantics,
+4. `MossMap<K,V,Ops>` cannot preserve exact custom Moss equality/hash semantics,
    ownership effects, or one canonical cross-crate Map representation without
    dynamic dispatch.
 5. Map specialization would require assuming Rust `Eq`/`Hash` for Float or
@@ -121,7 +142,7 @@ alternatives if any of these occurs:
 
 If (1) or (2) fires, evaluate at minimum (a) public Rust fields guarded only by
 the Moss checker and (b) provider-owned generated accessor functions. If (3),
-(4), or (5) fires, evaluate at minimum (a) shared-runtime `KeySlot<K,Ops>` with
+(4), or (5) fires, evaluate at minimum (a) shared-runtime `MossMap<K,V,Ops>` with
 provider-owned operations and (b) a provider-owned Map specialization/wrapper.
 Do not add runtime dispatch or source-level generic syntax as a workaround.
 
@@ -169,6 +190,18 @@ Rust generic arguments in declaration order. Specialization symbol keys include
 the full `InstanceKey` plus callable identity, effect signature, and ordered
 call argument types. This separates one provider record declaration from any
 number of consumer-owned specialized free functions.
+
+The built-in Map instance follows the same rule:
+
+```text
+MapInstanceKey = (builtin-map-v1, key-instance-id, value-instance-id)
+MapOpsKey = (moss-key-ops-v1, key-instance-id, isequal-id, hash-id)
+```
+
+`MapOpsKey` is derived once from canonical `K`; it is not consumer identity.
+Every artifact lowers that pair to the shared runtime
+`MossMap<K,V,ProviderOwnedOps>` type, as the prototype's two consumer signatures
+demonstrate.
 
 ## 5. Proposed ABI-v10 additions
 
@@ -292,11 +325,11 @@ Commands run at exact baseline
 PASS: ok=true, result.language_version=moss-0.1
 
 python3 tests/phase25/g0/check_rust_feasibility.py
-PASS: Phase 25 G0 provider identity, accessor visibility, and Map adapter prototype passed
+PASS: Phase 25 G0 provider identity, canonical cross-crate MossMap, and visibility prototype passed
 
 /usr/bin/time -f 'elapsed=%e maxrss_kb=%M' \
   python3 tests/phase25/g0/check_rust_feasibility.py
-PASS: elapsed=0.21, maxrss_kb=115344
+PASS: elapsed=0.22, maxrss_kb=111048
 
 python3 tests/tooling/check_phase21_abi_v9_migration.py ./moss
 PASS: ABI-v9 source-free migration and damaged-v9 diagnostics passed
@@ -317,10 +350,10 @@ EXPECTED BASELINE FAIL (exit 1): TYPE_INFERENCE_FAILED at fresh line 1
 EXPECTED BASELINE FAIL (exit 1): MOSS_COMPILE_ERROR at member call line 3
 ```
 
-The unoptimized prototype artifacts were 10,984 bytes for the provider rlib,
-167,674 bytes for consumer A (including the Map adapter), 35,454 bytes for
-consumer B, and 4,587,352 bytes for the executable. These are feasibility
-measurements, not production Moss code-size targets.
+The unoptimized prototype artifacts were 17,064 bytes for the shared Map
+runtime rlib, 18,502 bytes for the provider rlib, 31,434 bytes for consumer A,
+128,586 bytes for consumer B, and 4,558,832 bytes for the executable. These are
+feasibility measurements, not production Moss code-size targets.
 
 ## 9. G0 handoff and verdict
 
@@ -331,7 +364,7 @@ identity.
 
 **NO-GO for major shared-IR/compiler surgery until signed L7 G0.** Outstanding
 approval items are the canonical defining-module/declaration identity, exact
-ABI-v10 byte grammar, shared-runtime `KeySlot<K,Ops>` ownership with Team S,
+ABI-v10 byte grammar, shared-runtime `MossMap<K,V,Ops>` ownership with Team S,
 accessor visibility/private dependency policy, and both Architects' review of
 specialization termination, ownership/effect preservation, and source-free
 provenance.
