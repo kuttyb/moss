@@ -177,7 +177,9 @@ for every argument the checker accepts:
 | `String` | the text itself, unquoted and unescaped |
 | `Vector[T]` | `[`, each element's text by this table, separated by `, `, then `]` |
 
-An empty Vector prints `[]`. Nested Vectors use the same rule recursively
+An empty Vector of a known element type (`Vector[Int]()`, or `[]` inside a typed
+nested literal) prints `[]`. A bare `echo []` or `echo [[]]` whose element type
+nothing pins is rejected with `ECHO_DISPLAY_UNSUPPORTED` (P25-S-ARCH-025). Nested Vectors use the same rule recursively
 (`[[1], [], [2, 3]]`). A Float element prints the same text as `echo` of that
 Float alone. String and Char elements are raw, so `["a, b"]` and `["a", "b"]`
 both print `[a, b]`. They are raw because this matches scalar `echo`. Quoting

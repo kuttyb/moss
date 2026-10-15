@@ -188,6 +188,23 @@ def test_architect_next_cycle_findings():
             "fn main():\n  d = D()\n  echo message d.Neg(\"abc\")\n  echo message d.Neg(\"ab\")\n"
             "  echo message d.Len(\"abcd\")\n",
             "023 prefix minus in handler effects", "-8\n3\n-4\n")
+    record = "type P:\n  n: Int\n\n"
+    for body, label in (("y = p.zz\n  echo 1", "024 unknown record field"),
+                        ("echo p.0", "024 numeric record field"),
+                        ("echo x.foo", "024 field on Int"),
+                        ("echo x.5", "024 numeric field on Int"),
+                        ("echo s.length", "024 method without parentheses"),
+                        ("echo v.0", "024 field on Vector"),
+                        ("echo 1.5.x", "024 field on Float literal")):
+        rejected(record + "fn main():\n  p = P(n: 1)\n  x = 3\n  s = \"ab\"\n  v = [1]\n  "
+                 + body + "\n", label, "UNKNOWN_FIELD")
+    engines(record + "fn main():\n  p = P(n: 4)\n  echo p.n + 1\n  echo 1.5 + +2.5\n  echo -.5\n",
+            "024 declared fields and Float literals still valid", "5\n4.0\n-0.5\n")
+    for body, label in (("echo []", "025 echo of an untyped empty Vector"),
+                        ("echo [[]]", "025 echo of a nested untyped empty Vector")):
+        rejected("fn main():\n  " + body + "\n", label, "ECHO_DISPLAY_UNSUPPORTED")
+    engines("fn main():\n  echo Vector[Int]()\n  echo [[1], [], [2, 3]]\n",
+            "025 typed empty Vectors still display", "[]\n[[1], [], [2, 3]]\n")
     color = "enum Color:\n  Red\n  Blue\n\n"
     rejected(color + "fn main():\n  var inner = Map()\n  inner[\"a\"] = 1\n  var m = Map()\n"
              "  m[inner] = 1\n  echo 1\n", "014 Map as a Map key", "MAP_KEY_TYPE_UNSUPPORTED")

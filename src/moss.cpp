@@ -2434,8 +2434,11 @@ class Checker {
     // ASCII escapes, fileio_runtime.hpp). It is native-only because Fast
     // Debug rejects FileIO programs, and it is not a Vector element form.
     if (type == "Range" && !in_vector) return EchoDisplay::Displayable;
-    if (type.empty() || type == "vector" || internal_semantic_placeholder(type) ||
-        traits_.count(type))
+    // An empty literal whose element type nothing pins (`echo []`) has no
+    // native type to format; reject it rather than let rustc fail
+    // (P25-S-ARCH-025). A typed `Vector[T]()` prints `[]`.
+    if (type == "vector") return EchoDisplay::Unsupported;
+    if (type.empty() || internal_semantic_placeholder(type) || traits_.count(type))
       return EchoDisplay::Unresolved;
     if (starts_with(type, "vector[") && ends_with(type, "]"))
       return echo_display_class(trim(type.substr(7, type.size() - 8)), true);
@@ -2468,6 +2471,10 @@ class Checker {
              "echo its values by key";
     else if (type == "queue" || starts_with(type, "queue["))
       what = "a Queue ('" + type + "'); echo its elements";
+    else if (type == "vector" || type.find("vector[vector]") != string::npos ||
+             (starts_with(type, "vector[") && type.find("[vector]") != string::npos))
+      what = "a Vector whose element type is unknown ('" + type + "'); give it elements or "
+             "use a typed constructor such as Vector[Int]()";
     else if (starts_with(type, "vector["))
       what = "'" + type + "' because its element type has no display form; echo its "
              "elements' fields";
@@ -14691,6 +14698,39 @@ class Checker {
         if (receiver_type && enums_.count(canonical_type_name(*receiver_type)))
           err(line, "enum payload fields require match; field projection is unsupported",
               "ENUM_FIELD_PROJECTION_UNSUPPORTED");
+        string field = trim(value.substr(dot + 1));
+        string base = trim(value.substr(0, dot));
+        string digits = !base.empty() && (base.front() == '-' || base.front() == '+')
+            ? trim(base.substr(1)) : base;
+        auto all_digits = [](const string& text) {
+          return !text.empty() && std::all_of(text.begin(), text.end(), [](char c) {
+            return std::isdigit(static_cast<unsigned char>(c)) || c == '_';
+          });
+        };
+        bool float_literal = all_digits(digits) && (field.empty() || all_digits(field) ||
+            field.find_first_of("eE") != string::npos);
+        if (receiver_type && !float_literal && (plain_identifier(field) || all_digits(field))) {
+          // P25-S-ARCH-024: a projection must name a declared record field;
+          // compiler-defined values have no fields.
+          string type = canonical_type_name(*receiver_type);
+          if (objects_.count(type)) {
+            const auto& fields = objects_.at(type)->fields;
+            bool known = std::any_of(fields.begin(), fields.end(),
+                [&](const Field& candidate) { return candidate.name == field; });
+            if (!known)
+              err(line, "record '" + type + "' has no field '" + field + "'",
+                  "UNKNOWN_FIELD");
+          } else if (builtin_equality_type(type) || type == "map" || type == "queue" ||
+                     type == "vector" || starts_with(type, "map[") ||
+                     starts_with(type, "queue[")) {
+            err(line, "'" + type + "' has no field '" + field + "'" +
+                (type == "string" || starts_with(type, "vector") || starts_with(type, "map") ||
+                 starts_with(type, "queue")
+                     ? "; call methods with parentheses, e.g. '" + base + "." + field + "()'"
+                     : ""),
+                "UNKNOWN_FIELD");
+          }
+        }
         if (receiver_type && objects_.count(canonical_type_name(*receiver_type)))
           check_expression(line, value.substr(0, dot), env);
       }
@@ -15179,6 +15219,8 @@ class Checker {
           check_expression(statement.line, argument, current_env);
           auto type = inferred_expr_type(argument, current_env);
           if (type) check_echo_display(statement.line, *type);
+          else if (parse_vector_literal(trim(argument)))
+            check_echo_display(statement.line, "vector");  // `echo []`, `echo [[]]`
           echo_types.push_back(type ? canonical_type_name(*type) : string());
         }
         const string echo_context = current_function && checking_specialization_
