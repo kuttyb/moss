@@ -8920,6 +8920,12 @@ class Checker {
           for (const auto& argument : statement.args)
             analyze_effect_expression(argument, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, Effect::Read);
+          // `name = message ...` assigns an existing binding, including a
+          // domain state field, exactly like an ordinary assignment.
+          if (simple_effect_identifier(statement.message_result) &&
+              env.count(statement.message_result))
+            mark_effect_name(statement.message_result, Effect::Write, params, env,
+                             parameter_effects, receiver_effect, receiver_fields);
           if (leaf_effect_capture_ && !statement.message_result.empty()) {
             auto receiver = env.find(statement.a);
             synchronization_require(receiver != env.end() && domains_.count(receiver->second), "unresolved message receiver");
@@ -12646,7 +12652,10 @@ class Checker {
                   (before_id != incoming.binding_identities.end() &&
                    raised_id != raised.ownership.binding_identities.end() &&
                    before_id->second == raised_id->second);
-              if (!same_binding) {
+              // A try-local shadow hides the outer binding's ownership state
+              // at the edge. The outer binding is visible again in the arm;
+              // only a non-Copy one may have been consumed before the shadow.
+              if (!same_binding && !copy_type(binding.second)) {
                 recovered.moved.emplace(
                     binding.first, MoveInfo{arm.line, "shadowed before raise"});
               } else if (auto moved = raised.ownership.moved.find(binding.first);
@@ -12900,7 +12909,9 @@ class Checker {
           if (simple_identifier(s.a)) {
             if (source_type) env.types[s.a] = *source_type;
             else if (!env.types.count(s.a)) env.types[s.a] = "_value";
-            if (!env.binding_identities.count(s.a))
+            // Domain state is not a lexical binding; writing it must not make
+            // a later raise edge look as if the field had been shadowed.
+            if (!env.binding_identities.count(s.a) && !env.state_fields.count(s.a))
               env.binding_identities[s.a] = statement_binding_identity(
                   current_semantic_context_, s.line);
             // Assignment creates or reinitializes the target, including a
@@ -12930,10 +12941,16 @@ class Checker {
             }
           }
           record_direct_raise();
+          if (!s.message_result.empty() && env.types.count(s.message_result) &&
+              simple_identifier(s.message_result))
+            // Assigning an existing binding or state field is a WRITE.
+            check_ownership_expression(s.line, s.message_result, env, Effect::Write);
           if (!s.message_result.empty()) {
             if (handler->reply_type) env.types[s.message_result] = *handler->reply_type;
-            env.binding_identities[s.message_result] = statement_binding_identity(
-                current_semantic_context_, s.line);
+            if (!env.binding_identities.count(s.message_result) &&
+                !env.state_fields.count(s.message_result))
+              env.binding_identities[s.message_result] = statement_binding_identity(
+                  current_semantic_context_, s.line);
             env.moved.erase(s.message_result);
           }
           ++index;
@@ -22215,15 +22232,30 @@ class Generator {
           }
           call += ")";
           o << indent(level);
-          if (!s.message_result.empty()) {
+          // `field = message ...` in a handler writes the domain state field
+          // unless a local binding of that name is in scope.
+          const bool state_result = d && !s.message_result.empty() &&
+              !locals.count(s.message_result) &&
+              std::any_of(d->state.begin(), d->state.end(), [&](const Field& field) {
+                return field.name == s.message_result;
+              });
+          const bool state_view = state_result &&
+              is_object_view(s.message_result, d, locals, &types);
+          if (state_view) {
+            o << "(" << write_call_place(s.message_result, d, locals, &types)
+              << ").__moss_replace(";
+          } else if (state_result) {
+            o << write_call_place(s.message_result, d, locals, &types) << " = ";
+          } else if (!s.message_result.empty()) {
             if (!locals.count(s.message_result)) o << "let mut ";
             o << s.message_result << " = ";
           }
           vector<size_t> argument_plans;
           for (size_t argument = 0; argument < s.args.size(); ++argument)
             argument_plans.push_back(statement_functional_pipeline_id(s, functional_context, argument));
-          o << expr(call, d, locals, &types, 0, &argument_plans) << ";\n";
-          if (!s.message_result.empty()) {
+          o << expr(call, d, locals, &types, 0, &argument_plans)
+            << (state_view ? ")" : "") << ";\n";
+          if (!s.message_result.empty() && !state_result) {
             const Domain& target = *domains_.at(canonical_type_name(types.at(s.a)));
             locals.insert(s.message_result);
             types[s.message_result] = find_handler(target, s.b)->reply_type.value_or("unit");
