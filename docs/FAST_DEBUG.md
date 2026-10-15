@@ -162,9 +162,56 @@ not a second structured-query implementation. A structured query therefore
 requires the complete reachable source closure to be available in the source
 context supplied directly to Moss.
 
+## Echo display contract
+
+`echo a, b, ...` prints its arguments separated by one space and ends the
+line. Fast Debug and native execution (Debug and Release) print the same text
+for every argument the checker accepts:
+
+| Type | Text |
+| --- | --- |
+| `Int` | decimal, with `-` for a negative value (`-9223372036854775808`) |
+| `Float` | canonical Moss Float text: shortest round-trip digits, `1.5`, `100.0`, `-0.0`, `0.1`, `1e21`, `1e-7`, `NaN`, `inf`, `-inf` |
+| `Bool` | `true` or `false` |
+| `Char` | the character itself, unquoted |
+| `String` | the text itself, unquoted and unescaped |
+| `Vector[T]` | `[`, each element's text by this table, separated by `, `, then `]` |
+
+An empty Vector prints `[]`. Nested Vectors use the same rule recursively
+(`[[1], [], [2, 3]]`). A Float element prints the same text as `echo` of that
+Float alone. String and Char elements are raw, so `["a, b"]` and `["a", "b"]`
+both print `[a, b]`. They are raw because this matches scalar `echo`. Quoting
+would need an escape grammar that Moss does not define yet. Echo the elements
+one at a time when the form must be unambiguous.
+
+Native code formats a Vector through the generated Moss display runtime
+(`__moss_display_vector`). The compiler picks each element's formatter
+statically from the checked Moss type, with no runtime trait or dynamic
+dispatch. It never uses Rust's `Debug` representation, so the text is a Moss
+contract and not a property of the Rust standard library.
+
+Any other type has no display contract. The checker rejects it with
+`ECHO_DISPLAY_UNSUPPORTED` before any engine runs: `Map`, `Queue`, records,
+enums, function references, a Unit call result, and a Vector whose element
+type is any of these. `Map` and `Queue` have no contract in this cycle. Map
+iteration order is unspecified, so a Map has no deterministic text. A Queue
+form could be added later as an explicit decision. Domain handles
+and `range(...)` values are rejected earlier by their own rules. The FileIO
+byte `Range` keeps its Phase 20 binary-safe `b"..."` display. This is
+native-only, because Fast Debug rejects FileIO programs, and a Range is not a
+Vector element form. Collections have no `to_string()` and no `+`
+concatenation with a String, so no other path formats a collection.
+
+`moss check` gives the same verdict for a source file whether it is checked
+standalone or as part of a project. Project-mode check stops at semantics,
+like standalone check, and does not run native lowering. Before Phase 25 S-B,
+project check lowered to Rust and could reject a file that standalone check
+accepted (P25-S-ARCH-019).
+
 ## Remaining interpreter limits
 
-`for` traversal over ranges, Vectors, and Queues runs with native block scoping.
+`for` traversal over ranges, Vectors, and Iterator values runs with native
+block scoping. A Queue or a bare Map is not a `for` source in either engine.
 A program whose `main` can reach FileIO is rejected with `FAST_DEBUG_FILEIO`
 before any statement executes. In test mode (`moss test --interp`,
 `margo test --interp`) each selected test block is its own entry point: a test

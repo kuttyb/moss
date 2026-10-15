@@ -39,6 +39,7 @@
 #include "handler_runtime.hpp"
 #include "fileio_runtime.hpp"
 #include "float_format_runtime.hpp"
+#include "display_runtime.hpp"
 #include "executor_runtime.hpp"
 #include "synchronization_lowering.hpp"
 #include "source_free_abi_v9.hpp"
@@ -2263,6 +2264,7 @@ class Checker {
                           left.call_site_identity == right.call_site_identity;
                     }),
         p_.semantic_uses.end());
+    if (deferred_echo_display_error_) throw *deferred_echo_display_error_;
   }
 
   const vector<Warning>& warnings() const { return warnings_; }
@@ -2412,6 +2414,66 @@ class Checker {
     for (const auto& argument : arguments)
       if (!builtin_equality_type(trim(argument))) return false;
     return true;
+  }
+
+  // Phase 25 S-B: the echo display contract (docs/FAST_DEBUG.md, "echo
+  // display contract"). Int, Float, Bool, Char, and String display as their
+  // scalar text; Vector[T] displays as "[" + elements joined by ", " + "]"
+  // when T is itself displayable. Every other type has no agreed text form in
+  // all engines and is rejected here, so check, Fast Debug, and native share
+  // one verdict and one code. An unresolved generic/trait/placeholder type is
+  // decided at its concrete specialization instead.
+  enum class EchoDisplay { Displayable, Unresolved, Unsupported };
+
+  EchoDisplay echo_display_class(const string& t, bool in_vector = false) const {
+    string type = canonical_type_name(t);
+    if (type == "int" || type == "float" || type == "bool" || type == "char" ||
+        type == "string")
+      return EchoDisplay::Displayable;
+    // A FileIO byte Range keeps its Phase 20 binary-safe display (b"..." with
+    // ASCII escapes, fileio_runtime.hpp). It is native-only because Fast
+    // Debug rejects FileIO programs, and it is not a Vector element form.
+    if (type == "Range" && !in_vector) return EchoDisplay::Displayable;
+    if (type.empty() || type == "vector" || internal_semantic_placeholder(type) ||
+        traits_.count(type))
+      return EchoDisplay::Unresolved;
+    if (starts_with(type, "vector[") && ends_with(type, "]"))
+      return echo_display_class(trim(type.substr(7, type.size() - 8)), true);
+    return EchoDisplay::Unsupported;
+  }
+
+  // The display rule is reported after every other checker pass of the same
+  // program (see run()), so an earlier-pinned diagnostic for the expression
+  // being echoed, such as a functional ownership error, keeps precedence.
+  // The verdict is unchanged: a deferred display error still rejects.
+  mutable std::optional<CompileError> deferred_echo_display_error_;
+
+  void check_echo_display(int line, const string& t) const {
+    if (echo_display_class(t) != EchoDisplay::Unsupported) return;
+    if (deferred_echo_display_error_) return;
+    try {
+      report_echo_display(line, t);
+    } catch (const CompileError& error) {
+      deferred_echo_display_error_ = error;
+    }
+  }
+
+  [[noreturn]] void report_echo_display(int line, const string& t) const {
+    string type = canonical_type_name(t);
+    string what;
+    if (enums_.count(type)) what = "an enum value ('" + type + "'); match its cases";
+    else if (objects_.count(type)) what = "a record value ('" + type + "'); echo its fields";
+    else if (type == "map" || starts_with(type, "map["))
+      what = "a Map ('" + type + "'), which has no deterministic display order; "
+             "echo its values by key";
+    else if (type == "queue" || starts_with(type, "queue["))
+      what = "a Queue ('" + type + "'); echo its elements";
+    else if (starts_with(type, "vector["))
+      what = "'" + type + "' because its element type has no display form; echo its "
+             "elements' fields";
+    else what = "a value of type '" + type + "'";
+    err(line, "echo cannot display " + what + " (echo supports Int, Float, Bool, Char, "
+        "String, and Vector of those)", "ECHO_DISPLAY_UNSUPPORTED");
   }
 
   // Phase 25: `==`/`!=` is compiler-defined. Records have no equality (no
@@ -4665,7 +4727,16 @@ class Checker {
     if (auto parts = parse_vector_literal(e)) {
       if (parts->empty()) return std::nullopt;
       string element;
+      // An empty `[]` element takes the Vector type of its siblings
+      // (`[[], [1]]` is Vector[Vector[Int]]), as in both engines.
+      const bool has_typed_vector_sibling = std::any_of(
+          parts->begin(), parts->end(), [&](const string& part) {
+            if (trim(part) == "[]") return false;
+            auto t = inferred_expr_type(part, env);
+            return t && starts_with(canonical_type_name(*t), "vector[");
+          });
       for (const auto& part : *parts) {
+        if (has_typed_vector_sibling && trim(part) == "[]") continue;
         auto t = inferred_expr_type(part, env);
         if (!t) return std::nullopt;
         if (element.empty()) element = *t;
@@ -15103,13 +15174,18 @@ class Checker {
       }
 
       if (statement.kind == Stmt::Kind::Echo) {
+        vector<string> echo_types;
         for (const auto& argument : statement.args) {
           check_expression(statement.line, argument, current_env);
           auto type = inferred_expr_type(argument, current_env);
-          if (type && enums_.count(canonical_type_name(*type)))
-            err(statement.line, "echo cannot display an enum directly; match its cases",
-                "ENUM_DISPLAY_UNSUPPORTED");
+          if (type) check_echo_display(statement.line, *type);
+          echo_types.push_back(type ? canonical_type_name(*type) : string());
         }
+        const string echo_context = current_function && checking_specialization_
+            ? functional_function_context(*current_function, checking_specialization_)
+            : string();
+        const_cast<Stmt&>(statement).echo_types_by_context[echo_context] =
+            std::move(echo_types);
         return;
       }
 
@@ -16723,6 +16799,7 @@ class Generator {
     o << handler_runtime_rust();
     o << float_format_runtime_rust();
     o << char_string_ordering_runtime_rust(indexed_strings_staged());
+    o << display_runtime_rust();
     if (program_uses_numeric_builtins()) o << numeric_runtime_rust();
     if (program_uses_fileio(p_)) {
       o << fileio_runtime_rust();
@@ -17325,6 +17402,36 @@ class Generator {
                                           const Handler& handler) {
     return functional_handler_context(domain, handler) + "@" +
         std::to_string(handler.line);
+  }
+
+  // Mirrors Checker::echo_display_class for an already-checked Vector type.
+  static bool native_echo_vector_displayable(const string& t) {
+    string x = canonical_type_name(t);
+    if (x == "int" || x == "float" || x == "bool" || x == "char" || x == "string" ||
+        x == "vector" || internal_semantic_placeholder(x))
+      return true;
+    if (starts_with(x, "vector[") && ends_with(x, "]"))
+      return native_echo_vector_displayable(trim(x.substr(7, x.size() - 8)));
+    return false;
+  }
+
+  // The statically selected display-runtime formatter for one Vector element
+  // type: a helper function for a scalar, or a closure that formats a nested
+  // Vector with its own element formatter. nullopt when the type is open.
+  static std::optional<string> native_echo_element(const string& t) {
+    string x = canonical_type_name(t);
+    if (x == "int") return string("__moss_display_int");
+    if (x == "float") return string("__moss_display_float");
+    if (x == "bool") return string("__moss_display_bool");
+    if (x == "char") return string("__moss_display_char");
+    if (x == "string") return string("__moss_display_string");
+    if (starts_with(x, "vector[") && ends_with(x, "]")) {
+      auto inner = native_echo_element(trim(x.substr(7, x.size() - 8)));
+      if (!inner) return std::nullopt;
+      return "|o: &mut String, v: &std::vec::Vec<_>| __moss_display_vector_into(o, v, &" +
+             *inner + ")";
+    }
+    return std::nullopt;
   }
 
   string rust_type(const string& t) const {
@@ -22042,18 +22149,57 @@ class Generator {
                   statement_functional_pipeline_id(s, functional_context,
                                                    argument));
               auto type = generated_expr_type(s.args[argument], &types);
-              // The native target has no text form for a collection or
-              // record; report it before rustc rather than emit `{}` for it.
+              auto resolved = [](const std::optional<string>& t) {
+                if (!t) return false;
+                const string c = canonical_type_name(*t);
+                return !c.empty() && c != "vector" && !internal_semantic_placeholder(c);
+              };
+              if (!resolved(type)) {
+                // e.g. `[[], [1]]`: the backend's local typing cannot see the
+                // element type; use the type the checker accepted instead.
+                auto checked = s.echo_types_by_context.find(functional_context);
+                if (checked == s.echo_types_by_context.end())
+                  checked = s.echo_types_by_context.find(string());
+                if (checked != s.echo_types_by_context.end() &&
+                    argument < checked->second.size() &&
+                    resolved(checked->second[argument]))
+                  type = checked->second[argument];
+              }
+              // The checker owns the echo display contract (S-B); a Vector
+              // formats through the Moss display runtime, never Rust Debug.
+              // Anything else without a contract is an internal error here,
+              // reported with the checker's code rather than as rustc E0277.
               const string shown = type ? canonical_type_name(*type) : string();
-              if (shown == "vector" || shown == "map" || shown == "queue" ||
-                  starts_with(shown, "vector[") || starts_with(shown, "map[") ||
-                  starts_with(shown, "queue[") || objects_.count(shown))
-                throw CompileError(s.line, "native echo cannot display a " +
-                    string(objects_.count(shown) ? "record" : "collection") +
-                    " value; echo its fields or elements",
-                    "NATIVE_ECHO_DISPLAY_UNSUPPORTED");
-              if (type && canonical_type_name(*type) == "float")
+              if (shown == "map" || shown == "queue" || starts_with(shown, "map[") ||
+                  starts_with(shown, "queue[") || objects_.count(shown) ||
+                  enums_.count(shown) ||
+                  (starts_with(shown, "vector[") &&
+                   !native_echo_vector_displayable(shown)))
+                throw CompileError(s.line, "echo cannot display a value of type '" +
+                    shown + "'", "ECHO_DISPLAY_UNSUPPORTED");
+              if (shown == "float") {
                 rendered = "__moss_ryu::canonical_float_text(" + rendered + ")";
+              } else if (starts_with(shown, "vector[")) {
+                auto element = native_echo_element(shown.substr(7, shown.size() - 8));
+                if (!element) {
+                  // The backend saw a partially open element type; use the
+                  // complete type the checker accepted for this context.
+                  auto checked = s.echo_types_by_context.find(functional_context);
+                  if (checked == s.echo_types_by_context.end())
+                    checked = s.echo_types_by_context.find(string());
+                  if (checked != s.echo_types_by_context.end() &&
+                      argument < checked->second.size() &&
+                      starts_with(checked->second[argument], "vector[")) {
+                    const string& full = checked->second[argument];
+                    element = native_echo_element(full.substr(7, full.size() - 8));
+                  }
+                }
+                if (!element)
+                  throw CompileError(s.line, "internal error: echo of '" + shown +
+                      "' has no resolved element type for native display",
+                      "ECHO_DISPLAY_UNSUPPORTED");
+                rendered = "__moss_display_vector(&(" + rendered + "), &" + *element + ")";
+              }
               o << ", " << rendered;
             }
             o << ");\n";
@@ -30571,6 +30717,35 @@ static CompiledProjectUnit analyze_project_sources(
   }
 }
 
+// `moss check` and semantic queries on a project source: the same semantic
+// pipeline as standalone check (parse, Checker, FunctionalOptimizer) over the
+// project's module closure, but without native lowering. Lowering-only
+// diagnostics therefore cannot give a project file a different verdict from
+// the identical standalone file (P25-S-ARCH-019); `margo build` and native
+// compilation still lower and report them.
+static CompiledProjectUnit check_project_semantics(
+    const ProjectManifest& manifest,
+    const vector<std::filesystem::path>& sources, bool optimized,
+    ProgramGenerationMode mode,
+    const std::map<std::filesystem::path, string>* source_overrides = nullptr) {
+  CheckedProjectUnit checked = check_project_sources(
+      manifest, sources, mode, {}, nullptr, source_overrides);
+  try {
+    FunctionalOptimizer(checked.program).run(optimized);
+    OptimizationPlan plan = OptimizationPlan{optimized};
+    return {std::move(checked.program), std::move(plan), std::move(checked.warnings),
+            string(), std::move(checked.external_module_interfaces)};
+  } catch (const CompileError& error) {
+    throw ProjectError(
+        error.code.empty() ? diagnostic_code_for_message(error.what())
+                           : error.code,
+        error.what(), error.source_file.empty()
+            ? (sources.empty() ? string() : sources.front().string())
+            : error.source_file,
+        error.line, error.teaching);
+  }
+}
+
 static CompiledProjectUnit analyze_project_texts(
     const ProjectManifest& manifest,
     const vector<std::pair<std::filesystem::path, string>>& files,
@@ -36385,10 +36560,16 @@ int main(int argc, char** argv) {
             overrides[std::filesystem::absolute(input).lexically_normal()] =
                 *query_overlay;
           auto sources = moss::fast_debug_source_closure(context);
-          auto unit = moss::analyze_project_sources(
-              context.manifest, sources, optimize_shared_memory,
-              debug_build, context.mode, {}, nullptr,
-              overrides.empty() ? nullptr : &overrides);
+          // Check and semantic queries stop at semantics, exactly like the
+          // standalone path below; only compilation lowers to Rust.
+          auto unit = check_only
+              ? moss::check_project_semantics(
+                    context.manifest, sources, optimize_shared_memory,
+                    context.mode, overrides.empty() ? nullptr : &overrides)
+              : moss::analyze_project_sources(
+                    context.manifest, sources, optimize_shared_memory,
+                    debug_build, context.mode, {}, nullptr,
+                    overrides.empty() ? nullptr : &overrides);
           active_program = std::move(unit.program);
           plan = std::move(unit.plan);
           warnings = std::move(unit.warnings);

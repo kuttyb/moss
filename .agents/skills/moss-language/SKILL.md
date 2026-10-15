@@ -212,6 +212,13 @@ Facts the Phase 24 SDK swarm repeatedly rediscovered:
   representation `length()`, `char_at()` and `slice()` are O(n) per call, so
   index loops over long text are quadratic; the indexed representation is
   staged for ABI v10, not yet the default.
+- `echo` prints Int, Float, Bool, Char, String, and `Vector` of those. A Vector
+  prints as `[` + element texts joined by `, ` + `]` (`[]` when empty, nested
+  recursively), with raw unquoted String/Char elements and the same Float text
+  as scalar `echo`. Every engine prints the same text. A Map, Queue, record, enum,
+  function, Unit result, or Vector of them is rejected by `moss check` with
+  `ECHO_DISPLAY_UNSUPPORTED`; echo fields or elements instead. Project-mode
+  and standalone `moss check` give the same verdict for the same source.
 - Fast Debug runs `for`, has native block scoping, and uses IEEE `==` for
   Float (`isequal` is the separate total equality). It rejects programs whose
   `main` reaches FileIO before executing (`FAST_DEBUG_FILEIO`); in
