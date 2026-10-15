@@ -1007,7 +1007,11 @@ default written in the domain declaration, such as `value = 0` or one that
 calls a helper function, and a value passed to the constructor in `main`. The
 checker permits pure ordinary helper calls there, but rejects messages, domain
 access, I/O, failing, divergent, and unresolved work. **Failing** work includes
-operations that can fail at run time, such as division, indexing, or `pop()`. A
+operations that can fail at run time, such as division, indexing, or `pop()`.
+Integer division or remainder by an `Int` literal other than `0` or `-1`, such
+as `x % 10` or `x / 10`, is proven not to fail and is allowed. A `-1` literal
+divisor is still treated as possibly failing (the `Int`-minimum case), even
+though it wraps at run time. A
 helper's `while` loop is accepted when the checker can prove it terminates. In
 practice that means a simple counting loop, such as `while i < n:`, that moves
 `i` toward the bound by a fixed step once per pass. The bound must have no side

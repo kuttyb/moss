@@ -602,7 +602,12 @@ State initializers may compute ordinary runtime values, including through pure h
 calls, but must be side-effect-free. The rule covers defaults written in the domain
 declaration and constructor arguments in `main` alike. Messages, domain access, I/O,
 possibly failing work (for example division, indexing, or `pop`), possibly divergent
-loops, and unresolved calls are rejected. A helper `while` loop counts as terminating
+loops, and unresolved calls are rejected. Integer `/` and `%` count as possibly failing
+unless the divisor is a proven-safe constant: an `Int` literal, optionally
+parenthesized or signed, whose value is neither `0` nor `-1` (so `x % 10` and
+`x / 10` are proven not to fail, while `x % y`, `x % 0`, and `x / -1` are treated as
+possibly failing; `-1` is excluded conservatively even though the `Int`-minimum case
+wraps). A helper `while` loop counts as terminating
 only when the checker can prove it bounded. The accepted shape is a counting loop:
 
 - The condition compares the counter, written on the left, against a bound with `<`,
