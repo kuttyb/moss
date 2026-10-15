@@ -1,0 +1,13 @@
+fn fresh():
+  return []
+
+fn relay():
+  return fresh()
+
+fn main():
+  ints = fresh()
+  names = relay()
+  ints.push(1)
+  names.push("one")
+  echo ints[0]
+  echo names[0]

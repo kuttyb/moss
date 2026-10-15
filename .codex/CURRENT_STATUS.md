@@ -1,5 +1,28 @@
 # Moss current status
 
+## Phase 25 Team G G0 A1/ABI bounded feasibility — 2026-10-14
+
+On `phase25-g0-feasibility` from pinned baseline
+`fa3a340a0a6652568b97869489da1a84038b9857`, the bounded G0 prototype and
+conformance design are complete without compiler/shared-IR edits. One
+provider-owned generic Rust record with private fields is consumed by two
+independent specialization crates through provider-generated accessor-shaped
+functions. A custom Moss key equality/hash adapter succeeds without dynamic
+dispatch, while the direct foreign `Hash` implementation fails with rustc
+E0117 as required. The report recommends provider-owned opaque records and a
+shared-runtime `KeySlot<K,Ops>` representation, with explicit A1/Map escalation
+triggers.
+
+`docs/phase25/TEAM_G_G0_FEASIBILITY.md` defines the proposed canonical
+template/instance keys, ABI-v10 logical records, Option B freshening/closure
+rules, visibility alternatives, and source/source-free conformance plan.
+Forward fixtures are under `tests/phase25/g0/`; they are not wired into the
+baseline test runner because current ABI-v9 Moss correctly lacks Option B.
+Focused Rust feasibility and the existing ABI-v9 migration gate pass. Current
+open-result probes fail at `fresh` with `TYPE_INFERENCE_FAILED`, and the local
+pin probe reaches Team S's known local-member dispatch error. Major shared-IR
+work remains blocked pending Team S, both Architects, and signed L7 G0 approval.
+
 ## Phase 24 Aggregate SDK Integration Complete (Teams A & R Integrated) — 2026-10-13
 
 Team I completed the aggregate integration of all approved Phase 24 SDK deliveries into `phase24-integration`, incorporating Team A (`phase24-advanced-data`) and Team R (`phase24-data-utils`) alongside all previously integrated components:
