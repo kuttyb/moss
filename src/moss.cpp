@@ -4465,6 +4465,59 @@ class Checker {
     return std::nullopt;
   }
 
+  // The operator of `operators` at which split_binary split `expression`.
+  static string split_operator_at(const string& expression,
+                                  const std::pair<string, string>& split,
+                                  const vector<string>& operators) {
+    for (const auto& op : operators)
+      if (auto candidate = split_binary(expression, {op}); candidate && *candidate == split)
+        return op;
+    return "";
+  }
+
+  // Phase 25 S-C proven-safe divisor: an Int literal, optionally
+  // parenthesized and signed, whose value is neither 0 nor -1. Int `/` and
+  // `%` by such a divisor cannot fail in any engine. `-1` stays conservative
+  // (Int.MIN / -1 overflows; every engine currently wraps it), and every other
+  // divisor (names, calls, arithmetic, 0) stays a possible panic.
+  static bool proven_safe_integer_divisor(const string& divisor) {
+    string value = trim(divisor);
+    bool negative = false;
+    for (;;) {
+      if (value.size() >= 2 && value.front() == '(' && value.back() == ')') {
+        int depth = 0;
+        bool encloses = true;
+        for (size_t index = 0; index < value.size(); ++index) {
+          if (value[index] == '(') ++depth;
+          else if (value[index] == ')' && --depth == 0 && index + 1 != value.size()) {
+            encloses = false;
+            break;
+          }
+        }
+        if (!encloses) return false;
+        value = trim(value.substr(1, value.size() - 2));
+        continue;
+      }
+      if (!value.empty() && (value.front() == '-' || value.front() == '+')) {
+        if (value.front() == '-') negative = !negative;
+        value = trim(value.substr(1));
+        continue;
+      }
+      break;
+    }
+    if (value.empty() ||
+        !std::all_of(value.begin(), value.end(), [](char ch) {
+          return std::isdigit(static_cast<unsigned char>(ch));
+        }))
+      return false;
+    // Compare digit strings: no numeric conversion, so no overflow. A literal
+    // outside Int range is rejected separately (INT_LITERAL_OUT_OF_RANGE).
+    const size_t significant = value.find_first_not_of('0');
+    if (significant == string::npos) return false;            // 0
+    if (negative && value.substr(significant) == "1") return false;  // -1
+    return true;
+  }
+
   struct BuiltinCallSemantics {
     string result_type;
     ObservableEffects observable_effects;
@@ -10634,10 +10687,18 @@ class Checker {
             binary->second, env, domain_fields, implicit_object, parameters,
             proven_indices, root_ingress));
         if (operators.front() == "*") {
-          if (split_binary(value, {"%"})) effects.may_panic = true;
-          if (split_binary(value, {"/"})) {
+          // Phase 25 S-C: classify only the operator at this split; nested
+          // operands were classified by the recursive calls above.
+          const string op = split_operator_at(value, *binary, {"*", "/", "%"});
+          if (op == "/" || op == "%") {
             auto result_type = inferred_expr_type(value, env);
-            if (!result_type || canonical_type_name(*result_type) != "float")
+            const string result = result_type ? canonical_type_name(*result_type) : "";
+            const bool float_division = op == "/" && result == "float";
+            auto dividend_type = inferred_expr_type(binary->first, env);
+            const bool int_dividend = dividend_type &&
+                canonical_type_name(*dividend_type) == "int" && result == "int";
+            if (!float_division &&
+                !(int_dividend && proven_safe_integer_divisor(binary->second)))
               effects.may_panic = true;
           }
         }

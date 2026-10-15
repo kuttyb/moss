@@ -100,6 +100,9 @@ other scalars hash an injective image of the value (identity, code point,
   unresolved effect. A key that consumes a non-Copy argument receives a clone.
   Purity makes key-evaluation count and order unobservable, so the three
   engines may evaluate keys differently and still agree.
+- Possible panic follows the proven-safe arithmetic rule of §9 (S-C): Int
+  `x % 10` and `x / 10` are panic-free; `x % y`, `x % 0`, `x / -1`,
+  `s.char_at(i)`, and `xs[i]` are possible panics.
 - `Reverse` must wrap a named function directly; `Reverse(Reverse(k))` is
   `SORT_KEY_CALLABLE`.
 
@@ -156,7 +159,7 @@ L7 suites (`check_phase25_l7_repairs.py`, `check_phase25_g3_ordering.py`):
 | P25-S3-D2 | A `Map` keyed by a record or nominal type passes `moss check`. Native rustc rejects the `HashMap` (no `Eq`/`Hash`), and Fast Debug compares keys structurally, ignoring custom `isequal`/`hash` methods (wrong results, or `missing map key`). This holds for valid, malformed, impure, and missing proofs alike. | **Fails closed (Coordinator interim fix); real support handed off.** The checker now rejects a record key, or a key containing a record or a Float, at index and assignment positions with `RECORD_MAP_KEY_UNSUPPORTED` / `FLOAT_MAP_KEY_UNSUPPORTED`; a declared `Map[Record, V]` type is rejected as an invalid type (`UNKNOWN_SYMBOL_OR_TYPE`), as for Float. Keys that are Maps, enums, or collections of them are rejected with `MAP_KEY_TYPE_UNSUPPORTED` / `ENUM_MAP_KEY_UNSUPPORTED` (P25-S-ARCH-014). Map key admission with KeyProofs belongs to the `MossMap<K,V>` work. Fixtures `03`–`07` are recorded as fail-closed. |
 | P25-S3-D3 | Empty `Map()` whose K/V are not fixed where it is created: never-inserted `m.get(k, d)`, `Map().get(k, d)`, an open-result helper `fn fresh(): return Map()`, and a never-used `Map()` all pass `moss check` and fail in rustc. Annotated or unannotated domain state `Map()` and a cross-package open result are rejected instead. | **Handed off** to Team G Option B (`TYPE_IR_CONTRACT.md` §4.2). Fixtures `09b`–`09h`. |
 | P25-S3-L1 | An untyped key whose body makes a member call (`x.length()`) is accepted from a same-package module but rejected from a path dependency with `SORT_KEY_IMPURE` "unresolved effect": the `.mossi` template of an untyped function carries an unresolved effect summary. Fail-closed. | Pinned by `test_untyped_member_key_across_packages`; belongs to open summaries with effects (Team G G2). |
-| P25-S3-L2 | Purity is conservative: `x % 10`, `x / 10`, `s.char_at(i)`, and `xs[i]` count as possible panics, and `c.codepoint()` on a `for` element of a bound `Vector[Char]` is unresolved. Such keys are rejected. The G0 concurrence's own `UserKey` example (`code % 10`) has `may_panic=1` in its `.mossi` record and would therefore fail the protocol's purity rule as now computed. | Fail-closed; Team G/L7 should decide whether integer `%`/`/` by a nonzero literal is panic-free before freezing proof purity. |
+| P25-S3-L2 | Purity was conservative: `x % 10`, `x / 10`, `s.char_at(i)`, and `xs[i]` counted as possible panics, and `c.codepoint()` on a `for` element of a bound `Vector[Char]` is unresolved. Such keys were rejected. The G0 concurrence's own `UserKey` example (`code % 10`) had `may_panic=1` in its `.mossi` record and would have failed the protocol's purity rule. | **Arithmetic part resolved by S-C (§9)**: Int `/` and `%` by a proven-safe literal divisor (not `0`, not `-1`) are panic-free, so `code % 10` now has `may_panic=0` in effects, `inspect`, and `.mossi`. `char_at`, indexing, `-1` and non-literal divisors, and the `codepoint()` item stay fail-closed. |
 | P25-S3-L3 | `parts.push(item.field)` (or `let l = item.field`) for a non-Copy field of a `for` loop element passes `moss check` and fails in rustc (`cannot move out of ... behind a shared reference`). Unrelated to the key protocol; the S3 tests index instead. | Recorded, not fixed (outside S3 scope). Reproducer in the S3 report. |
 | P25-S3-L4 | `moss check <project-directory> --json` reports `ok` with no diagnostics without checking the project; `moss check src/main.moss` does check it. | Recorded (tooling). |
 
@@ -170,3 +173,61 @@ cases). Its README states the activation trigger. Set uses a minimal
 spelling (`Set()`, `insert`, `contains`, `values()`) marked
 **PROVISIONAL — pending Team G G2 Set API**, because no frozen Team G document
 specifies one.
+
+## 9. Proven-safe arithmetic (S-C)
+
+**Branch:** `s-c-safe-arithmetic` (from `c2e106c0`). Regression suite:
+`tests/tooling/check_phase25_sc_safe_arithmetic.py`.
+
+**Rule.** In the one observable-effect analysis
+(`observable_expression_effects` in `src/moss.cpp`, the `*`/`/`/`%`
+precedence level), the operator at which an expression splits is classified
+as follows. Operands are classified separately and recursively.
+
+| operation | `may_panic` |
+|---|---|
+| `a / b` whose result type is Float | false (IEEE division, unchanged) |
+| Int `a / d` or `a % d`, `a` of type Int, `d` a proven-safe divisor | false |
+| any other Int `/` or `%` | true |
+
+A **proven-safe divisor** is an Int literal, optionally wrapped in parentheses
+and preceded by unary `+`/`-` signs, whose value is neither `0` nor `-1`
+(`10`, `(10)`, `-7`, `+3`, `(-2)`, `9223372036854775807`). The literal is
+compared as a digit string, so there is no conversion overflow. There is no
+further folding: `x / (5 + 5)`, a `let` constant, a parameter, or a call stays
+a possible panic. `-(1)` is outside the rule and is also reported
+`unresolved` (pre-existing unary-minus-of-parentheses gap).
+
+**Int minimum and `-1`.** `docs/LANGUAGE_SYNTAX.md` "Integer arithmetic"
+specifies that Int `/` wraps the Int-minimum divided by `-1` case and `%`
+uses the same truncating model; only a zero divisor is invalid. Measured at
+`c2e106c0` and after S-C, with the divisor from a function so nothing folds:
+
+| engine | `Int.MIN / -1` | `Int.MIN % -1` | `x / 0`, `x % 0` |
+|---|---|---|---|
+| Fast Debug (`interpreter.hpp` `arithmetic`) | `-9223372036854775808` (explicit case) | `0` | runtime error, nonzero exit |
+| Native Debug (`wrapping_div`/`wrapping_rem`) | `-9223372036854775808` | `0` | Rust panic, exit 101 |
+| Native Release (same lowering, `-O`) | `-9223372036854775808` | `0` | Rust panic, exit 101 |
+
+The engines already agree, so no runtime change was needed. A `-1` divisor
+therefore cannot panic either; the L7-approved rule still treats it as a
+possible panic, which is conservative and sound. L7 may admit `-1` later
+without a runtime change.
+
+**Consumers.** The classification is a field of `ObservableEffects`, so every
+consumer sees the same answer: `moss effects`/`inspect` JSON and labels;
+`.mossi` `effects=` records (written and read back for source-free
+providers) and effect fingerprints; `SORT_KEY_IMPURE` (`observable_barrier`);
+domain-state initializer purity (defaults and constructor arguments); the
+bounded-`while` bound check; the handler leading-`if` split; and the
+functional optimizer (`fusion_safe`, `safe_to_skip`, chunk speculation,
+predicate push-down). Each of these only needs "this operation cannot
+panic", which holds for the admitted divisors in all three engines.
+
+**Observable changes.** No tracked `.moss` file changes its `moss check`
+verdict. Newly accepted: sort keys, nominal `isequal`/`hash` methods, and
+initializer helpers using `x % 10` / `x / 10`. Newly fused: pipelines whose
+only barrier was such a callback (`--explain-fusion` now reports
+`fused stages`). Untyped `fn k(x) -> Int: return (x / 10) % 10` is still
+rejected with `TYPE_MISMATCH` before specialization; this is a type-inference
+limitation outside S-C.
