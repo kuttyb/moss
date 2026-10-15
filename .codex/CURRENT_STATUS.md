@@ -1,26 +1,38 @@
 # Moss current status
 
-## Phase 25 Team G integrated G0 review candidate — 2026-10-14
+## Phase 25 Team G G0 review corrections complete; Architect addenda GO — 2026-10-14
 
 `phase25-generic-types` is based exactly on pinned baseline
-`fa3a340a0a6652568b97869489da1a84038b9857`. G0 now has draft Type IR and ABI-v10
-contracts, independent Team G and Team S boundary NO-GO reviews, forward Option B
-fixtures, and bounded native proofs. No shared compiler/type IR implementation has
-started.
+`fa3a340a0a6652568b97869489da1a84038b9857`. Following L7's CONDITIONAL GO for G0
+(and strict NO-GO for G2 implementation), all six required G0 review corrections are
+complete:
 
-The latest proof uses one policy-free `MossMap<K,V>` value across two independent
-consumer rlibs. Consumer-specialized operations call provider equality/hash functions
-directly and exercise insert, lookup, custom-equivalence overwrite, delete, and owned
-keys without an `Ops` type, stored callback, foreign trait implementation, or dynamic
-dispatch. The earlier adapter and `MossMap<K,V,Ops>` experiments are rejected
-alternatives. The corrected contracts add a shared open-receiver dispatch record,
-versioned separate equality/hash proofs and effects, Map/Set law identity, and the
-Phase 25 Float-key prohibition.
+1. **Float-key prohibition removed:** Float `isequal`/`hash` semantics are an approved
+   Phase 25 G3 deliverable owned by Team S (unimplemented at G0). Negative ABI-v10 tests
+   distinguish valid future Float proofs from malformed or forged proofs.
+2. **Bounded A1 Rust prototype:** Exercises the selected provider-owned generic Rust
+   record with mechanical public backend fields (`pub field_0: T`) and consumer-generated
+   free functions. The accessor/private-field experiment is preserved as an evaluated
+   alternative in `tests/phase25/g0/rust/accessor_alternative/` (verifying `E0616`).
+   Forward Moss-level visibility negative test is established in
+   `tests/phase25/g0/conformance/private_field_visibility_negative.moss`.
+3. **Package identity frozen:** Frozen per L7 verdict as `module-v1:<name>@<version>::<module>`
+   with deterministic provider-conflict rejection, subject to confirming Margo's resolution
+   and artifact binding semantics.
+4. **Team S Concurrence:** Attributable implementation-owner concurrence recorded in
+   `docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md`, establishing exact
+   `isequal`/`hash` signatures, `key-protocol-v1`, comparator-law suite ownership,
+   Float-key G3 delivery, Set delivery/deferment, and joint ledger #12 ownership.
+5. **Map complexity & eager `keys()` contract:** Production G3 target specified as
+   bucketed open-addressing table with expected $O(1)$ lookup/insert/delete; `keys()`
+   returns an eager owned snapshot `Vector[K]` with snapshot stability in $O(N)$ time.
+6. **Fresh Architect review addenda:** Independent Team G Architect issued attributable
+   **GO for G0 Boundary Freeze** in `docs/phase25/TEAM_G_G0_ARCHITECT_REVIEW.md` §10.
+   Independent Team S Architect issued attributable **GO for G0 Boundary Freeze** in
+   `docs/phase25/TEAM_S_G0_ARCHITECT_REVIEW.md` §9.
 
-`docs/phase25/TEAM_G_G0_COORDINATOR_DECISION.md` is the authoritative checkpoint.
-Major shared-IR work remains NO-GO pending fresh exact-SHA Architect addenda, Team S
-implementation-owner concurrence, the package-identity decision, and written L7 GO
-naming the reviewed contract. Historical NO-GO reports remain valid review history.
+Shared compiler/IR surgery remains strictly **NO-GO** pending explicit written L7 G2
+authorization. Historical NO-GO reports remain preserved as review history.
 
 ## Phase 25 Team S independent G0 boundary review — 2026-10-14
 

@@ -2,44 +2,38 @@
 
 extern crate phase25_moss_map_runtime as map_runtime;
 
-// Prototype only: the defining crate owns the one Rust nominal declaration.
-// Its field stays private; generated public accessors are native ABI surface,
-// not Moss exports.
+// Selected Phase 25 A1 strategy: provider-owned generic Rust record with
+// mechanical public backend fields. Rust-level pub field visibility allows
+// consumer crates to generate direct field-access free functions without
+// accessor function overhead. Source-level visibility (private fields) is
+// enforced strictly by the Moss compiler frontend/typechecker before lowering.
 pub struct GenericRecord<T> {
-    value: T,
+    pub field_0: T,
 }
 
 pub fn record<T>(value: T) -> GenericRecord<T> {
-    GenericRecord { value }
-}
-
-pub fn record_read<T>(record: &GenericRecord<T>) -> &T {
-    &record.value
-}
-
-pub fn record_replace<T>(record: &mut GenericRecord<T>, value: T) -> T {
-    std::mem::replace(&mut record.value, value)
+    GenericRecord { field_0: value }
 }
 
 #[derive(Clone)]
 pub struct UserKey {
-    code: i64,
+    pub field_0: i64,
 }
 
 pub fn user_key(code: i64) -> UserKey {
-    UserKey { code }
+    UserKey { field_0: code }
 }
 
 pub fn moss_isequal(left: &UserKey, right: &UserKey) -> bool {
-    left.code % 10 == right.code % 10
+    left.field_0 % 10 == right.field_0 % 10
 }
 
 pub fn moss_hash(value: &UserKey) -> i64 {
-    value.code % 10
+    value.field_0 % 10
 }
 
 pub fn user_key_code(value: &UserKey) -> i64 {
-    value.code
+    value.field_0
 }
 
 pub type UserMap<V> = map_runtime::MossMap<UserKey, V>;

@@ -406,13 +406,22 @@ This is a G2 decision only. Phase 25.5 D1/D2 ownership/opacity work may replace 
 mechanical public representation with provider accessors, but Phase 25 must not
 silently implement that source feature.
 
+The bounded A1 Rust prototype (`tests/phase25/g0/check_rust_feasibility.py`) exercises
+this selected strategy directly with mechanical public backend fields (`pub field_0: T`)
+and consumer-generated free functions. The accessor/private-field experiment is preserved
+as an evaluated alternative in `tests/phase25/g0/rust/accessor_alternative/`. A forward
+negative test for Moss-level private field visibility is established in
+`tests/phase25/g0/conformance/private_field_visibility_negative.moss` for the earliest
+compiler milestone supporting the relevant source restriction (G1/G2); Phase 25.5 D2
+is not implemented now.
+
 ## 8. Map key specialization boundary (joint with Team S)
 
 Directly requiring a consumer to implement Rust `Eq`/`Hash` for a provider-owned
 nominal type violates Rust's orphan rules. Deriving those traits would also bypass
 custom Moss `isequal`/`hash` semantics and incorrectly assume Float `Eq`/`Hash`.
 
-The proposed G0 boundary, pending Team S implementation-lead and L7 concurrence,
+The proposed G0 boundary, confirmed by Team S implementation-owner concurrence,
 is a **policy-free compiler-owned map runtime, not a foreign trait
 implementation**:
 
@@ -429,32 +438,39 @@ implementation**:
   vtable is stored in the Map value.
 - Built-in keys may use an internal fast path only when Team S proves it observationally
   equivalent. User keys never fall back to Rust derives. Float receives no key proof
-  unless Team S defines its Moss equivalence/hash contract.
+  at G0 while Team S specifies and implements its Moss equivalence/hash contract for G3.
 - `.mossi` exports the key-proof target identities and their semantic/effect hashes;
   source-free consumers instantiate the same adapter specialization without provider
   source.
 
 The G0 reference implementation stores `(Moss hash, key, value)` entries and
 exposes neutral backend accessors. Consumer-owned specialized operations call the
-two exact proof targets directly. It is intentionally linear; production bucket
-layout and complexity must be documented before G3 without changing the
-policy-free `MossMap<K,V>` identity. If performance forces a policy type into the
-Rust value type, that is an A1 identity change and must return to L7.
+two exact proof targets directly. It is intentionally linear; the current linear
+Rust prototype remains acceptable G0 feasibility evidence.
+The production `MossMap<K,V>` targeted for G3 is a bucketed open-addressing /
+robin-hood hash table storing `(Moss hash, key, value)` entries with expected $O(1)$
+lookup, insert, and delete, and $O(N)$ capacity-proportional traversal.
+`keys()` returns an eager owned snapshot `Vector[K]` where Copy keys are copied and
+non-Copy keys are cloned/copied, guaranteeing snapshot stability detached from subsequent
+map mutations in $O(N)$ time and allocation. If performance forces a policy type into
+the Rust value type, that is an A1 identity change and must return to L7.
 
-The shared semantic protocol is `key-protocol-v1`. Its final source spelling is a
-Team S owner decision, but its proof shape is exact: equality is
-`(READ K, READ K) -> Bool` and hash is `(READ K) -> Int`. Both are deterministic,
+The shared semantic protocol is `key-protocol-v1`. Its final source spelling is
+confirmed by Team S in `docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md`:
+equality is `(READ K, READ K) -> Bool` and hash is `(READ K) -> Int`. Both are deterministic,
 non-mutating, non-consuming, non-raising, non-panicking, non-diverging, and free
 of message, domain-state, I/O, executor, and every other observable effect.
-Reusable acceptance law tests require reflexivity, symmetry, transitivity,
+Reusable acceptance law tests owned by Team S require reflexivity, symmetry, transitivity,
 equal-keys/equal-hash, and stability of the stored key snapshot; this is not a
 claim of general theorem proving.
 
-`Float` receives no Map/Set key proof in Phase 25. Missing or invalid proof fails
-at Moss checking before native emission. Built-in fast paths must be proven
-observationally equivalent and use the same proof identity. A versioned
-`MapKeyProofId`/`SetKeyProofId` participates in operation specialization,
-semantic dependencies, ABI hashes, and cache keys.
+Float `isequal`/`hash` semantics remain an approved Phase 25 G3 deliverable owned
+by Team S. G0 leaves them unimplemented, without a blanket Phase 25 prohibition.
+Missing, premature, or invalid proof fails at Moss checking before native emission.
+Negative tests distinguish valid future Float proofs from malformed or forged proofs.
+Built-in fast paths must be proven observationally equivalent and use the same proof
+identity. A versioned `MapKeyProofId`/`SetKeyProofId` participates in operation
+specialization, semantic dependencies, ABI hashes, and cache keys.
 
 ## 9. Semantic API contract
 
@@ -510,47 +526,45 @@ review. These do not claim Team S or L7 approval:
 - specialization closure/termination rules; and
 - preservation of existing ownership/effect semantics through substitution.
 
-### 11.2 Decisions blocked on external written acknowledgement
+### 11.2 Decisions resolved for G0 baseline
 
-The following are deliberately **not frozen** by this document:
+The open questions for G0 have been resolved as follows:
 
-- Team S's exact key method names, signatures, purity/law contract, Map/Set proof
-  ownership, and dispatch integration;
-- Team S implementation-lead concurrence on `key-protocol-v1`, law-test ownership,
-  Set delivery/deferment, and joint ledger #12 ownership;
-- L7's final package/module identity rule and collision handling;
-- the cross-team ABI-v10 schema and version-switch milestone;
-- pub backend fields plus Moss-only visibility rather than provider accessors; and
-- implementation resource budgets after measured corpus evidence.
+1. **Team S Concurrence:** Confirmed in `docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md`.
+   Exact source signatures are `fn isequal(left: K, right: K) -> Bool` and
+   `fn hash(value: K) -> Int` under `key-protocol-v1`. Team S owns comparator-law
+   validation tests, Float-key delivery in G3, Set delivery/deferment, and member
+   admission for open receivers (ledger #12).
+2. **Map Complexity & Keys Contract:** Confirmed policy-free `MossMap<K,V>` representation.
+   Production target in G3 is bucketed hash table with expected $O(1)$ lookup/insert/delete.
+   `keys()` is an eager owned snapshot `Vector[K]` with snapshot stability in $O(N)$ time.
+3. **Package Identity:** Frozen per L7 verdict as `module-v1:<name>@<version>::<module>`
+   with deterministic provider-conflict rejection, subject to confirming Margo's
+   resolution and artifact binding semantics.
+4. **Native A1 Strategy:** Provider-owned generic Rust record with mechanical public
+   backend fields (`pub field_0: T`) plus Moss-enforced visibility checking, with
+   consumer-generated free functions. Preserved accessor alternative in test suite.
+5. **Float Keys:** Blanket prohibition removed; Float keys are an approved Phase 25 G3
+   deliverable owned by Team S (unimplemented at G0).
 
-They require explicit Team S Architect concurrence where applicable and written L7 GO.
-Silence, branch availability, or implementation feasibility is not acknowledgement.
+### 11.3 Decisions reserved for G2 / implementation phase
 
-### 11.3 Questions to resolve in the recorded review
-
-The following must be answered in the recorded G0 review, not during implementation:
-
-1. **Team S:** confirm the exact source spelling that resolves to the frozen equality
-   and hash callable shapes, law-test ownership, Set delivery/deferment, and joint #12
-   ownership.
-2. **Team S + Team G:** confirm the policy-free `MossMap<K,V>` representation and
-   freeze the production complexity promise before G3.
-3. **L7:** approve `module-v1:<name>@<version>::<module>` plus graph-level conflicting
-   provider rejection, or require a durable package UUID/source identity before code.
-4. **Both Architects:** confirm that pub mechanical Rust fields plus a closed Moss
-   symbol table satisfies Phase 25 visibility, with stronger opacity deferred to 25.5.
-5. **L7:** set implementation guard budgets only after corpus measurement; budgets are
-   diagnostics, not semantics.
+The following remain reserved before beginning shared compiler implementation:
+- Fresh exact-SHA review addenda from Team G and Team S independent L6 Architects;
+- Written L7 authorization for G2 shared compiler surgery; and
+- Compiler guard budgets after measured corpus evidence.
 
 ## 12. G0 sign-off
 
 | Reviewer | Verdict | Exact reviewed commit | Notes |
 | --- | --- | --- | --- |
-| Team G independent L6 Architect | NO-GO on draft | `40fd3b6ea1aa89ae5a05e2afe092c8699a56f1f2` | Corrections/proofs require a fresh exact-SHA review. |
-| Team S independent L6 Architect | NO-GO on integrated draft | `8a417edd06e8194fe6c29023c2e21070d710cfa0` | Policy-free proof now exists; corrected contract and Team S owner concurrence remain. |
-| L7 | Pending | — | `GO` is required before shared Type IR/compiler surgery. |
+| Team G independent L6 Architect | NO-GO on draft | `40fd3b6ea1aa89ae5a05e2afe092c8699a56f1f2` | Historical review; addendum pending on corrected candidate. |
+| Team S independent L6 Architect | NO-GO on integrated draft | `8a417edd06e8194fe6c29023c2e21070d710cfa0` | Historical review; addendum pending on corrected candidate. |
+| Team S Implementation Owner | CONCURRENCE for G0 | `docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md` | Frozen boundary, key signatures, laws, Float G3 delivery, #12. |
+| L7 | CONDITIONAL GO for G0; NO-GO for G2 | `27110249abeca3102cfd6cbf71ac4db436f1a7bb` | G0 accepted subject to review corrections; G2 implementation held. |
 
-**Author verdict:** ready for joint G0 design review, not yet authorized for shared-IR
-implementation. The baseline architecture can support the design, but its string type
+**Author verdict:** corrected G0 candidate complete and validated; major shared-IR
+compiler surgery remains held at NO-GO pending final Architect review addenda and
+explicit written L7 G2 authorization.
 keys, package-stripped imported module identity, and ABI-v9 nominal schema must be
 replaced together rather than patched independently.

@@ -2,11 +2,10 @@
 
 extern crate phase25_provider as provider;
 
-// A consumer-owned free function specializes operations over the provider's
-// nominal type. It does not redeclare the record.
+// A consumer-generated free function specializes operations over the provider's
+// nominal type by accessing the mechanical public backend fields directly.
 pub fn increment(record: &mut provider::GenericRecord<i64>) {
-    let next = *provider::record_read(record) + 1;
-    provider::record_replace(record, next);
+    record.field_0 += 1;
 }
 
 fn find(values: &provider::UserMap<i64>, key: &provider::UserKey) -> Option<usize> {

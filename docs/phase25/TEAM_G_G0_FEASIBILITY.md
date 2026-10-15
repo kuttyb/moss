@@ -333,7 +333,7 @@ Commands run at exact baseline
 PASS: ok=true, result.language_version=moss-0.1
 
 python3 tests/phase25/g0/check_rust_feasibility.py
-PASS: Phase 25 G0 provider identity, canonical cross-crate MossMap, and visibility prototype passed
+PASS: Phase 25 G0 provider identity, public backend fields, canonical cross-crate MossMap, and preserved accessor alternative passed
 
 /usr/bin/time -f 'elapsed=%e maxrss_kb=%M' \
   python3 tests/phase25/g0/check_rust_feasibility.py

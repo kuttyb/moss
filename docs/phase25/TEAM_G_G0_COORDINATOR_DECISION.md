@@ -29,7 +29,8 @@ variants are retained in history as rejected alternatives, not production decisi
 
 The corrected contract also freezes the shared open-receiver dispatch record for
 ledger #12, separate equality/hash signatures and effect records, versioned key proof
-and law identities, shared Map/Set proof shape, and the Phase 25 Float-key prohibition.
+and law identities, shared Map/Set proof shape, frozen package identity
+`module-v1:<name>@<version>::<module>`, and Team S G3 ownership of Float keys.
 
 ## Review history
 
@@ -43,8 +44,11 @@ and law identities, shared Map/Set proof shape, and the Phase 25 Float-key prohi
   `040ed4b1951ca9c8371becb2387db332addfedfd` (rejected/superseded).
 - Policy-free two-consumer Map proof:
   `d0423e0f728fff0a7f40a8b41953fd822195d3a4`.
+- Integrated review candidate:
+  `27110249abeca3102cfd6cbf71ac4db436f1a7bb`.
+- L7 verdict on `2711024`: **CONDITIONAL GO for G0; NO-GO for G2 shared compiler/IR implementation**.
 
-Historical NO-GO reports remain unchanged. Both Architects must review the exact
+Historical NO-GO reports remain unchanged. Both Architects review the exact
 corrected candidate and issue attributable addenda; an addendum does not erase the
 earlier findings.
 
@@ -60,27 +64,34 @@ The bounded Rust proof runs with:
 
 ```text
 python3 tests/phase25/g0/check_rust_feasibility.py
-PASS: Phase 25 G0 provider identity, canonical cross-crate MossMap, and visibility prototype passed
+PASS: Phase 25 G0 provider identity, public backend fields, canonical cross-crate MossMap, and preserved accessor alternative passed
 ```
 
 This is feasibility evidence, not Moss implementation acceptance. ABI-v9 remains the
 production format at this checkpoint; ABI-v10 is a reviewed design only.
 
-## Remaining approval items
+## Status of G0 requirements & G2 prerequisites
 
-Shared compiler/IR surgery remains blocked until all items are recorded:
+Following the L7 G0 review corrections:
 
-1. fresh exact-SHA GO addenda from the independent Team G and Team S Architects;
-2. an attributable Team S implementation-owner concurrence naming the source spelling
-   that resolves to `key-protocol-v1`, Map/Set law-test ownership, Set delivery or
-   deferment, and joint ledger #12 ownership;
-3. an L7 decision on package identity: approve
-   `module-v1:<package-name>@<package-version>::<module>` with graph-level collision
-   rejection, or require a durable package instance identity;
-4. written L7 GO naming the corrected contract commit and both Architect addenda; and
-5. implementation guard budgets after corpus measurement (budgets are diagnostics,
-   never semantics).
+1. **Float-key prohibition removed:** Float `isequal`/`hash` semantics remain an
+   approved Phase 25 G3 deliverable owned by Team S. G0 leaves them unimplemented;
+   negative tests distinguish valid future Float proofs from malformed/forged proofs.
+2. **A1 prototype:** Provider-owned generic Rust record with mechanical public backend
+   fields (`pub field_0: T`) and consumer-generated free functions verified. Accessor
+   alternative preserved; forward Moss visibility negative test recorded in
+   `tests/phase25/g0/conformance/private_field_visibility_negative.moss`.
+3. **Package identity:** Frozen per L7 verdict as `module-v1:<name>@<version>::<module>`
+   with deterministic provider-conflict rejection, subject to confirming Margo's
+   resolution and artifact binding semantics.
+4. **Team S Concurrence:** Formal implementation-owner concurrence recorded in
+   `docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md`.
+5. **Map Complexity & Keys Contract:** Production target specified as bucketed open-addressing
+   hash table with expected $O(1)$ lookup/insert/delete; `keys()` is an eager owned snapshot
+   `Vector[K]` with snapshot stability in $O(N)$ time.
+6. **Fresh Architect Reviews:** Fresh exact-SHA review addenda requested and recorded
+   from independent Team G and Team S Architects.
 
-The Phase 25 charter authorizes the mission and G0 work but, per its own gate, is not
-the later written GO naming reviewed contracts. No source-level `Box[T]`, `where T`,
-`Self`, local annotation, dynamic dispatch, or implicit `Any` is authorized.
+Shared compiler/IR surgery remains strictly **NO-GO** until written L7 G2 authorization.
+No source-level `Box[T]`, `where T`, `Self`, local annotation, dynamic dispatch, or
+implicit `Any` is authorized.

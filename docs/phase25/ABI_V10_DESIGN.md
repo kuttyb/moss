@@ -53,6 +53,10 @@ compatibility. Both are exactly 10 for this release. A v9 container, a v3 contai
 claiming native ABI 9, or a manually changed version line receives
 `SOURCE_FREE_ABI_REBUILD_REQUIRED`; it is never parsed under v10 assumptions.
 
+Package identity is frozen per L7 verdict as `module-v1:<package>@<version>::<module>`
+with deterministic provider-conflict rejection, subject to confirming Margo's resolution
+and artifact binding semantics.
+
 ## 2. Bound hashes
 
 ABI v10 separates three hashes, all SHA-256 with domain-separated canonical inputs:
@@ -249,8 +253,10 @@ specialization described in the Type IR contract. It never authorizes or request
 Rust `Eq`/`Hash` impl. `proof_id` is an input to Map/Set operation specialization,
 semantic dependencies, interface hashes, and cache keys. `SetKeyProof` uses the
 same record shape and protocol (or Set is explicitly deferred); it cannot invent a
-second key contract. Missing proof fails at Moss checking. Float has no valid proof
-in Phase 25, regardless of Rust representation.
+second key contract. Missing or premature proof fails at Moss checking. Float
+`isequal`/`hash` semantics are an approved Phase 25 G3 deliverable owned by Team S;
+G0 leaves them unimplemented rather than prohibited for the entire phase. Negative
+tests distinguish valid future Float proofs from malformed or forged proofs.
 
 The loader checks the two signatures and separate effect records against
 `key-protocol-v1`: equality is `(READ K, READ K) -> Bool`, hash is
@@ -258,6 +264,15 @@ The loader checks the two signatures and separate effect records against
 message, touch domain state, perform I/O/executor work, or have another observable
 effect. The law version names the reusable reflexive/symmetric/transitive,
 equal-hash, and snapshot-stability acceptance suite; it is not a runtime policy.
+Team S owns the comparator-law validation suite and has recorded formal concurrence
+in `docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md`.
+
+The production `MossMap<K,V>` targeted for G3 is a bucketed open-addressing /
+robin-hood hash table storing `(Moss hash, key, value)` entries with expected $O(1)$
+lookup, insert, and delete (linear prototype is bounded G0 feasibility evidence).
+`keys()` returns an eager owned snapshot `Vector[K]` where Copy keys are copied and
+non-Copy keys are cloned, ensuring snapshot stability detached from subsequent map
+mutation in $O(N)$ time and allocation.
 
 ### 3.6 Provenance
 
@@ -430,7 +445,8 @@ rustc/backend fingerprint, profile, command, and output/status for:
 8. compiled-only custom nominal Map key proof with custom Moss equality/hash, the same
    policy-free `MossMap<K,V>` value crossing two consumers, and no orphan impl;
 9. corrupt type key, summary, provenance edge, semantic hash, binary hash, provider
-   marker, weakened key effects, mismatched key-callable hash, Float-proof forgery,
+   marker, weakened key effects, mismatched key-callable hash, malformed or forged
+   Float-key proofs (distinguished from valid future G3 Float proofs),
    and same-layout/different-nominal proof-substitution negatives;
 10. v9 rebuild diagnostics and cache invalidation; and
 11. source-backed native/Fast Debug agreement plus source-free Fast Debug preflight.

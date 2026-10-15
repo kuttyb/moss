@@ -311,3 +311,61 @@ inference directly would create unstable identities, leaked variables, weak
 diagnostics, and backend-only failures. The charter therefore does **not** itself
 constitute G0 GO, and this independent review remains **NO-GO beyond G0** pending
 the named reviews, prototypes, and written L7 authorization.
+
+## 10. Addendum — Attributable G0 Architectural Review of Corrected Candidate
+
+- **Role:** Independent L6 Architect, Team G (Generics & Inference)
+- **Status:** Attributable G0 Review Addendum
+- **Reviewed candidate:** `phase25-generic-types` corrected review candidate
+- **Attributable Verdict:** **GO for G0 Boundary Freeze; NO-GO for G2 Shared Compiler/IR Implementation**
+
+### 10.1 Evaluation of corrected contracts and prototypes
+
+The earlier NO-GO verdict on baseline draft `40fd3b6ea1aa89ae5a05e2afe092c8699a56f1f2`
+remains valid historical review evidence. This addendum independently evaluates the
+corrected candidate on `phase25-generic-types`.
+
+1. **Option B and Shared Type IR:**
+   `TYPE_IR_CONTRACT.md` adopts a unified `TypeRef`/`TypeVar` structured representation
+   across inference, member dispatch, ownership/effects, semantic queries, Fast Debug,
+   native lowering, and ABI v10. Per-call freshening and open-result summaries are
+   consistently specified with transitive provenance and compile-time closure rules.
+2. **Native A1 Strategy:**
+   The selected strategy—provider-owned generic Rust records with mechanical public
+   backend fields (`pub field_0: T`) and consumer-generated free functions—is proven
+   in `tests/phase25/g0/check_rust_feasibility.py`. The private-field/accessor experiment
+   is preserved as an evaluated alternative under `tests/phase25/g0/rust/accessor_alternative/`
+   verifying `E0616`. Source-level visibility enforcement belongs to the Moss compiler,
+   with forward negative test `tests/phase25/g0/conformance/private_field_visibility_negative.moss`
+   scheduled for the earliest compiler visibility milestone (G1/G2). Phase 25.5 D2
+   encapsulation is not implemented now.
+3. **Policy-Free Cross-Crate `MossMap<K,V>`:**
+   The updated prototype demonstrates one runtime-owned `MossMap<K,V>` value crossing
+   two independent consumer rlibs (`consumer_a` and `consumer_b`), calling provider
+   `isequal` and `hash` functions directly without an `Ops` type parameter, stored
+   callbacks, trait objects, or dynamic dispatch. The negative test proves that foreign
+   Rust `Hash` implementation is rejected by rustc (`E0117`).
+4. **Package Identity:**
+   Package identity is frozen per L7 verdict as `module-v1:<name>@<version>::<module>`
+   with deterministic provider-conflict rejection, subject to confirming Margo's
+   resolution and artifact binding semantics.
+5. **Map Complexity and Eager `keys()` Contract:**
+   The production target for G3 is specified as a bucketed open-addressing / robin-hood
+   hash table with expected $O(1)$ lookup, insert, and delete. `keys()` returns an eager
+   owned snapshot `Vector[K]` with snapshot stability in $O(N)$ time and allocation.
+   The linear Rust prototype remains acceptable G0 feasibility evidence.
+6. **Float-Key Semantics:**
+   The blanket Phase 25 Float-key prohibition has been removed. Float `isequal`/`hash`
+   semantics are an approved Phase 25 G3 deliverable owned by Team S. Negative tests
+   distinguish valid future Float proofs from malformed or forged proofs.
+7. **Team S Concurrence:**
+   Formal implementation-owner concurrence is recorded in
+   `docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md`, resolving exact
+   signatures, `key-protocol-v1`, comparator-law validation ownership, Float-key
+   delivery in G3, and joint ledger #12 responsibilities.
+
+### 10.2 Final verdict
+
+The G0 boundary is complete, consistent, and validated. I issue an attributable
+**GO for G0 Candidate Boundary Freeze**. Shared compiler/IR implementation remains
+strictly **NO-GO** until explicit written L7 G2 authorization.

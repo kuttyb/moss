@@ -189,3 +189,58 @@ A future Team S concurrence must name the corrected contract commit, exact
 protocol and law version, chosen policy-free Map/Set representation, joint #12
 test ownership, and the implementation branch/milestone. Until then the Team S
 sign-off row must remain pending and the G0 gate remains **NO-GO**.
+
+## 9. Addendum — Attributable Team S Independent Boundary Review of Corrected Candidate
+
+- **Role:** Independent L6 Architect, reviewing the Team S boundary
+- **Status:** Attributable Boundary Review Addendum
+- **Reviewed candidate:** `phase25-generic-types` corrected review candidate
+- **Attributable Verdict:** **GO for G0 Boundary Freeze; NO-GO for G2 Shared Compiler/IR Implementation**
+
+### 9.1 Boundary re-evaluation
+
+The earlier NO-GO verdict on integrated draft `6f109124a580c6a76a4050b4c222484a658ee4e1`
+remains valid historical review evidence. This addendum independently evaluates the
+corrected candidate on `phase25-generic-types` against the Team S boundary criteria.
+
+1. **Policy-Free Map Runtime Proven Across Independent Consumers:**
+   The updated Rust prototype in `tests/phase25/g0/check_rust_feasibility.py` validates
+   the compiler-owned, policy-free `MossMap<K,V>` design. A single provider-created
+   map instance crosses two independently compiled consumer rlibs (`consumer_a` and
+   `consumer_b`), calling provider `isequal` and `hash` functions directly without an
+   `Ops` parameter, stored callbacks, closures, trait objects, or vtables. Rust's
+   orphan rule failure on direct foreign `Hash` implementation is confirmed (`E0117`).
+2. **Member Dispatch and Ledger #12 Joint Ownership:**
+   `TYPE_IR_CONTRACT.md` §3 defines the shared `MemberDispatchRequirement` record.
+   Phase ordering and ownership are unambiguous: Team S admits member calls on
+   partially open receivers (e.g. `Vector[alpha].push(Int)`) and selects candidate
+   targets; Team G unifies constraints and performs closure (`alpha = Int`). Both
+   teams jointly own the positive end-to-end ledger #12 regression test.
+3. **Team S Implementation-Owner Concurrence:**
+   Formal implementation-owner concurrence is executed in
+   `docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md`. It explicitly establishes:
+   - Exact signatures: `fn isequal(left: K, right: K) -> Bool` and `fn hash(value: K) -> Int`
+     with pure `READ`-only access.
+   - Protocol: `key-protocol-v1` purity, non-mutation, and effect guarantees.
+   - Law suite ownership: Team S owns the reusable comparator-law validation suite
+     (reflexivity, symmetry, transitivity, equal-keys/equal-hash, snapshot stability).
+   - Float-key delivery: Team S accepts delivery of Float `isequal`/`hash` semantics in
+     Phase 25 G3; blanket prohibition is removed.
+   - Set delivery/deferment: Set will share the exact same key protocol and runtime
+     storage kernel in G3 or be explicitly deferred.
+4. **ABI-v10 Key Proof Records and Negative Controls:**
+   `ABI_V10_DESIGN.md` §3.5 specifies separate equality/hash signatures, separate effect
+   records, and versioned `proof_id` binding. Negative verification rules distinguish
+   valid future G3 Float proofs from malformed or forged proofs.
+5. **Backend Representation and Opacity:**
+   The native A1 choice (mechanical public backend fields with consumer-generated free
+   functions) is proven, with the accessor alternative preserved for evaluation. Forward
+   Moss-level visibility checking is scheduled for compiler milestones G1/G2; Phase 25.5
+   D2 opacity is not prematurely implemented.
+
+### 9.2 Final verdict
+
+The boundary requirements for member dispatch, key proof, and Map runtime representation
+are satisfied and frozen. I issue an attributable **GO for G0 Boundary Freeze**. Shared
+compiler and IR surgery remains strictly **NO-GO** pending explicit written L7 G2
+authorization.

@@ -25,8 +25,8 @@ fn main() {
 
     println!(
         "{} {} map={},{},{},{},{},{},{}",
-        provider::record_read(&number),
-        provider::record_read(&text),
+        number.field_0,
+        text.field_0,
         before,
         overwritten,
         after,
