@@ -148,6 +148,40 @@ def test_map_keys_fail_closed():
             "record values and Vector[Int] keys still work", "x\n3\n")
 
 
+def test_architect_next_cycle_findings():
+    print("Architect findings P25-S-ARCH-013..017 at b6d45cf")
+    for body, label in (("c = \"abc\".char_at(0)\n  echo c + \"x\"", "013 Char + String"),
+                        ("echo 'a' + 'b'", "013 Char + Char"),
+                        ("echo true + 1", "013 Bool + Int"),
+                        ("echo \"a\" - \"b\"", "013 String - String"),
+                        ("echo [1] + [2]", "013 Vector + Vector"),
+                        ("echo \"ab\" * 2", "013 String * Int"),
+                        ("c = 'a'\n  echo -c", "013 unary minus on Char"),
+                        ("echo -true", "013 unary minus on Bool")):
+        rejected(f"fn main():\n  {body}\n", label, "TYPE_MISMATCH")
+    engines("fn main():\n  x = 3\n  echo 1 + 2.5 * x - 4 / 2\n  echo 5 - -x\n"
+            "  echo \"a\" + \"b\" + 'c'.to_string()\n",
+            "013 numeric and String + String still valid", "6.5\n8\nabc\n")
+    color = "enum Color:\n  Red\n  Blue\n\n"
+    rejected(color + "fn main():\n  var inner = Map()\n  inner[\"a\"] = 1\n  var m = Map()\n"
+             "  m[inner] = 1\n  echo 1\n", "014 Map as a Map key", "MAP_KEY_TYPE_UNSUPPORTED")
+    rejected(color + "fn main():\n  var m = Map()\n  m[[Color.Red]] = 1\n  echo 1\n",
+             "014 Vector[enum] as a Map key", "ENUM_MAP_KEY_UNSUPPORTED")
+    engines("fn main():\n  var m = Map()\n  m['a'] = 1\n  var b = Map()\n  b[true] = 2\n  echo m['a'] + b[true]\n"
+            "  var q = Map()\n  q[[\"x\", \"y\"]] = 3\n  echo q.get([\"x\", \"y\"], 0)\n",
+            "014 hashable builtin keys still valid", "3\n3\n")
+    rejected(color + "fn main():\n  assertEqual([Color.Red], [Color.Red])\n",
+             "015 assertEqual on Vector[enum]", "ENUM_OPERATOR_UNSUPPORTED")
+    rejected("fn main():\n  echo Char(codepoint: 65)\n", "016 labelled Char(Int)",
+             "CALL_NAMED_ARGUMENT_UNSUPPORTED")
+    rejected("fn main():\n  echo range(0, 3) == range(0, 3)\n", "017 range as a value",
+             "RANGE_OUTSIDE_FOR")
+    rejected("fn main():\n  r = range(0, 3)\n  echo 1\n", "017 range bound to a local",
+             "RANGE_OUTSIDE_FOR")
+    engines("fn main():\n  var t = 0\n  for i in range(0, 5, 2):\n    t = t + i\n  echo t\n",
+            "017 range as a for source still valid", "6\n")
+
+
 def write_record_projects(base):
     provider = base / "geometry"
     (provider / "src").mkdir(parents=True)
@@ -403,6 +437,7 @@ def main():
     test_imported_record_equality_rejected()
     test_mixed_operands_rejected()
     test_map_keys_fail_closed()
+    test_architect_next_cycle_findings()
     test_char_string_distinct()
     test_invalid_expression()
     test_char_conversion_and_failure()

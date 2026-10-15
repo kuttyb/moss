@@ -26,8 +26,9 @@ Team G contracts reference: `TYPE_IR_CONTRACT.md` §8 and
   `isequal` must have the same scalar type. Any other operand, including a
   record, a Vector, or a mixed Int/Float, Char/String pair, is rejected with
   `KEY_PROTOCOL_TYPE` before lowering. There is no implicit conversion; this
-  differs on purpose from operator `==`, which converts Int to Float and
-  compares Char with a one-scalar String.
+  differs on purpose from operator `==`, which converts Int to Float. Neither
+  `==` nor `isequal` compares a Char with a String (Char is distinct; L7
+  decision of this cycle).
 - All three operations are pure. They read their operands, never write,
   consume, raise, panic, diverge, message, touch domain state, or perform
   I/O. A sort key that calls them is accepted as pure (checked by
@@ -42,19 +43,19 @@ Team G contracts reference: `TYPE_IR_CONTRACT.md` §8 and
 There is no Rust trait, adapter type, or dynamic dispatch. Each call lowers to
 the exact per-type operation for the statically known type.
 
-| | Native (`src/moss.cpp` `scalar_protocol_rust`, line 17002; runtime in `src/char_string_ordering_runtime.hpp`) | Fast Debug (`src/interpreter.hpp`) |
+| | Native (`src/moss.cpp` `scalar_protocol_rust`; runtime in `src/char_string_ordering_runtime.hpp`) | Fast Debug (`src/interpreter.hpp`) |
 |---|---|---|
-| `less` Float | `moss_float_less(a, b)` (runtime line 32) | `moss_less` (line 1757), Float branch |
+| `less` Float | `moss_float_less(a, b)` | `moss_less`, Float branch |
 | `less` Int, Char, String, Bool | `(&(a) < &(b))` (Rust `Ord`) | `moss_less`: `<` on `int64_t`, code point, `std::string` bytes, `!a && b` |
-| `isequal` Float | `moss_float_isequal(a, b)` (runtime line 42) | `moss_isequal` (line 1784), Float branch |
+| `isequal` Float | `moss_float_isequal(a, b)` | `moss_isequal`, Float branch |
 | `isequal` Int, Char, String, Bool | `(&(a) == &(b))` | `moss_isequal`: `==` on the value |
-| `hash` Float | `moss_float_hash(a)` (runtime line 51) | `moss_hash` (line 1816) |
+| `hash` Float | `moss_float_hash(a)` | `moss_hash` |
 | `hash` Int | `(a)` | `val.integer` |
 | `hash` Bool | `(if a { 1i64 } else { 0i64 })` | `val.boolean ? 1 : 0` |
 | `hash` Char | `((a) as u32 as i64)` | `val.codepoint` |
-| `hash` String | `moss_string_hash(&(a))` (runtime line 74) | inline FNV-1a loop in `moss_hash` |
-| `sort` comparator | `total_order_compare_rust` (line 17023): `moss_float_total_cmp` for Float, Rust `cmp` otherwise; `sort_call_rust` (line 17033) emits a stable `sort_by` | `std::stable_sort` with `moss_less` (line 1216) |
-| Map key identity (scalar keys) | Rust `HashMap` `Eq`/`Hash` for Int/Char/String/Bool; Float keys rejected (`FLOAT_MAP_KEY_UNSUPPORTED`) | `key_equal` (line 1751): `moss_isequal` for Float, otherwise value equality |
+| `hash` String | `moss_string_hash(&(a))` | inline FNV-1a loop in `moss_hash` |
+| `sort` comparator | `total_order_compare_rust`: `moss_float_total_cmp` for Float, Rust `cmp` otherwise; `sort_call_rust` emits a stable `sort_by` | `std::stable_sort` with `moss_less` |
+| Map key identity (scalar keys) | Rust `HashMap` `Eq`/`Hash` for Int/Char/String/Bool and Vector/Queue of those; Float, record, Map, and enum keys rejected before lowering | `key_equal`: `moss_isequal` for Float, otherwise value equality |
 
 Line numbers are for this branch after the S3 change; the function names are
 the stable anchors.
@@ -151,8 +152,8 @@ L7 suites (`check_phase25_l7_repairs.py`, `check_phase25_g3_ordering.py`):
 
 | ID | finding | state |
 |---|---|---|
-| P25-S3-D1 | `sort(v, by: lib.key)` with an untyped key imported from another module, used only as a sort key, passed `moss check` and failed in rustc (`cannot find function __moss_specialize_keys__loose_0`). Module projection collected call edges for pipeline stages but not for sort keys, so the consumer crate never emitted the specialization. | **Fixed**: `collect_local_call_sites` in `src/moss.cpp` (line 9076) records the key edge at the element type. Regression: "same-package module key functions". |
-| P25-S3-D2 | A `Map` keyed by a record or nominal type passes `moss check`. Native rustc rejects the `HashMap` (no `Eq`/`Hash`), and Fast Debug compares keys structurally, ignoring custom `isequal`/`hash` methods (wrong results, or `missing map key`). This holds for valid, malformed, impure, and missing proofs alike. | **Fails closed (Coordinator interim fix); real support handed off.** The checker now rejects a record key, or a key containing a record or a Float, with `RECORD_MAP_KEY_UNSUPPORTED` / `FLOAT_MAP_KEY_UNSUPPORTED` in every position (index, assignment, declared `Map[K, V]` types), the same way Float keys fail closed. Map key admission with KeyProofs belongs to the `MossMap<K,V>` work. Fixtures `03`–`07` are recorded as fail-closed. |
+| P25-S3-D1 | `sort(v, by: lib.key)` with an untyped key imported from another module, used only as a sort key, passed `moss check` and failed in rustc (`cannot find function __moss_specialize_keys__loose_0`). Module projection collected call edges for pipeline stages but not for sort keys, so the consumer crate never emitted the specialization. | **Fixed**: `collect_local_call_sites` in `src/moss.cpp` records the key edge at the element type. Regression: "same-package module key functions". |
+| P25-S3-D2 | A `Map` keyed by a record or nominal type passes `moss check`. Native rustc rejects the `HashMap` (no `Eq`/`Hash`), and Fast Debug compares keys structurally, ignoring custom `isequal`/`hash` methods (wrong results, or `missing map key`). This holds for valid, malformed, impure, and missing proofs alike. | **Fails closed (Coordinator interim fix); real support handed off.** The checker now rejects a record key, or a key containing a record or a Float, at index and assignment positions with `RECORD_MAP_KEY_UNSUPPORTED` / `FLOAT_MAP_KEY_UNSUPPORTED`; a declared `Map[Record, V]` type is rejected as an invalid type (`UNKNOWN_SYMBOL_OR_TYPE`), as for Float. Keys that are Maps, enums, or collections of them are rejected with `MAP_KEY_TYPE_UNSUPPORTED` / `ENUM_MAP_KEY_UNSUPPORTED` (P25-S-ARCH-014). Map key admission with KeyProofs belongs to the `MossMap<K,V>` work. Fixtures `03`–`07` are recorded as fail-closed. |
 | P25-S3-D3 | Empty `Map()` whose K/V are not fixed where it is created: never-inserted `m.get(k, d)`, `Map().get(k, d)`, an open-result helper `fn fresh(): return Map()`, and a never-used `Map()` all pass `moss check` and fail in rustc. Annotated or unannotated domain state `Map()` and a cross-package open result are rejected instead. | **Handed off** to Team G Option B (`TYPE_IR_CONTRACT.md` §4.2). Fixtures `09b`–`09h`. |
 | P25-S3-L1 | An untyped key whose body makes a member call (`x.length()`) is accepted from a same-package module but rejected from a path dependency with `SORT_KEY_IMPURE` "unresolved effect": the `.mossi` template of an untyped function carries an unresolved effect summary. Fail-closed. | Pinned by `test_untyped_member_key_across_packages`; belongs to open summaries with effects (Team G G2). |
 | P25-S3-L2 | Purity is conservative: `x % 10`, `x / 10`, `s.char_at(i)`, and `xs[i]` count as possible panics, and `c.codepoint()` on a `for` element of a bound `Vector[Char]` is unresolved. Such keys are rejected. The G0 concurrence's own `UserKey` example (`code % 10`) has `may_panic=1` in its `.mossi` record and would therefore fail the protocol's purity rule as now computed. | Fail-closed; Team G/L7 should decide whether integer `%`/`/` by a nonzero literal is panic-free before freezing proof purity. |

@@ -17,12 +17,19 @@ A String is obtained from a Char only with an explicit `c.to_string()`.
 | `assertEqual(record, record)`, including records inside a `Vector` | `TEST_ASSERTION_CONFIGURATION_ERROR` or rustc failure | `RECORD_EQUALITY_UNSUPPORTED` |
 | `1 == "a"`, `true == 1`, `[1] == [1.5]` | accepted by the checker, failed in rustc | `TYPE_MISMATCH` |
 | `x = if c: 1 else: 2`, `x = foo bar` | accepted by the checker, failed in both engines | `INVALID_EXPRESSION` |
+| `c + "x"`, `'a' + 'b'`, `true + 1`, `"a" - "b"`, `[1] + [2]`, `-c` | accepted; Fast Debug printed an invented value, rustc failed | `TYPE_MISMATCH` (P25-S-ARCH-013); build Strings with `c.to_string() + "x"` |
+| a Map key that is a Map, enum, or collection of enums/records/Floats | accepted; rustc failed | `MAP_KEY_TYPE_UNSUPPORTED`, `ENUM_MAP_KEY_UNSUPPORTED`, `RECORD_MAP_KEY_UNSUPPORTED`, `FLOAT_MAP_KEY_UNSUPPORTED` |
+| `Char(codepoint: 65)` and other labelled builtin arguments | accepted; failed in both engines | `CALL_NAMED_ARGUMENT_UNSUPPORTED` (P25-S-ARCH-016) |
+| `r = range(0, 3)`, `range(0, 3) == range(0, 3)` | accepted; failed in both engines | `RANGE_OUTSIDE_FOR` (P25-S-ARCH-017) |
 
 Unchanged:
 - `Char == Char` and Char ordering.
 - `Int`/`Float` mixed comparison.
 - Equality on `Vector`, `Queue`, and `Map` of equality-comparable element types.
-- `Range == Range`.
+- `Range == Range` between FileIO `Range` values (byte-exact; native only, since
+  Fast Debug does not execute FileIO). A `range(...)`
+  call is not a value: it is valid only as a `for` source (`RANGE_OUTSIDE_FOR`,
+  P25-S-ARCH-017).
 - `Char(Int)` validation: surrogates, negative values, and values above
   U+10FFFF stop every engine before a Char exists.
 - `char_at() -> Char` and `chars() -> Vector[Char]`.
@@ -58,7 +65,7 @@ No equality is synthesized for records.
 - `tests/phase15_15_string_map.moss`, `tests/tooling/check_phase25_g4_unicode.py`,
   and `tests/tooling/check_phase25_l7_repairs.py`.
 
-All 1,831 tracked `.moss` files were checked with the starting compiler
+All 1,831 `.moss` files tracked at the time of the S2 change (`f272af9`) were checked with the starting compiler
 (`ee8dcea`) and with the new one. The only files the new compiler rejects are
 the Char/String callers above, and those are now migrated.
 

@@ -205,8 +205,10 @@ Team S then:
    one protocol;
 4. lands `admit_member` against the joint #12 suite.
 
-Until then, `Map[Float, V]` and user-keyed Maps keep failing closed
-(`FLOAT_MAP_KEY_UNSUPPORTED`) and the fixtures run in pending mode.
+Until then, Float-keyed and record-keyed Maps keep failing closed
+(`FLOAT_MAP_KEY_UNSUPPORTED`, `RECORD_MAP_KEY_UNSUPPORTED`; Map and enum keys
+`MAP_KEY_TYPE_UNSUPPORTED` / `ENUM_MAP_KEY_UNSUPPORTED`) and the fixtures run
+in pending mode.
 
 **Handoff to Team G (Option B):** the unpinned empty Map fixture under
 `tests/phase25/key_protocol/` is the failing reproducer. Team S adds no local

@@ -2463,6 +2463,21 @@ class Checker {
     if (contains_record_type(type))
       err(line, "record Map keys ('" + type + "') require the canonical MossMap<K,V> and a key-protocol-v1 key proof (isequal/hash), which are not yet available",
           "RECORD_MAP_KEY_UNSUPPORTED");
+    if (contains_enum_type(type))
+      err(line, "enum values cannot be Map keys; enum equality and hashing are unsupported",
+          "ENUM_MAP_KEY_UNSUPPORTED");
+    if (builtin_equality_type(type) && !hashable_map_key_type(type))
+      err(line, "'" + type + "' cannot be a Map key; keys are Int, Bool, Char, String, or a Vector/Queue of those until MossMap<K,V> lands",
+          "MAP_KEY_TYPE_UNSUPPORTED");
+  }
+
+  // Key types every engine hashes today (P25-S-ARCH-014).
+  static bool hashable_map_key_type(const string& type) {
+    if (type == "int" || type == "bool" || type == "char" || type == "string") return true;
+    for (const string head : {"vector[", "queue["})
+      if (starts_with(type, head) && ends_with(type, "]"))
+        return hashable_map_key_type(trim(type.substr(head.size(), type.size() - head.size() - 1)));
+    return false;
   }
 
   bool valid_type(const string& t) const {
@@ -2488,6 +2503,8 @@ class Checker {
           !contains_enum_type(ps[0]) &&
           !contains_float_type(canonical_type_name(ps[0])) &&
           !contains_record_type(ps[0]) &&
+          (!builtin_equality_type(canonical_type_name(ps[0])) ||
+           hashable_map_key_type(canonical_type_name(ps[0]))) &&
           valid_type(ps[0]) && valid_type(ps[1]);
     }
     if ((starts_with(type, "seq[") || starts_with(type, "option[")) && ends_with(type, "]"))
@@ -13442,6 +13459,9 @@ class Checker {
       if (contains_record_type(*actual))
         err(line, "assertEqual compares with '==', which is not defined for records ('" +
             *actual + "'); assert on the fields", "RECORD_EQUALITY_UNSUPPORTED");
+      if (contains_enum_type(*actual))
+        err(line, "automatic enum equality is not supported; match the cases explicitly",
+            "ENUM_OPERATOR_UNSUPPORTED");
       string type = canonical_type_name(*actual);
       bool printable = type == "int" || type == "float" || type == "bool" ||
           type == "char" || type == "string" || starts_with(type, "vector[");
@@ -13458,7 +13478,17 @@ class Checker {
     }
     auto function = functions_.find(target);
     if (function == functions_.end()) {
-      if (builtin_call_semantics(name, args, env)) return;
+      if (builtin_call_semantics(name, args, env)) {
+        // Builtin calls are positional too (P25-S-ARCH-016): 'Char(codepoint: 65)'.
+        for (const auto& argument : args) {
+          string label, value;
+          if (parse_named_argument(argument, label, value))
+            err(line, "builtin " + name + " does not accept named argument '" +
+                trim(argument) + "'; pass the value positionally",
+                "CALL_NAMED_ARGUMENT_UNSUPPORTED");
+        }
+        return;
+      }
       if (current_object_) {
         vector<string> argument_types;
         for (const auto& arg : args) argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
@@ -14297,6 +14327,18 @@ class Checker {
         err(line, "shift operator '" + op + "' requires Int operands", "TYPE_MISMATCH");
       return;
     }
+    if (!value.empty() && value.front() == '-' &&
+        !split_binary(value, {"+", "-", "*", "/", "%"})) {
+      string operand = trim(value.substr(1));
+      auto operand_type = inferred_expr_type(operand, env);
+      if (operand_type) {
+        string type = canonical_type_name(*operand_type);
+        if ((builtin_equality_type(type) || contains_record_type(type)) &&
+            type != "int" && type != "float")
+          err(line, "unary '-' requires an Int or Float operand, found '" + type + "'",
+              "TYPE_MISMATCH");
+      }
+    }
     for (const auto& operators : vector<vector<string>>{{"+", "-", "*", "/", "%"}}) {
         if (auto binary = split_binary(value, operators)) {
           check_expression(line, binary->first, env);
@@ -14316,6 +14358,26 @@ class Checker {
           if ((left_type && canonical_type_name(*left_type) == "Range") ||
               (right_type && canonical_type_name(*right_type) == "Range")) {
             err(line, "Range arithmetic is unsupported", "TYPE_MISMATCH");
+          }
+          if (left_type && right_type) {
+            // Arithmetic is compiler-defined: Int/Float operands, plus
+            // String + String concatenation (P25-S-ARCH-013).
+            string lt = canonical_type_name(*left_type);
+            string rt = canonical_type_name(*right_type);
+            string op;
+            for (const string candidate : {"+", "-", "*", "/", "%"}) {
+              auto split = split_binary(value, {candidate});
+              if (split && split->first == binary->first) op = candidate;
+            }
+            bool numeric = (lt == "int" || lt == "float") && (rt == "int" || rt == "float");
+            bool concat = op == "+" && lt == "string" && rt == "string";
+            if (!numeric && !concat && builtin_equality_type(lt) && builtin_equality_type(rt))
+              err(line, "operator '" + op + "' is not defined for '" + lt + "' and '" + rt +
+                  "'" + (lt == "char" || rt == "char"
+                             ? "; use c.to_string() to build a String from a Char" : ""),
+                  "TYPE_MISMATCH");
+            if (!numeric && !concat && (contains_record_type(lt) || contains_record_type(rt)))
+              err(line, "operator '" + op + "' is not defined for records", "TYPE_MISMATCH");
           }
           if (split_binary(value, {"%"})) {
             auto left = inferred_expr_type(binary->first, env);
@@ -14497,6 +14559,9 @@ class Checker {
       if (callee == "Reverse" && !functions_.count(callee))
         err(line, "Reverse(key) is only valid as the key of sort(v, by: Reverse(key))",
             "SORT_REVERSE_POSITION");
+      if (callee == "range" && !functions_.count(callee))
+        err(line, "range(start, end[, step]) is only valid as a for-loop source, not a value (P25-S-ARCH-017)",
+            "RANGE_OUTSIDE_FOR");
       if (callee == "replace" && args.size() == 2) {
         auto place = storage_location(args[0], env);
         if (!place)
@@ -24934,7 +24999,7 @@ static void write_bootstrap_json(std::ostream& out,
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"pass\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"],\"exhaustive_enum_match\":\"match expression: / match consume <owned enum expression>:\"},"
          "\"enums\":{\"declaration\":\"enum Name: with closed named-field cases\",\"construction\":\"Name.Case(field: value)\",\"read_match\":\"match expression:\",\"consume_match\":\"match consume <owned enum expression>:\",\"pattern_ownership_modifiers\":false,\"replace\":\"replace(place, replacement)\"},"
-         "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"bitwise\":[\"&\",\"|\",\"^\",\"~\",\"<<\",\">>\"],\"bitwise_precedence_high_to_low\":[\"~\",\"<<, >>\",\"&\",\"^\",\"|\"],\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"find(pattern)\",\"slice(start, length)\",\"ascii_lower()\",\"ascii_upper()\",\"reserve(additional_bytes)\",\"append(part)\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"},\"char_builtin\":{\"literal\":\"'x' or '\\\\u{HEX}'\",\"constructor\":\"Char(codepoint: Int) fails for surrogates and values above 0x10FFFF\",\"equality\":[\"==\",\"!=\"],\"ordering\":[\"<\",\"<=\",\">\",\">=\"],\"methods\":[\"codepoint()\",\"to_string()\",\"less(other)\",\"isequal(other)\",\"hash()\"],\"string_conversion\":\"explicit c.to_string(); Char and String never compare with ==\"},\"equality_operands\":{\"same_type\":true,\"numeric_mixing\":\"Int and Float only\",\"records\":\"unsupported (RECORD_EQUALITY_UNSUPPORTED); compare fields\",\"enums\":\"unsupported (ENUM_OPERATOR_UNSUPPORTED); use match\",\"collections\":\"Vector, Queue, and Map of equality-comparable element types\"}},"
+         "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"bitwise\":[\"&\",\"|\",\"^\",\"~\",\"<<\",\">>\"],\"bitwise_precedence_high_to_low\":[\"~\",\"<<, >>\",\"&\",\"^\",\"|\"],\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"find(pattern)\",\"slice(start, length)\",\"ascii_lower()\",\"ascii_upper()\",\"reserve(additional_bytes)\",\"append(part)\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"},\"char_builtin\":{\"literal\":\"'x' or '\\\\u{HEX}'\",\"constructor\":\"Char(Int) (positional) fails for surrogates and values above 0x10FFFF\",\"equality\":[\"==\",\"!=\"],\"ordering\":[\"<\",\"<=\",\">\",\">=\"],\"methods\":[\"codepoint()\",\"to_string()\",\"less(other)\",\"isequal(other)\",\"hash()\"],\"string_conversion\":\"explicit c.to_string(); Char and String never compare with ==\"},\"equality_operands\":{\"same_type\":true,\"numeric_mixing\":\"Int and Float only\",\"records\":\"unsupported (RECORD_EQUALITY_UNSUPPORTED); compare fields\",\"enums\":\"unsupported (ENUM_OPERATOR_UNSUPPORTED); use match\",\"collections\":\"Vector, Queue, and Map of equality-comparable element types\"}},"
          "\"numeric\":{\"float_predicates\":[\"is_nan(Float) -> Bool\",\"is_finite(Float) -> Bool\"],"
          "\"parsing\":[\"parse_int(String) -> Int raises ParseError.Invalid|Overflow\","
          "\"parse_float(String) -> Float raises ParseError.Invalid\"],"
