@@ -1,5 +1,34 @@
 # Moss current status
 
+## Phase 25 G2 first compiler gate: finite nominal layouts — 2026-10-14
+
+On `phase25-generic-types`, the first bounded G2 implementation milestone adds
+`TYPE_RECURSIVE_LAYOUT` to reject direct inline nominal field cycles before native
+lowering. The diagnostic names the field chain and points to the closing field.
+`tests/tooling/check_phase25_recursive_layout.py` is wired into `make check` and
+covers direct and mutual cycles, a finite chain, and collection-backed recursion.
+`AGENTS.md` now states the already-authorized normal-push rule directly, before
+this branch is pushed. One evidence-backed observation is recorded under
+`agent-feedback/phase25/team-g-generic-types/nominal-layout/`.
+
+Validation: `make` compiled; the focused Phase 25 check and
+`python3 tests/tooling/check_agent_feedback.py` passed; `git diff --check` passed.
+`TMPDIR="$PWD/tmp" make check` passed the new regression, 40 generic-specialization
+probes, Phase 24 bitwise checks, and the three-mode advanced-data semantic oracle.
+The broad suite was stopped during the unrelated advanced-data Fast Debug acceptance
+run because of its long runtime; no complete `make check` pass is claimed. The
+native Debug and Release acceptance runs had passed before it was stopped.
+Type IR, per-instance field inference, open-result
+summaries, generic native lowering, and ABI v10 remain G2 work; this gate does not
+change those contracts.
+
+Session report: bootstrap and structured `check --json` confirmed the live language
+contract and the pre-repair acceptance of the minimal self-cycle. One implementation
+and focused check cycle was needed; the test suite confirmed the expected finite and
+indirect cases. No semantic impact/affected-test query applies to this compiler
+implementation edit. A compiler-owned inline-layout query or targeted checker test
+selection would have shortened the broad validation path.
+
 ## Phase 25 L7 G0 Architecture GO; G2 Implementation Kickoff — 2026-10-14
 
 L7 reviewed corrected commit `fb2d273616a14e255ff29f6c5a9824f4826062a6` on branch

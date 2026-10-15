@@ -1948,6 +1948,7 @@ class Checker {
     // Seed internal structural/generic parameter relations before cross-reference inference.
     infer_function_signatures(false);
     infer_object_fields();
+    check_object_layout_cycles();
     check_enums();
     check_traits();
     check_objects();
@@ -5246,6 +5247,49 @@ class Checker {
         }
       }
     }
+  }
+
+  // Direct nominal fields have inline storage. A cycle among those fields has
+  // no finite native layout, even when no constructor is reachable from main.
+  // Collection fields are deliberately excluded: their runtime storage is
+  // indirect and does not put an instance inline in its own representation.
+  void check_object_layout_cycles() const {
+    std::unordered_map<string, int> state;
+    vector<const ObjectType*> path;
+    vector<const Field*> edges;
+    std::function<void(const ObjectType&)> visit = [&](const ObjectType& object) {
+      state[object.name] = 1;
+      path.push_back(&object);
+      for (const auto& field : object.fields) {
+        auto target = objects_.find(canonical_type_name(field.type));
+        if (target == objects_.end()) continue;
+        const ObjectType& next = *target->second;
+        if (state[next.name] == 1) {
+          auto start = std::find_if(path.begin(), path.end(), [&](const ObjectType* item) {
+            return item->name == next.name;
+          });
+          std::ostringstream cycle;
+          cycle << "recursive value layout: ";
+          for (auto item = start; item + 1 != path.end(); ++item) {
+            const Field& step = *edges[static_cast<size_t>(item - path.begin())];
+            cycle << (*item)->name << "." << step.name << " -> ";
+          }
+          cycle << object.name << "." << field.name << " -> " << next.name;
+          CompileError error(field.line, cycle.str(), "TYPE_RECURSIVE_LAYOUT");
+          error.source_file = field.source_file.empty() ? object.source_file : field.source_file;
+          throw error;
+        }
+        if (state[next.name] == 0) {
+          edges.push_back(&field);
+          visit(next);
+          edges.pop_back();
+        }
+      }
+      path.pop_back();
+      state[object.name] = 2;
+    };
+    for (const auto& object : p_.objects)
+      if (state[object.name] == 0) visit(object);
   }
 
   void infer_domain_specializations() {

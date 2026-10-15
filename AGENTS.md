@@ -154,5 +154,5 @@ When working with Moss:
 - **No Elevation**: Never run `sudo` or otherwise attempt to elevate privileges.
 - **Authorized Commands**: Run in-repository Git commands, Python scripts, builds, and tests without requesting approval.
 - Coordinate a single branch writer. A normal push to the configured remote is
-  allowed when the user explicitly authorizes it. Never force-push or rewrite
+  authorized when the user explicitly directs it. Never force-push or rewrite
   published history unless the user separately authorizes that operation.
