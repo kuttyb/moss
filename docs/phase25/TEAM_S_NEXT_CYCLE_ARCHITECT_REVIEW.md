@@ -483,3 +483,98 @@ Conditions:
    code, so it does not block this checkpoint. But it is the largest remaining
    class of checker-accepted programs that fail in every engine.
 3. ARCH-026 is tracked (Low). It does not block.
+
+## Addendum 4: closure check at `8d62f0a43915ef0e616b449270c227b0e3162c26`
+
+**Reviewed SHA:** `8d62f0a43915ef0e616b449270c227b0e3162c26`. I checked it out
+detached and `make` succeeded.
+
+**Scope:** `git diff 906b99d 8d62f0a -- src tests`, which is commit `8d62f0a`.
+It changes 46 lines in `src/moss.cpp`:
+- the `UNKNOWN_FIELD` rule, in the projection branch of `check_expression`;
+- `vector` treated as `Unsupported` for echo;
+- the echo of an unresolved vector literal.
+
+It also adds 17 lines of regressions to `check_phase25_s2_char_string.py`.
+
+### Runs
+
+- Every probe ran in check, Fast Debug, Native Debug, and Native Release, with
+  outputs compared.
+- Project cases ran under `moss check`, `moss debug`, `margo run`, and
+  `margo --release run`. The compiled-only provider case used the
+  `run_fixtures.py` source-free recipe: build the provider in both profiles,
+  remove its source, then check, build, and run the consumer with
+  `MOSS_MODULE_PATH`.
+- S-A, S-B, S-C, S1, S2, S3, S4, L7 repairs, G1 regressions, and
+  `run_fixtures.py` all exit 0.
+- I compared `moss check` verdicts on all 1,876 tracked `.moss` files between
+  `b6d45cf` and `8d62f0a`. The result is the same 4 changes as at `906b99d`;
+  no tracked file is newly rejected with `UNKNOWN_FIELD`. I then restored the
+  three tracked cache snapshots and removed the ignored `.moss/` caches.
+- Full `make check` / `make examples` were not re-run by me.
+
+### ARCH-024: closed, apart from the narrow bypass ARCH-027
+
+- **Now rejected with `UNKNOWN_FIELD` in every engine:**
+  - `p.zz`, a nested `b.c.zz`, and a pipeline placeholder `map(_.nn)`;
+  - `k.zz` on Int domain state;
+  - `2.foo` and `0x10.x`;
+  - `v.len` on a Vector;
+  - an unknown field on an imported record (`p.inner.zz`), from a same-project
+    module, a path dependency (`margo build`), and a compiled-only provider.
+- **No false positive found.** All of these are accepted and agree in all
+  engines:
+  - record chains `a.b.c.z` in `echo`, arithmetic, and vector literals;
+  - a typed `sort(v, by: keyf)` over `p.n`, and `v |> map(_.n)`;
+  - a record field of domain state (`p.n + k`);
+  - a message result field, and an enum payload binding's field
+    (`case Ok(value): echo value.n`);
+  - method calls `p.twice()` and `self.n`, field assignment `q.n = p.n + 10`,
+    and `P(n: 9).n`;
+  - enum case spelling `Color.Red` / `Color.Blue` and enum fields of records;
+  - Strings and Chars holding `.` (`"p.zz 1.exp"`, `'.'`, `"a.b".length()`,
+    `'a'.codepoint()`);
+  - S-A Float forms `1.e5`, `1_0.5`, `1_0.5e1`, `-0.0`, `+2.5`, `-.5`,
+    `1.5e-3`;
+  - module-qualified records, values, and calls: `geo.origin().inner.z`,
+    `geo.Point(…)`, `geo.xof(…)`, `geo.tag(geo.Color.Blue)`, a
+    `sort(by: ykey)` over an imported `Float` field, and `map(_.x)`, in the
+    same-project, path-dependency, and compiled-only provider layouts.
+- Untyped field access (`fn getn(p): return p.n`) is still the existing
+  `UNTYPED_FIELD_ACCESS` rule. The new rule does not change it.
+- FileIO `Range` exposes only methods (`length()`, `slice(…)`). Its existing
+  suites inside `run_fixtures.py` and the S-B suite pass.
+
+### ARCH-025: closed
+
+`echo []` and `echo [[]]` give `ECHO_DISPLAY_UNSUPPORTED` in every engine.
+These still print the same text in all engines: `Vector[Int]()` → `[]`,
+`[Vector[Int]()]` → `[[]]`, and `[[], [1]]`. These are not false positives:
+`fn show(x): echo [x]` at Int and String, `echo wrap(2)`, `echo [wrap(1.5)]`,
+`echo [first([1, 2])]`, and `echo [v[0].n]`.
+
+### Net-new findings
+
+| ID | Class | Severity | Reproducer (ran) | Engines |
+|---|---|---|---|---|
+| **P25-S-ARCH-027** | Confirmed defect: a bypass in the ARCH-024 fix | Low–Medium | `fn main():\n  echo 1.exp`. Also `echo 2.size`, `echo 12.e`, `echo -1.exp`, `echo 1_000.name`. | check **ok**. Fast Debug: `field receiver is not a Moss object`. Native rustc E0610. The Float-literal exemption (`all_digits(base) && field contains e/E`) also exempts an Int-literal receiver whose field name merely contains `e` or `E`. The lexer has already decided these are Int + member (`1.exp` is not a Float), so the exemption should apply only when the whole token is a valid Float literal (for example by asking `scan_numeric_literal`). `2.foo` and `0x10.x` are rejected correctly. |
+| **P25-S-ARCH-028** | Diagnostic-guidance inaccuracy | Low | `fn main():\n  v = [1]\n  echo v.len` | `UNKNOWN_FIELD` "… call methods with parentheses, e.g. 'v.len()'". The hint always appends `()`, so for a Vector, Map, or Queue it can suggest a method that does not exist (`len()`; the current spelling is `v \|> count`). For a String (`s.length` → `s.length()`) it is correct. |
+
+### Verdict (addendum 4)
+
+**GO for the L7 checkpoint at `8d62f0a`.** The two Addendum 3 conditions are
+met:
+- ARCH-025 is fixed.
+- ARCH-024 is fixed, with regressions.
+
+I found no false positive of the new `UNKNOWN_FIELD` or empty-Vector echo rules
+across the required probe areas, the three package layouts, or the tracked
+corpus.
+
+Tracked, not blocking this checkpoint:
+- **ARCH-027** must be fixed before Team S records the S1 acceptance criterion
+  ("every checker-accepted program runs consistently or is diagnosed before
+  execution") as met. It is the only checker-accepted, fails-everywhere form I
+  found at this SHA.
+- ARCH-028 and ARCH-026 are diagnostic quality only.
