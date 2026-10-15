@@ -14707,8 +14707,20 @@ class Checker {
             return std::isdigit(static_cast<unsigned char>(c)) || c == '_';
           });
         };
+        // An exponent field is only `e`/`E`, an optional sign, then digits
+        // (`1.e5`, `2.5E-3`); `1.exp` is Int `1` plus a member (P25-S-ARCH-027).
+        auto exponent = [&](const string& text) {
+          if (text.size() < 2 || (text[0] != 'e' && text[0] != 'E')) return false;
+          size_t at = (text[1] == '+' || text[1] == '-') ? 2 : 1;
+          return at < text.size() && all_digits(text.substr(at));
+        };
+        auto fraction_exponent = [&](const string& text) {
+          size_t e = text.find_first_of("eE");
+          return e != string::npos && e > 0 && all_digits(text.substr(0, e)) &&
+              exponent(text.substr(e));
+        };
         bool float_literal = all_digits(digits) && (field.empty() || all_digits(field) ||
-            field.find_first_of("eE") != string::npos);
+            exponent(field) || fraction_exponent(field));
         if (receiver_type && !float_literal && (plain_identifier(field) || all_digits(field))) {
           // P25-S-ARCH-024: a projection must name a declared record field;
           // compiler-defined values have no fields.
@@ -14724,10 +14736,13 @@ class Checker {
                      type == "vector" || starts_with(type, "map[") ||
                      starts_with(type, "queue[")) {
             err(line, "'" + type + "' has no field '" + field + "'" +
-                (type == "string" || starts_with(type, "vector") || starts_with(type, "map") ||
-                 starts_with(type, "queue")
-                     ? "; call methods with parentheses, e.g. '" + base + "." + field + "()'"
-                     : ""),
+                (type == "string"
+                     ? "; call String methods with parentheses, e.g. '" + base + ".length()'"
+                     : starts_with(type, "vector") || starts_with(type, "queue") ||
+                       starts_with(type, "map")
+                         ? "; collections have no fields (use '" + base + " |> count' for a "
+                           "Vector's size)"
+                         : ""),
                 "UNKNOWN_FIELD");
           }
         }

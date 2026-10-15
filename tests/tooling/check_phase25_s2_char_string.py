@@ -195,11 +195,16 @@ def test_architect_next_cycle_findings():
                         ("echo x.5", "024 numeric field on Int"),
                         ("echo s.length", "024 method without parentheses"),
                         ("echo v.0", "024 field on Vector"),
-                        ("echo 1.5.x", "024 field on Float literal")):
+                        ("echo 1.5.x", "024 field on Float literal"),
+                        ("echo 1.exp", "027 Int literal member that starts with e"),
+                        ("echo 12.e", "027 bare e member on an Int literal"),
+                        ("echo 1_000.name", "027 member on a separated Int literal")):
         rejected(record + "fn main():\n  p = P(n: 1)\n  x = 3\n  s = \"ab\"\n  v = [1]\n  "
                  + body + "\n", label, "UNKNOWN_FIELD")
     engines(record + "fn main():\n  p = P(n: 4)\n  echo p.n + 1\n  echo 1.5 + +2.5\n  echo -.5\n",
             "024 declared fields and Float literals still valid", "5\n4.0\n-0.5\n")
+    engines("fn main():\n  echo 1.e5\n  echo 2.5E-3\n  echo 1_0.5e1\n",
+            "027 exponent Float literals still valid", "100000.0\n0.0025\n105.0\n")
     for body, label in (("echo []", "025 echo of an untyped empty Vector"),
                         ("echo [[]]", "025 echo of a nested untyped empty Vector")):
         rejected("fn main():\n  " + body + "\n", label, "ECHO_DISPLAY_UNSUPPORTED")
