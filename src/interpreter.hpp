@@ -105,6 +105,9 @@ class FastInterpreter {
   struct Options {
     bool trace = false;
     std::string source_file;
+    // Test semantic identity -> FAIL detail for a test that the static
+    // target-capability preflight rejected; such a test is never executed.
+    std::map<std::string, std::string> unsupported_tests;
   };
 
   class RuntimeError : public std::runtime_error {
@@ -175,6 +178,12 @@ class FastInterpreter {
           test.semantic_identity.find(filter) == std::string::npos)
         continue;
       ++discovered;
+      if (auto unsupported = options_.unsupported_tests.find(test.semantic_identity);
+          unsupported != options_.unsupported_tests.end()) {
+        output << "FAIL " << test.name << ": " << unsupported->second << "\n";
+        ++failed;
+        continue;
+      }
       Frame frame;
       frame.function = "test:" + test.name;
       frame.functional_context = frame.function;

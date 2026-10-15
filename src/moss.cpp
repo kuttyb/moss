@@ -3889,6 +3889,18 @@ class Checker {
       err(line, "'" + receiver + "' is not a domain reference; use a local function call or a domain reference");
     const Handler* h = find_handler(*dit->second, message);
     if (!h) err(line, "domain " + dit->second->name + " has no message handler '" + message + "'");
+    // Moss v0.1 message arguments are positional. A 'label: value' (or
+    // 'label = value') argument is not part of the message contract, so it is
+    // rejected here instead of reaching an engine that cannot lower it.
+    for (const auto& argument : args) {
+      string label, value;
+      if (parse_named_argument(argument, label, value))
+        err(line, "message " + dit->second->name + "." + message +
+            " does not accept named argument '" + trim(argument) +
+            "'; message arguments are positional in Moss v0.1, so remove the "
+            "label '" + label + ":' and pass the value in parameter order",
+            "MESSAGE_NAMED_ARGUMENT_UNSUPPORTED");
+    }
     if (h->params.size() != args.size())
       err(line, "message " + dit->second->name + "." + message + " expects " +
           std::to_string(h->params.size()) + " arguments, got " + std::to_string(args.size()));
@@ -13317,6 +13329,17 @@ class Checker {
         if (method) return;
       }
       err(line, "unknown local function '" + name + "'");
+    }
+    // Ordinary function arguments are positional in Moss v0.1; labels are
+    // only part of constructor, enum-case, route, and builtin (e.g. 'by:')
+    // surfaces, which are handled before this point.
+    for (const auto& argument : args) {
+      string label, value;
+      if (parse_named_argument(argument, label, value))
+        err(line, "function " + name + " does not accept named argument '" +
+            trim(argument) + "'; function arguments are positional in Moss "
+            "v0.1, so remove the label '" + label + ":' and pass the value in "
+            "parameter order", "CALL_NAMED_ARGUMENT_UNSUPPORTED");
     }
     if (function->second->params.size() != args.size())
       err(line, "function " + name + " expects " +
@@ -34570,71 +34593,388 @@ static std::filesystem::path resolve_fast_debug_test_entry(const string& target)
   return std::filesystem::path();
 }
 
-// Fast Debug target-capability preflight (Phase 25 G0 proof 3): a program
-// whose main can reach FileIO is rejected before any statement executes.
-// Reachability over-approximates by identifier: a reachable body names a
-// function, handler, method, or domain.
-static void reject_fast_debug_fileio(const moss::Program& program) {
-  if (!program.main) return;
-  std::unordered_map<std::string, std::vector<const std::vector<moss::Stmt>*>> bodies;
-  std::unordered_map<std::string, bool> direct_fileio;
-  for (const auto& function : program.functions) {
-    bodies[function.name].push_back(&function.body);
-    if (function.observable_effects.fileio || function.observable_effects.fileio_unknown)
-      direct_fileio[function.name] = true;
-  }
-  for (const auto& object : program.objects)
-    for (const auto& method : object.methods) {
-      bodies[method.name].push_back(&method.body);
-      if (method.observable_effects.fileio) direct_fileio[method.name] = true;
+// Fast Debug target-capability preflight (Phase 25 G0 proof 3, S1.3).
+//
+// A Fast Debug entry point (main, or one test block) whose reachable closure
+// can reach FileIO is rejected before any of its statements execute.  The
+// closure is an over-approximation built from identifier references in each
+// reachable body, refined only where a reference provably cannot execute
+// code outside the body:
+//
+//   * a token inside a String or Char literal names nothing;
+//   * a label written as 'name:' (constructor/enum field, builtin 'by:',
+//     named argument) and a case/recover pattern execute nothing;
+//   * a value-position token that is a parameter, a domain/object field or
+//     route, or a local already bound in an enclosing lexical scope, refers
+//     to that binding, not to a same-named function or domain;
+//   * a member token ('x.name') can only name a method or handler (or a
+//     module-qualified function when 'x' is an imported module); a member of
+//     an enum type is a case and executes nothing.
+//
+// Every other token is resolved against every function, method, handler,
+// and domain of that name.  The checker's transitive observable effects
+// (FileIO directly or through a helper, or an unknown provider FileIO fact)
+// mark direct FileIO; domains with FileIO-typed state mark their constructor
+// and all of their handlers.  Unrecognized binding forms are never treated
+// as bindings, so the refinements only remove references that cannot run.
+class FastDebugFileIOPreflight {
+ public:
+  explicit FastDebugFileIOPreflight(const moss::Program& program) {
+    for (const auto& import : program.imports) modules_.insert(import.name);
+    for (const auto& module : program.external_modules) modules_.insert(module);
+    for (const auto& enumeration : program.enums) {
+      enums_.insert(enumeration.name);
+      const size_t separator = enumeration.name.rfind("__");
+      if (separator != std::string::npos)
+        enums_.insert(enumeration.name.substr(separator + 2));
     }
-  for (const auto& domain : program.domains) {
-    for (const auto& field : domain.state)
-      if (field.type.find("FileIO") != std::string::npos) direct_fileio[domain.name] = true;
-    for (const auto& handler : domain.handlers) {
-      bodies[handler.name].push_back(&handler.body);
-      for (const auto& arm : handler.failure_arms) bodies[handler.name].push_back(&arm.body);
+    for (const auto& edge : program.semantic_call_edges)
+      if (edge.invocation_kind == "synchronous_message")
+        message_edges_[edge.source + "@" + std::to_string(edge.line)].insert(edge.target);
+    for (const auto& function : program.functions) {
+      Body body{&function.body, {}, function.result_expression, "fn:" + function.name};
+      for (const auto& parameter : function.params) body.scope.insert(parameter.name);
+      free_[function.name].push_back(body);
+      bool fileio = function.observable_effects.fileio ||
+                    function.observable_effects.fileio_unknown;
+      for (const auto& specialization : function.specializations)
+        fileio = fileio || specialization.observable_effects.fileio ||
+                 specialization.observable_effects.fileio_unknown;
+      if (fileio) direct_free_.insert(function.name);
     }
-  }
-  std::set<std::string> visited;
-  std::vector<const std::vector<moss::Stmt>*> pending{&program.main->body};
-  const int main_line = program.main->line;
-  const auto reject = [main_line] {
-    throw moss::CompileError(main_line,
-        "Fast Debug FileIO execution is intentionally unsupported in Phase 20; "
-        "run this program with the native backend",
-        "FAST_DEBUG_FILEIO");
-  };
-  while (!pending.empty()) {
-    const auto* body = pending.back();
-    pending.pop_back();
-    for (const auto& statement : *body) {
-      std::string text = statement.text + " " + statement.a + " " + statement.b;
-      for (const auto& argument : statement.args) text += " " + argument;
-      for (size_t i = 0; i < text.size();) {
-        if (text[i] == '"') {  // string literal contents name nothing
-          for (++i; i < text.size() && text[i] != '"'; ++i)
-            if (text[i] == '\\') ++i;
-          ++i;
-          continue;
-        }
-        if (!(std::isalpha(static_cast<unsigned char>(text[i])) || text[i] == '_')) { ++i; continue; }
-        size_t end = i + 1;
-        while (end < text.size() &&
-               (std::isalnum(static_cast<unsigned char>(text[end])) || text[end] == '_')) ++end;
-        const std::string token = text.substr(i, end - i);
-        i = end;
-        if (token == "FileIO" || direct_fileio.count(token)) reject();
-        if (!visited.insert(token).second) continue;
-        auto found = bodies.find(token);
-        if (found != bodies.end())
-          for (const auto* next : found->second) pending.push_back(next);
+    for (const auto& object : program.objects)
+      for (const auto& method : object.methods) {
+        Body body{&method.body, {"self"}, method.result_expression,
+                  "method:" + object.name + "." + method.name};
+        for (const auto& field : object.fields) body.scope.insert(field.name);
+        for (const auto& parameter : method.params) body.scope.insert(parameter.name);
+        methods_[method.name].push_back(body);
+        if (method.observable_effects.fileio || method.observable_effects.fileio_unknown)
+          direct_methods_.insert(method.name);
+      }
+    for (const auto& domain : program.domains) {
+      bool fileio_state = false;
+      for (const auto& field : domain.state)
+        if (field.type.find("FileIO") != std::string::npos) fileio_state = true;
+      if (fileio_state) direct_free_.insert(domain.name);
+      std::set<std::string> scope{"self"};
+      for (const auto& field : domain.state) scope.insert(field.name);
+      for (const auto& route : domain.routes) scope.insert(route.name);
+      for (const auto& handler : domain.handlers) {
+        const std::string identity = "handler:" + domain.name + "." + handler.name;
+        std::set<std::string> handler_scope = scope;
+        for (const auto& parameter : handler.params) handler_scope.insert(parameter.name);
+        handlers_by_name_[handler.name].insert(identity);
+        handler_names_[identity] = handler.name;
+        handler_bodies_[identity].push_back(
+            Body{&handler.body, handler_scope, std::nullopt, identity});
+        for (const auto& arm : handler.failure_arms)
+          handler_bodies_[identity].push_back(
+              Body{&arm.body, handler_scope, std::nullopt, identity});
+        if (fileio_state || handler.observable_effects.fileio ||
+            handler.observable_effects.fileio_unknown)
+          direct_handlers_.insert(identity);
       }
     }
   }
+
+  // True when the entry body can reach FileIO.
+  // `context` is the checker's callable identity ("main", "test:<name>"),
+  // used to look up checked message targets.
+  bool reaches(const std::vector<moss::Stmt>& entry, const std::string& context) {
+    visited_free_.clear();
+    visited_methods_.clear();
+    visited_handlers_.clear();
+    pending_.clear();
+    pending_.push_back(Body{&entry, {}, std::nullopt, context});
+    while (!pending_.empty()) {
+      Body body = pending_.back();
+      pending_.pop_back();
+      if (scan_body(body)) return true;
+    }
+    return false;
+  }
+
+ private:
+  struct Body {
+    const std::vector<moss::Stmt>* statements = nullptr;
+    std::set<std::string> scope;
+    std::optional<std::string> result_expression;
+    std::string context;  // checker callable identity of this body
+  };
+  // A local is visible to following statements at indent >= `indent`.
+  // for/case bindings use the block's indent, so they end with the block;
+  // a binding joined after its block is conservatively forgotten.
+  struct Local {
+    std::string name;
+    int indent = 0;
+  };
+
+  std::set<std::string> modules_, enums_, direct_free_, direct_methods_,
+      direct_handlers_;
+  std::unordered_map<std::string, std::vector<Body>> free_, methods_,
+      handler_bodies_;
+  std::unordered_map<std::string, std::set<std::string>> handlers_by_name_;
+  std::unordered_map<std::string, std::string> handler_names_;
+  // "<context>@<line>" -> checked synchronous message targets on that line.
+  std::unordered_map<std::string, std::set<std::string>> message_edges_;
+  std::set<std::string> visited_free_, visited_methods_, visited_handlers_;
+  std::vector<Body> pending_;
+  // Checked message targets of the statement being scanned.
+  const std::set<std::string>* line_targets_ = nullptr;
+
+  static bool ident_start(char c) {
+    return std::isalpha(static_cast<unsigned char>(c)) || c == '_';
+  }
+  static bool ident_char(char c) {
+    return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+  }
+
+  // Number of 'message' keywords outside String/Char literals.
+  static size_t message_keywords(const std::string& text) {
+    size_t count = 0;
+    for (size_t i = 0; i < text.size();) {
+      const char c = text[i];
+      if (c == '"' || c == '\'') {
+        for (++i; i < text.size() && text[i] != c; ++i)
+          if (text[i] == '\\') ++i;
+        ++i;
+        continue;
+      }
+      if (!ident_start(c)) { ++i; continue; }
+      size_t end = i + 1;
+      while (end < text.size() && ident_char(text[end])) ++end;
+      if (text.compare(i, end - i, "message") == 0) ++count;
+      i = end;
+    }
+    return count;
+  }
+
+  bool follow_free(const std::string& name) {
+    if (direct_free_.count(name)) return true;
+    if (visited_free_.insert(name).second) {
+      auto found = free_.find(name);
+      if (found != free_.end())
+        for (const auto& next : found->second) pending_.push_back(next);
+    }
+    return false;
+  }
+  bool follow_handler(const std::string& identity) {
+    if (direct_handlers_.count(identity)) return true;
+    if (visited_handlers_.insert(identity).second) {
+      auto found = handler_bodies_.find(identity);
+      if (found != handler_bodies_.end())
+        for (const auto& next : found->second) pending_.push_back(next);
+    }
+    return false;
+  }
+  // A member name is any method of that name, plus the handler(s) of that
+  // name.  When the checker resolved a message on this statement to a
+  // handler of that name, only the resolved handler(s) are followed;
+  // otherwise every handler of that name is.
+  bool follow_member(const std::string& name) {
+    if (direct_methods_.count(name)) return true;
+    if (visited_methods_.insert(name).second) {
+      auto found = methods_.find(name);
+      if (found != methods_.end())
+        for (const auto& next : found->second) pending_.push_back(next);
+    }
+    std::vector<std::string> resolved;
+    if (line_targets_)
+      for (const auto& target : *line_targets_) {
+        auto handler = handler_names_.find(target);
+        if (handler != handler_names_.end() && handler->second == name)
+          resolved.push_back(target);
+      }
+    if (!resolved.empty()) {
+      for (const auto& identity : resolved)
+        if (follow_handler(identity)) return true;
+      return false;
+    }
+    auto handlers = handlers_by_name_.find(name);
+    if (handlers != handlers_by_name_.end())
+      for (const auto& identity : handlers->second)
+        if (follow_handler(identity)) return true;
+    return false;
+  }
+
+  // Scans one expression slot.  Returns true when it can reach FileIO.
+  bool scan(const std::string& text, const std::set<std::string>& bound) {
+    std::string previous_token;  // identifier immediately before a '.'
+    for (size_t i = 0; i < text.size();) {
+      const char c = text[i];
+      if (c == '"' || c == '\'') {  // literal contents name nothing
+        for (++i; i < text.size() && text[i] != c; ++i)
+          if (text[i] == '\\') ++i;
+        ++i;
+        previous_token.clear();
+        continue;
+      }
+      if (!ident_start(c)) {
+        if (!std::isspace(static_cast<unsigned char>(c)) && c != '.')
+          previous_token.clear();
+        ++i;
+        continue;
+      }
+      size_t end = i + 1;
+      while (end < text.size() && ident_char(text[end])) ++end;
+      const std::string token = text.substr(i, end - i);
+      size_t before = i;
+      while (before > 0 && std::isspace(static_cast<unsigned char>(text[before - 1]))) --before;
+      const bool member = before > 0 && text[before - 1] == '.';
+      size_t after = end;
+      while (after < text.size() && std::isspace(static_cast<unsigned char>(text[after]))) ++after;
+      const bool label = after < text.size() && text[after] == ':' &&
+          !(after + 1 < text.size() && text[after + 1] == ':');
+      const std::string receiver = member ? previous_token : std::string();
+      i = end;
+      previous_token = token;
+      if (member) {
+        if (!receiver.empty() && !bound.count(receiver) && enums_.count(receiver))
+          continue;  // enum case
+        if (!receiver.empty() && !bound.count(receiver) && modules_.count(receiver)) {
+          if (token == "FileIO" || follow_free(receiver + "__" + token) ||
+              follow_free(token) || follow_member(token))
+            return true;
+          continue;
+        }
+        if (token == "FileIO" || follow_member(token)) return true;
+        continue;
+      }
+      if (token == "FileIO") return true;
+      if (label) continue;
+      const bool call = after < text.size() && text[after] == '(';
+      if (!call && bound.count(token)) continue;
+      if (follow_free(token) || follow_member(token)) return true;
+    }
+    return false;
+  }
+
+  bool scan_body(const Body& body) {
+    using Kind = moss::Stmt::Kind;
+    std::vector<Local> locals;
+    const auto bound_now = [&] {
+      std::set<std::string> bound = body.scope;
+      for (const auto& local : locals) bound.insert(local.name);
+      return bound;
+    };
+    for (const auto& statement : *body.statements) {
+      locals.erase(std::remove_if(locals.begin(), locals.end(),
+          [&](const Local& local) {
+            return statement.indent < local.indent;
+          }), locals.end());
+      const std::set<std::string> bound = bound_now();
+      auto targets = message_edges_.find(body.context + "@" + std::to_string(statement.line));
+      // Checked targets narrow handler resolution only when every message on
+      // the line has its own recorded target; a message the checker did not
+      // record (or two messages to one target) falls back to name lookup.
+      line_targets_ = targets != message_edges_.end() &&
+              targets->second.size() == message_keywords(statement.text)
+          ? &targets->second : nullptr;
+      std::vector<std::string> slots;
+      std::vector<Local> introduced;
+      // The source line without its binding target, so the parsed slots
+      // and the original text are both scanned for binding statements.
+      const auto source_after = [&](const std::string& separator) {
+        const size_t at = separator == "="
+            ? moss::top_level_assignment(statement.text)
+            : statement.text.find(separator);
+        if (at == std::string::npos) return statement.text;
+        return statement.text.substr(at + separator.size());
+      };
+      switch (statement.kind) {
+        case Kind::Case:
+          for (const auto& binding : statement.args)
+            introduced.push_back(Local{binding, statement.indent + 1});
+          break;
+        case Kind::Recover:
+        case Kind::Pass:
+        case Kind::Else:
+        case Kind::Try:
+          break;
+        case Kind::Let:
+        case Kind::Var:
+        case Kind::Assign:
+          slots.push_back(statement.b);
+          if (moss::plain_identifier(statement.a)) {
+            slots.push_back(source_after("="));
+            introduced.push_back(Local{statement.a, statement.indent});
+          } else {
+            slots.push_back(statement.a);
+            slots.push_back(statement.text);
+          }
+          break;
+        case Kind::For:
+          slots.push_back(statement.b);
+          slots.push_back(source_after(" in "));
+          if (moss::plain_identifier(statement.a))
+            introduced.push_back(Local{statement.a, statement.indent + 1});
+          else slots.push_back(statement.a);
+          break;
+        case Kind::Message: {
+          std::string call = statement.a + "." + statement.b + "(";
+          for (size_t index = 0; index < statement.args.size(); ++index)
+            call += (index ? ", " : "") + statement.args[index];
+          slots.push_back(call + ")");
+          if (moss::plain_identifier(statement.message_result)) {
+            slots.push_back(source_after("="));
+            introduced.push_back(Local{statement.message_result, statement.indent});
+          } else {
+            slots.push_back(statement.text);
+          }
+          break;
+        }
+        default:
+          // The full source line, plus every parsed slot, so a checker
+          // rewrite of a slot can never hide a reference.
+          slots.push_back(statement.text);
+          slots.push_back(statement.a);
+          slots.push_back(statement.b);
+          for (const auto& argument : statement.args) slots.push_back(argument);
+          break;
+      }
+      for (const auto& slot : slots)
+        if (scan(slot, bound)) return true;
+      locals.insert(locals.end(), introduced.begin(), introduced.end());
+    }
+    line_targets_ = nullptr;
+    if (body.result_expression && scan(*body.result_expression, bound_now()))
+      return true;
+    return false;
+  }
+};
+
+static const char* const kFastDebugFileIOMessage =
+    "Fast Debug FileIO execution is intentionally unsupported in Phase 20; "
+    "run this program with the native backend";
+
+static void reject_fast_debug_fileio(const moss::Program& program) {
+  if (!program.main) return;
+  FastDebugFileIOPreflight preflight(program);
+  if (preflight.reaches(program.main->body, "main"))
+    throw moss::CompileError(program.main->line, kFastDebugFileIOMessage,
+                             "FAST_DEBUG_FILEIO");
 }
 
-static moss::Program load_checked_interpreter_program(const std::filesystem::path& input, bool test_mode = false) {
+// Test mode: each test block is its own entry point.  A test whose reachable
+// closure can reach FileIO is reported as FAIL with FAST_DEBUG_FILEIO and is
+// not executed; other tests run normally.
+static std::map<std::string, std::string> fast_debug_fileio_tests(
+    const moss::Program& program) {
+  std::map<std::string, std::string> rejected;
+  FastDebugFileIOPreflight preflight(program);
+  for (const auto& test : program.tests)
+    if (preflight.reaches(test.body, "test:" + test.name))
+      rejected[test.semantic_identity] =
+          "[FAST_DEBUG_FILEIO] Fast Debug FileIO execution is intentionally "
+          "unsupported; this test reaches FileIO and was not executed. Run it "
+          "with the native test runner ('margo test' or 'moss test')";
+  return rejected;
+}
+
+static moss::Program load_checked_interpreter_program(
+    const std::filesystem::path& input, bool test_mode = false,
+    std::map<std::string, std::string>* fileio_tests = nullptr) {
   try {
     auto context = moss::analyze_source_context(input);
     if (test_mode && context.project) {
@@ -34660,6 +35000,7 @@ static moss::Program load_checked_interpreter_program(const std::filesystem::pat
             context.requested_source.string());
       }
       if (!test_mode) reject_fast_debug_fileio(checked.program);
+      else if (fileio_tests) *fileio_tests = fast_debug_fileio_tests(checked.program);
       moss::FunctionalOptimizer(checked.program).run(false);
       return std::move(checked.program);
     }
@@ -34676,6 +35017,7 @@ static moss::Program load_checked_interpreter_program(const std::filesystem::pat
     moss::Checker checker(program);
     checker.run();
     if (!test_mode) reject_fast_debug_fileio(program);
+    else if (fileio_tests) *fileio_tests = fast_debug_fileio_tests(program);
     moss::FunctionalOptimizer(program).run(false);
     return program;
   } catch (const moss::ProjectError& error) {
@@ -34706,9 +35048,11 @@ static int run_fast_interpreter_source(const std::filesystem::path& input,
 
 static int run_fast_interpreter_tests(const std::filesystem::path& input,
                                       const string& filter, bool trace) {
-  moss::Program program = load_checked_interpreter_program(input, true);
+  std::map<std::string, std::string> fileio_tests;
+  moss::Program program = load_checked_interpreter_program(input, true, &fileio_tests);
   moss::FastInterpreter::Options options;
   options.trace = trace;
+  options.unsupported_tests = std::move(fileio_tests);
   options.source_file = std::filesystem::absolute(input).lexically_normal().string();
   moss::FastInterpreter interpreter(program, options);
   int status = 0;

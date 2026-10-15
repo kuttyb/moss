@@ -300,6 +300,12 @@ The final expression of a block is its result. Explicit `return value` may be re
 for migration and early exits. A call such as `normalize(value, total)` is an ordinary
 local, intra-domain call. It has no mailbox, request/reply, or domain scheduling meaning.
 
+Function and message arguments are positional. A labelled argument such as
+`normalize(value: 1, total: 2)` or `message counter.Bump(step: 2)` is rejected before
+execution with `CALL_NAMED_ARGUMENT_UNSUPPORTED` or
+`MESSAGE_NAMED_ARGUMENT_UNSUPPORTED`. Labels belong to type, enum-case, and domain
+constructors (`Counter(value: 0)`) and to builtin options such as `sort(v, by: key)`.
+
 `fn main()` is the preferred spelling for the program entry point; `proc main()` remains
 a compatibility spelling while existing programs migrate. A `fn` declared directly
 inside a `domain` is a domain message handler; `fn Handler(...)` is the canonical
