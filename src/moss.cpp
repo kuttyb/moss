@@ -14755,6 +14755,16 @@ class Checker {
           if (type && enums_.count(canonical_type_name(*type)))
             err(statement.line, "echo cannot display an enum directly; match its cases",
                 "ENUM_DISPLAY_UNSUPPORTED");
+          // Only scalars and Strings have a Moss display form; native code
+          // has no text representation for a collection or record.
+          const string shown = type ? canonical_type_name(*type) : string();
+          if (shown == "vector" || shown == "map" || shown == "queue" ||
+              starts_with(shown, "vector[") || starts_with(shown, "map[") ||
+              starts_with(shown, "queue[") || objects_.count(shown))
+            err(statement.line, "echo cannot display a " +
+                    string(objects_.count(shown) ? "record" : "collection") +
+                    " value directly; echo its fields or elements",
+                "ECHO_DISPLAY_UNSUPPORTED");
         }
         return;
       }
