@@ -43,13 +43,13 @@ when the API is frozen.
 | fixture | covers | today |
 |---|---|---|
 | `01-float-keys-map`, `02-float-keys-set` | Float keys: separate signed zeros, one NaN key (Map, Set) | fail-closed |
-| `03-imported-nominal-keys`, `...-source-free` | provider-owned nominal key with custom `isequal`/`hash` methods, source-backed and compiled-only | known-failing (P25-S3-D2) |
-| `04-two-consumers-shared-map` | two consumer packages message one provider domain that owns `Map[Name, Int]` | known-failing (P25-S3-D2) |
+| `03-imported-nominal-keys`, `...-source-free` | provider-owned nominal key with custom `isequal`/`hash` methods, source-backed and compiled-only | fail-closed in the checker (P25-S3-D2 interim fix) |
+| `04-two-consumers-shared-map` | two consumer packages message one provider domain that owns `Map[Name, Int]` | fail-closed in the checker (P25-S3-D2 interim fix) |
 | `04-two-consumers-shared-map-control` | same four-package topology with String keys | passes |
-| `05-coherence-mismatch-*` | conflicting free-function proofs; a free proof overriding canonical methods (`KEY_PROOF_COHERENCE_MISMATCH`) | known-failing (P25-S3-D2) |
-| `06a`–`06i` | malformed (wrong result/arity/operand), impure (I/O, raise, divergence), missing, and partial proofs | known-failing (P25-S3-D2) |
+| `05-coherence-mismatch-*` | conflicting free-function proofs; a free proof overriding canonical methods (`KEY_PROOF_COHERENCE_MISMATCH`) | fail-closed in the checker (P25-S3-D2 interim fix) |
+| `06a`–`06i` | malformed (wrong result/arity/operand), impure (I/O, raise, divergence), missing, and partial proofs | fail-closed in the checker (P25-S3-D2 interim fix) |
 | `06j-proof-forged-interface` | compiled-only provider whose `.mossi` claims an I/O `hash` is pure | fail-closed (`SOURCE_FREE_CONTRACT_MISMATCH`) |
-| `07-keys-snapshot-*` | `keys()` is an eager owned snapshot (Float, nominal; String control) | fail-closed / known-failing / passes |
+| `07-keys-snapshot-*` | `keys()` is an eager owned snapshot (Float, nominal; String control) | fail-closed / fail-closed / passes |
 | `08-map-and-set-same-protocol` | one nominal key in a Map and a Set agrees on identity | fail-closed |
 | `09a`–`09h` | S1.5 unpinned empty `Map()` (Team G Option B handoff) | see below |
 

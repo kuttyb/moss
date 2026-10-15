@@ -132,6 +132,22 @@ def test_record_equality_rejected():
             "explicit field comparison", "true\nfalse\n")
 
 
+def test_map_keys_fail_closed():
+    print("S1: record and Float-containing Map keys fail closed (P25-S3-D2)")
+    tag = "type Tag:\n  label: String\n\n"
+    rejected(tag + "fn main():\n  var m = Map()\n  m[Tag(label: \"a\")] = 1\n  echo 1\n",
+             "record key assignment", "RECORD_MAP_KEY_UNSUPPORTED", 6)
+    rejected(tag + "fn main():\n  var m = Map()\n  m[[Tag(label: \"a\")]] = 1\n  echo 1\n",
+             "Vector-of-record key", "RECORD_MAP_KEY_UNSUPPORTED", 6)
+    rejected("fn main():\n  var m = Map()\n  m[[1.5]] = 1\n  echo 1\n",
+             "Vector[Float] key", "FLOAT_MAP_KEY_UNSUPPORTED", 3)
+    rejected(tag + "fn size(m: Map[Tag, Int]) -> Int:\n  return 0\n\nfn main():\n  echo 1\n",
+             "declared Map[Record, V] parameter", "UNKNOWN_SYMBOL_OR_TYPE")
+    engines(tag + "fn main():\n  var m = Map()\n  m[\"a\"] = Tag(label: \"x\")\n"
+            "  echo m[\"a\"].label\n  var k = Map()\n  k[[1, 2]] = 3\n  echo k.get([1, 2], 0)\n",
+            "record values and Vector[Int] keys still work", "x\n3\n")
+
+
 def write_record_projects(base):
     provider = base / "geometry"
     (provider / "src").mkdir(parents=True)
@@ -383,6 +399,7 @@ def main():
     test_record_equality_rejected()
     test_imported_record_equality_rejected()
     test_mixed_operands_rejected()
+    test_map_keys_fail_closed()
     test_char_string_distinct()
     test_invalid_expression()
     test_char_conversion_and_failure()

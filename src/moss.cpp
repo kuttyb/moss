@@ -2389,6 +2389,29 @@ class Checker {
           "' and '" + rt + "'", "TYPE_MISMATCH");
   }
 
+  static bool contains_float_type(const string& type) {
+    if (type == "float") return true;
+    auto bracket = type.find('[');
+    if (bracket != string::npos && ends_with(type, "]"))
+      for (const auto& argument : split_top_level(
+               type.substr(bracket + 1, type.size() - bracket - 2), ','))
+        if (contains_float_type(canonical_type_name(argument))) return true;
+    return false;
+  }
+
+  // Map keys other than the built-in hashable scalars (and collections of
+  // them) need the canonical MossMap<K,V> and a key-protocol-v1 KeyProof
+  // (Team G G2/G3). Until then they fail closed here instead of in rustc.
+  void check_map_key_type(int line, const string& key) const {
+    string type = canonical_type_name(key);
+    if (contains_internal_placeholder(type)) return;
+    if (contains_float_type(type))
+      err(line, "Float Map keys require the canonical MossMap<K,V> under key-protocol-v1, which is not yet available; Float isequal/hash/less are available as functions", "FLOAT_MAP_KEY_UNSUPPORTED");
+    if (contains_record_type(type))
+      err(line, "record Map keys ('" + type + "') require the canonical MossMap<K,V> and a key-protocol-v1 key proof (isequal/hash), which are not yet available",
+          "RECORD_MAP_KEY_UNSUPPORTED");
+  }
+
   bool valid_type(const string& t) const {
     string type = canonical_type_name(t);
     if (fileio_forbidden_collection_type(type)) return false;
@@ -2410,7 +2433,8 @@ class Checker {
       return ps.size() == 2 &&
           !contains_trait_type(ps[0]) && !contains_trait_type(ps[1]) &&
           !contains_enum_type(ps[0]) &&
-          canonical_type_name(ps[0]) != "float" &&
+          !contains_float_type(canonical_type_name(ps[0])) &&
+          !contains_record_type(ps[0]) &&
           valid_type(ps[0]) && valid_type(ps[1]);
     }
     if ((starts_with(type, "seq[") || starts_with(type, "option[")) && ends_with(type, "]"))
@@ -14281,8 +14305,7 @@ class Checker {
         if (ps.size() == 2 && enums_.count(canonical_type_name(ps[0])))
           err(line, "enum values cannot be Map keys; enum equality and hashing are unsupported",
               "ENUM_MAP_KEY_UNSUPPORTED");
-        if (ps.size() == 2 && canonical_type_name(ps[0]) == "float")
-          err(line, "Float Map keys require the canonical MossMap<K,V> under key-protocol-v1, which is not yet available; Float isequal/hash/less are available as functions", "FLOAT_MAP_KEY_UNSUPPORTED");
+        if (ps.size() == 2) check_map_key_type(line, ps[0]);
         auto it = inferred_expr_type(ii, env);
         if (ps.size() != 2 || !it || !same_type(ps[0], *it)) err(line, "map key type mismatch");
       } else err(line, "value is not an indexable container");
@@ -14585,8 +14608,7 @@ class Checker {
                 err(statement.line,
                     "enum values cannot be Map keys; enum equality and hashing are unsupported",
                     "ENUM_MAP_KEY_UNSUPPORTED");
-              if (key_type && canonical_type_name(*key_type) == "float")
-                err(statement.line, "Float Map keys require the canonical MossMap<K,V> under key-protocol-v1, which is not yet available; Float isequal/hash/less are available as functions", "FLOAT_MAP_KEY_UNSUPPORTED");
+              if (key_type) check_map_key_type(statement.line, *key_type);
             }
           }
         }

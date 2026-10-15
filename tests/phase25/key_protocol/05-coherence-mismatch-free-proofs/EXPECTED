@@ -3,7 +3,7 @@ covers: 4 (canonical key-proof coherence)
 layout: packages
 entry: app
 expect: reject KEY_PROOF_COHERENCE_MISMATCH
-current: known-failing accepted-rustc-fails
-defect: P25-S3-D2: a Map keyed by a record/nominal type passes moss check; native rustc rejects the HashMap (no Eq/Hash) and Fast Debug ignores custom isequal/hash
+current: fail-closed UNKNOWN_SYMBOL_OR_TYPE
+defect: P25-S3-D2: a Map keyed by a record/nominal type passes moss check; native rustc rejects the HashMap (no Eq/Hash) and Fast Debug ignores custom isequal/hash [interim: fail-closed in the checker since the Coordinator S1 fix (RECORD_MAP_KEY_UNSUPPORTED); activation still needs MossMap/KeyProof]
 owner: Team G G2 KeyProof records + Team S proof resolution
 ---
