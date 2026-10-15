@@ -312,7 +312,7 @@ interface_path = project / 'build/debug/provider.mossi'
 contents = interface_path.read_text()
 # ABI v9 binds source-free metadata to the provider artifact. A historical
 # v8 interface has neither the v9 version nor its provider-owned seal.
-legacy = contents.replace('native_abi 9\n', 'native_abi 8\n')
+legacy = contents.replace('native_abi 10\n', 'native_abi 8\n').replace('native_abi 9\n', 'native_abi 8\n')
 legacy = re.sub(r'(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n', '', legacy)
 assert legacy != contents
 interface_path.write_text(legacy)

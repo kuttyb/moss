@@ -1,5 +1,52 @@
 # Moss current status
 
+## Phase 25 Team S Semantics & Engines (G1, G4, G3) Progress — 2026-10-15
+
+Team S implemented and verified Phase 25 language features, compiler defects, and engine parity across Fast Debug (`moss run --interp`), Native Debug (`moss --debug`), and Native Release (`moss -O`):
+
+1. **G1: Compiler Defect Remediation (10 Non-Retired Defects)**
+   - **Defect #1 (64-bit Int Precision):** Added large integer support beyond $2^{53}$ without IEEE-754 precision loss across AST constant evaluation and Fast Debug interpreter.
+   - **Defect #2 & #3 (Duplicate Identifiers):** Emitted semantic errors for duplicate function parameter names and duplicate pattern variable bindings in match expressions.
+   - **Defect #4 (Conflicting Index Expression Borrow):** Corrected rustc lowering for conflicting borrow expressions in indexing scenarios.
+   - **Defect #5 (`_ = expr` Discard):** Lowered wildcard discard assignment statements cleanly without synthetic unused variable warnings.
+   - **Defect #6 (Assert String Escaping):** Escaped newline and quote sequences properly in generated assertion diagnostics.
+   - **Defect #7 (`Float.to_string` Agreement):** Standardized float formatting to match across interpreter and native lowering.
+   - **Defect #8 (Fast Debug Loop Index Shadowing):** Scoped loop induction variables cleanly in Fast Debug environment to prevent variable leakage and preserve parity with lowered rustc semantics.
+   - **Defect #10 (Member Call vs Free Function Precedence):** Unified call resolution precedence to prioritize method lookup over free function scope when receiver type matches.
+   - **Defect #12 / #15 (Dotted Receiver Statement Calls):** Enabled chained member call statements on dotted receivers without requiring discarded assignment.
+   - **Defect #14 (Raising Calls inside Benchmarks):** Handled error propagation and return lowering for raising functions inside benchmark harness blocks.
+   - **Validation:** Verified via `tests/tooling/check_phase25_g1_regressions.py` (100% pass across all 3 execution modes).
+
+2. **G4: Unicode Indexing, Scalar `Char`, and ABI-v10 Migration**
+   - **Scalar `Char` Type & Literals:** Added first-class `Char` literal syntax (`'a'`, `'\n'`, `'\u{...}'`, `'😀'`), constructor `Char(codepoint: Int)`, and scalar methods `.codepoint()`, `.to_string()`, `.less()`, `.isequal()`, `.hash()`.
+   - **Unicode String Indexing:** Implemented `String.char_at(index)` returning `Char` and `String.chars()` returning `Vector[Char]`.
+   - **Transparent Equality:** Implemented transparent equality comparison between scalar `Char` and 1-character `String` values.
+   - **ABI-v10 Migration:** Promoted `kNativeAbiVersion = 10`. Enforced rejection of legacy ABI-v9 providers while maintaining backward test compatibility.
+   - **Validation:** Verified via `tests/tooling/check_phase25_g4_unicode.py` (100% pass across all 3 execution modes).
+
+3. **G3: Total Ordering, Map Float Keys, and Sort Operations**
+   - **Julia-Compliant Total Ordering:** Implemented `Float` total ordering axioms matching Julia's `isless` / `isequal` / `hash`:
+     - Ordering: $-0.0 < +0.0 < \text{NaN}$.
+     - Equality: `isequal(-0.0, +0.0) == false`, `isequal(NaN, NaN) == true`.
+     - Hashing: `hash(-0.0) != hash(+0.0)`, `hash(NaN) == hash(NaN)`.
+   - **Scalar Total Ordering:** Standardized `.less()`, `.isequal()`, and `.hash()` across `Int`, `Float`, `Char`, `String`, and `Bool` (both free functions and static/instance methods).
+   - **Map[Float, V] Key Dispatch:** Enabled `Float` keys in `Map[Float, V]` with distinct representation for `-0.0`, `+0.0`, and `NaN` via `MossFloatKey` wrapping in native lowered Rust and hash/isequal dispatch in interpreter.
+   - **In-Place Sort & Reverse:** Implemented `sort(v)`, `sort(v, by: key_fn)`, and `sort(v, by: Reverse(key_fn))` in-place sorting statements with complete semantic parity.
+   - **Validation:** Verified via `tests/tooling/check_phase25_g3_ordering.py` (100% pass across all 3 execution modes).
+
+4. **Integration & Regression Gates:**
+   - `python3 tests/tooling/check_phase25_g1_regressions.py` PASSED
+   - `python3 tests/tooling/check_phase25_g4_unicode.py` PASSED
+   - `python3 tests/tooling/check_phase25_g3_ordering.py` PASSED
+   - `python3 tests/tooling/check_phase21_abi_v9_migration.py ./moss` PASSED
+   - `python3 tests/tooling/check_phase106f1.py ./moss tmp/test_phase106f1` PASSED
+   - `python3 tests/tooling/check_handler_2pl.py ./moss tmp/test_handler_2pl` PASSED
+   - `python3 tests/tooling/check_numerics_abi_v9.py ./moss tmp/test_numerics` PASSED
+   - `python3 tests/tooling/check_phase21_source_free_abi.py ./moss tmp/test_source_free` PASSED
+   - `python3 tests/tooling/check_agent_feedback.py` PASSED
+   - `python3 tests/tooling/check_agent_skills.py` PASSED
+   - `python3 tests/tooling/check_agent_api.py ./moss` PASSED
+
 ## Phase 24 Aggregate SDK Integration Complete (Teams A & R Integrated) — 2026-10-13
 
 Team I completed the aggregate integration of all approved Phase 24 SDK deliveries into `phase24-integration`, incorporating Team A (`phase24-advanced-data`) and Team R (`phase24-data-utils`) alongside all previously integrated components:

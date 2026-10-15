@@ -23,7 +23,8 @@ inline bool copy_type_name(string type) {
   auto last = type.find_last_not_of(" \t\n\r");
   type = type.substr(first, last - first + 1);
   if (type == "int" || type == "Int" || type == "float" ||
-      type == "Float" || type == "bool" || type == "Bool") return true;
+      type == "Float" || type == "bool" || type == "Bool" ||
+      type == "char" || type == "Char") return true;
   if (type.size() > 8 && type.compare(0, 7, "option[") == 0 &&
       type.back() == ']')
     return copy_type_name(type.substr(7, type.size() - 8));
