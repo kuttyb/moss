@@ -34355,6 +34355,60 @@ static std::filesystem::path resolve_fast_debug_test_entry(const string& target)
   return std::filesystem::path();
 }
 
+// Fast Debug target-capability preflight (Phase 25 G0 proof 3): a program
+// whose main can reach FileIO is rejected before any statement executes.
+// Reachability over-approximates by identifier: a reachable body names a
+// function, handler, method, or domain.
+static void reject_fast_debug_fileio(const moss::Program& program) {
+  if (!program.main) return;
+  std::unordered_map<std::string, std::vector<const std::vector<moss::Stmt>*>> bodies;
+  std::unordered_map<std::string, bool> direct_fileio;
+  for (const auto& function : program.functions) {
+    bodies[function.name].push_back(&function.body);
+    if (function.observable_effects.fileio || function.observable_effects.fileio_unknown)
+      direct_fileio[function.name] = true;
+  }
+  for (const auto& object : program.objects)
+    for (const auto& method : object.methods) {
+      bodies[method.name].push_back(&method.body);
+      if (method.observable_effects.fileio) direct_fileio[method.name] = true;
+    }
+  for (const auto& domain : program.domains) {
+    for (const auto& field : domain.state)
+      if (field.type.find("FileIO") != std::string::npos) direct_fileio[domain.name] = true;
+    for (const auto& handler : domain.handlers) bodies[handler.name].push_back(&handler.body);
+  }
+  std::set<std::string> visited;
+  std::vector<const std::vector<moss::Stmt>*> pending{&program.main->body};
+  const auto reject = [] {
+    throw moss::CompileError(0,
+        "Fast Debug FileIO execution is intentionally unsupported in Phase 20; "
+        "run this program with the native backend",
+        "FAST_DEBUG_FILEIO");
+  };
+  while (!pending.empty()) {
+    const auto* body = pending.back();
+    pending.pop_back();
+    for (const auto& statement : *body) {
+      std::string text = statement.text + " " + statement.a + " " + statement.b;
+      for (const auto& argument : statement.args) text += " " + argument;
+      for (size_t i = 0; i < text.size();) {
+        if (!(std::isalpha(static_cast<unsigned char>(text[i])) || text[i] == '_')) { ++i; continue; }
+        size_t end = i + 1;
+        while (end < text.size() &&
+               (std::isalnum(static_cast<unsigned char>(text[end])) || text[end] == '_')) ++end;
+        const std::string token = text.substr(i, end - i);
+        i = end;
+        if (token == "FileIO" || direct_fileio.count(token)) reject();
+        if (!visited.insert(token).second) continue;
+        auto found = bodies.find(token);
+        if (found != bodies.end())
+          for (const auto* next : found->second) pending.push_back(next);
+      }
+    }
+  }
+}
+
 static moss::Program load_checked_interpreter_program(const std::filesystem::path& input, bool test_mode = false) {
   try {
     auto context = moss::analyze_source_context(input);
@@ -34380,6 +34434,7 @@ static moss::Program load_checked_interpreter_program(const std::filesystem::pat
             "dependency source, or use native execution.",
             context.requested_source.string());
       }
+      if (!test_mode) reject_fast_debug_fileio(checked.program);
       moss::FunctionalOptimizer(checked.program).run(false);
       return std::move(checked.program);
     }
@@ -34395,6 +34450,7 @@ static moss::Program load_checked_interpreter_program(const std::filesystem::pat
     moss::Program program = parser.parse();
     moss::Checker checker(program);
     checker.run();
+    if (!test_mode) reject_fast_debug_fileio(program);
     moss::FunctionalOptimizer(program).run(false);
     return program;
   } catch (const moss::ProjectError& error) {

@@ -1,5 +1,32 @@
 # Moss current status
 
+## Phase 25 Team S L7 repair pass (NO-GO of 983acb2) — 2026-10-15
+
+Branch `phase25-semantics-engines` continues on the Team S feature branch after
+the L7 **NO-GO for G5 integration** of `983acb2`. Full item-by-item status,
+evidence, outstanding limitations, and coordination requests are in
+`docs/phase25/TEAM_S_L7_REPAIR_REPORT.md`; benchmark data in
+`docs/phase25/TEAM_S_UNICODE_STRING_BENCHMARK.md`.
+
+- Repaired: Fast Debug IEEE Float `==`; range overflow, iteration cap, and
+  join-aware block scoping (with `on_fail` edge captures and consumed-binding
+  reinitialization); escaped-quote and Char-delimiter scanning; FileIO
+  preflight; ledger #10 constructor/enum-payload labels; `sort` effects,
+  lowering, typing, and key purity; scalar key-protocol operand typing; `Char`
+  as a declarable type; `match` constructor-literal scrutinee.
+- Retracted: `MossFloatKey`, the Rust ordering trait layer, and the solo
+  ABI-v10 bump (native ABI is v9 again; migration tests restored).
+  `Map[Float, V]` fails closed pending Team G's `MossMap<K,V>`.
+- Staged: indexed `MossString` (`MOSS_STAGED_STRING_REPR=indexed-v1`), proven
+  equivalent and linear; default flip and cross-crate use wait for the joint
+  ABI-v10 cut and shared runtime crate.
+- Migrated: in-repo SDK `char_at`/`chars` callers broken by `983acb2`.
+
+Open: joint ABI-v10 decisions with L7/Team G; Map/Set user and Float keys;
+#12 open-receiver admission (joint with Team G G2); native `==` on structs;
+independent L6 Architect implementation review; push of the corrected branch.
+Validation status for the final SHA is recorded in the repair report.
+
 ## Phase 25 Team S Semantics & Engines (G1, G4, G3) Progress — 2026-10-15
 
 Team S implemented and verified Phase 25 language features, compiler defects, and engine parity across Fast Debug (`moss run --interp`), Native Debug (`moss --debug`), and Native Release (`moss -O`):

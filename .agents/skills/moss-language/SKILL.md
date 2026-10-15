@@ -194,12 +194,15 @@ Facts the Phase 24 SDK swarm repeatedly rediscovered:
   local) is rejected with "local member calls are not implemented"; the same call
   through a parameter or inside a method works. That limitation is a tracked
   defect; report it rather than designing around it.
-- String positions are code points over UTF-8: `length()`, `char_at()` and
-  `slice()` are O(n) per call, so index loops over long text are quadratic, and
-  `chars()` allocates one String per character.
-- Fast Debug currently diverges on `for`, `Float.to_string()` and `Int` ordering
-  above 2^53. These are defects, not limits to code around; validate such code
-  natively and record the divergence.
+- String positions are code points over UTF-8. `char_at()` returns a scalar
+  `Char` and `chars()` a `Vector[Char]`; use `c.to_string()` where a String is
+  needed (`Char == "x"` comparisons work directly). With the default plain
+  representation `length()`, `char_at()` and `slice()` are O(n) per call, so
+  index loops over long text are quadratic; the indexed representation is
+  staged for ABI v10, not yet the default.
+- Fast Debug runs `for`, has native block scoping, and uses IEEE `==` for
+  Float (`isequal` is the separate total equality). It rejects programs whose
+  `main` reaches FileIO before executing. Any other divergence is a defect.
 
 ```moss
 fn adjusted(value: Int) -> Int:

@@ -100,6 +100,21 @@ fn main():
         "true\ntrue\nfalse\ntrue\nfalse\ntrue\nfalse\n")
 
 
+def test_int_ordering_above_2_53():
+    print("Ledger #1: Int ordering above 2^53")
+    three_modes("""
+fn main():
+  let a = 9007199254740992
+  let b = 9007199254740993
+  echo b > a
+  echo a < b
+  echo b >= a + 1
+  echo a == b
+  echo less(a, b)
+  echo 9223372036854775807 > 9223372036854775806
+""", "exact 64-bit comparisons", "true\ntrue\ntrue\nfalse\ntrue\ntrue\n")
+
+
 # --- Finding 5: Fast Debug ranges, iteration limits, block scope -----------
 
 def test_fast_debug_loops():
@@ -236,6 +251,32 @@ fn main():
   echo '('.to_string()
 """, "joined branch bindings, shadowing, and delimiter Char literals",
         "1\n10\n4\nno\nyes\n4\n44\n(\n")
+
+
+FILE_ERRORS = "".join(f"  {v}\n" for v in
+                      ("NotFound", "PermissionDenied", "NotRegularFile", "InUse", "Full", "IO"))
+FILE_RECOVERS = "".join(f"  recover FileError.{v}:\n    echo \"{v}\"\n" for v in
+                        ("NotFound", "PermissionDenied", "NotRegularFile", "InUse", "Full", "IO"))
+
+
+def test_fast_debug_fileio_preflight():
+    print("G1/G0 proof 3: Fast Debug rejects reachable FileIO before execution")
+    reachable = ("enum FileError:\n" + FILE_ERRORS + "\nfn touch():\n  try:\n"
+                 "    file = FileIO.open(\"x.txt\", ro)\n    file.close()\n" +
+                 FILE_RECOVERS.replace("\n  recover", "\n  recover") +
+                 "\nfn main():\n  echo \"started\"\n  touch()\n")
+    with tempfile.TemporaryDirectory(prefix="p25-l7-", dir=SCRATCH) as td:
+        source = Path(td) / "reachable.moss"
+        source.write_text(reachable)
+        assert run([str(MOSS), "check", str(source), "--json"]).returncode == 0
+        result = run([str(MOSS), "run", "--interp", str(source)])
+        assert result.returncode == 1 and result.stdout == "", result
+        assert "FAST_DEBUG_FILEIO" in result.stderr, result.stderr
+        unreachable = reachable.replace("  touch()\n", "  echo \"pure\"\n")
+        source.write_text(unreachable)
+        result = run([str(MOSS), "run", "--interp", str(source)])
+        assert result.returncode == 0 and result.stdout == "started\npure\n", result
+    print("  PASS: reachable FileIO rejected before output; unreferenced helper allowed")
 
 
 # --- Ledger #4: parameter-based indexed assignment ------------------------
@@ -648,8 +689,10 @@ fn main():
 def main():
     print("=== Phase 25 Team S L7 repair regressions ===")
     test_float_ieee_equality()
+    test_int_ordering_above_2_53()
     test_fast_debug_loops()
     test_branch_joins_and_char_delimiters()
+    test_fast_debug_fileio_preflight()
     test_parameter_indexed_assignment()
     test_constructor_label_collision()
     test_sort_semantics()

@@ -152,14 +152,15 @@ String ordering with `<`, `<=`, `>`, or `>=` is not part of v0.1.
 String inspection and transformation methods read their inputs and return
 independent values. Character positions are zero-based Unicode code-point
 positions (like Python), not UTF-8 byte offsets or grapheme clusters. A
-character is a one-code-point `String`:
+single code point is a scalar `Char` (`'a'`, `'\n'`, `'\u{1F642}'`, or
+`Char(codepoint)`), with `codepoint()` and `to_string()`:
 
 ```moss
 fn main():
   text = "aé🙂"
   echo text.length()          # 3
-  echo text.char_at(1)        # é
-  letters = text.chars()      # Vector[String]
+  echo text.char_at(1)        # é (a Char)
+  letters = text.chars()      # Vector[Char]
   echo text.find("é🙂")       # 1 (code-point index)
   echo text.slice(1, 2)       # é🙂
   echo "MÖSS".ascii_lower()  # mÖss
@@ -174,6 +175,10 @@ reads but does not consume its part, and overlapping access such as
 `text.append(text)` is rejected. Use `text = text + text` for an intentional
 self-copy.
 
+`Char` and a one-code-point String compare with `==` (`text.char_at(1) == "é"`);
+use `c.to_string()` where a String value is required. `Char(codepoint)` fails
+for surrogates and values above `0x10FFFF`.
+
 `char_at` requires a valid nonnegative position; `split` requires a nonempty
 separator. Invalid inputs fail under current runtime precondition behavior.
 `find` returns the first code-point position, `-1` when absent, and `0` for an
@@ -183,14 +188,14 @@ preserve every other Unicode scalar.
 `join` accepts `Vector[String]` and returns an empty String for an empty vector.
 String numeric parsing and recoverable invalid-input behavior are described above.
 
-Know the current cost of positions. Strings are stored as UTF-8, so `length()`,
-`char_at(i)`, `slice`, and the position `find` returns each walk the text: they
-cost time proportional to the String's length on every call. A loop such as
-`while i < text.length(): c = text.char_at(i)` is therefore quadratic; a 32,000-
-character scan already takes about 100 ms. `chars()` allocates one String per
-character. For long text, prefer `find`, `split`, and one `chars()` call over
-index loops, and hoist `length()` out of loop conditions. Constant-time positions
-and a scalar `Char` type are planned for Phase 25.
+Know the current cost of positions. The default String representation is plain
+UTF-8, so `length()`, `char_at(i)`, `slice`, and the position `find` returns each
+walk the text: they cost time proportional to the String's length on every
+call. A loop such as `while i < text.length(): c = text.char_at(i)` is therefore
+quadratic. For long text, prefer `find`, `split`, and one `chars()` call over
+index loops, and hoist `length()` out of loop conditions. An indexed String
+representation with O(1) `length()` and bounded-cost `char_at` is implemented
+and staged for the Phase 25 ABI-v10 transition; it is not yet the default.
 
 Integer bitwise and shift operators (`&`, `|`, `^`, `~`, `<<`, `>>`) operate strictly
 on 64-bit signed `Int` values with total two's-complement semantics. Boolean logic
@@ -238,7 +243,8 @@ fn main():
   pending.push(10)
 ```
 
-The native compiler supports `for`. The current Fast Debug interpreter is still smaller than the production execution engine and does not yet execute `for` traversal.
+`for` traverses ranges, Vectors, and Queues in native code and Fast Debug. The
+loop variable and any binding made inside the body are scoped to the loop.
 
 Ranges use the same form:
 
@@ -1481,14 +1487,11 @@ pipeline surface execute directly in Fast Debug.
 
 FileIO requires native execution; Fast Debug does not perform FileIO operations.
 
-Fast Debug is meant to be a full peer of native execution: a program that passes
-`moss check` should produce the same results in both. These known differences are
-defects being fixed in Phase 25, not intended behavior:
-
-- `for` loops do not run in Fast Debug.
-- `Float.to_string()` fails in Fast Debug ("method receiver is not a Moss object").
-- Ordering comparisons (`<`, `>`, and so on) between `Int` values larger than
-  2^53 can give the wrong answer in Fast Debug; `==` and arithmetic are correct.
+Fast Debug is a full peer of native execution: a program that passes `moss check`
+should produce the same results in both. The Phase 24 divergences (`for` loops,
+`Float.to_string()`, and `Int` ordering above 2^53) are fixed. A program whose
+`main` can reach FileIO is rejected before Fast Debug runs any statement. Treat
+any other difference as a defect and report it.
 
 A program accepted and executed by Fast Debug has passed Moss's own static checks. Native compilation additionally passes the generated Rust through Rust's type and borrow checker before machine code is produced.
 

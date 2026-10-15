@@ -164,17 +164,17 @@ context supplied directly to Moss.
 
 ## Remaining interpreter limits
 
-Unsupported iteration constructs, including `for` traversal, still produce
-construct-specific interpreter errors. Current eager functional pipelines run
+`for` traversal over ranges, Vectors, and Queues runs with native block scoping.
+A program whose `main` can reach FileIO is rejected with `FAST_DEBUG_FILEIO`
+before any statement executes. Current eager functional pipelines run
 in Fast Debug. There is no blanket domain/message/reply restriction or automatic native
 Moss fallback. Source-free providers remain supported by production, while Fast
 Debug requires their source.
 
 Fast Debug is a full peer of native execution: a program that passes `moss
-check` must produce the same results in both engines. Phase 24 dogfooding found
-divergences that are tracked as Phase 25 defects, not as intended limits:
-`for` traversal is unsupported; `Float.to_string()` fails with "method receiver
-is not a Moss object"; and ordering comparisons between `Int` values above 2^53
-can return the wrong result (equality and arithmetic are correct). Until these
-are fixed, validate code that depends on them natively. Phase 10.6F records [production measurements and trace-size observations](PERFORMANCE_10_6F.md);
+check` must produce the same results in both engines. The Phase 24 divergences
+(`for` traversal, `Float.to_string()`, and `Int` ordering above 2^53) are fixed,
+as are the Phase 25 review findings on IEEE Float `==`, range bounds at `Int`
+max, the former 10,000,000-iteration cap, and block scoping. Report any remaining
+difference as a defect. Phase 10.6F records [production measurements and trace-size observations](PERFORMANCE_10_6F.md);
 concurrency correctness remains covered by the production harness.

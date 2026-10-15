@@ -5,6 +5,16 @@
 **Approved Baseline:** `fa3a340a0a6652568b97869489da1a84038b9857`  
 **Status:** JOINT ARCHITECTURE PROOF COMPLETE — APPROVED FOR G1/G4
 
+> **Superseded in part (2026-10-15, L7 review of `983acb2`).** Proof 2's
+> type-owned `MossKey_T` and `MossFloatKey` adapters are withdrawn: the
+> canonical design is Team G's policy-free, compiler-owned `MossMap<K,V>`
+> under `key-protocol-v1` (`docs/phase25/TYPE_IR_CONTRACT.md`, L7 G0 GO at
+> `fb2d273`). Proof 5's "ABI-v10 bump" is not delivered by changing the
+> native ABI number; ABI v10 is one coordinated Team G/Team S/L7 transition.
+> Proof 3's Fast Debug FileIO preflight and Proof 5's String record are now
+> implemented as described in `docs/phase25/TEAM_S_L7_REPAIR_REPORT.md`. The
+> original text below is preserved as review history.
+
 ---
 
 ## Proof 1: Provider-Owned Generic Rust Representation and Consumer Free-Function Lowering
