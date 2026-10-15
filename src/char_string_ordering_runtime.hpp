@@ -80,12 +80,6 @@ pub fn moss_string_hash(s: &str) -> i64 {
     h as i64
 }
 
-// Operator `==` between a Char and a one-scalar String.
-#[inline(always)]
-pub fn moss_char_string_eq(c: char, s: &str) -> bool {
-    s.len() == c.len_utf8() && s.starts_with(c)
-}
-
 #[cold]
 fn __moss_char_at_out_of_bounds(idx: i64, length: usize) -> ! {
     panic!("String char_at out of bounds: index {} with length {}", idx, length)

@@ -195,8 +195,10 @@ Facts the Phase 24 SDK swarm repeatedly rediscovered:
   through a parameter or inside a method works. That limitation is a tracked
   defect; report it rather than designing around it.
 - String positions are code points over UTF-8. `char_at()` returns a scalar
-  `Char` and `chars()` a `Vector[Char]`; use `c.to_string()` where a String is
-  needed (`Char == "x"` comparisons work directly). With the default plain
+  `Char` and `chars()` a `Vector[Char]`. `Char` is distinct from String:
+  compare with a Char literal (`c == 'x'`) and use `c.to_string()` where a
+  String is needed; `c == "x"` is a `TYPE_MISMATCH`. Records have no
+  `==`/`!=` (`RECORD_EQUALITY_UNSUPPORTED`). With the default plain
   representation `length()`, `char_at()` and `slice()` are O(n) per call, so
   index loops over long text are quadratic; the indexed representation is
   staged for ABI v10, not yet the default.

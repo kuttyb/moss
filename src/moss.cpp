@@ -2322,6 +2322,60 @@ class Checker {
     return false;
   }
 
+  bool contains_record_type(const string& t) const {
+    string type = canonical_type_name(t);
+    if (objects_.count(type)) return true;
+    auto bracket = type.find('[');
+    if (bracket != string::npos && ends_with(type, "]"))
+      for (const auto& argument : split_top_level(
+               type.substr(bracket + 1, type.size() - bracket - 2), ','))
+        if (contains_record_type(argument)) return true;
+    return false;
+  }
+
+  // True when `type` is built only from compiler-defined value types whose
+  // operator equality every engine implements.
+  static bool builtin_equality_type(const string& type) {
+    if (type == "int" || type == "float" || type == "bool" || type == "char" ||
+        type == "string" || type == "Range")
+      return true;
+    auto bracket = type.find('[');
+    if (bracket == string::npos || !ends_with(type, "]")) return false;
+    string head = type.substr(0, bracket);
+    auto arguments = split_top_level(
+        type.substr(bracket + 1, type.size() - bracket - 2), ',');
+    if (!((head == "vector" || head == "queue") && arguments.size() == 1) &&
+        !(head == "map" && arguments.size() == 2))
+      return false;
+    for (const auto& argument : arguments)
+      if (!builtin_equality_type(trim(argument))) return false;
+    return true;
+  }
+
+  // Phase 25: `==`/`!=` is compiler-defined. Records have no equality (no
+  // synthesized field-wise equality), Char and String are distinct types, and
+  // mixed operands are accepted only for Int/Float numeric comparison.
+  void check_equality_operands(int line, const string& lt, const string& rt) const {
+    if (contains_record_type(lt) || contains_record_type(rt)) {
+      string record = contains_record_type(lt) ? lt : rt;
+      err(line, "record equality is not supported: '==' and '!=' are not defined for '" +
+          record + "'; compare the fields explicitly", "RECORD_EQUALITY_UNSUPPORTED");
+      return;
+    }
+    if (lt == rt) return;
+    bool numeric = (lt == "int" || lt == "float") && (rt == "int" || rt == "float");
+    if (numeric) return;
+    if ((lt == "char" && rt == "string") || (lt == "string" && rt == "char")) {
+      err(line, "Char and String are distinct types and cannot be compared with '==' or '!='; "
+          "use a Char literal such as 'x', or c.to_string() where a String is needed",
+          "TYPE_MISMATCH");
+      return;
+    }
+    if (builtin_equality_type(lt) && builtin_equality_type(rt))
+      err(line, "equality operands must have the same type, found '" + lt +
+          "' and '" + rt + "'", "TYPE_MISMATCH");
+  }
+
   bool valid_type(const string& t) const {
     string type = canonical_type_name(t);
     if (fileio_forbidden_collection_type(type)) return false;
@@ -13175,11 +13229,9 @@ class Checker {
       auto expected = inferred_expr_type(args[1], env);
       if (!actual || !expected)
         err(line, "cannot infer assertEqual operand types");
-      bool char_string_compat = (canonical_type_name(*actual) == "char" && canonical_type_name(*expected) == "string") ||
-                                (canonical_type_name(*actual) == "string" && canonical_type_name(*expected) == "char");
-      if (!same_type(*actual, *expected) && !char_string_compat)
+      if (!same_type(*actual, *expected))
         err(line, "assertEqual operands have types '" + *actual +
-            "' and '" + *expected + "'");
+            "' and '" + *expected + "'", "TYPE_MISMATCH");
       string type = canonical_type_name(*actual);
       bool printable = type == "int" || type == "float" || type == "bool" ||
           type == "char" || type == "string" || starts_with(type, "vector[");
@@ -13728,12 +13780,75 @@ class Checker {
     return true;
   }
 
+  // Finds two operands separated only by whitespace at the top level of an
+  // expression (`foo bar`, `1 2`, `if c`), which no Moss expression form
+  // allows. Word operators and the `message` prefix are not operands.
+  static std::optional<std::pair<string, string>> juxtaposed_operands(const string& expression) {
+    static const std::set<string> word_operators{"and", "or", "xor", "not", "message"};
+    auto is_word = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; };
+    string previous;          // last top-level token when it ends an operand
+    bool previous_operand = false;
+    bool space = false;
+    int depth = 0;
+    for (size_t i = 0; i < expression.size();) {
+      char c = expression[i];
+      if (c == '"' || (c == '\'' && depth == 0)) {
+        size_t start = i;
+        char quote = c;
+        for (++i; i < expression.size() && expression[i] != quote; ++i)
+          if (expression[i] == '\\') ++i;
+        ++i;
+        if (depth == 0) {
+          if (previous_operand && space) return std::make_pair(previous, expression.substr(start, i - start));
+          previous = expression.substr(start, std::min(i, expression.size()) - start);
+          previous_operand = true;
+          space = false;
+        }
+        continue;
+      }
+      if (c == '(' || c == '[' || c == '{') {
+        // `data [0]` and `f (x)` are postfix index/call forms.
+        ++depth; ++i; continue;
+      }
+      if (c == ')' || c == ']' || c == '}') {
+        if (depth > 0) --depth;
+        ++i;
+        if (depth == 0) { previous = string(1, c); previous_operand = true; space = false; }
+        continue;
+      }
+      if (depth > 0) { ++i; continue; }
+      if (std::isspace(static_cast<unsigned char>(c))) { space = true; ++i; continue; }
+      if (is_word(c)) {
+        size_t start = i;
+        while (i < expression.size() && (is_word(expression[i]) || expression[i] == '.' ||
+               ((expression[i] == '+' || expression[i] == '-') &&
+                std::isdigit(static_cast<unsigned char>(expression[start])) &&
+                (expression[i - 1] == 'e' || expression[i - 1] == 'E'))))
+          ++i;
+        string word = expression.substr(start, i - start);
+        if (word_operators.count(word)) { previous_operand = false; space = false; continue; }
+        if (previous_operand && space) return std::make_pair(previous, word);
+        previous = word; previous_operand = true; space = false;
+        continue;
+      }
+      previous_operand = c == '.' && previous_operand;
+      space = false;
+      ++i;
+    }
+    return std::nullopt;
+  }
+
   void check_expression(int line, const string& expression,
                         const std::unordered_map<string,string>& env) {
     string original = trim(expression);
     if (starts_with(original, "match "))
       err(line, "match is a statement, not an expression",
           "MATCH_EXPRESSION_UNSUPPORTED");
+    if (auto juxtaposed = juxtaposed_operands(original))
+      err(line, "invalid expression '" + original + "': '" + juxtaposed->first +
+          "' is followed by '" + juxtaposed->second +
+          "' with no operator between them (if, while, and for are statements, not expressions)",
+          "INVALID_EXPRESSION");
     {
       string enum_name, case_name;
       vector<string> arguments;
@@ -13925,6 +14040,9 @@ class Checker {
           err(line, "Range equality requires two Range operands",
               "TYPE_MISMATCH");
         }
+        auto equality = split_binary(value, {"==", "!="});
+        if (equality && equality->first == binary->first)
+          check_equality_operands(line, lt, rt);
       }
       return;
     }
@@ -18841,15 +18959,6 @@ class Generator {
       right = value_from_borrowed_message_parameter(comparison->right, right, types);
       auto left_type = generated_expr_type(comparison->left, types);
       auto right_type = generated_expr_type(comparison->right, types);
-      if ((comparison->op == "==" || comparison->op == "!=") &&
-          left_type && right_type &&
-          ((canonical_type_name(*left_type) == "char" && canonical_type_name(*right_type) == "string") ||
-           (canonical_type_name(*left_type) == "string" && canonical_type_name(*right_type) == "char"))) {
-        string eq = canonical_type_name(*left_type) == "char"
-            ? "moss_char_string_eq(" + left + ", &(" + right + "))"
-            : "moss_char_string_eq(" + right + ", &(" + left + "))";
-        return comparison->op == "==" ? eq : "(!" + eq + ")";
-      }
       if (left_type && canonical_type_name(*left_type) == "string") {
         left = "(" + left + ").as_str()";
       }
@@ -21804,18 +21913,7 @@ class Generator {
             string message = "Moss assertion failed at line " +
                 std::to_string(s.line) + ": " + escaped_text +
                 "; actual={:?}, expected={:?}";
-            auto actual_type = generated_expr_type(s.args[0], &types);
-            auto expected_type = generated_expr_type(s.args[1], &types);
-            string cond;
-            if (actual_type && expected_type &&
-                ((canonical_type_name(*actual_type) == "char" && canonical_type_name(*expected_type) == "string") ||
-                 (canonical_type_name(*actual_type) == "string" && canonical_type_name(*expected_type) == "char"))) {
-              cond = canonical_type_name(*actual_type) == "char"
-                  ? "!moss_char_string_eq(*" + actual + ", " + expected + ")"
-                  : "!moss_char_string_eq(*" + expected + ", " + actual + ")";
-            } else {
-              cond = actual + " != " + expected;
-            }
+            string cond = actual + " != " + expected;
             o << indent(level) << "if " << cond
               << " { panic!(" << rust_string_literal(message) << ", "
               << actual << ", " << expected << "); }\n";

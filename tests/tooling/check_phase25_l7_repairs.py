@@ -744,8 +744,8 @@ fn main():
   echo s.length()
   let parts = s.chars()
   echo parts[3].codepoint()
-  echo parts[1] == "é"
-  echo "世" == parts[2]
+  echo parts[1] == 'é'
+  echo "世" == parts[2].to_string()
   echo Char(65) == 'A'
 """, "Char fields, parameters, returns, vectors, and conversions",
         "233\né\né\n128512\n1114111\n55295\n57344\n4\n128512\ntrue\ntrue\ntrue\n")

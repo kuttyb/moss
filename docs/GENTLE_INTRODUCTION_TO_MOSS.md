@@ -175,8 +175,12 @@ reads but does not consume its part, and overlapping access such as
 `text.append(text)` is rejected. Use `text = text + text` for an intentional
 self-copy.
 
-`Char` and a one-code-point String compare with `==` (`text.char_at(1) == "é"`);
-use `c.to_string()` where a String value is required. `Char(codepoint)` fails
+`Char` is a distinct scalar type, not a one-code-point String. Compare a Char
+with a Char literal (`text.char_at(1) == 'é'`) and call `c.to_string()` where a
+String value is required; `'é' == "é"`, `isequal('é', "é")`, and
+`assertEqual('é', "é")` are rejected with `TYPE_MISMATCH` (or
+`KEY_PROTOCOL_TYPE` for `isequal`). Records have no `==`/`!=`
+(`RECORD_EQUALITY_UNSUPPORTED`); compare their fields. `Char(codepoint)` fails
 for surrogates and values above `0x10FFFF`.
 
 `char_at` requires a valid nonnegative position; `split` requires a nonempty

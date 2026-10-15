@@ -111,13 +111,13 @@ fn main():
   c_max = Char(1114111) # 0x10FFFF max Unicode scalar
   assertEqual(c_max.codepoint(), 1114111)
   
-  # Transparent equality with single-char String
-  assertEqual(c_ascii == "A", true)
-  assertEqual(c_ascii == "B", false)
-  assertEqual(c_unicode == "😀", true)
-  assertEqual(c_unicode != "😀", false)
-  assertEqual("A" == c_ascii, true)
-  assertEqual("B" == c_ascii, false)
+  # Char is distinct from String; compare through an explicit to_string()
+  assertEqual(c_ascii.to_string() == "A", true)
+  assertEqual(c_ascii.to_string() == "B", false)
+  assertEqual(c_unicode.to_string() == "😀", true)
+  assertEqual(c_unicode.to_string() != "😀", false)
+  assertEqual("A" == c_ascii.to_string(), true)
+  assertEqual(c_ascii == 'B', false)
   echo "CHAR LITERAL AND CTOR PASS"
 """
     run_code_in_all_modes(code, "Char Literal and Constructor")
@@ -138,11 +138,11 @@ fn main():
   assertEqual(s.char_at(10), '🌍')
   assertEqual(s.char_at(16), 'é')
   
-  # char_at interoperability with 1-character String in assertEqual
-  assertEqual(s.char_at(0), "H")
-  assertEqual(s.char_at(7), "世")
-  assertEqual(s.char_at(10), "🌍")
-  assertEqual(s.char_at(16), "é")
+  # Char is distinct from String: an explicit to_string() gives a String
+  assertEqual(s.char_at(0).to_string(), "H")
+  assertEqual(s.char_at(7).to_string(), "世")
+  assertEqual(s.char_at(10).to_string(), "🌍")
+  assertEqual(s.char_at(16).to_string(), "é")
   
   # chars() -> Vector[Char]
   chars = s.chars()

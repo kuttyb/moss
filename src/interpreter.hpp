@@ -1701,10 +1701,6 @@ class FastInterpreter {
       return static_cast<double>(left.integer) == right.floating;
     if (left.kind == Value::Kind::Float && right.kind == Value::Kind::Int)
       return left.floating == static_cast<double>(right.integer);
-    if (left.kind == Value::Kind::Char && right.kind == Value::Kind::String)
-      return right.string == utf8_from_codepoint(left.codepoint);
-    if (left.kind == Value::Kind::String && right.kind == Value::Kind::Char)
-      return left.string == utf8_from_codepoint(right.codepoint);
     if (left.kind != right.kind) return false;
     switch (left.kind) {
       case Value::Kind::DomainHandle: return left.domain == right.domain;
@@ -1797,12 +1793,6 @@ class FastInterpreter {
     }
     if (left.kind == Value::Kind::Char && right.kind == Value::Kind::Char) {
       return left.codepoint == right.codepoint;
-    }
-    if (left.kind == Value::Kind::Char && right.kind == Value::Kind::String) {
-      return right.string == utf8_from_codepoint(left.codepoint);
-    }
-    if (left.kind == Value::Kind::String && right.kind == Value::Kind::Char) {
-      return left.string == utf8_from_codepoint(right.codepoint);
     }
     if (left.kind == Value::Kind::String && right.kind == Value::Kind::String) {
       return left.string == right.string;
