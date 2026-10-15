@@ -254,7 +254,8 @@ fn main():
             "0\nA\n55295\n57344\n1114111\n1\n" + str(sum(n % 7 for n in range(0, 1114112, 4099)
                                                           if n < 55296 or n > 57343)) + "\n")
     for value, label in (("55296", "surrogate low edge"), ("57343", "surrogate high edge"),
-                         ("1114112", "above U+10FFFF"), ("0 - 1", "negative")):
+                         ("1114112", "above U+10FFFF"), ("0 - 1", "negative"),
+                         ("4294967296 + 65", "above 2^32 (no u32 truncation)")):
         code = ("fn make(n: Int) -> Char:\n  return Char(n)\n\n"
                 f"fn main():\n  echo \"before\"\n  let v = {value}\n  c = make(v)\n"
                 "  echo \"after\"\n  echo c.codepoint()\n")
