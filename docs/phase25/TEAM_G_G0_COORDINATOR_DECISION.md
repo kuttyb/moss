@@ -1,8 +1,8 @@
 # Phase 25 Team G G0 coordinator decision
 
-**Status:** corrected review candidate; **NO-GO for shared-IR implementation**  
-**Pinned baseline:** `fa3a340a0a6652568b97869489da1a84038b9857`  
-**Target branch:** `phase25-generic-types`
+- **Status:** L7 G0 Architecture GO accepted; **PROCEED TO G2 SHARED COMPILER IMPLEMENTATION**
+- **Pinned baseline:** `fa3a340a0a6652568b97869489da1a84038b9857`
+- **Target branch:** `phase25-generic-types`
 
 ## Integrated decision
 
@@ -47,10 +47,14 @@ and law identities, shared Map/Set proof shape, frozen package identity
 - Integrated review candidate:
   `27110249abeca3102cfd6cbf71ac4db436f1a7bb`.
 - L7 verdict on `2711024`: **CONDITIONAL GO for G0; NO-GO for G2 shared compiler/IR implementation**.
+- Corrected candidate commit: `fb2d273616a14e255ff29f6c5a9824f4826062a6`.
+- L7 disposition on `fb2d273616a14e255ff29f6c5a9824f4826062a6`:
+  **Verdict: GO for G0 architecture. Proceed to G2 implementation.**
+- Independent Architect kickoff sign-offs: Recorded on exact SHA `fb2d273616a14e255ff29f6c5a9824f4826062a6`
+  by Team G Architect (§11) and Team S Architect (§10).
 
-Historical NO-GO reports remain unchanged. Both Architects review the exact
-corrected candidate and issue attributable addenda; an addendum does not erase the
-earlier findings.
+Historical NO-GO reports remain unchanged as review history. Both Architects reviewed
+and approved the corrected candidate contracts.
 
 ## Evidence at G0
 
@@ -95,10 +99,23 @@ Following the L7 G0 review corrections:
 5. **Map Complexity & Keys Contract:** Production target specified as bucketed open-addressing
    hash table with expected $O(1)$ lookup/insert/delete; `keys()` is an eager owned snapshot
    `Vector[K]` with snapshot stability in $O(N)$ time.
-6. **Fresh Architect Reviews:** Fresh exact-SHA review addenda recorded from independent
-   Team G and Team S Architects on reviewed candidate `aa83fb66b7dbcbb33144aca023734f43a6ae4e0c`
-   (with narrow corrective contract updates).
+6. **Fresh Architect Reviews & Kickoff Sign-offs:** Fresh exact-SHA review addenda recorded
+   from independent Team G and Team S Architects on reviewed candidate `aa83fb66b7dbcbb33144aca023734f43a6ae4e0c`
+   with final implementation kickoff sign-offs on `fb2d273616a14e255ff29f6c5a9824f4826062a6`.
 
-Shared compiler/IR surgery remains strictly **NO-GO** until written L7 G2 authorization.
-No source-level `Box[T]`, `where T`, `Self`, local annotation, dynamic dispatch, or
-implicit `Any` is authorized.
+## G2 Implementation launch
+
+With written L7 authorization granted on reviewed commit `fb2d273616a14e255ff29f6c5a9824f4826062a6`,
+Team G transitions directly to **G2 shared compiler implementation**.
+
+Implementation responsibilities:
+- **Team G owns G2:** Generic type inference, open-result summaries, nominal specialization,
+  source-free ABI contracts, and related compiler defects.
+- **Team S owns G3:** Independent correctness fixes, String/Char work, and G3 ordering,
+  equality, hashing, and collection semantics (with Set preserved as a Phase 25 deliverable
+  unless L7 explicitly approves deferral).
+- **Scope boundaries:** Phase 25.5 retains D1 path-granular ownership and D2 opaque types;
+  they must not be absorbed into G2. No source-level `Box[T]`, `where T`, `Self`, local
+  annotation, dynamic dispatch, or implicit `Any` is authorized.
+- **Mandatory Git Workflow:** Feature branches must be committed and pushed upstream after
+  every meaningful reviewed milestone and before requesting L7 review. Zero merges directly into `main`.

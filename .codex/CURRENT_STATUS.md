@@ -1,5 +1,35 @@
 # Moss current status
 
+## Phase 25 L7 G0 Architecture GO; G2 Implementation Kickoff — 2026-10-14
+
+L7 reviewed corrected commit `fb2d273616a14e255ff29f6c5a9824f4826062a6` on branch
+`phase25-generic-types` and issued:
+**Verdict: GO for G0 architecture. Proceed to G2 implementation.**
+
+The shared Type IR, Option B inference, A1 lowering, canonical nominal identity,
+ABI-v10 design, and policy-free MossMap direction are accepted.
+
+Key kickoff alignments completed:
+1. **Map key protocol syntax corrected:** Moss source declarations specify concrete
+   structural methods directly accessing fields in scope without a `self` parameter
+   or prefix (`fn isequal(other: Key) -> Bool`, `fn hash() -> Int`). Structural
+   methods are confirmed as the canonical key protocol.
+2. **Set deliverable preserved:** Set is preserved as an active Phase 25 deliverable
+   reusing the exact same `key-protocol-v1`, `KeyProof` ABI record shape, and compiler-owned
+   runtime storage kernel as Map in G3, unless L7 explicitly approves deferral.
+3. **Kickoff sign-offs recorded:** Independent Team G Architect (§11) and Independent
+   Team S Architect (§10) recorded formal acceptance of final corrected G0 contract
+   SHA `fb2d273616a14e255ff29f6c5a9824f4826062a6` as kickoff sign-off.
+4. **Ownership allocation:**
+   - **Team G owns G2:** Generic type inference, open-result summaries, nominal
+     specialization, source-free ABI contracts, and related compiler defects.
+   - **Team S owns G3:** Independent correctness fixes, String/Char work, and G3
+     ordering, equality, hashing, and collection semantics.
+5. **Scope & Workflow guardrails:** Phase 25.5 retains D1 path-granular ownership
+   and D2 opaque types; neither is absorbed into G2. Neither team may merge directly
+   into `main`. Feature branches must be committed and pushed upstream after every
+   meaningful reviewed milestone and before requesting L7 review.
+
 ## Phase 25 Team G G0 review corrections complete; Architect addenda GO — 2026-10-14
 
 `phase25-generic-types` is based exactly on pinned baseline

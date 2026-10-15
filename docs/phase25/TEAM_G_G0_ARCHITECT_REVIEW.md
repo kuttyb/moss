@@ -379,3 +379,18 @@ corrected candidate on `phase25-generic-types`.
 The G0 boundary is complete, consistent, and validated. I issue an attributable
 **GO for G0 Candidate Boundary Freeze**. Shared compiler/IR implementation remains
 strictly **NO-GO** until explicit written L7 G2 authorization.
+
+---
+
+## 11. Implementation Kickoff Sign-off
+
+- **Role:** Independent Team G L6 Architect
+- **Verdict:** **ACCEPTANCE OF FINAL G0 CONTRACT SHA (`fb2d273616a14e255ff29f6c5a9824f4826062a6`) — PROCEED TO G2 IMPLEMENTATION**
+- **Date:** 2026-10-14
+- **Evaluated Commit:** `fb2d273616a14e255ff29f6c5a9824f4826062a6`
+
+Following L7's disposition (**GO for G0 architecture; Proceed to G2 implementation**):
+1. I record formal acceptance of the final corrected G0 contract SHA `fb2d273616a14e255ff29f6c5a9824f4826062a6`.
+2. The G0 architectural freeze is complete. No further broad G0 architecture review is required.
+3. Team G kicks off G2 implementation covering: generic type inference, open-result summaries, nominal specialization, source-free ABI contracts, and related compiler defects.
+4. Scope boundaries remain strictly enforced: Phase 25.5 retains D1 path-granular ownership and D2 opaque types; they are not absorbed into G2. Neither team may merge directly into `main`. All milestones will be committed and pushed to `origin/phase25-generic-types`.

@@ -252,9 +252,10 @@ The record authorizes static calls through the provider-owned `MossMap<K,V>` ope
 specialization described in the Type IR contract. It never authorizes or requests a
 Rust `Eq`/`Hash` impl. `proof_id` is an input to Map/Set operation specialization,
 semantic dependencies, interface hashes, and cache keys. `SetKeyProof` uses the
-same record shape and protocol (or Set is explicitly deferred); it cannot invent a
-second key contract. Missing or premature proof fails at Moss checking. Float
-`isequal`/`hash` semantics are an approved Phase 25 G3 deliverable owned by Team S;
+same record shape and protocol; Set is preserved as an approved Phase 25 deliverable
+reusing the same key protocol and kernel unless L7 explicitly approves deferral. It
+cannot invent a second key contract. Missing or premature proof fails at Moss checking.
+Float `isequal`/`hash` semantics are an approved Phase 25 G3 deliverable owned by Team S;
 G0 leaves them unimplemented rather than prohibited for the entire phase. In G3,
 Float keys follow approved Julia-like semantics: `isequal(-0.0, +0.0)` is `false`,
 with distinct hashes (`hash(-0.0) != hash(+0.0)`), canonical NaN equivalence
@@ -263,7 +264,9 @@ distinguish valid future Float proofs from malformed or forged proofs.
 
 In source code, nominal types declare concrete structural methods
 `fn isequal(other: Key) -> Bool` and `fn hash() -> Int` without source-level generic
-parameters. The loader checks the two ABI signatures and separate effect records against
+parameters, accessing declared fields directly without a `self` parameter or prefix.
+Structural methods declared on the nominal key type are the **canonical key protocol**.
+The loader checks the two ABI signatures and separate effect records against
 `key-protocol-v1`: equality is `(READ K, READ K) -> Bool`, hash is
 `(READ K) -> Int`, and neither may mutate, consume, raise, panic, diverge,
 message, touch domain state, perform I/O/executor work, or have another observable
@@ -473,15 +476,11 @@ Team G can freeze the logical record shapes, per-call summary freshening, canoni
 validation order, provenance DAG, migration failure behavior, and the rule that one
 provider owns a generic Rust record after its independent Architect review.
 
-Team G cannot unilaterally freeze the following cross-team choices. Before
-implementation, Team S and L7 must record concurrence with:
+Team G cannot unilaterally freeze cross-team choices without concurrence.
+Following review, Team S implementation-owner concurrence is recorded in
+`docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md`, and L7 has issued:
+**Verdict: GO for G0 architecture. Proceed to G2 implementation** on reviewed commit
+`fb2d273616a14e255ff29f6c5a9824f4826062a6`.
 
-- the exact `module_id`/package collision rule;
-- SHA-256 `type-key-v1` and `specialization-v2` identities;
-- provider-owned record plus pub mechanical fields guarded by Moss visibility;
-- `MapKeyProof` and provider-owned `MossMap<K,V>` with no policy type in value identity;
-- private semantic dependencies as a non-nameable namespace; and
-- unconditional v9 rebuild rather than compatibility parsing.
-
-Until those reviews and the Type IR sign-off table contain GO, this document is a
-precise implementation proposal, not authorization for shared-IR changes.
+The ABI-v10 design is accepted. Proceeding to G2 shared compiler implementation under
+Team G ownership.

@@ -21,24 +21,24 @@ Team S concurs with the G0 boundary definition in `TYPE_IR_CONTRACT.md` and `ABI
 
 ## 2. Key-protocol specification and source declarations
 
-Moss v0.1 has no source-level generic parameter syntax (`[T]`), so source code does not declare generic type variables. Instead, nominal key types satisfy the structural key protocol via concrete structural methods declared on the type:
+Moss v0.1 has no source-level generic parameter syntax (`[T]`), and object methods access declared fields directly in scope without a `self` parameter or prefix. Nominal key types satisfy the canonical key protocol via concrete structural methods declared on the type:
 
 ```moss
 type UserKey:
   code: Int
 
   fn isequal(other: UserKey) -> Bool:
-    return self.code % 10 == other.code % 10
+    return code % 10 == other.code % 10
 
   fn hash() -> Int:
-    return self.code % 10
+    return code % 10
 ```
 
-For any nominal key type `Key`, the concrete structural methods are:
+Structural methods on the key type are the **canonical key protocol**:
 - **Structural equality method:** `fn isequal(other: Key) -> Bool` (with inferred receiver/argument access `(READ Key, READ Key) -> Bool`).
 - **Structural hash method:** `fn hash() -> Int` (with inferred receiver access `(READ Key) -> Int`).
 
-In ordinary functions or helper callables, non-method free functions on concrete types (`fn isequal(left: Key, right: Key) -> Bool`, `fn hash(value: Key) -> Int`) are also supported by duck-typed candidate selection.
+In ordinary functions or helper callables, non-method free functions on concrete types (`fn isequal(left: Key, right: Key) -> Bool`, `fn hash(value: Key) -> Int`) are supported as alternative targets by duck-typed candidate selection.
 
 Inside the compiler and ABI-v10, the shared `key-protocol-v1` retains internal generic type variables (`TypeVar K`):
 - `equality_signature`: `(READ K, READ K) -> Bool`
@@ -79,9 +79,9 @@ Team S formally accepts ownership of **Float `isequal`/`hash` semantics** as a P
 
 ---
 
-## 5. Set delivery or deferment
+## 5. Set delivery
 
-Set will reuse the exact same `key-protocol-v1`, `KeyProof` ABI record shape, and compiler-owned runtime storage representation as Map in G3. If Set implementation cannot be completed concurrently with Map in G3 without schedule risk, Set will be explicitly deferred to avoid fragmenting or duplicating the key protocol.
+Set is preserved as an approved Phase 25 deliverable, reusing the exact same `key-protocol-v1`, `KeyProof` ABI record shape, and compiler-owned runtime storage representation as Map in G3, unless L7 explicitly approves deferral.
 
 ---
 

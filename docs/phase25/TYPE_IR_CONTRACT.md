@@ -427,10 +427,10 @@ implementation**:
 
 - Team G provides a representation-stable `MossMap<K,V>` whose Rust type does not
   require `K: Eq + Hash` and contains no policy type, callback, function pointer,
-  closure, trait object, or vtable. Set, if delivered in Phase 25, reuses the same
-  versioned key proof and kernel; otherwise it is explicitly deferred.
-- Team S defines the Moss key proof and resolves exact `isequal(K,K)->Bool` and
-  `hash(K)->Int` call targets, purity, effects, and laws for each concrete `K`.
+  closure, trait object, or vtable. Set is preserved as an approved Phase 25 deliverable
+  reusing the same versioned key proof and kernel, unless L7 explicitly approves deferral.
+- Team S defines the Moss key proof and resolves exact `key.isequal(other)` and
+  `key.hash()` structural method targets, purity, effects, and laws for each concrete `K`.
 - Team G lowers each Map operation to a consumer-side specialized free function keyed
   by `(operation, K, V, isequal-target, hash-target)`. The function calls those targets
   statically and manipulates the provider-owned container through its stable public
@@ -456,9 +456,10 @@ map mutations in $O(N)$ time and allocation. If performance forces a policy type
 the Rust value type, that is an A1 identity change and must return to L7.
 
 The shared semantic protocol is `key-protocol-v1`. Moss v0.1 has no source-level
-generic parameter syntax (`[T]`), so source code does not declare type-variable
-parameters. Instead, nominal types declare concrete structural methods:
-`fn isequal(other: Key) -> Bool` and `fn hash() -> Int` (or duck-typed free callables).
+generic parameter syntax (`[T]`), and object methods access declared fields directly
+in scope without a `self` parameter or prefix. Structural methods declared on the
+nominal key type are the **canonical key protocol**: `fn isequal(other: Key) -> Bool`
+and `fn hash() -> Int` (or duck-typed free callables).
 Inside the compiler Type IR and ABI-v10, the protocol retains internal generic type
 variables (`TypeVar K`): equality is `(READ K, READ K) -> Bool` and hash is
 `(READ K) -> Int`. Both are deterministic, non-mutating, non-consuming, non-raising,
@@ -547,8 +548,8 @@ The open questions for G0 have been resolved as follows:
 1. **Team S Concurrence:** Confirmed in `docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md`.
    Nominal key types declare concrete structural methods `fn isequal(other: Key) -> Bool`
    and `fn hash() -> Int` under `key-protocol-v1`. Team S owns comparator-law validation
-   tests, Float-key delivery in G3, Set delivery/deferment, and member admission for
-   open receivers (ledger #12).
+   tests, Float-key delivery in G3, Set delivery (preserved as Phase 25 deliverable unless
+   L7 approves deferral), and member admission for open receivers (ledger #12).
 2. **Map Complexity & Keys Contract:** Confirmed policy-free `MossMap<K,V>` representation.
    Production target in G3 is bucketed hash table with expected $O(1)$ lookup/insert/delete.
    `keys()` is an eager owned snapshot `Vector[K]` with snapshot stability in $O(N)$ time.
@@ -563,24 +564,30 @@ The open questions for G0 have been resolved as follows:
 6. **Canonical Key-Proof Coherence:** Cross-consumer key-proof coherence is an explicit
    compile/link invariant failing closed with `KEY_PROOF_COHERENCE_MISMATCH`.
 
-### 11.3 Decisions reserved for G2 / implementation phase
+### 11.3 Transition to G2 implementation
 
-The following remain reserved before beginning shared compiler implementation:
-- Fresh exact-SHA review addenda from Team G and Team S independent L6 Architects;
-- Written L7 authorization for G2 shared compiler surgery; and
-- Compiler guard budgets after measured corpus evidence.
+L7 reviewed corrected commit `fb2d273616a14e255ff29f6c5a9824f4826062a6` and issued
+**GO for G0 architecture; Proceed to G2 implementation**. Shared compiler implementation
+is authorized under strict ownership boundaries:
+- **Team G owns G2:** Generic type inference, open-result summaries, nominal specialization,
+  source-free ABI contracts, and related compiler defects.
+- **Team S owns G3:** Independent correctness fixes, String/Char work, and G3 ordering,
+  equality, hashing, and collection semantics. Set is preserved as a Phase 25 deliverable
+  unless L7 explicitly approves deferral.
+- **Phase 25.5 boundaries preserved:** Phase 25.5 retains D1 path-granular ownership and
+  D2 opaque types; they are not absorbed into G2.
+- **Mandatory Git Workflow:** Feature branches must be committed and pushed upstream
+  after every meaningful reviewed milestone and before requesting L7 review. Neither
+  team may merge directly into `main`.
 
-## 12. G0 sign-off
+## 12. G0 sign-off and G2 kickoff
 
 | Reviewer | Verdict | Exact reviewed commit | Notes |
 | --- | --- | --- | --- |
-| Team G independent L6 Architect | NO-GO on draft | `40fd3b6ea1aa89ae5a05e2afe092c8699a56f1f2` | Historical review; addendum pending on corrected candidate. |
-| Team S independent L6 Architect | NO-GO on integrated draft | `8a417edd06e8194fe6c29023c2e21070d710cfa0` | Historical review; addendum pending on corrected candidate. |
-| Team S Implementation Owner | CONCURRENCE for G0 | `docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md` | Frozen boundary, key signatures, laws, Float G3 delivery, #12. |
-| L7 | CONDITIONAL GO for G0; NO-GO for G2 | `27110249abeca3102cfd6cbf71ac4db436f1a7bb` | G0 accepted subject to review corrections; G2 implementation held. |
+| Team G independent L6 Architect | GO for G0 Boundary Freeze | `aa83fb66b7dbcbb33144aca023734f43a6ae4e0c` / `fb2d273616a14e255ff29f6c5a9824f4826062a6` | G0 accepted; Kickoff sign-off recorded on final contract SHA. |
+| Team S independent L6 Architect | GO for G0 Boundary Freeze | `aa83fb66b7dbcbb33144aca023734f43a6ae4e0c` / `fb2d273616a14e255ff29f6c5a9824f4826062a6` | G0 accepted; Kickoff sign-off recorded on final contract SHA. |
+| Team S Implementation Owner | CONCURRENCE for G0 | `fb2d273616a14e255ff29f6c5a9824f4826062a6` | Frozen boundary, structural key signatures, laws, Float G3 delivery, #12. |
+| L7 | GO for G0 architecture; Proceed to G2 implementation | `fb2d273616a14e255ff29f6c5a9824f4826062a6` | G0 architecture accepted; G2 shared compiler implementation authorized. |
 
-**Author verdict:** corrected G0 candidate complete and validated; major shared-IR
-compiler surgery remains held at NO-GO pending final Architect review addenda and
-explicit written L7 G2 authorization.
-keys, package-stripped imported module identity, and ABI-v9 nominal schema must be
-replaced together rather than patched independently.
+**Author verdict:** G0 architecture freeze complete and accepted by L7. Proceeding
+to G2 shared compiler implementation under Team G ownership.
