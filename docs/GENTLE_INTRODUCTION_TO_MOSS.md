@@ -735,10 +735,12 @@ fn swap(p: Pair) -> Pair:
 ```
 
 Clone the field you still need before the first move. Mutating a field in
-place through a parameter works (`fn add(p: Pair, x: Int): p.a.push(x)`), but
-the same statement on a local variable's field (`p.a.push(x)` where `p` is a
-local) is currently rejected with `local member calls are not implemented`; move
-that update into a function that takes the value as a parameter.
+place works both through a parameter (`fn add(p: Pair, x: Int): p.a.push(x)`)
+and on a local variable's field (`p.a.push(x)` where `p` is a local). A member
+call on a collection whose element type is still unknown (`var v = []` followed
+by `v.push(1)`) is still rejected with `local member calls are not implemented`;
+start from a literal with elements or a typed constructor such as
+`Vector[Int]()`.
 
 You do not write Rust-style lifetime or borrow annotations in Moss source.
 

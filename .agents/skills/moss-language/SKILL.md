@@ -191,9 +191,10 @@ Facts the Phase 24 SDK swarm repeatedly rediscovered:
   yet, so library types annotate their fields.
 - Ownership is per binding: moving one non-Copy field consumes the whole value.
   A mutating call on a local's field as a statement (`h.data.push(x)` with `h`
-  local) is rejected with "local member calls are not implemented"; the same call
-  through a parameter or inside a method works. That limitation is a tracked
-  defect; report it rather than designing around it.
+  a local `var`) works in every engine. A member call on a receiver whose
+  element type is still open (`var v = []` then `v.push(1)`, ledger #12) is
+  still rejected with "local member calls are not implemented"; that is tracked
+  joint Team S/Team G work, so report it rather than designing around it.
 - String positions are code points over UTF-8. `char_at()` returns a scalar
   `Char` and `chars()` a `Vector[Char]`. `Char` is distinct from String:
   compare with a Char literal (`c == 'x'`) and use `c.to_string()` where a
