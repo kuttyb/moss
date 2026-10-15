@@ -194,7 +194,8 @@ sign-off row must remain pending and the G0 gate remains **NO-GO**.
 
 - **Role:** Independent L6 Architect, reviewing the Team S boundary
 - **Status:** Attributable Boundary Review Addendum
-- **Reviewed candidate:** `phase25-generic-types` corrected review candidate
+- **Reviewed candidate SHA:** `aa83fb66b7dbcbb33144aca023734f43a6ae4e0c` (with narrow corrective contract updates)
+- **Pinned baseline:** `fa3a340a0a6652568b97869489da1a84038b9857`
 - **Attributable Verdict:** **GO for G0 Boundary Freeze; NO-GO for G2 Shared Compiler/IR Implementation**
 
 ### 9.1 Boundary re-evaluation
@@ -219,20 +220,27 @@ corrected candidate on `phase25-generic-types` against the Team S boundary crite
 3. **Team S Implementation-Owner Concurrence:**
    Formal implementation-owner concurrence is executed in
    `docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md`. It explicitly establishes:
-   - Exact signatures: `fn isequal(left: K, right: K) -> Bool` and `fn hash(value: K) -> Int`
-     with pure `READ`-only access.
+   - Valid Moss source declarations: nominal key types declare concrete structural
+     methods `fn isequal(other: Key) -> Bool` and `fn hash() -> Int` (or duck-typed
+     free callables), while the IR/ABI retains internal generic binders `(READ K, READ K) -> Bool`
+     and `(READ K) -> Int`.
    - Protocol: `key-protocol-v1` purity, non-mutation, and effect guarantees.
    - Law suite ownership: Team S owns the reusable comparator-law validation suite
      (reflexivity, symmetry, transitivity, equal-keys/equal-hash, snapshot stability).
    - Float-key delivery: Team S accepts delivery of Float `isequal`/`hash` semantics in
-     Phase 25 G3; blanket prohibition is removed.
+     Phase 25 G3, following approved Julia-like semantics: `isequal(-0.0, +0.0) == false`,
+     `hash(-0.0) != hash(+0.0)`, `isequal(NaN, NaN) == true`, and signed-zero ordering.
    - Set delivery/deferment: Set will share the exact same key protocol and runtime
      storage kernel in G3 or be explicitly deferred.
-4. **ABI-v10 Key Proof Records and Negative Controls:**
+4. **Canonical Key-Proof Coherence Across Consumers:**
+   Coherence across independent consumers is frozen as an explicit compile/link
+   invariant: all consumers importing `Map[Key, V]` must bind to the exact same
+   canonical `proof_id`, failing closed with `KEY_PROOF_COHERENCE_MISMATCH` on conflict.
+5. **ABI-v10 Key Proof Records and Negative Controls:**
    `ABI_V10_DESIGN.md` §3.5 specifies separate equality/hash signatures, separate effect
    records, and versioned `proof_id` binding. Negative verification rules distinguish
    valid future G3 Float proofs from malformed or forged proofs.
-5. **Backend Representation and Opacity:**
+6. **Backend Representation and Opacity:**
    The native A1 choice (mechanical public backend fields with consumer-generated free
    functions) is proven, with the accessor alternative preserved for evaluation. Forward
    Moss-level visibility checking is scheduled for compiler milestones G1/G2; Phase 25.5

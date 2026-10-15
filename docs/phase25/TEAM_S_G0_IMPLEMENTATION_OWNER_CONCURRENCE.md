@@ -3,6 +3,7 @@
 - **Role:** Team S Implementation Owner
 - **Status:** CONCURRENCE for G0 Candidate Boundary Freeze; NO-GO for G2 implementation
 - **Pinned baseline:** `fa3a340a0a6652568b97869489da1a84038b9857`
+- **Reviewed candidate SHA:** `aa83fb66b7dbcbb33144aca023734f43a6ae4e0c`
 - **Target branch:** `phase25-generic-types`
 
 ---
@@ -13,41 +14,55 @@ Team S concurs with the G0 boundary definition in `TYPE_IR_CONTRACT.md` and `ABI
 - One unified `TypeRef`/`TypeVar` structured graph across inference, member dispatch, ownership/effects, semantic queries, Fast Debug, native lowering, and ABI v10.
 - A compiler-owned, policy-free `MossMap<K,V>` runtime representation whose Rust value type contains no `Ops` parameter, stored callbacks, function pointers, closures, trait objects, or vtables.
 - The shared `MemberDispatchRequirement` record for open-receiver member calls (ledger #12).
-- The removal of the blanket Phase 25 Float-key prohibition; Float `isequal`/`hash` semantics are committed as an approved Phase 25 G3 deliverable owned by Team S.
+- Removal of the blanket Phase 25 Float-key prohibition; Float `isequal`/`hash` semantics are committed as an approved Phase 25 G3 deliverable owned by Team S.
+- Canonical key-proof coherence across consumers as an explicit compile/link invariant.
 
 ---
 
-## 2. Exact `isequal` and `hash` source signatures
+## 2. Key-protocol specification and source declarations
 
-Under `key-protocol-v1`, key operations are declared and resolved as:
+Moss v0.1 has no source-level generic parameter syntax (`[T]`), so source code does not declare generic type variables. Instead, nominal key types satisfy the structural key protocol via concrete structural methods declared on the type:
 
-- **Equality callable:**
-  ```moss
-  fn isequal(left: K, right: K) -> Bool
-  ```
-  Inferred parameter access: `(READ K, READ K) -> Bool`.
-- **Hash callable:**
-  ```moss
-  fn hash(value: K) -> Int
-  ```
-  Inferred parameter access: `(READ K) -> Int`.
+```moss
+type UserKey:
+  code: Int
 
-Both functions must resolve statically for each concrete key type `K`. They are pure, deterministic, non-mutating, non-consuming, non-raising, non-panicking, non-diverging, and free of messages, domain-state access, I/O, executor, or other observable side effects.
+  fn isequal(other: UserKey) -> Bool:
+    return self.code % 10 == other.code % 10
+
+  fn hash() -> Int:
+    return self.code % 10
+```
+
+For any nominal key type `Key`, the concrete structural methods are:
+- **Structural equality method:** `fn isequal(other: Key) -> Bool` (with inferred receiver/argument access `(READ Key, READ Key) -> Bool`).
+- **Structural hash method:** `fn hash() -> Int` (with inferred receiver access `(READ Key) -> Int`).
+
+In ordinary functions or helper callables, non-method free functions on concrete types (`fn isequal(left: Key, right: Key) -> Bool`, `fn hash(value: Key) -> Int`) are also supported by duck-typed candidate selection.
+
+Inside the compiler and ABI-v10, the shared `key-protocol-v1` retains internal generic type variables (`TypeVar K`):
+- `equality_signature`: `(READ K, READ K) -> Bool`
+- `hash_signature`: `(READ K) -> Int`
+
+Both operations must be pure, deterministic, non-mutating, non-consuming, non-raising, non-panicking, non-diverging, and free of messages, domain-state access, I/O, executor, or other observable side effects.
 
 ---
 
-## 3. Protocol and comparator-law validation ownership
+## 3. Protocol, comparator-law validation, and coherence invariants
 
-Team S owns the **`key-protocol-v1` comparator-law validation suite**.
-
-This acceptance test harness verifies the algebraic laws for key implementations:
-1. **Reflexivity:** `isequal(x, x) == true` for all valid `x`.
-2. **Symmetry:** `isequal(x, y) == isequal(y, x)` for all `x, y`.
-3. **Transitivity:** `isequal(x, y) && isequal(y, z) ==> isequal(x, z)`.
-4. **Equal-keys/Equal-hash:** `isequal(x, y) ==> hash(x) == hash(y)`.
+### 3.1 Comparator-law validation suite
+Team S owns the **`key-protocol-v1` comparator-law validation suite**, verifying:
+1. **Reflexivity:** `x.isequal(x) == true` for all valid `x`.
+2. **Symmetry:** `x.isequal(y) == y.isequal(x)` for all `x, y`.
+3. **Transitivity:** `x.isequal(y) && y.isequal(z) ==> x.isequal(z)`.
+4. **Equal-keys/Equal-hash:** `x.isequal(y) ==> x.hash() == y.hash()`.
 5. **Snapshot stability:** `isequal` and `hash` evaluate consistently on the key snapshot stored inside the map across subsequent map operations.
 
-These laws are backed by reusable acceptance tests executed against key providers, not a claim of general theorem proving.
+### 3.2 Canonical key-proof coherence invariant
+Canonical key-proof coherence across consumers is an explicit **compile/link invariant**:
+- For any concrete nominal type `Key`, there is at most one canonical `KeyProof` identity in the program.
+- When multiple independent consumer packages import, specialize, or pass values of type `Map[Key, V]`, all consumers must bind to the exact same canonical `KeyProofId`.
+- Conflicting or duplicate key proofs for the same nominal type fail closed at compile or link time with `KEY_PROOF_COHERENCE_MISMATCH`.
 
 ---
 
@@ -55,10 +70,11 @@ These laws are backed by reusable acceptance tests executed against key provider
 
 Team S formally accepts ownership of **Float `isequal`/`hash` semantics** as a Phase 25 G3 deliverable:
 - At G0, Float keys remain unimplemented.
-- In G3, Team S will define and implement IEEE-754 key equivalence:
-  - Canonical NaN equivalence (`NaN == NaN` for map lookup) and deterministic NaN hashing.
-  - Signed zero equivalence (`+0.0 == -0.0`) with identical hash values.
-  - Well-distributed 64-bit integer hash projection for normal and subnormal floating-point values.
+- In G3, Team S will define and implement approved **Julia-like Float semantics**:
+  - `isequal(-0.0, +0.0)` is **`false`**; `-0.0` and `+0.0` are distinct keys with distinct hashes (`hash(-0.0) != hash(+0.0)`).
+  - Canonical NaN equivalence: `isequal(NaN, NaN)` is **`true`** for all NaN representations, mapping to a single deterministic hash value.
+  - Signed-zero ordering and hashing are consistent with total Float ordering: `-Inf < negative finite < -0.0 < +0.0 < positive finite < +Inf < NaN`.
+  - Well-distributed 64-bit integer hash projection for all classes of floating-point values.
 - ABI-v10 negative verification tests will distinguish valid future Float proofs from malformed, forged, or premature proofs.
 
 ---

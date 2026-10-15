@@ -316,7 +316,8 @@ the named reviews, prototypes, and written L7 authorization.
 
 - **Role:** Independent L6 Architect, Team G (Generics & Inference)
 - **Status:** Attributable G0 Review Addendum
-- **Reviewed candidate:** `phase25-generic-types` corrected review candidate
+- **Reviewed candidate SHA:** `aa83fb66b7dbcbb33144aca023734f43a6ae4e0c` (with narrow corrective contract updates)
+- **Pinned baseline:** `fa3a340a0a6652568b97869489da1a84038b9857`
 - **Attributable Verdict:** **GO for G0 Boundary Freeze; NO-GO for G2 Shared Compiler/IR Implementation**
 
 ### 10.1 Evaluation of corrected contracts and prototypes
@@ -337,32 +338,41 @@ corrected candidate on `phase25-generic-types`.
    is preserved as an evaluated alternative under `tests/phase25/g0/rust/accessor_alternative/`
    verifying `E0616`. Source-level visibility enforcement belongs to the Moss compiler,
    with forward negative test `tests/phase25/g0/conformance/private_field_visibility_negative.moss`
-   scheduled for the earliest compiler visibility milestone (G1/G2). Phase 25.5 D2
-   encapsulation is not implemented now.
+   using valid Moss identifier import syntax (`import provider_module`), scheduled for
+   the earliest compiler visibility milestone (G1/G2). Phase 25.5 D2 encapsulation
+   is not implemented now.
 3. **Policy-Free Cross-Crate `MossMap<K,V>`:**
    The updated prototype demonstrates one runtime-owned `MossMap<K,V>` value crossing
    two independent consumer rlibs (`consumer_a` and `consumer_b`), calling provider
    `isequal` and `hash` functions directly without an `Ops` type parameter, stored
    callbacks, trait objects, or dynamic dispatch. The negative test proves that foreign
    Rust `Hash` implementation is rejected by rustc (`E0117`).
-4. **Package Identity:**
+4. **Canonical Key-Proof Coherence:**
+   Cross-consumer key-proof coherence is frozen as an explicit compile/link invariant:
+   all consumers must bind to the exact same canonical `KeyProofId` for a given nominal
+   type, failing closed with `KEY_PROOF_COHERENCE_MISMATCH` on conflict.
+5. **Package Identity:**
    Package identity is frozen per L7 verdict as `module-v1:<name>@<version>::<module>`
    with deterministic provider-conflict rejection, subject to confirming Margo's
    resolution and artifact binding semantics.
-5. **Map Complexity and Eager `keys()` Contract:**
+6. **Map Complexity and Eager `keys()` Contract:**
    The production target for G3 is specified as a bucketed open-addressing / robin-hood
    hash table with expected $O(1)$ lookup, insert, and delete. `keys()` returns an eager
    owned snapshot `Vector[K]` with snapshot stability in $O(N)$ time and allocation.
    The linear Rust prototype remains acceptable G0 feasibility evidence.
-6. **Float-Key Semantics:**
+7. **Float-Key Semantics:**
    The blanket Phase 25 Float-key prohibition has been removed. Float `isequal`/`hash`
-   semantics are an approved Phase 25 G3 deliverable owned by Team S. Negative tests
+   semantics are an approved Phase 25 G3 deliverable owned by Team S, following approved
+   Julia-like semantics: `isequal(-0.0, +0.0) == false`, `hash(-0.0) != hash(+0.0)`,
+   `isequal(NaN, NaN) == true`, and signed-zero total ordering. Negative tests
    distinguish valid future Float proofs from malformed or forged proofs.
-7. **Team S Concurrence:**
+8. **Team S Concurrence:**
    Formal implementation-owner concurrence is recorded in
-   `docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md`, resolving exact
-   signatures, `key-protocol-v1`, comparator-law validation ownership, Float-key
-   delivery in G3, and joint ledger #12 responsibilities.
+   `docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md`, specifying valid Moss
+   structural method declarations (`fn isequal(other: Key) -> Bool`, `fn hash() -> Int`)
+   while retaining internal generic type variables in the IR, `key-protocol-v1`,
+   comparator-law validation ownership, Float-key delivery in G3, and joint ledger #12
+   responsibilities.
 
 ### 10.2 Final verdict
 

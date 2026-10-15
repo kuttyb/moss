@@ -455,19 +455,33 @@ non-Copy keys are cloned/copied, guaranteeing snapshot stability detached from s
 map mutations in $O(N)$ time and allocation. If performance forces a policy type into
 the Rust value type, that is an A1 identity change and must return to L7.
 
-The shared semantic protocol is `key-protocol-v1`. Its final source spelling is
-confirmed by Team S in `docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md`:
-equality is `(READ K, READ K) -> Bool` and hash is `(READ K) -> Int`. Both are deterministic,
-non-mutating, non-consuming, non-raising, non-panicking, non-diverging, and free
-of message, domain-state, I/O, executor, and every other observable effect.
-Reusable acceptance law tests owned by Team S require reflexivity, symmetry, transitivity,
-equal-keys/equal-hash, and stability of the stored key snapshot; this is not a
-claim of general theorem proving.
+The shared semantic protocol is `key-protocol-v1`. Moss v0.1 has no source-level
+generic parameter syntax (`[T]`), so source code does not declare type-variable
+parameters. Instead, nominal types declare concrete structural methods:
+`fn isequal(other: Key) -> Bool` and `fn hash() -> Int` (or duck-typed free callables).
+Inside the compiler Type IR and ABI-v10, the protocol retains internal generic type
+variables (`TypeVar K`): equality is `(READ K, READ K) -> Bool` and hash is
+`(READ K) -> Int`. Both are deterministic, non-mutating, non-consuming, non-raising,
+non-panicking, non-diverging, and free of message, domain-state, I/O, executor, and
+every other observable effect. Reusable acceptance law tests owned by Team S require
+reflexivity, symmetry, transitivity, equal-keys/equal-hash, and stability of the
+stored key snapshot; this is not a claim of general theorem proving.
+
+**Canonical Key-Proof Coherence Invariant:**
+Canonical key-proof coherence across consumers is an explicit compile/link invariant.
+For any concrete nominal key type, there is at most one canonical `KeyProof` identity
+in the program (`KeyProofId`). When multiple independent consumer packages import,
+specialize, or pass values of type `Map[Key, V]`, all consumers must resolve and bind
+to the exact same canonical `KeyProofId`. Conflicting key proofs for the same nominal
+type fail closed at compile or link time with `KEY_PROOF_COHERENCE_MISMATCH`.
 
 Float `isequal`/`hash` semantics remain an approved Phase 25 G3 deliverable owned
 by Team S. G0 leaves them unimplemented, without a blanket Phase 25 prohibition.
-Missing, premature, or invalid proof fails at Moss checking before native emission.
-Negative tests distinguish valid future Float proofs from malformed or forged proofs.
+In G3, Float keys follow approved Julia-like semantics: `isequal(-0.0, +0.0)` is `false`,
+with distinct hashes (`hash(-0.0) != hash(+0.0)`), canonical NaN equivalence
+(`isequal(NaN, NaN) == true`), and signed-zero total ordering. Missing, premature,
+or invalid proof fails at Moss checking before native emission. Negative tests
+distinguish valid future Float proofs from malformed or forged proofs.
 Built-in fast paths must be proven observationally equivalent and use the same proof
 identity. A versioned `MapKeyProofId`/`SetKeyProofId` participates in operation
 specialization, semantic dependencies, ABI hashes, and cache keys.
@@ -531,10 +545,10 @@ review. These do not claim Team S or L7 approval:
 The open questions for G0 have been resolved as follows:
 
 1. **Team S Concurrence:** Confirmed in `docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md`.
-   Exact source signatures are `fn isequal(left: K, right: K) -> Bool` and
-   `fn hash(value: K) -> Int` under `key-protocol-v1`. Team S owns comparator-law
-   validation tests, Float-key delivery in G3, Set delivery/deferment, and member
-   admission for open receivers (ledger #12).
+   Nominal key types declare concrete structural methods `fn isequal(other: Key) -> Bool`
+   and `fn hash() -> Int` under `key-protocol-v1`. Team S owns comparator-law validation
+   tests, Float-key delivery in G3, Set delivery/deferment, and member admission for
+   open receivers (ledger #12).
 2. **Map Complexity & Keys Contract:** Confirmed policy-free `MossMap<K,V>` representation.
    Production target in G3 is bucketed hash table with expected $O(1)$ lookup/insert/delete.
    `keys()` is an eager owned snapshot `Vector[K]` with snapshot stability in $O(N)$ time.
@@ -545,7 +559,9 @@ The open questions for G0 have been resolved as follows:
    backend fields (`pub field_0: T`) plus Moss-enforced visibility checking, with
    consumer-generated free functions. Preserved accessor alternative in test suite.
 5. **Float Keys:** Blanket prohibition removed; Float keys are an approved Phase 25 G3
-   deliverable owned by Team S (unimplemented at G0).
+   deliverable owned by Team S with Julia-like semantics (`isequal(-0.0, +0.0) == false`).
+6. **Canonical Key-Proof Coherence:** Cross-consumer key-proof coherence is an explicit
+   compile/link invariant failing closed with `KEY_PROOF_COHERENCE_MISMATCH`.
 
 ### 11.3 Decisions reserved for G2 / implementation phase
 

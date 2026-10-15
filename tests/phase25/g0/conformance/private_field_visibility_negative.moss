@@ -9,9 +9,9 @@
 # Note: Full physical opacity / encapsulation across package boundaries belongs to
 # Phase 25.5 (D1/D2). In Phase 25, Moss-level symbol visibility provides module boundary safety.
 
-import "provider_module" as provider
+import provider_module
 
 fn main():
-  var record = provider.make_record(42)
+  var record = provider_module.make_record(42)
   # Unexported or private field access must be rejected by `moss check` before native emission:
   echo record.secret_field

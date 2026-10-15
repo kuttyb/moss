@@ -7,29 +7,35 @@
 (and strict NO-GO for G2 implementation), all six required G0 review corrections are
 complete:
 
-1. **Float-key prohibition removed:** Float `isequal`/`hash` semantics are an approved
-   Phase 25 G3 deliverable owned by Team S (unimplemented at G0). Negative ABI-v10 tests
-   distinguish valid future Float proofs from malformed or forged proofs.
-2. **Bounded A1 Rust prototype:** Exercises the selected provider-owned generic Rust
-   record with mechanical public backend fields (`pub field_0: T`) and consumer-generated
+1. **Float-key Julia-like semantics:** Float `isequal`/`hash` semantics are an approved
+   Phase 25 G3 deliverable owned by Team S, following approved Julia-like semantics
+   (`isequal(-0.0, +0.0) == false`, `hash(-0.0) != hash(+0.0)`, `isequal(NaN, NaN) == true`).
+   G0 leaves them unimplemented; negative ABI-v10 tests distinguish valid future Float proofs
+   from malformed or forged proofs.
+2. **Bounded A1 Rust prototype & visibility probe:** Exercises the selected provider-owned generic
+   Rust record with mechanical public backend fields (`pub field_0: T`) and consumer-generated
    free functions. The accessor/private-field experiment is preserved as an evaluated
    alternative in `tests/phase25/g0/rust/accessor_alternative/` (verifying `E0616`).
    Forward Moss-level visibility negative test is established in
-   `tests/phase25/g0/conformance/private_field_visibility_negative.moss`.
+   `tests/phase25/g0/conformance/private_field_visibility_negative.moss` using valid Moss
+   identifier import syntax (`import provider_module`).
 3. **Package identity frozen:** Frozen per L7 verdict as `module-v1:<name>@<version>::<module>`
    with deterministic provider-conflict rejection, subject to confirming Margo's resolution
    and artifact binding semantics.
-4. **Team S Concurrence:** Attributable implementation-owner concurrence recorded in
-   `docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md`, establishing exact
-   `isequal`/`hash` signatures, `key-protocol-v1`, comparator-law suite ownership,
-   Float-key G3 delivery, Set delivery/deferment, and joint ledger #12 ownership.
+4. **Team S Concurrence & Key-Proof Coherence:** Attributable implementation-owner concurrence
+   recorded in `docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md`, specifying valid
+   Moss structural method declarations (`fn isequal(other: Key) -> Bool`, `fn hash() -> Int`),
+   internal generic IR type variables, `key-protocol-v1`, comparator-law suite ownership,
+   Julia-like Float-key G3 delivery, Set delivery/deferment, joint ledger #12 ownership,
+   and cross-consumer canonical key-proof coherence (`KEY_PROOF_COHERENCE_MISMATCH`).
 5. **Map complexity & eager `keys()` contract:** Production G3 target specified as
    bucketed open-addressing table with expected $O(1)$ lookup/insert/delete; `keys()`
    returns an eager owned snapshot `Vector[K]` with snapshot stability in $O(N)$ time.
 6. **Fresh Architect review addenda:** Independent Team G Architect issued attributable
    **GO for G0 Boundary Freeze** in `docs/phase25/TEAM_G_G0_ARCHITECT_REVIEW.md` §10.
    Independent Team S Architect issued attributable **GO for G0 Boundary Freeze** in
-   `docs/phase25/TEAM_S_G0_ARCHITECT_REVIEW.md` §9.
+   `docs/phase25/TEAM_S_G0_ARCHITECT_REVIEW.md` §9, evaluating exact candidate SHA
+   `aa83fb66b7dbcbb33144aca023734f43a6ae4e0c` (with narrow corrective contract updates).
 
 Shared compiler/IR surgery remains strictly **NO-GO** pending explicit written L7 G2
 authorization. Historical NO-GO reports remain preserved as review history.

@@ -74,23 +74,30 @@ production format at this checkpoint; ABI-v10 is a reviewed design only.
 
 Following the L7 G0 review corrections:
 
-1. **Float-key prohibition removed:** Float `isequal`/`hash` semantics remain an
-   approved Phase 25 G3 deliverable owned by Team S. G0 leaves them unimplemented;
-   negative tests distinguish valid future Float proofs from malformed/forged proofs.
+1. **Float-key prohibition removed & Julia-like semantics:** Float `isequal`/`hash`
+   semantics remain an approved Phase 25 G3 deliverable owned by Team S, following
+   approved Julia-like semantics (`isequal(-0.0, +0.0) == false`, `hash(-0.0) != hash(+0.0)`,
+   `isequal(NaN, NaN) == true`). G0 leaves them unimplemented; negative tests distinguish
+   valid future Float proofs from malformed/forged proofs.
 2. **A1 prototype:** Provider-owned generic Rust record with mechanical public backend
    fields (`pub field_0: T`) and consumer-generated free functions verified. Accessor
    alternative preserved; forward Moss visibility negative test recorded in
-   `tests/phase25/g0/conformance/private_field_visibility_negative.moss`.
+   `tests/phase25/g0/conformance/private_field_visibility_negative.moss` using valid
+   identifier import syntax (`import provider_module`).
 3. **Package identity:** Frozen per L7 verdict as `module-v1:<name>@<version>::<module>`
    with deterministic provider-conflict rejection, subject to confirming Margo's
    resolution and artifact binding semantics.
-4. **Team S Concurrence:** Formal implementation-owner concurrence recorded in
-   `docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md`.
+4. **Team S Concurrence & Key-Proof Coherence:** Formal implementation-owner concurrence
+   recorded in `docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md`, specifying
+   valid Moss structural method declarations (`fn isequal(other: Key) -> Bool`,
+   `fn hash() -> Int`), internal IR type variables, Julia-like Float keys, and canonical
+   key-proof coherence across consumers (`KEY_PROOF_COHERENCE_MISMATCH`).
 5. **Map Complexity & Keys Contract:** Production target specified as bucketed open-addressing
    hash table with expected $O(1)$ lookup/insert/delete; `keys()` is an eager owned snapshot
    `Vector[K]` with snapshot stability in $O(N)$ time.
-6. **Fresh Architect Reviews:** Fresh exact-SHA review addenda requested and recorded
-   from independent Team G and Team S Architects.
+6. **Fresh Architect Reviews:** Fresh exact-SHA review addenda recorded from independent
+   Team G and Team S Architects on reviewed candidate `aa83fb66b7dbcbb33144aca023734f43a6ae4e0c`
+   (with narrow corrective contract updates).
 
 Shared compiler/IR surgery remains strictly **NO-GO** until written L7 G2 authorization.
 No source-level `Box[T]`, `where T`, `Self`, local annotation, dynamic dispatch, or

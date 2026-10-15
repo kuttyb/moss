@@ -255,10 +255,15 @@ semantic dependencies, interface hashes, and cache keys. `SetKeyProof` uses the
 same record shape and protocol (or Set is explicitly deferred); it cannot invent a
 second key contract. Missing or premature proof fails at Moss checking. Float
 `isequal`/`hash` semantics are an approved Phase 25 G3 deliverable owned by Team S;
-G0 leaves them unimplemented rather than prohibited for the entire phase. Negative
-tests distinguish valid future Float proofs from malformed or forged proofs.
+G0 leaves them unimplemented rather than prohibited for the entire phase. In G3,
+Float keys follow approved Julia-like semantics: `isequal(-0.0, +0.0)` is `false`,
+with distinct hashes (`hash(-0.0) != hash(+0.0)`), canonical NaN equivalence
+(`isequal(NaN, NaN) == true`), and signed-zero total ordering. Negative tests
+distinguish valid future Float proofs from malformed or forged proofs.
 
-The loader checks the two signatures and separate effect records against
+In source code, nominal types declare concrete structural methods
+`fn isequal(other: Key) -> Bool` and `fn hash() -> Int` without source-level generic
+parameters. The loader checks the two ABI signatures and separate effect records against
 `key-protocol-v1`: equality is `(READ K, READ K) -> Bool`, hash is
 `(READ K) -> Int`, and neither may mutate, consume, raise, panic, diverge,
 message, touch domain state, perform I/O/executor work, or have another observable
@@ -266,6 +271,14 @@ effect. The law version names the reusable reflexive/symmetric/transitive,
 equal-hash, and snapshot-stability acceptance suite; it is not a runtime policy.
 Team S owns the comparator-law validation suite and has recorded formal concurrence
 in `docs/phase25/TEAM_S_G0_IMPLEMENTATION_OWNER_CONCURRENCE.md`.
+
+**Canonical Key-Proof Coherence Invariant:**
+Canonical key-proof coherence across consumers is an explicit compile/link invariant.
+For any concrete nominal key type, there is at most one canonical `KeyProof` identity
+in the program (`proof_id`). When multiple independent consumer packages import,
+specialize, or pass values of type `Map[Key, V]`, all consumers must bind to the exact
+same canonical `KeyProofId`. Any attempt to link conflicting key proofs for the same
+nominal type fails closed with `KEY_PROOF_COHERENCE_MISMATCH`.
 
 The production `MossMap<K,V>` targeted for G3 is a bucketed open-addressing /
 robin-hood hash table storing `(Moss hash, key, value)` entries with expected $O(1)$
