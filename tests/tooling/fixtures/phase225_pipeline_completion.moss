@@ -14,4 +14,4 @@ fn main():
   values = [1, 2, 3]
   items = [Item(value: 1)]
   echo values
-  echo items
+  echo items |> count

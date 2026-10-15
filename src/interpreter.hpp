@@ -250,6 +250,35 @@ class FastInterpreter {
     std::string display() const;
   };
 
+  // Phase 25 S-B echo display contract (docs/FAST_DEBUG.md): scalars and
+  // Vectors of displayable elements only. The checker rejects every other
+  // type with ECHO_DISPLAY_UNSUPPORTED; this guard keeps Fast Debug from
+  // inventing text (such as "Map(1)" or a record's type name) if an
+  // unchecked path ever reaches it.
+  static std::string echo_text(const Value& value, int line) {
+    switch (value.kind) {
+      case Value::Kind::Bool:
+      case Value::Kind::Int:
+      case Value::Kind::Float:
+      case Value::Kind::Char:
+      case Value::Kind::String:
+        return value.display();
+      case Value::Kind::Vector: {
+        std::string out = "[";
+        if (value.vector)
+          for (size_t i = 0; i < value.vector->size(); ++i) {
+            if (i) out += ", ";
+            out += echo_text((*value.vector)[i], line);
+          }
+        return out + "]";
+      }
+      default:
+        throw RuntimeError(line, "[ECHO_DISPLAY_UNSUPPORTED] echo cannot display this "
+                                 "value; echo supports Int, Float, Bool, Char, String, "
+                                 "and Vector of those");
+    }
+  }
+
   struct StructValue {
     std::string type;
     std::string case_name;
@@ -2369,7 +2398,8 @@ class FastInterpreter {
         case Stmt::Kind::Echo:
           for (size_t i = 0; i < statement.args.size(); ++i) {
             if (i) output << " ";
-            output << eval(statement.args[i], frame, statement.line, output).display();
+            output << echo_text(eval(statement.args[i], frame, statement.line, output),
+                                statement.line);
           }
           output << "\n";
           break;

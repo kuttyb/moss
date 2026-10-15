@@ -544,6 +544,29 @@ fn main():
 Vectors support `push(item)`, `pop()`, indexed reads (`vec[i]`) and writes
 (`vec[i] = item`). Use `vec |> count` for cardinality.
 
+`echo` can print a whole Vector when its elements can be printed. Every
+engine prints the same text: `[`, then each element as `echo` would print it
+on its own, separated by `, `, then `]`:
+
+```moss
+fn main():
+  echo [1, -2, 3]             # [1, -2, 3]
+  echo [0.5, -0.0, 1e21]      # [0.5, -0.0, 1e21]
+  echo ["a", "b c"]           # [a, b c]
+  echo "hé".chars()           # [h, é]
+  echo [[1], [2, 3]]          # [[1], [2, 3]]
+  echo Vector[Int]()          # []
+```
+
+Strings and Chars inside a Vector are printed as plain text, with no quotes
+or escapes, so `["a, b"]` and `["a", "b"]` both print `[a, b]`. When you need
+an unambiguous form, echo the elements one at a time. `echo` prints only
+Int, Float, Bool, Char, String, and Vectors of those. A Map, Queue, record,
+enum, function, or a Vector containing one of them is rejected with
+`ECHO_DISPLAY_UNSUPPORTED`. Echo its fields or elements instead. Map has no
+deterministic iteration order, so it has no display form. There is also no
+`to_string()` or `+` concatenation for collections.
+
 An untyped helper can index built-in collections. Moss checks each concrete
 call separately, so `fn first(items): return items[0]` can return `Int` for a
 `Vector[Int]` caller and `String` for a `Vector[String]` caller. The container

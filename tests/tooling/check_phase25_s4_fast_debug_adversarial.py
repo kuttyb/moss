@@ -442,13 +442,18 @@ fn main():
 """, "state write and Copy shadow before a raise", "1\n1200\n2\n5\n3\n5\n")
 
 
-def native_rejected(code, name, code_expected):
-    """Checked source that the native target reports before rustc runs."""
+def checker_rejected(code, name, code_expected):
+    """Source the checker rejects before any engine runs (S-B display rule)."""
     with tempfile.TemporaryDirectory(prefix="p25-s4-", dir=SCRATCH) as td:
         source = Path(td) / "case.moss"
         source.write_text(code)
         check = run([str(MOSS), "check", str(source), "--json"])
-        assert check.returncode == 0, f"[{name}] check rejected:\n{check.stdout}"
+        error = json.loads(check.stdout).get("error") or {}
+        assert check.returncode != 0 and error.get("code") == code_expected, (
+            f"[{name}] check: {check.stdout}")
+        interp = run([str(MOSS), "run", "--interp", str(source)])
+        assert interp.returncode != 0 and code_expected in interp.stderr and not interp.stdout, (
+            f"[{name}] Fast Debug: {interp.stdout}{interp.stderr}")
         for flag in ("--debug", "-O"):
             gen = run([str(MOSS), str(source), flag, "-o", str(Path(td) / "case.rs")])
             assert gen.returncode != 0 and code_expected in gen.stderr, (
@@ -457,13 +462,18 @@ def native_rejected(code, name, code_expected):
 
 
 def test_echo_display():
-    print("P25-S-S4-011: native echo of a collection or record is a target diagnostic")
-    native_rejected("fn main():\n  let v = [1, 2]\n  echo v\n", "echo Vector",
-                    "NATIVE_ECHO_DISPLAY_UNSUPPORTED")
-    native_rejected("fn main():\n  var m = Map()\n  m[\"a\"] = 1\n  echo m\n", "echo Map",
-                    "NATIVE_ECHO_DISPLAY_UNSUPPORTED")
-    native_rejected("type P:\n  x: Int\n\nfn main():\n  let p = P(x: 1)\n  echo p\n",
-                    "echo record", "NATIVE_ECHO_DISPLAY_UNSUPPORTED")
+    # History: P25-S-S4-011 found that native echo of a Vector, Map, or record
+    # gave rustc E0277, and S4 reported it as the native-lowering diagnostic
+    # NATIVE_ECHO_DISPLAY_UNSUPPORTED. That made project-mode check (which ran
+    # lowering) disagree with standalone check (P25-S-ARCH-019). S-B replaced
+    # it: a Vector of displayable elements has one contract in every engine,
+    # and every other type is a checker error, ECHO_DISPLAY_UNSUPPORTED.
+    print("P25-S-S4-011 / S-B: echo of a Vector runs; Map and record are checker errors")
+    three_modes("fn main():\n  let v = [1, 2]\n  echo v\n", "echo Vector", "[1, 2]\n")
+    checker_rejected("fn main():\n  var m = Map()\n  m[\"a\"] = 1\n  echo m\n", "echo Map",
+                     "ECHO_DISPLAY_UNSUPPORTED")
+    checker_rejected("type P:\n  x: Int\n\nfn main():\n  let p = P(x: 1)\n  echo p\n",
+                     "echo record", "ECHO_DISPLAY_UNSUPPORTED")
 
 
 def main():
