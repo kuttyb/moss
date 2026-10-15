@@ -1,0 +1,14 @@
+module app
+
+import registry
+import alpha
+import beta
+
+fn main():
+  reg = registry.Registry(table: Map())
+  a = alpha.Alpha(store: reg)
+  b = beta.Beta(store: reg)
+  echo message a.Run()
+  echo message b.Run()
+  echo message reg.Get("Ada")
+  echo message reg.Count()

@@ -1,0 +1,12 @@
+title: Set[Float]: signed zeros are separate members, NaNs are one member
+covers: 1 (Float keys, Set)
+layout: standalone
+set-api: PROVISIONAL - pending Team G G2 Set API
+expect: stdout
+current: fail-closed UNKNOWN_SYMBOL_OR_TYPE
+owner: Team G G2 Set kernel + Team S Float key proof
+---
+3
+true
+true
+false

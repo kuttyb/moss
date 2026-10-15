@@ -1,0 +1,17 @@
+# Malformed key proof: isequal may diverge.
+type Tag:
+  label: String
+
+  fn isequal(other: Tag) -> Bool:
+    var i = 0
+    while true:
+      i = i + 1
+    return true
+
+  fn hash() -> Int:
+    return label.hash()
+
+fn main():
+  var m = Map()
+  m[Tag(label: "a")] = 1
+  echo m.get(Tag(label: "a"), 0)

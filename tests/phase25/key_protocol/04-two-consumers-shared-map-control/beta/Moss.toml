@@ -1,0 +1,9 @@
+[package]
+name = "beta"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+registry = { path = "../registry" }

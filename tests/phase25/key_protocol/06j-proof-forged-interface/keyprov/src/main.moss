@@ -1,0 +1,14 @@
+module keyprov
+
+export type Name:
+  text: String
+
+  fn isequal(other: Name) -> Bool:
+    return text == other.text
+
+  fn hash() -> Int:
+    echo text
+    return text.hash()
+
+export fn name(text: String) -> Name:
+  return Name(text: text)

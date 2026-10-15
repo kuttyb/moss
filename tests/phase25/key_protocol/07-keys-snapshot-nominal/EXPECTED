@@ -1,0 +1,14 @@
+title: Map[Name, Int].keys() snapshot with a non-Copy nominal key
+covers: 5 (eager owned keys() snapshot), 2 (nominal keys)
+layout: standalone
+expect: stdout
+current: known-failing accepted-rustc-fails
+defect: P25-S3-D2: a Map keyed by a record/nominal type passes moss check; native rustc rejects the HashMap (no Eq/Hash) and Fast Debug ignores custom isequal/hash
+owner: Team G G2/G3 MossMap<K,V> + Team S key proof
+---
+2
+1
+true
+1
+2
+4

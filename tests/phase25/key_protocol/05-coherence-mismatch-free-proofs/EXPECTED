@@ -1,0 +1,9 @@
+title: Two consumers bind different free-function proofs for one nominal key passed as one Map
+covers: 4 (canonical key-proof coherence)
+layout: packages
+entry: app
+expect: reject KEY_PROOF_COHERENCE_MISMATCH
+current: known-failing accepted-rustc-fails
+defect: P25-S3-D2: a Map keyed by a record/nominal type passes moss check; native rustc rejects the HashMap (no Eq/Hash) and Fast Debug ignores custom isequal/hash
+owner: Team G G2 KeyProof records + Team S proof resolution
+---

@@ -1,0 +1,11 @@
+title: Control: Map[String, Int].keys() snapshot runs today
+covers: 5 (control)
+layout: standalone
+expect: stdout
+current: passes
+owner: none (control)
+---
+2
+1
+2
+1

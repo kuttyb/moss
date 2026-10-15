@@ -1,0 +1,10 @@
+title: A consumer's free isequal/hash for a key that already declares canonical methods
+covers: 4 (duplicate proof for one nominal type)
+layout: packages
+entry: app
+expect: reject KEY_PROOF_COHERENCE_MISMATCH
+expect-note: PROVISIONAL - method-vs-free-callable precedence is not frozen by the G0 contracts
+current: known-failing accepted-rustc-fails
+defect: P25-S3-D2: a Map keyed by a record/nominal type passes moss check; native rustc rejects the HashMap (no Eq/Hash) and Fast Debug ignores custom isequal/hash
+owner: Team G G2 KeyProof records + Team S proof resolution
+---

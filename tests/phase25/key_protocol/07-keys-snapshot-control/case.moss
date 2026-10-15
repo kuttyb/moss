@@ -1,0 +1,18 @@
+# Control: the same snapshot rule with String keys runs today.
+fn main():
+  var m = Map()
+  m["a"] = 1
+  m["b"] = 2
+  let snapshot = m.keys()
+  m["c"] = 3
+  var found = false
+  let old = m.delete("a", 0, found)
+  echo snapshot |> count
+  var a = 0
+  for k in snapshot:
+    if k == "a":
+      a = a + 1
+  echo a
+  let later = m.keys()
+  echo later |> count
+  echo old

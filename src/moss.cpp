@@ -9140,6 +9140,27 @@ class Checker {
       vector<string> argument_types;
       for (const auto& argument : call_arguments)
         argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
+      // `sort(v, by: key)` / `by: Reverse(key)` calls the named key at the
+      // element type.  Record that edge like a pipeline stage so module
+      // projection emits an imported untyped key's specialization into the
+      // consumer crate.
+      if (callee == "sort" && !functions_.count(callee) &&
+          call_arguments.size() == 2) {
+        string label, key, reverse_callee;
+        vector<string> reverse_args;
+        if (parse_named_argument(call_arguments[1], label, key) && label == "by") {
+          key = trim(key);
+          if (parse_simple_call(key, reverse_callee, reverse_args) &&
+              reverse_callee == "Reverse" && reverse_args.size() == 1)
+            key = trim(reverse_args.front());
+          string vector_type = canonical_type_name(argument_types.front());
+          if (functions_.count(key) && starts_with(vector_type, "vector[") &&
+              ends_with(vector_type, "]"))
+            calls.push_back(LocalCallSite{
+                "fn:" + key, {},
+                {canonical_type_name(vector_type.substr(7, vector_type.size() - 8))}});
+        }
+      }
       auto function = functions_.find(callee);
       if (function != functions_.end()) {
         calls.push_back(LocalCallSite{"fn:" + callee, call_arguments,

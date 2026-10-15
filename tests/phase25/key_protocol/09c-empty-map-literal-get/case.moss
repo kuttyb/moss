@@ -1,0 +1,3 @@
+# S1.5 unpinned empty Map: Map().get(k, d) on a fresh temporary (K=Int, V=Int).
+fn main():
+  echo Map().get(1, 2)

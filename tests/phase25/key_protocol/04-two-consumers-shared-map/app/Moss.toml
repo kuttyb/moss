@@ -1,0 +1,11 @@
+[package]
+name = "sharedapp"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+registry = { path = "../registry" }
+alpha = { path = "../alpha" }
+beta = { path = "../beta" }
