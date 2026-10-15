@@ -1930,6 +1930,59 @@ static string canonicalize_char_literals(const string& line, int line_no,
       out += line.substr(i);
       break;
     }
+    if (std::isdigit(static_cast<unsigned char>(c)) &&
+        (i == 0 || !(std::isalnum(static_cast<unsigned char>(line[i - 1])) ||
+                     line[i - 1] == '_' || line[i - 1] == '.'))) {
+      // A decimal Int literal must fit Moss's 64-bit Int. Only the negated
+      // magnitude 2^63 (Int minimum) may exceed Int maximum. Float forms and
+      // other spellings are left to the existing literal handling.
+      size_t end = i;
+      while (end < line.size() &&
+             (std::isdigit(static_cast<unsigned char>(line[end])) || line[end] == '_'))
+        ++end;
+      const bool other_form = end < line.size() &&
+          (std::isalnum(static_cast<unsigned char>(line[end])) || line[end] == '.');
+      string digits;
+      for (size_t k = i; k < end; ++k) if (line[k] != '_') digits.push_back(line[k]);
+      digits.erase(0, std::min(digits.find_first_not_of('0'), digits.size() - 1));
+      const string max_magnitude = "9223372036854775808";
+      const bool exceeds = digits.size() > max_magnitude.size() ||
+          (digits.size() == max_magnitude.size() && digits >= max_magnitude);
+      if (!other_form && exceeds) {
+        bool negated = false;
+        if (digits == max_magnitude) {
+          size_t k = i;
+          while (k > 0 && line[k - 1] == ' ') --k;
+          if (k > 0 && line[k - 1] == '-') {
+            size_t before = k - 1;
+            while (before > 0 && line[before - 1] == ' ') --before;
+            if (before == 0 ||
+                string("([{,=:+-*/%<>!&|^~").find(line[before - 1]) != string::npos) {
+              negated = true;
+            } else if (std::isalpha(static_cast<unsigned char>(line[before - 1]))) {
+              size_t word = before;
+              while (word > 0 && (std::isalnum(static_cast<unsigned char>(line[word - 1])) ||
+                                  line[word - 1] == '_'))
+                --word;
+              static const std::set<string> keywords = {
+                  "echo", "return", "reply", "and", "or", "xor", "not", "in",
+                  "if", "while", "raise"};
+              negated = keywords.count(line.substr(word, before - word)) != 0;
+            }
+          }
+        }
+        if (!negated) {
+          CompileError error(line_no, "integer literal '" + line.substr(i, end - i) +
+                             "' does not fit in Int (-9223372036854775808 through "
+                             "9223372036854775807)", "INT_LITERAL_OUT_OF_RANGE");
+          error.source_file = source_file;
+          throw error;
+        }
+      }
+      out += line.substr(i, end - i);
+      i = end - 1;
+      continue;
+    }
     if (c != '\'') { out.push_back(c); continue; }
     uint32_t codepoint = 0;
     size_t end = string::npos;  // index of the closing quote
@@ -4586,6 +4639,13 @@ class Checker {
       return operand && canonical_type_name(*operand) == "int"
           ? std::optional<string>("int") : std::nullopt;
     }
+    // Unary minus keeps its numeric operand's type (`return -x`).
+    if (e.size() > 1 && e.front() == '-') {
+      auto operand = inferred_expr_type(trim(e.substr(1)), env);
+      if (operand && (canonical_type_name(*operand) == "int" ||
+                      canonical_type_name(*operand) == "float"))
+        return canonical_type_name(*operand);
+    }
     string index_base, index_expr;
     if (parse_index(e, index_base, index_expr)) {
       auto bt = inferred_expr_type(index_base, env);
@@ -6783,6 +6843,58 @@ class Checker {
       while (else_end < source.body.size() && source.body[else_end].indent > branch.indent) ++else_end;
     }
     const size_t suffix_begin = else_begin == then_end ? then_end : else_end;
+    // A Then/Else continuation splices the branch's statements in front of
+    // the suffix at one Rust block level. A branch-local binding would then
+    // stay visible in the suffix: it would shadow a state field, parameter,
+    // or route there, or capture a later same-named binding. Keep the
+    // conservative entry placement whenever the suffix names such a binding
+    // and it is not a fresh name bound on both paths (a checked join).
+    {
+      std::set<string> outer;
+      for (const auto& field : domain.state) outer.insert(field.name);
+      for (const auto& parameter : source.params) outer.insert(parameter.name);
+      for (const auto& route : domain.routes) outer.insert(route.name);
+      auto branch_binders = [&](size_t begin, size_t end) {
+        std::set<string> names;
+        for (size_t k = begin; k < end; ++k) {
+          const Stmt& statement = source.body[k];
+          if (statement.indent != branch.indent + 1) continue;
+          if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var)
+            names.insert(statement.a);
+          else if (statement.kind == Stmt::Kind::Assign && !outer.count(statement.a))
+            names.insert(statement.a);
+          else if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::Match ||
+                   statement.kind == Stmt::Kind::Try)
+            for (const auto& joined : statement.joined_types)
+              if (!outer.count(joined.first)) names.insert(joined.first);
+        }
+        return names;
+      };
+      const auto then_names = branch_binders(then_begin, then_end);
+      const auto else_names = branch_binders(else_begin, else_end);
+      auto suffix_mentions = [&](const string& name) {
+        for (size_t k = suffix_begin; k < source.body.size(); ++k) {
+          const Stmt& statement = source.body[k];
+          if (expression_uses(statement.a, name) ||
+              expression_uses(statement.b, name) ||
+              expression_uses(statement.message_result, name))
+            return true;
+          for (const auto& argument : statement.args)
+            if (expression_uses(argument, name)) return true;
+        }
+        return false;
+      };
+      for (const auto* names : {&then_names, &else_names})
+        for (const auto& name : *names) {
+          const bool joined = !outer.count(name) && then_names.count(name) &&
+              else_names.count(name);
+          if (!joined && suffix_mentions(name)) {
+            whole.path_placement.reason =
+                "conservative entry placement: leading branch binding is visible in the continuation";
+            return;
+          }
+        }
+    }
     auto then_body = normalized_statement_slice(source.body, then_begin, then_end, branch.indent + 1);
     auto else_body = normalized_statement_slice(source.body, else_begin, else_end, branch.indent + 1);
     auto suffix = normalized_statement_slice(source.body, suffix_begin, source.body.size(), 0);
@@ -8918,6 +9030,12 @@ class Checker {
           for (const auto& argument : statement.args)
             analyze_effect_expression(argument, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, Effect::Read);
+          // `name = message ...` assigns an existing binding, including a
+          // domain state field, exactly like an ordinary assignment.
+          if (simple_effect_identifier(statement.message_result) &&
+              env.count(statement.message_result))
+            mark_effect_name(statement.message_result, Effect::Write, params, env,
+                             parameter_effects, receiver_effect, receiver_fields);
           if (leaf_effect_capture_ && !statement.message_result.empty()) {
             auto receiver = env.find(statement.a);
             synchronization_require(receiver != env.end() && domains_.count(receiver->second), "unresolved message receiver");
@@ -12422,6 +12540,14 @@ class Checker {
         if (identity && *identity != found->second) different = true;
         identity = found->second;
       }
+      // A join binding declared with `let` on every path stays immutable.
+      // (A domain state field shadowed on every path is not a join binding.)
+      if (all_present && !destination.state_fields.count(entry.first) &&
+          std::all_of(paths.begin(), paths.end(),
+              [&](const OwnershipEnv& path) {
+                return path.immutable_locals.count(entry.first) != 0;
+              }))
+        destination.immutable_locals.insert(entry.first);
       if (!all_present) {
         destination.binding_identities.erase(entry.first);
       } else if (different) {
@@ -12659,7 +12785,10 @@ class Checker {
                   (before_id != incoming.binding_identities.end() &&
                    raised_id != raised.ownership.binding_identities.end() &&
                    before_id->second == raised_id->second);
-              if (!same_binding) {
+              // A try-local shadow hides the outer binding's ownership state
+              // at the edge. The outer binding is visible again in the arm;
+              // only a non-Copy one may have been consumed before the shadow.
+              if (!same_binding && !copy_type(binding.second)) {
                 recovered.moved.emplace(
                     binding.first, MoveInfo{arm.line, "shadowed before raise"});
               } else if (auto moved = raised.ownership.moved.find(binding.first);
@@ -12913,7 +13042,9 @@ class Checker {
           if (simple_identifier(s.a)) {
             if (source_type) env.types[s.a] = *source_type;
             else if (!env.types.count(s.a)) env.types[s.a] = "_value";
-            if (!env.binding_identities.count(s.a))
+            // Domain state is not a lexical binding; writing it must not make
+            // a later raise edge look as if the field had been shadowed.
+            if (!env.binding_identities.count(s.a) && !env.state_fields.count(s.a))
               env.binding_identities[s.a] = statement_binding_identity(
                   current_semantic_context_, s.line);
             // Assignment creates or reinitializes the target, including a
@@ -12943,10 +13074,16 @@ class Checker {
             }
           }
           record_direct_raise();
+          if (!s.message_result.empty() && env.types.count(s.message_result) &&
+              simple_identifier(s.message_result))
+            // Assigning an existing binding or state field is a WRITE.
+            check_ownership_expression(s.line, s.message_result, env, Effect::Write);
           if (!s.message_result.empty()) {
             if (handler->reply_type) env.types[s.message_result] = *handler->reply_type;
-            env.binding_identities[s.message_result] = statement_binding_identity(
-                current_semantic_context_, s.line);
+            if (!env.binding_identities.count(s.message_result) &&
+                !env.state_fields.count(s.message_result))
+              env.binding_identities[s.message_result] = statement_binding_identity(
+                  current_semantic_context_, s.line);
             env.moved.erase(s.message_result);
           }
           ++index;
@@ -19181,6 +19318,19 @@ class Generator {
       }
       return "(" + left + ") " + binary->op + " (" + right + ")";
     }
+    // Moss Int arithmetic wraps; Rust's `-x` panics on Int min in debug.
+    if (e.size() > 1 && e.front() == '-') {
+      const string inner = trim(e.substr(1));
+      if (!inner.empty() && std::isdigit(static_cast<unsigned char>(inner.front())) &&
+          generated_integer_literal(inner))
+        return "-" + inner + "_i64";
+      auto operand_type = generated_expr_type(inner, types);
+      if (operand_type && canonical_type_name(*operand_type) == "int") {
+        string operand = expr(inner, d, locals, types);
+        operand = value_from_borrowed_message_parameter(inner, operand, types);
+        return "(" + operand + ").wrapping_neg()";
+      }
+    }
     if (!e.empty() && e.front() == '~') {
       string operand = expr(trim(e.substr(1)), d, locals, types);
       operand = value_from_borrowed_message_parameter(trim(e.substr(1)), operand, types);
@@ -21160,6 +21310,12 @@ class Generator {
 
           const string outcome = "__moss_try_outcome_" +
               std::to_string(phase21_try_temp_++);
+          // The attempt's normal completion leaves this outer block
+          // directly, so rustc sees every join binding initialized on the
+          // normal path even when a raise precedes its first assignment.
+          const string done_label = "__moss_try_done_" +
+              std::to_string(phase21_try_temp_++);
+          o << indent(level) << "'" << done_label << ": {\n";
           o << indent(level) << "#[allow(unreachable_code)]\n";
           const string try_label = "__moss_try_" +
               std::to_string(phase21_try_temp_++);
@@ -21188,11 +21344,11 @@ class Generator {
                     functional_context);
           phase21_result_context_ = saved_result_context;
           phase21_try_label_ = saved_try_label;
-          o << indent(level + 1) << "Ok(())\n";
+          o << indent(level + 1) << "break '" << done_label << ";\n";
           o << indent(level) << "};\n";
           o << indent(level) << "#[allow(unreachable_patterns)]\n";
           o << indent(level) << "match " << outcome << " {\n";
-          o << indent(level + 1) << "Ok(()) => {},\n";
+          o << indent(level + 1) << "Ok(()) => std::process::abort(),\n";
 
           RaiseSet handled;
           while (i < ss.size() && ss[i].indent == level &&
@@ -21316,6 +21472,7 @@ class Generator {
             o << indent(level + 1)
               << "Err(_) => std::process::abort(),\n";
           }
+          o << indent(level) << "}\n";
           o << indent(level) << "}\n";
           phase21_return_result_context_ = saved_return_result_context;
           break;
@@ -21721,6 +21878,16 @@ class Generator {
                   statement_functional_pipeline_id(s, functional_context,
                                                    argument));
               auto type = generated_expr_type(s.args[argument], &types);
+              // The native target has no text form for a collection or
+              // record; report it before rustc rather than emit `{}` for it.
+              const string shown = type ? canonical_type_name(*type) : string();
+              if (shown == "vector" || shown == "map" || shown == "queue" ||
+                  starts_with(shown, "vector[") || starts_with(shown, "map[") ||
+                  starts_with(shown, "queue[") || objects_.count(shown))
+                throw CompileError(s.line, "native echo cannot display a " +
+                    string(objects_.count(shown) ? "record" : "collection") +
+                    " value; echo its fields or elements",
+                    "NATIVE_ECHO_DISPLAY_UNSUPPORTED");
               if (type && canonical_type_name(*type) == "float")
                 rendered = "__moss_ryu::canonical_float_text(" + rendered + ")";
               o << ", " << rendered;
@@ -22264,15 +22431,30 @@ class Generator {
           }
           call += ")";
           o << indent(level);
-          if (!s.message_result.empty()) {
+          // `field = message ...` in a handler writes the domain state field
+          // unless a local binding of that name is in scope.
+          const bool state_result = d && !s.message_result.empty() &&
+              !locals.count(s.message_result) &&
+              std::any_of(d->state.begin(), d->state.end(), [&](const Field& field) {
+                return field.name == s.message_result;
+              });
+          const bool state_view = state_result &&
+              is_object_view(s.message_result, d, locals, &types);
+          if (state_view) {
+            o << "(" << write_call_place(s.message_result, d, locals, &types)
+              << ").__moss_replace(";
+          } else if (state_result) {
+            o << write_call_place(s.message_result, d, locals, &types) << " = ";
+          } else if (!s.message_result.empty()) {
             if (!locals.count(s.message_result)) o << "let mut ";
             o << s.message_result << " = ";
           }
           vector<size_t> argument_plans;
           for (size_t argument = 0; argument < s.args.size(); ++argument)
             argument_plans.push_back(statement_functional_pipeline_id(s, functional_context, argument));
-          o << expr(call, d, locals, &types, 0, &argument_plans) << ";\n";
-          if (!s.message_result.empty()) {
+          o << expr(call, d, locals, &types, 0, &argument_plans)
+            << (state_view ? ")" : "") << ";\n";
+          if (!s.message_result.empty() && !state_result) {
             const Domain& target = *domains_.at(canonical_type_name(types.at(s.a)));
             locals.insert(s.message_result);
             types[s.message_result] = find_handler(target, s.b)->reply_type.value_or("unit");

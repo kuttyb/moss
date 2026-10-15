@@ -327,7 +327,12 @@ class FastInterpreter {
       if (keep && std::uncaught_exceptions() == uncaught) {
         std::vector<Frame::ScopedBinding> dropped;
         for (auto& item : scope) {
-          if (!keep->count(item.name) || item.value || item.alias) {
+          // A name that already resolves outside the block (a local, an
+          // alias, or the handler's domain state) is shadowed, not joined:
+          // native keeps such branch bindings block-local.
+          const bool shadows_state = frame.handler_scope && frame.domain &&
+              (frame.domain->state.count(item.name) || frame.domain->routes.count(item.name));
+          if (!keep->count(item.name) || item.value || item.alias || shadows_state) {
             dropped.push_back(std::move(item));
             continue;
           }
@@ -1043,6 +1048,9 @@ class FastInterpreter {
       return Value::int_value(~value.integer);
     }
     if (!e.empty() && e.front() == '-' && e.size() > 1) {
+      // The checker admits the magnitude 2^63 only as this negation.
+      if (trim_copy(e.substr(1)) == "9223372036854775808")
+        return Value::int_value(std::numeric_limits<std::int64_t>::min());
       Value value = eval(e.substr(1), frame, line, output);
       if (value.kind == Value::Kind::Int) return Value::int_value(wrapping_sub(0, value.integer));
       if (value.kind == Value::Kind::Float) return Value::float_value(-value.floating);
