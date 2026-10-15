@@ -4536,6 +4536,13 @@ class Checker {
       return operand && canonical_type_name(*operand) == "int"
           ? std::optional<string>("int") : std::nullopt;
     }
+    // Unary minus keeps its numeric operand's type (`return -x`).
+    if (e.size() > 1 && e.front() == '-') {
+      auto operand = inferred_expr_type(trim(e.substr(1)), env);
+      if (operand && (canonical_type_name(*operand) == "int" ||
+                      canonical_type_name(*operand) == "float"))
+        return canonical_type_name(*operand);
+    }
     string index_base, index_expr;
     if (parse_index(e, index_base, index_expr)) {
       auto bt = inferred_expr_type(index_base, env);
@@ -12410,7 +12417,9 @@ class Checker {
         identity = found->second;
       }
       // A join binding declared with `let` on every path stays immutable.
-      if (all_present && std::all_of(paths.begin(), paths.end(),
+      // (A domain state field shadowed on every path is not a join binding.)
+      if (all_present && !destination.state_fields.count(entry.first) &&
+          std::all_of(paths.begin(), paths.end(),
               [&](const OwnershipEnv& path) {
                 return path.immutable_locals.count(entry.first) != 0;
               }))
@@ -14755,16 +14764,6 @@ class Checker {
           if (type && enums_.count(canonical_type_name(*type)))
             err(statement.line, "echo cannot display an enum directly; match its cases",
                 "ENUM_DISPLAY_UNSUPPORTED");
-          // Only scalars and Strings have a Moss display form; native code
-          // has no text representation for a collection or record.
-          const string shown = type ? canonical_type_name(*type) : string();
-          if (shown == "vector" || shown == "map" || shown == "queue" ||
-              starts_with(shown, "vector[") || starts_with(shown, "map[") ||
-              starts_with(shown, "queue[") || objects_.count(shown))
-            err(statement.line, "echo cannot display a " +
-                    string(objects_.count(shown) ? "record" : "collection") +
-                    " value directly; echo its fields or elements",
-                "ECHO_DISPLAY_UNSUPPORTED");
         }
         return;
       }
@@ -21688,6 +21687,16 @@ class Generator {
                   statement_functional_pipeline_id(s, functional_context,
                                                    argument));
               auto type = generated_expr_type(s.args[argument], &types);
+              // The native target has no text form for a collection or
+              // record; report it before rustc rather than emit `{}` for it.
+              const string shown = type ? canonical_type_name(*type) : string();
+              if (shown == "vector" || shown == "map" || shown == "queue" ||
+                  starts_with(shown, "vector[") || starts_with(shown, "map[") ||
+                  starts_with(shown, "queue[") || objects_.count(shown))
+                throw CompileError(s.line, "native echo cannot display a " +
+                    string(objects_.count(shown) ? "record" : "collection") +
+                    " value; echo its fields or elements",
+                    "NATIVE_ECHO_DISPLAY_UNSUPPORTED");
               if (type && canonical_type_name(*type) == "float")
                 rendered = "__moss_ryu::canonical_float_text(" + rendered + ")";
               o << ", " << rendered;
