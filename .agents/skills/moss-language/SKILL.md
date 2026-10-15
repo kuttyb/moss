@@ -202,7 +202,12 @@ Facts the Phase 24 SDK swarm repeatedly rediscovered:
   staged for ABI v10, not yet the default.
 - Fast Debug runs `for`, has native block scoping, and uses IEEE `==` for
   Float (`isequal` is the separate total equality). It rejects programs whose
-  `main` reaches FileIO before executing. Any other divergence is a defect.
+  `main` reaches FileIO before executing (`FAST_DEBUG_FILEIO`); in
+  `margo test --interp` each test that reaches FileIO is reported `FAIL` without
+  running while the other tests run. Any other divergence is a defect.
+- Function and message arguments are positional: `f(x: 1)` and
+  `message c.Bump(step: 2)` are rejected (`CALL_/MESSAGE_NAMED_ARGUMENT_UNSUPPORTED`).
+  Labels are for constructors (`Counter(value: 0)`) and builtins (`sort(v, by: key)`).
 
 ```moss
 fn adjusted(value: Int) -> Int:

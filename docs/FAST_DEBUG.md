@@ -166,7 +166,20 @@ context supplied directly to Moss.
 
 `for` traversal over ranges, Vectors, and Queues runs with native block scoping.
 A program whose `main` can reach FileIO is rejected with `FAST_DEBUG_FILEIO`
-before any statement executes. Current eager functional pipelines run
+before any statement executes. In test mode (`moss test --interp`,
+`margo test --interp`) each selected test block is its own entry point: a test
+whose reachable closure can reach FileIO is reported as
+`FAIL <name>: [FAST_DEBUG_FILEIO] ...` without executing any of its
+statements, the remaining tests run normally, and the run exits 1. The native
+test runner (`margo test`) executes FileIO tests. Reachability is a static
+over-approximation: every function, method, handler, or domain that a
+reachable body could name is followed, except where the name provably cannot
+execute code, namely a String or Char literal, a `label:` (constructor field,
+`by:`), a case or recover pattern, an enum case (`Kind.Name`), a parameter,
+field, or in-scope local in value position, or a member name that can only be a
+method or handler. When the checker resolved a message to a specific handler,
+only that handler is followed, so a same-named handler of another domain does
+not cause a rejection. Current eager functional pipelines run
 in Fast Debug. There is no blanket domain/message/reply restriction or automatic native
 Moss fallback. Source-free providers remain supported by production, while Fast
 Debug requires their source.
