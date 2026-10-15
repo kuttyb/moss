@@ -13244,7 +13244,7 @@ class Checker {
         err(line, "cannot infer assertEqual operand types");
       if (!same_type(*actual, *expected))
         err(line, "assertEqual operands have types '" + *actual +
-            "' and '" + *expected + "'", "TYPE_MISMATCH");
+            "' and '" + *expected + "'");
       if (contains_record_type(*actual))
         err(line, "assertEqual compares with '==', which is not defined for records ('" +
             *actual + "'); assert on the fields", "RECORD_EQUALITY_UNSUPPORTED");

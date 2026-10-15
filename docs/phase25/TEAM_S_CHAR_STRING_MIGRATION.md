@@ -9,7 +9,7 @@ A String is obtained from a Char only with an explicit `c.to_string()`.
 | Form | Before (`983acb2`…`ee8dcea`) | Now |
 |---|---|---|
 | `c == "x"`, `"x" == c`, `!=` | true when the String held exactly that one code point | `TYPE_MISMATCH` at `moss check` |
-| `assertEqual(c, "x")` | accepted | `TYPE_MISMATCH` |
+| `assertEqual(c, "x")` | accepted | `TEST_ASSERTION_CONFIGURATION_ERROR` (the existing mixed-type assertEqual code) |
 | `isequal(c, "x")`, `less(c, "x")` | `KEY_PROTOCOL_TYPE` | unchanged (`KEY_PROTOCOL_TYPE`) |
 | `chars() == ["a", "b"]` (`Vector[Char]` vs `Vector[String]`) | accepted by the checker, failed in rustc | `TYPE_MISMATCH` |
 | `chars() \|> filter(_ == "a")` | accepted | `TYPE_MISMATCH` |

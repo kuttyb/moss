@@ -178,8 +178,8 @@ self-copy.
 `Char` is a distinct scalar type, not a one-code-point String. Compare a Char
 with a Char literal (`text.char_at(1) == 'é'`) and call `c.to_string()` where a
 String value is required; `'é' == "é"`, `isequal('é', "é")`, and
-`assertEqual('é', "é")` are rejected with `TYPE_MISMATCH` (or
-`KEY_PROTOCOL_TYPE` for `isequal`). Records have no `==`/`!=`
+`assertEqual('é', "é")` are rejected (`TYPE_MISMATCH`, `KEY_PROTOCOL_TYPE`,
+and `TEST_ASSERTION_CONFIGURATION_ERROR` respectively). Records have no `==`/`!=`
 (`RECORD_EQUALITY_UNSUPPORTED`); compare their fields. `Char(codepoint)` fails
 for surrogates and values above `0x10FFFF`.
 

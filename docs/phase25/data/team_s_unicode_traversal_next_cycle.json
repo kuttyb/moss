@@ -1,0 +1,166 @@
+{
+ "compiler_sha": "e95df42969c1f0700382b39e331431db1e9777e9",
+ "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+ "runs_per_binary": 5,
+ "fragment": "{\"\u540d\u524d\":\"\u5024\ud83d\ude00\",\"\u00e9\":[1,2],\"k\":\"\u00fc\"},",
+ "fragment_codepoints": 30,
+ "results": [
+  {
+   "mode": "plain",
+   "codepoints": 990,
+   "build_median_s": 0.000489,
+   "build_and_scan_median_s": 0.00048,
+   "scan_s": 0.0,
+   "output": [
+    "990",
+    "627"
+   ]
+  },
+  {
+   "mode": "plain",
+   "codepoints": 9990,
+   "build_median_s": 0.000553,
+   "build_and_scan_median_s": 0.007525,
+   "scan_s": 0.006973,
+   "output": [
+    "9990",
+    "6327"
+   ]
+  },
+  {
+   "mode": "plain",
+   "codepoints": 99990,
+   "build_median_s": 0.00054,
+   "build_and_scan_median_s": 0.769983,
+   "scan_s": 0.769444,
+   "output": [
+    "99990",
+    "63327"
+   ],
+   "ratio_vs_previous_size": 110.35
+  },
+  {
+   "mode": "plain",
+   "codepoints": 999990,
+   "build_median_s": 0.001174,
+   "build_and_scan_median_s": 81.487307,
+   "scan_s": 81.486134,
+   "output": [
+    "999990",
+    "633327"
+   ],
+   "ratio_vs_previous_size": 105.9
+  },
+  {
+   "mode": "indexed-v1",
+   "codepoints": 990,
+   "build_median_s": 0.000483,
+   "build_and_scan_median_s": 0.000492,
+   "scan_s": 9e-06,
+   "output": [
+    "990",
+    "627"
+   ]
+  },
+  {
+   "mode": "indexed-v1",
+   "codepoints": 9990,
+   "build_median_s": 0.000518,
+   "build_and_scan_median_s": 0.000818,
+   "scan_s": 0.000299,
+   "output": [
+    "9990",
+    "6327"
+   ],
+   "ratio_vs_previous_size": 33.22
+  },
+  {
+   "mode": "indexed-v1",
+   "codepoints": 99990,
+   "build_median_s": 0.000741,
+   "build_and_scan_median_s": 0.002371,
+   "scan_s": 0.001629,
+   "output": [
+    "99990",
+    "63327"
+   ],
+   "ratio_vs_previous_size": 5.45
+  },
+  {
+   "mode": "indexed-v1",
+   "codepoints": 999990,
+   "build_median_s": 0.001629,
+   "build_and_scan_median_s": 0.019274,
+   "scan_s": 0.017644,
+   "output": [
+    "999990",
+    "633327"
+   ],
+   "ratio_vs_previous_size": 10.83
+  }
+ ],
+ "metadata": {
+  "rust_struct_bytes": {
+   "String": 24,
+   "MossString": 56
+  },
+  "cases": [
+   {
+    "text": "ascii",
+    "codepoints": 988,
+    "utf8_bytes": 988,
+    "metadata_bytes": 32,
+    "metadata_percent_of_payload": 3.239
+   },
+   {
+    "text": "ascii",
+    "codepoints": 999986,
+    "utf8_bytes": 999986,
+    "metadata_bytes": 32,
+    "metadata_percent_of_payload": 0.003
+   },
+   {
+    "text": "json-mixed",
+    "codepoints": 990,
+    "utf8_bytes": 1353,
+    "metadata_bytes": 96,
+    "metadata_percent_of_payload": 7.095
+   },
+   {
+    "text": "json-mixed",
+    "codepoints": 999990,
+    "utf8_bytes": 1366653,
+    "metadata_bytes": 65568,
+    "metadata_percent_of_payload": 4.798
+   },
+   {
+    "text": "cjk",
+    "codepoints": 1000,
+    "utf8_bytes": 3000,
+    "metadata_bytes": 96,
+    "metadata_percent_of_payload": 3.2
+   },
+   {
+    "text": "cjk",
+    "codepoints": 1000000,
+    "utf8_bytes": 3000000,
+    "metadata_bytes": 65568,
+    "metadata_percent_of_payload": 2.186
+   },
+   {
+    "text": "emoji",
+    "codepoints": 999,
+    "utf8_bytes": 3996,
+    "metadata_bytes": 96,
+    "metadata_percent_of_payload": 2.402
+   },
+   {
+    "text": "emoji",
+    "codepoints": 999999,
+    "utf8_bytes": 3999996,
+    "metadata_bytes": 65568,
+    "metadata_percent_of_payload": 1.639
+   }
+  ]
+ }
+}
