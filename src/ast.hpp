@@ -47,6 +47,7 @@ struct Field {
   // The source declaration remains the specialization template; this bit
   // lets semantic consumers distinguish it from an explicitly typed field.
   bool inferred = false;
+  bool exported = false;
 };
 struct Param {
   string name, type;

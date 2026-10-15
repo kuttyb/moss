@@ -1,5 +1,34 @@
 # Moss current status
 
+## Phase 25 Milestone G2 Implementation & Conformance Complete — 2026-10-15
+
+Milestone G2 implementation on branch `phase25-generic-types` is complete and verified:
+
+1. **Type IR & Visibility Parsing:**
+   - Added `pub` / `export` modifier parsing for fields, types, enums, domains, traits, and functions.
+   - Enforced Moss-level field access control: explicit `pub` modifier enforces encapsulation; non-exported fields are private to their defining module (`FIELD_VISIBILITY_ERROR`).
+   - Maintained backward compatibility: types without explicit `pub` fields default all fields to exported.
+   - In `load_module_interface`, `public_representation field` sets `value.exported = true`.
+
+2. **Option B Open-Result Summaries & Pinning:**
+   - Empty collection literals (`[]`) infer open result summaries (`vector`).
+   - Added `check_closed_body_types` to reject unbound open collections at program closure (`main`, `test`, `bench`) with `TYPE_AMBIGUOUS_OPEN_RESULT` and canonical message `"heterogeneous or unresolved collection element type"`.
+   - Preserved contextual specialization for constructor fields, handler replies, and function returns when annotated with concrete collection types.
+
+3. **Validation & Regression:**
+   - `python3 tests/phase25/g0/check_rust_feasibility.py`: PASS.
+   - `python3 tests/tooling/check_teaching_diagnostics.py ./moss`: PASS.
+   - All `tests/phase25/g0/conformance/` fixtures verified across check, interp, and native lowering:
+     * `local_pin_positive.moss`: PASS (check, interp, native match: `1`)
+     * `open_result_ambiguous.moss`: PASS (rejected with `TYPE_AMBIGUOUS_OPEN_RESULT`)
+     * `open_result_conflict.moss`: PASS (rejected with `TYPE_MISMATCH`)
+     * `open_result_multihop.moss`: PASS (check, interp, native match: `1\none`)
+     * `open_result_zero_iteration.moss`: PASS (check, interp, native match: `0`)
+     * `private_field_visibility_negative.moss`: PASS (rejected with `FIELD_VISIBILITY_ERROR`)
+     * `provider_module.moss`: PASS (module check ok)
+   - Full regression suite `TMPDIR="$PWD/tmp" make check`: PASS (100% of unit, integration, and performance tests pass).
+   - Developer experience observation recorded and validated in `agent-feedback/phase25/team-g-generics/g2-compiler/observations.jsonl`.
+
 ## Phase 25 G2 first compiler gate: finite nominal layouts — 2026-10-14
 
 On `phase25-generic-types`, the first bounded G2 implementation milestone adds
