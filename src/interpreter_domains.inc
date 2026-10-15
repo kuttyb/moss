@@ -85,7 +85,7 @@
         if (place.value->map) {
           bool found = false;
           for (auto& entry : *place.value->map) {
-            if (equal(entry.first, index)) { place.value = &entry.second; found = true; break; }
+            if (key_equal(entry.first, index)) { place.value = &entry.second; found = true; break; }
           }
           if (!found) throw RuntimeError(line, "missing map key");
         } else {

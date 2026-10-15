@@ -266,6 +266,53 @@ class FastInterpreter {
     DomainValue* domain = nullptr;
     std::string handler;
     bool handler_scope = false;
+    // Lexical block scopes. Each entry records the binding a block-local
+    // declaration shadowed so leaving the block restores it, matching the
+    // native Rust block structure.
+    struct ScopedBinding {
+      std::string name;
+      std::optional<Value> value;
+      std::optional<std::string> type;
+      std::optional<Place> alias;
+    };
+    std::vector<std::vector<ScopedBinding>> scopes;
+  };
+
+  // Records `name` as declared in the innermost block before it is bound.
+  static void declare_local(Frame& frame, const std::string& name) {
+    if (frame.scopes.empty() || name.empty() || name == "_") return;
+    auto& scope = frame.scopes.back();
+    for (const auto& entry : scope) if (entry.name == name) return;
+    Frame::ScopedBinding saved{name, std::nullopt, std::nullopt, std::nullopt};
+    auto value = frame.locals.find(name);
+    if (value != frame.locals.end()) saved.value = value->second;
+    auto type = frame.local_types.find(name);
+    if (type != frame.local_types.end()) saved.type = type->second;
+    auto alias = frame.aliases.find(name);
+    if (alias != frame.aliases.end()) {
+      saved.alias = alias->second;
+      frame.aliases.erase(alias);
+    }
+    scope.push_back(std::move(saved));
+  }
+
+  struct BlockScope {
+    Frame& frame;
+    explicit BlockScope(Frame& f) : frame(f) { frame.scopes.emplace_back(); }
+    ~BlockScope() {
+      auto scope = std::move(frame.scopes.back());
+      frame.scopes.pop_back();
+      for (auto item = scope.rbegin(); item != scope.rend(); ++item) {
+        frame.locals.erase(item->name);
+        frame.local_types.erase(item->name);
+        frame.aliases.erase(item->name);
+        if (item->value) frame.locals[item->name] = *item->value;
+        if (item->type) frame.local_types[item->name] = *item->type;
+        if (item->alias) frame.aliases[item->name] = *item->alias;
+      }
+    }
+    BlockScope(const BlockScope&) = delete;
+    BlockScope& operator=(const BlockScope&) = delete;
   };
 
   struct Flow {
@@ -969,7 +1016,7 @@ class FastInterpreter {
                                line, output);
             if (base.kind == Value::Kind::Map && base.map) {
               for (const auto& entry : *base.map)
-                if (equal(entry.first, index)) return entry.second;
+                if (key_equal(entry.first, index)) return entry.second;
               throw RuntimeError(line, "missing map key");
             }
             auto values = base.kind == Value::Kind::Vector ? base.vector :
@@ -1086,7 +1133,7 @@ class FastInterpreter {
           throw RaisedSignal{RaisedIdentity::enum_variant(error_type, variant),
                              std::move(raised), line, frame.source_file};
         }
-        if (callee == "Char" && args.size() == 1) {
+        if (callee == "Char" && args.size() == 1 && !function(callee)) {
           auto cp_val = eval(args.front(), frame, line, output);
           if (cp_val.kind != Value::Kind::Int)
             throw RuntimeError(line, "Char expects an Int codepoint");
@@ -1095,27 +1142,21 @@ class FastInterpreter {
             throw RuntimeError(line, "ValueError: invalid Unicode scalar value " + std::to_string(cp));
           return Value::char_value(static_cast<uint32_t>(cp));
         }
-        if (callee == "less" && args.size() == 2) {
+        if (callee == "less" && args.size() == 2 && !function(callee)) {
           auto left = eval(args[0], frame, line, output);
           auto right = eval(args[1], frame, line, output);
           return Value::boolean_value(moss_less(left, right));
         }
-        if (callee == "isequal" && args.size() == 2) {
+        if (callee == "isequal" && args.size() == 2 && !function(callee)) {
           auto left = eval(args[0], frame, line, output);
           auto right = eval(args[1], frame, line, output);
           return Value::boolean_value(moss_isequal(left, right));
         }
-        if (callee == "hash" && args.size() == 1) {
+        if (callee == "hash" && args.size() == 1 && !function(callee)) {
           auto val = eval(args.front(), frame, line, output);
           return Value::int_value(moss_hash(val));
         }
-        if (callee == "Reverse" && args.size() == 1) {
-          Value res = Value::struct_value("Reverse");
-          res.object->case_name = "Reverse";
-          res.object->fields["fn"] = Value::callable_value(args.front());
-          return res;
-        }
-        if (callee == "sort" && (args.size() == 1 || args.size() == 2)) {
+        if (callee == "sort" && (args.size() == 1 || args.size() == 2) && !function(callee)) {
           Place place = locate(args[0], frame, line, output);
           if (!place.value || place.value->kind != Value::Kind::Vector || !place.value->vector)
             throw RuntimeError(line, "sort requires a writable Vector");
@@ -1414,7 +1455,7 @@ class FastInterpreter {
               Value key = eval(method_args[0], frame, line, output);
               Value fallback = eval(method_args[1], frame, line, output);
               for (auto it = receiver.map->begin(); it != receiver.map->end(); ++it) {
-                if (!equal(it->first, key)) continue;
+                if (!key_equal(it->first, key)) continue;
                 Value removed = independent(it->second);
                 receiver.map->erase(it);
                 assign(method_args[2], Value::boolean_value(true), frame, line, output);
@@ -1427,7 +1468,7 @@ class FastInterpreter {
               Value key = eval(method_args[0], frame, line, output);
               Value fallback = eval(method_args[1], frame, line, output);
               for (const auto& entry : *receiver.map)
-                if (equal(entry.first, key)) return independent(entry.second);
+                if (key_equal(entry.first, key)) return independent(entry.second);
               return independent(fallback);
             }
             if ((method_name == "keys" || method_name == "values") && method_args.empty()) {
@@ -1594,7 +1635,9 @@ class FastInterpreter {
       case Value::Kind::Unit: return true;
       case Value::Kind::Bool: return left.boolean == right.boolean;
       case Value::Kind::Int: return left.integer == right.integer;
-      case Value::Kind::Float: return moss_isequal(left, right);
+      // IEEE-754 operator semantics: NaN != NaN and -0.0 == +0.0. Total
+      // isequal semantics are reserved for isequal() and Map key identity.
+      case Value::Kind::Float: return left.floating == right.floating;
       case Value::Kind::Char: return left.codepoint == right.codepoint;
       case Value::Kind::String: return left.string == right.string;
       case Value::Kind::Callable: return left.string == right.string;
@@ -1620,12 +1663,19 @@ class FastInterpreter {
         for (const auto& entry : *left.map) {
           bool found = false;
           for (const auto& other : *right.map)
-            if (equal(entry.first, other.first) && equal(entry.second, other.second)) { found = true; break; }
+            if (key_equal(entry.first, other.first) && equal(entry.second, other.second)) { found = true; break; }
           if (!found) return false;
         }
         return true;
     }
     return false;
+  }
+
+  // Map key identity follows key-protocol-v1 isequal, not operator ==.
+  static bool key_equal(const Value& left, const Value& right) {
+    if (left.kind == Value::Kind::Float && right.kind == Value::Kind::Float)
+      return moss_isequal(left, right);
+    return equal(left, right);
   }
 
   static bool moss_less(const Value& left, const Value& right) {
@@ -1805,7 +1855,7 @@ class FastInterpreter {
       if (receiver.kind == Value::Kind::Map && receiver.map) {
         Value key = eval(name.substr(bracket + 1, name.size() - bracket - 2), frame, line, output);
         for (auto& entry : *receiver.map) {
-          if (equal(entry.first, key)) { entry.second = std::move(value); return; }
+          if (key_equal(entry.first, key)) { entry.second = std::move(value); return; }
         }
         receiver.map->push_back({std::move(key), std::move(value)});
         return;
@@ -1825,10 +1875,17 @@ class FastInterpreter {
       }
     } else if (identifier(name)) {
       std::string after = summary(value);
+      declare_local(frame, name);  // implicit `name = expr` binding
       frame.locals[name] = std::move(value);
       int event_id = emit("LocalWrite", frame, line, name);
       if (event_id) trace_.back().after = after;
     } else throw RuntimeError(line, "unsupported assignment target '" + name + "'");
+  }
+
+  Flow execute_block(const std::vector<Stmt>& statements, Frame& frame,
+                     std::ostream& output, size_t begin, size_t end) {
+    BlockScope scope(frame);
+    return execute(statements, frame, output, begin, end);
   }
 
   Flow execute(const std::vector<Stmt>& statements, Frame& frame,
@@ -1851,7 +1908,7 @@ class FastInterpreter {
             ++after;
         }
         try {
-          Flow flow = execute(statements, frame, output, index + 1, try_end);
+          Flow flow = execute_block(statements, frame, output, index + 1, try_end);
           if (flow.returned) return flow;
         } catch (const RaisedSignal& raised) {
           size_t arm = try_end;
@@ -1905,7 +1962,7 @@ class FastInterpreter {
                 bind(item.first, item.second.first, item.second.second);
               selected_errors_.push_back(raised);
               try {
-                Flow flow = execute(
+                Flow flow = execute_block(
                     statements, frame, output, arm + 1, arm_end);
                 selected_errors_.pop_back();
                 restore();
@@ -1977,7 +2034,7 @@ class FastInterpreter {
                 frame.aliases[arm.args[field_index]] = Place{&field->second, nullptr, {}};
               frame.local_types[binding] = item->fields[field_index].type;
             }
-            flow = execute(statements, frame, output, cursor + 1, arm_end);
+            flow = execute_block(statements, frame, output, cursor + 1, arm_end);
             for (const auto& binding : arm.args) {
               frame.locals.erase(binding);
               frame.local_types.erase(binding);
@@ -2014,8 +2071,8 @@ class FastInterpreter {
         {
           EventScope branch_scope(*this, branch_id, false, false, true);
           flow = condition
-              ? execute(statements, frame, output, index + 1, body_end)
-              : (after != body_end ? execute(statements, frame, output, body_end + 1, else_end) : Flow{});
+              ? execute_block(statements, frame, output, index + 1, body_end)
+              : (after != body_end ? execute_block(statements, frame, output, body_end + 1, else_end) : Flow{});
         }
         if (flow.returned) return flow;
         index = after;
@@ -2025,14 +2082,16 @@ class FastInterpreter {
       if (statement.kind == Stmt::Kind::While) {
         size_t body_end = index + 1;
         while (body_end < end && statements[body_end].indent > statement.indent) ++body_end;
-        size_t iterations = 0;
+        // No interpreter-only iteration cap: a checked program must run the
+        // same number of iterations as native code.
+        uint64_t iterations = 0;
         while (eval(statement.a, frame, statement.line, output).truthy()) {
-          if (++iterations > 10000000) throw RuntimeError(statement.line, "interpreter loop exceeded safety limit");
+          ++iterations;
           int loop_id = emit("LoopIteration", frame, statement.line, std::to_string(iterations));
           Flow flow;
           {
             EventScope loop_scope(*this, loop_id, false, false, true);
-            flow = execute(statements, frame, output, index + 1, body_end);
+            flow = execute_block(statements, frame, output, index + 1, body_end);
           }
           if (flow.returned) return flow;
         }
@@ -2046,11 +2105,20 @@ class FastInterpreter {
         std::vector<std::string> range_args;
         bool is_range = parse_call(statement.b, callee, range_args) && callee == "range";
 
-        auto prior_it = frame.locals.find(statement.a);
-        bool had_prior = (prior_it != frame.locals.end());
-
         Flow flow;
-        size_t iterations = 0;
+        uint64_t iterations = 0;
+        // The loop variable is scoped to the loop, like native `for x in ..`;
+        // an outer binding of the same name is restored afterwards.
+        BlockScope loop_variable_scope(frame);
+        const auto run_iteration = [&](Value element) {
+          ++iterations;
+          frame.locals[statement.a] = std::move(element);
+          emit("LocalWrite", frame, statement.line, statement.a);
+          int loop_id = emit("LoopIteration", frame, statement.line, std::to_string(iterations));
+          EventScope loop_scope(*this, loop_id, false, false, true);
+          flow = execute_block(statements, frame, output, index + 1, body_end);
+          return !flow.returned;
+        };
 
         if (is_range) {
           if (range_args.size() < 2 || range_args.size() > 3)
@@ -2060,63 +2128,31 @@ class FastInterpreter {
           int64_t step = 1;
           if (range_args.size() == 3) {
             step = eval(range_args[2], frame, statement.line, output).integer;
-            if (step == 0) throw RuntimeError(statement.line, "range() step cannot be zero");
+            if (step <= 0) throw RuntimeError(statement.line, "range() step must be positive");
           }
+          declare_local(frame, statement.a);
           frame.local_types[statement.a] = "int";
-          for (int64_t cur = start; (step > 0 ? cur < stop : cur > stop); cur += step) {
-            if (++iterations > 10000000)
-              throw RuntimeError(statement.line, "interpreter loop exceeded safety limit");
-            frame.locals[statement.a] = Value::int_value(cur);
-            emit("LocalWrite", frame, statement.line, statement.a);
-            int loop_id = emit("LoopIteration", frame, statement.line, std::to_string(iterations));
-            {
-              EventScope loop_scope(*this, loop_id, false, false, true);
-              flow = execute(statements, frame, output, index + 1, body_end);
-            }
-            if (flow.returned) break;
+          // Native lowering is Rust `start..stop` (`.step_by(step)`), which
+          // never overflows; stop instead of wrapping past Int max.
+          for (int64_t cur = start; cur < stop;) {
+            if (!run_iteration(Value::int_value(cur))) break;
+            int64_t next = 0;
+            if (__builtin_add_overflow(cur, step, &next)) break;
+            cur = next;
           }
         } else {
           Value iterable = eval(statement.b, frame, statement.line, output);
-          if (iterable.kind == Value::Kind::Vector && iterable.vector) {
-            std::string elem_type = iterable.element_type.empty() ? "int" : iterable.element_type;
-            frame.local_types[statement.a] = elem_type;
-            const auto elements = *iterable.vector;
-            for (size_t el_i = 0; el_i < elements.size(); ++el_i) {
-              if (++iterations > 10000000)
-                throw RuntimeError(statement.line, "interpreter loop exceeded safety limit");
-              frame.locals[statement.a] = elements[el_i];
-              emit("LocalWrite", frame, statement.line, statement.a);
-              int loop_id = emit("LoopIteration", frame, statement.line, std::to_string(iterations));
-              {
-                EventScope loop_scope(*this, loop_id, false, false, true);
-                flow = execute(statements, frame, output, index + 1, body_end);
-              }
-              if (flow.returned) break;
-            }
-          } else if (iterable.kind == Value::Kind::Queue && iterable.queue) {
-            std::string elem_type = iterable.element_type.empty() ? "int" : iterable.element_type;
-            frame.local_types[statement.a] = elem_type;
-            const auto elements = *iterable.queue;
-            for (size_t el_i = 0; el_i < elements.size(); ++el_i) {
-              if (++iterations > 10000000)
-                throw RuntimeError(statement.line, "interpreter loop exceeded safety limit");
-              frame.locals[statement.a] = elements[el_i];
-              emit("LocalWrite", frame, statement.line, statement.a);
-              int loop_id = emit("LoopIteration", frame, statement.line, std::to_string(iterations));
-              {
-                EventScope loop_scope(*this, loop_id, false, false, true);
-                flow = execute(statements, frame, output, index + 1, body_end);
-              }
-              if (flow.returned) break;
-            }
-          } else {
+          std::shared_ptr<std::vector<Value>> source =
+              iterable.kind == Value::Kind::Vector ? iterable.vector :
+              iterable.kind == Value::Kind::Queue ? iterable.queue : nullptr;
+          if (!source)
             throw RuntimeError(statement.line, "for loop requires an iterable collection or range");
-          }
-        }
-
-        if (!had_prior && iterations == 0) {
-          frame.locals.erase(statement.a);
-          frame.local_types.erase(statement.a);
+          declare_local(frame, statement.a);
+          if (!iterable.element_type.empty())
+            frame.local_types[statement.a] = iterable.element_type;
+          const auto elements = *source;
+          for (const auto& element : elements)
+            if (!run_iteration(element)) break;
         }
 
         if (flow.returned) return flow;
@@ -2128,12 +2164,15 @@ class FastInterpreter {
       if (interp_phase20_statement(statement, frame, output)) { ++index; continue; }
       switch (statement.kind) {
         case Stmt::Kind::Let:
-        case Stmt::Kind::Var:
-          frame.locals[statement.a] = eval(statement.b, frame, statement.line, output);
+        case Stmt::Kind::Var: {
+          Value initial = eval(statement.b, frame, statement.line, output);
+          declare_local(frame, statement.a);
+          frame.locals[statement.a] = std::move(initial);
           frame.local_types[statement.a] = checked_binding_type(statement, frame);
           if (emit("LocalWrite", frame, statement.line, statement.a))
             trace_.back().after = summary(frame.locals.at(statement.a));
           break;
+        }
         case Stmt::Kind::Assign:
           assign(statement.a, eval(statement.b, frame, statement.line, output), frame, statement.line, output);
           if (identifier(statement.a) && statement.a != "_")

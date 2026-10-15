@@ -62,6 +62,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_adversarial_archit
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_g1_regressions.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_g4_unicode.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_g3_ordering.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_l7_repairs.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_builtin_generic_typing.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tools/check_swarm_feedback.py --self-test
 PYTHONDONTWRITEBYTECODE=1 python3 tools/check_swarm_issues.py --self-test

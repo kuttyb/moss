@@ -485,7 +485,7 @@ first = json.loads(run([compiler, "build", "--json"], cwd=out).stdout)
 assert run([first["result"]["artifacts"]["executable"]]).stdout.strip() == "4"
 interface_path = out / "build/debug/provider.mossi"
 original = interface_path.read_text()
-assert ("native_abi 9\n" in original) or ("native_abi 10\n" in original)
+assert "native_abi 9\n" in original
 for required in (
     'handler_abi "Bump"',
     'handler_outcome_contract "Bump" "__MossBodyOutcome_provider__Worker_Bump" "unit"',
@@ -582,7 +582,7 @@ assert "error" in forged.stdout or forged.stderr, forged
 
 # v7 is intentionally incompatible because projection, bridge, structural
 # type, CFG and Root contracts changed. It must request a full provider rebuild.
-write_interface(interface_path, synthetic.replace("native_abi 10\n", "native_abi 7\n").replace("native_abi 9\n", "native_abi 7\n"))
+write_interface(interface_path, synthetic.replace("native_abi 9\n", "native_abi 7\n"))
 v7 = run([compiler, "--check", main], cwd=out, expected=1)
 assert "incompatible native calling convention" in v7.stderr
 assert "rebuild its .mossi provider" in v7.stderr

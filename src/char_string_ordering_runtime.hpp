@@ -151,182 +151,32 @@ pub fn moss_float_hash(a: f64) -> i64 {
     }
 }
 
-#[repr(transparent)]
-#[derive(Copy, Clone, Debug)]
-pub struct MossFloatKey(pub f64);
-
-impl PartialEq for MossFloatKey {
-    #[inline(always)]
-    fn eq(&self, other: &Self) -> bool {
-        moss_float_isequal(self.0, other.0)
-    }
-}
-
-impl Eq for MossFloatKey {}
-
-impl PartialOrd for MossFloatKey {
-    #[inline(always)]
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for MossFloatKey {
-    #[inline(always)]
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if moss_float_isequal(self.0, other.0) {
-            std::cmp::Ordering::Equal
-        } else if moss_float_less(self.0, other.0) {
-            std::cmp::Ordering::Less
-        } else {
-            std::cmp::Ordering::Greater
-        }
-    }
-}
-
-impl std::hash::Hash for MossFloatKey {
-    #[inline(always)]
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        state.write_u64(moss_float_hash(self.0) as u64);
-    }
-}
-
-pub trait MossLess<Rhs: ?Sized = Self> {
-    fn moss_less(&self, other: &Rhs) -> bool;
-}
-
-pub trait MossIsequal<Rhs: ?Sized = Self> {
-    fn moss_isequal(&self, other: &Rhs) -> bool;
-}
-
-pub trait MossHash {
-    fn moss_hash(&self) -> i64;
-}
-
-impl MossLess for i64 {
-    #[inline(always)] fn moss_less(&self, other: &i64) -> bool { *self < *other }
-}
-impl MossIsequal for i64 {
-    #[inline(always)] fn moss_isequal(&self, other: &i64) -> bool { *self == *other }
-}
-impl MossHash for i64 {
-    #[inline(always)] fn moss_hash(&self) -> i64 { *self }
-}
-
-impl MossLess for f64 {
-    #[inline(always)] fn moss_less(&self, other: &f64) -> bool { moss_float_less(*self, *other) }
-}
-impl MossIsequal for f64 {
-    #[inline(always)] fn moss_isequal(&self, other: &f64) -> bool { moss_float_isequal(*self, *other) }
-}
-impl MossHash for f64 {
-    #[inline(always)] fn moss_hash(&self) -> i64 { moss_float_hash(*self) }
-}
-
-impl MossLess for bool {
-    #[inline(always)] fn moss_less(&self, other: &bool) -> bool { !*self && *other }
-}
-impl MossIsequal for bool {
-    #[inline(always)] fn moss_isequal(&self, other: &bool) -> bool { *self == *other }
-}
-impl MossHash for bool {
-    #[inline(always)] fn moss_hash(&self) -> i64 { if *self { 1 } else { 0 } }
-}
-
-impl MossLess for char {
-    #[inline(always)] fn moss_less(&self, other: &char) -> bool { (*self as u32) < (*other as u32) }
-}
-impl MossIsequal for char {
-    #[inline(always)] fn moss_isequal(&self, other: &char) -> bool { *self == *other }
-}
-impl MossHash for char {
-    #[inline(always)] fn moss_hash(&self) -> i64 { *self as u32 as i64 }
-}
-
-// Char == String / &str compatibility
-impl MossIsequal<String> for char {
-    #[inline(always)]
-    fn moss_isequal(&self, other: &String) -> bool {
-        other.len() == self.len_utf8() && other.starts_with(*self)
-    }
-}
-impl MossIsequal<&str> for char {
-    #[inline(always)]
-    fn moss_isequal(&self, other: &&str) -> bool {
-        other.len() == self.len_utf8() && other.starts_with(*self)
-    }
-}
-impl MossIsequal<char> for String {
-    #[inline(always)]
-    fn moss_isequal(&self, other: &char) -> bool {
-        self.len() == other.len_utf8() && self.starts_with(*other)
-    }
-}
-impl MossIsequal<char> for &str {
-    #[inline(always)]
-    fn moss_isequal(&self, other: &char) -> bool {
-        self.len() == other.len_utf8() && self.starts_with(*other)
-    }
-}
-
-impl MossLess for String {
-    #[inline(always)] fn moss_less(&self, other: &String) -> bool { *self < *other }
-}
-impl MossIsequal for String {
-    #[inline(always)] fn moss_isequal(&self, other: &String) -> bool { *self == *other }
-}
-impl MossHash for String {
-    #[inline(always)]
-    fn moss_hash(&self) -> i64 {
-        let mut h = 14695981039346656037_u64;
-        for b in self.as_bytes() {
-            h ^= *b as u64;
-            h = h.wrapping_mul(1099511628211_u64);
-        }
-        h as i64
-    }
-}
-
-impl MossLess for &str {
-    #[inline(always)] fn moss_less(&self, other: &&str) -> bool { *self < *other }
-}
-impl MossIsequal for &str {
-    #[inline(always)] fn moss_isequal(&self, other: &&str) -> bool { *self == *other }
-}
-impl MossHash for &str {
-    #[inline(always)]
-    fn moss_hash(&self) -> i64 {
-        let mut h = 14695981039346656037_u64;
-        for b in self.as_bytes() {
-            h ^= *b as u64;
-            h = h.wrapping_mul(1099511628211_u64);
-        }
-        h as i64
-    }
-}
-
 #[inline(always)]
-pub fn __moss_less<T: MossLess<U> + ?Sized, U: ?Sized>(a: &T, b: &U) -> bool {
-    a.moss_less(b)
-}
-
-#[inline(always)]
-pub fn __moss_isequal<T: MossIsequal<U> + ?Sized, U: ?Sized>(a: &T, b: &U) -> bool {
-    a.moss_isequal(b)
-}
-
-#[inline(always)]
-pub fn __moss_hash<T: MossHash + ?Sized>(a: &T) -> i64 {
-    a.moss_hash()
-}
-
-pub struct __MossReverse<F>(pub F);
-
-impl<F> __MossReverse<F> {
-    #[inline(always)]
-    pub fn new(f: F) -> Self {
-        __MossReverse(f)
+pub fn moss_float_total_cmp(a: f64, b: f64) -> std::cmp::Ordering {
+    if moss_float_less(a, b) {
+        std::cmp::Ordering::Less
+    } else if moss_float_less(b, a) {
+        std::cmp::Ordering::Greater
+    } else {
+        std::cmp::Ordering::Equal
     }
+}
+
+// Moss String hash: FNV-1a over UTF-8 bytes.
+#[inline]
+pub fn moss_string_hash(s: &str) -> i64 {
+    let mut h = 14695981039346656037_u64;
+    for b in s.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(1099511628211_u64);
+    }
+    h as i64
+}
+
+// Operator `==` between a Char and a one-scalar String.
+#[inline(always)]
+pub fn moss_char_string_eq(c: char, s: &str) -> bool {
+    s.len() == c.len_utf8() && s.starts_with(c)
 }
 // ─── End Moss Char, String & Ordering Runtime ────────────────────────────
 )RUST";

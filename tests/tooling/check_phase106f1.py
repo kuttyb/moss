@@ -120,13 +120,13 @@ assert 'struct provider__CounterRuntime' in application_rust
 assert '__moss_body_provider__Counter_Bump' in provider_rust
 interface_path=project/'build/debug/provider.mossi'
 interface=interface_path.read_text()
-assert 'native_abi 9' in interface or 'native_abi 10' in interface
+assert 'native_abi 9' in interface
 assert re.search(r'(?m)^provider_contract_digest sha256:[0-9a-f]{64}$', interface)
 assert not any(x in interface for x in ('ClassState','RwLock','ClassSet','class_rank','MossRead'))
 # A historical ABI-v8 interface lacks the provider-owned v9 contract seal.
 # It must fail during Moss checking, before native code generation or linking.
 legacy=re.sub(r'(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n', '', interface)
-legacy=legacy.replace('native_abi 10\n', 'native_abi 8\n').replace('native_abi 9\n', 'native_abi 8\n')
+legacy=legacy.replace('native_abi 9\n', 'native_abi 8\n')
 assert legacy != interface
 interface_path.write_text(legacy)
 checked=subprocess.run([str(compiler),'check',str(main),'--json'],cwd=project,

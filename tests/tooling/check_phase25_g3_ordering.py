@@ -169,43 +169,29 @@ fn main():
     print("  PASS: Scalar ordering suite verified.")
 
 
-def test_map_float_key_dispatch():
-    print("Testing Map with Float keys (zero separation, NaN keys, lookup, deletion)...")
-    code = """
-fn main():
-  var m = Map()
-  nan = 0.0 / 0.0
-  pos_zero = 0.0
-  neg_zero = -0.0
-  
-  m[pos_zero] = "pos_zero"
-  m[neg_zero] = "neg_zero"
-  m[nan] = "nan_val"
-  m[42.5] = "answer"
-  
-  # Both zeros coexist as distinct keys
-  assertEqual(m[pos_zero], "pos_zero")
-  assertEqual(m[neg_zero], "neg_zero")
-  assertEqual(m[nan], "nan_val")
-  assertEqual(m[42.5], "answer")
-  
-  # .get() with fallback
-  assertEqual(m.get(pos_zero, "missing"), "pos_zero")
-  assertEqual(m.get(neg_zero, "missing"), "neg_zero")
-  assertEqual(m.get(nan, "missing"), "nan_val")
-  assertEqual(m.get(100.0, "missing"), "missing")
-  
-  # .delete()
-  var deleted = false
-  val = m.delete(42.5, "fallback", deleted)
-  assertEqual(val, "answer")
-  assertEqual(deleted, true)
-  assertEqual(m.get(42.5, "missing"), "missing")
-  
-  echo "MAP FLOAT KEY DISPATCH PASS"
-"""
-    run_code_in_all_modes(code, "Map Float Key Dispatch")
-    print("  PASS: Map Float key dispatch verified.")
+def test_map_float_key_fails_closed():
+    """Float Map keys wait for the canonical MossMap<K,V> under key-protocol-v1.
+
+    The earlier MossFloatKey adapter competed with Team G's policy-free map and
+    was retracted per the L7 review; the checker must reject before lowering.
+    """
+    print("Testing Map[Float, V] fails closed pending canonical MossMap...")
+    cases = {
+        "index assignment": "fn main():\n  var m = Map()\n  m[0.5] = 1\n  echo m[0.5]\n",
+        "declared type": "fn total(m: Map[Float, Int]) -> Int:\n  return 0\n\nfn main():\n  echo 1\n",
+    }
+    for name, code in cases.items():
+        with tempfile.NamedTemporaryFile("w", suffix=".moss", dir=SCRATCH, delete=False) as f:
+            f.write(code)
+            p = f.name
+        try:
+            res = run_cmd([str(MOSS), "check", p, "--json"])
+            assert res.returncode != 0, f"[{name}] Map[Float, V] was accepted"
+            if name == "index assignment":
+                assert "FLOAT_MAP_KEY_UNSUPPORTED" in res.stdout, res.stdout
+        finally:
+            Path(p).unlink(missing_ok=True)
+    print("  PASS: Map[Float, V] rejected before lowering.")
 
 
 def test_sort_and_reverse():
@@ -263,7 +249,7 @@ def main():
     print("=== Running Phase 25 G3 Ordering & Comparator Suite ===")
     test_float_total_ordering_laws()
     test_scalar_ordering_suite()
-    test_map_float_key_dispatch()
+    test_map_float_key_fails_closed()
     test_sort_and_reverse()
     print("=== All Phase 25 G3 Tests Passed Cleanly! ===")
 

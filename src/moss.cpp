@@ -66,8 +66,10 @@ class CompilerStageTimer {
 
 static constexpr const char* kCompilerVersion = "0.1.0";
 // ABI v8's raised-value layout is retained, while v9 adds an artifact-bound
-// source-free contract. ABI v10 migrates Unicode String metadata and scalar Char.
-static constexpr int kNativeAbiVersion = 10;
+// source-free contract. A v8 interface must be rebuilt before source-free use.
+// ABI v10 is a single coordinated Phase 25 transition (Team G container plus
+// Team S String/Char records); it is not delivered by changing this number.
+static constexpr int kNativeAbiVersion = 9;
 static constexpr const char* kMossLanguageVersion = "moss-0.1";
 static constexpr int kAgentProtocolVersion = 1;
 static constexpr const char* kAgentSchemaVersion = "moss-agent-1";
@@ -2199,7 +2201,7 @@ class Checker {
     string type = canonical_type_name(t);
     if (fileio_forbidden_collection_type(type)) return false;
     if (type == "FileIO" || type == "Range" || type == "RangeBatch") return true;
-    if (type == "int" || type == "float" || type == "bool" || type == "string" ||
+    if (type == "int" || type == "float" || type == "bool" || type == "string" || type == "char" ||
         type == "unit") return true;
     if (domains_.count(type) || objects_.count(type) || enums_.count(type)) return true;
     if (traits_.count(type) || type == "vector" || type == "map" || type == "queue") return true;
@@ -2216,6 +2218,7 @@ class Checker {
       return ps.size() == 2 &&
           !contains_trait_type(ps[0]) && !contains_trait_type(ps[1]) &&
           !contains_enum_type(ps[0]) &&
+          canonical_type_name(ps[0]) != "float" &&
           valid_type(ps[0]) && valid_type(ps[1]);
     }
     if ((starts_with(type, "seq[") || starts_with(type, "option[")) && ends_with(type, "]"))
@@ -8139,6 +8142,13 @@ class Checker {
     {
       string callee;
       vector<string> arguments;
+      if (parse_simple_call(value, callee, arguments) && callee == "sort" &&
+          (arguments.size() == 1 || arguments.size() == 2)) {
+        // sort writes its Vector place; the key is a pure named callable.
+        analyze_effect_expression(arguments[0], env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Write);
+        return;
+      }
       if (parse_simple_call(value, callee, arguments) && callee == "replace" &&
           arguments.size() == 2) {
         analyze_effect_expression(arguments[0], env, params, parameter_effects,
@@ -10391,6 +10401,14 @@ class Checker {
     string callee;
     vector<string> arguments_call;
     if (parse_simple_call(value, callee, arguments_call)) {
+      if (callee == "sort" &&
+          (arguments_call.size() == 1 || arguments_call.size() == 2)) {
+        auto place = storage_location(arguments_call[0], env);
+        if (place && domain_fields.count(place->root)) effects.domain_write = true;
+        else effects.local_mutation = true;
+        // check_sort_call rejects any key with observable effects.
+        return effects;
+      }
       if (callee == "replace" && arguments_call.size() == 2) {
         auto place = storage_location(arguments_call[0], env);
         if (place && domain_fields.count(place->root)) effects.domain_write = true;
@@ -12012,6 +12030,11 @@ class Checker {
       auto resolved_callee = env.binding_identities.find(callee);
       if (resolved_callee != env.binding_identities.end())
         retain_semantic_use(resolved_callee->second, "binding_use", line);
+      if (callee == "sort" &&
+          (call_arguments.size() == 1 || call_arguments.size() == 2)) {
+        check_ownership_expression(line, call_arguments[0], env, Effect::Write);
+        return;
+      }
       if (callee == "replace" && call_arguments.size() == 2) {
         auto replacement_type = inferred_expr_type(call_arguments[1], env.types);
         Effect replacement_effect = replacement_type && transfer_type(*replacement_type)
@@ -12937,6 +12960,10 @@ class Checker {
 
   void check_function_call(int line, const string& name, const vector<string>& args,
                            const std::unordered_map<string,string>& env) {
+    if (name == "sort" && !functions_.count(name)) {
+      check_sort_call(line, args, env);
+      return;
+    }
     if (name == "range") {
       if (args.size() != 2 && args.size() != 3)
         err(line, "range expects range(start, end) or range(start, end, step)");
@@ -13364,6 +13391,94 @@ class Checker {
     return result;
   }
 
+  static bool scalar_type_name(const string& name) {
+    return name == "Int" || name == "Float" || name == "Char" ||
+           name == "String" || name == "Bool";
+  }
+
+  // Built-in key-protocol-v1 operations on scalars: less/isequal take two
+  // operands of one total-order scalar type, hash takes one.
+  void check_scalar_protocol_call(int line, const string& op, const string& declared,
+                                  const vector<string>& args, const TypeEnv& env) {
+    const size_t arity = op == "hash" ? 1 : 2;
+    if (args.size() != arity)
+      err(line, op + " expects " + std::to_string(arity) + " argument" +
+          (arity == 1 ? "" : "s"), "KEY_PROTOCOL_SIGNATURE");
+    string type = declared;
+    for (const auto& argument : args) {
+      check_expression(line, argument, env);
+      auto actual = inferred_expr_type(argument, env);
+      string concrete = actual ? canonical_type_name(*actual) : "";
+      if (!total_order_scalar(concrete))
+        err(line, op + " requires Int, Float, Char, String, or Bool operands, found '" +
+            (actual ? *actual : string("unknown")) + "'", "KEY_PROTOCOL_TYPE");
+      if (type.empty()) type = concrete;
+      else if (concrete != type)
+        err(line, op + " operands must have one type; found '" + type + "' and '" +
+            concrete + "'", "KEY_PROTOCOL_TYPE");
+    }
+  }
+
+  static bool total_order_scalar(const string& type) {
+    return type == "int" || type == "float" || type == "char" ||
+           type == "string" || type == "bool";
+  }
+
+  // sort(v), sort(v, by: key), sort(v, by: Reverse(key)): stable in-place
+  // sort of a Vector place under the key type's total `less`. The key is a
+  // named function whose specialization has no observable effect, so the
+  // number and order of key evaluations is unobservable in every engine.
+  void check_sort_call(int line, const vector<string>& args, const TypeEnv& env) {
+    if (args.empty() || args.size() > 2)
+      err(line, "sort expects sort(v), sort(v, by: key), or sort(v, by: Reverse(key))",
+          "SORT_SIGNATURE");
+    if (!storage_location(args[0], env))
+      err(line, "sort requires an assignable Vector place, found '" + args[0] + "'",
+          "SORT_REQUIRES_PLACE");
+    check_expression(line, args[0], env);
+    auto vector_type = inferred_expr_type(args[0], env);
+    string canonical = vector_type ? canonical_type_name(*vector_type) : "";
+    if (!starts_with(canonical, "vector[") || !ends_with(canonical, "]"))
+      err(line, "sort requires a Vector place, found '" +
+          (vector_type ? *vector_type : string("unknown")) + "'",
+          "SORT_REQUIRES_VECTOR");
+    string element = canonical_type_name(canonical.substr(7, canonical.size() - 8));
+    if (args.size() == 1) {
+      if (!total_order_scalar(element))
+        err(line, "sort(v) requires Int, Float, Char, String, or Bool elements, found '" +
+            element + "'; supply sort(v, by: key)", "SORT_KEY_UNORDERED");
+      return;
+    }
+    string label, key;
+    if (!parse_named_argument(args[1], label, key) || label != "by" ||
+        top_level_colon(args[1]) == string::npos)
+      err(line, "sort's second argument must be 'by: key'", "SORT_SIGNATURE");
+    string reverse_callee;
+    vector<string> reverse_args;
+    if (parse_simple_call(key, reverse_callee, reverse_args) &&
+        reverse_callee == "Reverse") {
+      if (reverse_args.size() != 1)
+        err(line, "Reverse expects one key function", "SORT_SIGNATURE");
+      key = trim(reverse_args.front());
+    }
+    auto function = functions_.find(key);
+    if (!plain_identifier(key) || function == functions_.end())
+      err(line, "sort key must be a named function, found '" + key + "'",
+          "SORT_KEY_CALLABLE");
+    auto result = check_functional_callable(line, key, {element}, env, "sort");
+    string key_type = result ? canonical_type_name(*result) : "";
+    if (!total_order_scalar(key_type))
+      err(line, "sort key '" + key + "' must return Int, Float, Char, String, or Bool, found '" +
+          (result ? *result : string("unknown")) + "'", "SORT_KEY_UNORDERED");
+    ObservableEffects effects =
+        concrete_function_observable_effects(*function->second, {element});
+    string barrier = observable_barrier(effects);
+    if (barrier == "none" && effects.may_diverge) barrier = "possible divergence";
+    if (barrier != "none")
+      err(line, "sort key '" + key + "' must be pure; it has " + barrier,
+          "SORT_KEY_IMPURE");
+  }
+
   bool check_functional_pipeline(int line, const string& expression,
                                  const TypeEnv& env) {
     auto parsed = parse_functional_pipeline(expression);
@@ -13767,6 +13882,12 @@ class Checker {
     string receiver, handler;
     vector<string> args;
     if (parse_member_call(value, receiver, handler, args)) {
+      if (scalar_type_name(receiver) &&
+          (handler == "less" || handler == "isequal" || handler == "hash")) {
+        check_scalar_protocol_call(line, handler, canonical_type_name(receiver),
+                                   args, env);
+        return;
+      }
       if (check_fileio_operation(line, receiver, handler, args, env)) return;
       if (auto receiver_type = inferred_expr_type(receiver, env)) {
         if (builtin_receiver_family(*receiver_type)) {
@@ -13874,6 +13995,8 @@ class Checker {
         if (ps.size() == 2 && enums_.count(canonical_type_name(ps[0])))
           err(line, "enum values cannot be Map keys; enum equality and hashing are unsupported",
               "ENUM_MAP_KEY_UNSUPPORTED");
+        if (ps.size() == 2 && canonical_type_name(ps[0]) == "float")
+          err(line, "Float Map keys require the canonical MossMap<K,V> under key-protocol-v1, which is not yet available; Float isequal/hash/less are available as functions", "FLOAT_MAP_KEY_UNSUPPORTED");
         auto it = inferred_expr_type(ii, env);
         if (ps.size() != 2 || !it || !same_type(ps[0], *it)) err(line, "map key type mismatch");
       } else err(line, "value is not an indexable container");
@@ -13892,6 +14015,18 @@ class Checker {
     }
     string callee;
     if (parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
+      if (callee == "sort" && !functions_.count(callee)) {
+        check_sort_call(line, args, env);
+        return;
+      }
+      if ((callee == "less" || callee == "isequal" || callee == "hash") &&
+          !functions_.count(callee)) {
+        check_scalar_protocol_call(line, callee, "", args, env);
+        return;
+      }
+      if (callee == "Reverse")
+        err(line, "Reverse(key) is only valid as the key of sort(v, by: Reverse(key))",
+            "SORT_REVERSE_POSITION");
       if (callee == "replace" && args.size() == 2) {
         auto place = storage_location(args[0], env);
         if (!place)
@@ -14164,6 +14299,8 @@ class Checker {
                 err(statement.line,
                     "enum values cannot be Map keys; enum equality and hashing are unsupported",
                     "ENUM_MAP_KEY_UNSUPPORTED");
+              if (key_type && canonical_type_name(*key_type) == "float")
+                err(statement.line, "Float Map keys require the canonical MossMap<K,V> under key-protocol-v1, which is not yet available; Float isequal/hash/less are available as functions", "FLOAT_MAP_KEY_UNSUPPORTED");
             }
           }
         }
@@ -14321,8 +14458,10 @@ class Checker {
         }
         if (!statement.b.empty())
           check_expression(statement.line, statement.text, current_env);
+        const bool sort_builtin = statement.b.empty() && statement.a == "sort" &&
+            !functions_.count(statement.a);
         for (const auto& argument : statement.args)
-          if (!(fileio_builtin && (trim(argument) == "ro" ||
+          if (!sort_builtin && !(fileio_builtin && (trim(argument) == "ro" ||
                 trim(argument) == "rw" || trim(argument) == "create" ||
                 trim(argument) == "dataonly"))) {
             string name, val;
@@ -16601,10 +16740,6 @@ class Generator {
     if (starts_with(x, "queue[") && ends_with(x, "]")) return "std::collections::VecDeque<" + rust_type(x.substr(6, x.size()-7)) + ">";
     if (starts_with(x, "map[") && ends_with(x, "]")) {
       auto ps = split_top_level(x.substr(4, x.size()-5), ',');
-      string key_type = canonical_type_name(ps[0]);
-      if (key_type == "float") {
-        return "std::collections::HashMap<MossFloatKey, " + rust_type(ps[1]) + ">";
-      }
       return "std::collections::HashMap<" + rust_type(ps[0]) + ", " + rust_type(ps[1]) + ">";
     }
     if (starts_with(x, "option[") && ends_with(x, "]"))
@@ -16708,6 +16843,83 @@ class Generator {
       rendered = nominal + "Handle::from(" + rendered + ")";
     }
     return rendered;
+  }
+
+  // key-protocol-v1 scalar operations lowered to the exact Moss operation
+  // for the statically known type; no Rust trait or adapter is involved.
+  static string scalar_protocol_rust(const string& op, const string& type,
+                                     const string& a, const string& b = "") {
+    const string t = canonical_type_name(type);
+    if (op == "less") {
+      if (t == "float") return "moss_float_less(" + a + ", " + b + ")";
+      return "(&(" + a + ") < &(" + b + "))";
+    }
+    if (op == "isequal") {
+      if (t == "float") return "moss_float_isequal(" + a + ", " + b + ")";
+      return "(&(" + a + ") == &(" + b + "))";
+    }
+    if (t == "float") return "moss_float_hash(" + a + ")";
+    if (t == "int") return "(" + a + ")";
+    if (t == "bool") return "(if " + a + " { 1i64 } else { 0i64 })";
+    if (t == "char") return "((" + a + ") as u32 as i64)";
+    return "moss_string_hash(&(" + a + "))";
+  }
+
+  // Rust comparator for a key-protocol-v1 total-order scalar. Float uses
+  // the Julia-like total order; the other scalars' Rust Ord already matches
+  // Moss `less` (Bool false < true, String by UTF-8 bytes = code points).
+  static string total_order_compare_rust(const string& key_type,
+                                         const string& left, const string& right) {
+    if (canonical_type_name(key_type) == "float")
+      return "moss_float_total_cmp(" + left + ", " + right + ")";
+    return "(" + left + ").cmp(&(" + right + "))";
+  }
+
+  // Lowers sort(v), sort(v, by: key), and sort(v, by: Reverse(key)) to a
+  // stable in-place Rust sort. The checker has proven the key pure, so each
+  // key is lowered as an ordinary specialized Moss call.
+  string sort_call_rust(const vector<string>& args, const Domain* d,
+                        const std::set<string>& locals,
+                        const std::unordered_map<string,string>* types) const {
+    string target = write_call_place(args[0], d, locals, types);
+    auto vector_type = generated_expr_type(args[0], types);
+    string canonical = vector_type ? canonical_type_name(*vector_type) : "";
+    string element = starts_with(canonical, "vector[")
+        ? canonical_type_name(canonical.substr(7, canonical.size() - 8)) : "";
+    if (args.size() == 1)
+      return "(" + target + ").sort_by(|__moss_a, __moss_b| " +
+             total_order_compare_rust(element, "*__moss_a", "*__moss_b") + ")";
+    string label, key;
+    parse_named_argument(args[1], label, key);
+    bool reverse = false;
+    string reverse_callee;
+    vector<string> reverse_args;
+    if (parse_simple_call(key, reverse_callee, reverse_args) &&
+        reverse_callee == "Reverse" && reverse_args.size() == 1) {
+      reverse = true;
+      key = trim(reverse_args.front());
+    }
+    const bool copy = copy_type(element);
+    auto key_locals = locals;
+    key_locals.insert("__moss_sort_a");
+    key_locals.insert("__moss_sort_b");
+    std::unordered_map<string,string> key_types = types ? *types
+        : std::unordered_map<string,string>{};
+    key_types["__moss_sort_a"] = element;
+    key_types["__moss_sort_b"] = element;
+    string key_a = expr(key + "(__moss_sort_a)", d, key_locals, &key_types);
+    string key_b = expr(key + "(__moss_sort_b)", d, key_locals, &key_types);
+    string key_type = generated_expr_type(key + "(__moss_sort_a)", &key_types)
+        .value_or("");
+    string compare = reverse
+        ? total_order_compare_rust(key_type, "__moss_kb", "__moss_ka")
+        : total_order_compare_rust(key_type, "__moss_ka", "__moss_kb");
+    string bind = copy ? "*__moss_a" : "__moss_a";
+    string bind_b = copy ? "*__moss_b" : "__moss_b";
+    return "(" + target + ").sort_by(|__moss_a, __moss_b| { "
+           "let __moss_sort_a = " + bind + "; let __moss_sort_b = " + bind_b + "; "
+           "let __moss_ka = " + key_a + "; let __moss_kb = " + key_b + "; " +
+           compare + " })";
   }
 
   string write_call_place(const string& argument, const Domain* d,
@@ -17058,6 +17270,12 @@ class Generator {
       if (parse_simple_call(original, callee, arguments) && callee == "replace" &&
           arguments.size() == 2)
         return generated_expr_type(arguments[0], types);
+      if (parse_simple_call(original, callee, arguments) && !functions_.count(callee)) {
+        if (callee == "Char" && arguments.size() == 1) return string("char");
+        if ((callee == "less" || callee == "isequal") && arguments.size() == 2)
+          return string("bool");
+        if (callee == "hash" && arguments.size() == 1) return string("int");
+      }
     }
     if (types && starts_with(original, "message ")) {
       string receiver, handler;
@@ -18490,7 +18708,9 @@ class Generator {
           left_type && right_type &&
           ((canonical_type_name(*left_type) == "char" && canonical_type_name(*right_type) == "string") ||
            (canonical_type_name(*left_type) == "string" && canonical_type_name(*right_type) == "char"))) {
-        string eq = "__moss_isequal(&(" + left + "), &(" + right + "))";
+        string eq = canonical_type_name(*left_type) == "char"
+            ? "moss_char_string_eq(" + left + ", &(" + right + "))"
+            : "moss_char_string_eq(" + right + ", &(" + left + "))";
         return comparison->op == "==" ? eq : "(!" + eq + ")";
       }
       if (left_type && canonical_type_name(*left_type) == "string") {
@@ -18679,8 +18899,6 @@ class Generator {
         auto key_type = generated_expr_type(ii, types);
         if (key_type && canonical_type_name(*key_type) == "string")
           ir = "(" + ir + ").as_str()";
-        else if (key_type && canonical_type_name(*key_type) == "float")
-          ir = "&MossFloatKey(" + ir + ")";
         else if (!borrowed_function_parameters_.count(trim(ii)))
           ir = "&(" + ir + ")";
       }
@@ -18716,21 +18934,14 @@ class Generator {
     if (parse_member_call(e, member_receiver, member_name, member_arguments)) {
       string canon_recv = canonical_type_name(member_receiver);
       if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" || canon_recv == "string" || canon_recv == "bool") {
-        if (member_name == "less" && member_arguments.size() == 2) {
-          if (canon_recv == "float")
-            return "moss_float_less(" + expr(member_arguments[0], d, locals, types) + ", " + expr(member_arguments[1], d, locals, types) + ")";
-          return "__moss_less(&(" + expr(member_arguments[0], d, locals, types) + "), &(" + expr(member_arguments[1], d, locals, types) + "))";
-        }
-        if (member_name == "isequal" && member_arguments.size() == 2) {
-          if (canon_recv == "float")
-            return "moss_float_isequal(" + expr(member_arguments[0], d, locals, types) + ", " + expr(member_arguments[1], d, locals, types) + ")";
-          return "__moss_isequal(&(" + expr(member_arguments[0], d, locals, types) + "), &(" + expr(member_arguments[1], d, locals, types) + "))";
-        }
-        if (member_name == "hash" && member_arguments.size() == 1) {
-          if (canon_recv == "float")
-            return "moss_float_hash(" + expr(member_arguments[0], d, locals, types) + ")";
-          return "__moss_hash(&(" + expr(member_arguments[0], d, locals, types) + "))";
-        }
+        if ((member_name == "less" || member_name == "isequal") &&
+            member_arguments.size() == 2)
+          return scalar_protocol_rust(member_name, canon_recv,
+                                      expr(member_arguments[0], d, locals, types),
+                                      expr(member_arguments[1], d, locals, types));
+        if (member_name == "hash" && member_arguments.size() == 1)
+          return scalar_protocol_rust("hash", canon_recv,
+                                      expr(member_arguments[0], d, locals, types));
         if (member_name == "to_string" && member_arguments.size() == 1) {
           return "(" + expr(member_arguments[0], d, locals, types) + ").to_string()";
         }
@@ -18931,12 +19142,12 @@ class Generator {
             return source + ".chars().collect::<std::vec::Vec<char>>()";
           if (member_name == "char_at" && member_arguments.size() == 1)
             return "__moss_string_char_at(&(" + source + "), " + expr(member_arguments[0], d, locals, types) + ")";
-          if (member_name == "less" && member_arguments.size() == 1)
-            return "__moss_less(&(" + source + "), &(" + expr(member_arguments[0], d, locals, types) + "))";
-          if (member_name == "isequal" && member_arguments.size() == 1)
-            return "__moss_isequal(&(" + source + "), &(" + expr(member_arguments[0], d, locals, types) + "))";
+          if ((member_name == "less" || member_name == "isequal") &&
+              member_arguments.size() == 1)
+            return scalar_protocol_rust(member_name, concrete, source,
+                                        expr(member_arguments[0], d, locals, types));
           if (member_name == "hash" && member_arguments.empty())
-            return "__moss_hash(&(" + source + "))";
+            return scalar_protocol_rust("hash", concrete, source);
           if (member_name == "find" && member_arguments.size() == 1)
             return "{ let __moss_source = &" + source + "; let __moss_pattern = " +
                 expr(member_arguments[0], d, locals, types) +
@@ -18997,53 +19208,52 @@ class Generator {
             return source + ".to_string()";
           if (member_name == "codepoint" && member_arguments.empty())
             return "((" + source + ") as u32 as i64)";
-          if (member_name == "less" && member_arguments.size() == 1)
-            return "__moss_less(&(" + source + "), &(" + expr(member_arguments[0], d, locals, types) + "))";
-          if (member_name == "isequal" && member_arguments.size() == 1)
-            return "__moss_isequal(&(" + source + "), &(" + expr(member_arguments[0], d, locals, types) + "))";
+          if ((member_name == "less" || member_name == "isequal") &&
+              member_arguments.size() == 1)
+            return scalar_protocol_rust(member_name, concrete, source,
+                                        expr(member_arguments[0], d, locals, types));
           if (member_name == "hash" && member_arguments.empty())
-            return "__moss_hash(&(" + source + "))";
+            return scalar_protocol_rust("hash", concrete, source);
         }
         if (concrete == "int") {
           string source = "(" + receiver_expression + ")";
           if (member_name == "to_string" && member_arguments.empty())
             return source + ".to_string()";
-          if (member_name == "less" && member_arguments.size() == 1)
-            return "__moss_less(&(" + source + "), &(" + expr(member_arguments[0], d, locals, types) + "))";
-          if (member_name == "isequal" && member_arguments.size() == 1)
-            return "__moss_isequal(&(" + source + "), &(" + expr(member_arguments[0], d, locals, types) + "))";
+          if ((member_name == "less" || member_name == "isequal") &&
+              member_arguments.size() == 1)
+            return scalar_protocol_rust(member_name, concrete, source,
+                                        expr(member_arguments[0], d, locals, types));
           if (member_name == "hash" && member_arguments.empty())
-            return "__moss_hash(&(" + source + "))";
+            return scalar_protocol_rust("hash", concrete, source);
         }
         if (concrete == "float") {
           string source = "(" + receiver_expression + ")";
           if (member_name == "to_string" && member_arguments.empty())
             return source + ".to_string()";
-          if (member_name == "less" && member_arguments.size() == 1)
-            return "moss_float_less(" + source + ", " + expr(member_arguments[0], d, locals, types) + ")";
-          if (member_name == "isequal" && member_arguments.size() == 1)
-            return "moss_float_isequal(" + source + ", " + expr(member_arguments[0], d, locals, types) + ")";
+          if ((member_name == "less" || member_name == "isequal") &&
+              member_arguments.size() == 1)
+            return scalar_protocol_rust(member_name, concrete, source,
+                                        expr(member_arguments[0], d, locals, types));
           if (member_name == "hash" && member_arguments.empty())
-            return "moss_float_hash(" + source + ")";
+            return scalar_protocol_rust("hash", concrete, source);
         }
         if (concrete == "bool") {
           string source = "(" + receiver_expression + ")";
           if (member_name == "to_string" && member_arguments.empty())
             return source + ".to_string()";
-          if (member_name == "less" && member_arguments.size() == 1)
-            return "__moss_less(&(" + source + "), &(" + expr(member_arguments[0], d, locals, types) + "))";
-          if (member_name == "isequal" && member_arguments.size() == 1)
-            return "__moss_isequal(&(" + source + "), &(" + expr(member_arguments[0], d, locals, types) + "))";
+          if ((member_name == "less" || member_name == "isequal") &&
+              member_arguments.size() == 1)
+            return scalar_protocol_rust(member_name, concrete, source,
+                                        expr(member_arguments[0], d, locals, types));
           if (member_name == "hash" && member_arguments.empty())
-            return "__moss_hash(&(" + source + "))";
+            return scalar_protocol_rust("hash", concrete, source);
         }
         if (auto map_types = map_key_value_types(concrete)) {
           if (member_name == "delete" && member_arguments.size() == 3) {
             string key = expr(member_arguments[0], d, locals, types);
             string fallback = expr(member_arguments[1], d, locals, types);
             string flag = write_call_place(member_arguments[2], d, locals, types);
-            string lookup = map_types->first == "string" ? "__moss_key.as_str()" :
-                            map_types->first == "float" ? "&MossFloatKey(__moss_key)" : "&__moss_key";
+            string lookup = map_types->first == "string" ? "__moss_key.as_str()" : "&__moss_key";
             return "{ let __moss_key = " + key + "; let __moss_fallback = " + fallback +
                 "; let __moss_removed = (" + receiver_expression + ").remove(" + lookup +
                 "); let _ = &(" + flag + "); " + flag + " = __moss_removed.is_some(); " +
@@ -19053,8 +19263,6 @@ class Generator {
             string key = expr(member_arguments[0], d, locals, types);
             if (map_types->first == "string")
               key = "(" + key + ").as_str()";
-            else if (map_types->first == "float")
-              key = "&MossFloatKey( " + key + " )";
             else
               key = "&( " + key + " )";
             string fallback = expr(member_arguments[1], d, locals, types);
@@ -19284,20 +19492,19 @@ class Generator {
       if (builtin == "Char" && builtin_args.size() == 1) {
         return "__moss_char_from_codepoint(" + expr(builtin_args.front(), d, locals, types) + ")";
       }
-      if (builtin == "less" && builtin_args.size() == 2) {
-        return "__moss_less(&(" + expr(builtin_args[0], d, locals, types) + "), &(" +
-               expr(builtin_args[1], d, locals, types) + "))";
-      }
-      if (builtin == "isequal" && builtin_args.size() == 2) {
-        return "__moss_isequal(&(" + expr(builtin_args[0], d, locals, types) + "), &(" +
-               expr(builtin_args[1], d, locals, types) + "))";
-      }
-      if (builtin == "hash" && builtin_args.size() == 1) {
-        return "__moss_hash(&(" + expr(builtin_args.front(), d, locals, types) + "))";
-      }
-      if (builtin == "Reverse" && builtin_args.size() == 1) {
-        return "__MossReverse::new(" + expr(builtin_args.front(), d, locals, types) + ")";
-      }
+      if ((builtin == "less" || builtin == "isequal") && builtin_args.size() == 2 &&
+          !functions_.count(builtin))
+        return scalar_protocol_rust(
+            builtin, generated_expr_type(builtin_args[0], types).value_or(""),
+            expr(builtin_args[0], d, locals, types),
+            expr(builtin_args[1], d, locals, types));
+      if (builtin == "hash" && builtin_args.size() == 1 && !functions_.count(builtin))
+        return scalar_protocol_rust(
+            "hash", generated_expr_type(builtin_args[0], types).value_or(""),
+            expr(builtin_args.front(), d, locals, types));
+      if (builtin == "sort" &&
+          (builtin_args.size() == 1 || builtin_args.size() == 2))
+        return sort_call_rust(builtin_args, d, locals, types);
     }
 
     // Named value-object construction. Moss prefers `=` here; `:` remains a
@@ -21322,9 +21529,7 @@ class Generator {
               string key = mi.size() >= 2 && mi.front() == '"' && mi.back() == '"'
                   ? mi + ".to_string()" : expr(mi, d, locals, &types);
               auto key_type = generated_expr_type(mi, &types);
-              if (key_type && canonical_type_name(*key_type) == "float")
-                key = "MossFloatKey(" + key + ")";
-              else if (key_type && !copy_type(*key_type) &&
+              if (key_type && !copy_type(*key_type) &&
                   !(mi.size() >= 2 && mi.front() == '"' && mi.back() == '"'))
                 key = "(" + key + ").clone()";
               string inserted = expr(s.b, d, locals, &types,
@@ -21483,10 +21688,9 @@ class Generator {
             if (actual_type && expected_type &&
                 ((canonical_type_name(*actual_type) == "char" && canonical_type_name(*expected_type) == "string") ||
                  (canonical_type_name(*actual_type) == "string" && canonical_type_name(*expected_type) == "char"))) {
-              cond = "!__moss_isequal(" + actual + ", " + expected + ")";
-            } else if (actual_type && canonical_type_name(*actual_type) == "float" &&
-                       expected_type && canonical_type_name(*expected_type) == "float") {
-              cond = "!moss_float_isequal(*" + actual + ", *" + expected + ")";
+              cond = canonical_type_name(*actual_type) == "char"
+                  ? "!moss_char_string_eq(*" + actual + ", " + expected + ")"
+                  : "!moss_char_string_eq(*" + expected + ", " + actual + ")";
             } else {
               cond = actual + " != " + expected;
             }
@@ -21497,53 +21701,7 @@ class Generator {
             break;
           }
           if (s.b.empty() && s.a == "sort" && (s.args.size() == 1 || s.args.size() == 2)) {
-            string target = write_call_place(s.args[0], d, locals, &types);
-            if (s.args.size() == 1) {
-              o << indent(level) << "(" << target << ").sort_by(|__moss_a, __moss_b| "
-                << "if __moss_isequal(__moss_a, __moss_b) { std::cmp::Ordering::Equal } "
-                << "else if __moss_less(__moss_a, __moss_b) { std::cmp::Ordering::Less } "
-                << "else { std::cmp::Ordering::Greater });\n";
-            } else {
-              string key_expr = s.args[1];
-              size_t colon = key_expr.find(':');
-              size_t eq = key_expr.find('=');
-              size_t delim = std::string::npos;
-              if (colon != std::string::npos && (eq == std::string::npos || colon < eq)) delim = colon;
-              else if (eq != std::string::npos) delim = eq;
-              if (delim != std::string::npos) key_expr = key_expr.substr(delim + 1);
-              key_expr = trim(key_expr);
-              bool is_reverse = false;
-              string rev_callee;
-              vector<string> rev_args;
-              if (parse_simple_call(key_expr, rev_callee, rev_args) && rev_callee == "Reverse" && rev_args.size() == 1) {
-                is_reverse = true;
-                key_expr = trim(rev_args[0]);
-              }
-              string lowered_key = expr(key_expr, d, locals, &types);
-              auto target_type = generated_expr_type(s.args[0], &types);
-              bool is_copy = true;
-              if (target_type && starts_with(*target_type, "vector[") && ends_with(*target_type, "]")) {
-                size_t ob = target_type->find('[');
-                string elem_type = canonical_type_name(target_type->substr(ob + 1, target_type->size() - ob - 2));
-                is_copy = copy_type(elem_type);
-              }
-              string arg_a = is_copy ? "*__moss_a" : "__moss_a";
-              string arg_b = is_copy ? "*__moss_b" : "__moss_b";
-              o << indent(level) << "{ let __moss_sort_key = " << lowered_key << ";\n";
-              o << indent(level) << "(" << target << ").sort_by(|__moss_a, __moss_b| {\n";
-              o << indent(level + 1) << "let __moss_ka = (__moss_sort_key)(" << arg_a << ");\n";
-              o << indent(level + 1) << "let __moss_kb = (__moss_sort_key)(" << arg_b << ");\n";
-              if (is_reverse) {
-                o << indent(level + 1) << "if __moss_isequal(&__moss_kb, &__moss_ka) { std::cmp::Ordering::Equal } "
-                  << "else if __moss_less(&__moss_kb, &__moss_ka) { std::cmp::Ordering::Less } "
-                  << "else { std::cmp::Ordering::Greater }\n";
-              } else {
-                o << indent(level + 1) << "if __moss_isequal(&__moss_ka, &__moss_kb) { std::cmp::Ordering::Equal } "
-                  << "else if __moss_less(&__moss_ka, &__moss_kb) { std::cmp::Ordering::Less } "
-                  << "else { std::cmp::Ordering::Greater }\n";
-              }
-              o << indent(level) << "}); }\n";
-            }
+            o << indent(level) << sort_call_rust(s.args, d, locals, &types) << ";\n";
             ++i;
             break;
           }
@@ -27128,6 +27286,21 @@ struct ParsedModuleUnit {
   vector<ModuleImport> imports;
 };
 
+// True when expression[begin, end) is the label of a named argument such as
+// `Table(row_count: n)`: preceded by `(` or `,` and followed by `:` or a
+// lone `=`.
+static bool named_argument_label(const string& expression, size_t begin, size_t end) {
+  size_t before = begin;
+  while (before > 0 && std::isspace(static_cast<unsigned char>(expression[before - 1]))) --before;
+  if (before == 0 || (expression[before - 1] != '(' && expression[before - 1] != ',')) return false;
+  size_t after = end;
+  while (after < expression.size() && std::isspace(static_cast<unsigned char>(expression[after]))) ++after;
+  if (after >= expression.size()) return false;
+  if (expression[after] == ':') return after + 1 >= expression.size() || expression[after + 1] != ':';
+  if (expression[after] == '=') return after + 1 >= expression.size() || expression[after + 1] != '=';
+  return false;
+}
+
 static string module_symbol(const string& module, const string& name) {
   return module + "__" + name;
 }
@@ -27269,6 +27442,13 @@ static string rewrite_module_expression(
       continue;
     }
     if (starts_with(token, module + "__")) {
+      result += token;
+      i = end;
+      continue;
+    }
+    if (named_argument_label(expression, i, end)) {
+      // Constructor/enum-payload field labels name fields, never module
+      // functions or types (Phase 25 ledger #10).
       result += token;
       i = end;
       continue;
@@ -28153,9 +28333,6 @@ static string source_free_contract_material(const string& text) {
   // ABI v8 used the same interface container but had no provider-owned seal.
   // Diagnose that version before the v9-only digest check. A v9 interface
   // missing its digest remains a malformed v9 contract.
-  if (text.find("\nnative_abi 9\n") != string::npos)
-    throw CompileError(0, "ABI_VERSION_MISMATCH: module was compiled with ABI-v9, required ABI-v10 (String/Char representation changed); rebuild its .mossi and .rlib for ABI v10",
-                       "ABI_VERSION_MISMATCH");
   if (text.find("\nnative_abi 8\n") != string::npos)
     throw CompileError(0, "source-free provider uses ABI v8; rebuild its .mossi and .rlib for ABI v9",
                        "SOURCE_FREE_ABI_REBUILD_REQUIRED");
@@ -28271,12 +28448,8 @@ static ParsedModuleUnit load_module_interface(
   content << input.rdbuf();
   string text = content.str();
   verify_source_free_provider_binding(file, text);
-  if (text.find("\nnative_abi " + std::to_string(kNativeAbiVersion) + "\n") == string::npos) {
-    if (text.find("\nnative_abi 9\n") != string::npos) {
-      throw CompileError(0, "ABI_VERSION_MISMATCH: module was compiled with ABI-v9, required ABI-v10 (String/Char representation changed); compiled provider uses an incompatible native calling convention; rebuild its .mossi provider", "ABI_VERSION_MISMATCH");
-    }
+  if (text.find("\nnative_abi " + std::to_string(kNativeAbiVersion) + "\n") == string::npos)
     throw CompileError(0, "compiled provider uses an incompatible native calling convention; rebuild its .mossi provider");
-  }
   // The producer already records separate hashes for the native contract and
   // semantic exports.  Validate them before trusting source-free metadata;
   // otherwise a changed failure-arm symbol can link and abort at runtime.

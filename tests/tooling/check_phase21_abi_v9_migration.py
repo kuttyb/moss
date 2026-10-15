@@ -41,7 +41,7 @@ def run(*args, expected=0):
 run(MARGO, "build", "--json")
 interface = PROJECT / "build/debug/provider.mossi"
 original = interface.read_text()
-assert ("\nnative_abi 9\n" in original) or ("\nnative_abi 10\n" in original)
+assert "\nnative_abi 9\n" in original
 provider.rename(provider.with_suffix(".removed"))
 main.write_text(main.read_text() + '  echo "source-free"\n')
 native = json.loads(run(MARGO, "build", "--json").stdout)
@@ -51,7 +51,7 @@ assert run(executable).stdout == "7\nsource-free\n"
 # An ABI-v8 interface has the v2 container and native_abi 8 but no v9
 # provider_contract_digest field. Diagnose the required provider rebuild
 # before treating the absent v9-only field as a damaged v9 interface.
-legacy = original.replace("\nnative_abi 10\n", "\nnative_abi 8\n", 1).replace("\nnative_abi 9\n", "\nnative_abi 8\n", 1)
+legacy = original.replace("\nnative_abi 9\n", "\nnative_abi 8\n", 1)
 legacy, count = re.subn(
     r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n", "", legacy)
 assert count == 1

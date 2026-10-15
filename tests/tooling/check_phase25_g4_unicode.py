@@ -168,46 +168,35 @@ fn main():
     print("  PASS: String Unicode traversal verified.")
 
 
-def test_abi_v10_rejection():
-    print("Testing ABI-v10 migration and ABI-v9 provider rejection...")
+def test_no_unilateral_abi_bump():
+    """ABI v10 is one coordinated Team G/Team S/L7 transition.
+
+    Until it lands, this branch must keep emitting the ABI v9 contract rather
+    than relabelling an unchanged String representation as v10.
+    """
+    print("Testing that the native ABI remains v9 pending the joint v10 cut...")
     with tempfile.TemporaryDirectory(dir=SCRATCH) as td:
         proj = Path(td)
         (proj / "Moss.toml").write_text('[package]\nname = "abi_test"\nversion = "0.1.0"\n')
         src_dir = proj / "src"
         src_dir.mkdir()
-        (src_dir / "provider.moss").write_text("module provider\nexport fn answer() -> Int:\n  return 42\n")
-        (src_dir / "main.moss").write_text("module app\nimport provider\nfn main():\n  echo provider.answer()\n")
-
-        # Build provider
+        (src_dir / "provider.moss").write_text(
+            "module provider\nexport fn initial(s: String) -> Char:\n  return s.char_at(0)\n")
+        (src_dir / "main.moss").write_text(
+            "module app\nimport provider\nfn main():\n  echo provider.initial(\"é\")\n")
         res_bld = run_cmd([str(MOSS), "build", "--json"], cwd=proj)
-        assert res_bld.returncode == 0, f"Initial build failed: {res_bld.stderr}"
-        mossi_file = proj / "build" / "debug" / "provider.mossi"
-        assert mossi_file.is_file()
-        mossi_text = mossi_file.read_text()
-        assert "native_abi 10" in mossi_text, f"Expected native_abi 10, got:\n{mossi_text}"
-
-        # Tamper with .mossi to simulate historical ABI-v9 provider
-        v9_mossi = mossi_text.replace("native_abi 10\n", "native_abi 9\n", 1)
-        mossi_file.write_text(v9_mossi)
-
-        # Remove source to force source-free provider loading
-        (src_dir / "provider.moss").unlink()
-
-        # Re-check main: MUST diagnose ABI_VERSION_MISMATCH
-        res_check = run_cmd([str(MOSS), "check", str(src_dir / "main.moss"), "--json"], cwd=proj)
-        assert res_check.returncode != 0, "Expected ABI-v9 provider to be rejected under ABI-v10 compiler"
-        diag_output = res_check.stdout + res_check.stderr
-        assert "ABI_VERSION_MISMATCH" in diag_output, f"Expected ABI_VERSION_MISMATCH in diagnostic:\n{diag_output}"
-        assert "ABI-v9" in diag_output, f"Expected mention of ABI-v9 in diagnostic:\n{diag_output}"
-        assert "ABI-v10" in diag_output, f"Expected mention of ABI-v10 in diagnostic:\n{diag_output}"
-    print("  PASS: ABI-v10 rejects ABI-v9 provider with ABI_VERSION_MISMATCH.")
+        assert res_bld.returncode == 0, f"Build failed: {res_bld.stdout}{res_bld.stderr}"
+        mossi_text = (proj / "build" / "debug" / "provider.mossi").read_text()
+        assert "\nnative_abi 9\n" in mossi_text, "provider must still declare native_abi 9"
+        assert "native_abi 10" not in mossi_text
+    print("  PASS: ABI v9 retained; Char crosses the provider boundary.")
 
 
 def main():
-    print("=== Running Phase 25 G4 Unicode & ABI-v10 Suite ===")
+    print("=== Running Phase 25 G4 Unicode & Char Suite ===")
     test_char_literal_and_constructors()
     test_string_unicode_traversal()
-    test_abi_v10_rejection()
+    test_no_unilateral_abi_bump()
     print("=== All Phase 25 G4 Tests Passed Cleanly! ===")
 
 

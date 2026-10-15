@@ -71,8 +71,8 @@ def run_source_free_test():
         # Verify ABI-v9 contract in header
         for name in ("linalg", "sparse", "statistics"):
             mossi_content = (provider_dir / f"{name}.mossi").read_text(encoding="utf-8")
-            assert "native_abi 9" in mossi_content or "native_abi 10" in mossi_content, f"{name}.mossi does not declare native_abi 9 or 10"
-            print(f"Verified {name}.mossi declares native_abi")
+            assert "native_abi 9" in mossi_content, f"{name}.mossi does not declare native_abi 9"
+            print(f"Verified {name}.mossi declares native_abi 9")
 
         # Create consumer application
         (app_dir / "Moss.toml").write_text(
