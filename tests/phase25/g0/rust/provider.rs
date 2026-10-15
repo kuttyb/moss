@@ -42,21 +42,7 @@ pub fn user_key_code(value: &UserKey) -> i64 {
     value.code
 }
 
-// The key-defining provider owns this zero-sized operation identity. The trait
-// is foreign, but the implementing self type is local, so the impl is legal.
-pub struct UserKeyOps;
-
-impl map_runtime::MossKeyOps<UserKey> for UserKeyOps {
-    fn isequal(left: &UserKey, right: &UserKey) -> bool {
-        moss_isequal(left, right)
-    }
-
-    fn hash(value: &UserKey) -> i64 {
-        moss_hash(value)
-    }
-}
-
-pub type UserMap<V> = map_runtime::MossMap<UserKey, V, UserKeyOps>;
+pub type UserMap<V> = map_runtime::MossMap<UserKey, V>;
 
 pub fn user_map<V>() -> UserMap<V> {
     UserMap::new()

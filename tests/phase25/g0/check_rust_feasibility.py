@@ -68,6 +68,9 @@ positive_sources = "\n".join(
 )
 assert "dyn " not in positive_sources
 assert "impl Hash for provider::UserKey" not in positive_sources
+assert "MossKeyOps" not in positive_sources
+assert "MossMap<K, V, Ops>" not in positive_sources
+assert "pub struct MossMap<K, V>" in positive_sources
 
 orphan = run([
     "rustc", "--edition=2021", RUST / "orphan_negative.rs",

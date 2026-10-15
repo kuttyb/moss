@@ -22,14 +22,17 @@ On `phase25-g0-feasibility` from pinned baseline
 conformance design are complete without compiler/shared-IR edits. One
 provider-owned generic Rust record with private fields is consumed by two
 independent specialization crates through provider-generated accessor-shaped
-functions. The follow-up Architect proof adds a compiler-owned shared
-`MossMap<K,V,Ops>` runtime representation and provider-owned key/operations
-identity. One provider-created Map crosses both independent consumer rlibs and
-passes custom static equality/hash insertion, lookup, overwrite, eager owned
-keys, deletion, length, and missing-key checks without dynamic dispatch or a
-foreign key impl; the direct foreign `Hash` control fails with rustc E0117 as
-required. The report recommends provider-owned opaque records and the shared
-runtime Map representation, with explicit A1/Map escalation triggers.
+functions. The final Architect proof adds a compiler-owned, policy-free shared
+`MossMap<K,V>` runtime representation with neutral accessors. Consumer-owned
+specialized free operations call provider `isequal`/`hash` functions directly.
+One provider-created Map crosses both independent consumer rlibs and passes
+custom static equality/hash insertion, lookup, overwrite, eager owned keys,
+deletion, length, and missing-key checks without an Ops type parameter, stored
+callback, dynamic dispatch, or foreign key impl; the direct foreign `Hash`
+control fails with rustc E0117 as required. The earlier `MossMap<K,V,Ops>`
+alternative is explicitly superseded. The report recommends provider-owned
+opaque records and the policy-free shared runtime Map representation, with
+explicit A1/Map escalation triggers.
 
 `docs/phase25/TEAM_G_G0_FEASIBILITY.md` defines the proposed canonical
 template/instance keys, ABI-v10 logical records, Option B freshening/closure
