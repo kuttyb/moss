@@ -549,6 +549,19 @@ static bool parse_simple_call(const string& text, string& callee, vector<string>
   auto lp = value.find('(');
   auto rp = value.rfind(')');
   if (lp == string::npos || rp != value.size() - 1 || lp == 0) return false;
+  // The callee's '(' must close at the final ')': `Char(65).to_string()` is a
+  // member call on a call result, not a call of `Char`.
+  int depth = 0;
+  for (size_t i = lp; i < value.size(); ++i) {
+    char c = value[i];
+    if (c == '"' || c == '\'') {
+      for (++i; i < value.size() && value[i] != c; ++i)
+        if (value[i] == '\\') ++i;
+      continue;
+    }
+    if (c == '(' || c == '[' || c == '{') ++depth;
+    else if ((c == ')' || c == ']' || c == '}') && --depth == 0 && i != rp) return false;
+  }
   callee = trim(value.substr(0, lp));
   if (callee.empty()) return false;
   string inside = value.substr(lp + 1, rp - lp - 1);
@@ -13232,6 +13245,9 @@ class Checker {
       if (!same_type(*actual, *expected))
         err(line, "assertEqual operands have types '" + *actual +
             "' and '" + *expected + "'", "TYPE_MISMATCH");
+      if (contains_record_type(*actual))
+        err(line, "assertEqual compares with '==', which is not defined for records ('" +
+            *actual + "'); assert on the fields", "RECORD_EQUALITY_UNSUPPORTED");
       string type = canonical_type_name(*actual);
       bool printable = type == "int" || type == "float" || type == "bool" ||
           type == "char" || type == "string" || starts_with(type, "vector[");
@@ -24669,7 +24685,7 @@ static void write_bootstrap_json(std::ostream& out,
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"pass\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"],\"exhaustive_enum_match\":\"match expression: / match consume <owned enum expression>:\"},"
          "\"enums\":{\"declaration\":\"enum Name: with closed named-field cases\",\"construction\":\"Name.Case(field: value)\",\"read_match\":\"match expression:\",\"consume_match\":\"match consume <owned enum expression>:\",\"pattern_ownership_modifiers\":false,\"replace\":\"replace(place, replacement)\"},"
-         "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"bitwise\":[\"&\",\"|\",\"^\",\"~\",\"<<\",\">>\"],\"bitwise_precedence_high_to_low\":[\"~\",\"<<, >>\",\"&\",\"^\",\"|\"],\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"find(pattern)\",\"slice(start, length)\",\"ascii_lower()\",\"ascii_upper()\",\"reserve(additional_bytes)\",\"append(part)\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"}},"
+         "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"bitwise\":[\"&\",\"|\",\"^\",\"~\",\"<<\",\">>\"],\"bitwise_precedence_high_to_low\":[\"~\",\"<<, >>\",\"&\",\"^\",\"|\"],\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"find(pattern)\",\"slice(start, length)\",\"ascii_lower()\",\"ascii_upper()\",\"reserve(additional_bytes)\",\"append(part)\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"},\"char_builtin\":{\"literal\":\"'x' or '\\\\u{HEX}'\",\"constructor\":\"Char(codepoint: Int) fails for surrogates and values above 0x10FFFF\",\"equality\":[\"==\",\"!=\"],\"ordering\":[\"<\",\"<=\",\">\",\">=\"],\"methods\":[\"codepoint()\",\"to_string()\",\"less(other)\",\"isequal(other)\",\"hash()\"],\"string_conversion\":\"explicit c.to_string(); Char and String never compare with ==\"},\"equality_operands\":{\"same_type\":true,\"numeric_mixing\":\"Int and Float only\",\"records\":\"unsupported (RECORD_EQUALITY_UNSUPPORTED); compare fields\",\"enums\":\"unsupported (ENUM_OPERATOR_UNSUPPORTED); use match\",\"collections\":\"Vector, Queue, and Map of equality-comparable element types\"}},"
          "\"numeric\":{\"float_predicates\":[\"is_nan(Float) -> Bool\",\"is_finite(Float) -> Bool\"],"
          "\"parsing\":[\"parse_int(String) -> Int raises ParseError.Invalid|Overflow\","
          "\"parse_float(String) -> Float raises ParseError.Invalid\"],"
