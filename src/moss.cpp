@@ -1913,6 +1913,10 @@ static string canonicalize_char_literals(const string& line, int line_no,
       continue;
     }
     if (c == '"') { in_string = true; out.push_back(c); continue; }
+    if (c == '#') {  // a trailing comment is not code; lex_lines strips it
+      out += line.substr(i);
+      break;
+    }
     if (c != '\'') { out.push_back(c); continue; }
     uint32_t codepoint = 0;
     size_t end = string::npos;  // index of the closing quote

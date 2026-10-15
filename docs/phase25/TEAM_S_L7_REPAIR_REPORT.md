@@ -287,6 +287,14 @@ three net-new defects:
 | P25-S-ARCH-010 `moss check` accepted malformed String/Char escapes; Fast Debug leaked `stoul` or produced surrogate/out-of-range values | The lexer validates every escape against Rust's set (`INVALID_ESCAPE`, with the source line) | eleven `INVALID_ESCAPE` cases |
 | P25-S-ARCH-011 `'\x41'` was 92 in Fast Debug and 65 natively | Escaped Char literals always canonicalize to `'\u{HEX}'`; `\xHH` is part of the shared escape parser | (011) |
 
+A third pass on `8e70b9c6a006d2d81fa83bb1e58103a1adedd957` (second addendum)
+confirmed 009–011 fixed and issued **CONDITIONAL GO** with one regression from
+the 010 fix: P25-S-ARCH-012, where escapes inside a trailing `#` comment were
+validated (`echo 1  # "C:\Users\me"` was rejected). The lexer now stops at an
+unquoted `#`; the regression is `(012)`. The Architect stated that with only
+this source change and `make check`/`make examples` ending `EXIT 0`, the
+branch is ready for L7 re-review without another Architect pass.
+
 Inside `sort(v, by: Reverse(k))`, `Reverse` is always the builtin key wrapper,
 even when a user function named `Reverse` exists; elsewhere the user function
 wins. All engines apply this rule.

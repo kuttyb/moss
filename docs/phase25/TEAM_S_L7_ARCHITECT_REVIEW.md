@@ -252,3 +252,64 @@ probes, with the exceptions below. Before the branch goes to L7:
 The decisions on item 2 (staged indexed String) and on the ABI-v10 cut remain with
 L7 and Team G. **L7 alone decides G5 integration; this verdict concerns only
 readiness for L7 re-review.**
+
+---
+
+## Addendum 2: final verification of the re-review repair (2026-10-15)
+
+- **Role:** Independent L6 Architect, Team S (the same reviewer; the earlier text and
+  addendum are unchanged and were committed byte-identical in 8e70b9c).
+- **Reviewed implementation SHA:** `8e70b9c6a006d2d81fa83bb1e58103a1adedd957`. This is
+  `HEAD` of `phase25-semantics-engines` and of the clean worktree `tmp/wt-ckpt6`, and
+  the two `moss` binaries are byte-identical. The only source change since `6ee8fee` is
+  `src/moss.cpp` (`sort_key_effect`, `parse_rust_escape`, and
+  `canonicalize_char_literals`).
+
+### Commands and outcomes
+
+| command | outcome |
+|---|---|
+| `check_phase25_l7_repairs.py`, `check_phase25_indexed_string.py` | **pass** both |
+| `run_ledger.py repaired=…` | unchanged: all pass except #12 (joint G2) |
+| `make check` / `make examples` | **relied on** `tmp/wt-ckpt6/tmp/check11.log`: ends `all Moss v0.1 tests passed` / `EXIT 0`, no `FAIL` lines. `examples11.log` ends `EXIT 0`. Both are from the clean worktree at 8e70b9c, so the SDK sources pass check |
+| All earlier probes: `ck1`–`ck9`, `ar1`–`ar6`, `pk9/11/12`, `h2`–`h4`, `esc`, `ue`, `xe`, `f1`, `s1`, `c1`, `r1`, `so1`, `st1`, `ch1`, `sd`, `o1`, `o2`, `hs` | every runnable probe **AGREES** across the three engines. Rejections are consistent with structured codes. `ck3`/`ck8`/`ck9` (untyped consuming key, with `Reverse`, used at both String and Int) now run natively |
+| `es1`–`es11`, `es21`, `es22`, `es24` (malformed String/Char escapes) | all rejected at check and in Fast Debug with `INVALID_ESCAPE`; no `stoul` leak |
+| `es12` (`"\u{41}\x41\0"`), `es23` (`'\x41'`) | AGREE; `'\x41'` is 65 in every engine |
+| `ev1.moss`: `"\u{10FFFF}"`, `"\x7F"`, `"it\'s"`, `'\"'`, `'\''`, `'\x7F'`, `'\u{10FFFF}'`, `'\0'`, `"\u{0}"`, `"\u{000041}"`, escapes next to `#` and `\|>`, a multi-line `\|> map(...)` continuation | **AGREE** in plain and staged indexed-v1 modes, with correct values |
+
+### Net-new defect
+
+| ID | severity | reproducer | engines affected | status |
+|---|---|---|---|---|
+| P25-S-ARCH-012 | Medium (regression) | `fn main():\n  echo 1  # Windows path "C:\Users\me"` and `fn main():\n  echo 1  # regex '\d+'` are both rejected with `INVALID_ESCAPE`. The escape validator runs in `canonicalize_char_literals` *before* trailing comments are stripped, so quote and backslash text inside a trailing `#` comment is validated as a literal. Full-line comments are unaffected (they are skipped earlier). Both programs pass check at 983acb2 | check, all engines | Confirmed; introduced by the ARCH-010 fix. Remedy: stop scanning at a `#` outside a String literal, or strip comments before validating |
+
+### Status of my conditions
+
+| condition (addendum 1) | status |
+|---|---|
+| 1. ARCH-009: decide clone vs borrow from the concrete specialization effects, with a regression | **Met** |
+| 2. ARCH-011: Char `\xHH` identical in all engines, with a regression | **Met** |
+| 3. Fill §Validation from finished `EXIT 0` logs and record the Submission SHA | **Open, docs only.** `VALIDATION_SECTION` is still a placeholder, and the new report text already says it is "filled below". The logs it needs (`check11.log`, `examples11.log`, both `EXIT 0`) now exist |
+| 4. ARCH-010: escapes validated, or at minimum no `stoul` leak and no non-scalar values | **Met** (the checker and lexer reject them with `INVALID_ESCAPE`), but the fix introduced ARCH-012 |
+
+The report also now states the Reverse-inside-sort rule and the pre-existing
+named-message-argument limitation, as requested.
+
+### Verdict (addendum 2)
+
+**CONDITIONAL GO for L7 re-review**, attributable to the Independent L6 Architect,
+Team S, for implementation SHA `8e70b9c6a006d2d81fa83bb1e58103a1adedd957`.
+
+All of my previous conditions are met except the docs-only validation section. The
+remaining conditions are narrow:
+
+1. Fix ARCH-012 so that trailing comments are not escape-validated, with a regression
+   that checks a trailing comment holding `"C:\Users"` and `'\d'`. Because this touches
+   the lexer, rerun `check_phase25_l7_repairs.py` and `make check`.
+2. Fill §Validation and the Submission SHA with the finished logs for the final SHA.
+
+Once both are done and the logs end `EXIT 0`, I consider the branch ready for L7
+re-review without a further Architect pass, provided the only source change is the
+ARCH-012 fix. The decisions on item 2 (staged indexed String) and on the ABI-v10 cut
+remain with L7 and Team G. **L7 alone decides G5 integration; this verdict concerns
+only readiness for L7 re-review.**

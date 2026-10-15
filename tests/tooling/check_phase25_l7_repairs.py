@@ -598,6 +598,12 @@ fn main():
   echo c
   echo '\\x2C'.codepoint()
 """, "011 \\xHH Char literals", "65\nA\n44\n")
+    three_modes("""
+fn main():
+  echo 1  # Windows path "C:\\Users\\me" and regex '\\d+'
+  echo '#'.codepoint()  # a '#' Char literal is code, this is a comment
+  echo "a#b"  # "\\q"
+""", "012 trailing comments are not escape-checked", "1\n35\na#b\n")
     for literal in ('"\\x80"', '"\\xZZ"', '"\\x4"', '"\\u{110000}"', '"\\u{D800}"', '"\\u{}"',
                     '"\\u{1F600"', '"\\q"', '"\\u{0000041}"', "'\\u{D800}'", "'\\u{110000}'"):
         rejected(f"fn main():\n  echo {literal}\n", f"010 escape {literal}", "INVALID_ESCAPE")
