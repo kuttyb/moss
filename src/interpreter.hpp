@@ -318,7 +318,12 @@ class FastInterpreter {
       if (keep && std::uncaught_exceptions() == uncaught) {
         std::vector<Frame::ScopedBinding> dropped;
         for (auto& item : scope) {
-          if (!keep->count(item.name) || item.value || item.alias) {
+          // A name that already resolves outside the block (a local, an
+          // alias, or the handler's domain state) is shadowed, not joined:
+          // native keeps such branch bindings block-local.
+          const bool shadows_state = frame.handler_scope && frame.domain &&
+              (frame.domain->state.count(item.name) || frame.domain->routes.count(item.name));
+          if (!keep->count(item.name) || item.value || item.alias || shadows_state) {
             dropped.push_back(std::move(item));
             continue;
           }

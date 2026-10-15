@@ -6680,6 +6680,58 @@ class Checker {
       while (else_end < source.body.size() && source.body[else_end].indent > branch.indent) ++else_end;
     }
     const size_t suffix_begin = else_begin == then_end ? then_end : else_end;
+    // A Then/Else continuation splices the branch's statements in front of
+    // the suffix at one Rust block level. A branch-local binding would then
+    // stay visible in the suffix: it would shadow a state field, parameter,
+    // or route there, or capture a later same-named binding. Keep the
+    // conservative entry placement whenever the suffix names such a binding
+    // and it is not a fresh name bound on both paths (a checked join).
+    {
+      std::set<string> outer;
+      for (const auto& field : domain.state) outer.insert(field.name);
+      for (const auto& parameter : source.params) outer.insert(parameter.name);
+      for (const auto& route : domain.routes) outer.insert(route.name);
+      auto branch_binders = [&](size_t begin, size_t end) {
+        std::set<string> names;
+        for (size_t k = begin; k < end; ++k) {
+          const Stmt& statement = source.body[k];
+          if (statement.indent != branch.indent + 1) continue;
+          if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var)
+            names.insert(statement.a);
+          else if (statement.kind == Stmt::Kind::Assign && !outer.count(statement.a))
+            names.insert(statement.a);
+          else if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::Match ||
+                   statement.kind == Stmt::Kind::Try)
+            for (const auto& joined : statement.joined_types)
+              if (!outer.count(joined.first)) names.insert(joined.first);
+        }
+        return names;
+      };
+      const auto then_names = branch_binders(then_begin, then_end);
+      const auto else_names = branch_binders(else_begin, else_end);
+      auto suffix_mentions = [&](const string& name) {
+        for (size_t k = suffix_begin; k < source.body.size(); ++k) {
+          const Stmt& statement = source.body[k];
+          if (expression_uses(statement.a, name) ||
+              expression_uses(statement.b, name) ||
+              expression_uses(statement.message_result, name))
+            return true;
+          for (const auto& argument : statement.args)
+            if (expression_uses(argument, name)) return true;
+        }
+        return false;
+      };
+      for (const auto* names : {&then_names, &else_names})
+        for (const auto& name : *names) {
+          const bool joined = !outer.count(name) && then_names.count(name) &&
+              else_names.count(name);
+          if (!joined && suffix_mentions(name)) {
+            whole.path_placement.reason =
+                "conservative entry placement: leading branch binding is visible in the continuation";
+            return;
+          }
+        }
+    }
     auto then_body = normalized_statement_slice(source.body, then_begin, then_end, branch.indent + 1);
     auto else_body = normalized_statement_slice(source.body, else_begin, else_end, branch.indent + 1);
     auto suffix = normalized_statement_slice(source.body, suffix_begin, source.body.size(), 0);
@@ -12298,6 +12350,12 @@ class Checker {
         if (identity && *identity != found->second) different = true;
         identity = found->second;
       }
+      // A join binding declared with `let` on every path stays immutable.
+      if (all_present && std::all_of(paths.begin(), paths.end(),
+              [&](const OwnershipEnv& path) {
+                return path.immutable_locals.count(entry.first) != 0;
+              }))
+        destination.immutable_locals.insert(entry.first);
       if (!all_present) {
         destination.binding_identities.erase(entry.first);
       } else if (different) {
@@ -20969,6 +21027,12 @@ class Generator {
 
           const string outcome = "__moss_try_outcome_" +
               std::to_string(phase21_try_temp_++);
+          // The attempt's normal completion leaves this outer block
+          // directly, so rustc sees every join binding initialized on the
+          // normal path even when a raise precedes its first assignment.
+          const string done_label = "__moss_try_done_" +
+              std::to_string(phase21_try_temp_++);
+          o << indent(level) << "'" << done_label << ": {\n";
           o << indent(level) << "#[allow(unreachable_code)]\n";
           const string try_label = "__moss_try_" +
               std::to_string(phase21_try_temp_++);
@@ -20997,11 +21061,11 @@ class Generator {
                     functional_context);
           phase21_result_context_ = saved_result_context;
           phase21_try_label_ = saved_try_label;
-          o << indent(level + 1) << "Ok(())\n";
+          o << indent(level + 1) << "break '" << done_label << ";\n";
           o << indent(level) << "};\n";
           o << indent(level) << "#[allow(unreachable_patterns)]\n";
           o << indent(level) << "match " << outcome << " {\n";
-          o << indent(level + 1) << "Ok(()) => {},\n";
+          o << indent(level + 1) << "Ok(()) => std::process::abort(),\n";
 
           RaiseSet handled;
           while (i < ss.size() && ss[i].indent == level &&
@@ -21125,6 +21189,7 @@ class Generator {
             o << indent(level + 1)
               << "Err(_) => std::process::abort(),\n";
           }
+          o << indent(level) << "}\n";
           o << indent(level) << "}\n";
           phase21_return_result_context_ = saved_return_result_context;
           break;
