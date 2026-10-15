@@ -229,3 +229,74 @@ diverge or fail in rustc (ARCH-013 through 018). Conditions:
    gets a ledger entry with an owner. Make ARCH-019 consistent: either
    standalone `check` also reports native display capability, or project
    `check` does not.
+
+## Addendum: closure verification at `baefd1fbd763ba0ec1d4955c6bad64f4bb71ac94`
+
+**Reviewed SHA:** `baefd1fbd763ba0ec1d4955c6bad64f4bb71ac94`. I checked it out detached and `make` succeeded.
+
+**Scope:** `git diff b6d45cf baefd1f`, which covers commits `bd843db` and
+`baefd1f`. Commit `3645e43` is this review document, unchanged.
+
+### Commands and outcomes
+
+| Command | Result |
+|---|---|
+| The seven required suites from §3 (S1, S2 including `test_architect_next_cycle_findings`, S3, S4, L7 repairs, G1 regressions, `run_fixtures.py`) | all exit 0 |
+| Differential `moss check --json` over all 1,876 tracked `.moss` files, `b6d45cf` against `baefd1f` | 3 verdict changes. All three are `examples/swarm/modules/domain_services/repro/diag_file/**` and were already rejected; only the code changed, from `TYPE_INFERENCE_FAILED` to `TYPE_MISMATCH` ("operator '+' is not defined for 'int' and 'string'"). No file went from accepted to rejected or back. |
+| Full `make check` / `make examples` | **Not re-run by me at this SHA.** The Coordinator reports both passed. Once the scan finished, I restored the semantic-cache snapshots it had touched and removed the ignored `.moss/` caches, so the tree was clean at commit time. |
+
+### Status of the findings
+
+| Item | Status at `baefd1f` | Evidence (ran: check, Fast Debug, Native Debug) |
+|---|---|---|
+| ARCH-013 | **Fixed** | Every original reproducer is now `TYPE_MISMATCH` in all engines: `c + "x"`, `"x" + c`, `'a' + 'b'`, `c + 1`, `c - 'a'`, `c * 2`, `-c`, `true + 1`, `"a" - "b"`, `"a" + 1`, `"ab" * 2`, `[1] + [2]`. The rule also fires in the other positions I tried: vector literal, call argument, parenthesized receiver, untyped specialization (`fn add(a, b)` with `('a', "x")` / `(true, 1)`), `if` condition, assignment, handler `reply`, pipeline stage, and `-a` in an untyped function. These still work in all engines: `s + c.to_string() + "!"`, String chains, Int/Float mixing, `x - -1`, `x * -x`, `-1.5e-3`, `2.0e-3 + 1.0`, `1e-3 - 1`, `0 - two()`, record field arithmetic, `-p.x`, and an untyped `add` at Int, String, and mixed numeric types. But see ARCH-021. |
+| ARCH-014 | **Fixed** | Rejected: `m[inner] = 1` and `m[[inner]] = 1` with `MAP_KEY_TYPE_UNSUPPORTED`; `m[[Color.Red]] = 1` with `ENUM_MAP_KEY_UNSUPPORTED`; a declared parameter `Map[Map[String, Int], Int]` with `UNKNOWN_SYMBOL_OR_TYPE`. Still accepted and identical in all engines: Vector/Queue/Bool/Char keys, `Map[Vector[Char], Int]` parameters, Map-valued Maps (`Map[String, Map[String, Int]]`), and domain-state `Map[String, Int]`. |
+| ARCH-015 | **Fixed** | `assertEqual([Color.Red], [Color.Red])` is rejected with `ENUM_OPERATOR_UNSUPPORTED` by `moss test` and `moss test --interp`. |
+| ARCH-016 | **Fixed** | `Char(codepoint: 65)` gives `CALL_NAMED_ARGUMENT_UNSUPPORTED`. `sort(v, by: Reverse(ident))` still works. Bootstrap now says `Char(Int) (positional)`. |
+| ARCH-017 | **Fixed** | `range(0, 3) == range(0, 3)` and `r = range(0, 3)` give `RANGE_OUTSIDE_FOR`. Nested `for … in range(…)` loops, `range` in a test `for`, and `range(0, n + 1)` are unaffected. |
+| ARCH-018, 019, 020 | Tracked, not fixed (as agreed) | — |
+| DOC-1 | Fixed | The §1 sentence now says neither `==` nor `isequal` compares Char with String. |
+| DOC-2 | Fixed | Declared record-key types are now described as `UNKNOWN_SYMBOL_OR_TYPE`, and Map/enum keys are listed. Minor residual: a declared `Map[Map[…], V]` also gets `UNKNOWN_SYMBOL_OR_TYPE`, not `MAP_KEY_TYPE_UNSUPPORTED`; the doc names the latter only for index/assignment positions. It fails closed, so I do not count it. |
+| DOC-3 | Fixed | Line anchors removed. |
+| DOC-4 | Fixed | `Range == Range` is now scoped to FileIO `Range` values, and `RANGE_OUTSIDE_FOR` is documented. |
+| DOC-5 | Fixed | The corpus claim is dated to `f272af9`. |
+| DOC-6 | Fixed | §5 lists all four key codes. |
+| DOC-7 | Fixed | Bootstrap text corrected. |
+
+### Net-new defect
+
+| ID | Class | Severity | Reproducer (ran) | Engines |
+|---|---|---|---|---|
+| **P25-S-ARCH-021** | Confirmed defect, **regression** introduced by the ARCH-013 unary-minus rule (false rejection of valid code) | Medium | `fn main():\n  s = "abc"\n  echo -s.length()`. Also `-c.codepoint()` (Char receiver), `k = -s.find(",")`, a record method `-p.get()`, and the same operand inside larger expressions: `if -s.length() < 0:` and `x = 10 + -s.length()`. | Now rejected in every engine with `TYPE_MISMATCH` "unary '-' requires an Int or Float operand, found 'string'" (or `'char'`, `'P'`): the new check reports the **receiver's** type, not the member-call result's type. At `b6d45cf` all of these passed check and printed the same value in Fast Debug and Native (`-3`, `-97`, `-1`, `-4`, `neg`, `7`). Workaround: `0 - s.length()`. |
+
+Observation, not a new defect: `-v[0]` (and `-p.v[0]`, `-m["a"]`) is now
+rejected with "found 'vector[int]'". At `b6d45cf` it was already rejected, with
+`TYPE_INFERENCE_FAILED`, because unary minus binds before indexing. The new
+message exposes that precedence. It belongs with the tracked ARCH-020 family.
+
+No other false positive or fail-open was found. That includes the corpus
+differential and about 60 new probes of the arithmetic, Map-key, named-argument,
+`RANGE_OUTSIDE_FOR`, and `assertEqual` rules.
+
+### Verdict (addendum)
+
+**CONDITIONAL GO for joint G2/G3/G4 integration readiness.** This is narrower
+than §6.
+
+- Conditions 1 to 3 of §6 are satisfied: ARCH-013 to 017 and DOC-1 to 7 are
+  fixed, with regressions in the S2 suite.
+- The S1 acceptance gap that blocked L7 S1 acceptance (silent wrong Fast Debug
+  output from mistyped arithmetic) is closed.
+- The Map-key boundary that Team G inherits now fails closed for every
+  non-hashable key type I found.
+
+The one remaining condition is a regression, not an integration-interface
+issue:
+
+1. **Fix P25-S-ARCH-021 before integration closeout**, with a regression test.
+   The unary-minus operand check must use the type of the whole operand
+   expression (method-call results, `find`, `length`, `codepoint`), so that
+   `-s.length()` is accepted again and agrees in all engines. It does not block
+   starting the joint G2/G3/G4 integration worktree.
+
+ARCH-018 to 020 remain tracked and do not block.
