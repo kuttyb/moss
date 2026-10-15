@@ -300,3 +300,78 @@ issue:
    starting the joint G2/G3/G4 integration worktree.
 
 ARCH-018 to 020 remain tracked and do not block.
+
+## Addendum 2 (S-D part 1): unary-minus repair at `3577dbce6080aa1320a2b60e31d926866fbb3f54`
+
+**Reviewed SHA:** `3577dbce6080aa1320a2b60e31d926866fbb3f54`. I checked it out
+detached and `make` succeeded.
+
+**Scope:** `git diff baefd1f 3577dbc -- src tests`. The prefix-`-` block in
+`check_expression` now checks the whole operand and returns. The only test
+change is 8 added lines in `check_phase25_s2_char_string.py`, and their cases
+are Int-only.
+
+### Method
+
+Every probe ran in four engines: `moss check --json`, Fast Debug, Native
+Debug (`--debug` plus `rustc`), and Native Release (`-O` plus `rustc -O`),
+with the outputs compared. All seven required suites were re-run (S1, S2, S3,
+S4, L7 repairs, G1 regressions, `run_fixtures.py`) and all exit 0. Full
+`make check` was not re-run at this SHA.
+
+### What now works (accepted, and identical in all four engines)
+
+- **L7-required forms:**
+  - `-s.length()`;
+  - `-f(x)` and `-f(x) + 1`;
+  - `-(x + 1)` and `-(x + 1) * 2`;
+  - `-v[0]`, `-m["k"]`, and `-w[i][j]` for **Int** elements;
+  - `10 - -v[0]` and `-v[0] + -v[1]`.
+- **Chains:** `- -x`, `-(-x)`, `-p.q.get()`, `-p.q.n`.
+- **Other positions:**
+  - call arguments: `id(-a)`, `id(-id(a))`;
+  - vector literals: `[-a, -b, -(a - b)]`;
+  - comparisons: `-a < -b`, `-a == 0 - a`;
+  - `return -x`;
+  - pipelines: `map(neg)`, `map(_ * -1)`, `map(-_)` (Int and Float), `filter(_ > -2)`;
+  - handler `reply -n`, and `reply -v[0]` on Int state.
+- **Binary vs unary:** `a - -b` = 9, `a -b` = 5, `a- b` = 5, `a--b` = 9,
+  `a * -b`, `a / -b`, `a % -b`.
+- **Untyped specializations:** `neg(3)`, `neg(2.5)`, `negl("abcd")` (which
+  returns `-s.length()`).
+- **Float:** `-g()`, `-g() * 2.0`, `-p.y`, `-p.get()`, `-(x * 2.0)`, `-0.0`,
+  `-(0.0)`.
+- **Int minimum wraps (S4-005):** `-(-9223372036854775807 - 1)`, `-m`,
+  `-v[0]`, `- -m`, and `-(m)` all print `-9223372036854775808`.
+- **Still rejected with `TYPE_MISMATCH` in every engine:** `-s`,
+  `-s.char_at(0)`, `-b` (Bool), `-mk()` (record), `-s.slice(0, 1)`, `-v[0]`
+  on a `Vector[String]`, `-(c)` (Char), and `neg("s")` (untyped
+  specialization at String).
+
+ARCH-021 is **closed**. ARCH-020 is **closed**: `-big()`, `-(x + 1)`, and
+`-(x)` are accepted and agree across engines.
+
+### Net-new findings
+
+| ID | Class | Severity | Reproducer (ran) | Engines |
+|---|---|---|---|---|
+| **P25-S-ARCH-022** | Confirmed defect, net-new fail-open. The checker now accepts the form, and native lowering negates the container. | Medium | `fn main():\n  v = [1.5, 2.5]\n  echo -v[0]`. Also: `x = -v[1] * 2.0`; `-m["a"]` on a `Map[String, Float]`; `-p.v[0]` on a `Vector[Float]` field; `-w[0][1]` on nested Float vectors; `1.0 + -v[0]`; and `fn negf(v: Vector[Float]) -> Float:\n  return -v[0]`. | check **ok**. Fast Debug prints the right value (`-1.5`, `-5.0`, `-2.5`, `-2.5`, `-2.5`, `-0.5`, `-3.5`). Native Debug fails in rustc with E0600 (`cannot apply unary operator '-' to type Vec<{float}>`, `HashMap<String, {float}>`, `Vec<f64>`, `&Vec<f64>`). The Generator's Int branch emits `(v[0]).wrapping_neg()`, but a Float operand falls through to the older path, which parses `-v[0]` as `(-v)[0]`. At `baefd1f` the checker rejected these forms, and at `b6d45cf` they were `TYPE_INFERENCE_FAILED`, so this repair is what makes them reach rustc. The new regression test covers only Int. |
+| **P25-S-ARCH-023** | Confirmed defect: fails closed with an internal error. Pre-existing (same at `b6d45cf`), but newly reachable because ARCH-021 now admits the form. | Low–Medium | `domain D:\n  n: Int\n  fn NegLen(s: String) -> Int:\n    reply -s.length()` with `main` calling `message d.NegLen("hello")`. Also `k = -s.length()` then `reply k` in a handler. | check, Fast Debug, and native all fail with `MOSS_INTERNAL_OR_IO_ERROR` at line 0: "internal synchronization invariant: unresolved concrete method effect target". The same expression in an ordinary `fn` works in all four engines (`-5`). So does `reply 0 - s.length()`. The handler's effect/synchronization capture does not resolve the member call under prefix `-`. |
+
+### Verdict (addendum 2)
+
+- **ARCH-021: closed.**
+- **ARCH-020: closed.**
+
+**Team S at `3577dbc`: CONDITIONAL GO for joint G2/G3/G4 integration
+readiness.** The only remaining condition is **P25-S-ARCH-022**. This repair
+introduced a checker-accepted form that fails in native rustc, which breaks
+the S1 acceptance criterion. Before integration closeout, the Generator must
+lower prefix `-` on an indexed or member Float operand as negation of the
+whole operand, for example `-(v[0])`, and the S2 regression must gain Float
+cases (`-v[0]`, `-m["k"]`, `-p.v[0]`, nested, and the typed-parameter form).
+Alternatively, the checker could reject these forms precisely until then.
+
+ARCH-023 fails closed. It is tracked, not blocking, but it should get a
+stable diagnostic instead of an internal invariant error. It does not block
+starting the joint integration worktree. ARCH-018 and 019 remain tracked.
