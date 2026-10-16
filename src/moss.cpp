@@ -13132,6 +13132,57 @@ class Checker {
     return operation;
   }
 
+  static bool compiled_interface_file(const string& file) {
+    return std::filesystem::path(file).extension() == ".mossi";
+  }
+
+  static string provider_callable_display(const string& name) {
+    const string module = module_name_from_symbol(name);
+    return module.empty() ? name : module + "." + name.substr(module.size() + 2);
+  }
+
+  // Source-free provider bodies have no consumer-visible source, so a failed
+  // requirement names the provider statement that introduced it.
+  [[noreturn]] void requirement_err(int line, const Function& function,
+                                    const Constraint& requirement,
+                                    const string& message) const {
+    CompileError error(line, message);
+    if (!current_source_file_.empty()) error.source_file = current_source_file_;
+    if (compiled_interface_file(function.source_file)) {
+      const string use = requirement.subject + "." + requirement.detail + "(";
+      int origin = function.line;
+      for (const auto& statement : function.body)
+        if (statement.text.find(use) != string::npos) {
+          origin = statement.line;
+          break;
+        }
+      error.teaching.related.push_back(
+          {function.source_file, origin, 1,
+           "provider function '" + provider_callable_display(function.name) +
+               "' requires method '" + requirement.detail + "' on '" +
+               requirement.subject + "'"});
+    }
+    throw error;
+  }
+
+  // Unwinding through a specialization records each provider frame. At the
+  // boundary between consumer source and a compiled provider, the consumer's
+  // outer call becomes the primary location (ABI_V10_DESIGN.md §3.6).
+  static void annotate_specialization_failure(CompileError& error,
+                                              const Function& function,
+                                              int call_line,
+                                              const string& call_source) {
+    if (!compiled_interface_file(error.source_file)) return;
+    error.teaching.related.insert(
+        error.teaching.related.begin(),
+        {error.source_file, error.line, 1,
+         "inside provider function '" +
+             provider_callable_display(function.name) + "'"});
+    if (compiled_interface_file(call_source) || call_source.empty()) return;
+    error.line = call_line;
+    error.source_file = call_source;
+  }
+
   void validate_method_requirements(int line, const Function& function,
                                     const vector<string>& parameter_types) const {
     auto instantiated = instantiated_function_env(function, parameter_types);
@@ -13161,16 +13212,18 @@ class Checker {
         string prefix = "argument to function '" + function.name + "' has type '" +
             canonical_type_name(receiver->second) + "'";
         if (failure == MethodResolutionFailure::WrongArity)
-          err(line, prefix + " with wrong arity for required method '" +
-              requirement.detail + "' (requires " +
-              std::to_string(requirement.arity) + ")");
+          requirement_err(line, function, requirement, prefix +
+              " with wrong arity for required method '" + requirement.detail +
+              "' (requires " + std::to_string(requirement.arity) + ")");
         if (failure == MethodResolutionFailure::IncompatibleArguments)
-          err(line, prefix + " whose method '" + requirement.detail +
-              "' is incompatible with argument types (" + type_list(argument_types) + ")");
+          requirement_err(line, function, requirement, prefix + " whose method '" +
+              requirement.detail + "' is incompatible with argument types (" +
+              type_list(argument_types) + ")");
         if (failure == MethodResolutionFailure::Ambiguous)
-          err(line, prefix + " with ambiguous required method '" +
-              requirement.detail + "'");
-        err(line, prefix + " missing required method '" + requirement.detail + "'");
+          requirement_err(line, function, requirement, prefix +
+              " with ambiguous required method '" + requirement.detail + "'");
+        requirement_err(line, function, requirement, prefix +
+            " missing required method '" + requirement.detail + "'");
       }
       string result = builtin.value_or(fileio_builtin.value_or(
           method ? method->return_type.value_or("unit") : "unit"));
@@ -13261,6 +13314,8 @@ class Checker {
     for (size_t index = 0; index < function.params.size(); ++index)
       specialized_env[function.params[index].name] = canonical_types[index];
     FunctionSpecialization* previous = checking_specialization_;
+    const string call_source = current_source_file_;
+    try {
     checking_specialization_ = &function.specializations.back();
     StaticBindingScope specialization_bounds(static_bound_bindings_);
     static_bound_bindings_.clear();
@@ -13287,6 +13342,11 @@ class Checker {
     if (function.result_expression)
       check_expression(function.result_line ? function.result_line : function.line,
                        *function.result_expression, specialized_env);
+    } catch (CompileError& error) {
+      checking_specialization_ = previous;
+      annotate_specialization_failure(error, function, line, call_source);
+      throw;
+    }
     checking_specialization_ = previous;
   }
 
@@ -29967,7 +30027,7 @@ static CheckedProjectUnit check_project_sources(
         error.what(), error.source_file.empty()
             ? (sources.empty() ? string() : sources.front().string())
             : error.source_file,
-        error.line);
+        error.line, error.teaching);
   }
 }
 
