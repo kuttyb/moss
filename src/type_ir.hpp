@@ -48,14 +48,147 @@ struct TypeVarId {
 
 class Type;
 using TypeRef = std::shared_ptr<Type>;
+class TypeContext;
+
+// ---------------------------------------------------------------------------
+// Stable declaration identities (TYPE_IR_CONTRACT §3.1).
+//
+// A nominal type is identified by its defining module and declaration, never
+// by its program spelling (`Provider__Box`), source path, layout, or a Rust
+// symbol. One NominalDeclaration is interned per declaration per compilation
+// session; nominal TypeRefs point at it.
+
+inline std::string module_identity(std::string_view package,
+                                   std::string_view version,
+                                   std::string_view module) {
+  return "module-v1:" + std::string(package) + "@" + std::string(version) +
+         "::" + std::string(module);
+}
+
+enum class DeclarationKind { Record, Enum, Domain };
+
+struct NominalFieldSlot {
+  std::string name;
+  std::string declared_type;  // canonical annotation; empty for an inferred slot
+  bool inferred{false};
+};
+
+struct NominalDeclaration {
+  DeclarationKind kind{DeclarationKind::Record};
+  std::string program_name;      // checker spelling used only for name lookup
+  std::string module_id;         // module-v1:<package>@<version>::<module>
+  std::string declaration_name;  // source declaration name
+  std::string id;                // nominal-template-v1:<module_id>:type:<name>
+  std::vector<NominalFieldSlot> fields;  // records only, in source order
+  const TypeContext* owner{nullptr};     // resolves declared field types
+
+  size_t inferred_slot_count() const {
+    return static_cast<size_t>(std::count_if(fields.begin(), fields.end(),
+        [](const NominalFieldSlot& slot) { return slot.inferred; }));
+  }
+};
+using NominalDeclarationRef = std::shared_ptr<const NominalDeclaration>;
+
+inline std::string declaration_identity(DeclarationKind kind,
+                                        const std::string& module_id,
+                                        const std::string& name) {
+  switch (kind) {
+    case DeclarationKind::Record:
+      return "nominal-template-v1:" + module_id + ":type:" + name;
+    case DeclarationKind::Enum:
+      return "nominal-enum-v1:" + module_id + ":enum:" + name;
+    case DeclarationKind::Domain:
+      return "nominal-domain-v1:" + module_id + ":domain:" + name;
+  }
+  return {};
+}
+
+// The declaration table of one compilation session. Name resolution binds a
+// program spelling to its interned declaration exactly once; after that every
+// comparison and key uses the declaration identity. The active context is
+// scoped (RAII) to the checker/generator/build step that owns the program.
+class TypeContext {
+ public:
+  // Interns a declaration. Re-declaring one program name with a different
+  // identity is a compiler error, never a silent replacement.
+  NominalDeclarationRef declare(NominalDeclaration declaration) {
+    declaration.id = declaration_identity(declaration.kind, declaration.module_id,
+                                          declaration.declaration_name);
+    declaration.owner = this;
+    auto existing = by_name_.find(declaration.program_name);
+    if (existing != by_name_.end()) {
+      if (existing->second->id != declaration.id)
+        throw std::invalid_argument("conflicting nominal identity for '" +
+                                    declaration.program_name + "'");
+      return existing->second;
+    }
+    auto interned = std::make_shared<const NominalDeclaration>(std::move(declaration));
+    by_name_.emplace(interned->program_name, interned);
+    by_id_.emplace(interned->id, interned);
+    return interned;
+  }
+  NominalDeclarationRef find(std::string_view program_name) const {
+    auto found = by_name_.find(std::string(program_name));
+    return found == by_name_.end() ? nullptr : found->second;
+  }
+  NominalDeclarationRef find_id(std::string_view id) const {
+    auto found = by_id_.find(std::string(id));
+    return found == by_id_.end() ? nullptr : found->second;
+  }
+  static const TypeContext* current() {
+    return stack().empty() ? nullptr : stack().back();
+  }
+  class Scope {
+   public:
+    explicit Scope(const TypeContext* context) : active_(context != nullptr) {
+      if (active_) stack().push_back(context);
+    }
+    ~Scope() { if (active_) stack().pop_back(); }
+    Scope(const Scope&) = delete;
+    Scope& operator=(const Scope&) = delete;
+   private:
+    bool active_;
+  };
+  // A copyable member form of Scope for objects (such as the generator) that
+  // are themselves copied; each live copy keeps the same context bound.
+  class Binding {
+   public:
+    explicit Binding(const TypeContext* context) : context_(context) { push(); }
+    Binding(const Binding& other) : context_(other.context_) { push(); }
+    Binding& operator=(const Binding&) = delete;
+    ~Binding() { if (context_) stack().pop_back(); }
+   private:
+    void push() { if (context_) stack().push_back(context_); }
+    const TypeContext* context_;
+  };
+
+ private:
+  static std::vector<const TypeContext*>& stack() {
+    thread_local std::vector<const TypeContext*> contexts;
+    return contexts;
+  }
+  std::unordered_map<std::string, NominalDeclarationRef> by_name_;
+  std::unordered_map<std::string, NominalDeclarationRef> by_id_;
+};
+
+inline NominalDeclarationRef bind_declaration(std::string_view program_name,
+                                              DeclarationKind kind) {
+  const TypeContext* context = TypeContext::current();
+  if (!context) return nullptr;
+  auto found = context->find(program_name);
+  return found && found->kind == kind ? found : nullptr;
+}
 
 class Type {
 public:
   TypeKind kind{TypeKind::Unit};
   std::string name; // primitive, enum, domain, trait, builtin, or nominal template
   std::vector<TypeRef> type_args; // for builtin containers (vector, map, queue, etc.)
-  std::vector<std::pair<std::string, TypeRef>> field_substitutions; // for NominalInstance
+  std::vector<std::pair<std::string, TypeRef>> field_substitutions; // inferred slots, template order
   TypeVarId var_id; // for InferenceVar
+  // NominalInstance/Enum/Domain: the interned declaration. An unbound nominal
+  // (no resolved declaration) is never closed and has no stable key.
+  NominalDeclarationRef declaration;
 
   static TypeRef primitive(std::string name) {
     auto t = std::make_shared<Type>();
@@ -72,10 +205,30 @@ public:
     return t;
   }
 
+  // Binds the template through the active session context. Substitutions are
+  // stored in template slot order, so constructor argument order or spelling
+  // cannot change instance identity.
   static TypeRef nominal(std::string template_name, std::vector<std::pair<std::string, TypeRef>> subs) {
+    auto declaration = bind_declaration(template_name, DeclarationKind::Record);
+    return nominal_bound(std::move(declaration), std::move(template_name), std::move(subs));
+  }
+
+  static TypeRef nominal_bound(NominalDeclarationRef declaration, std::string template_name,
+                               std::vector<std::pair<std::string, TypeRef>> subs) {
     auto t = std::make_shared<Type>();
     t->kind = TypeKind::NominalInstance;
     t->name = std::move(template_name);
+    t->declaration = std::move(declaration);
+    if (t->declaration) {
+      std::vector<std::pair<std::string, TypeRef>> ordered;
+      for (const auto& slot : t->declaration->fields) {
+        if (!slot.inferred) continue;
+        for (const auto& sub : subs)
+          if (sub.first == slot.name) { ordered.push_back(sub); break; }
+      }
+      // Keep unknown or duplicate names visible; is_closed rejects them.
+      if (ordered.size() == subs.size()) subs = std::move(ordered);
+    }
     t->field_substitutions = std::move(subs);
     return t;
   }
@@ -83,6 +236,7 @@ public:
   static TypeRef enumeration(std::string name) {
     auto t = std::make_shared<Type>();
     t->kind = TypeKind::Enum;
+    t->declaration = bind_declaration(name, DeclarationKind::Enum);
     t->name = std::move(name);
     return t;
   }
@@ -90,8 +244,33 @@ public:
   static TypeRef domain(std::string name) {
     auto t = std::make_shared<Type>();
     t->kind = TypeKind::Domain;
+    t->declaration = bind_declaration(name, DeclarationKind::Domain);
     t->name = std::move(name);
     return t;
+  }
+
+  bool declaration_kind() const {
+    return kind == TypeKind::NominalInstance || kind == TypeKind::Enum ||
+           kind == TypeKind::Domain;
+  }
+
+  // Same type constructor: declaration identity for nominal kinds, the
+  // built-in/primitive name otherwise.
+  bool same_head(const Type& other) const {
+    if (kind != other.kind) return false;
+    if (declaration_kind()) {
+      if (declaration && other.declaration)
+        return declaration->id == other.declaration->id;
+      return !declaration && !other.declaration && name == other.name;
+    }
+    return kind == TypeKind::Unit || name == other.name;
+  }
+
+  // A bare template spelling (`Box`) names the declaration without choosing
+  // its inferred slots: the known-open receiver of TYPE_IR_CONTRACT §4.4.
+  bool is_bare_template() const {
+    return kind == TypeKind::NominalInstance && declaration &&
+           declaration->inferred_slot_count() != 0 && field_substitutions.empty();
   }
 
   static TypeRef trait_constraint(std::string name) {
@@ -124,6 +303,18 @@ public:
 
   bool is_closed() const {
     if (kind == TypeKind::InferenceVar) return false;
+    if (declaration_kind() && !declaration) return false;
+    if (kind == TypeKind::NominalInstance) {
+      // Every inferred slot is substituted exactly once, in template order.
+      size_t index = 0;
+      for (const auto& slot : declaration->fields) {
+        if (!slot.inferred) continue;
+        if (index >= field_substitutions.size() ||
+            field_substitutions[index].first != slot.name) return false;
+        ++index;
+      }
+      if (index != field_substitutions.size()) return false;
+    }
     // `vector`, `queue`, and `map` are closed only with every type argument;
     // the bare spelling is an open collection whose element/key/value types
     // are still unbound (Option B). Partial arity is never closed.
@@ -142,7 +333,7 @@ public:
   bool structurally_equal(const Type& other) const {
     if (kind != other.kind) return false;
     if (kind == TypeKind::InferenceVar) return var_id == other.var_id;
-    if (kind != TypeKind::Unit && name != other.name) return false;
+    if (!same_head(other)) return false;
     if (type_args.size() != other.type_args.size() ||
         field_substitutions.size() != other.field_substitutions.size()) return false;
     for (size_t i = 0; i < type_args.size(); ++i)
@@ -168,7 +359,7 @@ public:
       append_part(key, std::to_string(var_id.owner_id));
       append_part(key, std::to_string(var_id.ordinal));
     } else {
-      append_part(key, name);
+      append_part(key, declaration ? declaration->id : name);
       append_part(key, std::to_string(type_args.size()));
       for (const auto& arg : type_args) append_part(key, arg->structural_key());
       append_part(key, std::to_string(field_substitutions.size()));
@@ -180,9 +371,29 @@ public:
     return key;
   }
 
+  // type-key-v1 (TYPE_IR_CONTRACT §3.2): a length-prefixed binary encoding
+  // hashed with SHA-256. A nominal instance hashes its template identity and
+  // ordered *resolved* field types; re-entering an instance already being
+  // encoded (a recursive layout through a collection) emits a back-reference.
+  void append_type_key(std::string& out, std::vector<std::string>& active) const;
+  std::vector<TypeRef> resolved_fields() const;
+
   std::string stable_type_key() const {
     if (!is_closed()) throw std::invalid_argument("open type has no stable type key");
-    return "type-key-v1:sha256:" + source_free_contract_sha256(structural_key());
+    std::vector<std::string> active;
+    std::string material;
+    append_type_key(material, active);
+    return "type-key-v1:sha256:" + source_free_contract_sha256(material);
+  }
+
+  // NominalInstanceKey of a closed record instance.
+  std::string nominal_instance_key() const {
+    if (kind != TypeKind::NominalInstance || !is_closed())
+      throw std::invalid_argument("only a closed nominal instance has an instance key");
+    std::vector<std::string> active;
+    std::string material;
+    append_type_key(material, active);
+    return "nominal-instance-v1:sha256:" + source_free_contract_sha256(material);
   }
 
   std::string to_canonical_string() const {
@@ -307,6 +518,13 @@ public:
         else if (head == "Queue") head = "queue";
         if (head == "vector" || head == "map" || head == "queue")
           return Type::builtin(head, {});
+        if (const TypeContext* context = TypeContext::current())
+          if (auto declared = context->find(head)) {
+            if (declared->kind == DeclarationKind::Record)
+              return Type::nominal_bound(declared, head, {});
+            if (declared->kind == DeclarationKind::Enum) return Type::enumeration(head);
+            return Type::domain(head);
+          }
         constexpr std::string_view prefix = "_typevar:";
         if (head.rfind(prefix, 0) == 0) {
           std::string_view ids(head.data() + prefix.size(), head.size() - prefix.size());
@@ -334,6 +552,85 @@ public:
     return *parsed;
   }
 };
+
+// Ordered field types of a record instance: declared fields from the
+// template (resolved in the declaration's own session), inferred slots from
+// this instance's substitution.
+inline std::vector<TypeRef> Type::resolved_fields() const {
+  if (kind != TypeKind::NominalInstance || !is_closed())
+    throw std::invalid_argument("only a closed nominal instance has resolved fields");
+  TypeContext::Scope scope(declaration->owner);
+  std::vector<TypeRef> fields;
+  size_t inferred = 0;
+  for (const auto& slot : declaration->fields) {
+    if (slot.inferred) {
+      fields.push_back(field_substitutions[inferred++].second);
+      continue;
+    }
+    auto declared = parse_canonical(slot.declared_type);
+    if (!declared)
+      throw std::invalid_argument("declared field type of " + declaration->id +
+                                  " is malformed: " + slot.declared_type);
+    fields.push_back(*declared);
+  }
+  return fields;
+}
+
+inline void Type::append_type_key(std::string& out, std::vector<std::string>& active) const {
+  switch (kind) {
+    case TypeKind::Primitive:
+      append_part(out, "primitive");
+      append_part(out, name);
+      return;
+    case TypeKind::Unit:
+      append_part(out, "unit");
+      return;
+    case TypeKind::Enum:
+    case TypeKind::Domain:
+      append_part(out, kind == TypeKind::Enum ? "enum" : "domain");
+      append_part(out, declaration->id);
+      return;
+    case TypeKind::TraitConstraint:
+      append_part(out, "trait");
+      append_part(out, name);
+      return;
+    case TypeKind::InferenceVar:
+      throw std::invalid_argument("open type has no stable type key");
+    case TypeKind::Builtin:
+      append_part(out, "builtin-instance-v1");
+      append_part(out, name);
+      append_part(out, std::to_string(type_args.size()));
+      for (const auto& argument : type_args) {
+        std::string nested;
+        argument->append_type_key(nested, active);
+        append_part(out, nested);
+      }
+      return;
+    case TypeKind::NominalInstance: {
+      std::string instance = declaration->id;
+      for (const auto& sub : field_substitutions)
+        append_part(instance, sub.second->structural_key());
+      for (size_t depth = 0; depth < active.size(); ++depth)
+        if (active[active.size() - 1 - depth] == instance) {
+          append_part(out, "backref");
+          append_part(out, std::to_string(depth));
+          return;
+        }
+      active.push_back(instance);
+      append_part(out, "nominal-instance-v1");
+      append_part(out, declaration->id);
+      const auto fields = resolved_fields();
+      append_part(out, std::to_string(fields.size()));
+      for (const auto& field : fields) {
+        std::string nested;
+        field->append_type_key(nested, active);
+        append_part(out, nested);
+      }
+      active.pop_back();
+      return;
+    }
+  }
+}
 
 struct FieldSlot {
   std::string name;
@@ -486,7 +783,7 @@ public:
       std::vector<std::pair<std::string, TypeRef>> fields;
       for (const auto& field : value->field_substitutions)
         fields.emplace_back(field.first, resolve(field.second));
-      return Type::nominal(value->name, std::move(fields));
+      return Type::nominal_bound(value->declaration, value->name, std::move(fields));
     }
     return value;
   }
@@ -494,7 +791,7 @@ public:
     TypeRef a = resolve(left), b = resolve(right);
     if (a->kind == TypeKind::InferenceVar) return bind(a->var_id, b);
     if (b->kind == TypeKind::InferenceVar) return bind(b->var_id, a);
-    if (a->kind != b->kind || a->name != b->name ||
+    if (!a->same_head(*b) ||
         a->type_args.size() != b->type_args.size() ||
         a->field_substitutions.size() != b->field_substitutions.size()) return false;
     for (size_t i = 0; i < a->type_args.size(); ++i)
