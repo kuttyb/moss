@@ -21,6 +21,10 @@ MARGO = ROOT / "margo"
 FIX = ROOT / "tests/phase25/g0/conformance"
 G2 = ROOT / "tests/phase25/g2/conformance"
 
+# Production stays on ABI v9 until the joint Team S/Team G cutover; the
+# source-free gates prove the staged ABI-v10 path (TEAM_G_ABI_V10_STAGING.md).
+os.environ["MOSS_STAGED_ABI"] = "v10"
+
 
 def run(*args, cwd=ROOT, env=None):
     return subprocess.run([str(x) for x in args], cwd=cwd, env=env,
@@ -144,9 +148,13 @@ def source_free(scratch, provider_source):
     assert built.returncode == 0 and payload(built).get("ok"), (built.stdout, built.stderr)
     artifacts = scratch / "artifacts"
     artifacts.mkdir()
-    files = list((provider / "build/debug").glob("*.mossi")) + list((provider / "build/debug").glob("*.rlib"))
-    assert files, "provider build emitted no semantic interface/native artifacts"
-    interfaces = [file for file in files if file.suffix == ".mossi"]
+    # Publish each interface with its selected provider rlib. The build's
+    # `libmoss_<Module>.rlib` is a rustc discovery alias that every consumer
+    # build recreates from the selected rlib; it is not provider ABI data.
+    interfaces = list((provider / "build/debug").glob("*.mossi"))
+    files = interfaces + [file.with_name(f"lib{file.stem}.rlib") for file in interfaces]
+    assert interfaces and all(file.exists() for file in files), \
+        "provider build emitted no semantic interface/native artifacts"
     assert interfaces and all(
         file.read_bytes().startswith(b"moss-module-interface-v3\n")
         and b"\nschema_version 10\n" in file.read_bytes()

@@ -42,6 +42,7 @@
 #include "executor_runtime.hpp"
 #include "synchronization_lowering.hpp"
 #include "source_free_abi_v9.hpp"
+#include "source_free_abi_v10.hpp"
 
 using std::string;
 using std::vector;
@@ -68,6 +69,13 @@ static constexpr const char* kCompilerVersion = "0.1.0";
 // ABI v8's raised-value layout is retained, while v9 adds an artifact-bound
 // source-free contract. A v8 interface must be rebuilt before source-free use.
 static constexpr int kNativeAbiVersion = 9;
+// Staged ABI v10 (docs/phase25/TEAM_G_ABI_V10_STAGING.md). Production stays
+// on v9 until the joint Team S/Team G cutover; MOSS_STAGED_ABI=v10 opts a
+// build into emitting and loading only v10 source-free interfaces.
+static bool staged_abi_v10() {
+  const char* value = std::getenv("MOSS_STAGED_ABI");
+  return value && string(value) == "v10";
+}
 static constexpr const char* kMossLanguageVersion = "moss-0.1";
 static constexpr int kAgentProtocolVersion = 1;
 static constexpr const char* kAgentSchemaVersion = "moss-agent-1";
@@ -28597,36 +28605,82 @@ static void verify_source_free_provider_binding(
         "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
 }
 
+// Staged ABI v10 carries the declaration records in canonical, sealed
+// sections. Validation follows ABI_V10_DESIGN.md §5: framing, then the exact
+// provider digest and selected rlib marker, then every section hash. Only then
+// are records projected into the declaration lines read below.
+static string verified_abi_v10_interface_records(
+    const std::filesystem::path& file, const string& text) {
+  abi_v10::SealedInterface parsed;
+  try {
+    parsed = abi_v10::parse(text);
+    if (!abi_v10::digest_matches(text, parsed))
+      throw abi_v10::Error("SOURCE_FREE_CONTRACT_INVALID",
+                           "ABI-v10 provider metadata does not match its declared contract digest");
+    const auto rlib = selected_provider_rlib(file);
+    abi_v10::validate_selected_rlib(
+        read_text_file(rlib, "SOURCE_FREE_PROVIDER_ARTIFACT_MISSING"),
+        tooling_name(file.stem().string()), parsed.digest);
+    abi_v10::verify_canonical(text, parsed);
+  } catch (const abi_v10::Error& error) {
+    throw CompileError(0, error.what(), error.code);
+  }
+  const string& id = parsed.value.module_id;
+  const size_t module_at = id.rfind("::");
+  if (module_at == string::npos ||
+      tooling_name(id.substr(module_at + 2)) != tooling_name(file.stem().string()))
+    throw CompileError(0, "ABI-v10 module identity '" + id +
+        "' does not name its selected provider artifact",
+        "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
+  string records = "moss-module-interface-v3\nmodule_id " + id + "\nimports\n";
+  for (const auto& import : parsed.value.imports)
+    records += "  " + import.module_id.substr(import.module_id.rfind("::") + 2) + "\n";
+  records += "contract\n";
+  for (const auto& record : parsed.value.binary_contract) records += record.payload;
+  records += "semantic_exports\n";
+  for (const auto& record : parsed.value.semantic_contract) records += record.payload;
+  return records;
+}
+
 static ParsedModuleUnit load_module_interface(
     const std::filesystem::path& file) {
   std::ifstream input(file, std::ios::binary);
   std::ostringstream content;
   content << input.rdbuf();
   string text = content.str();
-  verify_source_free_provider_binding(file, text);
-  if (text.find("\nnative_abi " + std::to_string(kNativeAbiVersion) + "\n") == string::npos)
-    throw CompileError(0, "compiled provider uses an incompatible native calling convention; rebuild its .mossi provider");
-  // The producer already records separate hashes for the native contract and
-  // semantic exports.  Validate them before trusting source-free metadata;
-  // otherwise a changed failure-arm symbol can link and abort at runtime.
-  const string contract_marker = "\ncontract\n";
-  const string semantic_marker = "\nsemantic_exports\n";
-  const size_t contract_at = text.find(contract_marker);
-  const size_t semantic_at = text.find(semantic_marker,
-      contract_at == string::npos ? 0 : contract_at + contract_marker.size());
-  if (contract_at == string::npos || semantic_at == string::npos)
-    throw CompileError(0, "compiled provider has incomplete module interface sections; rebuild its .mossi provider");
-  std::map<string, string> declared_hashes;
-  std::istringstream header(text.substr(0, contract_at));
-  string header_line;
-  while (std::getline(header, header_line)) {
-    for (const char* key : {"concrete_interface_hash", "generic_semantic_hash",
-                            "interface_hash"}) {
-      const string prefix = string(key) + " ";
-      if (starts_with(header_line, prefix) &&
-          !declared_hashes.emplace(key, header_line.substr(prefix.size())).second)
-        throw CompileError(0, "compiled provider has duplicate module interface hash; rebuild its .mossi provider");
-    }
+  const bool v10_interface = starts_with(text, "moss-module-interface-v3\n");
+  if (v10_interface != staged_abi_v10())
+    throw CompileError(0, v10_interface
+        ? "source-free provider uses staged ABI v10; rebuild it for ABI v9 or set MOSS_STAGED_ABI=v10"
+        : "source-free provider uses an older module interface; rebuild it for ABI v10",
+        "SOURCE_FREE_ABI_REBUILD_REQUIRED");
+  if (v10_interface) {
+    text = verified_abi_v10_interface_records(file, text);
+  } else {
+    verify_source_free_provider_binding(file, text);
+    if (text.find("\nnative_abi " + std::to_string(kNativeAbiVersion) + "\n") == string::npos)
+      throw CompileError(0, "compiled provider uses an incompatible native calling convention; rebuild its .mossi provider");
+    // The producer already records separate hashes for the native contract and
+    // semantic exports.  Validate them before trusting source-free metadata;
+    // otherwise a changed failure-arm symbol can link and abort at runtime.
+    const string contract_marker = "\ncontract\n";
+    const string semantic_marker = "\nsemantic_exports\n";
+    const size_t contract_at = text.find(contract_marker);
+    const size_t semantic_at = text.find(semantic_marker,
+        contract_at == string::npos ? 0 : contract_at + contract_marker.size());
+    if (contract_at == string::npos || semantic_at == string::npos)
+      throw CompileError(0, "compiled provider has incomplete module interface sections; rebuild its .mossi provider");
+    std::map<string, string> declared_hashes;
+    std::istringstream header(text.substr(0, contract_at));
+    string header_line;
+    while (std::getline(header, header_line)) {
+      for (const char* key : {"concrete_interface_hash", "generic_semantic_hash",
+                              "interface_hash"}) {
+        const string prefix = string(key) + " ";
+        if (starts_with(header_line, prefix) &&
+            !declared_hashes.emplace(key, header_line.substr(prefix.size())).second)
+          throw CompileError(0, "compiled provider has duplicate module interface hash; rebuild its .mossi provider");
+      }
   }
   const string concrete_hash = stable_hash(text.substr(
       contract_at + contract_marker.size(),
@@ -28638,6 +28692,7 @@ static ParsedModuleUnit load_module_interface(
       declared_hashes["interface_hash"] != concrete_hash ||
       declared_hashes["generic_semantic_hash"] != generic_hash)
     throw CompileError(0, "compiled provider module interface hash mismatch; rebuild its .mossi provider");
+  }
   std::istringstream lines(text);
   ParsedModuleUnit unit;
   unit.name = interface_module_name(text, file);
@@ -31079,10 +31134,38 @@ static void write_provider_handler_abi(std::ostream& out,
       << " " << kAllExceptionalCfgConsumers << "\n";
 }
 
+// Split one v9 declaration section into ordered ABI-v10 records. A record is
+// a top-level declaration line plus its indented detail lines; the ordinal
+// prefix keeps canonical record order equal to declaration order.
+static vector<abi_v10::Record> abi_v10_declaration_records(const string& section) {
+  vector<abi_v10::Record> records;
+  std::istringstream lines(section);
+  string line;
+  while (std::getline(lines, line)) {
+    if (records.empty() || (!line.empty() && line[0] != ' ')) {
+      std::istringstream words(line);
+      string kind, name;
+      words >> kind >> name;
+      if (kind == "export") words >> name;
+      char ordinal[16];
+      std::snprintf(ordinal, sizeof ordinal, "%08zu", records.size());
+      records.push_back({string(ordinal) + " " + kind + " " + name, {}});
+    }
+    records.back().payload += line + "\n";
+  }
+  return records;
+}
+
+static string abi_v10_module_id(const ProjectManifest& manifest,
+                                const string& module) {
+  return "module-v1:" + manifest.name + "@" + manifest.version + "::" + module;
+}
+
 static vector<std::filesystem::path> write_module_interfaces(
     const ProjectManifest& manifest, const Program& program,
     const std::filesystem::path& directory,
-    const BackendToolchainIdentity& backend) {
+    const BackendToolchainIdentity& backend,
+    const std::map<string, std::filesystem::path>& external_interfaces) {
   std::map<string,std::ostringstream> contents;
   std::map<string,std::ostringstream> interface_contents;
   std::set<string> module_names;
@@ -31409,7 +31492,68 @@ static vector<std::filesystem::path> write_module_interfaces(
     }
   }
   vector<std::filesystem::path> result;
+  std::map<string, abi_v10::Import> sealed_v10;
+  std::function<string(const string&)> encode_v10 = [&](const string& module) {
+    abi_v10::Interface value;
+    value.module_id = abi_v10_module_id(manifest, module);
+    value.compiler = kCompilerVersion;
+    value.backend_fingerprint = backend.fingerprint;
+    value.backend_rustc = backend.version_verbose.substr(
+        0, backend.version_verbose.find('\n'));
+    for (const auto& import : program.imports) {
+      if (import.owner_module != module) continue;
+      if (contents.count(import.name)) {
+        if (!sealed_v10.count(import.name)) encode_v10(import.name);
+        value.imports.push_back(sealed_v10.at(import.name));
+        continue;
+      }
+      auto selected = external_interfaces.find(import.name);
+      if (selected == external_interfaces.end())
+        throw ProjectError("MOSS_INTERFACE_ERROR",
+            "staged ABI-v10 import '" + import.name + "' of module '" + module +
+                "' has no selected provider interface", directory.string());
+      auto provider = abi_v10::parse(read_text_file(
+          selected->second, "MOSS_INTERFACE_ERROR"));
+      value.imports.push_back({provider.value.module_id, provider.binary_hash,
+                               provider.semantic_hash});
+    }
+    std::sort(value.imports.begin(), value.imports.end(),
+              [](const abi_v10::Import& left, const abi_v10::Import& right) {
+                return left.module_id < right.module_id;
+              });
+    value.binary_contract =
+        abi_v10_declaration_records(interface_contents[module].str());
+    value.semantic_contract = abi_v10_declaration_records(contents[module].str());
+    string text;
+    try {
+      text = abi_v10::encode(value);
+      auto sealed = abi_v10::decode(text);
+      sealed_v10[module] = {value.module_id, sealed.binary_hash,
+                            sealed.semantic_hash};
+    } catch (const abi_v10::Error& error) {
+      throw ProjectError(error.code, error.what(), directory.string());
+    }
+    return text;
+  };
   for (auto& entry : contents) {
+    if (staged_abi_v10()) {
+      const string text = encode_v10(entry.first);
+      std::filesystem::path file =
+          directory / (tooling_name(entry.first) + ".mossi");
+      std::ifstream prior(file, std::ios::binary);
+      std::ostringstream prior_text;
+      if (prior) prior_text << prior.rdbuf();
+      if (!prior || prior_text.str() != text) {
+        std::ofstream output(file, std::ios::binary);
+        if (!output)
+          throw ProjectError("MOSS_INTERFACE_ERROR",
+                             "cannot write Moss module interface '" + file.string() + "'",
+                             file.string());
+        output << text;
+      }
+      result.push_back(file);
+      continue;
+    }
     std::ostringstream header;
     header << "moss-module-interface-v2\n"
            << "module_id " << manifest.name << "::" << entry.first << "\n"
@@ -31577,7 +31721,8 @@ static NativeArtifact compile_native_artifact(
     }
   }
   source_key << "compiler\n" << kCompilerVersion << "\nnative_abi\n"
-             << kNativeAbiVersion << "\nmode\n"
+             << kNativeAbiVersion << (staged_abi_v10() ? "-staged-v10" : "")
+             << "\nmode\n"
              << static_cast<int>(mode) << "\nfilter\n" << declaration_filter
              << "\n";
   if (declaration_ids)
@@ -31626,7 +31771,8 @@ static NativeArtifact compile_native_artifact(
   vector<std::filesystem::path> preexisting_interfaces = artifact.module_interfaces;
   vector<string> local_module_names = module_names_for_program(unit.program);
   const auto emitted_interfaces = write_module_interfaces(
-      manifest, unit.program, directory, artifact.backend_toolchain);
+      manifest, unit.program, directory, artifact.backend_toolchain,
+      unit.external_module_interfaces);
   artifact.module_interfaces = emitted_interfaces;
   for (const auto& interface_file : preexisting_interfaces) {
     string module = interface_file.stem().string();
@@ -31691,14 +31837,26 @@ static NativeArtifact compile_native_artifact(
         const string interface_text = read_text_file(
             provider_interface, "MOSS_INTERFACE_ERROR");
         const string digest = source_free_declared_digest(interface_text);
-        if (digest.size() != 64 ||
+        const bool v10 = staged_abi_v10();
+        if (v10) {
+          try {
+            abi_v10::decode(interface_text);
+          } catch (const abi_v10::Error& error) {
+            throw ProjectError("MOSS_INTERFACE_ERROR",
+                string("generated ABI-v10 provider interface is invalid: ") +
+                    error.what(), provider_interface.string());
+          }
+        } else if (digest.size() != 64 ||
             source_free_contract_sha256(
                 source_free_contract_material(interface_text)) != digest)
           throw ProjectError("MOSS_INTERFACE_ERROR",
               "generated ABI-v9 provider interface has an invalid digest",
               provider_interface.string());
-        const string marker = source_free_contract_marker(module, digest);
-        generated += "\n#[used]\n#[no_mangle]\npub static __moss_abi_v9_contract_" +
+        const string marker = v10
+            ? abi_v10::provider_marker(tooling_name(module), digest)
+            : source_free_contract_marker(module, digest);
+        generated += string("\n#[used]\n#[no_mangle]\npub static __moss_abi_") +
+            (v10 ? "v10" : "v9") + "_contract_" +
             tooling_name(module) + ": [u8; " +
             std::to_string(marker.size()) + "] = *b\"" + marker + "\";\n";
       }

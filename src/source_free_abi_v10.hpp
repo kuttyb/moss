@@ -275,7 +275,10 @@ inline std::vector<Record> read_records(Reader& reader, const char* section) {
   return records;
 }
 
-inline SealedInterface decode(std::string_view text) {
+// Framing and header parse only (validation step 1 of ABI_V10_DESIGN.md §5).
+// Callers that must distinguish an artifact-seal mismatch from a malformed
+// interface check the digest and rlib marker before `verify_canonical`.
+inline SealedInterface parse(std::string_view text) {
   if (text.substr(0, sizeof("moss-module-interface-v3\n") - 1) !=
       "moss-module-interface-v3\n")
     throw Error("SOURCE_FREE_ABI_REBUILD_REQUIRED",
@@ -324,10 +327,31 @@ inline SealedInterface decode(std::string_view text) {
   result.value.provenance = read_records(reader, "provenance");
   require(reader.done(), "SOURCE_FREE_CONTRACT_INVALID",
           "ABI-v10 interface has trailing data");
-  // Re-emission verifies canonical order, framing, every section hash, full
-  // interface hash, and the exact-byte provider seal in one comparison.
-  require(encode(result.value) == text, "SOURCE_FREE_CONTRACT_INVALID",
+  return result;
+}
+
+// The provider digest covers the exact interface bytes with its own line
+// removed (ABI_V10_DESIGN.md §2).
+inline bool digest_matches(std::string_view text, const SealedInterface& parsed) {
+  const std::string prefix = "moss-module-interface-v3\nprovider_contract_digest sha256:";
+  if (text.substr(0, prefix.size()) != prefix) return false;
+  const auto line_end = text.find('\n', prefix.size());
+  if (line_end == std::string_view::npos) return false;
+  std::string material("moss-module-interface-v3\n");
+  material.append(text.substr(line_end + 1));
+  return source_free_contract_sha256(material) == parsed.digest;
+}
+
+// Re-emission verifies canonical order, framing, every section hash, full
+// interface hash, and the exact-byte provider seal in one comparison.
+inline void verify_canonical(std::string_view text, const SealedInterface& parsed) {
+  require(encode(parsed.value) == text, "SOURCE_FREE_CONTRACT_INVALID",
           "ABI-v10 interface digest or canonical record validation failed");
+}
+
+inline SealedInterface decode(std::string_view text) {
+  auto result = parse(text);
+  verify_canonical(text, result);
   return result;
 }
 

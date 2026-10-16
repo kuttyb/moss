@@ -38,6 +38,34 @@ The interface hash excludes its own header field and the provider digest to
 avoid self-reference. It includes the other header fields and all canonical
 sections. This is the precise byte encoding for the staged line format.
 
+## Compiler integration behind `MOSS_STAGED_ABI=v10`
+
+With `MOSS_STAGED_ABI=v10`, `moss build` emits and loads only the v10
+container; without it, production behavior is unchanged ABI v9. A v2/v9
+interface under the flag, or a v3 interface without it, receives
+`SOURCE_FREE_ABI_REBUILD_REQUIRED`.
+
+- Emission writes `module-v1:<package>@<version>::<module>`, the first line of
+  the rustc version, imports bound to each provider's sealed binary/semantic
+  hashes (in-package modules in import order; external modules from the
+  interface selected during resolution), and a single
+  `MOSS_ABI_V10_CONTRACT::<module>::<digest>::END` native-object marker.
+- Loading follows §5 of the design for the container: framing, the exact
+  provider digest (`SOURCE_FREE_CONTRACT_INVALID`), the selected rlib marker
+  (`SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`), then every section and interface
+  hash by canonical re-emission. The `module_id` must name the selected artifact.
+- The build cache key distinguishes staged v10 from v9.
+
+**Payload limitation.** `binary_contract` and `semantic_contract` records
+currently carry the existing v9 declaration lines (one record per
+declaration, ordinal-ordered), which the established loader parses after the
+container is verified. They are sealed and hashed, but they are not yet the
+typed `NominalTemplate`/`OpenCallableSummary`/`Specialization` payloads of
+`src/abi_v10_records.hpp`; `private_semantic_dependencies` (generic
+dependencies remain nested in their exporting record) and `provenance` are
+emitted empty. Replacing these payloads with typed records is the remaining
+G-D work and depends on the G-A structured Type IR.
+
 ## Integration still required
 
 This codec is isolated from `src/moss.cpp` while the authoritative Type IR and
