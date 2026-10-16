@@ -12,11 +12,16 @@ another push after validation. It is not merged into Team B, Team S, Team I, or
 
 - **A1:** Exact package/module nominal declaration identities, source-free
   provider binding, constructor-order-stable instance keys, and built-in arity
-  closure are integrated at `5c2f078`. Focused Type IR, nominal identity,
+  closure are integrated at `5c2f078`. `0efa5ff` also interns exact defining
+  module identities within each compilation session and rejects malformed IDs.
+  `52c8f7c` makes nominal equality fail closed when a display spelling has
+  not bound to a declaration ID.
+  Focused Type IR, nominal identity,
   field visibility, feedback checks, and `make -j2` passed in the A1 worktree.
 - **A3 partial:** `d63c97d` adds typed `specialization-v2` key inputs, stores
   one key across registration/dependency/projection/query/native lookup, and
-  retains concrete `MemberDispatchRequirement` access facts. Existing
+  retains concrete `MemberDispatchRequirement` access facts. `6e2d381`
+  rejects incomplete concrete member result/access records. Existing
   registration does not yet supply open-result bindings; open requirements
   still need the A2 solver bridge. Focused A3 tests passed in its worktree.
 - **A2 partial:** `f0c8cda` routes compatibility and concrete-body closure
@@ -39,6 +44,12 @@ another push after validation. It is not merged into Team B, Team S, Team I, or
   Team A, and text/encoding gates reached so far; its final result is pending.
   A prior A1 `make check` attempt was stopped after subsequent source edits
   invalidated it. Independent Architect review remains required.
+- **Post-`52c8f7c` focused validation:** a separate compiler built from the
+  latest source passed Team A's 13 compiler-path cases, all 40 generic
+  specialization probes, A3 specialization keys, and nominal identity with
+  source-free consumers. The Type IR C++ test passed. The in-flight full
+  `make check` began before `0efa5ff`/`6e2d381`/`52c8f7c`; it does not validate those
+  final edits and must be rerun for an exact-SHA claim.
 
 The delegated A2/A4 workers hit a service usage limit mid-turn. The Coordinator
 finished and integrated the isolated A2 patches; no result is claimed for
