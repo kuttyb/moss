@@ -13631,6 +13631,10 @@ class Checker {
         closed.selected_callable_id = "builtin:FileIO." + requirement.detail;
         closed.argument_access.assign(argument_types.size(), moss::AccessMode::Read);
       }
+      if (!moss::member_requirement_is_closed(closed))
+        err(line, "required member '" + requirement.detail +
+            "' has an unresolved type or access contract",
+            "TYPE_AMBIGUOUS_OPEN_RESULT");
       resolved_requirements.push_back(std::move(closed));
       if (!requirement.result.empty()) {
         if (related_function_result && !same_type(*related_function_result, result))

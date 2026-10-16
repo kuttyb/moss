@@ -926,12 +926,13 @@ inline bool member_requirement_is_closed(
     const MemberDispatchRequirement& requirement) {
   if (!requirement.receiver || !requirement.receiver->is_closed() ||
       requirement.argument_access.size() != requirement.argument_types.size() ||
+      !requirement.result || !*requirement.result ||
+      !(*requirement.result)->is_closed() ||
       !requirement.admitted_template_or_builtin_family ||
       !requirement.selected_callable_id) return false;
   for (const auto& argument : requirement.argument_types)
     if (!argument || !argument->is_closed()) return false;
-  return !requirement.result ||
-      (*requirement.result && (*requirement.result)->is_closed());
+  return true;
 }
 
 } // namespace moss

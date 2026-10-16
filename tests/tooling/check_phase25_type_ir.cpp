@@ -178,6 +178,7 @@ int main() {
   member.receiver = Type::builtin("vector", {Type::primitive("int")});
   member.member_name = "push";
   member.argument_types = {Type::primitive("int")};
+  member.result = Type::unit();
   member.receiver_access = moss::AccessMode::Write;
   member.argument_access = {moss::AccessMode::Read};
   member.admitted_template_or_builtin_family = "builtin:vector";
