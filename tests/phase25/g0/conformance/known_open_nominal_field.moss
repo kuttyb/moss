@@ -1,0 +1,8 @@
+type Box:
+  value
+
+fn get_value(b: Box):
+  return b.value
+
+fn main():
+  echo get_value(Box(value: 42))

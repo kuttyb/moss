@@ -535,11 +535,35 @@ static ConcreteParameterABI concrete_parameter_abi(Effect effect,
       effect == Effect::Consume || copy_type_name(canonical_type_name(type))
           ? ParameterPassingMode::Value : ParameterPassingMode::SharedBorrow};
 }
+static bool same_closed_type_vector(const vector<string>& left,
+                                    const vector<string>& right) {
+  if (left.size() != right.size()) return false;
+  for (size_t index = 0; index < left.size(); ++index) {
+    auto a = moss::Type::parse_canonical(left[index]);
+    auto b = moss::Type::parse_canonical(right[index]);
+    if (!a || !b || !(*a)->is_closed() || !(*b)->is_closed() ||
+        !(*a)->structurally_equal(**b)) return false;
+  }
+  return true;
+}
+static bool specialization_matches(const FunctionSpecialization& specialization,
+                                   const vector<string>& types) {
+  if (specialization.parameter_type_refs.empty())
+    return same_closed_type_vector(specialization.parameter_types, types);
+  if (specialization.parameter_type_refs.size() != types.size()) return false;
+  for (size_t index = 0; index < types.size(); ++index) {
+    auto actual = moss::Type::parse_canonical(types[index]);
+    if (!actual || !(*actual)->is_closed() ||
+        !specialization.parameter_type_refs[index]->structurally_equal(**actual))
+      return false;
+  }
+  return true;
+}
 static const FunctionSpecialization* concrete_specialization(
     const Function& function, const vector<string>& types) {
   auto found = std::find_if(function.specializations.begin(),
       function.specializations.end(), [&](const FunctionSpecialization& candidate) {
-        return candidate.parameter_types == types;
+        return specialization_matches(candidate, types);
       });
   return found == function.specializations.end() ? nullptr : &*found;
 }
@@ -2240,6 +2264,20 @@ class Checker {
 
   bool valid_type(const string& t) const {
     string type = canonical_type_name(t);
+    auto parsed = moss::Type::parse_canonical(type);
+    if (!parsed) return false;
+    if ((*parsed)->kind == moss::TypeKind::NominalInstance) {
+      auto declaration = objects_.find((*parsed)->name);
+      if (declaration == objects_.end() ||
+          declaration->second->fields.size() !=
+              (*parsed)->field_substitutions.size()) return false;
+      for (size_t index = 0; index < declaration->second->fields.size(); ++index) {
+        const auto& actual = (*parsed)->field_substitutions[index];
+        if (actual.first != declaration->second->fields[index].name ||
+            !valid_type(actual.second->to_canonical_string())) return false;
+      }
+      return true;
+    }
     if (fileio_forbidden_collection_type(type)) return false;
     if (type == "FileIO" || type == "Range" || type == "RangeBatch") return true;
     if (type == "int" || type == "float" || type == "bool" || type == "string" ||
@@ -4770,7 +4808,7 @@ class Checker {
             else if (!function->second->generic && !function->second->static_dispatch &&
                      !traits_.count(parameter.type) &&
                      !contains_internal_placeholder(*actual) &&
-                     !same_type(parameter.type, *actual))
+                     !is_type_compatible(parameter.type, *actual))
               err(line, "argument " + std::to_string(index + 1) + " to function '" +
                   constructor + "' has type '" + *actual + "', expected '" +
                   parameter.type + "'");
@@ -5379,7 +5417,7 @@ class Checker {
                          !function->second->static_dispatch &&
                          !traits_.count(parameter.type) &&
                          !contains_internal_placeholder(*actual) &&
-                         !same_type(parameter.type, *actual))
+                         !is_type_compatible(parameter.type, *actual))
                   err(statement.line, "argument " + std::to_string(i + 1) + " to function '" +
                       function->second->name + "' has type '" + *actual +
                       "', expected '" + parameter.type + "'");
@@ -5905,6 +5943,18 @@ class Checker {
         function.generic = true;
         function.static_dispatch = true;
       }
+      // A declared nominal with inferred fields is a known template, not a
+      // closed parameter layout. Each call supplies its field substitution.
+      for (const auto& parameter : function.params) {
+        auto declaration = objects_.find(parameter.type);
+        if (declaration != objects_.end() &&
+            std::any_of(declaration->second->fields.begin(),
+                        declaration->second->fields.end(),
+                        [](const Field& field) { return field.inferred; })) {
+          function.generic = true;
+          function.static_dispatch = true;
+        }
+      }
       for (const auto& statement : function.body)
         if (statement.kind == Stmt::Kind::Match)
           for (const auto& parameter : function.params)
@@ -6168,7 +6218,9 @@ class Checker {
     if (!finalize) return;
     for (auto& function : p_.functions) {
       SourceFileScope function_source(current_source_file_, function.source_file);
-      if (function.generic && std::all_of(function.params.begin(), function.params.end(), [](const Param& p) { return !p.type.empty(); }))
+      if (function.generic && !function.static_dispatch &&
+          std::all_of(function.params.begin(), function.params.end(),
+                      [](const Param& p) { return !p.type.empty(); }))
         function.generic = false;
       if (!function.generic && function.result_expression) {
         auto binary = split_binary(trim(*function.result_expression), {"+", "-", "*", "/", "%"});
@@ -13077,7 +13129,8 @@ class Checker {
           checking_specialization_->dependencies.end(),
           [&](const StaticSpecializationDependency& existing) {
             return existing.function_name == dependency.function_name &&
-                existing.parameter_types == dependency.parameter_types;
+                same_closed_type_vector(existing.parameter_types,
+                                        dependency.parameter_types);
           });
       if (existing_dependency == checking_specialization_->dependencies.end())
         checking_specialization_->dependencies.push_back(std::move(dependency));
@@ -13085,7 +13138,8 @@ class Checker {
     auto existing = std::find_if(function.specializations.begin(),
                                  function.specializations.end(),
                                  [&](const FunctionSpecialization& specialization) {
-                                   return specialization.parameter_types == canonical_types;
+                                   return specialization_matches(specialization,
+                                                                 canonical_types);
                                  });
     if (existing != function.specializations.end()) {
       record_dependency();
@@ -13100,6 +13154,22 @@ class Checker {
         std::to_string(function.specializations.size());
     specialization.parameter_types = canonical_types;
     specialization.return_type = canonical_type_name(*result);
+    string key_material;
+    moss::Type::append_part(key_material, "specialization-v2");
+    moss::Type::append_part(key_material, function.name);
+    moss::Type::append_part(key_material, std::to_string(canonical_types.size()));
+    for (const auto& type : canonical_types) {
+      auto parsed = moss::Type::parse_canonical(type);
+      if (!parsed || !(*parsed)->is_closed())
+        err(line, "static specialization has an unresolved argument type",
+            "TYPE_AMBIGUOUS_OPEN_RESULT");
+      specialization.parameter_type_refs.push_back(*parsed);
+      moss::Type::append_part(key_material, (*parsed)->stable_type_key());
+    }
+    specialization.return_type_ref = moss::Type::parse_canonical(
+        specialization.return_type).value_or(nullptr);
+    specialization.stable_type_key = "specialization-v2:sha256:" +
+        moss::source_free_contract_sha256(key_material);
     specialization.parameter_effects = concrete_function_effects(
         function, canonical_types, &specialization.parameter_mutations);
     function.specializations.push_back(specialization);
@@ -13307,7 +13377,7 @@ class Checker {
       if (!actual_type.empty() && !contains_internal_placeholder(actual_type) &&
           !function->second->generic && !param.type.empty() &&
           !contains_internal_placeholder(param.type) && !traits_.count(param.type) &&
-          !container_match && !same_type(param.type, actual_type))
+          !container_match && !is_type_compatible(param.type, actual_type))
         err(line, "argument " + std::to_string(index + 1) + " to function '" + name +
             "' has type '" + actual_type + "', expected '" +
             param.type + "'");
@@ -13532,7 +13602,7 @@ class Checker {
               actual + "': " + reason);
       } else if (!parameter.type.empty() &&
                  !unresolved_semantic_type(actual) &&
-                 !same_type(parameter.type, actual)) {
+                 !is_type_compatible(parameter.type, actual)) {
         err(line, "functional callable '" + identity + "' argument " +
             std::to_string(index + 1) + " has type '" + actual +
             "', expected '" + parameter.type + "'");
@@ -17224,7 +17294,7 @@ class Generator {
           function->second->specializations.begin(),
           function->second->specializations.end(),
           [&](const FunctionSpecialization& candidate) {
-            return candidate.parameter_types == input_types;
+            return specialization_matches(candidate, input_types);
           });
       if (specialization != function->second->specializations.end())
         return specialization->return_type;
@@ -17440,7 +17510,7 @@ class Generator {
               function->second->specializations.begin(),
               function->second->specializations.end(),
               [&](const FunctionSpecialization& candidate) {
-                return candidate.parameter_types == argument_types;
+                return specialization_matches(candidate, argument_types);
               });
           if (specialization != function->second->specializations.end())
             return specialization->return_type;
@@ -17750,7 +17820,7 @@ class Generator {
         function->second->specializations.begin(),
         function->second->specializations.end(),
         [&](const FunctionSpecialization& candidate) {
-          return candidate.parameter_types == argument_types;
+          return specialization_matches(candidate, argument_types);
         });
     if (specialization == function->second->specializations.end())
       throw std::runtime_error("missing static specialization for function '" + name +
@@ -17926,7 +17996,7 @@ class Generator {
           function->second->specializations.begin(),
           function->second->specializations.end(),
           [&](const FunctionSpecialization& candidate) {
-            return candidate.parameter_types == argument_types;
+            return specialization_matches(candidate, argument_types);
           });
       if (specialization == function->second->specializations.end())
         throw std::runtime_error("missing functional specialization for '" +
