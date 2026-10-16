@@ -1,11 +1,11 @@
 type CustomKey:
   id: Int
 
-fn isequal(a: CustomKey, b: CustomKey) -> Bool:
-  return a.id == b.id
+  fn isequal(other: CustomKey) -> Bool:
+    return id == other.id
 
-fn hash(a: CustomKey) -> Int:
-  return a.id
+  fn hash() -> Int:
+    return id
 
 fn main():
   var m = Map()

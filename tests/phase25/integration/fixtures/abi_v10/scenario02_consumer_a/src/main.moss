@@ -1,6 +1,9 @@
 module ConsumerA
 import BoxProvider
 
+export fn make_int_box(v: Int) -> BoxProvider.Box:
+  return BoxProvider.fresh(v)
+
 fn main():
-  b = BoxProvider.fresh(42)
+  b = make_int_box(42)
   echo BoxProvider.relay(b)

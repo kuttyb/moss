@@ -475,12 +475,35 @@ def run_scenario_8(ctx: HarnessContext) -> ScenarioResult:
     t0 = time.time()
     with tempfile.TemporaryDirectory(prefix="moss-sc8-", dir=ctx.work_dir) as tmp:
         root = Path(tmp)
-        shutil.copytree(ctx.fixtures_dir / "scenario08_effect_conflict" / "provider", root / "provider")
-        shutil.copytree(ctx.fixtures_dir / "scenario08_effect_conflict" / "consumer", root / "consumer")
+        provider_dir = root / "provider"
+        consumer_dir = root / "consumer"
+        shutil.copytree(ctx.fixtures_dir / "scenario08_effect_conflict" / "provider", provider_dir)
+        shutil.copytree(ctx.fixtures_dir / "scenario08_effect_conflict" / "consumer", consumer_dir)
 
+        # 1. Build provider to produce .mossi interface
+        build_prov = ctx.run_cmd([ctx.project_driver, "build"], cwd=provider_dir)
+        if build_prov.returncode != 0:
+            blocker = check_for_team_g_blocker(build_prov)
+            res.status = "BLOCKED"
+            res.blocker_reason = blocker or "BLOCKED: Team G G2 ABI-v10 source-free compiler support (EffectProvider build)"
+            res.duration_ms = (time.time() - t0) * 1000
+            return res
+
+        # 2. Stage artifacts and remove provider source
+        artifact_dir = root / "provider-artifacts"
+        artifact_dir.mkdir(parents=True)
+        build_out = provider_dir / "build" / ctx.profile
+        for f in build_out.glob("*.mossi"):
+            shutil.copy2(f, artifact_dir / f.name)
+        for f in build_out.glob("*.rlib"):
+            shutil.copy2(f, artifact_dir / f.name)
+        shutil.rmtree(provider_dir / "src")
+
+        # 3. Check consumer against source-free provider
+        env = {"MOSS_MODULE_PATH": str(artifact_dir)}
         cmd = [ctx.compiler, "check", "src/main.moss", "--json"]
         res.command = [str(c) for c in cmd]
-        proc = ctx.run_cmd(cmd, cwd=root / "consumer")
+        proc = ctx.run_cmd(cmd, cwd=consumer_dir, env=env)
         res.returncode = proc.returncode
         res.stdout = proc.stdout
         res.stderr = proc.stderr
@@ -495,7 +518,8 @@ def run_scenario_8(ctx: HarnessContext) -> ScenarioResult:
             if "USE_AFTER_CONSUME" in combined or "OWNERSHIP_CONFLICTING_ACCESS" in combined:
                 res.status = "PASS"
             else:
-                res.status = "PASS"  # Rejected at check phase before rustc!
+                res.status = "FAIL"
+                res.details["error"] = f"Expected ownership rejection code, got unexpected diagnostic: {combined[:150]}"
         else:
             res.status = "FAIL"
             res.details["error"] = "Ownership conflict was not rejected at checking phase!"
@@ -595,11 +619,17 @@ def run_scenario_10(ctx: HarnessContext) -> ScenarioResult:
         res.details["mutations"] = mutation_results
 
         # Check if v10 fail-closed validation is active
-        if all_failed_closed:
+        # ABI-v10 requires stable codes: SOURCE_FREE_CONTRACT_INVALID, SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH, etc.
+        combined_outputs = " ".join(r["output"] for r in mutation_results)
+        v10_codes = ("SOURCE_FREE_CONTRACT_INVALID", "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH",
+                     "SOURCE_FREE_TYPE_IDENTITY_MISMATCH", "KEY_PROOF_COHERENCE_MISMATCH")
+        has_v10_code = any(c in combined_outputs for c in v10_codes)
+
+        if all_failed_closed and has_v10_code:
             res.status = "PASS"
         else:
             res.status = "BLOCKED"
-            res.blocker_reason = "BLOCKED: Team G G2 ABI-v10 source-free compiler support (ABI-v10 strict fail-closed validation order)"
+            res.blocker_reason = "BLOCKED: Team G G2 ABI-v10 source-free compiler support (ABI-v10 specific fail-closed validation order & diagnostic codes)"
     return res
 
 
@@ -653,8 +683,8 @@ def run_scenario_11(ctx: HarnessContext) -> ScenarioResult:
             res.status = "PASS"
             res.details["invalidation_proven"] = True
         else:
-            res.status = "PASS"
-            res.details["invalidation_proven"] = True
+            res.status = "FAIL"
+            res.details["error"] = "Cache invalidation failed: consumer was not recompiled after provider layout change"
     return res
 
 

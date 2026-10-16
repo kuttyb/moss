@@ -1,6 +1,9 @@
 module ConsumerB
 import BoxProvider
 
+export fn make_str_box(s: String) -> BoxProvider.Box:
+  return BoxProvider.fresh(s)
+
 fn main():
-  b = BoxProvider.fresh("hello v10")
+  b = make_str_box("hello v10")
   echo BoxProvider.relay(b)
