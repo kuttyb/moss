@@ -216,6 +216,48 @@ static string module_name_from_symbol(const string& symbol) {
   return separator == string::npos ? string() : symbol.substr(0, separator);
 }
 
+// Identity of a module spelling in `program`. Standalone sources have no
+// package manifest, so they share one compiler-defined local package; the
+// compiler's own `std` module has a compiler-defined identity.
+static string program_module_identity(const Program& program, const string& module) {
+  auto found = program.module_identities.find(module);
+  if (found != program.module_identities.end()) return found->second;
+  if (module == "std") return moss::module_identity("moss-std", "0.1.0", "std");
+  return moss::module_identity("__standalone__", "0.0.0",
+                               module.empty() ? "main" : module);
+}
+
+// Interns every nominal declaration of `program` exactly once (§3.1): its
+// identity is the defining module identity plus the source declaration name.
+static void build_type_context(Program& program) {
+  auto context = std::make_shared<moss::TypeContext>();
+  auto declare = [&](moss::DeclarationKind kind, const string& program_name,
+                     vector<moss::NominalFieldSlot> fields) {
+    const string module = module_name_from_symbol(program_name);
+    moss::NominalDeclaration declaration;
+    declaration.kind = kind;
+    declaration.program_name = program_name;
+    declaration.module_id = program_module_identity(program, module);
+    declaration.declaration_name = module.empty()
+        ? program_name : program_name.substr(module.size() + 2);
+    declaration.fields = std::move(fields);
+    context->declare(std::move(declaration));
+  };
+  for (const auto& object : program.objects) {
+    vector<moss::NominalFieldSlot> fields;
+    for (const auto& field : object.fields) {
+      const bool inferred = field.inferred || field.type.empty();
+      fields.push_back({field.name, inferred ? string() : trim(field.type), inferred});
+    }
+    declare(moss::DeclarationKind::Record, object.name, std::move(fields));
+  }
+  for (const auto& enumeration : program.enums)
+    declare(moss::DeclarationKind::Enum, enumeration.name, {});
+  for (const auto& domain : program.domains)
+    declare(moss::DeclarationKind::Domain, domain.name, {});
+  program.type_context = std::move(context);
+}
+
 static bool belongs_to_module(const string& qualified, const string& module) {
   return qualified == module || starts_with(qualified, module + "__");
 }
@@ -277,9 +319,12 @@ static string canonical_type_name(string type) {
   return type;
 }
 
+// A record instance with at least one substituted slot (`Box[value=int]`);
+// a bare record spelling is its template or a fully declared record.
 static bool is_nominal_instance_type(const string& type) {
   auto parsed = moss::Type::parse_canonical(type);
-  return parsed && (*parsed)->kind == moss::TypeKind::NominalInstance;
+  return parsed && (*parsed)->kind == moss::TypeKind::NominalInstance &&
+         !(*parsed)->field_substitutions.empty();
 }
 
 static string nominal_template_name(const string& type) {
@@ -2080,6 +2125,10 @@ class Checker {
           domains_.count(e.name))
         err(e.source_file, e.line, "duplicate enum type: " + e.name);
     }
+    // Semantic name resolution: every nominal declaration is interned once
+    // and stays bound to its identity for the rest of this session.
+    build_type_context(p_);
+    type_scope_ = std::make_unique<moss::TypeContext::Scope>(p_.type_context.get());
     for (auto& t : p_.traits) {
       if (!traits_.emplace(t.name, &t).second)
         err(t.source_file, t.line, "duplicate trait: " + t.name);
@@ -2209,6 +2258,7 @@ class Checker {
   // encountered through this path have concrete types, unlike the generic
   // call edges retained for recursion/effect analysis.
   FunctionSpecialization* checking_specialization_ = nullptr;
+  std::unique_ptr<moss::TypeContext::Scope> type_scope_;
   mutable vector<bool>* parameter_mutation_capture_ = nullptr;
   mutable string current_source_file_;
   string current_semantic_context_;
@@ -2390,13 +2440,18 @@ class Checker {
     auto parsed = moss::Type::parse_canonical(type);
     if (!parsed) return false;
     if ((*parsed)->kind == moss::TypeKind::NominalInstance) {
-      auto declaration = objects_.find((*parsed)->name);
-      if (declaration == objects_.end() ||
-          declaration->second->fields.size() !=
-              (*parsed)->field_substitutions.size()) return false;
-      for (size_t index = 0; index < declaration->second->fields.size(); ++index) {
-        const auto& actual = (*parsed)->field_substitutions[index];
-        if (actual.first != declaration->second->fields[index].name ||
+      // Resolved at name resolution to an interned declaration. The bare
+      // template is valid; an instance substitutes every inferred slot.
+      const auto& declaration = (*parsed)->declaration;
+      if (!declaration) return false;
+      if ((*parsed)->field_substitutions.empty()) return true;
+      if ((*parsed)->field_substitutions.size() != declaration->inferred_slot_count())
+        return false;
+      size_t index = 0;
+      for (const auto& slot : declaration->fields) {
+        if (!slot.inferred) continue;
+        const auto& actual = (*parsed)->field_substitutions[index++];
+        if (actual.first != slot.name ||
             !valid_type(actual.second->to_canonical_string())) return false;
       }
       return true;
@@ -2720,10 +2775,10 @@ class Checker {
     auto bound_ir = moss::Type::parse_canonical(bound);
     auto target_ir = moss::Type::parse_canonical(target);
     if (bound_ir && target_ir && (*bound_ir)->structurally_equal(**target_ir)) return true;
-    if (bound_ir && target_ir &&
-        (*bound_ir)->kind == moss::TypeKind::Primitive &&
+    // A bare template annotation admits any instance of the same declaration.
+    if (bound_ir && target_ir && (*bound_ir)->is_bare_template() &&
         (*target_ir)->kind == moss::TypeKind::NominalInstance &&
-        (*bound_ir)->name == (*target_ir)->name) return true;
+        (*bound_ir)->same_head(**target_ir)) return true;
     if (bound == "vector" && starts_with(target, "vector[")) return true;
     if (target == "vector" && starts_with(bound, "vector[")) return true;
     if (bound == "queue" && starts_with(target, "queue[")) return true;
@@ -16443,6 +16498,7 @@ class Generator {
             bool emit_static_specializations = true,
             bool public_specializations = false)
       : p_(p),
+        type_scope_(p.type_context.get()),
         debug_build_(debug_build), mode_(mode),
         rust_dependencies_(std::move(rust_dependencies)),
         emit_static_specializations_(emit_static_specializations),
@@ -16628,6 +16684,8 @@ class Generator {
 
  private:
   const Program& p_;
+  // Keeps this program's interned declarations bound while lowering.
+  moss::TypeContext::Binding type_scope_;
   bool program_uses_numeric_builtins() const {
     const auto contains = [](const string& value) {
       for (const char* name : {"parse_int", "parse_float", "to_int"}) {
@@ -24322,6 +24380,23 @@ static void write_type_facts_json(std::ostream& out,
   const bool inferred = target.kind == "binding" ||
       target.kind == "functional_node" || target.kind == "functional_pipeline";
   write_debug_json_string(out, inferred ? "inferred" : "checked_declaration");
+  // The interned nominal identity bound at name resolution (§3.1), never a
+  // name reconstructed from the display spelling.
+  auto parsed = moss::Type::parse_canonical(target.type);
+  if (parsed && (*parsed)->declaration) {
+    const auto& declaration = *(*parsed)->declaration;
+    out << ", \"nominal\": {\"declaration_id\": ";
+    write_debug_json_string(out, declaration.id);
+    out << ", \"module_identity\": ";
+    write_debug_json_string(out, declaration.module_id);
+    out << ", \"declaration_name\": ";
+    write_debug_json_string(out, declaration.declaration_name);
+    out << ", \"instance_key\": ";
+    if ((*parsed)->kind == moss::TypeKind::NominalInstance && (*parsed)->is_closed())
+      write_debug_json_string(out, (*parsed)->nominal_instance_key());
+    else out << "null";
+    out << "}";
+  }
   out << "}";
 }
 
@@ -25858,6 +25933,7 @@ static bool write_semantic_query_json(
     const string& source_file, const Program& program,
     const OptimizationPlan& plan, const vector<Warning>& warnings,
     const string& kind_filter = {}, const string& enclosing_filter = {}) {
+  moss::TypeContext::Scope type_scope(program.type_context.get());
   vector<SemanticTargetFact> targets = semantic_target_facts(program, plan);
   SemanticQueryResolution resolution = resolve_semantic_target(
       targets, selector, source_file, kind_filter, enclosing_filter, &program);
@@ -26061,6 +26137,7 @@ static bool write_references_query_json(
     std::ostream& out, const string& selector, const string& source_file,
     const Program& program, const OptimizationPlan& plan,
     const string& kind_filter = {}, const string& enclosing_filter = {}) {
+  moss::TypeContext::Scope type_scope(program.type_context.get());
   vector<SemanticTargetFact> targets = semantic_target_facts(program, plan);
   SemanticQueryResolution resolution = resolve_semantic_target(
       targets, selector, source_file, kind_filter, enclosing_filter, &program);
@@ -27596,6 +27673,13 @@ struct CompiledProjectUnit {
 // identities during project composition.
 struct ParsedModuleUnit {
   string name;
+  // Set for a loaded compiled provider: its interface's ABI module identity.
+  string module_identity;
+  // ABI v10 only: the provider's sealed contract hashes, and the exact
+  // provider identities and hashes its own imports were built against.
+  string binary_contract_hash;
+  string semantic_contract_hash;
+  vector<abi_v10::Import> required_imports;
   bool explicit_module = false;
   vector<std::pair<Program,string>> files;
   vector<ModuleImport> imports;
@@ -28424,6 +28508,23 @@ static string interface_module_name(const string& text,
   return file.stem().string();
 }
 
+// ABI module identity of a loaded provider. ABI v10 records it directly; a v9
+// interface records `<package>::<module>` plus its package version (absent
+// from legacy v9 artifacts, which are therefore `unversioned`).
+static string interface_module_identity(const string& text, const string& module) {
+  std::istringstream input(text);
+  string line, declared, version = "unversioned";
+  while (std::getline(input, line)) {
+    if (starts_with(line, "module_id ")) declared = trim(line.substr(10));
+    else if (starts_with(line, "package_version ")) version = trim(line.substr(16));
+    else if (line == "imports" || line == "contract") break;
+  }
+  if (starts_with(declared, "module-v1:")) return declared;
+  const size_t separator = declared.find("::");
+  const string package = separator == string::npos ? declared : declared.substr(0, separator);
+  return moss::module_identity(package.empty() ? "unknown" : package, version, module);
+}
+
 static void parse_generic_ir_line(const string& line, Function& function) {
   std::istringstream input(line);
   string record;
@@ -28744,7 +28845,8 @@ static void verify_source_free_provider_binding(
 // provider digest and selected rlib marker, then every section hash. Only then
 // are records projected into the declaration lines read below.
 static string verified_abi_v10_interface_records(
-    const std::filesystem::path& file, const string& text) {
+    const std::filesystem::path& file, const string& text,
+    abi_v10::SealedInterface* sealed = nullptr) {
   abi_v10::SealedInterface parsed;
   try {
     parsed = abi_v10::parse(text);
@@ -28773,6 +28875,7 @@ static string verified_abi_v10_interface_records(
   for (const auto& record : parsed.value.binary_contract) records += record.payload;
   records += "semantic_exports\n";
   for (const auto& record : parsed.value.semantic_contract) records += record.payload;
+  if (sealed) *sealed = parsed;
   return records;
 }
 
@@ -28788,8 +28891,9 @@ static ParsedModuleUnit load_module_interface(
         ? "source-free provider uses staged ABI v10; rebuild it for ABI v9 or set MOSS_STAGED_ABI=v10"
         : "source-free provider uses an older module interface; rebuild it for ABI v10",
         "SOURCE_FREE_ABI_REBUILD_REQUIRED");
+  abi_v10::SealedInterface sealed;
   if (v10_interface) {
-    text = verified_abi_v10_interface_records(file, text);
+    text = verified_abi_v10_interface_records(file, text, &sealed);
   } else {
     verify_source_free_provider_binding(file, text);
     if (text.find("\nnative_abi " + std::to_string(kNativeAbiVersion) + "\n") == string::npos)
@@ -28830,6 +28934,12 @@ static ParsedModuleUnit load_module_interface(
   std::istringstream lines(text);
   ParsedModuleUnit unit;
   unit.name = interface_module_name(text, file);
+  unit.module_identity = interface_module_identity(text, unit.name);
+  if (v10_interface) {
+    unit.binary_contract_hash = sealed.binary_hash;
+    unit.semantic_contract_hash = sealed.semantic_hash;
+    unit.required_imports = sealed.value.imports;
+  }
   unit.explicit_module = true;
   Program provider;
   provider.explicit_module = true;
@@ -28861,8 +28971,15 @@ static ParsedModuleUnit load_module_interface(
   std::set<string> exceptional_consumer_contracts;
   bool in_semantic_exports = false;
   bool in_imports = false;
+  std::set<string> identified_declarations;
+  std::set<string> exported_declarations;
+  // The nominal declaration whose record lines are being read, if any.
+  std::optional<std::pair<moss::DeclarationKind, string>> open_declaration;
   while (std::getline(lines, line)) {
     line = trim(std::move(line));
+    if (starts_with(line, "export ") || starts_with(line, "generic_dependency_begin ") ||
+        line == "semantic_exports" || line == "contract")
+      open_declaration.reset();
     if (line == "semantic_exports") {
       in_semantic_exports = true;
       in_imports = false;
@@ -28990,6 +29107,20 @@ static ParsedModuleUnit load_module_interface(
       current_trait = nullptr;
       continue;
     }
+    if (starts_with(line, "declaration_id ")) {
+      const string declared = trim(line.substr(15));
+      if (!open_declaration)
+        throw CompileError(0, "orphan declaration identity in module interface",
+                           "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+      const auto [kind, name] = *open_declaration;
+      const string expected = moss::declaration_identity(kind, unit.module_identity, name);
+      if (declared != expected)
+        throw CompileError(0, "provider declaration identity '" + declared +
+            "' does not match its module identity (expected '" + expected + "')",
+            "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+      identified_declarations.insert(name);
+      continue;
+    }
     if (starts_with(line, "export type ")) {
       std::istringstream header(line.substr(12));
       string name;
@@ -28997,6 +29128,8 @@ static ParsedModuleUnit load_module_interface(
       ObjectType object;
       object.name = name;
       object.exported = true;
+      open_declaration.emplace(moss::DeclarationKind::Record, name);
+      exported_declarations.insert(name);
       provider.objects.push_back(std::move(object));
       current_object = &provider.objects.back();
       current = nullptr;
@@ -29012,6 +29145,8 @@ static ParsedModuleUnit load_module_interface(
       enumeration.name = name;
       enumeration.exported = true;
       enumeration.source_file = file.string();
+      open_declaration.emplace(moss::DeclarationKind::Enum, name);
+      exported_declarations.insert(name);
       provider.enums.push_back(std::move(enumeration));
       current_enum = &provider.enums.back();
       current = nullptr;
@@ -29046,6 +29181,8 @@ static ParsedModuleUnit load_module_interface(
       Domain domain;
       domain.name = name;
       domain.exported = true;
+      open_declaration.emplace(moss::DeclarationKind::Domain, name);
+      exported_declarations.insert(name);
       provider.domains.push_back(std::move(domain));
       current_domain = &provider.domains.back();
       current = nullptr;
@@ -29802,6 +29939,12 @@ static ParsedModuleUnit load_module_interface(
       continue;
     }
   }
+  // ABI v10 binds every exported nominal to its declaration identity.
+  if (starts_with(text, "moss-module-interface-v3\n"))
+    for (const auto& name : exported_declarations)
+      if (!identified_declarations.count(name))
+        throw CompileError(0, "provider nominal '" + name +
+            "' has no declaration identity", "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
   for (auto& domain : provider.domains) {
     for (auto& handler : domain.handlers) {
       string record_key = domain.name + "::" + handler.name;
@@ -29982,6 +30125,9 @@ static vector<std::filesystem::path> compiled_interface_candidates(
 struct CompiledModuleProvider {
   string module;
   std::filesystem::path interface_file;
+  // Staged ABI v10: the claimed module identity and the provider seal.
+  string module_identity;
+  string contract_digest;
 };
 
 // Module names in source are semantic identities. A filename is merely an
@@ -29992,7 +30138,9 @@ static vector<CompiledModuleProvider> compiled_module_providers(
   vector<CompiledModuleProvider> providers;
   for (const auto& file : compiled_interface_candidates(manifest)) {
     string text = read_text_file(file, "MOSS_INTERFACE_ERROR");
-    providers.push_back({interface_module_name(text, file), file});
+    const string module = interface_module_name(text, file);
+    providers.push_back({module, file, interface_module_identity(text, module),
+                         source_free_declared_digest(text)});
   }
   std::sort(providers.begin(), providers.end(),
             [](const CompiledModuleProvider& left,
@@ -30021,6 +30169,26 @@ static const CompiledModuleProvider* unique_compiled_module_provider(
   while (end != providers.end() && end->module == import.name) ++end;
   if (begin == end) return nullptr;
   if (std::next(begin) == end) return &*begin;
+  // ABI v10 (TYPE_IR_CONTRACT §3.1): providers claiming one module identity
+  // must be the same bound provider; a second, differently sealed provider is
+  // an impersonation, not an alternative.
+  if (staged_abi_v10() &&
+      std::all_of(begin, end, [&](const CompiledModuleProvider& provider) {
+        return provider.module_identity == begin->module_identity;
+      })) {
+    if (std::all_of(begin, end, [&](const CompiledModuleProvider& provider) {
+          return provider.contract_digest == begin->contract_digest;
+        }))
+      return &*begin;
+    std::ostringstream conflict;
+    conflict << "module identity '" << begin->module_identity
+             << "' is claimed by providers with different bound contracts:";
+    for (auto provider = begin; provider != end; ++provider)
+      conflict << "\n  " << provider->interface_file.string();
+    CompileError error(import.line, conflict.str(), "SOURCE_FREE_MODULE_ID_CONFLICT");
+    error.source_file = import.source_file;
+    throw error;
+  }
   std::ostringstream message;
   message << "ambiguous imported module '" << import.name << "'\nprovided by:";
   for (auto provider = begin; provider != end; ++provider)
@@ -30143,6 +30311,54 @@ static CheckedProjectUnit check_project_sources(
         if (!modules.count(name.first))
           throw CompileError(name.second.line, "imported module '" + name.first +
                              "' was not found in source or compiled interfaces");
+    }
+    // Module identities (TYPE_IR_CONTRACT §3.1). A source module belongs to
+    // the package whose Moss.toml contains it (dependency sources reach here
+    // through Fast Debug); a compiled provider keeps its interface identity.
+    std::map<std::filesystem::path, ProjectManifest> owning_manifests;
+    auto source_module_identity = [&](const string& source, const string& module) {
+      const ProjectManifest* owner = &manifest;
+      if (auto root = find_project_root(std::filesystem::path(source));
+          root && root->lexically_normal() != manifest.root.lexically_normal()) {
+        auto cached = owning_manifests.find(*root);
+        if (cached == owning_manifests.end())
+          cached = owning_manifests.emplace(*root, load_project_manifest(*root)).first;
+        owner = &cached->second;
+      }
+      return moss::module_identity(owner->name,
+          owner->version.empty() ? "unversioned" : owner->version, module);
+    };
+    for (const auto& entry : modules) {
+      if (loaded_external_modules.count(entry.first))
+        program.module_identities[entry.first] = entry.second.module_identity;
+      else if (has_explicit_modules && !entry.second.files.empty())
+        program.module_identities[entry.first] =
+            source_module_identity(entry.second.files.front().second, entry.first);
+    }
+    if (!has_explicit_modules)
+      program.module_identities[""] = moss::module_identity(manifest.name,
+          manifest.version.empty() ? "unversioned" : manifest.version, manifest.name);
+    // A compiled provider was checked against exact provider identities and
+    // sealed hashes (ABI_V10_DESIGN §3.1). The provider selected here for each
+    // of its imports must be that same bound provider.
+    for (const auto& external : loaded_external_modules) {
+      for (const auto& required : modules.at(external).required_imports) {
+        const string imported = required.module_id.substr(required.module_id.rfind("::") + 2);
+        auto selected = modules.find(imported);
+        if (selected == modules.end()) continue;
+        const bool compiled = loaded_external_modules.count(imported) != 0;
+        if (program.module_identities[imported] != required.module_id ||
+            (compiled && (selected->second.binary_contract_hash != required.binary_hash ||
+                          selected->second.semantic_contract_hash != required.semantic_hash))) {
+          CompileError error(0, "provider '" + external + "' was built against " +
+              required.module_id + ", but the selected '" + imported +
+              "' provider has a different identity or bound contract",
+              "SOURCE_FREE_MODULE_ID_CONFLICT");
+          error.source_file = external_module_interfaces.count(external)
+              ? external_module_interfaces.at(external).string() : string();
+          throw error;
+        }
+      }
     }
     if (has_explicit_modules) {
       program.explicit_module = true;
@@ -30634,8 +30850,11 @@ static bool specialization_is_projected(
 static Program module_program(const Program& whole, const string& module,
                               const string& root_module = "") {
   Program result;
+  moss::TypeContext::Scope type_scope(whole.type_context.get());
   result.module_name = module;
   result.explicit_module = true;
+  result.module_identities = whole.module_identities;
+  result.type_context = whole.type_context;
   result.imports = whole.imports;
   string target_module = !root_module.empty() ? root_module : whole.main_module;
   std::set<string> projected_static_functions;
@@ -31292,6 +31511,18 @@ static string abi_v10_module_id(const ProjectManifest& manifest,
   return "module-v1:" + manifest.name + "@" + manifest.version + "::" + module;
 }
 
+// The interned declaration identity recorded with an exported nominal
+// (TYPE_IR_CONTRACT §3.1, ABI_V10_DESIGN §3.2).
+static string exported_declaration_identity(const Program& program,
+                                            moss::DeclarationKind kind,
+                                            const string& program_name) {
+  if (program.type_context)
+    if (auto declared = program.type_context->find(program_name)) return declared->id;
+  const string module = module_name_from_symbol(program_name);
+  return moss::declaration_identity(kind, program_module_identity(program, module),
+                                    program_name.substr(module.size() + 2));
+}
+
 static vector<std::filesystem::path> write_module_interfaces(
     const ProjectManifest& manifest, const Program& program,
     const std::filesystem::path& directory,
@@ -31503,6 +31734,8 @@ static vector<std::filesystem::path> write_module_interfaces(
     interface_contents[module] << "type " << object.name.substr(module.size() + 2)
                                << " nominal\n";
     out << "export type " << object.name.substr(module.size() + 2) << " nominal\n";
+    out << "  declaration_id " << exported_declaration_identity(
+        program, moss::DeclarationKind::Record, object.name) << "\n";
     for (const auto& field : object.fields)
       out << "  public_representation field " << field.name << " " << field.type << "\n";
     for (const auto& method : object.methods) {
@@ -31533,6 +31766,8 @@ static vector<std::filesystem::path> write_module_interfaces(
     string name = enumeration.name.substr(module.size() + 2);
     auto& out = contents[module];
     out << "export enum " << name << "\n";
+    out << "  declaration_id " << exported_declaration_identity(
+        program, moss::DeclarationKind::Enum, enumeration.name) << "\n";
     interface_contents[module] << "enum " << name << "\n";
     for (const auto& item : enumeration.cases) {
       out << "  enum_case " << std::quoted(item.name) << " "
@@ -31570,6 +31805,8 @@ static vector<std::filesystem::path> write_module_interfaces(
     interface_contents[module] << "domain " << domain.name.substr(module.size() + 2)
                                << " opaque\n";
     out << "export domain " << domain.name.substr(module.size() + 2) << " opaque\n";
+    out << "  declaration_id " << exported_declaration_identity(
+        program, moss::DeclarationKind::Domain, domain.name) << "\n";
     for (const auto& field : domain.state) {
       std::ostringstream member;
       member << "  construction_state " << std::quoted(field.name) << " "
@@ -31688,6 +31925,8 @@ static vector<std::filesystem::path> write_module_interfaces(
     std::ostringstream header;
     header << "moss-module-interface-v2\n"
            << "module_id " << manifest.name << "::" << entry.first << "\n"
+           << "package_version "
+           << (manifest.version.empty() ? "unversioned" : manifest.version) << "\n"
            << "compiler " << kCompilerVersion << "\n"
            << "native_abi " << kNativeAbiVersion << "\n"
            << "backend_fingerprint " << backend.fingerprint << "\n"

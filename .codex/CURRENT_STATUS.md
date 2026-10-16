@@ -63,6 +63,38 @@ integration (runner exit 0; G2 conformance is not complete).
   `MALFORMED_TYPE_EXPRESSION`. Type IR unit cases plus run.sh negatives
   `partial_arity_map_field` and `partial_arity_vector_parameter`.
 
+**L7 decision (2026-10-16, supersedes the deferral below):** Architect
+findings G-A-3 (stable nominal identity) and G-A-1 (authoritative
+TypeRef/TypeSolver) are **approved as P0 for Phase 25**. The plan:
+
+- G-A3 first, as Checkpoint A.
+- Then G-A1, as Checkpoints B–E: checker type environments, constraint and
+  dispatch paths, closure and downstream consumers, and a full audit.
+- Commit each checkpoint, sequentially.
+- Close with a fresh independent L6 Architect review that must falsify both
+  findings.
+
+No narrower string hybrid, and no new deferral without L7. ABI v10 stays
+staged, and gate 10 stays on the joint integration.
+
+**Checkpoint A (G-A3): implemented, awaiting independent review.**
+
+- Interned record/enum/domain identities are wired through the checker,
+  generator, module projection, interface emission/loading, provider selection,
+  and semantic queries (details in
+  `docs/phase25/TEAM_G_UNRESOLVED_CONTRACT_DECISIONS.md`).
+- Validation (focused, at the Checkpoint A commit):
+  - Type IR unit;
+  - G-A3 cases A–E (`check_phase25_nominal_identity.py`, wired into run.sh);
+  - conformance 10/11 with gate 10 pending;
+  - generic specialization 40/40 and builtin generic typing 129/129;
+  - known-open nominal, recursive layout, and teaching diagnostics;
+  - Phase 21 source-free ABI and v9 migration;
+  - module provider ambiguity, multi-file project, enum source-free, and
+    same-module type resolution;
+  - Phase 20 executor/FileIO and Phase 10 Fast Debug project.
+- The full `make check` at that SHA is run separately.
+
 **L7 feedback (2026-10-16):** keep gate 10 on joint integration; authoritative
 Type IR, nominal identity, typed ABI-v10 payloads, and runtime linkage need
 architectural resolution before Team G is declared ready. These are recorded

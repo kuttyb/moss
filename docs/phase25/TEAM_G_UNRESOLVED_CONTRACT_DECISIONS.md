@@ -9,8 +9,9 @@ resolution before `G-Complete` can be declared.
   `TEAM_S_TEAM_G_INTERFACE_AGREEMENT.md`.
 - Review basis: independent Architect review `TEAM_G_G2_ARCHITECT_REVIEW.md`,
   which issued **NO-GO** for the Type IR milestone.
-- The user deferred items D1 and D2 to L7 on 2026-10-16. L7 confirmed that
-  D1–D4 need resolution before Team G is declared ready.
+- The user deferred items D1 and D2 to L7 on 2026-10-16. L7 then approved
+  both for full implementation (see below). D3 and D4 still need resolution
+  before Team G is declared ready.
 
 ## Settled scope (for reference, not open)
 
@@ -22,6 +23,42 @@ resolution before `G-Complete` can be declared.
   final evidence runs with `MOSS_G2_ACTIVATE_JOINT=1`.
 - Production native ABI remains v9. ABI v10 is staged behind
   `MOSS_STAGED_ABI=v10` until the joint cutover.
+
+## L7 resolution of D1 and D2 (2026-10-16)
+
+L7 approved **full implementation** of D1 (G-A-1) and D2 (G-A-3) during
+Phase 25, as P0 work required before G-Complete. Option (b) of D1, a narrower
+string-based hybrid, is rejected. The order is G-A3 first (Checkpoint A), then
+G-A1 (Checkpoints B–E). Each checkpoint is committed separately, and a fresh
+independent Architect review closes the work. Neither item may be deferred
+again without a new L7 decision. D3 and D4 remain open as written below.
+
+**Checkpoint A (D2): implemented, not yet independently reviewed.**
+
+- **Identities.** Records, enums, and domains are interned once per
+  compilation session as `NominalDeclaration` records carrying their
+  identities:
+  - `nominal-template-v1:<module-v1 ...>:type:<name>`;
+  - for enums, `nominal-enum-v1:...:enum:<name>`;
+  - for domains, `nominal-domain-v1:...:domain:<name>`.
+
+  Equality, closure, `type-key-v1`, and §3.2 instance keys use these identities
+  and the ordered resolved fields. Keys stay terminating for recursive layouts.
+- **Module identity.** Local modules take their owning `Moss.toml`, so
+  dependency sources keep their own package under Fast Debug. Loaded providers
+  take their interface identity: v10 `module_id`, or the v9 `package_version`
+  line.
+- **ABI v10.** Each exported nominal carries a `declaration_id` that the
+  loader validates. Two differently sealed providers claiming one identity, or
+  a provider whose imports do not match the selected providers, are rejected
+  with `SOURCE_FREE_MODULE_ID_CONFLICT`.
+- **Semantic queries** report the bound identity and instance key.
+- **Evidence:** `tests/tooling/check_phase25_nominal_identity.py` (cases A–E)
+  and `tests/tooling/check_phase25_type_ir.cpp`.
+- **Limitation, carried into D1.** Outside the Type IR algebra, the checker
+  still compares type spellings in many places. These spellings are unique per
+  declaration within a session, but replacing them with `TypeRef` comparisons
+  is Checkpoint B/C work.
 
 ## D1. Authoritative Type IR (Architect finding 1)
 

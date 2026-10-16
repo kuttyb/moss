@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <string>
@@ -406,6 +408,14 @@ struct Program {
   // participate in Moss name/type checking, but are never regenerated into
   // this build's Rust crates.
   std::set<string> external_modules;
+  // ABI module identity (`module-v1:<package>@<version>::<module>`) of each
+  // module spelling in this program; "" is the root of an unmodular program.
+  // Local modules take the package manifest; loaded providers take their
+  // interface's identity (TYPE_IR_CONTRACT §3.1).
+  std::map<string, string> module_identities;
+  // The session declaration table, built by the checker. It interns every
+  // record/enum/domain identity and outlives the checker with the program.
+  std::shared_ptr<TypeContext> type_context;
   vector<ModuleImport> imports;
   vector<Function> functions;
   vector<Trait> traits;
