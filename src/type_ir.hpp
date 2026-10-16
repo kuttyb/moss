@@ -115,13 +115,21 @@ public:
     return t;
   }
 
+  // Type-argument count of a built-in collection, or nullopt for other names.
+  static std::optional<size_t> collection_arity(std::string_view builtin_name) {
+    if (builtin_name == "vector" || builtin_name == "queue") return 1;
+    if (builtin_name == "map") return 2;
+    return std::nullopt;
+  }
+
   bool is_closed() const {
     if (kind == TypeKind::InferenceVar) return false;
-    // `vector`, `queue`, and `map` without arguments are open collections
-    // whose element/key/value types are still unbound (Option B).
-    if (kind == TypeKind::Builtin && type_args.empty() &&
-        (name == "vector" || name == "queue" || name == "map"))
-      return false;
+    // `vector`, `queue`, and `map` are closed only with every type argument;
+    // the bare spelling is an open collection whose element/key/value types
+    // are still unbound (Option B). Partial arity is never closed.
+    if (kind == TypeKind::Builtin)
+      if (auto arity = collection_arity(name); arity && type_args.size() != *arity)
+        return false;
     for (const auto& arg : type_args) {
       if (!arg->is_closed()) return false;
     }
@@ -283,6 +291,10 @@ public:
           if (head == "Vector") head = "vector";
           else if (head == "Map") head = "map";
           else if (head == "Queue") head = "queue";
+          // A parameterized collection names every type argument; only the
+          // bare spelling denotes an open, not-yet-inferred collection.
+          if (auto arity = collection_arity(head); arity && args.size() != *arity)
+            return std::nullopt;
           return Type::builtin(head, std::move(args));
         }
         if (head == "unit") return Type::unit();

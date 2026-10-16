@@ -2251,6 +2251,16 @@ class Checker {
     throw error;
   }
 
+  // An annotation that does not parse as a structured type is malformed;
+  // one that parses but names nothing known keeps its specific message.
+  [[noreturn]] void invalid_type_err(const string& source_file, int line,
+                                     const string& type, const string& message) const {
+    if (!moss::Type::parse_canonical(canonical_type_name(type)))
+      err(source_file, line, "malformed type expression '" + type + "'",
+          "MALFORMED_TYPE_EXPRESSION");
+    err(source_file, line, message);
+  }
+
   [[noreturn]] void teaching_err(
       int line, const string& code, const string& message,
       const string& rule_id, const string& rule_summary,
@@ -2872,7 +2882,8 @@ class Checker {
         string signature = method.name + "/" + std::to_string(method.params.size());
         for (const auto& parameter : method.params) {
           if (!parameter.type.empty() && !valid_type(parameter.type))
-            err(method_source, method.line, "unknown parameter type '" + parameter.type +
+            invalid_type_err(method_source, method.line, parameter.type,
+                "unknown parameter type '" + parameter.type +
                 "' in trait method '" + trait.name + "." + method.name + "'");
           signature += ":" + canonical_type_name(parameter.type);
         }
@@ -2921,7 +2932,8 @@ class Checker {
             err(method_source, method.line, "cannot infer type for parameter '" + param.name +
                 "' in method '" + object.name + "." + method.name + "'");
           if (!valid_type(param.type))
-            err(method_source, method.line, "unknown parameter type '" + param.type +
+            invalid_type_err(method_source, method.line, param.type,
+                "unknown parameter type '" + param.type +
                 "' in method '" + object.name + "." + method.name + "'");
           signature += ":" + canonical_type_name(param.type);
           env[param.name] = param.type;
@@ -3388,7 +3400,9 @@ class Checker {
         if (p.type.empty())
           err(h_source, h.line, "cannot infer type for parameter '" + p.name +
               "' in handler '" + d.name + "." + h.name + "'");
-        if (!valid_type(p.type)) err(h_source, h.line, "unknown parameter type '" + p.type + "'");
+        if (!valid_type(p.type))
+          invalid_type_err(h_source, h.line, p.type,
+                           "unknown parameter type '" + p.type + "'");
         if (fileio_contains_scoped_type(p.type))
           err(h.line,
               "handler parameters cannot contain FileIO, Range, or RangeBatch capabilities",
@@ -3852,14 +3866,16 @@ class Checker {
     std::unordered_map<string,string> env;
     std::set<string> names;
     if (f.return_type && *f.return_type != "unit" && !valid_type(*f.return_type) && !contains_internal_placeholder(*f.return_type))
-      err(f.source_file, f.line, "unknown return type '" + *f.return_type + "' in function '" + f.name + "'");
+      invalid_type_err(f.source_file, f.line, *f.return_type,
+                       "unknown return type '" + *f.return_type + "' in function '" + f.name + "'");
     for (const auto& param : f.params) {
       if (param.type.empty() && !f.generic && !has_constraint(f, param.name))
         err(f.source_file, f.line, "cannot infer type for parameter '" + param.name +
             "' in function '" + f.name + "'");
       if (!param.type.empty() && !valid_type(param.type) && !contains_internal_placeholder(param.type) &&
           !phase20_allowed_as_ordinary_parameter(param.type))
-        err(f.source_file, f.line, "unknown parameter type '" + param.type + "'");
+        invalid_type_err(f.source_file, f.line, param.type,
+                         "unknown parameter type '" + param.type + "'");
       if (!names.insert(param.name).second) err(f.source_file, f.line, "duplicate parameter: " + param.name);
       env[param.name] = param.type.empty() ? "_generic:" + param.name : param.type;
     }

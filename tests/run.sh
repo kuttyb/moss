@@ -1338,6 +1338,10 @@ reject_case naked_cross_domain_call "domain handler 'Worker.Ping' must be called
 # unconstructed template is legal, but a reachable value must close it.
 run_case unused_inferred_field_template tests/unused_inferred_field_template.moss '1'
 reject_case unresolved_field_value "unbound open result type for variable 'value'"
+# A parameterized built-in collection names every type argument (Vector and
+# Queue one, Map two); partial or excess arity is malformed, not open.
+reject_case partial_arity_map_field "[MALFORMED_TYPE_EXPRESSION] malformed type expression 'map[string]'"
+reject_case partial_arity_vector_parameter "[MALFORMED_TYPE_EXPRESSION] malformed type expression 'vector[int,int]'"
 reject_case unresolved_state "cannot infer type for state field 'Worker.value'"
 reject_case state_annotation_mismatch "state field 'Counter.value' is annotated 'int' but its initializer has type 'float'"
 reject_case conflicting_reply_types "conflicting reply types in handler 'Worker.Maybe'"
