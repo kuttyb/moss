@@ -363,3 +363,147 @@ Fast Debug and native: `margo debug` with two path dependencies runs (`1`, `2`) 
 Version bump: an in-place `Moss.toml` bump re-emits `module_id`/`package_version`/`declaration_id` (v9 and v10), and the source identity follows.
 
 Context binding (instrumented): no `Type::nominal` was created without a context, and no declared nominal fell back to `Primitive` inside a context, across the nominal-identity suite, G2 conformance, and all cross-package probes.
+
+## Addendum 1 — closure check at 235072d
+
+- Subject: `235072d` ("Close Checkpoint A review conditions ARCH-001/002/003 and harden ARCH-010"). Its history is `2a7454b → c787dc3` (this review, cherry-picked) `→ 235072d`.
+- I checked it out detached in the review worktree, then ran `make` and `./moss agent bootstrap --json` (`language_version` is `moss-0.1`).
+- For comparison I also built `2a7454b` from `git archive` (`tmp/prev/moss`) and kept `1690de5` (`tmp/base/moss`).
+- I did not implement any of these fixes.
+
+### Verdict
+
+**CONDITIONAL GO for Checkpoint A. The only remaining condition is the L7 action (original condition 3).**
+
+- Conditions 1 and 2 are met: ARCH-001, ARCH-002, and ARCH-003 are closed with evidence below. ARCH-010 is also closed.
+- Original condition 3 is not an implementation change and remains open: L7 must record that gate item 2 (ARCH-004) and the instance-key part of item 5 (ARCH-007) carry into G-A1 Checkpoints B/C and the ABI-v10 record work. Once L7 records it, Checkpoint A is GO.
+- G-A3 as a whole is still **not complete**: ARCH-004, -005, -006, -007, -008, and -009 remain open as scheduled.
+- New finding ARCH-011 is a small **regression introduced by 235072d**. It is non-blocking for the checkpoint but must close before G-A3 completion.
+
+### Suites at 235072d (all pass)
+
+```
+python3 tests/tooling/check_phase25_type_ir.py                  -> PASS (exit 0)
+python3 tests/tooling/check_phase25_nominal_identity.py ./moss  -> cases A, B, C, E, D, F PASS (exit 0)
+python3 tests/tooling/check_phase25_conformance.py ./moss       -> gates 1-9, 11 PASS; gate 10 PENDING (joint); exit 0
+python3 tests/tooling/check_phase21_standard_error_namespace.py ./moss -> PASS (affected by the std-error declaration change)
+```
+
+### Per-finding status
+
+| Finding | Status at 235072d | Evidence |
+|---|---|---|
+| ARCH-001 `__` identity | **Closed** | See below |
+| ARCH-002 type/domain clash | **Closed** | See below |
+| ARCH-003 trait/type clash | **Closed** | See below |
+| ARCH-010 context lifetime and scoping | **Closed** (residual note) | See below |
+| ARCH-004 item 2 spelling comparisons | Open (G-A1 B/C) | Unchanged by this commit |
+| ARCH-005 bare unknown spelling is a closed `Primitive` | Open | `Type::from_canonical_string("Ghost")` → `kind=Primitive`, `is_closed()=1` (`tmp/ga3/ctxprobe.cpp`) |
+| ARCH-006 v9 cross-provider identities | Open (v10 cutover) | Shadow probe: v9 `check` OK with a wrong id; v10 `SOURCE_FREE_MODULE_ID_CONFLICT` |
+| ARCH-007 v10 instance keys and typed references | Open (ABI v10) | Unchanged |
+| ARCH-008 enum/domain ID formats | Open (L7/Team S ratification) | Unchanged |
+| ARCH-009 claimed package/version not bound to the lock | Open (observation) | Forgery F5 still accepted under v9 and v10 |
+
+**ARCH-001 — closed.**
+
+What changed:
+- `rewrite_module_program` sets `defining_module` and `declaration_name` on records, enums, and domains (`src/moss.cpp:28160-28197`). The standard errors take `std`.
+- `build_type_context` uses only those fields.
+- `exported_declaration_identity` fails with `MOSS_INTERFACE_ERROR` instead of re-deriving.
+- In projects, `program_module_identity` fails closed with `MODULE_IDENTITY_UNRESOLVED`.
+
+Evidence:
+- Root-level `Foo__Bar` in project `nmproj@4.5.6` → `nominal-template-v1:module-v1:nmproj@4.5.6::nmproj:type:Foo__Bar`.
+- The same declaration in a standalone file → `…__standalone__@0.0.0::main:type:Foo__Bar`, with a different instance key (`128310…` vs `3a6821…`). The two packages' declarations no longer share an identity.
+- Module-level `__` names in module `Geo` of `geo@2.0.0` (`tmp/ga3/dunder2.py`) give `…geo@2.0.0::Geo:type:Foo__Bar`, `nominal-enum-v1:…::Geo:enum:Mode__X`, and `nominal-domain-v1:…::Geo:domain:Svc__Y`. These are identical:
+  - in the provider's source session;
+  - in the emitted v9 and v10 `declaration_id` lines;
+  - in a compiled-only consumer (provider `src/` removed, v9 and v10; the run prints `7`);
+  - under `margo debug` with a path dependency.
+- A mixed project (explicit `module P` plus an unmodular root file) gets `mixed@3.0.0::P:type:Box`, `mixed@3.0.0::mixed:type:Local`, and `…::mixed:enum:Color`, and runs.
+- I could not reach `MODULE_IDENTITY_UNRESOLVED` from source. Every project shape I tried had a resolved identity.
+
+**ARCH-002 and ARCH-003 — closed.** Every cross-kind clash now gives a positioned `DUPLICATE_SYMBOL` (`tmp/ga3/clash/*.moss`):
+
+| Probe | Line | `1690de5` |
+|---|---|---|
+| type/domain (`dupdom`) | 1 | accepted |
+| domain-then-type | 5 | accepted |
+| enum/type | 4 | `MOSS_COMPILE_ERROR` |
+| enum/domain | 1 | `MOSS_COMPILE_ERROR` |
+| trait/type (`traitclash`) | 1 | accepted; native build died with non-JSON "missing static specialization" |
+| trait/enum | 1 | accepted |
+| trait/domain | 1 | accepted |
+| `type Iterator` | 1 | accepted |
+| `enum Iterator` | 1 | accepted |
+| `domain Iterator` | 1 | accepted |
+
+A user `trait Iterator` keeps its existing `MOSS_COMPILE_ERROR` reserved-name diagnostic. A user `type ParseError` gives an unpositioned diagnostic; see ARCH-012.
+
+**ARCH-010 — closed, with a residual note.** `NominalDeclaration::owner` is a `weak_ptr`, and `Scope`/`Binding` release their own entry. A direct unit probe (`tmp/ga3/ctxprobe.cpp`, compiled against `src/type_ir.hpp`) shows:
+- Releasing A's `Scope` before B's `Binding` leaves B current; releasing both leaves no context.
+- `stable_type_key()` on a `TypeRef` whose session was dropped throws `invalid_argument "… outlived its compilation session"` instead of dereferencing a dangling pointer.
+
+Residual note: a stack-allocated `TypeContext` (no `shared_ptr` owner) declares successfully, but every key computation then fails with the misleading "outlived" message. `declare` could reject a context not owned by a `shared_ptr`. The repository has no regression test for release order or an outlived session; consider adopting the probe.
+
+**Field-privacy change — no weakening found.** The change is to use the declaration's own module, and to treat an unmodular program as one module. Probe `tmp/ga3/priv.py`, run with 235072d and with `1690de5`, gives identical results for every explicit-module case:
+- Frozen fixture `private_field_visibility_negative.moss` with `provider_module.moss` in a project → `FIELD_VISIBILITY_ERROR` (both). The positive fixture → OK.
+- Explicit `module App` reading `provider_module.Record.secret_field` → `FIELD_VISIBILITY_ERROR` (both).
+- A same-module read from another file of `module P` → OK (both).
+- Exported types: fields are exported by default (parser `field_exported = exported`, `src/moss.cpp:1364`), so `secret_field` of an `export type` is readable from another module and compiled-only in v9/v10. This is pre-existing language behaviour, identical at `1690de5`, and not a weakening.
+- The only behavioural change: a two-file unmodular project reading a same-program record's field is now OK; it was `FIELD_VISIBILITY_ERROR` at `1690de5`. This is intended.
+
+Coverage gap: see ARCH-013.
+
+Regression re-runs, all unchanged from `2a7454b`:
+- `tmp/ga3/cross.py v10` and `v9`: output byte-identical to the `2a7454b` run.
+- Forgery F0–F5 for v9 and v10.
+- Fast Debug path dependencies: identity and instance key `4e6b9c…` agree with native.
+- Domain and enum providers.
+- v10 shadow rejection.
+
+### New findings
+
+#### P25-G-GA3-ARCH-011 — Legacy-declared standard errors lost their `moss-std` identity (regression in 235072d; non-blocking for Checkpoint A, must close before G-A3 completion)
+
+A program may still declare the legacy `enum ParseError: Invalid, Overflow`. Phase 21 migrates it to the canonical compiler type `std.ParseError`, and the checker then skips the synthesized `std` declaration (`present`, `src/moss.cpp:2095-2099`). The user declaration never passes through `rewrite_module_program`, so it carries no `defining_module`/`declaration_name`. Its identity therefore becomes package-local, with the mangled name as the declaration name.
+
+Reproducer (`tmp/ga3/legacy_std.moss`):
+
+```moss
+enum ParseError:
+  Invalid
+  Overflow
+
+fn f(e: ParseError) -> Int:
+  return 1
+
+fn main():
+  echo f(ParseError.Invalid)
+```
+
+Command: `moss type entity-v1:enum:std__ParseError --source <file> --json`
+
+| Program | `2a7454b` | `235072d` |
+|---|---|---|
+| standalone | `nominal-enum-v1:module-v1:moss-std@0.1.0::std:enum:ParseError` | `nominal-enum-v1:module-v1:__standalone__@0.0.0::main:enum:std__ParseError` |
+| same file in an unmodular project `lsp@1.0.0` | `moss-std` identity | `…lsp@1.0.0::lsp:enum:std__ParseError` |
+
+Scope of the regression:
+- Programs written with `import std` / `std.ParseError` keep the `moss-std` identity.
+- Mixed projects (an explicit module plus an unmodular root with the legacy declaration) keep it as well, and `recover ParseError.Invalid` against `P.bad()` runs (`1`, `6`) under both binaries.
+- So the regression is limited to standalone programs and purely unmodular projects. There it changes reported identities and every type key that includes a standard error.
+
+To close: when the legacy alias path migrates a declaration to `std__<Name>`, set `defining_module = "std"` and `declaration_name = <Name>`. Alternatively, drop the user declaration in favour of the synthesized one, as the project path does. Add a `case F` assertion that the legacy and canonical spellings give the same `declaration_id`.
+
+#### P25-G-GA3-ARCH-012 — A user record named like a standard error reports an unpositioned, misleading duplicate (non-blocking; pre-existing, now coded `DUPLICATE_SYMBOL`)
+
+`type ParseError:\n  v: Int\nfn main():\n  echo 1` gives `DUPLICATE_SYMBOL duplicate enum type: std__ParseError` at line 0, naming an enum the user did not write. `1690de5` gives the same text as `MOSS_COMPILE_ERROR`. This contradicts the claim that every clash gives a positioned diagnostic.
+
+To close: position the diagnostic at the user's declaration, and name the reserved standard error.
+
+#### P25-G-GA3-ARCH-013 — Field-privacy enforcement has no automated test (non-blocking)
+
+`grep -rln "private_field_visibility\|FIELD_VISIBILITY_ERROR" tests/ Makefile` finds only the forward fixture and its README. No runner executes the fixture or asserts `FIELD_VISIBILITY_ERROR`, even though 235072d changed the privacy decision.
+
+To close: add the fixture pair, plus the explicit-module negative and same-module multi-file positive from `tmp/ga3/priv.py`, to a checked runner.
