@@ -2096,6 +2096,16 @@ class Checker {
                        "InUse", "Full", "IO"}},
         {"ParseError", {"Invalid", "Overflow"}},
         {"ConversionError", {"NonFinite", "Overflow"}}};
+    // A legacy source declaration of a standard error (`enum ParseError:`)
+    // is rewritten to the std spelling at parse time. It is the compiler's
+    // own standard error, so it keeps the std declaration identity.
+    for (auto& declaration : p_.enums)
+      for (const auto& [short_name, cases] : standard_errors)
+        if (declaration.name == standard_error_identity(short_name) &&
+            declaration.defining_module.empty()) {
+          declaration.defining_module = "std";
+          declaration.declaration_name = short_name;
+        }
     for (const auto& [short_name, cases] : standard_errors) {
       const string identity = standard_error_identity(short_name);
       const bool present = std::any_of(p_.enums.begin(), p_.enums.end(),
@@ -2133,10 +2143,26 @@ class Checker {
             "DUPLICATE_SYMBOL");
     }
     for (auto& e : p_.enums) {
-      if (!enums_.emplace(e.name, &e).second || objects_.count(e.name) ||
-          domains_.count(e.name))
-        err(e.source_file, e.line, "duplicate enum type: " + e.name,
-            "DUPLICATE_SYMBOL");
+      const bool clash = !enums_.emplace(e.name, &e).second ||
+          objects_.count(e.name) || domains_.count(e.name);
+      if (!clash) continue;
+      // Report a collision with a compiler standard error at the user's
+      // declaration, naming the standard type it would redeclare.
+      if (e.source_file == "<moss-std>") {
+        string source = e.source_file;
+        int line = e.line;
+        if (auto object = objects_.find(e.name); object != objects_.end()) {
+          source = object->second->source_file;
+          line = object->second->line;
+        } else if (auto domain = domains_.find(e.name); domain != domains_.end()) {
+          source = domain->second->source_file;
+          line = domain->second->line;
+        }
+        err(source, line, "'" + e.declaration_name +
+            "' names the compiler standard error std." + e.declaration_name +
+            "; choose another name", "DUPLICATE_SYMBOL");
+      }
+      err(e.source_file, e.line, "duplicate enum type: " + e.name, "DUPLICATE_SYMBOL");
     }
     // Semantic name resolution: every nominal declaration is interned once
     // and stays bound to its identity for the rest of this session.
