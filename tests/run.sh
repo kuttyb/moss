@@ -57,6 +57,12 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_same_module_type_r
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_bitwise_operations.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_recursive_layout.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_type_ir.py
+# ABI-v10 container unit validation is staged; compiled-only Moss proof is
+# tracked separately by the Phase 25 G2 conformance gates below.
+mkdir -p tmp
+${CXX:-c++} -std=c++17 -Wall -Wextra -Werror -pedantic \
+  tests/tooling/abi_v10_staging.cpp -o tmp/abi_v10_staging
+tmp/abi_v10_staging
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_conformance.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/phase25/runtime/check_runtime.py
 PYTHONDONTWRITEBYTECODE=1 python3 sdk/foundations/acceptance/run_all.py
