@@ -1,0 +1,2 @@
+fn main():
+  echo Map().get(1, 2)

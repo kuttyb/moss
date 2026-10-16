@@ -1,0 +1,10 @@
+type Box:
+  value
+
+fn ident(x):
+  return x
+
+fn main():
+  box = Box(value: "abc")
+  echo ident(box).value
+  echo box.value

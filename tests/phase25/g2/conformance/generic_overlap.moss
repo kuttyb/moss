@@ -1,0 +1,6 @@
+fn append_one(values, item):
+  values.push(item)
+
+fn main():
+  var values = [[1], [2]]
+  append_one(values, values[0])
