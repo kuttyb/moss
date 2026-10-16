@@ -507,3 +507,83 @@ To close: position the diagnostic at the user's declaration, and name the reserv
 `grep -rln "private_field_visibility\|FIELD_VISIBILITY_ERROR" tests/ Makefile` finds only the forward fixture and its README. No runner executes the fixture or asserts `FIELD_VISIBILITY_ERROR`, even though 235072d changed the privacy decision.
 
 To close: add the fixture pair, plus the explicit-module negative and same-module multi-file positive from `tmp/ga3/priv.py`, to a checked runner.
+
+## Addendum 2 — verification at 27fc2fb
+
+- Subject: `27fc2fb` ("Close closure-check findings ARCH-011/012/013"). Its history is `235072d → c517127` (Addendum 1, cherry-picked) `→ 27fc2fb`.
+- I checked it out detached in the review worktree and ran `make`.
+- For comparison I used the `2a7454b` binary (`tmp/prev/moss`). I did not implement these fixes.
+
+### Verdict
+
+**CONDITIONAL GO for Checkpoint A. The only open condition is the L7 record (original condition 3).**
+
+- ARCH-011, ARCH-012, and ARCH-013 are closed.
+- The new finding ARCH-014 is non-blocking.
+- L7 must still record that gate item 2 (ARCH-004) and the ABI-v10 instance-key part of item 5 (ARCH-007) carry into G-A1 Checkpoints B/C and the ABI-v10 record work. Once L7 records it, Checkpoint A is GO.
+- G-A3 as a whole remains incomplete until ARCH-004 and ARCH-007 close.
+- ARCH-005, -006, -008, and -009 remain open as scheduled. No commit since Addendum 1 changed them.
+
+### Suites at 27fc2fb (all exit 0)
+
+```
+python3 tests/tooling/check_phase25_nominal_identity.py ./moss       -> cases A-F PASS
+python3 tests/tooling/check_phase25_conformance.py ./moss            -> 10/11, gate 10 PENDING (joint)
+python3 tests/tooling/check_phase25_field_visibility.py ./moss       -> PASS
+python3 tests/tooling/check_phase25_type_ir.py                       -> PASS
+python3 tests/tooling/check_phase21_standard_error_namespace.py ./moss -> PASS
+```
+
+### Per-finding status
+
+**ARCH-011 — closed.** The probe (`tmp/ga3/std2.sh`) declares all three legacy standard errors: `enum FileError` (6 tags), `enum ParseError`, and `enum ConversionError`. `moss type entity-v1:enum:std__<Name>` reports `nominal-enum-v1:module-v1:moss-std@0.1.0::std:enum:<Name>` for all three in each of these shapes:
+- a standalone file;
+- a purely unmodular project;
+- a mixed project (explicit `module P` plus an unmodular root with the legacy declarations).
+
+This matches the `2a7454b` identities. The closed variant contract still holds. Each of these gives `BUILTIN_ERROR_TYPE_SHAPE ParseError must declare exactly these tag-only variants: Invalid, Overflow` at line 1, the same as at `2a7454b`:
+- a payload variant (`Invalid(code: Int)`);
+- a missing variant;
+- an extra variant.
+
+**ARCH-012 — closed.** A user declaration named like a standard error now gives a positioned `DUPLICATE_SYMBOL` that names the standard type:
+
+| Probe | Result | `2a7454b` |
+|---|---|---|
+| `type ParseError` | `'ParseError' names the compiler standard error std.ParseError; choose another name` at the user's line 3 | `MOSS_COMPILE_ERROR` at line 0 |
+| `domain FileError` | same form, line 3 | `MOSS_COMPILE_ERROR` at line 0 |
+| `clash/std_name_type.moss` | line 1 | — |
+| `enum ConversionError: A` | `BUILTIN_ERROR_TYPE_SHAPE` at line 3 (legacy contract, unchanged) | same |
+| `trait ParseError` | `DUPLICATE_SYMBOL` at line 3 (see ARCH-014) | accepted |
+
+Module-local namesakes are not regressed. In an explicit-module project, `module P` exports `enum ParseError: Invalid(code: Int)` and raises it. The consumer's arms run in this order:
+
+```
+recover std.ParseError.Invalid
+recover P.ParseError.Invalid(code)
+```
+
+- `margo run` prints `9`, then `1` for `parse_int("x")`. The std arm never selects the provider error.
+- Identities are `…expl@1.0.0::P:enum:ParseError` and `…moss-std@0.1.0::std:enum:ParseError`.
+- `2a7454b` accepts the same program.
+
+Pre-existing and out of scope, identical at `2a7454b`: a module-local *record* or *domain* named `ParseError`/`ConversionError` cannot be constructed. The constructor is rewritten to `std__…`, giving `UNKNOWN_SYMBOL_OR_TYPE`.
+
+**ARCH-013 — closed, with a coverage note.** `check_phase25_field_visibility.py` (wired into `run.sh`) builds and runs real projects. It asserts:
+- `FIELD_VISIBILITY_ERROR` at the exact line for an explicit `module App` reading a private field of a non-exported `Model.Record`;
+- that a second file of `module Model` may use the field, with native and `run --interp` agreeing;
+- that an unmodular two-file project may use its own record's private field.
+
+Using a non-exported record is correct: the parser exports every field of an `export type` by default (`field_exported = exported`).
+
+Coverage note: the test does not exercise the frozen fixture's shape, an *unmodular* consumer reading an explicit module's private field (`tests/phase25/g0/conformance/private_field_visibility_negative.moss` plus `provider_module.moss`). That path goes through a different branch of the privacy decision. My probe (`tmp/ga3/priv.py`) shows it still reports `FIELD_VISIBILITY_ERROR` at 27fc2fb. Adding that pair to the test is recommended, not required.
+
+The `priv.py` results otherwise match Addendum 1 and `1690de5`. All earlier clash reproducers (`clash/*.moss`, `dupdom.moss`, `traitclash.moss`) still give positioned `DUPLICATE_SYMBOL`.
+
+### New finding
+
+#### P25-G-GA3-ARCH-014 — A trait named like a standard error reports the mangled spelling (non-blocking; message quality)
+
+`trait ParseError:\n  fn f() -> Int` gives `DUPLICATE_SYMBOL trait 'std__ParseError' has the same name as a type, enum, or domain; one name names one declaration` at line 3. It shows the internal `std__` spelling instead of naming `std.ParseError`, as the type/domain message now does.
+
+To close: use the standard-error wording for traits as well.
