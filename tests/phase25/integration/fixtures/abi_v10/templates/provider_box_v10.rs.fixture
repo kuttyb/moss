@@ -1,0 +1,19 @@
+// Phase 25 ABI-v10 Provider Generic Box Representation Fixture
+// In provider crate (libbox_provider.rlib)
+#![allow(dead_code)]
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Box<F0> {
+    #[doc(hidden)]
+    pub __moss_field_value: F0,
+}
+
+pub fn moss_fresh<F0>(val: F0) -> Box<F0> {
+    Box {
+        __moss_field_value: val,
+    }
+}
+
+pub fn moss_relay<F0: Clone>(b: &Box<F0>) -> F0 {
+    b.__moss_field_value.clone()
+}

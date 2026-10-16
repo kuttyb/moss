@@ -1,0 +1,9 @@
+module MethodConsumer
+import MethodProvider
+
+type Data:
+  id: Int
+
+fn main():
+  d = Data(id: 1)
+  echo MethodProvider.invoke_action(d)

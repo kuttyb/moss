@@ -1,0 +1,16 @@
+moss-module-interface-v2
+provider_contract_digest sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+module_id legacy::Legacy
+compiler 0.1.0
+native_abi 9
+backend_fingerprint 2f48c0ef4ea1736c
+backend_rustc rustc 1.98.1
+concrete_interface_hash 1234567890abcdef
+generic_semantic_hash 1234567890abcdef
+interface_hash 1234567890abcdef
+imports
+contract
+type Box nominal
+semantic_exports
+export type Box nominal
+  public_representation field value int

@@ -1,0 +1,20 @@
+// Phase 25 ABI-v10 Consumer Free-Function Generic Box Specialization Fixture
+extern crate box_provider;
+
+pub fn consume_int_box() -> i64 {
+    let b: box_provider::Box<i64> = box_provider::moss_fresh(42i64);
+    box_provider::moss_relay(&b)
+}
+
+pub fn consume_string_box() -> String {
+    let b: box_provider::Box<String> = box_provider::moss_fresh(String::from("moss-v10"));
+    box_provider::moss_relay(&b)
+}
+
+fn main() {
+    let int_val = consume_int_box();
+    assert_eq!(int_val, 42);
+    let str_val = consume_string_box();
+    assert_eq!(str_val, "moss-v10");
+    println!("Phase 25 A1 cross-crate generic Box linkage passed");
+}

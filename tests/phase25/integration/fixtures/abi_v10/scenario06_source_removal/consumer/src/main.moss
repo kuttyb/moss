@@ -1,0 +1,6 @@
+module Main
+import Service
+
+fn main():
+  b = Service.fresh(99)
+  echo Service.relay(b)

@@ -1,0 +1,10 @@
+module Service
+
+export type Box:
+  value
+
+export fn fresh(x):
+  return Box(value: x)
+
+export fn relay(b: Box):
+  return b.value

@@ -1,0 +1,8 @@
+module FreshTester
+import BoxProvider
+
+fn main():
+  first = BoxProvider.fresh(100)
+  second = BoxProvider.fresh("independent")
+  echo BoxProvider.relay(first)
+  echo BoxProvider.relay(second)

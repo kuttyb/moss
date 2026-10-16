@@ -1,0 +1,9 @@
+[package]
+name = "consumer_b"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+box_provider = { path = "../scenario01_provider" }

@@ -1,0 +1,6 @@
+module V9Consumer
+import Legacy
+
+fn main():
+  b = Legacy.Box(value: 42)
+  echo b.value

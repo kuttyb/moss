@@ -1,0 +1,16 @@
+moss-module-interface-v2
+provider_contract_digest sha256:{digest}
+module_id {module_id}
+compiler {compiler_version}
+native_abi 9
+backend_fingerprint {backend_fingerprint}
+backend_rustc {backend_rustc}
+concrete_interface_hash {concrete_interface_hash}
+generic_semantic_hash {generic_semantic_hash}
+interface_hash {interface_hash}
+imports
+{imports}
+contract
+{contract}
+semantic_exports
+{semantic_exports}

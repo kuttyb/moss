@@ -1,0 +1,9 @@
+[package]
+name = "effect_consumer"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+effect_provider = { path = "../provider" }

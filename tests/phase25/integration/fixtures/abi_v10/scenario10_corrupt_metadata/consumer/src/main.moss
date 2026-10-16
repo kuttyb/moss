@@ -1,0 +1,6 @@
+module MetadataConsumer
+import MetadataProvider
+
+fn main():
+  b = MetadataProvider.Box(value: 77)
+  echo MetadataProvider.get_value(b)
