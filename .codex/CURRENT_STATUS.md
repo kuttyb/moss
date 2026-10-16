@@ -1,5 +1,52 @@
 # Moss current status
 
+## Phase 25 Team A authoritative type core — 2026-10-16 (in progress)
+
+The L7 directive approved Architect findings G-A-1 and G-A-3. Team A branch
+`phase25-g-type-core` starts at the exact common baseline `5b29352`. The user
+authorized AGENTS.md/.codex edits, local commits, and normal push; AGENTS.md's
+push rule was clarified before the first push. The branch was pushed to
+`origin/phase25-g-type-core` at A1 SHA `5c2f078`; subsequent local commits need
+another push after validation. It is not merged into Team B, Team S, Team I, or
+`main`.
+
+- **A1:** Exact package/module nominal declaration identities, source-free
+  provider binding, constructor-order-stable instance keys, and built-in arity
+  closure are integrated at `5c2f078`. Focused Type IR, nominal identity,
+  field visibility, feedback checks, and `make -j2` passed in the A1 worktree.
+- **A3 partial:** `d63c97d` adds typed `specialization-v2` key inputs, stores
+  one key across registration/dependency/projection/query/native lookup, and
+  retains concrete `MemberDispatchRequirement` access facts. Existing
+  registration does not yet supply open-result bindings; open requirements
+  still need the A2 solver bridge. Focused A3 tests passed in its worktree.
+- **A2 partial:** `f0c8cda` routes compatibility and concrete-body closure
+  through `TypeRef`/`TypeSolver`; builtin generic typing 129/129, generic
+  specialization 40/40, and G2 conformance 10/11 (Gate 10 intentionally
+  PENDING) passed in the isolated compatibility worktree. `6d50d59` adds a
+  scoped solver prepass for open local collections and Fast Debug vector/range
+  traversal. The checker-wide TypeEnv conversion and solver ownership remain
+  unfinished.
+- **A4:** `docs/phase25/TEAM_A_TYPED_SEMANTIC_API.md` is pushed as the Team B/I
+  handoff shape; the compiler-facing typed projection is not implemented yet.
+  The 13-case Team A compiler-path suite is registered in `tests/run.sh`.
+- **Validation at consolidated source `6d50d59` plus test-runner registration:**
+  `make -j2`, `make examples`, Type IR, A3 compiler-path keys, and all 13 Team A
+  cases passed. Builtin typing 129/129 and generic specialization 40/40 passed
+  on the isolated A2 worktree; G2 conformance passed 10/11 with Gate 10
+  intentionally PENDING on the consolidated source. Feedback validation
+  passed after resolving the open-loop observation. `make check` is currently
+  running on the consolidated source and has passed Phase 20/21, Phase 25,
+  Team A, and text/encoding gates reached so far; its final result is pending.
+  A prior A1 `make check` attempt was stopped after subsequent source edits
+  invalidated it. Independent Architect review remains required.
+
+The delegated A2/A4 workers hit a service usage limit mid-turn. The Coordinator
+finished and integrated the isolated A2 patches; no result is claimed for
+unfinished A4. The branch is **NOT READY** for Team I at this checkpoint. The
+next step is to finish checker-wide TypeRef authority and the A4 typed API,
+complete the acceptance gates, then obtain an independent review of the exact
+consolidated implementation SHA.
+
 ## Phase 25 Team A A3 isolated workstream — 2026-10-16
 
 Branch `phase25-g-type-core-a3` builds a typed `specialization-v2` key from the

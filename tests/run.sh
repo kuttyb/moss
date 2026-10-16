@@ -71,6 +71,7 @@ tmp/abi_v10_adversarial
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_conformance.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_nominal_identity.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_field_visibility.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_team_a_semantics.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/phase25/runtime/check_runtime.py
 PYTHONDONTWRITEBYTECODE=1 python3 sdk/foundations/acceptance/run_all.py
 PYTHONDONTWRITEBYTECODE=1 python3 sdk/text-encoding-acceptance/run_all.py
