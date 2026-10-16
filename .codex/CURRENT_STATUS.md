@@ -1,42 +1,50 @@
 # Moss current status
 
-## Phase 25 Integration Team Preparation Cycle Complete — 2026-10-16
+## Phase 25 Integration Team Preparation Cycle Complete & Frozen — 2026-10-16
 
-Team I completed the Phase 25 Preparation Cycle on `phase25-integration-prep` (baseline `fa3a340a0a6652568b97869489da1a84038b9857`, reviewed implementation `98c2874001d50e0d109f0e790b5acf5d651825b4`, delivered HEAD `d21ddbc`), preparing Phase 25 for rapid, rigorous integration while Team G finishes remaining compiler and runtime work:
+Team I completed the Phase 25 Preparation Cycle on `phase25-integration-prep` (baseline `fa3a340a0a6652568b97869489da1a84038b9857`, reviewed implementation `6ab05c6e4c92f63b7dd612856afb14242ecc3830`, review artifact `docs/phase25/INTEGRATION_PREP_ARCHITECT_REVIEW.md` at `b0edeeb`), preparing Phase 25 for rapid, rigorous integration while Team G finishes remaining compiler and runtime work:
 
 1. **Machine-Checkable Acceptance Gates & Ledger:**
    - Delivered `tests/phase25/integration/acceptance_matrix.json` covering all **62 frozen Phase 25 acceptance requirements** across 7 functional groups: Type IR (11), ABI-v10 (11), G1 Semantics (15), G3 Ordering/Keys (8), G4 Char/Unicode (6), G5 Integration (6), G6 Whole-System Acceptance (5).
-   - Delivered `tests/phase25/integration/run_acceptance.py` supporting `--self-test` (passes cleanly on main/prep in 2ms), `--summary`, `--strict`, `--json`, and `--gate <ID>`. Current ledger status: 0 PASS, 1 FAIL (`GATE-G1-01` on baseline int64 Fast Debug precision), 51 BLOCKED on Team G/S completion, 10 NOT IMPLEMENTED. Anti-forging rules enforced: zero static feasibility tests (`check_rust_feasibility.py`) or pending fixtures counted as production PASS.
+   - Delivered `tests/phase25/integration/run_acceptance.py` supporting `--self-test` (passes cleanly on main/prep in 2ms), `--summary`, `--strict`, `--json`, `--fault-injection`, and `--gate <ID>`. Current ledger status: 0 PASS, 1 FAIL (`GATE-G1-01` on baseline int64 Fast Debug precision), 51 BLOCKED on Team G/S completion, 10 NOT IMPLEMENTED.
+   - Enforced strict anti-false-green validation (`validate_gate_evidence`): PASS requires on-disk file existence, genuine commit SHA existence in local git history (`git cat-file -e`), non-empty execution proof, zero pending/mock markers, and zero blocking dependencies.
 
 2. **ABI-v10 & Cross-Crate Reusable Harness:**
    - Implemented `tests/phase25/integration/cross_crate_harness.py` and 11 scenario fixture packages in `tests/phase25/integration/fixtures/abi_v10/`.
    - Supports Debug/Release profiles, cache cold/warm invalidation testing, authentic provider source-removal (`rmtree(src)` leaving only `.mossi` + `.rlib`), and five fail-closed metadata mutation modes (tamper digest, bad schema version, missing records, altered identity, corrupt float proof).
-   - Clean execution: 1 PASS (Scenario 11: cache invalidation on provider layout change), 10 BLOCKED on Team G G2 ABI-v10 compiler capabilities, 0 FAIL. Self-test passed 5/5 components cleanly.
+   - Hardened against false greens: Scenario 4 validates joint execution and outputs of both ConsumerA and ConsumerB; Scenario 8 requires exact ownership diagnostic tokens and rejects unrelated syntax/module errors; Scenario 10 requires all 5 mutations to fail closed with expected codes without crashes; Scenario 11 strictly validates layout invalidation (`missing object constructor field: LayoutProvider__Box.extra`).
+   - Clean execution: 1 PASS (Scenario 11: cache invalidation on provider layout change), 10 BLOCKED on Team G G2 ABI-v10 compiler capabilities, 0 FAIL. Self-test passed 6/6 checks cleanly.
 
-3. **Phase 24 SDK Compatibility Baseline & Smoke Runner:**
+3. **Deliberate Fault-Injection Test Suite:**
+   - Created `tests/phase25/integration/test_fault_injection.py` (and embedded in runner `--self-test` and `--fault-injection` flags) with zero false-green tolerance:
+     - Fault 1: Missing dependencies fail closed as BLOCKED/FAIL; cannot produce PASS.
+     - Fault 2: Unrelated compiler errors (e.g. syntax errors) are disqualified; cannot produce PASS.
+     - Fault 3: Stale evidence (fake git SHA, non-existent files, pending markers) is caught and rejected by ledger validator.
+     - Fault 4: Incomplete cross-consumer linking in Scenario 4 is detected and fails closed as FAIL.
+
+4. **Phase 24 SDK Compatibility Baseline & Smoke Runner:**
    - Evaluated all 19 Phase 24 SDK packages in 8 domains across Native Debug, Native Release, and Fast Debug.
    - Delivered reusable multi-mode smoke suite `tests/phase25/integration/sdk_compatibility_smoke.py`: 30 test runs across 10 domains and 3 modes (29 PASS, 1 documented limitation: Fast Debug source-free provider requirement, 0 FAIL).
    - Published in-depth baseline report `docs/phase25/PHASE_24_SDK_COMPATIBILITY_BASELINE.md` documenting existing main limitations (Fast Debug `for` loop, Float display, member call #15) and Team S/G behavioral differences.
 
-4. **Multi-Engine Differential & Adversarial Harness:**
+5. **Multi-Engine Differential & Adversarial Harness:**
    - Delivered `tests/phase25/integration/run_differential_adversarial.py` comparing Moss checking, Fast Debug, Native Debug, and Native Release with semantic output normalization and structured semantic queries (`type`, `effects`, `ownership`, `inspect`).
    - Created 29 minimized adversarial fixtures in `tests/phase25/integration/fixtures/adversarial/` across 10 families.
    - Published `docs/phase25/MULTI_ENGINE_DIFFERENTIAL_BASELINE.md` documenting 5 real baseline compiler/interpreter disagreements (`RUSTC_E0282`, `RUSTC_E0609`, integer overflow, negation overflow, runtime failure signals) without masking them.
 
-5. **Merge Rehearsal & Risk-Ranked Integration Playbook:**
+6. **Merge Rehearsal & Risk-Ranked Integration Playbook:**
    - Built automated rehearsal runner `tests/phase25/integration/rehearse_merge.py` and published `docs/phase25/MERGE_REHEARSAL_AND_PLAYBOOK.md`.
    - Identified all 3 Git merge conflicts (`.codex/CURRENT_STATUS.md`, `AGENTS.md`, `src/moss.cpp` across 4 discrete hunks), 4 semantic overlap files, and 8 risk classes.
    - Discovered and cataloged critical root-module visibility fallback risk (RISK-01: `specialization_calling_module` project-mode fallback) with verified patch in disposable rehearsal worktree.
    - Verified all 6 merge rehearsal invariants. Zero temporary architectures or shims introduced to `phase25-integration-prep`.
 
-6. **Independent L6 Architect Audit & Remediations:**
-   - Independent L6 Architect reviewed exact implementation SHA `98c2874001d50e0d109f0e790b5acf5d651825b4` and rendered **CONDITIONAL GO FOR PREPARATION MILESTONE** in `docs/phase25/INTEGRATION_PREP_ARCHITECT_REVIEW.md` (`96fda65`).
-   - Coordinator resolved all 5 Architect findings in commit `d21ddbc`: P25-PREP-001 (staged provider & genuine `USE_AFTER_CONSUME` check), P25-PREP-002 (fixed scenario 11 else branch), P25-PREP-003 (scenario 04 calls ConsumerA/B exports), P25-PREP-004 (isolated v9 legacy digest mismatch as BLOCKED on v10 codes), P25-PREP-005 (CustomKey structural methods declared inside type body).
+7. **Independent L6 Architect Audit & Final GO Verdict:**
+   - Independent L6 Architect reviewed exact hardened implementation SHA `6ab05c6e4c92f63b7dd612856afb14242ecc3830` and rendered **UNCONDITIONAL GO FOR PREPARATION FREEZE & HANDOFF** in `docs/phase25/INTEGRATION_PREP_ARCHITECT_REVIEW.md` (`b0edeeb`). All prior findings P25-PREP-001..005 verified resolved.
 
-7. **Repository Quality Gates & Organizational Closeout:**
+8. **Repository Quality Gates & Organizational Closeout:**
    - `make check` passed (54/54 executor tests, all Moss v0.1 tests); `make examples` passed (32/32 showcase examples); `python3 tests/tooling/check_agent_feedback.py` passed; `git diff --check` clean.
-   - Team efficiency closeout recorded in `docs/phase25/agent-patterns/team-i-integration-prep.md` (5 leaf workers, peak concurrency 5, 5 handoffs integrated, 1 planned Architect review event, 0 PRs).
-   - Milestone report published in `docs/phase25/INTEGRATION_PREP_REPORT.md`. Delivered on `phase25-integration-prep`.
+   - Team efficiency closeout recorded in `docs/phase25/agent-patterns/team-i-integration-prep.md`. Milestone report published in `docs/phase25/INTEGRATION_PREP_REPORT.md`.
+   - Baseline frozen on `phase25-integration-prep` for immediate handoff to active integration upon Team G completion.
 
 ## Phase 24 Aggregate SDK Integration Complete (Teams A & R Integrated) — 2026-10-13
 

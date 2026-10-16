@@ -8,8 +8,9 @@
 **Input Reference SHAs:**
 - **Team S (Semantics & Engines):** `58d33d9ab00a666e8d9b60450c7c6aeb2b55b657` (`origin/phase25-semantics-engines`)
 - **Team G (Generic Types & Type IR):** `a50fa30c8420538534471c4404afb0c645ae9b0c` (`origin/phase25-generic-types`)
-**Architect-Reviewed Implementation SHA:** `98c2874001d50e0d109f0e790b5acf5d651825b4`
-**Delivered Preparation Branch HEAD:** `d21ddbc` (incorporates Architect remediations P25-PREP-001..005)
+**Architect-Reviewed Implementation SHA:** `6ab05c6e4c92f63b7dd612856afb14242ecc3830`
+**Architect Review Verdict:** **GO (UNCONDITIONAL SIGN-OFF FOR PREPARATION FREEZE)** (`b0edeeb`)
+**Delivered Preparation Branch HEAD:** `b0edeeb` (incorporates all Architect remediations and anti-false-green fault injection hardening)
 
 ---
 
@@ -21,8 +22,9 @@ Team I has executed and completed the **Preparation Cycle** for Phase 25 in acco
 3. Established an empirical compatibility baseline across all 19 Phase 24 SDK packages in 8 domains, with a fast 10-domain smoke-test suite operating across Native Debug, Native Release, and Fast Debug.
 4. Delivered an automated multi-engine differential test suite and 29 minimized adversarial fixtures comparing Moss checking, Fast Debug, Native Debug, and Native Release, cataloging 5 real compiler defects without masking them.
 5. Executed non-persistent merge rehearsals reconciling Team S and Team G, identifying all 3 Git conflict files, 4 `src/moss.cpp` conflict hunks, and 8 semantic risk classes, authoring a risk-ranked integration playbook with zero temporary architectures on the preparation branch.
-6. Undergone independent L6 Architect audit resulting in **CONDITIONAL GO** at exact implementation SHA `98c2874`, followed by immediate Coordinator remediation of all 5 Architect findings in commit `d21ddbc`.
-7. Validated all repository quality gates (`make check`, `make examples`, feedback checks, whitespace diffs).
+6. Hardened the acceptance runner (`run_acceptance.py`) and cross-crate harness Scenarios 4, 8, 10, and 11 against false greens, adding a deliberate fault-injection suite proving that missing dependencies, unrelated compiler errors, stale evidence, and incomplete linking cannot produce PASS.
+7. Undergone independent L6 Architect audit resulting in an **UNCONDITIONAL GO** at exact implementation SHA `6ab05c6` (recorded in `b0edeeb`), certifying the preparation baseline for freeze and handoff.
+8. Validated all repository quality gates (`make check` [54/54 passed], `make examples` [32/32 passed], feedback checks, whitespace diffs).
 
 ---
 
