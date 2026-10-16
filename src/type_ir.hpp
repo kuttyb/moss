@@ -77,6 +77,7 @@ struct NominalDeclaration {
   DeclarationKind kind{DeclarationKind::Record};
   std::string program_name;      // checker spelling used only for name lookup
   std::string module_id;         // module-v1:<package>@<version>::<module>
+  std::shared_ptr<const std::string> interned_module_id;
   std::string declaration_name;  // source declaration name
   std::string id;                // nominal-template-v1:<module_id>:type:<name>
   std::vector<NominalFieldSlot> fields;  // records only, in source order
@@ -110,9 +111,32 @@ inline std::string declaration_identity(DeclarationKind kind,
 // scoped (RAII) to the checker/generator/build step that owns the program.
 class TypeContext : public std::enable_shared_from_this<TypeContext> {
  public:
+  // A defining module has one value in this compilation session, including
+  // when its declarations arrive from separate source-free consumers.
+  std::shared_ptr<const std::string> intern_module(const std::string& id) {
+    constexpr size_t prefix_size = sizeof("module-v1:") - 1;
+    const size_t version = id.find('@', prefix_size);
+    const size_t module = id.find("::", version == std::string::npos
+        ? prefix_size : version + 1);
+    if (id.rfind("module-v1:", 0) != 0 ||
+        version == std::string::npos || version == prefix_size ||
+        module == std::string::npos || module == version + 1 ||
+        module + 2 == id.size())
+      throw std::invalid_argument("invalid module identity");
+    auto found = modules_.find(id);
+    if (found != modules_.end()) return found->second;
+    auto value = std::make_shared<const std::string>(id);
+    modules_.emplace(id, value);
+    return value;
+  }
+  std::shared_ptr<const std::string> find_module(std::string_view id) const {
+    auto found = modules_.find(std::string(id));
+    return found == modules_.end() ? nullptr : found->second;
+  }
   // Interns a declaration. Re-declaring one program name with a different
   // identity is a compiler error, never a silent replacement.
   NominalDeclarationRef declare(NominalDeclaration declaration) {
+    declaration.interned_module_id = intern_module(declaration.module_id);
     declaration.id = declaration_identity(declaration.kind, declaration.module_id,
                                           declaration.declaration_name);
     declaration.owner = weak_from_this();
@@ -182,6 +206,7 @@ class TypeContext : public std::enable_shared_from_this<TypeContext> {
   }
   std::unordered_map<std::string, NominalDeclarationRef> by_name_;
   std::unordered_map<std::string, NominalDeclarationRef> by_id_;
+  std::unordered_map<std::string, std::shared_ptr<const std::string>> modules_;
 };
 
 inline NominalDeclarationRef bind_declaration(std::string_view program_name,

@@ -43,6 +43,14 @@ int main() {
   context.declare(record("Node", app, "Node", {{"children", "vector[Node]", false}}));
   context.declare(record("Alpha__Token", alpha, "Token", {{"id", "int", false}}));
   context.declare(record("Beta__Token", beta, "Token", {{"id", "int", false}}));
+  assert(context.find("Box")->interned_module_id == context.find("Cell")->interned_module_id);
+  assert(context.find("Box")->interned_module_id == context.find_module(app));
+  assert(context.find("Alpha__Token")->interned_module_id !=
+         context.find("Beta__Token")->interned_module_id);
+  assert(throws_invalid([&] { (void)context.intern_module("Alpha"); }));
+  assert(throws_invalid([&] { (void)context.intern_module("module-v1:@1.0::Alpha"); }));
+  assert(throws_invalid([&] { (void)context.intern_module("module-v1:app@::Alpha"); }));
+  assert(throws_invalid([&] { (void)context.intern_module("module-v1:app@1.0::"); }));
   TypeContext::Scope scope(&context);
 
   // Canonical identities follow TYPE_IR_CONTRACT §3.1.
