@@ -124,6 +124,18 @@ formats), ARCH-009 (bind claimed package/version to Moss.toml/Moss.lock), and
 the reviewer's baseline transitive-provider rustc failure. Non-blocking
 latent items: ARCH-005 and ARCH-006.
 
+**Closure check (Addendum 1, at `235072d`): CONDITIONAL GO for Checkpoint A.**
+ARCH-001, 002, 003, and 010 are closed, and the privacy change was verified
+not to weaken explicit-module privacy. The only open condition is the L7
+record (condition 3). New findings, all fixed in the next commit:
+
+- ARCH-011: a legacy `enum ParseError` keeps the std identity.
+- ARCH-012: a user `type ParseError` is a positioned `DUPLICATE_SYMBOL`
+  naming `std.ParseError`.
+- ARCH-013: `check_phase25_field_visibility.py` (explicit-module privacy
+  across modules, same module across files, unmodular projects) is wired into
+  run.sh.
+
 **L7 feedback (2026-10-16):** keep gate 10 on joint integration; authoritative
 Type IR, nominal identity, typed ABI-v10 payloads, and runtime linkage need
 architectural resolution before Team G is declared ready. These are recorded

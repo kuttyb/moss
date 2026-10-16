@@ -322,6 +322,29 @@ fn main():
         clash.write_text(text)
         error = rejected(clash, {"DUPLICATE_SYMBOL"})
         assert error["line"] > 0, error
+    # A legacy standard-error declaration is the compiler's own std type.
+    legacy = scratch / "legacy_std.moss"
+    legacy.write_text('''enum ParseError:
+  Invalid
+  Overflow
+
+fn main():
+  error = ParseError.Invalid
+  echo 1
+''')
+    std_error = nominal("error", legacy, kind="binding", enclosing="main")
+    assert std_error["declaration_id"] == \
+        "nominal-enum-v1:module-v1:moss-std@0.1.0::std:enum:ParseError", std_error
+    # A user type cannot redeclare a standard error; the clash names it.
+    user = scratch / "user_parse_error.moss"
+    user.write_text('''type ParseError:
+  value: Int
+
+fn main():
+  echo 1
+''')
+    error = rejected(user, {"DUPLICATE_SYMBOL"})
+    assert error["line"] == 1 and "std.ParseError" in error["message"], error
 
 
 def main():
