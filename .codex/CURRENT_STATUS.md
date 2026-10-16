@@ -1,5 +1,11 @@
 # Moss current status
 
+## Phase 25 Team G completion cycle — 2026-10-16 (in progress)
+
+Branch `phase25-generic-types` began at `a50fa30c8420538534471c4404afb0c645ae9b0c`. The previous section records the historical G2 checkpoint claim, not a current completion verdict. An independent gate audit at the starting SHA found that its runner substitutes a standalone Rust feasibility prototype for compiled-only Moss proof and omits several contract gates. The corrected gate-specific harness is being developed in the G-E worktree; its initial genuine matrix was 3 passing / 8 failing gates. Confirmed defects include `echo Map().get(1, 2)` passing `moss check` and failing in rustc E0061, and known-open nominal field use failing `TYPE_MISMATCH`. G-Complete is not yet established.
+
+Team G concurrence with all five numbered Team S interface sections is recorded in `docs/phase25/TEAM_S_TEAM_G_INTERFACE_AGREEMENT.md`. G-A Type IR, G-C shared runtime, G-D staged ABI-v10 and G-E conformance work are in independent worktrees; production ABI v9 remains active pending the joint cutover. Validation and independent reviews remain outstanding.
+
 ## Phase 25 Milestone G2 Implementation & Conformance Complete — 2026-10-15
 
 Milestone G2 implementation on branch `phase25-generic-types` is complete and verified according to `docs/phase25/TYPE_IR_CONTRACT.md` and L7 review directives:
