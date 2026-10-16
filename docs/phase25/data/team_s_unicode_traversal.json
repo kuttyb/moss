@@ -1,0 +1,167 @@
+{
+ "compiler_sha": "7bf962d287a4ce341c2b7015f4c7032d9f395031",
+ "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+ "runs_per_binary": 5,
+ "fragment": "{\"\u540d\u524d\":\"\u5024\ud83d\ude00\",\"\u00e9\":[1,2],\"k\":\"\u00fc\"},",
+ "fragment_codepoints": 30,
+ "results": [
+  {
+   "mode": "plain",
+   "codepoints": 990,
+   "build_median_s": 0.000457,
+   "build_and_scan_median_s": 0.000652,
+   "scan_s": 0.000195,
+   "output": [
+    "990",
+    "627"
+   ]
+  },
+  {
+   "mode": "plain",
+   "codepoints": 9990,
+   "build_median_s": 0.000436,
+   "build_and_scan_median_s": 0.007049,
+   "scan_s": 0.006613,
+   "output": [
+    "9990",
+    "6327"
+   ],
+   "ratio_vs_previous_size": 33.91
+  },
+  {
+   "mode": "plain",
+   "codepoints": 99990,
+   "build_median_s": 0.000578,
+   "build_and_scan_median_s": 0.678882,
+   "scan_s": 0.678304,
+   "output": [
+    "99990",
+    "63327"
+   ],
+   "ratio_vs_previous_size": 102.57
+  },
+  {
+   "mode": "plain",
+   "codepoints": 999990,
+   "build_median_s": 0.000889,
+   "build_and_scan_median_s": 67.790008,
+   "scan_s": 67.789119,
+   "output": [
+    "999990",
+    "633327"
+   ],
+   "ratio_vs_previous_size": 99.94
+  },
+  {
+   "mode": "indexed-v1",
+   "codepoints": 990,
+   "build_median_s": 0.000464,
+   "build_and_scan_median_s": 0.000465,
+   "scan_s": 2e-06,
+   "output": [
+    "990",
+    "627"
+   ]
+  },
+  {
+   "mode": "indexed-v1",
+   "codepoints": 9990,
+   "build_median_s": 0.000457,
+   "build_and_scan_median_s": 0.000638,
+   "scan_s": 0.000182,
+   "output": [
+    "9990",
+    "6327"
+   ],
+   "ratio_vs_previous_size": 91.0
+  },
+  {
+   "mode": "indexed-v1",
+   "codepoints": 99990,
+   "build_median_s": 0.000653,
+   "build_and_scan_median_s": 0.002684,
+   "scan_s": 0.002031,
+   "output": [
+    "99990",
+    "63327"
+   ],
+   "ratio_vs_previous_size": 11.16
+  },
+  {
+   "mode": "indexed-v1",
+   "codepoints": 999990,
+   "build_median_s": 0.001599,
+   "build_and_scan_median_s": 0.017515,
+   "scan_s": 0.015916,
+   "output": [
+    "999990",
+    "633327"
+   ],
+   "ratio_vs_previous_size": 7.84
+  }
+ ],
+ "metadata": {
+  "rust_struct_bytes": {
+   "String": 24,
+   "MossString": 56
+  },
+  "cases": [
+   {
+    "text": "ascii",
+    "codepoints": 988,
+    "utf8_bytes": 988,
+    "metadata_bytes": 32,
+    "metadata_percent_of_payload": 3.239
+   },
+   {
+    "text": "ascii",
+    "codepoints": 999986,
+    "utf8_bytes": 999986,
+    "metadata_bytes": 32,
+    "metadata_percent_of_payload": 0.003
+   },
+   {
+    "text": "json-mixed",
+    "codepoints": 990,
+    "utf8_bytes": 1353,
+    "metadata_bytes": 96,
+    "metadata_percent_of_payload": 7.095
+   },
+   {
+    "text": "json-mixed",
+    "codepoints": 999990,
+    "utf8_bytes": 1366653,
+    "metadata_bytes": 65568,
+    "metadata_percent_of_payload": 4.798
+   },
+   {
+    "text": "cjk",
+    "codepoints": 1000,
+    "utf8_bytes": 3000,
+    "metadata_bytes": 96,
+    "metadata_percent_of_payload": 3.2
+   },
+   {
+    "text": "cjk",
+    "codepoints": 1000000,
+    "utf8_bytes": 3000000,
+    "metadata_bytes": 65568,
+    "metadata_percent_of_payload": 2.186
+   },
+   {
+    "text": "emoji",
+    "codepoints": 999,
+    "utf8_bytes": 3996,
+    "metadata_bytes": 96,
+    "metadata_percent_of_payload": 2.402
+   },
+   {
+    "text": "emoji",
+    "codepoints": 999999,
+    "utf8_bytes": 3999996,
+    "metadata_bytes": 65568,
+    "metadata_percent_of_payload": 1.639
+   }
+  ]
+ }
+}
