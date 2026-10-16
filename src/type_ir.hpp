@@ -117,6 +117,11 @@ public:
 
   bool is_closed() const {
     if (kind == TypeKind::InferenceVar) return false;
+    // `vector`, `queue`, and `map` without arguments are open collections
+    // whose element/key/value types are still unbound (Option B).
+    if (kind == TypeKind::Builtin && type_args.empty() &&
+        (name == "vector" || name == "queue" || name == "map"))
+      return false;
     for (const auto& arg : type_args) {
       if (!arg->is_closed()) return false;
     }

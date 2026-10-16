@@ -3517,6 +3517,10 @@ class Checker {
             break;
           }
         }
+        // A field substituted by an open collection (`field = []` never
+        // pinned) leaves the instance open as well.
+        auto parsed = moss::Type::parse_canonical(canonical_type_name(type));
+        if (parsed && !(*parsed)->is_closed()) open_nominal = true;
       }
       if (open_collection || open_nominal) {
         int err_line = fallback_line;

@@ -1334,7 +1334,10 @@ fi
 reject_source use_after_transfer examples/use_after_transfer.moss \
   "value 'original' was transferred to 'destination' at line 10"
 reject_case naked_cross_domain_call "domain handler 'Worker.Ping' must be called with message"
-reject_case unresolved_field "cannot infer type for field 'Unresolved.field'"
+# An untyped field is a nominal template slot (TYPE_IR_CONTRACT §2): an
+# unconstructed template is legal, but a reachable value must close it.
+run_case unused_inferred_field_template tests/unused_inferred_field_template.moss '1'
+reject_case unresolved_field_value "unbound open result type for variable 'value'"
 reject_case unresolved_state "cannot infer type for state field 'Worker.value'"
 reject_case state_annotation_mismatch "state field 'Counter.value' is annotated 'int' but its initializer has type 'float'"
 reject_case conflicting_reply_types "conflicting reply types in handler 'Worker.Maybe'"
