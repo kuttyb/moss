@@ -524,8 +524,13 @@ static bool contains_internal_placeholder(const string& type) {
   if (internal_semantic_placeholder(value)) return true;
   auto open = value.find('[');
   if (open == string::npos || !ends_with(value, "]")) return false;
-  for (const auto& part : split_top_level(value.substr(open + 1, value.size() - open - 2), ','))
+  for (auto part : split_top_level(value.substr(open + 1, value.size() - open - 2), ',')) {
+    // A nominal instance substitutes named fields: `Box[s=_generic:x]`.
+    const auto equals = part.find('=');
+    if (equals != string::npos && equals < part.find('['))
+      part = part.substr(equals + 1);
     if (contains_internal_placeholder(part)) return true;
+  }
   return false;
 }
 
@@ -6452,6 +6457,15 @@ class Checker {
     return simple_identifier(trim(value));
   }
 
+  // An inferred nominal field takes the type of the value each constructor
+  // call supplies, so its ownership follows that value, not the template slot.
+  Effect constructor_field_effect(const Field& field, const string& value,
+                                  const std::unordered_map<string,string>& env) const {
+    const string type = field.inferred || field.type.empty()
+        ? inferred_expr_type(value, env).value_or("") : field.type;
+    return effect_requires_borrow(type) ? Effect::Consume : Effect::Read;
+  }
+
   bool effect_requires_borrow(const string& type) const {
     string t = canonical_type_name(type);
     if (t.empty() || contains_internal_placeholder(t) || copy_type(t) || domains_.count(t)) return false;
@@ -8681,8 +8695,8 @@ class Checker {
           if (value_it != supplied.end()) {
             analyze_effect_expression(value_it->second, env, params, parameter_effects,
                                       receiver_effect, receiver_fields,
-                                      effect_requires_borrow(field.type)
-                                          ? Effect::Consume : Effect::Read);
+                                      constructor_field_effect(
+                                          field, value_it->second, env));
           }
         }
         return;
@@ -12467,8 +12481,8 @@ class Checker {
           auto supplied_value = supplied.find(field.name);
           if (supplied_value != supplied.end()) {
             access_expressions.push_back(supplied_value->second);
-            access_effects.push_back(effect_requires_borrow(field.type)
-                ? Effect::Consume : Effect::Read);
+            access_effects.push_back(constructor_field_effect(
+                field, supplied_value->second, env.types));
           }
         }
         check_conflicting_call_accesses(line, callee, access_expressions,
@@ -12477,7 +12491,7 @@ class Checker {
           auto supplied_value = supplied.find(field.name);
           if (supplied_value != supplied.end())
             check_ownership_expression(line, supplied_value->second, env,
-                effect_requires_borrow(field.type) ? Effect::Consume : Effect::Read);
+                constructor_field_effect(field, supplied_value->second, env.types));
         }
         return;
       }

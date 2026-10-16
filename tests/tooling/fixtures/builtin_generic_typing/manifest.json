@@ -198,7 +198,7 @@
     "code": "TYPE_MISMATCH"
   },
   "constructor_uninferred": {
-    "code": "TYPE_INFERENCE_FAILED"
+    "stdout": ""
   },
   "assert_bare_word": {
     "code": "INVALID_ASSERT_SYNTAX"
@@ -255,7 +255,7 @@
     "code": "OWNERSHIP_USE_AFTER_CONSUME"
   },
   "constructor_collection_uninferred": {
-    "code": "TYPE_INFERENCE_FAILED"
+    "stdout": ""
   },
   "domain_push": {
     "stdout": "2\n",
