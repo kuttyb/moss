@@ -1,0 +1,6 @@
+module LayoutConsumer
+import LayoutProvider
+
+fn main():
+  b = LayoutProvider.Box(value: 10)
+  echo LayoutProvider.get_value(b)

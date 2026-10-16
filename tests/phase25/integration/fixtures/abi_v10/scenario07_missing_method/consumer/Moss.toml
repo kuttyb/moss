@@ -1,0 +1,9 @@
+[package]
+name = "method_consumer"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+method_provider = { path = "../provider" }

@@ -1,0 +1,7 @@
+module MetadataProvider
+
+export type Box:
+  value: Int
+
+export fn get_value(b: Box) -> Int:
+  return b.value

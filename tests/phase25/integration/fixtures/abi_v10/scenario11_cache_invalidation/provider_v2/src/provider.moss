@@ -1,0 +1,8 @@
+module LayoutProvider
+
+export type Box:
+  value: Int
+  extra: Int
+
+export fn get_value(b: Box) -> Int:
+  return b.value + b.extra

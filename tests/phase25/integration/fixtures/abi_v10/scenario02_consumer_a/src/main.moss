@@ -1,0 +1,6 @@
+module ConsumerA
+import BoxProvider
+
+fn main():
+  b = BoxProvider.fresh(42)
+  echo BoxProvider.relay(b)

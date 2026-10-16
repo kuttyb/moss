@@ -1,0 +1,10 @@
+module EffectProvider
+
+export type Item:
+  tag: String
+
+export fn consume_item(item: Item):
+  echo item.tag
+
+export fn read_item(item: Item) -> String:
+  return item.tag

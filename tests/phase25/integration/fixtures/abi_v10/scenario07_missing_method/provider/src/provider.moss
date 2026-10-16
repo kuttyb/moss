@@ -1,0 +1,4 @@
+module MethodProvider
+
+export fn invoke_action(item):
+  return item.custom_action()
