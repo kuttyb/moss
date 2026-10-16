@@ -9479,6 +9479,75 @@ class Checker {
     }
   }
 
+  struct ChangingSpecializationEdge {
+    int line = 0;
+    string source_file;
+    string callee;
+    string difference;
+  };
+
+  // Generic placeholders print as the parameter they stand for, e.g. the
+  // incoming type of `value` is `<value>`.
+  static string recursion_type_text(const string& type) {
+    static const string marker = "_generic:";
+    string text;
+    for (size_t at = 0; at < type.size();) {
+      if (type.compare(at, marker.size(), marker) != 0) {
+        text += type[at++];
+        continue;
+      }
+      size_t end = at + marker.size();
+      while (end < type.size() &&
+             (std::isalnum(static_cast<unsigned char>(type[end])) ||
+              type[end] == '_'))
+        ++end;
+      text += "<" + type.substr(at + marker.size(), end - at - marker.size()) + ">";
+      at = end;
+    }
+    return text;
+  }
+
+  // A recursive cycle whose call passes an argument type different from the
+  // callee's own parameter type cannot reach an IN_PROGRESS specialization
+  // key: every iteration would request a new instance (TYPE_IR_CONTRACT §5).
+  std::optional<ChangingSpecializationEdge> changing_specialization_edge(
+      const vector<string>& cycle) const {
+    for (size_t index = 0; index + 1 < cycle.size(); ++index) {
+      const string& caller = cycle[index];
+      const string& callee = cycle[index + 1];
+      if (!starts_with(callee, "fn:")) continue;
+      auto function = std::find_if(
+          p_.functions.begin(), p_.functions.end(),
+          [&](const Function& candidate) {
+            return candidate.name == callee.substr(3);
+          });
+      if (function == p_.functions.end()) continue;
+      for (const auto& edge : p_.semantic_call_edges) {
+        if (edge.source != caller || edge.target != callee ||
+            edge.invocation_kind != "ordinary_call")
+          continue;
+        for (size_t argument = 0; argument < edge.argument_types.size() &&
+                                  argument < function->params.size();
+             ++argument) {
+          const auto& parameter = function->params[argument];
+          string formal = parameter.type.empty()
+              ? "_generic:" + parameter.name : parameter.type;
+          const string& actual = edge.argument_types[argument];
+          if (actual.empty() ||
+              canonical_type_name(actual) == canonical_type_name(formal) ||
+              same_type(actual, formal))
+            continue;
+          return ChangingSpecializationEdge{
+              edge.line, edge.source_file, callable_label(callee),
+              "parameter '" + parameter.name + "' from '" +
+                  recursion_type_text(formal) + "' to '" +
+                  recursion_type_text(actual) + "'"};
+        }
+      }
+    }
+    return std::nullopt;
+  }
+
   void check_local_call_cycles() {
     std::map<string,std::set<string>> graph;
     std::map<string,int> edge_lines;
@@ -9572,6 +9641,19 @@ class Checker {
             cycle << " -> " << callable_label(next);
             int line = edge_lines.count(node + "\n" + next)
                 ? edge_lines.at(node + "\n" + next) : 1;
+            vector<string> members(begin, stack.end());
+            members.push_back(next);
+            if (auto changed = changing_specialization_edge(members)) {
+              CompileError error(
+                  changed->line,
+                  "uncontrolled recursive specialization: " + cycle.str() +
+                      "; the call to " + changed->callee + " changes " +
+                      changed->difference +
+                      ", so each recursive call would require a new specialization",
+                  "TYPE_RECURSIVE_SPECIALIZATION");
+              error.source_file = changed->source_file;
+              throw error;
+            }
             err(line, "recursive local call cycle: " + cycle.str() +
                 "; recursion is not supported in Phase 2");
           }
@@ -24314,7 +24396,8 @@ static void write_structured_error(
     out << "null";
   }
   out << ", \"recursion_witness\": ";
-  if (code == "RECURSION_CYCLE") write_debug_json_string(out, message);
+  if (code == "RECURSION_CYCLE" || code == "TYPE_RECURSIVE_SPECIALIZATION")
+    write_debug_json_string(out, message);
   else out << "null";
   out << ", \"resolution\": ";
   if (query_status.empty()) out << "null";
