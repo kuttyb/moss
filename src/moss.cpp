@@ -2451,8 +2451,11 @@ class Checker {
   // The verdict is unchanged: a deferred display error still rejects.
   mutable std::optional<CompileError> deferred_echo_display_error_;
 
-  void check_echo_display(int line, const string& t) const {
-    if (echo_display_class(t) != EchoDisplay::Unsupported) return;
+  void check_echo_display(int line, const string& t,
+                          bool require_concrete = false) const {
+    EchoDisplay display = echo_display_class(t);
+    if (display == EchoDisplay::Displayable ||
+        (display == EchoDisplay::Unresolved && !require_concrete)) return;
     if (deferred_echo_display_error_) return;
     try {
       report_echo_display(line, t);
@@ -2471,6 +2474,9 @@ class Checker {
              "echo its values by key";
     else if (type == "queue" || starts_with(type, "queue["))
       what = "a Queue ('" + type + "'); echo its elements";
+    else if (internal_semantic_placeholder(type))
+      what = "a value whose type is unresolved ('" + type +
+             "'); give it a concrete type before echo";
     else if (type == "vector" || type.find("vector[vector]") != string::npos ||
              (starts_with(type, "vector[") && type.find("[vector]") != string::npos))
       what = "a Vector whose element type is unknown ('" + type + "'); give it elements or "
@@ -13745,6 +13751,17 @@ class Checker {
                                        return concrete_specialization_type(type) &&
                                               !traits_.count(canonical_type_name(type));
                                      });
+    bool in_unspecialized_static_function = false;
+    if (!checking_specialization_ && starts_with(current_semantic_context_, "fn:")) {
+      auto enclosing = functions_.find(current_semantic_context_.substr(3));
+      in_unspecialized_static_function = enclosing != functions_.end() &&
+          enclosing->second->static_dispatch;
+    }
+    if (function->second->static_dispatch && !concrete_call &&
+        !in_unspecialized_static_function)
+      err(line, "cannot infer concrete argument types for static specialization of function '" +
+          name + "'; give empty collections a typed constructor such as Vector[Int]()",
+          "TYPE_INFERENCE_FAILED");
     if (concrete_call) {
       validate_method_requirements(line, *function->second, actual_types);
       register_static_specialization(line, *function->second, actual_types);
@@ -15233,9 +15250,22 @@ class Checker {
         for (const auto& argument : statement.args) {
           check_expression(statement.line, argument, current_env);
           auto type = inferred_expr_type(argument, current_env);
-          if (type) check_echo_display(statement.line, *type);
+          if (type) check_echo_display(
+              statement.line, *type,
+              !current_function || !current_function->static_dispatch ||
+                  checking_specialization_);
           else if (parse_vector_literal(trim(argument)))
             check_echo_display(statement.line, "vector");  // `echo []`, `echo [[]]`
+          else if (plain_identifier(trim(argument))) {
+            auto binding = current_env.find(trim(argument));
+            if (binding != current_env.end() &&
+                (canonical_type_name(binding->second) == "vector" ||
+                 contains_internal_placeholder(binding->second)))
+              check_echo_display(
+                  statement.line, binding->second,
+                  !current_function || !current_function->static_dispatch ||
+                      checking_specialization_);
+          }
           echo_types.push_back(type ? canonical_type_name(*type) : string());
         }
         const string echo_context = current_function && checking_specialization_

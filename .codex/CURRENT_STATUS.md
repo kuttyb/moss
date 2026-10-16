@@ -1,12 +1,32 @@
 # Moss current status
 
+## Phase 25 Team S skipped-commit audit — 2026-10-16
+
+Auditing local commits `8224e2f` and `22f7c20` against the integrated branch
+found two S-B cases that were not covered by the server suite. At `043d12a`,
+`moss check` accepted an unresolved local Vector echo and an untyped `show([])`
+specialization; Fast Debug printed `[]`, while native execution failed in rustc
+or lowering. The checker now rejects the unresolved local echo with
+`ECHO_DISPLAY_UNSUPPORTED` and the underdetermined static function call with
+`TYPE_INFERENCE_FAILED`. The S-B suite tests both modes and every execution
+path, plus typed empty Vectors and generic forwarding. The 30 Map/Set fixtures
+retain their recorded verdicts. Validation passed: `make -j2`, the S-B suite,
+the 30 Map/Set fixtures, `python3 tests/tooling/check_agent_feedback.py`, and
+`TMPDIR="$PWD/tmp" make check` (all Moss v0.1 tests, executor 54/54).
+
+Other differences in the skipped commits were superseded by reviewed server
+contracts: `.5`, `1.`, and `1.e5` are accepted Float literals; uppercase `0X`
+is rejected; Vector of record echo has no display contract. The skipped commits
+remain available at `backup/phase25-semantics-engines-pre-rebase-20261016`.
+
 ## Phase 25 Team S branch reconciliation — 2026-10-16
 
 Branch `phase25-semantics-engines` was rebased to the fetched server tip
 `d6bc0b1`. The two unpushed local commits (`8224e2f`, `22f7c20`) were kept at
 `backup/phase25-semantics-engines-pre-rebase-20261016` and skipped during the
-rebase after conflict review. Their S-A, S-B, S-C, and S-D behavior is covered by
-the server's independently integrated commits and focused suites. The local
+rebase after conflict review. Most S-A, S-B, S-C, and S-D behavior is covered by
+the server's independently integrated commits and focused suites; the two missed
+S-B cases are recorded in the follow-up audit above. The local
 consolidated suite contained older expectations, including Vector-of-record
 display, that conflict with the later reviewed display contract; it was not
 carried forward. No compiler semantics were changed in this reconciliation.

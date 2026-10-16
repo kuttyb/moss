@@ -219,6 +219,11 @@ def test_vector_contract():
              "  echo s\n  var p = [1]\n  p.pop()\n  echo p\n  var n = [[1]]\n  n.pop()\n"
              "  echo n\n",
              "empty Vectors", "[]\n[]\n[]\n[]\n")
+    accepted("fn show(x):\n  echo x\n\nfn main():\n  show(Vector[Int]())\n",
+             "typed empty Vector through specialization", "[]\n")
+    accepted("fn show(x):\n  echo x\n\nfn forward(y):\n  show(y)\n\n"
+             "fn main():\n  forward([1])\n",
+             "concrete Vector through two specializations", "[1]\n")
     accepted("type Bag:\n  xs: Vector[Int]\n\n"
              "domain Store:\n  v = [1, 2]\n\n  fn Show():\n    echo v\n\n"
              "  fn Get() -> Vector[Float]:\n    reply [0.5, -0.0]\n\n"
@@ -257,6 +262,10 @@ def test_rejected_types():
              "record through an untyped specialization", line=5)
     rejected(RECORD + "fn main():\n  echo 1, P(x: 2)\n", "record as a later echo argument",
              line=5)
+    rejected("fn main():\n  var v = []\n  echo v\n",
+             "untyped local Vector echo", line=3)
+    rejected("fn show(x):\n  echo x\n\nfn main():\n  show([])\n",
+             "untyped Vector generic argument", "TYPE_INFERENCE_FAILED", line=5)
     # Existing rules that already stop these values keep their own codes, and
     # both check modes agree on them.
     rejected("domain D:\n  n = 0\n  fn Get() -> Int:\n    reply n\n\n"
