@@ -195,10 +195,14 @@ struct DomainRoute {
   int line = 0;
   string source_file;
 };
-struct Domain { string name, header; vector<Field> state; vector<DomainRoute> routes; vector<Handler> handlers; bool exported = false; int line = 0; string source_file; };
-struct ObjectType { string name, header; vector<Field> fields; vector<Method> methods; bool exported = false; int line = 0; string source_file; };
+// Nominal declarations keep their defining module spelling ("" for the root
+// of an unmodular program) and source declaration name, set where module
+// rewriting qualifies `name`. Identity is derived from these, never by
+// splitting the qualified spelling (TYPE_IR_CONTRACT §3.1).
+struct Domain { string name, header; vector<Field> state; vector<DomainRoute> routes; vector<Handler> handlers; bool exported = false; int line = 0; string source_file; string defining_module; string declaration_name; };
+struct ObjectType { string name, header; vector<Field> fields; vector<Method> methods; bool exported = false; int line = 0; string source_file; string defining_module; string declaration_name; };
 struct EnumCase { string name; vector<Field> fields; int line = 0; string source_file; };
-struct EnumType { string name, header; vector<EnumCase> cases; bool exported = false; int line = 0; string source_file; };
+struct EnumType { string name, header; vector<EnumCase> cases; bool exported = false; int line = 0; string source_file; string defining_module; string declaration_name; };
 struct MainProc { vector<Stmt> body; int line = 0; string header; string source_file; };
 struct StaticSpecializationDependency {
   // Canonical Moss callable identity and concrete parameter types.  This is
@@ -413,6 +417,9 @@ struct Program {
   // Local modules take the package manifest; loaded providers take their
   // interface's identity (TYPE_IR_CONTRACT §3.1).
   std::map<string, string> module_identities;
+  // True when module identities come from a package manifest; a missing
+  // identity is then an error, never the standalone fallback.
+  bool package_identities = false;
   // The session declaration table, built by the checker. It interns every
   // record/enum/domain identity and outlives the checker with the program.
   std::shared_ptr<TypeContext> type_context;

@@ -33,7 +33,8 @@ int main() {
   const std::string app = moss::module_identity("app", "1.0.0", "main");
   const std::string alpha = moss::module_identity("alpha", "1.0.0", "Alpha");
   const std::string beta = moss::module_identity("beta", "2.0.0", "Beta");
-  TypeContext context;
+  auto session = std::make_shared<TypeContext>();
+  TypeContext& context = *session;
   context.declare(record("Box", app, "Box", {{"value", "", true}}));
   context.declare(record("Cell", app, "Cell", {{"item", "", true}}));
   context.declare(record("Other", app, "Other", {{"value", "", true}}));
@@ -97,8 +98,8 @@ int main() {
   assert(node->stable_type_key() == Type::from_canonical_string("Node")->stable_type_key());
   // Outside any declaring session a nominal name is unbound: never closed.
   {
-    TypeContext empty;
-    TypeContext::Scope none(&empty);
+    auto empty = std::make_shared<TypeContext>();
+    TypeContext::Scope none(empty.get());
     auto unbound = Type::from_canonical_string("Box[value=int]");
     assert(unbound->kind == TypeKind::NominalInstance && !unbound->declaration);
     assert(!unbound->is_closed());

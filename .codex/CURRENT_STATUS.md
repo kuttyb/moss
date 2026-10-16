@@ -95,6 +95,35 @@ staged, and gate 10 stays on the joint integration.
   - Phase 20 executor/FileIO and Phase 10 Fast Debug project.
 - The full `make check` at that SHA is run separately.
 
+**Checkpoint A independent review (`docs/phase25/TEAM_G_GA3_ARCHITECT_REVIEW.md`,
+at `2a7454b`):** CONDITIONAL GO as a checkpoint; NO-GO for declaring G-A3
+complete. The full `make check` and `make examples` at `2a7454b` passed
+(G-A3 identity suite included). Conditions:
+
+1. ARCH-001 (identity derived by splitting `__` spellings): fixed. Records,
+   enums, and domains carry `defining_module`/`declaration_name` from the
+   module rewrite; a missing identity inside a project fails closed
+   (`MODULE_IDENTITY_UNRESOLVED`).
+2. ARCH-002/003 (cross-kind name clashes): fixed. Type, enum, domain, trait,
+   and the reserved `Iterator` share one namespace, and a clash is a
+   positioned `DUPLICATE_SYMBOL`.
+3. **Needs L7:** record that gate item 2 (ARCH-004, spelling-based
+   comparisons outside the Type IR) and the instance-key part of item 5
+   (ARCH-007, typed ABI-v10 records) carry into G-A1 Checkpoints B/C and the
+   ABI-v10 record work.
+
+Also fixed:
+
+- ARCH-010: declarations hold a `weak_ptr` to their session, and scope exit
+  releases its own entry.
+- The reviewer's baseline `FIELD_VISIBILITY_ERROR`: unmodular programs are
+  one module, and record privacy uses the declaration's module.
+
+Open for L7/Team S: ARCH-008 (ratify the `nominal-enum-v1`/`nominal-domain-v1`
+formats), ARCH-009 (bind claimed package/version to Moss.toml/Moss.lock), and
+the reviewer's baseline transitive-provider rustc failure. Non-blocking
+latent items: ARCH-005 and ARCH-006.
+
 **L7 feedback (2026-10-16):** keep gate 10 on joint integration; authoritative
 Type IR, nominal identity, typed ABI-v10 payloads, and runtime linkage need
 architectural resolution before Team G is declared ready. These are recorded

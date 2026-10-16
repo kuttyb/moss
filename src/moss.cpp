@@ -223,6 +223,9 @@ static string program_module_identity(const Program& program, const string& modu
   auto found = program.module_identities.find(module);
   if (found != program.module_identities.end()) return found->second;
   if (module == "std") return moss::module_identity("moss-std", "0.1.0", "std");
+  if (program.package_identities)
+    throw CompileError(0, "module '" + module + "' has no package identity",
+                       "MODULE_IDENTITY_UNRESOLVED");
   return moss::module_identity("__standalone__", "0.0.0",
                                module.empty() ? "main" : module);
 }
@@ -232,14 +235,14 @@ static string program_module_identity(const Program& program, const string& modu
 static void build_type_context(Program& program) {
   auto context = std::make_shared<moss::TypeContext>();
   auto declare = [&](moss::DeclarationKind kind, const string& program_name,
+                     const string& defining_module, const string& declaration_name,
                      vector<moss::NominalFieldSlot> fields) {
-    const string module = module_name_from_symbol(program_name);
     moss::NominalDeclaration declaration;
     declaration.kind = kind;
     declaration.program_name = program_name;
-    declaration.module_id = program_module_identity(program, module);
-    declaration.declaration_name = module.empty()
-        ? program_name : program_name.substr(module.size() + 2);
+    declaration.module_id = program_module_identity(program, defining_module);
+    declaration.declaration_name =
+        declaration_name.empty() ? program_name : declaration_name;
     declaration.fields = std::move(fields);
     context->declare(std::move(declaration));
   };
@@ -249,12 +252,15 @@ static void build_type_context(Program& program) {
       const bool inferred = field.inferred || field.type.empty();
       fields.push_back({field.name, inferred ? string() : trim(field.type), inferred});
     }
-    declare(moss::DeclarationKind::Record, object.name, std::move(fields));
+    declare(moss::DeclarationKind::Record, object.name, object.defining_module,
+            object.declaration_name, std::move(fields));
   }
   for (const auto& enumeration : program.enums)
-    declare(moss::DeclarationKind::Enum, enumeration.name, {});
+    declare(moss::DeclarationKind::Enum, enumeration.name,
+            enumeration.defining_module, enumeration.declaration_name, {});
   for (const auto& domain : program.domains)
-    declare(moss::DeclarationKind::Domain, domain.name, {});
+    declare(moss::DeclarationKind::Domain, domain.name, domain.defining_module,
+            domain.declaration_name, {});
   program.type_context = std::move(context);
 }
 
@@ -2099,6 +2105,8 @@ class Checker {
       if (present) continue;
       EnumType declaration;
       declaration.name = identity;
+      declaration.defining_module = "std";
+      declaration.declaration_name = short_name;
       declaration.header = "compiler standard error " + string(short_name);
       declaration.source_file = "<moss-std>";
       for (const auto& name : cases)
@@ -2119,11 +2127,16 @@ class Checker {
     for (auto& o : p_.objects) {
       if (!objects_.emplace(o.name, &o).second)
         err(o.source_file, o.line, "duplicate object type: " + o.name);
+      if (domains_.count(o.name))
+        err(o.source_file, o.line, "type '" + o.name +
+            "' has the same name as a domain; one name names one declaration",
+            "DUPLICATE_SYMBOL");
     }
     for (auto& e : p_.enums) {
       if (!enums_.emplace(e.name, &e).second || objects_.count(e.name) ||
           domains_.count(e.name))
-        err(e.source_file, e.line, "duplicate enum type: " + e.name);
+        err(e.source_file, e.line, "duplicate enum type: " + e.name,
+            "DUPLICATE_SYMBOL");
     }
     // Semantic name resolution: every nominal declaration is interned once
     // and stays bound to its identity for the rest of this session.
@@ -2132,7 +2145,22 @@ class Checker {
     for (auto& t : p_.traits) {
       if (!traits_.emplace(t.name, &t).second)
         err(t.source_file, t.line, "duplicate trait: " + t.name);
+      if (objects_.count(t.name) || enums_.count(t.name) || domains_.count(t.name))
+        err(t.source_file, t.line, "trait '" + t.name +
+            "' has the same name as a type, enum, or domain; one name names one declaration",
+            "DUPLICATE_SYMBOL");
     }
+    // `Iterator` names the standard iteration trait.
+    const string reserved = "Iterator";
+    if (auto object = objects_.find(reserved); object != objects_.end())
+      err(object->second->source_file, object->second->line,
+          "'Iterator' is reserved by the standard iteration trait", "DUPLICATE_SYMBOL");
+    if (auto enumeration = enums_.find(reserved); enumeration != enums_.end())
+      err(enumeration->second->source_file, enumeration->second->line,
+          "'Iterator' is reserved by the standard iteration trait", "DUPLICATE_SYMBOL");
+    if (auto domain = domains_.find(reserved); domain != domains_.end())
+      err(domain->second->source_file, domain->second->line,
+          "'Iterator' is reserved by the standard iteration trait", "DUPLICATE_SYMBOL");
     iterator_trait_.name = "Iterator";
     iterator_trait_.header = "trait Iterator";
     TraitMethod next;
@@ -14489,16 +14517,21 @@ class Checker {
           if (it == obj->fields.end()) {
             err(line, "type '" + obj->name + "' has no field '" + field_name + "'", "UNKNOWN_FIELD");
           } else if (!it->exported) {
-            string defining_mod = module_name_from_symbol(obj->name);
+            // The declaration's own module, not a split of its spelling: a
+            // root-level `Foo__Bar` belongs to the root module.
+            string defining_mod = obj->defining_module;
             if (defining_mod.empty() && p_.explicit_module && !p_.module_name.empty()) {
               defining_mod = p_.module_name;
             }
             string caller_mod = specialization_calling_module(p_, current_semantic_context_, p_.module_name);
             bool cross_module = false;
-            if (!defining_mod.empty() || !caller_mod.empty()) {
-              cross_module = (defining_mod != caller_mod);
-            } else if (!obj->source_file.empty() && !current_source_file_.empty()) {
-              cross_module = (obj->source_file != current_source_file_);
+            // An unmodular program is one module: none of its fields is
+            // foreign to it, whichever file declares the record.
+            if (p_.explicit_module) {
+              if (!defining_mod.empty() || !caller_mod.empty())
+                cross_module = (defining_mod != caller_mod);
+              else if (!obj->source_file.empty() && !current_source_file_.empty())
+                cross_module = (obj->source_file != current_source_file_);
             }
             if (cross_module) {
               err(line, "field '" + field_name + "' of type '" + obj->name +
@@ -28124,6 +28157,8 @@ static void rewrite_module_program(
     string old = object.name;
     std::set<string> sibling_methods;
     for (const auto& method : object.methods) sibling_methods.insert(method.name);
+    object.defining_module = module;
+    object.declaration_name = old;
     object.name = module_symbol(module, old);
     for (auto& field : object.fields) {
       field.type = type(field.type);
@@ -28143,6 +28178,8 @@ static void rewrite_module_program(
     }
   }
   for (auto& enumeration : program.enums) {
+    enumeration.defining_module = module;
+    enumeration.declaration_name = enumeration.name;
     enumeration.name = module_symbol(module, enumeration.name);
     for (auto& item : enumeration.cases)
       for (auto& field : item.fields)
@@ -28156,6 +28193,8 @@ static void rewrite_module_program(
     }
   }
   for (auto& domain : program.domains) {
+    domain.defining_module = module;
+    domain.declaration_name = domain.name;
     domain.name = module_symbol(module, domain.name);
     for (auto& field : domain.state) {
       field.type = type(field.type);
@@ -30335,6 +30374,7 @@ static CheckedProjectUnit check_project_sources(
         program.module_identities[entry.first] =
             source_module_identity(entry.second.files.front().second, entry.first);
     }
+    program.package_identities = true;
     if (!has_explicit_modules)
       program.module_identities[""] = moss::module_identity(manifest.name,
           manifest.version.empty() ? "unversioned" : manifest.version, manifest.name);
@@ -31517,10 +31557,12 @@ static string exported_declaration_identity(const Program& program,
                                             moss::DeclarationKind kind,
                                             const string& program_name) {
   if (program.type_context)
-    if (auto declared = program.type_context->find(program_name)) return declared->id;
-  const string module = module_name_from_symbol(program_name);
-  return moss::declaration_identity(kind, program_module_identity(program, module),
-                                    program_name.substr(module.size() + 2));
+    if (auto declared = program.type_context->find(program_name);
+        declared && declared->kind == kind)
+      return declared->id;
+  throw ProjectError("MOSS_INTERFACE_ERROR",
+                     "exported nominal '" + program_name +
+                         "' has no interned declaration identity");
 }
 
 static vector<std::filesystem::path> write_module_interfaces(
