@@ -1,0 +1,9 @@
+family: 9
+name: 01_pure_domain_init_pos
+title: Pure helper function in domain state initializer
+layout: standalone
+expect: pass
+g2_dependent: false
+semantic_query: effects:pure_calc, effects:Service.Get
+---
+42

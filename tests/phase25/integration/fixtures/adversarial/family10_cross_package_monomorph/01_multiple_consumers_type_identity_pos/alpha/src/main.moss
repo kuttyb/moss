@@ -1,0 +1,6 @@
+module alpha
+
+import geometry
+
+export fn create_origin() -> geometry.Point:
+  return geometry.make_point(0, 0)

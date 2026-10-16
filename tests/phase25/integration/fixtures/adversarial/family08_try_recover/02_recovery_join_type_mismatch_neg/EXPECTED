@@ -1,0 +1,7 @@
+family: 8
+name: 02_recovery_join_type_mismatch_neg
+title: Conflicting types between try and recover control-flow branches
+layout: standalone
+expect: reject MOSS_COMPILE_ERROR
+g2_dependent: false
+---

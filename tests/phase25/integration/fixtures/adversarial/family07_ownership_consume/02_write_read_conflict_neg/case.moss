@@ -1,0 +1,4 @@
+fn main():
+  var s = "moss"
+  s.append(s)
+  echo s

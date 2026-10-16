@@ -1,0 +1,10 @@
+family: 5
+name: 01_unicode_codepoint_pos
+title: String Unicode length, character access, and slicing
+layout: standalone
+expect: pass
+g2_dependent: false
+---
+14
+🌍
+🌍!

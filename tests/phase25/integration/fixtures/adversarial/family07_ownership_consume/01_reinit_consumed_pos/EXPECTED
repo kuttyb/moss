@@ -1,0 +1,10 @@
+family: 7
+name: 01_reinit_consumed_pos
+title: Consuming a resource and reinitializing mutable binding
+layout: standalone
+expect: pass
+g2_dependent: false
+semantic_query: ownership:consume_res
+---
+100
+200

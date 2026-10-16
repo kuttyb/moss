@@ -1,0 +1,6 @@
+type Point:
+  x: Int
+
+fn main():
+  let p = Point(x: 1)
+  echo p.unknown_field

@@ -1,0 +1,14 @@
+type CustomKey:
+  id: Int
+
+fn isequal(a: CustomKey, b: CustomKey) -> Bool:
+  return a.id == b.id
+
+fn hash(a: CustomKey) -> Int:
+  return a.id
+
+fn main():
+  var m = Map()
+  let k = CustomKey(id: 42)
+  m[k] = "custom_val"
+  echo m[k]

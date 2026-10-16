@@ -1,0 +1,3 @@
+fn main():
+  let s = "short"
+  echo s.char_at(10)

@@ -1,0 +1,12 @@
+enum InitErr:
+  Failed
+
+fn impure_calc() -> Int:
+  raise InitErr.Failed
+  return 1
+
+domain Service:
+  val: Int = impure_calc()
+
+fn main():
+  let s = Service()

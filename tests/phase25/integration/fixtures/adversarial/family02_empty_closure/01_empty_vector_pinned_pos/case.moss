@@ -1,0 +1,3 @@
+fn main():
+  let v = Vector[Int]()
+  echo v |> count

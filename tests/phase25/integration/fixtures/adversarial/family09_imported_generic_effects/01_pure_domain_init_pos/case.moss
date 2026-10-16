@@ -1,0 +1,12 @@
+fn pure_calc() -> Int:
+  return 42
+
+domain Service:
+  val: Int = pure_calc()
+
+  fn Get() -> Int:
+    reply val
+
+fn main():
+  let s = Service()
+  echo message s.Get()

@@ -1,0 +1,22 @@
+enum DivError:
+  DivisionByZero
+
+fn safe_div(a: Int, b: Int) -> Int:
+  if b == 0:
+    raise DivError.DivisionByZero
+  return a / b
+
+fn main():
+  var r1 = 0
+  try:
+    r1 = safe_div(12, 3)
+  recover DivError.DivisionByZero:
+    r1 = -1
+  echo r1
+
+  var r2 = 0
+  try:
+    r2 = safe_div(12, 0)
+  recover DivError.DivisionByZero:
+    r2 = -1
+  echo r2

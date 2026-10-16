@@ -1,0 +1,7 @@
+family: 1
+name: 03_nested_mismatch_neg
+title: Nested vector literal with inconsistent element types
+layout: standalone
+expect: reject TYPE_INFERENCE_FAILED
+g2_dependent: false
+---

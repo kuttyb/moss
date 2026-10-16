@@ -1,0 +1,11 @@
+module app
+
+import geometry
+import alpha
+import beta
+
+fn main():
+  let p0 = alpha.create_origin()
+  let p1 = beta.shift_point(p0, 5)
+  echo p1.x
+  echo p1.y

@@ -1,0 +1,7 @@
+family: 8
+name: 03_unhandled_raise_neg
+title: Unhandled typed error escaping main function
+layout: standalone
+expect: reject MOSS_COMPILE_ERROR
+g2_dependent: false
+---

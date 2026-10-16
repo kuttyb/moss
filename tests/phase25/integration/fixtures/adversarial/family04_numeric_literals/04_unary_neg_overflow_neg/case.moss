@@ -1,0 +1,4 @@
+fn main():
+  let min_int = -9223372036854775808
+  let neg = -min_int
+  echo neg

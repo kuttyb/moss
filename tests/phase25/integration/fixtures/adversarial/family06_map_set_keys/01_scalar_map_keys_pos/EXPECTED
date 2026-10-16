@@ -1,0 +1,10 @@
+family: 6
+name: 01_scalar_map_keys_pos
+title: Map operations with scalar String keys
+layout: standalone
+expect: pass
+g2_dependent: false
+---
+10
+20
+-1

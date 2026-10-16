@@ -1,0 +1,7 @@
+family: 9
+name: 02_impure_domain_init_neg
+title: Impure raising helper rejected in domain state initializer
+layout: standalone
+expect: reject MOSS_COMPILE_ERROR
+g2_dependent: false
+---

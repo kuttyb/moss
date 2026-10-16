@@ -1,0 +1,3 @@
+fn main():
+  let grid = [[1, 2], ["three", "four"]]
+  echo grid[0][0]

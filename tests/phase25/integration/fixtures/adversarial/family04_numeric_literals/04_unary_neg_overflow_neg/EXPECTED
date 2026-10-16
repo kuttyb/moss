@@ -1,0 +1,8 @@
+family: 4
+name: 04_unary_neg_overflow_neg
+title: Unary negation of INT64_MIN causes arithmetic overflow
+layout: standalone
+expect: disagreement RUSTC_OVERFLOW
+g2_dependent: false
+notes: Check accepts, Fast Debug returns INT64_MIN, Native rustc rejects with arithmetic_overflow
+---

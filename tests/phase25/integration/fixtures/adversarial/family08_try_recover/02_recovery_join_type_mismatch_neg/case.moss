@@ -1,0 +1,14 @@
+enum AppError:
+  Failure
+
+fn fail():
+  raise AppError.Failure
+
+fn main():
+  var val = 0
+  try:
+    fail()
+    val = 10
+  recover AppError.Failure:
+    val = "string_recovery"
+  echo val

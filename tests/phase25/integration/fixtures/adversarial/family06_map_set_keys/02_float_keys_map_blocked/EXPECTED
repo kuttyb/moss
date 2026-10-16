@@ -1,0 +1,10 @@
+family: 6
+name: 02_float_keys_map_blocked
+title: Map with Float keys (signed zeros and NaN semantics)
+layout: standalone
+expect: pass
+g2_dependent: true
+blocked_reason: Pending Team G G2/G3 MossMap<K,V> key-protocol-v1 runtime for Float keys
+notes: Check accepts, Fast Debug runs, Native fails E0277 missing Eq and Hash
+---
+zero

@@ -1,0 +1,8 @@
+enum AppError:
+  Failure
+
+fn fail():
+  raise AppError.Failure
+
+fn main():
+  fail()

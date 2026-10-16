@@ -1,0 +1,8 @@
+family: 4
+name: 03_overflow_int_literal_neg
+title: Out of range integer literal above 2^63 - 1
+layout: standalone
+expect: disagreement RUSTC_OVERFLOW
+g2_dependent: false
+notes: Check accepts, Fast Debug clamps, Native rustc rejects with overflowing_literals
+---

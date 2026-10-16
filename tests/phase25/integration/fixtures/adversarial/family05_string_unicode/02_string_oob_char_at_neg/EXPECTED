@@ -1,0 +1,8 @@
+family: 5
+name: 02_string_oob_char_at_neg
+title: String character access out of bounds failure behavior
+layout: standalone
+expect: failure RUNTIME_BOUNDS_ERROR
+g2_dependent: false
+notes: Fast Debug exits 1 with String character index out of bounds, Native exits 134 on panic
+---
