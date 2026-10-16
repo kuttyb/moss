@@ -1,5 +1,22 @@
 # Moss current status
 
+## Phase 25 Team S branch reconciliation — 2026-10-16
+
+Branch `phase25-semantics-engines` was rebased to the fetched server tip
+`d6bc0b1`. The two unpushed local commits (`8224e2f`, `22f7c20`) were kept at
+`backup/phase25-semantics-engines-pre-rebase-20261016` and skipped during the
+rebase after conflict review. Their S-A, S-B, S-C, and S-D behavior is covered by
+the server's independently integrated commits and focused suites. The local
+consolidated suite contained older expectations, including Vector-of-record
+display, that conflict with the later reviewed display contract; it was not
+carried forward. No compiler semantics were changed in this reconciliation.
+
+Validation on the aligned branch: `make -j2`,
+`check_phase25_sa_numeric_literals.py`, `check_phase25_sb_check_display.py`,
+`check_phase25_sc_safe_arithmetic.py`, `check_phase25_s2_char_string.py`, and
+`check_agent_feedback.py` all passed. The full `make check` suite was not run
+for this Git-only reconciliation.
+
 ## Phase 25 Team S L7 parallel-execution cycle (S-A, S-B, S-C, S-D) — 2026-10-15
 
 Branch `phase25-semantics-engines`, pushed.
