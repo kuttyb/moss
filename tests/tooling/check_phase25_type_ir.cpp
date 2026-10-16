@@ -113,6 +113,7 @@ int main() {
     assert(!unbound->is_closed());
     assert(throws_invalid([&] { (void)unbound->stable_type_key(); }));
     assert(!unbound->structurally_equal(*box));
+    assert(!unbound->structurally_equal(*Type::from_canonical_string("Box[value=int]")));
   }
 
   for (const std::string bad : {"Vector[Box[value=Int]", "Box[value=Int,,other=Int]",

@@ -299,7 +299,9 @@ public:
     if (declaration_kind()) {
       if (declaration && other.declaration)
         return declaration->id == other.declaration->id;
-      return !declaration && !other.declaration && name == other.name;
+      // An unresolved spelling cannot establish nominal equality, even when
+      // another unresolved spelling has identical display text.
+      return false;
     }
     return kind == TypeKind::Unit || name == other.name;
   }
