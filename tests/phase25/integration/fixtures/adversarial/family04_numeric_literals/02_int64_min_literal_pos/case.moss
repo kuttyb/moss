@@ -1,0 +1,3 @@
+fn main():
+  let min_val = -9223372036854775808
+  echo min_val

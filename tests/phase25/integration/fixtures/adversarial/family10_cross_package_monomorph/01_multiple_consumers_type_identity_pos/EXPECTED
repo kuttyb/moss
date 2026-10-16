@@ -1,0 +1,10 @@
+family: 10
+name: 01_multiple_consumers_type_identity_pos
+title: Multiple consumer packages sharing provider nominal type
+layout: packages
+entry: app
+expect: pass
+g2_dependent: false
+---
+5
+5

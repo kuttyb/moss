@@ -1,0 +1,9 @@
+family: 9
+name: 03_imported_helper_pos
+title: Imported package function with effect preservation
+layout: packages
+entry: app
+expect: pass
+g2_dependent: false
+---
+99

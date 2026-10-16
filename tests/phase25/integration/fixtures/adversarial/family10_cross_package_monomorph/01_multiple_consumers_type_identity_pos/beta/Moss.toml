@@ -1,0 +1,9 @@
+[package]
+name = "beta"
+version = "0.1.0"
+
+[dependencies]
+geometry = { path = "../geometry" }
+
+[build]
+source = "src"

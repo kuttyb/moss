@@ -1,0 +1,6 @@
+module app
+
+import helper
+
+fn main():
+  echo helper.compute_val(90)

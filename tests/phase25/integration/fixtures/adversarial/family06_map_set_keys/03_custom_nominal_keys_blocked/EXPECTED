@@ -1,0 +1,10 @@
+family: 6
+name: 03_custom_nominal_keys_blocked
+title: Map with custom nominal keys implementing isequal and hash
+layout: standalone
+expect: pass
+g2_dependent: true
+blocked_reason: Pending Team G G2/G3 KeyProof adapter lowering for nominal Map keys
+notes: Check accepts, Fast Debug runs, Native fails E0277 missing Eq and Hash
+---
+custom_val

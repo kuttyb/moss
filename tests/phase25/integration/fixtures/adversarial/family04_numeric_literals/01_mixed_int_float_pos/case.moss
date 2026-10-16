@@ -1,0 +1,7 @@
+fn main():
+  let a = 20
+  let b = 2.5
+  echo a + b
+  echo a - b
+  echo a * b
+  echo a / b

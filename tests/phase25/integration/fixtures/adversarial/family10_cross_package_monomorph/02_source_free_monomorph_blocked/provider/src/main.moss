@@ -1,0 +1,4 @@
+module provider
+
+export fn calculate(x: Int) -> Int:
+  return x * 2

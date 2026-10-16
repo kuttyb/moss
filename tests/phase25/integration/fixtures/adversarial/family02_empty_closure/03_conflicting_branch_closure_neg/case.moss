@@ -1,0 +1,6 @@
+fn main():
+  var v = []
+  if true:
+    v = [1, 2]
+  else:
+    v = ["a", "b"]

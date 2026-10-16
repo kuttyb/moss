@@ -1,0 +1,8 @@
+family: 2
+name: 02_unpinned_empty_vector_neg
+title: Unpinned empty vector literal without type closure
+layout: standalone
+expect: disagreement RUSTC_E0282
+g2_dependent: false
+notes: Check accepts, Fast Debug runs, Native rustc fails E0282 type annotations needed
+---

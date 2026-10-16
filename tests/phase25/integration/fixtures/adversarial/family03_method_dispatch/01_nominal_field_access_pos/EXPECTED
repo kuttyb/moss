@@ -1,0 +1,10 @@
+family: 3
+name: 01_nominal_field_access_pos
+title: Accessing declared fields on nominal record instance
+layout: standalone
+expect: pass
+g2_dependent: false
+semantic_query: type:Point, effects:main
+---
+15
+25

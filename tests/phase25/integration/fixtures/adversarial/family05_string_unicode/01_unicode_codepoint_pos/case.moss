@@ -1,0 +1,5 @@
+fn main():
+  let s = "Hello, 🌍! Café"
+  echo s.length()
+  echo s.char_at(7)
+  echo s.slice(7, 2)

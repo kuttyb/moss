@@ -1,0 +1,11 @@
+family: 1
+name: 02_map_of_vectors_pos
+title: Map containing vector values
+layout: standalone
+expect: pass
+g2_dependent: false
+semantic_query: type:main, effects:main
+---
+2
+4
+6

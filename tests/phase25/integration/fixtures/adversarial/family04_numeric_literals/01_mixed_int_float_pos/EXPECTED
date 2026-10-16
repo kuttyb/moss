@@ -1,0 +1,11 @@
+family: 4
+name: 01_mixed_int_float_pos
+title: Mixed Int and Float arithmetic operations
+layout: standalone
+expect: pass
+g2_dependent: false
+---
+22.5
+17.5
+50.0
+8.0

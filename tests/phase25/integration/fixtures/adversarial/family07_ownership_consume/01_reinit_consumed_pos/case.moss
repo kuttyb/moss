@@ -1,0 +1,13 @@
+enum Resource:
+  Handle(id: Int)
+
+fn consume_res(r: Resource):
+  match consume r:
+    case Handle(id):
+      echo id
+
+fn main():
+  var r = Resource.Handle(id: 100)
+  consume_res(r)
+  r = Resource.Handle(id: 200)
+  consume_res(r)

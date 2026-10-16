@@ -1,0 +1,8 @@
+family: 4
+name: 02_int64_min_literal_pos
+title: Boundary signed 64-bit minimum integer literal -2^63
+layout: standalone
+expect: pass
+g2_dependent: false
+---
+-9223372036854775808

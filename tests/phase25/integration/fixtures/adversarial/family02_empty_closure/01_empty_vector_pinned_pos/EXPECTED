@@ -1,0 +1,9 @@
+family: 2
+name: 01_empty_vector_pinned_pos
+title: Empty typed vector constructor Vector[Int]() with count operation
+layout: standalone
+expect: pass
+g2_dependent: false
+semantic_query: type:main, effects:main
+---
+0

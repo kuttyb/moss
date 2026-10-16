@@ -1,0 +1,8 @@
+module geometry
+
+export type Point:
+  x: Int
+  y: Int
+
+export fn make_point(x: Int, y: Int) -> Point:
+  return Point(x: x, y: y)

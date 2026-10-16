@@ -1,0 +1,8 @@
+type Point:
+  x: Int
+  y: Int
+
+fn main():
+  let p = Point(x: 15, y: 25)
+  echo p.x
+  echo p.y

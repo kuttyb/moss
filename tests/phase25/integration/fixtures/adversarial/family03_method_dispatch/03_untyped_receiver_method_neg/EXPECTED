@@ -1,0 +1,7 @@
+family: 3
+name: 03_untyped_receiver_method_neg
+title: Method call dispatch on primitive receiver
+layout: standalone
+expect: reject MOSS_COMPILE_ERROR
+g2_dependent: false
+---

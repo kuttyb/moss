@@ -1,0 +1,11 @@
+[package]
+name = "app"
+version = "0.1.0"
+
+[dependencies]
+geometry = { path = "../geometry" }
+alpha = { path = "../alpha" }
+beta = { path = "../beta" }
+
+[build]
+source = "src"

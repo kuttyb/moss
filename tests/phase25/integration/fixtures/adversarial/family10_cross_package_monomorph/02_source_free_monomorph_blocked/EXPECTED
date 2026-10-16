@@ -1,0 +1,11 @@
+family: 10
+name: 02_source_free_monomorph_blocked
+title: Cross-package source-free access and monomorphization
+layout: packages
+entry: app
+expect: pass
+g2_dependent: true
+blocked_reason: Source-free generic monomorphization across providers requires ABI-v10 Type IR
+notes: Fast Debug rejects source-free provider with FAST_DEBUG_NATIVE_DEPENDENCY
+---
+42

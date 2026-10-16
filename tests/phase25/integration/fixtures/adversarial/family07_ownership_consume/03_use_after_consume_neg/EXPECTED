@@ -1,0 +1,7 @@
+family: 7
+name: 03_use_after_consume_neg
+title: Use after consume on immutable binding
+layout: standalone
+expect: reject OWNERSHIP_USE_AFTER_CONSUME
+g2_dependent: false
+---

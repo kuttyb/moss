@@ -1,0 +1,7 @@
+fn main():
+  var m = Map()
+  m["alpha"] = 10
+  m["beta"] = 20
+  echo m["alpha"]
+  echo m.get("beta", 0)
+  echo m.get("gamma", -1)

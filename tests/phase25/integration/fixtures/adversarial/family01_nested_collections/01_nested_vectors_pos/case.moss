@@ -1,0 +1,6 @@
+fn main():
+  let grid = [[10, 20], [30, 40]]
+  echo grid[0][0]
+  echo grid[0][1]
+  echo grid[1][0]
+  echo grid[1][1]

@@ -1,0 +1,12 @@
+family: 1
+name: 01_nested_vectors_pos
+title: Nested vector construction and multi-level indexing
+layout: standalone
+expect: pass
+g2_dependent: false
+semantic_query: type:main, effects:main
+---
+10
+20
+30
+40

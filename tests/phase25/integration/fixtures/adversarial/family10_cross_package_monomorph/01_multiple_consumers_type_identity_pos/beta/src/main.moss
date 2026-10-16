@@ -1,0 +1,6 @@
+module beta
+
+import geometry
+
+export fn shift_point(p: geometry.Point, d: Int) -> geometry.Point:
+  return geometry.make_point(p.x + d, p.y + d)

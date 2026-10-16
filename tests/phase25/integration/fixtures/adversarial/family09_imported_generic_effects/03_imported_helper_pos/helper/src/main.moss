@@ -1,0 +1,4 @@
+module helper
+
+export fn compute_val(x: Int) -> Int:
+  return x + 9

@@ -1,0 +1,8 @@
+family: 3
+name: 02_unknown_field_nominal_neg
+title: Accessing non-existent field on nominal type
+layout: standalone
+expect: disagreement RUSTC_E0609
+g2_dependent: false
+notes: Check accepts on current baseline, Fast Debug interpreter error, Native rustc fails E0609
+---

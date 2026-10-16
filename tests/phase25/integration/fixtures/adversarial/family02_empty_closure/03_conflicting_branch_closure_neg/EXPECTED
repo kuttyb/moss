@@ -1,0 +1,7 @@
+family: 2
+name: 03_conflicting_branch_closure_neg
+title: Conflicting collection type assignments across control-flow paths
+layout: standalone
+expect: reject MOSS_COMPILE_ERROR
+g2_dependent: false
+---

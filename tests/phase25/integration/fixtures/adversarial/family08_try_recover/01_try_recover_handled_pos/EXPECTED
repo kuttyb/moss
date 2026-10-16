@@ -1,0 +1,9 @@
+family: 8
+name: 01_try_recover_handled_pos
+title: Handling typed errors with try/recover
+layout: standalone
+expect: pass
+g2_dependent: false
+---
+4
+-1
