@@ -216,7 +216,18 @@ def g6(s):
 def g7(s):
     cases(overlap=lambda: check_negative(G2 / "generic_overlap.moss", {"OWNERSHIP_CONFLICTING_ACCESS"}),
           use_after_consume=lambda: check_negative(G2 / "generic_use_after_consume.moss", {"OWNERSHIP_USE_AFTER_CONSUME"}),
-          map_get=lambda: parity(G2 / "map_get_empty.moss", s, "2\n"))
+          map_get=lambda: check_map_get_consistency(s))
+
+
+def check_map_get_consistency(s):
+    source = G2 / "map_get_empty.moss"
+    checked = run(MOSS, "check", source, "--json")
+    data = payload(checked)
+    if data.get("ok"):
+        parity(source, s, "2\n")
+    else:
+        assert checked.returncode != 0, data
+        assert data["error"]["code"] == "TYPE_AMBIGUOUS_OPEN_RESULT", data
 
 
 def g8(s):

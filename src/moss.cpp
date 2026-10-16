@@ -2746,7 +2746,13 @@ class Checker {
           err(field.line,
               "FileIO and scoped ranges cannot be stored in ordinary objects",
               "FILEIO_COLLECTION_ESCAPE");
-        if (!field.inferred && !field.type.empty() && !valid_type(field.type)) err(field_source, field.line, "unknown field type '" + field.type + "'");
+        if (!field.inferred && !field.type.empty() && !valid_type(field.type)) {
+          if (!moss::Type::parse_canonical(field.type))
+            err(field_source, field.line,
+                "malformed type expression '" + field.type + "'",
+                "MALFORMED_TYPE_EXPRESSION");
+          err(field_source, field.line, "unknown field type '" + field.type + "'");
+        }
         if (!field_names.insert(field.name).second)
           err(field_source, field.line, "duplicate object field '" + field.name + "' in " + object.name);
       }
@@ -13952,6 +13958,12 @@ class Checker {
     if (parse_member_call(value, receiver, handler, args)) {
       if (check_fileio_operation(line, receiver, handler, args, env)) return;
       if (auto receiver_type = inferred_expr_type(receiver, env)) {
+        // A bare Map has no key or value type. In particular, a default passed
+        // to get cannot silently turn an untyped temporary into a Rust
+        // HashMap::get call with the wrong arity.
+        if (*receiver_type == "map" && handler == "get")
+          err(line, "Map.get requires a concrete key and value type before use",
+              "TYPE_AMBIGUOUS_OPEN_RESULT");
         if (builtin_receiver_family(*receiver_type)) {
           check_expression(line, receiver, env);
           for (const auto& arg : args) check_expression(line, arg, env);
@@ -14548,6 +14560,9 @@ class Checker {
         for (const auto& argument : statement.args) {
           check_expression(statement.line, argument, current_env);
           auto type = inferred_expr_type(argument, current_env);
+          if (type && unresolved_semantic_type(*type))
+            err(statement.line, "echo requires a concrete result type for '" +
+                argument + "'", "TYPE_AMBIGUOUS_OPEN_RESULT");
           if (type && enums_.count(canonical_type_name(*type)))
             err(statement.line, "echo cannot display an enum directly; match its cases",
                 "ENUM_DISPLAY_UNSUPPORTED");
