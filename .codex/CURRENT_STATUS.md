@@ -1,5 +1,20 @@
 # Moss current status
 
+## Phase 25 Team A A1 nominal identity handoff — 2026-10-16
+
+The isolated `phase25-g-type-core-a1` branch starts at the frozen `5b29352`
+baseline. It carries the previously implemented and reviewed A1 identity
+patches, including exact package/version/module declaration IDs, bound nominal
+TypeRefs, ordered resolved-field instance keys, source-free provider identity,
+and review repairs for declaration origin and standard-error collisions. It
+also includes the prerequisite partial-arity built-in type rejection.
+
+Validation on this branch after the final code edit: `make -j2`,
+`check_phase25_type_ir.py`, `check_phase25_nominal_identity.py` (cases A–F),
+`check_phase25_field_visibility.py`, and `check_agent_feedback.py` all passed.
+The full Team A acceptance suite remains for consolidation after A2–A4.
+
+
 ## Phase 25 Team G completion cycle, coordinator handoff session — 2026-10-16 (in progress)
 
 A new coordinator session resumed the cycle at integrated SHA `def823e` and,
