@@ -6,6 +6,7 @@ cannot establish compiled-only Moss provider/consumer behavior.
 """
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -111,6 +112,30 @@ export fn unbox(box: Box):
   return box.value
 '''
 
+PROVIDER_SIMPLE = '''module Provider
+export fn answer() -> Int:
+  return 42
+'''
+
+PROVIDER_KEY = '''module Provider
+export type UserKey:
+  id: Int
+
+  fn isequal(other: UserKey) -> Bool:
+    return id == other.id
+
+  fn hash() -> Int:
+    return id
+
+export fn seed() -> Map[UserKey, Int]:
+  var values = Map()
+  values[UserKey(id: 1)] = 7
+  return values
+
+export fn lookup(values: Map[UserKey, Int], key: UserKey) -> Int:
+  return values.get(key, 0)
+'''
+
 
 def source_free(scratch, provider_source):
     provider = scratch / "provider"
@@ -122,8 +147,11 @@ def source_free(scratch, provider_source):
     files = list((provider / "build/debug").glob("*.mossi")) + list((provider / "build/debug").glob("*.rlib"))
     assert files, "provider build emitted no semantic interface/native artifacts"
     interfaces = [file for file in files if file.suffix == ".mossi"]
-    assert interfaces and all(file.read_bytes().startswith(b"moss-module-interface-v3\n")
-                              for file in interfaces), "provider did not emit ABI-v10 .mossi"
+    assert interfaces and all(
+        file.read_bytes().startswith(b"moss-module-interface-v3\n")
+        and b"\nschema_version 10\n" in file.read_bytes()
+        and b"\nnative_abi 10\n" in file.read_bytes()
+        for file in interfaces), "provider did not emit ABI-v10 .mossi"
     for file in files:
         shutil.copy2(file, artifacts / file.name)
     shutil.rmtree(provider / "src")
@@ -143,10 +171,71 @@ def source_free_run(root, env, expected):
     built = run(MARGO, "build", "--json", cwd=root, env=env)
     data = payload(built)
     assert built.returncode == 0 and data.get("ok"), (root, data, built.stderr)
-    executable = data["result"]["artifacts"]["executable"]
+    executable = data["artifacts"]["artifacts"]["executable"]
     executed = run(executable, cwd=root, env=env)
     assert executed.returncode == 0 and executed.stdout == expected, (root, executed.stdout, expected, executed.stderr)
     return data
+
+
+def artifact_error(source, artifacts, code):
+    env = os.environ.copy()
+    env["MOSS_MODULE_PATH"] = str(artifacts)
+    error = check_negative(source, {code}, env=env)
+    assert error.get("source_file"), error
+
+
+def clone_artifacts(source, destination):
+    shutil.copytree(source, destination)
+    interfaces = list(destination.glob("*.mossi"))
+    libraries = list(destination.glob("*.rlib"))
+    assert len(interfaces) == len(libraries) == 1, (interfaces, libraries)
+    return interfaces[0], libraries[0]
+
+
+def replace_one(source, before, after):
+    assert before in source, f"expected ABI-v10 record absent: {before!r}"
+    return source.replace(before, after, 1)
+
+
+def g9_records(s):
+    env, pristine = source_free(s / "record-provider", PROVIDER_SIMPLE)
+    root, consumer_source = consumer(s / "record-provider", "g2records", '''module Consumer
+import Provider
+fn main():
+  echo Provider.answer()
+''')
+    source_free_run(root, env, "42\n")
+
+    corrupt, _ = clone_artifacts(pristine, s / "corrupt")
+    raw = corrupt.read_bytes()
+    corrupt.write_bytes(raw[:-1] + bytes([raw[-1] ^ 1]))
+    artifact_error(consumer_source, corrupt.parent, "SOURCE_FREE_CONTRACT_INVALID")
+
+    v9, _ = clone_artifacts(pristine, s / "v9")
+    v9.write_bytes(replace_one(v9.read_bytes(), b"moss-module-interface-v3\n",
+                               b"moss-module-interface-v2\n"))
+    artifact_error(consumer_source, v9.parent, "SOURCE_FREE_ABI_REBUILD_REQUIRED")
+
+    forged, _ = clone_artifacts(pristine, s / "forged")
+    original = forged.read_bytes()
+    changed = replace_one(original, b"module_id module-v1:g2provider@0.1.0::Provider",
+                          b"module_id module-v1:g2imposter@0.1.0::Provider")
+    digest_line = next(line for line in changed.splitlines(keepends=True)
+                       if line.startswith(b"provider_contract_digest sha256:"))
+    changed = changed.replace(digest_line, b"", 1)
+    digest = hashlib.sha256(changed).hexdigest().encode()
+    forged.write_bytes(changed.replace(b"moss-module-interface-v3\n",
+        b"moss-module-interface-v3\nprovider_contract_digest sha256:" + digest + b"\n", 1))
+    artifact_error(consumer_source, forged.parent,
+                   "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH")
+
+    _, newer = source_free(s / "record-provider-new", PROVIDER_SIMPLE.replace("42", "43"))
+    stale, stale_lib = clone_artifacts(pristine, s / "stale")
+    newer_interface = next(newer.glob("*.mossi"))
+    stale.write_bytes(newer_interface.read_bytes())
+    assert stale_lib.exists()
+    artifact_error(consumer_source, stale.parent,
+                   "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH")
 
 
 def g1(s):
@@ -204,8 +293,12 @@ import Provider
 fn main():
   echo Provider.outer(1)
 ''')
-    check_negative(source, {"MEMBER_NOT_FOUND", "UNKNOWN_METHOD", "TYPE_MEMBER_NOT_FOUND", "TYPE_MISMATCH"},
-                   ("outer", "middle", "required", "Provider"), env)
+    error = check_negative(source, {"MEMBER_NOT_FOUND", "UNKNOWN_METHOD", "TYPE_MEMBER_NOT_FOUND", "TYPE_MISMATCH"},
+                           ("outer", "middle", "required", "Provider"), env)
+    assert error["source_file"] == str(source), error
+    related = error.get("related") or []
+    assert len(related) >= 2, "missing imported outer-to-provider provenance chain"
+    assert any("Provider" in json.dumps(note) for note in related), related
 
 
 def g6(s):
@@ -238,6 +331,11 @@ def g8(s):
 
 
 def g9(s):
+    cases(two_consumers=lambda: g9_two_consumers(s),
+          sealed_records=lambda: g9_records(s))
+
+
+def g9_two_consumers(s):
     env, artifacts = source_free(s / "sf9", PROVIDER_BOX)
     outputs = []
     for name, value, expected in (("g2consumera", "1", "1\n"),
@@ -256,23 +354,23 @@ fn main():
 
 
 def g10(s):
+    cases(identity_conflict=lambda: check_negative(G2 / "key_proof_identity_conflict.moss",
+                                                {"TYPE_MISMATCH", "KEY_PROOF_IDENTITY_MISMATCH"}),
+          compiled_only_custom_key=lambda: g10_compiled_only(s))
+
+
+def g10_compiled_only(s):
     # The key protocol belongs to Team S. A compiled-only Moss provider is the
     # acceptance surface, not a synthetic Rust Hash/Eq implementation.
-    env, _ = source_free(s / "sf10", PROVIDER_BOX)
-    root, _ = consumer(s / "sf10", "g2keyconsumer", '''module Consumer
+    env, _ = source_free(s / "sf10", PROVIDER_KEY)
+    for name in ("g2keyconsumera", "g2keyconsumerb"):
+        root, _ = consumer(s / "sf10", name, '''module Consumer
 import Provider
-type UserKey:
-  id: Int
-  fn isequal(other: UserKey) -> Bool:
-    return id == other.id
-  fn hash() -> Int:
-    return id
 fn main():
-  var table = Map()
-  table[UserKey(id: 1)] = Provider.Box(value: 7)
-  echo table.get(UserKey(id: 1), Provider.Box(value: 0)).value
+  table = Provider.seed()
+  echo Provider.lookup(table, Provider.UserKey(id: 1))
 ''')
-    source_free_run(root, env, "7\n")
+        source_free_run(root, env, "7\n")
 
 
 def g11(s):
