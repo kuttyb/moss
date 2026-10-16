@@ -33,6 +33,7 @@ int main() {
   };
   valid.dependencies = {{"helper:inner", digest}};
   valid.observable_effect_bits = 1;
+  valid.observable_effect_tags = {"raise:ProviderError"};
   valid.body_semantic_hash = digest;
   valid.provenance_id = "provider:outer:1";
 
@@ -42,6 +43,29 @@ int main() {
   assert(roundtrip.parameter_access[0] == Access::Write);
   assert(roundtrip.requirements[1].parent == 1);
   assert(roundtrip.requirements[1].provenance_id == "provider:inner:2");
+  assert(roundtrip.observable_effect_tags == valid.observable_effect_tags);
+
+  validate_summary_nonweakening(valid, roundtrip);
+  auto weakened = valid;
+  weakened.parameter_access[0] = Access::Read;
+  expect_error([&] { validate_summary_nonweakening(valid, weakened); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  weakened = valid;
+  weakened.requirements.pop_back();
+  expect_error([&] { validate_summary_nonweakening(valid, weakened); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  weakened = valid;
+  weakened.dependencies.clear();
+  expect_error([&] { validate_summary_nonweakening(valid, weakened); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  weakened = valid;
+  weakened.observable_effect_bits = 0;
+  expect_error([&] { validate_summary_nonweakening(valid, weakened); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  weakened = valid;
+  weakened.observable_effect_tags.clear();
+  expect_error([&] { validate_summary_nonweakening(valid, weakened); },
+               "SOURCE_FREE_SUMMARY_INVALID");
 
   auto malformed = valid;
   malformed.requirements[0].parent = 1;
@@ -89,6 +113,47 @@ int main() {
                "SOURCE_FREE_SUMMARY_INVALID");
   expect_error([&] { (void)read_summary(record.payload + "trailing"); },
                "SOURCE_FREE_SUMMARY_INVALID");
+
+  KeyProof proof;
+  proof.key_type = {WireTypeKind::Primitive, "int", {}, 0};
+  proof.equality_callable_id = "builtin::int_isequal";
+  proof.equality_specialization_key = digest;
+  proof.equality_semantic_hash = digest;
+  proof.hash_callable_id = "builtin::int_hash";
+  proof.hash_specialization_key = digest;
+  proof.hash_semantic_hash = digest;
+  proof.law_contract_version = "key-laws-v1";
+  proof.provenance_id = "builtin:int";
+  validate_key_proof(key_proof_record(proof));
+  auto impure = proof;
+  impure.equality_effect_bits = 1;
+  expect_error([&] { (void)key_proof_record(impure); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+  impure = proof;
+  impure.hash_effect_bits = 1;
+  expect_error([&] { (void)key_proof_record(impure); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+  impure = proof;
+  impure.equality_effect_tags = {"raise:KeyError"};
+  expect_error([&] { (void)key_proof_record(impure); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+  impure = proof;
+  impure.hash_effect_tags = {"panic"};
+  expect_error([&] { (void)key_proof_record(impure); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+
+  const auto base_proof = key_proof_record(proof);
+  auto conflicting = proof;
+  conflicting.hash_semantic_hash = "sha256:" + std::string(64, 'b');
+  expect_error([&] {
+    validate_key_proof_coherence({base_proof, key_proof_record(conflicting)});
+  }, "KEY_PROOF_COHERENCE_MISMATCH");
+
+  proof.key_type = {WireTypeKind::Nominal, "sha256:" + std::string(64, 'c'), {}, 0};
+  auto distinct_nominal = proof;
+  distinct_nominal.key_type.identity = "sha256:" + std::string(64, 'd');
+  validate_key_proof_coherence({key_proof_record(proof),
+                                key_proof_record(distinct_nominal)});
 
   std::cout << "ABI-v10 staged summary adversarial tests passed\n";
 }
