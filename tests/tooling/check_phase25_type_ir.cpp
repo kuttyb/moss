@@ -23,6 +23,25 @@ int main() {
         "Vector[Int]junk", "_typevar:1:2:x", "Map[Int,Box[value=String]]]"})
     assert(!Type::parse_canonical(bad));
 
+  // Built-in collection arity: a parameterized collection names every type
+  // argument, at any nesting depth; the bare spelling is the open form.
+  for (const std::string partial : {"map[int]", "Map[String]", "vector[int,string]",
+        "Queue[Int,Int]", "map[int,string,bool]", "vector[map[int]]",
+        "Map[String,Vector[Int,Int]]", "Box[items=map[int]]"})
+    assert(!Type::parse_canonical(partial));
+  for (const std::string open : {"vector", "queue", "map", "vector[map]",
+        "map[string,vector]", "Box[items=vector]"}) {
+    auto parsed = Type::parse_canonical(open);
+    assert(parsed && !(*parsed)->is_closed());
+  }
+  for (const std::string closed : {"vector[int]", "queue[string]", "map[int,string]",
+        "Box[items=map[string,vector[int]]]"}) {
+    auto parsed = Type::parse_canonical(closed);
+    assert(parsed && (*parsed)->is_closed());
+  }
+  assert(!Type::builtin("map", {Type::primitive("int")})->is_closed());
+  assert(!Type::builtin("vector", {Type::primitive("int"), Type::primitive("int")})->is_closed());
+
   TypeSolver solver(7);
   auto first = solver.fresh(1);
   auto second = solver.fresh(1);

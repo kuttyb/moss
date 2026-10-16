@@ -1,0 +1,5 @@
+type Index:
+  entries: Map[String]
+
+fn main():
+  echo 1
