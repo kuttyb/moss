@@ -55,6 +55,20 @@ integration (runner exit 0; G2 conformance is not complete).
   failing in rustc. The pre-G2 `unresolved_field` negative (unconstructed
   template) became a positive case; `unresolved_field_value` is the new negative.
 
+- `0cabf6b` the `unresolved_collection_type` negative expects the echo closure
+  diagnostic (same `TYPE_AMBIGUOUS_OPEN_RESULT`, more precise message).
+- `1e72261` (L7 request) partial-arity built-in collection types are rejected
+  in the Type IR (`map[int]`, `vector[int,string]`, nested) and `is_closed`
+  requires exact arity; unparsable parameter/result annotations report
+  `MALFORMED_TYPE_EXPRESSION`. Type IR unit cases plus run.sh negatives
+  `partial_arity_map_field` and `partial_arity_vector_parameter`.
+
+**L7 feedback (2026-10-16):** keep gate 10 on joint integration; authoritative
+Type IR, nominal identity, typed ABI-v10 payloads, and runtime linkage need
+architectural resolution before Team G is declared ready. These are recorded
+as explicit open decisions D1–D4 in
+`docs/phase25/TEAM_G_UNRESOLVED_CONTRACT_DECISIONS.md`. **Team G is not ready.**
+
 **Deferred to L7 (user decision, 2026-10-16):** Architect G-A findings 1
 (TypeRef/TypeSolver as the checker's source of truth — the checker still
 carries string `TypeEnv`s and string-prefix compatibility) and 3 (interned
