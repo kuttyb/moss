@@ -1,8 +1,8 @@
 # Phase 25 — G0 Joint Architecture Proofs: Semantics & Engines
 
-**Authors:** Team S L6 Coordinator, Team S L6 Independent Architect  
-**Co-Authors:** Team G L6 Coordinator, Team G L6 Architect  
-**Approved Baseline:** `fa3a340a0a6652568b97869489da1a84038b9857`  
+**Authors:** Team S L6 Coordinator, Team S L6 Independent Architect
+**Co-Authors:** Team G L6 Coordinator, Team G L6 Architect
+**Approved Baseline:** `fa3a340a0a6652568b97869489da1a84038b9857`
 **Status:** JOINT ARCHITECTURE PROOF COMPLETE — APPROVED FOR G1/G4
 
 > **Superseded in part (2026-10-15, L7 review of `983acb2`).** Proof 2's
@@ -266,7 +266,7 @@ Differential CI executes programs across multiple targets (Native Debug, Native 
 
 ---
 
-**Joint Architecture Sign-off:**  
-Team S L6 Coordinator: **APPROVED**  
-Team S L6 Independent Architect: **APPROVED**  
+**Joint Architecture Sign-off:**
+Team S L6 Coordinator: **APPROVED**
+Team S L6 Independent Architect: **APPROVED**
 Ready for G1, G4, and G3 execution.

@@ -1,8 +1,8 @@
 # Phase 25 Team G G0 A1/ABI feasibility
 
-Status: **bounded feasibility GO; shared-contract approval still required**  
-Pinned baseline: `fa3a340a0a6652568b97869489da1a84038b9857`  
-Branch: `phase25-g0-feasibility`  
+Status: **bounded feasibility GO; shared-contract approval still required**
+Pinned baseline: `fa3a340a0a6652568b97869489da1a84038b9857`
+Branch: `phase25-g0-feasibility`
 Scope: architecture prototype and conformance design only; no compiler or
 shared-IR changes.
 

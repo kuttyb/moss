@@ -1,12 +1,12 @@
 # Phase 25 Team G — Independent G0 Architect Review
 
-**Role:** Independent L6 Architect, Team G (Generics & Inference)  
-**Reviewed baseline:** `fa3a340a0a6652568b97869489da1a84038b9857`  
-**Branch:** `phase25-g0-architect`  
-**Language/compiler:** `moss-0.1` / `0.1.0`, agent protocol `moss-agent-1`  
+**Role:** Independent L6 Architect, Team G (Generics & Inference)
+**Reviewed baseline:** `fa3a340a0a6652568b97869489da1a84038b9857`
+**Branch:** `phase25-g0-architect`
+**Language/compiler:** `moss-0.1` / `0.1.0`, agent protocol `moss-agent-1`
 **Native toolchain used for probes:** `rustc 1.98.1
 (48a229ceaefd4985c50990b14116b6d856af0985)`,
-`x86_64-unknown-linux-gnu`, debug/unoptimized standalone builds  
+`x86_64-unknown-linux-gnu`, debug/unoptimized standalone builds
 **Scope:** report and falsification only; no shared IR implementation
 
 ## 1. Verdict

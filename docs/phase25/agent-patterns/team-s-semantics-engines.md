@@ -1,8 +1,8 @@
 # Phase 25 Team S semantics-engines agent patterns
 
-**Branch:** `phase25-semantics-engines`  
-**Baseline:** `fa3a340a0a6652568b97869489da1a84038b9857`  
-**Review Status:** G0 Joint Architecture Proofs Approved; Initial Architect Review Conditional GO  
+**Branch:** `phase25-semantics-engines`
+**Baseline:** `fa3a340a0a6652568b97869489da1a84038b9857`
+**Review Status:** G0 Joint Architecture Proofs Approved; Initial Architect Review Conditional GO
 
 | Category | Report |
 | --- | --- |

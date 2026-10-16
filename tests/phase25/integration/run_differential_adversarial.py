@@ -55,7 +55,7 @@ def normalize_line(line: str) -> str:
 
 def normalize_output(text: str, sort_lines: bool = False) -> str:
     """Normalize multi-line output for semantic comparison.
-    
+
     Trailing spaces on each line and trailing blank lines are normalized.
     If sort_lines is True (e.g. for unordered Map key dumps), lines are sorted.
     """
@@ -77,7 +77,7 @@ def parse_float_canonical(val_str: str) -> Optional[float]:
 
 def compare_outputs(actual: str, expected: str, sort_lines: bool = False) -> Tuple[bool, str]:
     """Compare engine output with expected text strictly on values.
-    
+
     Returns (matches, diff_description).
     """
     norm_actual = normalize_output(actual, sort_lines=sort_lines)

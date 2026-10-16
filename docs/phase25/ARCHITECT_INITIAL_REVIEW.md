@@ -1,8 +1,8 @@
 # Independent L6 Architect Review: Phase 25 G0 Architecture & G1 Defect Ledger
 
-**Reviewer:** Independent L6 Architect  
-**Review Target:** `docs/phase25/G0_JOINT_ARCHITECTURE_PROOFS.md`, `docs/phase25/TEAM_S_DESIGN_AND_ACCEPTANCE.md`  
-**Target Commit SHA:** `fa3a340a0a6652568b97869489da1a84038b9857`  
+**Reviewer:** Independent L6 Architect
+**Review Target:** `docs/phase25/G0_JOINT_ARCHITECTURE_PROOFS.md`, `docs/phase25/TEAM_S_DESIGN_AND_ACCEPTANCE.md`
+**Target Commit SHA:** `fa3a340a0a6652568b97869489da1a84038b9857`
 **Verdict:** **CONDITIONAL GO FOR G1 & G4 IMPLEMENTATION** (Subject to Falsification Regressions for G1 Ledger)
 
 ---
@@ -78,7 +78,7 @@ The Architect independently inspected the codebase to verify root causes for the
 
 ## 3. Verdict & Next Steps
 
-**VERDICT: CONDITIONAL GO.**  
+**VERDICT: CONDITIONAL GO.**
 G0 architecture proofs are approved. G1 defect analysis is verified against root causes. Implementation may proceed on:
 1. G1 parity fixes (Fast Debug exact Int, for loops, borrow lowering, assert escaping, discard lowering).
 2. G4 String metadata and distinct Char implementation.

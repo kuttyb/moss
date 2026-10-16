@@ -1,10 +1,10 @@
 # Multi-Engine Differential & Adversarial Baseline Report (Phase 25)
 
-**Workstream:** I-D (Multi-Engine Differential & Adversarial Harness)  
-**Branch:** `phase25-prep-id`  
-**Baseline SHA:** `d714d17c1b1ca34b7765f4853f6d53ccb1df9daf`  
-**Tooling Driver:** `tests/phase25/integration/run_differential_adversarial.py`  
-**Execution Matrix:** Moss Checking, Fast Debug (checked interpreter), Native Debug, Native Release  
+**Workstream:** I-D (Multi-Engine Differential & Adversarial Harness)
+**Branch:** `phase25-prep-id`
+**Baseline SHA:** `d714d17c1b1ca34b7765f4853f6d53ccb1df9daf`
+**Tooling Driver:** `tests/phase25/integration/run_differential_adversarial.py`
+**Execution Matrix:** Moss Checking, Fast Debug (checked interpreter), Native Debug, Native Release
 
 ---
 

@@ -1,10 +1,10 @@
 # Phase 24 SDK Compatibility Baseline and Integration Matrix
 
-**Branch:** `phase25-prep-ic`  
-**Worktree:** `/home/owner/daji/code/moss-integration/tmp/worktree-ic`  
-**Base Commit:** `d714d17c1b1ca34b7765f4853f6d53ccb1df9daf` (`docs(phase25): import canonical Phase 25 G0 contracts and Team S/G agreements`)  
-**Main Ancestor:** `fa3a340a0a6652568b97869489da1a84038b9857` (`docs: sync language docs with Phase 24 findings on main`)  
-**Compiler Contract:** `moss-0.1` / compiler version `0.1.0`  
+**Branch:** `phase25-prep-ic`
+**Worktree:** `/home/owner/daji/code/moss-integration/tmp/worktree-ic`
+**Base Commit:** `d714d17c1b1ca34b7765f4853f6d53ccb1df9daf` (`docs(phase25): import canonical Phase 25 G0 contracts and Team S/G agreements`)
+**Main Ancestor:** `fa3a340a0a6652568b97869489da1a84038b9857` (`docs: sync language docs with Phase 24 findings on main`)
+**Compiler Contract:** `moss-0.1` / compiler version `0.1.0`
 **Status:** **GREEN** across all 10 Phase 24 SDK and toolchain areas; baseline established and verified.
 
 ---
