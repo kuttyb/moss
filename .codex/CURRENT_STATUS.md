@@ -1,5 +1,72 @@
 # Moss current status
 
+## Phase 25 Team G completion cycle, coordinator handoff session — 2026-10-16 (in progress)
+
+A new coordinator session resumed the cycle at integrated SHA `def823e` and,
+by user decision, works **sequentially and inline** (no parallel sub-agent
+worktrees) with ABI v10 behind the **staged opt-in flag
+`MOSS_STAGED_ABI=v10`**; production stays on ABI v9 until the joint cutover.
+
+Commits this session (unpushed, on top of `def823e`):
+
+- `992062b` gate 8: changing-key recursion reports `TYPE_RECURSIVE_SPECIALIZATION`
+  with the cycle and first differing parameter; same-key cycles keep `RECURSION_CYCLE`.
+- `31a0c37` loader fix: untyped provider fields load as template slots, so
+  two source-free consumers specialize `Box[value=int]`/`Box[value=string]`
+  against the provider-owned `Provider__Box<F0>`. The gate 9 fixture uses `item`
+  rather than the Rust keyword `box` (open L7 Rust-colliding-identifier item).
+- `42474b3` open-result exports (`fresh() -> []`, `relay()`) ship as generic
+  summaries; an open-result consumer specialization lowers its result as a
+  Rust type parameter, as source-backed `fresh()` does.
+- `a8411c5` source-free requirement failures are anchored at the consumer
+  call with provider related notes; the module-closure error path now keeps
+  teaching facts.
+- `4e7f44b` staged ABI-v10 container emission/loading (see
+  `docs/phase25/TEAM_G_ABI_V10_STAGING.md`). Record payloads still carry v9
+  declaration lines; typed TypeExpr records, private-dependency and provenance
+  sections remain.
+
+- `fc810bf` record (nominal) Map keys fail closed with
+  `RECORD_MAP_KEY_UNSUPPORTED` (Team S P25-S3-D2 code/message) in declared
+  types, indexing, and index assignment, instead of passing check and failing
+  in rustc. By user decision, gate 10's compiled-only custom key and
+  same-layout key substitution close at the joint Team S/Team G integration
+  (agreement §2, §5): the runner reports gate 10 **PENDING**, asserts the
+  interim fail-closed contract, keeps the final evidence behind
+  `MOSS_G2_ACTIVATE_JOINT=1`, and fails on any other pending/failing gate.
+- `d75c11f` three `builtin_generic_typing` probes that already failed at the
+  cycle start `a50fa30` (earlier `make check` runs stopped before them):
+  nominal placeholders inside `Box[s=_generic:x]`, inferred-field constructor
+  ownership (`wrap("hello")` now consumes), and two uncalled-template
+  expectations superseded by TYPE_IR_CONTRACT §4.2 (closure only at reachable
+  bodies).
+- `2a5314d` Architect finding 2: every specialization identity (registration,
+  module projection, call-edge selection, query identity) derives from one
+  structured `specialization-v2` key over argument `TypeRef` stable keys.
+
+Gate audit at `2a5314d`: conformance 10/11 pass, gate 10 PENDING joint
+integration (runner exit 0; G2 conformance is not complete).
+
+Still open for G-Complete: gate 10 at joint integration; G-A Architect
+findings 1 (TypeRef/TypeSolver as the checker's source of truth — the checker
+still carries string `TypeEnv`s and string-prefix compatibility) and 3
+(interned declaration IDs bound to `module-v1` identity); typed ABI-v10
+payloads, `MapKeyProof` emission, `moss_runtime` link plumbing,
+`MemberDispatchRequirement` with per-argument access, and the §11 proof
+matrix; fresh Architect review at the complete SHA; team closeout record;
+push (needs explicit user direction).
+
+Validation:
+- `def823e` (start of session): `make examples` passed; `make check` passed
+  through `tests/run.sh:69` and stopped at the conformance gate.
+- `4e7f44b`: `make examples` passed; suite without the conformance line
+  stopped at `check_builtin_generic_typing.py` (3 pre-existing failures).
+- `d75c11f` (clean detached worktree `tmp/moss-worktrees/phase25-g-validate`):
+  `make` and `make examples` passed; full `make check` running — result not
+  yet recorded. `2a5314d` validated only by focused suites (generic
+  specialization 40/40, builtin generic typing 129/129, conformance, multi-file
+  project, module ambiguity, same-module types, Phase 21 pipelines).
+
 ## Phase 25 Team G completion cycle — 2026-10-16 (in progress)
 
 Branch `phase25-generic-types` began at `a50fa30c8420538534471c4404afb0c645ae9b0c`. The historical G2 completion claim below is superseded by the executable gate audit. On implementation SHA `070fd84a9b90f2f26df6f83a5f08f5f16fbc80d1`, `python3 tests/tooling/check_phase25_conformance.py ./moss` passed actual gates 1, 2, 3, and 7; gates 4, 5, 6, 8, 9, 10, and 11 failed. The mandatory `echo Map().get(1, 2)` now receives `TYPE_AMBIGUOUS_OPEN_RESULT` before rustc, and unpinned direct Map/Vector output and malformed nested type syntax have precise Moss diagnostics. The shared runtime Rust unit/two-consumer proof and staged ABI-v10 container tests pass, but neither establishes a compiled-only Moss provider/consumer proof.
