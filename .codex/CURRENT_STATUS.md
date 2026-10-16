@@ -47,10 +47,22 @@ Commits this session (unpushed, on top of `def823e`):
 Gate audit at `2a5314d`: conformance 10/11 pass, gate 10 PENDING joint
 integration (runner exit 0; G2 conformance is not complete).
 
-Still open for G-Complete: gate 10 at joint integration; G-A Architect
-findings 1 (TypeRef/TypeSolver as the checker's source of truth — the checker
-still carries string `TypeEnv`s and string-prefix compatibility) and 3
-(interned declaration IDs bound to `module-v1` identity); typed ABI-v10
+- `50e4b1b` the inferred-reply lowering text check expects the A1 generic
+  record `Option<Quote<String, f64>>` (stale pre-G2 expectation).
+- `5baff68` `Type::is_closed` treats argument-less `vector`/`queue`/`map` as
+  open, and the closure check uses the structured instance: a reachable
+  `Unresolved(field = [])` now gets `TYPE_AMBIGUOUS_OPEN_RESULT` instead of
+  failing in rustc. The pre-G2 `unresolved_field` negative (unconstructed
+  template) became a positive case; `unresolved_field_value` is the new negative.
+
+**Deferred to L7 (user decision, 2026-10-16):** Architect G-A findings 1
+(TypeRef/TypeSolver as the checker's source of truth — the checker still
+carries string `TypeEnv`s and string-prefix compatibility) and 3 (interned
+declaration IDs bound to `module-v1` identity) are not addressed in this
+session; whether to convert fully in reviewable milestones or accept a
+narrower scope is an L7 decision. Finding 2 is addressed by `2a5314d`.
+
+Still open for G-Complete: gate 10 at joint integration; the L7 G-A decision; typed ABI-v10
 payloads, `MapKeyProof` emission, `moss_runtime` link plumbing,
 `MemberDispatchRequirement` with per-argument access, and the §11 proof
 matrix; fresh Architect review at the complete SHA; team closeout record;
