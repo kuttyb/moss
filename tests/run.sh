@@ -1148,7 +1148,7 @@ grep -F 'fn square(x: i64) -> i64' "$test_build/frontend_syntax.rs" >/dev/null |
 grep -F 'square((quote).size)' "$test_build/frontend_syntax.rs" >/dev/null ||
   fail "frontend syntax example did not lower its pipeline"
 run_case inferred_frontend tests/inferred_frontend.moss '2 3 MOSS 12.5'
-grep -F 'fn Latest_shared(&self) -> Option<Quote>' \
+grep -F 'fn Latest_shared(&self) -> Option<Quote<String, f64>>' \
   "$test_build/inferred_frontend.rs" >/dev/null ||
   fail "inferred reply handler did not lower with its inferred reply type"
 grep -F '// Moss line 6: value = 0' "$test_build/inferred_frontend.rs" >/dev/null ||
