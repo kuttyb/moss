@@ -1,15 +1,15 @@
 # Phase 25 Integration Team — Preparation Cycle Milestone Report
 
-**Phase:** Phase 25 (Generics, Type IR, Semantics Engines, ABI-v10)  
-**Milestone:** Preparation Cycle Complete  
-**Coordinator:** L6 Coordinator, Team I  
-**Target Branch:** `phase25-integration-prep`  
-**Common Baseline:** `fa3a340a0a6652568b97869489da1a84038b9857` (`origin/main`)  
-**Input Reference SHAs:**  
+**Phase:** Phase 25 (Generics, Type IR, Semantics Engines, ABI-v10)
+**Milestone:** Preparation Cycle Complete
+**Coordinator:** L6 Coordinator, Team I
+**Target Branch:** `phase25-integration-prep`
+**Common Baseline:** `fa3a340a0a6652568b97869489da1a84038b9857` (`origin/main`)
+**Input Reference SHAs:**
 - **Team S (Semantics & Engines):** `58d33d9ab00a666e8d9b60450c7c6aeb2b55b657` (`origin/phase25-semantics-engines`)
-- **Team G (Generic Types & Type IR):** `a50fa30c8420538534471c4404afb0c645ae9b0c` (`origin/phase25-generic-types`)  
-**Architect-Reviewed Implementation SHA:** `98c2874001d50e0d109f0e790b5acf5d651825b4`  
-**Delivered Preparation Branch HEAD:** `d21ddbc` (incorporates Architect remediations P25-PREP-001..005)  
+- **Team G (Generic Types & Type IR):** `a50fa30c8420538534471c4404afb0c645ae9b0c` (`origin/phase25-generic-types`)
+**Architect-Reviewed Implementation SHA:** `98c2874001d50e0d109f0e790b5acf5d651825b4`
+**Delivered Preparation Branch HEAD:** `d21ddbc` (incorporates Architect remediations P25-PREP-001..005)
 
 ---
 
