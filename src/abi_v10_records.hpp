@@ -366,6 +366,111 @@ inline void validate_template(const Record& record) {
           "ABI-v10 nominal template ID disagrees with its record");
 }
 
+struct ConcreteInstance {
+  std::string template_id;
+  std::vector<WireType> substitution;
+  std::vector<WireType> resolved_fields;
+  std::string provider_binary_id;
+  std::string provider_rust_type_symbol;
+  std::string representation_hash;
+};
+
+inline std::string instance_key(const ConcreteInstance& value) {
+  require(hex_hash(value.template_id) && value.substitution.size() <= 4096,
+          "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+          "ABI-v10 concrete instance template is invalid");
+  WireWriter writer;
+  writer.string(value.template_id);
+  writer.number(static_cast<std::uint32_t>(value.substitution.size()));
+  for (const auto& type : value.substitution) write_type(writer, type, 0);
+  return hash("moss-abi-v10-nominal-instance", writer.finish());
+}
+
+inline std::string instance_payload(const ConcreteInstance& value) {
+  require(hex_hash(value.provider_binary_id) &&
+              !value.provider_rust_type_symbol.empty() &&
+              hex_hash(value.representation_hash) &&
+              value.resolved_fields.size() <= 4096,
+          "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+          "ABI-v10 concrete instance representation is invalid");
+  WireWriter writer;
+  writer.byte(1);
+  writer.string(value.template_id);
+  writer.number(static_cast<std::uint32_t>(value.substitution.size()));
+  for (const auto& type : value.substitution) write_type(writer, type, 0);
+  writer.number(static_cast<std::uint32_t>(value.resolved_fields.size()));
+  for (const auto& type : value.resolved_fields) write_type(writer, type, 0);
+  writer.string(value.provider_binary_id);
+  writer.string(value.provider_rust_type_symbol);
+  writer.string(value.representation_hash);
+  return writer.finish();
+}
+
+inline Record instance_record(const ConcreteInstance& value) {
+  return {instance_key(value), instance_payload(value)};
+}
+
+inline ConcreteInstance read_instance(std::string_view payload) {
+  WireReader reader(payload);
+  require(reader.byte() == 1, "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+          "ABI-v10 concrete instance version is unsupported");
+  ConcreteInstance value;
+  value.template_id = reader.string();
+  auto count = reader.number();
+  require(count <= 4096, "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+          "ABI-v10 concrete instance has too many arguments");
+  for (std::uint32_t i = 0; i < count; ++i)
+    value.substitution.push_back(read_type(reader, 0));
+  count = reader.number();
+  require(count <= 4096, "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+          "ABI-v10 concrete instance has too many fields");
+  for (std::uint32_t i = 0; i < count; ++i)
+    value.resolved_fields.push_back(read_type(reader, 0));
+  value.provider_binary_id = reader.string();
+  value.provider_rust_type_symbol = reader.string();
+  value.representation_hash = reader.string();
+  require(reader.done() && instance_payload(value) == payload,
+          "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+          "ABI-v10 concrete instance is noncanonical");
+  return value;
+}
+
+inline WireType substitute_bound(const WireType& source,
+                                 const std::vector<WireType>& bindings) {
+  if (source.kind == WireTypeKind::BoundVar) {
+    require(source.ordinal < bindings.size(),
+            "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+            "ABI-v10 instance substitution misses a bound variable");
+    return bindings[source.ordinal];
+  }
+  WireType result = source;
+  result.arguments.clear();
+  for (const auto& argument : source.arguments)
+    result.arguments.push_back(substitute_bound(argument, bindings));
+  return result;
+}
+
+inline void validate_instance(const Record& record,
+                              const NominalTemplate& nominal,
+                              std::string_view selected_provider_binary_id) {
+  const auto value = read_instance(record.payload);
+  require(value.template_id == nominal.template_id &&
+              value.substitution.size() == nominal.variable_count &&
+              value.resolved_fields.size() == nominal.fields.size() &&
+              value.representation_hash == nominal.representation_hash &&
+              value.provider_binary_id == selected_provider_binary_id &&
+              instance_key(value) == record.id,
+          "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+          "ABI-v10 concrete instance conflicts with its provider template");
+  for (std::size_t i = 0; i < nominal.fields.size(); ++i) {
+    const auto expected = substitute_bound(nominal.fields[i].type,
+                                           value.substitution);
+    require(type_bytes(expected, 0) == type_bytes(value.resolved_fields[i], 0),
+            "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+            "ABI-v10 concrete field type differs from its template substitution");
+  }
+}
+
 struct Specialization {
   std::string callable_id;
   std::vector<WireType> arguments;

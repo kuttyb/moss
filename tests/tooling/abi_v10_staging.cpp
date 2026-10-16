@@ -141,6 +141,32 @@ int main() {
   } catch (const Error& error) {
     assert(error.code == "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
   }
+  nominal.fields.pop_back();
+  ConcreteInstance instance;
+  instance.template_id = nominal.template_id;
+  instance.substitution.push_back(int_type);
+  instance.resolved_fields.push_back(int_type);
+  instance.provider_binary_id = "sha256:" + std::string(64, '6');
+  instance.provider_rust_type_symbol = "provider::Box<int>";
+  instance.representation_hash = nominal.representation_hash;
+  const auto instance_wire = instance_record(instance);
+  validate_instance(instance_wire, nominal, instance.provider_binary_id);
+  auto wrong_instance = instance;
+  wrong_instance.resolved_fields[0] = {WireTypeKind::Primitive, "string", {}, 0};
+  try {
+    validate_instance(instance_record(wrong_instance), nominal,
+                      instance.provider_binary_id);
+    assert(false && "forged concrete field substitution accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+  }
+  try {
+    validate_instance(instance_wire, nominal,
+                      "sha256:" + std::string(64, '7'));
+    assert(false && "wrong provider binary accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+  }
 
   Summary summary;
   summary.callable_id = "module-v1:boxes@1.0.0::Boxes::fresh";
