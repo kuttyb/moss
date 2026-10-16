@@ -6,3 +6,4 @@ fn get_value(b: Box):
 
 fn main():
   echo get_value(Box(value: 42))
+  echo get_value(Box(value: "hello"))

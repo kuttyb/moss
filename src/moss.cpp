@@ -14630,7 +14630,8 @@ class Checker {
         for (const auto& argument : statement.args) {
           check_expression(statement.line, argument, current_env);
           auto type = inferred_expr_type(argument, current_env);
-          if (type && unresolved_semantic_type(*type))
+          if (type && unresolved_semantic_type(*type) &&
+              (!current_function || checking_specialization_))
             err(statement.line, "echo requires a concrete result type for '" +
                 argument + "'", "TYPE_AMBIGUOUS_OPEN_RESULT");
           if (type && enums_.count(canonical_type_name(*type)))

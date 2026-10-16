@@ -17,5 +17,5 @@ subprocess.run([str(compiler), str(source), "-o", str(out) + ".rs"],
 subprocess.run(["rustc", "-D", "warnings", str(out) + ".rs", "-o", str(out)],
                check=True, capture_output=True)
 native = subprocess.run([str(out)], check=True, capture_output=True, text=True).stdout
-assert interp == native == "42\n", (interp, native)
+assert interp == native == "42\nhello\n", (interp, native)
 print("Phase 25 known-open nominal: PASS")
