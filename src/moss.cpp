@@ -559,6 +559,31 @@ static bool same_closed_type_vector(const vector<string>& left,
   }
   return true;
 }
+// The one specialization identity: callable plus the structured stable key of
+// each closed argument TypeRef (TYPE_IR_CONTRACT §3.3). Display strings are
+// only parsed into TypeRef; they never decide identity themselves. An open or
+// unparsable argument has no specialization key.
+static std::optional<string> specialization_stable_key(
+    const string& function_name, const vector<string>& types) {
+  string key_material;
+  moss::Type::append_part(key_material, "specialization-v2");
+  moss::Type::append_part(key_material, function_name);
+  moss::Type::append_part(key_material, std::to_string(types.size()));
+  for (const auto& type : types) {
+    // A static higher-order argument is a callable identity, not a type.
+    if (starts_with(type, "callable:")) {
+      moss::Type::append_part(key_material, "callable");
+      moss::Type::append_part(key_material, type.substr(9));
+      continue;
+    }
+    auto parsed = moss::Type::parse_canonical(canonical_type_name(type));
+    if (!parsed || !(*parsed)->is_closed()) return std::nullopt;
+    moss::Type::append_part(key_material, (*parsed)->stable_type_key());
+  }
+  return "specialization-v2:sha256:" +
+      moss::source_free_contract_sha256(key_material);
+}
+
 static bool specialization_matches(const FunctionSpecialization& specialization,
                                    const vector<string>& types) {
   if (specialization.parameter_type_refs.empty())
@@ -13386,22 +13411,17 @@ class Checker {
         std::to_string(function.specializations.size());
     specialization.parameter_types = canonical_types;
     specialization.return_type = canonical_type_name(*result);
-    string key_material;
-    moss::Type::append_part(key_material, "specialization-v2");
-    moss::Type::append_part(key_material, function.name);
-    moss::Type::append_part(key_material, std::to_string(canonical_types.size()));
     for (const auto& type : canonical_types) {
       auto parsed = moss::Type::parse_canonical(type);
       if (!parsed || !(*parsed)->is_closed())
         err(line, "static specialization has an unresolved argument type",
             "TYPE_AMBIGUOUS_OPEN_RESULT");
       specialization.parameter_type_refs.push_back(*parsed);
-      moss::Type::append_part(key_material, (*parsed)->stable_type_key());
     }
+    auto stable_key = specialization_stable_key(function.name, canonical_types);
     specialization.return_type_ref = moss::Type::parse_canonical(
         specialization.return_type).value_or(nullptr);
-    specialization.stable_type_key = "specialization-v2:sha256:" +
-        moss::source_free_contract_sha256(key_material);
+    specialization.stable_type_key = *stable_key;
     specialization.parameter_effects = concrete_function_effects(
         function, canonical_types, &specialization.parameter_mutations);
     function.specializations.push_back(specialization);
@@ -24339,7 +24359,10 @@ static std::optional<string> specialization_identity_for_call(
       [&](const Function& candidate) { return candidate.name == name; });
   if (function == program.functions.end()) return std::nullopt;
   for (const auto& specialization : function->specializations) {
-    if (specialization.parameter_types != edge.argument_types) continue;
+    if (!specialization_stable_key(name, edge.argument_types) ||
+        specialization_stable_key(name, edge.argument_types) !=
+            specialization_stable_key(name, specialization.parameter_types))
+      continue;
     string identity = "specialization:" + name + "<";
     for (size_t index = 0; index < specialization.parameter_types.size(); ++index) {
       if (index) identity += ",";
@@ -30543,11 +30566,8 @@ static bool edge_requires_specialization(const SemanticCallEdge& edge,
   if ((edge.target != function.name && edge.target != "fn:" + function.name) ||
       edge.argument_types.size() != specialization.parameter_types.size())
     return false;
-  for (size_t index = 0; index < edge.argument_types.size(); ++index)
-    if (canonical_type_name(edge.argument_types[index]) !=
-        canonical_type_name(specialization.parameter_types[index]))
-      return false;
-  return true;
+  return specialization_stable_key(function.name, edge.argument_types) ==
+      specialization_stable_key(function.name, specialization.parameter_types);
 }
 
 // A specialization remains one canonical checked fact on Function.  Native
@@ -30572,11 +30592,11 @@ static bool module_requires_specialization(const Program& program,
 
 static string specialization_projection_key(const string& function_name,
                                             const vector<string>& parameter_types) {
-  std::ostringstream key;
-  key << function_name;
-  for (const auto& type : parameter_types)
-    key << "\n" << canonical_type_name(type);
-  return key.str();
+  auto key = specialization_stable_key(function_name, parameter_types);
+  if (!key)
+    throw std::runtime_error("checked specialization of '" + function_name +
+                             "' has an open argument type");
+  return *key;
 }
 
 static bool specialization_is_projected(
