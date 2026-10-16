@@ -49,8 +49,14 @@ Every entry in `acceptance_matrix.json` conforms to the following schema:
 The runner is self-contained and executed using standard Python 3:
 
 ```bash
-# Execute self-test (checks schema, invariants, and gate count; exits 0):
+# Execute self-test (checks schema, invariants, gate count, and 4 fault injections; exits 0):
 python3 tests/phase25/integration/run_acceptance.py --self-test
+
+# Execute deliberate fault-injection suite (anti-false-green proof):
+python3 tests/phase25/integration/run_acceptance.py --fault-injection
+
+# Run combined acceptance + cross-crate fault-injection test suite:
+python3 tests/phase25/integration/test_fault_injection.py
 
 # Generate tabular/markdown summary of all gates:
 python3 tests/phase25/integration/run_acceptance.py --summary

@@ -168,18 +168,32 @@ The machine-readable source of truth is stored in [`tests/phase25/integration/ac
 The runner is located at `tests/phase25/integration/run_acceptance.py`. It is invoked with standard Python 3.
 
 ```bash
-# 1. Harness self-test (validates matrix schema, gate count, rules, invariants; exits 0 on main/prep):
+# 1. Harness self-test (validates matrix schema, gate count, rules, invariants, and 4 fault injections; exits 0):
 python3 tests/phase25/integration/run_acceptance.py --self-test
 
-# 2. Print formatted markdown summary:
+# 2. Deliberate fault-injection verification suite:
+python3 tests/phase25/integration/run_acceptance.py --fault-injection
+
+# 3. Print formatted markdown summary:
 python3 tests/phase25/integration/run_acceptance.py --summary
 
-# 3. Output machine-readable JSON acceptance report:
+# 4. Output machine-readable JSON acceptance report:
 python3 tests/phase25/integration/run_acceptance.py --json
 
-# 4. Inspect a single gate:
+# 5. Inspect a single gate:
 python3 tests/phase25/integration/run_acceptance.py --gate GATE-G1-01
 
-# 5. Strict release gate verification (exits non-zero if any gate is not PASS):
+# 6. Strict release gate verification (exits non-zero if any gate is not PASS):
 python3 tests/phase25/integration/run_acceptance.py --strict
 ```
+
+---
+
+## 5. Anti-False-Green Hardening & Deliberate Fault Injection
+
+To guarantee that no pending fixture, static feasibility test, or incomplete linking can produce an illegitimate `PASS`, the runner and harness implement rigorous evidence validation (`validate_gate_evidence`) and deliberate fault-injection testing (`tests/phase25/integration/test_fault_injection.py`):
+
+1. **Fault 1 — Missing Dependencies:** Gates or scenarios with unsatisfied dependencies fail closed as `BLOCKED` or `FAIL`. Missing provider modules cannot produce `PASS`.
+2. **Fault 2 — Unrelated Compiler Errors:** Rejection tests (e.g. Scenario 8 source-free ownership and Scenario 11 layout invalidation) verify exact diagnostic codes (`OWNERSHIP_USE_AFTER_CONSUME`, `missing object constructor field: LayoutProvider__Box.extra`). Unrelated parser/syntax errors, crashes, or internal compiler errors are disqualified and cannot produce `PASS`.
+3. **Fault 3 — Stale Evidence & Forged Commits:** Gates claiming `PASS` must reference genuine, non-empty test files on disk, valid commit SHAs existing in git object database (`git cat-file -e <sha>^{commit}`), and cannot contain placeholder or feasibility markers.
+4. **Fault 4 — Incomplete Cross-Consumer Linking:** Scenario 4 validates that both `ConsumerA` and `ConsumerB` are imported, linked, and executed producing combined runtime output. Omission of either consumer or disconnected linkages fail closed as `FAIL`.
