@@ -26,6 +26,12 @@ ABI-v10 container in `src/source_free_abi_v10.hpp` and tests it with
   dependency ordering, canonical specialization keys, and key-proof IDs.
   An instance validator checks provider binary binding, template arity and
   representation hash, and exact recursive field substitution.
+  Summary and key-proof payloads include effect bits and sorted named effects;
+  imported-summary refinement rejects erased ownership access, requirements,
+  dependencies, or observable effects. Key proofs reject any equality/hash
+  effect, and a cross-consumer check rejects conflicting proof IDs for one key
+  type. The complete compiler effect leaves and target signatures remain a
+  separate integration step.
   Wire types are serialization values, not a second inference engine.
 
 The interface hash excludes its own header field and the provider digest to
@@ -66,3 +72,5 @@ It also checks nested tagged types, bound-variable scope, nominal field
 uniqueness, requirement-parent order, closed specialization keys, and forged
 key-proof identities. Concrete-instance cases reject a wrong provider binary
 identity or field type substituted differently from the nominal template.
+Imported-summary cases reject erased requirements and effects. Key-proof cases
+reject impure targets and conflicting proof IDs.

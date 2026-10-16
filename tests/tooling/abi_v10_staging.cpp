@@ -194,6 +194,39 @@ int main() {
   } catch (const Error& error) {
     assert(error.code == "SOURCE_FREE_SUMMARY_INVALID");
   }
+  summary.requirements[0].parent = 0;
+  summary.observable_effect_bits = 0b101;
+  summary.observable_effect_tags = {"panic:division", "raise:ParseError"};
+  auto weakened_summary = summary;
+  weakened_summary.observable_effect_bits = 0b001;
+  try {
+    validate_summary_nonweakening(summary, weakened_summary);
+    assert(false && "weakened imported effects accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_SUMMARY_INVALID");
+  }
+  weakened_summary = summary;
+  weakened_summary.requirements.clear();
+  try {
+    validate_summary_nonweakening(summary, weakened_summary);
+    assert(false && "erased imported requirement accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_SUMMARY_INVALID");
+  }
+  weakened_summary = summary;
+  weakened_summary.observable_effect_tags.pop_back();
+  try {
+    validate_summary_nonweakening(summary, weakened_summary);
+    assert(false && "erased imported raise effect accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_SUMMARY_INVALID");
+  }
+  auto strengthened_summary = summary;
+  strengthened_summary.observable_effect_bits |= 0b010;
+  strengthened_summary.observable_effect_tags.push_back("warning:recovery");
+  strengthened_summary.requirements.push_back(
+      {var_type, "hash", Access::Read, 1, "boxes:fn:4"});
+  validate_summary_nonweakening(summary, strengthened_summary);
 
   Specialization specialization;
   specialization.callable_id = summary.callable_id;
@@ -227,6 +260,33 @@ int main() {
   proof.provenance_id = "builtin:int";
   const auto proof_wire = key_proof_record(proof);
   validate_key_proof(proof_wire);
+  std::vector<Record> proofs{proof_wire};
+  validate_key_proof_coherence(proofs);
+  auto impure_proof = proof;
+  impure_proof.hash_effect_bits = 1;
+  try {
+    (void)key_proof_record(impure_proof);
+    assert(false && "impure key hash proof accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_CONTRACT_INVALID");
+  }
+  impure_proof = proof;
+  impure_proof.equality_effect_tags.push_back("raise:KeyError");
+  try {
+    (void)key_proof_record(impure_proof);
+    assert(false && "raising key equality proof accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_CONTRACT_INVALID");
+  }
+  auto alternate_proof = proof;
+  alternate_proof.hash_semantic_hash = "sha256:" + std::string(64, '8');
+  proofs.push_back(key_proof_record(alternate_proof));
+  try {
+    validate_key_proof_coherence(proofs);
+    assert(false && "conflicting key proofs accepted");
+  } catch (const Error& error) {
+    assert(error.code == "KEY_PROOF_COHERENCE_MISMATCH");
+  }
   auto forged_proof = proof_wire;
   forged_proof.id = "sha256:" + std::string(64, '5');
   try {

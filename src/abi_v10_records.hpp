@@ -152,6 +152,29 @@ inline Access read_access(WireReader& reader) {
   return static_cast<Access>(value);
 }
 
+inline void write_effect_tags(WireWriter& writer,
+                              const std::vector<std::string>& tags) {
+  require(tags.size() <= 4096, "SOURCE_FREE_SUMMARY_INVALID",
+          "ABI-v10 effect set exceeds the limit");
+  writer.number(static_cast<std::uint32_t>(tags.size()));
+  std::string previous;
+  for (const auto& tag : tags) {
+    require(!tag.empty() && previous < tag, "SOURCE_FREE_SUMMARY_INVALID",
+            "ABI-v10 effect tags are not canonical");
+    previous = tag;
+    writer.string(tag);
+  }
+}
+
+inline std::vector<std::string> read_effect_tags(WireReader& reader) {
+  const auto count = reader.number();
+  require(count <= 4096, "SOURCE_FREE_SUMMARY_INVALID",
+          "ABI-v10 effect set exceeds the limit");
+  std::vector<std::string> result;
+  for (std::uint32_t i = 0; i < count; ++i) result.push_back(reader.string());
+  return result;
+}
+
 struct Requirement {
   WireType receiver;
   std::string operation;
@@ -169,6 +192,7 @@ struct Summary {
   std::vector<Requirement> requirements;
   std::vector<std::pair<std::string, std::string>> dependencies;
   std::uint32_t observable_effect_bits = 0;
+  std::vector<std::string> observable_effect_tags;
   std::string body_semantic_hash;
   std::string provenance_id;
 };
@@ -221,6 +245,7 @@ inline std::string summary_payload(const Summary& summary) {
     writer.string(dependency.second);
   }
   writer.number(summary.observable_effect_bits);
+  write_effect_tags(writer, summary.observable_effect_tags);
   writer.string(summary.body_semantic_hash);
   writer.string(summary.provenance_id);
   return writer.finish();
@@ -261,6 +286,7 @@ inline Summary read_summary(std::string_view payload) {
   for (std::uint32_t i = 0; i < dependencies; ++i)
     summary.dependencies.push_back({reader.string(), reader.string()});
   summary.observable_effect_bits = reader.number();
+  summary.observable_effect_tags = read_effect_tags(reader);
   summary.body_semantic_hash = reader.string();
   summary.provenance_id = reader.string();
   require(reader.done() && summary_payload(summary) == payload,
@@ -277,6 +303,61 @@ inline void validate_summary(const Record& record) {
   const auto value = read_summary(record.payload);
   require(summary_record(value).id == record.id,
           "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 summary ID is forged");
+}
+
+inline std::string requirement_bytes(const Requirement& value,
+                                      std::uint32_t variable_count) {
+  WireWriter writer;
+  write_type(writer, value.receiver, variable_count);
+  writer.string(value.operation);
+  writer.byte(static_cast<std::uint8_t>(value.access));
+  writer.number(value.parent);
+  writer.string(value.provenance_id);
+  return writer.finish();
+}
+
+// Imported facts are a lower bound on caller-visible ownership/effects. A
+// consumer can discover extra requirements/effects, but cannot erase provider
+// constraints or weaken WRITE/CONSUME access to READ.
+inline void validate_summary_nonweakening(const Summary& provider,
+                                           const Summary& consumer) {
+  require(provider.callable_id == consumer.callable_id &&
+              provider.variable_count == consumer.variable_count &&
+              provider.parameters.size() == consumer.parameters.size() &&
+              provider.parameter_access == consumer.parameter_access &&
+              provider.requirements.size() <= consumer.requirements.size() &&
+              (consumer.observable_effect_bits & provider.observable_effect_bits) ==
+                  provider.observable_effect_bits &&
+              provider.body_semantic_hash == consumer.body_semantic_hash,
+          "SOURCE_FREE_SUMMARY_INVALID",
+          "ABI-v10 consumer weakens an imported summary");
+  for (std::size_t i = 0; i < provider.parameters.size(); ++i)
+    require(type_bytes(provider.parameters[i], provider.variable_count) ==
+                type_bytes(consumer.parameters[i], consumer.variable_count),
+            "SOURCE_FREE_SUMMARY_INVALID",
+            "ABI-v10 consumer changes an imported parameter type");
+  require(type_bytes(provider.result, provider.variable_count) ==
+              type_bytes(consumer.result, consumer.variable_count),
+          "SOURCE_FREE_SUMMARY_INVALID",
+          "ABI-v10 consumer changes an imported result type");
+  for (std::size_t i = 0; i < provider.requirements.size(); ++i)
+    require(requirement_bytes(provider.requirements[i], provider.variable_count) ==
+                requirement_bytes(consumer.requirements[i], consumer.variable_count),
+            "SOURCE_FREE_SUMMARY_INVALID",
+            "ABI-v10 consumer erases an imported requirement");
+  for (const auto& dependency : provider.dependencies) {
+    const auto match = std::find(consumer.dependencies.begin(),
+                                 consumer.dependencies.end(), dependency);
+    require(match != consumer.dependencies.end(), "SOURCE_FREE_SUMMARY_INVALID",
+            "ABI-v10 consumer erases an imported semantic dependency");
+  }
+  for (const auto& effect : provider.observable_effect_tags) {
+    require(std::find(consumer.observable_effect_tags.begin(),
+                      consumer.observable_effect_tags.end(), effect) !=
+                consumer.observable_effect_tags.end(),
+            "SOURCE_FREE_SUMMARY_INVALID",
+            "ABI-v10 consumer erases an imported observable effect");
+  }
 }
 
 struct Field {
@@ -545,9 +626,13 @@ struct KeyProof {
   std::string equality_callable_id;
   std::string equality_specialization_key;
   std::string equality_semantic_hash;
+  std::uint32_t equality_effect_bits = 0;
+  std::vector<std::string> equality_effect_tags;
   std::string hash_callable_id;
   std::string hash_specialization_key;
   std::string hash_semantic_hash;
+  std::uint32_t hash_effect_bits = 0;
+  std::vector<std::string> hash_effect_tags;
   std::string law_contract_version;
   std::string provenance_id;
 };
@@ -560,8 +645,14 @@ inline std::string key_proof_payload(const KeyProof& value) {
               hex_hash(value.hash_specialization_key) &&
               hex_hash(value.hash_semantic_hash) &&
               !value.law_contract_version.empty() &&
-              !value.provenance_id.empty(), "SOURCE_FREE_CONTRACT_INVALID",
+              !value.provenance_id.empty() &&
+              value.equality_effect_bits == 0 && value.hash_effect_bits == 0 &&
+              value.equality_effect_tags.empty() && value.hash_effect_tags.empty(),
+          "SOURCE_FREE_CONTRACT_INVALID",
           "ABI-v10 key proof shape is invalid");
+  // The protocol signatures are encoded by this record version: equality is
+  // (READ K, READ K) -> Bool and hash is (READ K) -> Int. The two exact targets
+  // and their semantic hashes are bound below; no Rust Eq/Hash policy is stored.
   WireWriter writer;
   writer.byte(1);
   writer.string("key-protocol-v1");
@@ -569,9 +660,13 @@ inline std::string key_proof_payload(const KeyProof& value) {
   writer.string(value.equality_callable_id);
   writer.string(value.equality_specialization_key);
   writer.string(value.equality_semantic_hash);
+  writer.number(value.equality_effect_bits);
+  write_effect_tags(writer, value.equality_effect_tags);
   writer.string(value.hash_callable_id);
   writer.string(value.hash_specialization_key);
   writer.string(value.hash_semantic_hash);
+  writer.number(value.hash_effect_bits);
+  write_effect_tags(writer, value.hash_effect_tags);
   writer.string(value.law_contract_version);
   writer.string(value.provenance_id);
   return writer.finish();
@@ -591,14 +686,35 @@ inline void validate_key_proof(const Record& record) {
   value.equality_callable_id = reader.string();
   value.equality_specialization_key = reader.string();
   value.equality_semantic_hash = reader.string();
+  value.equality_effect_bits = reader.number();
+  value.equality_effect_tags = read_effect_tags(reader);
   value.hash_callable_id = reader.string();
   value.hash_specialization_key = reader.string();
   value.hash_semantic_hash = reader.string();
+  value.hash_effect_bits = reader.number();
+  value.hash_effect_tags = read_effect_tags(reader);
   value.law_contract_version = reader.string();
   value.provenance_id = reader.string();
   require(reader.done() && key_proof_payload(value) == record.payload &&
               key_proof_record(value).id == record.id,
           "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 key proof ID or body is noncanonical");
+}
+
+inline void validate_key_proof_coherence(const std::vector<Record>& proofs) {
+  std::map<std::string, std::string> by_type;
+  for (const auto& record : proofs) {
+    validate_key_proof(record);
+    WireReader reader(record.payload);
+    (void)reader.byte();
+    (void)reader.string();
+    const auto type = read_type(reader, 0);
+    const auto key = type_bytes(type, 0);
+    const auto prior = by_type.find(key);
+    require(prior == by_type.end() || prior->second == record.id,
+            "KEY_PROOF_COHERENCE_MISMATCH",
+            "ABI-v10 consumers bind conflicting proofs for one key type");
+    by_type[key] = record.id;
+  }
 }
 
 }  // namespace moss::abi_v10
