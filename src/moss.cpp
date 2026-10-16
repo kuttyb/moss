@@ -2090,6 +2090,7 @@ class Checker {
     infer_function_signatures(true);
     check_domain_handle_declarations();
     check_objects();
+    check_declared_map_key_types();
     check_local_call_cycles();
     { CompilerStageTimer timer("effects"); infer_effects(); infer_observable_effects(); }
     // Discard early summaries together so dependencies cannot reuse another
@@ -2268,6 +2269,80 @@ class Checker {
                type.substr(bracket + 1, type.size() - bracket - 2), ','))
         if (contains_enum_type(argument)) return true;
     return false;
+  }
+
+  bool contains_record_type(const string& t) const {
+    string type = canonical_type_name(t);
+    if (objects_.count(type)) return true;
+    auto parsed = moss::Type::parse_canonical(type);
+    if (parsed && (*parsed)->kind == moss::TypeKind::NominalInstance) return true;
+    auto bracket = type.find('[');
+    if (bracket != string::npos && ends_with(type, "]"))
+      for (const auto& argument : split_top_level(
+               type.substr(bracket + 1, type.size() - bracket - 2), ','))
+        if (contains_record_type(argument)) return true;
+    return false;
+  }
+
+  // Record (nominal) Map keys need the shared MossMap<K,V> and a
+  // key-protocol-v1 KeyProof for their isequal/hash, which arrive at the joint
+  // Team S/Team G integration (TEAM_S_TEAM_G_INTERFACE_AGREEMENT.md §2, §5).
+  // Until then they fail closed here rather than in rustc. The code and message
+  // match Team S's P25-S3-D2 rule (dee3f62) so the joint merge is semantic-neutral.
+  void check_map_key_type(int line, const string& key) const {
+    string type = canonical_type_name(key);
+    if (contains_internal_placeholder(type)) return;
+    if (contains_record_type(type))
+      err(line, "record Map keys ('" + type + "') require the canonical MossMap<K,V> and a key-protocol-v1 key proof (isequal/hash), which are not yet available",
+          "RECORD_MAP_KEY_UNSUPPORTED");
+  }
+
+  // Apply check_map_key_type to every Map nested in a declared type.
+  void check_declared_map_keys(const string& source_file, int line,
+                               const string& declared) {
+    if (declared.empty()) return;
+    string type = canonical_type_name(declared);
+    auto bracket = type.find('[');
+    if (bracket == string::npos || !ends_with(type, "]")) return;
+    auto arguments = split_top_level(
+        type.substr(bracket + 1, type.size() - bracket - 2), ',');
+    if (starts_with(type, "map[") && arguments.size() == 2) {
+      SourceFileScope scope(current_source_file_, source_file);
+      check_map_key_type(line, arguments[0]);
+    }
+    for (const auto& argument : arguments) {
+      string inner = trim(argument);
+      auto equals = inner.find('=');
+      if (equals != string::npos && inner.find('[') > equals)
+        inner = trim(inner.substr(equals + 1));
+      check_declared_map_keys(source_file, line, inner);
+    }
+  }
+
+  void check_declared_map_key_types() {
+    for (const auto& function : p_.functions) {
+      for (const auto& parameter : function.params)
+        check_declared_map_keys(function.source_file, function.line, parameter.type);
+      if (function.return_type)
+        check_declared_map_keys(function.source_file, function.line, *function.return_type);
+    }
+    for (const auto& object : p_.objects) {
+      for (const auto& field : object.fields)
+        check_declared_map_keys(object.source_file, field.line, field.type);
+      for (const auto& method : object.methods) {
+        for (const auto& parameter : method.params)
+          check_declared_map_keys(method.source_file, method.line, parameter.type);
+        if (method.return_type)
+          check_declared_map_keys(method.source_file, method.line, *method.return_type);
+      }
+    }
+    for (const auto& domain : p_.domains) {
+      for (const auto& field : domain.state)
+        check_declared_map_keys(domain.source_file, field.line, field.type);
+      for (const auto& handler : domain.handlers)
+        for (const auto& parameter : handler.params)
+          check_declared_map_keys(handler.source_file, handler.line, parameter.type);
+    }
   }
 
   bool valid_type(const string& t) const {
@@ -14283,6 +14358,7 @@ class Checker {
         if (ps.size() == 2 && enums_.count(canonical_type_name(ps[0])))
           err(line, "enum values cannot be Map keys; enum equality and hashing are unsupported",
               "ENUM_MAP_KEY_UNSUPPORTED");
+        if (ps.size() == 2) check_map_key_type(line, ps[0]);
         auto it = inferred_expr_type(ii, env);
         if (ps.size() != 2 || !it || !same_type(ps[0], *it)) err(line, "map key type mismatch");
       } else err(line, "value is not an indexable container");
@@ -14586,6 +14662,7 @@ class Checker {
                   err(statement.line,
                       "enum values cannot be Map keys; enum equality and hashing are unsupported",
                       "ENUM_MAP_KEY_UNSUPPORTED");
+                if (key_type) check_map_key_type(statement.line, *key_type);
               }
             } else {
               size_t dot = statement.a.rfind('.');
