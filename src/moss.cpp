@@ -2504,21 +2504,21 @@ class Checker {
     if (type == "int" || type == "float" || type == "bool" || type == "string" ||
         type == "unit") return true;
     if (domains_.count(type) || objects_.count(type) || enums_.count(type)) return true;
-    if (traits_.count(type) || type == "vector" || type == "map" || type == "queue") return true;
-    if (starts_with(type, "vector[") && ends_with(type, "]")) {
-      string element = trim(type.substr(7, type.size() - 8));
-      return !contains_trait_type(element) && valid_type(element);
-    }
-    if (starts_with(type, "queue[") && ends_with(type, "]")) {
-      string element = trim(type.substr(6, type.size() - 7));
-      return !contains_trait_type(element) && valid_type(element);
-    }
-    if (starts_with(type, "map[") && ends_with(type, "]")) {
-      auto ps = split_top_level(type.substr(4, type.size()-5), ',');
-      return ps.size() == 2 &&
-          !contains_trait_type(ps[0]) && !contains_trait_type(ps[1]) &&
-          !contains_enum_type(ps[0]) &&
-          valid_type(ps[0]) && valid_type(ps[1]);
+    if (traits_.count(type)) return true;
+    if ((*parsed)->kind == moss::TypeKind::Builtin) {
+      const auto arity = moss::Type::collection_arity((*parsed)->name);
+      if (arity) {
+        const auto& args = (*parsed)->type_args;
+        if (args.empty()) return true;  // known open built-in constructor
+        if (args.size() != *arity) return false;
+        for (const auto& arg : args) {
+          const string nested = arg->to_canonical_string();
+          if (contains_trait_type(nested) || !valid_type(nested)) return false;
+        }
+        if ((*parsed)->name == "map" &&
+            contains_enum_type(args.front()->to_canonical_string())) return false;
+        return true;
+      }
     }
     if ((starts_with(type, "seq[") || starts_with(type, "option[")) && ends_with(type, "]"))
       return valid_type(trim(type.substr(type.find('[')+1, type.size()-type.find('[')-2)));
@@ -2811,25 +2811,59 @@ class Checker {
         starts_with(canonical_type_name(expected), "option[");
   }
   static bool is_type_compatible(const string& bound_type_raw, const string& new_type_raw) {
-    string bound = canonical_type_name(bound_type_raw);
-    string target = canonical_type_name(new_type_raw);
-    if (bound.empty() || bound == "_value" || starts_with(bound, "_generic:")) return true;
-    if (target.empty() || target == "_value" || starts_with(target, "_generic:")) return true;
-    auto bound_ir = moss::Type::parse_canonical(bound);
-    auto target_ir = moss::Type::parse_canonical(target);
-    if (bound_ir && target_ir && (*bound_ir)->structurally_equal(**target_ir)) return true;
-    // A bare template annotation admits any instance of the same declaration.
-    if (bound_ir && target_ir && (*bound_ir)->is_bare_template() &&
-        (*target_ir)->kind == moss::TypeKind::NominalInstance &&
-        (*bound_ir)->same_head(**target_ir)) return true;
-    if (bound == "vector" && starts_with(target, "vector[")) return true;
-    if (target == "vector" && starts_with(bound, "vector[")) return true;
-    if (bound == "queue" && starts_with(target, "queue[")) return true;
-    if (target == "queue" && starts_with(bound, "queue[")) return true;
-    if (bound == "map" && starts_with(target, "map[")) return true;
-    if (target == "map" && starts_with(bound, "map[")) return true;
-    if (option_none_compatible(target, bound)) return true;
-    return false;
+    const auto bound = moss::Type::parse_canonical(canonical_type_name(bound_type_raw));
+    const auto target = moss::Type::parse_canonical(canonical_type_name(new_type_raw));
+    if (!bound || !target) return false;
+    // None is the one language-defined value admitted by an Option without
+    // sharing its type constructor. All other compatibility is unification.
+    if ((*target)->name == "_none" && (*bound)->kind == moss::TypeKind::Builtin &&
+        (*bound)->name == "option" && (*bound)->type_args.size() == 1)
+      return true;
+    moss::TypeSolver solver(1);
+    std::map<string, moss::TypeRef> placeholders;
+    std::function<moss::TypeRef(const moss::TypeRef&)> instantiate =
+        [&](const moss::TypeRef& type) -> moss::TypeRef {
+      if (type->kind == moss::TypeKind::Primitive &&
+          (type->name == "_value" || starts_with(type->name, "_generic:"))) {
+        auto [it, inserted] = placeholders.emplace(type->name, nullptr);
+        if (inserted) it->second = solver.fresh(0);
+        return it->second;
+      }
+      if (type->kind == moss::TypeKind::Builtin) {
+        auto args = type->type_args;
+        if (auto arity = moss::Type::collection_arity(type->name)) {
+          if (args.empty())
+            for (size_t index = 0; index < *arity; ++index) args.push_back(solver.fresh(0));
+          else if (args.size() != *arity) return nullptr;
+        }
+        for (auto& arg : args) {
+          arg = instantiate(arg);
+          if (!arg) return nullptr;
+        }
+        return moss::Type::builtin(type->name, std::move(args));
+      }
+      if (type->is_bare_template()) {
+        vector<std::pair<string, moss::TypeRef>> substitutions;
+        for (const auto& slot : type->declaration->fields)
+          if (slot.inferred) substitutions.emplace_back(slot.name, solver.fresh(0));
+        return moss::Type::nominal_bound(type->declaration, type->name,
+                                        std::move(substitutions));
+      }
+      if (type->kind == moss::TypeKind::NominalInstance) {
+        vector<std::pair<string, moss::TypeRef>> substitutions;
+        for (const auto& slot : type->field_substitutions) {
+          auto value = instantiate(slot.second);
+          if (!value) return nullptr;
+          substitutions.emplace_back(slot.first, value);
+        }
+        return moss::Type::nominal_bound(type->declaration, type->name,
+                                        std::move(substitutions));
+      }
+      return type;
+    };
+    auto expected = instantiate(*bound);
+    auto actual = instantiate(*target);
+    return expected && actual && solver.unify(expected, actual);
   }
   bool trait_conforms(const string& type, const string& trait,
                       string* reason = nullptr) const {
@@ -3617,24 +3651,10 @@ class Checker {
 
   void check_closed_body_types(const vector<Stmt>& body, const TypeEnv& env, int fallback_line) const {
     for (const auto& [name, type] : env) {
-      bool open_collection = type == "vector" || type == "queue" || type == "map" ||
-          starts_with(type, "_generic:") ||
-          ((starts_with(type, "vector[") || starts_with(type, "queue[") || starts_with(type, "map[")) &&
-           contains_internal_placeholder(type));
-      bool open_nominal = false;
-      if (is_nominal_instance_type(type)) {
-        for (const auto& sub : nominal_field_substitutions(type)) {
-          if (sub.second.empty() || sub.second == "_" || contains_internal_placeholder(sub.second) || starts_with(sub.second, "_generic:")) {
-            open_nominal = true;
-            break;
-          }
-        }
-        // A field substituted by an open collection (`field = []` never
-        // pinned) leaves the instance open as well.
-        auto parsed = moss::Type::parse_canonical(canonical_type_name(type));
-        if (parsed && !(*parsed)->is_closed()) open_nominal = true;
-      }
-      if (open_collection || open_nominal) {
+      const auto parsed = moss::Type::parse_canonical(canonical_type_name(type));
+      // Internal summary placeholders are open even when legacy ingress
+      // printed them as primitive names. Concrete roots cannot retain them.
+      if (!parsed || !(*parsed)->is_closed() || contains_internal_placeholder(type)) {
         int err_line = fallback_line;
         for (const auto& stmt : body) {
           if (stmt.a == name) {
