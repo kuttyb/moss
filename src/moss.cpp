@@ -5198,7 +5198,8 @@ class Checker {
   void advance_type_environment(const Stmt& statement, TypeEnv& env,
                                 const vector<Stmt>& statements,
                                 bool record_semantic_types,
-                                const string& join_context = {}) const {
+                                const string& join_context = {},
+                                const TypeEnv& solved_collections = {}) const {
     if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
         statement.kind == Stmt::Kind::Assign) {
       if (statement.kind != Stmt::Kind::Assign || simple_identifier(statement.a)) {
@@ -5207,6 +5208,13 @@ class Checker {
           env[statement.a] = *constructed;
         } else if (auto inferred = inferred_expr_type(statement.b, env)) {
           string cinf = canonical_type_name(*inferred);
+          // A local's open collection is one inference term for the whole
+          // body.  The solver may close it from a use after a loop; retain that
+          // result when this earlier constructor is visited in source order.
+          if (cinf == "vector" || cinf == "queue" || cinf == "map") {
+            auto solved = solved_collections.find(statement.a);
+            if (solved != solved_collections.end()) cinf = solved->second;
+          }
           if (statement.kind == Stmt::Kind::Assign && existing != env.end() &&
               (cinf == "vector" || cinf == "queue" || cinf == "map") &&
               starts_with(existing->second, cinf + "[")) {
@@ -5292,7 +5300,8 @@ class Checker {
                                    bool reject_conflicts,
                                    bool record_join_types,
                                    bool record_semantic_types,
-                                   const string& join_context) const {
+                                   const string& join_context,
+                                   const TypeEnv& solved_collections) const {
     while (index < statements.size()) {
       const Stmt& statement = statements[index];
       if (statement.indent < level) return;
@@ -5362,7 +5371,7 @@ class Checker {
             err(arm.line, "enum case requires a statement body", "EMPTY_MATCH_CASE");
           walk_type_environment_block(statements, index, level + 2, branch,
                                       visitor, reject_conflicts, record_join_types,
-                                      record_semantic_types, join_context);
+                                      record_semantic_types, join_context, solved_collections);
           for (const auto& name : arm.args) {
             auto prior = env.find(name);
             if (prior == env.end()) branch.erase(name);
@@ -5401,7 +5410,7 @@ class Checker {
         walk_type_environment_block(statements, index, level + 1, normal,
                                     visitor, reject_conflicts,
                                     record_join_types, record_semantic_types,
-                                    join_context);
+                                    join_context, solved_collections);
         vector<TypeEnv> paths{std::move(normal)};
         bool saw_recover = false;
         while (index < statements.size() &&
@@ -5433,7 +5442,7 @@ class Checker {
           walk_type_environment_block(statements, index, level + 1, recovered,
                                       visitor, reject_conflicts,
                                       record_join_types, record_semantic_types,
-                                      join_context);
+                                      join_context, solved_collections);
           paths.push_back(std::move(recovered));
         }
         if (!saw_recover)
@@ -5459,7 +5468,7 @@ class Checker {
         TypeEnv then_env = incoming;
         walk_type_environment_block(statements, index, level + 1, then_env,
                                     visitor, reject_conflicts, record_join_types,
-                                    record_semantic_types, join_context);
+                                    record_semantic_types, join_context, solved_collections);
 
         vector<TypeEnv> paths;
         paths.push_back(std::move(then_env));
@@ -5469,7 +5478,7 @@ class Checker {
           TypeEnv else_env = incoming;
           walk_type_environment_block(statements, index, level + 1, else_env,
                                       visitor, reject_conflicts, record_join_types,
-                                      record_semantic_types, join_context);
+                                      record_semantic_types, join_context, solved_collections);
           paths.push_back(std::move(else_env));
         } else {
           paths.push_back(std::move(incoming));
@@ -5490,7 +5499,7 @@ class Checker {
         TypeEnv body_env = incoming;
         walk_type_environment_block(statements, index, level + 1, body_env,
                                     visitor, reject_conflicts, record_join_types,
-                                    record_semantic_types, join_context);
+                                    record_semantic_types, join_context, solved_collections);
         env = merge_type_environments({incoming, body_env}, statement.line,
                                       reject_conflicts);
         if (record_join_types) {
@@ -5513,7 +5522,7 @@ class Checker {
           const_cast<Stmt&>(statement).semantic_type = element_type;
         walk_type_environment_block(statements, index, level + 1, body_env,
                                     visitor, reject_conflicts, record_join_types,
-                                    record_semantic_types, join_context);
+                                    record_semantic_types, join_context, solved_collections);
         body_env.erase(statement.a);
         TypeEnv joined;
         for (const auto& entry : incoming) {
@@ -5534,7 +5543,8 @@ class Checker {
       }
 
       visitor(statement, env);
-      advance_type_environment(statement, env, statements, record_semantic_types, join_context);
+      advance_type_environment(statement, env, statements, record_semantic_types,
+                               join_context, solved_collections);
       if (record_semantic_types && statement.kind == Stmt::Kind::Call &&
           !statement.b.empty()) {
         if (auto receiver = inferred_expr_type(statement.a, env))
@@ -5548,16 +5558,81 @@ class Checker {
     }
   }
 
+  // Solve open collection locals once per body before source-order checking.
+  // In particular, a for source may precede the operation that determines its
+  // element type.  Each local gets its own variable, including two assignments
+  // from separate calls to the same open-result function.
+  TypeEnv solve_local_collection_types(const vector<Stmt>& statements,
+                                       const TypeEnv& entry) const {
+    moss::TypeSolver solver(1);
+    std::unordered_map<string, moss::TypeRef> locals;
+    TypeEnv scan = entry;
+    for (const Stmt& statement : statements) {
+      if ((statement.kind == Stmt::Kind::Let ||
+           statement.kind == Stmt::Kind::Var ||
+           statement.kind == Stmt::Kind::Assign) &&
+          statement.indent == 0 && simple_identifier(statement.a)) {
+        auto inferred = inferred_expr_type(statement.b, scan);
+        if (!inferred) continue;
+        auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
+        if (!parsed || (*parsed)->kind != moss::TypeKind::Builtin ||
+            !moss::Type::collection_arity((*parsed)->name)) {
+          scan[statement.a] = *inferred;
+          continue;
+        }
+        moss::TypeRef term = *parsed;
+        if (auto arity = moss::Type::collection_arity(term->name);
+            arity && term->type_args.empty()) {
+          vector<moss::TypeRef> arguments;
+          for (size_t index = 0; index < *arity; ++index)
+            arguments.push_back(solver.fresh(static_cast<uint32_t>(locals.size() + 1)));
+          term = moss::Type::builtin(term->name, std::move(arguments));
+        }
+        auto prior = locals.find(statement.a);
+        if (prior != locals.end() && !solver.unify(prior->second, term))
+          err(statement.line, "assignment type mismatch for binding '" +
+              statement.a + "'", "TYPE_MISMATCH");
+        else if (prior == locals.end())
+          locals.emplace(statement.a, term);
+        scan[statement.a] = solver.resolve(locals.at(statement.a))->to_canonical_string();
+      } else if (statement.kind == Stmt::Kind::Call && statement.b == "push" &&
+                 statement.args.size() == 1) {
+        auto local = locals.find(statement.a);
+        if (local == locals.end()) continue;
+        auto argument = inferred_expr_type(statement.args.front(), scan);
+        if (!argument) continue;
+        auto parsed = moss::Type::parse_canonical(canonical_type_name(*argument));
+        if (!parsed) continue;
+        auto current = solver.resolve(local->second);
+        if (current->kind != moss::TypeKind::Builtin ||
+            (current->name != "vector" && current->name != "queue") ||
+            current->type_args.size() != 1) continue;
+        if (!solver.unify(current->type_args.front(), *parsed))
+          err(statement.line, "push argument conflicts with the element type of '" +
+              statement.a + "'", "TYPE_MISMATCH");
+        scan[statement.a] = solver.resolve(local->second)->to_canonical_string();
+      }
+    }
+    TypeEnv closed;
+    for (const auto& [name, term] : locals) {
+      auto resolved = solver.resolve(term);
+      if (resolved->is_closed()) closed.emplace(name, resolved->to_canonical_string());
+    }
+    return closed;
+  }
+
   TypeEnv walk_type_environment(const vector<Stmt>& statements, TypeEnv env,
                                 const TypeEnvVisitor& visitor,
                                 bool reject_conflicts,
                                 bool record_join_types = false,
                                 bool record_semantic_types = false,
                                 const string& join_context = {}) const {
+    const TypeEnv solved_collections = solve_local_collection_types(statements, env);
     size_t index = 0;
     walk_type_environment_block(statements, index, 0, env, visitor,
                                 reject_conflicts, record_join_types,
-                                record_semantic_types, join_context);
+                                record_semantic_types, join_context,
+                                solved_collections);
     if (index != statements.size())
       err(statements[index].line, "unexpected 'else' without matching 'if'");
     return env;
@@ -13181,6 +13256,15 @@ class Checker {
           if (auto constructed = domain_constructor(s.b)) type = *constructed;
           else type = inferred_expr_type(s.b, env.types);
 
+          // The checker has already solved this binding's open collection.
+          // Ownership consumes that semantic fact instead of re-inferring an
+          // earlier constructor without its later constraints.
+          auto checked = s.semantic_types_by_context.find(current_semantic_context_);
+          const string& checked_type = checked == s.semantic_types_by_context.end()
+              ? s.semantic_type : checked->second;
+          if (type && (*type == "vector" || *type == "queue" || *type == "map") &&
+              !checked_type.empty())
+            type = checked_type;
           env.types[s.a] = type.value_or("_value");
           env.binding_identities[s.a] = statement_binding_identity(
               current_semantic_context_, s.line);
@@ -13235,7 +13319,14 @@ class Checker {
             break;
           }
           if (simple_identifier(s.a)) {
-            if (source_type) env.types[s.a] = *source_type;
+            if (source_type) {
+              auto checked = s.semantic_types_by_context.find(current_semantic_context_);
+              const string& checked_type = checked == s.semantic_types_by_context.end()
+                  ? s.semantic_type : checked->second;
+              env.types[s.a] = (*source_type == "vector" || *source_type == "queue" ||
+                                *source_type == "map") && !checked_type.empty()
+                  ? checked_type : *source_type;
+            }
             else if (!env.types.count(s.a)) env.types[s.a] = "_value";
             if (!env.binding_identities.count(s.a))
               env.binding_identities[s.a] = statement_binding_identity(

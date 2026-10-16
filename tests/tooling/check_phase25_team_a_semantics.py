@@ -161,6 +161,13 @@ fn main():
         parity(zero_loop, scratch, "1\n")
         print("PASS zero-iteration loop type constraints are static", flush=True)
 
+        range_loop = source(scratch, "range_loop", '''fn main():
+  for index in range(0, 2):
+    echo index
+''')
+        parity(range_loop, scratch, "0\n1\n")
+        print("PASS range traversal agrees across engines", flush=True)
+
         different_instances = source(scratch, "different_instances", '''type Box:
   value
 
