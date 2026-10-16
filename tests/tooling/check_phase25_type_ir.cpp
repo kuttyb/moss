@@ -144,4 +144,44 @@ int main() {
   assert(!solver.unify(second, Type::nominal("Other", {{"value", Type::primitive("int")}})));
   assert(solver.resolve(second)->declaration == context.find("Box"));
   assert(throws_invalid([&] { (void)solver.fresh(2)->stable_type_key(); }));
+
+  // A specialization hashes the resolved callable and every ordered binding.
+  moss::SpecializationKey instance;
+  instance.callable_id = "callable-v1:" + app + ":fn:unwrap";
+  instance.arguments = {box};
+  auto base_key = instance.stable_key();
+  assert(base_key && base_key->find("specialization-v2:sha256:") == 0);
+  instance.callable_id = "callable-v1:" + beta + ":fn:unwrap";
+  assert(instance.stable_key() != base_key);
+  instance.callable_id = "callable-v1:" + app + ":fn:unwrap";
+  instance.receiver = box;
+  assert(instance.stable_key() != base_key);
+  instance.receiver.reset();
+  instance.callable_arguments = {"0:callable-v1:" + app + ":fn:predicate"};
+  assert(instance.stable_key() != base_key);
+  instance.callable_arguments.clear();
+  instance.open_result_bindings = {{0, Type::primitive("int")}};
+  assert(instance.stable_key() != base_key);
+  instance.open_result_bindings = {{0, solver.fresh(3)}};
+  assert(!instance.stable_key());
+
+  moss::MemberDispatchRequirement member;
+  member.requirement_id = "requirement-v1:push";
+  member.receiver = Type::builtin("vector", {Type::primitive("int")});
+  member.member_name = "push";
+  member.argument_types = {Type::primitive("int")};
+  member.receiver_access = moss::AccessMode::Write;
+  member.argument_access = {moss::AccessMode::Read};
+  member.admitted_template_or_builtin_family = "builtin:vector";
+  member.selected_callable_id = "builtin:vector.push";
+  assert(moss::member_requirement_is_closed(member));
+  assert(member.receiver_access == moss::AccessMode::Write &&
+         member.argument_access[0] == moss::AccessMode::Read);
+  auto open_item = solver.fresh(4);
+  member.receiver = Type::builtin("vector", {open_item});
+  member.argument_types = {open_item};
+  assert(!moss::member_requirement_is_closed(member));
+  assert(solver.unify(open_item, Type::primitive("int")));
+  auto resolved_member = moss::resolve_member_requirement(solver, member);
+  assert(moss::member_requirement_is_closed(resolved_member));
 }

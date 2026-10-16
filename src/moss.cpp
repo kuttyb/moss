@@ -234,6 +234,13 @@ static string program_module_identity(const Program& program, const string& modu
 // identity is the defining module identity plus the source declaration name.
 static void build_type_context(Program& program) {
   auto context = std::make_shared<moss::TypeContext>();
+  for (auto& function : program.functions) {
+    const string& declaration = function.declaration_name.empty()
+        ? function.name : function.declaration_name;
+    function.semantic_callable_id = "callable-v1:" +
+        program_module_identity(program, function.defining_module) +
+        ":fn:" + declaration;
+  }
   auto declare = [&](moss::DeclarationKind kind, const string& program_name,
                      const string& defining_module, const string& declaration_name,
                      vector<moss::NominalFieldSlot> fields) {
@@ -599,60 +606,42 @@ static ConcreteParameterABI concrete_parameter_abi(Effect effect,
       effect == Effect::Consume || copy_type_name(canonical_type_name(type))
           ? ParameterPassingMode::Value : ParameterPassingMode::SharedBorrow};
 }
-static bool same_closed_type_vector(const vector<string>& left,
-                                    const vector<string>& right) {
-  if (left.size() != right.size()) return false;
-  for (size_t index = 0; index < left.size(); ++index) {
-    auto a = moss::Type::parse_canonical(left[index]);
-    auto b = moss::Type::parse_canonical(right[index]);
-    if (!a || !b || !(*a)->is_closed() || !(*b)->is_closed() ||
-        !(*a)->structurally_equal(**b)) return false;
-  }
-  return true;
-}
-// The one specialization identity: callable plus the structured stable key of
-// each closed argument TypeRef (TYPE_IR_CONTRACT §3.3). Display strings are
-// only parsed into TypeRef; they never decide identity themselves. An open or
-// unparsable argument has no specialization key.
+// The one specialization identity (TYPE_IR_CONTRACT §3.3). Legacy typed
+// strings enter at this boundary only; all key material is checked Type IR.
 static std::optional<string> specialization_stable_key(
-    const string& function_name, const vector<string>& types) {
-  string key_material;
-  moss::Type::append_part(key_material, "specialization-v2");
-  moss::Type::append_part(key_material, function_name);
-  moss::Type::append_part(key_material, std::to_string(types.size()));
-  for (const auto& type : types) {
+    const string& callable_id, const vector<string>& types,
+    const std::optional<moss::TypeRef>& receiver = std::nullopt,
+    const vector<std::pair<uint32_t, moss::TypeRef>>& open_result_bindings = {}) {
+  moss::SpecializationKey key;
+  key.callable_id = callable_id;
+  key.receiver = receiver;
+  key.open_result_bindings = open_result_bindings;
+  for (size_t index = 0; index < types.size(); ++index) {
+    const auto& type = types[index];
     // A static higher-order argument is a callable identity, not a type.
     if (starts_with(type, "callable:")) {
-      moss::Type::append_part(key_material, "callable");
-      moss::Type::append_part(key_material, type.substr(9));
+      key.arguments.push_back(moss::Type::unit());
+      key.callable_arguments.push_back(std::to_string(index) + ":" + type.substr(9));
       continue;
     }
     auto parsed = moss::Type::parse_canonical(canonical_type_name(type));
     if (!parsed || !(*parsed)->is_closed()) return std::nullopt;
-    moss::Type::append_part(key_material, (*parsed)->stable_type_key());
+    key.arguments.push_back(*parsed);
   }
-  return "specialization-v2:sha256:" +
-      moss::source_free_contract_sha256(key_material);
+  return key.stable_key();
 }
 
-static bool specialization_matches(const FunctionSpecialization& specialization,
+static bool specialization_matches(const Function& function,
+                                   const FunctionSpecialization& specialization,
                                    const vector<string>& types) {
-  if (specialization.parameter_type_refs.empty())
-    return same_closed_type_vector(specialization.parameter_types, types);
-  if (specialization.parameter_type_refs.size() != types.size()) return false;
-  for (size_t index = 0; index < types.size(); ++index) {
-    auto actual = moss::Type::parse_canonical(types[index]);
-    if (!actual || !(*actual)->is_closed() ||
-        !specialization.parameter_type_refs[index]->structurally_equal(**actual))
-      return false;
-  }
-  return true;
+  auto key = specialization_stable_key(function.semantic_callable_id, types);
+  return key && *key == specialization.stable_type_key;
 }
 static const FunctionSpecialization* concrete_specialization(
     const Function& function, const vector<string>& types) {
   auto found = std::find_if(function.specializations.begin(),
       function.specializations.end(), [&](const FunctionSpecialization& candidate) {
-        return specialization_matches(candidate, types);
+        return specialization_matches(function, candidate, types);
       });
   return found == function.specializations.end() ? nullptr : &*found;
 }
@@ -11739,8 +11728,11 @@ class Checker {
                                                !traits_.count(canonical_type_name(type));
                                          });
           if (concrete_cb && (fn_it->second->generic || fn_it->second->static_dispatch)) {
-            validate_method_requirements(line, *fn_it->second, callback_input_types);
-            register_static_specialization(line, *fn_it->second, callback_input_types);
+            auto requirements = validate_method_requirements(
+                line, *fn_it->second, callback_input_types);
+            register_static_specialization(line, *fn_it->second,
+                                           callback_input_types,
+                                           std::move(requirements));
           }
         }
         node.effects = functional_stage_effects(
@@ -13434,11 +13426,20 @@ class Checker {
     error.source_file = call_source;
   }
 
-  void validate_method_requirements(int line, const Function& function,
-                                    const vector<string>& parameter_types) const {
+  static moss::AccessMode requirement_access(Effect effect) {
+    if (effect == Effect::Write) return moss::AccessMode::Write;
+    if (effect == Effect::Consume) return moss::AccessMode::Consume;
+    return moss::AccessMode::Read;
+  }
+
+  vector<moss::MemberDispatchRequirement> validate_method_requirements(
+      int line, const Function& function,
+      const vector<string>& parameter_types) const {
     auto instantiated = instantiated_function_env(function, parameter_types);
     std::optional<string> related_function_result;
-    for (const auto& requirement : function.constraints) {
+    vector<moss::MemberDispatchRequirement> resolved_requirements;
+    for (size_t ordinal = 0; ordinal < function.constraints.size(); ++ordinal) {
+      const auto& requirement = function.constraints[ordinal];
       if (requirement.kind != ConstraintKind::Method) continue;
       auto receiver = instantiated.find(requirement.subject);
       if (receiver == instantiated.end() ||
@@ -13478,6 +13479,48 @@ class Checker {
       }
       string result = builtin.value_or(fileio_builtin.value_or(
           method ? method->return_type.value_or("unit") : "unit"));
+      moss::MemberDispatchRequirement closed;
+      closed.requirement_id = function.semantic_callable_id + ":member:" +
+          std::to_string(ordinal);
+      closed.member_name = requirement.detail;
+      closed.receiver = moss::Type::parse_canonical(
+          canonical_type_name(receiver->second)).value_or(nullptr);
+      for (const auto& argument : argument_types)
+        closed.argument_types.push_back(moss::Type::parse_canonical(
+            canonical_type_name(argument)).value_or(nullptr));
+      closed.result = moss::Type::parse_canonical(canonical_type_name(result));
+      closed.origin = {program_module_identity(p_, function.defining_module),
+                       function.source_file, function.line, 1,
+                       function.semantic_callable_id,
+                       function.semantic_callable_id + ":member:" +
+                           std::to_string(ordinal)};
+      if (const auto* operation = builtin_operation(receiver->second,
+                                                    requirement.detail)) {
+        closed.admitted_template_or_builtin_family =
+            "builtin:" + canonical_type_name(receiver->second);
+        closed.selected_callable_id =
+            "builtin:" + canonical_type_name(receiver->second) + "." +
+            requirement.detail;
+        closed.receiver_access = requirement_access(operation->receiver_effect);
+        for (auto effect : operation->argument_effects)
+          closed.argument_access.push_back(requirement_access(effect));
+      } else if (method) {
+        auto nominal_receiver = moss::Type::parse_canonical(receiver->second);
+        closed.admitted_template_or_builtin_family =
+            nominal_receiver && (*nominal_receiver)->declaration
+                ? (*nominal_receiver)->declaration->id
+                : canonical_type_name(receiver->second);
+        closed.selected_callable_id = "method:" + method->owner + "." + method->name;
+        closed.receiver_access = requirement_access(method->receiver_effect);
+        for (size_t index = 0; index < argument_types.size(); ++index)
+          closed.argument_access.push_back(
+              requirement_access(method_parameter_effect(*method, index)));
+      } else {
+        closed.admitted_template_or_builtin_family = "FileIO";
+        closed.selected_callable_id = "builtin:FileIO." + requirement.detail;
+        closed.argument_access.assign(argument_types.size(), moss::AccessMode::Read);
+      }
+      resolved_requirements.push_back(std::move(closed));
       if (!requirement.result.empty()) {
         if (related_function_result && !same_type(*related_function_result, result))
           err(line, "conflicting method result expectations in function '" +
@@ -13492,10 +13535,13 @@ class Checker {
               "', conflicting with expected result type '" + expected + "'");
       }
     }
+    return resolved_requirements;
   }
 
   void register_static_specialization(int line, Function& function,
-                                      const vector<string>& parameter_types) {
+                                      const vector<string>& parameter_types,
+                                      vector<moss::MemberDispatchRequirement>
+                                          member_requirements = {}) {
     if (!function.static_dispatch) return;
     if (parameter_types.size() != function.params.size() ||
         !std::all_of(parameter_types.begin(), parameter_types.end(),
@@ -13507,16 +13553,20 @@ class Checker {
     vector<string> canonical_types;
     for (const auto& type : parameter_types)
       canonical_types.push_back(canonical_type_name(type));
+    auto stable_key = specialization_stable_key(
+        function.semantic_callable_id, canonical_types);
+    if (!stable_key)
+      err(line, "static specialization has an unresolved argument type",
+          "TYPE_AMBIGUOUS_OPEN_RESULT");
     auto record_dependency = [&] {
       if (!checking_specialization_) return;
-      StaticSpecializationDependency dependency{function.name, canonical_types};
+      StaticSpecializationDependency dependency{function.name, canonical_types,
+                                                *stable_key};
       auto existing_dependency = std::find_if(
           checking_specialization_->dependencies.begin(),
           checking_specialization_->dependencies.end(),
           [&](const StaticSpecializationDependency& existing) {
-            return existing.function_name == dependency.function_name &&
-                same_closed_type_vector(existing.parameter_types,
-                                        dependency.parameter_types);
+            return existing.specialization_key == dependency.specialization_key;
           });
       if (existing_dependency == checking_specialization_->dependencies.end())
         checking_specialization_->dependencies.push_back(std::move(dependency));
@@ -13524,10 +13574,11 @@ class Checker {
     auto existing = std::find_if(function.specializations.begin(),
                                  function.specializations.end(),
                                  [&](const FunctionSpecialization& specialization) {
-                                   return specialization_matches(specialization,
-                                                                 canonical_types);
+                                   return specialization.stable_type_key == *stable_key;
                                  });
     if (existing != function.specializations.end()) {
+      if (existing->member_requirements.empty() && !member_requirements.empty())
+        existing->member_requirements = std::move(member_requirements);
       record_dependency();
       return;
     }
@@ -13547,10 +13598,10 @@ class Checker {
             "TYPE_AMBIGUOUS_OPEN_RESULT");
       specialization.parameter_type_refs.push_back(*parsed);
     }
-    auto stable_key = specialization_stable_key(function.name, canonical_types);
     specialization.return_type_ref = moss::Type::parse_canonical(
         specialization.return_type).value_or(nullptr);
     specialization.stable_type_key = *stable_key;
+    specialization.member_requirements = std::move(member_requirements);
     specialization.parameter_effects = concrete_function_effects(
         function, canonical_types, &specialization.parameter_mutations);
     function.specializations.push_back(specialization);
@@ -13799,8 +13850,10 @@ class Checker {
                                               !traits_.count(canonical_type_name(type));
                                      });
     if (concrete_call) {
-      validate_method_requirements(line, *function->second, actual_types);
-      register_static_specialization(line, *function->second, actual_types);
+      auto requirements = validate_method_requirements(
+          line, *function->second, actual_types);
+      register_static_specialization(line, *function->second, actual_types,
+                                     std::move(requirements));
     }
   }
 
@@ -14003,8 +14056,10 @@ class Checker {
                                       !traits_.count(canonical_type_name(type));
                                 });
     if (concrete) {
-      validate_method_requirements(line, *function->second, input_types);
-      register_static_specialization(line, *function->second, input_types);
+      auto requirements = validate_method_requirements(
+          line, *function->second, input_types);
+      register_static_specialization(line, *function->second, input_types,
+                                     std::move(requirements));
     }
     auto result = functional_callable_result(identity, input_types, env);
     if (!result && concrete)
@@ -17693,7 +17748,7 @@ class Generator {
           function->second->specializations.begin(),
           function->second->specializations.end(),
           [&](const FunctionSpecialization& candidate) {
-            return specialization_matches(candidate, input_types);
+            return specialization_matches(*function->second, candidate, input_types);
           });
       if (specialization != function->second->specializations.end())
         return specialization->return_type;
@@ -17909,7 +17964,7 @@ class Generator {
               function->second->specializations.begin(),
               function->second->specializations.end(),
               [&](const FunctionSpecialization& candidate) {
-                return specialization_matches(candidate, argument_types);
+                return specialization_matches(*function->second, candidate, argument_types);
               });
           if (specialization != function->second->specializations.end())
             return specialization->return_type;
@@ -18219,7 +18274,7 @@ class Generator {
         function->second->specializations.begin(),
         function->second->specializations.end(),
         [&](const FunctionSpecialization& candidate) {
-          return specialization_matches(candidate, argument_types);
+          return specialization_matches(*function->second, candidate, argument_types);
         });
     if (specialization == function->second->specializations.end())
       throw std::runtime_error("missing static specialization for function '" + name +
@@ -18395,7 +18450,7 @@ class Generator {
           function->second->specializations.begin(),
           function->second->specializations.end(),
           [&](const FunctionSpecialization& candidate) {
-            return specialization_matches(candidate, argument_types);
+            return specialization_matches(*function->second, candidate, argument_types);
           });
       if (specialization == function->second->specializations.end())
         throw std::runtime_error("missing functional specialization for '" +
@@ -24503,9 +24558,9 @@ static string semantic_call_target_kind(const string& target) {
   return "resolved_callable";
 }
 
-static std::optional<string> specialization_identity_for_call(
+static std::optional<std::pair<string,string>> specialization_identity_for_call(
     const Program& program, const SemanticCallEdge& edge) {
-  if (!starts_with(edge.target, "fn:") || edge.argument_types.empty())
+  if (!starts_with(edge.target, "fn:"))
     return std::nullopt;
   string name = edge.target.substr(3);
   auto function = std::find_if(
@@ -24513,17 +24568,17 @@ static std::optional<string> specialization_identity_for_call(
       [&](const Function& candidate) { return candidate.name == name; });
   if (function == program.functions.end()) return std::nullopt;
   for (const auto& specialization : function->specializations) {
-    if (!specialization_stable_key(name, edge.argument_types) ||
-        specialization_stable_key(name, edge.argument_types) !=
-            specialization_stable_key(name, specialization.parameter_types))
+    auto key = specialization_stable_key(function->semantic_callable_id,
+                                         edge.argument_types);
+    if (!key || *key != specialization.stable_type_key)
       continue;
-    string identity = "specialization:" + name + "<";
+    string display = "specialization:" + name + "<";
     for (size_t index = 0; index < specialization.parameter_types.size(); ++index) {
-      if (index) identity += ",";
-      identity += specialization.parameter_types[index];
+      if (index) display += ",";
+      display += specialization.parameter_types[index];
     }
-    identity += ">";
-    return identity;
+    display += ">";
+    return std::make_pair(display, specialization.stable_type_key);
   }
   return std::nullopt;
 }
@@ -25310,7 +25365,10 @@ static void write_calls_result(std::ostream& out, const Program& program,
     write_agent_string_array(out, calls[index]->argument_types);
     out << ", \"specialization_identity\": ";
     auto specialization = specialization_identity_for_call(program, *calls[index]);
-    if (specialization) write_debug_json_string(out, *specialization);
+    if (specialization) write_debug_json_string(out, specialization->first);
+    else out << "null";
+    out << ", \"specialization_key\": ";
+    if (specialization) write_debug_json_string(out, specialization->second);
     else out << "null";
     out << ", \"boundary\": ";
     write_debug_json_string(out,
@@ -28169,6 +28227,8 @@ static void rewrite_module_program(
   };
   for (auto& function : program.functions) {
     string old = function.name;
+    function.defining_module = module;
+    function.declaration_name = old;
     function.name = module_symbol(module, old);
     params(function.params);
     if (function.return_type) *function.return_type = type(*function.return_type);
@@ -30868,8 +30928,9 @@ static bool edge_requires_specialization(const SemanticCallEdge& edge,
   if ((edge.target != function.name && edge.target != "fn:" + function.name) ||
       edge.argument_types.size() != specialization.parameter_types.size())
     return false;
-  return specialization_stable_key(function.name, edge.argument_types) ==
-      specialization_stable_key(function.name, specialization.parameter_types);
+  return specialization_stable_key(function.semantic_callable_id,
+                                   edge.argument_types) ==
+      specialization.stable_type_key;
 }
 
 // A specialization remains one canonical checked fact on Function.  Native
@@ -30892,20 +30953,10 @@ static bool module_requires_specialization(const Program& program,
                      });
 }
 
-static string specialization_projection_key(const string& function_name,
-                                            const vector<string>& parameter_types) {
-  auto key = specialization_stable_key(function_name, parameter_types);
-  if (!key)
-    throw std::runtime_error("checked specialization of '" + function_name +
-                             "' has an open argument type");
-  return *key;
-}
-
 static bool specialization_is_projected(
-    const std::set<string>& required, const Function& function,
+    const std::set<string>& required,
     const FunctionSpecialization& specialization) {
-  return required.count(specialization_projection_key(
-      function.name, specialization.parameter_types));
+  return required.count(specialization.stable_type_key);
 }
 
 // The semantic checker still sees the composed project.  Once that single
@@ -30934,19 +30985,17 @@ static Program module_program(const Program& whole, const string& module,
       for (const auto& specialization : function.specializations)
         if (module_requires_specialization(whole, module, target_module,
                                            function, specialization))
-          required_specializations.insert(specialization_projection_key(
-              function.name, specialization.parameter_types));
+          required_specializations.insert(specialization.stable_type_key);
   bool specialization_changed = true;
   while (specialization_changed) {
     specialization_changed = false;
     for (const auto& function : whole.functions) {
       for (const auto& specialization : function.specializations) {
-        if (!specialization_is_projected(required_specializations, function,
+        if (!specialization_is_projected(required_specializations,
                                          specialization))
           continue;
         for (const auto& dependency : specialization.dependencies) {
-          string key = specialization_projection_key(
-              dependency.function_name, dependency.parameter_types);
+          string key = dependency.specialization_key;
           if (required_specializations.insert(std::move(key)).second)
             specialization_changed = true;
         }
@@ -30962,7 +31011,7 @@ static Program module_program(const Program& whole, const string& module,
                          projected.specializations.end(),
                          [&](const FunctionSpecialization& specialization) {
                            return !specialization_is_projected(
-                               required_specializations, function,
+                               required_specializations,
                                specialization);
                          }),
           projected.specializations.end());

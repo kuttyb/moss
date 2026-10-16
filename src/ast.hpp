@@ -209,6 +209,7 @@ struct StaticSpecializationDependency {
   // checked specialization metadata, not a backend symbol reference.
   string function_name;
   vector<string> parameter_types;
+  string specialization_key;
 };
 struct FunctionSpecialization {
   string generated_name;
@@ -229,6 +230,8 @@ struct FunctionSpecialization {
   // projection closes this graph so an owned specialization never references
   // a specialization that exists only in some other artifact.
   vector<StaticSpecializationDependency> dependencies;
+  // Closed member requirements checked for this exact static instance.
+  vector<MemberDispatchRequirement> member_requirements;
 };
 
 struct DomainSpecialization {
@@ -249,6 +252,9 @@ struct DomainSpecialization {
 };
 struct Function {
   string name, header; vector<Param> params; std::optional<string> return_type; vector<Stmt> body;
+  // Bound at module name resolution, before checking. Source-free functions
+  // retain the same defining package/module/declaration identity.
+  string defining_module, declaration_name, semantic_callable_id;
   std::optional<string> result_expression; int result_line = 0; bool expression_body = false;
   vector<int> result_continuation_lines;
   std::unordered_map<string,std::size_t> result_functional_pipeline_ids;

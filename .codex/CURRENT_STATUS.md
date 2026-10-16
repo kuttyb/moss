@@ -1,5 +1,27 @@
 # Moss current status
 
+## Phase 25 Team A A3 isolated workstream — 2026-10-16
+
+Branch `phase25-g-type-core-a3` builds a typed `specialization-v2` key from the
+resolved callable identity and ordered TypeRefs, and retains concrete member
+requirements with receiver and per-argument access on each checked static
+specialization. The key is shared by registration, deduplication, call-edge
+selection, module projection, and native specialization lookup. The query keeps
+its historical display identity and adds the exact `specialization_key`.
+
+Validation on the final edit: `make -j2`,
+`python3 tests/tooling/check_phase25_type_ir.py`,
+`python3 tests/tooling/check_phase25_a3_specialization.py ./moss`,
+`python3 tests/tooling/check_semantic_queries.py ./moss`,
+`python3 tests/tooling/check_generic_specialization.py ./moss` (40/40),
+`python3 tests/tooling/check_agent_feedback.py`, and `git diff --check`
+passed. `python3 tests/tooling/check_phase25_nominal_identity.py ./moss`
+passed, including source-free consumers. Phase 25 conformance passed gates
+1–9 and 11; Gate 10 remains the contractually pending joint integration case.
+Open integration: existing registration does not yet pass open-result bindings
+from A2 summaries into the key, and open member requirements need the A2 solver
+bridge before they can close through the same record.
+
 ## Phase 25 Team A A1 nominal identity handoff — 2026-10-16
 
 The isolated `phase25-g-type-core-a1` branch starts at the frozen `5b29352`

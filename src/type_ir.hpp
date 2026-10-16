@@ -713,15 +713,74 @@ struct RequirementOrigin {
   int line{0};
   int column{0};
   std::string enclosing_callable;
+  std::string call_expression_id;
 };
 
 struct Requirement {
+  std::string id;
   RequirementKind kind{RequirementKind::SameType};
   TypeRef subject;
   std::vector<TypeRef> arguments;
   std::optional<TypeRef> result;
   AccessMode access{AccessMode::Read};
+  std::vector<AccessMode> argument_access;
+  std::optional<std::string> parent_requirement_id;
   RequirementOrigin origin;
+};
+
+// The solver-owned record passed to Team S's member admission policy. It
+// retains the type terms and access contract through substitution; display
+// text and backend symbols are never used to select a member target.
+struct MemberDispatchRequirement {
+  std::string requirement_id;
+  TypeRef receiver;
+  std::string member_name;
+  std::vector<TypeRef> argument_types;
+  std::optional<TypeRef> result;
+  AccessMode receiver_access{AccessMode::Read};
+  std::vector<AccessMode> argument_access;
+  std::optional<std::string> admitted_template_or_builtin_family;
+  std::optional<std::string> selected_callable_id;
+  RequirementOrigin origin;
+  std::optional<std::string> parent_requirement_id;
+};
+
+// All consumers use the same length-prefixed specialization-v2 encoding.
+// The caller supplies resolved callable/receiver/callable-argument identities;
+// this record cannot turn an open TypeRef into a concrete key.
+struct SpecializationKey {
+  std::string callable_id;
+  std::optional<TypeRef> receiver;
+  std::vector<TypeRef> arguments;
+  std::vector<std::string> callable_arguments;
+  std::vector<std::pair<uint32_t, TypeRef>> open_result_bindings;
+
+  std::optional<std::string> stable_key() const {
+    if (callable_id.empty()) return std::nullopt;
+    std::string material;
+    Type::append_part(material, "specialization-v2");
+    Type::append_part(material, callable_id);
+    Type::append_part(material, receiver ? "receiver" : "no-receiver");
+    if (receiver) {
+      if (!*receiver || !(*receiver)->is_closed()) return std::nullopt;
+      Type::append_part(material, (*receiver)->stable_type_key());
+    }
+    Type::append_part(material, std::to_string(arguments.size()));
+    for (const auto& argument : arguments) {
+      if (!argument || !argument->is_closed()) return std::nullopt;
+      Type::append_part(material, argument->stable_type_key());
+    }
+    Type::append_part(material, std::to_string(callable_arguments.size()));
+    for (const auto& callable : callable_arguments)
+      Type::append_part(material, callable);
+    Type::append_part(material, std::to_string(open_result_bindings.size()));
+    for (const auto& binding : open_result_bindings) {
+      if (!binding.second || !binding.second->is_closed()) return std::nullopt;
+      Type::append_part(material, std::to_string(binding.first));
+      Type::append_part(material, binding.second->stable_type_key());
+    }
+    return "specialization-v2:sha256:" + source_free_contract_sha256(material);
+  }
 };
 
 // One solver belongs to one inference session. Variables are allocated, never
@@ -826,5 +885,28 @@ public:
     return variables_.at(root(id)).requirements;
   }
 };
+
+inline MemberDispatchRequirement resolve_member_requirement(
+    TypeSolver& solver, const MemberDispatchRequirement& requirement) {
+  MemberDispatchRequirement result = requirement;
+  if (result.receiver) result.receiver = solver.resolve(result.receiver);
+  for (auto& argument : result.argument_types)
+    if (argument) argument = solver.resolve(argument);
+  if (result.result && *result.result)
+    result.result = solver.resolve(*result.result);
+  return result;
+}
+
+inline bool member_requirement_is_closed(
+    const MemberDispatchRequirement& requirement) {
+  if (!requirement.receiver || !requirement.receiver->is_closed() ||
+      requirement.argument_access.size() != requirement.argument_types.size() ||
+      !requirement.admitted_template_or_builtin_family ||
+      !requirement.selected_callable_id) return false;
+  for (const auto& argument : requirement.argument_types)
+    if (!argument || !argument->is_closed()) return false;
+  return !requirement.result ||
+      (*requirement.result && (*requirement.result)->is_closed());
+}
 
 } // namespace moss
