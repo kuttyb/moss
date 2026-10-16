@@ -88,8 +88,22 @@ Validation:
 - `4e7f44b`: `make examples` passed; suite without the conformance line
   stopped at `check_builtin_generic_typing.py` (3 pre-existing failures).
 - `d75c11f` (clean detached worktree `tmp/moss-worktrees/phase25-g-validate`):
-  `make` and `make examples` passed; full `make check` running — result not
-  yet recorded. `2a5314d` validated only by focused suites (generic
+  `make` and `make examples` passed; `make check` failed at `tests/run.sh:1153`
+  (stale `Option<Quote>` text check, fixed in `50e4b1b`).
+- **`0cabf6b`: full uninterrupted validation PASSED** in the clean detached
+  worktree: `make` exit 0; `TMPDIR="$PWD/tmp" make examples` exit 0;
+  `TMPDIR="$PWD/tmp" make check` exit 0 ("all Moss v0.1 tests passed";
+  Executor 54/54; generic specialization 40/40; builtin generic typing
+  129/129; G2 conformance 10/11 with gate 10 PENDING joint integration).
+  Earlier segmented runs at `50e4b1b` and `5baff68` found the stale checks
+  fixed in `5baff68` and `0cabf6b`.
+- **`9f68822` (handoff SHA, includes `1e72261`): full uninterrupted validation
+  PASSED** in the clean detached worktree: `make` exit 0; `make examples` exit
+  0; `make check` exit 0 ("all Moss v0.1 tests passed"; Executor 54/54;
+  generic specialization 40/40; builtin generic typing 129/129; G2
+  conformance 10/11, gate 10 PENDING joint integration).
+- L7 then approved Architect findings G-A-3 and G-A-1 as P0 (see the L7
+  decision entry); Checkpoint A (G-A3 nominal identities) is in progress. `2a5314d` validated only by focused suites (generic
   specialization 40/40, builtin generic typing 129/129, conformance, multi-file
   project, module ambiguity, same-module types, Phase 21 pipelines).
 
