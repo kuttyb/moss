@@ -20191,9 +20191,15 @@ class Generator {
     // A specialization can be projected into distinct provider/consumer rlibs.
     // Preserve native debug-map symbols, but scope them to the emitting module
     // artifact so those otherwise-identical semantic projections cannot collide
-    bool open_return = !specialization && f.return_type &&
-        (*f.return_type == "vector" || *f.return_type == "queue" || *f.return_type == "map");
-    bool can_export = !view && (specialization || (!f.generic && !container_generic && !open_return));
+    // An open result stays a Rust type parameter even in a static
+    // specialization (e.g. a consumer's `Provider.fresh()`): each Moss call
+    // site binds it independently, exactly as for a source-backed `fresh()`.
+    const string open_result_type = specialization
+        ? specialization->return_type : f.return_type.value_or("unit");
+    bool open_return = open_result_type == "vector" ||
+        open_result_type == "queue" || open_result_type == "map";
+    bool can_export = !view && !open_return &&
+        (specialization || (!f.generic && !container_generic));
     string native_identity = semantic_identity;
     if (specialization && p_.explicit_module && !p_.module_name.empty())
       native_identity += "@artifact:" + p_.module_name;
@@ -20214,11 +20220,12 @@ class Generator {
         !f.generic && !container_generic && !open_return;
     o << ((materialized_export || (specialization && public_specializations_)) ? "pub " : "")
       << "fn " << generated_symbol;
-    if (!specialization && (f.generic || container_generic || open_return)) {
+    if (open_return || (!specialization && (f.generic || container_generic))) {
       o << "<";
       size_t gi = 0;
       for (const auto& p : f.params)
-        if (constraint_ops(f, p.name).size() || p.type == "vector" || p.type == "queue") {
+        if (!specialization &&
+            (constraint_ops(f, p.name).size() || p.type == "vector" || p.type == "queue")) {
           if (gi++) o << ", ";
           o << "T_" << p.name;
         }
@@ -28001,7 +28008,12 @@ static void prepare_and_validate_module_exports(Program& program,
   for (const auto& domain : program.domains) domains.insert(domain.name);
   for (auto& function : program.functions) {
     if (!function.exported) continue;
-    bool open = function.generic || std::any_of(
+    // An open result (`fresh() -> []`) is an Option B summary: each consumer
+    // call instantiates fresh variables, so it is exported like a generic.
+    bool open_result = function.return_type &&
+        (*function.return_type == "vector" || *function.return_type == "map" ||
+         *function.return_type == "queue");
+    bool open = function.generic || open_result || std::any_of(
         function.params.begin(), function.params.end(),
         [](const Param& parameter) { return parameter.type.empty(); });
     // An explicitly untyped exported parameter is a Moss generic even when
