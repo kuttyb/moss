@@ -19,6 +19,12 @@ ABI-v10 container in `src/source_free_abi_v10.hpp` and tests it with
   digest covers the exact emitted interface bytes with its own line removed.
 - Validation of the selected rlib archive for exactly one matching native object
   marker. Rust metadata copies do not satisfy the marker requirement.
+- `src/abi_v10_records.hpp` defines a bounded tagged `TypeExpr` wire encoding
+  with scoped bound-variable ordinals. Its nominal-template, open-summary,
+  specialization, and key-proof payload codecs validate record versions,
+  structural closure, access modes, topologically ordered requirement parents,
+  dependency ordering, canonical specialization keys, and key-proof IDs.
+  Wire types are serialization values, not a second inference engine.
 
 The interface hash excludes its own header field and the provider digest to
 avoid self-reference. It includes the other header fields and all canonical
@@ -27,11 +33,12 @@ sections. This is the precise byte encoding for the staged line format.
 ## Integration still required
 
 This codec is isolated from `src/moss.cpp` while the authoritative Type IR and
-solver are being integrated. It does not yet serialize or validate typed
-`NominalTemplate`, `ConcreteInstance`, `OpenCallableSummary`, method,
-specialization, key-proof, effects, or provenance DAG records. The record
-payloads are deliberately opaque to this container layer. The production
-loader does not accept v10 or emit a v10 rlib marker. Therefore no compiled-only
+solver are being integrated. The container still treats payloads as opaque;
+the compiler must dispatch each semantic record to the typed payload validator
+before importing it. Concrete instances, method templates, full effect leaves,
+private semantic IR, and provenance records still need typed codecs and
+cross-record referential validation. The production loader does not accept v10
+or emit a v10 rlib marker. Therefore no compiled-only
 Moss provider/consumer, two-consumer identity, summary freshening, cache
 invalidation, or source-free proof-matrix result is claimed here.
 
@@ -53,3 +60,6 @@ tmp/abi_v10_staging
 The test covers canonical roundtrip, sealed payload mutation, v9/schema/native
 version rejection, trailing bytes, duplicate records, invalid UTF-8,
 metadata-only marker rejection, and duplicate native-object markers.
+It also checks nested tagged types, bound-variable scope, nominal field
+uniqueness, requirement-parent order, closed specialization keys, and forged
+key-proof identities.

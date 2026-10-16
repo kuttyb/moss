@@ -1,4 +1,4 @@
-#include "../../src/source_free_abi_v10.hpp"
+#include "../../src/abi_v10_records.hpp"
 
 #include <cassert>
 #include <iostream>
@@ -104,6 +104,110 @@ int main() {
     assert(false && "duplicate seal accepted");
   } catch (const Error& error) {
     assert(error.code == "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
+  }
+
+  using namespace moss::abi_v10;
+  const WireType int_type{WireTypeKind::Primitive, "int", {}, 0};
+  const WireType var_type{WireTypeKind::BoundVar, "", {}, 0};
+  const WireType box_of_var{WireTypeKind::Nominal,
+                            "sha256:" + std::string(64, 'c'), {var_type}, 0};
+  const auto nested = type_bytes(
+      {WireTypeKind::Builtin, "Vector", {box_of_var}, 0}, 1);
+  WireReader type_reader(nested);
+  const auto parsed_type = read_type(type_reader, 1);
+  assert(type_reader.done() && parsed_type.arguments[0].arguments[0].ordinal == 0);
+  try {
+    (void)type_bytes(var_type, 0);
+    assert(false && "unbound wire type variable accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_SUMMARY_INVALID");
+  }
+
+  NominalTemplate nominal;
+  nominal.template_id = "sha256:" + std::string(64, 'c');
+  nominal.module_id = value.module_id;
+  nominal.declaration_name = "Box";
+  nominal.variable_count = 1;
+  nominal.fields.push_back({"value", var_type, true, "boxes:field:1"});
+  nominal.representation_hash = "sha256:" + std::string(64, 'd');
+  nominal.provenance_id = "boxes:1";
+  const auto nominal_record = template_record(nominal);
+  validate_template(nominal_record);
+  assert(read_template(nominal_record.payload).fields[0].name == "value");
+  nominal.fields.push_back(nominal.fields[0]);
+  try {
+    (void)template_payload(nominal);
+    assert(false && "duplicate field accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+  }
+
+  Summary summary;
+  summary.callable_id = "module-v1:boxes@1.0.0::Boxes::fresh";
+  summary.variable_count = 1;
+  summary.result = box_of_var;
+  summary.body_semantic_hash = "sha256:" + std::string(64, 'e');
+  summary.provenance_id = "boxes:fn:2";
+  summary.requirements.push_back({var_type, "to_string", Access::Read, 0,
+                                   "boxes:fn:3"});
+  const auto open_record = summary_record(summary);
+  validate_summary(open_record);
+  assert(read_summary(open_record.payload).variable_count == 1);
+  auto forged_summary = open_record;
+  forged_summary.id = "sha256:" + std::string(64, '0');
+  try {
+    validate_summary(forged_summary);
+    assert(false && "forged summary ID accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_SUMMARY_INVALID");
+  }
+  summary.requirements[0].parent = 1;
+  try {
+    (void)summary_payload(summary);
+    assert(false && "self-parent requirement accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_SUMMARY_INVALID");
+  }
+
+  Specialization specialization;
+  specialization.callable_id = summary.callable_id;
+  specialization.arguments.push_back(int_type);
+  specialization.argument_access.push_back(Access::Read);
+  specialization.result = {WireTypeKind::Nominal, nominal.template_id,
+                           {int_type}, 0};
+  specialization.materialization_owner = "consumer-free-function";
+  specialization.native_symbol = "fresh_int";
+  specialization.semantic_hash = "sha256:" + std::string(64, 'f');
+  const auto specialization_wire = specialization_record(specialization);
+  validate_specialization(specialization_wire);
+  auto forged_specialization = specialization_wire;
+  forged_specialization.id = "sha256:" + std::string(64, '0');
+  try {
+    validate_specialization(forged_specialization);
+    assert(false && "forged specialization key accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+  }
+
+  KeyProof proof;
+  proof.key_type = int_type;
+  proof.equality_callable_id = "builtin::int_isequal";
+  proof.equality_specialization_key = "sha256:" + std::string(64, '1');
+  proof.equality_semantic_hash = "sha256:" + std::string(64, '2');
+  proof.hash_callable_id = "builtin::int_hash";
+  proof.hash_specialization_key = "sha256:" + std::string(64, '3');
+  proof.hash_semantic_hash = "sha256:" + std::string(64, '4');
+  proof.law_contract_version = "key-laws-v1";
+  proof.provenance_id = "builtin:int";
+  const auto proof_wire = key_proof_record(proof);
+  validate_key_proof(proof_wire);
+  auto forged_proof = proof_wire;
+  forged_proof.id = "sha256:" + std::string(64, '5');
+  try {
+    validate_key_proof(forged_proof);
+    assert(false && "forged key-proof identity accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_CONTRACT_INVALID");
   }
   std::cout << "ABI-v10 staged container tests passed\n";
 }
