@@ -233,6 +233,8 @@ static string specialization_calling_module(const Program& program,
 
 static string canonical_type_name(string type) {
   type = trim(std::move(type));
+  if (auto parsed = moss::Type::parse_canonical(type))
+    return (*parsed)->to_canonical_string();
   if (type == "Int") return "int";
   if (type == "Float") return "float";
   if (type == "Bool") return "bool";
@@ -268,30 +270,22 @@ static string canonical_type_name(string type) {
 }
 
 static bool is_nominal_instance_type(const string& type) {
-  auto bracket = type.find('[');
-  if (bracket == string::npos || !ends_with(type, "]")) return false;
-  auto inside = type.substr(bracket + 1, type.size() - bracket - 2);
-  return inside.find('=') != string::npos;
+  auto parsed = moss::Type::parse_canonical(type);
+  return parsed && (*parsed)->kind == moss::TypeKind::NominalInstance;
 }
 
 static string nominal_template_name(const string& type) {
-  auto bracket = type.find('[');
-  if (bracket == string::npos) return canonical_type_name(type);
-  return canonical_type_name(type.substr(0, bracket));
+  auto parsed = moss::Type::parse_canonical(type);
+  return parsed && (*parsed)->kind == moss::TypeKind::NominalInstance
+      ? (*parsed)->name : canonical_type_name(type);
 }
 
 static std::vector<std::pair<string, string>> nominal_field_substitutions(const string& type) {
   std::vector<std::pair<string, string>> result;
-  auto bracket = type.find('[');
-  if (bracket == string::npos || !ends_with(type, "]")) return result;
-  auto inside = type.substr(bracket + 1, type.size() - bracket - 2);
-  auto parts = split_top_level(inside, ',');
-  for (const auto& part : parts) {
-    auto eq = part.find('=');
-    if (eq != string::npos) {
-      result.emplace_back(trim(part.substr(0, eq)), canonical_type_name(part.substr(eq + 1)));
-    }
-  }
+  auto parsed = moss::Type::parse_canonical(type);
+  if (!parsed || (*parsed)->kind != moss::TypeKind::NominalInstance) return result;
+  for (const auto& field : (*parsed)->field_substitutions)
+    result.emplace_back(field.first, field.second->to_canonical_string());
   return result;
 }
 
@@ -2562,7 +2556,13 @@ class Checker {
     string target = canonical_type_name(new_type_raw);
     if (bound.empty() || bound == "_value" || starts_with(bound, "_generic:")) return true;
     if (target.empty() || target == "_value" || starts_with(target, "_generic:")) return true;
-    if (bound == target) return true;
+    auto bound_ir = moss::Type::parse_canonical(bound);
+    auto target_ir = moss::Type::parse_canonical(target);
+    if (bound_ir && target_ir && (*bound_ir)->structurally_equal(**target_ir)) return true;
+    if (bound_ir && target_ir &&
+        (*bound_ir)->kind == moss::TypeKind::Primitive &&
+        (*target_ir)->kind == moss::TypeKind::NominalInstance &&
+        (*bound_ir)->name == (*target_ir)->name) return true;
     if (bound == "vector" && starts_with(target, "vector[")) return true;
     if (target == "vector" && starts_with(bound, "vector[")) return true;
     if (bound == "queue" && starts_with(target, "queue[")) return true;
@@ -4649,7 +4649,9 @@ class Checker {
   }
 
   static bool same_type(const string& left, const string& right) {
-    return canonical_type_name(left) == canonical_type_name(right);
+    auto left_ir = moss::Type::parse_canonical(canonical_type_name(left));
+    auto right_ir = moss::Type::parse_canonical(canonical_type_name(right));
+    return left_ir && right_ir && (*left_ir)->structurally_equal(**right_ir);
   }
 
   std::unordered_map<string,string> instantiated_function_env(

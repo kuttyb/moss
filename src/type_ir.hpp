@@ -1,15 +1,21 @@
 #pragma once
 
 #include <algorithm>
+#include <charconv>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
+#include "source_free_abi_v9.hpp"
 
 namespace moss {
 
@@ -120,6 +126,52 @@ public:
     return true;
   }
 
+  bool structurally_equal(const Type& other) const {
+    if (kind != other.kind) return false;
+    if (kind == TypeKind::InferenceVar) return var_id == other.var_id;
+    if (kind != TypeKind::Unit && name != other.name) return false;
+    if (type_args.size() != other.type_args.size() ||
+        field_substitutions.size() != other.field_substitutions.size()) return false;
+    for (size_t i = 0; i < type_args.size(); ++i)
+      if (!type_args[i]->structurally_equal(*other.type_args[i])) return false;
+    for (size_t i = 0; i < field_substitutions.size(); ++i)
+      if (field_substitutions[i].first != other.field_substitutions[i].first ||
+          !field_substitutions[i].second->structurally_equal(
+              *other.field_substitutions[i].second)) return false;
+    return true;
+  }
+
+  static void append_part(std::string& out, std::string_view part) {
+    out += std::to_string(part.size());
+    out += ':';
+    out.append(part.data(), part.size());
+  }
+
+  std::string structural_key() const {
+    std::string key;
+    append_part(key, std::to_string(static_cast<unsigned>(kind)));
+    if (kind == TypeKind::InferenceVar) {
+      append_part(key, std::to_string(var_id.session_id));
+      append_part(key, std::to_string(var_id.owner_id));
+      append_part(key, std::to_string(var_id.ordinal));
+    } else {
+      append_part(key, name);
+      append_part(key, std::to_string(type_args.size()));
+      for (const auto& arg : type_args) append_part(key, arg->structural_key());
+      append_part(key, std::to_string(field_substitutions.size()));
+      for (const auto& field : field_substitutions) {
+        append_part(key, field.first);
+        append_part(key, field.second->structural_key());
+      }
+    }
+    return key;
+  }
+
+  std::string stable_type_key() const {
+    if (!is_closed()) throw std::invalid_argument("open type has no stable type key");
+    return "type-key-v1:sha256:" + source_free_contract_sha256(structural_key());
+  }
+
   std::string to_canonical_string() const {
     switch (kind) {
       case TypeKind::Primitive:
@@ -159,85 +211,110 @@ public:
     return name;
   }
 
-  static std::vector<std::string> split_top_level_types(const std::string& s) {
-    std::vector<std::string> out;
-    int depth = 0;
-    size_t start = 0;
-    for (size_t i = 0; i < s.size(); ++i) {
-      char c = s[i];
-      if (c == '[') ++depth;
-      else if (c == ']') --depth;
-      else if (c == ',' && depth == 0) {
-        out.push_back(s.substr(start, i - start));
-        start = i + 1;
+  // This parser is for legacy display/ABI ingress. Semantic operations use the
+  // resulting tree; they never search display text for brackets or '='.
+  static std::optional<TypeRef> parse_canonical(std::string_view raw) {
+    struct Parser {
+      std::string_view text;
+      size_t pos{0};
+      void space() {
+        while (pos < text.size() && (text[pos] == ' ' || text[pos] == '\t' ||
+               text[pos] == '\n' || text[pos] == '\r')) ++pos;
       }
-    }
-    out.push_back(s.substr(start));
-    return out;
+      std::string token() {
+        space();
+        size_t begin = pos;
+        while (pos < text.size() && text[pos] != '[' && text[pos] != ']' &&
+               text[pos] != ',' && text[pos] != '=' && text[pos] != ' ' &&
+               text[pos] != '\t' && text[pos] != '\n' && text[pos] != '\r') ++pos;
+        return std::string(text.substr(begin, pos - begin));
+      }
+      static std::optional<uint32_t> number(std::string_view value) {
+        uint32_t result = 0;
+        auto parsed = std::from_chars(value.data(), value.data() + value.size(), result);
+        if (value.empty() || parsed.ec != std::errc{} ||
+            parsed.ptr != value.data() + value.size()) return std::nullopt;
+        return result;
+      }
+      std::optional<TypeRef> parse(unsigned depth = 0) {
+        if (depth >= 128) return std::nullopt;
+        std::string head = token();
+        if (head.empty()) return std::nullopt;
+        space();
+        if (pos < text.size() && text[pos] == '[') {
+          ++pos;
+          std::vector<TypeRef> args;
+          std::vector<std::pair<std::string, TypeRef>> fields;
+          bool nominal = false, positional = false;
+          do {
+            space();
+            if (pos == text.size() || text[pos] == ']') return std::nullopt;
+            size_t start = pos;
+            std::string candidate = token();
+            space();
+            if (pos < text.size() && text[pos] == '=') {
+              if (positional || candidate.empty()) return std::nullopt;
+              nominal = true;
+              ++pos;
+              auto value = parse(depth + 1);
+              if (!value) return std::nullopt;
+              for (const auto& field : fields)
+                if (field.first == candidate) return std::nullopt;
+              fields.emplace_back(candidate, *value);
+            } else {
+              if (nominal) return std::nullopt;
+              positional = true;
+              pos = start;
+              auto value = parse(depth + 1);
+              if (!value) return std::nullopt;
+              args.push_back(*value);
+            }
+            space();
+            if (pos < text.size() && text[pos] == ']') { ++pos; break; }
+            if (pos == text.size() || text[pos] != ',') return std::nullopt;
+            ++pos;
+          } while (true);
+          if (nominal) return Type::nominal(head, std::move(fields));
+          if (head == "Vector") head = "vector";
+          else if (head == "Map") head = "map";
+          else if (head == "Queue") head = "queue";
+          return Type::builtin(head, std::move(args));
+        }
+        if (head == "unit") return Type::unit();
+        if (head == "Int" || head == "int") return Type::primitive("int");
+        if (head == "Float" || head == "float") return Type::primitive("float");
+        if (head == "Bool" || head == "bool") return Type::primitive("bool");
+        if (head == "String" || head == "string") return Type::primitive("string");
+        if (head == "Vector") head = "vector";
+        else if (head == "Map") head = "map";
+        else if (head == "Queue") head = "queue";
+        if (head == "vector" || head == "map" || head == "queue")
+          return Type::builtin(head, {});
+        constexpr std::string_view prefix = "_typevar:";
+        if (head.rfind(prefix, 0) == 0) {
+          std::string_view ids(head.data() + prefix.size(), head.size() - prefix.size());
+          auto first = ids.find(':');
+          auto second = first == std::string_view::npos ? first : ids.find(':', first + 1);
+          if (first == std::string_view::npos || second == std::string_view::npos)
+            return std::nullopt;
+          auto session = number(ids.substr(0, first));
+          auto owner = number(ids.substr(first + 1, second - first - 1));
+          auto ordinal = number(ids.substr(second + 1));
+          if (!session || !owner || !ordinal) return std::nullopt;
+          return Type::var({*session, *owner, *ordinal});
+        }
+        return Type::primitive(head);
+      }
+    } parser{raw};
+    auto parsed = parser.parse();
+    parser.space();
+    return parsed && parser.pos == raw.size() ? parsed : std::nullopt;
   }
 
   static TypeRef from_canonical_string(const std::string& raw) {
-    std::string s;
-    for (char c : raw) {
-      if (c != ' ' && c != '\t' && c != '\n' && c != '\r') s.push_back(c);
-    }
-    if (s.empty()) return unit();
-    if (s == "unit") return unit();
-    if (s == "int" || s == "Int") return primitive("int");
-    if (s == "float" || s == "Float") return primitive("float");
-    if (s == "bool" || s == "Bool") return primitive("bool");
-    if (s == "string" || s == "String") return primitive("string");
-
-    auto bracket = s.find('[');
-    if (bracket != std::string::npos && s.back() == ']') {
-      std::string head = s.substr(0, bracket);
-      std::string inside = s.substr(bracket + 1, s.size() - bracket - 2);
-      auto parts = split_top_level_types(inside);
-      // Check if parts are of the form key=val (NominalInstance)
-      bool is_nominal = false;
-      for (const auto& part : parts) {
-        if (part.find('=') != std::string::npos) {
-          is_nominal = true;
-          break;
-        }
-      }
-      if (is_nominal) {
-        std::vector<std::pair<std::string, TypeRef>> subs;
-        for (const auto& part : parts) {
-          auto eq = part.find('=');
-          if (eq != std::string::npos) {
-            std::string k = part.substr(0, eq);
-            std::string v = part.substr(eq + 1);
-            subs.push_back({k, from_canonical_string(v)});
-          }
-        }
-        return nominal(head, std::move(subs));
-      } else {
-        std::vector<TypeRef> args;
-        for (const auto& part : parts) {
-          args.push_back(from_canonical_string(part));
-        }
-        return builtin(head, std::move(args));
-      }
-    }
-
-    if (s.rfind("_typevar:", 0) == 0) {
-      // parse _typevar:session:owner:ordinal
-      TypeVarId id;
-      size_t c1 = s.find(':', 9);
-      if (c1 != std::string::npos) {
-        size_t c2 = s.find(':', c1 + 1);
-        if (c2 != std::string::npos) {
-          id.session_id = std::stoul(s.substr(9, c1 - 9));
-          id.owner_id = std::stoul(s.substr(c1 + 1, c2 - c1 - 1));
-          id.ordinal = std::stoul(s.substr(c2 + 1));
-          return var(id);
-        }
-      }
-    }
-
-    // Default to primitive/nominal by name
-    return primitive(s);
+    auto parsed = parse_canonical(raw);
+    if (!parsed) throw std::invalid_argument("malformed type expression: " + raw);
+    return *parsed;
   }
 };
 
@@ -314,6 +391,109 @@ struct Requirement {
   std::optional<TypeRef> result;
   AccessMode access{AccessMode::Read};
   RequirementOrigin origin;
+};
+
+// One solver belongs to one inference session. Variables are allocated, never
+// inferred from their printed name; requirements follow the representative.
+class TypeSolver {
+  struct Variable {
+    TypeVarId parent;
+    std::optional<TypeRef> binding;
+    std::vector<Requirement> requirements;
+  };
+  uint32_t session_;
+  uint32_t next_ordinal_{0};
+  std::map<TypeVarId, Variable> variables_;
+
+  TypeVarId root(TypeVarId id) {
+    auto found = variables_.find(id);
+    if (found == variables_.end()) throw std::invalid_argument("unknown type variable");
+    if (found->second.parent == id) return id;
+    found->second.parent = root(found->second.parent);
+    return found->second.parent;
+  }
+  bool occurs(TypeVarId id, const TypeRef& value) {
+    TypeRef resolved = resolve(value);
+    if (resolved->kind == TypeKind::InferenceVar) return root(resolved->var_id) == id;
+    for (const auto& arg : resolved->type_args)
+      if (occurs(id, arg)) return true;
+    for (const auto& field : resolved->field_substitutions)
+      if (occurs(id, field.second)) return true;
+    return false;
+  }
+  bool bind(TypeVarId id, const TypeRef& value) {
+    id = root(id);
+    TypeRef resolved = resolve(value);
+    if (resolved->kind == TypeKind::InferenceVar) {
+      TypeVarId other = root(resolved->var_id);
+      if (id == other) return true;
+      // Deterministic representative independent of constraint order.
+      if (other < id) std::swap(id, other);
+      auto& primary = variables_.at(id);
+      auto& secondary = variables_.at(other);
+      secondary.parent = id;
+      primary.requirements.insert(primary.requirements.end(),
+          secondary.requirements.begin(), secondary.requirements.end());
+      if (primary.binding && secondary.binding)
+        return unify(*primary.binding, *secondary.binding);
+      if (!primary.binding) primary.binding = secondary.binding;
+      return true;
+    }
+    if (occurs(id, resolved)) return false;
+    auto& variable = variables_.at(id);
+    if (variable.binding) return unify(*variable.binding, resolved);
+    variable.binding = resolved;
+    return true;
+  }
+
+public:
+  explicit TypeSolver(uint32_t session) : session_(session) {}
+  TypeRef fresh(uint32_t owner_id) {
+    TypeVarId id{session_, owner_id, next_ordinal_++};
+    variables_.emplace(id, Variable{id, std::nullopt, {}});
+    return Type::var(id);
+  }
+  TypeRef resolve(const TypeRef& value) {
+    if (value->kind == TypeKind::InferenceVar) {
+      TypeVarId id = root(value->var_id);
+      auto& variable = variables_.at(id);
+      return variable.binding ? resolve(*variable.binding) : Type::var(id);
+    }
+    if (value->type_args.empty() && value->field_substitutions.empty()) return value;
+    if (value->kind == TypeKind::Builtin) {
+      std::vector<TypeRef> args;
+      for (const auto& arg : value->type_args) args.push_back(resolve(arg));
+      return Type::builtin(value->name, std::move(args));
+    }
+    if (value->kind == TypeKind::NominalInstance) {
+      std::vector<std::pair<std::string, TypeRef>> fields;
+      for (const auto& field : value->field_substitutions)
+        fields.emplace_back(field.first, resolve(field.second));
+      return Type::nominal(value->name, std::move(fields));
+    }
+    return value;
+  }
+  bool unify(const TypeRef& left, const TypeRef& right) {
+    TypeRef a = resolve(left), b = resolve(right);
+    if (a->kind == TypeKind::InferenceVar) return bind(a->var_id, b);
+    if (b->kind == TypeKind::InferenceVar) return bind(b->var_id, a);
+    if (a->kind != b->kind || a->name != b->name ||
+        a->type_args.size() != b->type_args.size() ||
+        a->field_substitutions.size() != b->field_substitutions.size()) return false;
+    for (size_t i = 0; i < a->type_args.size(); ++i)
+      if (!unify(a->type_args[i], b->type_args[i])) return false;
+    for (size_t i = 0; i < a->field_substitutions.size(); ++i)
+      if (a->field_substitutions[i].first != b->field_substitutions[i].first ||
+          !unify(a->field_substitutions[i].second, b->field_substitutions[i].second))
+        return false;
+    return true;
+  }
+  void require(TypeVarId id, Requirement requirement) {
+    variables_.at(root(id)).requirements.push_back(std::move(requirement));
+  }
+  const std::vector<Requirement>& requirements(TypeVarId id) {
+    return variables_.at(root(id)).requirements;
+  }
 };
 
 } // namespace moss
