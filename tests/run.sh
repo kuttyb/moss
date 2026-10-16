@@ -64,6 +64,9 @@ ${CXX:-c++} -std=c++17 -Wall -Wextra -Werror -pedantic \
   tests/tooling/abi_v10_staging.cpp -o tmp/abi_v10_staging
 tmp/abi_v10_staging
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_known_open_nominal.py "$compiler"
+${CXX:-c++} -std=c++17 -Wall -Wextra -Werror -pedantic -Isrc \
+  tests/tooling/abi_v10_adversarial.cpp -o tmp/abi_v10_adversarial
+tmp/abi_v10_adversarial
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_conformance.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/phase25/runtime/check_runtime.py
 PYTHONDONTWRITEBYTECODE=1 python3 sdk/foundations/acceptance/run_all.py
