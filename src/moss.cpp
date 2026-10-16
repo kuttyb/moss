@@ -29465,6 +29465,9 @@ static ParsedModuleUnit load_module_interface(
       Field value;
       value.exported = true;
       field >> value.name >> value.type;
+      // An untyped provider field is a template slot, exactly as in source:
+      // each consumer constructor call supplies its own substitution.
+      value.inferred = value.type.empty();
       current_object->fields.push_back(std::move(value));
       continue;
     }

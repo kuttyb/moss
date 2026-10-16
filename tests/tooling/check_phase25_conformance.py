@@ -108,8 +108,8 @@ PROVIDER_BOX = '''module Provider
 export type Box:
   value
 
-export fn unbox(box: Box):
-  return box.value
+export fn unbox(item: Box):
+  return item.value
 '''
 
 PROVIDER_SIMPLE = '''module Provider
@@ -343,8 +343,8 @@ def g9_two_consumers(s):
         root, _ = consumer(s / "sf9", name, f'''module Consumer
 import Provider
 fn main():
-  box = Provider.Box(value: {value})
-  echo Provider.unbox(box)
+  item = Provider.Box(value: {value})
+  echo Provider.unbox(item)
 ''')
         data = source_free_run(root, env, expected)
         outputs.append(data)
