@@ -7,6 +7,8 @@ tmp/**
 !tests/tooling/fixtures/*.rs
 !tests/phase25/g0/rust/*.rs
 !tests/phase25/g0/rust/**/*.rs
+!runtime/moss_runtime/src/*.rs
+!tests/phase25/runtime/*.rs
 examples/**.rs
 examples/**/*.rs
 *.mossmap

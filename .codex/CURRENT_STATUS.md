@@ -6,6 +6,24 @@ Branch `phase25-generic-types` began at `a50fa30c8420538534471c4404afb0c645ae9b0
 
 Team G concurrence with all five numbered Team S interface sections is recorded in `docs/phase25/TEAM_S_TEAM_G_INTERFACE_AGREEMENT.md`. G-A Type IR, G-C shared runtime, G-D staged ABI-v10 and G-E conformance work are in independent worktrees; production ABI v9 remains active pending the joint cutover. Validation and independent reviews remain outstanding.
 
+## Phase 25 Team G G-C runtime worktree — 2026-10-16
+
+Branch `phase25-g-c-runtime` adds an isolated compiler-owned
+`runtime/moss_runtime` crate with deterministic bucketed `MossMap<K,V>` storage,
+eager owned `keys()` snapshots, and `MossSet<K>` over the same kernel. A
+bounded Rust provider/two-consumer test links one runtime artifact and checks
+cross-crate nominal Map identity and Set behavior. `tests/run.sh` invokes the
+proof. `runtime/moss_runtime/INTEGRATION.md` records the exact ABI-v10
+compiler-link and binary-contract hooks still to be integrated after the
+single shared-file writer hands off `src/moss.cpp`.
+
+Validation completed on this worktree: `./moss agent bootstrap --json` reported
+`moss-0.1`; `python3 tests/phase25/runtime/check_runtime.py` passed;
+`CARGO_TARGET_DIR="$PWD/tmp/phase25-moss-runtime-cargo" cargo test --manifest-path
+runtime/moss_runtime/Cargo.toml --offline` passed 3 unit tests; `git diff
+--check` passed. This standalone Rust proof does not establish a compiled-only
+Moss provider/consumer gate, which remains pending compiler ABI-v10 integration.
+
 ## Phase 25 Milestone G2 Implementation & Conformance Complete — 2026-10-15
 
 Milestone G2 implementation on branch `phase25-generic-types` is complete and verified according to `docs/phase25/TYPE_IR_CONTRACT.md` and L7 review directives:

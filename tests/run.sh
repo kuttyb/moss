@@ -58,6 +58,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_bitwise_operations
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_recursive_layout.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_type_ir.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_conformance.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/phase25/runtime/check_runtime.py
 PYTHONDONTWRITEBYTECODE=1 python3 sdk/foundations/acceptance/run_all.py
 PYTHONDONTWRITEBYTECODE=1 python3 sdk/text-encoding-acceptance/run_all.py
 PYTHONDONTWRITEBYTECODE=1 python3 sdk/advanced-data-acceptance/run_all.py
