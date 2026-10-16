@@ -80,7 +80,8 @@ struct NominalDeclaration {
   std::string declaration_name;  // source declaration name
   std::string id;                // nominal-template-v1:<module_id>:type:<name>
   std::vector<NominalFieldSlot> fields;  // records only, in source order
-  const TypeContext* owner{nullptr};     // resolves declared field types
+  // The session that owns this declaration; resolves declared field types.
+  std::weak_ptr<const TypeContext> owner;
 
   size_t inferred_slot_count() const {
     return static_cast<size_t>(std::count_if(fields.begin(), fields.end(),
@@ -107,14 +108,14 @@ inline std::string declaration_identity(DeclarationKind kind,
 // program spelling to its interned declaration exactly once; after that every
 // comparison and key uses the declaration identity. The active context is
 // scoped (RAII) to the checker/generator/build step that owns the program.
-class TypeContext {
+class TypeContext : public std::enable_shared_from_this<TypeContext> {
  public:
   // Interns a declaration. Re-declaring one program name with a different
   // identity is a compiler error, never a silent replacement.
   NominalDeclarationRef declare(NominalDeclaration declaration) {
     declaration.id = declaration_identity(declaration.kind, declaration.module_id,
                                           declaration.declaration_name);
-    declaration.owner = this;
+    declaration.owner = weak_from_this();
     auto existing = by_name_.find(declaration.program_name);
     if (existing != by_name_.end()) {
       if (existing->second->id != declaration.id)
@@ -140,14 +141,16 @@ class TypeContext {
   }
   class Scope {
    public:
-    explicit Scope(const TypeContext* context) : active_(context != nullptr) {
+    explicit Scope(const TypeContext* context)
+        : active_(context != nullptr), context_(context) {
       if (active_) stack().push_back(context);
     }
-    ~Scope() { if (active_) stack().pop_back(); }
+    ~Scope() { if (active_) release(context_); }
     Scope(const Scope&) = delete;
     Scope& operator=(const Scope&) = delete;
    private:
     bool active_;
+    const TypeContext* context_;
   };
   // A copyable member form of Scope for objects (such as the generator) that
   // are themselves copied; each live copy keeps the same context bound.
@@ -156,13 +159,23 @@ class TypeContext {
     explicit Binding(const TypeContext* context) : context_(context) { push(); }
     Binding(const Binding& other) : context_(other.context_) { push(); }
     Binding& operator=(const Binding&) = delete;
-    ~Binding() { if (context_) stack().pop_back(); }
+    ~Binding() { if (context_) release(context_); }
    private:
     void push() { if (context_) stack().push_back(context_); }
     const TypeContext* context_;
   };
 
  private:
+  // Removes the most recent binding of `context`, so a scope that ends out of
+  // order cannot unbind another session's context.
+  static void release(const TypeContext* context) {
+    auto& contexts = stack();
+    for (auto entry = contexts.rbegin(); entry != contexts.rend(); ++entry)
+      if (*entry == context) {
+        contexts.erase(std::next(entry).base());
+        return;
+      }
+  }
   static std::vector<const TypeContext*>& stack() {
     thread_local std::vector<const TypeContext*> contexts;
     return contexts;
@@ -559,7 +572,11 @@ public:
 inline std::vector<TypeRef> Type::resolved_fields() const {
   if (kind != TypeKind::NominalInstance || !is_closed())
     throw std::invalid_argument("only a closed nominal instance has resolved fields");
-  TypeContext::Scope scope(declaration->owner);
+  auto owner = declaration->owner.lock();
+  if (!owner)
+    throw std::invalid_argument("declaration " + declaration->id +
+                                " outlived its compilation session");
+  TypeContext::Scope scope(owner.get());
   std::vector<TypeRef> fields;
   size_t inferred = 0;
   for (const auto& slot : declaration->fields) {

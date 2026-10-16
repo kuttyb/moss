@@ -264,11 +264,71 @@ fn main():
              module_env(impostor_artifacts, consumer_a_artifacts))
 
 
+def case_f(scratch):
+    """Identity comes from the declaration's module, not its spelling."""
+    project = scratch / "nmproj"
+    source = package(project, "nmproj", "4.5.6", "main.moss", '''type Foo__Bar:
+  value: Int
+
+type Plain:
+  value: Int
+
+fn main():
+  b = Foo__Bar(value: 1)
+  p = Plain(value: 2)
+  echo b.value
+  echo p.value
+''')
+    mangled = nominal("b", source, kind="binding", enclosing="main")
+    plain = nominal("p", source, kind="binding", enclosing="main")
+    assert mangled["declaration_id"] == template_id("nmproj", "4.5.6", "nmproj", "Foo__Bar"), mangled
+    assert plain["declaration_id"] == template_id("nmproj", "4.5.6", "nmproj", "Plain"), plain
+    standalone = scratch / "standalone.moss"
+    standalone.write_text('''type Foo__Bar:
+  value: Int
+
+fn main():
+  b = Foo__Bar(value: 1)
+  echo b.value
+''')
+    other = nominal("b", standalone, kind="binding", enclosing="main")
+    assert other["declaration_id"] != mangled["declaration_id"], (other, mangled)
+    assert other["instance_key"] != mangled["instance_key"], (other, mangled)
+    # One spelling names one declaration across records, enums, domains, traits.
+    for name, text in (("type_domain", '''type X:
+  value: Int
+
+domain X:
+  count: Int = 0
+
+  fn Get() -> Int:
+    reply count
+
+fn main():
+  echo 1
+'''), ("trait_type", '''trait Circle:
+  fn area() -> Int
+
+type Circle:
+  radius: Int
+
+  fn area():
+    return radius * radius
+
+fn main():
+  echo Circle(radius: 3).area()
+''')):
+        clash = scratch / f"{name}.moss"
+        clash.write_text(text)
+        error = rejected(clash, {"DUPLICATE_SYMBOL"})
+        assert error["line"] > 0, error
+
+
 def main():
     (ROOT / "tmp").mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="phase25-nominal-identity-", dir=ROOT / "tmp") as directory:
         scratch = Path(directory)
-        for case in ("a", "b", "c", "d"):
+        for case in ("a", "b", "c", "d", "f"):
             (scratch / case).mkdir()
         case_a(scratch / "a")
         print("G-A3 case A (same layout, different declarations): PASS")
@@ -279,6 +339,8 @@ def main():
         print("G-A3 case E (provider source removed): PASS")
         case_d(scratch / "d", *artifacts)
         print("G-A3 case D (provider impersonation): PASS")
+        case_f(scratch / "f")
+        print("G-A3 case F (declaration-module identity, one name per declaration): PASS")
     print("Phase 25 G-A3 nominal identity: PASS")
     return 0
 
