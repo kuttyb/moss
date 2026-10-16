@@ -4,7 +4,8 @@
 **L7-reviewed starting checkpoint:** `c2e106c0da3debde6b0334c23d45635f2b498cd6`
 **Team G checkpoint reviewed:** `a50fa30c8420538534471c4404afb0c645ae9b0c`
 **Architect-reviewed consolidated SHA:** `906b99d4068d1c2bbc92548249d8abb24eaea11f` (CONDITIONAL GO)
-**Delivered implementation SHA:** `8d62f0a43915ef0e616b449270c227b0e3162c26` (Architect conditions 024/025 fixed; closure check requested)
+**Architect GO SHA:** `8d62f0a43915ef0e616b449270c227b0e3162c26` (**GO for the L7 checkpoint**, Addendum 4)
+**Delivered implementation SHA:** `dea9a4e21f9925e6d69943960eee0239460f2a3b` (post-GO fix of ARCH-027/028; not Architect-reviewed)
 
 Nothing was merged into `main` or `phase25-integration`, and there was no
 ABI-v10 switch.
@@ -16,7 +17,7 @@ ABI-v10 switch.
 | S-A numeric literals | `1_000`, `0x10` and the existing Float forms go through **one shared parser** (`src/numeric_literal.hpp`), canonicalized in the lexer and emitted as `16_i64` / `2.5_f64`. Int bounds are signed 64-bit; only a directly negated 2^63 (decimal or hex) is accepted. `1e400` gives `FLOAT_LITERAL_OUT_OF_RANGE`. `0b`, `0o` and type suffixes are rejected. 68 accepted literals agree with a Python oracle in three engines; 63 rejection cases. |
 | S-B check and display | Standalone and project `moss check` share one semantic pipeline (`check_project_semantics`; project check no longer lowers). `echo` of a Vector follows a deterministic contract (Int, canonical Float, Bool, raw Char/String, nested Vectors, typed `[]`) through a Moss runtime helper and never Rust `{:?}`. Map, Queue, records, enums, callables, Unit and untyped `[]` give `ECHO_DISPLAY_UNSUPPORTED` in every engine and both check modes. |
 | S-C safe arithmetic | Int `/` and `%` by an Int literal other than 0 and -1 is proven non-panicking in the one observable-effect analysis. That analysis feeds `SORT_KEY_IMPURE`, initializer purity, fusion and speculation, and `.mossi` `may_panic`. Unknown, zero and `-1` divisors stay conservative. `Int.MIN / -1` and `% -1` already wrap identically in all engines (no runtime change). Lawful nominal `isequal`/`hash` methods using `% 10` and `/ 10` are pure. |
-| S-D Architect | Reviewed `3577dbc`: ARCH-020/021 closed, net-new 022/023. Reviewed the consolidated `906b99d`: 018/019/022/023 closed, S-A and S-C meet all L7 requirements, net-new 024/025/026. 022–025 are fixed; 026 is tracked. |
+| S-D Architect | `3577dbc`: ARCH-020/021 closed, net-new 022/023. Consolidated `906b99d`: 018/019/022/023 closed; S-A and S-C meet all L7 requirements; net-new 024/025/026. Closure `8d62f0a`: **GO**; 024/025 closed, no false positives; net-new 027 (fix required before recording S1 acceptance) and 028. 027/028 fixed at `dea9a4e`; 026 tracked. |
 | Runtime agreement | L7 decision recorded in `TEAM_S_TEAM_G_INTERFACE_AGREEMENT.md`, with a Team S review of Team G `a50fa30` and a concurrence checklist. **Team G Coordinator concurrence: pending** (no Team G session was reachable; the request is in the pushed document). |
 | Item 6 (deferred) | Reproducer retained (S3 L1); the required effect information is documented; no workaround. |
 
@@ -32,8 +33,10 @@ ABI-v10 switch.
 | P25-S-ARCH-024 | Architect at `906b99d` (pre-existing) | `p.zz`, `x.foo`, `x.5`, `s.length`, `v.0` passed check and failed in both engines | `8d62f0a` (`UNKNOWN_FIELD`) |
 | P25-S-ARCH-025 | Architect at `906b99d` | `echo []` passed check and failed in rustc | `8d62f0a` (`ECHO_DISPLAY_UNSUPPORTED`) |
 | P25-S-ARCH-026 | Architect at `906b99d` | S-A lexer diagnostics report column 1 | **tracked** |
+| P25-S-ARCH-027 | Architect at `8d62f0a` | `1.exp`, `12.e`, `1_000.name` slipped through the Float-literal exemption | `dea9a4e` (exponent must be `e`, sign, digits) |
+| P25-S-ARCH-028 | Architect at `8d62f0a` | Collection hint suggested a nonexistent `.len()` | `dea9a4e` (`\|> count` hint) |
 
-Regressions for 022–025 are in `check_phase25_s2_char_string.py::test_architect_next_cycle_findings`.
+Regressions for 022–025 and 027 are in `check_phase25_s2_char_string.py::test_architect_next_cycle_findings`.
 
 ## L7 requirement checklist
 
@@ -68,11 +71,14 @@ Regressions for 022–025 are in `check_phase25_s2_char_string.py::test_architec
 
 ## Validation
 
-**Delivered SHA `8d62f0a43915ef0e616b449270c227b0e3162c26`** (clean worktree):
+**Architect GO SHA `8d62f0a43915ef0e616b449270c227b0e3162c26`** (clean worktree):
 `TMPDIR="$PWD/tmp" make check` **passed** (Executor 54/54, editor 61/61, "all
 Moss v0.1 tests passed"); `make examples` **passed** (32).
 
-**Consolidated SHA `906b99d`**, the one the Architect reviewed, also passed
+**Final delivered SHA `dea9a4e21f9925e6d69943960eee0239460f2a3b`** (clean worktree): `make check` **passed** (Executor
+54/54, editor 61/61, all Moss v0.1 tests); `make examples` **passed** (32).
+
+Earlier: **Architect GO SHA `8d62f0a`** above. **Consolidated SHA `906b99d`**, the one the Architect reviewed, also passed
 both.
 
 New suites registered in `tests/run.sh`:
