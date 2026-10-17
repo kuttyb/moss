@@ -5908,6 +5908,20 @@ class Checker {
         string base, index_expression;
         if (parse_index(statement.a, base, index_expression)) {
           auto container = env.find(base);
+          auto retained = current_body_types_
+              ? current_body_types_->resolved_local(base) : nullptr;
+          if (container != env.end() && retained && retained->is_closed() &&
+              !contains_internal_placeholder(retained->to_canonical_string())) {
+            container->second = retained->to_canonical_string();
+            if (record_semantic_types)
+              for (auto& prior : const_cast<vector<Stmt>&>(statements))
+                if (prior.a == base && prior.b == "Map()") {
+                  prior.semantic_type = container->second;
+                  if (!join_context.empty())
+                    prior.semantic_types_by_context[join_context] = container->second;
+                }
+            return;
+          }
           auto value_type = inferred_expr_type(statement.b, env);
           if (container != env.end() && value_type) {
             auto key_type = inferred_expr_type(index_expression, env);
@@ -5954,6 +5968,24 @@ class Checker {
     if (statement.kind == Stmt::Kind::Call && !statement.b.empty() &&
         statement.b == "push" && statement.args.size() == 1) {
       auto container = env.find(statement.a);
+      auto retained = current_body_types_
+          ? current_body_types_->resolved_local(statement.a) : nullptr;
+      if (container != env.end() && retained && retained->is_closed() &&
+          !contains_internal_placeholder(retained->to_canonical_string())) {
+        container->second = retained->to_canonical_string();
+        if (record_semantic_types)
+          for (auto& prior : const_cast<vector<Stmt>&>(statements))
+            if (prior.a == statement.a &&
+                (prior.b == "[]" || prior.b == "Queue()" ||
+                 parse_vector_literal(prior.b).has_value() ||
+                 starts_with(prior.semantic_type, "vector") ||
+                 starts_with(prior.semantic_type, "queue"))) {
+              prior.semantic_type = container->second;
+              if (!join_context.empty())
+                prior.semantic_types_by_context[join_context] = container->second;
+            }
+        return;
+      }
       auto argument = inferred_expr_type(statement.args.front(), env);
       if (container != env.end() && argument) {
         if (auto refined = refine_bare_collection(container->second,

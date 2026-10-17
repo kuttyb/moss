@@ -438,6 +438,14 @@ fn main():
         checked(map_key_conflict, "TYPE_MISMATCH")
         print("PASS indexed writes retain one Map key type", flush=True)
 
+        inferred_map = source(scratch, "inferred_map_index", '''fn main():
+  var values = Map()
+  values[1] = "one"
+  echo values[1]
+''')
+        parity(inferred_map, scratch, "one\n")
+        print("PASS indexed Map write projects solved key/value types", flush=True)
+
         map_read_conflict = source(scratch, "one_map_key_read", '''fn main():
   var values = Map()
   values[1] = "one"
