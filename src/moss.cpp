@@ -2699,7 +2699,18 @@ class Checker {
               break;
             case ConstraintKind::Field:
               requirement.kind = moss::RequirementKind::Field;
-              requirement.target_id = constraint.detail;
+              if (subject->second->kind != moss::TypeKind::NominalInstance ||
+                  !subject->second->declaration ||
+                  std::none_of(subject->second->declaration->fields.begin(),
+                               subject->second->declaration->fields.end(),
+                               [&](const moss::NominalFieldSlot& slot) {
+                    return slot.name == constraint.detail;
+                  })) {
+                complete = false;
+              } else {
+                requirement.target_id = subject->second->declaration->id +
+                    ":field:" + constraint.detail;
+              }
               break;
             case ConstraintKind::Indexable:
               requirement.kind = moss::RequirementKind::Index;
@@ -27975,6 +27986,28 @@ static void write_typed_semantic_projection_json(std::ostream& out,
     }
     out << "]";
   };
+  auto write_parameter_leaf_effects = [&](const auto& effects) {
+    if (!effects) { out << "null"; return; }
+    out << "{";
+    bool first_kind = true;
+    for (const auto& [name, leaves] :
+         vector<std::pair<string, const moss::StateLeafSet*>>{
+             {"reads", &effects->reads}, {"writes", &effects->writes},
+             {"consumes", &effects->consumes}}) {
+      if (!first_kind) out << ",";
+      first_kind = false;
+      write_debug_json_string(out, name);
+      out << ":[";
+      bool first_leaf = true;
+      for (const auto& leaf : *leaves) {
+        if (!first_leaf) out << ",";
+        first_leaf = false;
+        write_debug_json_string(out, leaf);
+      }
+      out << "]";
+    }
+    out << "}";
+  };
   out << "{\"version\": ";
   write_debug_json_string(out, moss::TypedSemanticModuleV1::version);
   out << ", \"open_summaries_complete\": "
@@ -27987,6 +28020,7 @@ static void write_typed_semantic_projection_json(std::ostream& out,
     const auto& summary = entry.second;
     out << "{\"callable_id\": ";
     write_debug_json_string(out, summary.callable_id);
+    out << ", \"exported\": " << (summary.exported ? "true" : "false");
     out << ", \"bound_variable_count\": " << summary.bound_variable_count;
     out << ", \"parameter_types\": [";
     for (size_t index = 0; index < summary.parameter_types.size(); ++index) {
@@ -28008,6 +28042,8 @@ static void write_typed_semantic_projection_json(std::ostream& out,
     out << "]";
     out << ", \"module_id\": ";
     write_debug_json_string(out, summary.provenance.defining_module_id);
+    out << ", \"parameter_leaf_effects\": ";
+    write_parameter_leaf_effects(summary.parameter_leaf_effects);
     out << "}";
   }
   out << "]";
@@ -28071,6 +28107,9 @@ static void write_typed_semantic_projection_json(std::ostream& out,
     out << "{\"key\": "; write_debug_json_string(out, entry.first);
     out << ", \"callable_id\": ";
     write_debug_json_string(out, specialization.callable_id);
+    out << ", \"exported\": " << (specialization.exported ? "true" : "false");
+    out << ", \"parameter_leaf_effects\": ";
+    write_parameter_leaf_effects(specialization.parameter_leaf_effects);
     out << ", \"parameter_type_keys\": [";
     for (size_t index = 0; index < specialization.parameter_types.size(); ++index) {
       if (index) out << ",";

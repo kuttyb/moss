@@ -56,9 +56,11 @@ struct TypedSpecializationV1 {
   std::string key;
   SpecializationKey identity;
   std::string callable_id;
+  bool exported{false};
   std::vector<TypeRef> parameter_types;
   TypeRef result_type;
   std::vector<Effect> parameter_access;
+  std::optional<StateLeafEffects> parameter_leaf_effects;
   ObservableEffects observable_effects;
   std::vector<MemberDispatchRequirement> member_requirements;
   std::vector<TypedSemanticDependencyV1> dependencies;
@@ -69,6 +71,7 @@ struct TypedSpecializationV1 {
 // never guessed from the function's display result or source text.
 struct TypedOpenCallableSummaryV1 {
   std::string callable_id;
+  bool exported{false};
   uint32_t bound_variable_count{0};
   std::vector<TypeRef> parameter_types;
   TypeRef result_type;
@@ -76,6 +79,8 @@ struct TypedOpenCallableSummaryV1 {
   std::vector<MemberDispatchRequirement> member_requirements;
   std::vector<std::string> semantic_dependencies;
   std::vector<AccessMode> parameter_access;
+  // Present only when the checker retained exact parameter leaf paths.
+  std::optional<StateLeafEffects> parameter_leaf_effects;
   ObservableEffects observable_effects;
   TypedSourceProvenanceV1 provenance;
 };
@@ -258,6 +263,7 @@ inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) 
         throw std::invalid_argument("complete open summary contains invalid bound variable");
       TypedOpenCallableSummaryV1 summary;
       summary.callable_id = checked.callable_id;
+      summary.exported = function.exported;
       summary.bound_variable_count = checked.bound_variable_count;
       summary.parameter_types = checked.parameter_types;
       summary.result_type = checked.result_type;
@@ -265,6 +271,7 @@ inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) 
       summary.member_requirements = checked.member_requirements;
       summary.semantic_dependencies = checked.semantic_dependencies;
       summary.parameter_access = checked.parameter_access;
+      summary.parameter_leaf_effects = function.parameter_leaf_effects;
       summary.observable_effects = checked.observable_effects;
       summary.provenance = {checked.origin.source_file, checked.origin.line,
           checked.origin.module_id, checked.origin.enclosing_callable};
@@ -308,9 +315,11 @@ inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) 
       record.key = specialization.stable_type_key;
       record.identity = specialization.semantic_key;
       record.callable_id = function.semantic_callable_id;
+      record.exported = function.exported;
       record.parameter_types = specialization.parameter_type_refs;
       record.result_type = specialization.return_type_ref;
       record.parameter_access = specialization.parameter_effects;
+      record.parameter_leaf_effects = function.parameter_leaf_effects;
       record.observable_effects = specialization.observable_effects;
       record.member_requirements = specialization.member_requirements;
       const auto bound_module = program.module_identities.find(function.defining_module);

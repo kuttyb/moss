@@ -61,6 +61,7 @@ fn main():
                        for entry in typed["specializations"]}
     box = specializations[f"callable-v1:{module}:fn:unbox"]
     cell = specializations[f"callable-v1:{module}:fn:uncell"]
+    assert not box["exported"] and box["parameter_leaf_effects"] is None, box
     assert box["key"].startswith("specialization-v2:sha256:")
     assert cell["key"].startswith("specialization-v2:sha256:")
     assert box["key"] != cell["key"]
@@ -73,6 +74,8 @@ fn main():
                        typed["open_summaries"]}
     for name, template in (("unbox", "Box"), ("uncell", "Cell")):
         summary = field_summaries[f"callable-v1:{module}:fn:{name}"]
+        assert not summary["exported"], summary
+        assert summary["parameter_leaf_effects"] is None, summary
         assert summary["bound_variable_count"] == 1, summary
         assert summary["result_type"] == {"kind": "bound_var", "ordinal": 0}, summary
         assert summary["parameter_types"] == [{"kind": "nominal",
@@ -228,6 +231,7 @@ fn main():
         assert imported_summaries[identity]["module_id"] == provider_id, (
             identity, imported_typed)
         assert imported_summaries[identity]["bound_variable_count"] == 1
+        assert imported_summaries[identity]["exported"], imported_summaries
     assert imported_summaries[f"callable-v1:{provider_id}:fn:relay"]["semantic_dependencies"] == [
         f"callable-v1:{provider_id}:fn:fresh"], imported_summaries
     assert not imported_typed["open_summaries_complete"], imported_typed
