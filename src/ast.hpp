@@ -252,6 +252,9 @@ struct FunctionSpecialization {
   vector<TypeRef> parameter_type_refs;
   TypeRef return_type_ref;
   string stable_type_key;
+  // A direct return of another open-result callable selects that callee's
+  // exact checked instance after this specialization's result closes.
+  string result_call_key;
   // Concrete observable effects drive the native Result ABI of this static
   // specialization. A duck-typed method may raise even when the unspecialized
   // function body cannot resolve that method's exact variant.

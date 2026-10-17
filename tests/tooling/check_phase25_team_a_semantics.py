@@ -186,6 +186,13 @@ fn main():
   echo b[0]
 ''')
         parity(relay, scratch, "1\nhello\n")
+        relay_calls = run(MOSS, "calls", "relay", "--source", relay, "--json")
+        assert relay_calls.returncode == 0, (relay_calls.stdout, relay_calls.stderr)
+        relay_edges = [edge for edge in json.loads(relay_calls.stdout)["result"]["direct_calls"]
+                       if edge["target"] == "fn:fresh" and
+                       edge.get("caller_specialization_key")]
+        assert len(relay_edges) == 2, relay_edges
+        assert len({edge["specialization_key"] for edge in relay_edges}) == 2, relay_edges
         print("PASS transitive open-result calls freshen independently", flush=True)
 
         nested_open = source(scratch, "nested_open_result", '''fn nested():
@@ -196,8 +203,8 @@ fn main():
   values.push([1])
   echo values[1][0]
 ''')
-        checked(nested_open)
-        print("PASS nested open result closes from a later push", flush=True)
+        parity(nested_open, scratch, "1\n")
+        print("PASS nested open result closes across three engines", flush=True)
 
         nominal_open = source(scratch, "nominal_open_result", '''type Box:
   value
@@ -210,8 +217,8 @@ fn main():
   item = Box(value: [1])
   echo item.value[0]
 ''')
-        checked(nominal_open)
-        print("PASS nominal open field closes from one binding", flush=True)
+        parity(nominal_open, scratch, "1\n")
+        print("PASS nominal open field closes across three engines", flush=True)
 
         conflict = source(scratch, "one_binding_conflict", '''fn main():
   a = []

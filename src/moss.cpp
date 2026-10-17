@@ -2353,6 +2353,7 @@ class Checker {
   string current_semantic_context_;
   const Stmt* current_check_statement_ = nullptr;
   string current_check_body_context_;
+  const Function* current_check_result_function_ = nullptr;
   mutable const Stmt* ownership_current_stmt_ = nullptr;
   vector<Warning> warnings_;
   bool phase21_warnings_enabled_ = true;
@@ -5969,14 +5970,15 @@ class Checker {
           scan[statement.a] = *inferred;
           continue;
         }
+        auto prior = locals.find(statement.a);
         if (!instantiated && !record_call_facts &&
+            prior == locals.end() &&
             ((*parsed)->kind != moss::TypeKind::Builtin ||
              !moss::Type::collection_arity((*parsed)->name))) {
           scan[statement.a] = *inferred;
           continue;
         }
         moss::TypeRef term = instantiated ? instantiated : freshen_open_type(*parsed);
-        auto prior = locals.find(statement.a);
         const bool prior_open = prior != locals.end() &&
             !solver.resolve(prior->second)->is_closed();
         // Fresh declarations inside separate branches have separate lexical
@@ -14126,7 +14128,8 @@ class Checker {
       if (!checking_specialization_ &&
           starts_with(current_semantic_context_, "fn:"))
         return;  // An open source scheme closes in each concrete caller.
-      err(line, "static specialization has an unresolved result type",
+      err(line, "static specialization of function '" + function.name +
+          "' has an unresolved result type",
           "TYPE_AMBIGUOUS_OPEN_RESULT");
     }
     auto semantic_key = specialization_key_inputs(
@@ -14178,11 +14181,15 @@ class Checker {
     if (!result)
       err(line, "cannot determine the concrete result type for static specialization of function '" +
           function.name + "'");
-    if (contains_internal_placeholder(*result)) {
+    auto projected_result_ref = moss::Type::parse_canonical(
+        canonical_type_name(*result));
+    if (contains_internal_placeholder(*result) || !projected_result_ref ||
+        !(*projected_result_ref)->is_closed()) {
       if (!checking_specialization_ &&
           starts_with(current_semantic_context_, "fn:"))
         return;
-      err(line, "static specialization has an unresolved result type",
+      err(line, "static specialization of function '" + function.name +
+          "' has an unresolved result type",
           "TYPE_AMBIGUOUS_OPEN_RESULT");
     }
     FunctionSpecialization specialization;
@@ -14240,9 +14247,17 @@ class Checker {
         check_ownership_expression(function.result_line ? function.result_line : function.line,
                                    *function.result_expression, final_ownership, Effect::Consume);
     }
-    if (function.result_expression)
+    if (function.result_expression) {
+      struct ResultExpressionScope {
+        const Function*& slot;
+        const Function* prior;
+        ResultExpressionScope(const Function*& target, const Function& current)
+            : slot(target), prior(target) { slot = &current; }
+        ~ResultExpressionScope() { slot = prior; }
+      } result_scope(current_check_result_function_, function);
       check_expression(function.result_line ? function.result_line : function.line,
                        *function.result_expression, specialized_env);
+    }
     } catch (CompileError& error) {
       checking_specialization_ = previous;
       annotate_specialization_failure(error, function, line, call_source);
@@ -14457,6 +14472,7 @@ class Checker {
       auto requirements = validate_method_requirements(
           line, *function->second, actual_types);
       const OpenCallResultFacts* open_result = nullptr;
+      std::optional<OpenCallResultFacts> returned_result;
       if (current_check_statement_ &&
           current_check_statement_->line == line) {
         const auto& statement = *current_check_statement_;
@@ -14475,6 +14491,89 @@ class Checker {
                 function->second->semantic_callable_id)
           open_result = &retained->second;
       }
+      if (!open_result && current_check_result_function_ &&
+          checking_specialization_ &&
+          function->second->open_summary &&
+          function->second->open_summary->complete) {
+        const string* result_expression = current_check_statement_ &&
+            current_check_statement_->kind == Stmt::Kind::Return
+            ? &current_check_statement_->a
+            : current_check_result_function_->result_expression
+                ? &*current_check_result_function_->result_expression
+                : nullptr;
+        string direct_callee;
+        vector<string> direct_arguments;
+        if (result_expression &&
+            parse_simple_call(trim(*result_expression), direct_callee,
+                              direct_arguments) &&
+            direct_callee == name && direct_arguments == args &&
+            checking_specialization_->return_type_ref) {
+          const auto& summary = *function->second->open_summary;
+          moss::TypeSolver solver(1);
+          vector<moss::TypeRef> fresh;
+          for (uint32_t ordinal = 0; ordinal < summary.bound_variable_count;
+               ++ordinal)
+            fresh.push_back(solver.fresh(1));
+          std::function<moss::TypeRef(const moss::TypeRef&)> instantiate =
+              [&](const moss::TypeRef& type) -> moss::TypeRef {
+            if (!type) return nullptr;
+            if (type->kind == moss::TypeKind::InferenceVar)
+              return type->var_id.session_id == 0 &&
+                     type->var_id.ordinal < fresh.size()
+                  ? fresh[type->var_id.ordinal] : nullptr;
+            if (type->kind == moss::TypeKind::Builtin) {
+              vector<moss::TypeRef> children;
+              for (const auto& child : type->type_args)
+                children.push_back(instantiate(child));
+              return moss::Type::builtin(type->name, std::move(children));
+            }
+            if (type->kind == moss::TypeKind::NominalInstance) {
+              vector<std::pair<string, moss::TypeRef>> fields;
+              for (const auto& field : type->field_substitutions)
+                fields.emplace_back(field.first, instantiate(field.second));
+              return moss::Type::nominal_bound(type->declaration, type->name,
+                                               std::move(fields));
+            }
+            return type;
+          };
+          if (summary.parameter_types.size() == actual_types.size()) {
+            for (size_t index = 0; index < actual_types.size(); ++index) {
+              auto actual = moss::Type::parse_canonical(
+                  canonical_type_name(actual_types[index]));
+              auto formal = instantiate(summary.parameter_types[index]);
+              if (!actual || !formal || !solver.unify(*actual, formal))
+                err(line, "open-result call argument conflicts with its summary",
+                    "TYPE_MISMATCH");
+            }
+            auto result = instantiate(summary.result_type);
+            if (!result || !solver.unify(result,
+                                        checking_specialization_->return_type_ref))
+              err(line, "returned open call conflicts with the closed result type",
+                  "TYPE_MISMATCH");
+            returned_result.emplace();
+            returned_result->callable_id =
+                function->second->semantic_callable_id;
+            returned_result->result = solver.resolve(result);
+            std::set<uint32_t> ordinals;
+            std::function<void(const moss::TypeRef&)> collect =
+                [&](const moss::TypeRef& type) {
+              if (!type) return;
+              if (type->kind == moss::TypeKind::InferenceVar) {
+                ordinals.insert(type->var_id.ordinal);
+                return;
+              }
+              for (const auto& child : type->type_args) collect(child);
+              for (const auto& field : type->field_substitutions)
+                collect(field.second);
+            };
+            collect(summary.result_type);
+            for (uint32_t ordinal : ordinals)
+              returned_result->ordered_bindings.emplace_back(
+                  ordinal, solver.resolve(fresh[ordinal]));
+            open_result = &*returned_result;
+          }
+        }
+      }
       register_static_specialization(line, *function->second, actual_types,
                                      std::move(requirements), std::nullopt,
                                      open_result ? open_result->ordered_bindings
@@ -14491,8 +14590,15 @@ class Checker {
           err(line, "open-result specialization has unresolved type bindings",
               "TYPE_AMBIGUOUS_OPEN_RESULT");
         const string exact_key = *key->stable_key();
-        const_cast<Stmt*>(current_check_statement_)->open_call_keys_by_context[
-            current_check_body_context_] = exact_key;
+        if (current_check_statement_ && !returned_result)
+          const_cast<Stmt*>(current_check_statement_)->open_call_keys_by_context[
+              current_check_body_context_] = exact_key;
+        if (returned_result && current_check_statement_ &&
+            checking_specialization_)
+          const_cast<Stmt*>(current_check_statement_)->open_call_keys_by_context[
+              checking_specialization_->stable_type_key] = exact_key;
+        if (returned_result && checking_specialization_)
+          checking_specialization_->result_call_key = exact_key;
         const string caller_key = checking_specialization_
             ? checking_specialization_->stable_type_key : string();
         std::optional<SemanticCallEdge> source_edge;
@@ -14502,7 +14608,7 @@ class Checker {
               edge.line != line ||
               (edge.target != function->second->name &&
                edge.target != "fn:" + function->second->name) ||
-              (!edge.source_file.empty() &&
+              (!returned_result && !edge.source_file.empty() &&
                edge.source_file != current_check_statement_->source_file))
             continue;
           if (edge.source_specialization_key.empty() && !source_edge)
@@ -15889,6 +15995,13 @@ class Checker {
           !statement.a.empty()) {
         // As with replies, syntax/call legality is authoritative and must be
         // checked before suggesting a statically typed expression.
+        struct ReturnCallScope {
+          const Function*& slot;
+          const Function* prior;
+          ReturnCallScope(const Function*& target, const Function& current)
+              : slot(target), prior(target) { slot = &current; }
+          ~ReturnCallScope() { slot = prior; }
+        } return_call_scope(current_check_result_function_, *current_function);
         check_expression(statement.line, statement.a, current_env);
         auto actual = inferred_expr_type(statement.a, current_env);
         if (actual && (*actual == "vector" || *actual == "queue" || *actual == "map")) {
@@ -15924,6 +16037,10 @@ class Checker {
             traits_.count(canonical_type_name(*current_function->return_type)) &&
             concrete_specialization_type(*actual) &&
             trait_conforms(*actual, *current_function->return_type);
+        auto actual_result_ref = moss::Type::parse_canonical(
+            canonical_type_name(*actual));
+        bool open_result_shape = actual_result_ref &&
+            !(*actual_result_ref)->is_closed();
         if (current_function->return_type &&
             !contains_internal_placeholder(*current_function->return_type) &&
             !starts_with(*actual, "_generic:") &&
@@ -15931,6 +16048,9 @@ class Checker {
             !starts_with(*actual, "_functional_callable_result:") &&
             !trait_result_match &&
             !option_none_compatible(*actual, *current_function->return_type) &&
+            !(checking_specialization_ &&
+              open_result_shape &&
+              is_type_compatible(*current_function->return_type, *actual)) &&
             !same_type(*actual, *current_function->return_type))
           err(statement.line, "function '" + current_function->name + "' returns '" +
               *actual + "' but is annotated '" + *current_function->return_type + "'");
@@ -17629,6 +17749,9 @@ class Generator {
   std::set<string> phase21_option_slots_;
   const Stmt* phase21_codegen_statement_ = nullptr;
   string codegen_body_context_;
+  string codegen_active_specialization_key_;
+  const FunctionSpecialization* codegen_result_specialization_ = nullptr;
+  string codegen_result_expression_;
 
   static bool handler_has_failure_captures(const Handler& handler) {
     if (handler.provider_abi)
@@ -18179,16 +18302,40 @@ class Generator {
   const FunctionSpecialization* call_specialization(
       const Function& function, const vector<string>& arguments,
       const std::unordered_map<string,string>* types) const {
+    if (codegen_result_specialization_ &&
+        !codegen_result_specialization_->result_call_key.empty()) {
+      string direct_callee;
+      vector<string> direct_arguments;
+      if (parse_simple_call(trim(codegen_result_expression_), direct_callee,
+                            direct_arguments) &&
+          direct_callee == function.name && direct_arguments == arguments) {
+        auto exact = std::find_if(function.specializations.begin(),
+                                  function.specializations.end(),
+                                  [&](const FunctionSpecialization& candidate) {
+          return candidate.stable_type_key ==
+              codegen_result_specialization_->result_call_key;
+        });
+        if (exact == function.specializations.end())
+          throw std::runtime_error(
+              "checked returned-call key is absent from native projection");
+        return &*exact;
+      }
+    }
     if (phase21_codegen_statement_) {
       const Stmt& statement = *phase21_codegen_statement_;
       auto selected = statement.open_call_keys_by_context.find(
-          codegen_body_context_);
+          codegen_active_specialization_key_);
+      if (selected == statement.open_call_keys_by_context.end())
+        selected = statement.open_call_keys_by_context.find(
+            codegen_body_context_);
       if (selected == statement.open_call_keys_by_context.end())
         selected = statement.open_call_keys_by_context.find("");
       string direct_callee;
       vector<string> direct_arguments;
+      const string& call_expression = statement.kind == Stmt::Kind::Return
+          ? statement.a : statement.b;
       if (selected != statement.open_call_keys_by_context.end() &&
-          parse_simple_call(trim(statement.b), direct_callee,
+          parse_simple_call(trim(call_expression), direct_callee,
                             direct_arguments) &&
           direct_callee == function.name &&
           direct_arguments == arguments) {
@@ -21298,6 +21445,17 @@ class Generator {
 
   void gen_function_instance(std::ostringstream& o, const Function& f,
                              const FunctionSpecialization* specialization, bool view = false) {
+    struct ActiveSpecializationScope {
+      string& slot;
+      string prior;
+      ActiveSpecializationScope(string& target,
+                                const FunctionSpecialization* current)
+          : slot(target), prior(target) {
+        slot = current ? current->stable_type_key : string();
+      }
+      ~ActiveSpecializationScope() { slot = std::move(prior); }
+    } active_specialization_scope(codegen_active_specialization_key_,
+                                  specialization);
     borrowed_function_parameters_.clear();
     bool container_generic = !specialization &&
         std::any_of(f.params.begin(), f.params.end(), [](const Param& p) {
@@ -21449,6 +21607,26 @@ class Generator {
     phase21_result_context_ = raises;
     gen_stmts(o, f.body, nullptr, nullptr, "", locals, types, 1, false, true, functional_context);
     if (f.result_expression) {
+      struct ResultCodegenScope {
+        const FunctionSpecialization*& specialization_slot;
+        string& expression_slot;
+        const FunctionSpecialization* prior_specialization;
+        string prior_expression;
+        ResultCodegenScope(const FunctionSpecialization*& selected,
+                           string& source, const FunctionSpecialization* current,
+                           const string& expression)
+            : specialization_slot(selected), expression_slot(source),
+              prior_specialization(selected), prior_expression(source) {
+          specialization_slot = current;
+          expression_slot = expression;
+        }
+        ~ResultCodegenScope() {
+          specialization_slot = prior_specialization;
+          expression_slot = std::move(prior_expression);
+        }
+      } result_scope(codegen_result_specialization_,
+                     codegen_result_expression_, specialization,
+                     *f.result_expression);
       source_comment(o, 4, f.result_line, *f.result_expression);
       auto plan = f.result_functional_pipeline_ids.find(functional_context);
       string rendered = expr(*f.result_expression, nullptr, locals, &types,
