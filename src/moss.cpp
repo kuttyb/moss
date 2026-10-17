@@ -608,7 +608,7 @@ static ConcreteParameterABI concrete_parameter_abi(Effect effect,
 }
 // The one specialization identity (TYPE_IR_CONTRACT §3.3). Legacy typed
 // strings enter at this boundary only; all key material is checked Type IR.
-static std::optional<string> specialization_stable_key(
+static std::optional<moss::SpecializationKey> specialization_key_inputs(
     const string& callable_id, const vector<string>& types,
     const std::optional<moss::TypeRef>& receiver = std::nullopt,
     const vector<std::pair<uint32_t, moss::TypeRef>>& open_result_bindings = {}) {
@@ -628,22 +628,38 @@ static std::optional<string> specialization_stable_key(
     if (!parsed || !(*parsed)->is_closed()) return std::nullopt;
     key.arguments.push_back(*parsed);
   }
-  return key.stable_key();
+  if (!key.stable_key()) return std::nullopt;
+  return key;
 }
 
 static bool specialization_matches(const Function& function,
                                    const FunctionSpecialization& specialization,
                                    const vector<string>& types) {
-  auto key = specialization_stable_key(function.semantic_callable_id, types);
-  return key && *key == specialization.stable_type_key;
+  vector<string> canonical_types;
+  for (const auto& type : types) canonical_types.push_back(canonical_type_name(type));
+  if (specialization.parameter_types != canonical_types) return false;
+  if (specialization.semantic_key.stable_key() !=
+      std::optional<string>(specialization.stable_type_key)) return false;
+  return std::count_if(function.specializations.begin(),
+      function.specializations.end(), [&](const FunctionSpecialization& candidate) {
+        return candidate.parameter_types == canonical_types;
+      }) == 1;
 }
 static const FunctionSpecialization* concrete_specialization(
     const Function& function, const vector<string>& types) {
-  auto found = std::find_if(function.specializations.begin(),
-      function.specializations.end(), [&](const FunctionSpecialization& candidate) {
-        return specialization_matches(function, candidate, types);
-      });
-  return found == function.specializations.end() ? nullptr : &*found;
+  const FunctionSpecialization* selected = nullptr;
+  vector<string> canonical_types;
+  for (const auto& type : types) canonical_types.push_back(canonical_type_name(type));
+  for (const auto& candidate : function.specializations) {
+    if (candidate.parameter_types != canonical_types) continue;
+    if (candidate.semantic_key.stable_key() !=
+        std::optional<string>(candidate.stable_type_key)) return nullptr;
+    // A parameter-only lookup is valid only when it names one checked
+    // instance. Result-bound calls supply the exact key at their call site.
+    if (selected) return nullptr;
+    selected = &candidate;
+  }
+  return selected;
 }
 
 static bool parse_index(const string& text, string& base, string& index) {
@@ -9795,7 +9811,7 @@ class Checker {
           source, "handler:" + domain + "." + handler_name, line,
           argument_types, expression_source.empty() ? physical_source
                                                      : expression_source,
-          "synchronous_message", receiver_name};
+          "synchronous_message", receiver_name, {}};
       if (std::find_if(
               p_.semantic_call_edges.begin(), p_.semantic_call_edges.end(),
               [&](const SemanticCallEdge& existing) {
@@ -9821,7 +9837,7 @@ class Checker {
                                 statement.source_file.empty()
                                     ? physical_source
                                     : statement.source_file,
-                                "ordinary_call", {}};
+                                "ordinary_call", {}, {}};
           if (std::find_if(
                   p_.semantic_call_edges.begin(),
                   p_.semantic_call_edges.end(),
@@ -9854,7 +9870,7 @@ class Checker {
                 statement.line, argument_types,
                 statement.source_file.empty() ? physical_source
                                               : statement.source_file,
-                "synchronous_message", statement.a};
+                "synchronous_message", statement.a, {}};
             if (std::find_if(
                     p_.semantic_call_edges.begin(),
                     p_.semantic_call_edges.end(),
@@ -9883,7 +9899,7 @@ class Checker {
         edge_lines.emplace(source + "\n" + call.target, result_line);
         SemanticCallEdge edge{source, call.target, result_line,
                               call.argument_types, physical_source,
-                              "ordinary_call", {}};
+                              "ordinary_call", {}, {}};
         if (std::find_if(
                 p_.semantic_call_edges.begin(),
                 p_.semantic_call_edges.end(),
@@ -13743,7 +13759,13 @@ class Checker {
   void register_static_specialization(int line, Function& function,
                                       const vector<string>& parameter_types,
                                       vector<moss::MemberDispatchRequirement>
-                                          member_requirements = {}) {
+                                          member_requirements = {},
+                                      const std::optional<moss::TypeRef>& receiver =
+                                          std::nullopt,
+                                      const vector<std::pair<uint32_t,
+                                          moss::TypeRef>>& open_result_bindings = {},
+                                      const std::optional<moss::TypeRef>&
+                                          closed_result_type = std::nullopt) {
     if (!function.static_dispatch) return;
     if (parameter_types.size() != function.params.size() ||
         !std::all_of(parameter_types.begin(), parameter_types.end(),
@@ -13755,15 +13777,17 @@ class Checker {
     vector<string> canonical_types;
     for (const auto& type : parameter_types)
       canonical_types.push_back(canonical_type_name(type));
-    auto stable_key = specialization_stable_key(
-        function.semantic_callable_id, canonical_types);
-    if (!stable_key)
+    auto semantic_key = specialization_key_inputs(
+        function.semantic_callable_id, canonical_types, receiver,
+        open_result_bindings);
+    if (!semantic_key)
       err(line, "static specialization has an unresolved argument type",
           "TYPE_AMBIGUOUS_OPEN_RESULT");
+    const string stable_key = *semantic_key->stable_key();
     auto record_dependency = [&] {
       if (!checking_specialization_) return;
       StaticSpecializationDependency dependency{function.name, canonical_types,
-                                                *stable_key};
+                                                stable_key};
       auto existing_dependency = std::find_if(
           checking_specialization_->dependencies.begin(),
           checking_specialization_->dependencies.end(),
@@ -13776,21 +13800,36 @@ class Checker {
     auto existing = std::find_if(function.specializations.begin(),
                                  function.specializations.end(),
                                  [&](const FunctionSpecialization& specialization) {
-                                   return specialization.stable_type_key == *stable_key;
+                                   return specialization.stable_type_key == stable_key;
                                  });
     if (existing != function.specializations.end()) {
+      if (existing->semantic_key.stable_key() != semantic_key->stable_key())
+        err(line, "inconsistent static specialization identity",
+            "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+      if (closed_result_type &&
+          (!existing->return_type_ref ||
+           !existing->return_type_ref->structurally_equal(**closed_result_type)))
+        err(line, "static specialization has inconsistent result types for one key",
+            "SOURCE_FREE_SPECIALIZATION_MISMATCH");
       if (existing->member_requirements.empty() && !member_requirements.empty())
         existing->member_requirements = std::move(member_requirements);
       record_dependency();
       return;
     }
     auto result = specialized_function_return_type(function, canonical_types);
+    if (closed_result_type) {
+      if (!*closed_result_type || !(*closed_result_type)->is_closed())
+        err(line, "static specialization has an unresolved result type",
+            "TYPE_AMBIGUOUS_OPEN_RESULT");
+      result = (*closed_result_type)->to_canonical_string();
+    }
     if (!result)
       err(line, "cannot determine the concrete result type for static specialization of function '" +
           function.name + "'");
     FunctionSpecialization specialization;
     specialization.generated_name = "__moss_specialize_" + function.name + "_" +
         std::to_string(function.specializations.size());
+    specialization.semantic_key = *semantic_key;
     specialization.parameter_types = canonical_types;
     specialization.return_type = canonical_type_name(*result);
     for (const auto& type : canonical_types) {
@@ -13802,7 +13841,9 @@ class Checker {
     }
     specialization.return_type_ref = moss::Type::parse_canonical(
         specialization.return_type).value_or(nullptr);
-    specialization.stable_type_key = *stable_key;
+    if (closed_result_type)
+      specialization.return_type_ref = *closed_result_type;
+    specialization.stable_type_key = stable_key;
     specialization.member_requirements = std::move(member_requirements);
     specialization.parameter_effects = concrete_function_effects(
         function, canonical_types, &specialization.parameter_mutations);
@@ -24769,18 +24810,23 @@ static std::optional<std::pair<string,string>> specialization_identity_for_call(
       program.functions.begin(), program.functions.end(),
       [&](const Function& candidate) { return candidate.name == name; });
   if (function == program.functions.end()) return std::nullopt;
+  const FunctionSpecialization* selected = nullptr;
   for (const auto& specialization : function->specializations) {
-    auto key = specialization_stable_key(function->semantic_callable_id,
-                                         edge.argument_types);
-    if (!key || *key != specialization.stable_type_key)
-      continue;
+    bool matches = !edge.specialization_key.empty()
+        ? specialization.stable_type_key == edge.specialization_key
+        : specialization.parameter_types == edge.argument_types;
+    if (!matches) continue;
+    if (selected) return std::nullopt;
+    selected = &specialization;
+  }
+  if (selected) {
     string display = "specialization:" + name + "<";
-    for (size_t index = 0; index < specialization.parameter_types.size(); ++index) {
+    for (size_t index = 0; index < selected->parameter_types.size(); ++index) {
       if (index) display += ",";
-      display += specialization.parameter_types[index];
+      display += selected->parameter_types[index];
     }
     display += ">";
-    return std::make_pair(display, specialization.stable_type_key);
+    return std::make_pair(display, selected->stable_type_key);
   }
   return std::nullopt;
 }
@@ -31130,9 +31176,10 @@ static bool edge_requires_specialization(const SemanticCallEdge& edge,
   if ((edge.target != function.name && edge.target != "fn:" + function.name) ||
       edge.argument_types.size() != specialization.parameter_types.size())
     return false;
-  return specialization_stable_key(function.semantic_callable_id,
-                                   edge.argument_types) ==
-      specialization.stable_type_key;
+  if (!edge.specialization_key.empty())
+    return edge.specialization_key == specialization.stable_type_key;
+  const auto* unique = concrete_specialization(function, edge.argument_types);
+  return unique && unique->stable_type_key == specialization.stable_type_key;
 }
 
 // A specialization remains one canonical checked fact on Function.  Native

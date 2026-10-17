@@ -226,6 +226,9 @@ struct FunctionSpecialization {
   string generated_name;
   vector<string> parameter_types;
   string return_type;
+  // The complete input to specialization-v2. In particular, result bindings
+  // distinguish calls with equal parameters whose open results close apart.
+  SpecializationKey semantic_key;
   // The checked semantic identity; text above is only an ABI/display projection.
   vector<TypeRef> parameter_type_refs;
   TypeRef return_type_ref;
@@ -324,6 +327,9 @@ struct SemanticCallEdge {
   // generated code.
   string invocation_kind = "ordinary_call";
   string receiver;
+  // Set by the checked call closure. Query and module projection consume this
+  // exact identity instead of reconstructing it from display argument types.
+  string specialization_key;
 };
 
 // Minimal resolved-use facts retained by the ordinary checker for semantic

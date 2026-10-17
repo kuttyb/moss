@@ -772,6 +772,20 @@ struct MemberDispatchRequirement {
   std::optional<std::string> parent_requirement_id;
 };
 
+// Team S supplies admission and target selection. The solver consumes its
+// equalities and retains the selected target on the original requirement.
+struct MemberAdmission {
+  enum class Status { Admitted, Deferred, Rejected };
+  Status status{Status::Deferred};
+  std::optional<std::string> admitted_template_or_builtin_family;
+  std::optional<std::string> selected_callable_id;
+  AccessMode receiver_access{AccessMode::Read};
+  std::vector<AccessMode> argument_access;
+  std::optional<TypeRef> result;
+  std::vector<std::pair<TypeRef, TypeRef>> contributes;
+  std::string diagnostic;
+};
+
 // All consumers use the same length-prefixed specialization-v2 encoding.
 // The caller supplies resolved callable/receiver/callable-argument identities;
 // this record cannot turn an open TypeRef into a concrete key.
@@ -801,7 +815,14 @@ struct SpecializationKey {
     for (const auto& callable : callable_arguments)
       Type::append_part(material, callable);
     Type::append_part(material, std::to_string(open_result_bindings.size()));
+    uint32_t previous_ordinal = 0;
+    bool first_binding = true;
     for (const auto& binding : open_result_bindings) {
+      // Summary ordinals are canonical and unique. A caller cannot silently
+      // manufacture two identities by permuting equivalent bindings.
+      if (!first_binding && binding.first <= previous_ordinal) return std::nullopt;
+      first_binding = false;
+      previous_ordinal = binding.first;
       if (!binding.second || !binding.second->is_closed()) return std::nullopt;
       Type::append_part(material, std::to_string(binding.first));
       Type::append_part(material, binding.second->stable_type_key());
@@ -935,6 +956,95 @@ inline bool member_requirement_is_closed(
   for (const auto& argument : requirement.argument_types)
     if (!argument || !argument->is_closed()) return false;
   return true;
+}
+
+struct MemberClosureResult {
+  enum class Status { Closed, Deferred, Rejected, UnificationFailed };
+  Status status{Status::Deferred};
+  std::vector<MemberDispatchRequirement> requirements;
+  std::optional<size_t> failing_requirement;
+  std::string diagnostic;
+};
+
+// A deterministic worklist for solver-owned member facts. Admission may
+// defer until earlier requirements pin a receiver. No deferred fact can be
+// reported as closed. The policy callback is the Team S boundary.
+inline MemberClosureResult close_member_requirements(
+    TypeSolver& solver, std::vector<MemberDispatchRequirement> requirements,
+    const std::function<MemberAdmission(const MemberDispatchRequirement&)>&
+        admit_member) {
+  MemberClosureResult closure;
+  closure.requirements = std::move(requirements);
+  std::vector<bool> completed(closure.requirements.size(), false);
+  size_t remaining = completed.size();
+  while (remaining) {
+    bool progress = false;
+    for (size_t index = 0; index < completed.size(); ++index) {
+      if (completed[index]) continue;
+      auto current = resolve_member_requirement(solver, closure.requirements[index]);
+      MemberAdmission admission = admit_member(current);
+      if (admission.status == MemberAdmission::Status::Deferred) continue;
+      if (admission.status == MemberAdmission::Status::Rejected) {
+        closure.status = MemberClosureResult::Status::Rejected;
+        closure.failing_requirement = index;
+        closure.diagnostic = std::move(admission.diagnostic);
+        return closure;
+      }
+      if (!admission.admitted_template_or_builtin_family ||
+          !admission.selected_callable_id ||
+          admission.argument_access.size() != current.argument_types.size()) {
+        closure.status = MemberClosureResult::Status::Rejected;
+        closure.failing_requirement = index;
+        closure.diagnostic = "member admission omitted its target or access contract";
+        return closure;
+      }
+      for (const auto& equality : admission.contributes) {
+        if (!equality.first || !equality.second ||
+            !solver.unify(equality.first, equality.second)) {
+          closure.status = MemberClosureResult::Status::UnificationFailed;
+          closure.failing_requirement = index;
+          closure.diagnostic = "member admission contributed incompatible types";
+          return closure;
+        }
+      }
+      if (current.result && admission.result &&
+          !solver.unify(*current.result, *admission.result)) {
+        closure.status = MemberClosureResult::Status::UnificationFailed;
+        closure.failing_requirement = index;
+        closure.diagnostic = "member result conflicts with its expected type";
+        return closure;
+      }
+      current.admitted_template_or_builtin_family =
+          std::move(admission.admitted_template_or_builtin_family);
+      current.selected_callable_id = std::move(admission.selected_callable_id);
+      current.receiver_access = admission.receiver_access;
+      current.argument_access = std::move(admission.argument_access);
+      if (!current.result) current.result = std::move(admission.result);
+      closure.requirements[index] = std::move(current);
+      completed[index] = true;
+      --remaining;
+      progress = true;
+    }
+    if (!progress) {
+      closure.status = MemberClosureResult::Status::Deferred;
+      for (size_t index = 0; index < completed.size(); ++index)
+        if (!completed[index]) { closure.failing_requirement = index; break; }
+      closure.diagnostic = "member receiver remains unresolved";
+      return closure;
+    }
+  }
+  for (size_t index = 0; index < closure.requirements.size(); ++index) {
+    closure.requirements[index] =
+        resolve_member_requirement(solver, closure.requirements[index]);
+    if (!member_requirement_is_closed(closure.requirements[index])) {
+      closure.status = MemberClosureResult::Status::Deferred;
+      closure.failing_requirement = index;
+      closure.diagnostic = "member requirement remains open after admission";
+      return closure;
+    }
+  }
+  closure.status = MemberClosureResult::Status::Closed;
+  return closure;
 }
 
 } // namespace moss

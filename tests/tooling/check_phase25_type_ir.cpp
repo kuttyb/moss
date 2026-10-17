@@ -173,6 +173,12 @@ int main() {
   assert(instance.stable_key() != base_key);
   instance.open_result_bindings = {{0, solver.fresh(3)}};
   assert(!instance.stable_key());
+  instance.open_result_bindings = {{1, Type::primitive("int")},
+                                   {0, Type::primitive("string")}};
+  assert(!instance.stable_key());
+  instance.open_result_bindings = {{0, Type::primitive("int")},
+                                   {0, Type::primitive("string")}};
+  assert(!instance.stable_key());
 
   moss::MemberDispatchRequirement member;
   member.requirement_id = "requirement-v1:push";
@@ -194,4 +200,43 @@ int main() {
   assert(solver.unify(open_item, Type::primitive("int")));
   auto resolved_member = moss::resolve_member_requirement(solver, member);
   assert(moss::member_requirement_is_closed(resolved_member));
+
+  // Admission is policy owned, while the solver applies contributions and
+  // refuses to close unresolved or contradictory facts.
+  TypeSolver member_solver(8);
+  auto element = member_solver.fresh(1);
+  moss::MemberDispatchRequirement open_push;
+  open_push.requirement_id = "requirement-v1:open-push";
+  open_push.receiver = Type::builtin("vector", {element});
+  open_push.member_name = "push";
+  open_push.argument_types = {Type::primitive("int")};
+  open_push.result = Type::unit();
+  open_push.origin = {app, "open.moss", 4, 3, "fn:main", "call:4:3"};
+  auto policy = [&](const moss::MemberDispatchRequirement& fact) {
+    moss::MemberAdmission answer;
+    assert(fact.origin.source_file == "open.moss");
+    answer.status = moss::MemberAdmission::Status::Admitted;
+    answer.admitted_template_or_builtin_family = "builtin:vector";
+    answer.selected_callable_id = "builtin:vector.push";
+    answer.receiver_access = moss::AccessMode::Write;
+    answer.argument_access = {moss::AccessMode::Read};
+    answer.result = Type::unit();
+    answer.contributes = {{fact.receiver->type_args[0], fact.argument_types[0]}};
+    return answer;
+  };
+  auto closure = moss::close_member_requirements(member_solver, {open_push}, policy);
+  assert(closure.status == moss::MemberClosureResult::Status::Closed);
+  assert(closure.requirements[0].origin.call_expression_id == "call:4:3");
+  assert(closure.requirements[0].receiver_access == moss::AccessMode::Write);
+  assert(closure.requirements[0].argument_access[0] == moss::AccessMode::Read);
+  assert(closure.requirements[0].receiver->type_args[0]->name == "int");
+  auto conflicting = open_push;
+  conflicting.argument_types = {Type::primitive("string")};
+  auto failed = moss::close_member_requirements(member_solver, {conflicting}, policy);
+  assert(failed.status == moss::MemberClosureResult::Status::UnificationFailed);
+  auto deferred = moss::close_member_requirements(member_solver, {open_push},
+      [](const moss::MemberDispatchRequirement&) {
+        return moss::MemberAdmission{};
+      });
+  assert(deferred.status == moss::MemberClosureResult::Status::Deferred);
 }

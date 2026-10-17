@@ -1,5 +1,23 @@
 # Moss current status
 
+## Phase 25 Team A A3 closure follow-up — 2026-10-16 (isolated milestone)
+
+The isolated `phase25-g-type-core-a3-v2` worktree extends A3 with a
+solver-owned `MemberAdmission` worklist boundary for Team S policy, ordered
+open-result binding validation, retained complete `SpecializationKey` inputs
+on each function specialization, and an exact specialization-key slot on
+semantic call edges. Query and module projection use that exact edge key when
+present and reject ambiguous same-argument fallback selection. The checker
+registration API accepts receiver, ordered open-result bindings, and a closed
+result `TypeRef`; A2 has not yet supplied the per-call post-closure facts that
+populate them. The two `make(0)` calls whose results become `Vector[Int]` and
+`Vector[String]` still receive one key before A2 integration. Do not mark A3
+closed or Team A READY on this milestone. Validation on the final isolated
+source: `make -B -j2`, Type IR, A3 compiler specialization keys, 40 generic
+specialization probes, feedback validator, and G2 conformance Gates 1–9 and
+11 passed; Gate 10 remains pending joint integration. The direct open-result
+two-key compiler probe is still failing until the A2 hook is wired.
+
 ## Phase 25 Team A authoritative type core — 2026-10-16 (in progress)
 
 The L7 directive approved Architect findings G-A-1 and G-A-3. Team A branch
