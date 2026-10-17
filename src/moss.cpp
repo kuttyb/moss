@@ -2544,6 +2544,7 @@ class Checker {
       };
       const string result = function.return_type
           ? canonical_type_name(*function.return_type) : "unit";
+      std::optional<std::pair<string, string>> returned_member;
       if (starts_with(result, "_generic:")) {
         auto source = parameter_variables.find(result.substr(9));
         if (source == parameter_variables.end()) {
@@ -2556,20 +2557,39 @@ class Checker {
                   function.body.back().kind == Stmt::Kind::Return
                   ? &function.body.back().a : nullptr;
           if (returned) {
-            TypeEnv body_env;
-            for (const auto& parameter : function.params)
-              body_env[parameter.name] = parameter.type.empty()
-                  ? "_generic:" + parameter.name : parameter.type;
-            infer_statement_expressions(function.body, body_env);
-            auto actual = inferred_expr_type(*returned, body_env);
-            if (actual && !contains_internal_placeholder(*actual)) {
-              auto parsed = moss::Type::parse_canonical(
-                  canonical_type_name(*actual));
-              if (parsed && (*parsed)->is_closed())
-                summary.result_type = *parsed;
-              else
-                complete = false;
+            if (trim(*returned) != result.substr(9)) {
+              TypeEnv parameter_entry;
+              for (const auto& parameter : function.params)
+                parameter_entry[parameter.name] = parameter.type.empty()
+                    ? "_generic:" + parameter.name : parameter.type;
+              auto body_types = solve_local_collection_types(
+                  function.body, parameter_entry,
+                  "fn:" + function.name, false, true);
+              auto actual = body_types.known_expression(*returned);
+              if (actual && actual->is_closed())
+                summary.result_type = actual;
+              else {
+                string receiver, member;
+                vector<string> arguments;
+                if (parse_member_call(trim(*returned), receiver, member,
+                                      arguments) &&
+                    std::any_of(function.constraints.begin(),
+                                function.constraints.end(),
+                                [&](const Constraint& constraint) {
+                      return constraint.kind == ConstraintKind::Method &&
+                             constraint.subject == trim(receiver) &&
+                             constraint.detail == member &&
+                             constraint.arguments == arguments;
+                    })) {
+                  summary.result_type = bound();
+                  returned_member = std::make_pair(trim(receiver), member);
+                } else {
+                  complete = false;
+                }
+              }
             }
+          } else {
+            complete = false;
           }
         }
       } else if (starts_with(result, "_method_result:")) {
@@ -2760,6 +2780,10 @@ class Checker {
         } else {
           member.result = bound();
         }
+        if (returned_member &&
+            returned_member->first == constraint.subject &&
+            returned_member->second == constraint.detail)
+          member.result = summary.result_type;
         summary.member_requirements.push_back(std::move(member));
       }
       summary.complete = complete && summary.result_type &&
