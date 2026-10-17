@@ -162,6 +162,31 @@ fn main():
         parity(relay, scratch, "1\nhello\n")
         print("PASS transitive open-result calls freshen independently", flush=True)
 
+        nested_open = source(scratch, "nested_open_result", '''fn nested():
+  return [[]]
+
+fn main():
+  values = nested()
+  values.push([1])
+  echo values[1][0]
+''')
+        checked(nested_open)
+        print("PASS nested open result closes from a later push", flush=True)
+
+        nominal_open = source(scratch, "nominal_open_result", '''type Box:
+  value
+
+fn boxed():
+  return Box(value: [])
+
+fn main():
+  var item = boxed()
+  item = Box(value: [1])
+  echo item.value[0]
+''')
+        checked(nominal_open)
+        print("PASS nominal open field closes from one binding", flush=True)
+
         conflict = source(scratch, "one_binding_conflict", '''fn main():
   a = []
   a.push(1)

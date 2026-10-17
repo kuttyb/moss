@@ -2375,19 +2375,47 @@ class Checker {
         return moss::Type::var(moss::TypeVarId{
             0, 0, summary.bound_variable_count++});
       };
-      auto type_term = [&](const string& spelling) -> moss::TypeRef {
-        auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
-        if (!parsed) return nullptr;
-        if ((*parsed)->kind == moss::TypeKind::Builtin &&
-            moss::Type::collection_arity((*parsed)->name) &&
-            (*parsed)->type_args.empty()) {
+      std::function<moss::TypeRef(const moss::TypeRef&)> openize =
+          [&](const moss::TypeRef& type) -> moss::TypeRef {
+        if (!type) return nullptr;
+        if (type->kind == moss::TypeKind::Builtin) {
           vector<moss::TypeRef> args;
-          for (size_t index = 0; index < *moss::Type::collection_arity((*parsed)->name);
-               ++index)
-            args.push_back(bound());
-          return moss::Type::builtin((*parsed)->name, std::move(args));
+          auto arity = moss::Type::collection_arity(type->name);
+          if (arity && type->type_args.empty()) {
+            for (size_t index = 0; index < *arity; ++index) args.push_back(bound());
+          } else {
+            if (arity && type->type_args.size() != *arity) return nullptr;
+            for (const auto& arg : type->type_args) {
+              auto opened = openize(arg);
+              if (!opened) return nullptr;
+              args.push_back(opened);
+            }
+          }
+          return moss::Type::builtin(type->name, std::move(args));
         }
-        return (*parsed)->is_closed() ? *parsed : nullptr;
+        if (type->is_bare_template()) {
+          vector<std::pair<string, moss::TypeRef>> substitutions;
+          for (const auto& slot : type->declaration->fields)
+            if (slot.inferred) substitutions.emplace_back(slot.name, bound());
+          return moss::Type::nominal_bound(type->declaration, type->name,
+                                           std::move(substitutions));
+        }
+        if (type->kind == moss::TypeKind::NominalInstance) {
+          vector<std::pair<string, moss::TypeRef>> substitutions;
+          for (const auto& slot : type->field_substitutions) {
+            auto opened = openize(slot.second);
+            if (!opened) return nullptr;
+            substitutions.emplace_back(slot.first, opened);
+          }
+          return moss::Type::nominal_bound(type->declaration, type->name,
+                                           std::move(substitutions));
+        }
+        return type->is_closed() ? type : nullptr;
+      };
+      auto type_term = [&](const string& spelling) -> moss::TypeRef {
+        if (contains_internal_placeholder(spelling)) return nullptr;
+        auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
+        return parsed ? openize(*parsed) : nullptr;
       };
       bool complete = function.constraints.empty();
       for (const auto& parameter : function.params) {
@@ -5315,7 +5343,8 @@ class Checker {
           // A local's open collection is one inference term for the whole
           // body.  The solver may close it from a use after a loop; retain that
           // result when this earlier constructor is visited in source order.
-          if (cinf == "vector" || cinf == "queue" || cinf == "map") {
+          auto inferred_term = moss::Type::parse_canonical(cinf);
+          if (inferred_term && !(*inferred_term)->is_closed()) {
             auto solved = solved_collections.find(statement.a);
             if (solved != solved_collections.end()) cinf = solved->second;
           }
@@ -5702,6 +5731,40 @@ class Checker {
         err(line, context + " requires '" + canonical_type_name(expected) +
             "' for '" + trim(expression) + "'", "TYPE_MISMATCH");
     };
+    std::function<moss::TypeRef(const moss::TypeRef&)> freshen_open_type =
+        [&](const moss::TypeRef& type) -> moss::TypeRef {
+      if (!type) return nullptr;
+      if (type->kind == moss::TypeKind::Builtin) {
+        vector<moss::TypeRef> args;
+        auto arity = moss::Type::collection_arity(type->name);
+        if (arity && type->type_args.empty()) {
+          for (size_t index = 0; index < *arity; ++index)
+            args.push_back(solver.fresh(static_cast<uint32_t>(locals.size() + 1)));
+        } else {
+          for (const auto& arg : type->type_args)
+            args.push_back(freshen_open_type(arg));
+        }
+        return moss::Type::builtin(type->name, std::move(args));
+      }
+      if (type->is_bare_template()) {
+        vector<std::pair<string, moss::TypeRef>> substitutions;
+        for (const auto& slot : type->declaration->fields)
+          if (slot.inferred)
+            substitutions.emplace_back(slot.name,
+                solver.fresh(static_cast<uint32_t>(locals.size() + 1)));
+        return moss::Type::nominal_bound(type->declaration, type->name,
+                                         std::move(substitutions));
+      }
+      if (type->kind == moss::TypeKind::NominalInstance) {
+        vector<std::pair<string, moss::TypeRef>> substitutions;
+        for (const auto& field : type->field_substitutions)
+          substitutions.emplace_back(field.first,
+                                     freshen_open_type(field.second));
+        return moss::Type::nominal_bound(type->declaration, type->name,
+                                         std::move(substitutions));
+      }
+      return type;
+    };
     auto constrain_call = [&](int line, const string& expression) {
       string callee;
       vector<string> arguments;
@@ -5744,6 +5807,13 @@ class Checker {
           for (const auto& arg : source->type_args)
             args.push_back(instantiate(arg));
           return moss::Type::builtin(source->name, std::move(args));
+        }
+        if (source->kind == moss::TypeKind::NominalInstance) {
+          vector<std::pair<string, moss::TypeRef>> substitutions;
+          for (const auto& field : source->field_substitutions)
+            substitutions.emplace_back(field.first, instantiate(field.second));
+          return moss::Type::nominal_bound(source->declaration, source->name,
+                                           std::move(substitutions));
         }
         return source;
       };
@@ -5797,14 +5867,7 @@ class Checker {
           scan[statement.a] = *inferred;
           continue;
         }
-        moss::TypeRef term = instantiated ? instantiated : *parsed;
-        if (auto arity = moss::Type::collection_arity(term->name);
-            arity && term->type_args.empty()) {
-          vector<moss::TypeRef> arguments;
-          for (size_t index = 0; index < *arity; ++index)
-            arguments.push_back(solver.fresh(static_cast<uint32_t>(locals.size() + 1)));
-          term = moss::Type::builtin(term->name, std::move(arguments));
-        }
+        moss::TypeRef term = instantiated ? instantiated : freshen_open_type(*parsed);
         auto prior = locals.find(statement.a);
         // This pass owns only bindings that began open. A declared concrete
         // collection can contain a generic callable result whose type is
@@ -6864,6 +6927,16 @@ class Checker {
         if (has_value_return)
           err(function.line, "cannot infer return type for function '" + function.name + "'");
         function.return_type = "unit";
+      }
+      if (function.return_type) {
+        auto result = moss::Type::parse_canonical(
+            canonical_type_name(*function.return_type));
+        if (result && !(*result)->is_closed() &&
+            ((*result)->kind == moss::TypeKind::Builtin ||
+             (*result)->kind == moss::TypeKind::NominalInstance)) {
+          function.generic = true;
+          function.static_dispatch = true;
+        }
       }
     }
   }
@@ -28979,9 +29052,14 @@ static void prepare_and_validate_module_exports(Program& program,
     if (!function.exported) continue;
     // An open result (`fresh() -> []`) is an Option B summary: each consumer
     // call instantiates fresh variables, so it is exported like a generic.
-    bool open_result = function.return_type &&
-        (*function.return_type == "vector" || *function.return_type == "map" ||
-         *function.return_type == "queue");
+    bool open_result = false;
+    if (function.return_type) {
+      auto result = moss::Type::parse_canonical(
+          canonical_type_name(*function.return_type));
+      open_result = result && !(*result)->is_closed() &&
+          ((*result)->kind == moss::TypeKind::Builtin ||
+           (*result)->kind == moss::TypeKind::NominalInstance);
+    }
     bool open = function.generic || open_result || std::any_of(
         function.params.begin(), function.params.end(),
         [](const Param& parameter) { return parameter.type.empty(); });
@@ -29026,9 +29104,10 @@ static void prepare_and_validate_module_exports(Program& program,
         throw error;
       }
     }
-    if (!function.return_type || contains_internal_placeholder(*function.return_type) ||
-        *function.return_type == "vector" || *function.return_type == "map" ||
-        *function.return_type == "queue") {
+    auto result = function.return_type ? moss::Type::parse_canonical(
+        canonical_type_name(*function.return_type)) : std::nullopt;
+    if (!result || !(*result)->is_closed() ||
+        contains_internal_placeholder(*function.return_type)) {
       CompileError error(function.line,
           "typed export '" + function.name + "' must have a closed concrete return type");
       error.source_file = function.source_file;
