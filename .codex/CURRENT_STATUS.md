@@ -1,5 +1,56 @@
 # Moss current status
 
+## Phase 25 Team A A2 checkpoint at `bc28920` — 2026-10-16 (NOT READY)
+
+Slices since `1cf0278`, each with focused suites plus a `corpus_verdicts`
+comparison, all pushed:
+
+- `15d9ddf` **A2-3:** `contains_record_type`, `check_declared_map_keys`, the
+  ownership collection receiver, and the indexed-assignment enum key walk
+  terms through one `for_each_subterm`. These sites must see types that are
+  not closed (bare `map`, `map[Key, _generic:x]`), so they use a structural
+  `parsed_type`, not `inferred_leaf`.
+- `9bcba85` **A2-4:** `functional_element_type` and
+  `trivial_pipeline_element_type` read `type_args`. The latter gates pipeline
+  fusion, so generated Rust for all 25 pipeline/functional/fusion programs
+  was diffed byte-for-byte against the preceding commit.
+- `03af760` **tooling:** `corpus_verdicts --emit` hashes each accepted
+  program's generated Rust into its verdict, so a lowering-only change is
+  visible. Sensitivity: 235 differing programs against the fork point
+  `5b29352`, 0 against the immediate predecessor. A full `--emit` pass over
+  1860 sources takes about two minutes.
+- `5aa2db5` **A2-5:** `contains_trait_type` recurses through term arguments
+  instead of five listed prefixes; the bare-collection state initializer
+  rule is the shared `bare_matches_applied`.
+- `bc28920` **A2-6:** `contains_enum_type` and the seq/option/table branches
+  of `valid_type` walk terms, **and** the second `make check` blocker is
+  fixed (below).
+
+**Second blocker, fixed at `bc28920`** (present before `252c2c7`, not from
+these slices). The signature pass unified each return term against a closed
+annotation and reported a mismatch on failure. For `fn broken(v: Int) -> Int:
+return []` the result term is `vector[<inference var>]`, so it reported
+`MOSS_COMPILE_ERROR function 'broken' returns 'vector[_typevar:1:0:0]' but is
+annotated 'int'`. That pre-empted the checker's `TYPE_INFERENCE_FAILED`
+teaching diagnostic and printed a compiler-internal `_typevar:` spelling to
+the user. A result still holding inference variables is an unresolved return,
+so the signature pass now reports only a closed resolved term.
+`check_teaching_diagnostics.py` passes again.
+
+**Validation.** Full `make check` and `make examples` at `bc28920` are
+running; this is the first run with both known blockers fixed. `make` and
+`make examples` passed at `1cf0278`. No Team A SHA has a completed passing
+`make check` yet.
+
+**Remaining A2** (unchanged in kind, smaller in count): native lowering
+spellings (`gen_block`, `generated_expr_type`,
+`generated_functional_element_type`, `constraint_ops`) — note `rust_type` is
+Rust emission rather than a semantic decision; then the string `TypeEnv`
+(~165 uses); then the pseudo-types (`_generic:`, `_element:`, `_field:`,
+`_method_value`, `callable:`, `_functional_*`, `""`) as real inference
+variables and requirements; then retiring the `actual_type.empty()` fallback;
+then binding parameter/return annotations as terms.
+
 ## Phase 25 Team A A2 checkpoint at `1cf0278` — 2026-10-16 (NOT READY)
 
 **`1cf0278` fixes the `make check` blocker reported in the entry below.** A for
