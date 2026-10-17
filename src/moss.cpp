@@ -2207,6 +2207,12 @@ class Checker {
     for (auto& t : p_.traits) {
       if (!traits_.emplace(t.name, &t).second)
         err(t.source_file, t.line, "duplicate trait: " + t.name);
+      if (auto standard = enums_.find(t.name);
+          standard != enums_.end() && standard->second->source_file == "<moss-std>")
+        err(t.source_file, t.line, "'" + standard->second->declaration_name +
+            "' names the compiler standard error std." +
+            standard->second->declaration_name + "; choose another name",
+            "DUPLICATE_SYMBOL");
       if (objects_.count(t.name) || enums_.count(t.name) || domains_.count(t.name))
         err(t.source_file, t.line, "trait '" + t.name +
             "' has the same name as a type, enum, or domain; one name names one declaration",

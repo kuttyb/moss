@@ -92,6 +92,20 @@ fn main():
         assert checked.returncode != 0 and error.get("code") == "FIELD_VISIBILITY_ERROR", checked.stdout
         assert error.get("line") == 5, error
 
+        # The frozen fixture's shape: an unmodular consumer of an explicit
+        # module cannot read that module's private field either.
+        legacy_consumer = project(scratch / "legacyconsumer", {
+            "model.moss": MODEL,
+            "main.moss": '''import Model
+
+fn main():
+  record = Model.make(21)
+  echo record.secret
+'''})
+        checked = run(MOSS, "check", legacy_consumer / "src/main.moss", "--json")
+        error = json.loads(checked.stdout).get("error") or {}
+        assert checked.returncode != 0 and error.get("code") == "FIELD_VISIBILITY_ERROR", checked.stdout
+
         unmodular = project(scratch / "unmodular", {
             "shapes.moss": '''type Point:
   export x: Int
