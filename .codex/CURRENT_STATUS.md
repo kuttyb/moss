@@ -1,5 +1,49 @@
 # Moss current status
 
+## Phase 25 Team A resume from `19f8a4f` — 2026-10-16 (NOT READY)
+
+Resumed on `phase25-g-type-core` at the restart checkpoint `19f8a4f`. No ref
+descends from it. Newer work outside this branch:
+
+- **A4 WIP.** The isolated A4 commit `057a3a5` (local, on
+  `phase25-a4-body-ir-v2`, after the pushed `08e26a4`) remains isolated. Per
+  its own status, its two focused A4 tests fail, so it must not be integrated
+  yet.
+- **A2 edit rejected.** An uncommitted one-line A2 edit, saved at 21:46 in the
+  `phase25-g-a2-env-resume` worktree (left untouched there), was evaluated and
+  **not carried**. It removed `actual_type.empty() ||` from the untyped
+  argument-compatibility fallback in `check_function_call`. It regresses three
+  valid programs that `19f8a4f` accepts, rejecting each with `TYPE_MISMATCH ...
+  has type ''`:
+  - `examples/swarm/modules/algo_chain/repro/exported_generic_typed_callee/split_workaround`
+  - `.../untyped_method_value/workaround`
+  - `examples/swarm/modules/lib_and_app/repro/natural_geolib_attempt` (it
+    builds natively at `19f8a4f`).
+
+  An instrumented scan of all 1858 tracked `.moss` files found only these
+  programs on that path. Two are open generic templates; one is a concrete
+  method whose local comes from imported method calls the string path cannot
+  type. A later pass already checks the concrete type: a deliberately wrong
+  `need_text(twice)` is rejected at `19f8a4f`. Deferring only inside generic
+  templates still breaks the concrete case. Removing this fallback is real A2
+  work: give those expressions a checked term first.
+
+Carried: Team G's ARCH-014 fix and coverage case (cherry-picked as `649d809`).
+A trait named like a standard error now says `std.ParseError`, not
+`std__ParseError`. The unmodular-consumer privacy case is in
+`check_phase25_field_visibility.py`. Team G commits after `5b29352` are
+otherwise superseded by this branch and remain unpushed on
+`phase25-generic-types`.
+
+Validation at `649d809` (all exit 0): `make`; the Type IR suite; checked body
+IR; typed semantic API; Team A compiler-path semantics; nominal identity A–F;
+field visibility; generic specialization 40/40; built-in generic typing
+129/129; G2 conformance 10/11 (gate 10 PENDING joint); Phase 21 standard
+error namespace; agent feedback. Not run: full `make check` and `make
+examples`. The independent Architect review of the newest SHA is still
+outstanding. Next: full validation on a frozen SHA, then A2 typed
+environments (including the fallback above) and A4 checked body IR.
+
 ## Phase 25 Team A restart checkpoint — 2026-10-16 (NOT READY)
 
 The consolidated feature branch `phase25-g-type-core` has implementation
