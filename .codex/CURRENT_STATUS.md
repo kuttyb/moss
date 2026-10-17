@@ -1,21 +1,29 @@
 # Moss current status
 
-## Phase 25 Team H — H0/H1 Checked Body IR & Dependency Model Complete — 2026-10-17
+## Phase 25 Team H — H0/H1 Checked Body IR & Dependency Model Complete (Remediated) — 2026-10-17
 
-Team H completed the independent Milestone H0 (Checked Body IR representation and deterministic encoding) and Milestone H1 (exact semantic dependency identification, expected hashes, and DAG closure validation) on feature branch `phase25-checked-body-ir`.
+Team H completed the independent Milestone H0 (Checked Body IR representation and deterministic encoding) and Milestone H1 (exact semantic dependency identification, mandatory expected hashes, canonical hash kind validation, and DAG closure validation) on feature branch `phase25-checked-body-ir`.
 
-1. **Implementation Baseline & Commit:**
+1. **Implementation Baseline & Commits:**
    - Base commit: `7c3f18d8badcaf6a346bb5044cd03d5100cc714a`.
-   - Reviewed implementation commit: `da2718e` on `phase25-checked-body-ir`.
+   - Initial H0/H1 commit: `da2718e`.
+   - Contract remediation commit: `0eb80d3`.
    - Compiler writing lease respected: Absolute zero modifications to `src/moss.cpp`, `src/ast.hpp`, or `src/typed_semantic_api.hpp`.
 
-2. **Milestone Deliverables:**
+2. **Milestone Deliverables & Contract Hardening:**
    - **Self-contained Checked Body IR (`src/checked_body_ir.hpp`):** Expression nodes (`Parameter`, `IntegerLiteral`, `FloatLiteral`, `BoolLiteral`, `StringLiteral`, `LocalRead`, `Unary`, `Binary`, `Field`, `VectorLiteral`, `MapLiteral`, `Call`, `Message`), statement nodes (`Let`, `Var`, `Assign`, `AssignField`, `AssignIndex`, `ExprStmt`, `Return`, `Reply`), and control flow (`If`, `While`, `For`, `Match` with `CaseBranch`).
    - **Deterministic Canonical Encoding & Hashing:** Canonical length-prefixed encoding (`<len>:<value>`), numeric ordinal binding for parameters and locals ensuring variable name and formatting invariance, deterministic field substitution ordering for nominal types, and SHA-256 domain-separated hashing (`body-semantic-v1:sha256:`). Backward compatibility with legacy AST nodes preserved.
    - **Exact Semantic Dependency Model:** Recursive extraction of exact semantic dependencies from body IR (`callable-v1:...`, `nominal-template-v1:...`).
-   - **DAG Closure Validation:** Validates expected dependency hashes against environment, detecting missing dependencies, hash mismatches, forged/non-canonical hashes, and cycles fail-closed. Explicitly reports unsupported facts with zero fabricated semantic hashes.
-   - **Executable Unit Tests (`tests/tooling/check_phase25_checked_body_ir.cpp`):** Comprehensive C++17 unit test suite covering expression nodes, statement nodes, control flow, deterministic hashing, malformed IR rejection, and all six dependency closure scenarios. Integrated into `tests/tooling/check_phase25_checked_body_ir.py`.
-   - **Developer Experience Feedback:** Recorded observation in `agent-feedback/phase25/team-h-checked-body-ir/checked-body-ir/observations.jsonl`.
+   - **Fail-Closed Dependency Closure Validation:**
+     - Rejects missing expected hashes with `ClosureValidationStatus::MissingExpectedHash`.
+     - Rejects mismatched hash kinds (e.g. nominal vs callable prefix) with `ClosureValidationStatus::InvalidHashKind`.
+     - Rejects malformed hex with `ClosureValidationStatus::ForgedHash`.
+     - Rejects hash discrepancies with `ClosureValidationStatus::HashMismatch`.
+     - Rejects dependency cycles with `ClosureValidationStatus::CyclicDependency`.
+     - Rejects unsupported dependency facts with `ClosureValidationStatus::UnsupportedDependency` (zero fabricated semantic hashes).
+   - **Incomplete Dependency Contract Handling:** `make_checked_function` marks functions with unprovided expected dependency hashes as unsupported (`has_supported_body = false`, empty `body_semantic_hash`, `unsupported_reason = "incomplete_dependency_contract: missing expected hash for ..."`).
+   - **Executable Unit Tests (`tests/tooling/check_phase25_checked_body_ir.cpp`):** Comprehensive C++17 unit test suite covering expression nodes, statement nodes, control flow, deterministic hashing, malformed IR rejection, and all eight dependency closure scenarios. Integrated into `tests/tooling/check_phase25_checked_body_ir.py`.
+   - **Developer Experience Feedback:** Recorded observations in `agent-feedback/phase25/team-h-checked-body-ir/checked-body-ir/observations.jsonl` (records 001 and 002).
 
 3. **Validation & Quality Gates:**
    - Strict C++17 build: `g++ -std=c++17 -O0 -Wall -Wextra -Werror -pedantic tests/tooling/check_phase25_checked_body_ir.cpp` compiled with zero warnings and zero errors; 100% assertions passed.
@@ -26,12 +34,12 @@ Team H completed the independent Milestone H0 (Checked Body IR representation an
    - Git hygiene: `git diff --check` passed cleanly.
 
 4. **Independent L6 Adversarial Reviewer Sign-Off:**
-   - Independent L6 Adversarial Reviewer audited candidate commit `da2718e`.
-   - Actively probed 15+ malformed IR configurations, self-cycles, deep transitive cycles, diamond DAGs, conflicting expected hashes, forged hashes, and unsupported dependencies.
-   - Issued attributable **EXPLICIT PASS** verdict for H0 and H1.
+   - Independent L6 Adversarial Reviewer audited candidate commit `da2718e` and identified the H1 empty expected hash gap.
+   - Team H implemented the remediation (mandatory expected hashes, kind-specific prefix checks, fail-closed `make_checked_function`).
+   - Reviewer audited the remediation and issued an unconditional **FULL PASS (H0 and H1 ACCEPTED FOR ABI-v10)** verdict.
 
 5. **Current Team H Status:**
-   - Independent implementation work (H0 & H1) is complete.
+   - Independent implementation work (H0 & H1) is fully complete and verified.
    - Team H is **PARKED** awaiting Team T's accepted SHA, test evidence, interface contract, independent review verdict, and `COMPILER_OWNERSHIP_RELEASED` marker.
    - Upon receipt of the marker, Team H will resume for Milestone H2 (ownership transfer, Git reconciliation, compiler wiring) and Milestone H3 (full A4 completion).
 
