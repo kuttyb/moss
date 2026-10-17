@@ -17,8 +17,12 @@ def main() -> int:
         raise SystemExit("expected two distinct concrete types")
 
     source = Path(rust_path).read_text()
+    # A specialized function's marker carries its specialization-v2 key after
+    # the line number (`fn:inner<First>@14#specialization-v2:sha256:...`), so
+    # the key is optional here and never part of the identity this compares.
     marker = re.compile(
-        r"// Moss tooling begin\|function\|fn:([^<@]+)<([^>]+)>@\d+\|([^|]+)\|"
+        r"// Moss tooling begin\|function\|fn:([^<@]+)<([^>]+)>@\d+"
+        r"(?:#[^|]*)?\|([^|]+)\|"
     )
     inner_symbols = {concrete: set() for concrete in concrete_types}
     outer_bodies = {concrete: [] for concrete in concrete_types}
