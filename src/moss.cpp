@@ -2360,6 +2360,8 @@ class Checker {
 
   using TypeEnv = std::unordered_map<string,string>;
   using TypeEnvVisitor = std::function<void(const Stmt&, const TypeEnv&)>;
+  struct BodyTypeState;
+  BodyTypeState* current_body_types_ = nullptr;
 
   // One solver owns the terms inferred for a checked body. The string
   // environment remains a projection for older walkers and lowering; it is
@@ -15491,6 +15493,43 @@ class Checker {
       check_expression(line, ib, env);
       check_expression(line, ii, env);
       auto bt = inferred_expr_type(ib, env);
+      if (current_body_types_) {
+        auto container = current_body_types_->known_expression(ib);
+        auto key = current_body_types_->known_expression(ii);
+        if (!key) {
+          auto inferred_key = inferred_expr_type(ii, env);
+          if (inferred_key) {
+            auto parsed = moss::Type::parse_canonical(
+                canonical_type_name(*inferred_key));
+            if (parsed && (*parsed)->is_closed()) key = *parsed;
+          }
+        }
+        if (container && key && container->kind == moss::TypeKind::Builtin) {
+          if (container->name == "vector" || container->name == "queue") {
+            auto integer = moss::Type::parse_canonical("int");
+            if (container->type_args.size() != 1 || !integer ||
+                !current_body_types_->solver.unify(key, *integer))
+              err(line, "vector and queue indices must be Int", "TYPE_MISMATCH");
+            return;
+          }
+          if (container->name == "map") {
+            if (container->type_args.size() != 2 ||
+                !current_body_types_->solver.unify(
+                    container->type_args[0], key))
+              err(line, "map key type mismatch", "TYPE_MISMATCH");
+            auto key_type = current_body_types_->solver.resolve(
+                container->type_args[0]);
+            if (key_type && key_type->is_closed()) {
+              const string spelling = key_type->to_canonical_string();
+              if (enums_.count(canonical_type_name(spelling)))
+                err(line, "enum values cannot be Map keys; enum equality and hashing are unsupported",
+                    "ENUM_MAP_KEY_UNSUPPORTED");
+              check_map_key_type(line, spelling);
+            }
+            return;
+          }
+        }
+      }
       if (!bt) err(line, "cannot infer indexed container type");
       if (canonical_type_name(*bt) == "RangeBatch" ||
           canonical_type_name(*bt) == "Range") {
@@ -15632,6 +15671,19 @@ class Checker {
         err(line, "range expects range(start, end) or range(start, end, step)");
       return "int";
     }
+    if (current_body_types_) {
+      auto retained = current_body_types_->known_expression(source);
+      if (retained && retained->kind == moss::TypeKind::Builtin &&
+          (retained->name == "vector" || retained->name == "seq") &&
+          retained->type_args.size() == 1) {
+        auto element = current_body_types_->solver.resolve(
+            retained->type_args[0]);
+        if (element && element->is_closed())
+          return element->to_canonical_string();
+        err(line, "for loop source has an open element type",
+            "TYPE_AMBIGUOUS_OPEN_RESULT");
+      }
+    }
     auto source_type = inferred_expr_type(source, env);
     if (!source_type) {
       auto local = env.find(trim(source));
@@ -15723,6 +15775,13 @@ class Checker {
     StaticBindingScope bound_scope(static_bound_bindings_);
     auto bound_snapshots = static_bindings_for_body(statements, env);
     BodyTypeState checked_types;
+    struct CheckedBodyScope {
+      BodyTypeState*& slot;
+      BodyTypeState* previous;
+      CheckedBodyScope(BodyTypeState*& target, BodyTypeState& current)
+          : slot(target), previous(target) { slot = &current; }
+      ~CheckedBodyScope() { slot = previous; }
+    } checked_body_scope(current_body_types_, checked_types);
     string join_context = current_function && checking_specialization_
         ? functional_function_context(*current_function, checking_specialization_)
         : "";

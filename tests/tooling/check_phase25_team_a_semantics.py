@@ -258,6 +258,14 @@ fn main():
         checked(map_key_conflict, "TYPE_MISMATCH")
         print("PASS indexed writes retain one Map key type", flush=True)
 
+        map_read_conflict = source(scratch, "one_map_key_read", '''fn main():
+  var values = Map()
+  values[1] = "one"
+  echo values["wrong"]
+''')
+        checked(map_read_conflict, "TYPE_MISMATCH")
+        print("PASS indexed reads use the retained Map key term", flush=True)
+
         known = source(scratch, "known_nominal_field", '''type Box:
   value
 
