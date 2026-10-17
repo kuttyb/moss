@@ -628,6 +628,23 @@ static bool applied_builtin(const moss::TypeRef& type,
   return std::find(names.begin(), names.end(), type->name) != names.end();
 }
 
+// A built-in collection, bare or applied, named one of `names`.
+static bool collection_named(const moss::TypeRef& type,
+                             std::initializer_list<std::string_view> names) {
+  if (!type || type->kind != moss::TypeKind::Builtin) return false;
+  return std::find(names.begin(), names.end(), type->name) != names.end();
+}
+
+// The type an index expression yields: a vector's or queue's element, or a
+// map's value. `seq` is not indexable and is deliberately absent.
+static std::optional<string> indexed_element(const moss::TypeRef& type) {
+  if (applied_builtin(type, {"vector", "queue"}) && type->type_args.size() == 1)
+    return type->type_args[0]->to_canonical_string();
+  if (applied_builtin(type, {"map"}) && type->type_args.size() == 2)
+    return type->type_args[1]->to_canonical_string();
+  return std::nullopt;
+}
+
 // A bare collection spelling (`vector`) against an application of that same
 // collection (`vector[int]`): the open literal takes the declared type.
 static bool bare_matches_applied(const string& bare, const string& applied) {
@@ -20261,11 +20278,9 @@ class Generator {
 
   static std::optional<string> generated_functional_element_type(
       const string& type) {
-    string value = canonical_type_name(type);
-    if (starts_with(value, "vector[") && ends_with(value, "]"))
-      return trim(value.substr(7, value.size() - 8));
-    if (starts_with(value, "seq[") && ends_with(value, "]"))
-      return trim(value.substr(4, value.size() - 5));
+    const auto term = parsed_type(type);
+    if (applied_builtin(term, {"vector", "seq"}) && term->type_args.size() == 1)
+      return term->type_args[0]->to_canonical_string();
     return std::nullopt;
   }
 
@@ -20586,14 +20601,8 @@ class Generator {
       if (base_type) {
         string concrete = canonical_type_name(*base_type);
         if (concrete == "RangeBatch") return string("Range");
-        if (starts_with(concrete, "vector[") && ends_with(concrete, "]"))
-          return trim(concrete.substr(7, concrete.size() - 8));
-        if (starts_with(concrete, "queue[") && ends_with(concrete, "]"))
-          return trim(concrete.substr(6, concrete.size() - 7));
-        if (starts_with(concrete, "map[") && ends_with(concrete, "]")) {
-          auto ps = split_top_level(concrete.substr(4, concrete.size() - 5), ',');
-          if (ps.size() == 2) return trim(ps[1]);
-        }
+        if (auto element = indexed_element(parsed_type(concrete)))
+          return element;
       }
     }
     if (generated_split_binary(value, {" or "}) ||
@@ -22344,7 +22353,7 @@ class Generator {
           if (member_name == "values" && member_arguments.empty())
             return "(" + receiver_expression + ").values().cloned().collect::<std::vec::Vec<_>>()";
         }
-        if (concrete == "queue" || starts_with(concrete, "queue["))
+        if (collection_named(parsed_type(concrete), {"queue"}))
           member_name = member_name == "push" ? "push_back" : member_name == "pop" ? "pop_front" : member_name;
         if (auto method = resolve_object_method(objects_, concrete, member_name == "push_back" ? "push" : member_name == "pop_front" ? "pop" : member_name,
                                                 [&]() {
@@ -22469,14 +22478,12 @@ class Generator {
             sequenced << result << " }";
             result = sequenced.str();
           }
-          if ((concrete == "vector" || starts_with(concrete, "vector[") ||
-               concrete == "queue" || starts_with(concrete, "queue[")) &&
+          if (collection_named(parsed_type(concrete), {"vector", "queue"}) &&
               (member_name == "pop" || member_name == "pop_front"))
             result += ".unwrap_or_else(|| std::process::abort())";
           return result;
         }
-        if ((concrete == "vector" || starts_with(concrete, "vector[") ||
-             concrete == "queue" || starts_with(concrete, "queue[")) &&
+        if (collection_named(parsed_type(concrete), {"vector", "queue"}) &&
             (member_name == "pop" || member_name == "pop_front") &&
             member_arguments.empty())
           return receiver_expression + "." +
