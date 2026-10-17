@@ -13,9 +13,10 @@ compiler-facing projection. These milestones remain partial.
 Open work: `TypeEnv` is still string-backed in many checker, ownership and
 effect paths; open member requirements and complete source-free summaries need
 the solver bridge; a transitive `relay(): return fresh()` call needs an exact
-return-expression key; a source-free nominal ConsumerB runtime regression was
-isolated to the `4750088` control-flow join change. Dedicated isolated workers
-are repairing these. Independent Architect exact-SHA review has not occurred.
+return-expression key; a source-free nominal ConsumerB runtime regression also
+reproduces at `a497fd3`, before the `4750088` control-flow join change. Its
+first failing commit is under bisect. Dedicated isolated workers are repairing
+these. Independent Architect exact-SHA review has not occurred.
 
 An intermediate `make check` started on code before the latest A2/A3/A4 edits.
 It has passed Phase 20/21 and advanced-data run/release/Fast Debug so far, but
