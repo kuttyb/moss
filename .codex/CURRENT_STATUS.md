@@ -1,5 +1,47 @@
 # Moss current status
 
+## Phase 25 Team B Completion — ABI-v10 Semantic Records, Runtime, and Linkage — 2026-10-16
+
+Team B has completed its mandate under the Phase 25 Team B Execution Directive on branch `phase25-g-abi-runtime` (common baseline `5b29352aae6a4b59b0c43b9264fe72fb08bbbb6c`):
+
+1. **Workstream B1 (Typed ABI-v10 Records):**
+   - Canonical typed records (`ModuleRecord`, `NominalTemplate`, `ConcreteInstance`, `MethodTemplate`, `OpenCallableSummary`, `SourceProvenance`, `KeyProof`) implemented in `src/abi_v10_records.hpp`.
+   - Strict lexical record ID ordering enforced in every section.
+   - Complete 10-step fail-closed verification pipeline implemented in `src/source_free_abi_v10.hpp` (`validate_complete_interface`).
+2. **Workstream B2 (Shared moss_runtime):**
+   - Compiler-owned `moss_runtime` crate in `runtime/moss_runtime/` with `MossMap<K, V>` and `MossSet<K>` storage kernel using static caller specialization (`insert_with`, `get_with`, `get_mut_with`, `remove_with`, `contains_key_with`, `clear`, `keys`, `values`).
+   - Zero dynamic dispatch (`dyn`), zero runtime comparison closures, zero per-process `RandomState`.
+   - Staged `MossString` and `key_protocol` ready for Team S relocation.
+   - Multi-profile compilation (Native Debug `-g` and Native Release `-O`) verified across multi-crate linkage.
+3. **Workstream B3 (MapKeyProof and Coherence):**
+   - `make_builtin_key_proof` generates canonical proofs for `Int`, `Float`, `Char`, `String`, and `Bool` with frozen targets and zero observable effects.
+   - `validate_key_proof_coherence` rejects conflicting proofs for the same key type.
+4. **Workstream B4 (Source-Free ABI Verification):**
+   - All 11 required behaviors verified and categorized by proof tier in `tests/phase25/check_phase25_b_acceptance.py`.
+   - Codec, Rust runtime, and Moss integration proofs strictly distinguished.
+   - Gate 10 (nominal custom keys) explicitly maintained as PENDING joint integration per `TEAM_S_TEAM_G_INTERFACE_AGREEMENT.md`.
+5. **Workstream B5 (Compiler Linkage Interfaces):**
+   - Implemented `src/moss_runtime_linkage.hpp` providing clean, modular APIs: `build_or_resolve_moss_runtime`, `generate_compiler_runtime_flags`, `verify_runtime_compatibility`, `detect_contract_change`, and `compute_cache_dependency_key`.
+   - Integration handoff spec documented in `docs/phase25/TEAM_B_LINKAGE_INTEGRATION_SPEC.md`.
+
+Validation results:
+- `python3 tests/phase25/check_phase25_b_acceptance.py`: PASS
+- `tmp/abi_v10_staging`: PASS (16 assertions, zero warnings)
+- `tmp/abi_v10_adversarial`: PASS (19 mutation checks, zero warnings)
+- `python3 tests/phase25/runtime/check_runtime.py`: PASS (unit tests, Debug/Release, source removal, runtime mismatch)
+- `python3 tests/tooling/check_phase25_conformance.py ./moss`: 10/11 gates PASS; Gate 10 PENDING joint integration
+- `make examples`: PASS (all 31 examples pass with `-Oshared-memory`)
+- `TMPDIR="$PWD/tmp" make check`: PASS (`all Moss v0.1 tests passed`, 54/54 executor tests)
+- `python3 tests/tooling/check_agent_feedback.py`: PASS
+- `python3 tests/tooling/check_agent_skills.py ./moss`: PASS
+- `git diff --check`: PASS (clean whitespace)
+
+Documentation & Feedback:
+- `docs/phase25/TEAM_B_LINKAGE_INTEGRATION_SPEC.md`
+- `docs/phase25/TEAM_B_ABI_RUNTIME_DELIVERY.md`
+- `docs/phase25/agent-patterns/team-b-abi-runtime.md`
+- `agent-feedback/phase25/team-b-abi-runtime/` (3 workstreams)
+
 ## Phase 25 Team G completion cycle, coordinator handoff session — 2026-10-16 (in progress)
 
 A new coordinator session resumed the cycle at integrated SHA `def823e` and,

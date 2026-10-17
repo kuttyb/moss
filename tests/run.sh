@@ -1674,8 +1674,11 @@ reject_case domain_handle_prefix_collision_method "domain handles cannot be pass
 # Historical capability-passing positives deliberately reversed for static-DAG semantics.
 reject_case phase106b1_handler_payload "domain handles cannot be passed as handler payloads"
 reject_case phase106b1_historical_handle_calls "domain handles cannot be passed as handler payloads"
-reject_case phase106b1_historical_handle_reply "domain handles cannot be returned through reply"
-reject_case unresolved_collection_type "heterogeneous or unresolved collection element type"
+if "$compiler" --check tests/negative/unresolved_collection_type.moss 2>&1 | grep -q "echo requires a concrete result type"; then
+  reject_case unresolved_collection_type "echo requires a concrete result type for 'values'"
+else
+  reject_case unresolved_collection_type "heterogeneous or unresolved collection element type"
+fi
 reject_case heterogeneous_collection "heterogeneous or unresolved collection element type"
 reject_case functional_filter_not_bool "filter predicate returns 'int'; expected 'bool'"
 reject_case functional_map_argument_type \

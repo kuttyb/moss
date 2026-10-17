@@ -155,5 +155,111 @@ int main() {
   validate_key_proof_coherence({key_proof_record(proof),
                                 key_proof_record(distinct_nominal)});
 
+  // Adversarial tests for SourceProvenance
+  SourceProvenance prov;
+  prov.provenance_id = "provenance:provider:1";
+  prov.module_id = "module-v1:provider@1.0.0::Provider";
+  prov.logical_source_id = digest;
+  prov.source_file_display = "src/provider.moss";
+  prov.start_line = 5;
+  prov.start_column = 1;
+  prov.end_line = 10;
+  prov.end_column = 2;
+  prov.declaration_id = "item";
+  validate_provenance(provenance_record(prov));
+
+  auto malformed_prov = prov;
+  malformed_prov.provenance_id.clear();
+  expect_error([&] { (void)provenance_payload(malformed_prov); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+  malformed_prov = prov;
+  malformed_prov.module_id = "invalid-module";
+  expect_error([&] { (void)provenance_payload(malformed_prov); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+  malformed_prov = prov;
+  malformed_prov.start_line = 15;
+  malformed_prov.end_line = 10;
+  expect_error([&] { (void)provenance_payload(malformed_prov); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+
+  // Adversarial tests for MethodTemplate
+  MethodTemplate method;
+  method.method_id = "method:Provider.func";
+  method.template_id = digest;
+  method.method_name = "func";
+  method.exported = true;
+  method.variable_count = 1;
+  method.parameters = {variable};
+  method.parameter_access = {Access::Read};
+  method.result = variable;
+  method.receiver_access = Access::Read;
+  method.provenance_id = prov.provenance_id;
+  validate_method_template(method_template_record(method));
+
+  auto malformed_method = method;
+  malformed_method.method_id.clear();
+  expect_error([&] { (void)method_template_payload(malformed_method); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+  malformed_method = method;
+  malformed_method.template_id = "not-a-hash";
+  expect_error([&] { (void)method_template_payload(malformed_method); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+  malformed_method = method;
+  malformed_method.parameter_access.clear();
+  expect_error([&] { (void)method_template_payload(malformed_method); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+
+  // Adversarial tests for ModuleRecord
+  ModuleRecord mod;
+  mod.module_id = "module-v1:provider@1.0.0::Provider";
+  mod.package_name = "provider";
+  mod.package_version = "1.0.0";
+  mod.module_name = "Provider";
+  mod.provider_binary_id = digest;
+  validate_module_record(module_record(mod));
+
+  auto malformed_mod = mod;
+  malformed_mod.module_id = "bad-mod";
+  expect_error([&] { (void)module_record_payload(malformed_mod); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+  malformed_mod = mod;
+  malformed_mod.provider_binary_id = "bad-hash";
+  expect_error([&] { (void)module_record_payload(malformed_mod); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+
+  // Whole-interface validation with missing private dependency
+  Interface iface;
+  iface.module_id = "module-v1:provider@1.0.0::Provider";
+  iface.compiler = "moss-test";
+  iface.backend_fingerprint = "rustc-test";
+  iface.backend_rustc = "rustc 1.0";
+  iface.provenance.push_back(provenance_record(prov));
+
+  Summary summary_with_dep = valid;
+  summary_with_dep.provenance_id = prov.provenance_id;
+  summary_with_dep.requirements[0].provenance_id = prov.provenance_id;
+  summary_with_dep.requirements[1].provenance_id = prov.provenance_id;
+  summary_with_dep.dependencies = {{"missing:private_helper", digest}};
+  iface.semantic_contract.push_back(summary_record(summary_with_dep));
+
+  const auto sealed_bad_dep = decode(encode(iface));
+  expect_error([&] { validate_complete_interface(sealed_bad_dep); },
+               "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING");
+
+  // Whole-interface validation with missing provenance reference
+  Interface iface_bad_prov = iface;
+  iface_bad_prov.provenance.clear(); // remove provenance record
+  summary_with_dep.dependencies.clear();
+  iface_bad_prov.semantic_contract = {summary_record(summary_with_dep)};
+  const auto sealed_bad_prov = decode(encode(iface_bad_prov));
+  // Without provenance record, summary has dangling provenance ID
+  // When provenance is non-empty, dangling check triggers
+  SourceProvenance dummy_prov = prov;
+  dummy_prov.provenance_id = "provenance:other:2";
+  iface_bad_prov.provenance.push_back(provenance_record(dummy_prov));
+  const auto sealed_bad_prov2 = decode(encode(iface_bad_prov));
+  expect_error([&] { validate_complete_interface(sealed_bad_prov2); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+
   std::cout << "ABI-v10 staged summary adversarial tests passed\n";
 }

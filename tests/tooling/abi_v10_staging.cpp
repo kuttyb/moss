@@ -1,4 +1,5 @@
 #include "../../src/abi_v10_records.hpp"
+#include "../../src/moss_runtime_linkage.hpp"
 
 #include <cassert>
 #include <iostream>
@@ -295,5 +296,203 @@ int main() {
   } catch (const Error& error) {
     assert(error.code == "SOURCE_FREE_CONTRACT_INVALID");
   }
+
+  // Test SourceProvenance record
+  SourceProvenance prov;
+  prov.provenance_id = "provenance:boxes:1";
+  prov.module_id = value.module_id;
+  prov.logical_source_id = "sha256:" + std::string(64, '9');
+  prov.source_file_display = "src/boxes.moss";
+  prov.start_line = 10;
+  prov.start_column = 1;
+  prov.end_line = 20;
+  prov.end_column = 15;
+  prov.declaration_id = "Box";
+  const auto prov_rec = provenance_record(prov);
+  validate_provenance(prov_rec);
+  const auto decoded_prov = read_provenance(prov_rec.payload);
+  assert(decoded_prov.provenance_id == prov.provenance_id);
+  assert(decoded_prov.start_line == 10 && decoded_prov.end_line == 20);
+
+  // Negative: invalid line range
+  auto bad_prov = prov;
+  bad_prov.start_line = 30;
+  bad_prov.end_line = 20;
+  try {
+    (void)provenance_payload(bad_prov);
+    assert(false && "inverted line range accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_CONTRACT_INVALID");
+  }
+
+  // Test MethodTemplate record
+  MethodTemplate method;
+  method.method_id = "method:Box.unbox";
+  method.template_id = nominal.template_id;
+  method.method_name = "unbox";
+  method.exported = true;
+  method.variable_count = 1;
+  method.parameters = {var_type};
+  method.parameter_access = {Access::Read};
+  method.result = var_type;
+  method.receiver_access = Access::Read;
+  method.provenance_id = prov.provenance_id;
+  const auto method_rec = method_template_record(method);
+  validate_method_template(method_rec);
+  const auto decoded_method = read_method_template(method_rec.payload);
+  assert(decoded_method.method_name == "unbox");
+  assert(decoded_method.template_id == nominal.template_id);
+
+  // Test ModuleRecord
+  ModuleRecord mod_rec_data;
+  mod_rec_data.module_id = value.module_id;
+  mod_rec_data.package_name = "boxes";
+  mod_rec_data.package_version = "1.0.0";
+  mod_rec_data.module_name = "Boxes";
+  mod_rec_data.provider_binary_id = "sha256:" + std::string(64, 'b');
+  const auto mod_rec = module_record(mod_rec_data);
+  validate_module_record(mod_rec);
+  const auto decoded_mod = read_module_record(mod_rec.payload);
+  assert(decoded_mod.package_name == "boxes");
+
+  // Test Builtin KeyProofs
+  const auto int_proof = make_builtin_key_proof("Int");
+  assert(int_proof.equality_callable_id == "builtin:key-protocol-v1:isequal:Int");
+  assert(int_proof.hash_callable_id == "builtin:key-protocol-v1:hash:Int");
+  validate_key_proof(key_proof_record(int_proof));
+
+  const auto float_proof = make_builtin_key_proof("Float");
+  assert(float_proof.equality_callable_id == "builtin:key-protocol-v1:isequal:Float");
+  validate_key_proof(key_proof_record(float_proof));
+
+  const auto char_proof = make_builtin_key_proof("Char");
+  validate_key_proof(key_proof_record(char_proof));
+
+  const auto str_proof = make_builtin_key_proof("String");
+  validate_key_proof(key_proof_record(str_proof));
+
+  const auto bool_proof = make_builtin_key_proof("Bool");
+  validate_key_proof(key_proof_record(bool_proof));
+
+  // Build a complete valid SealedInterface and run validate_complete_interface
+  Interface full_iface;
+  full_iface.module_id = value.module_id;
+  full_iface.compiler = value.compiler;
+  full_iface.backend_fingerprint = value.backend_fingerprint;
+  full_iface.backend_rustc = value.backend_rustc;
+  full_iface.imports = value.imports;
+  full_iface.provenance.push_back(prov_rec);
+  nominal.provenance_id = prov.provenance_id;
+  nominal.fields[0].provenance_id = prov.provenance_id;
+  nominal.method_template_ids.push_back(method.method_id);
+  full_iface.binary_contract.push_back(template_record(nominal));
+  full_iface.binary_contract.push_back(instance_record(instance));
+  full_iface.semantic_contract.push_back(method_rec);
+  summary.provenance_id = prov.provenance_id;
+  summary.requirements[0].provenance_id = prov.provenance_id;
+  summary.dependencies.clear(); // self-contained
+  full_iface.semantic_contract.push_back(summary_record(summary));
+  full_iface.semantic_contract.push_back(key_proof_record(int_proof));
+
+  auto sort_records = [](std::vector<Record>& recs) {
+    std::sort(recs.begin(), recs.end(), [](const Record& a, const Record& b) {
+      return a.id < b.id;
+    });
+  };
+  sort_records(full_iface.binary_contract);
+  sort_records(full_iface.semantic_contract);
+  sort_records(full_iface.provenance);
+
+  const auto sealed_full = decode(encode(full_iface));
+  validate_complete_interface(sealed_full, instance.provider_binary_id);
+
+  // Linkage tests (Workstream B5)
+  using moss::abi_v10::RuntimeCrateIdentity;
+  using moss::abi_v10::ContractChangeKind;
+  RuntimeCrateIdentity rt_provider;
+  rt_provider.name = "moss_runtime";
+  rt_provider.version = "0.1.0";
+  rt_provider.artifact_hash = "sha256:" + std::string(64, 'a');
+  rt_provider.profile = "debug";
+
+  RuntimeCrateIdentity rt_consumer = rt_provider;
+  moss::abi_v10::verify_runtime_compatibility(rt_provider, rt_consumer);
+
+  // Mismatch name
+  rt_consumer.name = "other_runtime";
+  try {
+    moss::abi_v10::verify_runtime_compatibility(rt_provider, rt_consumer);
+    assert(false && "name mismatch accepted");
+  } catch (const Error& err) {
+    assert(err.code == "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
+  }
+  rt_consumer.name = rt_provider.name;
+
+  // Mismatch version
+  rt_consumer.version = "0.2.0";
+  try {
+    moss::abi_v10::verify_runtime_compatibility(rt_provider, rt_consumer);
+    assert(false && "version mismatch accepted");
+  } catch (const Error& err) {
+    assert(err.code == "SOURCE_FREE_ABI_REBUILD_REQUIRED");
+  }
+  rt_consumer.version = rt_provider.version;
+
+  // Mismatch hash
+  rt_consumer.artifact_hash = "sha256:" + std::string(64, 'b');
+  try {
+    moss::abi_v10::verify_runtime_compatibility(rt_provider, rt_consumer);
+    assert(false && "artifact hash mismatch accepted");
+  } catch (const Error& err) {
+    assert(err.code == "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
+  }
+
+  // Contract change detection
+  auto altered_iface = sealed_full;
+  assert(moss::abi_v10::detect_contract_change(sealed_full, altered_iface) == ContractChangeKind::None);
+
+  altered_iface.binary_hash = "sha256:" + std::string(64, '1');
+  assert(moss::abi_v10::detect_contract_change(sealed_full, altered_iface) == ContractChangeKind::BinaryChange);
+
+  altered_iface = sealed_full;
+  altered_iface.semantic_hash = "sha256:" + std::string(64, '2');
+  assert(moss::abi_v10::detect_contract_change(sealed_full, altered_iface) == ContractChangeKind::SemanticChange);
+
+  altered_iface = sealed_full;
+  altered_iface.interface_hash = "sha256:" + std::string(64, '3');
+  assert(moss::abi_v10::detect_contract_change(sealed_full, altered_iface) == ContractChangeKind::InterfaceHashOnly);
+
+  // Cache key derivation and sensitivity
+  const std::string base_key = moss::abi_v10::compute_cache_dependency_key(
+      sealed_full, rt_provider, "moss-0.1.0", "backend-x86_64");
+  assert(!base_key.empty());
+  assert(base_key.rfind("sha256:", 0) == 0);
+
+  // Stable across invocations with same inputs
+  const std::string base_key_repeat = moss::abi_v10::compute_cache_dependency_key(
+      sealed_full, rt_provider, "moss-0.1.0", "backend-x86_64");
+  assert(base_key == base_key_repeat);
+
+  // Invalidated when runtime artifact hash changes
+  rt_consumer.artifact_hash = "sha256:" + std::string(64, 'f');
+  const std::string rt_changed_key = moss::abi_v10::compute_cache_dependency_key(
+      sealed_full, rt_consumer, "moss-0.1.0", "backend-x86_64");
+  assert(base_key != rt_changed_key);
+
+  // Invalidated when provider interface changes
+  altered_iface = sealed_full;
+  altered_iface.binary_hash = "sha256:" + std::string(64, '9');
+  const std::string iface_changed_key = moss::abi_v10::compute_cache_dependency_key(
+      altered_iface, rt_provider, "moss-0.1.0", "backend-x86_64");
+  assert(base_key != iface_changed_key);
+
+  // Flags generation
+  const auto flags = moss::abi_v10::generate_compiler_runtime_flags("/path/to/libmoss_runtime.rlib");
+  assert(flags.size() == 4);
+  assert(flags[0] == "-L");
+  assert(flags[1] == "dependency=/path/to");
+  assert(flags[2] == "--extern");
+  assert(flags[3] == "moss_runtime=/path/to/libmoss_runtime.rlib");
+
   std::cout << "ABI-v10 staged container tests passed\n";
 }

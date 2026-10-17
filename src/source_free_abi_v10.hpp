@@ -106,6 +106,28 @@ inline bool module_id_valid(std::string_view id) {
          valid_part(id.substr(split + 2));
 }
 
+struct ModuleIdentity {
+  std::string package_name;
+  std::string package_version;
+  std::string module_name;
+  std::string raw_id;
+};
+
+inline ModuleIdentity parse_module_id(std::string_view id) {
+  if (!module_id_valid(id)) {
+    throw Error("SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 module identity is malformed");
+  }
+  std::string_view rest = id.substr(10); // remove "module-v1:"
+  const auto at = rest.find('@');
+  const auto split = rest.find("::");
+  ModuleIdentity result;
+  result.package_name = std::string(rest.substr(0, at));
+  result.package_version = std::string(rest.substr(at + 1, split - at - 1));
+  result.module_name = std::string(rest.substr(split + 2));
+  result.raw_id = std::string(id);
+  return result;
+}
+
 inline std::string hash(std::string_view domain, std::string_view bytes) {
   std::string input(domain);
   input.push_back('\0');
@@ -114,6 +136,10 @@ inline std::string hash(std::string_view domain, std::string_view bytes) {
 }
 
 inline void require(bool condition, const char* code, const char* message) {
+  if (!condition) throw Error(code, message);
+}
+
+inline void require(bool condition, const char* code, const std::string& message) {
   if (!condition) throw Error(code, message);
 }
 
