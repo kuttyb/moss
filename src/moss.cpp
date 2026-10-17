@@ -5651,7 +5651,8 @@ class Checker {
   // from separate calls to the same open-result function.
   TypeEnv solve_local_collection_types(const vector<Stmt>& statements,
                                        const TypeEnv& entry,
-                                       const string& semantic_context) const {
+                                       const string& semantic_context,
+                                       bool record_call_facts) const {
     moss::TypeSolver solver(1);
     std::unordered_map<string, moss::TypeRef> locals;
     struct PendingOpenCall {
@@ -5839,8 +5840,9 @@ class Checker {
       for (const auto& binding : pending.bindings)
         facts.ordered_bindings.emplace_back(binding.first,
                                             solver.resolve(binding.second));
-      const_cast<Stmt*>(statement)->open_call_results_by_context[semantic_context] =
-          std::move(facts);
+      if (record_call_facts)
+        const_cast<Stmt*>(statement)->open_call_results_by_context[semantic_context] =
+            std::move(facts);
     }
     return closed;
   }
@@ -5852,7 +5854,8 @@ class Checker {
                                 bool record_semantic_types = false,
                                 const string& join_context = {}) const {
     const TypeEnv solved_collections =
-        solve_local_collection_types(statements, env, join_context);
+        solve_local_collection_types(statements, env, join_context,
+                                     record_semantic_types);
     size_t index = 0;
     walk_type_environment_block(statements, index, 0, env, visitor,
                                 reject_conflicts, record_join_types,
