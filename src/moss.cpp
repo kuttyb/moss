@@ -15644,7 +15644,8 @@ class Checker {
       auto actual = moss::Type::parse_canonical(
           canonical_type_name(actual_types[index]));
       auto formal = instantiate(summary.parameter_types[index]);
-      if (!actual || !formal || !solver.unify(*actual, formal))
+      if (!actual || !open_argument_matches(*actual, formal,
+                                            actual_types[index], solver))
         err(line, "open-result call argument conflicts with its summary",
             "TYPE_MISMATCH");
     }
@@ -15702,6 +15703,22 @@ class Checker {
         return (*parsed)->declaration->module_id;
     }
     return module_identity_of(p_.main_module);
+  }
+
+  // A trait formal is a constraint, never a value layout
+  // (TYPE_IR_CONTRACT §2), so an argument satisfies it by structural
+  // conformance, not unification: unifying a concrete value type against a
+  // trait always fails. A trait is not an interned declaration, so a summary
+  // carries it as a plain named type; both spellings are checked here.
+  bool open_argument_matches(const moss::TypeRef& actual,
+                             const moss::TypeRef& formal,
+                             const string& actual_spelling,
+                             moss::TypeSolver& solver) const {
+    if (!actual || !formal) return false;
+    if (formal->kind == moss::TypeKind::TraitConstraint ||
+        (formal->kind == moss::TypeKind::Primitive && traits_.count(formal->name)))
+      return trait_conforms(actual_spelling, formal->name);
+    return solver.unify(actual, formal);
   }
 
   void check_function_call(int line, const string& name, const vector<string>& args,
@@ -16117,7 +16134,8 @@ class Checker {
               auto actual = moss::Type::parse_canonical(
                   canonical_type_name(actual_types[index]));
               auto formal = instantiate(summary.parameter_types[index]);
-              if (!actual || !formal || !solver.unify(*actual, formal))
+              if (!actual || !open_argument_matches(*actual, formal,
+                                                    actual_types[index], solver))
                 err(line, "open-result call argument conflicts with its summary",
                     "TYPE_MISMATCH");
             }

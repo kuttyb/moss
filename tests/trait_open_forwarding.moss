@@ -1,0 +1,20 @@
+# A generic callee taking both a trait-constrained and an open parameter is
+# reached through a forwarding generic caller. The trait formal is a
+# constraint, so a concrete Task satisfies it by conformance.
+type Task:
+  cost: Int
+
+  fn score() -> Int:
+    return cost * 2
+
+trait Scorable:
+  fn score() -> Int
+
+fn score_inner(item: Scorable, unused):
+  return item.score()
+
+fn score_outer(item: Scorable, unused):
+  return score_inner(item, unused)
+
+fn main():
+  echo score_outer(Task(cost: 21), 0)
