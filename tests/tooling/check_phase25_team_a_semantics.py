@@ -221,6 +221,14 @@ fn main():
         checked(conflict, "TYPE_MISMATCH")
         print("PASS one binding retains one monotype", flush=True)
 
+        map_key_conflict = source(scratch, "one_map_key_binding", '''fn main():
+  var values = Map()
+  values[1] = "one"
+  values["two"] = "two"
+''')
+        checked(map_key_conflict, "TYPE_MISMATCH")
+        print("PASS indexed writes retain one Map key type", flush=True)
+
         known = source(scratch, "known_nominal_field", '''type Box:
   value
 
@@ -263,6 +271,20 @@ fn main():
 ''')
         parity(nested, scratch, "1\n2\n")
         print("PASS nested collection and nominal field closure", flush=True)
+
+        typed_reads = source(scratch, "typed_field_and_index_reads", '''type Box:
+  value
+
+fn main():
+  container_box = Box(value: [1])
+  var field = [0]
+  field = container_box.value
+  var item = 0
+  item = field[0]
+  echo item
+''')
+        parity(typed_reads, scratch, "1\n")
+        print("PASS local assignments use typed nominal field and index reads", flush=True)
 
         zero_loop = source(scratch, "zero_iteration", '''fn fresh():
   return []
@@ -338,6 +360,16 @@ fn main():
             document = json.loads(result.stdout)
             assert result.returncode != 0 and not document["ok"], (spelling, document)
             print(f"PASS malformed {spelling} fails in Moss check", flush=True)
+
+        nested_open_argument = source(scratch, "nested_open_argument", '''fn id(value):
+  return value
+
+fn main():
+  items = [[]]
+  echo id(items)
+''')
+        checked(nested_open_argument, "TYPE_AMBIGUOUS_OPEN_RESULT")
+        print("PASS nested open collection is not a concrete specialization", flush=True)
 
         package(scratch / "modules", "team_a_identity", "1.2.3", {
             "alpha": '''module Alpha

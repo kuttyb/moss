@@ -2360,6 +2360,50 @@ class Checker {
   using TypeEnv = std::unordered_map<string,string>;
   using TypeEnvVisitor = std::function<void(const Stmt&, const TypeEnv&)>;
 
+  // One solver owns the terms inferred for a checked body. The string
+  // environment remains a projection for older walkers and lowering; it is
+  // never used to recreate the term of a local already present here.
+  struct BodyTypeState {
+    moss::TypeSolver solver{1};
+    std::unordered_map<string, moss::TypeRef> locals;
+    TypeEnv closed_projection;
+
+    moss::TypeRef resolved_local(const string& name) {
+      auto found = locals.find(name);
+      return found == locals.end() ? nullptr : solver.resolve(found->second);
+    }
+
+    moss::TypeRef known_expression(const string& expression) {
+      const string value = trim(expression);
+      if (auto local = resolved_local(value)) return local;
+      string base, index;
+      if (parse_index(value, base, index) && simple_identifier(base)) {
+        auto container = resolved_local(base);
+        if (container && container->kind == moss::TypeKind::Builtin) {
+          if ((container->name == "vector" || container->name == "queue") &&
+              container->type_args.size() == 1)
+            return solver.resolve(container->type_args[0]);
+          if (container->name == "map" && container->type_args.size() == 2)
+            return solver.resolve(container->type_args[1]);
+        }
+      }
+      const size_t dot = value.find('.');
+      if (dot != string::npos && value.find('.', dot + 1) == string::npos &&
+          simple_identifier(value.substr(0, dot))) {
+        auto receiver = resolved_local(value.substr(0, dot));
+        if (receiver && receiver->kind == moss::TypeKind::NominalInstance &&
+            receiver->is_closed()) {
+          const string field = value.substr(dot + 1);
+          const auto fields = receiver->resolved_fields();
+          for (size_t index = 0; index < receiver->declaration->fields.size(); ++index)
+            if (receiver->declaration->fields[index].name == field)
+              return fields[index];
+        }
+      }
+      return nullptr;
+    }
+  };
+
   void build_open_callable_summaries() {
     for (auto& function : p_.functions) {
       if (!function.return_type) continue;
@@ -5747,12 +5791,13 @@ class Checker {
   // In particular, a for source may precede the operation that determines its
   // element type.  Each local gets its own variable, including two assignments
   // from separate calls to the same open-result function.
-  TypeEnv solve_local_collection_types(const vector<Stmt>& statements,
-                                       const TypeEnv& entry,
-                                       const string& semantic_context,
-                                       bool record_call_facts) const {
-    moss::TypeSolver solver(1);
-    std::unordered_map<string, moss::TypeRef> locals;
+  BodyTypeState solve_local_collection_types(const vector<Stmt>& statements,
+                                             const TypeEnv& entry,
+                                             const string& semantic_context,
+                                             bool record_call_facts) const {
+    BodyTypeState body_types;
+    auto& solver = body_types.solver;
+    auto& locals = body_types.locals;
     struct PendingOpenCall {
       const Stmt* statement;
       moss::TypeRef result;
@@ -5817,6 +5862,12 @@ class Checker {
       }
       return type;
     };
+    if (record_call_facts)
+      for (const auto& [name, spelling] : entry) {
+        if (contains_internal_placeholder(spelling)) continue;
+        auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
+        if (parsed) locals.emplace(name, freshen_open_type(*parsed));
+      }
     auto constrain_call = [&](int line, const string& expression) {
       string callee;
       vector<string> arguments;
@@ -5914,17 +5965,24 @@ class Checker {
         if (!instantiated && !inferred) continue;
         auto parsed = inferred ? moss::Type::parse_canonical(
             canonical_type_name(*inferred)) : std::nullopt;
-        if (!instantiated && (!parsed || (*parsed)->kind != moss::TypeKind::Builtin ||
-            !moss::Type::collection_arity((*parsed)->name))) {
+        if (!instantiated && !parsed) {
+          scan[statement.a] = *inferred;
+          continue;
+        }
+        if (!instantiated && !record_call_facts &&
+            ((*parsed)->kind != moss::TypeKind::Builtin ||
+             !moss::Type::collection_arity((*parsed)->name))) {
           scan[statement.a] = *inferred;
           continue;
         }
         moss::TypeRef term = instantiated ? instantiated : freshen_open_type(*parsed);
         auto prior = locals.find(statement.a);
-        // This pass owns only bindings that began open. A declared concrete
-        // collection can contain a generic callable result whose type is
-        // established during concrete specialization, not during this scan.
-        if (prior == locals.end() && term->is_closed()) {
+        const bool prior_open = prior != locals.end() &&
+            !solver.resolve(prior->second)->is_closed();
+        // Fresh declarations inside separate branches have separate lexical
+        // identities. The legacy walker owns their scope until its branch join.
+        if (!instantiated && record_call_facts && statement.indent > 0 &&
+            prior == locals.end() && term->is_closed()) {
           scan[statement.a] = *inferred;
           continue;
         }
@@ -5933,7 +5991,11 @@ class Checker {
               statement.a + "'", "TYPE_MISMATCH");
         else if (prior == locals.end())
           locals.emplace(statement.a, term);
-        scan[statement.a] = solver.resolve(locals.at(statement.a))->to_canonical_string();
+        // Preserve the checked source spelling for an already concrete value;
+        // module lowering still uses it to select the defining provider.
+        scan[statement.a] = prior_open || !term->is_closed()
+            ? solver.resolve(locals.at(statement.a))->to_canonical_string()
+            : inferred.value_or(term->to_canonical_string());
       } else if (statement.kind == Stmt::Kind::Call && statement.b == "push" &&
                  statement.args.size() == 1) {
         auto local = locals.find(statement.a);
@@ -5950,10 +6012,10 @@ class Checker {
         scan[statement.a] = solver.resolve(local->second)->to_canonical_string();
       }
     }
-    TypeEnv closed;
     for (const auto& [name, term] : locals) {
       auto resolved = solver.resolve(term);
-      if (resolved->is_closed()) closed.emplace(name, resolved->to_canonical_string());
+      if (resolved->is_closed())
+        body_types.closed_projection.emplace(name, resolved->to_canonical_string());
     }
     for (const auto& pending : open_calls) {
       const Stmt* statement = pending.statement;
@@ -5976,7 +6038,7 @@ class Checker {
         const_cast<Stmt*>(statement)->open_call_results_by_context[semantic_context] =
             std::move(facts);
     }
-    return closed;
+    return body_types;
   }
 
   TypeEnv walk_type_environment(const vector<Stmt>& statements, TypeEnv env,
@@ -5984,10 +6046,14 @@ class Checker {
                                 bool reject_conflicts,
                                 bool record_join_types = false,
                                 bool record_semantic_types = false,
-                                const string& join_context = {}) const {
-    const TypeEnv solved_collections =
+                                const string& join_context = {},
+                                BodyTypeState* retained_types = nullptr) const {
+    BodyTypeState body_types =
         solve_local_collection_types(statements, env, join_context,
                                      record_semantic_types);
+    if (retained_types) *retained_types = std::move(body_types);
+    const TypeEnv& solved_collections = retained_types
+        ? retained_types->closed_projection : body_types.closed_projection;
     size_t index = 0;
     walk_type_environment_block(statements, index, 0, env, visitor,
                                 reject_conflicts, record_join_types,
@@ -13815,7 +13881,14 @@ class Checker {
   }
 
   static bool concrete_specialization_type(const string& type) {
-    return !type.empty() && !contains_internal_placeholder(type);
+    // A callable argument contributes its exact callable identity to the key.
+    // Ordinary arguments must be recursively closed Type IR values: a nested
+    // `vector[vector]` still has an unbound element, despite having no textual
+    // placeholder marker.
+    if (starts_with(type, "callable:")) return type.size() > 9;
+    if (contains_internal_placeholder(type)) return false;
+    auto parsed = moss::Type::parse_canonical(canonical_type_name(type));
+    return parsed && (*parsed)->is_closed();
   }
 
   static string type_list(const vector<string>& types) {
@@ -15383,6 +15456,7 @@ class Checker {
                       bool main_body = false) {
     StaticBindingScope bound_scope(static_bound_bindings_);
     auto bound_snapshots = static_bindings_for_body(statements, env);
+    BodyTypeState checked_types;
     string join_context = current_function && checking_specialization_
         ? functional_function_context(*current_function, checking_specialization_)
         : "";
@@ -15458,9 +15532,19 @@ class Checker {
             } else {
               auto bound_type = current_env.at(statement.a);
               auto rhs_type = inferred_expr_type(statement.b, current_env);
-              if (rhs_type && !is_type_compatible(bound_type, *rhs_type)) {
+              auto bound_term = checked_types.resolved_local(statement.a);
+              moss::TypeRef rhs_term = checked_types.known_expression(statement.b);
+              if (!rhs_term && rhs_type) {
+                auto parsed = moss::Type::parse_canonical(
+                    canonical_type_name(*rhs_type));
+                if (parsed && (*parsed)->is_closed()) rhs_term = *parsed;
+              }
+              bool compatible = bound_term && rhs_term
+                  ? checked_types.solver.unify(bound_term, rhs_term)
+                  : !rhs_type || is_type_compatible(bound_type, *rhs_type);
+              if (!compatible) {
                 err(statement.line, "assignment type mismatch: cannot assign value of type '" +
-                    canonical_type_name(*rhs_type) + "' to binding '" + statement.a +
+                    canonical_type_name(rhs_type.value_or("_value")) + "' to binding '" + statement.a +
                     "' of type '" + canonical_type_name(bound_type) + "'", "TYPE_MISMATCH");
               }
             }
@@ -15476,6 +15560,38 @@ class Checker {
               }
               auto container = current_env.find(base);
               auto value_type = inferred_expr_type(statement.b, current_env);
+              auto container_term = checked_types.resolved_local(base);
+              if (container_term && value_type &&
+                  container_term->kind == moss::TypeKind::Builtin) {
+                auto value_term = checked_types.known_expression(statement.b);
+                if (!value_term) {
+                  auto parsed = moss::Type::parse_canonical(
+                      canonical_type_name(*value_type));
+                  if (parsed) value_term = *parsed;
+                }
+                auto key_type = inferred_expr_type(index_expression, current_env);
+                auto key_term = key_type ? moss::Type::parse_canonical(
+                    canonical_type_name(*key_type)) : std::nullopt;
+                bool valid = true;
+                if (value_term && value_term->is_closed()) {
+                  if ((container_term->name == "vector" ||
+                       container_term->name == "queue") &&
+                      container_term->type_args.size() == 1)
+                    valid = checked_types.solver.unify(
+                        container_term->type_args[0], value_term);
+                  else if (container_term->name == "map" &&
+                           container_term->type_args.size() == 2 &&
+                           key_term && (*key_term)->is_closed())
+                    valid = checked_types.solver.unify(
+                        container_term->type_args[0], *key_term) &&
+                        checked_types.solver.unify(
+                            container_term->type_args[1], value_term);
+                }
+                if (!valid)
+                  err(statement.line,
+                      "indexed assignment conflicts with the binding's type",
+                      "TYPE_MISMATCH");
+              }
               if (container != current_env.end() &&
                   (starts_with(container->second, "_generic:") ||
                    container->second == "map")) {
@@ -15822,7 +15938,7 @@ class Checker {
     };
 
     return walk_type_environment(statements, std::move(env), check_statement,
-                                 true, true, true, join_context);
+                                 true, true, true, join_context, &checked_types);
   }
 
 #include "executor_invoke_lowering.inc"
