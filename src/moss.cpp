@@ -4599,8 +4599,10 @@ class Checker {
   }
 
   static bool unresolved_semantic_type(const string& type) {
-    return type.empty() || contains_internal_placeholder(type) || type == "vector" ||
-        type == "queue" || type == "map";
+    if (type.empty() || contains_internal_placeholder(type)) return true;
+    if (starts_with(type, "callable:")) return type.size() == 9;
+    auto parsed = moss::Type::parse_canonical(canonical_type_name(type));
+    return !parsed || !(*parsed)->is_closed();
   }
 
   static std::optional<string> functional_element_type(const string& type,
@@ -16622,14 +16624,21 @@ class Checker {
                 // learns its key/value types from this first assignment.
               } else {
                 check_expression(statement.line, statement.a, current_env);
-                auto element_type = inferred_expr_type(statement.a, current_env);
-                if (element_type && value_type &&
-                    !contains_internal_placeholder(*element_type) &&
-                    !contains_internal_placeholder(*value_type) &&
-                    !same_type(*element_type, *value_type))
-                  err(statement.line, "indexed assignment requires value of type '" +
-                      canonical_type_name(*element_type) + "', found '" +
-                      canonical_type_name(*value_type) + "'");
+                // The retained solver already related this place and RHS.
+                // A legacy place without a retained term still compares the
+                // parsed TypeRefs, never their display spelling.
+                if (!container_term || !checked_types.assignment_value(statement)) {
+                  auto element_type = inferred_expr_type(statement.a, current_env);
+                  auto element_term = checked_term(statement.a, element_type);
+                  auto value_term = checked_term(statement.b, value_type);
+                  if (element_term && value_term &&
+                      !checked_types.solver.unify(element_term, value_term))
+                    err(statement.line, "indexed assignment requires value of type '" +
+                        (element_type ? canonical_type_name(*element_type)
+                            : element_term->to_canonical_string()) + "', found '" +
+                        (value_type ? canonical_type_name(*value_type)
+                            : value_term->to_canonical_string()) + "'");
+                }
               }
               if (container != current_env.end() && value_type &&
                   container->second == "map" &&
