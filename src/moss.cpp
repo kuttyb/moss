@@ -6980,7 +6980,10 @@ class Checker {
           err(function.line, "cannot infer return type for function '" + function.name + "'");
         function.return_type = "unit";
       }
-      if (function.return_type) {
+      // A compiled interface already records whether this declaration is
+      // concrete or generic. Reclassifying its return from display text can
+      // turn a concrete provider call into a consumer-side specialization.
+      if (function.return_type && !compiled_interface_file(function.source_file)) {
         auto result = moss::Type::parse_canonical(
             canonical_type_name(*function.return_type));
         if (result && !(*result)->is_closed() &&
@@ -29141,6 +29144,11 @@ static void prepare_and_validate_module_exports(Program& program,
   for (const auto& domain : program.domains) domains.insert(domain.name);
   for (auto& function : program.functions) {
     if (!function.exported) continue;
+    // The provider interface already fixed this callable's concrete/generic
+    // ABI. Consumer-side export preparation must not infer a new dispatch
+    // class by reparsing its return display spelling.
+    if (std::filesystem::path(function.source_file).extension() == ".mossi")
+      continue;
     // An open result (`fresh() -> []`) is an Option B summary: each consumer
     // call instantiates fresh variables, so it is exported like a generic.
     bool open_result = false;
