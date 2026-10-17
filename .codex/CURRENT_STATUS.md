@@ -1,5 +1,20 @@
 # Moss current status
 
+## Phase 25 Team A A2 function-signature TypeRef join — 2026-10-16 (integrated)
+
+From consolidated `421b79c`, the signature pass now joins concrete and open
+collection return paths with a per-body TypeSolver before projecting a closed
+function return. Concrete specialized return inference reads retained body
+TypeRefs and unifies them. A compiler-path test for `return []` and `return [1]`
+now passes in Fast Debug, Native Debug, and Native Release; the base rejected it
+as `vector` versus `vector[int]`. An incompatible Vector[Int]/Vector[String]
+pair remains a Moss TYPE_MISMATCH. `make`, Team A compiler-path semantics,
+Type IR, typed API, generic specialization (40 probes), built-in typing (129
+probes), and feedback validation passed on the isolated source. The isolated
+base `421b79c` had the known `mini_application.moss:88` trait-summary failure;
+the consolidated branch already fixed it in `e17ed1c` and passed `make
+examples`. The Coordinator owns combined validation and final Architect review.
+
 ## Phase 25 Team A A4 canonical body-hash audit — 2026-10-16 (integrated)
 
 At consolidated base `70aad4e`, the ABI-v10 §3.3 body-hash/dependency-hash

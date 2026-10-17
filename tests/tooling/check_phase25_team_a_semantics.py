@@ -97,6 +97,28 @@ fn main():
         parity(independent, scratch, "1\nhello\n")
         print("PASS independent open-result calls and three-engine parity", flush=True)
 
+        signature_join = source(scratch, "signature_return_join", '''fn choose(flag: Bool):
+  if flag:
+    return []
+  return [1]
+
+fn main():
+  values = choose(true)
+  values.push(2)
+  echo values[0]
+''')
+        parity(signature_join, scratch, "2\n")
+        conflicting_returns = source(scratch, "signature_return_conflict", '''fn choose(flag: Bool):
+  if flag:
+    return [1]
+  return ["hello"]
+
+fn main():
+  echo choose(true)
+''')
+        checked(conflicting_returns, "TYPE_MISMATCH")
+        print("PASS function return signatures unify open and closed TypeRefs", flush=True)
+
         callable_keys = source(scratch, "resolved_callable_keys", '''fn add_one(x: Int) -> Int:
   return x + 1
 

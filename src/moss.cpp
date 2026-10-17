@@ -5586,13 +5586,16 @@ class Checker {
     bool requires_concrete_result = result.empty() || contains_internal_placeholder(result) || traits_.count(result);
     if (requires_concrete_result) {
       auto env = instantiated_function_env(function, parameter_types);
-      std::optional<string> inferred_result;
+      BodyTypeState body_types = solve_local_collection_types(
+          function.body, env, function.semantic_callable_id, false, true);
+      BodyTypeScope body_scope(current_body_types_, &body_types);
+      moss::TypeRef inferred_result;
       auto include_result = [&](const string& expression) {
-        auto actual = inferred_expr_type(expression, env);
-        if (!actual || contains_internal_placeholder(*actual)) return true;
-        string concrete = canonical_type_name(*actual);
-        if (inferred_result && !same_type(*inferred_result, concrete)) return false;
-        inferred_result = concrete;
+        auto actual = checked_expression_term(expression, env);
+        if (!actual) return true;
+        if (inferred_result && !body_types.solver.unify(inferred_result, actual))
+          return false;
+        if (!inferred_result) inferred_result = actual;
         return true;
       };
       if (function.result_expression && !include_result(*function.result_expression))
@@ -5601,7 +5604,12 @@ class Checker {
         if (statement.kind == Stmt::Kind::Return && !statement.a.empty() &&
             !include_result(statement.a))
           return std::nullopt;
-      if (inferred_result) return inferred_result;
+      if (inferred_result) {
+        auto closed = body_types.solver.resolve(inferred_result);
+        if (closed->is_closed() &&
+            !contains_internal_placeholder(closed->to_canonical_string()))
+          return closed->to_canonical_string();
+      }
     }
     if (starts_with(result, "_generic:")) {
       string parameter = result.substr(9);
@@ -7691,21 +7699,90 @@ class Checker {
           env[parameter.name] = parameter.type.empty()
               ? "_generic:" + parameter.name : parameter.type;
         infer_statement_expressions(function.body, env);
+        BodyTypeState body_types = solve_local_collection_types(
+            function.body, env, function.semantic_callable_id, false, true);
+        BodyTypeScope body_scope(current_body_types_, &body_types);
+        moss::TypeRef joined_result;
+        bool all_results_typed = true;
+        auto result_term = [&](const string& expression) -> moss::TypeRef {
+          if (auto retained = body_types.known_expression(expression)) {
+            auto resolved = body_types.solver.resolve(retained);
+            if (!contains_internal_placeholder(resolved->to_canonical_string()))
+              return retained;
+          }
+          auto inferred = inferred_expr_type(expression, env);
+          if (!inferred || contains_internal_placeholder(*inferred)) return nullptr;
+          auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
+          if (!parsed) return nullptr;
+          std::function<moss::TypeRef(const moss::TypeRef&)> open_collections =
+              [&](const moss::TypeRef& type) -> moss::TypeRef {
+            if (type->kind != moss::TypeKind::Builtin) return type;
+            vector<moss::TypeRef> arguments;
+            if (auto arity = moss::Type::collection_arity(type->name);
+                arity && type->type_args.empty()) {
+              for (size_t index = 0; index < *arity; ++index)
+                arguments.push_back(body_types.solver.fresh(0));
+            } else {
+              for (const auto& argument : type->type_args)
+                arguments.push_back(open_collections(argument));
+            }
+            return moss::Type::builtin(type->name, std::move(arguments));
+          };
+          return open_collections(*parsed);
+        };
+        auto include_typed_result = [&](int line, const string& expression) {
+          auto term = result_term(expression);
+          if (!term) {
+            all_results_typed = false;
+            return;
+          }
+          if (function.return_type &&
+              !contains_internal_placeholder(*function.return_type)) {
+            auto declared = moss::Type::parse_canonical(
+                canonical_type_name(*function.return_type));
+            if (declared && (*declared)->is_closed() &&
+                !body_types.solver.unify(term, *declared))
+              err(line, "function '" + function.name + "' returns '" +
+                  body_types.solver.resolve(term)->to_canonical_string() +
+                  "' but is annotated '" + *function.return_type + "'");
+          }
+          if (joined_result && !body_types.solver.unify(joined_result, term))
+            err(line, "function '" + function.name +
+                "' has conflicting return types", "TYPE_MISMATCH");
+          if (!joined_result) joined_result = term;
+        };
+        if (function.result_expression)
+          include_typed_result(function.result_line, *function.result_expression);
+        for (const auto& statement : function.body)
+          if (statement.kind == Stmt::Kind::Return && !statement.a.empty())
+            include_typed_result(statement.line, statement.a);
+        bool typed_result_closed = false;
+        if (joined_result) {
+          auto closed = body_types.solver.resolve(joined_result);
+          typed_result_closed = all_results_typed && closed->is_closed() &&
+              !contains_internal_placeholder(closed->to_canonical_string());
+          if (typed_result_closed &&
+              (!function.return_type ||
+               starts_with(*function.return_type, "_field:")))
+            function.return_type = closed->to_canonical_string();
+        }
         if (function.return_type && starts_with(*function.return_type, "_field:") && function.result_expression) {
           if (auto resolved = inferred_expr_type(*function.result_expression, env)) function.return_type = *resolved;
         }
         if (function.result_expression) {
           constrain_constructor_fields(function.result_line, *function.result_expression, env);
-          if (auto result = inferred_expr_type(*function.result_expression, env)) {
-            if (!function.return_type) function.return_type = *result;
-            else if (!contains_internal_placeholder(*function.return_type) &&
-                     !(*result == "_method_value" || starts_with(*result, "_method_result:")) &&
-                      !starts_with(*result, "_functional_callable_result:") &&
-                     !same_type(*function.return_type, *result))
-              err(function.result_line, "function '" + function.name + "' returns '" + *result +
-                  "' but is annotated '" + *function.return_type + "'");
+          if (!typed_result_closed) {
+            if (auto result = inferred_expr_type(*function.result_expression, env)) {
+              if (!function.return_type) function.return_type = *result;
+              else if (!contains_internal_placeholder(*function.return_type) &&
+                       !(*result == "_method_value" || starts_with(*result, "_method_result:")) &&
+                        !starts_with(*result, "_functional_callable_result:") &&
+                       !same_type(*function.return_type, *result))
+                err(function.result_line, "function '" + function.name + "' returns '" + *result +
+                    "' but is annotated '" + *function.return_type + "'");
+            }
           }
-        } else if (!function.return_type) {
+        } else if (!function.return_type && !typed_result_closed) {
           for (const auto& statement : function.body) {
             if (statement.kind != Stmt::Kind::Return || statement.a.empty()) continue;
             auto result = inferred_expr_type(statement.a, env);
