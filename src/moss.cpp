@@ -14715,7 +14715,9 @@ class Checker {
 
   void check_function_call(int line, const string& name, const vector<string>& args,
                            const std::unordered_map<string,string>& env,
-                           const moss::TypeRef& expected_open_result = nullptr) {
+                           const moss::TypeRef& expected_open_result = nullptr,
+                           std::optional<std::pair<uint32_t, uint32_t>>
+                               nested_occurrences = std::nullopt) {
     if (name == "range") {
       if (args.size() != 2 && args.size() != 3)
         err(line, "range expects range(start, end) or range(start, end, step)");
@@ -14845,7 +14847,22 @@ class Checker {
             nested->second->open_summary->complete &&
             nested->second->open_summary->result_type &&
             !nested->second->open_summary->result_type->is_closed()) {
-          check_function_call(line, nested_name, nested_arguments, env, *required);
+          uint32_t target_occurrence = 0;
+          uint32_t expression_occurrence = 0;
+          for (size_t prior = 0; prior < index; ++prior) {
+            string prior_name;
+            vector<string> prior_arguments;
+            if (!parse_simple_call(trim(args[prior]), prior_name,
+                                   prior_arguments) ||
+                prior_name != nested_name) continue;
+            ++target_occurrence;
+            if (trim(args[prior]) == trim(argument))
+              ++expression_occurrence;
+          }
+          check_function_call(line, nested_name, nested_arguments, env,
+                              *required,
+                              std::make_pair(target_occurrence,
+                                             expression_occurrence));
           actual_types.push_back((*required)->to_canonical_string());
           continue;
         }
@@ -14954,23 +14971,9 @@ class Checker {
                            ->nested_open_call_keys_by_context.end()) {
           auto nested_key = context->second.find(
               function->second->name + "(" + join_arguments(args) + ")");
-          if (nested_key != context->second.end()) {
-            auto closed = std::find_if(function->second->specializations.begin(),
-                function->second->specializations.end(),
-                [&](const FunctionSpecialization& candidate) {
-                  return candidate.stable_type_key == nested_key->second;
-                });
-            if (closed == function->second->specializations.end() ||
-                !closed->return_type_ref)
-              err(line, "checked nested call has no closed specialization",
-                  "TYPE_AMBIGUOUS_OPEN_RESULT");
-            nested_result.emplace();
-            nested_result->callable_id = function->second->semantic_callable_id;
-            nested_result->result = closed->return_type_ref;
-            nested_result->ordered_bindings =
-                closed->semantic_key.open_result_bindings;
-            open_result = &*nested_result;
-          }
+          if (nested_key != context->second.end() &&
+              !nested_key->second.empty())
+            return;  // This nested expression was checked at its typed argument.
         }
       }
       if (current_check_statement_ &&
@@ -15091,11 +15094,18 @@ class Checker {
           err(line, "open-result specialization has unresolved type bindings",
               "TYPE_AMBIGUOUS_OPEN_RESULT");
         const string exact_key = *key->stable_key();
-        if (nested_result && current_check_statement_)
-          const_cast<Stmt*>(current_check_statement_)
+        if (nested_result && current_check_statement_) {
+          auto& keys = const_cast<Stmt*>(current_check_statement_)
               ->nested_open_call_keys_by_context[current_check_body_context_]
-                  [function->second->name + "(" + join_arguments(args) + ")"] =
-                      exact_key;
+                  [function->second->name + "(" + join_arguments(args) + ")"];
+          const uint32_t occurrence = nested_occurrences
+              ? nested_occurrences->second : 0;
+          if (keys.size() <= occurrence) keys.resize(occurrence + 1);
+          if (!keys[occurrence].empty() && keys[occurrence] != exact_key)
+            err(line, "one nested call occurrence acquired two specialization keys",
+                "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+          keys[occurrence] = exact_key;
+        }
         if (current_check_statement_ && !returned_result && !nested_result)
           const_cast<Stmt*>(current_check_statement_)->open_call_keys_by_context[
               current_check_body_context_] = exact_key;
@@ -15112,6 +15122,8 @@ class Checker {
         for (auto& edge : p_.semantic_call_edges) {
           if (edge.source != current_semantic_context_ ||
               edge.line != line ||
+              (nested_occurrences &&
+               edge.occurrence != nested_occurrences->first) ||
               (edge.target != function->second->name &&
                edge.target != "fn:" + function->second->name) ||
               (!returned_result && !edge.source_file.empty() &&
@@ -18319,6 +18331,7 @@ class Generator {
   std::set<string> ambiguous_domain_instance_bindings_;
   size_t assertion_temp_ = 0;
   mutable size_t call_argument_temp_ = 0;
+  mutable std::optional<uint32_t> codegen_nested_argument_occurrence_;
   mutable size_t executor_invoke_temp_ = 0;
   mutable bool root_ingress_statement_ = false;
   mutable size_t fileio_chunk_temp_ = 0;
@@ -18922,10 +18935,16 @@ class Generator {
       if (nested_context != statement.nested_open_call_keys_by_context.end()) {
         auto nested_key = nested_context->second.find(nested_expression);
         if (nested_key != nested_context->second.end()) {
+          const auto& keys = nested_key->second;
+          const uint32_t occurrence =
+              codegen_nested_argument_occurrence_.value_or(0);
+          if (occurrence >= keys.size() || keys[occurrence].empty())
+            throw std::runtime_error(
+                "checked nested open-result occurrence has no exact key");
           auto exact = std::find_if(function.specializations.begin(),
                                     function.specializations.end(),
                                     [&](const FunctionSpecialization& candidate) {
-            return candidate.stable_type_key == nested_key->second;
+            return candidate.stable_type_key == keys[occurrence];
           });
           if (exact == function.specializations.end())
             throw std::runtime_error(
@@ -19674,8 +19693,23 @@ class Generator {
 
     std::ostringstream call;
     call << viewed_function_name(name, arguments, domain, locals, types) << "(";
+    auto nested_occurrence = [&](size_t index) {
+      uint32_t occurrence = 0;
+      for (size_t prior = 0; prior < index; ++prior)
+        if (trim(arguments[prior]) == trim(arguments[index])) ++occurrence;
+      return occurrence;
+    };
+    struct NestedArgumentScope {
+      std::optional<uint32_t>& slot;
+      std::optional<uint32_t> previous;
+      NestedArgumentScope(std::optional<uint32_t>& target, uint32_t occurrence)
+          : slot(target), previous(target) { slot = occurrence; }
+      ~NestedArgumentScope() { slot = previous; }
+    };
     size_t emitted_arguments = 0;
     for (size_t index = 0; index < arguments.size(); ++index) {
+      NestedArgumentScope nested_scope(codegen_nested_argument_occurrence_,
+                                       nested_occurrence(index));
       bool compile_time_callable = generated_expr_type(arguments[index], types)
           .value_or("").rfind("callable:", 0) == 0;
       if (compile_time_callable) continue;
@@ -19766,9 +19800,12 @@ class Generator {
     std::ostringstream lowered;
     lowered << "{ ";
     for (size_t index = 0; index < arguments.size(); ++index)
-      if (!temporaries[index].empty())
+      if (!temporaries[index].empty()) {
+        NestedArgumentScope nested_scope(codegen_nested_argument_occurrence_,
+                                         nested_occurrence(index));
         lowered << "let " << temporaries[index] << " = "
                 << expr(arguments[index], domain, locals, types) << "; ";
+      }
     lowered << call.str() << " }";
     return lowered.str();
   }

@@ -5,7 +5,7 @@
 The Coordinator is continuing A2/A3/A4 on `phase25-g-type-core` after the
 user explicitly directed Team A to finish rather than hand off to Team I.
 The latest remote checkpoint is `ec6688e`; local HEAD has advanced through
-that commit and a typed API validation edit is pending. The user authorized
+the A3 occurrence integration and requires combined validation. The user authorized
 normal pushes and AGENTS.md's prior no-push rule was removed before the first
 push. Do not merge Team B, Team S, Team I, or main.
 
@@ -17,17 +17,23 @@ requirement provenance and typed semantic dependencies; `b6a765c` projects
 structural requirements; `7c6c6c7` projects checked closed body terms at the
 inference boundary; and `d3f7ca6` uses semantic callable IDs in specialization
 keys. At pushed `ec6688e`, `make`, Type IR, typed API, Team A compiler-path
-semantics (33 named PASS cases), and feedback validation passed. Later edits
-are not covered by those results.
+semantics, and feedback validation passed. Later local changes add exact
+same-line call occurrence IDs, nested result bindings per occurrence, shared
+checked types in effects/ownership, and typed generic indexed result relations.
+On the combined source before the last nested occurrence cherry-pick, `make`,
+`make examples`, Type IR, typed API, Team A semantics, 40 generic specialization
+probes, 129 built-in typing probes, nominal source-free identity A–F, and G2
+Gates 1–9 and 11 passed. These results do not validate the newest cherry-pick.
 
 An independent Architect audited exact interim SHA `ec0c0d6` and returned
 NO-GO: same-ID alias interning (now fixed), nested contextual open-result
 closure (`use_ints(make(0))`), callable arguments keyed by display names,
 non-Method structural requirements absent from typed open summaries, missing
 typed leaf effect/dependency facts, and remaining string-backed checker paths.
-Dedicated isolated workers are addressing nested closure, callable IDs, and
-shared typed checker facts. This was an interim audit, not the required final
-GO at a frozen exact implementation SHA.
+The alias, nested contextual result, callable argument, and structural summary
+issues have implementation checkpoints. Remaining string-backed checker paths
+and complete typed summary facts are under active A2/A4 work. This was an
+interim audit, not the required final GO at a frozen exact implementation SHA.
 
 The previous repository-wide `make check` used a rebuilt release compiler and
 an older default `./moss` after intervening commits. Its Phase 20/21 and
@@ -36,7 +42,12 @@ by those mixed snapshots. A final full `make check` must run on one frozen
 implementation SHA after the remaining commits. G2 Gate 10 remains PENDING
 joint integration. The provider `.mossi` serializer currently omits nonzero
 member argument shape; Team B owns that source-free ABI record and Team A has
-an evidence-backed feedback observation. This is still Team A NOT READY.
+an evidence-backed feedback observation. Imported
+`size(value): return value.length()` also retains unresolved observable
+effects; the typed API marks that full summary unavailable while preserving
+its source requirement chain. The isolated A3 occurrence patch passed
+`both(make(0), make(0))` across Fast Debug, Native Debug, and Native Release
+with distinct query keys. This is still Team A NOT READY.
 
 ## Phase 25 Team A continuation — 2026-10-16 (active, NOT READY)
 

@@ -216,6 +216,29 @@ fn main():
         print("PASS nested argument results close to distinct exact keys across three engines",
               flush=True)
 
+        repeated_nested = source(scratch, "same_line_nested_open_results", '''fn make(seed):
+  return []
+
+fn both(a: Vector[Int], b: Vector[String]):
+  echo a |> count
+  echo b |> count
+
+fn main():
+  both(make(0), make(0))
+''')
+        parity(repeated_nested, scratch, "0\n0\n")
+        calls = run(MOSS, "calls", "main", "--source", repeated_nested, "--json")
+        assert calls.returncode == 0, (calls.stdout, calls.stderr)
+        repeated_edges = [edge for edge in json.loads(calls.stdout)["result"]["direct_calls"]
+                          if edge["target"] == "fn:make"]
+        assert len(repeated_edges) == 2, repeated_edges
+        assert len({edge["specialization_key"] for edge in repeated_edges}) == 2, (
+            repeated_edges)
+        assert len({edge["call_site_id"] for edge in repeated_edges}) == 2, (
+            repeated_edges)
+        print("PASS repeated same-line open results retain distinct checked and native keys",
+              flush=True)
+
         generic_caller = source(scratch, "generic_caller_result_keys", '''fn make(seed):
   return []
 
