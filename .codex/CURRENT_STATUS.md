@@ -1,5 +1,34 @@
 # Moss current status
 
+## Phase 25 Team A A2 checkpoint at `1cf0278` — 2026-10-16 (NOT READY)
+
+**`1cf0278` fixes the `make check` blocker reported in the entry below.** A for
+variable is scoped to its body, and the walker erased it on exit. That was
+harmless while the join kept a binding's incoming type when the body lacked
+it, but `4750088` switched to `merge_type_environments`, which drops a
+binding missing from any path, so a shadowed parameter or local became an
+unknown identifier after the loop. The exit now restores a shadowed binding,
+as the match-arm path already did. `git bisect` named `4750088` over
+`5b29352..19f8a4f`. New `tests/for_shadow_restores_outer.moss` agrees in Fast
+Debug and native.
+
+- `check_phase21_peer_effects.py` passes again.
+- `corpus_verdicts` against `252c2c7` reports exactly two intended changes
+  (this fixture, the new enum negative) and nothing else.
+- Full `make check` and `make examples` at `1cf0278` are running; no Team A
+  SHA has a passing full suite yet.
+
+**New open item for joint integration (not a regression; present at the fork
+point `5b29352`).** On this line `label = "text"` then `echo label + 1`
+passes `moss check`, and Fast Debug prints `1.0`. Expression inference yields
+no type for a String/Int operand pair and the call site accepts an unknown
+type. The Team S line rejects it with `TYPE_MISMATCH operator '+' is not
+defined for 'string' and 'int'`. Team S owns the mixed-type arithmetic rule,
+so this is recorded rather than fixed here, but it contradicts the Team S S1
+criterion and the two lines must agree before integration. Evidence:
+`agent-feedback/phase25/team-a-type-core/checker-conversion/observations.jsonl`
+(`-007`, `-008`).
+
 ## Phase 25 Team A A2 checkpoint at `cb7b81b` — 2026-10-16 (NOT READY)
 
 **Done since `252c2c7`:**
