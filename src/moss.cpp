@@ -505,6 +505,52 @@ static std::optional<std::pair<string, string>> map_key_value_types(
 
 enum class BuiltinReceiverFamily { Vector, Map, Queue, String };
 
+// The structural term of a declared or projected type spelling, whether or
+// not it is closed: `map` and `vector[_generic:x]` parse here.
+static moss::TypeRef parsed_type(const string& spelling) {
+  auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
+  return parsed ? *parsed : nullptr;
+}
+
+static bool primitive_term(const moss::TypeRef& type, std::string_view name) {
+  return type && type->kind == moss::TypeKind::Primitive && type->name == name;
+}
+
+// A parameterized built-in application named one of `names`.
+static bool applied_builtin(const moss::TypeRef& type,
+                            std::initializer_list<std::string_view> names) {
+  if (!type || type->kind != moss::TypeKind::Builtin || type->type_args.empty())
+    return false;
+  return std::find(names.begin(), names.end(), type->name) != names.end();
+}
+
+// A built-in collection, bare or applied, named one of `names`.
+static bool collection_named(const moss::TypeRef& type,
+                             std::initializer_list<std::string_view> names) {
+  if (!type || type->kind != moss::TypeKind::Builtin) return false;
+  return std::find(names.begin(), names.end(), type->name) != names.end();
+}
+
+// The type an index expression yields: a vector's or queue's element, or a
+// map's value. `seq` is not indexable and is deliberately absent.
+static std::optional<string> indexed_element(const moss::TypeRef& type) {
+  if (applied_builtin(type, {"vector", "queue"}) && type->type_args.size() == 1)
+    return type->type_args[0]->to_canonical_string();
+  if (applied_builtin(type, {"map"}) && type->type_args.size() == 2)
+    return type->type_args[1]->to_canonical_string();
+  return std::nullopt;
+}
+
+// A bare collection spelling (`vector`) against an application of that same
+// collection (`vector[int]`): the open literal takes the declared type.
+static bool bare_matches_applied(const string& bare, const string& applied) {
+  const auto open = parsed_type(bare);
+  const auto declared = parsed_type(applied);
+  return open && declared && open->kind == moss::TypeKind::Builtin &&
+         open->type_args.empty() && declared->kind == moss::TypeKind::Builtin &&
+         !declared->type_args.empty() && declared->name == open->name;
+}
+
 struct BuiltinOperationDescriptor {
   BuiltinReceiverFamily receiver;
   const char* name;
@@ -546,13 +592,11 @@ static const vector<BuiltinOperationDescriptor>& builtin_operations() {
 static std::optional<BuiltinReceiverFamily> builtin_receiver_family(
     const string& type) {
   string concrete = canonical_type_name(type);
-  if (concrete == "vector" || starts_with(concrete, "vector["))
-    return BuiltinReceiverFamily::Vector;
-  if (concrete == "map" || starts_with(concrete, "map["))
-    return BuiltinReceiverFamily::Map;
-  if (concrete == "queue" || starts_with(concrete, "queue["))
-    return BuiltinReceiverFamily::Queue;
-  if (concrete == "string") return BuiltinReceiverFamily::String;
+  const auto term = parsed_type(concrete);
+  if (collection_named(term, {"vector"})) return BuiltinReceiverFamily::Vector;
+  if (collection_named(term, {"map"})) return BuiltinReceiverFamily::Map;
+  if (collection_named(term, {"queue"})) return BuiltinReceiverFamily::Queue;
+  if (primitive_term(term, "string")) return BuiltinReceiverFamily::String;
   return std::nullopt;
 }
 
@@ -609,51 +653,6 @@ static bool contains_internal_placeholder(const string& type) {
   return false;
 }
 
-// The structural term of a declared or projected type spelling, whether or
-// not it is closed: `map` and `vector[_generic:x]` parse here.
-static moss::TypeRef parsed_type(const string& spelling) {
-  auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
-  return parsed ? *parsed : nullptr;
-}
-
-static bool primitive_term(const moss::TypeRef& type, std::string_view name) {
-  return type && type->kind == moss::TypeKind::Primitive && type->name == name;
-}
-
-// A parameterized built-in application named one of `names`.
-static bool applied_builtin(const moss::TypeRef& type,
-                            std::initializer_list<std::string_view> names) {
-  if (!type || type->kind != moss::TypeKind::Builtin || type->type_args.empty())
-    return false;
-  return std::find(names.begin(), names.end(), type->name) != names.end();
-}
-
-// A built-in collection, bare or applied, named one of `names`.
-static bool collection_named(const moss::TypeRef& type,
-                             std::initializer_list<std::string_view> names) {
-  if (!type || type->kind != moss::TypeKind::Builtin) return false;
-  return std::find(names.begin(), names.end(), type->name) != names.end();
-}
-
-// The type an index expression yields: a vector's or queue's element, or a
-// map's value. `seq` is not indexable and is deliberately absent.
-static std::optional<string> indexed_element(const moss::TypeRef& type) {
-  if (applied_builtin(type, {"vector", "queue"}) && type->type_args.size() == 1)
-    return type->type_args[0]->to_canonical_string();
-  if (applied_builtin(type, {"map"}) && type->type_args.size() == 2)
-    return type->type_args[1]->to_canonical_string();
-  return std::nullopt;
-}
-
-// A bare collection spelling (`vector`) against an application of that same
-// collection (`vector[int]`): the open literal takes the declared type.
-static bool bare_matches_applied(const string& bare, const string& applied) {
-  const auto open = parsed_type(bare);
-  const auto declared = parsed_type(applied);
-  return open && declared && open->kind == moss::TypeKind::Builtin &&
-         open->type_args.empty() && declared->kind == moss::TypeKind::Builtin &&
-         !declared->type_args.empty() && declared->name == open->name;
-}
 
 // The concrete effect is semantic metadata; both native sides derive their
 // passing mode from this one decision. Primitive WRITE retains Moss's existing
@@ -15770,8 +15769,12 @@ class Checker {
         err(line, "assertEqual operands have types '" + *actual +
             "' and '" + *expected + "'");
       string type = canonical_type_name(*actual);
-      bool printable = type == "int" || type == "float" || type == "bool" ||
-          type == "string" || starts_with(type, "vector[");
+      const auto printable_term = parsed_type(type);
+      bool printable = primitive_term(printable_term, "int") ||
+          primitive_term(printable_term, "float") ||
+          primitive_term(printable_term, "bool") ||
+          primitive_term(printable_term, "string") ||
+          applied_builtin(printable_term, {"vector"});
       if (!printable)
         err(line, "assertEqual currently supports scalar, string, and Vector values; compare a field for other values");
       return;
@@ -27114,11 +27117,7 @@ static void write_type_facts_json(std::ostream& out,
     category = "specialized";
   else if (target.kind == "domain")
     category = "domain";
-  else if (starts_with(target.type, "vector[") ||
-           starts_with(target.type, "map[") ||
-           starts_with(target.type, "queue[") ||
-           target.type == "vector" || target.type == "map" ||
-           target.type == "queue")
+  else if (collection_named(parsed_type(target.type), {"vector", "map", "queue"}))
     category = "collection";
   write_debug_json_string(out, category);
   out << ", \"origin\": ";
