@@ -97,6 +97,28 @@ fn main():
         parity(independent, scratch, "1\nhello\n")
         print("PASS independent open-result calls and three-engine parity", flush=True)
 
+        call_constraint = source(scratch, "open_call_constraint", '''fn use_ints(values: Vector[Int]):
+  echo values |> count
+
+fn main():
+  items = []
+  use_ints(items)
+  echo items
+''')
+        checked(call_constraint)
+        print("PASS concrete call parameter closes one open local", flush=True)
+
+        call_conflict = source(scratch, "open_call_conflict", '''fn use_ints(values: Vector[Int]):
+  echo values |> count
+
+fn main():
+  items = []
+  use_ints(items)
+  items.push("wrong")
+''')
+        checked(call_conflict, "TYPE_MISMATCH")
+        print("PASS call and later push constrain the same local", flush=True)
+
         conflict = source(scratch, "one_binding_conflict", '''fn main():
   a = []
   a.push(1)

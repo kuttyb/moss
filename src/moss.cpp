@@ -5563,15 +5563,61 @@ class Checker {
   // element type.  Each local gets its own variable, including two assignments
   // from separate calls to the same open-result function.
   TypeEnv solve_local_collection_types(const vector<Stmt>& statements,
-                                       const TypeEnv& entry) const {
+                                       const TypeEnv& entry,
+                                       const string& semantic_context) const {
     moss::TypeSolver solver(1);
     std::unordered_map<string, moss::TypeRef> locals;
+    vector<std::pair<const Stmt*, moss::TypeRef>> open_calls;
     TypeEnv scan = entry;
+    auto term_for = [&](const string& expression) -> moss::TypeRef {
+      string value = trim(expression);
+      if (simple_identifier(value)) {
+        auto local = locals.find(value);
+        if (local != locals.end()) return local->second;
+      }
+      auto inferred = inferred_expr_type(value, scan);
+      if (!inferred) return nullptr;
+      auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
+      return parsed ? *parsed : nullptr;
+    };
+    auto require_type = [&](int line, const string& expression,
+                            const string& expected, const string& context) {
+      auto actual = term_for(expression);
+      auto parsed = moss::Type::parse_canonical(canonical_type_name(expected));
+      if (!actual || !parsed) return;
+      // A call supplies a concrete constraint to the existing local variable.
+      // The solver owns this binding for the whole body, including earlier
+      // reads and later assignments. The call never creates a fresh local.
+      if (!solver.unify(actual, *parsed))
+        err(line, context + " requires '" + canonical_type_name(expected) +
+            "' for '" + trim(expression) + "'", "TYPE_MISMATCH");
+    };
+    auto constrain_call = [&](int line, const string& expression) {
+      string callee;
+      vector<string> arguments;
+      if (!parse_simple_call(trim(expression), callee, arguments)) return;
+      auto function = functions_.find(callee);
+      if (function == functions_.end()) return;
+      for (size_t index = 0;
+           index < arguments.size() && index < function->second->params.size(); ++index) {
+        const auto& parameter = function->second->params[index];
+        if (parameter.type.empty() || traits_.count(parameter.type) ||
+            contains_internal_placeholder(parameter.type)) continue;
+        require_type(line, arguments[index], parameter.type,
+                     "argument " + std::to_string(index + 1) +
+                     " to function '" + callee + "'");
+      }
+    };
     for (const Stmt& statement : statements) {
+      if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
+        string invocation = statement.a + "(" + join_arguments(statement.args) + ")";
+        constrain_call(statement.line, invocation);
+      }
       if ((statement.kind == Stmt::Kind::Let ||
            statement.kind == Stmt::Kind::Var ||
            statement.kind == Stmt::Kind::Assign) &&
-          statement.indent == 0 && simple_identifier(statement.a)) {
+          simple_identifier(statement.a)) {
+        constrain_call(statement.line, statement.b);
         auto inferred = inferred_expr_type(statement.b, scan);
         if (!inferred) continue;
         auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
@@ -5601,20 +5647,34 @@ class Checker {
               statement.a + "'", "TYPE_MISMATCH");
         else if (prior == locals.end())
           locals.emplace(statement.a, term);
+        string callee;
+        vector<string> call_arguments;
+        if (parse_simple_call(trim(statement.b), callee, call_arguments)) {
+          auto function = functions_.find(callee);
+          if (function != functions_.end() && function->second->return_type) {
+            auto returned = moss::Type::parse_canonical(
+                canonical_type_name(*function->second->return_type));
+            // Only the bare built-in result grammar gives a fixed, direct
+            // ordinal for every result slot here. Nested, nominal and
+            // composed summaries require their own typed bound-var record.
+            if (returned && (*returned)->kind == moss::TypeKind::Builtin &&
+                moss::Type::collection_arity((*returned)->name) &&
+                (*returned)->type_args.empty())
+              open_calls.emplace_back(&statement, term);
+          }
+        }
         scan[statement.a] = solver.resolve(locals.at(statement.a))->to_canonical_string();
       } else if (statement.kind == Stmt::Kind::Call && statement.b == "push" &&
                  statement.args.size() == 1) {
         auto local = locals.find(statement.a);
         if (local == locals.end()) continue;
-        auto argument = inferred_expr_type(statement.args.front(), scan);
+        auto argument = term_for(statement.args.front());
         if (!argument) continue;
-        auto parsed = moss::Type::parse_canonical(canonical_type_name(*argument));
-        if (!parsed) continue;
         auto current = solver.resolve(local->second);
         if (current->kind != moss::TypeKind::Builtin ||
             (current->name != "vector" && current->name != "queue") ||
             current->type_args.size() != 1) continue;
-        if (!solver.unify(current->type_args.front(), *parsed))
+        if (!solver.unify(current->type_args.front(), argument))
           err(statement.line, "push argument conflicts with the element type of '" +
               statement.a + "'", "TYPE_MISMATCH");
         scan[statement.a] = solver.resolve(local->second)->to_canonical_string();
@@ -5625,6 +5685,25 @@ class Checker {
       auto resolved = solver.resolve(term);
       if (resolved->is_closed()) closed.emplace(name, resolved->to_canonical_string());
     }
+    for (const auto& [statement, term] : open_calls) {
+      auto result = solver.resolve(term);
+      if (!result->is_closed()) continue;
+      string callee;
+      vector<string> arguments;
+      if (!parse_simple_call(trim(statement->b), callee, arguments)) continue;
+      auto function = functions_.find(callee);
+      if (function == functions_.end()) continue;
+      OpenCallResultFacts facts;
+      facts.expression_id = "call-expression-v1:" + statement->source_file +
+          ":" + std::to_string(statement->line) + ":" + callee;
+      facts.callable_id = function->second->semantic_callable_id;
+      facts.result = result;
+      for (size_t index = 0; index < result->type_args.size(); ++index)
+        facts.ordered_bindings.emplace_back(static_cast<uint32_t>(index),
+                                            result->type_args[index]);
+      const_cast<Stmt*>(statement)->open_call_results_by_context[semantic_context] =
+          std::move(facts);
+    }
     return closed;
   }
 
@@ -5634,7 +5713,8 @@ class Checker {
                                 bool record_join_types = false,
                                 bool record_semantic_types = false,
                                 const string& join_context = {}) const {
-    const TypeEnv solved_collections = solve_local_collection_types(statements, env);
+    const TypeEnv solved_collections =
+        solve_local_collection_types(statements, env, join_context);
     size_t index = 0;
     walk_type_environment_block(statements, index, 0, env, visitor,
                                 reject_conflicts, record_join_types,

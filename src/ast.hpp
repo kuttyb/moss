@@ -57,6 +57,16 @@ struct Param {
   // True when the concrete type was inferred from an untyped parameter.
   bool inferred = false;
 };
+// A call that instantiates an open result has its own inference variables.
+// These checked facts survive body closure for specialization registration and
+// semantic export. Ordinals refer to the callee's result variables, not the
+// caller's local binding names.
+struct OpenCallResultFacts {
+  string expression_id;
+  string callable_id;
+  TypeRef result;
+  vector<std::pair<std::uint32_t, TypeRef>> ordered_bindings;
+};
 struct Stmt {
   enum class Kind {
     Raw, Pass, Assign, Call, Message, Echo, If, Else, While, For, Match, Case,
@@ -74,6 +84,7 @@ struct Stmt {
   string message_result;
   vector<int> continuation_lines;
   string semantic_type;
+  std::unordered_map<string, OpenCallResultFacts> open_call_results_by_context;
   // Concrete receiver after collection element inference, keyed by the exact
   // callable/specialization context. Native lowering projects this checked fact.
   std::unordered_map<string,string> receiver_types_by_context;
