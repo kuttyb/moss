@@ -6974,13 +6974,27 @@ class Checker {
         body_types.assignment_values.emplace(&statement, value);
         if (!container || container->kind != moss::TypeKind::Builtin) continue;
         bool compatible = true;
+        // Name both types: unification binds variables, so the expected
+        // element and the actual value are read before it runs.
+        auto describe = [&](const moss::TypeRef& type) {
+          auto resolved = solver.resolve(type);
+          return resolved ? resolved->to_canonical_string() : string();
+        };
+        string expected_element, actual_value = describe(value);
         if ((container->name == "vector" || container->name == "queue") &&
-            container->type_args.size() == 1)
+            container->type_args.size() == 1) {
+          expected_element = describe(container->type_args[0]);
           compatible = solver.unify(container->type_args[0], value);
-        else if (container->name == "map" &&
-                 container->type_args.size() == 2)
+        } else if (container->name == "map" &&
+                 container->type_args.size() == 2) {
+          expected_element = describe(container->type_args[1]);
           compatible = (!key || solver.unify(container->type_args[0], key)) &&
               solver.unify(container->type_args[1], value);
+        }
+        if (!compatible && !expected_element.empty() && !actual_value.empty())
+          err(statement.line, "indexed assignment requires value of type '" +
+              expected_element + "', found '" + actual_value + "'",
+              "TYPE_MISMATCH");
         if (!compatible)
           err(statement.line, "indexed assignment conflicts with the binding's type",
               "TYPE_MISMATCH");
