@@ -77,7 +77,7 @@ struct InvalidFieldAnnotation : std::invalid_argument {
   std::string declaration_id;
   std::string field_name;
   InvalidFieldAnnotation(std::string id, std::string field, std::string type)
-      : std::invalid_argument("invalid declared field type: " + type),
+      : std::invalid_argument("malformed type expression '" + type + "'"),
         declaration_id(std::move(id)), field_name(std::move(field)) {}
 };
 

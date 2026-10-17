@@ -1348,6 +1348,8 @@ reject_case unresolved_field_value "unbound open result type for variable 'value
 # Queue one, Map two); partial or excess arity is malformed, not open.
 reject_case partial_arity_map_field "[MALFORMED_TYPE_EXPRESSION] malformed type expression 'map[string]'"
 reject_case partial_arity_vector_parameter "[MALFORMED_TYPE_EXPRESSION] malformed type expression 'vector[int,int]'"
+# An enum Map key is detected from the key's term kind, not its spelling.
+reject_case enum_index_map_key "[ENUM_MAP_KEY_UNSUPPORTED] enum values cannot be Map keys"
 reject_case unresolved_state "cannot infer type for state field 'Worker.value'"
 reject_case state_annotation_mismatch "state field 'Counter.value' is annotated 'int' but its initializer has type 'float'"
 reject_case conflicting_reply_types "conflicting reply types in handler 'Worker.Maybe'"

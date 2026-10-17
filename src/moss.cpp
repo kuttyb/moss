@@ -5220,16 +5220,12 @@ class Checker {
           "option[" + element.value_or("_") + "]", false};
     }
     if (callee == "sum" && args.size() == 1) {
-      auto argument = inferred_expr_type(args.front(), env);
+      auto argument = inferred_expr(args.front(), env);
       if (!argument) return std::nullopt;
-      if ((starts_with(*argument, "seq[") ||
-           starts_with(*argument, "vector[")) && ends_with(*argument, "]")) {
-        size_t opening = argument->find('[');
-        return BuiltinCallSemantics{
-            trim(argument->substr(opening + 1,
-                                  argument->size() - opening - 2)), false};
-      }
-      return BuiltinCallSemantics{*argument, false};
+      const auto collection = inferred_shape(*argument);
+      if (applied_builtin(collection, {"seq", "vector"}) && collection->type_args.size() == 1)
+        return BuiltinCallSemantics{collection->type_args[0]->to_canonical_string(), false};
+      return BuiltinCallSemantics{argument->projection(), false};
     }
     if (callee == "assert" && args.size() == 1)
       return BuiltinCallSemantics{"unit", true};
@@ -5264,6 +5260,15 @@ class Checker {
 
   static bool primitive_term(const moss::TypeRef& type, std::string_view name) {
     return type && type->kind == moss::TypeKind::Primitive && type->name == name;
+  }
+
+  // A bare collection annotation (`vector`, `map`, `queue`) accepts any
+  // application of the same collection.
+  static bool bare_collection_accepts(const string& formal, const InferredExpr& actual) {
+    auto parsed = moss::Type::parse_canonical(canonical_type_name(formal));
+    return parsed && (*parsed)->kind == moss::TypeKind::Builtin &&
+           (*parsed)->type_args.empty() &&
+           applied_builtin(inferred_shape(actual), {(*parsed)->name});
   }
 
   // A parameterized built-in application named one of `names`.
@@ -7048,13 +7053,11 @@ class Checker {
                     err(statement.line,
                         "functional pipeline must be materialized in a local binding "
                         "before crossing a domain boundary");
-                  auto actual = inferred_expr_type(statement.args[index], current_env);
-                  if (!actual) continue;
+                  auto inferred = inferred_expr(statement.args[index], current_env);
+                  if (!inferred) continue;
+                  const auto actual = std::optional<string>(inferred->projection());
                   auto& parameter = handler->params[index];
-                  bool inferred_container =
-                      (parameter.type == "vector" && starts_with(*actual, "vector[")) ||
-                      (parameter.type == "queue" && starts_with(*actual, "queue[")) ||
-                      (parameter.type == "map" && starts_with(*actual, "map["));
+                  bool inferred_container = bare_collection_accepts(parameter.type, *inferred);
                   bool untyped_parameter = parameter.type.empty();
                   if (untyped_parameter || inferred_container) {
                     parameter.type = *actual;
@@ -7084,13 +7087,11 @@ class Checker {
               if (auto* handler = find_handler(*domains_.at(receiver->second), handler_name)) {
                 for (size_t index = 0;
                      index < handler_args.size() && index < handler->params.size(); ++index) {
-                  auto actual = inferred_expr_type(handler_args[index], current_env);
-                  if (!actual) continue;
+                  auto inferred = inferred_expr(handler_args[index], current_env);
+                  if (!inferred) continue;
+                  const auto actual = std::optional<string>(inferred->projection());
                   auto& parameter = handler->params[index];
-                  bool inferred_container =
-                      (parameter.type == "vector" && starts_with(*actual, "vector[")) ||
-                      (parameter.type == "queue" && starts_with(*actual, "queue[")) ||
-                      (parameter.type == "map" && starts_with(*actual, "map["));
+                  bool inferred_container = bare_collection_accepts(parameter.type, *inferred);
                   bool untyped_parameter = parameter.type.empty();
                   if (untyped_parameter || inferred_container) {
                     parameter.type = *actual;
@@ -15858,11 +15859,7 @@ class Checker {
       }
       auto formal_term = moss::Type::parse_canonical(
           canonical_type_name(param.type));
-      // A bare collection parameter accepts any application of it.
-      bool container_match = formal_term &&
-          (*formal_term)->kind == moss::TypeKind::Builtin &&
-          (*formal_term)->type_args.empty() &&
-          applied_builtin(actual_shape, {(*formal_term)->name});
+      bool container_match = bare_collection_accepts(param.type, actual_result);
       auto actual_term = checked_expression_term(args[index], env);
       const bool typed_check = current_body_types_ &&
           !param.type.empty() && !traits_.count(param.type) &&
@@ -16856,23 +16853,17 @@ class Checker {
     if (parse_index(value, ib, ii)) {
       check_expression(line, ib, env);
       check_expression(line, ii, env);
-      auto bt = inferred_expr_type(ib, env);
+      const auto base = inferred_expr(ib, env);
+      const auto bt = base ? std::optional<string>(base->projection()) : std::nullopt;
+      const auto index_term = inferred_expr_term(ii, env);
       if (current_body_types_) {
         auto container = current_body_types_->known_expression(ib);
         auto key = current_body_types_->known_expression(ii);
-        if (!key) {
-          auto inferred_key = inferred_expr_type(ii, env);
-          if (inferred_key) {
-            auto parsed = moss::Type::parse_canonical(
-                canonical_type_name(*inferred_key));
-            if (parsed && (*parsed)->is_closed()) key = *parsed;
-          }
-        }
+        if (!key) key = index_term;
         if (container && key && container->kind == moss::TypeKind::Builtin) {
           if (container->name == "vector" || container->name == "queue") {
-            auto integer = moss::Type::parse_canonical("int");
-            if (container->type_args.size() != 1 || !integer ||
-                !current_body_types_->solver.unify(key, *integer))
+            if (container->type_args.size() != 1 ||
+                !current_body_types_->solver.unify(key, moss::Type::primitive("int")))
               err(line, "vector and queue indices must be Int", "TYPE_MISMATCH");
             return;
           }
@@ -16884,38 +16875,40 @@ class Checker {
             auto key_type = current_body_types_->solver.resolve(
                 container->type_args[0]);
             if (key_type && key_type->is_closed()) {
-              const string spelling = key_type->to_canonical_string();
-              if (enums_.count(canonical_type_name(spelling)))
+              if (key_type->kind == moss::TypeKind::Enum)
                 err(line, "enum values cannot be Map keys; enum equality and hashing are unsupported",
                     "ENUM_MAP_KEY_UNSUPPORTED");
-              check_map_key_type(line, spelling);
+              check_map_key_type(line, key_type->to_canonical_string());
             }
             return;
           }
         }
       }
       if (!bt) err(line, "cannot infer indexed container type");
-      if (canonical_type_name(*bt) == "RangeBatch" ||
-          canonical_type_name(*bt) == "Range") {
-        auto index_type = inferred_expr_type(ii, env);
-        if (!index_type || canonical_type_name(*index_type) != "int")
+      if (primitive_term(base->term, "RangeBatch") || primitive_term(base->term, "Range")) {
+        if (!primitive_term(index_term, "int"))
           err(line, "Range and RangeBatch indexes must be Int", "TYPE_MISMATCH");
         return;
       }
       // An untyped parameter carries an indexing requirement. Its key and
       // element types are checked again in each concrete specialization.
-      if (starts_with(*bt, "_generic:")) return;
-      if (starts_with(*bt, "vector[") || starts_with(*bt, "queue[") || *bt == "vector" || *bt == "queue") {
-        auto it = inferred_expr_type(ii, env);
-        if (!it || *it != "int") err(line, "vector and queue indices must be Int");
-      } else if (starts_with(*bt, "map[")) {
-        auto ps = split_top_level(bt->substr(4, bt->size()-5), ',');
-        if (ps.size() == 2 && enums_.count(canonical_type_name(ps[0])))
+      if (!base->term && starts_with(base->legacy, "_generic:")) return;
+      const auto container = inferred_shape(*base);
+      const bool builtin = container && container->kind == moss::TypeKind::Builtin;
+      if (builtin && (container->name == "vector" || container->name == "queue")) {
+        if (!primitive_term(index_term, "int")) err(line, "vector and queue indices must be Int");
+      } else if (applied_builtin(container, {"map"})) {
+        const bool keyed = container->type_args.size() == 2;
+        const auto key = keyed ? container->type_args[0] : nullptr;
+        if (keyed && key->kind == moss::TypeKind::Enum)
           err(line, "enum values cannot be Map keys; enum equality and hashing are unsupported",
               "ENUM_MAP_KEY_UNSUPPORTED");
-        if (ps.size() == 2) check_map_key_type(line, ps[0]);
-        auto it = inferred_expr_type(ii, env);
-        if (ps.size() != 2 || !it || !same_type(ps[0], *it)) err(line, "map key type mismatch");
+        if (keyed) check_map_key_type(line, key->to_canonical_string());
+        auto index = inferred_expr(ii, env);
+        const bool same_key = keyed && index &&
+            (index->term && base->term ? key->structurally_equal(*index->term)
+                                       : same_type(key->to_canonical_string(), index->projection()));
+        if (!same_key) err(line, "map key type mismatch");
       } else err(line, "value is not an indexable container");
       return;
     }
@@ -17056,14 +17049,14 @@ class Checker {
       err(line, "cannot infer the static iterator source type");
     }
     string type = canonical_type_name(*source_type);
-    if (type == "RangeBatch") return string("Range");
-    if (type == "Range") return string("int");
-    if (starts_with(type, "_generic:"))
-      return "_iterator_element:" + type.substr(9);
-    if (starts_with(type, "vector[") && ends_with(type, "]"))
-      return trim(type.substr(7, type.size() - 8));
-    if (starts_with(type, "seq[") && ends_with(type, "]"))
-      return trim(type.substr(4, type.size() - 5));
+    const auto source_result = inferred_leaf(type);
+    if (primitive_term(source_result.term, "RangeBatch")) return string("Range");
+    if (primitive_term(source_result.term, "Range")) return string("int");
+    if (!source_result.term && starts_with(source_result.legacy, "_generic:"))
+      return "_iterator_element:" + source_result.legacy.substr(9);
+    if (const auto collection = inferred_shape(source_result);
+        applied_builtin(collection, {"vector", "seq"}) && collection->type_args.size() == 1)
+      return collection->type_args[0]->to_canonical_string();
 
     auto next_element = [&](const string& iterator_type) -> std::optional<string> {
       MethodResolutionFailure failure = MethodResolutionFailure::None;

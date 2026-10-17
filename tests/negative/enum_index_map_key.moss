@@ -1,0 +1,8 @@
+enum Color:
+  Red
+  Blue
+
+fn main():
+  var m = Map()
+  m[Color.Red] = 1
+  echo m[Color.Red]
