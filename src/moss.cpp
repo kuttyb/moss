@@ -526,6 +526,14 @@ static std::optional<string> indexed_element(const moss::TypeRef& type) {
   return std::nullopt;
 }
 
+// An open built-in collection: named, with no type arguments yet.
+static bool bare_collection(const moss::TypeRef& type,
+                            std::initializer_list<std::string_view> names) {
+  if (!type || type->kind != moss::TypeKind::Builtin || !type->type_args.empty())
+    return false;
+  return std::find(names.begin(), names.end(), type->name) != names.end();
+}
+
 // A bare collection spelling (`vector`) against an application of that same
 // collection (`vector[int]`): the open literal takes the declared type.
 static bool bare_matches_applied(const string& bare, const string& applied) {
@@ -869,7 +877,7 @@ static bool parse_fileio_open(const string& text, vector<string>& args) {
 static bool executor_typed(const std::unordered_map<string,string>& env,
                            const string& name) {
   auto it = env.find(trim(name));
-  return it != env.end() && it->second == "executor";
+  return it != env.end() && primitive_term(parsed_type(it->second), "executor");
 }
 
 static bool fileio_typed(const std::unordered_map<string,string>& env,
@@ -14958,7 +14966,7 @@ class Checker {
             else {
               auto element = inferred_expr_type(s.args.front(), env.types);
               if (container != env.types.end() && element &&
-                  (container->second == "queue" || container->second == "vector"))
+                  bare_collection(parsed_type(container->second), {"queue", "vector"}))
                 container->second += "[" + *element + "]";
             }
           }
@@ -17355,7 +17363,7 @@ class Checker {
               }
               if (container != current_env.end() &&
                   (starts_with(container->second, "_generic:") ||
-                   container->second == "map")) {
+                   bare_collection(parsed_type(container->second), {"map"}))) {
                 // A generic is checked at its concrete call. A fresh Map()
                 // learns its key/value types from this first assignment.
               } else {
@@ -24916,7 +24924,8 @@ class Generator {
           if (!s.b.empty()) {
             string method = s.b;
             auto it = types.find(s.a);
-            if (it != types.end() && (it->second == "queue" || starts_with(it->second, "queue["))) method = method == "push" ? "push_back" : method == "pop" ? "pop_front" : method;
+            if (it != types.end() && collection_named(parsed_type(it->second), {"queue"}))
+              method = method == "push" ? "push_back" : method == "pop" ? "pop_front" : method;
             call_output << "." << viewed_method_name(s.a, method, s.args, d, locals, &types);
           }
           call_output << "(";
