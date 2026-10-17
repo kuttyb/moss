@@ -15,10 +15,13 @@ leaking or it is removed, so the list cannot rot silently.
 """
 
 import concurrent.futures
+import io
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -35,10 +38,10 @@ KNOWN_OPEN = {
 }
 
 
-def leaked(moss: Path, source: str) -> str:
+def leaked(moss: Path, corpus: Path, source: str) -> str:
     try:
         completed = subprocess.run([str(moss), "check", source, "--json"],
-                                   cwd=ROOT, capture_output=True, text=True,
+                                   cwd=corpus, capture_output=True, text=True,
                                    timeout=120)
         message = (json.loads(completed.stdout).get("error") or {}).get("message", "")
     except (subprocess.TimeoutExpired, json.JSONDecodeError):
@@ -53,10 +56,22 @@ def main() -> int:
         capture_output=True, text=True, check=True).stdout.splitlines()
         if path.endswith(".moss")]
 
+    # Check a private export: `moss check` writes a semantic cache beside the
+    # project it checks, and doing that in the worktree corrupts fixtures that
+    # declare an exact file inventory, such as the agent benchmark starters.
+    corpus = ROOT / "tmp" / "internal-type-leak"
+    shutil.rmtree(corpus, ignore_errors=True)
+    corpus.mkdir(parents=True)
+    archive = subprocess.run(["git", "archive", "HEAD"], cwd=ROOT,
+                             capture_output=True, check=True).stdout
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+        tar.extractall(corpus, filter="data")
+
     with concurrent.futures.ThreadPoolExecutor(os.cpu_count() or 4) as pool:
         leaks = {source: message for source, message
-                 in zip(sources, pool.map(lambda s: leaked(moss, s), sources))
+                 in zip(sources, pool.map(lambda s: leaked(moss, corpus, s), sources))
                  if message}
+    shutil.rmtree(corpus, ignore_errors=True)
 
     unexpected = sorted(set(leaks) - KNOWN_OPEN)
     for source in unexpected:
