@@ -33,6 +33,7 @@
 #include "ast.hpp"
 #include "type_ir.hpp"
 #include "typed_semantic_api.hpp"
+#include "checked_body_ir.hpp"
 #include "debug_map.hpp"
 #include "diagnostics.hpp"
 #include "type_placeholders.hpp"
@@ -2331,6 +2332,7 @@ class Checker {
               "static specialization has inconsistent observable effects for one key",
               "SOURCE_FREE_SPECIALIZATION_MISMATCH");
       }
+    retain_checked_body_ir();
     { CompilerStageTimer timer("synchronization_plan"); build_synchronization_plan(p_.concrete_domain_graph); }
     warn_fileio_blocking_with_shared_write();
     retain_checked_type_uses();
@@ -2483,6 +2485,66 @@ class Checker {
         : slot(target), previous(target) { slot = current; }
     ~BodyTypeScope() { slot = previous; }
   };
+
+  // Materialize only body forms whose operands can be tied to checked summary
+  // slots. No source spelling or physical path participates in the hash.
+  void retain_checked_body_ir() {
+    for (auto& function : p_.functions) {
+      function.checked_body_v1.reset();
+      if (!function.open_summary || !function.open_summary->complete) continue;
+      const auto& summary = *function.open_summary;
+      string expression;
+      if (function.body.empty() && function.result_expression)
+        expression = *function.result_expression;
+      else if (function.body.size() == 1 &&
+               function.body[0].kind == Stmt::Kind::Return)
+        expression = function.body[0].a;
+      else continue;
+      auto leaf = [&](const string& source) -> std::optional<moss::CheckedBodyExprV1> {
+        string value = trim(source);
+        for (size_t index = 0; index < function.params.size(); ++index)
+          if (value == function.params[index].name &&
+              index < summary.parameter_types.size() &&
+              summary.parameter_types[index])
+            return moss::CheckedBodyExprV1{
+                moss::CheckedBodyExprV1::Kind::Parameter,
+                summary.parameter_types[index],
+                static_cast<std::uint32_t>(index), {}, {}};
+        if (value.empty() || !std::all_of(value.begin(), value.end(),
+              [](unsigned char c) { return std::isdigit(c); })) return std::nullopt;
+        try {
+          size_t consumed = 0;
+          const auto number = std::stoll(value, &consumed, 10);
+          if (consumed != value.size()) return std::nullopt;
+          return moss::CheckedBodyExprV1{
+              moss::CheckedBodyExprV1::Kind::Integer,
+              moss::Type::primitive("int"), 0, std::to_string(number), {}};
+        } catch (const std::exception&) {
+          return std::nullopt;
+        }
+      };
+      std::optional<moss::CheckedBodyExprV1> result = leaf(expression);
+      if (!result) {
+        auto binary = split_binary(trim(expression), {"+"});
+        if (binary) {
+          auto left = leaf(binary->first);
+          auto right = leaf(binary->second);
+          if (left && right && summary.result_type)
+            result = moss::CheckedBodyExprV1{
+                moss::CheckedBodyExprV1::Kind::Add,
+                summary.result_type, 0, {}, {*left, *right}};
+        }
+      }
+      if (!result || !summary.result_type) continue;
+      // A direct return has exactly the summary's checked result type.
+      if (result->kind != moss::CheckedBodyExprV1::Kind::Add &&
+          !result->type->structurally_equal(*summary.result_type)) continue;
+      vector<moss::CheckedBodyStmtV1> statements{{
+          moss::CheckedBodyStmtV1::Kind::Return, *result}};
+      function.checked_body_v1 = moss::CheckedBodyV1{
+          statements, moss::checked_body_semantic_hash_v1(statements)};
+    }
+  }
 
   void build_open_callable_summaries() {
     for (auto& function : p_.functions) {
@@ -28619,6 +28681,13 @@ static void write_typed_semantic_projection_json(std::ostream& out,
     out << ", \"exported\": " << (summary.exported ? "true" : "false");
     out << ", \"checked_body_ir_available\": "
         << (summary.checked_body_ir_available ? "true" : "false");
+    out << ", \"body_semantic_hash\": ";
+    if (summary.checked_body_v1)
+      write_debug_json_string(out, summary.checked_body_v1->semantic_hash);
+    else out << "null";
+    out << ", \"body_semantic_status\": ";
+    write_debug_json_string(out, summary.checked_body_v1
+        ? "available_checked_body_v1" : "unsupported_checked_body_form");
     out << ", \"bound_variable_count\": " << summary.bound_variable_count;
     out << ", \"parameter_types\": [";
     for (size_t index = 0; index < summary.parameter_types.size(); ++index) {
