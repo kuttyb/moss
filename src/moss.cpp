@@ -2512,8 +2512,11 @@ class Checker {
         }
         if (!constraint.result.empty() &&
             starts_with(constraint.result, "_method_result:")) {
-          if (!summary.result_type) summary.result_type = bound();
-          member.result = summary.result_type;
+          // An imported generic may project its overall result through a
+          // parameter while still retaining a separate method-result marker.
+          // Only the matching callable result marker relates those terms.
+          member.result = starts_with(result, "_method_result:")
+              ? summary.result_type : bound();
         } else if (!constraint.result_expectations.empty()) {
           member.result = type_term(constraint.result_expectations.front());
           if (!member.result) complete = false;

@@ -429,6 +429,9 @@ export fn fresh():
 
 export fn relay():
   return fresh()
+
+export fn size(value):
+  return value.length()
 ''',
         })
         env = os.environ.copy()
@@ -448,6 +451,7 @@ fn main():
   words.push("one")
   echo ints[0]
   echo words[0]
+  echo Provider.size("abc")
 ''',
         })
         env["MOSS_MODULE_PATH"] = str(artifacts)
@@ -458,9 +462,25 @@ fn main():
         assert data["ok"], data
         executable = data["artifacts"]["artifacts"]["executable"]
         executed = run(executable, cwd=scratch / "consumer", env=env)
-        assert executed.returncode == 0 and executed.stdout == "1\none\n", (
+        assert executed.returncode == 0 and executed.stdout == "1\none\n3\n", (
             executed.stdout, executed.stderr)
         print("PASS source-free generic calls freshen independently", flush=True)
+
+        package(scratch / "bad_consumer", "team_a_bad_consumer", "0.1.0", {
+            "main": '''module Main
+import Provider
+fn main():
+  echo Provider.size(42)
+''',
+        })
+        rejected = project_check(scratch / "bad_consumer",
+                                 code="TYPE_MISMATCH", env=env)
+        related = rejected["error"].get("related", [])
+        assert any(note["source"]["file"].endswith("Provider.mossi") and
+                   "requires method 'length'" in note["message"]
+                   for note in related), related
+        print("PASS source-free member failure retains provider provenance",
+              flush=True)
 
     print("Phase 25 Team A compiler-path semantics: PASS")
 
