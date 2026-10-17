@@ -1,3 +1,23 @@
+## Phase 25 Team A A4 canonical body-hash audit — 2026-10-16 (isolated)
+
+At consolidated base `70aad4e`, the ABI-v10 §3.3 body-hash/dependency-hash
+requirement cannot be implemented from the currently retained checked facts.
+`Stmt` has string expression operands and `Function.result_expression` is a
+string; no checked expression IR records resolved symbol/callable identities,
+literal values, and ordered operators. The source-free `generic_stmt` and
+`generic_result` records transport these strings. Two checked programs whose
+generic body returns `value + 1` and `value + 2` produce identical
+`typed-semantic-v1` open-summary JSON, despite different execution behavior.
+Hashing TypeRefs, requirements, or effects alone would therefore create a
+false semantic hash. The existing `.mossi` `semantic_ir_body_hash` derives from
+statement text and is only 64-bit, so it also cannot satisfy the frozen
+contract. Team A needs versioned checked expression/body nodes before it can
+publish a canonical SHA-256 body hash or expected dependency hashes; Team B
+must transport or deterministically reconstruct those nodes for source-free
+consumers. This remains a material A4 blocker and Team A is NOT READY.
+`make` and `tests/tooling/check_phase25_typed_semantic_api.py ./moss` passed
+on this isolated base; they do not validate any new body-hash implementation.
+
 ## Phase 25 Team A A4 final API audit — 2026-10-16 (isolated)
 
 An isolated worktree from consolidated SHA `56a8b62` added a structured
