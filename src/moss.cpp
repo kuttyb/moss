@@ -661,19 +661,6 @@ static string semantic_call_site_identity(const SemanticCallEdge& edge) {
   return identity;
 }
 
-static bool specialization_matches(const Function& function,
-                                   const FunctionSpecialization& specialization,
-                                   const vector<string>& types) {
-  vector<string> canonical_types;
-  for (const auto& type : types) canonical_types.push_back(canonical_type_name(type));
-  if (specialization.parameter_types != canonical_types) return false;
-  if (specialization.semantic_key.stable_key() !=
-      std::optional<string>(specialization.stable_type_key)) return false;
-  return std::count_if(function.specializations.begin(),
-      function.specializations.end(), [&](const FunctionSpecialization& candidate) {
-        return candidate.parameter_types == canonical_types;
-      }) == 1;
-}
 static const FunctionSpecialization* concrete_specialization(
     const Function& function, const vector<string>& types) {
   const FunctionSpecialization* selected = nullptr;
@@ -689,6 +676,20 @@ static const FunctionSpecialization* concrete_specialization(
     selected = &candidate;
   }
   return selected;
+}
+
+static const FunctionSpecialization* functional_specialization(
+    const Function& function, const vector<string>& types) {
+  // Functional registration uses this exact no-receiver, no-result-binding
+  // key. Ordinary calls of the same parameter types may have other keys.
+  auto key = specialization_key_inputs(function.semantic_callable_id, types);
+  if (!key || !key->stable_key()) return nullptr;
+  auto selected = std::find_if(function.specializations.begin(),
+                               function.specializations.end(),
+                               [&](const FunctionSpecialization& candidate) {
+    return candidate.stable_type_key == *key->stable_key();
+  });
+  return selected == function.specializations.end() ? nullptr : &*selected;
 }
 
 static bool parse_index(const string& text, string& base, string& index) {
@@ -14872,6 +14873,102 @@ class Checker {
     return resolved;
   }
 
+  vector<moss::MemberDispatchRequirement> close_specialization_members(
+      int line, const Function& function, const vector<string>& parameter_types,
+      const vector<std::pair<uint32_t, moss::TypeRef>>& open_result_bindings,
+      const vector<moss::MemberDispatchRequirement>& selected) const {
+    if (!function.open_summary ||
+        function.open_summary->member_requirements.empty()) return selected;
+    const auto& summary = *function.open_summary;
+    moss::TypeSolver solver(1);
+    vector<moss::TypeRef> variables;
+    for (uint32_t ordinal = 0; ordinal < summary.bound_variable_count; ++ordinal)
+      variables.push_back(solver.fresh(1));
+    std::function<moss::TypeRef(const moss::TypeRef&)> instantiate =
+        [&](const moss::TypeRef& source) -> moss::TypeRef {
+      if (!source) return nullptr;
+      if (source->kind == moss::TypeKind::InferenceVar)
+        return source->var_id.session_id == 0 &&
+               source->var_id.ordinal < variables.size()
+            ? variables[source->var_id.ordinal] : nullptr;
+      if (source->kind == moss::TypeKind::Builtin) {
+        vector<moss::TypeRef> arguments;
+        for (const auto& argument : source->type_args)
+          arguments.push_back(instantiate(argument));
+        return moss::Type::builtin(source->name, std::move(arguments));
+      }
+      if (source->kind == moss::TypeKind::NominalInstance) {
+        vector<std::pair<string, moss::TypeRef>> fields;
+        for (const auto& field : source->field_substitutions)
+          fields.emplace_back(field.first, instantiate(field.second));
+        return moss::Type::nominal_bound(source->declaration, source->name,
+                                        std::move(fields));
+      }
+      return source;
+    };
+    if (summary.parameter_types.size() != parameter_types.size())
+      err(line, "member summary parameter arity changed at specialization",
+          "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+    for (size_t index = 0; index < parameter_types.size(); ++index) {
+      auto concrete = moss::Type::parse_canonical(parameter_types[index]);
+      auto formal = instantiate(summary.parameter_types[index]);
+      if (!concrete || !formal || !solver.unify(*concrete, formal))
+        err(line, "member summary parameter type changed at specialization",
+            "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+    }
+    for (const auto& [ordinal, type] : open_result_bindings) {
+      if (ordinal >= variables.size() || !type ||
+          !solver.unify(variables[ordinal], type))
+        err(line, "member summary result binding changed at specialization",
+            "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+    }
+    vector<moss::MemberDispatchRequirement> requirements;
+    for (const auto& source : summary.member_requirements) {
+      auto instantiated = source;
+      instantiated.receiver = instantiate(source.receiver);
+      for (auto& argument : instantiated.argument_types)
+        argument = instantiate(argument);
+      if (source.result) instantiated.result = instantiate(*source.result);
+      requirements.push_back(std::move(instantiated));
+    }
+    auto admit = [&](const moss::MemberDispatchRequirement& open)
+        -> moss::MemberAdmission {
+      moss::MemberAdmission decision;
+      auto policy = std::find_if(selected.begin(), selected.end(),
+          [&](const moss::MemberDispatchRequirement& item) {
+            return item.requirement_id == open.requirement_id;
+          });
+      if (policy == selected.end()) return decision;
+      decision.status = moss::MemberAdmission::Status::Admitted;
+      decision.admitted_template_or_builtin_family =
+          policy->admitted_template_or_builtin_family;
+      decision.selected_callable_id = policy->selected_callable_id;
+      decision.receiver_access = policy->receiver_access;
+      decision.argument_access = policy->argument_access;
+      decision.result = policy->result;
+      if (open.receiver && policy->receiver)
+        decision.contributes.emplace_back(open.receiver, policy->receiver);
+      for (size_t index = 0;
+           index < open.argument_types.size() &&
+           index < policy->argument_types.size(); ++index)
+        decision.contributes.emplace_back(open.argument_types[index],
+                                          policy->argument_types[index]);
+      return decision;
+    };
+    auto closure = moss::close_member_requirements(
+        solver, std::move(requirements), admit);
+    if (closure.status != moss::MemberClosureResult::Status::Closed)
+      err(line, "member summary did not close at concrete specialization",
+          "TYPE_AMBIGUOUS_OPEN_RESULT");
+    for (auto& requirement : closure.requirements) {
+      requirement = moss::resolve_member_requirement(solver, requirement);
+      if (!moss::member_requirement_is_closed(requirement))
+        err(line, "member summary has an unresolved concrete requirement",
+            "TYPE_AMBIGUOUS_OPEN_RESULT");
+    }
+    return closure.requirements;
+  }
+
   void register_static_specialization(int line, Function& function,
                                       const vector<string>& parameter_types,
                                       vector<moss::MemberDispatchRequirement>
@@ -14911,6 +15008,16 @@ class Checker {
       err(line, "static specialization has an unresolved argument type",
           "TYPE_AMBIGUOUS_OPEN_RESULT");
     const string stable_key = *semantic_key->stable_key();
+    if (function.open_summary &&
+        !function.open_summary->member_requirements.empty() &&
+        !member_requirements.empty() &&
+        std::none_of(member_requirements.begin(), member_requirements.end(),
+                     [](const moss::MemberDispatchRequirement& requirement) {
+                       return requirement.parent_requirement_id.has_value();
+                     }))
+      member_requirements = close_specialization_members(
+          line, function, canonical_types, open_result_bindings,
+          member_requirements);
     if (function.open_summary && !member_requirements.empty() &&
         !current_source_file_.empty() && !current_semantic_context_.empty()) {
       string caller_module = p_.main_module.empty()
@@ -19807,13 +19914,8 @@ class Generator {
     auto function = functions_.find(identity);
     if (function == functions_.end()) return std::nullopt;
     if (function->second->static_dispatch) {
-      auto specialization = std::find_if(
-          function->second->specializations.begin(),
-          function->second->specializations.end(),
-          [&](const FunctionSpecialization& candidate) {
-            return specialization_matches(*function->second, candidate, input_types);
-          });
-      if (specialization != function->second->specializations.end())
+      if (const auto* specialization =
+              functional_specialization(*function->second, input_types))
         return specialization->return_type;
       return std::nullopt;
     }
@@ -20513,19 +20615,17 @@ class Generator {
     string emitted = identity;
     vector<string> argument_types;
     for (const auto& argument : arguments) argument_types.push_back(argument.type);
-    const auto* concrete = concrete_specialization(*function->second, argument_types);
+    const FunctionSpecialization* concrete = nullptr;
     if (function->second->static_dispatch) {
-      auto specialization = std::find_if(
-          function->second->specializations.begin(),
-          function->second->specializations.end(),
-          [&](const FunctionSpecialization& candidate) {
-            return specialization_matches(*function->second, candidate, argument_types);
-          });
-      if (specialization == function->second->specializations.end())
+      // Functional callbacks register the key with no receiver or open-result
+      // binding. Select that exact checked key even when a separate ordinary
+      // call of the same callable and arguments has a bound result key.
+      concrete = functional_specialization(*function->second, argument_types);
+      if (!concrete)
         throw std::runtime_error("missing functional specialization for '" +
                                  identity + "'");
-      emitted = specialization->generated_name;
-    }
+      emitted = concrete->generated_name;
+    } else concrete = concrete_specialization(*function->second, argument_types);
     std::ostringstream rendered;
     rendered << emitted << "(";
     for (size_t index = 0; index < arguments.size(); ++index) {

@@ -309,6 +309,31 @@ fn main():
         checked(member_conflict, "TYPE_MISMATCH")
         print("PASS generic member constraint rejects conflicting element", flush=True)
 
+        nested_member = source(scratch, "nested_and_pipeline_member", '''fn length(value):
+  return value.length()
+
+fn consume(n: Int):
+  echo n
+
+fn main():
+  consume(length("abc"))
+  echo ["ab", "cde"] |> map(length) |> sum
+''')
+        parity(nested_member, scratch, "3\n5\n")
+        inspected = run(MOSS, "inspect", "main", "--source", nested_member,
+                        "--json")
+        assert inspected.returncode == 0, (inspected.stdout, inspected.stderr)
+        typed = json.loads(inspected.stdout)["result"]["typed_semantic_v1"]
+        length_specs = [entry for entry in typed["specializations"]
+                        if entry["callable_id"].endswith(":fn:length")]
+        assert len(length_specs) == 2, length_specs
+        assert {entry["member_requirements"][0]["origin"]["line"]
+                for entry in length_specs} == {8, 9}, length_specs
+        assert all(entry["member_requirements"][0]["receiver_access"] == "READ"
+                   and entry["member_requirements"][0]["selected_callable_id"] ==
+                   "builtin:string.length" for entry in length_specs), length_specs
+        print("PASS nested and pipeline member requirements close in the solver", flush=True)
+
         relay = source(scratch, "transitive_open_result", '''fn fresh():
   return []
 
