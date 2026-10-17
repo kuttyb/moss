@@ -148,12 +148,33 @@ class TypeContext : public std::enable_shared_from_this<TypeContext> {
     declaration.id = declaration_identity(declaration.kind, declaration.module_id,
                                           declaration.declaration_name);
     declaration.owner = weak_from_this();
+    auto same_contract = [](const NominalDeclaration& left,
+                            const NominalDeclaration& right) {
+      if (left.kind != right.kind || left.module_id != right.module_id ||
+          left.declaration_name != right.declaration_name ||
+          left.fields.size() != right.fields.size()) return false;
+      for (size_t index = 0; index < left.fields.size(); ++index)
+        if (left.fields[index].name != right.fields[index].name ||
+            left.fields[index].declared_type != right.fields[index].declared_type ||
+            left.fields[index].inferred != right.fields[index].inferred)
+          return false;
+      return true;
+    };
     auto existing = by_name_.find(declaration.program_name);
     if (existing != by_name_.end()) {
-      if (existing->second->id != declaration.id)
+      if (existing->second->id != declaration.id ||
+          !same_contract(*existing->second, declaration))
         throw std::invalid_argument("conflicting nominal identity for '" +
                                     declaration.program_name + "'");
       return existing->second;
+    }
+    auto by_identity = by_id_.find(declaration.id);
+    if (by_identity != by_id_.end()) {
+      if (!same_contract(*by_identity->second, declaration))
+        throw std::invalid_argument("conflicting nominal declaration contract for '" +
+                                    declaration.id + "'");
+      by_name_.emplace(declaration.program_name, by_identity->second);
+      return by_identity->second;
     }
     auto interned = std::make_shared<const NominalDeclaration>(std::move(declaration));
     by_name_.emplace(interned->program_name, interned);

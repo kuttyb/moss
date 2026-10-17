@@ -67,6 +67,20 @@ int main() {
   assert(throws_invalid([&] {
     context.declare(record("Box", beta, "Box", {{"value", "", true}}));
   }));
+  // Distinct lookup aliases for one exact declaration ID share the interned
+  // object. A conflicting field contract cannot hide behind that same ID.
+  auto box_alias = context.declare(record("Alias__Box", app, "Box",
+                                          {{"value", "", true}}));
+  assert(box_alias == context.find("Box"));
+  assert(context.find("Alias__Box") == context.find_id(box_alias->id));
+  assert(throws_invalid([&] {
+    context.declare(record("OtherAlias__Box", app, "Box",
+                           {{"value", "string", false}}));
+  }));
+  assert(throws_invalid([&] {
+    context.declare(record("Box", app, "Box",
+                           {{"other", "", true}}));
+  }));
 
   auto nested = Type::parse_canonical("Vector[Box[value=Map[String,Vector[Cell[item=Int]]]]]");
   assert(nested && (*nested)->kind == TypeKind::Builtin);
