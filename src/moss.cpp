@@ -5751,6 +5751,28 @@ class Checker {
         if (!paths[index].count(binding)) present_everywhere = false;
       if (!present_everywhere) continue;
 
+      // The body's prepass has already unified every assignment to this
+      // binding, including assignments under zero-iteration loops and both
+      // sides of a branch. A join only projects that representative; it must
+      // not infer another type from the paths' display spellings.
+      if (current_body_types_) {
+        auto retained = current_body_types_->resolved_local(binding);
+        if (retained && !contains_internal_placeholder(
+                            retained->to_canonical_string())) {
+          if (retained->is_closed()) {
+            auto entry_type = moss::Type::parse_canonical(
+                canonical_type_name(entry.second));
+            merged[binding] = entry_type &&
+                    (*entry_type)->structurally_equal(*retained)
+                ? canonical_type_name(entry.second)
+                : retained->to_canonical_string();
+          } else {
+            merged[binding] = canonical_type_name(entry.second);
+          }
+          continue;
+        }
+      }
+
       // A binding has one type across the control-flow join. Fresh variables
       // represent only genuinely open collection slots, including nested ones;
       // a use on another path constrains that same binding's term.

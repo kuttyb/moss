@@ -647,6 +647,14 @@ fn main():
   echo values[0][0]
 ''')
         parity(nested_join, scratch, "1\n")
+        incompatible_join = source(scratch, "incompatible_branch_join", '''fn main():
+  var values = []
+  if true:
+    values = [1]
+  else:
+    values = ["wrong"]
+''')
+        checked(incompatible_join, "TYPE_MISMATCH")
         print("PASS open and nested collection branch joins use checked types", flush=True)
 
         range_loop = source(scratch, "range_loop", '''fn main():
