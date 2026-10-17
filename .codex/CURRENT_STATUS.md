@@ -1,4 +1,6 @@
-## Phase 25 Team A A4 canonical body-hash audit — 2026-10-16 (isolated)
+# Moss current status
+
+## Phase 25 Team A A4 canonical body-hash audit — 2026-10-16 (integrated)
 
 At consolidated base `70aad4e`, the ABI-v10 §3.3 body-hash/dependency-hash
 requirement cannot be implemented from the currently retained checked facts.
@@ -18,7 +20,7 @@ consumers. This remains a material A4 blocker and Team A is NOT READY.
 `make` and `tests/tooling/check_phase25_typed_semantic_api.py ./moss` passed
 on this isolated base; they do not validate any new body-hash implementation.
 
-## Phase 25 Team A A4 final API audit — 2026-10-16 (isolated)
+## Phase 25 Team A A4 final API audit — 2026-10-16 (integrated)
 
 An isolated worktree from consolidated SHA `56a8b62` added a structured
 `TypedOpenSummaryGapV1` status and a checked generic-body IR availability bit
@@ -35,7 +37,33 @@ cannot substitute for the frozen SHA-256 semantic record. Team B owns
 serialization of ordered nonzero member arguments and effect facts for
 source-free providers. Team A remains NOT READY.
 
-# Moss current status
+## Phase 25 Team A second consolidated check — 2026-10-16 (active, NOT READY)
+
+After A4 corrected the false source-free `_generic:data` result summary,
+implementation SHA `6e40cdb` passed `make`, `make examples`, Team A compiler
+semantics, typed API, Type IR, source-free foundations acceptance (provider
+source removed; range output 329), and G2 Gates 1–9 and 11. Its full
+`make check` passed Phase 20/21, the same Team A/typed API/nominal/runtime
+tests, foundations, and Text & Encoding, then failed the advanced-data
+ndarray/tables oracle: `tables.add_column` calling
+`tables__require_valid_column(column)` produced TYPE_MISMATCH against
+`tables__Column`. The diagnostic incorrectly named `csv_adapter.moss:462`
+(a file with 312 lines) while the call is `tables.moss:462`. Log:
+`tmp/phase25-team-a-postfix-make-check.log` (disposable). A2 is reproducing
+the nominal alias mismatch and source provenance issue.
+
+Local implementation has since advanced through `7be9d37`: A4 derives
+imported return corrections from retained BodyTypeState TypeRefs, projects
+checked visibility/parameter leaf effects, binds known nominal Field
+requirement IDs, and reports structured summary gaps. A2 scoped retained
+type facts to each function, fixing the `sdk/tables` mismatch and subsequent
+effect invariant in an isolated direct Margo build, and projects closed
+assignment values from solver terms. A3 exposes structured requirements in
+semantic queries. These commits have focused validation but no combined full
+suite yet. A2 still has string-backed checker fallbacks; A4 has no checked
+semantic/body hash retained for its typed export API. The independent Architect
+has not reviewed this consolidated implementation SHA. The latest pushed
+remote checkpoint remains `56a8b62`; do not claim Team A READY.
 
 ## Phase 25 Team A resumed implementation — 2026-10-16 (active, NOT READY)
 
