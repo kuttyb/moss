@@ -5589,6 +5589,13 @@ class Checker {
           term = moss::Type::builtin(term->name, std::move(arguments));
         }
         auto prior = locals.find(statement.a);
+        // This pass owns only bindings that began open. A declared concrete
+        // collection can contain a generic callable result whose type is
+        // established during concrete specialization, not during this scan.
+        if (prior == locals.end() && term->is_closed()) {
+          scan[statement.a] = *inferred;
+          continue;
+        }
         if (prior != locals.end() && !solver.unify(prior->second, term))
           err(statement.line, "assignment type mismatch for binding '" +
               statement.a + "'", "TYPE_MISMATCH");
