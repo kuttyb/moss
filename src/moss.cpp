@@ -2514,7 +2514,7 @@ class Checker {
             return moss::CheckedBodyExprV1{
                 moss::CheckedBodyExprV1::Kind::Parameter,
                 summary.parameter_types[index],
-                static_cast<std::uint32_t>(index), {}, {}};
+                static_cast<std::uint32_t>(index), {}, {}, {}, 0};
         if (!value.empty() && std::all_of(value.begin(), value.end(),
               [](unsigned char c) { return std::isdigit(c); })) {
           try {
@@ -2525,7 +2525,7 @@ class Checker {
               if (!expected || integer->structurally_equal(*expected))
                 return moss::CheckedBodyExprV1{
                     moss::CheckedBodyExprV1::Kind::Integer,
-                    integer, 0, std::to_string(number), {}};
+                    integer, 0, std::to_string(number), {}, {}, 0};
             }
           } catch (const std::exception&) {}
         }
@@ -2536,7 +2536,7 @@ class Checker {
           if (left && right && expected)
             return moss::CheckedBodyExprV1{
                 moss::CheckedBodyExprV1::Kind::Add,
-                expected, 0, {}, {*left, *right}};
+                expected, 0, {}, {*left, *right}, {}, 0};
         }
         const size_t dot = value.find('.');
         if (dot != string::npos && value.find('.', dot + 1) == string::npos) {
@@ -2569,14 +2569,30 @@ class Checker {
           }
           return moss::CheckedBodyExprV1{
               moss::CheckedBodyExprV1::Kind::VectorLiteral,
-              expected, 0, {}, std::move(children)};
+              expected, 0, {}, std::move(children), {}, 0};
         }
         string callee;
         vector<string> arguments;
         if (parse_simple_call(value, callee, arguments) && expected) {
+          // A source spelling and a dependency-set membership do not identify
+          // this call occurrence. Require one exact checker call edge at the
+          // return site before retaining a callable target in the body IR.
+          const int return_line = function.result_expression
+              ? function.result_line : function.body.front().line;
+          const moss::SemanticCallEdge* selected_edge = nullptr;
+          for (const auto& edge : p_.semantic_call_edges) {
+            if (edge.source != "fn:" + function.name ||
+                edge.line != return_line ||
+                edge.invocation_kind != "ordinary_call" ||
+                edge.source_specialization_key.size()) continue;
+            if (selected_edge) return std::nullopt;
+            selected_edge = &edge;
+          }
+          if (!selected_edge || selected_edge->occurrence != 0) return std::nullopt;
           const Function* selected = nullptr;
           for (const auto& candidate : p_.functions)
             if (candidate.name == callee &&
+                selected_edge->target == "fn:" + candidate.name &&
                 candidate.params.size() == arguments.size() &&
                 std::find(summary.semantic_dependencies.begin(),
                           summary.semantic_dependencies.end(),

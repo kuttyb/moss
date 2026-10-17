@@ -75,9 +75,10 @@ fn main():
     for name, template in (("unbox", "Box"), ("uncell", "Cell")):
         summary = field_summaries[f"callable-v1:{module}:fn:{name}"]
         assert not summary["exported"], summary
-        assert not summary["checked_body_ir_available"], summary
-        assert summary["body_semantic_hash"] is None, summary
-        assert summary["body_semantic_status"] == "unsupported_checked_body_form", summary
+        assert summary["checked_body_ir_available"], summary
+        assert summary["body_semantic_hash"].startswith(
+            "body-semantic-v1:sha256:"), summary
+        assert summary["body_semantic_status"] == "available_checked_body_v1", summary
         assert summary["parameter_leaf_effects"] is None, summary
         assert summary["bound_variable_count"] == 1, summary
         assert summary["result_type"] == {"kind": "bound_var", "ordinal": 0}, summary

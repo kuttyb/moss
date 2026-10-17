@@ -1,5 +1,33 @@
 # Moss current status
 
+## Phase 25 Team A A4 restart checkpoint — 2026-10-16 (WIP, NOT READY)
+
+The isolated `phase25-a4-body-ir-v2` worktree has a follow-up on top of
+`08e26a4`. It removes four compiler initializer warnings, requires a unique
+checked ordinary-call edge at the return site before retaining a direct Call
+node, and extends checked-body tests for nominal field IDs, vector order,
+direct calls and nested-call fail-closed behavior. The API contract describes
+this narrow retained subset. The user requested a checkpoint before the two
+updated A4 tests could be made green; treat this commit as WIP and do not
+integrate it into the consolidated branch yet.
+
+Completed on this exact source: forced `make -B -j2` built cleanly with no
+warnings, `check_phase25_type_ir.py` passed, and
+`check_phase25_team_a_semantics.py ./moss` passed all listed compiler-path
+cases. `check_phase25_checked_body_ir.py ./moss` fails because its new
+multi-statement `inc` fixture publishes no open summary, so the helper raises
+`StopIteration`; choose a supported complete open summary as the fail-closed
+fixture. `check_phase25_typed_semantic_api.py ./moss` fails at its existing
+source-free provider assertion: imported `fresh` and `relay` now publish
+checked body hashes, so the old expected-unavailable assertion needs a
+contract-aware update after validating those imported facts. Full `make check`
+was not run on this isolated WIP.
+
+Canonical expected dependency semantic hashes and general checked expression
+and control-flow IR remain unimplemented. The direct call body's hash includes
+its exact checked callable ID but does not yet include an expected dependency
+hash. Team B still owns ABI serialization and source-free transport.
+
 ## Phase 25 Team A A4 follow-up checkpoint — 2026-10-16 (WIP)
 
 The user requested immediate checkpoint of in-flight Team A work. Isolated
