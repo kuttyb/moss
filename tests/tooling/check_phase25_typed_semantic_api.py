@@ -188,6 +188,7 @@ fn main():
 fn main():
   values = []
   append(values, 1)
+  append(values, 2)
   echo values[0]
 """)
     member_checked = subprocess.run([str(MOSS), "inspect", "main", "--source",
@@ -199,6 +200,8 @@ fn main():
     append_specs = [entry for entry in member_typed["specializations"]
                     if entry["callable_id"] == append_id]
     assert len(append_specs) == 1, append_specs
+    assert append_specs[0]["key"].startswith("specialization-v2:sha256:"), (
+        append_specs)
     push = append_specs[0]["member_requirements"][0]
     assert push["member_name"] == "push", push
     assert push["receiver"] == {"kind": "builtin", "id": "vector",

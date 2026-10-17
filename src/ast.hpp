@@ -102,6 +102,10 @@ struct Stmt {
   vector<int> continuation_lines;
   string semantic_type;
   std::unordered_map<string, OpenCallResultFacts> open_call_results_by_context;
+  // Solver-closed member facts for the direct call in this statement. The
+  // specialization registrar consumes these exact terms and access decisions.
+  std::unordered_map<string, vector<MemberDispatchRequirement>>
+      member_requirements_by_context;
   // Exact checked specialization selected for an open-result call in this
   // body context. Native lowering consumes this key at the source statement.
   std::unordered_map<string, string> open_call_keys_by_context;

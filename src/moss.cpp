@@ -2297,6 +2297,7 @@ class Checker {
         specialization.parameter_effects = concrete_function_effects(
             function, specialization.parameter_types, &specialization.parameter_mutations);
       }
+    final_parameter_effects_ready_ = true;
     validate_borrowed_view_write_effects();
     { CompilerStageTimer timer("concrete_graph"); build_concrete_domain_graph(); }
     check_method_ownership();
@@ -2319,6 +2320,16 @@ class Checker {
         specialization.observable_effects =
             concrete_function_observable_effects(
                 function, specialization.parameter_types);
+    for (const auto& function : p_.functions)
+      for (const auto& specialization : function.specializations) {
+        const auto rechecked = concrete_function_observable_effects(
+            function, specialization.parameter_types);
+        if (!same_observable_effects(specialization.observable_effects,
+                                     rechecked))
+          err(function.line,
+              "static specialization has inconsistent observable effects for one key",
+              "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+      }
     { CompilerStageTimer timer("synchronization_plan"); build_synchronization_plan(p_.concrete_domain_graph); }
     warn_fileio_blocking_with_shared_write();
     retain_checked_type_uses();
@@ -2377,6 +2388,9 @@ class Checker {
   // encountered through this path have concrete types, unlike the generic
   // call edges retained for recursion/effect analysis.
   FunctionSpecialization* checking_specialization_ = nullptr;
+  // Rechecks during the final body pass compare against effects computed after
+  // inference reaches its fixed point, never against early registration facts.
+  bool final_parameter_effects_ready_ = false;
   std::unique_ptr<moss::TypeContext::Scope> type_scope_;
   mutable vector<bool>* parameter_mutation_capture_ = nullptr;
   mutable string current_source_file_;
@@ -6293,6 +6307,11 @@ class Checker {
       vector<std::pair<uint32_t, moss::TypeRef>> bindings;
     };
     vector<PendingOpenCall> open_calls;
+    struct PendingMemberCall {
+      const Stmt* statement;
+      vector<moss::MemberDispatchRequirement> requirements;
+    };
+    vector<PendingMemberCall> member_calls;
     TypeEnv scan = entry;
     std::function<moss::TypeRef(const moss::TypeRef&)> freshen_open_type =
         [&](const moss::TypeRef& type) -> moss::TypeRef {
@@ -6510,6 +6529,9 @@ class Checker {
           if (closure.status ==
               moss::MemberClosureResult::Status::Rejected)
             err(line, closure.diagnostic, "TYPE_MISMATCH");
+          if (statement && closure.status ==
+              moss::MemberClosureResult::Status::Closed)
+            member_calls.push_back({statement, std::move(closure.requirements)});
         } else {
           // The existing builtin descriptor is the current admission policy
           // for a known collection head. It contributes equations to the
@@ -6568,6 +6590,9 @@ class Checker {
           if (closure.status ==
               moss::MemberClosureResult::Status::Rejected)
             err(line, closure.diagnostic, "TYPE_MISMATCH");
+          if (statement && closure.status ==
+              moss::MemberClosureResult::Status::Closed)
+            member_calls.push_back({statement, std::move(closure.requirements)});
         }
       }
       moss::TypeRef result = instantiate(summary.result_type);
@@ -6596,7 +6621,7 @@ class Checker {
       if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
         string invocation = statement.a + "(" + join_arguments(statement.args) + ")";
         constrain_call(statement.line, invocation);
-        instantiate_summary(statement.line, invocation, nullptr);
+        instantiate_summary(statement.line, invocation, &statement);
       }
       if ((statement.kind == Stmt::Kind::Let ||
            statement.kind == Stmt::Kind::Var ||
@@ -6720,6 +6745,21 @@ class Checker {
       if (resolved->is_closed())
         body_types.closed_projection.emplace(name, resolved->to_canonical_string());
     }
+    if (record_call_facts)
+      for (auto& pending : member_calls) {
+        vector<moss::MemberDispatchRequirement> closed;
+        for (const auto& requirement : pending.requirements) {
+          auto resolved = moss::resolve_member_requirement(solver, requirement);
+          if (!moss::member_requirement_is_closed(resolved)) {
+            closed.clear();
+            break;
+          }
+          closed.push_back(std::move(resolved));
+        }
+        if (!closed.empty())
+          const_cast<Stmt*>(pending.statement)->member_requirements_by_context[
+              semantic_context] = std::move(closed);
+      }
     for (const auto& pending : open_calls) {
       const Stmt* statement = pending.statement;
       auto result = solver.resolve(pending.result);
@@ -7780,9 +7820,10 @@ class Checker {
 
   vector<Effect> concrete_function_effects(const Function& function,
                                            const vector<string>& types,
-                                           vector<bool>* mutations = nullptr) const {
+                                           vector<bool>* mutations = nullptr,
+                                           bool recheck = false) const {
     if (const auto* specialization = concrete_specialization(function, types);
-        specialization && !specialization->parameter_effects.empty()) {
+        !recheck && specialization && !specialization->parameter_effects.empty()) {
       if (mutations) *mutations = specialization->parameter_mutations;
       return specialization->parameter_effects;
     }
@@ -14890,7 +14931,9 @@ class Checker {
             function.open_summary->member_requirements.begin(),
             function.open_summary->member_requirements.end(),
             [&](const moss::MemberDispatchRequirement& source) {
-              return source.requirement_id == requirement.requirement_id;
+              return source.requirement_id ==
+                  requirement.parent_requirement_id.value_or(
+                      requirement.requirement_id);
             });
         if (parent == function.open_summary->member_requirements.end()) continue;
         requirement.parent_requirement_id = parent->requirement_id;
@@ -14926,6 +14969,15 @@ class Checker {
            !existing->return_type_ref->structurally_equal(**closed_result_type)))
         err(line, "static specialization has inconsistent result types for one key",
             "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+      if (final_parameter_effects_ready_) {
+        vector<bool> fresh_mutations;
+        auto fresh_effects = concrete_function_effects(
+            function, canonical_types, &fresh_mutations, true);
+        if (existing->parameter_effects != fresh_effects ||
+            existing->parameter_mutations != fresh_mutations)
+          err(line, "static specialization has inconsistent ownership effects for one key",
+              "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+      }
       if (existing->member_requirements.empty() && !member_requirements.empty())
         existing->member_requirements = std::move(member_requirements);
       record_dependency();
@@ -15360,6 +15412,57 @@ class Checker {
     if (concrete_call) {
       auto requirements = validate_method_requirements(
           line, *function->second, actual_types);
+      if (current_check_statement_ &&
+          current_check_statement_->line == line) {
+        const auto& statement = *current_check_statement_;
+        bool direct_call = statement.kind == Stmt::Kind::Call &&
+            statement.b.empty() && statement.a == name &&
+            statement.args == args;
+        if (!direct_call && (statement.kind == Stmt::Kind::Assign ||
+                             statement.kind == Stmt::Kind::Let ||
+                             statement.kind == Stmt::Kind::Var)) {
+          string direct_callee;
+          vector<string> direct_arguments;
+          direct_call = parse_simple_call(trim(statement.b), direct_callee,
+                                          direct_arguments) &&
+              direct_callee == name && direct_arguments == args;
+        }
+        auto retained = statement.member_requirements_by_context.find(
+            current_check_body_context_);
+        if (direct_call &&
+            retained != statement.member_requirements_by_context.end()) {
+          if (retained->second.size() != requirements.size())
+            err(line, "checked member requirement count changed at specialization",
+                "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+          for (size_t index = 0; index < requirements.size(); ++index) {
+            const auto& selected = requirements[index];
+            auto closed = retained->second[index];
+            bool same_terms = closed.receiver && selected.receiver &&
+                closed.receiver->structurally_equal(*selected.receiver) &&
+                closed.argument_types.size() == selected.argument_types.size() &&
+                closed.result && selected.result && *closed.result &&
+                *selected.result &&
+                (*closed.result)->structurally_equal(**selected.result);
+            for (size_t argument = 0;
+                 same_terms && argument < closed.argument_types.size();
+                 ++argument)
+              same_terms = closed.argument_types[argument] &&
+                  selected.argument_types[argument] &&
+                  closed.argument_types[argument]->structurally_equal(
+                      *selected.argument_types[argument]);
+            if (!same_terms || closed.receiver_access != selected.receiver_access ||
+                closed.argument_access != selected.argument_access)
+              err(line, "solver and member admission selected inconsistent types or access",
+                  "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+            // The existing admission policy resolves the final concrete target.
+            // The solver remains the authority for the checked type terms.
+            closed.admitted_template_or_builtin_family =
+                selected.admitted_template_or_builtin_family;
+            closed.selected_callable_id = selected.selected_callable_id;
+            requirements[index] = std::move(closed);
+          }
+        }
+      }
       const OpenCallResultFacts* open_result = nullptr;
       std::optional<OpenCallResultFacts> nested_result;
       std::optional<OpenCallResultFacts> returned_result;
