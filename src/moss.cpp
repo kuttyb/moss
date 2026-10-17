@@ -2988,17 +2988,32 @@ class Checker {
     return false;
   }
 
+  // The structural term of a declared or projected spelling, whether or not
+  // it is closed: `map` and `vector[_generic:x]` parse, unlike inferred_leaf.
+  static moss::TypeRef parsed_type(const string& spelling) {
+    auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
+    return parsed ? *parsed : nullptr;
+  }
+
+  // Visit a term and every type nested in it: built-in arguments and a
+  // nominal instance's field substitutions.
+  static void for_each_subterm(const moss::TypeRef& type,
+                               const std::function<void(const moss::TypeRef&)>& visit) {
+    if (!type) return;
+    visit(type);
+    for (const auto& argument : type->type_args) for_each_subterm(argument, visit);
+    for (const auto& field : type->field_substitutions)
+      for_each_subterm(field.second, visit);
+  }
+
   bool contains_record_type(const string& t) const {
     string type = canonical_type_name(t);
     if (objects_.count(type)) return true;
-    auto parsed = moss::Type::parse_canonical(type);
-    if (parsed && (*parsed)->kind == moss::TypeKind::NominalInstance) return true;
-    auto bracket = type.find('[');
-    if (bracket != string::npos && ends_with(type, "]"))
-      for (const auto& argument : split_top_level(
-               type.substr(bracket + 1, type.size() - bracket - 2), ','))
-        if (contains_record_type(argument)) return true;
-    return false;
+    bool record = false;
+    for_each_subterm(parsed_type(type), [&](const moss::TypeRef& nested) {
+      if (nested->kind == moss::TypeKind::NominalInstance) record = true;
+    });
+    return record;
   }
 
   // Record (nominal) Map keys need the shared MossMap<K,V> and a
@@ -3018,22 +3033,13 @@ class Checker {
   void check_declared_map_keys(const string& source_file, int line,
                                const string& declared) {
     if (declared.empty()) return;
-    string type = canonical_type_name(declared);
-    auto bracket = type.find('[');
-    if (bracket == string::npos || !ends_with(type, "]")) return;
-    auto arguments = split_top_level(
-        type.substr(bracket + 1, type.size() - bracket - 2), ',');
-    if (starts_with(type, "map[") && arguments.size() == 2) {
-      SourceFileScope scope(current_source_file_, source_file);
-      check_map_key_type(line, arguments[0]);
-    }
-    for (const auto& argument : arguments) {
-      string inner = trim(argument);
-      auto equals = inner.find('=');
-      if (equals != string::npos && inner.find('[') > equals)
-        inner = trim(inner.substr(equals + 1));
-      check_declared_map_keys(source_file, line, inner);
-    }
+    auto term = parsed_type(declared);
+    if (!term) return;
+    SourceFileScope scope(current_source_file_, source_file);
+    for_each_subterm(term, [&](const moss::TypeRef& nested) {
+      if (applied_builtin(nested, {"map"}) && nested->type_args.size() == 2)
+        check_map_key_type(line, nested->type_args[0]->to_canonical_string());
+    });
   }
 
   void check_declared_map_key_types() {
@@ -14136,9 +14142,10 @@ class Checker {
                                        builtin->argument_effects[index]);
           return;
         }
-        bool collection = concrete == "vector" || concrete == "queue" || concrete == "map" ||
-            starts_with(concrete, "vector[") || starts_with(concrete, "queue[") ||
-            starts_with(concrete, "map[");
+        const auto receiver_shape = parsed_type(concrete);
+        bool collection = receiver_shape &&
+            receiver_shape->kind == moss::TypeKind::Builtin &&
+            moss::Type::collection_arity(receiver_shape->name).has_value();
         if (collection && builtin && builtin->argument_effects.size() == arguments.size()) {
           if (method == "push" && !arguments.empty()) {
             auto item = inferred_expr_type(arguments.front(), env.types);
@@ -17341,10 +17348,13 @@ class Checker {
                   container->second == "map" &&
                   !inferred_expr_type(index_expression, current_env))
                 err(statement.line, "cannot infer map key type");
-              if (container != current_env.end() &&
-                  (container->second == "map" || starts_with(container->second, "map["))) {
+              const auto container_shape = container != current_env.end()
+                  ? parsed_type(container->second) : nullptr;
+              if (container_shape && container_shape->kind == moss::TypeKind::Builtin &&
+                  container_shape->name == "map") {
                 auto key_type = inferred_expr_type(index_expression, current_env);
-                if (key_type && enums_.count(canonical_type_name(*key_type)))
+                const auto key_term = key_type ? parsed_type(*key_type) : nullptr;
+                if (key_term && key_term->kind == moss::TypeKind::Enum)
                   err(statement.line,
                       "enum values cannot be Map keys; enum equality and hashing are unsupported",
                       "ENUM_MAP_KEY_UNSUPPORTED");
