@@ -5862,18 +5862,6 @@ class Checker {
       auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
       return parsed ? *parsed : nullptr;
     };
-    auto require_type = [&](int line, const string& expression,
-                            const string& expected, const string& context) {
-      auto actual = term_for(expression);
-      auto parsed = moss::Type::parse_canonical(canonical_type_name(expected));
-      if (!actual || !parsed) return;
-      // A call supplies a concrete constraint to the existing local variable.
-      // The solver owns this binding for the whole body, including earlier
-      // reads and later assignments. The call never creates a fresh local.
-      if (!solver.unify(actual, *parsed))
-        err(line, context + " requires '" + canonical_type_name(expected) +
-            "' for '" + trim(expression) + "'", "TYPE_MISMATCH");
-    };
     std::function<moss::TypeRef(const moss::TypeRef&)> freshen_open_type =
         [&](const moss::TypeRef& type) -> moss::TypeRef {
       if (!type) return nullptr;
@@ -5907,6 +5895,18 @@ class Checker {
                                          std::move(substitutions));
       }
       return type;
+    };
+    auto require_type = [&](int line, const string& expression,
+                            const string& expected, const string& context) {
+      auto actual = term_for(expression);
+      auto parsed = moss::Type::parse_canonical(canonical_type_name(expected));
+      if (!actual || !parsed) return;
+      // A call supplies a concrete constraint to the existing local variable.
+      // The solver owns this binding for the whole body, including earlier
+      // reads and later assignments. The call never creates a fresh local.
+      if (!solver.unify(actual, freshen_open_type(*parsed)))
+        err(line, context + " requires '" + canonical_type_name(expected) +
+            "' for '" + trim(expression) + "'", "TYPE_MISMATCH");
     };
     if (record_call_facts)
       for (const auto& [name, spelling] : entry) {
@@ -15726,6 +15726,16 @@ class Checker {
     string join_context = current_function && checking_specialization_
         ? functional_function_context(*current_function, checking_specialization_)
         : "";
+    auto checked_term = [&](const string& expression,
+                            const std::optional<string>& inferred) -> moss::TypeRef {
+      if (auto retained = checked_types.known_expression(expression))
+        return retained;
+      if (!inferred) return nullptr;
+      auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
+      // An open value needs its own instantiation site; reparsing a projected
+      // spelling here would manufacture a second type variable for a local.
+      return parsed && (*parsed)->is_closed() ? *parsed : nullptr;
+    };
     TypeEnvVisitor check_statement = [&](const Stmt& statement,
                                          const TypeEnv& current_env) {
       struct CheckedStatementScope {
@@ -15892,10 +15902,17 @@ class Checker {
               if (dot != string::npos && statement.a.find('(', dot) == string::npos) {
                 auto field_type = inferred_expr_type(statement.a, current_env);
                 auto rhs_type = inferred_expr_type(statement.b, current_env);
-                if (field_type && rhs_type && !is_type_compatible(*field_type, *rhs_type)) {
+                auto field_term = checked_term(statement.a, field_type);
+                auto rhs_term = checked_term(statement.b, rhs_type);
+                bool compatible = field_term && rhs_term
+                    ? checked_types.solver.unify(field_term, rhs_term)
+                    : !field_type || !rhs_type ||
+                          is_type_compatible(*field_type, *rhs_type);
+                if (!compatible) {
                   err(statement.line, "assignment type mismatch: cannot assign value of type '" +
-                      canonical_type_name(*rhs_type) + "' to field '" + statement.a +
-                      "' of type '" + canonical_type_name(*field_type) + "'", "TYPE_MISMATCH");
+                      canonical_type_name(rhs_type.value_or("_value")) + "' to field '" +
+                      statement.a + "' of type '" +
+                      canonical_type_name(field_type.value_or("_value")) + "'", "TYPE_MISMATCH");
                 }
               }
             }
@@ -16138,7 +16155,14 @@ class Checker {
               "use-statically-typed-expression",
               "rewrite the reply using an expression whose type Moss can determine from checked declarations and uses");
         }
-        if (!same_type(*actual, *current_handler->reply_type))
+        auto actual_term = checked_term(statement.a, actual);
+        auto expected_term = moss::Type::parse_canonical(
+            canonical_type_name(*current_handler->reply_type));
+        bool reply_compatible = actual_term && expected_term &&
+                                (*expected_term)->is_closed()
+            ? checked_types.solver.unify(actual_term, *expected_term)
+            : same_type(*actual, *current_handler->reply_type);
+        if (!reply_compatible)
           err(statement.line, "reply type mismatch: handler expects '" +
               *current_handler->reply_type + "', expression has type '" + *actual +
               "'");

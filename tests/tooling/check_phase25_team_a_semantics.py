@@ -315,6 +315,43 @@ fn main():
         parity(typed_reads, scratch, "1\n")
         print("PASS local assignments use typed nominal field and index reads", flush=True)
 
+        checked(ROOT / "examples" / "collections_and_methods.moss")
+        print("PASS closed Vector argument satisfies bare Vector parameter", flush=True)
+
+        field_write = source(scratch, "typed_field_write", '''type Box:
+  value: Int
+
+fn main():
+  var item = Box(value: 1)
+  item.value = 2
+  echo item.value
+''')
+        parity(field_write, scratch, "2\n")
+        field_conflict = source(scratch, "typed_field_write_conflict", '''type Box:
+  value: Int
+
+fn main():
+  var item = Box(value: 1)
+  item.value = "wrong"
+''')
+        checked(field_conflict, "TYPE_MISMATCH")
+        print("PASS field writes use retained nominal field type", flush=True)
+
+        handler_reply = source(scratch, "typed_handler_reply", '''type Box:
+  value: Int
+
+domain Reader:
+  fn Get() -> Int:
+    var values = [Box(value: 7)]
+    reply values[0].value
+
+fn main():
+  reader = Reader()
+  echo message reader.Get()
+''')
+        parity(handler_reply, scratch, "7\n")
+        print("PASS handler reply uses checked field/index result", flush=True)
+
         zero_loop = source(scratch, "zero_iteration", '''fn fresh():
   return []
 
