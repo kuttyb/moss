@@ -5266,6 +5266,14 @@ class Checker {
     return type && type->kind == moss::TypeKind::Primitive && type->name == name;
   }
 
+  // A parameterized built-in application named one of `names`.
+  static bool applied_builtin(const moss::TypeRef& type,
+                              std::initializer_list<std::string_view> names) {
+    if (!type || type->kind != moss::TypeKind::Builtin || type->type_args.empty())
+      return false;
+    return std::find(names.begin(), names.end(), type->name) != names.end();
+  }
+
   // The structural shape of a result, including an open legacy spelling such
   // as `vector[_generic:x]` whose element relation is still a placeholder.
   static moss::TypeRef inferred_shape(const InferredExpr& inferred) {
@@ -15600,6 +15608,37 @@ class Checker {
     return facts;
   }
 
+  string module_identity_of(const string& module) const {
+    auto bound = p_.module_identities.find(module);
+    return bound == p_.module_identities.end() ? string() : bound->second;
+  }
+
+  // The module-v1 identity of the callable being checked, resolved through
+  // its declaration (function, handler domain, or method record), never by
+  // splitting a mangled symbol.
+  string current_callable_module_id() const {
+    const string& context = current_semantic_context_;
+    auto owner = [&](size_t prefix) {
+      const string rest = context.substr(prefix);
+      return rest.substr(0, rest.rfind('.'));
+    };
+    if (starts_with(context, "fn:")) {
+      if (auto function = functions_.find(context.substr(3)); function != functions_.end())
+        return module_identity_of(function->second->defining_module);
+    } else if (starts_with(context, "handler:")) {
+      if (auto domain = domains_.find(owner(8)); domain != domains_.end())
+        return module_identity_of(domain->second->defining_module);
+    } else if (starts_with(context, "method:")) {
+      const string type = owner(7);
+      if (auto object = objects_.find(type); object != objects_.end())
+        return module_identity_of(object->second->defining_module);
+      if (auto parsed = moss::Type::parse_canonical(canonical_type_name(type));
+          parsed && (*parsed)->declaration)
+        return (*parsed)->declaration->module_id;
+    }
+    return module_identity_of(p_.main_module);
+  }
+
   void check_function_call(int line, const string& name, const vector<string>& args,
                            const std::unordered_map<string,string>& env,
                            const moss::TypeRef& expected_open_result = nullptr,
@@ -15720,6 +15759,8 @@ class Checker {
           std::to_string(function->second->params.size()) + " arguments, got " +
           std::to_string(args.size()));
     vector<string> actual_types;
+    // Each argument's structured result; local decisions test these terms.
+    vector<InferredExpr> actual_results;
     for (size_t index = 0; index < args.size(); ++index) {
       const auto& argument = args[index];
       const auto& parameter = function->second->params[index];
@@ -15751,10 +15792,13 @@ class Checker {
                               std::make_pair(target_occurrence,
                                              expression_occurrence));
           actual_types.push_back((*required)->to_canonical_string());
+          actual_results.push_back({*required, {}});
           continue;
         }
       }
-      actual_types.push_back(inferred_expr_type(argument, env).value_or(""));
+      auto inferred = inferred_expr(argument, env);
+      actual_results.push_back(inferred ? *inferred : InferredExpr{});
+      actual_types.push_back(actual_results.back().projection());
     }
     if (function->second->open_summary &&
         function->second->open_summary->complete) {
@@ -15769,11 +15813,9 @@ class Checker {
                                index < actual_types.size(); ++index) {
           if (!summary.parameter_types[index]->structurally_equal(
                   *requirement.subject)) continue;
-          auto actual = moss::Type::parse_canonical(
-              canonical_type_name(actual_types[index]));
-          if (!actual || !(*actual)->is_closed()) continue;
-          if ((*actual)->kind != moss::TypeKind::Primitive ||
-              ((*actual)->name != "int" && (*actual)->name != "float"))
+          const auto& actual = actual_results[index].term;
+          if (!actual) continue;
+          if (!primitive_term(actual, "int") && !primitive_term(actual, "float"))
             err(line, "argument " + std::to_string(index + 1) +
                 " to function '" + name +
                 "' has no compatible '+' operation with Int", "TYPE_MISMATCH");
@@ -15785,34 +15827,25 @@ class Checker {
     // Static/generic calls specialize in the consumer crate and use its Range;
     // they remain valid even when their Moss body came from a .mossi file.
     if (p_.explicit_module && !function->second->static_dispatch) {
-      auto module_of = [](const string& symbol) {
-        const size_t separator = symbol.find("__");
-        return separator == string::npos ? string() : symbol.substr(0, separator);
-      };
-      string owner = current_semantic_context_;
-      if (starts_with(owner, "fn:")) owner = owner.substr(3);
-      else if (starts_with(owner, "handler:")) owner = owner.substr(8);
-      else if (starts_with(owner, "method:")) owner = owner.substr(7);
-      else owner = p_.main_module;
-      const string caller_module = module_of(owner).empty()
-          ? owner : module_of(owner);
-      const string callee_module = module_of(function->second->name);
-      if (!callee_module.empty() && callee_module != caller_module)
+      const string callee_module =
+          module_identity_of(function->second->defining_module);
+      if (!callee_module.empty() && callee_module != current_callable_module_id())
         for (size_t index = 0; index < actual_types.size(); ++index) {
-          const string actual = canonical_type_name(actual_types[index]);
-          const string expected = canonical_type_name(
-              function->second->params[index].type);
-          if (actual == "Range" || actual == "RangeBatch" ||
-              expected == "Range" || expected == "RangeBatch")
+          const auto& actual = actual_results[index].term;
+          const auto expected = inferred_leaf(function->second->params[index].type).term;
+          const bool batch = primitive_term(actual, "RangeBatch") ||
+              primitive_term(expected, "RangeBatch");
+          if (batch || primitive_term(actual, "Range") || primitive_term(expected, "Range"))
             err(line, "call to imported function '" + name +
-                "' cannot pass " + (actual == "RangeBatch" || expected == "RangeBatch"
-                    ? "RangeBatch" : "Range") +
+                "' cannot pass " + (batch ? "RangeBatch" : "Range") +
                 " across native module crates until the Phase 20 FileIO ABI is shared",
                 "FILEIO_CROSS_CRATE_ABI");
         }
     }
     for (size_t index = 0; index < args.size(); ++index) {
       const auto& actual_type = actual_types[index];
+      const auto& actual_result = actual_results[index];
+      const auto actual_shape = inferred_shape(actual_result);
       const auto& param = function->second->params[index];
       bool concrete_actual = concrete_specialization_type(actual_type) &&
           !traits_.count(canonical_type_name(actual_type));
@@ -15823,12 +15856,13 @@ class Checker {
               "' has type '" + actual_type + "' which does not satisfy trait '" +
               param.type + "': " + reason);
       }
-      bool container_match = !actual_type.empty() &&
-          ((param.type == "vector" && starts_with(actual_type, "vector[")) ||
-           (param.type == "map" && starts_with(actual_type, "map[")) ||
-           (param.type == "queue" && starts_with(actual_type, "queue[")));
       auto formal_term = moss::Type::parse_canonical(
           canonical_type_name(param.type));
+      // A bare collection parameter accepts any application of it.
+      bool container_match = formal_term &&
+          (*formal_term)->kind == moss::TypeKind::Builtin &&
+          (*formal_term)->type_args.empty() &&
+          applied_builtin(actual_shape, {(*formal_term)->name});
       auto actual_term = checked_expression_term(args[index], env);
       const bool typed_check = current_body_types_ &&
           !param.type.empty() && !traits_.count(param.type) &&
@@ -15845,22 +15879,25 @@ class Checker {
             param.type + "'");
       if (concrete_actual && has_constraint(*function->second, param.name)) {
         for (const auto& op : constraint_details(*function->second, param.name)) {
-          if ((op == "+" || op == "-" || op == "*" || op == "/" || op == "%") && !numeric_type(actual_type) && !(op == "+" && actual_type == "string"))
+          const bool numeric = primitive_term(actual_result.term, "int") ||
+              primitive_term(actual_result.term, "float");
+          if ((op == "+" || op == "-" || op == "*" || op == "/" || op == "%") && !numeric &&
+              !(op == "+" && primitive_term(actual_result.term, "string")))
             err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' does not support inferred operation '" + op + "'");
-          if (op == "[]" && !(starts_with(actual_type, "vector[") || starts_with(actual_type, "map[") || starts_with(actual_type, "queue[")))
+          if (op == "[]" && !applied_builtin(actual_shape, {"vector", "map", "queue"}))
             err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' is not an indexable container");
         }
         for (const auto& c : function->second->constraints) if (c.subject == param.name) {
           if (c.kind == ConstraintKind::Field && !type_has_field(actual_type, c.detail))
             err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' has type '" + actual_type + "' missing required field '" + c.detail + "'");
           if (c.kind == ConstraintKind::Iterable && c.detail != "static iterator" &&
-              !starts_with(actual_type, "vector[") &&
-              !starts_with(actual_type, "seq["))
+              !applied_builtin(actual_shape, {"vector", "seq"}))
             err(line, "argument " + std::to_string(index + 1) +
                 " to function '" + name +
                 "' is not a statically typed functional collection");
+          // Callable identities are not yet terms (pseudo-type slice).
           if (c.kind == ConstraintKind::Callable &&
-              !starts_with(actual_type, "callable:"))
+              !starts_with(actual_result.legacy, "callable:"))
             err(line, "argument " + std::to_string(index + 1) +
                 " to function '" + name +
                 "' is not a statically bounded callable identity");
