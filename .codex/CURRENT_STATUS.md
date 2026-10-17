@@ -1,5 +1,52 @@
 # Moss current status
 
+## Phase 25 Team A A2 checkpoint at `b70e888` — 2026-10-17 (NOT READY)
+
+Running the `tests/tooling` sweep instead of waiting on serial `make check`
+runs found three more defects at once. Two were pre-existing; **one was mine**.
+
+**Mine (`23f1224`).** `git bisect` named `1d8193c` (A2-1, term-native
+inference) over `252c2c7..e5af4ac`. Two prepass type conflicts began masking
+the precise domain-handle diagnostics: `worker = message worker.Run()`
+reported "message assignment … conflicts with its binding type" instead of
+"domain handle binding 'worker' is immutable", and pushing a handle into a
+collection reported an element conflict instead of naming the handle rule.
+A2-1 made the message branch return a canonical projection rather than the
+declared spelling, which enabled the comparison. Both prepass checks now
+defer to the closed-handle rule for a `Domain` operand.
+
+**Both harnesses missed it**, which is the more important finding and is
+recorded as observation `-010`:
+
+- the dual-run probe normalized each side with `canonical_type_name`, hiding
+  exactly the projection change it should have caught;
+- `corpus_verdicts` only covers tracked `.moss` files, and
+  `check_domain_handle_closure.py` synthesizes its fixtures in a temp
+  directory.
+
+A corpus of checked-in sources is **not sufficient** for checker work. The
+tooling sweep is now part of the validation loop.
+
+**Pre-existing, fixed `b70e888`.** `out.push(transform(items[idx]))` with an
+open callable parameter was rejected with a push element conflict. The pushed
+value is an unresolved open result, not a value of a known conflicting type.
+The prepass now reports a conflict only for a resolved argument. Relaxation
+safety: the same 1197 programs are accepted before and after, with no program
+moving between accepted and rejected; three already-rejected programs now
+report a later diagnostic instead.
+
+**Pre-existing, fixed `e5af4ac`.** The stale `swarm_050` marker regex
+(see the entry below).
+
+Blocker tally, now six, of which five pre-existed this session: `4750088`
+for-shadow scoping; the A2 signature `_typevar` return; `950d2b5` trait
+formal unification; the stale `swarm_050` regex; the unresolved push
+conflict; and my own domain-handle masking.
+
+**Validation.** The full `make check` at `e5af4ac` is still running and is
+now three commits behind. A fresh full run belongs on the final SHA once the
+sweep is clean.
+
 ## Phase 25 Team A A2 checkpoint at `e5af4ac` — 2026-10-17 (NOT READY)
 
 **Fourth pre-existing blocker, fixed at `e5af4ac`.** `make check` at
