@@ -526,6 +526,14 @@ static std::optional<string> indexed_element(const moss::TypeRef& type) {
   return std::nullopt;
 }
 
+// The open generic placeholder `_generic:<name>`, which stands for a type the
+// checker has not bound yet. Centralized so the A2 conversion to a real
+// inference variable with requirements (TYPE_IR_CONTRACT §§2, 4) has one
+// place to change, rather than two dozen prefix tests.
+static bool open_generic(const string& type) {
+  return starts_with(type, "_generic:");
+}
+
 // An open built-in collection: named, with no type arguments yet.
 static bool bare_collection(const moss::TypeRef& type,
                             std::initializer_list<std::string_view> names) {
@@ -2690,7 +2698,7 @@ class Checker {
       const string result = function.return_type
           ? canonical_type_name(*function.return_type) : "unit";
       std::optional<std::pair<string, string>> returned_member;
-      if (starts_with(result, "_generic:")) {
+      if (open_generic(result)) {
         auto source = parameter_variables.find(result.substr(9));
         if (source == parameter_variables.end()) {
           complete = false;
@@ -3456,7 +3464,7 @@ class Checker {
     std::function<moss::TypeRef(const moss::TypeRef&)> instantiate =
         [&](const moss::TypeRef& type) -> moss::TypeRef {
       if (type->kind == moss::TypeKind::Primitive &&
-          (type->name == "_value" || starts_with(type->name, "_generic:"))) {
+          (type->name == "_value" || open_generic(type->name))) {
         auto [it, inserted] = placeholders.emplace(type->name, nullptr);
         if (inserted) it->second = solver.fresh(0);
         return it->second;
@@ -4777,7 +4785,7 @@ class Checker {
     auto local = env.find(value);
     if (local != env.end() && starts_with(local->second, "callable:"))
       value = local->second.substr(9);
-    else if (local != env.end() && starts_with(local->second, "_generic:"))
+    else if (local != env.end() && open_generic(local->second))
       return "_functional_callable_result:" + value;
     auto function = functions_.find(value);
     if (function == functions_.end() ||
@@ -5480,7 +5488,7 @@ class Checker {
       auto right_open = inferred_expr(arithmetic->second, env);
       if (left_open && right_open && !left_open->term && !right_open->term &&
           left_open->legacy == right_open->legacy &&
-          starts_with(left_open->legacy, "_generic:"))
+          open_generic(left_open->legacy))
         return left_open;
     }
     if (!e.empty() && e.front() == '~')
@@ -5497,7 +5505,7 @@ class Checker {
       if (!base) return std::nullopt;
       if (primitive_term(base->term, "RangeBatch")) return primitive("Range");
       if (primitive_term(base->term, "Range")) return primitive("int");
-      if (!base->term && starts_with(base->legacy, "_generic:"))
+      if (!base->term && open_generic(base->legacy))
         return InferredExpr{nullptr, "_element:element:" + base->legacy.substr(9)};
       // A bare collection is open: legacy spelling, not a term.
       if (!base->term && (base->legacy == "vector" || base->legacy == "queue"))
@@ -5525,7 +5533,7 @@ class Checker {
       if (binding != env.end()) {
         if (starts_with(binding->second, "callable:"))
           target = binding->second.substr(9);
-        else if (starts_with(binding->second, "_generic:"))
+        else if (open_generic(binding->second))
           return InferredExpr{nullptr, "_functional_callable_result:" + callee};
       }
       auto function = functions_.find(target);
@@ -5561,7 +5569,7 @@ class Checker {
           if (!specialized) return std::nullopt;
           return inferred_leaf(*specialized);
         }
-        if (starts_with(r, "_generic:")) {
+        if (open_generic(r)) {
           auto relation = function->second->generic_results.find(r.substr(9));
           if (relation == function->second->generic_results.end()) return std::nullopt;
           auto it = env.find(relation->second);
@@ -5659,7 +5667,7 @@ class Checker {
         for (const auto& arg : method_args) argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
         if (auto method = resolve_method(method_owner, method_name, argument_types))
           if (method->return_type) return inferred_leaf(*method->return_type);
-        if (!base->term && starts_with(base->legacy, "_generic:"))
+        if (!base->term && open_generic(base->legacy))
           return InferredExpr{nullptr, "_method_value"};
         auto trait = traits_.find(canonical_type_name(base->projection()));
         if (trait != traits_.end()) {
@@ -5800,7 +5808,7 @@ class Checker {
           return closed->to_canonical_string();
       }
     }
-    if (starts_with(result, "_generic:")) {
+    if (open_generic(result)) {
       string parameter = result.substr(9);
       for (size_t index = 0;
            index < function.params.size() && index < parameter_types.size(); ++index)
@@ -6247,7 +6255,7 @@ class Checker {
         visitor(statement, env);
         auto scrutinee_type = inferred_expr_type(statement.a, env);
         bool deferred = (scrutinee_type &&
-            (starts_with(*scrutinee_type, "_generic:") ||
+            (open_generic(*scrutinee_type) ||
              *scrutinee_type == "_selected_error")) ||
             (!scrutinee_type && env.count(statement.a) && env.at(statement.a).empty());
         if (!deferred && (!scrutinee_type ||
@@ -7810,7 +7818,7 @@ class Checker {
           size_t next = end;
           while (next < expression.size() && std::isspace(static_cast<unsigned char>(expression[next]))) ++next;
           auto binding = env.find(receiver);
-          if (binding != env.end() && starts_with(binding->second, "_generic:") &&
+          if (binding != env.end() && open_generic(binding->second) &&
               (next >= expression.size() || expression[next] != '('))
             err(line, "field access '" + receiver + "." +
                 expression.substr(member, end - member) +
@@ -13289,7 +13297,7 @@ class Checker {
     }
     auto local = env.find(identity);
     const bool deferred_generic_callable =
-        local != env.end() && starts_with(local->second, "_generic:");
+        local != env.end() && open_generic(local->second);
     if (local != env.end() && starts_with(local->second, "callable:"))
       identity = local->second.substr(9);
     auto function = functions_.find(identity);
@@ -13410,7 +13418,7 @@ class Checker {
         auto callable_binding = env.find(trim(callable));
         const bool deferred_generic_callable =
             callable_binding != env.end() &&
-            starts_with(callable_binding->second, "_generic:");
+            open_generic(callable_binding->second);
         if (!deferred_generic_callable) {
           if (node.effects.unresolved || node.callable_identity.empty()) {
             err(stage_line, "cannot resolve observable effects for callable '" + callable + "' in functional pipeline", "FUNCTIONAL_CALLABLE_UNRESOLVED");
@@ -15793,7 +15801,7 @@ class Checker {
     string target = name;
     auto binding = env.find(name);
     if (binding != env.end()) {
-      if (starts_with(binding->second, "_generic:")) return;
+      if (open_generic(binding->second)) return;
       if (starts_with(binding->second, "callable:"))
         target = binding->second.substr(9);
     }
@@ -16327,7 +16335,7 @@ class Checker {
     if (local != env.end()) {
       if (starts_with(local->second, "callable:")) {
         identity = local->second.substr(9);
-      } else if (starts_with(local->second, "_generic:")) {
+      } else if (open_generic(local->second)) {
         return "_functional_callable_result:" + identity;
       } else {
         err(line, "callable identity '" + identity +
@@ -16945,7 +16953,7 @@ class Checker {
       }
       // An untyped parameter carries an indexing requirement. Its key and
       // element types are checked again in each concrete specialization.
-      if (!base->term && starts_with(base->legacy, "_generic:")) return;
+      if (!base->term && open_generic(base->legacy)) return;
       const auto container = inferred_shape(*base);
       const bool builtin = container && container->kind == moss::TypeKind::Builtin;
       if (builtin && (container->name == "vector" || container->name == "queue")) {
@@ -17105,7 +17113,7 @@ class Checker {
     const auto source_result = inferred_leaf(type);
     if (primitive_term(source_result.term, "RangeBatch")) return string("Range");
     if (primitive_term(source_result.term, "Range")) return string("int");
-    if (!source_result.term && starts_with(source_result.legacy, "_generic:"))
+    if (!source_result.term && open_generic(source_result.legacy))
       return "_iterator_element:" + source_result.legacy.substr(9);
     if (const auto collection = inferred_shape(source_result);
         applied_builtin(collection, {"vector", "seq"}) && collection->type_args.size() == 1)
@@ -17362,7 +17370,7 @@ class Checker {
                       "TYPE_MISMATCH");
               }
               if (container != current_env.end() &&
-                  (starts_with(container->second, "_generic:") ||
+                  (open_generic(container->second) ||
                    bare_collection(parsed_type(container->second), {"map"}))) {
                 // A generic is checked at its concrete call. A fresh Map()
                 // learns its key/value types from this first assignment.
@@ -17549,7 +17557,7 @@ class Checker {
                 err(statement.line, "no matching method '" + receiver->second + "." +
                     statement.b + "' for supplied arguments");
             } else if (receiver != current_env.end() && current_function &&
-                       (starts_with(receiver->second, "_generic:") ||
+                       (open_generic(receiver->second) ||
                         traits_.count(receiver->second))) {
               bool constrained = std::any_of(
                   current_function->constraints.begin(),
@@ -17721,7 +17729,7 @@ class Checker {
             !(*actual_result_ref)->is_closed();
         if (current_function->return_type &&
             !contains_internal_placeholder(*current_function->return_type) &&
-            !starts_with(*actual, "_generic:") &&
+            !open_generic(*actual) &&
             !(*actual == "_method_value" || starts_with(*actual, "_method_result:")) &&
             !starts_with(*actual, "_functional_callable_result:") &&
             !trait_result_match &&
@@ -20580,7 +20588,7 @@ class Generator {
           return std::nullopt;
         }
         string result = canonical_type_name(*function->second->return_type);
-        if (starts_with(result, "_generic:")) {
+        if (open_generic(result)) {
           string parameter = result.substr(9);
           for (size_t index = 0; index < function->second->params.size(); ++index)
             if (function->second->params[index].name == parameter &&
@@ -23272,7 +23280,7 @@ class Generator {
                                         : f.return_type.value_or("unit");
     if (return_type != "unit") {
       string rr = return_type;
-      if (!specialization && starts_with(rr, "_generic:")) rr = "T_" + rr.substr(9);
+      if (!specialization && open_generic(rr)) rr = "T_" + rr.substr(9);
       else if (!specialization && starts_with(rr, "_element:_element:")) rr = "T_" + rr.substr(17);
       else if (!specialization && starts_with(rr, "_element:element:")) rr = "T_" + rr.substr(17);
       o << ") -> ";
@@ -33149,7 +33157,7 @@ static ParsedModuleUnit load_module_interface(
     // A generic interface records open parameters separately from its body;
     // preserve the semantic marker used by normal Moss specialization.
     if (function.generic && function.return_type &&
-        starts_with(*function.return_type, "_generic:"))
+        open_generic(*function.return_type))
       function.generic_results[function.return_type->substr(9)] =
           function.return_type->substr(9);
   }
