@@ -4961,6 +4961,17 @@ class Checker {
   std::optional<string> inferred_expr_type(const string& expression,
                                            const std::unordered_map<string,string>& env) const {
     string original = strip_redundant_outer_parentheses(expression);
+    // Checked bodies retain one solver-owned term per local. Every downstream
+    // string consumer receives a projection of that term after closure, so a
+    // field or index read cannot re-infer a different type from display text.
+    if (current_body_types_) {
+      auto retained = current_body_types_->known_expression(original);
+      if (retained) {
+        auto resolved = current_body_types_->solver.resolve(retained);
+        if (resolved && resolved->is_closed())
+          return resolved->to_canonical_string();
+      }
+    }
     if (auto builtin = fileio_result_type(original, env)) return builtin;
     {
       string callee;
