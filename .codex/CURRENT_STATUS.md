@@ -1,5 +1,16 @@
 # Moss current status
 
+## Phase 25 Team A A4 follow-up checkpoint — 2026-10-16 (WIP)
+
+The user requested immediate checkpoint of in-flight Team A work. Isolated
+`phase25-a4-body-ir-v2` commit `feaf113629519bfa7d04edee54db799cfe79eb83`
+adds tentative exact Field, VectorLiteral, and direct Call checked nodes on top
+of tested `7f58554`. The follow-up was committed WIP before focused testing;
+its initial compiler build was still running and had emitted four missing-field
+initializer warnings. It must not be treated as a validated A4 implementation.
+Control-flow coverage and expected dependency hashes remain unimplemented.
+The previously recorded tests apply only to `7f58554`, not this WIP follow-up.
+
 ## Phase 25 Team A A4 checked body IR subset — 2026-10-16 (isolated, partial)
 
 From exact consolidated base `2c6772f`, the isolated
