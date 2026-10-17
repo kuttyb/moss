@@ -1,5 +1,40 @@
 # Moss current status
 
+## Phase 25 Team H — H0/H1 Checked Body IR & Dependency Model Complete — 2026-10-17
+
+Team H completed the independent Milestone H0 (Checked Body IR representation and deterministic encoding) and Milestone H1 (exact semantic dependency identification, expected hashes, and DAG closure validation) on feature branch `phase25-checked-body-ir`.
+
+1. **Implementation Baseline & Commit:**
+   - Base commit: `7c3f18d8badcaf6a346bb5044cd03d5100cc714a`.
+   - Reviewed implementation commit: `da2718e` on `phase25-checked-body-ir`.
+   - Compiler writing lease respected: Absolute zero modifications to `src/moss.cpp`, `src/ast.hpp`, or `src/typed_semantic_api.hpp`.
+
+2. **Milestone Deliverables:**
+   - **Self-contained Checked Body IR (`src/checked_body_ir.hpp`):** Expression nodes (`Parameter`, `IntegerLiteral`, `FloatLiteral`, `BoolLiteral`, `StringLiteral`, `LocalRead`, `Unary`, `Binary`, `Field`, `VectorLiteral`, `MapLiteral`, `Call`, `Message`), statement nodes (`Let`, `Var`, `Assign`, `AssignField`, `AssignIndex`, `ExprStmt`, `Return`, `Reply`), and control flow (`If`, `While`, `For`, `Match` with `CaseBranch`).
+   - **Deterministic Canonical Encoding & Hashing:** Canonical length-prefixed encoding (`<len>:<value>`), numeric ordinal binding for parameters and locals ensuring variable name and formatting invariance, deterministic field substitution ordering for nominal types, and SHA-256 domain-separated hashing (`body-semantic-v1:sha256:`). Backward compatibility with legacy AST nodes preserved.
+   - **Exact Semantic Dependency Model:** Recursive extraction of exact semantic dependencies from body IR (`callable-v1:...`, `nominal-template-v1:...`).
+   - **DAG Closure Validation:** Validates expected dependency hashes against environment, detecting missing dependencies, hash mismatches, forged/non-canonical hashes, and cycles fail-closed. Explicitly reports unsupported facts with zero fabricated semantic hashes.
+   - **Executable Unit Tests (`tests/tooling/check_phase25_checked_body_ir.cpp`):** Comprehensive C++17 unit test suite covering expression nodes, statement nodes, control flow, deterministic hashing, malformed IR rejection, and all six dependency closure scenarios. Integrated into `tests/tooling/check_phase25_checked_body_ir.py`.
+   - **Developer Experience Feedback:** Recorded observation in `agent-feedback/phase25/team-h-checked-body-ir/checked-body-ir/observations.jsonl`.
+
+3. **Validation & Quality Gates:**
+   - Strict C++17 build: `g++ -std=c++17 -O0 -Wall -Wextra -Werror -pedantic tests/tooling/check_phase25_checked_body_ir.cpp` compiled with zero warnings and zero errors; 100% assertions passed.
+   - Syntax validation: `g++ -std=c++17 -Wall -Wextra -Werror -pedantic -fsyntax-only src/moss.cpp` passed with zero warnings and zero errors.
+   - Python test runner: `python3 tests/tooling/check_phase25_checked_body_ir.py ./moss` passed.
+   - Phase 25 suite: Full regression check (`check_phase25_type_ir.py`, `check_phase25_recursive_layout.py`, `check_phase25_a3_specialization.py`, `check_phase25_known_open_nominal.py`, `check_phase25_conformance.py`, `check_phase25_nominal_identity.py`, `check_phase25_field_visibility.py`, `check_phase25_team_a_semantics.py`, `check_phase25_typed_semantic_api.py`, `check_phase25_checked_body_ir.py`) passed cleanly (0 regressions).
+   - Agent feedback validation: `python3 tests/tooling/check_agent_feedback.py` passed.
+   - Git hygiene: `git diff --check` passed cleanly.
+
+4. **Independent L6 Adversarial Reviewer Sign-Off:**
+   - Independent L6 Adversarial Reviewer audited candidate commit `da2718e`.
+   - Actively probed 15+ malformed IR configurations, self-cycles, deep transitive cycles, diamond DAGs, conflicting expected hashes, forged hashes, and unsupported dependencies.
+   - Issued attributable **EXPLICIT PASS** verdict for H0 and H1.
+
+5. **Current Team H Status:**
+   - Independent implementation work (H0 & H1) is complete.
+   - Team H is **PARKED** awaiting Team T's accepted SHA, test evidence, interface contract, independent review verdict, and `COMPILER_OWNERSHIP_RELEASED` marker.
+   - Upon receipt of the marker, Team H will resume for Milestone H2 (ownership transfer, Git reconciliation, compiler wiring) and Milestone H3 (full A4 completion).
+
 ## Phase 25 Team A — handoff for parallel splitting — 2026-10-17
 
 Written for L7 to divide the remaining work. Nothing new was started after
