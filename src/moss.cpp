@@ -5729,6 +5729,13 @@ class Checker {
     if (!parse_index(target, base, index)) return;
     auto container = env.find(base);
     if (container == env.end()) return;
+    auto retained = current_body_types_
+        ? current_body_types_->resolved_local(base) : nullptr;
+    if (retained && retained->is_closed() &&
+        !contains_internal_placeholder(retained->to_canonical_string())) {
+      container->second = retained->to_canonical_string();
+      return;
+    }
     auto key_type = inferred_expr_type(index, env);
     auto value_type = inferred_expr_type(value, env);
     if (key_type && value_type)
@@ -14524,10 +14531,18 @@ class Checker {
           // a subsequent pop can be checked as the concrete enum value.
           if (s.b == "push" && s.args.size() == 1) {
             auto container = env.types.find(s.a);
-            auto element = inferred_expr_type(s.args.front(), env.types);
-            if (container != env.types.end() && element &&
-                (container->second == "queue" || container->second == "vector"))
-              container->second += "[" + *element + "]";
+            auto retained = current_body_types_
+                ? current_body_types_->resolved_local(s.a) : nullptr;
+            if (container != env.types.end() && retained &&
+                retained->is_closed() &&
+                !contains_internal_placeholder(retained->to_canonical_string()))
+              container->second = retained->to_canonical_string();
+            else {
+              auto element = inferred_expr_type(s.args.front(), env.types);
+              if (container != env.types.end() && element &&
+                  (container->second == "queue" || container->second == "vector"))
+                container->second += "[" + *element + "]";
+            }
           }
           ++index;
           break;
