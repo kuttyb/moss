@@ -6944,9 +6944,14 @@ class Checker {
         if (current->kind != moss::TypeKind::Builtin ||
             (current->name != "vector" && current->name != "queue") ||
             current->type_args.size() != 1) continue;
-        // A domain handle cannot enter a collection at all; the closed-handle
-        // rule says so precisely, so an element conflict must not mask it.
-        if (argument->kind != moss::TypeKind::Domain &&
+        // Report a conflict only for a resolved value. A domain handle cannot
+        // enter a collection at all and the closed-handle rule says so
+        // precisely, while an unresolved open result -- the value of calling
+        // an open callable parameter -- is checked in each concrete
+        // specialization. Reporting either here states the wrong thing.
+        const bool resolved_argument = argument->kind != moss::TypeKind::Domain &&
+            !contains_internal_placeholder(argument->to_canonical_string());
+        if (resolved_argument &&
             !solver.unify(current->type_args.front(), argument))
           err(statement.line, "push argument conflicts with the element type of '" +
               statement.a + "'", "TYPE_MISMATCH");
