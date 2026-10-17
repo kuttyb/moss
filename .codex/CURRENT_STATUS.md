@@ -1,6 +1,65 @@
 # Moss current status
 
-## Phase 25 Team A A4 checked body IR subset — 2026-10-16 (isolated, partial)
+## Phase 25 Team A restart checkpoint — 2026-10-16 (NOT READY)
+
+The consolidated feature branch `phase25-g-type-core` has implementation
+through `b323e94` (a later documentation-only checkpoint commit follows).
+The latest added fix closes a real generic
+call bypass: `ignore(x: Int, y)` no longer accepts `ignore("wrong", 1)`.
+The combined implementation passed `make`, `make examples`, structured
+Type IR, checked-body hash, typed API, Team A three-engine semantics, nominal
+source-free identity A–F, generic specialization 40/40, built-in typing
+129/129, feedback validation, and G2 Gates 1–9 and 11. Gate 10 is pending
+joint integration. A full `make check` has **not** completed on this
+implementation. Earlier full runs were stopped for new
+repairs; one earlier run failed at `sdk/tables`, which was repaired and passed
+its direct build and a later advanced-data three-mode oracle at `70aad4e`.
+
+Independent Architect review of exact implementation
+`2c6772ff452a4f7d33f6bc7e389267ed5eee13d5` returned **NO-GO**:
+G-A-3 nominal identity closed; G-A-2 function specialization keys preserved,
+but selected method IDs were display-derived; G-A-1 retained semantic
+string/placeholder fallbacks; A4 lacked canonical body hashes. Later commits
+fixed the selected method ID and added a checked body hash for a narrow
+single-return expression subset. They do not close G-A-1 or full A4. No
+independent Architect has reviewed the newer SHA. Team A is **NOT READY**;
+do not hand off to Team I or claim ABI-v10 production cutover.
+
+An isolated A4 follow-up is checkpointed as code WIP
+`feaf113629519bfa7d04edee54db799cfe79eb83` plus status
+`08e26a48b2ab1f5ec75d3e7d55a82aa3c5c0037d` on
+`phase25-a4-body-ir-v2`. It adds tentative field/vector/call checked nodes;
+the build and tests were not complete at handoff. Do not cherry-pick into the
+consolidated branch without validating it. The already integrated tested
+subset is `ff99832` (original isolated commit `7f58554`). Remaining A4:
+arbitrary expressions, assignments, calls with exact dependency hashes,
+control flow, and source-free transport. Team B owns `.mossi` serialization
+of ordered nonzero member arguments and complete effect records. G2 Gate 10
+remains pending joint Team S/Team G integration.
+
+Resume from the pushed feature branch, inspect the exact checkpoint commit,
+then run `make`, `make examples`, `make check`, Type IR, Team A/typed API,
+generic/builtin, nominal source-free, and G2 conformance on a frozen SHA.
+Continue A2 typed-environment conversion and A4 checked body IR, then obtain
+independent Architect GO on the exact final implementation SHA before READY.
+
+## Phase 25 Team A consolidated implementation — 2026-10-16 (active, NOT READY)
+
+The latest consolidated source includes checked nominal and specialization
+identity, structured requirement closure, TypeRef-backed body and early
+signature/state/reply paths, an exact selected method ID, and a checked body
+hash for a narrow expression subset. At implementation SHA `2c6772ff452a4f7d33f6bc7e389267ed5eee13d5`, `make examples`, Type IR,
+typed API, Team A three-engine semantics, generic (40) and built-in (129)
+typing, and G2 Gates 1–9 and 11 passed. The independent Architect reviewed
+that exact SHA and returned NO-GO: G-A-3 closed, G-A-2 function keys preserved
+but selected method ID still display-derived, G-A-1 and A4 open. The method ID
+has since been fixed; newer source has no full-suite or Architect GO. The full
+`make check` on `2c6772f` passed Phase 20/21, Team A, typed API, runtime,
+foundations, and Text & Encoding before the Coordinator stopped it at the
+advanced-data oracle to integrate repairs. This is an interrupted run, not a
+full-suite pass. The latest pushed checkpoint is `e17ed1c`.
+
+## Phase 25 Team A A4 checked body IR subset — 2026-10-16 (integrated, partial)
 
 From exact consolidated base `2c6772f`, the isolated
 `phase25-a4-body-ir-v2` branch retains `CheckedBodyV1` semantic nodes and a

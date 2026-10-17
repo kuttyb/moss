@@ -37,7 +37,7 @@ Team B maps these records into ABI-v10 `Module`, `NominalTemplate`, `TypeExpr`, 
 
 ## Current implementation and remaining work
 
-At consolidated Team A implementation SHA `56a8b62`, `src/typed_semantic_api.hpp`
+At checkpoint Team A implementation through `b323e94`, `src/typed_semantic_api.hpp`
 projects `typed-semantic-v1` directly from the checked `Program`. The compiler
 retains exact module and nominal IDs, bound nominal field annotations, closed
 `TypeRef` and instance keys, open summary variables and typed requirements,
@@ -58,6 +58,14 @@ generic body availability bit tells Team B whether versioned body IR is present;
 it is not a body hash. Source-free `bytes.from_range(Range)` now uses the
 solver's closed `Vector[Int]` body result rather than the stale legacy
 `_generic:data` display relation.
+
+The checked body IR currently hashes only a validated single return using a
+parameter, decimal integer, or one addition. Other bodies report
+`unsupported_checked_body_form` and no body hash. `require_complete_body_hashes()`
+rejects a module with such gaps; this is an explicit partial API, not a complete
+ABI-v10 semantic record. A WIP extension for field, vector, and direct-call
+nodes is preserved on the separate `phase25-a4-body-ir-v2` branch and is not
+part of the validated feature branch.
 
 | Remaining item | Owner and boundary |
 | --- | --- |

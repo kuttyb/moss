@@ -1,24 +1,24 @@
-# Team A type core: efficiency record (in progress)
+# Team A type core: efficiency checkpoint
 
-This is the Phase 25 Team A record for branch `phase25-g-type-core`. The
-directive is unfinished; final review and delivery fields remain pending.
-Counts below use actual agent instances and branch/commit handoffs, not planned
-role slots or generated tests across multiple execution modes.
+This record covers the active Phase 25 Team A branch `phase25-g-type-core`.
+It is a restart checkpoint, not a READY verdict. Evidence is the Git history,
+isolated worktree handoffs, test output, and exact-SHA Architect review.
+Historic agent usage and all handoff counts are not fully reconstructable;
+those fields remain `unknown`.
 
 | Category | Report |
 | --- | --- |
-| **Leaf agents** | 6 actual: A1 identity, A2 audit/API draft, conformance tests, A2 solver, A3 requirements, and A2 compatibility. Evidence: their isolated `phase25-g-type-core-*` worktrees and handoff commits listed below. The A3 worker's later A4 follow-up is the same instance. |
-| **Peak leaf concurrency** | 3, from the initial A1/audit/conformance and later A2 solver/A3/A2 compatibility overlaps in this session. Coordinator excluded. |
-| **Non-leaf reviewers/managers** | 1 L6 Coordinator; 0 actual independent Architects; 0 independent adversarial reviewers. An independent Architect is required before READY. |
-| **Submissions** | 0 PRs; 4 completed non-PR handoffs: A1 `bf6b335`, API draft `e8d750e`, conformance `5e4ecef`, A3 `730387c`. All four were incorporated into the feature branch. The A2 solver and compatibility workers hit a service usage limit before a handoff; the Coordinator validated, finished, and committed their isolated patches. |
-| **Coordinator reviews** | 4/4 completed handoffs inspected and integrated; 0 recorded Coordinator change-request/resubmission rounds, average 0, maximum 0. The Coordinator also validated the unfinished A2 patches before integrating them, outside the completed-handoff count. |
-| **Other review events** | 0 current-branch Architect events; 0 independent adversarial events; 0 current-branch L7 review events. The L7 execution directive is scope approval, not a review of this implementation. |
-| **Defects** | The Team A compiler-path suite first exposed the zero-iteration open-Vector rejection (`tests/tooling/check_phase25_team_a_semantics.py`); the Coordinator reduced the pre-existing Fast Debug `for` rejection with `tmp/simple_for.moss`. Both are fixed by `6d50d59` and verified in the new suite. The full check exposed a stale open-collection diagnostic expectation, then the Phase 15.14 SWARM-051 regression from the scoped solver prepass treating an already concrete `Vector[Int]` as open. The Coordinator corrected the expectation and restricted the prepass to bindings that begin open; the focused SWARM-051 and Team A suites pass. G-A-1/G-A-3 were L7-approved prior findings, not new Team A review discoveries. No duplicate/false-positive count is asserted. |
-| **Test evidence** | Team A suite: 13 distinct cases (6 three-engine parity cases, 6 negative checker cases, 1 source-free compiled consumer), PASS. A3 compiler specialization: 1 scenario, PASS. Builtin generic typing: 129 probes, PASS. Generic specialization: 40 probes, PASS. Nominal identity with source-free consumers: PASS. G2 conformance: 11 gates; 10 PASS and Gate 10 PENDING joint integration. Phase 15.14 SWARM-051: PASS after the solver boundary repair. `make examples`: 32 ordinary examples built. The first repository-wide `make check` failed on obsolete expected wording; the second passed that fixture but exposed SWARM-051. The third full `make check` passed on implementation commit `00a0f34` with `all Moss v0.1 tests passed`. Do not add mode executions to unique-case totals. |
-| **Review provenance** | No independent Architect verdict for the consolidated implementation. Current implementation/source commit: `00a0f34`; a later closeout-only commit will change the branch tip. The implementation SHA needs an exact-SHA Architect review before READY. |
-| **Usage** | Actual tokens and billed cost by role: `unknown` (not exposed by the provider in this session). |
-| **Value** | The independent test worker's compiler-path suite exposed the open-loop failure that the standalone TypeSolver test could not. A1's reused prior identity repairs avoided reintroducing three previously reviewed declaration-ID defects. A3's separate key work produced a concrete compiler-path test, while its open-result and open-requirement limits remain visible for the next integration cycle. |
+| **Leaf agents** | Exact unique count `unknown` across resumed work. Recorded roles include A1 identity, A2 solver/compatibility/type environment/signature/reply, A3 requirements/specialization, A4 open summaries/body IR, and compiler-path tests. Worktrees and commits do not establish unique agent count. |
+| **Peak leaf concurrency** | At least 3 during A2, A3, and A4 isolated work; exact historic peak `unknown`. Coordinator and Architect excluded. |
+| **Non-leaf reviewers/managers** | 1 L6 Coordinator. Independent Architect instance count `unknown`; at least one exact-SHA review at `2c6772ff452a4f7d33f6bc7e389267ed5eee13d5`. No independent adversarial review evidenced. |
+| **Submissions** | 0 PRs evidenced. Non-PR handoff count `unknown`; validated handoffs listed in the feature-branch history were integrated. A4 follow-up `feaf1136` remains isolated WIP. |
+| **Coordinator reviews** | Integrated handoffs received focused validation or inspection; exact reviewed/submitted coverage and Coordinator repair-round average/max `unknown` across resumed history. The mini-application trait regression was returned to A3 and repaired by `e17ed1c`. |
+| **Other review events** | Independent Architect reviewed exact `2c6772ff452a4f7d33f6bc7e389267ed5eee13d5`: **NO-GO**; G-A-3 closed, G-A-2 function keys preserved but selected method target ID defective, G-A-1 and A4 open. Selected method ID was repaired later in `6cd535a` and requires re-review. Earlier interim Architect NO-GO at `ec0c0d6` is preserved in `.codex/CURRENT_STATUS.md`. No attributable L7 implementation review yet. |
+| **Defects** | Confirmed compiler-path defects include cross-body TypeRef leakage into sdk/tables (fixed `bfaef60`, direct Margo build and later oracle passed), trait-formal summary mismatch in mini-application (fixed `e17ed1c`, examples passed), message-result monotype overwrite (fixed `5bf0ae4`, negative probe passed), and generic-callee bypass of a declared Int parameter (fixed `b323e94`, isolated focused probe passed). G-A-1 string authority and A4 body coverage remain open. Exact net-new discoverer totals and duplicate counts `unknown`; Architect verification is not counted as discovery. |
+| **Test evidence** | On checkpoint implementation through `b323e94`: `make`, `make examples`, Team A compiler-path suite in declared modes, generic specialization 40/40, built-in typing 129/129, Type IR, checked-body hash, typed API, nominal A–F source-free identity, feedback validation, and G2 Gates 1–9 and 11 passed. Gate 10 is pending joint integration. A prior `make check` on `2c6772f` passed Phase 20/21, Team A, runtime, foundations, and Text & Encoding before intentional stop at the advanced-data oracle to integrate changes. No final full-suite pass yet. Unique Team A case count and mode executions need recount from final frozen output. |
+| **Review provenance** | Reviewed implementation: `2c6772ff452a4f7d33f6bc7e389267ed5eee13d5`, **NO-GO**. Checkpoint delivery SHA is in the final status commit and remote branch. Later implementation changes include exact selected method ID, retained body walk scope, partial checked body IR, and generic declared-parameter checking; a new Architect review is required. |
+| **Usage** | Tokens and billed cost by role `unknown` (provider data unavailable). |
+| **Value** | Isolated compiler-path tests found failures that standalone TypeSolver tests missed: cross-function state leakage, nominal trait-formal binding, and a generic call that bypassed its declared parameter. The independent Architect found a display-derived selected method ID and confirmed that semantic string decisions still prevent Finding 1 closure. |
 
-Completed non-PR handoff ledger: `bf6b335` → `5c2f078` (A1), `e8d750e` →
-`40b35bd` (API draft), `5e4ecef` → `de6800b` (conformance), `730387c` →
-`d63c97d` (A3). All four are non-PR handoffs; no PR number exists.
+Team A remains NOT READY. It retains ownership until full TypeRef authority,
+complete checked body IR, full validation, and exact-SHA Architect GO.
