@@ -523,6 +523,20 @@ fn main():
         parity(open_field_write, scratch, "1\n")
         print("PASS nominal field write closes nested open collection", flush=True)
 
+        replace_terms = source(scratch, "replace_index_terms", '''fn main():
+  var values = [1]
+  old = replace(values[0], 2)
+  echo old
+  echo values[0]
+''')
+        parity(replace_terms, scratch, "1\n2\n")
+        replace_conflict = source(scratch, "replace_index_conflict", '''fn main():
+  var values = [1]
+  old = replace(values[0], "wrong")
+''')
+        checked(replace_conflict, "REPLACE_TYPE_MISMATCH")
+        print("PASS replace checks retained indexed place type", flush=True)
+
         handler_reply = source(scratch, "typed_handler_reply", '''type Box:
   value: Int
 

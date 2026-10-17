@@ -2406,6 +2406,28 @@ class Checker {
       return found == locals.end() ? nullptr : solver.resolve(found->second);
     }
 
+    static moss::TypeRef nominal_field(const moss::TypeRef& receiver,
+                                       const string& field) {
+      if (!receiver || receiver->kind != moss::TypeKind::NominalInstance ||
+          !receiver->declaration) return nullptr;
+      for (size_t index = 0; index < receiver->declaration->fields.size(); ++index) {
+        const auto& slot = receiver->declaration->fields[index];
+        if (slot.name != field) continue;
+        if (slot.inferred) {
+          auto bound = std::find_if(receiver->field_substitutions.begin(),
+              receiver->field_substitutions.end(),
+              [&](const auto& item) { return item.first == field; });
+          return bound == receiver->field_substitutions.end()
+              ? nullptr : bound->second;
+        }
+        auto owner = receiver->declaration->owner.lock();
+        if (!owner) return nullptr;
+        const auto& annotations = owner->field_annotations(receiver->declaration->id);
+        return index < annotations.size() ? annotations[index] : nullptr;
+      }
+      return nullptr;
+    }
+
     moss::TypeRef known_expression(const string& expression) {
       const string value = trim(expression);
       if (auto local = resolved_local(value)) return local;
@@ -2423,26 +2445,8 @@ class Checker {
       const size_t dot = value.rfind('.');
       if (dot != string::npos) {
         auto receiver = known_expression(value.substr(0, dot));
-        if (receiver && receiver->kind == moss::TypeKind::NominalInstance &&
-            receiver->declaration) {
-          const string field = value.substr(dot + 1);
-          for (size_t index = 0; index < receiver->declaration->fields.size(); ++index) {
-            const auto& slot = receiver->declaration->fields[index];
-            if (slot.name != field) continue;
-            if (slot.inferred) {
-              auto bound = std::find_if(receiver->field_substitutions.begin(),
-                  receiver->field_substitutions.end(),
-                  [&](const auto& item) { return item.first == field; });
-              return bound == receiver->field_substitutions.end()
-                  ? nullptr : solver.resolve(bound->second);
-            }
-            auto owner = receiver->declaration->owner.lock();
-            if (!owner) return nullptr;
-            const auto& annotations = owner->field_annotations(
-                receiver->declaration->id);
-            return index < annotations.size() ? annotations[index] : nullptr;
-          }
-        }
+        if (auto field = nominal_field(receiver, value.substr(dot + 1)))
+          return solver.resolve(field);
       }
       return nullptr;
     }
@@ -5257,12 +5261,16 @@ class Checker {
       if (canonical_type_name(*bt) == "RangeBatch") return string("Range");
       if (canonical_type_name(*bt) == "Range") return string("int");
       if (starts_with(*bt, "_generic:")) return string("_element:element:" + bt->substr(9));
-      if (*bt == "vector" || *bt == "queue") return string("_element:element:" + index_base);
-      if (starts_with(*bt, "vector[") && ends_with(*bt, "]")) return trim(bt->substr(7, bt->size()-8));
-      if (starts_with(*bt, "queue[") && ends_with(*bt, "]")) return trim(bt->substr(6, bt->size()-7));
-      if (starts_with(*bt, "map[") && ends_with(*bt, "]")) {
-        auto ps = split_top_level(bt->substr(4, bt->size()-5), ',');
-        if (ps.size() == 2) return trim(ps[1]);
+      auto container = moss::Type::parse_canonical(canonical_type_name(*bt));
+      if (container && (*container)->kind == moss::TypeKind::Builtin) {
+        if (((*container)->name == "vector" || (*container)->name == "queue") &&
+            (*container)->type_args.empty())
+          return string("_element:element:" + index_base);
+        if (((*container)->name == "vector" || (*container)->name == "queue") &&
+            (*container)->type_args.size() == 1)
+          return (*container)->type_args[0]->to_canonical_string();
+        if ((*container)->name == "map" && (*container)->type_args.size() == 2)
+          return (*container)->type_args[1]->to_canonical_string();
       }
       return std::nullopt;
     }
@@ -5297,7 +5305,7 @@ class Checker {
           bool concrete = actual_types.size() == function->second->params.size() &&
               std::all_of(actual_types.begin(), actual_types.end(),
                           [](const string& type) {
-                            return !type.empty() && !contains_internal_placeholder(type);
+                            return !type.empty() && concrete_specialization_type(type);
                           });
           if (concrete) {
             auto specialized = specialized_function_return_type(
@@ -5356,7 +5364,19 @@ class Checker {
     if (parse_member_call(e, method_receiver, method_name, method_args)) {
       auto base = inferred_expr_type(method_receiver, env);
       if (base) {
-        string concrete_base = canonical_type_name(*base);
+        auto receiver_ir = current_body_types_
+            ? current_body_types_->known_expression(method_receiver) : nullptr;
+        if (!receiver_ir) {
+          auto parsed = moss::Type::parse_canonical(canonical_type_name(*base));
+          if (parsed) receiver_ir = *parsed;
+        }
+        const string concrete_base = receiver_ir && receiver_ir->is_closed()
+            ? receiver_ir->to_canonical_string()
+            : canonical_type_name(*base);
+        const string method_owner = receiver_ir &&
+            receiver_ir->kind == moss::TypeKind::NominalInstance &&
+            receiver_ir->declaration
+            ? receiver_ir->declaration->program_name : concrete_base;
         // Phase 20: Executor configuration/start chain and FileIO operations.
         // See parse_executor_chain and docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md.
         if (concrete_base == "executor" &&
@@ -5377,12 +5397,17 @@ class Checker {
           return string("int");
         if (concrete_base == "Range" && method_name == "slice" && method_args.size() == 2)
           return string("Range");
-        if (auto result = builtin_operation_result(concrete_base, method_name,
-                                                    method_args.size()))
-          return result;
+        if (receiver_ir &&
+            ((receiver_ir->kind == moss::TypeKind::Builtin &&
+              moss::Type::collection_arity(receiver_ir->name)) ||
+             (receiver_ir->kind == moss::TypeKind::Primitive &&
+              receiver_ir->name == "string")))
+          if (auto result = builtin_operation_result(concrete_base, method_name,
+                                                      method_args.size()))
+            return result;
         vector<string> argument_types;
         for (const auto& arg : method_args) argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
-        if (auto method = resolve_method(canonical_type_name(*base), method_name, argument_types))
+        if (auto method = resolve_method(method_owner, method_name, argument_types))
           if (method->return_type) return *method->return_type;
         if (starts_with(*base, "_generic:")) return string("_method_value");
         auto trait = traits_.find(canonical_type_name(*base));
@@ -5403,15 +5428,11 @@ class Checker {
       auto base_type = inferred_expr_type(e.substr(0, dot), env);
       string field = trim(e.substr(dot + 1));
       if (base_type) {
-        string tname = nominal_template_name(*base_type);
-        auto object = objects_.find(tname);
-        if (object != objects_.end()) {
-          if (auto sub_type = nominal_field_type(*base_type, field)) {
-            return canonical_type_name(*sub_type);
-          }
-          for (const auto& candidate : object->second->fields)
-            if (candidate.name == field && !candidate.type.empty())
-              return canonical_type_name(candidate.type);
+        auto receiver = moss::Type::parse_canonical(canonical_type_name(*base_type));
+        if (receiver && (*receiver)->kind == moss::TypeKind::NominalInstance &&
+            (*receiver)->declaration) {
+          if (auto field_type = BodyTypeState::nominal_field(*receiver, field))
+            return field_type->to_canonical_string();
         }
       }
     }
@@ -5420,11 +5441,13 @@ class Checker {
     if (parse_member_call(e, mr, mh, ma)) {
       auto bt = env.find(mr);
       if (bt != env.end()) {
-        string t = bt->second;
-        if (mh == "pop" && ma.empty() && starts_with(t, "queue[") && ends_with(t, "]"))
-          return trim(t.substr(6, t.size()-7));
-        if (mh == "pop" && ma.empty() && starts_with(t, "vector[") && ends_with(t, "]"))
-          return trim(t.substr(7, t.size()-8));
+        auto receiver = moss::Type::parse_canonical(
+            canonical_type_name(bt->second));
+        if (receiver && mh == "pop" && ma.empty() &&
+            (*receiver)->kind == moss::TypeKind::Builtin &&
+            ((*receiver)->name == "queue" || (*receiver)->name == "vector") &&
+            (*receiver)->type_args.size() == 1)
+          return (*receiver)->type_args[0]->to_canonical_string();
       }
     }
 
@@ -5435,6 +5458,39 @@ class Checker {
     auto left_ir = moss::Type::parse_canonical(canonical_type_name(left));
     auto right_ir = moss::Type::parse_canonical(canonical_type_name(right));
     return left_ir && right_ir && (*left_ir)->structurally_equal(**right_ir);
+  }
+
+  moss::TypeRef checked_expression_term(const string& expression,
+                                        const TypeEnv& env) const {
+    if (current_body_types_)
+      if (auto retained = current_body_types_->known_expression(expression))
+        return retained;
+    auto inferred = inferred_expr_type(expression, env);
+    if (!inferred || contains_internal_placeholder(*inferred)) return nullptr;
+    auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
+    return parsed && (*parsed)->is_closed() ? *parsed : nullptr;
+  }
+
+  bool checked_same_expressions(const string& left, const string& right,
+                                const TypeEnv& env) const {
+    auto left_term = checked_expression_term(left, env);
+    auto right_term = checked_expression_term(right, env);
+    if (current_body_types_ && left_term && right_term)
+      return current_body_types_->solver.unify(left_term, right_term);
+    auto left_type = inferred_expr_type(left, env);
+    auto right_type = inferred_expr_type(right, env);
+    return left_type && right_type && same_type(*left_type, *right_type);
+  }
+
+  bool checked_matches_declared(const string& expression,
+                                const string& declared,
+                                const TypeEnv& env) const {
+    auto actual = checked_expression_term(expression, env);
+    auto expected = moss::Type::parse_canonical(canonical_type_name(declared));
+    if (current_body_types_ && actual && expected && (*expected)->is_closed())
+      return current_body_types_->solver.unify(actual, *expected);
+    auto inferred = inferred_expr_type(expression, env);
+    return inferred && same_type(*inferred, declared);
   }
 
   std::unordered_map<string,string> instantiated_function_env(
@@ -15718,8 +15774,7 @@ class Checker {
           if (field == item->fields.end())
             err(line, "unknown enum field '" + name + "'", "UNKNOWN_ENUM_FIELD");
           check_expression(line, value, env);
-          auto actual = inferred_expr_type(value, env);
-          if (!actual || !same_type(*actual, field->type))
+          if (!checked_matches_declared(value, field->type, env))
             err(line, "enum field '" + name + "' expects '" + field->type + "'",
                 "ENUM_FIELD_TYPE_MISMATCH");
         }
@@ -16013,7 +16068,8 @@ class Checker {
           auto actual = inferred_expr_type(args[index], env);
           if (actual && !contains_internal_placeholder(*actual) &&
               !method->params[index].type.empty() &&
-              !same_type(*actual, method->params[index].type))
+              !checked_matches_declared(args[index], method->params[index].type,
+                                        env))
             err(line, "argument " + std::to_string(index + 1) +
                 " to trait method '" + handler + "' has type '" + *actual +
                 "', expected '" + method->params[index].type + "'");
@@ -16153,7 +16209,7 @@ class Checker {
         auto place_type = inferred_expr_type(args[0], env);
         auto replacement_type = inferred_expr_type(args[1], env);
         if (!place_type || !replacement_type ||
-            !same_type(*place_type, *replacement_type))
+            !checked_same_expressions(args[0], args[1], env))
           err(line, "replace requires the replacement to have the same static type as the place",
               "REPLACE_TYPE_MISMATCH");
         return;
@@ -16682,11 +16738,19 @@ class Checker {
           const Handler* handler = target ? find_handler(*target, statement.b) : nullptr;
           if (!handler || !handler->reply_type)
             err(statement.line, "message assignment requires a value-returning handler");
-          if (current_env.count(statement.message_result) &&
-              !same_type(current_env.at(statement.message_result), *handler->reply_type))
-            err(statement.line, "message assignment to '" + statement.message_result +
-                "' has type '" + current_env.at(statement.message_result) +
-                "', expected '" + *handler->reply_type + "'");
+          if (current_env.count(statement.message_result)) {
+            auto destination = checked_types.resolved_local(statement.message_result);
+            auto reply = moss::Type::parse_canonical(
+                canonical_type_name(*handler->reply_type));
+            bool compatible = destination && reply && (*reply)->is_closed()
+                ? checked_types.solver.unify(destination, *reply)
+                : same_type(current_env.at(statement.message_result),
+                            *handler->reply_type);
+            if (!compatible)
+              err(statement.line, "message assignment to '" + statement.message_result +
+                  "' has type '" + current_env.at(statement.message_result) +
+                  "', expected '" + *handler->reply_type + "'");
+          }
         }
         return;
       }
