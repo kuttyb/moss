@@ -309,6 +309,23 @@ fn main():
         checked(call_conflict, "TYPE_MISMATCH")
         print("PASS call and later push constrain the same local", flush=True)
 
+        mixed_parameter_call = source(scratch, "generic_declared_parameter", '''fn ignore(x: Int, y):
+  return y
+
+fn main():
+  echo ignore(1, "ok")
+''')
+        parity(mixed_parameter_call, scratch, "ok\n")
+        mixed_parameter_conflict = source(scratch, "generic_declared_parameter_conflict", '''fn ignore(x: Int, y):
+  return y
+
+fn main():
+  echo ignore("wrong", 1)
+''')
+        checked(mixed_parameter_conflict, "TYPE_MISMATCH")
+        print("PASS generic callable retains declared parameter TypeRef at nested call",
+              flush=True)
+
         declared_call = source(scratch, "typed_declared_call", '''fn first(values: Vector[Int]) -> Int:
   return values[0]
 

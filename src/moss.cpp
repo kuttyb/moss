@@ -15752,14 +15752,13 @@ class Checker {
       auto formal_term = moss::Type::parse_canonical(
           canonical_type_name(param.type));
       auto actual_term = checked_expression_term(args[index], env);
-      const bool typed_check = current_body_types_ && !function->second->generic &&
+      const bool typed_check = current_body_types_ &&
           !param.type.empty() && !traits_.count(param.type) &&
           formal_term && (*formal_term)->is_closed() && actual_term;
       bool argument_compatible = typed_check
           ? current_body_types_->solver.unify(*formal_term, actual_term)
           : actual_type.empty() || contains_internal_placeholder(actual_type) ||
-                function->second->generic || param.type.empty() ||
-                contains_internal_placeholder(param.type) ||
+                param.type.empty() || contains_internal_placeholder(param.type) ||
                 traits_.count(param.type) || container_match ||
                 is_type_compatible(param.type, actual_type);
       if (!argument_compatible)
