@@ -67,13 +67,47 @@ fn main():
     assert box["parameter_type_keys"][0] != cell["parameter_type_keys"][0]
     assert box["result_type_key"] == cell["result_type_key"]
     assert not typed["unavailable_specializations"], typed
-    # Current generic bodies lack a reusable solver-owned open summary. The
-    # API reports that omission rather than inventing one from display text.
-    assert typed["open_summaries_complete"] is False, typed
-    unavailable = {entry["callable_id"] for entry in
-                   typed["unavailable_open_summaries"]}
-    assert f"callable-v1:{module}:fn:unbox" in unavailable, typed
-    assert f"callable-v1:{module}:fn:uncell" in unavailable, typed
+    assert typed["open_summaries_complete"], typed
+    assert not typed["unavailable_open_summaries"], typed
+    field_summaries = {entry["callable_id"]: entry for entry in
+                       typed["open_summaries"]}
+    for name, template in (("unbox", "Box"), ("uncell", "Cell")):
+        summary = field_summaries[f"callable-v1:{module}:fn:{name}"]
+        assert summary["bound_variable_count"] == 1, summary
+        assert summary["result_type"] == {"kind": "bound_var", "ordinal": 0}, summary
+        assert summary["parameter_types"] == [{"kind": "nominal",
+            "id": f"nominal-template-v1:{module}:type:{template}",
+            "arguments": [], "fields": [{"name": "value", "type":
+                {"kind": "bound_var", "ordinal": 0}}]}], summary
+
+    operator_source = Path(scratch_path) / "operator.moss"
+    operator_source.write_text("""fn add_one(value):
+  return value + 1
+
+fn main():
+  echo add_one(2)
+  echo add_one(2.5)
+""")
+    operator_checked = subprocess.run([str(MOSS), "inspect", "main",
+        "--source", str(operator_source), "--json"], text=True,
+        capture_output=True)
+    assert operator_checked.returncode == 0, (
+        operator_checked.stdout, operator_checked.stderr)
+    operator_typed = json.loads(operator_checked.stdout)["result"][
+        "typed_semantic_v1"]
+    assert operator_typed["open_summaries_complete"], operator_typed
+    operator_summary = operator_typed["open_summaries"][0]
+    assert operator_summary["callable_id"] == (
+        f"callable-v1:{module}:fn:add_one"), operator_summary
+    assert operator_summary["parameter_types"] == [
+        {"kind": "bound_var", "ordinal": 0}], operator_summary
+    assert operator_summary["result_type"] == (
+        {"kind": "bound_var", "ordinal": 0}), operator_summary
+    assert operator_summary["requirement_count"] == 1, operator_summary
+    operator_specs = [entry for entry in operator_typed["specializations"]
+                      if entry["callable_id"] == operator_summary["callable_id"]]
+    assert len(operator_specs) == 2, operator_specs
+    assert len({entry["key"] for entry in operator_specs}) == 2, operator_specs
 
     open_source = Path(scratch_path) / "open.moss"
     open_source.write_text("""fn fresh():

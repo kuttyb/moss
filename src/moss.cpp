@@ -2542,8 +2542,32 @@ class Checker {
           ? canonical_type_name(*function.return_type) : "unit";
       if (starts_with(result, "_generic:")) {
         auto source = parameter_variables.find(result.substr(9));
-        if (source != parameter_variables.end()) summary.result_type = source->second;
-        else complete = false;
+        if (source == parameter_variables.end()) {
+          complete = false;
+        } else {
+          summary.result_type = source->second;
+          const string* returned = function.result_expression
+              ? &*function.result_expression :
+              !function.body.empty() &&
+                  function.body.back().kind == Stmt::Kind::Return
+                  ? &function.body.back().a : nullptr;
+          if (returned) {
+            TypeEnv body_env;
+            for (const auto& parameter : function.params)
+              body_env[parameter.name] = parameter.type.empty()
+                  ? "_generic:" + parameter.name : parameter.type;
+            infer_statement_expressions(function.body, body_env);
+            auto actual = inferred_expr_type(*returned, body_env);
+            if (actual && !contains_internal_placeholder(*actual)) {
+              auto parsed = moss::Type::parse_canonical(
+                  canonical_type_name(*actual));
+              if (parsed && (*parsed)->is_closed())
+                summary.result_type = *parsed;
+              else
+                complete = false;
+            }
+          }
+        }
       } else if (starts_with(result, "_method_result:")) {
         summary.result_type = bound();
       } else if (starts_with(result, "_element:")) {
@@ -2551,8 +2575,83 @@ class Checker {
         if (!summary.result_type) complete = false;
       } else if (!contains_internal_placeholder(result)) {
         summary.result_type = type_term(result);
-      } else {
-        complete = false;
+      }
+      // A specialized result can still have a precise relation to an open
+      // parameter. Retain the relation on TypeRefs while the defining nominal
+      // declaration is in scope, before a consumer freshens this summary.
+      const string* single_result_expression = function.result_expression
+          ? &*function.result_expression :
+          function.body.size() == 1 &&
+              function.body.front().kind == Stmt::Kind::Return
+              ? &function.body.front().a : nullptr;
+      const int single_result_line = function.result_expression
+          ? function.result_line : function.body.size() == 1
+              ? function.body.front().line : function.line;
+      if (!summary.result_type && single_result_expression &&
+          (function.body.empty() ||
+           (function.body.size() == 1 &&
+            function.body.front().kind == Stmt::Kind::Return))) {
+        const string expression = trim(*single_result_expression);
+        const size_t dot = expression.find('.');
+        if (dot != string::npos &&
+            expression.find('.', dot + 1) == string::npos) {
+          auto receiver = parameter_variables.find(trim(expression.substr(0, dot)));
+          const string field = trim(expression.substr(dot + 1));
+          if (receiver != parameter_variables.end() && plain_identifier(field)) {
+            const auto& type = receiver->second;
+            if (type && type->kind == moss::TypeKind::NominalInstance &&
+                type->declaration) {
+              const auto& slots = type->declaration->fields;
+              for (size_t index = 0; index < slots.size(); ++index) {
+                if (slots[index].name != field) continue;
+                if (slots[index].inferred) {
+                  for (const auto& substitution : type->field_substitutions)
+                    if (substitution.first == field)
+                      summary.result_type = substitution.second;
+                } else if (auto owner = type->declaration->owner.lock()) {
+                  const auto& annotations = owner->field_annotations(
+                      type->declaration->id);
+                  if (index < annotations.size())
+                    summary.result_type = openize(annotations[index]);
+                }
+                break;
+              }
+            }
+          }
+        }
+        if (!summary.result_type) {
+          if (auto binary = split_binary(expression, {"+"})) {
+            for (const auto& parameter : function.params) {
+              const string left = trim(binary->first);
+              const string right = trim(binary->second);
+              const bool parameter_left = left == parameter.name;
+              const bool parameter_right = right == parameter.name;
+              if (parameter_left == parameter_right) continue;
+              const string& operand = parameter_left ? right : left;
+              if (constraint_expression_type(function, operand) !=
+                  std::optional<string>("int")) continue;
+              auto subject = parameter_variables.find(parameter.name);
+              if (subject == parameter_variables.end() || !subject->second)
+                continue;
+              summary.result_type = subject->second;
+              moss::Requirement requirement;
+              requirement.id = function.semantic_callable_id +
+                  ":requirement:return-operator";
+              requirement.kind = moss::RequirementKind::Operator;
+              requirement.target_id = "operator:+";
+              requirement.subject = subject->second;
+              requirement.arguments.push_back(moss::Type::primitive("int"));
+              requirement.argument_access.push_back(moss::AccessMode::Read);
+              requirement.result = subject->second;
+              requirement.origin = {summary.origin.module_id,
+                                    function.source_file, single_result_line,
+                                    1, function.semantic_callable_id,
+                                    requirement.id};
+              summary.requirements.push_back(std::move(requirement));
+              break;
+            }
+          }
+        }
       }
       for (size_t ordinal = 0; ordinal < function.constraints.size(); ++ordinal) {
         const auto& constraint = function.constraints[ordinal];
@@ -6115,6 +6214,7 @@ class Checker {
                      " to function '" + callee + "'");
       }
     };
+    vector<std::pair<int, moss::Requirement>> structural_requirements;
     auto instantiate_summary = [&](int line, const string& expression,
                                    const Stmt* statement) -> moss::TypeRef {
       string callee;
@@ -6168,6 +6268,7 @@ class Checker {
         for (auto& argument : requirement.arguments)
           argument = instantiate(argument);
         if (source.result) requirement.result = instantiate(*source.result);
+        structural_requirements.emplace_back(line, requirement);
         auto subject = requirement.subject
             ? solver.resolve(requirement.subject) : nullptr;
         if (subject && subject->kind == moss::TypeKind::InferenceVar)
@@ -6392,6 +6493,28 @@ class Checker {
           err(statement.line, "assignment type mismatch for field '" +
               statement.a + "'", "TYPE_MISMATCH");
       }
+    }
+    for (const auto& [line, requirement] : structural_requirements) {
+      // The closed built-in '+' family admits Int and Float when the other
+      // operand is Int. Keep this check on the instantiated TypeRefs so a
+      // concrete invalid call fails before open-result closure/codegen.
+      if (requirement.kind != moss::RequirementKind::Operator ||
+          requirement.target_id != "operator:+" ||
+          requirement.arguments.size() != 1) continue;
+      auto subject = solver.resolve(requirement.subject);
+      auto argument = solver.resolve(requirement.arguments.front());
+      if (subject->kind == moss::TypeKind::InferenceVar ||
+          argument->kind == moss::TypeKind::InferenceVar) continue;
+      if (subject->kind != moss::TypeKind::Primitive ||
+          (subject->name != "int" && subject->name != "float") ||
+          argument->kind != moss::TypeKind::Primitive ||
+          argument->name != "int")
+        err(line, "required '+' operator has incompatible operand type",
+            "TYPE_MISMATCH");
+      if (requirement.result &&
+          !solver.unify(*requirement.result, subject))
+        err(line, "required '+' operator has incompatible result type",
+            "TYPE_MISMATCH");
     }
     for (const auto& [name, term] : locals) {
       auto resolved = solver.resolve(term);
@@ -14910,6 +15033,30 @@ class Checker {
         }
       }
       actual_types.push_back(inferred_expr_type(argument, env).value_or(""));
+    }
+    if (function->second->open_summary &&
+        function->second->open_summary->complete) {
+      const auto& summary = *function->second->open_summary;
+      for (const auto& requirement : summary.requirements) {
+        if (requirement.kind != moss::RequirementKind::Operator ||
+            requirement.target_id != "operator:+" ||
+            requirement.arguments.size() != 1 ||
+            requirement.arguments.front()->kind != moss::TypeKind::Primitive ||
+            requirement.arguments.front()->name != "int") continue;
+        for (size_t index = 0; index < summary.parameter_types.size() &&
+                               index < actual_types.size(); ++index) {
+          if (!summary.parameter_types[index]->structurally_equal(
+                  *requirement.subject)) continue;
+          auto actual = moss::Type::parse_canonical(
+              canonical_type_name(actual_types[index]));
+          if (!actual || !(*actual)->is_closed()) continue;
+          if ((*actual)->kind != moss::TypeKind::Primitive ||
+              ((*actual)->name != "int" && (*actual)->name != "float"))
+            err(line, "argument " + std::to_string(index + 1) +
+                " to function '" + name +
+                "' has no compatible '+' operation with Int", "TYPE_MISMATCH");
+        }
+      }
     }
     // Each explicit module currently emits its own nominal FileIO runtime.
     // A concrete provider-owned call cannot take another crate's Range.

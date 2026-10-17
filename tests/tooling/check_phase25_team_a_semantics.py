@@ -402,6 +402,37 @@ fn main():
             indexed_typed)
         print("PASS generic index result closes from typed requirement", flush=True)
 
+        operator_result = source(scratch, "generic_operator_result", '''fn add_one(value):
+  return value + 1
+
+fn main():
+  echo add_one(2)
+  echo add_one(2.5)
+''')
+        parity(operator_result, scratch, "3\n3.5\n")
+        operator_inspect = run(MOSS, "inspect", "main", "--source",
+                               operator_result, "--json")
+        assert operator_inspect.returncode == 0, (
+            operator_inspect.stdout, operator_inspect.stderr)
+        operator_typed = json.loads(operator_inspect.stdout)["result"][
+            "typed_semantic_v1"]
+        operator_id = (
+            "callable-v1:module-v1:__standalone__@0.0.0::main:fn:add_one")
+        operator_summaries = [item for item in operator_typed["open_summaries"]
+                              if item["callable_id"] == operator_id]
+        assert len(operator_summaries) == 1 and (
+            operator_summaries[0]["requirement_count"] == 1), operator_typed
+        print("PASS generic operator result closes from typed requirement", flush=True)
+
+        bad_operator = source(scratch, "bad_generic_operator", '''fn add_one(value):
+  return value + 1
+
+fn main():
+  echo add_one("oops")
+''')
+        checked(bad_operator, "TYPE_MISMATCH")
+        print("PASS closed generic operator rejects invalid operand", flush=True)
+
         known = source(scratch, "known_nominal_field", '''type Box:
   value
 
@@ -725,6 +756,23 @@ fn main():
                    "requires method 'length'" in note["message"]
                    for note in related), related
         print("PASS source-free member failure retains provider provenance",
+              flush=True)
+
+        # The imported generic body returns an owned Vector[Int] after
+        # iterating a borrowed Range. Its old display `_generic:data` result
+        # must not cause the consumer to bind the result back to Range.
+        source_free_range = run(
+            sys.executable,
+            ROOT / "sdk/foundations/acceptance/validate_source_free.py",
+            "--foundations-root", ROOT / "sdk/foundations",
+            "--workdir", scratch / "source_free_range",
+            "--moss", MOSS)
+        assert source_free_range.returncode == 0, (
+            source_free_range.stdout, source_free_range.stderr)
+        range_data = json.loads(source_free_range.stdout)
+        assert range_data["source_removed"] and (
+            range_data["range_output"] == "329"), range_data
+        print("PASS source-free generic Range return keeps owned Vector type",
               flush=True)
 
     print("Phase 25 Team A compiler-path semantics: PASS")
