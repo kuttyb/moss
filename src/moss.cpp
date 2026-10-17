@@ -5846,22 +5846,34 @@ class Checker {
           env[statement.a] = *constructed;
         } else if (auto inferred = inferred_expr_type(statement.b, env)) {
           string cinf = canonical_type_name(*inferred);
-          // A local's open collection is one inference term for the whole
-          // body.  The solver may close it from a use after a loop; retain that
-          // result when this earlier constructor is visited in source order.
-          auto inferred_term = moss::Type::parse_canonical(cinf);
-          if (inferred_term && !(*inferred_term)->is_closed()) {
-            auto solved = solved_collections.find(statement.a);
-            if (solved != solved_collections.end()) cinf = solved->second;
-          }
-          auto candidate = moss::Type::parse_canonical(cinf);
-          if (statement.kind == Stmt::Kind::Assign && existing != env.end() &&
-              candidate && (*candidate)->kind == moss::TypeKind::Builtin &&
-              !(*candidate)->is_closed() &&
-              is_type_compatible(existing->second, cinf)) {
-            // Keep specialized container type
+          auto retained = current_body_types_
+              ? current_body_types_->assignment_value(statement) : nullptr;
+          auto local = retained && current_body_types_
+              ? current_body_types_->resolved_local(statement.a) : nullptr;
+          if (local && local->is_closed() &&
+              !contains_internal_placeholder(local->to_canonical_string())) {
+            // The body solver already related this RHS to the binding. The
+            // string environment is only the projection consumed by older
+            // walkers and lowering.
+            env[statement.a] = local->to_canonical_string();
           } else {
-            env[statement.a] = cinf;
+            // A local's open collection is one inference term for the whole
+            // body. The solver may close it from a use after a loop; retain
+            // that result when this constructor is visited in source order.
+            auto inferred_term = moss::Type::parse_canonical(cinf);
+            if (inferred_term && !(*inferred_term)->is_closed()) {
+              auto solved = solved_collections.find(statement.a);
+              if (solved != solved_collections.end()) cinf = solved->second;
+            }
+            auto candidate = moss::Type::parse_canonical(cinf);
+            if (statement.kind == Stmt::Kind::Assign && existing != env.end() &&
+                candidate && (*candidate)->kind == moss::TypeKind::Builtin &&
+                !(*candidate)->is_closed() &&
+                is_type_compatible(existing->second, cinf)) {
+              // Keep specialized container type
+            } else {
+              env[statement.a] = cinf;
+            }
           }
         } else if (statement.kind != Stmt::Kind::Assign || existing == env.end()) {
           env[statement.a] = "_value";

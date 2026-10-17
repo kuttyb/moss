@@ -366,6 +366,20 @@ fn main():
         checked(conflict, "TYPE_MISMATCH")
         print("PASS one binding retains one monotype", flush=True)
 
+        assigned_collection = source(scratch, "assigned_open_collection", '''fn main():
+  var values = []
+  values = [1]
+  echo values[0]
+''')
+        parity(assigned_collection, scratch, "1\n")
+        assigned_conflict = source(scratch, "assigned_collection_conflict", '''fn main():
+  var values = []
+  values = [1]
+  values = ["wrong"]
+''')
+        checked(assigned_conflict, "TYPE_MISMATCH")
+        print("PASS assignment projects one solved TypeRef", flush=True)
+
         moved_collection = source(scratch, "moved_collection_term", '''fn main():
   a = []
   b = a
