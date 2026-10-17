@@ -1,7 +1,7 @@
 
 ## D5. Specialization identity for an identical concrete call (Team A, 2026-10-17)
 
-**Status:** open, and currently a `make check` blocker.
+**Status:** resolved 2026-10-17 by user decision as L7: **option (a)**.
 
 A generic function called from two handlers with the same concrete argument
 type registers **two** specializations that differ only in
@@ -32,5 +32,17 @@ specialization identities (§§3.3, 4.2)? Candidate directions:
   exact key, extending the `open_call_keys_by_context` path to cover a
   result-bound call in a handler.
 
-Team A has not chosen between these, because the answer sets Option B
-identity rather than an implementation detail.
+**Resolution (option (a)).** A result variable that is already resolved when
+a call is checked -- by the arguments, or by the member requirements those
+arguments close -- is excluded from `open_result_bindings` and so from the
+specialization key. A variable still open at that point is the caller's
+choice, as in `fresh() -> []`, and remains part of the identity. The rule is
+applied at all three sites that record bindings: the body prepass, the
+open-result closure, and the returned-call path.
+
+Evidence: the reproducer and `tests/phase106d1_read_projection.moss` emit one
+specialization again and lower. Across the 1862 tracked sources no program
+changed between accepted and rejected; 13 lower differently, of which
+`implicit_domain_specialization` drops one duplicate specialization and the
+rest differ only in the specialization keys embedded in their tooling
+markers. Fast Debug output is byte-identical for every affected program.

@@ -6829,9 +6829,16 @@ class Checker {
             collect(field.second);
         };
         collect(summary.result_type);
+        // D5: only a result variable that is still open here is chosen by
+        // the caller. One already resolved -- by the arguments or by the
+        // member requirements they close -- carries no identity, and
+        // recording it would give one generic two specializations for the
+        // same concrete call.
         PendingOpenCall pending{statement, result, {}};
         for (uint32_t ordinal : result_ordinals)
-          pending.bindings.emplace_back(ordinal, fresh[ordinal]);
+          if (auto bound = solver.resolve(fresh[ordinal]);
+              !bound || !bound->is_closed())
+            pending.bindings.emplace_back(ordinal, fresh[ordinal]);
         if (!pending.bindings.empty()) open_calls.push_back(std::move(pending));
       }
       return result;
@@ -15661,6 +15668,19 @@ class Checker {
         err(line, "open-result call argument conflicts with its summary",
             "TYPE_MISMATCH");
     }
+    // D5: a result variable the arguments already determine carries no
+    // identity of its own. Only a variable the caller's expectation binds --
+    // `fresh() -> []` taking its element type from the call site --
+    // distinguishes one specialization from another, so the ordinals that are
+    // already closed here are excluded from the key below. Without this, one
+    // generic called with identical argument types registers two
+    // specializations whenever one call site binds its result and another
+    // does not, and the parameter-only lookup in native lowering can no
+    // longer choose between them.
+    std::set<uint32_t> determined_by_arguments;
+    for (uint32_t ordinal = 0; ordinal < fresh.size(); ++ordinal)
+      if (auto bound = solver.resolve(fresh[ordinal]); bound && bound->is_closed())
+        determined_by_arguments.insert(ordinal);
     auto result = instantiate(summary.result_type);
     if (!result || !solver.unify(result, expected))
       err(line, "open-result call conflicts with its required result type",
@@ -15682,7 +15702,8 @@ class Checker {
     };
     collect(summary.result_type);
     for (uint32_t ordinal : ordinals)
-      facts.ordered_bindings.emplace_back(ordinal, solver.resolve(fresh[ordinal]));
+      if (!determined_by_arguments.count(ordinal))
+        facts.ordered_bindings.emplace_back(ordinal, solver.resolve(fresh[ordinal]));
     return facts;
   }
 
@@ -16151,6 +16172,13 @@ class Checker {
                 err(line, "open-result call argument conflicts with its summary",
                     "TYPE_MISMATCH");
             }
+            // D5, as in close_open_result_summary: a result variable the
+            // arguments already determine carries no identity of its own.
+            std::set<uint32_t> determined_by_arguments;
+            for (uint32_t ordinal = 0; ordinal < fresh.size(); ++ordinal)
+              if (auto bound = solver.resolve(fresh[ordinal]);
+                  bound && bound->is_closed())
+                determined_by_arguments.insert(ordinal);
             auto result = instantiate(summary.result_type);
             if (!result || !solver.unify(result,
                                         checking_specialization_->return_type_ref))
@@ -16174,8 +16202,9 @@ class Checker {
             };
             collect(summary.result_type);
             for (uint32_t ordinal : ordinals)
-              returned_result->ordered_bindings.emplace_back(
-                  ordinal, solver.resolve(fresh[ordinal]));
+              if (!determined_by_arguments.count(ordinal))
+                returned_result->ordered_bindings.emplace_back(
+                    ordinal, solver.resolve(fresh[ordinal]));
             open_result = &*returned_result;
           }
         }
