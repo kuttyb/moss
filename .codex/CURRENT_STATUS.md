@@ -1,5 +1,32 @@
 # Moss current status
 
+## Phase 25 Team A A2 checkpoint at `56ca3d8` — 2026-10-17 (NOT READY)
+
+**Eighth blocker fixed at `56ca3d8`.** The body prepass reported "indexed
+assignment conflicts with the binding's type" and fired before the checker's
+more informative message, so `items[0] = value` with a `Vector[String]` and
+an `Int` lost the expected and found types that `swarm_044_bad_write`
+expects. The prepass holds both terms and now reports "requires value of
+type 'string', found 'int'", reading both before unification binds them. The
+generic message remains for the case where either type cannot be named.
+
+**All branches are pushed.** `phase25-g-type-core`, `phase25-generic-types`
+and `phase25-a4-body-ir-v2` are at zero unpushed commits. While porting, the
+Team G decisions document was found to exist on this branch only as the
+48-line D5 fragment my earlier append created; the full 187-line document is
+now carried across with D5 placed after D4, which also brings the **L7
+carry-forward record of 2026-10-16** onto the canonical line (it previously
+lived only in an unpushed commit). About 90 other local branches from
+earlier sessions have no remote; they are superseded leaf branches and were
+left alone.
+
+Blocker tally: **eight found, all eight now fixed**. Six pre-existed this
+session; two were mine (the domain-handle masking and the leak-checker
+pollution). No blocker is currently known to be open, but that is not the
+same as a passing suite: each full run so far has reached one further
+defect, so the run at `56ca3d8` may find a ninth. `make` and `make examples`
+passed at `ed5521f`; no Team A SHA has a completed passing `make check` yet.
+
 ## Phase 25 Team A A2 checkpoint at `ed5521f` — 2026-10-17 (NOT READY)
 
 **D5 resolved by the user as L7: option (a)**, implemented at `ed5521f`. A
