@@ -96,6 +96,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_chunk_fileio_raise
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_domain_field_physical.py "$compiler" "$test_build/phase20_domain_physical"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_r5_fair.py "$test_build/phase20_r5_fair"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_teaching_diagnostics.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_no_internal_type_leak.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_semantic_queries.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase225_semantic_ide.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase15_15_string_api.py
