@@ -347,6 +347,9 @@ struct SemanticCallEdge {
   // generated code.
   string invocation_kind = "ordinary_call";
   string receiver;
+  // A generic source statement can be checked under several concrete caller
+  // instances. This key keeps those call edges distinct after closure.
+  string source_specialization_key;
   // Set by the checked call closure. Query and module projection consume this
   // exact identity instead of reconstructing it from display argument types.
   string specialization_key;

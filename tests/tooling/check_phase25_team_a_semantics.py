@@ -123,6 +123,32 @@ fn main():
         print("PASS checked open-result bindings select distinct query and native keys",
               flush=True)
 
+        generic_caller = source(scratch, "generic_caller_result_keys", '''fn make(seed):
+  return []
+
+fn outer(item):
+  values = make(0)
+  values.push(item)
+  return values
+
+fn main():
+  ints = outer(1)
+  words = outer("hello")
+  echo ints[0]
+  echo words[0]
+''')
+        parity(generic_caller, scratch, "1\nhello\n")
+        calls = run(MOSS, "calls", "outer", "--source", generic_caller, "--json")
+        assert calls.returncode == 0, (calls.stdout, calls.stderr)
+        bound_edges = [edge for edge in json.loads(calls.stdout)["result"]["direct_calls"]
+                       if edge["target"] == "fn:make" and
+                       edge.get("caller_specialization_key")]
+        assert len(bound_edges) == 2, bound_edges
+        assert len({edge["specialization_key"] for edge in bound_edges}) == 2, bound_edges
+        assert len({edge["caller_specialization_key"] for edge in bound_edges}) == 2, bound_edges
+        print("PASS generic caller contexts retain distinct checked call edges",
+              flush=True)
+
         call_constraint = source(scratch, "open_call_constraint", '''fn use_ints(values: Vector[Int]):
   echo values |> count
 

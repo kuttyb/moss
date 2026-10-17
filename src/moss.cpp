@@ -10078,7 +10078,7 @@ class Checker {
           source, "handler:" + domain + "." + handler_name, line,
           argument_types, expression_source.empty() ? physical_source
                                                      : expression_source,
-          "synchronous_message", receiver_name, {}};
+          "synchronous_message", receiver_name, {}, {}};
       if (std::find_if(
               p_.semantic_call_edges.begin(), p_.semantic_call_edges.end(),
               [&](const SemanticCallEdge& existing) {
@@ -10104,7 +10104,7 @@ class Checker {
                                 statement.source_file.empty()
                                     ? physical_source
                                     : statement.source_file,
-                                "ordinary_call", {}, {}};
+                                "ordinary_call", {}, {}, {}};
           if (std::find_if(
                   p_.semantic_call_edges.begin(),
                   p_.semantic_call_edges.end(),
@@ -10137,7 +10137,7 @@ class Checker {
                 statement.line, argument_types,
                 statement.source_file.empty() ? physical_source
                                               : statement.source_file,
-                "synchronous_message", statement.a, {}};
+                "synchronous_message", statement.a, {}, {}};
             if (std::find_if(
                     p_.semantic_call_edges.begin(),
                     p_.semantic_call_edges.end(),
@@ -10166,7 +10166,7 @@ class Checker {
         edge_lines.emplace(source + "\n" + call.target, result_line);
         SemanticCallEdge edge{source, call.target, result_line,
                               call.argument_types, physical_source,
-                              "ordinary_call", {}, {}};
+                              "ordinary_call", {}, {}, {}};
         if (std::find_if(
                 p_.semantic_call_edges.begin(),
                 p_.semantic_call_edges.end(),
@@ -14044,6 +14044,15 @@ class Checker {
     vector<string> canonical_types;
     for (const auto& type : parameter_types)
       canonical_types.push_back(canonical_type_name(type));
+    if (closed_result_type && *closed_result_type &&
+        contains_internal_placeholder(
+            (*closed_result_type)->to_canonical_string())) {
+      if (!checking_specialization_ &&
+          starts_with(current_semantic_context_, "fn:"))
+        return;  // An open source scheme closes in each concrete caller.
+      err(line, "static specialization has an unresolved result type",
+          "TYPE_AMBIGUOUS_OPEN_RESULT");
+    }
     auto semantic_key = specialization_key_inputs(
         function.semantic_callable_id, canonical_types, receiver,
         open_result_bindings);
@@ -14093,6 +14102,13 @@ class Checker {
     if (!result)
       err(line, "cannot determine the concrete result type for static specialization of function '" +
           function.name + "'");
+    if (contains_internal_placeholder(*result)) {
+      if (!checking_specialization_ &&
+          starts_with(current_semantic_context_, "fn:"))
+        return;
+      err(line, "static specialization has an unresolved result type",
+          "TYPE_AMBIGUOUS_OPEN_RESULT");
+    }
     FunctionSpecialization specialization;
     specialization.generated_name = "__moss_specialize_" + function.name + "_" +
         std::to_string(function.specializations.size());
@@ -14124,6 +14140,8 @@ class Checker {
     const string call_source = current_source_file_;
     try {
     checking_specialization_ = &function.specializations.back();
+    SourceFileScope checked_callee_context(current_semantic_context_,
+                                           "fn:" + function.name);
     StaticBindingScope specialization_bounds(static_bound_bindings_);
     static_bound_bindings_.clear();
     infer_statement_expressions(function.body, specialized_env);
@@ -14399,6 +14417,10 @@ class Checker {
         const string exact_key = *key->stable_key();
         const_cast<Stmt*>(current_check_statement_)->open_call_keys_by_context[
             current_check_body_context_] = exact_key;
+        const string caller_key = checking_specialization_
+            ? checking_specialization_->stable_type_key : string();
+        std::optional<SemanticCallEdge> source_edge;
+        bool attached = false;
         for (auto& edge : p_.semantic_call_edges) {
           if (edge.source != current_semantic_context_ ||
               edge.line != line ||
@@ -14407,11 +14429,21 @@ class Checker {
               (!edge.source_file.empty() &&
                edge.source_file != current_check_statement_->source_file))
             continue;
+          if (edge.source_specialization_key.empty() && !source_edge)
+            source_edge = edge;
+          if (edge.source_specialization_key != caller_key) continue;
           if (!edge.specialization_key.empty() &&
               edge.specialization_key != exact_key)
-            err(line, "one call edge acquired two specialization identities",
+            err(line, "one checked call context acquired two specialization identities",
                 "SOURCE_FREE_SPECIALIZATION_MISMATCH");
           edge.specialization_key = exact_key;
+          attached = true;
+        }
+        if (!attached && !caller_key.empty() && source_edge) {
+          SemanticCallEdge concrete_edge = *source_edge;
+          concrete_edge.source_specialization_key = caller_key;
+          concrete_edge.specialization_key = exact_key;
+          p_.semantic_call_edges.push_back(std::move(concrete_edge));
         }
       }
     }
@@ -25922,7 +25954,10 @@ static const SemanticTargetFact* semantic_target_for_context(
 }
 
 static string semantic_call_site_identity(const SemanticCallEdge& edge) {
-  return edge.source + "@" + std::to_string(edge.line) +
+  return edge.source +
+      (edge.source_specialization_key.empty()
+          ? string() : "#" + edge.source_specialization_key) +
+      "@" + std::to_string(edge.line) +
       ":call:" + edge.target;
 }
 
@@ -25978,6 +26013,10 @@ static void write_calls_result(std::ostream& out, const Program& program,
     out << ", \"specialization_key\": ";
     if (specialization) write_debug_json_string(out, specialization->second);
     else out << "null";
+    out << ", \"caller_specialization_key\": ";
+    if (calls[index]->source_specialization_key.empty()) out << "null";
+    else write_debug_json_string(out,
+                                 calls[index]->source_specialization_key);
     out << ", \"boundary\": ";
     write_debug_json_string(out,
         calls[index]->invocation_kind == "synchronous_message"
