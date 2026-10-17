@@ -33,7 +33,10 @@ G-A1 (Checkpoints B–E). Each checkpoint is committed separately, and a fresh
 independent Architect review closes the work. Neither item may be deferred
 again without a new L7 decision. D3 and D4 remain open as written below.
 
-**Checkpoint A (D2): implemented, not yet independently reviewed.**
+**Checkpoint A (D2): implemented; CONDITIONAL GO from the independent
+Architect (`TEAM_G_GA3_ARCHITECT_REVIEW.md`, Addendum 2 at `27fc2fb`).** The
+only open condition is an L7 record that ARCH-004 carries into Checkpoints B/C
+and the ARCH-007 instance-key work into the ABI-v10 record work.
 
 - **Identities.** Records, enums, and domains are interned once per
   compilation session as `NominalDeclaration` records carrying their

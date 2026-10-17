@@ -136,6 +136,21 @@ record (condition 3). New findings, all fixed in the next commit:
   across modules, same module across files, unmodular projects) is wired into
   run.sh.
 
+**Verification (Addendum 2, at `27fc2fb`): CONDITIONAL GO for Checkpoint A.**
+ARCH-011/012/013 verified closed; the only open condition is still the L7
+record (condition 3). New non-blocking ARCH-014 (a trait named like a
+standard error showed the mangled `std__` spelling) is fixed at `d682e28`,
+which also adds the reviewer's recommended unmodular-consumer privacy case to
+`check_phase25_field_visibility.py`. Focused validation at `d682e28`: nominal
+identity A–F, field visibility, Phase 21 standard error namespace, Type IR
+unit, conformance 10/11 (gate 10 PENDING joint). Full `make check` not rerun
+since `2a7454b`.
+
+**Next:** L7 records the condition-3 carry-forward (ARCH-004 into G-A1
+Checkpoints B/C; ARCH-007 instance keys into the ABI-v10 record work), making
+Checkpoint A GO; then G-A1 Checkpoint B (structured `TypeRef` checker type
+environments) begins.
+
 **L7 feedback (2026-10-16):** keep gate 10 on joint integration; authoritative
 Type IR, nominal identity, typed ABI-v10 payloads, and runtime linkage need
 architectural resolution before Team G is declared ready. These are recorded
