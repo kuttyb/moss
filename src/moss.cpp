@@ -28086,6 +28086,8 @@ static void write_typed_semantic_projection_json(std::ostream& out,
     out << "{\"callable_id\": ";
     write_debug_json_string(out, summary.callable_id);
     out << ", \"exported\": " << (summary.exported ? "true" : "false");
+    out << ", \"checked_body_ir_available\": "
+        << (summary.checked_body_ir_available ? "true" : "false");
     out << ", \"bound_variable_count\": " << summary.bound_variable_count;
     out << ", \"parameter_types\": [";
     for (size_t index = 0; index < summary.parameter_types.size(); ++index) {
@@ -28126,8 +28128,10 @@ static void write_typed_semantic_projection_json(std::ostream& out,
     first = false;
     out << "{\"callable_id\": ";
     write_debug_json_string(out, entry.first);
+    out << ", \"gap\": ";
+    write_debug_json_string(out, moss::typed_open_summary_gap_name(entry.second));
     out << ", \"reason\": ";
-    write_debug_json_string(out, entry.second);
+    write_debug_json_string(out, moss::typed_open_summary_gap_message(entry.second));
     out << "}";
   }
   out << "]";

@@ -1,3 +1,20 @@
+## Phase 25 Team A A4 final API audit — 2026-10-16 (isolated)
+
+An isolated worktree from consolidated SHA `56a8b62` added a structured
+`TypedOpenSummaryGapV1` status and a checked generic-body IR availability bit
+to the compiler-facing API. `moss inspect` exposes both without requiring ABI
+consumers to parse a reason string. The Team A API document now describes the
+current implementation and exact A2/Team B/Team I boundaries. `make`, the
+typed semantic API test, Team A compiler-path suite, feedback validator, and
+`git diff --check` passed on this isolated source. The Coordinator owns final
+consolidated validation and Architect review.
+
+ABI-v10 canonical body semantic hashes and expected dependency hashes are
+not yet checked API facts. The legacy `.mossi` hash uses statement text; it
+cannot substitute for the frozen SHA-256 semantic record. Team B owns
+serialization of ordered nonzero member arguments and effect facts for
+source-free providers. Team A remains NOT READY.
+
 # Moss current status
 
 ## Phase 25 Team A resumed implementation — 2026-10-16 (active, NOT READY)

@@ -35,8 +35,40 @@ The internal consumer can enumerate `TypedSemanticModuleV1` by ID; query `closed
 
 Team B maps these records into ABI-v10 `Module`, `NominalTemplate`, `TypeExpr`, `ConcreteInstance`, `OpenCallableSummary`, `Specialization`, requirements, and dependency/provenance records. Team B computes and validates the `binary_contract_hash`, `semantic_contract_hash`, `interface_hash`, provider digest and selected `.rlib` marker. The exported module ID is checked against its bound provider binary identity, while preserving their separate purposes. Team I verifies two independent consumers of one provider obtain the same declaration and instance keys.
 
-## Baseline availability and remaining Team A work
+## Current implementation and remaining work
 
-At `5b29352`, `src/type_ir.hpp` has `TypeRef`, a standalone `TypeSolver`, and partial nominal/requirement records. `src/ast.hpp` stores some structured specialization type references. The checker still uses `unordered_map<string,string>` for its type environment (`src/moss.cpp:2219`) and never instantiates `TypeSolver`; nominal instances and many joins/compatibility checks remain string-backed. The current requirement has one access mode and lacks a member name, per-argument modes, parent ID, and selected callable ID. The existing `specialization-v2` helper does not yet encode the frozen receiver, callable-argument, and open-result fields. ABI-v10 staging is not evidence that this typed compiler handoff is complete.
+At consolidated Team A implementation SHA `56a8b62`, `src/typed_semantic_api.hpp`
+projects `typed-semantic-v1` directly from the checked `Program`. The compiler
+retains exact module and nominal IDs, bound nominal field annotations, closed
+`TypeRef` and instance keys, open summary variables and typed requirements,
+`specialization-v2` inputs, checked access/effects, callable dependencies,
+source requirement chains, visibility and optional parameter leaf effects.
+`TypeSolver` is used on compiler paths for fresh open calls, local monotypes,
+collection/field inference, and result closure. The projection rejects open
+concrete specializations and invalid built-in arity. `moss inspect` exposes a
+read-only JSON view for compiler-path tests.
 
-Team A must finish those compiler paths and prove this API is generated from the checker-owned TypeRef/TypeSolver state. Team B can use this shape to prepare its consumer without inventing a second inference pass. Team I should gate integration on compiler-path tests for distinct nominal IDs, per-call freshening and one-binding monotypes, source-free summary identity, complete requirement/access records, exact specialization keys, and closed facts shared by Fast Debug and native lowering.
+An open summary is published only when its type and effect facts are complete.
+`TypedOpenSummaryGapV1` reports `missing_typed_facts`, `unresolved_effects`, or
+`missing_parameter_access` as structured status. An imported member requirement
+can remain in `source_member_requirements` with its provider provenance when
+the enclosing open summary lacks resolved observable effects; consumers must
+not treat that source requirement as a callable, complete summary. A checked
+generic body availability bit tells Team B whether versioned body IR is present;
+it is not a body hash. Source-free `bytes.from_range(Range)` now uses the
+solver's closed `Vector[Int]` body result rather than the stale legacy
+`_generic:data` display relation.
+
+| Remaining item | Owner and boundary |
+| --- | --- |
+| Complete TypeRef authority for checker, ownership and effects | Team A A2. Some legacy `TypeEnv` and compatibility paths still make semantic decisions from type spellings. The final Architect review must audit actual compiler paths. |
+| Canonical `body_semantic_hash` and expected dependency hashes | Team A must expose a canonical digest of checked semantic body IR and exact dependency facts. Team B maps them to ABI-v10 SHA-256 records and validates them. The legacy `.mossi` `semantic_ir_body_hash` is a 64-bit hash of header and statement text and does not meet the frozen semantic-record contract. No ABI consumer may substitute it. |
+| Ordered source-free nonzero member argument records | Team B owns the `.mossi` serializer/importer. It currently writes `generic_constraint` with kind, subject, detail and result only, losing `Constraint.arity`, ordered `arguments` and `result_expectations`. Team A retains those typed argument/access facts when supplied. `append_one(values): values.push(1)` is the required reduced source-free regression. |
+| Imported unresolved observable effects | Team B must transport complete provider effect facts; Team A publishes the full typed summary only after the checker has resolved them. The source requirement table preserves provenance while the summary remains unavailable. |
+| Map-key proof and final runtime/ABI cutover | Team S supplies admission/target policy; Team B and Team I own binary records, linker/validator, and joint integration. G2 Gate 10 may remain pending until that integration. |
+
+The Team A compiler-path suite covers typed nominal IDs, independent open calls,
+one-binding monotypes, exact specialization keys, structural requirements,
+Fast Debug/Native parity, and source-free Range return closure. The exact
+implementation SHA still requires consolidated acceptance and independent
+Architect GO. No full ABI-v10 production cutover is claimed here.

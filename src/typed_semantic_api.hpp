@@ -72,6 +72,9 @@ struct TypedSpecializationV1 {
 struct TypedOpenCallableSummaryV1 {
   std::string callable_id;
   bool exported{false};
+  // The checked generic body IR is present on Function. The ABI serializer
+  // may hash/encode that IR; this flag never substitutes for a body hash.
+  bool checked_body_ir_available{false};
   uint32_t bound_variable_count{0};
   std::vector<TypeRef> parameter_types;
   TypeRef result_type;
@@ -85,6 +88,34 @@ struct TypedOpenCallableSummaryV1 {
   TypedSourceProvenanceV1 provenance;
 };
 
+enum class TypedOpenSummaryGapV1 {
+  MissingTypedFacts,
+  UnresolvedEffects,
+  MissingParameterAccess
+};
+
+inline const char* typed_open_summary_gap_name(TypedOpenSummaryGapV1 gap) {
+  switch (gap) {
+    case TypedOpenSummaryGapV1::MissingTypedFacts: return "missing_typed_facts";
+    case TypedOpenSummaryGapV1::UnresolvedEffects: return "unresolved_effects";
+    case TypedOpenSummaryGapV1::MissingParameterAccess:
+      return "missing_parameter_access";
+  }
+  throw std::invalid_argument("unknown typed open summary gap");
+}
+
+inline const char* typed_open_summary_gap_message(TypedOpenSummaryGapV1 gap) {
+  switch (gap) {
+    case TypedOpenSummaryGapV1::MissingTypedFacts:
+      return "checker has no complete typed open summary";
+    case TypedOpenSummaryGapV1::UnresolvedEffects:
+      return "checker result or effect facts remain unresolved";
+    case TypedOpenSummaryGapV1::MissingParameterAccess:
+      return "checker parameter access facts remain unresolved";
+  }
+  throw std::invalid_argument("unknown typed open summary gap");
+}
+
 struct TypedSemanticModuleV1 {
   static constexpr const char* version = "typed-semantic-v1";
   std::map<std::string, std::shared_ptr<const std::string>> modules;
@@ -96,7 +127,8 @@ struct TypedSemanticModuleV1 {
   // publish its unresolved observable effects yet. This table does not make
   // such a summary callable through the typed API.
   std::map<std::string, MemberDispatchRequirement> source_member_requirements;
-  std::map<std::string, std::string> unavailable_open_summaries;
+  // Structured absence keeps ABI consumers from parsing diagnostic prose.
+  std::map<std::string, TypedOpenSummaryGapV1> unavailable_open_summaries;
   std::map<std::string, TypedSpecializationV1> specializations;
   // Legacy imported generic skeletons may appear in Function::specializations
   // with open type terms. They cannot be projected as closed specializations.
@@ -264,6 +296,8 @@ inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) 
       TypedOpenCallableSummaryV1 summary;
       summary.callable_id = checked.callable_id;
       summary.exported = function.exported;
+      summary.checked_body_ir_available = !function.body.empty() ||
+          function.result_expression.has_value();
       summary.bound_variable_count = checked.bound_variable_count;
       summary.parameter_types = checked.parameter_types;
       summary.result_type = checked.result_type;
@@ -285,11 +319,14 @@ inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) 
         throw std::invalid_argument("duplicate typed semantic open summary");
     } else if (function.generic || function.static_dispatch) {
       result.open_summaries_complete = false;
+      const auto gap = !function.open_summary ||
+          !function.open_summary->complete
+          ? TypedOpenSummaryGapV1::MissingTypedFacts
+          : function.open_summary->observable_effects.unresolved
+              ? TypedOpenSummaryGapV1::UnresolvedEffects
+              : TypedOpenSummaryGapV1::MissingParameterAccess;
       result.unavailable_open_summaries.emplace(
-          function.semantic_callable_id,
-          function.open_summary && function.open_summary->complete
-              ? "checker result or effect facts remain unresolved"
-              : "checker has no complete typed open summary");
+          function.semantic_callable_id, gap);
     }
     for (const auto& specialization : function.specializations) {
       const bool open_parameter = std::any_of(
