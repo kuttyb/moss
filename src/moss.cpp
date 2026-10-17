@@ -2492,10 +2492,13 @@ class Checker {
   struct BodyTypeState {
     moss::TypeSolver solver{1};
     std::unordered_map<string, moss::TypeRef> locals;
+    std::unordered_map<const Stmt*,
+        std::unordered_map<string, moss::TypeRef>> locals_at_statement;
     // A for binding is lexical, even when it uses the name of an outer open
     // local. Keep its term at the statement and activate it only in the body.
     std::unordered_map<const Stmt*, moss::TypeRef> for_bindings;
     std::unordered_map<string, moss::TypeRef> scoped_locals;
+    bool scoped_locals_active = false;
     std::unordered_map<const Stmt*, moss::TypeRef> assignment_values;
     TypeEnv closed_projection;
 
@@ -2509,6 +2512,7 @@ class Checker {
       auto scoped = scoped_locals.find(name);
       if (scoped != scoped_locals.end())
         return scoped->second ? solver.resolve(scoped->second) : nullptr;
+      if (scoped_locals_active) return nullptr;
       auto found = locals.find(name);
       return found == locals.end() ? nullptr : solver.resolve(found->second);
     }
@@ -6115,12 +6119,13 @@ class Checker {
               ? current_body_types_->assignment_value(statement) : nullptr;
           auto local = retained && current_body_types_
               ? current_body_types_->resolved_local(statement.a) : nullptr;
-          if (local && local->is_closed() &&
-              !contains_internal_placeholder(local->to_canonical_string())) {
+          auto binding = local ? local : retained;
+          if (binding && binding->is_closed() &&
+              !contains_internal_placeholder(binding->to_canonical_string())) {
             // The body solver already related this RHS to the binding. The
             // string environment is only the projection consumed by older
             // walkers and lowering.
-            env[statement.a] = local->to_canonical_string();
+            env[statement.a] = binding->to_canonical_string();
           } else {
             // A local's open collection is one inference term for the whole
             // body. The solver may close it from a use after a loop; retain
@@ -6260,6 +6265,13 @@ class Checker {
                                    const TypeEnv& solved_collections) const {
     while (index < statements.size()) {
       const Stmt& statement = statements[index];
+      if (current_body_types_) {
+        auto found = current_body_types_->locals_at_statement.find(&statement);
+        if (found != current_body_types_->locals_at_statement.end()) {
+          current_body_types_->scoped_locals = found->second;
+          current_body_types_->scoped_locals_active = true;
+        }
+      }
       if (statement.indent < level) return;
       if (statement.indent > level)
         err(statement.line, "indentation jumps more than one block level");
@@ -6867,36 +6879,65 @@ class Checker {
       }
       return result;
     };
-    // The statement vector is flat, so preserve a loop variable's previous
-    // binding until its indented body ends. A shadow must have its own solver
-    // term: otherwise a push in the loop can bind an open outer collection.
-    struct ForBindingScope {
+    // The statement vector is flat, but local identities obey lexical block
+    // joins. Save the environment at each control-flow boundary so a binding
+    // first made in one path cannot constrain a later binding of the same
+    // spelling. Existing terms remain shared and keep their monotype.
+    struct BlockScope {
       int indent;
-      string name;
-      std::optional<moss::TypeRef> outer_term;
-      std::optional<string> outer_projection;
+      Stmt::Kind kind;
+      std::unordered_map<string, moss::TypeRef> incoming_locals;
+      TypeEnv incoming_scan;
+      std::unordered_map<string, moss::TypeRef> then_locals;
+      bool in_else = false;
     };
-    vector<ForBindingScope> for_scopes;
-    auto leave_for_scopes = [&](int indent) {
-      while (!for_scopes.empty() && indent <= for_scopes.back().indent) {
-        auto scope = std::move(for_scopes.back());
-        for_scopes.pop_back();
-        if (scope.outer_term) locals[scope.name] = *scope.outer_term;
-        else locals.erase(scope.name);
-        if (scope.outer_projection) scan[scope.name] = *scope.outer_projection;
-        else scan.erase(scope.name);
+    vector<BlockScope> block_scopes;
+    auto leave_blocks = [&](const Stmt* next) {
+      while (!block_scopes.empty() &&
+             (!next || next->indent <= block_scopes.back().indent)) {
+        auto& scope = block_scopes.back();
+        if (next && next->indent == scope.indent &&
+            next->kind == Stmt::Kind::Else &&
+            scope.kind == Stmt::Kind::If && !scope.in_else) {
+          scope.then_locals = locals;
+          locals = scope.incoming_locals;
+          scan = scope.incoming_scan;
+          scope.in_else = true;
+          return;
+        }
+        if (scope.kind == Stmt::Kind::If && scope.in_else) {
+          for (const auto& [name, then_term] : scope.then_locals) {
+            if (scope.incoming_locals.count(name)) continue;
+            auto other = locals.find(name);
+            if (other == locals.end()) continue;
+            if (!solver.unify(then_term, other->second))
+              err(next ? next->line : 0,
+                  "branch types conflict for binding '" + name + "'",
+                  "TYPE_MISMATCH");
+            scope.incoming_locals.emplace(name, then_term);
+          }
+        }
+        // Preserve existing identities and the newly joined identities only.
+        // Their solver terms carry refinements made inside the block.
+        locals = std::move(scope.incoming_locals);
+        scan = std::move(scope.incoming_scan);
+        for (const auto& [name, term] : locals) {
+          auto resolved = solver.resolve(term);
+          if (resolved && resolved->is_closed())
+            scan[name] = resolved->to_canonical_string();
+        }
+        block_scopes.pop_back();
       }
     };
     for (const Stmt& statement : statements) {
-      leave_for_scopes(statement.indent);
+      leave_blocks(&statement);
+      if (statement.kind == Stmt::Kind::If ||
+          statement.kind == Stmt::Kind::While ||
+          statement.kind == Stmt::Kind::For)
+        block_scopes.push_back({statement.indent, statement.kind, locals, scan,
+                                {}, false});
+      body_types.locals_at_statement.emplace(&statement, locals);
       if (statement.kind == Stmt::Kind::For) {
-        auto old_term = locals.find(statement.a);
-        auto old_projection = scan.find(statement.a);
-        for_scopes.push_back({statement.indent, statement.a,
-            old_term == locals.end() ? std::nullopt
-                : std::optional<moss::TypeRef>(old_term->second),
-            old_projection == scan.end() ? std::nullopt
-                : std::optional<string>(old_projection->second)});
         moss::TypeRef loop_term;
         string callee;
         vector<string> arguments;
@@ -7015,14 +7056,6 @@ class Checker {
         body_types.assignment_values.emplace(&statement, term);
         const bool prior_open = prior != locals.end() &&
             !solver.resolve(prior->second)->is_closed();
-        // Fresh declarations inside separate branches have separate lexical
-        // identities. The legacy walker owns their scope until its branch join.
-        if (!instantiated && (record_call_facts || retain_all_types) &&
-            statement.indent > 0 &&
-            prior == locals.end() && term->is_closed()) {
-          scan[statement.a] = *inferred;
-          continue;
-        }
         if (prior != locals.end() && !solver.unify(prior->second, term))
           err(statement.line, "assignment type mismatch for binding '" +
               statement.a + "'", "TYPE_MISMATCH");
@@ -7101,7 +7134,7 @@ class Checker {
               statement.a + "'", "TYPE_MISMATCH");
       }
     }
-    leave_for_scopes(-1);
+    leave_blocks(nullptr);
     for (const auto& [line, requirement] : structural_requirements) {
       // The closed built-in '+' family admits Int and Float when the other
       // operand is Int. Keep this check on the instantiated TypeRefs so a
