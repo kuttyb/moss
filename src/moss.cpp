@@ -634,10 +634,13 @@ static std::optional<moss::SpecializationKey> specialization_key_inputs(
   key.open_result_bindings = open_result_bindings;
   for (size_t index = 0; index < types.size(); ++index) {
     const auto& type = types[index];
-    // A static higher-order argument is a callable identity, not a type.
+    // A static higher-order argument is a resolved callable identity, not a
+    // type or the lookup spelling used by its caller.
     if (starts_with(type, "callable:")) {
+      const string callable_id = type.substr(9);
+      if (!starts_with(callable_id, "callable-v1:")) return std::nullopt;
       key.arguments.push_back(moss::Type::unit());
-      key.callable_arguments.push_back(std::to_string(index) + ":" + type.substr(9));
+      key.callable_arguments.push_back(callable_id);
       continue;
     }
     auto parsed = moss::Type::parse_canonical(canonical_type_name(type));
@@ -14371,6 +14374,22 @@ class Checker {
     return resolved_requirements;
   }
 
+  vector<string> semantic_specialization_arguments(
+      int line, const vector<string>& parameter_types) const {
+    vector<string> resolved = parameter_types;
+    for (auto& type : resolved) {
+      if (!starts_with(type, "callable:")) continue;
+      const string lookup_name = type.substr(9);
+      const auto callable = functions_.find(lookup_name);
+      if (callable == functions_.end() ||
+          callable->second->semantic_callable_id.empty())
+        err(line, "static callable argument has no resolved semantic identity",
+            "TYPE_AMBIGUOUS_OPEN_RESULT");
+      type = "callable:" + callable->second->semantic_callable_id;
+    }
+    return resolved;
+  }
+
   void register_static_specialization(int line, Function& function,
                                       const vector<string>& parameter_types,
                                       vector<moss::MemberDispatchRequirement>
@@ -14403,7 +14422,8 @@ class Checker {
           "TYPE_AMBIGUOUS_OPEN_RESULT");
     }
     auto semantic_key = specialization_key_inputs(
-        function.semantic_callable_id, canonical_types, receiver,
+        function.semantic_callable_id,
+        semantic_specialization_arguments(line, canonical_types), receiver,
         open_result_bindings);
     if (!semantic_key)
       err(line, "static specialization has an unresolved argument type",
@@ -14883,7 +14903,8 @@ class Checker {
                                                  : std::nullopt);
       if (open_result && function->second->static_dispatch) {
         auto key = specialization_key_inputs(
-            function->second->semantic_callable_id, actual_types,
+            function->second->semantic_callable_id,
+            semantic_specialization_arguments(line, actual_types),
             std::nullopt, open_result->ordered_bindings);
         if (!key || !key->stable_key())
           err(line, "open-result specialization has unresolved type bindings",

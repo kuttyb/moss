@@ -185,7 +185,7 @@ int main() {
   instance.receiver = box;
   assert(instance.stable_key() != base_key);
   instance.receiver.reset();
-  instance.callable_arguments = {"0:callable-v1:" + app + ":fn:predicate"};
+  instance.callable_arguments = {"callable-v1:" + app + ":fn:predicate"};
   assert(instance.stable_key() != base_key);
   instance.callable_arguments.clear();
   instance.open_result_bindings = {{0, Type::primitive("int")}};

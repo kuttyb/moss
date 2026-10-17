@@ -97,6 +97,40 @@ fn main():
         parity(independent, scratch, "1\nhello\n")
         print("PASS independent open-result calls and three-engine parity", flush=True)
 
+        callable_keys = source(scratch, "resolved_callable_keys", '''fn add_one(x: Int) -> Int:
+  return x + 1
+
+fn add_two(x: Int) -> Int:
+  return x + 2
+
+fn apply(f, x: Int) -> Int:
+  return f(x)
+
+fn main():
+  echo apply(add_one, 2)
+  echo apply(add_two, 2)
+''')
+        parity(callable_keys, scratch, "3\n4\n")
+        inspected = run(MOSS, "inspect", "main", "--source", callable_keys,
+                        "--json")
+        assert inspected.returncode == 0, (inspected.stdout, inspected.stderr)
+        result = json.loads(inspected.stdout)["result"]
+        specializations = [entry for entry in
+                           result["typed_semantic_v1"]["specializations"]
+                           if entry["callable_id"].endswith(":fn:apply")]
+        module_id = "module-v1:__standalone__@0.0.0::main"
+        assert {entry["callable_arguments"][0] for entry in specializations} == {
+            f"callable-v1:{module_id}:fn:add_one",
+            f"callable-v1:{module_id}:fn:add_two"}, specializations
+        assert len({entry["key"] for entry in specializations}) == 2, (
+            specializations)
+        edges = [edge for edge in result["direct_calls"]
+                 if edge["target"] == "fn:apply"]
+        assert {edge["specialization_key"] for edge in edges} == {
+            entry["key"] for entry in specializations}, (edges, specializations)
+        print("PASS callable arguments use resolved IDs in checked keys and edges",
+              flush=True)
+
         # Equal callable and argument identities must still diverge when the
         # checked result variables close to different concrete types.
         result_keys = source(scratch, "open_result_keys", '''fn make(seed):
@@ -478,6 +512,14 @@ export fn relay():
 export fn size(value):
   return value.length()
 ''',
+            "alpha": '''module Alpha
+export fn add_one(value: Int) -> Int:
+  return value + 1
+''',
+            "beta": '''module Beta
+export fn add_one(value: Int) -> Int:
+  return value + 2
+''',
         })
         env = os.environ.copy()
         env["MOSS_STAGED_ABI"] = "v10"
@@ -485,7 +527,8 @@ export fn size(value):
         assert built.returncode == 0 and json.loads(built.stdout)["ok"], (
             built.stdout, built.stderr)
         artifacts = scratch / "provider" / "build" / "debug"
-        (scratch / "provider" / "src" / "provider.moss").unlink()
+        for provider_source in (scratch / "provider" / "src").glob("*.moss"):
+            provider_source.unlink()
         package(scratch / "consumer", "team_a_consumer", "0.1.0", {
             "main": '''module Main
 import Provider
@@ -510,6 +553,46 @@ fn main():
         assert executed.returncode == 0 and executed.stdout == "1\none\n3\n", (
             executed.stdout, executed.stderr)
         print("PASS source-free generic calls freshen independently", flush=True)
+
+        package(scratch / "callable_consumer", "team_a_callable_consumer",
+                "0.1.0", {"main": '''module Main
+import Alpha
+import Beta
+
+fn apply(f, value: Int) -> Int:
+  return f(value)
+
+fn main():
+  echo apply(Alpha.add_one, 2)
+  echo apply(Beta.add_one, 2)
+'''})
+        callable_path = scratch / "callable_consumer" / "src" / "main.moss"
+        project_check(scratch / "callable_consumer", env=env)
+        imported = run(MOSS, "inspect", "main", "--source", callable_path,
+                       "--json", env=env)
+        assert imported.returncode == 0, (imported.stdout, imported.stderr)
+        result = json.loads(imported.stdout)["result"]
+        specializations = [entry for entry in
+                           result["typed_semantic_v1"]["specializations"]
+                           if entry["callable_id"].endswith(":fn:apply")]
+        provider_module = "module-v1:team_a_provider@0.1.0::"
+        assert {entry["callable_arguments"][0] for entry in specializations} == {
+            f"callable-v1:{provider_module}Alpha:fn:add_one",
+            f"callable-v1:{provider_module}Beta:fn:add_one"}, specializations
+        assert len({entry["key"] for entry in specializations}) == 2, (
+            specializations)
+        built_consumer = run(MARGO, "build", "--json",
+                             cwd=scratch / "callable_consumer", env=env)
+        assert built_consumer.returncode == 0, (
+            built_consumer.stdout, built_consumer.stderr)
+        built_data = json.loads(built_consumer.stdout)
+        assert built_data["ok"], built_data
+        executable = built_data["artifacts"]["artifacts"]["executable"]
+        executed = run(executable, cwd=scratch / "callable_consumer", env=env)
+        assert executed.returncode == 0 and executed.stdout == "3\n4\n", (
+            executed.stdout, executed.stderr)
+        print("PASS source-free provider callable IDs distinguish identical names",
+              flush=True)
 
         package(scratch / "bad_consumer", "team_a_bad_consumer", "0.1.0", {
             "main": '''module Main
