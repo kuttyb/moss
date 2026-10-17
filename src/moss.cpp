@@ -628,6 +628,16 @@ static bool applied_builtin(const moss::TypeRef& type,
   return std::find(names.begin(), names.end(), type->name) != names.end();
 }
 
+// A bare collection spelling (`vector`) against an application of that same
+// collection (`vector[int]`): the open literal takes the declared type.
+static bool bare_matches_applied(const string& bare, const string& applied) {
+  const auto open = parsed_type(bare);
+  const auto declared = parsed_type(applied);
+  return open && declared && open->kind == moss::TypeKind::Builtin &&
+         open->type_args.empty() && declared->kind == moss::TypeKind::Builtin &&
+         !declared->type_args.empty() && declared->name == open->name;
+}
+
 // The concrete effect is semantic metadata; both native sides derive their
 // passing mode from this one decision. Primitive WRITE retains Moss's existing
 // write-through ABI; ordinary Copy arguments are values.
@@ -2978,20 +2988,12 @@ class Checker {
   bool contains_trait_type(const string& t) const {
     string type = canonical_type_name(t);
     if (traits_.count(type)) return true;
-    if ((starts_with(type, "vector[") || starts_with(type, "queue[") ||
-         starts_with(type, "seq[") || starts_with(type, "option[")) &&
-        ends_with(type, "]")) {
-      size_t open = type.find('[');
-      return contains_trait_type(
-          trim(type.substr(open + 1, type.size() - open - 2)));
-    }
-    if ((starts_with(type, "map[") || starts_with(type, "table[")) &&
-        ends_with(type, "]")) {
-      size_t open = type.find('[');
-      auto parts =
-          split_top_level(type.substr(open + 1, type.size() - open - 2), ',');
-      return parts.size() == 2 &&
-          (contains_trait_type(parts[0]) || contains_trait_type(parts[1]));
+    // A trait constraint anywhere inside a built-in application.
+    if (const auto term = parsed_type(type);
+        term && term->kind == moss::TypeKind::Builtin && !term->type_args.empty()) {
+      for (const auto& argument : term->type_args)
+        if (contains_trait_type(argument->to_canonical_string())) return true;
+      return false;
     }
     return false;
   }
@@ -4439,9 +4441,7 @@ class Checker {
                       "domain state initializers must be side-effect-free and cannot perform message, domain, I/O, failing, or divergent work");
             auto actual = inferred_expr_type(pair.second, binding_types);
             bool contextual_empty_collection = actual &&
-                ((*actual == "vector" && starts_with(field->type, "vector[")) ||
-                 (*actual == "map" && starts_with(field->type, "map[")) ||
-                 (*actual == "queue" && starts_with(field->type, "queue[")));
+                bare_matches_applied(*actual, field->type);
             if (actual && !field->type.empty() && !contextual_empty_collection &&
                 !same_type(field->type, *actual))
               fail_at(statement, "state member '" + pair.first + "' has type '" + field->type +
@@ -5281,10 +5281,8 @@ class Checker {
   // A bare collection annotation (`vector`, `map`, `queue`) accepts any
   // application of the same collection.
   static bool bare_collection_accepts(const string& formal, const InferredExpr& actual) {
-    auto parsed = moss::Type::parse_canonical(canonical_type_name(formal));
-    return parsed && (*parsed)->kind == moss::TypeKind::Builtin &&
-           (*parsed)->type_args.empty() &&
-           applied_builtin(inferred_shape(actual), {(*parsed)->name});
+    const auto shape = inferred_shape(actual);
+    return shape && bare_matches_applied(formal, shape->to_canonical_string());
   }
 
 
