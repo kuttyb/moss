@@ -609,6 +609,25 @@ static bool contains_internal_placeholder(const string& type) {
   return false;
 }
 
+// The structural term of a declared or projected type spelling, whether or
+// not it is closed: `map` and `vector[_generic:x]` parse here.
+static moss::TypeRef parsed_type(const string& spelling) {
+  auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
+  return parsed ? *parsed : nullptr;
+}
+
+static bool primitive_term(const moss::TypeRef& type, std::string_view name) {
+  return type && type->kind == moss::TypeKind::Primitive && type->name == name;
+}
+
+// A parameterized built-in application named one of `names`.
+static bool applied_builtin(const moss::TypeRef& type,
+                            std::initializer_list<std::string_view> names) {
+  if (!type || type->kind != moss::TypeKind::Builtin || type->type_args.empty())
+    return false;
+  return std::find(names.begin(), names.end(), type->name) != names.end();
+}
+
 // The concrete effect is semantic metadata; both native sides derive their
 // passing mode from this one decision. Primitive WRITE retains Moss's existing
 // write-through ABI; ordinary Copy arguments are values.
@@ -2988,13 +3007,6 @@ class Checker {
     return false;
   }
 
-  // The structural term of a declared or projected spelling, whether or not
-  // it is closed: `map` and `vector[_generic:x]` parse, unlike inferred_leaf.
-  static moss::TypeRef parsed_type(const string& spelling) {
-    auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
-    return parsed ? *parsed : nullptr;
-  }
-
   // Visit a term and every type nested in it: built-in arguments and a
   // nominal instance's field substitutions.
   static void for_each_subterm(const moss::TypeRef& type,
@@ -4696,12 +4708,13 @@ class Checker {
 
   static std::optional<string> functional_element_type(const string& type,
                                                         const string& source) {
-    string value = canonical_type_name(type);
-    if (starts_with(value, "vector[") && ends_with(value, "]"))
-      return trim(value.substr(7, value.size() - 8));
-    if (starts_with(value, "seq[") && ends_with(value, "]"))
-      return trim(value.substr(4, value.size() - 5));
-    if (value == "vector" || starts_with(value, "_generic:"))
+    const auto term = parsed_type(type);
+    if (applied_builtin(term, {"vector", "seq"}) && term->type_args.size() == 1)
+      return term->type_args[0]->to_canonical_string();
+    // A bare collection or an open parameter carries the element relation.
+    const bool open_source = term && term->kind == moss::TypeKind::Builtin &&
+        term->name == "vector" && term->type_args.empty();
+    if (open_source || starts_with(canonical_type_name(type), "_generic:"))
       return "_functional_element:" + trim(source);
     return std::nullopt;
   }
@@ -5264,9 +5277,6 @@ class Checker {
     return {nullptr, spelling};
   }
 
-  static bool primitive_term(const moss::TypeRef& type, std::string_view name) {
-    return type && type->kind == moss::TypeKind::Primitive && type->name == name;
-  }
 
   // A bare collection annotation (`vector`, `map`, `queue`) accepts any
   // application of the same collection.
@@ -5277,13 +5287,6 @@ class Checker {
            applied_builtin(inferred_shape(actual), {(*parsed)->name});
   }
 
-  // A parameterized built-in application named one of `names`.
-  static bool applied_builtin(const moss::TypeRef& type,
-                              std::initializer_list<std::string_view> names) {
-    if (!type || type->kind != moss::TypeKind::Builtin || type->type_args.empty())
-      return false;
-    return std::find(names.begin(), names.end(), type->name) != names.end();
-  }
 
   // The structural shape of a result, including an open legacy spelling such
   // as `vector[_generic:x]` whose element relation is still a placeholder.
@@ -17892,13 +17895,12 @@ class FunctionalOptimizer {
   }
 
   static bool trivial_pipeline_element_type(const string& collection_type) {
-    string type = canonical_type_name(collection_type);
-    string element;
-    if (starts_with(type, "vector[") && ends_with(type, "]"))
-      element = trim(type.substr(7, type.size() - 8));
-    else if (starts_with(type, "seq[") && ends_with(type, "]"))
-      element = trim(type.substr(4, type.size() - 5));
-    return element == "int" || element == "float" || element == "bool";
+    const auto term = parsed_type(collection_type);
+    if (!applied_builtin(term, {"vector", "seq"}) || term->type_args.size() != 1)
+      return false;
+    const auto& element = term->type_args[0];
+    return primitive_term(element, "int") || primitive_term(element, "float") ||
+           primitive_term(element, "bool");
   }
 
   static bool identity_map_step(const FunctionalPipeline& pipeline,
