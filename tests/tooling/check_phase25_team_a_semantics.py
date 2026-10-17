@@ -119,6 +119,23 @@ fn main():
         checked(call_conflict, "TYPE_MISMATCH")
         print("PASS call and later push constrain the same local", flush=True)
 
+        relay = source(scratch, "transitive_open_result", '''fn fresh():
+  return []
+
+fn relay():
+  return fresh()
+
+fn main():
+  a = relay()
+  b = relay()
+  a.push(1)
+  b.push("hello")
+  echo a[0]
+  echo b[0]
+''')
+        parity(relay, scratch, "1\nhello\n")
+        print("PASS transitive open-result calls freshen independently", flush=True)
+
         conflict = source(scratch, "one_binding_conflict", '''fn main():
   a = []
   a.push(1)
@@ -251,6 +268,9 @@ fn main():
             "provider": '''module Provider
 export fn fresh():
   return []
+
+export fn relay():
+  return fresh()
 ''',
         })
         env = os.environ.copy()
@@ -264,8 +284,8 @@ export fn fresh():
             "main": '''module Main
 import Provider
 fn main():
-  ints = Provider.fresh()
-  words = Provider.fresh()
+  ints = Provider.relay()
+  words = Provider.relay()
   ints.push(1)
   words.push("one")
   echo ints[0]

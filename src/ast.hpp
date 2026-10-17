@@ -69,6 +69,20 @@ struct OpenCallResultFacts {
   TypeRef result;
   vector<std::pair<std::uint32_t, TypeRef>> ordered_bindings;
 };
+// A reusable open callable type scheme. Summary variables use session zero;
+// each call substitutes them with fresh variables in its caller's solver.
+struct OpenCallableSummaryFacts {
+  string callable_id;
+  std::uint32_t bound_variable_count = 0;
+  vector<TypeRef> parameter_types;
+  TypeRef result_type;
+  vector<Requirement> requirements;
+  vector<MemberDispatchRequirement> member_requirements;
+  vector<AccessMode> parameter_access;
+  ObservableEffects observable_effects;
+  RequirementOrigin origin;
+  bool complete = false;
+};
 struct Stmt {
   enum class Kind {
     Raw, Pass, Assign, Call, Message, Echo, If, Else, While, For, Match, Case,
@@ -278,6 +292,7 @@ struct Function {
   std::unordered_map<string,string> generic_results; int line = 0;
   vector<Constraint> constraints;
   vector<FunctionSpecialization> specializations;
+  std::optional<OpenCallableSummaryFacts> open_summary;
   // Concrete callable specializations referenced by functional code.  This is
   // retained as semantic dependency information for later incremental work.
   vector<string> callable_dependencies;

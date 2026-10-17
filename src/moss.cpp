@@ -2227,11 +2227,21 @@ class Checker {
     infer_domain_state_fields(true);
     infer_handler_reply_types(true);
     infer_function_signatures(true);
+    build_open_callable_summaries();
     check_domain_handle_declarations();
     check_objects();
     check_declared_map_key_types();
     check_local_call_cycles();
     { CompilerStageTimer timer("effects"); infer_effects(); infer_observable_effects(); }
+    for (auto& function : p_.functions)
+      if (function.open_summary) {
+        function.open_summary->observable_effects = function.observable_effects;
+        for (const auto effect : function.parameter_effects)
+          function.open_summary->parameter_access.push_back(
+              effect == Effect::Consume ? moss::AccessMode::Consume :
+              effect == Effect::Write ? moss::AccessMode::Write :
+                                        moss::AccessMode::Read);
+      }
     // Discard early summaries together so dependencies cannot reuse another
     // instance's pre-fixed-point effects while these are rebuilt.
     for (auto& function : p_.functions)
@@ -2332,6 +2342,62 @@ class Checker {
 
   using TypeEnv = std::unordered_map<string,string>;
   using TypeEnvVisitor = std::function<void(const Stmt&, const TypeEnv&)>;
+
+  void build_open_callable_summaries() {
+    for (auto& function : p_.functions) {
+      if (!function.return_type) continue;
+      OpenCallableSummaryFacts summary;
+      summary.callable_id = function.semantic_callable_id;
+      summary.origin.module_id =
+          program_module_identity(p_, function.defining_module);
+      summary.origin.source_file = function.source_file;
+      summary.origin.line = function.line;
+      summary.origin.enclosing_callable = function.semantic_callable_id;
+      std::unordered_map<string, moss::TypeRef> parameter_variables;
+      auto bound = [&]() {
+        return moss::Type::var(moss::TypeVarId{
+            0, 0, summary.bound_variable_count++});
+      };
+      auto type_term = [&](const string& spelling) -> moss::TypeRef {
+        auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
+        if (!parsed) return nullptr;
+        if ((*parsed)->kind == moss::TypeKind::Builtin &&
+            moss::Type::collection_arity((*parsed)->name) &&
+            (*parsed)->type_args.empty()) {
+          vector<moss::TypeRef> args;
+          for (size_t index = 0; index < *moss::Type::collection_arity((*parsed)->name);
+               ++index)
+            args.push_back(bound());
+          return moss::Type::builtin((*parsed)->name, std::move(args));
+        }
+        return (*parsed)->is_closed() ? *parsed : nullptr;
+      };
+      bool complete = function.constraints.empty();
+      for (const auto& parameter : function.params) {
+        moss::TypeRef term = parameter.type.empty() ? bound() :
+            type_term(parameter.type);
+        if (!term) complete = false;
+        summary.parameter_types.push_back(term);
+        parameter_variables.emplace(parameter.name, term);
+      }
+      const string result = canonical_type_name(*function.return_type);
+      if (starts_with(result, "_generic:")) {
+        auto source = parameter_variables.find(result.substr(9));
+        if (source != parameter_variables.end()) summary.result_type = source->second;
+        else complete = false;
+      } else if (!contains_internal_placeholder(result)) {
+        summary.result_type = type_term(result);
+      } else {
+        complete = false;
+      }
+      summary.complete = complete && summary.result_type &&
+          std::all_of(summary.parameter_types.begin(),
+                      summary.parameter_types.end(),
+                      [](const moss::TypeRef& type) { return type != nullptr; });
+      if (summary.bound_variable_count || function.generic)
+        function.open_summary = std::move(summary);
+    }
+  }
 
 #include "static_bounds.inc"
 #include "fileio_semantics.inc"
@@ -5588,7 +5654,12 @@ class Checker {
                                        const string& semantic_context) const {
     moss::TypeSolver solver(1);
     std::unordered_map<string, moss::TypeRef> locals;
-    vector<std::pair<const Stmt*, moss::TypeRef>> open_calls;
+    struct PendingOpenCall {
+      const Stmt* statement;
+      moss::TypeRef result;
+      vector<std::pair<uint32_t, moss::TypeRef>> bindings;
+    };
+    vector<PendingOpenCall> open_calls;
     TypeEnv scan = entry;
     auto term_for = [&](const string& expression) -> moss::TypeRef {
       string value = trim(expression);
@@ -5629,6 +5700,64 @@ class Checker {
                      " to function '" + callee + "'");
       }
     };
+    auto instantiate_summary = [&](int line, const string& expression,
+                                   const Stmt* statement) -> moss::TypeRef {
+      string callee;
+      vector<string> arguments;
+      if (!parse_simple_call(trim(expression), callee, arguments)) return nullptr;
+      auto function = functions_.find(callee);
+      if (function == functions_.end() || !function->second->open_summary ||
+          !function->second->open_summary->complete) return nullptr;
+      const auto& summary = *function->second->open_summary;
+      if (arguments.size() != summary.parameter_types.size()) return nullptr;
+      vector<moss::TypeRef> fresh;
+      for (uint32_t ordinal = 0; ordinal < summary.bound_variable_count; ++ordinal)
+        fresh.push_back(solver.fresh(static_cast<uint32_t>(open_calls.size() + 1)));
+      std::function<moss::TypeRef(const moss::TypeRef&)> instantiate =
+          [&](const moss::TypeRef& source) -> moss::TypeRef {
+        if (!source) return nullptr;
+        if (source->kind == moss::TypeKind::InferenceVar) {
+          if (source->var_id.session_id != 0 ||
+              source->var_id.ordinal >= fresh.size()) return nullptr;
+          return fresh[source->var_id.ordinal];
+        }
+        if (source->kind == moss::TypeKind::Builtin) {
+          vector<moss::TypeRef> args;
+          for (const auto& arg : source->type_args)
+            args.push_back(instantiate(arg));
+          return moss::Type::builtin(source->name, std::move(args));
+        }
+        return source;
+      };
+      for (size_t index = 0; index < arguments.size(); ++index) {
+        auto actual = term_for(arguments[index]);
+        auto expected = instantiate(summary.parameter_types[index]);
+        if (actual && expected && !solver.unify(actual, expected))
+          err(line, "argument " + std::to_string(index + 1) +
+              " to function '" + callee + "' has incompatible type", "TYPE_MISMATCH");
+      }
+      moss::TypeRef result = instantiate(summary.result_type);
+      if (statement && result) {
+        std::set<uint32_t> result_ordinals;
+        std::function<void(const moss::TypeRef&)> collect =
+            [&](const moss::TypeRef& type) {
+          if (!type) return;
+          if (type->kind == moss::TypeKind::InferenceVar) {
+            result_ordinals.insert(type->var_id.ordinal);
+            return;
+          }
+          for (const auto& arg : type->type_args) collect(arg);
+          for (const auto& field : type->field_substitutions)
+            collect(field.second);
+        };
+        collect(summary.result_type);
+        PendingOpenCall pending{statement, result, {}};
+        for (uint32_t ordinal : result_ordinals)
+          pending.bindings.emplace_back(ordinal, fresh[ordinal]);
+        if (!pending.bindings.empty()) open_calls.push_back(std::move(pending));
+      }
+      return result;
+    };
     for (const Stmt& statement : statements) {
       if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
         string invocation = statement.a + "(" + join_arguments(statement.args) + ")";
@@ -5639,15 +5768,18 @@ class Checker {
            statement.kind == Stmt::Kind::Assign) &&
           simple_identifier(statement.a)) {
         constrain_call(statement.line, statement.b);
+        auto instantiated = instantiate_summary(statement.line, statement.b,
+                                                &statement);
         auto inferred = inferred_expr_type(statement.b, scan);
-        if (!inferred) continue;
-        auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
-        if (!parsed || (*parsed)->kind != moss::TypeKind::Builtin ||
-            !moss::Type::collection_arity((*parsed)->name)) {
+        if (!instantiated && !inferred) continue;
+        auto parsed = inferred ? moss::Type::parse_canonical(
+            canonical_type_name(*inferred)) : std::nullopt;
+        if (!instantiated && (!parsed || (*parsed)->kind != moss::TypeKind::Builtin ||
+            !moss::Type::collection_arity((*parsed)->name))) {
           scan[statement.a] = *inferred;
           continue;
         }
-        moss::TypeRef term = *parsed;
+        moss::TypeRef term = instantiated ? instantiated : *parsed;
         if (auto arity = moss::Type::collection_arity(term->name);
             arity && term->type_args.empty()) {
           vector<moss::TypeRef> arguments;
@@ -5668,22 +5800,6 @@ class Checker {
               statement.a + "'", "TYPE_MISMATCH");
         else if (prior == locals.end())
           locals.emplace(statement.a, term);
-        string callee;
-        vector<string> call_arguments;
-        if (parse_simple_call(trim(statement.b), callee, call_arguments)) {
-          auto function = functions_.find(callee);
-          if (function != functions_.end() && function->second->return_type) {
-            auto returned = moss::Type::parse_canonical(
-                canonical_type_name(*function->second->return_type));
-            // Only the bare built-in result grammar gives a fixed, direct
-            // ordinal for every result slot here. Nested, nominal and
-            // composed summaries require their own typed bound-var record.
-            if (returned && (*returned)->kind == moss::TypeKind::Builtin &&
-                moss::Type::collection_arity((*returned)->name) &&
-                (*returned)->type_args.empty())
-              open_calls.emplace_back(&statement, term);
-          }
-        }
         scan[statement.a] = solver.resolve(locals.at(statement.a))->to_canonical_string();
       } else if (statement.kind == Stmt::Kind::Call && statement.b == "push" &&
                  statement.args.size() == 1) {
@@ -5706,8 +5822,9 @@ class Checker {
       auto resolved = solver.resolve(term);
       if (resolved->is_closed()) closed.emplace(name, resolved->to_canonical_string());
     }
-    for (const auto& [statement, term] : open_calls) {
-      auto result = solver.resolve(term);
+    for (const auto& pending : open_calls) {
+      const Stmt* statement = pending.statement;
+      auto result = solver.resolve(pending.result);
       if (!result->is_closed()) continue;
       string callee;
       vector<string> arguments;
@@ -5719,9 +5836,9 @@ class Checker {
           ":" + std::to_string(statement->line) + ":" + callee;
       facts.callable_id = function->second->semantic_callable_id;
       facts.result = result;
-      for (size_t index = 0; index < result->type_args.size(); ++index)
-        facts.ordered_bindings.emplace_back(static_cast<uint32_t>(index),
-                                            result->type_args[index]);
+      for (const auto& binding : pending.bindings)
+        facts.ordered_bindings.emplace_back(binding.first,
+                                            solver.resolve(binding.second));
       const_cast<Stmt*>(statement)->open_call_results_by_context[semantic_context] =
           std::move(facts);
     }
