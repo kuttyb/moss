@@ -1,5 +1,31 @@
 # Moss current status
 
+## Phase 25 Team A A2 checkpoint at `e5af4ac` — 2026-10-17 (NOT READY)
+
+**Fourth pre-existing blocker, fixed at `e5af4ac`.** `make check` at
+`f7f586a` passed `make` and `make examples` and then failed in
+`check_swarm_050_targets.py` with "missing inner/outer<First>". The compiler
+was right: both specializations were emitted. Since `2a5314d` a specialized
+function's tooling marker carries its `specialization-v2` key after the line
+number (`fn:inner<First>@14#specialization-v2:sha256:…`), and the test's
+regex expected `@<line>|` immediately, so it matched nothing. The key is now
+optional in the pattern and is not part of the identity compared. Verified
+against generated Rust from `5b29352` (no key) and HEAD (with key), for all
+three `run.sh` invocations, and the pattern still matches 8 real markers, so
+the test is not vacuous. Only this one test parses that marker.
+
+**Change of approach to finding the rest.** Each full `make check` takes
+roughly 90 minutes and stops at the first failure, so it has been yielding
+one defect per run. `tmp/resume/all_tooling.sh` (disposable) instead runs
+every `tests/tooling` check that `run.sh` invokes with just the compiler
+argument — 100 of them — continuing past failures, so the remaining broken
+checks surface together. A full `make check` at the fixed SHA remains the
+authority; this only finds the work faster.
+
+Running blockers tally, all pre-existing and none from the conversion
+slices: `4750088` for-shadow scoping, the A2 signature `_typevar` return,
+`950d2b5` trait formal unification, and the stale `swarm_050` marker regex.
+
 ## Phase 25 Team A A2 checkpoint at `f7f586a` — 2026-10-17 (NOT READY)
 
 **Three pre-existing Team A regressions have now been found by running the
