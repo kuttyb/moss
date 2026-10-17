@@ -5238,37 +5238,96 @@ class Checker {
     return std::nullopt;
   }
 
+  // One expression inference result. A closed type is always carried as a
+  // TypeRef and composes structurally; `legacy` carries only an open
+  // pseudo-type spelling (`_generic:x`, `_element:...`, `callable:f`, a bare
+  // collection) that later A2 slices replace with inference variables and
+  // requirements. Exactly one of the two is set.
+  struct InferredExpr {
+    moss::TypeRef term;
+    string legacy;
+    string projection() const {
+      return term ? term->to_canonical_string() : legacy;
+    }
+  };
+
+  // A declared or helper-produced spelling enters the term algebra once,
+  // here. Spellings that name compiler-internal open placeholders stay legacy.
+  static InferredExpr inferred_leaf(const string& spelling) {
+    if (!spelling.empty() && !contains_internal_placeholder(spelling) &&
+        !starts_with(spelling, "callable:")) {
+      auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
+      if (parsed && (*parsed)->is_closed()) return {*parsed, {}};
+    }
+    return {nullptr, spelling};
+  }
+
+  static bool primitive_term(const moss::TypeRef& type, std::string_view name) {
+    return type && type->kind == moss::TypeKind::Primitive && type->name == name;
+  }
+
+  // The structural shape of a result, including an open legacy spelling such
+  // as `vector[_generic:x]` whose element relation is still a placeholder.
+  static moss::TypeRef inferred_shape(const InferredExpr& inferred) {
+    if (inferred.term) return inferred.term;
+    auto parsed = moss::Type::parse_canonical(canonical_type_name(inferred.legacy));
+    return parsed ? *parsed : nullptr;
+  }
+
   std::optional<string> inferred_expr_type(const string& expression,
-                                           const std::unordered_map<string,string>& env) const {
+                                           const TypeEnv& env) const {
+    auto inferred = inferred_expr(expression, env);
+    if (!inferred) return std::nullopt;
+    return inferred->projection();
+  }
+
+  // The closed term of an expression, or null when it is open or unknown.
+  moss::TypeRef inferred_expr_term(const string& expression, const TypeEnv& env) const {
+    auto inferred = inferred_expr(expression, env);
+    return inferred ? inferred->term : nullptr;
+  }
+
+  // A placeholder primitive (`_generic:x`) counts as closed in the algebra
+  // but is still open here; it stays legacy until variables replace it.
+  std::optional<InferredExpr> inferred_expr(const string& expression,
+                                            const TypeEnv& env) const {
+    auto inferred = inferred_expr_core(expression, env);
+    if (inferred && inferred->term &&
+        contains_internal_placeholder(inferred->term->to_canonical_string()))
+      inferred = InferredExpr{nullptr, inferred->term->to_canonical_string()};
+    return inferred;
+  }
+
+  std::optional<InferredExpr> inferred_expr_core(const string& expression,
+                                                 const TypeEnv& env) const {
+    using R = std::optional<InferredExpr>;
+    auto primitive = [](const char* name) -> R {
+      return InferredExpr{moss::Type::primitive(name), {}};
+    };
     string original = strip_redundant_outer_parentheses(expression);
     auto operand_term = [&](const string& operand) -> moss::TypeRef {
       if (current_body_types_) {
         auto retained = current_body_types_->known_expression(operand);
         if (retained) return current_body_types_->solver.resolve(retained);
       }
-      auto inferred = inferred_expr_type(operand, env);
-      if (!inferred || contains_internal_placeholder(*inferred)) return nullptr;
-      auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
-      return parsed && (*parsed)->is_closed() ? *parsed : nullptr;
+      return inferred_expr_term(operand, env);
     };
-    // Checked bodies retain one solver-owned term per local. Every downstream
-    // string consumer receives a projection of that term after closure, so a
-    // field or index read cannot re-infer a different type from display text.
+    // Checked bodies retain one solver-owned term per local. A field or index
+    // read composes from that term instead of re-inferring from display text.
     if (current_body_types_) {
       auto retained = current_body_types_->known_expression(original);
       if (retained) {
         auto resolved = current_body_types_->solver.resolve(retained);
-        if (resolved && resolved->is_closed())
-          return resolved->to_canonical_string();
+        if (resolved && resolved->is_closed()) return InferredExpr{resolved, {}};
       }
     }
-    if (auto builtin = fileio_result_type(original, env)) return builtin;
+    if (auto builtin = fileio_result_type(original, env)) return inferred_leaf(*builtin);
     {
       string callee;
       vector<string> arguments;
       if (parse_simple_call(original, callee, arguments) && callee == "replace" &&
           arguments.size() == 2)
-        return inferred_expr_type(arguments[0], env);
+        return inferred_expr(arguments[0], env);
     }
     {
       string enum_name, case_name;
@@ -5276,7 +5335,7 @@ class Checker {
       bool called = false;
       if (parse_enum_case_expression(original, enum_name, case_name, fields, called) &&
           enums_.count(enum_name))
-        return enum_name;
+        return inferred_leaf(enum_name);
     }
     if (starts_with(original, "message ")) {
       string receiver, handler;
@@ -5290,59 +5349,64 @@ class Checker {
       if (domain == domains_.end()) return std::nullopt;
       const Handler* target = find_handler(*domain->second, handler);
       if (!target) return std::nullopt;
-      return target->reply_type ? *target->reply_type : string("unit");
+      return inferred_leaf(target->reply_type ? *target->reply_type : string("unit"));
     }
     if (auto functional = inferred_functional_pipeline_type(original, env))
-      return functional;
+      return inferred_leaf(*functional);
     string e = strip_redundant_outer_parentheses(normalize_pipeline(std::move(original)));
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
       if (auto binary = split_binary(e, {op})) {
-        auto left = operand_term(binary->first);
-        auto right = operand_term(binary->second);
-        return left && right && left->kind == moss::TypeKind::Primitive &&
-                right->kind == moss::TypeKind::Primitive &&
-                left->name == "bool" && right->name == "bool"
-            ? std::optional<string>("bool") : std::nullopt;
+        return primitive_term(operand_term(binary->first), "bool") &&
+                primitive_term(operand_term(binary->second), "bool")
+            ? primitive("bool") : std::nullopt;
       }
     }
-    if (starts_with(e, "not ")) {
-      auto operand = operand_term(trim(e.substr(4)));
-      return operand && operand->kind == moss::TypeKind::Primitive &&
-              operand->name == "bool"
-          ? std::optional<string>("bool") : std::nullopt;
-    }
-    if (auto type = obvious_expr_type(e, env)) return canonical_type_name(*type);
+    if (starts_with(e, "not "))
+      return primitive_term(operand_term(trim(e.substr(4))), "bool")
+          ? primitive("bool") : std::nullopt;
+    if (auto type = obvious_expr_type(e, env))
+      return inferred_leaf(canonical_type_name(*type));
     if (plain_identifier(e) && functions_.count(e))
-      return "callable:" + e;
-    if (auto typed_vector = typed_empty_vector_constructor(e)) return *typed_vector;
+      return InferredExpr{nullptr, "callable:" + e};
+    if (auto typed_vector = typed_empty_vector_constructor(e))
+      return inferred_leaf(*typed_vector);
     // Phase 20: `Executor()` begins a compiler-recognized configuration chain
     // (see parse_executor_chain); it is not a general object construction.
-    if (e == "Executor()") return string("executor");
+    if (e == "Executor()") return primitive("executor");
     {
       vector<string> open_arguments;
-      if (parse_fileio_open(e, open_arguments)) return string("FileIO");
+      if (parse_fileio_open(e, open_arguments)) return primitive("FileIO");
     }
     if (auto parts = parse_vector_literal(e)) {
-      if (parts->empty()) return string("vector");
-      string element;
+      if (parts->empty()) return InferredExpr{nullptr, "vector"};
+      vector<InferredExpr> elements;
       for (const auto& part : *parts) {
-        auto t = inferred_expr_type(part, env);
-        if (!t) return std::nullopt;
-        if (element.empty()) element = *t;
-        else if (!same_type(element, *t)) return std::nullopt;
+        auto element = inferred_expr(part, env);
+        if (!element) return std::nullopt;
+        elements.push_back(std::move(*element));
       }
-      return "vector[" + element + "]";
+      const bool closed = std::all_of(elements.begin(), elements.end(),
+          [](const InferredExpr& element) { return element.term != nullptr; });
+      if (closed) {
+        for (const auto& element : elements)
+          if (!element.term->structurally_equal(*elements.front().term))
+            return std::nullopt;
+        return InferredExpr{moss::Type::builtin("vector", {elements.front().term}), {}};
+      }
+      // An open element keeps the legacy spelling until element variables
+      // replace it; mixed open/closed elements never agree.
+      for (const auto& element : elements)
+        if (!same_type(element.projection(), elements.front().projection()))
+          return std::nullopt;
+      return InferredExpr{nullptr, "vector[" + elements.front().projection() + "]"};
     }
     if (auto comparison = split_binary(e, {"==", "!=", "<=", ">=", "<", ">"}))
-      return string("bool");
+      return primitive("bool");
     for (const auto& ops : vector<vector<string>>{{"|"}, {"^"}, {"&"}, {"<<", ">>"}}) {
       if (auto binary = split_binary(e, ops)) {
-        auto left = operand_term(binary->first);
-        auto right = operand_term(binary->second);
-        return left && right && left->kind == moss::TypeKind::Primitive &&
-                right->kind == moss::TypeKind::Primitive &&
-                left->name == "int" && right->name == "int"
-            ? std::optional<string>("int") : std::nullopt;
+        return primitive_term(operand_term(binary->first), "int") &&
+                primitive_term(operand_term(binary->second), "int")
+            ? primitive("int") : std::nullopt;
       }
     }
     if (auto arithmetic = split_binary(e, {"+", "-", "*", "/", "%"})) {
@@ -5352,68 +5416,69 @@ class Checker {
           right->kind == moss::TypeKind::Primitive) {
         if (left->name == "string" && right->name == "string" &&
             e.find('+') != string::npos)
-          return string("string");
+          return primitive("string");
         if (arithmetic->first.empty() || arithmetic->second.empty()) return std::nullopt;
         if (split_binary(e, {"%"}) &&
             (left->name != "int" || right->name != "int"))
           return std::nullopt;
         if ((left->name == "int" || left->name == "float") &&
             (right->name == "int" || right->name == "float"))
-          return (left->name == "float" || right->name == "float")
-              ? "float" : "int";
+          return primitive(left->name == "float" || right->name == "float"
+              ? "float" : "int");
       }
       // An open source declaration keeps an operator requirement. Concrete
       // specializations re-enter this branch with bound TypeRefs.
-      auto left_open = inferred_expr_type(arithmetic->first, env);
-      auto right_open = inferred_expr_type(arithmetic->second, env);
-      if (left_open && right_open && *left_open == *right_open &&
-          starts_with(*left_open, "_generic:")) return *left_open;
+      auto left_open = inferred_expr(arithmetic->first, env);
+      auto right_open = inferred_expr(arithmetic->second, env);
+      if (left_open && right_open && !left_open->term && !right_open->term &&
+          left_open->legacy == right_open->legacy &&
+          starts_with(left_open->legacy, "_generic:"))
+        return left_open;
     }
-    if (!e.empty() && e.front() == '~') {
-      auto operand = operand_term(trim(e.substr(1)));
-      return operand && operand->kind == moss::TypeKind::Primitive &&
-              operand->name == "int"
-          ? std::optional<string>("int") : std::nullopt;
-    }
+    if (!e.empty() && e.front() == '~')
+      return primitive_term(operand_term(trim(e.substr(1))), "int")
+          ? primitive("int") : std::nullopt;
     if (!e.empty() && e.front() == '-' && e.size() > 1 && !std::isdigit(static_cast<unsigned char>(e[1]))) {
       auto operand = operand_term(trim(e.substr(1)));
-      if (operand && operand->kind == moss::TypeKind::Primitive &&
-          (operand->name == "int" || operand->name == "float"))
-        return operand->name;
+      if (primitive_term(operand, "int") || primitive_term(operand, "float"))
+        return InferredExpr{operand, {}};
     }
     string index_base, index_expr;
     if (parse_index(e, index_base, index_expr)) {
-      auto bt = inferred_expr_type(index_base, env);
-      if (!bt) return std::nullopt;
-      if (canonical_type_name(*bt) == "RangeBatch") return string("Range");
-      if (canonical_type_name(*bt) == "Range") return string("int");
-      if (starts_with(*bt, "_generic:")) return string("_element:element:" + bt->substr(9));
-      auto container = moss::Type::parse_canonical(canonical_type_name(*bt));
-      if (container && (*container)->kind == moss::TypeKind::Builtin) {
-        if (((*container)->name == "vector" || (*container)->name == "queue") &&
-            (*container)->type_args.empty())
-          return string("_element:element:" + index_base);
-        if (((*container)->name == "vector" || (*container)->name == "queue") &&
-            (*container)->type_args.size() == 1)
-          return (*container)->type_args[0]->to_canonical_string();
-        if ((*container)->name == "map" && (*container)->type_args.size() == 2)
-          return (*container)->type_args[1]->to_canonical_string();
+      auto base = inferred_expr(index_base, env);
+      if (!base) return std::nullopt;
+      if (primitive_term(base->term, "RangeBatch")) return primitive("Range");
+      if (primitive_term(base->term, "Range")) return primitive("int");
+      if (!base->term && starts_with(base->legacy, "_generic:"))
+        return InferredExpr{nullptr, "_element:element:" + base->legacy.substr(9)};
+      // A bare collection is open: legacy spelling, not a term.
+      if (!base->term && (base->legacy == "vector" || base->legacy == "queue"))
+        return InferredExpr{nullptr, "_element:element:" + index_base};
+      const auto container = inferred_shape(*base);
+      if (container && container->kind == moss::TypeKind::Builtin) {
+        if ((container->name == "vector" || container->name == "queue") &&
+            container->type_args.size() == 1)
+          return base->term ? InferredExpr{container->type_args[0], {}}
+                            : inferred_leaf(container->type_args[0]->to_canonical_string());
+        if (container->name == "map" && container->type_args.size() == 2)
+          return base->term ? InferredExpr{container->type_args[1], {}}
+                            : inferred_leaf(container->type_args[1]->to_canonical_string());
       }
       return std::nullopt;
     }
-    auto object_call = [&]() -> std::optional<string> {
+    auto object_call = [&]() -> R {
       string callee;
       vector<string> args;
       if (!parse_simple_call(e, callee, args)) return std::nullopt;
       if (auto builtin = builtin_call_semantics(callee, args, env))
-        return builtin->result_type;
+        return inferred_leaf(builtin->result_type);
       string target = callee;
       auto binding = env.find(callee);
       if (binding != env.end()) {
         if (starts_with(binding->second, "callable:"))
           target = binding->second.substr(9);
         else if (starts_with(binding->second, "_generic:"))
-          return "_functional_callable_result:" + callee;
+          return InferredExpr{nullptr, "_functional_callable_result:" + callee};
       }
       auto function = functions_.find(target);
       if (function == functions_.end() && current_object_) {
@@ -5421,7 +5486,7 @@ class Checker {
         for (const auto& argument : args)
           argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
         auto method = resolve_method(current_object_->name, callee, argument_types);
-        if (method && method->return_type) return *method->return_type;
+        if (method && method->return_type) return inferred_leaf(*method->return_type);
       }
       if (function != functions_.end() && function->second->return_type) {
         string r = canonical_type_name(*function->second->return_type);
@@ -5437,27 +5502,35 @@ class Checker {
           if (concrete) {
             auto specialized = specialized_function_return_type(
                 *function->second, actual_types);
-            if (specialized) return specialized;
+            if (specialized) return inferred_leaf(*specialized);
           }
         }
         if (starts_with(r, "_method_result:")) {
           vector<string> actual_types;
           for (const auto& arg : args)
             actual_types.push_back(inferred_expr_type(arg, env).value_or(""));
-          return specialized_function_return_type(*function->second, actual_types);
+          auto specialized = specialized_function_return_type(*function->second, actual_types);
+          if (!specialized) return std::nullopt;
+          return inferred_leaf(*specialized);
         }
         if (starts_with(r, "_generic:")) {
           auto relation = function->second->generic_results.find(r.substr(9));
           if (relation == function->second->generic_results.end()) return std::nullopt;
           auto it = env.find(relation->second);
-          if (it != env.end()) return it->second;
+          if (it != env.end()) return inferred_leaf(it->second);
         }
         if (starts_with(r, "_element:")) {
           auto relation = function->second->generic_results.find(r.substr(9));
           if (relation == function->second->generic_results.end()) return std::nullopt;
           auto it = env.find(relation->second);
-          if (it != env.end() && starts_with(it->second, "vector[") && ends_with(it->second, "]"))
-            return trim(it->second.substr(7, it->second.size()-8));
+          if (it != env.end()) {
+            auto container = inferred_leaf(it->second).term;
+            if (container && container->kind == moss::TypeKind::Builtin &&
+                container->name == "vector" && container->type_args.size() == 1)
+              return InferredExpr{container->type_args[0], {}};
+            if (starts_with(it->second, "vector[") && ends_with(it->second, "]"))
+              return inferred_leaf(trim(it->second.substr(7, it->second.size() - 8)));
+          }
         }
         if (starts_with(r, "_field:")) {
           auto key = r.substr(7); auto pos = key.find(':');
@@ -5469,7 +5542,7 @@ class Checker {
               if (at) {
                 auto object = objects_.find(*at);
                 if (object != objects_.end() && pos != string::npos) for (const auto& f : object->second->fields)
-                  if (f.name == key.substr(pos + 1)) return f.type;
+                  if (f.name == key.substr(pos + 1)) return inferred_leaf(f.type);
               }
             }
           auto relation = function->second->generic_results.find(key);
@@ -5478,66 +5551,68 @@ class Checker {
             if (base != env.end()) {
               auto object = objects_.find(base->second);
               if (object != objects_.end() && pos != string::npos) for (const auto& f : object->second->fields)
-                if (f.name == key.substr(pos + 1)) return f.type;
+                if (f.name == key.substr(pos + 1)) return inferred_leaf(f.type);
             }
           }
         }
-        return r;
+        return inferred_leaf(r);
       }
       return std::nullopt;
     }();
     if (object_call) return object_call;
     string method_receiver, method_name; vector<string> method_args;
     if (parse_member_call(e, method_receiver, method_name, method_args)) {
-      auto base = inferred_expr_type(method_receiver, env);
+      auto base = inferred_expr(method_receiver, env);
       if (base) {
         auto receiver_ir = current_body_types_
             ? current_body_types_->known_expression(method_receiver) : nullptr;
         if (!receiver_ir) {
-          auto parsed = moss::Type::parse_canonical(canonical_type_name(*base));
-          if (parsed) receiver_ir = *parsed;
+          if (base->term) receiver_ir = base->term;
+          else if (auto parsed = moss::Type::parse_canonical(canonical_type_name(base->legacy)))
+            receiver_ir = *parsed;
         }
         const string concrete_base = receiver_ir && receiver_ir->is_closed()
             ? receiver_ir->to_canonical_string()
-            : canonical_type_name(*base);
+            : canonical_type_name(base->projection());
         const string method_owner = receiver_ir &&
             receiver_ir->kind == moss::TypeKind::NominalInstance &&
             receiver_ir->declaration
             ? receiver_ir->declaration->program_name : concrete_base;
         // Phase 20: Executor configuration/start chain and FileIO operations.
         // See parse_executor_chain and docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md.
-        if (concrete_base == "executor" &&
+        if (primitive_term(receiver_ir, "executor") &&
             (executor_config_methods().count(method_name) || method_name == "start"))
-          return string("executor");
-        if (concrete_base == "FileIO") {
-          if (method_name == "read" && method_args.size() == 2) return string("Range");
-          if (method_name == "chunks" && method_args.size() == 1) return string("seq[Range]");
+          return primitive("executor");
+        if (primitive_term(receiver_ir, "FileIO")) {
+          if (method_name == "read" && method_args.size() == 2) return primitive("Range");
+          if (method_name == "chunks" && method_args.size() == 1)
+            return InferredExpr{moss::Type::builtin("seq", {moss::Type::primitive("Range")}), {}};
           if ((method_name == "write" && method_args.size() == 2) ||
               (method_name == "sync" && method_args.size() <= 1) ||
               (method_name == "close" && method_args.empty()))
-            return string("unit");
+            return InferredExpr{moss::Type::unit(), {}};
         }
         // Provisional: Agent A/B own Range's final semantic surface. `.length()`
         // is the one accessor Agent D's own tests need to verify chunk-pipeline
         // ordering/termination without a materialized byte API.
-        if (concrete_base == "Range" && method_name == "length" && method_args.empty())
-          return string("int");
-        if (concrete_base == "Range" && method_name == "slice" && method_args.size() == 2)
-          return string("Range");
+        if (primitive_term(receiver_ir, "Range") && method_name == "length" && method_args.empty())
+          return primitive("int");
+        if (primitive_term(receiver_ir, "Range") && method_name == "slice" && method_args.size() == 2)
+          return primitive("Range");
         if (receiver_ir &&
             ((receiver_ir->kind == moss::TypeKind::Builtin &&
               moss::Type::collection_arity(receiver_ir->name)) ||
-             (receiver_ir->kind == moss::TypeKind::Primitive &&
-              receiver_ir->name == "string")))
+             primitive_term(receiver_ir, "string")))
           if (auto result = builtin_operation_result(concrete_base, method_name,
                                                       method_args.size()))
-            return result;
+            return inferred_leaf(*result);
         vector<string> argument_types;
         for (const auto& arg : method_args) argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
         if (auto method = resolve_method(method_owner, method_name, argument_types))
-          if (method->return_type) return *method->return_type;
-        if (starts_with(*base, "_generic:")) return string("_method_value");
-        auto trait = traits_.find(canonical_type_name(*base));
+          if (method->return_type) return inferred_leaf(*method->return_type);
+        if (!base->term && starts_with(base->legacy, "_generic:"))
+          return InferredExpr{nullptr, "_method_value"};
+        auto trait = traits_.find(canonical_type_name(base->projection()));
         if (trait != traits_.end()) {
           auto declared = std::find_if(trait->second->methods.begin(), trait->second->methods.end(),
                                        [&](const TraitMethod& candidate) {
@@ -5545,36 +5620,33 @@ class Checker {
                                                 candidate.params.size() == method_args.size();
                                        });
           if (declared != trait->second->methods.end())
-            return declared->return_type.value_or("_method_value");
+            return inferred_leaf(declared->return_type.value_or("_method_value"));
         }
       }
     }
 
     auto dot = e.rfind('.');
     if (dot != string::npos) {
-      auto base_type = inferred_expr_type(e.substr(0, dot), env);
+      auto base = inferred_expr(e.substr(0, dot), env);
       string field = trim(e.substr(dot + 1));
-      if (base_type) {
-        auto receiver = moss::Type::parse_canonical(canonical_type_name(*base_type));
-        if (receiver && (*receiver)->kind == moss::TypeKind::NominalInstance &&
-            (*receiver)->declaration) {
-          if (auto field_type = BodyTypeState::nominal_field(*receiver, field))
-            return field_type->to_canonical_string();
-        }
-      }
+      const auto receiver = base ? inferred_shape(*base) : nullptr;
+      if (receiver && receiver->kind == moss::TypeKind::NominalInstance &&
+          receiver->declaration)
+        if (auto field_type = BodyTypeState::nominal_field(receiver, field))
+          return base->term ? InferredExpr{field_type, {}}
+                            : inferred_leaf(field_type->to_canonical_string());
     }
 
     string mr, mh; vector<string> ma;
     if (parse_member_call(e, mr, mh, ma)) {
       auto bt = env.find(mr);
       if (bt != env.end()) {
-        auto receiver = moss::Type::parse_canonical(
-            canonical_type_name(bt->second));
+        auto receiver = inferred_shape(inferred_leaf(bt->second));
         if (receiver && mh == "pop" && ma.empty() &&
-            (*receiver)->kind == moss::TypeKind::Builtin &&
-            ((*receiver)->name == "queue" || (*receiver)->name == "vector") &&
-            (*receiver)->type_args.size() == 1)
-          return (*receiver)->type_args[0]->to_canonical_string();
+            receiver->kind == moss::TypeKind::Builtin &&
+            (receiver->name == "queue" || receiver->name == "vector") &&
+            receiver->type_args.size() == 1)
+          return inferred_leaf(receiver->type_args[0]->to_canonical_string());
       }
     }
 
