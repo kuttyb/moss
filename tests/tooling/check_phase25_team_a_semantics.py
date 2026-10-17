@@ -366,6 +366,22 @@ fn main():
         checked(conflict, "TYPE_MISMATCH")
         print("PASS one binding retains one monotype", flush=True)
 
+        moved_collection = source(scratch, "moved_collection_term", '''fn main():
+  a = []
+  b = a
+  b.push(1)
+  echo b[0]
+''')
+        parity(moved_collection, scratch, "1\n")
+        moved_conflict = source(scratch, "moved_collection_conflict", '''fn main():
+  a = []
+  b = a
+  b.push(1)
+  b.push("wrong")
+''')
+        checked(moved_conflict, "TYPE_MISMATCH")
+        print("PASS moved local retains its TypeRef across assignment", flush=True)
+
         map_key_conflict = source(scratch, "one_map_key_binding", '''fn main():
   var values = Map()
   values[1] = "one"

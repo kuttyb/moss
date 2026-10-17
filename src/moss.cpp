@@ -2399,7 +2399,14 @@ class Checker {
   struct BodyTypeState {
     moss::TypeSolver solver{1};
     std::unordered_map<string, moss::TypeRef> locals;
+    std::unordered_map<const Stmt*, moss::TypeRef> assignment_values;
     TypeEnv closed_projection;
+
+    moss::TypeRef assignment_value(const Stmt& statement) {
+      auto found = assignment_values.find(&statement);
+      return found == assignment_values.end()
+          ? nullptr : solver.resolve(found->second);
+    }
 
     moss::TypeRef resolved_local(const string& name) {
       auto found = locals.find(name);
@@ -6209,17 +6216,6 @@ class Checker {
     };
     vector<PendingOpenCall> open_calls;
     TypeEnv scan = entry;
-    auto term_for = [&](const string& expression) -> moss::TypeRef {
-      string value = trim(expression);
-      if (simple_identifier(value)) {
-        auto local = locals.find(value);
-        if (local != locals.end()) return local->second;
-      }
-      auto inferred = inferred_expr_type(value, scan);
-      if (!inferred) return nullptr;
-      auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
-      return parsed ? *parsed : nullptr;
-    };
     std::function<moss::TypeRef(const moss::TypeRef&)> freshen_open_type =
         [&](const moss::TypeRef& type) -> moss::TypeRef {
       if (!type) return nullptr;
@@ -6253,6 +6249,14 @@ class Checker {
                                          std::move(substitutions));
       }
       return type;
+    };
+    auto term_for = [&](const string& expression) -> moss::TypeRef {
+      string value = trim(expression);
+      if (auto retained = body_types.known_expression(value)) return retained;
+      auto inferred = inferred_expr_type(value, scan);
+      if (!inferred) return nullptr;
+      auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
+      return parsed ? freshen_open_type(*parsed) : nullptr;
     };
     auto require_type = [&](int line, const string& expression,
                             const string& expected, const string& context) {
@@ -6523,23 +6527,28 @@ class Checker {
         constrain_call(statement.line, statement.b);
         auto instantiated = instantiate_summary(statement.line, statement.b,
                                                 &statement);
+        auto retained_source = body_types.known_expression(statement.b);
         auto inferred = inferred_expr_type(statement.b, scan);
-        if (!instantiated && !inferred) continue;
+        if (!instantiated && !retained_source && !inferred) continue;
         auto parsed = inferred ? moss::Type::parse_canonical(
             canonical_type_name(*inferred)) : std::nullopt;
-        if (!instantiated && !parsed) {
+        if (!instantiated && !retained_source && !parsed) {
           scan[statement.a] = *inferred;
           continue;
         }
         auto prior = locals.find(statement.a);
-        if (!instantiated && !record_call_facts && !retain_all_types &&
+        if (!instantiated && !retained_source && !record_call_facts && !retain_all_types &&
             prior == locals.end() &&
             ((*parsed)->kind != moss::TypeKind::Builtin ||
              !moss::Type::collection_arity((*parsed)->name))) {
           scan[statement.a] = *inferred;
           continue;
         }
-        moss::TypeRef term = instantiated ? instantiated : freshen_open_type(*parsed);
+        // Reading a local, field, or index shares its retained type variable.
+        // Only constructors and callable results create a fresh instance.
+        moss::TypeRef term = instantiated ? instantiated : retained_source
+            ? retained_source : freshen_open_type(*parsed);
+        body_types.assignment_values.emplace(&statement, term);
         const bool prior_open = prior != locals.end() &&
             !solver.resolve(prior->second)->is_closed();
         // Fresh declarations inside separate branches have separate lexical
@@ -6575,12 +6584,33 @@ class Checker {
               statement.a + "'", "TYPE_MISMATCH");
         scan[statement.a] = solver.resolve(local->second)->to_canonical_string();
       } else if (statement.kind == Stmt::Kind::Assign &&
+                 statement.a.find('[') != string::npos) {
+        string base, index;
+        if (!parse_index(statement.a, base, index)) continue;
+        auto container = body_types.known_expression(base);
+        auto key = term_for(index);
+        auto value = term_for(statement.b);
+        if (!value) continue;
+        body_types.assignment_values.emplace(&statement, value);
+        if (!container || container->kind != moss::TypeKind::Builtin) continue;
+        bool compatible = true;
+        if ((container->name == "vector" || container->name == "queue") &&
+            container->type_args.size() == 1)
+          compatible = solver.unify(container->type_args[0], value);
+        else if (container->name == "map" &&
+                 container->type_args.size() == 2)
+          compatible = (!key || solver.unify(container->type_args[0], key)) &&
+              solver.unify(container->type_args[1], value);
+        if (!compatible)
+          err(statement.line, "indexed assignment conflicts with the binding's type",
+              "TYPE_MISMATCH");
+      } else if (statement.kind == Stmt::Kind::Assign &&
                  statement.a.find('.') != string::npos) {
         auto field = body_types.known_expression(statement.a);
-        auto inferred = inferred_expr_type(statement.b, scan);
-        if (!field || !inferred) continue;
-        auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
-        if (parsed && !solver.unify(field, freshen_open_type(*parsed)))
+        auto rhs = term_for(statement.b);
+        if (!field || !rhs) continue;
+        body_types.assignment_values.emplace(&statement, rhs);
+        if (!solver.unify(field, rhs))
           err(statement.line, "assignment type mismatch for field '" +
               statement.a + "'", "TYPE_MISMATCH");
       }
@@ -16498,7 +16528,9 @@ class Checker {
               auto bound_type = current_env.at(statement.a);
               auto rhs_type = inferred_expr_type(statement.b, current_env);
               auto bound_term = checked_types.resolved_local(statement.a);
-              moss::TypeRef rhs_term = checked_types.known_expression(statement.b);
+              moss::TypeRef rhs_term = checked_types.assignment_value(statement);
+              if (!rhs_term)
+                rhs_term = checked_types.known_expression(statement.b);
               if (!rhs_term && rhs_type) {
                 auto parsed = moss::Type::parse_canonical(
                     canonical_type_name(*rhs_type));
@@ -16528,7 +16560,9 @@ class Checker {
               auto container_term = checked_types.resolved_local(base);
               if (container_term && value_type &&
                   container_term->kind == moss::TypeKind::Builtin) {
-                auto value_term = checked_types.known_expression(statement.b);
+                auto value_term = checked_types.assignment_value(statement);
+                if (!value_term)
+                  value_term = checked_types.known_expression(statement.b);
                 if (!value_term) {
                   auto parsed = moss::Type::parse_canonical(
                       canonical_type_name(*value_type));
@@ -16592,7 +16626,8 @@ class Checker {
                 auto field_type = inferred_expr_type(statement.a, current_env);
                 auto rhs_type = inferred_expr_type(statement.b, current_env);
                 auto field_term = checked_term(statement.a, field_type);
-                auto rhs_term = checked_term(statement.b, rhs_type);
+                auto rhs_term = checked_types.assignment_value(statement);
+                if (!rhs_term) rhs_term = checked_term(statement.b, rhs_type);
                 bool compatible = field_term && rhs_term
                     ? checked_types.solver.unify(field_term, rhs_term)
                     : !field_type || !rhs_type ||
