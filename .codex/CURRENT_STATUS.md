@@ -146,10 +146,11 @@ identity A–F, field visibility, Phase 21 standard error namespace, Type IR
 unit, conformance 10/11 (gate 10 PENDING joint). Full `make check` not rerun
 since `2a7454b`.
 
-**Next:** L7 records the condition-3 carry-forward (ARCH-004 into G-A1
-Checkpoints B/C; ARCH-007 instance keys into the ABI-v10 record work), making
-Checkpoint A GO; then G-A1 Checkpoint B (structured `TypeRef` checker type
-environments) begins.
+**L7 record (2026-10-16): Checkpoint A is GO.** ARCH-004 carries into G-A1
+Checkpoints B/C, and the ARCH-007 instance keys carry into the ABI-v10 record
+work (`TEAM_G_UNRESOLVED_CONTRACT_DECISIONS.md`). G-A3 as a whole stays open
+until both close. **Next: G-A1 Checkpoint B** (structured `TypeRef` checker
+type environments), sequential and inline.
 
 **L7 feedback (2026-10-16):** keep gate 10 on joint integration; authoritative
 Type IR, nominal identity, typed ABI-v10 payloads, and runtime linkage need

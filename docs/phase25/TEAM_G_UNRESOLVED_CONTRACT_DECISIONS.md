@@ -33,10 +33,18 @@ G-A1 (Checkpoints B–E). Each checkpoint is committed separately, and a fresh
 independent Architect review closes the work. Neither item may be deferred
 again without a new L7 decision. D3 and D4 remain open as written below.
 
-**Checkpoint A (D2): implemented; CONDITIONAL GO from the independent
-Architect (`TEAM_G_GA3_ARCHITECT_REVIEW.md`, Addendum 2 at `27fc2fb`).** The
-only open condition is an L7 record that ARCH-004 carries into Checkpoints B/C
-and the ARCH-007 instance-key work into the ABI-v10 record work.
+**Checkpoint A (D2): GO.** The independent Architect gave CONDITIONAL GO
+(`TEAM_G_GA3_ARCHITECT_REVIEW.md`, Addendum 2 at `27fc2fb`). Its only
+condition, the L7 record below, is met.
+
+**L7 record (2026-10-16, condition 3 of the G-A3 review):**
+
+- Gate item 2 (ARCH-004: spelling-based type comparisons outside the Type IR)
+  carries into G-A1 Checkpoints B/C.
+- The instance-key part of gate item 5 (ARCH-007: typed ABI-v10 records)
+  carries into the ABI-v10 record work (D3).
+- G-A3 as a whole is not complete until ARCH-004 and ARCH-007 close.
+- ARCH-005, -006, -008, and -009 remain open as scheduled.
 
 - **Identities.** Records, enums, and domains are interned once per
   compilation session as `NominalDeclaration` records carrying their
