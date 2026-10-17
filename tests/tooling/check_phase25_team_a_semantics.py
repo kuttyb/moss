@@ -481,6 +481,17 @@ fn main():
         checked(field_conflict, "TYPE_MISMATCH")
         print("PASS field writes use retained nominal field type", flush=True)
 
+        open_field_write = source(scratch, "open_nominal_field_write", '''type Box:
+  value
+
+fn main():
+  var item = Box(value: [])
+  item.value = [1]
+  echo item.value[0]
+''')
+        parity(open_field_write, scratch, "1\n")
+        print("PASS nominal field write closes nested open collection", flush=True)
+
         handler_reply = source(scratch, "typed_handler_reply", '''type Box:
   value: Int
 

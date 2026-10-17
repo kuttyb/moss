@@ -2410,8 +2410,8 @@ class Checker {
       const string value = trim(expression);
       if (auto local = resolved_local(value)) return local;
       string base, index;
-      if (parse_index(value, base, index) && simple_identifier(base)) {
-        auto container = resolved_local(base);
+      if (parse_index(value, base, index)) {
+        auto container = known_expression(base);
         if (container && container->kind == moss::TypeKind::Builtin) {
           if ((container->name == "vector" || container->name == "queue") &&
               container->type_args.size() == 1)
@@ -2420,17 +2420,28 @@ class Checker {
             return solver.resolve(container->type_args[1]);
         }
       }
-      const size_t dot = value.find('.');
-      if (dot != string::npos && value.find('.', dot + 1) == string::npos &&
-          simple_identifier(value.substr(0, dot))) {
-        auto receiver = resolved_local(value.substr(0, dot));
+      const size_t dot = value.rfind('.');
+      if (dot != string::npos) {
+        auto receiver = known_expression(value.substr(0, dot));
         if (receiver && receiver->kind == moss::TypeKind::NominalInstance &&
-            receiver->is_closed()) {
+            receiver->declaration) {
           const string field = value.substr(dot + 1);
-          const auto fields = receiver->resolved_fields();
-          for (size_t index = 0; index < receiver->declaration->fields.size(); ++index)
-            if (receiver->declaration->fields[index].name == field)
-              return fields[index];
+          for (size_t index = 0; index < receiver->declaration->fields.size(); ++index) {
+            const auto& slot = receiver->declaration->fields[index];
+            if (slot.name != field) continue;
+            if (slot.inferred) {
+              auto bound = std::find_if(receiver->field_substitutions.begin(),
+                  receiver->field_substitutions.end(),
+                  [&](const auto& item) { return item.first == field; });
+              return bound == receiver->field_substitutions.end()
+                  ? nullptr : solver.resolve(bound->second);
+            }
+            auto owner = receiver->declaration->owner.lock();
+            if (!owner) return nullptr;
+            const auto& annotations = owner->field_annotations(
+                receiver->declaration->id);
+            return index < annotations.size() ? annotations[index] : nullptr;
+          }
         }
       }
       return nullptr;
@@ -5000,6 +5011,16 @@ class Checker {
   std::optional<string> inferred_expr_type(const string& expression,
                                            const std::unordered_map<string,string>& env) const {
     string original = strip_redundant_outer_parentheses(expression);
+    auto operand_term = [&](const string& operand) -> moss::TypeRef {
+      if (current_body_types_) {
+        auto retained = current_body_types_->known_expression(operand);
+        if (retained) return current_body_types_->solver.resolve(retained);
+      }
+      auto inferred = inferred_expr_type(operand, env);
+      if (!inferred || contains_internal_placeholder(*inferred)) return nullptr;
+      auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
+      return parsed && (*parsed)->is_closed() ? *parsed : nullptr;
+    };
     // Checked bodies retain one solver-owned term per local. Every downstream
     // string consumer receives a projection of that term after closure, so a
     // field or index read cannot re-infer a different type from display text.
@@ -5046,17 +5067,18 @@ class Checker {
     string e = strip_redundant_outer_parentheses(normalize_pipeline(std::move(original)));
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
       if (auto binary = split_binary(e, {op})) {
-        auto left = inferred_expr_type(binary->first, env);
-        auto right = inferred_expr_type(binary->second, env);
-        return left && right &&
-                canonical_type_name(*left) == "bool" &&
-                canonical_type_name(*right) == "bool"
+        auto left = operand_term(binary->first);
+        auto right = operand_term(binary->second);
+        return left && right && left->kind == moss::TypeKind::Primitive &&
+                right->kind == moss::TypeKind::Primitive &&
+                left->name == "bool" && right->name == "bool"
             ? std::optional<string>("bool") : std::nullopt;
       }
     }
     if (starts_with(e, "not ")) {
-      auto operand = inferred_expr_type(trim(e.substr(4)), env);
-      return operand && canonical_type_name(*operand) == "bool"
+      auto operand = operand_term(trim(e.substr(4)));
+      return operand && operand->kind == moss::TypeKind::Primitive &&
+              operand->name == "bool"
           ? std::optional<string>("bool") : std::nullopt;
     }
     if (auto type = obvious_expr_type(e, env)) return canonical_type_name(*type);
@@ -5077,7 +5099,7 @@ class Checker {
         auto t = inferred_expr_type(part, env);
         if (!t) return std::nullopt;
         if (element.empty()) element = *t;
-        else if (canonical_type_name(element) != canonical_type_name(*t)) return std::nullopt;
+        else if (!same_type(element, *t)) return std::nullopt;
       }
       return "vector[" + element + "]";
     }
@@ -5085,38 +5107,49 @@ class Checker {
       return string("bool");
     for (const auto& ops : vector<vector<string>>{{"|"}, {"^"}, {"&"}, {"<<", ">>"}}) {
       if (auto binary = split_binary(e, ops)) {
-        auto left = inferred_expr_type(binary->first, env);
-        auto right = inferred_expr_type(binary->second, env);
-        return left && right &&
-                canonical_type_name(*left) == "int" &&
-                canonical_type_name(*right) == "int"
+        auto left = operand_term(binary->first);
+        auto right = operand_term(binary->second);
+        return left && right && left->kind == moss::TypeKind::Primitive &&
+                right->kind == moss::TypeKind::Primitive &&
+                left->name == "int" && right->name == "int"
             ? std::optional<string>("int") : std::nullopt;
       }
     }
     if (auto arithmetic = split_binary(e, {"+", "-", "*", "/", "%"})) {
-      auto left = inferred_expr_type(arithmetic->first, env);
-      auto right = inferred_expr_type(arithmetic->second, env);
-      if (left && right) {
-        if (*left == *right && starts_with(*left, "_generic:")) return *left;
-        if (*left == "string" && *right == "string" && e.find('+') != string::npos)
+      auto left = operand_term(arithmetic->first);
+      auto right = operand_term(arithmetic->second);
+      if (left && right && left->kind == moss::TypeKind::Primitive &&
+          right->kind == moss::TypeKind::Primitive) {
+        if (left->name == "string" && right->name == "string" &&
+            e.find('+') != string::npos)
           return string("string");
         if (arithmetic->first.empty() || arithmetic->second.empty()) return std::nullopt;
-        if (split_binary(e, {"%"}) && (*left != "int" || *right != "int"))
+        if (split_binary(e, {"%"}) &&
+            (left->name != "int" || right->name != "int"))
           return std::nullopt;
-        if ((*left == "int" || *left == "float") &&
-            (*right == "int" || *right == "float"))
-          return (*left == "float" || *right == "float") ? "float" : "int";
+        if ((left->name == "int" || left->name == "float") &&
+            (right->name == "int" || right->name == "float"))
+          return (left->name == "float" || right->name == "float")
+              ? "float" : "int";
       }
+      // An open source declaration keeps an operator requirement. Concrete
+      // specializations re-enter this branch with bound TypeRefs.
+      auto left_open = inferred_expr_type(arithmetic->first, env);
+      auto right_open = inferred_expr_type(arithmetic->second, env);
+      if (left_open && right_open && *left_open == *right_open &&
+          starts_with(*left_open, "_generic:")) return *left_open;
     }
     if (!e.empty() && e.front() == '~') {
-      auto operand = inferred_expr_type(trim(e.substr(1)), env);
-      return operand && canonical_type_name(*operand) == "int"
+      auto operand = operand_term(trim(e.substr(1)));
+      return operand && operand->kind == moss::TypeKind::Primitive &&
+              operand->name == "int"
           ? std::optional<string>("int") : std::nullopt;
     }
     if (!e.empty() && e.front() == '-' && e.size() > 1 && !std::isdigit(static_cast<unsigned char>(e[1]))) {
-      auto operand = inferred_expr_type(trim(e.substr(1)), env);
-      if (operand && (canonical_type_name(*operand) == "int" || canonical_type_name(*operand) == "float"))
-        return canonical_type_name(*operand);
+      auto operand = operand_term(trim(e.substr(1)));
+      if (operand && operand->kind == moss::TypeKind::Primitive &&
+          (operand->name == "int" || operand->name == "float"))
+        return operand->name;
     }
     string index_base, index_expr;
     if (parse_index(e, index_base, index_expr)) {
@@ -6349,6 +6382,15 @@ class Checker {
           err(statement.line, "push argument conflicts with the element type of '" +
               statement.a + "'", "TYPE_MISMATCH");
         scan[statement.a] = solver.resolve(local->second)->to_canonical_string();
+      } else if (statement.kind == Stmt::Kind::Assign &&
+                 statement.a.find('.') != string::npos) {
+        auto field = body_types.known_expression(statement.a);
+        auto inferred = inferred_expr_type(statement.b, scan);
+        if (!field || !inferred) continue;
+        auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
+        if (parsed && !solver.unify(field, freshen_open_type(*parsed)))
+          err(statement.line, "assignment type mismatch for field '" +
+              statement.a + "'", "TYPE_MISMATCH");
       }
     }
     for (const auto& [name, term] : locals) {
