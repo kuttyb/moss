@@ -6421,7 +6421,13 @@ class Checker {
         walk_type_environment_block(statements, index, level + 1, body_env,
                                     visitor, reject_conflicts, record_join_types,
                                     record_semantic_types, join_context, solved_collections);
-        body_env.erase(statement.a);
+        // The loop variable is scoped to the body. On exit a binding it
+        // shadowed is restored, as a match arm's pattern bindings are;
+        // erasing it would drop the outer binding at the join.
+        if (auto shadowed = incoming.find(statement.a); shadowed != incoming.end())
+          body_env[statement.a] = shadowed->second;
+        else
+          body_env.erase(statement.a);
         env = merge_type_environments({incoming, body_env}, statement.line,
                                       reject_conflicts);
         if (record_join_types) {
