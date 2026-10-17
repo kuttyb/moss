@@ -78,6 +78,7 @@ struct OpenCallableSummaryFacts {
   TypeRef result_type;
   vector<Requirement> requirements;
   vector<MemberDispatchRequirement> member_requirements;
+  vector<string> semantic_dependencies;
   vector<AccessMode> parameter_access;
   ObservableEffects observable_effects;
   RequirementOrigin origin;

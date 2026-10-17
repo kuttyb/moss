@@ -105,6 +105,9 @@ fn main():
             "arguments": [{"kind": "bound_var", "ordinal": 0}],
             "fields": []}, summary
         assert summary["requirement_count"] == 0, summary
+    assert summaries["fresh"]["semantic_dependencies"] == [], summaries
+    fresh_id = f"callable-v1:{module}:fn:fresh"
+    assert summaries["relay"]["semantic_dependencies"] == [fresh_id], summaries
     relay_id = f"callable-v1:module-v1:__standalone__@0.0.0::main:fn:relay"
     relay_specs = [entry for entry in open_typed["specializations"]
                    if entry["callable_id"] == relay_id]
@@ -131,6 +134,9 @@ export fn fresh():
 
 export fn relay():
   return fresh()
+
+export fn size(value):
+  return value.length()
 """)
     env = os.environ.copy()
     env["MOSS_STAGED_ABI"] = "v10"
@@ -149,6 +155,7 @@ fn main():
   words.push("hello")
   echo values[0]
   echo words[0]
+  echo Provider.size("abc")
 """)
     env["MOSS_MODULE_PATH"] = str(provider / "build" / "debug")
     imported = subprocess.run([str(MOSS), "inspect", "main", "--source",
@@ -164,8 +171,13 @@ fn main():
         assert imported_summaries[identity]["module_id"] == provider_id, (
             identity, imported_typed)
         assert imported_summaries[identity]["bound_variable_count"] == 1
-    assert imported_typed["open_summaries_complete"], imported_typed
-    assert not imported_typed["unavailable_open_summaries"], imported_typed
+    assert imported_summaries[f"callable-v1:{provider_id}:fn:relay"]["semantic_dependencies"] == [
+        f"callable-v1:{provider_id}:fn:fresh"], imported_summaries
+    assert not imported_typed["open_summaries_complete"], imported_typed
+    assert imported_typed["unavailable_open_summaries"] == [{
+        "callable_id": f"callable-v1:{provider_id}:fn:size",
+        "reason": "checker result or effect facts remain unresolved",
+    }], imported_typed
     imported_relay = [entry for entry in imported_typed["specializations"]
                       if entry["callable_id"] ==
                       f"callable-v1:{provider_id}:fn:relay"]
@@ -173,5 +185,37 @@ fn main():
     assert len({entry["key"] for entry in imported_relay}) == 2
     assert all(len(entry["open_result_bindings"]) == 1
                for entry in imported_relay), imported_relay
+
+    # A concrete imported member requirement keeps a caller edge back to the
+    # provider's source-free open summary. Neither identity is reconstructed
+    # from diagnostic prose or generated Rust names.
+    provider_member = f"callable-v1:{provider_id}:fn:size"
+    source_requirements = [entry for entry in
+        imported_typed["source_member_requirements"]
+        if entry["origin"]["enclosing_callable"] == provider_member]
+    assert len(source_requirements) == 1, imported_typed
+    source_requirement = source_requirements[0]
+    assert source_requirement["origin"]["module_id"] == provider_id
+    assert source_requirement["origin"]["source_file"].endswith(
+        "Provider.mossi"), source_requirement
+    assert source_requirement["parent_requirement_id"] is None
+    size_specs = [entry for entry in imported_typed["specializations"]
+                  if entry["callable_id"] == provider_member]
+    assert len(size_specs) == 1, size_specs
+    closed_requirement = size_specs[0]["member_requirements"][0]
+    assert closed_requirement["parent_requirement_id"] == (
+        source_requirement["requirement_id"]), closed_requirement
+    assert closed_requirement["requirement_id"] != (
+        source_requirement["requirement_id"]), closed_requirement
+    assert closed_requirement["selected_callable_id"] == (
+        "builtin:string.length"), closed_requirement
+    consumer_id = "module-v1:typed_consumer@1.0.0::Main"
+    assert closed_requirement["origin"]["module_id"] == consumer_id, (
+        closed_requirement, imported_typed)
+    assert closed_requirement["origin"]["source_file"].endswith(
+        "main.moss"), closed_requirement
+    assert closed_requirement["origin"]["line"] == 10, closed_requirement
+    assert closed_requirement["origin"]["call_expression_id"], (
+        closed_requirement, imported_typed)
 
 print("Phase 25 typed semantic API compiler projection: PASS")

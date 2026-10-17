@@ -74,6 +74,7 @@ struct TypedOpenCallableSummaryV1 {
   TypeRef result_type;
   std::vector<Requirement> requirements;
   std::vector<MemberDispatchRequirement> member_requirements;
+  std::vector<std::string> semantic_dependencies;
   std::vector<AccessMode> parameter_access;
   ObservableEffects observable_effects;
   TypedSourceProvenanceV1 provenance;
@@ -86,6 +87,10 @@ struct TypedSemanticModuleV1 {
   std::map<std::string, TypedClosedTypeV1> closed_types;
   std::map<std::string, TypedNominalInstanceV1> nominal_instances;
   std::map<std::string, TypedOpenCallableSummaryV1> open_summaries;
+  // Source requirements remain addressable when a generic summary cannot
+  // publish its unresolved observable effects yet. This table does not make
+  // such a summary callable through the typed API.
+  std::map<std::string, MemberDispatchRequirement> source_member_requirements;
   std::map<std::string, std::string> unavailable_open_summaries;
   std::map<std::string, TypedSpecializationV1> specializations;
   // Legacy imported generic skeletons may appear in Function::specializations
@@ -178,6 +183,16 @@ inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) 
   for (const auto& function : program.functions) {
     if (function.semantic_callable_id.empty())
       throw std::invalid_argument("checked function has no semantic callable identity");
+    if (function.open_summary && function.open_summary->complete)
+      for (const auto& requirement : function.open_summary->member_requirements) {
+        if (requirement.requirement_id.empty() ||
+            requirement.origin.module_id.empty() ||
+            requirement.origin.enclosing_callable != function.semantic_callable_id ||
+            !result.source_member_requirements.emplace(
+                requirement.requirement_id, requirement).second)
+          throw std::invalid_argument(
+              "checked source member requirement lacks exact provenance");
+      }
     if (function.open_summary && function.open_summary->complete &&
         !function.open_summary->observable_effects.unresolved &&
         function.open_summary->parameter_access.size() ==
@@ -215,6 +230,7 @@ inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) 
       summary.result_type = checked.result_type;
       summary.requirements = checked.requirements;
       summary.member_requirements = checked.member_requirements;
+      summary.semantic_dependencies = checked.semantic_dependencies;
       summary.parameter_access = checked.parameter_access;
       summary.observable_effects = checked.observable_effects;
       summary.provenance = {checked.origin.source_file, checked.origin.line,

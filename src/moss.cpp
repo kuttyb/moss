@@ -2247,6 +2247,23 @@ class Checker {
     check_objects();
     check_declared_map_key_types();
     check_local_call_cycles();
+    for (auto& function : p_.functions) {
+      if (!function.open_summary) continue;
+      for (const auto& edge : p_.semantic_call_edges) {
+        if (edge.source != "fn:" + function.name ||
+            !starts_with(edge.target, "fn:")) continue;
+        auto dependency = functions_.find(edge.target.substr(3));
+        if (dependency == functions_.end() ||
+            dependency->second->semantic_callable_id.empty())
+          throw std::invalid_argument(
+              "checked open summary has unresolved callable dependency");
+        const string& identity = dependency->second->semantic_callable_id;
+        auto& dependencies = function.open_summary->semantic_dependencies;
+        if (std::find(dependencies.begin(), dependencies.end(), identity) ==
+            dependencies.end())
+          dependencies.push_back(identity);
+      }
+    }
     { CompilerStageTimer timer("effects"); infer_effects(); infer_observable_effects(); }
     for (auto& function : p_.functions)
       if (function.open_summary) {
@@ -14301,6 +14318,35 @@ class Checker {
       err(line, "static specialization has an unresolved argument type",
           "TYPE_AMBIGUOUS_OPEN_RESULT");
     const string stable_key = *semantic_key->stable_key();
+    if (function.open_summary && !member_requirements.empty() &&
+        !current_source_file_.empty() && !current_semantic_context_.empty()) {
+      string caller_module = p_.main_module.empty()
+          ? p_.module_name : p_.main_module;
+      string caller_id = current_semantic_context_;
+      if (starts_with(current_semantic_context_, "fn:")) {
+        const string caller_name = current_semantic_context_.substr(3);
+        auto caller = functions_.find(caller_name);
+        if (caller != functions_.end()) {
+          caller_module = caller->second->defining_module;
+          caller_id = caller->second->semantic_callable_id;
+        }
+      }
+      const string call_id = "call-v1:" + stable_key + ":" + caller_id +
+          ":" + current_source_file_ + ":" + std::to_string(line);
+      for (auto& requirement : member_requirements) {
+        auto parent = std::find_if(
+            function.open_summary->member_requirements.begin(),
+            function.open_summary->member_requirements.end(),
+            [&](const moss::MemberDispatchRequirement& source) {
+              return source.requirement_id == requirement.requirement_id;
+            });
+        if (parent == function.open_summary->member_requirements.end()) continue;
+        requirement.parent_requirement_id = parent->requirement_id;
+        requirement.requirement_id = parent->requirement_id + ":" + call_id;
+        requirement.origin = {program_module_identity(p_, caller_module),
+                              current_source_file_, line, 1, caller_id, call_id};
+      }
+    }
     auto record_dependency = [&] {
       if (!checking_specialization_) return;
       StaticSpecializationDependency dependency{function.name, canonical_types,
@@ -27273,6 +27319,37 @@ static void write_typed_semantic_projection_json(std::ostream& out,
   if (!program.typed_semantics)
     throw std::invalid_argument("checked program has no typed semantic projection");
   const auto& projection = *program.typed_semantics;
+  auto write_member_requirements = [&](const auto& requirements) {
+    out << "[";
+    for (size_t index = 0; index < requirements.size(); ++index) {
+      if (index) out << ",";
+      const auto& requirement = requirements[index];
+      out << "{\"requirement_id\": ";
+      write_debug_json_string(out, requirement.requirement_id);
+      out << ", \"parent_requirement_id\": ";
+      if (requirement.parent_requirement_id)
+        write_debug_json_string(out, *requirement.parent_requirement_id);
+      else out << "null";
+      out << ", \"member_name\": ";
+      write_debug_json_string(out, requirement.member_name);
+      out << ", \"selected_callable_id\": ";
+      if (requirement.selected_callable_id)
+        write_debug_json_string(out, *requirement.selected_callable_id);
+      else out << "null";
+      out << ", \"origin\": {\"module_id\": ";
+      write_debug_json_string(out, requirement.origin.module_id);
+      out << ", \"source_file\": ";
+      write_debug_json_string(out, requirement.origin.source_file);
+      out << ", \"line\": " << requirement.origin.line;
+      out << ", \"column\": " << requirement.origin.column;
+      out << ", \"enclosing_callable\": ";
+      write_debug_json_string(out, requirement.origin.enclosing_callable);
+      out << ", \"call_expression_id\": ";
+      write_debug_json_string(out, requirement.origin.call_expression_id);
+      out << "}}";
+    }
+    out << "]";
+  };
   out << "{\"version\": ";
   write_debug_json_string(out, moss::TypedSemanticModuleV1::version);
   out << ", \"open_summaries_complete\": "
@@ -27296,11 +27373,26 @@ static void write_typed_semantic_projection_json(std::ostream& out,
     out << ", \"requirement_count\": " << summary.requirements.size();
     out << ", \"member_requirement_count\": "
         << summary.member_requirements.size();
+    out << ", \"member_requirements\": ";
+    write_member_requirements(summary.member_requirements);
+    out << ", \"semantic_dependencies\": [";
+    for (size_t index = 0; index < summary.semantic_dependencies.size(); ++index) {
+      if (index) out << ",";
+      write_debug_json_string(out, summary.semantic_dependencies[index]);
+    }
+    out << "]";
     out << ", \"module_id\": ";
     write_debug_json_string(out, summary.provenance.defining_module_id);
     out << "}";
   }
   out << "]";
+  out << ", \"source_member_requirements\": ";
+  {
+    vector<moss::MemberDispatchRequirement> source_requirements;
+    for (const auto& entry : projection.source_member_requirements)
+      source_requirements.push_back(entry.second);
+    write_member_requirements(source_requirements);
+  }
   out << ", \"unavailable_open_summaries\": [";
   first = true;
   for (const auto& entry : projection.unavailable_open_summaries) {
@@ -27387,6 +27479,8 @@ static void write_typed_semantic_projection_json(std::ostream& out,
     out << "]";
     out << ", \"member_requirement_count\": "
         << specialization.member_requirements.size();
+    out << ", \"member_requirements\": ";
+    write_member_requirements(specialization.member_requirements);
     out << ", \"dependency_count\": "
         << specialization.dependencies.size() << "}";
   }
