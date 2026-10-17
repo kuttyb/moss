@@ -1,5 +1,27 @@
 # Moss current status
 
+## Phase 25 Team A continuation — 2026-10-16 (active, NOT READY)
+
+The consolidated feature branch was pushed to `origin/phase25-g-type-core` at
+interim SHA `d6ed0af`; local work has advanced through `11d315a` and is not
+yet fully validated or pushed. A2 now retains checked open-call summaries for
+bounded shapes, freshens result variables per call, and uses TypeSolver in
+control-flow joins. A3 attaches exact open-result keys to direct and generic
+caller call edges. A4 retains bound nominal field TypeRefs and a typed
+compiler-facing projection. These milestones remain partial.
+
+Open work: `TypeEnv` is still string-backed in many checker, ownership and
+effect paths; open member requirements and complete source-free summaries need
+the solver bridge; a transitive `relay(): return fresh()` call needs an exact
+return-expression key; a source-free nominal ConsumerB runtime regression was
+isolated to the `4750088` control-flow join change. Dedicated isolated workers
+are repairing these. Independent Architect exact-SHA review has not occurred.
+
+An intermediate `make check` started on code before the latest A2/A3/A4 edits.
+It has passed Phase 20/21 and advanced-data run/release/Fast Debug so far, but
+its eventual result cannot validate the subsequent implementation commits.
+The required final full suite must run again after integration.
+
 ## Phase 25 Team A A4 field annotation completion — 2026-10-16 (isolated worktree)
 
 The isolated `phase25-g-a4-field-completion` worktree binds nominal field
