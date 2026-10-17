@@ -2481,7 +2481,20 @@ class Checker {
   vector<Warning> warnings_;
   bool phase21_warnings_enabled_ = true;
 
-  using TypeEnv = std::unordered_map<string,string>;
+  struct TypeEnv : std::unordered_map<string, string> {
+    using Projection = std::unordered_map<string, string>;
+    using Projection::Projection;
+    TypeEnv() = default;
+    TypeEnv(const TypeEnv&) = default;
+    TypeEnv(TypeEnv&&) = default;
+    TypeEnv& operator=(const TypeEnv&) = default;
+    TypeEnv& operator=(TypeEnv&&) = default;
+    TypeEnv(const Projection& projected) : Projection(projected) {}
+    TypeEnv(Projection&& projected) : Projection(std::move(projected)) {}
+    // The text map remains a projection for existing diagnostics and lowering.
+    // Checked source-order walks carry the exact solver terms alongside it.
+    std::unordered_map<string, moss::TypeRef> terms;
+  };
   using TypeEnvVisitor = std::function<void(const Stmt&, const TypeEnv&)>;
   struct BodyTypeState;
   mutable BodyTypeState* current_body_types_ = nullptr;
@@ -5962,7 +5975,7 @@ class Checker {
 
   void refine_map_index_assignment_type(const string& target,
                                         const string& value,
-                                        TypeEnv& env) const {
+                                        std::unordered_map<string, string>& env) const {
     string base, index;
     if (!parse_index(target, base, index)) return;
     auto container = env.find(base);
@@ -5995,6 +6008,35 @@ class Checker {
       for (size_t index = 1; index < paths.size(); ++index)
         if (!paths[index].count(binding)) present_everywhere = false;
       if (!present_everywhere) continue;
+
+      if (current_body_types_) {
+        moss::TypeRef joined;
+        bool fully_typed = true;
+        for (const auto& path : paths) {
+          auto found = path.terms.find(binding);
+          if (found == path.terms.end() || !found->second) {
+            fully_typed = false;
+            break;
+          }
+          if (!joined) joined = found->second;
+          else if (!current_body_types_->solver.unify(joined, found->second)) {
+            if (reject_conflicts)
+              err(line, "binding '" + binding +
+                  "' has conflicting types across control-flow paths",
+                  "TYPE_MISMATCH");
+            fully_typed = false;
+            break;
+          }
+        }
+        if (fully_typed) {
+          merged.terms[binding] = joined;
+          auto resolved = current_body_types_->solver.resolve(joined);
+          merged[binding] = resolved->is_closed()
+              ? resolved->to_canonical_string()
+              : canonical_type_name(entry.second);
+          continue;
+        }
+      }
 
       // The body's prepass has already unified every assignment to this
       // binding, including assignments under zero-iteration loops and both
@@ -6270,6 +6312,7 @@ class Checker {
         if (found != current_body_types_->locals_at_statement.end()) {
           current_body_types_->scoped_locals = found->second;
           current_body_types_->scoped_locals_active = true;
+          env.terms = found->second;
         }
       }
       if (statement.indent < level) return;
@@ -6486,9 +6529,14 @@ class Checker {
         string element_type = iterator_element_type(
             statement.line, statement.b, incoming).value_or("_value");
         body_env[statement.a] = element_type;
+        BodyTypeState* scoped_types = current_body_types_;
+        if (scoped_types) {
+          auto binding = scoped_types->for_bindings.find(&statement);
+          if (binding != scoped_types->for_bindings.end() && binding->second)
+            body_env.terms[statement.a] = binding->second;
+        }
         if (record_semantic_types)
           const_cast<Stmt&>(statement).semantic_type = element_type;
-        BodyTypeState* scoped_types = current_body_types_;
         bool has_loop_term = false;
         std::optional<moss::TypeRef> previous_term;
         if (scoped_types) {
@@ -6515,6 +6563,11 @@ class Checker {
           body_env[statement.a] = shadowed->second;
         else
           body_env.erase(statement.a);
+        if (auto shadowed = incoming.terms.find(statement.a);
+            shadowed != incoming.terms.end())
+          body_env.terms[statement.a] = shadowed->second;
+        else
+          body_env.terms.erase(statement.a);
         env = merge_type_environments({incoming, body_env}, statement.line,
                                       reject_conflicts);
         if (record_join_types) {
@@ -6528,6 +6581,14 @@ class Checker {
       visitor(statement, env);
       advance_type_environment(statement, env, statements, record_semantic_types,
                                join_context, solved_collections);
+      if (current_body_types_ &&
+          (statement.kind == Stmt::Kind::Let ||
+           statement.kind == Stmt::Kind::Var ||
+           statement.kind == Stmt::Kind::Assign) &&
+          simple_identifier(statement.a)) {
+        if (auto term = current_body_types_->assignment_value(statement))
+          env.terms[statement.a] = term;
+      }
       if (record_semantic_types && statement.kind == Stmt::Kind::Call &&
           !statement.b.empty()) {
         if (auto receiver = inferred_expr_type(statement.a, env))
@@ -7212,7 +7273,7 @@ class Checker {
                                 BodyTypeState* retained_types = nullptr) const {
     BodyTypeState body_types =
         solve_local_collection_types(statements, env, join_context,
-                                     record_semantic_types);
+                                     record_semantic_types, true);
     if (retained_types) *retained_types = std::move(body_types);
     // The prepass has already assigned one solver term to each local and
     // assignment. Keep that exact state active while the source-order checker
