@@ -534,6 +534,13 @@ static bool open_generic(const string& type) {
   return starts_with(type, "_generic:");
 }
 
+// The statically bounded callable identity `callable:<name>`. Like
+// open_generic, centralized so the conversion to a real callable type has one
+// place to change. A bare `callable:` carries no identity yet.
+static bool callable_identity(const string& type) {
+  return starts_with(type, "callable:");
+}
+
 // An open built-in collection: named, with no type arguments yet.
 static bool bare_collection(const moss::TypeRef& type,
                             std::initializer_list<std::string_view> names) {
@@ -698,7 +705,7 @@ static std::optional<moss::SpecializationKey> specialization_key_inputs(
     const auto& type = types[index];
     // A static higher-order argument is a resolved callable identity, not a
     // type or the lookup spelling used by its caller.
-    if (starts_with(type, "callable:")) {
+    if (callable_identity(type)) {
       const string callable_id = type.substr(9);
       if (!starts_with(callable_id, "callable-v1:")) return std::nullopt;
       key.arguments.push_back(moss::Type::unit());
@@ -4737,7 +4744,7 @@ class Checker {
 
   static bool unresolved_semantic_type(const string& type) {
     if (type.empty() || contains_internal_placeholder(type)) return true;
-    if (starts_with(type, "callable:")) return type.size() == 9;
+    if (callable_identity(type)) return type.size() == 9;
     auto parsed = moss::Type::parse_canonical(canonical_type_name(type));
     return !parsed || !(*parsed)->is_closed();
   }
@@ -4783,7 +4790,7 @@ class Checker {
     }
 
     auto local = env.find(value);
-    if (local != env.end() && starts_with(local->second, "callable:"))
+    if (local != env.end() && callable_identity(local->second))
       value = local->second.substr(9);
     else if (local != env.end() && open_generic(local->second))
       return "_functional_callable_result:" + value;
@@ -5306,7 +5313,7 @@ class Checker {
   // here. Spellings that name compiler-internal open placeholders stay legacy.
   static InferredExpr inferred_leaf(const string& spelling) {
     if (!spelling.empty() && !contains_internal_placeholder(spelling) &&
-        !starts_with(spelling, "callable:")) {
+        !callable_identity(spelling)) {
       auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
       if (parsed && (*parsed)->is_closed()) return {*parsed, {}};
     }
@@ -5531,7 +5538,7 @@ class Checker {
       string target = callee;
       auto binding = env.find(callee);
       if (binding != env.end()) {
-        if (starts_with(binding->second, "callable:"))
+        if (callable_identity(binding->second))
           target = binding->second.substr(9);
         else if (open_generic(binding->second))
           return InferredExpr{nullptr, "_functional_callable_result:" + callee};
@@ -10522,7 +10529,7 @@ class Checker {
         return;
       }
       if (auto callable = env.find(callee);
-          callable != env.end() && starts_with(callable->second, "callable:"))
+          callable != env.end() && callable_identity(callable->second))
         callee = callable->second.substr(9);
       auto function = functions_.find(callee);
       if (function != functions_.end()) {
@@ -10999,7 +11006,7 @@ class Checker {
             }
           } else {
             auto local = env.find(identity);
-            if (local != env.end() && starts_with(local->second, "callable:"))
+            if (local != env.end() && callable_identity(local->second))
               identity = local->second.substr(9);
             if (functions_.count(identity))
               calls.push_back(LocalCallSite{"fn:" + identity, {}, argument_types});
@@ -12451,7 +12458,7 @@ class Checker {
             }
           } else {
             auto local = env.find(identity);
-            if (local != env.end() && starts_with(local->second, "callable:"))
+            if (local != env.end() && callable_identity(local->second))
               identity = local->second.substr(9);
             auto function = functions_.find(identity);
             if (function != functions_.end()) {
@@ -13298,7 +13305,7 @@ class Checker {
     auto local = env.find(identity);
     const bool deferred_generic_callable =
         local != env.end() && open_generic(local->second);
-    if (local != env.end() && starts_with(local->second, "callable:"))
+    if (local != env.end() && callable_identity(local->second))
       identity = local->second.substr(9);
     auto function = functions_.find(identity);
     if (function == functions_.end()) {
@@ -13894,7 +13901,7 @@ class Checker {
           }
         } else {
           auto local = env.types.find(identity);
-          if (local != env.types.end() && starts_with(local->second, "callable:"))
+          if (local != env.types.end() && callable_identity(local->second))
             identity = local->second.substr(9);
           auto function = functions_.find(identity);
           if (function != functions_.end()) {
@@ -15035,7 +15042,7 @@ class Checker {
     // Ordinary arguments must be recursively closed Type IR values: a nested
     // `vector[vector]` still has an unbound element, despite having no textual
     // placeholder marker.
-    if (starts_with(type, "callable:")) return type.size() > 9;
+    if (callable_identity(type)) return type.size() > 9;
     if (contains_internal_placeholder(type)) return false;
     auto parsed = moss::Type::parse_canonical(canonical_type_name(type));
     return parsed && (*parsed)->is_closed();
@@ -15255,7 +15262,7 @@ class Checker {
       int line, const vector<string>& parameter_types) const {
     vector<string> resolved = parameter_types;
     for (auto& type : resolved) {
-      if (!starts_with(type, "callable:")) continue;
+      if (!callable_identity(type)) continue;
       const string lookup_name = type.substr(9);
       const auto callable = functions_.find(lookup_name);
       if (callable == functions_.end() ||
@@ -15802,7 +15809,7 @@ class Checker {
     auto binding = env.find(name);
     if (binding != env.end()) {
       if (open_generic(binding->second)) return;
-      if (starts_with(binding->second, "callable:"))
+      if (callable_identity(binding->second))
         target = binding->second.substr(9);
     }
     auto function = functions_.find(target);
@@ -15955,7 +15962,7 @@ class Checker {
                 "' is not a statically typed functional collection");
           // Callable identities are not yet terms (pseudo-type slice).
           if (c.kind == ConstraintKind::Callable &&
-              !starts_with(actual_result.legacy, "callable:"))
+              !callable_identity(actual_result.legacy))
             err(line, "argument " + std::to_string(index + 1) +
                 " to function '" + name +
                 "' is not a statically bounded callable identity");
@@ -16333,7 +16340,7 @@ class Checker {
 
     auto local = env.find(identity);
     if (local != env.end()) {
-      if (starts_with(local->second, "callable:")) {
+      if (callable_identity(local->second)) {
         identity = local->second.substr(9);
       } else if (open_generic(local->second)) {
         return "_functional_callable_result:" + identity;
@@ -20311,7 +20318,7 @@ class Generator {
     callable = trim(std::move(callable));
     if (types) {
       auto local = types->find(callable);
-      if (local != types->end() && starts_with(local->second, "callable:"))
+      if (local != types->end() && callable_identity(local->second))
         return local->second.substr(9);
     }
     return callable;
@@ -23242,7 +23249,7 @@ class Generator {
                                  : f.params[index].type;
       // A callable parameter in a static higher-order specialization is a
       // compile-time identity, not a Rust function value.
-      if (specialization && starts_with(pt, "callable:")) continue;
+      if (specialization && callable_identity(pt)) continue;
       if (emitted_parameters++) o << ", ";
       auto ops = constraint_ops(f, f.params[index].name);
       string parameter_rust_type;
