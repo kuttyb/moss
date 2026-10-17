@@ -2492,6 +2492,10 @@ class Checker {
   struct BodyTypeState {
     moss::TypeSolver solver{1};
     std::unordered_map<string, moss::TypeRef> locals;
+    // A for binding is lexical, even when it uses the name of an outer open
+    // local. Keep its term at the statement and activate it only in the body.
+    std::unordered_map<const Stmt*, moss::TypeRef> for_bindings;
+    std::unordered_map<string, moss::TypeRef> scoped_locals;
     std::unordered_map<const Stmt*, moss::TypeRef> assignment_values;
     TypeEnv closed_projection;
 
@@ -2502,6 +2506,9 @@ class Checker {
     }
 
     moss::TypeRef resolved_local(const string& name) {
+      auto scoped = scoped_locals.find(name);
+      if (scoped != scoped_locals.end())
+        return scoped->second ? solver.resolve(scoped->second) : nullptr;
       auto found = locals.find(name);
       return found == locals.end() ? nullptr : solver.resolve(found->second);
     }
@@ -6469,9 +6476,26 @@ class Checker {
         body_env[statement.a] = element_type;
         if (record_semantic_types)
           const_cast<Stmt&>(statement).semantic_type = element_type;
+        BodyTypeState* scoped_types = current_body_types_;
+        bool has_loop_term = false;
+        std::optional<moss::TypeRef> previous_term;
+        if (scoped_types) {
+          auto binding = scoped_types->for_bindings.find(&statement);
+          if (binding != scoped_types->for_bindings.end()) {
+            has_loop_term = true;
+            auto previous = scoped_types->scoped_locals.find(statement.a);
+            if (previous != scoped_types->scoped_locals.end())
+              previous_term = previous->second;
+            scoped_types->scoped_locals[statement.a] = binding->second;
+          }
+        }
         walk_type_environment_block(statements, index, level + 1, body_env,
                                     visitor, reject_conflicts, record_join_types,
                                     record_semantic_types, join_context, solved_collections);
+        if (has_loop_term) {
+          if (previous_term) scoped_types->scoped_locals[statement.a] = *previous_term;
+          else scoped_types->scoped_locals.erase(statement.a);
+        }
         // The loop variable is scoped to the body. On exit a binding it
         // shadowed is restored, as a match arm's pattern bindings are;
         // erasing it would drop the outer binding at the join.
@@ -6843,7 +6867,75 @@ class Checker {
       }
       return result;
     };
+    // The statement vector is flat, so preserve a loop variable's previous
+    // binding until its indented body ends. A shadow must have its own solver
+    // term: otherwise a push in the loop can bind an open outer collection.
+    struct ForBindingScope {
+      int indent;
+      string name;
+      std::optional<moss::TypeRef> outer_term;
+      std::optional<string> outer_projection;
+    };
+    vector<ForBindingScope> for_scopes;
+    auto leave_for_scopes = [&](int indent) {
+      while (!for_scopes.empty() && indent <= for_scopes.back().indent) {
+        auto scope = std::move(for_scopes.back());
+        for_scopes.pop_back();
+        if (scope.outer_term) locals[scope.name] = *scope.outer_term;
+        else locals.erase(scope.name);
+        if (scope.outer_projection) scan[scope.name] = *scope.outer_projection;
+        else scan.erase(scope.name);
+      }
+    };
     for (const Stmt& statement : statements) {
+      leave_for_scopes(statement.indent);
+      if (statement.kind == Stmt::Kind::For) {
+        auto old_term = locals.find(statement.a);
+        auto old_projection = scan.find(statement.a);
+        for_scopes.push_back({statement.indent, statement.a,
+            old_term == locals.end() ? std::nullopt
+                : std::optional<moss::TypeRef>(old_term->second),
+            old_projection == scan.end() ? std::nullopt
+                : std::optional<string>(old_projection->second)});
+        moss::TypeRef loop_term;
+        string callee;
+        vector<string> arguments;
+        if (parse_simple_call(trim(statement.b), callee, arguments) &&
+            callee == "range") {
+          loop_term = moss::Type::primitive("int");
+        } else if (auto source = term_for(statement.b)) {
+          auto resolved = solver.resolve(source);
+          if (resolved->kind == moss::TypeKind::Builtin &&
+              (resolved->name == "vector" || resolved->name == "seq") &&
+              resolved->type_args.size() == 1)
+            loop_term = resolved->type_args[0];
+          else if (resolved->kind == moss::TypeKind::Primitive &&
+                   resolved->name == "RangeBatch")
+            loop_term = moss::Type::primitive("Range");
+          else if (resolved->kind == moss::TypeKind::Primitive &&
+                   resolved->name == "Range")
+            loop_term = moss::Type::primitive("int");
+        }
+        if (!loop_term) {
+          const string element = iterator_element_type(
+              statement.line, statement.b, scan).value_or("_value");
+          auto parsed = moss::Type::parse_canonical(canonical_type_name(element));
+          if (parsed && !contains_internal_placeholder(element))
+            loop_term = freshen_open_type(*parsed);
+        }
+        body_types.for_bindings[&statement] = loop_term;
+        if (loop_term) {
+          locals[statement.a] = loop_term;
+          auto resolved = solver.resolve(loop_term);
+          scan[statement.a] = resolved->is_closed()
+              ? resolved->to_canonical_string()
+              : "_iterator_element:" + statement.a;
+        } else {
+          locals.erase(statement.a);
+          scan[statement.a] = "_value";
+        }
+        continue;
+      }
       if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
         string invocation = statement.a + "(" + join_arguments(statement.args) + ")";
         constrain_call(statement.line, invocation);
@@ -7009,6 +7101,7 @@ class Checker {
               statement.a + "'", "TYPE_MISMATCH");
       }
     }
+    leave_for_scopes(-1);
     for (const auto& [line, requirement] : structural_requirements) {
       // The closed built-in '+' family admits Int and Float when the other
       // operand is Int. Keep this check on the instantiated TypeRefs so a
