@@ -2391,7 +2391,7 @@ class Checker {
   using TypeEnv = std::unordered_map<string,string>;
   using TypeEnvVisitor = std::function<void(const Stmt&, const TypeEnv&)>;
   struct BodyTypeState;
-  BodyTypeState* current_body_types_ = nullptr;
+  mutable BodyTypeState* current_body_types_ = nullptr;
 
   // One solver owns the terms inferred for a checked body. The string
   // environment remains a projection for older walkers and lowering; it is
@@ -6207,6 +6207,9 @@ class Checker {
                                              bool record_call_facts,
                                              bool retain_all_types = false) const {
     BodyTypeState body_types;
+    // Expression inference in this prepass must read the terms being built
+    // here, even when an outer checker/effects walk retains another body.
+    BodyTypeScope body_scope(current_body_types_, &body_types);
     auto& solver = body_types.solver;
     auto& locals = body_types.locals;
     struct PendingOpenCall {
@@ -7949,6 +7952,9 @@ class Checker {
     }
     if (recorded) capture.effects = *recorded;
     else {
+      BodyTypeState callee_types = solve_local_collection_types(
+          body, env, "", false, true);
+      BodyTypeScope callee_scope(current_body_types_, &callee_types);
       LeafCaptureScope scope(leaf_effect_capture_, &capture);
       vector<Effect> unused(formals.size(), Effect::Read);
       Effect unused_receiver = Effect::Read;
@@ -9409,12 +9415,16 @@ class Checker {
     for (auto& function : p_.functions) {
       if (!function.exported || function.generic ||
           (function.body.empty() && !function.result_expression)) continue;
+      SourceFileScope function_source(current_source_file_, function.source_file);
       LeafEffectCapture capture;
       std::unordered_map<string,string> env;
       for (const auto& parameter : function.params) {
         capture.roots[parameter.name] = parameter.type;
         env[parameter.name] = parameter.type;
       }
+      BodyTypeState body_types = solve_local_collection_types(
+          function.body, env, "fn:" + function.name, false, true);
+      BodyTypeScope body_scope(current_body_types_, &body_types);
       LeafCaptureScope scope(leaf_effect_capture_, &capture);
       vector<Effect> unused(function.params.size(), Effect::Read);
       Effect receiver = Effect::Read;
@@ -11073,6 +11083,7 @@ class Checker {
       for (auto& function : p_.functions) {
         if (std::filesystem::path(function.source_file).extension() == ".mossi")
           continue;
+        SourceFileScope function_source(current_source_file_, function.source_file);
         std::unordered_map<string,string> env;
         for (const auto& parameter : function.params)
           env[parameter.name] = parameter.type.empty() ? "_generic:" + parameter.name : parameter.type;
@@ -11113,6 +11124,7 @@ class Checker {
         for (auto& method : object.methods) {
           if (std::filesystem::path(method.source_file).extension() == ".mossi")
             continue;
+          SourceFileScope method_source(current_source_file_, method.source_file);
           std::unordered_map<string,string> env;
           std::set<string> fields;
           for (const auto& field : object.fields) {
@@ -14888,6 +14900,7 @@ class Checker {
     const string call_source = current_source_file_;
     try {
     checking_specialization_ = &function.specializations.back();
+    SourceFileScope function_source(current_source_file_, function.source_file);
     SourceFileScope checked_callee_context(current_semantic_context_,
                                            "fn:" + function.name);
     StaticBindingScope specialization_bounds(static_bound_bindings_);
@@ -14903,7 +14916,6 @@ class Checker {
     for (size_t index = 0; index < function.params.size(); ++index)
       specialized_ownership.types[function.params[index].name] = canonical_types[index];
     {
-      SourceFileScope source_scope(current_source_file_, function.source_file);
       SourceFileScope semantic_context(
           current_semantic_context_, "fn:" + function.name);
       auto final_ownership = check_ownership(

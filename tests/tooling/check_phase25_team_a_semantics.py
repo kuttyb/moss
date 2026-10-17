@@ -382,6 +382,40 @@ fn main():
         checked(moved_conflict, "TYPE_MISMATCH")
         print("PASS moved local retains its TypeRef across assignment", flush=True)
 
+        # Checking a callee body from a caller that also names `column` and
+        # `result` must install the callee's own retained terms. Otherwise a
+        # caller Int contaminates the Column parameter and a caller Table
+        # contaminates the Vector used by copy_ints during effect capture.
+        nested_body_scopes = source(scratch, "nested_body_type_scopes", '''export type Column:
+  value: Int
+
+export type Table:
+  columns: Vector[Column]
+
+fn require_column(column: Column):
+  echo column.value
+
+fn copy_ints(values: Vector[Int]) -> Vector[Int]:
+  var result = Vector[Int]()
+  for value in values:
+    result.push(value)
+  return result
+
+export fn add_column(column: Column) -> Table:
+  require_column(column)
+  var result = Table(columns: [column])
+  ignored = copy_ints([1, 2])
+  return result
+
+fn csv_adapter(column: Int):
+  ignored = add_column(Column(value: column))
+
+fn main():
+  csv_adapter(2)
+''')
+        parity(nested_body_scopes, scratch, "2\n")
+        print("PASS nested call and effect walks use callee TypeRefs", flush=True)
+
         map_key_conflict = source(scratch, "one_map_key_binding", '''fn main():
   var values = Map()
   values[1] = "one"
