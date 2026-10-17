@@ -1,6 +1,46 @@
 # Moss current status
 
-## Phase 25 Team A A2 checkpoint at `9249c11` — 2026-10-17 (BLOCKED on D5, NOT READY)
+## Phase 25 Team A A2 checkpoint at `ed5521f` — 2026-10-17 (NOT READY)
+
+**D5 resolved by the user as L7: option (a)**, implemented at `ed5521f`. A
+result variable already resolved when a call is checked — by the arguments,
+or by the member requirements those arguments close — is excluded from the
+specialization key; one still open is the caller's choice and stays. Applied
+at all three sites that record bindings. `check_borrowed_reads` passes.
+Evidence: across 1862 tracked sources no program moved between accepted and
+rejected, 13 lower differently (one drops a duplicate specialization, the
+rest differ only in the keys embedded in tooling markers), and Fast Debug
+output is byte-identical for every affected program.
+
+**Eighth blocker, open: `swarm_044_bad_write`.** `make check` at `2a341a5`
+reached a `run.sh` `reject_case` that the tooling sweep does not cover, and
+it fails:
+
+- expected `indexed assignment requires value of type 'string', found 'int'`
+- actual `[TYPE_MISMATCH] indexed assignment conflicts with the binding's type`
+
+The fixture is a generic `fn replace(items, value): items[0] = value` called
+as `replace(words, 42)`. The old message names the expected and found types;
+the new one does not, so this is a loss of diagnostic quality rather than a
+wrong verdict.
+
+**Correction to an earlier attribution.** I first recorded this as my own
+regression, and a bisect agreed. Both were wrong. The worktree I compared
+against had been rebuilt to a different commit than I assumed, so the
+"passing" baseline was not the commit I believed, and `git bisect` inherited
+that error through a `good` endpoint that was already bad. Rebuilding
+`252c2c7` and testing the fixture at both its in-repo path and a copy
+outside the repo gives the new message in both; the fork point `5b29352`
+gives the old one. **The change is pre-existing, introduced between
+`5b29352` and `252c2c7`.** Lesson recorded with the blocker: verify a bisect
+endpoint before trusting the bisect, especially when a worktree is reused
+across runs.
+
+**Also note:** the tooling sweep covers `tests/tooling/*.py` only. `run.sh`
+also has inline `run_case`/`reject_case` entries, which is how this one
+surfaced; the sweep is a fast filter, not a substitute for `make check`.
+
+## Phase 25 Team A A2 checkpoint at `9249c11` — 2026-10-17 (was BLOCKED on D5)
 
 **The tooling sweep is clean apart from one blocker.** `tmp/resume/all_tooling.sh`
 reports 112 of 119 passing; the seven remaining failures were the sweep
