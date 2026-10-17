@@ -1,5 +1,61 @@
 # Moss current status
 
+## Phase 25 Team A A2 checkpoint at `cb7b81b` — 2026-10-16 (NOT READY)
+
+**Done since `252c2c7`:**
+
+- `1d8193c` **A2-1:** expression inference is term-native. `inferred_expr`
+  returns a closed `TypeRef` or an explicit legacy open spelling.
+  `inferred_expr_type` is a projection of it, and `inferred_expr_term`
+  exposes the term. A dual-run probe found 0 old/new mismatches over all
+  1858 tracked `.moss` files.
+- `36a0a67` **A2-2a:** `check_function_call` decides on terms. ARCH-004: the
+  FileIO cross-crate check now compares module-v1 identities taken from
+  declarations, no longer splitting `__` symbols. Helper and method callers
+  are added to the Phase 20 test.
+- `cb7b81b` **A2-2b:** the index check, `sum`, and `iterator_element_type`
+  read `type_args` from terms, no longer splitting spellings. Enum Map keys
+  are detected by `TypeKind::Enum`, with a new negative test. The
+  field-annotation malformed-type message is made consistent; this fixes a
+  stale `run.sh` expectation.
+- New tool: `tests/tooling/corpus_verdicts.py` records and compares `moss
+  check` verdicts over every tracked `.moss` file. Each slice above has 0
+  verdict changes against `252c2c7`.
+
+**Validation:**
+
+- At `252c2c7` (frozen, clean worktree): `make` and `make examples` pass.
+  **`make check` FAILED** at `tests/tooling/check_phase21_peer_effects.py`.
+  The fixture `phase21_peer_speculation.moss:38` (`for chunk in [1]` shadows
+  parameter `chunk`) gets `UNKNOWN_SYMBOL_OR_TYPE`. The fixture passes at
+  `5b29352`, so this is a Team A block-scoping regression, now being
+  bisected.
+- The run would also have failed later at the stale `partial_arity_map_field`
+  expectation (fixed in `cb7b81b`).
+- Focused suites pass at `cb7b81b`. Full `make check` has not passed on any
+  Team A SHA yet.
+
+**Remaining (A2):**
+
+- Fix the peer-effects scoping regression; rerun full `make check`.
+- Convert the remaining spelling decisions, roughly 60 collection-prefix
+  checks:
+  - checker: ownership walk, `check_stmts` Map, declared Map keys,
+    functional/pipeline element helpers, `type_has_field`;
+  - native lowering (`gen_block`, `generated_expr_type`).
+- Convert `TypeEnv` (string map, 165 uses) to `TypeRef`.
+- Bind parameter/return annotations as terms.
+- Replace the pseudo-types with inference variables and requirements per
+  TYPE_IR_CONTRACT §§2, 4: `_generic:`, `_element:`, `_field:`,
+  `_method_value`, `callable:`, `_functional_*`, and `""`.
+- Retire the `actual_type.empty()` fallback; see the resume entry below.
+
+**Also remaining:**
+
+- A4: checked body IR. WIP `057a3a5` is isolated, and its two tests fail.
+- Independent Architect review of an exact SHA.
+- Gate 10 waits on the joint integration.
+
 ## Phase 25 Team A resume from `19f8a4f` — 2026-10-16 (NOT READY)
 
 Resumed on `phase25-g-type-core` at the restart checkpoint `19f8a4f`. No ref
