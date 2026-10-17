@@ -1,5 +1,83 @@
 # Moss current status
 
+## Phase 25 Team A — handoff for parallel splitting — 2026-10-17
+
+Written for L7 to divide the remaining work. Nothing new was started after
+`29482f2`; the branch is clean and fully pushed.
+
+### The piece currently in hand
+
+**A2 / Architect finding G-A-1: make `TypeRef` the checker's authority**, on
+`phase25-g-type-core`. Acceptance criterion: no compiler-critical type
+equality, substitution, or specialization decision may depend on splitting or
+matching display strings.
+
+Done (see *A2 conversion state* in `TEAM_A_TYPED_SEMANTIC_API.md`):
+expression inference is term-native; call arguments, index, `sum`, iterator
+and pipeline element helpers, Map-key and collection-receiver checks,
+`builtin_receiver_family`, and the native-lowering collection tests all
+decide on terms. Collection-prefix spelling tests are **76 → 23**, and the
+23 remaining are in `rust_type`/`default_value`, which are Rust emission and
+deliberately left as string work. ARCH-004's module comparison now uses
+`module-v1` identities.
+
+Remaining inside A2, in dependency order:
+
+1. `TypeEnv` is still `unordered_map<string,string>` — **169 mentions**. The
+   largest single item.
+2. The open pseudo-types become inference variables with requirements
+   (contract §§2, 4). `open_generic` (24 sites) and `callable_identity`
+   (24 sites) are already funnelled through one predicate each, so this is a
+   single-point change rather than a sweep; `contains_internal_placeholder`
+   has 71 call sites.
+3. Retire the unknown-argument fallback in `check_function_call`. Depends on
+   2: deleting it outright rejects three valid repository programs.
+4. Bind parameter and return annotations as terms.
+
+### The constraint that governs any split
+
+**`src/moss.cpp` is one 39,356-line file and nearly all compiler work lands
+in it.** This session's 38 commits are +619/−381 there. The next largest
+source file is `interpreter.hpp` at 2,038 lines. A4's WIP commit `057a3a5`
+also edits `src/moss.cpp`.
+
+So **A2 and A4 cannot be two concurrent writers.** Whoever edits
+`src/moss.cpp` must be a single writer at a time, or the streams will spend
+their time merging a file where unrelated edits sit lines apart. The
+validation harnesses below exist partly because diffs in this file do not
+show when an unchanged line changes meaning (see `4750088`, where a `for`
+loop's scope exit silently became destructive).
+
+### What can run in parallel without touching `src/moss.cpp`
+
+- **Defect hunting and reduction.** Eight `make check` blockers were found
+  this session, six of them pre-existing. A reader can run the suite,
+  reduce failures to minimal reproducers and diagnose them, handing fixes to
+  the single `src/moss.cpp` writer. This is the highest-value parallel
+  stream and it contends with nothing.
+- **Validation tooling** (`tests/tooling/*.py`): extending
+  `corpus_verdicts.py`, `check_no_internal_type_leak.py`, and the disposable
+  `tmp/resume/all_tooling.sh` sweep.
+- **Independent Architect review** of a frozen SHA: read-only.
+- **Contract and documentation** work under `docs/phase25`.
+- **Team B / Team I items** named in `TEAM_A_TYPED_SEMANTIC_API.md`: `.mossi`
+  ordered member-argument records, imported observable effects, ABI-v10
+  binary records, runtime linkage and `MapKeyProof`, gate 10.
+
+### Cautions for whoever picks this up
+
+- `moss check` writes a semantic cache beside each project it checks. Run
+  corpora from a private export, never the worktree, or fixtures that
+  declare an exact file inventory (the agent benchmark starters) break.
+- Verify a `git bisect` endpoint before trusting the result. Two bisects
+  this session were wrong: one landed on a documentation-only commit, and
+  one inherited a `good` endpoint that was already bad because a reused
+  worktree had been rebuilt to a different commit.
+- Curated suites are not sufficient. Use `corpus_verdicts.py` (verdicts over
+  all 1,862 tracked sources, `--emit` also hashes generated Rust) **and** the
+  tooling sweep; neither alone caught every regression here, because some
+  tests synthesize fixtures in temp directories that no corpus covers.
+
 ## Phase 25 Team A A2 checkpoint at `56ca3d8` — 2026-10-17 (NOT READY)
 
 **Eighth blocker fixed at `56ca3d8`.** The body prepass reported "indexed
