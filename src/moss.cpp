@@ -6885,6 +6885,7 @@ class Checker {
     // spelling. Existing terms remain shared and keep their monotype.
     struct BlockScope {
       int indent;
+      int line;
       Stmt::Kind kind;
       std::unordered_map<string, moss::TypeRef> incoming_locals;
       TypeEnv incoming_scan;
@@ -6911,7 +6912,7 @@ class Checker {
             auto other = locals.find(name);
             if (other == locals.end()) continue;
             if (!solver.unify(then_term, other->second))
-              err(next ? next->line : 0,
+              err(scope.line,
                   "branch types conflict for binding '" + name + "'",
                   "TYPE_MISMATCH");
             scope.incoming_locals.emplace(name, then_term);
@@ -6934,7 +6935,8 @@ class Checker {
       if (statement.kind == Stmt::Kind::If ||
           statement.kind == Stmt::Kind::While ||
           statement.kind == Stmt::Kind::For)
-        block_scopes.push_back({statement.indent, statement.kind, locals, scan,
+        block_scopes.push_back({statement.indent, statement.line,
+                                statement.kind, locals, scan,
                                 {}, false});
       body_types.locals_at_statement.emplace(&statement, locals);
       if (statement.kind == Stmt::Kind::For) {
