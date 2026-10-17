@@ -490,21 +490,6 @@ static Effect specialized_iterator_parameter_effect(
   return effect;
 }
 
-// Map built-ins need the concrete key/value types in the checker and native
-// backend. Keep that decoding in one place so their type and lowering rules
-// cannot drift apart.
-static std::optional<std::pair<string, string>> map_key_value_types(
-    const string& type) {
-  string concrete = canonical_type_name(type);
-  if (!starts_with(concrete, "map[") || !ends_with(concrete, "]"))
-    return std::nullopt;
-  auto parts = split_top_level(concrete.substr(4, concrete.size() - 5), ',');
-  if (parts.size() != 2) return std::nullopt;
-  return std::make_pair(trim(parts[0]), trim(parts[1]));
-}
-
-enum class BuiltinReceiverFamily { Vector, Map, Queue, String };
-
 // The structural term of a declared or projected type spelling, whether or
 // not it is closed: `map` and `vector[_generic:x]` parse here.
 static moss::TypeRef parsed_type(const string& spelling) {
@@ -550,6 +535,21 @@ static bool bare_matches_applied(const string& bare, const string& applied) {
          open->type_args.empty() && declared->kind == moss::TypeKind::Builtin &&
          !declared->type_args.empty() && declared->name == open->name;
 }
+
+// Map built-ins need the concrete key/value types in the checker and native
+// backend. Keep that decoding in one place so their type and lowering rules
+// cannot drift apart.
+static std::optional<std::pair<string, string>> map_key_value_types(
+    const string& type) {
+  const auto term = parsed_type(type);
+  if (!applied_builtin(term, {"map"}) || term->type_args.size() != 2)
+    return std::nullopt;
+  return std::make_pair(term->type_args[0]->to_canonical_string(),
+                        term->type_args[1]->to_canonical_string());
+}
+
+enum class BuiltinReceiverFamily { Vector, Map, Queue, String };
+
 
 struct BuiltinOperationDescriptor {
   BuiltinReceiverFamily receiver;
@@ -776,6 +776,8 @@ static std::optional<string> typed_empty_vector_constructor(const string& text) 
   vector<string> args;
   if (!parse_simple_call(text, callee, args) || !args.empty()) return std::nullopt;
   string type = canonical_type_name(callee);
+  // Recognize the constructor spelling only; INVALID_TYPED_VECTOR_CONSTRUCTOR
+  // reports a wrong arity later, so this must not reject it here.
   if (!starts_with(type, "vector[") || !ends_with(type, "]"))
     return std::nullopt;
   return type;
@@ -4814,7 +4816,7 @@ class Checker {
 
     FunctionalPipelineState state;
     state.element_type = *element;
-    state.output_type = starts_with(*source_type, "vector[")
+    state.output_type = applied_builtin(parsed_type(*source_type), {"vector"})
         ? *source_type : "_functional_collection:" + state.element_type;
     if (!parsed) return state;
     for (const auto& stage : parsed->stages) {
@@ -5566,8 +5568,9 @@ class Checker {
             if (container && container->kind == moss::TypeKind::Builtin &&
                 container->name == "vector" && container->type_args.size() == 1)
               return InferredExpr{container->type_args[0], {}};
-            if (starts_with(it->second, "vector[") && ends_with(it->second, "]"))
-              return inferred_leaf(trim(it->second.substr(7, it->second.size() - 8)));
+            if (const auto bound = parsed_type(it->second);
+                applied_builtin(bound, {"vector"}) && bound->type_args.size() == 1)
+              return inferred_leaf(bound->type_args[0]->to_canonical_string());
           }
         }
         if (starts_with(r, "_field:")) {
