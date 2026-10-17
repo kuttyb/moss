@@ -14923,9 +14923,15 @@ class Checker {
     vector<moss::TypeRef> variables;
     for (uint32_t ordinal = 0; ordinal < summary.bound_variable_count; ++ordinal)
       variables.push_back(solver.fresh(1));
+    // A named trait parameter is a predicate on each concrete argument, not
+    // a nominal type to unify with it. The summary reuses this exact TypeRef
+    // for member requirements, so bind by term identity per parameter.
+    std::unordered_map<const moss::Type*, moss::TypeRef> trait_bindings;
     std::function<moss::TypeRef(const moss::TypeRef&)> instantiate =
         [&](const moss::TypeRef& source) -> moss::TypeRef {
       if (!source) return nullptr;
+      auto trait_binding = trait_bindings.find(source.get());
+      if (trait_binding != trait_bindings.end()) return trait_binding->second;
       if (source->kind == moss::TypeKind::InferenceVar)
         return source->var_id.session_id == 0 &&
                source->var_id.ordinal < variables.size()
@@ -14950,8 +14956,21 @@ class Checker {
           "SOURCE_FREE_SPECIALIZATION_MISMATCH");
     for (size_t index = 0; index < parameter_types.size(); ++index) {
       auto concrete = moss::Type::parse_canonical(parameter_types[index]);
+      if (!concrete)
+        err(line, "member summary has an invalid concrete argument type",
+            "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+      if (traits_.count(function.params[index].type)) {
+        string reason;
+        if (!trait_conforms(parameter_types[index],
+                            function.params[index].type, &reason))
+          err(line, "concrete argument does not satisfy member summary trait '" +
+              function.params[index].type + "': " + reason,
+              "TYPE_MISMATCH");
+        trait_bindings.emplace(summary.parameter_types[index].get(), *concrete);
+        continue;
+      }
       auto formal = instantiate(summary.parameter_types[index]);
-      if (!concrete || !formal || !solver.unify(*concrete, formal))
+      if (!formal || !solver.unify(*concrete, formal))
         err(line, "member summary parameter type changed at specialization",
             "SOURCE_FREE_SPECIALIZATION_MISMATCH");
     }

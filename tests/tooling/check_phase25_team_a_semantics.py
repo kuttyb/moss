@@ -354,6 +354,42 @@ fn main():
                    "builtin:string.length" for entry in length_specs), length_specs
         print("PASS nested and pipeline member requirements close in the solver", flush=True)
 
+        trait_member = source(scratch, "distinct_trait_member_bindings", '''trait Costed:
+  fn cost() -> Int
+
+type Alpha:
+  units: Int
+  fn cost():
+    return units
+
+type Beta:
+  units: Int
+  fn cost():
+    return units * 2
+
+fn total(left: Costed, right: Costed):
+  return left.cost() + right.cost()
+
+fn main():
+  echo total(Alpha(units: 3), Beta(units: 4))
+''')
+        parity(trait_member, scratch, "11\n")
+        inspected = run(MOSS, "inspect", "main", "--source", trait_member,
+                        "--json")
+        assert inspected.returncode == 0, (inspected.stdout, inspected.stderr)
+        typed = json.loads(inspected.stdout)["result"]["typed_semantic_v1"]
+        total_specs = [entry for entry in typed["specializations"]
+                       if entry["callable_id"].endswith(":fn:total")]
+        assert len(total_specs) == 1, total_specs
+        members = total_specs[0]["member_requirements"]
+        assert [entry["selected_callable_id"] for entry in members] == [
+            "method:Alpha.cost", "method:Beta.cost"], members
+        assert members[0]["receiver"]["id"] != members[1]["receiver"]["id"], members
+        bad_trait = source(scratch, "invalid_trait_member_binding",
+            trait_member.read_text().replace("Beta(units: 4)", "4"))
+        checked(bad_trait, "TYPE_MISMATCH")
+        print("PASS each trait formal binds its own conforming nominal type", flush=True)
+
         relay = source(scratch, "transitive_open_result", '''fn fresh():
   return []
 
