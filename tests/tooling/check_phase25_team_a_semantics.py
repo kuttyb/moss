@@ -251,6 +251,26 @@ fn main():
         parity(zero_loop, scratch, "1\n")
         print("PASS zero-iteration loop type constraints are static", flush=True)
 
+        branch_join = source(scratch, "open_collection_branch_join", '''fn main():
+  var values = []
+  if true:
+    values = [1]
+  else:
+    values = []
+  echo values[0]
+''')
+        parity(branch_join, scratch, "1\n")
+        nested_join = source(scratch, "nested_collection_branch_join", '''fn main():
+  var values = []
+  if true:
+    values.push([1])
+  else:
+    values.push([2])
+  echo values[0][0]
+''')
+        parity(nested_join, scratch, "1\n")
+        print("PASS open and nested collection branch joins use checked types", flush=True)
+
         range_loop = source(scratch, "range_loop", '''fn main():
   for index in range(0, 2):
     echo index

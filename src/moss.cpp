@@ -5243,17 +5243,42 @@ class Checker {
     return !type.empty() && !contains_internal_placeholder(type);
   }
 
+  static std::optional<string> refine_bare_collection(
+      const string& current, const vector<string>& argument_names) {
+    auto parsed = moss::Type::parse_canonical(canonical_type_name(current));
+    if (!parsed || (*parsed)->kind != moss::TypeKind::Builtin ||
+        !(*parsed)->type_args.empty()) return std::nullopt;
+    auto arity = moss::Type::collection_arity((*parsed)->name);
+    if (!arity || *arity != argument_names.size()) return std::nullopt;
+    moss::TypeSolver solver(1);
+    vector<moss::TypeRef> open_arguments;
+    vector<moss::TypeRef> concrete_arguments;
+    for (const auto& name : argument_names) {
+      auto argument = moss::Type::parse_canonical(canonical_type_name(name));
+      if (!argument || !(*argument)->is_closed()) return std::nullopt;
+      open_arguments.push_back(solver.fresh(0));
+      concrete_arguments.push_back(*argument);
+    }
+    auto open = moss::Type::builtin((*parsed)->name, std::move(open_arguments));
+    auto concrete = moss::Type::builtin((*parsed)->name,
+                                        std::move(concrete_arguments));
+    if (!solver.unify(open, concrete)) return std::nullopt;
+    return solver.resolve(open)->to_canonical_string();
+  }
+
   void refine_map_index_assignment_type(const string& target,
                                         const string& value,
                                         TypeEnv& env) const {
     string base, index;
     if (!parse_index(target, base, index)) return;
     auto container = env.find(base);
-    if (container == env.end() || container->second != "map") return;
+    if (container == env.end()) return;
     auto key_type = inferred_expr_type(index, env);
     auto value_type = inferred_expr_type(value, env);
     if (key_type && value_type)
-      container->second = "map[" + *key_type + "," + *value_type + "]";
+      if (auto refined = refine_bare_collection(container->second,
+                                                 {*key_type, *value_type}))
+        container->second = *refined;
   }
 
   // This is the common control-flow join for inference, ordinary checking,
@@ -5265,44 +5290,71 @@ class Checker {
     TypeEnv merged;
     for (const auto& entry : paths.front()) {
       const string& binding = entry.first;
-      string agreed = entry.second;
       bool present_everywhere = true;
+      for (size_t index = 1; index < paths.size(); ++index)
+        if (!paths[index].count(binding)) present_everywhere = false;
+      if (!present_everywhere) continue;
+
+      // A binding has one type across the control-flow join. Fresh variables
+      // represent only genuinely open collection slots, including nested ones;
+      // a use on another path constrains that same binding's term.
+      moss::TypeSolver solver(1);
+      std::function<moss::TypeRef(const moss::TypeRef&)> open_slots =
+          [&](const moss::TypeRef& type) -> moss::TypeRef {
+        if (type->kind != moss::TypeKind::Builtin) return type;
+        vector<moss::TypeRef> args;
+        if (auto arity = moss::Type::collection_arity(type->name);
+            arity && type->type_args.empty()) {
+          for (size_t i = 0; i < *arity; ++i)
+            args.push_back(solver.fresh(0));
+        } else {
+          for (const auto& arg : type->type_args)
+            args.push_back(open_slots(arg));
+        }
+        return moss::Type::builtin(type->name, std::move(args));
+      };
+      moss::TypeRef agreed;
       bool disagrees = false;
-      for (size_t index = 1; index < paths.size(); ++index) {
-        auto found = paths[index].find(binding);
-        if (found == paths[index].end()) {
-          present_everywhere = false;
+      string conflicting;
+      for (const auto& path : paths) {
+        const string& spelling = path.at(binding);
+        auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
+        if (!parsed) {
+          if (spelling != entry.second) disagrees = true;
+          continue;
+        }
+        auto candidate = open_slots(*parsed);
+        if (!agreed) agreed = candidate;
+        else if (!solver.unify(agreed, candidate)) {
+          disagrees = true;
+          conflicting = spelling;
           break;
         }
-        if (!same_type(agreed, found->second)) {
-          string agreed_canon = canonical_type_name(agreed);
-          string found_canon = canonical_type_name(found->second);
-          bool agreed_unspec = agreed_canon == "vector" || agreed_canon == "queue" || agreed_canon == "map";
-          bool found_unspec = found_canon == "vector" || found_canon == "queue" || found_canon == "map";
-          if (agreed_unspec && starts_with(found_canon, agreed_canon + "[")) {
-            agreed = found->second;
-            continue;
-          }
-          if (found_unspec && starts_with(agreed_canon, found_canon + "[")) {
-            continue;
-          }
-          if (reject_conflicts && concrete_environment_type(agreed) &&
-              concrete_environment_type(found->second)) {
-            string left = canonical_type_name(agreed);
-            string right = canonical_type_name(found->second);
-            if (domains_.count(left) && domains_.count(right))
-              err(line, "binding '" + binding +
-                  "' has conflicting domain types across control-flow paths: " +
-                  left + " and " + right);
-            err(line, "binding '" + binding +
-                "' has conflicting concrete types across control-flow paths: " +
-                left + " and " + right);
-          }
-          disagrees = true;
-        }
       }
-      if (present_everywhere)
-        merged[binding] = disagrees ? "_value" : canonical_type_name(agreed);
+      if (disagrees) {
+        if (reject_conflicts && !conflicting.empty() &&
+            concrete_environment_type(entry.second) &&
+            concrete_environment_type(conflicting)) {
+          string left = canonical_type_name(entry.second);
+          string right = canonical_type_name(conflicting);
+          if (domains_.count(left) && domains_.count(right))
+            err(line, "binding '" + binding +
+                "' has conflicting domain types across control-flow paths: " +
+                left + " and " + right);
+          err(line, "binding '" + binding +
+              "' has conflicting concrete types across control-flow paths: " +
+              left + " and " + right);
+        }
+        merged[binding] = "_value";
+        continue;
+      }
+      if (agreed) {
+        auto resolved = solver.resolve(agreed);
+        merged[binding] = resolved->is_closed()
+            ? resolved->to_canonical_string() : canonical_type_name(entry.second);
+      } else {
+        merged[binding] = canonical_type_name(entry.second);
+      }
     }
     return merged;
   }
@@ -5348,9 +5400,11 @@ class Checker {
             auto solved = solved_collections.find(statement.a);
             if (solved != solved_collections.end()) cinf = solved->second;
           }
+          auto candidate = moss::Type::parse_canonical(cinf);
           if (statement.kind == Stmt::Kind::Assign && existing != env.end() &&
-              (cinf == "vector" || cinf == "queue" || cinf == "map") &&
-              starts_with(existing->second, cinf + "[")) {
+              candidate && (*candidate)->kind == moss::TypeKind::Builtin &&
+              !(*candidate)->is_closed() &&
+              is_type_compatible(existing->second, cinf)) {
             // Keep specialized container type
           } else {
             env[statement.a] = cinf;
@@ -5365,22 +5419,26 @@ class Checker {
         if (parse_index(statement.a, base, index_expression)) {
           auto container = env.find(base);
           auto value_type = inferred_expr_type(statement.b, env);
-          if (container != env.end() && value_type && container->second == "map") {
+          if (container != env.end() && value_type) {
             auto key_type = inferred_expr_type(index_expression, env);
             if (key_type) {
-              container->second = "map[" + *key_type + "," + *value_type + "]";
-              if (record_semantic_types) {
-                for (auto& prior : const_cast<vector<Stmt>&>(statements))
-                  if (prior.a == base && prior.b == "Map()") {
-                    prior.semantic_type = container->second;
-                    if (!join_context.empty())
-                      prior.semantic_types_by_context[join_context] = container->second;
-                  }
+              auto refined = refine_bare_collection(container->second,
+                                                     {*key_type, *value_type});
+              if (refined) {
+                container->second = *refined;
+                if (record_semantic_types) {
+                  for (auto& prior : const_cast<vector<Stmt>&>(statements))
+                    if (prior.a == base && prior.b == "Map()") {
+                      prior.semantic_type = container->second;
+                      if (!join_context.empty())
+                        prior.semantic_types_by_context[join_context] = container->second;
+                    }
+                }
               }
             }
-          } else if (container != env.end() && value_type &&
-                     (container->second == "queue" || container->second == "vector")) {
-            container->second += "[" + *value_type + "]";
+            if (auto refined = refine_bare_collection(container->second,
+                                                       {*value_type}))
+              container->second = *refined;
           }
         }
       }
@@ -5407,19 +5465,21 @@ class Checker {
         statement.b == "push" && statement.args.size() == 1) {
       auto container = env.find(statement.a);
       auto argument = inferred_expr_type(statement.args.front(), env);
-      if (container != env.end() && argument &&
-          (container->second == "vector" || container->second == "queue")) {
-        container->second += "[" + *argument + "]";
-        if (record_semantic_types) {
-          for (auto& prior : const_cast<vector<Stmt>&>(statements)) {
-            if (prior.a == statement.a &&
-                (prior.b == "[]" || prior.b == "Queue()" ||
-                 parse_vector_literal(prior.b).has_value() ||
-                 starts_with(prior.semantic_type, "vector") ||
-                 starts_with(prior.semantic_type, "queue"))) {
-              prior.semantic_type = container->second;
-              if (!join_context.empty())
-                prior.semantic_types_by_context[join_context] = container->second;
+      if (container != env.end() && argument) {
+        if (auto refined = refine_bare_collection(container->second,
+                                                   {*argument})) {
+          container->second = *refined;
+          if (record_semantic_types) {
+            for (auto& prior : const_cast<vector<Stmt>&>(statements)) {
+              if (prior.a == statement.a &&
+                  (prior.b == "[]" || prior.b == "Queue()" ||
+                   parse_vector_literal(prior.b).has_value() ||
+                   starts_with(prior.semantic_type, "vector") ||
+                   starts_with(prior.semantic_type, "queue"))) {
+                prior.semantic_type = container->second;
+                if (!join_context.empty())
+                  prior.semantic_types_by_context[join_context] = container->second;
+              }
             }
           }
         }
@@ -5657,16 +5717,8 @@ class Checker {
                                     visitor, reject_conflicts, record_join_types,
                                     record_semantic_types, join_context, solved_collections);
         body_env.erase(statement.a);
-        TypeEnv joined;
-        for (const auto& entry : incoming) {
-          auto found = body_env.find(entry.first);
-          if (found != body_env.end()) {
-            joined[entry.first] = found->second;
-          } else {
-            joined[entry.first] = entry.second;
-          }
-        }
-        env = std::move(joined);
+        env = merge_type_environments({incoming, body_env}, statement.line,
+                                      reject_conflicts);
         if (record_join_types) {
           const_cast<Stmt&>(statement).joined_types = env;
           if (!join_context.empty())
