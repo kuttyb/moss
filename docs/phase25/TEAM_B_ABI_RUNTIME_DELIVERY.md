@@ -32,7 +32,18 @@ The implementation strictly maintains `MOSS_STAGED_ABI=v10` gating so production
   - Strict validation of canonical record ordering (must sort strictly by record ID in every section).
   - Rejection of dangling provenance references, unregistered private dependencies, malformed line ranges, and conflicting key proofs.
 
-### 2.2 Workstream B2 — Shared `moss_runtime` Infrastructure
+### 2.2 Workstream B2 — Shared `moss_runtime` Infrastructure & Deterministic Caching
+- **Deterministic Content-Addressed Artifact Resolution (`src/moss_runtime_linkage.hpp`):**
+  - Replaced filesystem timestamp checks with composite SHA-256 build key (`compute_runtime_build_key`) over:
+    - Runtime crate identity and version
+    - Exact SHA-256 content hashes of all runtime source files (`src/*.rs`, `Cargo.toml`)
+    - Rust toolchain fingerprint (`rustc -vV` release, commit-hash, host)
+    - Target architecture (`target_arch`)
+    - Profile (`debug` vs `release`)
+    - Compilation flags
+  - Sidecar metadata manifest (`moss_runtime-<profile>-<short_id>.meta`) verifies `artifact_hash`.
+  - Cache corruption detection: automatically detects corrupted or tampered `.rlib` files and performs safe, deterministic rebuilds.
+  - Safe process execution: Replaced shell invocation with `run_command_safe` using direct `fork()`/`execvp()` and non-blocking `poll()` on stdout/stderr pipes, eliminating shell injection and pipe buffer deadlocks.
 - **Shared Rust Crate (`runtime/moss_runtime/`):**
   - `MossMap<K, V>`: Bucket-indexed deterministic hash map with caller-provided static specialization functions (`insert_with`, `get_with`, `get_mut_with`, `remove_with`, `contains_key_with`, `clear`, `keys`, `values`).
   - `MossSet<K>`: Set representation sharing the Map kernel.
@@ -48,22 +59,24 @@ The implementation strictly maintains `MOSS_STAGED_ABI=v10` gating so production
   - Enforces zero observable effect bits and empty effect tags.
   - Coherence verification (`validate_key_proof_coherence`): Conflicting equality or hash proofs for the same key type are rejected with `KEY_PROOF_COHERENCE_MISMATCH`.
 
-### 2.4 Workstream B4 — Source-Free ABI Verification (The 11 Behaviors)
-Every behavior from Directive §5 is verified and categorized by proof tier:
+### 2.4 Workstream B4 — Source-Free ABI Verification (The 11 Behaviors Genuinely Executable)
+Every behavior from Directive §5 is verified with genuine executable assertions and explicitly categorized by proof tier in `tests/phase25/check_phase25_b_acceptance.py`:
 
 | # | Behavior | Proof Tier & Evidence | Verdict |
 |---|---|---|---|
-| 1 | Provider-owned generic record identity | Codec: `abi_v10_staging.cpp`<br>Rust: `provider.rs` -> `consumer_a.rs` / `b.rs`<br>Moss: G2 Gate 1, 2 | **PASS** |
-| 2 | Two independently compiled consumers using same provider | Rust: `consumer_a.rlib` & `consumer_b.rlib` linking `provider.rlib`<br>Moss: G2 Gate 2 | **PASS** |
-| 3 | Provider source removed before consumer compilation | Rust: `provider_isolated.rs` deleted before consumer build (`check_runtime.py`)<br>Moss: G2 Gate 1, 2, 3 | **PASS** |
-| 4 | Imported generic summaries preserving open results | Codec: `OpenCallableSummary` validation<br>Moss: G2 Gate 4 | **PASS** |
-| 5 | Imported requirement and effect provenance | Codec: `SourceProvenance` and `validate_summary_nonweakening`<br>Moss: G2 Gate 5 | **PASS** |
-| 6 | Wrong package, module, type or provider artifact rejection | Codec: `ModuleRecord` & header validation<br>Moss: G2 Gate 6 | **PASS** |
-| 7 | ABI-v9/v10 incompatibility detection | Codec: `SOURCE_FREE_ABI_REBUILD_REQUIRED`<br>Moss: G2 Gate 7 | **PASS** |
-| 8 | Runtime identity mismatch | Codec/Linkage: `verify_runtime_compatibility`<br>Rust: cross-crate SVH mismatch rejection | **PASS** |
-| 9 | Metadata mutation and forged proof rejection | Codec: `abi_v10_adversarial.cpp`<br>Moss: G2 Gate 9 | **PASS** |
-| 10 | Correct cache invalidation after layout/semantic changes | Linkage: `compute_cache_dependency_key`<br>Moss: G2 Gate 10 | **PASS (Linkage)**<br>*PENDING (Gate 10)* |
-| 11 | Native Debug and Native Release compatibility | Rust: `-g` and `-O` verified in `check_runtime.py`<br>Moss: G2 Gate 11 | **PASS** |
+| 1 | Provider-owned generic record identity | Codec: `abi_v10_staging.cpp`<br>Runtime: `check_runtime.py`<br>Moss: G2 Gate 9 Box[T] -> Box[Int] | **PASS — Codec**<br>**PASS — Runtime**<br>**PASS — Moss** |
+| 2 | Two independently compiled consumers using same provider | Runtime: `check_runtime.py` (`consumer_a` & `b`)<br>Moss: G2 Gate 9 (`g2consumera` & `g2consumerb`) | **PASS — Runtime**<br>**PASS — Moss** |
+| 3 | Provider source removed before consumer compilation | Runtime: `check_runtime.py` (`unlink()` verified)<br>Moss: G2 Gate 9 (`shutil.rmtree` verified) | **PASS — Runtime**<br>**PASS — Moss** |
+| 4 | Imported generic summaries preserving open results | Codec: `OpenCallableSummary` roundtrip<br>Moss: G2 Gate 4 (`g4_source_free`) | **PASS — Codec**<br>**PASS — Moss** |
+| 5 | Imported requirement and effect provenance | Codec: `SourceProvenance` & non-weakening<br>Moss: G2 Gate 5 (related provenance notes) | **PASS — Codec**<br>**PASS — Moss** |
+| 6 | Wrong package, module, type or provider artifact rejection | Codec: `validate_complete_interface`<br>Moss: G2 Gate 9 (forged `module_id` rejection) | **PASS — Codec**<br>**PASS — Moss** |
+| 7 | ABI-v9/v10 incompatibility detection | Codec: `SOURCE_FREE_ABI_REBUILD_REQUIRED`<br>Moss: G2 Gate 9 (v9 header rejection) | **PASS — Codec**<br>**PASS — Moss** |
+| 8 | Runtime identity mismatch | Codec: `verify_runtime_compatibility`<br>Runtime: `check_runtime.py` (forged runtime rejection) | **PASS — Codec**<br>**PASS — Runtime** |
+| 9 | Metadata mutation and forged proof rejection | Codec: `abi_v10_adversarial.cpp`<br>Moss: G2 Gate 9 (bit-flip & digest mismatch) | **PASS — Codec**<br>**PASS — Moss** |
+| 10 | Correct cache invalidation after layout/semantic changes | Codec: `compute_cache_dependency_key` & build key<br>Integration: G2 Gate 10 interim contract | **PASS — Codec**<br>***PENDING — Integration*** |
+| 11 | Native Debug and Native Release compatibility | Runtime: `check_runtime.py` (-g and -O)<br>Moss: G2 Gate 11 (debug run & Fast Debug rejection) | **PASS — Runtime**<br>**PASS — Moss** |
+
+Total verification checks: 22 PASS, 1 PENDING (Gate 10), 0 FAIL.
 
 ### 2.5 Workstream B5 — Compiler-Facing Linkage Interfaces
 - **Dedicated Implementation Unit (`src/moss_runtime_linkage.hpp`):**

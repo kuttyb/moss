@@ -1187,36 +1187,62 @@ inline void validate_complete_interface(
     validate_key_proof_coherence(key_proof_records);
   }
 
-  if (!known_provenances.empty()) {
-    for (const auto& pair : known_templates) {
+  // Referential integrity checks across templates, methods, summaries, and provenance
+  for (const auto& pair : known_templates) {
+    if (!pair.second.provenance_id.empty()) {
       require(known_provenances.count(pair.second.provenance_id) > 0,
               "SOURCE_FREE_CONTRACT_INVALID",
               "NominalTemplate references unknown provenance ID: " + pair.second.provenance_id);
-      for (const auto& f : pair.second.fields) {
+    }
+    for (const auto& f : pair.second.fields) {
+      if (!f.provenance_id.empty()) {
         require(known_provenances.count(f.provenance_id) > 0,
                 "SOURCE_FREE_CONTRACT_INVALID",
                 "Field references unknown provenance ID: " + f.provenance_id);
       }
-      for (const auto& mid : pair.second.method_template_ids) {
-        bool method_found = false;
-        for (const auto& m : public_methods) {
-          if (m.method_id == mid) { method_found = true; break; }
-        }
-        if (!method_found && private_methods.count(mid) > 0) method_found = true;
-        require(method_found, "SOURCE_FREE_CONTRACT_INVALID",
-                "NominalTemplate references unknown method template: " + mid);
-      }
     }
-    for (const auto& sum : public_summaries) {
+    for (const auto& mid : pair.second.method_template_ids) {
+      bool method_found = false;
+      for (const auto& m : public_methods) {
+        if (m.method_id == mid) { method_found = true; break; }
+      }
+      if (!method_found && private_methods.count(mid) > 0) method_found = true;
+      require(method_found, "SOURCE_FREE_CONTRACT_INVALID",
+              "NominalTemplate references unknown method template: " + mid);
+    }
+  }
+
+  for (const auto& sum : public_summaries) {
+    if (!sum.provenance_id.empty()) {
       require(known_provenances.count(sum.provenance_id) > 0,
               "SOURCE_FREE_CONTRACT_INVALID",
               "Summary references unknown provenance ID: " + sum.provenance_id);
-      for (const auto& req : sum.requirements) {
+    }
+    for (const auto& req : sum.requirements) {
+      if (!req.provenance_id.empty()) {
         require(known_provenances.count(req.provenance_id) > 0,
                 "SOURCE_FREE_CONTRACT_INVALID",
                 "Requirement references unknown provenance ID: " + req.provenance_id);
       }
     }
+  }
+
+  for (const auto& m : public_methods) {
+    if (!m.provenance_id.empty()) {
+      require(known_provenances.count(m.provenance_id) > 0,
+              "SOURCE_FREE_CONTRACT_INVALID",
+              "MethodTemplate references unknown provenance ID: " + m.provenance_id);
+    }
+    for (const auto& req : m.requirements) {
+      if (!req.provenance_id.empty()) {
+        require(known_provenances.count(req.provenance_id) > 0,
+                "SOURCE_FREE_CONTRACT_INVALID",
+                "Method requirement references unknown provenance ID: " + req.provenance_id);
+      }
+    }
+    require(known_templates.count(m.template_id) > 0,
+            "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+            "MethodTemplate references unknown template ID: " + m.template_id);
   }
 }
 

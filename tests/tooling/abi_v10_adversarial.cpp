@@ -1,4 +1,5 @@
 #include "abi_v10_records.hpp"
+#include "moss_runtime_linkage.hpp"
 
 #include <cassert>
 #include <iostream>
@@ -12,6 +13,9 @@ void expect_error(Action&& action, const std::string& code) {
   try {
     std::forward<Action>(action)();
   } catch (const Error& error) {
+    if (error.code != code) {
+      std::cerr << "Expected error code '" << code << "', got '" << error.code << "': " << error.what() << "\n";
+    }
     assert(error.code == code);
     return;
   }
@@ -246,20 +250,173 @@ int main() {
   expect_error([&] { validate_complete_interface(sealed_bad_dep); },
                "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING");
 
-  // Whole-interface validation with missing provenance reference
+  // Test dangling provenance when provenance section is empty
   Interface iface_bad_prov = iface;
-  iface_bad_prov.provenance.clear(); // remove provenance record
-  summary_with_dep.dependencies.clear();
-  iface_bad_prov.semantic_contract = {summary_record(summary_with_dep)};
+  Summary valid_summary = valid;
+  valid_summary.dependencies.clear();
+  valid_summary.provenance_id = prov.provenance_id;
+  valid_summary.requirements[0].provenance_id = prov.provenance_id;
+  valid_summary.requirements[1].provenance_id = prov.provenance_id;
+  iface_bad_prov.semantic_contract = {summary_record(valid_summary)};
+  iface_bad_prov.provenance.clear();
   const auto sealed_bad_prov = decode(encode(iface_bad_prov));
-  // Without provenance record, summary has dangling provenance ID
-  // When provenance is non-empty, dangling check triggers
+  expect_error([&] { validate_complete_interface(sealed_bad_prov); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+
   SourceProvenance dummy_prov = prov;
   dummy_prov.provenance_id = "provenance:other:2";
-  iface_bad_prov.provenance.push_back(provenance_record(dummy_prov));
+  iface_bad_prov.provenance = {provenance_record(dummy_prov)};
   const auto sealed_bad_prov2 = decode(encode(iface_bad_prov));
   expect_error([&] { validate_complete_interface(sealed_bad_prov2); },
                "SOURCE_FREE_CONTRACT_INVALID");
+
+  // Duplicate records within a section
+  Interface iface_dup = iface;
+  iface_dup.semantic_contract = {summary_record(summary_with_dep), summary_record(summary_with_dep)};
+  expect_error([&] { (void)encode(iface_dup); }, "SOURCE_FREE_CONTRACT_INVALID");
+
+  // Out of order records within a section
+  Record rec_b{"sha256:" + std::string(64, 'b'), "payload"};
+  Record rec_a{"sha256:" + std::string(64, 'a'), "payload"};
+  Interface iface_ooo = iface;
+  iface_ooo.semantic_contract = {rec_b, rec_a};
+  expect_error([&] { (void)encode(iface_ooo); }, "SOURCE_FREE_CONTRACT_INVALID");
+
+  // Bound variable escaping scope
+  WireType esc_var{WireTypeKind::BoundVar, "", {}, 5};
+  expect_error([&] { (void)type_bytes(esc_var, 2); }, "SOURCE_FREE_SUMMARY_INVALID");
+
+  // Bound variable in closed ConcreteInstance
+  ConcreteInstance ci;
+  ci.template_id = "sha256:" + std::string(64, '1');
+  ci.substitution = {esc_var};
+  expect_error([&] { (void)instance_key(ci); }, "SOURCE_FREE_SUMMARY_INVALID");
+
+  // Truncated wire payload
+  const auto full_pl = summary_record(summary_with_dep).payload;
+  expect_error([&] { (void)read_summary(full_pl.substr(0, 10)); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+
+  // Trailing data on record payload
+  expect_error([&] { (void)read_summary(full_pl + "trailing"); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+
+  // MethodTemplate referencing unknown template ID
+  MethodTemplate mt;
+  mt.method_id = "method:unattached";
+  mt.template_id = "sha256:" + std::string(64, '9');
+  mt.method_name = "orphan";
+  mt.provenance_id = prov.provenance_id;
+  Interface iface_bad_mt = iface;
+  iface_bad_mt.semantic_contract = {method_template_record(mt)};
+  const auto sealed_bad_mt = decode(encode(iface_bad_mt));
+  expect_error([&] { validate_complete_interface(sealed_bad_mt); },
+               "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+
+  // Corrupted rlib archive and mismatched marker
+  auto archive_with_marker = [](const std::string& marker, bool metadata = false) {
+    auto member = marker;
+    std::string header(60, ' ');
+    const auto name = metadata ? "provider.rmeta/" : "provider.o/";
+    header.replace(0, std::char_traits<char>::length(name), name);
+    header.replace(48, std::to_string(member.size()).size(),
+                   std::to_string(member.size()));
+    header.replace(58, 2, "`\n");
+    return "!<arch>\n" + header + member + (member.size() & 1 ? "\n" : "");
+  };
+
+  expect_error([&] { validate_complete_interface(sealed_bad_dep, "", "not an archive"); },
+               "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
+
+  const std::string wrong_marker_rlib =
+      archive_with_marker("MOSS_ABI_V10_CONTRACT::Provider::" + std::string(64, '0') + "::END");
+  expect_error([&] { validate_complete_interface(sealed_bad_dep, "", wrong_marker_rlib); },
+               "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
+
+  // ABI-v9 container rejection
+  expect_error([&] { (void)parse("moss-module-interface-v2\nmodule_id test\n"); },
+               "SOURCE_FREE_ABI_REBUILD_REQUIRED");
+
+  // Runtime identity mismatch checks
+  RuntimeCrateIdentity prov_rt, cons_rt;
+  prov_rt.name = "moss_runtime";
+  prov_rt.version = "0.1.0";
+  prov_rt.artifact_hash = "sha256:" + std::string(64, '1');
+  prov_rt.build_key = "sha256:" + std::string(64, 'a');
+
+  cons_rt = prov_rt;
+  cons_rt.name = "diff_runtime";
+  expect_error([&] { verify_runtime_compatibility(prov_rt, cons_rt); },
+               "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
+
+  cons_rt = prov_rt;
+  cons_rt.version = "0.2.0";
+  expect_error([&] { verify_runtime_compatibility(prov_rt, cons_rt); },
+               "SOURCE_FREE_ABI_REBUILD_REQUIRED");
+
+  cons_rt = prov_rt;
+  cons_rt.artifact_hash = "sha256:" + std::string(64, '2');
+  expect_error([&] { verify_runtime_compatibility(prov_rt, cons_rt); },
+               "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
+
+  cons_rt = prov_rt;
+  cons_rt.build_key = "sha256:" + std::string(64, 'b');
+  expect_error([&] { verify_runtime_compatibility(prov_rt, cons_rt); },
+               "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
+
+  // Content-addressed runtime caching tests
+  const std::filesystem::path runtime_src_dir = "runtime/moss_runtime";
+  const std::filesystem::path test_cache_dir = "tmp/phase25-test-runtime-cache";
+  std::filesystem::remove_all(test_cache_dir);
+
+  // 1. Initial build (debug)
+  const auto [rlib_debug, id_debug] =
+      build_or_resolve_moss_runtime(runtime_src_dir, test_cache_dir, "debug");
+  assert(std::filesystem::exists(rlib_debug));
+  assert(!id_debug.build_key.empty());
+  assert(!id_debug.artifact_hash.empty());
+  assert(!id_debug.source_hash.empty());
+
+  // 2. Cache hit: identical inputs produce identical build_key and reuse artifact
+  const auto [rlib_debug_hit, id_debug_hit] =
+      build_or_resolve_moss_runtime(runtime_src_dir, test_cache_dir, "debug");
+  assert(rlib_debug == rlib_debug_hit);
+  assert(id_debug.build_key == id_debug_hit.build_key);
+  assert(id_debug.artifact_hash == id_debug_hit.artifact_hash);
+
+  // 3. Timestamp touch without content change: must produce identical source hash and cache hit
+  const auto lib_rs_path = runtime_src_dir / "src" / "lib.rs";
+  const auto old_time = std::filesystem::last_write_time(lib_rs_path);
+  std::filesystem::last_write_time(lib_rs_path, old_time + std::chrono::hours(1));
+  const auto [rlib_touch, id_touch] =
+      build_or_resolve_moss_runtime(runtime_src_dir, test_cache_dir, "debug");
+  assert(id_debug.source_hash == id_touch.source_hash);
+  assert(id_debug.build_key == id_touch.build_key);
+  assert(id_debug.artifact_hash == id_touch.artifact_hash);
+
+  // 4. Corrupted cached artifact: overwrite rlib with junk, verify detection and safe rebuild
+  {
+    std::ofstream junk(rlib_debug, std::ios::binary | std::ios::trunc);
+    junk << "CORRUPTED_RLIB_JUNK";
+  }
+  const auto [rlib_restored, id_restored] =
+      build_or_resolve_moss_runtime(runtime_src_dir, test_cache_dir, "debug");
+  assert(id_restored.build_key == id_debug.build_key);
+  assert(id_restored.artifact_hash == id_debug.artifact_hash);
+  assert(compute_file_sha256(rlib_restored) == id_debug.artifact_hash);
+
+  // 5. Profile separation: release build uses distinct build_key and directory
+  const auto [rlib_release, id_release] =
+      build_or_resolve_moss_runtime(runtime_src_dir, test_cache_dir, "release");
+  assert(std::filesystem::exists(rlib_release));
+  assert(rlib_release != rlib_debug);
+  assert(id_release.profile == "release");
+  assert(id_release.build_key != id_debug.build_key);
+  // Re-verify compatibility check rejects debug vs release
+  expect_error([&] { verify_runtime_compatibility(id_debug, id_release); },
+               "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
+
+  std::filesystem::remove_all(test_cache_dir);
 
   std::cout << "ABI-v10 staged summary adversarial tests passed\n";
 }

@@ -1,33 +1,36 @@
 # Moss current status
 
-## Phase 25 Team B Completion — ABI-v10 Semantic Records, Runtime, and Linkage — 2026-10-16
+## Phase 25 Team B Final Hardening & Delivery — ABI-v10 Semantic Records, Runtime, and Linkage — 2026-10-16
 
-Team B has completed its mandate under the Phase 25 Team B Execution Directive on branch `phase25-g-abi-runtime` (common baseline `5b29352aae6a4b59b0c43b9264fe72fb08bbbb6c`):
+Team B has completed its mandate and final hardening cycle under the Phase 25 Team B Execution Directive on branch `phase25-g-abi-runtime`:
 
-1. **Workstream B1 (Typed ABI-v10 Records):**
+1. **Workstream B1 (Shared Runtime Artifact Caching & Safe Execution):**
+   - Implemented deterministic, content-addressed runtime artifact caching (`compute_runtime_build_key`, `query_rustc_details`) in `src/moss_runtime_linkage.hpp`.
+   - Caching key accounts for sorted runtime source SHA-256 hashes, `Cargo.toml`, full `rustc -vV` fingerprint, target architecture, profile (`debug` vs `release`), and flags.
+   - Replaced shell execution with `run_command_safe` using direct `fork()`/`execvp()` and non-blocking `poll()` on pipes to prevent shell injection and pipe buffer deadlocks.
+   - Built-in artifact corruption detection with automatic safe rebuilds.
+2. **Workstream B2 (Hardened ABI-v10 Validation):**
    - Canonical typed records (`ModuleRecord`, `NominalTemplate`, `ConcreteInstance`, `MethodTemplate`, `OpenCallableSummary`, `SourceProvenance`, `KeyProof`) implemented in `src/abi_v10_records.hpp`.
    - Strict lexical record ID ordering enforced in every section.
+   - Hardened referential integrity across templates, method templates, summaries, requirements, and provenance (unconditional provenance verification).
    - Complete 10-step fail-closed verification pipeline implemented in `src/source_free_abi_v10.hpp` (`validate_complete_interface`).
-2. **Workstream B2 (Shared moss_runtime):**
+3. **Workstream B3 (Shared moss_runtime & MapKeyProof Coherence):**
    - Compiler-owned `moss_runtime` crate in `runtime/moss_runtime/` with `MossMap<K, V>` and `MossSet<K>` storage kernel using static caller specialization (`insert_with`, `get_with`, `get_mut_with`, `remove_with`, `contains_key_with`, `clear`, `keys`, `values`).
    - Zero dynamic dispatch (`dyn`), zero runtime comparison closures, zero per-process `RandomState`.
-   - Staged `MossString` and `key_protocol` ready for Team S relocation.
-   - Multi-profile compilation (Native Debug `-g` and Native Release `-O`) verified across multi-crate linkage.
-3. **Workstream B3 (MapKeyProof and Coherence):**
-   - `make_builtin_key_proof` generates canonical proofs for `Int`, `Float`, `Char`, `String`, and `Bool` with frozen targets and zero observable effects.
+   - Built-in KeyProof factory (`make_builtin_key_proof`) for `Int`, `Float`, `Char`, `String`, and `Bool` with zero observable effects.
    - `validate_key_proof_coherence` rejects conflicting proofs for the same key type.
-4. **Workstream B4 (Source-Free ABI Verification):**
-   - All 11 required behaviors verified and categorized by proof tier in `tests/phase25/check_phase25_b_acceptance.py`.
-   - Codec, Rust runtime, and Moss integration proofs strictly distinguished.
-   - Gate 10 (nominal custom keys) explicitly maintained as PENDING joint integration per `TEAM_S_TEAM_G_INTERFACE_AGREEMENT.md`.
-5. **Workstream B5 (Compiler Linkage Interfaces):**
-   - Implemented `src/moss_runtime_linkage.hpp` providing clean, modular APIs: `build_or_resolve_moss_runtime`, `generate_compiler_runtime_flags`, `verify_runtime_compatibility`, `detect_contract_change`, and `compute_cache_dependency_key`.
-   - Integration handoff spec documented in `docs/phase25/TEAM_B_LINKAGE_INTEGRATION_SPEC.md`.
+4. **Workstream B4 (Genuinely Executable Acceptance Harness):**
+   - Overhauled `tests/phase25/check_phase25_b_acceptance.py`: every PASS is backed by an actual executable assertion verifying exit codes, diagnostics, and outputs.
+   - Explicit tier classifications: `PASS — Codec`, `PASS — Runtime`, `PASS — Moss`, `PENDING — Integration`.
+   - Total checks: 22 PASS, 1 PENDING (Gate 10), 0 FAIL.
+5. **Workstream B5 (Team A Direct Coordination & Linkage Interfaces):**
+   - Documented agreed typed semantic API in `docs/phase25/TEAM_A_TYPED_SEMANTIC_API.md` and linkage spec in `docs/phase25/TEAM_B_LINKAGE_INTEGRATION_SPEC.md`.
+   - Preserves Team A type ownership and Team S key protocol ownership.
 
 Validation results:
-- `python3 tests/phase25/check_phase25_b_acceptance.py`: PASS
+- `python3 tests/phase25/check_phase25_b_acceptance.py`: PASS (22 PASS, 1 PENDING, 0 FAIL)
 - `tmp/abi_v10_staging`: PASS (16 assertions, zero warnings)
-- `tmp/abi_v10_adversarial`: PASS (19 mutation checks, zero warnings)
+- `tmp/abi_v10_adversarial`: PASS (30+ mutation and caching checks, zero warnings)
 - `python3 tests/phase25/runtime/check_runtime.py`: PASS (unit tests, Debug/Release, source removal, runtime mismatch)
 - `python3 tests/tooling/check_phase25_conformance.py ./moss`: 10/11 gates PASS; Gate 10 PENDING joint integration
 - `make examples`: PASS (all 31 examples pass with `-Oshared-memory`)
@@ -37,10 +40,11 @@ Validation results:
 - `git diff --check`: PASS (clean whitespace)
 
 Documentation & Feedback:
+- `docs/phase25/TEAM_A_TYPED_SEMANTIC_API.md`
 - `docs/phase25/TEAM_B_LINKAGE_INTEGRATION_SPEC.md`
 - `docs/phase25/TEAM_B_ABI_RUNTIME_DELIVERY.md`
 - `docs/phase25/agent-patterns/team-b-abi-runtime.md`
-- `agent-feedback/phase25/team-b-abi-runtime/` (3 workstreams)
+- `agent-feedback/phase25/team-b-abi-runtime/` (4 observations across 3 workstreams)
 
 ## Phase 25 Team G completion cycle, coordinator handoff session — 2026-10-16 (in progress)
 

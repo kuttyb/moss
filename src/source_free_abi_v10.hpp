@@ -286,6 +286,7 @@ inline std::vector<Record> read_records(Reader& reader, const char* section) {
   const auto size = count_number(field(reader, "count"), 100000);
   std::vector<Record> records;
   records.reserve(size);
+  std::string previous;
   for (std::size_t i = 0; i < size; ++i) {
     const auto frame = field(reader, "record");
     const auto split = frame.find(' ');
@@ -296,6 +297,9 @@ inline std::vector<Record> read_records(Reader& reader, const char* section) {
     Record record{reader.bytes(id_size), reader.bytes(payload_size)};
     require(reader.line().empty(), "SOURCE_FREE_CONTRACT_INVALID",
             "ABI-v10 frame has trailing data");
+    require(previous.empty() || previous < record.id, "SOURCE_FREE_CONTRACT_INVALID",
+            "ABI-v10 record is duplicate, malformed, or out of order");
+    previous = record.id;
     records.push_back(std::move(record));
   }
   return records;
@@ -336,13 +340,18 @@ inline SealedInterface parse(std::string_view text) {
   require(reader.line() == "imports", "SOURCE_FREE_CONTRACT_INVALID",
           "ABI-v10 imports section is missing");
   const auto import_count = count_number(field(reader, "count"), 100000);
+  std::string prev_import;
   for (std::size_t i = 0; i < import_count; ++i) {
     const auto line = reader.line();
     const auto first = line.find(' '), second = line.find(' ', first + 1);
     require(first != std::string::npos && second != std::string::npos &&
                 line.find(' ', second + 1) == std::string::npos,
             "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 import record is malformed");
-    result.value.imports.push_back({line.substr(0, first),
+    const auto mod_id = line.substr(0, first);
+    require(prev_import.empty() || prev_import < mod_id, "SOURCE_FREE_CONTRACT_INVALID",
+            "ABI-v10 import order is invalid or duplicate");
+    prev_import = mod_id;
+    result.value.imports.push_back({mod_id,
                                      line.substr(first + 1, second - first - 1),
                                      line.substr(second + 1)});
   }
