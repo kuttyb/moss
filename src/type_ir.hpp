@@ -813,6 +813,10 @@ struct RequirementOrigin {
 struct Requirement {
   std::string id;
   RequirementKind kind{RequirementKind::SameType};
+  // Exact selected declaration/callable ID when known, or a controlled
+  // built-in operation family (for example operator:+). Open structural
+  // requirements retain the operation spelling here until admission.
+  std::string target_id;
   TypeRef subject;
   std::vector<TypeRef> arguments;
   std::optional<TypeRef> result;

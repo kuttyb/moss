@@ -2504,7 +2504,72 @@ class Checker {
       for (size_t ordinal = 0; ordinal < function.constraints.size(); ++ordinal) {
         const auto& constraint = function.constraints[ordinal];
         if (constraint.kind != ConstraintKind::Method) {
-          complete = false;
+          auto subject = parameter_variables.find(constraint.subject);
+          if (subject == parameter_variables.end() || !subject->second) {
+            complete = false;
+            continue;
+          }
+          moss::Requirement requirement;
+          requirement.id = function.semantic_callable_id + ":requirement:" +
+              std::to_string(ordinal);
+          requirement.subject = subject->second;
+          requirement.origin = {summary.origin.module_id, function.source_file,
+                                function.line, 1, function.semantic_callable_id,
+                                requirement.id};
+          switch (constraint.kind) {
+            case ConstraintKind::Operator:
+              requirement.kind = moss::RequirementKind::Operator;
+              requirement.target_id = "operator:" + constraint.detail;
+              break;
+            case ConstraintKind::Field:
+              requirement.kind = moss::RequirementKind::Field;
+              requirement.target_id = constraint.detail;
+              break;
+            case ConstraintKind::Indexable:
+              requirement.kind = moss::RequirementKind::Index;
+              requirement.target_id = "builtin:index";
+              break;
+            case ConstraintKind::Iterable:
+              requirement.kind = moss::RequirementKind::Iterate;
+              requirement.target_id = constraint.detail;
+              break;
+            case ConstraintKind::Callable:
+              requirement.kind = moss::RequirementKind::Callable;
+              requirement.target_id = constraint.detail;
+              break;
+            case ConstraintKind::SameType:
+              requirement.kind = moss::RequirementKind::SameType;
+              break;
+            case ConstraintKind::ResultType:
+              requirement.kind = moss::RequirementKind::SameType;
+              break;
+            case ConstraintKind::Method:
+              break;
+          }
+          for (const auto& argument : constraint.arguments) {
+            auto parameter = parameter_variables.find(trim(argument));
+            moss::TypeRef term = parameter != parameter_variables.end()
+                ? parameter->second : type_term(
+                      constraint_expression_type(function, argument).value_or(""));
+            if (!term) complete = false;
+            requirement.arguments.push_back(term);
+            requirement.argument_access.push_back(moss::AccessMode::Read);
+          }
+          if (!constraint.result.empty()) {
+            auto parameter = parameter_variables.find(constraint.result);
+            if (parameter != parameter_variables.end())
+              requirement.result = parameter->second;
+            else if (starts_with(constraint.result, "element:")) {
+              auto source = parameter_variables.find(constraint.result.substr(8));
+              if (source != parameter_variables.end() && source->second &&
+                  source->second->kind == moss::TypeKind::Builtin &&
+                  !source->second->type_args.empty())
+                requirement.result = source->second->type_args.back();
+            } else if (!contains_internal_placeholder(constraint.result)) {
+              requirement.result = type_term(constraint.result);
+            }
+          }
+          summary.requirements.push_back(std::move(requirement));
           continue;
         }
         auto receiver = parameter_variables.find(constraint.subject);
@@ -5991,6 +6056,21 @@ class Checker {
         if (actual && expected && !solver.unify(actual, expected))
           err(line, "argument " + std::to_string(index + 1) +
               " to function '" + callee + "' has incompatible type", "TYPE_MISMATCH");
+      }
+      // An open structural requirement follows its instantiated type variable
+      // through subsequent unification. The existing checker admission path
+      // closes concrete requirements; the solver retains the open relationship
+      // until that point instead of deriving it again from a display type.
+      for (const auto& source : summary.requirements) {
+        moss::Requirement requirement = source;
+        requirement.subject = instantiate(source.subject);
+        for (auto& argument : requirement.arguments)
+          argument = instantiate(argument);
+        if (source.result) requirement.result = instantiate(*source.result);
+        auto subject = requirement.subject
+            ? solver.resolve(requirement.subject) : nullptr;
+        if (subject && subject->kind == moss::TypeKind::InferenceVar)
+          solver.require(subject->var_id, std::move(requirement));
       }
       if (!summary.member_requirements.empty()) {
         vector<moss::MemberDispatchRequirement> instantiated_requirements;

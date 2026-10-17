@@ -1,5 +1,40 @@
 # Moss current status
 
+## Phase 25 Team A resumed implementation — 2026-10-16 (active, NOT READY)
+
+The Coordinator is continuing A2/A3/A4 on `phase25-g-type-core` after the
+user explicitly directed Team A to finish rather than hand off to Team I.
+The latest remote checkpoint is `ec0c0d6`; local HEAD has advanced through
+`442a222` and will be pushed after focused validation. The user authorized
+normal pushes and AGENTS.md's prior no-push rule was removed before the first
+push. Do not merge Team B, Team S, Team I, or main.
+
+Integrated since that remote checkpoint: `6f77aef` retains typed field/reply
+terms and fixes open bare collection calls (`make examples` passed afterward);
+`2047c7c` interns nominal declaration IDs across aliases (`check_phase25_type_ir`
+passed afterward); `54a27ad` uses retained body terms for index/iteration
+checks; `442a222` retains source-free requirement provenance and typed semantic
+dependencies. These last two commits are rebuilding now, so earlier test
+results do not validate this latest source snapshot.
+
+An independent Architect audited exact interim SHA `ec0c0d6` and returned
+NO-GO: same-ID alias interning (now fixed), nested contextual open-result
+closure (`use_ints(make(0))`), callable arguments keyed by display names,
+non-Method structural requirements absent from typed open summaries, missing
+typed leaf effect/dependency facts, and remaining string-backed checker paths.
+Dedicated isolated workers are addressing nested closure, callable IDs, and
+shared typed checker facts. This was an interim audit, not the required final
+GO at a frozen exact implementation SHA.
+
+The previous repository-wide `make check` used a rebuilt release compiler and
+an older default `./moss` after intervening commits. Its Phase 20/21 and
+advanced-data checks passed, but its release comparator mismatch is invalidated
+by those mixed snapshots. A final full `make check` must run on one frozen
+implementation SHA after the remaining commits. G2 Gate 10 remains PENDING
+joint integration. The provider `.mossi` serializer currently omits nonzero
+member argument shape; Team B owns that source-free ABI record and Team A has
+an evidence-backed feedback observation. This is still Team A NOT READY.
+
 ## Phase 25 Team A continuation — 2026-10-16 (active, NOT READY)
 
 The consolidated feature branch was pushed to `origin/phase25-g-type-core` at
