@@ -1,0 +1,227 @@
+#pragma once
+
+#include <map>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+#include "ast.hpp"
+
+namespace moss {
+
+// Compiler-internal handoff. These records own checked TypeRefs and exact IDs;
+// the ABI-v10 serializer is a separate Team B consumer.
+struct TypedSourceProvenanceV1 {
+  std::string source_file;
+  int line{0};
+  std::string defining_module_id;
+  std::string enclosing_callable_id;
+};
+
+struct TypedNominalTemplateV1 {
+  NominalDeclarationRef declaration;
+  std::vector<NominalFieldSlot> fields;
+  bool exported{false};
+  TypedSourceProvenanceV1 provenance;
+};
+
+struct TypedClosedTypeV1 {
+  TypeRef type;
+  std::string type_key;
+  std::optional<std::string> nominal_template_id;
+  std::optional<std::string> nominal_instance_key;
+  std::vector<TypeRef> ordered_resolved_fields;
+};
+
+struct TypedNominalInstanceV1 {
+  std::string template_id;
+  TypeRef type;
+  std::string instance_key;
+  std::vector<TypeRef> ordered_resolved_fields;
+};
+
+struct TypedSemanticDependencyV1 {
+  std::string callable_id;
+  std::string specialization_key;
+  TypedSourceProvenanceV1 provenance;
+};
+
+struct TypedSpecializationV1 {
+  std::string key;
+  std::string callable_id;
+  std::vector<TypeRef> parameter_types;
+  TypeRef result_type;
+  std::vector<Effect> parameter_access;
+  ObservableEffects observable_effects;
+  std::vector<MemberDispatchRequirement> member_requirements;
+  std::vector<TypedSemanticDependencyV1> dependencies;
+  TypedSourceProvenanceV1 provenance;
+};
+
+// A2 must supply bound ordinals and typed result/requirements at the checker
+// boundary. A missing summary is represented as unavailable, never guessed
+// from the function's display result or source text.
+struct TypedOpenCallableSummaryV1 {
+  std::string callable_id;
+  uint32_t bound_variable_count{0};
+  std::vector<TypeRef> parameter_types;
+  TypeRef result_type;
+  std::vector<Requirement> requirements;
+  std::vector<MemberDispatchRequirement> member_requirements;
+  std::vector<Effect> parameter_access;
+  ObservableEffects observable_effects;
+  TypedSourceProvenanceV1 provenance;
+};
+
+struct TypedSemanticModuleV1 {
+  static constexpr const char* version = "typed-semantic-v1";
+  std::map<std::string, std::shared_ptr<const std::string>> modules;
+  std::map<std::string, TypedNominalTemplateV1> nominal_templates;
+  std::map<std::string, TypedClosedTypeV1> closed_types;
+  std::map<std::string, TypedNominalInstanceV1> nominal_instances;
+  std::map<std::string, TypedOpenCallableSummaryV1> open_summaries;
+  std::map<std::string, TypedSpecializationV1> specializations;
+  // Legacy imported generic skeletons may appear in Function::specializations
+  // with open type terms. They cannot be projected as closed specializations.
+  // Keep their exact IDs visible to consumers until A2 supplies summaries.
+  std::map<std::string, std::string> unavailable_specializations;
+  // False until A2 emits all reachable open summaries directly from solver
+  // terms. ABI consumers must call require_complete_open_summaries().
+  bool open_summaries_complete{true};
+
+  void require_complete_open_summaries() const {
+    if (!open_summaries_complete)
+      throw std::invalid_argument("typed semantic open callable summaries unavailable");
+  }
+
+  void require_complete_specializations() const {
+    if (!unavailable_specializations.empty())
+      throw std::invalid_argument("typed semantic closed specialization facts unavailable");
+  }
+
+  const TypedClosedTypeV1& closed_type(TypeRef type) {
+    if (!type || !type->is_closed())
+      throw std::invalid_argument("typed semantic projection requires a closed TypeRef: " +
+          (type ? type->to_canonical_string() : std::string("<null>")));
+    const std::string key = type->stable_type_key();
+    auto found = closed_types.find(key);
+    if (found != closed_types.end()) return found->second;
+    TypedClosedTypeV1 record;
+    record.type = type;
+    record.type_key = key;
+    if (type->kind == TypeKind::NominalInstance) {
+      record.nominal_template_id = type->declaration->id;
+      record.nominal_instance_key = type->nominal_instance_key();
+      record.ordered_resolved_fields = type->resolved_fields();
+      nominal_instances.emplace(*record.nominal_instance_key,
+          TypedNominalInstanceV1{*record.nominal_template_id, type,
+              *record.nominal_instance_key, record.ordered_resolved_fields});
+    }
+    for (const auto& argument : type->type_args) closed_type(argument);
+    for (const auto& field : type->field_substitutions) closed_type(field.second);
+    return closed_types.emplace(key, std::move(record)).first->second;
+  }
+
+  const TypedSpecializationV1& specialization(const std::string& key) const {
+    auto found = specializations.find(key);
+    if (found == specializations.end())
+      throw std::invalid_argument("unknown typed semantic specialization key");
+    return found->second;
+  }
+};
+
+inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) {
+  if (!program.type_context)
+    throw std::invalid_argument("typed semantic projection requires a checked type context");
+  TypeContext::Scope scope(program.type_context.get());
+  TypedSemanticModuleV1 result;
+  for (const auto& entry : program.module_identities)
+    result.modules.emplace(entry.second, program.type_context->intern_module(entry.second));
+  auto add_nominal = [&](const std::string& name, bool exported,
+                         const std::string& source_file, int line) {
+    auto declaration = program.type_context->find(name);
+    if (!declaration)
+      throw std::invalid_argument("checked nominal declaration has no interned identity");
+    result.modules.emplace(declaration->module_id, declaration->interned_module_id);
+    result.nominal_templates.emplace(declaration->id, TypedNominalTemplateV1{
+        declaration, declaration->fields, exported,
+        {source_file, line, declaration->module_id, {}}});
+  };
+  for (const auto& object : program.objects)
+    add_nominal(object.name, object.exported, object.source_file, object.line);
+  for (const auto& enumeration : program.enums)
+    add_nominal(enumeration.name, enumeration.exported,
+                enumeration.source_file, enumeration.line);
+  for (const auto& domain : program.domains)
+    add_nominal(domain.name, domain.exported, domain.source_file, domain.line);
+  for (const auto& function : program.functions) {
+    if (function.semantic_callable_id.empty())
+      throw std::invalid_argument("checked function has no semantic callable identity");
+    if (function.generic || function.static_dispatch)
+      result.open_summaries_complete = false;
+    for (const auto& specialization : function.specializations) {
+      const bool open_parameter = std::any_of(
+          specialization.parameter_type_refs.begin(),
+          specialization.parameter_type_refs.end(),
+          [](const TypeRef& type) { return !type || !type->is_closed(); });
+      if (open_parameter || (specialization.return_type_ref &&
+                             !specialization.return_type_ref->is_closed())) {
+        result.unavailable_specializations.emplace(
+            specialization.stable_type_key.empty()
+                ? function.semantic_callable_id : specialization.stable_type_key,
+            "open imported or generic specialization requires a typed summary");
+        result.open_summaries_complete = false;
+        continue;
+      }
+      if (specialization.stable_type_key.empty() ||
+          specialization.parameter_type_refs.size() != function.params.size() ||
+          !specialization.return_type_ref ||
+          specialization.parameter_effects.size() != function.params.size())
+        throw std::invalid_argument("checked specialization lacks typed result or access facts");
+      TypedSpecializationV1 record;
+      record.key = specialization.stable_type_key;
+      record.callable_id = function.semantic_callable_id;
+      record.parameter_types = specialization.parameter_type_refs;
+      record.result_type = specialization.return_type_ref;
+      record.parameter_access = specialization.parameter_effects;
+      record.observable_effects = specialization.observable_effects;
+      record.member_requirements = specialization.member_requirements;
+      const std::string callable_prefix = "callable-v1:";
+      const size_t module_end = function.semantic_callable_id.find(":fn:");
+      if (function.semantic_callable_id.rfind(callable_prefix, 0) != 0 ||
+          module_end == std::string::npos)
+        throw std::invalid_argument("checked function has malformed callable identity");
+      const std::string defining_module_id = function.semantic_callable_id.substr(
+          callable_prefix.size(), module_end - callable_prefix.size());
+      result.modules.emplace(defining_module_id,
+          program.type_context->intern_module(defining_module_id));
+      record.provenance = {function.source_file, function.line,
+          defining_module_id, function.semantic_callable_id};
+      for (const auto& type : record.parameter_types) result.closed_type(type);
+      result.closed_type(record.result_type);
+      for (const auto& requirement : record.member_requirements) {
+        if (!member_requirement_is_closed(requirement))
+          throw std::invalid_argument("checked specialization has open member requirement");
+        result.closed_type(requirement.receiver);
+        for (const auto& argument : requirement.argument_types)
+          result.closed_type(argument);
+        if (requirement.result) result.closed_type(*requirement.result);
+      }
+      for (const auto& dependency : specialization.dependencies) {
+        auto target = std::find_if(program.functions.begin(), program.functions.end(),
+            [&](const Function& candidate) { return candidate.name == dependency.function_name; });
+        if (target == program.functions.end() || target->semantic_callable_id.empty() ||
+            dependency.specialization_key.empty())
+          throw std::invalid_argument("checked specialization has unresolved dependency");
+        record.dependencies.push_back({target->semantic_callable_id,
+            dependency.specialization_key, record.provenance});
+      }
+      if (!result.specializations.emplace(record.key, std::move(record)).second)
+        throw std::invalid_argument("duplicate typed semantic specialization key");
+    }
+  }
+  return result;
+}
+
+}  // namespace moss

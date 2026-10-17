@@ -32,6 +32,7 @@
 #include <unistd.h>
 #include "ast.hpp"
 #include "type_ir.hpp"
+#include "typed_semantic_api.hpp"
 #include "debug_map.hpp"
 #include "diagnostics.hpp"
 #include "type_placeholders.hpp"
@@ -2288,6 +2289,10 @@ class Checker {
                           left.call_site_identity == right.call_site_identity;
                     }),
         p_.semantic_uses.end());
+    // Retain the typed compiler-facing handoff from the facts just checked.
+    // This pass neither infers types nor parses diagnostic/display strings.
+    p_.typed_semantics = std::make_shared<moss::TypedSemanticModuleV1>(
+        moss::project_typed_semantics_v1(p_));
   }
 
   const vector<Warning>& warnings() const { return warnings_; }
@@ -26293,6 +26298,64 @@ static void write_reason_evidence_json(std::ostream& out,
   out << "]}";
 }
 
+static void write_typed_semantic_projection_json(std::ostream& out,
+                                                 const Program& program) {
+  if (!program.typed_semantics)
+    throw std::invalid_argument("checked program has no typed semantic projection");
+  const auto& projection = *program.typed_semantics;
+  out << "{\"version\": ";
+  write_debug_json_string(out, moss::TypedSemanticModuleV1::version);
+  out << ", \"open_summaries_complete\": "
+      << (projection.open_summaries_complete ? "true" : "false");
+  out << ", \"modules\": [";
+  bool first = true;
+  for (const auto& entry : projection.modules) {
+    if (!first) out << ",";
+    first = false;
+    write_debug_json_string(out, entry.first);
+  }
+  out << "], \"nominal_templates\": [";
+  first = true;
+  for (const auto& entry : projection.nominal_templates) {
+    if (!first) out << ",";
+    first = false;
+    out << "{\"id\": "; write_debug_json_string(out, entry.first);
+    out << ", \"module_id\": ";
+    write_debug_json_string(out, entry.second.declaration->module_id);
+    out << "}";
+  }
+  out << "], \"specializations\": [";
+  first = true;
+  for (const auto& entry : projection.specializations) {
+    if (!first) out << ",";
+    first = false;
+    const auto& specialization = entry.second;
+    out << "{\"key\": "; write_debug_json_string(out, entry.first);
+    out << ", \"callable_id\": ";
+    write_debug_json_string(out, specialization.callable_id);
+    out << ", \"parameter_type_keys\": [";
+    for (size_t index = 0; index < specialization.parameter_types.size(); ++index) {
+      if (index) out << ",";
+      write_debug_json_string(out,
+          specialization.parameter_types[index]->stable_type_key());
+    }
+    out << "], \"result_type_key\": ";
+    write_debug_json_string(out, specialization.result_type->stable_type_key());
+    out << ", \"member_requirement_count\": "
+        << specialization.member_requirements.size();
+    out << ", \"dependency_count\": "
+        << specialization.dependencies.size() << "}";
+  }
+  out << "], \"unavailable_specializations\": [";
+  first = true;
+  for (const auto& entry : projection.unavailable_specializations) {
+    if (!first) out << ",";
+    first = false;
+    write_debug_json_string(out, entry.first);
+  }
+  out << "]}";
+}
+
 static bool write_semantic_query_json(
     std::ostream& out, const string& command, const string& selector,
     const string& source_file, const Program& program,
@@ -26413,6 +26476,8 @@ static bool write_semantic_query_json(
     write_domain_semantics_json(out, program, *target);
   }
   if (command == "inspect") {
+    out << ", \"typed_semantic_v1\": ";
+    write_typed_semantic_projection_json(out, program);
     out << ", \"concrete_domain_graph\": {\"graph_identity\":";
     write_debug_json_string(out, program.concrete_domain_graph.identity);
     out << ",\"closed\":"

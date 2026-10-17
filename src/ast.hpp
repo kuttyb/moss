@@ -15,6 +15,8 @@
 
 namespace moss {
 
+struct TypedSemanticModuleV1;
+
 using std::string;
 using std::vector;
 
@@ -424,6 +426,9 @@ struct ExecutorStartPlan {
 };
 
 struct Program {
+  // Compiler-internal typed projection of checked facts, populated once by
+  // Checker::run. ABI serializers consume this rather than diagnostic text.
+  std::shared_ptr<TypedSemanticModuleV1> typed_semantics;
   // Parsed physical source lines retained for compiler-owned editor
   // resolution.  They preserve indentation and file identity, while all
   // semantic selection still comes from checked declarations/uses/calls.

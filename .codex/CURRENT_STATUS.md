@@ -17,6 +17,30 @@ source: `make -B -j2`, Type IR, A3 compiler specialization keys, 40 generic
 specialization probes, feedback validator, and G2 conformance Gates 1–9 and
 11 passed; Gate 10 remains pending joint integration. The direct open-result
 two-key compiler probe is still failing until the A2 hook is wired.
+## Phase 25 Team A A4 typed projection worktree — 2026-10-16
+
+The isolated `phase25-g-type-core-a4-v2` branch adds `typed-semantic-v1`
+compiler-internal records in `src/typed_semantic_api.hpp`. `Checker::run`
+retains a projection from checked `Program` TypeRefs: exact interned module and
+nominal declaration IDs, closed concrete specialization and nominal instance
+types, structured member requirements, effects, call dependencies, and source
+provenance. `moss inspect` exposes a read-only summary of these records for a
+compiler-path test. Source-free generic skeletons with open TypeRefs are
+recorded as unavailable instead of misreported as closed. Consumers can call
+explicit completeness guards.
+
+Validation after the final code edit: `make -j2`, the new typed semantic API
+compiler-path test, Team A's 13 semantic cases (including source-free calls),
+A3 specialization keys, Type IR, and Phase 25 conformance passed. G2 Gate 10
+remains PENDING joint integration. `tests/run.sh` was updated after those runs
+to register the new test; its next full run belongs to consolidation.
+
+Unfinished A4: reusable solver-owned `OpenCallableSummaryV1` facts and typed
+template field annotation terms are not retained by the current checker.
+The projection marks open summaries incomplete; it does not derive them by
+parsing diagnostic strings. A2 must populate those facts before an ABI-v10
+consumer can require the complete handoff. This branch is an isolated partial
+implementation, not Team A READY.
 
 ## Phase 25 Team A authoritative type core — 2026-10-16 (in progress)
 
