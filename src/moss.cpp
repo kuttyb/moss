@@ -6864,7 +6864,11 @@ class Checker {
                 if (parsed) destination = freshen_open_type(*parsed);
               }
             }
-            if (destination && !solver.unify(destination, *reply))
+            // A domain handle binding is governed by the closed-handle rule,
+            // which reports its own immutability diagnostic; a type conflict
+            // raised here would mask it.
+            if (destination && destination->kind != moss::TypeKind::Domain &&
+                !solver.unify(destination, *reply))
               err(statement.line, "message assignment to '" +
                   statement.message_result + "' conflicts with its binding type",
                   "TYPE_MISMATCH");
@@ -6940,7 +6944,10 @@ class Checker {
         if (current->kind != moss::TypeKind::Builtin ||
             (current->name != "vector" && current->name != "queue") ||
             current->type_args.size() != 1) continue;
-        if (!solver.unify(current->type_args.front(), argument))
+        // A domain handle cannot enter a collection at all; the closed-handle
+        // rule says so precisely, so an element conflict must not mask it.
+        if (argument->kind != moss::TypeKind::Domain &&
+            !solver.unify(current->type_args.front(), argument))
           err(statement.line, "push argument conflicts with the element type of '" +
               statement.a + "'", "TYPE_MISMATCH");
         scan[statement.a] = solver.resolve(local->second)->to_canonical_string();
