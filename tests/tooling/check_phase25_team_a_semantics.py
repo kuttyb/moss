@@ -727,6 +727,45 @@ fn main():
         parity(handler_reply, scratch, "7\n")
         print("PASS handler reply uses checked field/index result", flush=True)
 
+        nested_handler_reply = source(scratch, "typed_nested_handler_reply", '''domain Reader:
+  fn Get() -> Vector[Vector[Int]]:
+    var values = [[]]
+    reply values
+
+fn main():
+  reader = Reader()
+  echo message reader.Get()
+''')
+        checked(nested_handler_reply)
+        print("PASS nested open handler reply closes through TypeRef", flush=True)
+
+        nested_state_initializer = source(scratch, "typed_nested_state_initializer", '''domain Reader:
+  values: Vector[Vector[Int]] = [[]]
+
+  fn Get() -> Vector[Vector[Int]]:
+    reply values
+
+fn main():
+  reader = Reader()
+  echo message reader.Get()
+''')
+        checked(nested_state_initializer)
+        wrong_state_initializer = source(scratch, "typed_wrong_state_initializer", '''domain Reader:
+  values: Vector[Vector[Int]] = [["bad"]]
+
+  fn Get() -> Vector[Vector[Int]]:
+    reply values
+
+fn main():
+  reader = Reader()
+  echo message reader.Get()
+''')
+        wrong_state = run(MOSS, "check", wrong_state_initializer, "--json")
+        assert wrong_state.returncode != 0, wrong_state.stdout
+        wrong_state_error = json.loads(wrong_state.stdout)["error"]
+        assert "state field 'Reader.values' is annotated" in wrong_state_error["message"], wrong_state_error
+        print("PASS nested open state initializer closes through TypeRef", flush=True)
+
         typed_message_assignment = source(scratch, "typed_message_assignment", '''domain Reader:
   fn Get() -> Int:
     reply 7

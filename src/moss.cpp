@@ -7365,10 +7365,33 @@ class Checker {
                 // eligible for per-instance specialization.
                 field.inferred = field.init.empty();
               }
-              else if (!same_type(field.type, *actual))
-                err(field_source, field.line, "state field '" + domain.name + "." + field.name +
-                    "' is annotated '" + field.type + "' but its initializer has type '" +
-                    *actual + "'");
+              else {
+                moss::TypeSolver initializer_solver(1);
+                std::function<moss::TypeRef(const moss::TypeRef&)> open_collections =
+                    [&](const moss::TypeRef& type) -> moss::TypeRef {
+                  if (type->kind != moss::TypeKind::Builtin) return type;
+                  vector<moss::TypeRef> arguments;
+                  if (auto arity = moss::Type::collection_arity(type->name);
+                      arity && type->type_args.empty()) {
+                    for (size_t index = 0; index < *arity; ++index)
+                      arguments.push_back(initializer_solver.fresh(0));
+                  } else {
+                    for (const auto& argument : type->type_args)
+                      arguments.push_back(open_collections(argument));
+                  }
+                  return moss::Type::builtin(type->name, std::move(arguments));
+                };
+                auto declared = moss::Type::parse_canonical(
+                    canonical_type_name(field.type));
+                auto inferred = moss::Type::parse_canonical(
+                    canonical_type_name(*actual));
+                if (!declared || !inferred ||
+                    !initializer_solver.unify(*declared,
+                                              open_collections(*inferred)))
+                  err(field_source, field.line, "state field '" + domain.name + "." + field.name +
+                      "' is annotated '" + field.type + "' but its initializer has type '" +
+                      *actual + "'");
+              }
             }
           }
           if (!field.type.empty()) initializer_env[field.name] = field.type;
@@ -7383,24 +7406,43 @@ class Checker {
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
           for (const auto& field : domain.state) env[field.name] = field.type;
           for (const auto& route : domain.routes) env[route.name] = route.type;
+          const TypeEnv entry = env;
           infer_statement_expressions(handler.body, env);
+          auto body_types = solve_local_collection_types(
+              handler.body, entry, "handler:" + domain.name + "." + handler.name,
+              false, true);
           for (auto& field : domain.state) {
             auto inferred = env.find(field.name);
             if (inferred == env.end() || inferred->second.empty() || inferred->second == "_value") continue;
+            auto retained = body_types.resolved_local(field.name);
+            string incoming = inferred->second;
+            if (retained && retained->is_closed()) {
+              auto displayed = moss::Type::parse_canonical(
+                  canonical_type_name(incoming));
+              if (!displayed || !(*displayed)->structurally_equal(*retained))
+                incoming = retained->to_canonical_string();
+            }
             if (field.type.empty()) {
-              field.type = inferred->second;
+              field.type = incoming;
               field.inferred = true;
-            } else if (!field.inferred && !same_type(field.type, inferred->second)) {
-              if ((inferred->second == "vector" && starts_with(canonical_type_name(field.type), "vector[")) ||
-                  (inferred->second == "map" && starts_with(canonical_type_name(field.type), "map[")) ||
-                  (inferred->second == "queue" && starts_with(canonical_type_name(field.type), "queue["))) {
+            } else if (!field.inferred) {
+              auto expected = moss::Type::parse_canonical(
+                  canonical_type_name(field.type));
+              const bool compatible = retained && expected && (*expected)->is_closed()
+                  ? body_types.solver.unify(retained, *expected)
+                  : same_type(field.type, incoming);
+              if (compatible) continue;
+              if (!retained &&
+                  ((incoming == "vector" && starts_with(canonical_type_name(field.type), "vector[")) ||
+                   (incoming == "map" && starts_with(canonical_type_name(field.type), "map[")) ||
+                   (incoming == "queue" && starts_with(canonical_type_name(field.type), "queue[")))) {
                 continue;
               }
               string field_source = field.source_file.empty()
                   ? domain.source_file : field.source_file;
               err(field_source, field.line, "state field '" + domain.name + "." + field.name +
                   "' has conflicting inferred types '" + field.type + "' and '" +
-                  inferred->second + "'");
+                  incoming + "'");
             }
           }
         }
@@ -7434,12 +7476,34 @@ class Checker {
             env[field.name] = field.type.empty() && !field.init.empty()
                 ? inferred_expr_type(field.init, env).value_or("") : field.type;
           for (const auto& route : domain.routes) env[route.name] = route.type;
+          const TypeEnv entry = env;
           infer_statement_expressions(handler.body, env);
+          auto body_types = solve_local_collection_types(
+              handler.body, entry, "handler:" + domain.name + "." + handler.name,
+              false, true);
+          BodyTypeScope body_scope(current_body_types_, &body_types);
           for (const auto& statement : handler.body) {
             if (statement.kind != Stmt::Kind::Reply) continue;
             auto actual = inferred_expr_type(statement.a, env);
             if (!actual) continue;
             string actual_type = *actual;
+            if (auto retained = body_types.known_expression(statement.a)) {
+              auto expected = handler.reply_type
+                  ? moss::Type::parse_canonical(
+                        canonical_type_name(*handler.reply_type))
+                  : std::nullopt;
+              if (expected && (*expected)->is_closed() &&
+                  !body_types.solver.unify(retained, *expected)) {
+                string statement_source = statement.source_file.empty()
+                    ? handler_source : statement.source_file;
+                err(statement_source, statement.line,
+                    "conflicting reply types in handler '" + domain.name +
+                    "." + handler.name + "': expected '" + *handler.reply_type +
+                    "' but this reply has type '" + *actual + "'");
+              }
+              auto resolved = body_types.solver.resolve(retained);
+              if (resolved->is_closed()) actual_type = resolved->to_canonical_string();
+            }
             if (actual_type == "vector" || actual_type == "queue" || actual_type == "map") {
               if (handler.reply_type &&
                   (canonical_type_name(*handler.reply_type) == actual_type ||
