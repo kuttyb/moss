@@ -12,6 +12,14 @@ ROOT = Path(__file__).resolve().parents[2]
 MOSS = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "moss"
 (ROOT / "tmp").mkdir(exist_ok=True)
 
+# 1. Run C++ executable unit tests covering expression nodes, statements, control flow,
+# deterministic encoding, exact identities, malformed IR rejection, and dependency closure validation.
+cpp_test = ROOT / "tests" / "tooling" / "check_phase25_checked_body_ir.cpp"
+cpp_bin = ROOT / "tmp" / "phase25-checked-body-ir-cpp-test"
+subprocess.run(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror", "-pedantic",
+                str(cpp_test), "-o", str(cpp_bin)], check=True)
+subprocess.run([str(cpp_bin)], check=True)
+
 
 def summary(source: Path, contents: str) -> dict:
     source.write_text(contents)
