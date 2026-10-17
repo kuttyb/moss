@@ -120,6 +120,29 @@ fn main():
         assert entry["open_result_bindings"][0]["ordinal"] == 0, entry
         assert entry["receiver_type_key"] is None, entry
 
+    structural = Path(scratch_path) / "structural.moss"
+    structural.write_text("""fn total(values):
+  acc = 0
+  for item in values:
+    acc = acc + item
+  return acc
+
+fn main():
+  echo total([2, 3])
+""")
+    structural_checked = subprocess.run([str(MOSS), "inspect", "main",
+        "--source", str(structural), "--json"], text=True,
+        capture_output=True)
+    assert structural_checked.returncode == 0, (
+        structural_checked.stdout, structural_checked.stderr)
+    structural_typed = json.loads(structural_checked.stdout)["result"][
+        "typed_semantic_v1"]
+    total_id = f"callable-v1:{module}:fn:total"
+    total_summaries = [entry for entry in structural_typed["open_summaries"]
+                       if entry["callable_id"] == total_id]
+    assert len(total_summaries) == 1, structural_typed
+    assert total_summaries[0]["requirement_count"] == 1, total_summaries
+
     provider = Path(scratch_path) / "provider"
     consumer = Path(scratch_path) / "consumer"
     for package_name, path in (("typed_provider", provider),
