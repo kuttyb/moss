@@ -60,6 +60,29 @@ inline void encode_checked_body_expr_v1(std::string& out,
       for (const auto& child : expr.operands)
         encode_checked_body_expr_v1(out, child);
       break;
+    case CheckedBodyExprV1::Kind::Field:
+      if (expr.operands.size() != 1 || expr.semantic_target_id.empty() ||
+          !expr.integer_value.empty())
+        throw std::invalid_argument("invalid checked field node");
+      checked_body_field(out, expr.semantic_target_id);
+      checked_body_field(out, std::to_string(expr.member_ordinal));
+      encode_checked_body_expr_v1(out, expr.operands.front());
+      break;
+    case CheckedBodyExprV1::Kind::VectorLiteral:
+      if (!expr.semantic_target_id.empty() || !expr.integer_value.empty())
+        throw std::invalid_argument("invalid checked vector node");
+      checked_body_field(out, std::to_string(expr.operands.size()));
+      for (const auto& child : expr.operands)
+        encode_checked_body_expr_v1(out, child);
+      break;
+    case CheckedBodyExprV1::Kind::Call:
+      if (expr.semantic_target_id.empty() || !expr.integer_value.empty())
+        throw std::invalid_argument("invalid checked call node");
+      checked_body_field(out, expr.semantic_target_id);
+      checked_body_field(out, std::to_string(expr.operands.size()));
+      for (const auto& child : expr.operands)
+        encode_checked_body_expr_v1(out, child);
+      break;
   }
 }
 

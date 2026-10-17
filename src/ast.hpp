@@ -87,11 +87,14 @@ struct OpenCallableSummaryFacts {
 // A versioned, checked semantic body subset. Every published node has a
 // resolved operand identity and TypeRef. Other source forms have no body hash.
 struct CheckedBodyExprV1 {
-  enum class Kind { Parameter, Integer, Add } kind;
+  enum class Kind { Parameter, Integer, Add, Field, VectorLiteral, Call } kind;
   TypeRef type;
   std::uint32_t parameter_ordinal = 0;
   string integer_value;
   vector<CheckedBodyExprV1> operands;
+  // Exact resolved declaration/callable ID, never a source alias or Rust name.
+  string semantic_target_id;
+  std::uint32_t member_ordinal = 0;
 };
 struct CheckedBodyStmtV1 {
   enum class Kind { Return } kind;

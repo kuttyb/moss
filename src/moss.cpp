@@ -2500,45 +2500,109 @@ class Checker {
                function.body[0].kind == Stmt::Kind::Return)
         expression = function.body[0].a;
       else continue;
-      auto leaf = [&](const string& source) -> std::optional<moss::CheckedBodyExprV1> {
+      std::function<std::optional<moss::CheckedBodyExprV1>(
+          const string&, const moss::TypeRef&, unsigned)> emit =
+          [&](const string& source, const moss::TypeRef& expected,
+              unsigned depth) -> std::optional<moss::CheckedBodyExprV1> {
+        if (depth > 8) return std::nullopt;
         string value = trim(source);
         for (size_t index = 0; index < function.params.size(); ++index)
           if (value == function.params[index].name &&
               index < summary.parameter_types.size() &&
-              summary.parameter_types[index])
+              summary.parameter_types[index] &&
+              (!expected || summary.parameter_types[index]->structurally_equal(*expected)))
             return moss::CheckedBodyExprV1{
                 moss::CheckedBodyExprV1::Kind::Parameter,
                 summary.parameter_types[index],
                 static_cast<std::uint32_t>(index), {}, {}};
-        if (value.empty() || !std::all_of(value.begin(), value.end(),
-              [](unsigned char c) { return std::isdigit(c); })) return std::nullopt;
-        try {
-          size_t consumed = 0;
-          const auto number = std::stoll(value, &consumed, 10);
-          if (consumed != value.size()) return std::nullopt;
-          return moss::CheckedBodyExprV1{
-              moss::CheckedBodyExprV1::Kind::Integer,
-              moss::Type::primitive("int"), 0, std::to_string(number), {}};
-        } catch (const std::exception&) {
-          return std::nullopt;
+        if (!value.empty() && std::all_of(value.begin(), value.end(),
+              [](unsigned char c) { return std::isdigit(c); })) {
+          try {
+            size_t consumed = 0;
+            const auto number = std::stoll(value, &consumed, 10);
+            if (consumed == value.size()) {
+              auto integer = moss::Type::primitive("int");
+              if (!expected || integer->structurally_equal(*expected))
+                return moss::CheckedBodyExprV1{
+                    moss::CheckedBodyExprV1::Kind::Integer,
+                    integer, 0, std::to_string(number), {}};
+            }
+          } catch (const std::exception&) {}
         }
-      };
-      std::optional<moss::CheckedBodyExprV1> result = leaf(expression);
-      if (!result) {
-        auto binary = split_binary(trim(expression), {"+"});
+        auto binary = split_binary(value, {"+"});
         if (binary) {
-          auto left = leaf(binary->first);
-          auto right = leaf(binary->second);
-          if (left && right && summary.result_type)
-            result = moss::CheckedBodyExprV1{
+          auto left = emit(binary->first, nullptr, depth + 1);
+          auto right = emit(binary->second, nullptr, depth + 1);
+          if (left && right && expected)
+            return moss::CheckedBodyExprV1{
                 moss::CheckedBodyExprV1::Kind::Add,
-                summary.result_type, 0, {}, {*left, *right}};
+                expected, 0, {}, {*left, *right}};
         }
-      }
+        const size_t dot = value.find('.');
+        if (dot != string::npos && value.find('.', dot + 1) == string::npos) {
+          auto receiver = emit(value.substr(0, dot), nullptr, depth + 1);
+          if (receiver && receiver->type &&
+              receiver->type->kind == moss::TypeKind::NominalInstance &&
+              receiver->type->declaration) {
+            auto field = BodyTypeState::nominal_field(
+                receiver->type, value.substr(dot + 1));
+            if (field && (!expected || field->structurally_equal(*expected))) {
+              const auto& slots = receiver->type->declaration->fields;
+              for (size_t index = 0; index < slots.size(); ++index)
+                if (slots[index].name == value.substr(dot + 1))
+                  return moss::CheckedBodyExprV1{
+                      moss::CheckedBodyExprV1::Kind::Field,
+                      field, 0, {}, {*receiver},
+                      receiver->type->declaration->id,
+                      static_cast<std::uint32_t>(index)};
+            }
+          }
+        }
+        if (auto elements = parse_vector_literal(value);
+            elements && expected && expected->kind == moss::TypeKind::Builtin &&
+            expected->name == "vector" && expected->type_args.size() == 1) {
+          vector<moss::CheckedBodyExprV1> children;
+          for (const auto& element : *elements) {
+            auto child = emit(element, expected->type_args[0], depth + 1);
+            if (!child) return std::nullopt;
+            children.push_back(*child);
+          }
+          return moss::CheckedBodyExprV1{
+              moss::CheckedBodyExprV1::Kind::VectorLiteral,
+              expected, 0, {}, std::move(children)};
+        }
+        string callee;
+        vector<string> arguments;
+        if (parse_simple_call(value, callee, arguments) && expected) {
+          const Function* selected = nullptr;
+          for (const auto& candidate : p_.functions)
+            if (candidate.name == callee &&
+                candidate.params.size() == arguments.size() &&
+                std::find(summary.semantic_dependencies.begin(),
+                          summary.semantic_dependencies.end(),
+                          candidate.semantic_callable_id) !=
+                    summary.semantic_dependencies.end()) {
+              if (selected) return std::nullopt;
+              selected = &candidate;
+            }
+          if (selected) {
+            vector<moss::CheckedBodyExprV1> children;
+            for (const auto& argument : arguments) {
+              auto child = emit(argument, nullptr, depth + 1);
+              if (!child) return std::nullopt;
+              children.push_back(*child);
+            }
+            return moss::CheckedBodyExprV1{
+                moss::CheckedBodyExprV1::Kind::Call,
+                expected, 0, {}, std::move(children),
+                selected->semantic_callable_id};
+          }
+        }
+        return std::nullopt;
+      };
+      std::optional<moss::CheckedBodyExprV1> result =
+          emit(expression, summary.result_type, 0);
       if (!result || !summary.result_type) continue;
-      // A direct return has exactly the summary's checked result type.
-      if (result->kind != moss::CheckedBodyExprV1::Kind::Add &&
-          !result->type->structurally_equal(*summary.result_type)) continue;
       vector<moss::CheckedBodyStmtV1> statements{{
           moss::CheckedBodyStmtV1::Kind::Return, *result}};
       function.checked_body_v1 = moss::CheckedBodyV1{
