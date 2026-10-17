@@ -15000,12 +15000,14 @@ class Checker {
         for (auto effect : operation->argument_effects)
           closed.argument_access.push_back(requirement_access(effect));
       } else if (method) {
-        auto nominal_receiver = moss::Type::parse_canonical(receiver->second);
-        closed.admitted_template_or_builtin_family =
-            nominal_receiver && (*nominal_receiver)->declaration
-                ? (*nominal_receiver)->declaration->id
-                : canonical_type_name(receiver->second);
-        closed.selected_callable_id = "method:" + method->owner + "." + method->name;
+        auto owner_declaration = p_.type_context
+            ? p_.type_context->find(method->owner) : nullptr;
+        if (!owner_declaration)
+          err(line, "selected method has no nominal declaration identity",
+              "MODULE_IDENTITY_UNRESOLVED");
+        closed.admitted_template_or_builtin_family = owner_declaration->id;
+        closed.selected_callable_id = "callable-v1:" + owner_declaration->id +
+            ":method:" + method->name;
         closed.receiver_access = requirement_access(method->receiver_effect);
         for (size_t index = 0; index < argument_types.size(); ++index)
           closed.argument_access.push_back(

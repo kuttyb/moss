@@ -405,7 +405,8 @@ fn main():
         assert len(total_specs) == 1, total_specs
         members = total_specs[0]["member_requirements"]
         assert [entry["selected_callable_id"] for entry in members] == [
-            "method:Alpha.cost", "method:Beta.cost"], members
+            "callable-v1:" + entry["receiver"]["id"] + ":method:cost"
+            for entry in members], members
         assert members[0]["receiver"]["id"] != members[1]["receiver"]["id"], members
         bad_trait = source(scratch, "invalid_trait_member_binding",
             trait_member.read_text().replace("Beta(units: 4)", "4"))
