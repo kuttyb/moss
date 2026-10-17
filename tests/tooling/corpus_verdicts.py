@@ -10,6 +10,9 @@ every file whose verdict differs from a previously recorded run.
 Each run uses a private export of the revision under `tmp/`, so semantic
 caches never touch the worktree and two compilers never share a cache.
 
+Pass --emit to also hash each accepted program's generated Rust, so a change
+that alters lowering without altering the verdict is visible too.
+
     python3 tests/tooling/corpus_verdicts.py BASE_MOSS tmp/base.tsv --rev HEAD
     python3 tests/tooling/corpus_verdicts.py ./moss tmp/new.tsv --rev HEAD \
         --compare tmp/base.tsv
@@ -17,6 +20,7 @@ caches never touch the worktree and two compilers never share a cache.
 
 import argparse
 import concurrent.futures
+import hashlib
 import io
 import json
 import os
@@ -29,7 +33,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def verdict(moss: Path, corpus: Path, source: str, timeout: int) -> str:
+def verdict(moss: Path, corpus: Path, source: str, timeout: int,
+            emit: bool) -> str:
     try:
         completed = subprocess.run(
             [str(moss), "check", source, "--json"], cwd=corpus,
@@ -40,10 +45,25 @@ def verdict(moss: Path, corpus: Path, source: str, timeout: int) -> str:
         result = json.loads(completed.stdout)
     except json.JSONDecodeError:
         return "NOJSON"
-    if result.get("ok"):
+    if not result.get("ok"):
+        error = result.get("error") or {}
+        return f"{error.get('code')}:{error.get('line')}"
+    if not emit:
         return "ok"
-    error = result.get("error") or {}
-    return f"{error.get('code')}:{error.get('line')}"
+    # Lowering decisions (pipeline fusion, specialization emission) do not
+    # change the verdict, so compare the generated Rust itself.
+    out = corpus / "tmp" / "corpus-emit" / (source.replace("/", "_") + ".rs")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        emitted = subprocess.run([str(moss), source, "-o", str(out)], cwd=corpus,
+                                 capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return "ok:EMIT-TIMEOUT"
+    if emitted.returncode != 0 or not out.exists():
+        return "ok:NO-EMIT"
+    digest = hashlib.sha256(out.read_bytes()).hexdigest()[:12]
+    out.unlink()
+    return f"ok:{digest}"
 
 
 def main() -> int:
@@ -54,6 +74,8 @@ def main() -> int:
     parser.add_argument("--compare", type=Path)
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
     parser.add_argument("--timeout", type=int, default=120)
+    parser.add_argument("--emit", action="store_true",
+                        help="also hash the generated Rust of accepted programs")
     args = parser.parse_args()
 
     moss = args.moss.resolve()
@@ -71,12 +93,13 @@ def main() -> int:
 
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
         verdicts = dict(zip(sources, pool.map(
-            lambda source: verdict(moss, corpus, source, args.timeout), sources)))
+            lambda source: verdict(moss, corpus, source, args.timeout, args.emit),
+            sources)))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text("".join(
         f"{source}\t{verdicts[source]}\n" for source in sorted(verdicts)))
     print(f"{len(verdicts)} sources checked; "
-          f"{sum(v == 'ok' for v in verdicts.values())} accepted")
+          f"{sum(v.startswith('ok') for v in verdicts.values())} accepted")
 
     if not args.compare:
         return 0
