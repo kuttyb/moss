@@ -54,6 +54,7 @@ struct TypedSemanticDependencyV1 {
 
 struct TypedSpecializationV1 {
   std::string key;
+  SpecializationKey identity;
   std::string callable_id;
   std::vector<TypeRef> parameter_types;
   TypeRef result_type;
@@ -64,9 +65,8 @@ struct TypedSpecializationV1 {
   TypedSourceProvenanceV1 provenance;
 };
 
-// A2 must supply bound ordinals and typed result/requirements at the checker
-// boundary. A missing summary is represented as unavailable, never guessed
-// from the function's display result or source text.
+// A missing or incomplete checker summary is represented as unavailable,
+// never guessed from the function's display result or source text.
 struct TypedOpenCallableSummaryV1 {
   std::string callable_id;
   uint32_t bound_variable_count{0};
@@ -74,7 +74,7 @@ struct TypedOpenCallableSummaryV1 {
   TypeRef result_type;
   std::vector<Requirement> requirements;
   std::vector<MemberDispatchRequirement> member_requirements;
-  std::vector<Effect> parameter_access;
+  std::vector<AccessMode> parameter_access;
   ObservableEffects observable_effects;
   TypedSourceProvenanceV1 provenance;
 };
@@ -86,6 +86,7 @@ struct TypedSemanticModuleV1 {
   std::map<std::string, TypedClosedTypeV1> closed_types;
   std::map<std::string, TypedNominalInstanceV1> nominal_instances;
   std::map<std::string, TypedOpenCallableSummaryV1> open_summaries;
+  std::map<std::string, std::string> unavailable_open_summaries;
   std::map<std::string, TypedSpecializationV1> specializations;
   // Legacy imported generic skeletons may appear in Function::specializations
   // with open type terms. They cannot be projected as closed specializations.
@@ -177,8 +178,63 @@ inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) 
   for (const auto& function : program.functions) {
     if (function.semantic_callable_id.empty())
       throw std::invalid_argument("checked function has no semantic callable identity");
-    if (function.generic || function.static_dispatch)
+    if (function.open_summary && function.open_summary->complete &&
+        !function.open_summary->observable_effects.unresolved &&
+        function.open_summary->parameter_access.size() ==
+            function.params.size()) {
+      const auto& checked = *function.open_summary;
+      if (checked.callable_id != function.semantic_callable_id ||
+          !checked.result_type ||
+          checked.parameter_types.size() != function.params.size())
+        throw std::invalid_argument("complete open summary lacks checked type or effect facts");
+      auto valid_term = [&](const TypeRef& type, const auto& self) -> bool {
+        if (!type) return false;
+        if (type->kind == TypeKind::InferenceVar)
+          return type->var_id.session_id == 0 &&
+                 type->var_id.owner_id == 0 &&
+                 type->var_id.ordinal < checked.bound_variable_count;
+        for (const auto& arg : type->type_args)
+          if (!self(arg, self)) return false;
+        for (const auto& field : type->field_substitutions)
+          if (!self(field.second, self)) return false;
+        return (type->kind != TypeKind::NominalInstance &&
+                type->kind != TypeKind::Enum &&
+                type->kind != TypeKind::Domain) || type->declaration;
+      };
+      if (!valid_term(checked.result_type, valid_term) ||
+          std::any_of(checked.parameter_types.begin(),
+                      checked.parameter_types.end(),
+                      [&](const TypeRef& type) {
+                        return !valid_term(type, valid_term);
+                      }))
+        throw std::invalid_argument("complete open summary contains invalid bound variable");
+      TypedOpenCallableSummaryV1 summary;
+      summary.callable_id = checked.callable_id;
+      summary.bound_variable_count = checked.bound_variable_count;
+      summary.parameter_types = checked.parameter_types;
+      summary.result_type = checked.result_type;
+      summary.requirements = checked.requirements;
+      summary.member_requirements = checked.member_requirements;
+      summary.parameter_access = checked.parameter_access;
+      summary.observable_effects = checked.observable_effects;
+      summary.provenance = {checked.origin.source_file, checked.origin.line,
+          checked.origin.module_id, checked.origin.enclosing_callable};
+      if (summary.provenance.defining_module_id.empty() ||
+          summary.provenance.enclosing_callable_id != summary.callable_id)
+        throw std::invalid_argument("complete open summary lacks bound provenance");
+      result.modules.emplace(summary.provenance.defining_module_id,
+          program.type_context->intern_module(summary.provenance.defining_module_id));
+      if (!result.open_summaries.emplace(summary.callable_id,
+                                         std::move(summary)).second)
+        throw std::invalid_argument("duplicate typed semantic open summary");
+    } else if (function.generic || function.static_dispatch) {
       result.open_summaries_complete = false;
+      result.unavailable_open_summaries.emplace(
+          function.semantic_callable_id,
+          function.open_summary && function.open_summary->complete
+              ? "checker result or effect facts remain unresolved"
+              : "checker has no complete typed open summary");
+    }
     for (const auto& specialization : function.specializations) {
       const bool open_parameter = std::any_of(
           specialization.parameter_type_refs.begin(),
@@ -190,16 +246,18 @@ inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) 
             specialization.stable_type_key.empty()
                 ? function.semantic_callable_id : specialization.stable_type_key,
             "open imported or generic specialization requires a typed summary");
-        result.open_summaries_complete = false;
         continue;
       }
       if (specialization.stable_type_key.empty() ||
+          specialization.semantic_key.stable_key() !=
+              std::optional<std::string>(specialization.stable_type_key) ||
           specialization.parameter_type_refs.size() != function.params.size() ||
           !specialization.return_type_ref ||
           specialization.parameter_effects.size() != function.params.size())
         throw std::invalid_argument("checked specialization lacks typed result or access facts");
       TypedSpecializationV1 record;
       record.key = specialization.stable_type_key;
+      record.identity = specialization.semantic_key;
       record.callable_id = function.semantic_callable_id;
       record.parameter_types = specialization.parameter_type_refs;
       record.result_type = specialization.return_type_ref;

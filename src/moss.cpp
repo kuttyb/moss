@@ -27149,6 +27149,42 @@ static void write_reason_evidence_json(std::ostream& out,
   out << "]}";
 }
 
+static void write_typed_open_type_json(std::ostream& out,
+                                       const moss::TypeRef& type) {
+  if (!type) { out << "null"; return; }
+  if (type->kind == moss::TypeKind::InferenceVar) {
+    out << "{\"kind\": \"bound_var\", \"ordinal\": "
+        << type->var_id.ordinal << "}";
+    return;
+  }
+  out << "{\"kind\": ";
+  const char* kind = type->kind == moss::TypeKind::Builtin ? "builtin" :
+      type->kind == moss::TypeKind::NominalInstance ? "nominal" :
+      type->kind == moss::TypeKind::Primitive ? "primitive" :
+      type->kind == moss::TypeKind::Enum ? "enum" :
+      type->kind == moss::TypeKind::Domain ? "domain" :
+      type->kind == moss::TypeKind::TraitConstraint ? "trait_constraint" : "unit";
+  write_debug_json_string(out, kind);
+  out << ", \"id\": ";
+  write_debug_json_string(out,
+      type->declaration ? type->declaration->id : type->name);
+  out << ", \"arguments\": [";
+  for (size_t index = 0; index < type->type_args.size(); ++index) {
+    if (index) out << ",";
+    write_typed_open_type_json(out, type->type_args[index]);
+  }
+  out << "], \"fields\": [";
+  for (size_t index = 0; index < type->field_substitutions.size(); ++index) {
+    if (index) out << ",";
+    out << "{\"name\": ";
+    write_debug_json_string(out, type->field_substitutions[index].first);
+    out << ", \"type\": ";
+    write_typed_open_type_json(out, type->field_substitutions[index].second);
+    out << "}";
+  }
+  out << "]}";
+}
+
 static void write_typed_semantic_projection_json(std::ostream& out,
                                                  const Program& program) {
   if (!program.typed_semantics)
@@ -27158,8 +27194,44 @@ static void write_typed_semantic_projection_json(std::ostream& out,
   write_debug_json_string(out, moss::TypedSemanticModuleV1::version);
   out << ", \"open_summaries_complete\": "
       << (projection.open_summaries_complete ? "true" : "false");
-  out << ", \"modules\": [";
+  out << ", \"open_summaries\": [";
   bool first = true;
+  for (const auto& entry : projection.open_summaries) {
+    if (!first) out << ",";
+    first = false;
+    const auto& summary = entry.second;
+    out << "{\"callable_id\": ";
+    write_debug_json_string(out, summary.callable_id);
+    out << ", \"bound_variable_count\": " << summary.bound_variable_count;
+    out << ", \"parameter_types\": [";
+    for (size_t index = 0; index < summary.parameter_types.size(); ++index) {
+      if (index) out << ",";
+      write_typed_open_type_json(out, summary.parameter_types[index]);
+    }
+    out << "], \"result_type\": ";
+    write_typed_open_type_json(out, summary.result_type);
+    out << ", \"requirement_count\": " << summary.requirements.size();
+    out << ", \"member_requirement_count\": "
+        << summary.member_requirements.size();
+    out << ", \"module_id\": ";
+    write_debug_json_string(out, summary.provenance.defining_module_id);
+    out << "}";
+  }
+  out << "]";
+  out << ", \"unavailable_open_summaries\": [";
+  first = true;
+  for (const auto& entry : projection.unavailable_open_summaries) {
+    if (!first) out << ",";
+    first = false;
+    out << "{\"callable_id\": ";
+    write_debug_json_string(out, entry.first);
+    out << ", \"reason\": ";
+    write_debug_json_string(out, entry.second);
+    out << "}";
+  }
+  out << "]";
+  out << ", \"modules\": [";
+  first = true;
   for (const auto& entry : projection.modules) {
     if (!first) out << ",";
     first = false;
@@ -27207,6 +27279,29 @@ static void write_typed_semantic_projection_json(std::ostream& out,
     }
     out << "], \"result_type_key\": ";
     write_debug_json_string(out, specialization.result_type->stable_type_key());
+    out << ", \"receiver_type_key\": ";
+    if (specialization.identity.receiver)
+      write_debug_json_string(out,
+          (*specialization.identity.receiver)->stable_type_key());
+    else out << "null";
+    out << ", \"callable_arguments\": [";
+    for (size_t index = 0;
+         index < specialization.identity.callable_arguments.size(); ++index) {
+      if (index) out << ",";
+      write_debug_json_string(out,
+          specialization.identity.callable_arguments[index]);
+    }
+    out << "], \"open_result_bindings\": [";
+    for (size_t index = 0;
+         index < specialization.identity.open_result_bindings.size(); ++index) {
+      if (index) out << ",";
+      const auto& binding =
+          specialization.identity.open_result_bindings[index];
+      out << "{\"ordinal\": " << binding.first << ", \"type_key\": ";
+      write_debug_json_string(out, binding.second->stable_type_key());
+      out << "}";
+    }
+    out << "]";
     out << ", \"member_requirement_count\": "
         << specialization.member_requirements.size();
     out << ", \"dependency_count\": "
