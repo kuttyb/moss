@@ -1,5 +1,50 @@
 # Moss current status
 
+## Phase 25 Team A A2 checkpoint at `68f1ea7` — 2026-10-17 (NOT READY)
+
+Slices since `bc28920`, each validated with focused suites plus a
+`corpus_verdicts --emit` comparison (verdicts **and** generated Rust), all
+pushed:
+
+- `79bf78d` **A2-7:** native lowering collection tests use terms
+  (`generated_functional_element_type`, indexed element, queue member
+  renaming, vector/queue pop). `indexed_element` deliberately excludes `seq`,
+  which is not indexable, so the conversion does not widen behavior.
+- `2659f56` **A2-8:** `builtin_receiver_family`, the semantic-query
+  collection category, and the `assertEqual` printable test use
+  `collection_named`/`primitive_term`. Helpers hoisted above first use.
+- `d3c569c` **A2-9:** `map_key_value_types`, the pipeline output type, and
+  the generic `_element:` relation read `type_args`.
+  `typed_empty_vector_constructor` **keeps** its spelling test on purpose: it
+  recognizes the constructor form and a wrong arity is reported later as
+  `INVALID_TYPED_VECTOR_CONSTRUCTOR`, but `parse_canonical` rejects a
+  wrong-arity collection outright, so using it turned `Vector[Int, String]()`
+  into `UNKNOWN_SYMBOL_OR_TYPE`. `corpus_verdicts` caught that on
+  `swarm_017_typed_empty_vector_arity`; the code now says why.
+- `6469bcd` **guard:** `check_no_internal_type_leak.py`, wired into
+  `run.sh`, fails when any diagnostic shows a compiler-internal type marker
+  (`_typevar:`, `_generic:`, `_method_value`, …). It passes here and fails on
+  the pre-`bc28920` binary with the `_typevar:` message. Two pre-existing
+  leaks are listed as KNOWN_OPEN, both pseudo-types A2 still owes; the list
+  also fails if an entry stops leaking, so it cannot rot. About 50 seconds.
+- `68f1ea7` **docs:** `TEAM_A_TYPED_SEMANTIC_API.md` gains an *A2 conversion
+  state* section: what runs on the term algebra, what remains, and why
+  `rust_type`/`default_value` stay string work. For the Architect audit.
+
+Collection-prefix spelling tests: **76 at `252c2c7` → 23**, the remainder
+concentrated in Rust emission.
+
+**Validation.** Full `make check` at `bc28920` is still running in
+`tmp/resume/base` (slow at the `margo debug` SDK step); `make` and `make
+examples` passed there. The later slices above are validated by focused
+suites and corpus comparison only. No Team A SHA has a completed passing
+`make check` yet.
+
+**Next:** the string `TypeEnv` (~165 uses) and then the open pseudo-types as
+inference variables with requirements; these are the two items that actually
+close G-A-1. Then the `actual_type.empty()` fallback, annotation binding, A4
+body IR, and the independent Architect review.
+
 ## Phase 25 Team A A2 checkpoint at `bc28920` — 2026-10-16 (NOT READY)
 
 Slices since `1cf0278`, each with focused suites plus a `corpus_verdicts`
