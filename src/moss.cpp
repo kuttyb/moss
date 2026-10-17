@@ -651,6 +651,16 @@ static std::optional<moss::SpecializationKey> specialization_key_inputs(
   return key;
 }
 
+static string semantic_call_site_identity(const SemanticCallEdge& edge) {
+  string identity = edge.source +
+      (edge.source_specialization_key.empty()
+          ? string() : "#" + edge.source_specialization_key) +
+      "@" + std::to_string(edge.line) + ":call:" + edge.target;
+  if (edge.occurrence != 0)
+    identity += ":occurrence:" + std::to_string(edge.occurrence + 1);
+  return identity;
+}
+
 static bool specialization_matches(const Function& function,
                                    const FunctionSpecialization& specialization,
                                    const vector<string>& types) {
@@ -10423,6 +10433,7 @@ class Checker {
       int result_line, TypeEnv env, const ObjectType* implicit_owner,
       const string& source, std::map<string,std::set<string>>& graph,
       std::map<string,int>& edge_lines, const string& physical_source) {
+    std::map<std::tuple<string,int,string>, uint32_t> call_occurrences;
     auto retain_message_edge = [&](int line, const string& expression,
                                    const TypeEnv& current_env,
                                    const string& expression_source) {
@@ -10478,17 +10489,9 @@ class Checker {
                                     ? physical_source
                                     : statement.source_file,
                                 "ordinary_call", {}, {}, {}};
-          if (std::find_if(
-                  p_.semantic_call_edges.begin(),
-                  p_.semantic_call_edges.end(),
-                  [&](const SemanticCallEdge& existing) {
-                    return existing.source == edge.source &&
-                        existing.target == edge.target &&
-                        existing.line == edge.line &&
-                        existing.argument_types == edge.argument_types &&
-                        existing.source_file == edge.source_file;
-                  }) == p_.semantic_call_edges.end())
-            p_.semantic_call_edges.push_back(std::move(edge));
+          edge.occurrence = call_occurrences[std::make_tuple(
+              edge.source_file, edge.line, edge.target)]++;
+          p_.semantic_call_edges.push_back(std::move(edge));
         }
         retain_message_edge(statement.line, expression, current_env,
                             statement.source_file);
@@ -10540,17 +10543,9 @@ class Checker {
         SemanticCallEdge edge{source, call.target, result_line,
                               call.argument_types, physical_source,
                               "ordinary_call", {}, {}, {}};
-        if (std::find_if(
-                p_.semantic_call_edges.begin(),
-                p_.semantic_call_edges.end(),
-                [&](const SemanticCallEdge& existing) {
-                  return existing.source == edge.source &&
-                      existing.target == edge.target &&
-                      existing.line == edge.line &&
-                        existing.argument_types == edge.argument_types &&
-                        existing.source_file == edge.source_file;
-                }) == p_.semantic_call_edges.end())
-          p_.semantic_call_edges.push_back(std::move(edge));
+        edge.occurrence = call_occurrences[std::make_tuple(
+            edge.source_file, edge.line, edge.target)]++;
+        p_.semantic_call_edges.push_back(std::move(edge));
       }
       retain_message_edge(result_line, *result_expression, env,
                           physical_source);
@@ -10695,6 +10690,8 @@ class Checker {
                 if (left.line != right.line) return left.line < right.line;
                 if (left.target != right.target)
                   return left.target < right.target;
+                if (left.occurrence != right.occurrence)
+                  return left.occurrence < right.occurrence;
                 if (left.argument_types != right.argument_types)
                   return left.argument_types < right.argument_types;
                 return left.source_file < right.source_file;
@@ -25218,8 +25215,7 @@ static vector<SemanticTargetFact> semantic_target_facts(
 
   for (const auto& call : program.semantic_call_edges) {
     SemanticTargetFact fact;
-    fact.semantic_identity = call.source + "@" + std::to_string(call.line) +
-        ":call:" + call.target;
+    fact.semantic_identity = semantic_call_site_identity(call);
     fact.context = call.source;
     fact.kind = "call";
     fact.name = call.target;
@@ -25630,8 +25626,7 @@ static SemanticQueryResolution resolve_semantic_target(
             (!source_file.empty() && edge.source_file != source_file))
           continue;
         if (kind_filter == "call") {
-          const string call_identity = edge.source + "@" +
-              std::to_string(edge.line) + ":call:" + edge.target;
+          const string call_identity = semantic_call_site_identity(edge);
           append(by_semantic_identity(call_identity));
         } else {
           const SemanticTargetFact* callee = by_context(edge.target);
@@ -26056,8 +26051,8 @@ static vector<const SemanticCallEdge*> calls_for_target(
     const Program& program, const SemanticTargetFact& target) {
   vector<const SemanticCallEdge*> result;
   for (const auto& edge : program.semantic_call_edges)
-    if ((target.kind == "call" && edge.source == target.context &&
-         edge.target == target.name && edge.line == target.line) ||
+    if ((target.kind == "call" &&
+         semantic_call_site_identity(edge) == target.semantic_identity) ||
         (target.kind != "call" && edge.source == target.context))
       result.push_back(&edge);
   return result;
@@ -26836,14 +26831,6 @@ static const SemanticTargetFact* semantic_target_for_context(
     if (semantic_target_is_root(target) && target.context == context)
       return &target;
   return nullptr;
-}
-
-static string semantic_call_site_identity(const SemanticCallEdge& edge) {
-  return edge.source +
-      (edge.source_specialization_key.empty()
-          ? string() : "#" + edge.source_specialization_key) +
-      "@" + std::to_string(edge.line) +
-      ":call:" + edge.target;
 }
 
 static void write_calls_result(std::ostream& out, const Program& program,

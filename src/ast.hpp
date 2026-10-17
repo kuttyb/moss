@@ -361,6 +361,10 @@ struct SemanticCallEdge {
   // Set by the checked call closure. Query and module projection consume this
   // exact identity instead of reconstructing it from display argument types.
   string specialization_key;
+  // Source-order occurrence among calls with the same caller, line, and
+  // target. This distinguishes two expressions on one source line without
+  // changing the callable or specialization identity.
+  uint32_t occurrence = 0;
 };
 
 // Minimal resolved-use facts retained by the ordinary checker for semantic

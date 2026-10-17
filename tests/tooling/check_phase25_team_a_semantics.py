@@ -131,6 +131,41 @@ fn main():
         print("PASS callable arguments use resolved IDs in checked keys and edges",
               flush=True)
 
+        same_line = source(scratch, "same_line_callable_sites", '''fn add_one(x: Int) -> Int:
+  return x + 1
+
+fn add_two(x: Int) -> Int:
+  return x + 2
+
+fn apply(f, x: Int) -> Int:
+  return f(x)
+
+fn main():
+  echo apply(add_one, 2) + apply(add_two, 2)
+  echo apply(add_one, 2) + apply(add_one, 3)
+''')
+        parity(same_line, scratch, "7\n7\n")
+        calls = run(MOSS, "calls", "main", "--source", same_line, "--json")
+        assert calls.returncode == 0, (calls.stdout, calls.stderr)
+        edges = [edge for edge in json.loads(calls.stdout)["result"]["direct_calls"]
+                 if edge["target"] == "fn:apply"]
+        distinct = [edge for edge in edges if edge["line"] == 11]
+        repeated = [edge for edge in edges if edge["line"] == 12]
+        assert len(distinct) == len(repeated) == 2, edges
+        assert len({edge["specialization_key"] for edge in distinct}) == 2, distinct
+        assert len({edge["specialization_key"] for edge in repeated}) == 1, repeated
+        for pair in (distinct, repeated):
+            assert len({edge["call_site_semantic_identity"] for edge in pair}) == 2, pair
+            assert len({edge["call_site_id"] for edge in pair}) == 2, pair
+        selected = run(MOSS, "calls", distinct[1]["call_site_semantic_identity"],
+                       "--source", same_line, "--json")
+        assert selected.returncode == 0, (selected.stdout, selected.stderr)
+        selected_edges = json.loads(selected.stdout)["result"]["direct_calls"]
+        assert len(selected_edges) == 1 and selected_edges[0]["specialization_key"] == \
+            distinct[1]["specialization_key"], selected_edges
+        print("PASS same-line calls retain one exact identity per expression",
+              flush=True)
+
         # Equal callable and argument identities must still diverge when the
         # checked result variables close to different concrete types.
         result_keys = source(scratch, "open_result_keys", '''fn make(seed):
