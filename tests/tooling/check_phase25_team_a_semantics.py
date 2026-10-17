@@ -157,6 +157,30 @@ fn main():
         print("PASS checked open-result bindings select distinct query and native keys",
               flush=True)
 
+        nested_arguments = source(scratch, "nested_argument_open_results", '''fn make(seed):
+  return []
+
+fn use_ints(a: Vector[Int]):
+  echo a |> count
+
+fn use_words(a: Vector[String]):
+  echo a |> count
+
+fn main():
+  use_ints(make(0))
+  use_words(make(0))
+''')
+        parity(nested_arguments, scratch, "0\n0\n")
+        calls = run(MOSS, "calls", "main", "--source", nested_arguments, "--json")
+        assert calls.returncode == 0, (calls.stdout, calls.stderr)
+        nested_edges = [edge for edge in json.loads(calls.stdout)["result"]["direct_calls"]
+                        if edge["target"] == "fn:make"]
+        nested_keys = [edge.get("specialization_key") for edge in nested_edges]
+        assert len(nested_keys) == 2 and all(nested_keys), nested_edges
+        assert len(set(nested_keys)) == 2, nested_edges
+        print("PASS nested argument results close to distinct exact keys across three engines",
+              flush=True)
+
         generic_caller = source(scratch, "generic_caller_result_keys", '''fn make(seed):
   return []
 
@@ -532,6 +556,9 @@ export fn add_one(value: Int) -> Int:
         package(scratch / "consumer", "team_a_consumer", "0.1.0", {
             "main": '''module Main
 import Provider
+fn use_ints(values: Vector[Int]):
+  echo values |> count
+
 fn main():
   ints = Provider.relay()
   words = Provider.relay()
@@ -540,6 +567,7 @@ fn main():
   echo ints[0]
   echo words[0]
   echo Provider.size("abc")
+  use_ints(Provider.fresh())
 ''',
         })
         env["MOSS_MODULE_PATH"] = str(artifacts)
@@ -550,7 +578,7 @@ fn main():
         assert data["ok"], data
         executable = data["artifacts"]["artifacts"]["executable"]
         executed = run(executable, cwd=scratch / "consumer", env=env)
-        assert executed.returncode == 0 and executed.stdout == "1\none\n3\n", (
+        assert executed.returncode == 0 and executed.stdout == "1\none\n3\n0\n", (
             executed.stdout, executed.stderr)
         print("PASS source-free generic calls freshen independently", flush=True)
 

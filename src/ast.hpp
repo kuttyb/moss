@@ -105,6 +105,10 @@ struct Stmt {
   // Exact checked specialization selected for an open-result call in this
   // body context. Native lowering consumes this key at the source statement.
   std::unordered_map<string, string> open_call_keys_by_context;
+  // Nested call results can close from an enclosing parameter type. Preserve
+  // each expression's exact checked key for native lowering in that context.
+  std::unordered_map<string, std::unordered_map<string, string>>
+      nested_open_call_keys_by_context;
   // Concrete receiver after collection element inference, keyed by the exact
   // callable/specialization context. Native lowering projects this checked fact.
   std::unordered_map<string,string> receiver_types_by_context;

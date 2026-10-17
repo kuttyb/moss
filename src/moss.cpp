@@ -5996,6 +5996,23 @@ class Checker {
     };
     auto require_type = [&](int line, const string& expression,
                             const string& expected, const string& context) {
+      string callee;
+      vector<string> arguments;
+      if (parse_simple_call(trim(expression), callee, arguments)) {
+        auto function = functions_.find(callee);
+        if (function != functions_.end()) {
+          const auto* summary = function->second->open_summary
+              ? &*function->second->open_summary : nullptr;
+          auto inferred_result = function->second->return_type
+              ? moss::Type::parse_canonical(
+                    canonical_type_name(*function->second->return_type))
+              : std::nullopt;
+          if ((summary && summary->complete && summary->result_type &&
+               !summary->result_type->is_closed()) ||
+              (inferred_result && !(*inferred_result)->is_closed()))
+            return;  // The checked call closes against the expected parameter.
+        }
+      }
       auto actual = term_for(expression);
       auto parsed = moss::Type::parse_canonical(canonical_type_name(expected));
       if (!actual || !parsed) return;
@@ -14585,8 +14602,77 @@ class Checker {
     checking_specialization_ = previous;
   }
 
+  OpenCallResultFacts close_open_result_summary(
+      int line, const Function& function, const vector<string>& actual_types,
+      const moss::TypeRef& expected) const {
+    if (!function.open_summary || !function.open_summary->complete || !expected)
+      err(line, "open-result call has no complete checked summary",
+          "TYPE_AMBIGUOUS_OPEN_RESULT");
+    const auto& summary = *function.open_summary;
+    if (summary.parameter_types.size() != actual_types.size())
+      err(line, "open-result call has incompatible argument count", "TYPE_MISMATCH");
+    moss::TypeSolver solver(1);
+    vector<moss::TypeRef> fresh;
+    for (uint32_t ordinal = 0; ordinal < summary.bound_variable_count; ++ordinal)
+      fresh.push_back(solver.fresh(1));
+    std::function<moss::TypeRef(const moss::TypeRef&)> instantiate =
+        [&](const moss::TypeRef& type) -> moss::TypeRef {
+      if (!type) return nullptr;
+      if (type->kind == moss::TypeKind::InferenceVar)
+        return type->var_id.session_id == 0 &&
+               type->var_id.ordinal < fresh.size()
+            ? fresh[type->var_id.ordinal] : nullptr;
+      if (type->kind == moss::TypeKind::Builtin) {
+        vector<moss::TypeRef> children;
+        for (const auto& child : type->type_args)
+          children.push_back(instantiate(child));
+        return moss::Type::builtin(type->name, std::move(children));
+      }
+      if (type->kind == moss::TypeKind::NominalInstance) {
+        vector<std::pair<string, moss::TypeRef>> fields;
+        for (const auto& field : type->field_substitutions)
+          fields.emplace_back(field.first, instantiate(field.second));
+        return moss::Type::nominal_bound(type->declaration, type->name,
+                                        std::move(fields));
+      }
+      return type;
+    };
+    for (size_t index = 0; index < actual_types.size(); ++index) {
+      auto actual = moss::Type::parse_canonical(
+          canonical_type_name(actual_types[index]));
+      auto formal = instantiate(summary.parameter_types[index]);
+      if (!actual || !formal || !solver.unify(*actual, formal))
+        err(line, "open-result call argument conflicts with its summary",
+            "TYPE_MISMATCH");
+    }
+    auto result = instantiate(summary.result_type);
+    if (!result || !solver.unify(result, expected))
+      err(line, "open-result call conflicts with its required result type",
+          "TYPE_MISMATCH");
+    OpenCallResultFacts facts;
+    facts.callable_id = function.semantic_callable_id;
+    facts.result = solver.resolve(result);
+    std::set<uint32_t> ordinals;
+    std::function<void(const moss::TypeRef&)> collect =
+        [&](const moss::TypeRef& type) {
+      if (!type) return;
+      if (type->kind == moss::TypeKind::InferenceVar) {
+        ordinals.insert(type->var_id.ordinal);
+        return;
+      }
+      for (const auto& child : type->type_args) collect(child);
+      for (const auto& field : type->field_substitutions)
+        collect(field.second);
+    };
+    collect(summary.result_type);
+    for (uint32_t ordinal : ordinals)
+      facts.ordered_bindings.emplace_back(ordinal, solver.resolve(fresh[ordinal]));
+    return facts;
+  }
+
   void check_function_call(int line, const string& name, const vector<string>& args,
-                           const std::unordered_map<string,string>& env) {
+                           const std::unordered_map<string,string>& env,
+                           const moss::TypeRef& expected_open_result = nullptr) {
     if (name == "range") {
       if (args.size() != 2 && args.size() != 3)
         err(line, "range expects range(start, end) or range(start, end, step)");
@@ -14702,8 +14788,27 @@ class Checker {
           std::to_string(function->second->params.size()) + " arguments, got " +
           std::to_string(args.size()));
     vector<string> actual_types;
-    for (const auto& argument : args)
+    for (size_t index = 0; index < args.size(); ++index) {
+      const auto& argument = args[index];
+      const auto& parameter = function->second->params[index];
+      string nested_name;
+      vector<string> nested_arguments;
+      auto required = parameter.type.empty() ? std::nullopt :
+          moss::Type::parse_canonical(canonical_type_name(parameter.type));
+      if (required && (*required)->is_closed() &&
+          parse_simple_call(trim(argument), nested_name, nested_arguments)) {
+        auto nested = functions_.find(nested_name);
+        if (nested != functions_.end() && nested->second->open_summary &&
+            nested->second->open_summary->complete &&
+            nested->second->open_summary->result_type &&
+            !nested->second->open_summary->result_type->is_closed()) {
+          check_function_call(line, nested_name, nested_arguments, env, *required);
+          actual_types.push_back((*required)->to_canonical_string());
+          continue;
+        }
+      }
       actual_types.push_back(inferred_expr_type(argument, env).value_or(""));
+    }
     // Each explicit module currently emits its own nominal FileIO runtime.
     // A concrete provider-owned call cannot take another crate's Range.
     // Static/generic calls specialize in the consumer crate and use its Range;
@@ -14791,7 +14896,40 @@ class Checker {
       auto requirements = validate_method_requirements(
           line, *function->second, actual_types);
       const OpenCallResultFacts* open_result = nullptr;
+      std::optional<OpenCallResultFacts> nested_result;
       std::optional<OpenCallResultFacts> returned_result;
+      if (expected_open_result && function->second->open_summary &&
+          function->second->open_summary->complete) {
+        nested_result = close_open_result_summary(
+            line, *function->second, actual_types, expected_open_result);
+        open_result = &*nested_result;
+      }
+      if (!open_result && current_check_statement_) {
+        auto context = current_check_statement_->nested_open_call_keys_by_context.find(
+            current_check_body_context_);
+        if (context != current_check_statement_
+                           ->nested_open_call_keys_by_context.end()) {
+          auto nested_key = context->second.find(
+              function->second->name + "(" + join_arguments(args) + ")");
+          if (nested_key != context->second.end()) {
+            auto closed = std::find_if(function->second->specializations.begin(),
+                function->second->specializations.end(),
+                [&](const FunctionSpecialization& candidate) {
+                  return candidate.stable_type_key == nested_key->second;
+                });
+            if (closed == function->second->specializations.end() ||
+                !closed->return_type_ref)
+              err(line, "checked nested call has no closed specialization",
+                  "TYPE_AMBIGUOUS_OPEN_RESULT");
+            nested_result.emplace();
+            nested_result->callable_id = function->second->semantic_callable_id;
+            nested_result->result = closed->return_type_ref;
+            nested_result->ordered_bindings =
+                closed->semantic_key.open_result_bindings;
+            open_result = &*nested_result;
+          }
+        }
+      }
       if (current_check_statement_ &&
           current_check_statement_->line == line) {
         const auto& statement = *current_check_statement_;
@@ -14910,7 +15048,12 @@ class Checker {
           err(line, "open-result specialization has unresolved type bindings",
               "TYPE_AMBIGUOUS_OPEN_RESULT");
         const string exact_key = *key->stable_key();
-        if (current_check_statement_ && !returned_result)
+        if (nested_result && current_check_statement_)
+          const_cast<Stmt*>(current_check_statement_)
+              ->nested_open_call_keys_by_context[current_check_body_context_]
+                  [function->second->name + "(" + join_arguments(args) + ")"] =
+                      exact_key;
+        if (current_check_statement_ && !returned_result && !nested_result)
           const_cast<Stmt*>(current_check_statement_)->open_call_keys_by_context[
               current_check_body_context_] = exact_key;
         if (returned_result && current_check_statement_ &&
@@ -18724,6 +18867,31 @@ class Generator {
     }
     if (phase21_codegen_statement_) {
       const Stmt& statement = *phase21_codegen_statement_;
+      string nested_expression = function.name + "(";
+      for (size_t index = 0; index < arguments.size(); ++index) {
+        if (index) nested_expression += ", ";
+        nested_expression += arguments[index];
+      }
+      nested_expression += ")";
+      auto nested_context = statement.nested_open_call_keys_by_context.find(
+          codegen_active_specialization_key_);
+      if (nested_context == statement.nested_open_call_keys_by_context.end())
+        nested_context = statement.nested_open_call_keys_by_context.find(
+            codegen_body_context_);
+      if (nested_context != statement.nested_open_call_keys_by_context.end()) {
+        auto nested_key = nested_context->second.find(nested_expression);
+        if (nested_key != nested_context->second.end()) {
+          auto exact = std::find_if(function.specializations.begin(),
+                                    function.specializations.end(),
+                                    [&](const FunctionSpecialization& candidate) {
+            return candidate.stable_type_key == nested_key->second;
+          });
+          if (exact == function.specializations.end())
+            throw std::runtime_error(
+                "checked nested open-result key is absent from native projection");
+          return &*exact;
+        }
+      }
       auto selected = statement.open_call_keys_by_context.find(
           codegen_active_specialization_key_);
       if (selected == statement.open_call_keys_by_context.end())
