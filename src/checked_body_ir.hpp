@@ -499,6 +499,8 @@ struct SemanticDependency {
   std::string target_id;       // Exact semantic identifier
   std::string expected_hash;   // Expected canonical hash
 
+  bool is_complete() const { return !expected_hash.empty(); }
+
   bool operator==(const SemanticDependency& o) const {
     return kind == o.kind && target_id == o.target_id && expected_hash == o.expected_hash;
   }
@@ -558,15 +560,61 @@ inline std::vector<SemanticDependency> extract_semantic_dependencies(
   return std::vector<SemanticDependency>(deps.begin(), deps.end());
 }
 
-inline bool is_canonical_semantic_hash(std::string_view hash) {
-  constexpr std::string_view prefix = "body-semantic-v1:sha256:";
-  if (hash.rfind(prefix, 0) == 0) {
-    hash.remove_prefix(prefix.size());
+inline bool is_canonical_dependency_hash(SemanticDependency::Kind kind, std::string_view hash) {
+  std::string_view hex_part = hash;
+  if (kind == SemanticDependency::Kind::Callable || kind == SemanticDependency::Kind::Handler) {
+    constexpr std::string_view body_prefix = "body-semantic-v1:sha256:";
+    constexpr std::string_view sha_prefix = "sha256:";
+    if (hex_part.rfind(body_prefix, 0) == 0) {
+      hex_part.remove_prefix(body_prefix.size());
+    } else if (hex_part.rfind(sha_prefix, 0) == 0) {
+      hex_part.remove_prefix(sha_prefix.size());
+    } else {
+      return false;
+    }
+  } else if (kind == SemanticDependency::Kind::NominalType) {
+    constexpr std::string_view nominal_prefix = "nominal-instance-v1:sha256:";
+    constexpr std::string_view type_key_prefix = "type-key-v1:sha256:";
+    constexpr std::string_view sha_prefix = "sha256:";
+    if (hex_part.rfind(nominal_prefix, 0) == 0) {
+      hex_part.remove_prefix(nominal_prefix.size());
+    } else if (hex_part.rfind(type_key_prefix, 0) == 0) {
+      hex_part.remove_prefix(type_key_prefix.size());
+    } else if (hex_part.rfind(sha_prefix, 0) == 0) {
+      hex_part.remove_prefix(sha_prefix.size());
+    } else {
+      return false;
+    }
+  } else {
+    return false;
   }
-  if (hash.size() != 64) return false;
-  return std::all_of(hash.begin(), hash.end(), [](char c) {
+
+  if (hex_part.size() != 64) return false;
+  return std::all_of(hex_part.begin(), hex_part.end(), [](char c) {
     return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
   });
+}
+
+inline bool is_well_formed_hash_any_kind(std::string_view hash) {
+  constexpr std::string_view p1 = "body-semantic-v1:sha256:";
+  constexpr std::string_view p2 = "nominal-instance-v1:sha256:";
+  constexpr std::string_view p3 = "type-key-v1:sha256:";
+  constexpr std::string_view p4 = "sha256:";
+  std::string_view hex_part = hash;
+  if (hex_part.rfind(p1, 0) == 0) hex_part.remove_prefix(p1.size());
+  else if (hex_part.rfind(p2, 0) == 0) hex_part.remove_prefix(p2.size());
+  else if (hex_part.rfind(p3, 0) == 0) hex_part.remove_prefix(p3.size());
+  else if (hex_part.rfind(p4, 0) == 0) hex_part.remove_prefix(p4.size());
+  else return false;
+
+  if (hex_part.size() != 64) return false;
+  return std::all_of(hex_part.begin(), hex_part.end(), [](char c) {
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+  });
+}
+
+inline bool is_canonical_semantic_hash(std::string_view hash) {
+  return is_well_formed_hash_any_kind(hash);
 }
 
 struct EntityFacts {
@@ -580,6 +628,8 @@ struct EntityFacts {
 enum class ClosureValidationStatus {
   Valid,
   MissingDependency,
+  MissingExpectedHash,
+  InvalidHashKind,
   HashMismatch,
   ForgedHash,
   CyclicDependency,
@@ -613,16 +663,31 @@ inline ClosureValidationResult validate_dependency_closure(
     current_path.push_back(id);
 
     for (const auto& dep : deps) {
-      // 1. Check for forged expected hash
-      if (!dep.expected_hash.empty() && !is_canonical_semantic_hash(dep.expected_hash)) {
+      // 1. Expected hash MUST be present; an empty expected hash leaves the contract incomplete.
+      if (dep.expected_hash.empty()) {
+        result.status = ClosureValidationStatus::MissingExpectedHash;
+        result.failing_id = dep.target_id;
+        result.error_message = "missing expected semantic hash for dependency: " + dep.target_id;
+        return false;
+      }
+
+      // 2. Validate expected hash well-formedness and kind
+      if (!is_well_formed_hash_any_kind(dep.expected_hash)) {
         result.status = ClosureValidationStatus::ForgedHash;
         result.failing_id = dep.target_id;
         result.expected_hash = dep.expected_hash;
         result.error_message = "forged or non-canonical expected dependency hash for " + dep.target_id;
         return false;
       }
+      if (!is_canonical_dependency_hash(dep.kind, dep.expected_hash)) {
+        result.status = ClosureValidationStatus::InvalidHashKind;
+        result.failing_id = dep.target_id;
+        result.expected_hash = dep.expected_hash;
+        result.error_message = "expected dependency hash kind mismatch for " + dep.target_id;
+        return false;
+      }
 
-      // 2. Check missing
+      // 3. Check missing in environment
       auto it = environment.find(dep.target_id);
       if (it == environment.end()) {
         result.status = ClosureValidationStatus::MissingDependency;
@@ -634,7 +699,7 @@ inline ClosureValidationResult validate_dependency_closure(
 
       const auto& fact = it->second;
 
-      // 3. Check unsupported
+      // 4. Check unsupported
       if (!fact.is_supported) {
         result.status = ClosureValidationStatus::UnsupportedDependency;
         result.failing_id = dep.target_id;
@@ -643,17 +708,24 @@ inline ClosureValidationResult validate_dependency_closure(
         return false;
       }
 
-      // 4. Check forged actual hash
-      if (!is_canonical_semantic_hash(fact.semantic_hash)) {
+      // 5. Validate actual hash well-formedness and kind
+      if (!is_well_formed_hash_any_kind(fact.semantic_hash)) {
         result.status = ClosureValidationStatus::ForgedHash;
         result.failing_id = dep.target_id;
         result.actual_hash = fact.semantic_hash;
         result.error_message = "dependency has forged or non-canonical actual hash: " + dep.target_id;
         return false;
       }
+      if (!is_canonical_dependency_hash(dep.kind, fact.semantic_hash)) {
+        result.status = ClosureValidationStatus::InvalidHashKind;
+        result.failing_id = dep.target_id;
+        result.actual_hash = fact.semantic_hash;
+        result.error_message = "actual dependency hash kind mismatch for " + dep.target_id;
+        return false;
+      }
 
-      // 5. Check hash mismatch
-      if (!dep.expected_hash.empty() && dep.expected_hash != fact.semantic_hash) {
+      // 6. Check hash mismatch
+      if (dep.expected_hash != fact.semantic_hash) {
         result.status = ClosureValidationStatus::HashMismatch;
         result.failing_id = dep.target_id;
         result.expected_hash = dep.expected_hash;
@@ -663,7 +735,7 @@ inline ClosureValidationResult validate_dependency_closure(
         return false;
       }
 
-      // 6. Check cycle
+      // 7. Check cycle
       if (visit_state[dep.target_id] == 1) {
         result.status = ClosureValidationStatus::CyclicDependency;
         result.failing_id = dep.target_id;
@@ -713,13 +785,25 @@ inline CheckedBodyFunction make_checked_function(
   try {
     fn.body_semantic_hash = checked_ir::compute_checked_body_hash_v1(fn.statements);
     fn.dependencies = extract_semantic_dependencies(fn.statements);
+    bool has_incomplete_dependency = false;
+    std::string missing_dep_id;
     for (auto& dep : fn.dependencies) {
       auto found = expected_hashes.find(dep.target_id);
       if (found != expected_hashes.end()) {
         dep.expected_hash = found->second;
       }
+      if (dep.expected_hash.empty()) {
+        has_incomplete_dependency = true;
+        if (missing_dep_id.empty()) missing_dep_id = dep.target_id;
+      }
     }
-    fn.has_supported_body = true;
+    if (has_incomplete_dependency) {
+      fn.has_supported_body = false;
+      fn.unsupported_reason = "incomplete_dependency_contract: missing expected hash for " + missing_dep_id;
+      fn.body_semantic_hash.clear();
+    } else {
+      fn.has_supported_body = true;
+    }
   } catch (const std::exception& e) {
     fn.has_supported_body = false;
     fn.unsupported_reason = e.what();

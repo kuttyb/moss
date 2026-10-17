@@ -266,11 +266,15 @@ int main() {
   env[helper_id] = moss::EntityFacts{helper_id, hash_add, {}, true, ""};
   env[other_helper_id] = moss::EntityFacts{other_helper_id, hash_sub, {}, true, ""};
   env[audit_handler_id] = moss::EntityFacts{audit_handler_id, "body-semantic-v1:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", {}, true, ""};
-  env[box_decl->id] = moss::EntityFacts{box_decl->id, "body-semantic-v1:sha256:1111111111111111111111111111111111111111111111111111111111111111", {}, true, ""};
+  const std::string box_nominal_hash = "nominal-instance-v1:sha256:1111111111111111111111111111111111111111111111111111111111111111";
+  env[box_decl->id] = moss::EntityFacts{box_decl->id, box_nominal_hash, {}, true, ""};
 
-  // Scenario 1: Valid closure
+  // Scenario 1: Valid closure (callable and nominal dependencies)
   {
-    std::vector<moss::SemanticDependency> root_deps{{moss::SemanticDependency::Kind::Callable, helper_id, hash_add}};
+    std::vector<moss::SemanticDependency> root_deps{
+      {moss::SemanticDependency::Kind::Callable, helper_id, hash_add},
+      {moss::SemanticDependency::Kind::NominalType, box_decl->id, box_nominal_hash}
+    };
     auto res = moss::validate_dependency_closure("fn:main", root_deps, env);
     assert(res.ok());
     assert(res.status == moss::ClosureValidationStatus::Valid);
@@ -332,19 +336,78 @@ int main() {
     auto unsupp_env = env;
     unsupp_env[unsupported_id] = moss::EntityFacts{unsupported_id, "", {}, false, "unsupported_checked_body_form"};
 
-    std::vector<moss::SemanticDependency> root_deps{{moss::SemanticDependency::Kind::Callable, unsupported_id, ""}};
+    std::string valid_expected = "body-semantic-v1:sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+    std::vector<moss::SemanticDependency> root_deps{{moss::SemanticDependency::Kind::Callable, unsupported_id, valid_expected}};
     auto res = moss::validate_dependency_closure("fn:main", root_deps, unsupp_env);
     assert(!res.ok());
     assert(res.status == moss::ClosureValidationStatus::UnsupportedDependency);
     assert(res.failing_id == unsupported_id);
   }
 
+  // Scenario 7: Missing expected hash (rejects incomplete contract)
+  {
+    std::vector<moss::SemanticDependency> incomplete_deps{{moss::SemanticDependency::Kind::Callable, helper_id, ""}};
+    assert(!incomplete_deps[0].is_complete());
+    auto res = moss::validate_dependency_closure("fn:main", incomplete_deps, env);
+    assert(!res.ok());
+    assert(res.status == moss::ClosureValidationStatus::MissingExpectedHash);
+    assert(res.failing_id == helper_id);
+  }
+
+  // Scenario 8: Invalid hash kind (Callable vs NominalType hash prefix mismatch)
+  {
+    // Callable with nominal-instance-v1 prefix
+    std::vector<moss::SemanticDependency> bad_callable_deps{{moss::SemanticDependency::Kind::Callable, helper_id, box_nominal_hash}};
+    auto res1 = moss::validate_dependency_closure("fn:main", bad_callable_deps, env);
+    assert(!res1.ok());
+    assert(res1.status == moss::ClosureValidationStatus::InvalidHashKind);
+    assert(res1.failing_id == helper_id);
+
+    // NominalType with body-semantic-v1 prefix
+    std::vector<moss::SemanticDependency> bad_nominal_deps{{moss::SemanticDependency::Kind::NominalType, box_decl->id, hash_add}};
+    auto res2 = moss::validate_dependency_closure("fn:main", bad_nominal_deps, env);
+    assert(!res2.ok());
+    assert(res2.status == moss::ClosureValidationStatus::InvalidHashKind);
+    assert(res2.failing_id == box_decl->id);
+
+    // Environment actual hash has wrong kind
+    auto bad_env = env;
+    bad_env[helper_id] = moss::EntityFacts{helper_id, box_nominal_hash, {}, true, ""};
+    std::vector<moss::SemanticDependency> valid_callable_deps{{moss::SemanticDependency::Kind::Callable, helper_id, hash_add}};
+    auto res3 = moss::validate_dependency_closure("fn:main", valid_callable_deps, bad_env);
+    assert(!res3.ok());
+    assert(res3.status == moss::ClosureValidationStatus::InvalidHashKind);
+  }
+
   // 8. Test make_checked_function
+  // 8a. Function with no dependencies succeeds
   {
     auto fn = moss::make_checked_function("callable-v1:main:fn:add", {int_type, int_type}, int_type, {ret_bin_add});
     assert(fn.has_supported_body);
     assert(!fn.body_semantic_hash.empty());
     assert(fn.body_semantic_hash == hash_add);
+    assert(fn.dependencies.empty());
+  }
+
+  // 8b. Function with dependency but missing expected hash fails closed (incomplete contract)
+  {
+    auto fn_incomplete = moss::make_checked_function("callable-v1:main:fn:caller", {int_type}, int_type, {ret_call_helper});
+    assert(!fn_incomplete.has_supported_body);
+    assert(fn_incomplete.body_semantic_hash.empty());
+    assert(fn_incomplete.unsupported_reason.find("incomplete_dependency_contract") != std::string::npos);
+    assert(fn_incomplete.dependencies.size() == 1);
+    assert(!fn_incomplete.dependencies[0].is_complete());
+  }
+
+  // 8c. Function with dependency and provided expected hash succeeds
+  {
+    std::map<std::string, std::string> expected_map{{helper_id, hash_add}};
+    auto fn_complete = moss::make_checked_function("callable-v1:main:fn:caller", {int_type}, int_type, {ret_call_helper}, expected_map);
+    assert(fn_complete.has_supported_body);
+    assert(!fn_complete.body_semantic_hash.empty());
+    assert(fn_complete.dependencies.size() == 1);
+    assert(fn_complete.dependencies[0].is_complete());
+    assert(fn_complete.dependencies[0].expected_hash == hash_add);
   }
 
   std::cout << "All Phase 25 Checked Body IR and Dependency Closure tests passed!" << std::endl;
