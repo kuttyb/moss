@@ -6843,6 +6843,12 @@ class Checker {
         solve_local_collection_types(statements, env, join_context,
                                      record_semantic_types);
     if (retained_types) *retained_types = std::move(body_types);
+    // The prepass has already assigned one solver term to each local and
+    // assignment. Keep that exact state active while the source-order checker
+    // visits statements; otherwise it silently falls back to projected
+    // strings and re-instantiates an open type at each comparison.
+    BodyTypeScope body_scope(current_body_types_, retained_types
+        ? retained_types : current_body_types_);
     const TypeEnv& solved_collections = retained_types
         ? retained_types->closed_projection : body_types.closed_projection;
     size_t index = 0;
