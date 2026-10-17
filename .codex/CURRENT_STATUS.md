@@ -50,6 +50,18 @@ another push after validation. It is not merged into Team B, Team S, Team I, or
   source-free consumers. The Type IR C++ test passed. The in-flight full
   `make check` began before `0efa5ff`/`6e2d381`/`52c8f7c`; it does not validate those
   final edits and must be rerun for an exact-SHA claim.
+- **Full-check diagnostic repair:** the first consolidated `make check`
+  (started before the last A1/A3 edits) reached the late negative-fixture
+  section and failed only because `tests/run.sh` expected the historical
+  collection wording for `values = []; echo values`. The compiler correctly
+  reported `TYPE_AMBIGUOUS_OPEN_RESULT` under the frozen contract. The test
+  expectation was updated; the adjacent heterogeneous-collection diagnostic
+  remains unchanged. `make -j2`, the direct negative fixtures, Type IR, and
+  A3 key checks passed after that update. On the rebuilt latest-source
+  compiler, all 129 built-in typing probes and all 13 Team A semantic cases
+  passed; G2 conformance passed Gates 1–9 and 11 with Gate 10 PENDING joint
+  integration. A new full `make check` is running
+  from the latest source; its result is pending.
 
 The delegated A2/A4 workers hit a service usage limit mid-turn. The Coordinator
 finished and integrated the isolated A2 patches; no result is claimed for
