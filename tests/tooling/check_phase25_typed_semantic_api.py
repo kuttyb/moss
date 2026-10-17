@@ -180,6 +180,38 @@ fn main():
     assert len(total_summaries) == 1, structural_typed
     assert total_summaries[0]["requirement_count"] == 1, total_summaries
 
+    member_source = Path(scratch_path) / "member_access.moss"
+    member_source.write_text("""fn append(values, item):
+  values.push(item)
+
+fn main():
+  values = []
+  append(values, 1)
+  echo values[0]
+""")
+    member_checked = subprocess.run([str(MOSS), "inspect", "main", "--source",
+        str(member_source), "--json"], text=True, capture_output=True)
+    assert member_checked.returncode == 0, (
+        member_checked.stdout, member_checked.stderr)
+    member_typed = json.loads(member_checked.stdout)["result"]["typed_semantic_v1"]
+    append_id = f"callable-v1:{module}:fn:append"
+    append_specs = [entry for entry in member_typed["specializations"]
+                    if entry["callable_id"] == append_id]
+    assert len(append_specs) == 1, append_specs
+    push = append_specs[0]["member_requirements"][0]
+    assert push["member_name"] == "push", push
+    assert push["receiver"] == {"kind": "builtin", "id": "vector",
+        "arguments": [{"kind": "primitive", "id": "int", "arguments": [],
+                       "fields": []}], "fields": []}, push
+    assert push["argument_types"] == [
+        {"kind": "primitive", "id": "int", "arguments": [], "fields": []}], push
+    assert push["result"] == {"kind": "unit", "id": "unit",
+        "arguments": [], "fields": []}, push
+    assert push["receiver_access"] == "WRITE", push
+    assert push["argument_access"] == ["CONSUME"], push
+    assert push["admitted_template_or_builtin_family"] == (
+        "builtin:vector[int]"), push
+
     provider = Path(scratch_path) / "provider"
     consumer = Path(scratch_path) / "consumer"
     for package_name, path in (("typed_provider", provider),
@@ -260,6 +292,12 @@ fn main():
     assert source_requirement["origin"]["source_file"].endswith(
         "Provider.mossi"), source_requirement
     assert source_requirement["parent_requirement_id"] is None
+    assert source_requirement["receiver"]["kind"] == "bound_var", (
+        source_requirement)
+    assert source_requirement["receiver_access"] == "READ", source_requirement
+    assert source_requirement["argument_types"] == [], source_requirement
+    assert source_requirement["argument_access"] == [], source_requirement
+    assert source_requirement["selected_callable_id"] is None, source_requirement
     size_specs = [entry for entry in imported_typed["specializations"]
                   if entry["callable_id"] == provider_member]
     assert len(size_specs) == 1, size_specs
@@ -270,6 +308,13 @@ fn main():
         source_requirement["requirement_id"]), closed_requirement
     assert closed_requirement["selected_callable_id"] == (
         "builtin:string.length"), closed_requirement
+    assert closed_requirement["receiver"]["kind"] == "primitive", (
+        closed_requirement)
+    assert closed_requirement["receiver_access"] == "READ", closed_requirement
+    assert closed_requirement["argument_types"] == [], closed_requirement
+    assert closed_requirement["argument_access"] == [], closed_requirement
+    assert closed_requirement["admitted_template_or_builtin_family"], (
+        closed_requirement)
     consumer_id = "module-v1:typed_consumer@1.0.0::Main"
     assert closed_requirement["origin"]["module_id"] == consumer_id, (
         closed_requirement, imported_typed)

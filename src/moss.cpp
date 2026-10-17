@@ -27990,6 +27990,11 @@ static void write_typed_semantic_projection_json(std::ostream& out,
   if (!program.typed_semantics)
     throw std::invalid_argument("checked program has no typed semantic projection");
   const auto& projection = *program.typed_semantics;
+  auto write_access = [&](moss::AccessMode access) {
+    write_debug_json_string(out,
+        access == moss::AccessMode::Consume ? "CONSUME" :
+        access == moss::AccessMode::Write ? "WRITE" : "READ");
+  };
   auto write_member_requirements = [&](const auto& requirements) {
     out << "[";
     for (size_t index = 0; index < requirements.size(); ++index) {
@@ -28003,6 +28008,31 @@ static void write_typed_semantic_projection_json(std::ostream& out,
       else out << "null";
       out << ", \"member_name\": ";
       write_debug_json_string(out, requirement.member_name);
+      out << ", \"receiver\": ";
+      write_typed_open_type_json(out, requirement.receiver);
+      out << ", \"argument_types\": [";
+      for (size_t argument = 0; argument < requirement.argument_types.size();
+           ++argument) {
+        if (argument) out << ",";
+        write_typed_open_type_json(out, requirement.argument_types[argument]);
+      }
+      out << "], \"result\": ";
+      if (requirement.result)
+        write_typed_open_type_json(out, *requirement.result);
+      else out << "null";
+      out << ", \"receiver_access\": ";
+      write_access(requirement.receiver_access);
+      out << ", \"argument_access\": [";
+      for (size_t argument = 0; argument < requirement.argument_access.size();
+           ++argument) {
+        if (argument) out << ",";
+        write_access(requirement.argument_access[argument]);
+      }
+      out << "], \"admitted_template_or_builtin_family\": ";
+      if (requirement.admitted_template_or_builtin_family)
+        write_debug_json_string(out,
+            *requirement.admitted_template_or_builtin_family);
+      else out << "null";
       out << ", \"selected_callable_id\": ";
       if (requirement.selected_callable_id)
         write_debug_json_string(out, *requirement.selected_callable_id);
