@@ -1,5 +1,23 @@
 # Moss current status
 
+## Phase 25 Team A A4 checked body IR subset — 2026-10-16 (isolated, partial)
+
+From exact consolidated base `2c6772f`, the isolated
+`phase25-a4-body-ir-v2` branch retains `CheckedBodyV1` semantic nodes and a
+domain-separated SHA-256 body hash for a checked single return of a parameter,
+decimal integer, or one addition over those operands. Nodes carry ordered
+operands, parameter ordinals, TypeRefs, and a one-statement ordered body.
+Unsupported bodies publish a null hash and structured
+`unsupported_checked_body_form` status. No expected dependency hash is
+invented. Arbitrary expressions, calls, assignments, and control flow remain
+open A4 work; Team A is NOT READY solely from this subset.
+
+`make`, `check_phase25_checked_body_ir.py`,
+`check_phase25_typed_semantic_api.py`, `check_phase25_type_ir.py`,
+`check_phase25_team_a_semantics.py`, `check_agent_feedback.py`, `sh -n
+tests/run.sh`, and `git diff --check` passed on this isolated branch. The
+Coordinator owns consolidation, full suite, and independent Architect GO.
+
 ## Phase 25 Team A A2 function-signature TypeRef join — 2026-10-16 (integrated)
 
 From consolidated `421b79c`, the signature pass now joins concrete and open

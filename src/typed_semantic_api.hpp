@@ -72,9 +72,9 @@ struct TypedSpecializationV1 {
 struct TypedOpenCallableSummaryV1 {
   std::string callable_id;
   bool exported{false};
-  // The checked generic body IR is present on Function. The ABI serializer
-  // may hash/encode that IR; this flag never substitutes for a body hash.
+  // A hash is present only when the checker retained supported semantic nodes.
   bool checked_body_ir_available{false};
+  std::optional<CheckedBodyV1> checked_body_v1;
   uint32_t bound_variable_count{0};
   std::vector<TypeRef> parameter_types;
   TypeRef result_type;
@@ -141,6 +141,13 @@ struct TypedSemanticModuleV1 {
   void require_complete_open_summaries() const {
     if (!open_summaries_complete)
       throw std::invalid_argument("typed semantic open callable summaries unavailable");
+  }
+
+  void require_complete_body_hashes() const {
+    for (const auto& entry : open_summaries)
+      if (!entry.second.checked_body_v1)
+        throw std::invalid_argument(
+            "checked semantic body hash unavailable for " + entry.first);
   }
 
   void require_complete_specializations() const {
@@ -296,8 +303,8 @@ inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) 
       TypedOpenCallableSummaryV1 summary;
       summary.callable_id = checked.callable_id;
       summary.exported = function.exported;
-      summary.checked_body_ir_available = !function.body.empty() ||
-          function.result_expression.has_value();
+      summary.checked_body_ir_available = function.checked_body_v1.has_value();
+      summary.checked_body_v1 = function.checked_body_v1;
       summary.bound_variable_count = checked.bound_variable_count;
       summary.parameter_types = checked.parameter_types;
       summary.result_type = checked.result_type;

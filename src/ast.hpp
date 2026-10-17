@@ -84,6 +84,23 @@ struct OpenCallableSummaryFacts {
   RequirementOrigin origin;
   bool complete = false;
 };
+// A versioned, checked semantic body subset. Every published node has a
+// resolved operand identity and TypeRef. Other source forms have no body hash.
+struct CheckedBodyExprV1 {
+  enum class Kind { Parameter, Integer, Add } kind;
+  TypeRef type;
+  std::uint32_t parameter_ordinal = 0;
+  string integer_value;
+  vector<CheckedBodyExprV1> operands;
+};
+struct CheckedBodyStmtV1 {
+  enum class Kind { Return } kind;
+  CheckedBodyExprV1 value;
+};
+struct CheckedBodyV1 {
+  vector<CheckedBodyStmtV1> statements;
+  string semantic_hash;
+};
 struct Stmt {
   enum class Kind {
     Raw, Pass, Assign, Call, Message, Echo, If, Else, While, For, Match, Case,
@@ -308,6 +325,7 @@ struct Function {
   vector<Constraint> constraints;
   vector<FunctionSpecialization> specializations;
   std::optional<OpenCallableSummaryFacts> open_summary;
+  std::optional<CheckedBodyV1> checked_body_v1;
   // Concrete callable specializations referenced by functional code.  This is
   // retained as semantic dependency information for later incremental work.
   vector<string> callable_dependencies;
