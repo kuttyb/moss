@@ -2511,6 +2511,22 @@ class Checker {
         summary.parameter_types.push_back(term);
         parameter_variables.emplace(parameter.name, term);
       }
+      std::unordered_map<string, moss::TypeRef> element_relations;
+      auto element_relation = [&](const string& key) -> moss::TypeRef {
+        auto known = element_relations.find(key);
+        if (known != element_relations.end()) return known->second;
+        if (!starts_with(key, "element:")) return nullptr;
+        auto source = parameter_variables.find(key.substr(8));
+        if (source == parameter_variables.end() || !source->second) return nullptr;
+        moss::TypeRef element;
+        if (source->second->kind == moss::TypeKind::Builtin &&
+            !source->second->type_args.empty())
+          element = source->second->type_args.back();
+        else
+          element = bound();
+        element_relations.emplace(key, element);
+        return element;
+      };
       const string result = function.return_type
           ? canonical_type_name(*function.return_type) : "unit";
       if (starts_with(result, "_generic:")) {
@@ -2519,6 +2535,9 @@ class Checker {
         else complete = false;
       } else if (starts_with(result, "_method_result:")) {
         summary.result_type = bound();
+      } else if (starts_with(result, "_element:")) {
+        summary.result_type = element_relation(result.substr(9));
+        if (!summary.result_type) complete = false;
       } else if (!contains_internal_placeholder(result)) {
         summary.result_type = type_term(result);
       } else {
@@ -2583,11 +2602,8 @@ class Checker {
             if (parameter != parameter_variables.end())
               requirement.result = parameter->second;
             else if (starts_with(constraint.result, "element:")) {
-              auto source = parameter_variables.find(constraint.result.substr(8));
-              if (source != parameter_variables.end() && source->second &&
-                  source->second->kind == moss::TypeKind::Builtin &&
-                  !source->second->type_args.empty())
-                requirement.result = source->second->type_args.back();
+              requirement.result = element_relation(constraint.result);
+              if (!requirement.result) complete = false;
             } else if (!contains_internal_placeholder(constraint.result)) {
               requirement.result = type_term(constraint.result);
             }
@@ -6123,6 +6139,15 @@ class Checker {
             ? solver.resolve(requirement.subject) : nullptr;
         if (subject && subject->kind == moss::TypeKind::InferenceVar)
           solver.require(subject->var_id, std::move(requirement));
+        else if (subject && requirement.kind == moss::RequirementKind::Index &&
+                 requirement.result &&
+                 subject->kind == moss::TypeKind::Builtin &&
+                 (subject->name == "vector" || subject->name == "queue" ||
+                  subject->name == "map") &&
+                 !subject->type_args.empty() &&
+                 !solver.unify(*requirement.result, subject->type_args.back()))
+          err(line, "indexed result conflicts with collection element type",
+              "TYPE_MISMATCH");
       }
       if (!summary.member_requirements.empty()) {
         vector<moss::MemberDispatchRequirement> instantiated_requirements;

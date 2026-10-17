@@ -359,6 +359,26 @@ fn main():
         checked(map_read_conflict, "TYPE_MISMATCH")
         print("PASS indexed reads use the retained Map key term", flush=True)
 
+        generic_index = source(scratch, "generic_index_result", '''fn first(values):
+  return values[0]
+
+fn main():
+  echo first([2, 3])
+''')
+        parity(generic_index, scratch, "2\n")
+        indexed_inspect = run(MOSS, "inspect", "main", "--source",
+                              generic_index, "--json")
+        assert indexed_inspect.returncode == 0, (
+            indexed_inspect.stdout, indexed_inspect.stderr)
+        indexed_typed = json.loads(indexed_inspect.stdout)["result"][
+            "typed_semantic_v1"]
+        first_id = "callable-v1:module-v1:__standalone__@0.0.0::main:fn:first"
+        first_summary = [item for item in indexed_typed["open_summaries"]
+                         if item["callable_id"] == first_id]
+        assert len(first_summary) == 1 and first_summary[0]["requirement_count"], (
+            indexed_typed)
+        print("PASS generic index result closes from typed requirement", flush=True)
+
         known = source(scratch, "known_nominal_field", '''type Box:
   value
 
