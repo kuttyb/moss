@@ -208,6 +208,10 @@ inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) 
           return type->var_id.session_id == 0 &&
                  type->var_id.owner_id == 0 &&
                  type->var_id.ordinal < checked.bound_variable_count;
+        if (type->kind == TypeKind::Builtin) {
+          auto arity = Type::collection_arity(type->name);
+          if (arity && type->type_args.size() != *arity) return false;
+        }
         for (const auto& arg : type->type_args)
           if (!self(arg, self)) return false;
         for (const auto& field : type->field_substitutions)
@@ -221,6 +225,35 @@ inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) 
                       checked.parameter_types.end(),
                       [&](const TypeRef& type) {
                         return !valid_term(type, valid_term);
+                      }) ||
+          std::any_of(checked.requirements.begin(), checked.requirements.end(),
+                      [&](const Requirement& requirement) {
+                        if (requirement.id.empty() ||
+                            requirement.origin.module_id.empty() ||
+                            !valid_term(requirement.subject, valid_term) ||
+                            (requirement.result &&
+                             !valid_term(*requirement.result, valid_term)))
+                          return true;
+                        return std::any_of(requirement.arguments.begin(),
+                            requirement.arguments.end(),
+                            [&](const TypeRef& argument) {
+                              return !valid_term(argument, valid_term);
+                            });
+                      }) ||
+          std::any_of(checked.member_requirements.begin(),
+                      checked.member_requirements.end(),
+                      [&](const MemberDispatchRequirement& requirement) {
+                        if (requirement.requirement_id.empty() ||
+                            requirement.origin.module_id.empty() ||
+                            !valid_term(requirement.receiver, valid_term) ||
+                            (requirement.result &&
+                             !valid_term(*requirement.result, valid_term)))
+                          return true;
+                        return std::any_of(requirement.argument_types.begin(),
+                            requirement.argument_types.end(),
+                            [&](const TypeRef& argument) {
+                              return !valid_term(argument, valid_term);
+                            });
                       }))
         throw std::invalid_argument("complete open summary contains invalid bound variable");
       TypedOpenCallableSummaryV1 summary;

@@ -4,18 +4,21 @@
 
 The Coordinator is continuing A2/A3/A4 on `phase25-g-type-core` after the
 user explicitly directed Team A to finish rather than hand off to Team I.
-The latest remote checkpoint is `ec0c0d6`; local HEAD has advanced through
-`442a222` and will be pushed after focused validation. The user authorized
+The latest remote checkpoint is `ec6688e`; local HEAD has advanced through
+that commit and a typed API validation edit is pending. The user authorized
 normal pushes and AGENTS.md's prior no-push rule was removed before the first
 push. Do not merge Team B, Team S, Team I, or main.
 
 Integrated since that remote checkpoint: `6f77aef` retains typed field/reply
 terms and fixes open bare collection calls (`make examples` passed afterward);
-`2047c7c` interns nominal declaration IDs across aliases (`check_phase25_type_ir`
-passed afterward); `54a27ad` uses retained body terms for index/iteration
-checks; `442a222` retains source-free requirement provenance and typed semantic
-dependencies. These last two commits are rebuilding now, so earlier test
-results do not validate this latest source snapshot.
+`2047c7c` interns nominal declaration IDs across aliases; `54a27ad` uses
+retained body terms for index/iteration checks; `442a222` retains source-free
+requirement provenance and typed semantic dependencies; `b6a765c` projects
+structural requirements; `7c6c6c7` projects checked closed body terms at the
+inference boundary; and `d3f7ca6` uses semantic callable IDs in specialization
+keys. At pushed `ec6688e`, `make`, Type IR, typed API, Team A compiler-path
+semantics (33 named PASS cases), and feedback validation passed. Later edits
+are not covered by those results.
 
 An independent Architect audited exact interim SHA `ec0c0d6` and returned
 NO-GO: same-ID alias interning (now fixed), nested contextual open-result
