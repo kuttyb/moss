@@ -69,11 +69,71 @@ part of the validated feature branch.
 
 | Remaining item | Owner and boundary |
 | --- | --- |
-| Complete TypeRef authority for checker, ownership and effects | Team A A2. Some legacy `TypeEnv` and compatibility paths still make semantic decisions from type spellings. The final Architect review must audit actual compiler paths. |
+| Complete TypeRef authority for checker, ownership and effects | Team A A2, in progress; see **A2 conversion state** below for what is converted, what remains, and the evidence. The final Architect review must audit actual compiler paths, not this summary. |
 | Canonical `body_semantic_hash` and expected dependency hashes | `CheckedBodyV1` retains a narrow validated return-expression subset: parameter-slot identity, canonical decimal integer literal, one addition with ordered operands, and checked TypeRefs. Its domain-separated SHA-256 hash changes with the literal and ignores spacing and physical path. `checked_body_ir_available=false`, `body_semantic_status=unsupported_checked_body_form`, and null hash explicitly cover every other body. This subset does **not** close ABI-v10 §3.3: arbitrary checked expressions, calls with exact callable IDs, ordered statements/control flow, and expected dependency hashes still need retained semantic nodes. The source-free `generic_stmt`/`generic_result` records transport strings; Team B must transport or deterministically reconstruct a complete versioned IR. The legacy `.mossi` 64-bit text hash is not a substitute. No ABI consumer may publish an expected semantic dependency hash from the current API. |
 | Ordered source-free nonzero member argument records | Team B owns the `.mossi` serializer/importer. It currently writes `generic_constraint` with kind, subject, detail and result only, losing `Constraint.arity`, ordered `arguments` and `result_expectations`. Team A retains those typed argument/access facts when supplied. `append_one(values): values.push(1)` is the required reduced source-free regression. |
 | Imported unresolved observable effects | Team B must transport complete provider effect facts; Team A publishes the full typed summary only after the checker has resolved them. The source requirement table preserves provenance while the summary remains unavailable. |
 | Map-key proof and final runtime/ABI cutover | Team S supplies admission/target policy; Team B and Team I own binary records, linker/validator, and joint integration. G2 Gate 10 may remain pending until that integration. |
+
+## A2 conversion state (Architect finding G-A-1)
+
+The acceptance criterion is that no compiler-critical type equality,
+substitution, or specialization decision depends on splitting or matching
+display strings. This records progress against it as of `6469bcd`; it is a
+map for the audit, not a claim of closure. **G-A-1 is not closed.**
+
+Converted to the term algebra:
+
+- Expression inference. `inferred_expr` returns a structured result carrying a
+  closed `TypeRef`, or an explicit legacy spelling for a type that is still
+  open. `inferred_expr_type` is a projection of it. Operators, vector
+  literals, index, field, `pop`, and the FileIO/Range/executor results test
+  term kinds.
+- Call arguments: the operator requirement, bare-collection acceptance,
+  numeric and string operator support, indexable and iterable constraints.
+- Index, `sum`, iterator element, and the functional pipeline element and
+  fusion-eligibility helpers.
+- Map keys: `contains_record_type`, `check_declared_map_keys`,
+  `contains_enum_type`, `map_key_value_types`, and enum-key detection by
+  `TypeKind::Enum`.
+- `contains_trait_type`, `valid_type`'s seq/option/table branches, the
+  ownership collection receiver, `builtin_receiver_family`, the semantic-query
+  collection category, and the `assertEqual` printable test.
+- Native lowering: `generated_functional_element_type`, the indexed-element
+  type, the queue member renaming, and the vector/queue pop sites.
+- Module identity: the FileIO cross-crate rule compares `module-v1`
+  identities from declarations rather than splitting `__` symbols
+  (Architect ARCH-004).
+
+Not converted, and why:
+
+- `TypeEnv` is still `unordered_map<string, string>`, about 165 uses across
+  the checker, ownership and effect walks. The per-body `BodyTypeState` holds
+  the authoritative solver terms and the string environment is its
+  projection, but the environment remains the carrier. **This is the largest
+  remaining item.**
+- The open pseudo-types `_generic:`, `_element:`, `_field:`, `_method_value`,
+  `callable:`, the `_functional_*` family, and the empty spelling are not yet
+  inference variables with requirements (contract §§2, 4). Two of them still
+  reach user-facing diagnostics; `check_no_internal_type_leak.py` pins those
+  two and fails on any new leak.
+- `check_function_call` still accepts an argument whose inferred type is
+  unknown. Removing that fallback requires the pseudo-type work first: an
+  attempt to delete it outright rejected three valid repository programs.
+- Parameter and return annotations are bound as spellings at declaration time.
+- `rust_type` and `default_value` map a canonical Moss spelling to Rust text.
+  These are emission, not semantic decisions, and are deliberately left as
+  string work.
+
+Collection-prefix spelling tests in `src/moss.cpp` are down from 76 to 23, and
+the remainder are concentrated in the emission paths above.
+
+Evidence for each slice: `tests/tooling/corpus_verdicts.py` compares
+`moss check` verdicts over every tracked `.moss` source between two
+compilers, and `--emit` additionally hashes the generated Rust so a
+lowering-only change is visible. Every conversion slice reports zero
+unintended changes; the exceptions it did catch are recorded in the slice
+commits.
 
 The Team A compiler-path suite covers typed nominal IDs, independent open calls,
 one-binding monotypes, exact specialization keys, structural requirements,
