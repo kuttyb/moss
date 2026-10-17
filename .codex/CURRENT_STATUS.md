@@ -1,5 +1,47 @@
 # Moss current status
 
+## Phase 25 Team A A2 checkpoint at `f7f586a` — 2026-10-17 (NOT READY)
+
+**Three pre-existing Team A regressions have now been found by running the
+full suite, each bisected to its commit and fixed with a regression test.**
+None came from this session's conversion slices; all were present at
+`252c2c7` and each blocked `make check` in turn:
+
+| Fixed at | Introduced by | Defect |
+| --- | --- | --- |
+| `1cf0278` | `4750088` | A `for` variable erased an outer binding it shadowed |
+| `bc28920` | (A2 signature work) | An unresolved return reported a mismatch and printed `_typevar:` |
+| `f7f586a` | `950d2b5` | A trait formal was unified instead of conformance-checked |
+
+The third: open-summary argument checking unified each actual argument
+against the formal. A trait-constrained parameter is a constraint, never a
+value layout (contract §2), and a trait is not an interned declaration, so it
+renders as a plain named type; unifying a concrete `Task` against a named
+`Scorable` always failed and a valid cross-package provider was rejected.
+`open_argument_matches` now uses `trait_conforms` for a trait formal in
+either spelling. Reaching it needs a callee with **both** a trait-constrained
+and an open parameter, since without the open parameter no summary is
+published; `tests/trait_open_forwarding.moss` pins that shape.
+
+Conversion slices since `68f1ea7`, all pushed, each with focused suites and
+a `corpus_verdicts --emit` comparison reporting 0 changes:
+
+- `01f1c75` **A2-10:** the last direct comparisons against environment values
+  use terms. Two intents were hiding behind the same spellings, so they use
+  two predicates: `bare_collection` (an open collection, no arguments yet)
+  and `collection_named` (bare or applied).
+- `ba19d68` **A2-11** and `53c635d` **A2-12:** the `_generic:` and
+  `callable:` pseudo-types are tested through single `open_generic` and
+  `callable_identity` predicates (23 and 17 sites), so converting them to
+  real inference variables becomes a single-point change. No suffix helper:
+  `substr(9)` is also the length of `callable:`, so those extractions are not
+  mechanically safe to fold in.
+
+**Validation.** Full `make check` at `f7f586a` is running; `make` and `make
+examples` passed at `bc28920`. Each run so far has reached one further
+genuine defect, which is the point of running it. No Team A SHA has a
+completed passing `make check` yet.
+
 ## Phase 25 Team A A2 checkpoint at `68f1ea7` — 2026-10-17 (NOT READY)
 
 Slices since `bc28920`, each validated with focused suites plus a
