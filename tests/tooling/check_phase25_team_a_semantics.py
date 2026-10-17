@@ -287,6 +287,26 @@ fn main():
         checked(call_conflict, "TYPE_MISMATCH")
         print("PASS call and later push constrain the same local", flush=True)
 
+        declared_call = source(scratch, "typed_declared_call", '''fn first(values: Vector[Int]) -> Int:
+  return values[0]
+
+fn main():
+  var values = []
+  values.push(9)
+  echo first(values)
+''')
+        parity(declared_call, scratch, "9\n")
+        declared_call_conflict = source(scratch, "typed_declared_call_conflict", '''fn first(values: Vector[Int]) -> Int:
+  return values[0]
+
+fn main():
+  var values = []
+  values.push("wrong")
+  echo first(values)
+''')
+        checked(declared_call_conflict, "TYPE_MISMATCH")
+        print("PASS concrete call arguments use bound collection terms", flush=True)
+
         member_constraint = source(scratch, "open_member_requirement", '''fn append_one(values):
   values.push(1)
 
@@ -648,6 +668,57 @@ fn main():
 ''')
         parity(handler_reply, scratch, "7\n")
         print("PASS handler reply uses checked field/index result", flush=True)
+
+        typed_message_assignment = source(scratch, "typed_message_assignment", '''domain Reader:
+  fn Get() -> Int:
+    reply 7
+
+fn main():
+  reader = Reader()
+  var value = 0
+  value = message reader.Get()
+  echo value
+''')
+        parity(typed_message_assignment, scratch, "7\n")
+        message_assignment_conflict = source(scratch, "typed_message_assignment_conflict", '''domain Reader:
+  fn Get() -> Int:
+    reply 7
+
+fn main():
+  reader = Reader()
+  var value = "bad"
+  value = message reader.Get()
+''')
+        checked(message_assignment_conflict, "TYPE_MISMATCH")
+        print("PASS message results preserve the destination monotype", flush=True)
+
+        typed_return_conflict = source(scratch, "typed_return_conflict", '''fn wrong(values: Vector[Int]) -> Vector[String]:
+  return values
+
+fn main():
+  echo 1
+''')
+        result = run(MOSS, "check", typed_return_conflict, "--json")
+        assert result.returncode != 0, result.stdout
+        diagnostic = json.loads(result.stdout)["error"]
+        assert diagnostic["code"] == "MOSS_COMPILE_ERROR" and (
+            "returns 'vector[int]' but is annotated 'vector[string]'"
+            in diagnostic["message"]), diagnostic
+        reply_conflict = source(scratch, "typed_reply_conflict", '''domain Reader:
+  fn Get() -> Vector[String]:
+    var values = [1]
+    reply values
+
+fn main():
+  reader = Reader()
+  echo message reader.Get()
+''')
+        result = run(MOSS, "check", reply_conflict, "--json")
+        assert result.returncode != 0, result.stdout
+        diagnostic = json.loads(result.stdout)["error"]
+        assert diagnostic["code"] == "TYPE_MISMATCH" and (
+            "conflicting reply types" in diagnostic["message"]), diagnostic
+        print("PASS return and reply reject incompatible bound terms", flush=True)
 
         zero_loop = source(scratch, "zero_iteration", '''fn fresh():
   return []

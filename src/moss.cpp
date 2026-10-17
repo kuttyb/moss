@@ -6624,10 +6624,49 @@ class Checker {
         constrain_call(statement.line, invocation);
         instantiate_summary(statement.line, invocation, &statement);
       }
+      if (statement.kind == Stmt::Kind::Message &&
+          !statement.message_result.empty()) {
+        auto receiver = scan.find(statement.a);
+        auto domain = receiver == scan.end() ? domains_.end()
+            : domains_.find(canonical_type_name(receiver->second));
+        const Handler* handler = domain == domains_.end() ? nullptr
+            : find_handler(*domain->second, statement.b);
+        if (handler && handler->reply_type) {
+          auto reply = moss::Type::parse_canonical(
+              canonical_type_name(*handler->reply_type));
+          if (reply && (*reply)->is_closed()) {
+            auto prior = locals.find(statement.message_result);
+            moss::TypeRef destination = prior == locals.end()
+                ? nullptr : prior->second;
+            if (!destination) {
+              auto projected = scan.find(statement.message_result);
+              if (projected != scan.end()) {
+                auto parsed = moss::Type::parse_canonical(
+                    canonical_type_name(projected->second));
+                if (parsed) destination = freshen_open_type(*parsed);
+              }
+            }
+            if (destination && !solver.unify(destination, *reply))
+              err(statement.line, "message assignment to '" +
+                  statement.message_result + "' conflicts with its binding type",
+                  "TYPE_MISMATCH");
+            if (prior == locals.end())
+              locals.emplace(statement.message_result,
+                             destination ? destination : *reply);
+            scan[statement.message_result] =
+                solver.resolve(locals.at(statement.message_result))
+                    ->to_canonical_string();
+          }
+        }
+      }
       if ((statement.kind == Stmt::Kind::Let ||
            statement.kind == Stmt::Kind::Var ||
            statement.kind == Stmt::Kind::Assign) &&
           simple_identifier(statement.a)) {
+        if (auto constructed = domain_constructor(statement.b)) {
+          scan[statement.a] = *constructed;
+          continue;
+        }
         constrain_call(statement.line, statement.b);
         auto instantiated = instantiate_summary(statement.line, statement.b,
                                                 &statement);
@@ -15480,10 +15519,20 @@ class Checker {
           ((param.type == "vector" && starts_with(actual_type, "vector[")) ||
            (param.type == "map" && starts_with(actual_type, "map[")) ||
            (param.type == "queue" && starts_with(actual_type, "queue[")));
-      if (!actual_type.empty() && !contains_internal_placeholder(actual_type) &&
-          !function->second->generic && !param.type.empty() &&
-          !contains_internal_placeholder(param.type) && !traits_.count(param.type) &&
-          !container_match && !is_type_compatible(param.type, actual_type))
+      auto formal_term = moss::Type::parse_canonical(
+          canonical_type_name(param.type));
+      auto actual_term = checked_expression_term(args[index], env);
+      const bool typed_check = current_body_types_ && !function->second->generic &&
+          !param.type.empty() && !traits_.count(param.type) &&
+          formal_term && (*formal_term)->is_closed() && actual_term;
+      bool argument_compatible = typed_check
+          ? current_body_types_->solver.unify(*formal_term, actual_term)
+          : actual_type.empty() || contains_internal_placeholder(actual_type) ||
+                function->second->generic || param.type.empty() ||
+                contains_internal_placeholder(param.type) ||
+                traits_.count(param.type) || container_match ||
+                is_type_compatible(param.type, actual_type);
+      if (!argument_compatible)
         err(line, "argument " + std::to_string(index + 1) + " to function '" + name +
             "' has type '" + actual_type + "', expected '" +
             param.type + "'");
@@ -16760,6 +16809,32 @@ class Checker {
       // spelling here would manufacture a second type variable for a local.
       return parsed && (*parsed)->is_closed() ? *parsed : nullptr;
     };
+    auto checked_result_type = [&](std::optional<string> actual,
+                                   const std::optional<string>& declared)
+        -> std::optional<string> {
+      if (!actual || !declared) return actual;
+      auto inferred = moss::Type::parse_canonical(canonical_type_name(*actual));
+      auto expected = moss::Type::parse_canonical(canonical_type_name(*declared));
+      if (!inferred || !expected ||
+          (*inferred)->kind != moss::TypeKind::Builtin ||
+          !(*inferred)->type_args.empty()) return actual;
+      auto arity = moss::Type::collection_arity((*inferred)->name);
+      if (!arity || (*expected)->kind != moss::TypeKind::Builtin ||
+          (*expected)->name != (*inferred)->name ||
+          (*expected)->type_args.size() != *arity) return std::nullopt;
+      // A bare collection literal is instantiated at this result boundary.
+      return (*expected)->to_canonical_string();
+    };
+    auto checked_result_matches = [&](const string& expression,
+                                      const string& actual,
+                                      const string& declared) {
+      auto expected = moss::Type::parse_canonical(canonical_type_name(declared));
+      auto term = checked_term(expression, actual);
+      if (expected && (*expected)->is_closed() && term)
+        return checked_types.solver.unify(term, *expected);
+      if (option_none_compatible(actual, declared)) return true;
+      return same_type(actual, declared);
+    };
     TypeEnvVisitor check_statement = [&](const Stmt& statement,
                                          const TypeEnv& current_env) {
       struct CheckedStatementScope {
@@ -17124,10 +17199,13 @@ class Checker {
             auto destination = checked_types.resolved_local(statement.message_result);
             auto reply = moss::Type::parse_canonical(
                 canonical_type_name(*handler->reply_type));
-            bool compatible = destination && reply && (*reply)->is_closed()
-                ? checked_types.solver.unify(destination, *reply)
-                : same_type(current_env.at(statement.message_result),
-                            *handler->reply_type);
+            if (!destination) {
+              auto projected = moss::Type::parse_canonical(
+                  canonical_type_name(current_env.at(statement.message_result)));
+              if (projected && (*projected)->is_closed()) destination = *projected;
+            }
+            bool compatible = destination && reply && (*reply)->is_closed() &&
+                checked_types.solver.unify(destination, *reply);
             if (!compatible)
               err(statement.line, "message assignment to '" + statement.message_result +
                   "' has type '" + current_env.at(statement.message_result) +
@@ -17175,15 +17253,7 @@ class Checker {
                 "functional pipeline must be materialized in a local binding "
                 "before crossing a domain boundary");
         }
-        if (actual && (*actual == "vector" || *actual == "queue" || *actual == "map")) {
-          if (current_handler->reply_type &&
-              canonical_type_name(*current_handler->reply_type) != *actual &&
-              !starts_with(canonical_type_name(*current_handler->reply_type), *actual + "[")) {
-            actual = std::nullopt;
-          } else if (current_handler->reply_type) {
-            actual = current_handler->reply_type;
-          }
-        }
+        actual = checked_result_type(actual, current_handler->reply_type);
         if (!actual) {
           teaching_err(
               statement.line, "TYPE_INFERENCE_FAILED",
@@ -17199,13 +17269,8 @@ class Checker {
               "use-statically-typed-expression",
               "rewrite the reply using an expression whose type Moss can determine from checked declarations and uses");
         }
-        auto actual_term = checked_term(statement.a, actual);
-        auto expected_term = moss::Type::parse_canonical(
-            canonical_type_name(*current_handler->reply_type));
-        bool reply_compatible = actual_term && expected_term &&
-                                (*expected_term)->is_closed()
-            ? checked_types.solver.unify(actual_term, *expected_term)
-            : same_type(*actual, *current_handler->reply_type);
+        bool reply_compatible = checked_result_matches(
+            statement.a, *actual, *current_handler->reply_type);
         if (!reply_compatible)
           err(statement.line, "reply type mismatch: handler expects '" +
               *current_handler->reply_type + "', expression has type '" + *actual +
@@ -17232,15 +17297,7 @@ class Checker {
         } return_call_scope(current_check_result_function_, *current_function);
         check_expression(statement.line, statement.a, current_env);
         auto actual = inferred_expr_type(statement.a, current_env);
-        if (actual && (*actual == "vector" || *actual == "queue" || *actual == "map")) {
-          if (current_function->return_type &&
-              canonical_type_name(*current_function->return_type) != *actual &&
-              !starts_with(canonical_type_name(*current_function->return_type), *actual + "[")) {
-            actual = std::nullopt;
-          } else if (current_function->return_type) {
-            actual = current_function->return_type;
-          }
-        }
+        actual = checked_result_type(actual, current_function->return_type);
         if (!actual && current_function->static_dispatch && !checking_specialization_)
           return;  // The source has requirements; each concrete instance checks its return.
         if (!actual) {
@@ -17276,10 +17333,11 @@ class Checker {
             !starts_with(*actual, "_functional_callable_result:") &&
             !trait_result_match &&
             !option_none_compatible(*actual, *current_function->return_type) &&
-            !(checking_specialization_ &&
-              open_result_shape &&
+            !(checking_specialization_ && open_result_shape &&
+              !checked_types.known_expression(statement.a) &&
               is_type_compatible(*current_function->return_type, *actual)) &&
-            !same_type(*actual, *current_function->return_type))
+            !checked_result_matches(statement.a, *actual,
+                                    *current_function->return_type))
           err(statement.line, "function '" + current_function->name + "' returns '" +
               *actual + "' but is annotated '" + *current_function->return_type + "'");
       }
