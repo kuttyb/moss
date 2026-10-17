@@ -2426,6 +2426,16 @@ class Checker {
       return nullptr;
     }
   };
+  std::unordered_map<const vector<Stmt>*, std::shared_ptr<BodyTypeState>>
+      checked_body_states_;
+
+  struct BodyTypeScope {
+    BodyTypeState*& slot;
+    BodyTypeState* previous;
+    BodyTypeScope(BodyTypeState*& target, BodyTypeState* current)
+        : slot(target), previous(target) { slot = current; }
+    ~BodyTypeScope() { slot = previous; }
+  };
 
   void build_open_callable_summaries() {
     for (auto& function : p_.functions) {
@@ -5938,7 +5948,8 @@ class Checker {
   BodyTypeState solve_local_collection_types(const vector<Stmt>& statements,
                                              const TypeEnv& entry,
                                              const string& semantic_context,
-                                             bool record_call_facts) const {
+                                             bool record_call_facts,
+                                             bool retain_all_types = false) const {
     BodyTypeState body_types;
     auto& solver = body_types.solver;
     auto& locals = body_types.locals;
@@ -6023,7 +6034,7 @@ class Checker {
         err(line, context + " requires '" + canonical_type_name(expected) +
             "' for '" + trim(expression) + "'", "TYPE_MISMATCH");
     };
-    if (record_call_facts)
+    if (record_call_facts || retain_all_types)
       for (const auto& [name, spelling] : entry) {
         if (contains_internal_placeholder(spelling)) continue;
         auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
@@ -6261,7 +6272,7 @@ class Checker {
           continue;
         }
         auto prior = locals.find(statement.a);
-        if (!instantiated && !record_call_facts &&
+        if (!instantiated && !record_call_facts && !retain_all_types &&
             prior == locals.end() &&
             ((*parsed)->kind != moss::TypeKind::Builtin ||
              !moss::Type::collection_arity((*parsed)->name))) {
@@ -6273,7 +6284,8 @@ class Checker {
             !solver.resolve(prior->second)->is_closed();
         // Fresh declarations inside separate branches have separate lexical
         // identities. The legacy walker owns their scope until its branch join.
-        if (!instantiated && record_call_facts && statement.indent > 0 &&
+        if (!instantiated && (record_call_facts || retain_all_types) &&
+            statement.indent > 0 &&
             prior == locals.end() && term->is_closed()) {
           scan[statement.a] = *inferred;
           continue;
@@ -10757,6 +10769,9 @@ class Checker {
         for (const auto& parameter : function.params)
           env[parameter.name] = parameter.type.empty() ? "_generic:" + parameter.name : parameter.type;
         const TypeEnv entry_env = env;
+        BodyTypeState body_types = solve_local_collection_types(
+            function.body, entry_env, "", false, true);
+        BodyTypeScope body_scope(current_body_types_, &body_types);
         auto inferred = function.parameter_effects;
         vector<bool> mutations(function.params.size(), false);
         auto* previous_mutation_capture = parameter_mutation_capture_;
@@ -10799,6 +10814,9 @@ class Checker {
           env["self"] = object.name;
           for (const auto& parameter : method.params) env[parameter.name] = parameter.type;
           const TypeEnv entry_env = env;
+          BodyTypeState body_types = solve_local_collection_types(
+              method.body, entry_env, "", false, true);
+          BodyTypeScope body_scope(current_body_types_, &body_types);
           auto inferred = method.parameter_effects;
           Effect receiver = Effect::Read;
           size_t index = 0;
@@ -13587,6 +13605,9 @@ class Checker {
                                const Domain* current_domain,
                                const Handler* current_handler,
                                vector<ExceptionalOwnershipExit>* exceptional = nullptr) {
+    auto retained = checked_body_states_.find(&statements);
+    BodyTypeScope body_scope(current_body_types_,
+        retained == checked_body_states_.end() ? nullptr : retained->second.get());
     size_t index = 0;
     check_ownership_block(statements, index, 0, env, current_domain,
                           current_handler, exceptional);
@@ -16076,13 +16097,7 @@ class Checker {
     StaticBindingScope bound_scope(static_bound_bindings_);
     auto bound_snapshots = static_bindings_for_body(statements, env);
     BodyTypeState checked_types;
-    struct CheckedBodyScope {
-      BodyTypeState*& slot;
-      BodyTypeState* previous;
-      CheckedBodyScope(BodyTypeState*& target, BodyTypeState& current)
-          : slot(target), previous(target) { slot = &current; }
-      ~CheckedBodyScope() { slot = previous; }
-    } checked_body_scope(current_body_types_, checked_types);
+    BodyTypeScope checked_body_scope(current_body_types_, &checked_types);
     string join_context = current_function && checking_specialization_
         ? functional_function_context(*current_function, checking_specialization_)
         : "";
@@ -16601,8 +16616,12 @@ class Checker {
       }
     };
 
-    return walk_type_environment(statements, std::move(env), check_statement,
-                                 true, true, true, join_context, &checked_types);
+    TypeEnv checked_env = walk_type_environment(
+        statements, std::move(env), check_statement,
+        true, true, true, join_context, &checked_types);
+    checked_body_states_[&statements] =
+        std::make_shared<BodyTypeState>(std::move(checked_types));
+    return checked_env;
   }
 
 #include "executor_invoke_lowering.inc"
