@@ -97,6 +97,32 @@ fn main():
         parity(independent, scratch, "1\nhello\n")
         print("PASS independent open-result calls and three-engine parity", flush=True)
 
+        # Equal callable and argument identities must still diverge when the
+        # checked result variables close to different concrete types.
+        result_keys = source(scratch, "open_result_keys", '''fn make(seed):
+  return []
+
+fn main():
+  a = make(0)
+  b = make(0)
+  a.push(1)
+  b.push("hello")
+  echo a[0]
+  echo b[0]
+''')
+        parity(result_keys, scratch, "1\nhello\n")
+        calls = run(MOSS, "calls", "main", "--source", result_keys, "--json")
+        assert calls.returncode == 0, (calls.stdout, calls.stderr)
+        result_edges = [edge for edge in json.loads(calls.stdout)["result"]["direct_calls"]
+                        if edge["target"] == "fn:make"]
+        result_keys_seen = [edge.get("specialization_key") for edge in result_edges]
+        assert len(result_keys_seen) == 2 and all(result_keys_seen), result_edges
+        assert len(set(result_keys_seen)) == 2, result_edges
+        assert all(key.startswith("specialization-v2:sha256:")
+                   for key in result_keys_seen), result_edges
+        print("PASS checked open-result bindings select distinct query and native keys",
+              flush=True)
+
         call_constraint = source(scratch, "open_call_constraint", '''fn use_ints(values: Vector[Int]):
   echo values |> count
 

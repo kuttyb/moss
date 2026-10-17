@@ -2351,6 +2351,8 @@ class Checker {
   mutable vector<bool>* parameter_mutation_capture_ = nullptr;
   mutable string current_source_file_;
   string current_semantic_context_;
+  const Stmt* current_check_statement_ = nullptr;
+  string current_check_body_context_;
   mutable const Stmt* ownership_current_stmt_ = nullptr;
   vector<Warning> warnings_;
   bool phase21_warnings_enabled_ = true;
@@ -14235,8 +14237,58 @@ class Checker {
     if (concrete_call) {
       auto requirements = validate_method_requirements(
           line, *function->second, actual_types);
+      const OpenCallResultFacts* open_result = nullptr;
+      if (current_check_statement_ &&
+          current_check_statement_->line == line) {
+        const auto& statement = *current_check_statement_;
+        auto retained = statement.open_call_results_by_context.find(
+            current_check_body_context_);
+        string direct_callee;
+        vector<string> direct_arguments;
+        if (retained != statement.open_call_results_by_context.end() &&
+            (statement.kind == Stmt::Kind::Assign ||
+             statement.kind == Stmt::Kind::Let ||
+             statement.kind == Stmt::Kind::Var) &&
+            parse_simple_call(trim(statement.b), direct_callee,
+                              direct_arguments) &&
+            direct_callee == name && direct_arguments == args &&
+            retained->second.callable_id ==
+                function->second->semantic_callable_id)
+          open_result = &retained->second;
+      }
       register_static_specialization(line, *function->second, actual_types,
-                                     std::move(requirements));
+                                     std::move(requirements), std::nullopt,
+                                     open_result ? open_result->ordered_bindings
+                                                 : vector<std::pair<uint32_t,
+                                                       moss::TypeRef>>{},
+                                     open_result ? std::optional<moss::TypeRef>(
+                                                       open_result->result)
+                                                 : std::nullopt);
+      if (open_result && function->second->static_dispatch) {
+        auto key = specialization_key_inputs(
+            function->second->semantic_callable_id, actual_types,
+            std::nullopt, open_result->ordered_bindings);
+        if (!key || !key->stable_key())
+          err(line, "open-result specialization has unresolved type bindings",
+              "TYPE_AMBIGUOUS_OPEN_RESULT");
+        const string exact_key = *key->stable_key();
+        const_cast<Stmt*>(current_check_statement_)->open_call_keys_by_context[
+            current_check_body_context_] = exact_key;
+        for (auto& edge : p_.semantic_call_edges) {
+          if (edge.source != current_semantic_context_ ||
+              edge.line != line ||
+              (edge.target != function->second->name &&
+               edge.target != "fn:" + function->second->name) ||
+              (!edge.source_file.empty() &&
+               edge.source_file != current_check_statement_->source_file))
+            continue;
+          if (!edge.specialization_key.empty() &&
+              edge.specialization_key != exact_key)
+            err(line, "one call edge acquired two specialization identities",
+                "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+          edge.specialization_key = exact_key;
+        }
+      }
     }
   }
 
@@ -15171,8 +15223,31 @@ class Checker {
                       bool main_body = false) {
     StaticBindingScope bound_scope(static_bound_bindings_);
     auto bound_snapshots = static_bindings_for_body(statements, env);
+    string join_context = current_function && checking_specialization_
+        ? functional_function_context(*current_function, checking_specialization_)
+        : "";
     TypeEnvVisitor check_statement = [&](const Stmt& statement,
                                          const TypeEnv& current_env) {
+      struct CheckedStatementScope {
+        const Stmt*& statement_slot;
+        string& context_slot;
+        const Stmt* previous_statement;
+        string previous_context;
+        CheckedStatementScope(const Stmt*& statement_target,
+                              string& context_target, const Stmt& current,
+                              const string& context)
+            : statement_slot(statement_target), context_slot(context_target),
+              previous_statement(statement_target), previous_context(context_target) {
+          statement_slot = &current;
+          context_slot = context;
+        }
+        ~CheckedStatementScope() {
+          statement_slot = previous_statement;
+          context_slot = std::move(previous_context);
+        }
+      } checked_statement_scope(current_check_statement_,
+                                current_check_body_context_, statement,
+                                join_context);
       if (auto snapshot = bound_snapshots.find(&statement);
           snapshot != bound_snapshots.end())
         static_bound_bindings_ = snapshot->second;
@@ -15586,9 +15661,6 @@ class Checker {
       }
     };
 
-    string join_context = current_function && checking_specialization_
-        ? functional_function_context(*current_function, checking_specialization_)
-        : "";
     return walk_type_environment(statements, std::move(env), check_statement,
                                  true, true, true, join_context);
   }
@@ -17280,6 +17352,7 @@ class Generator {
   const RaiseSet* phase21_capture_alternatives_ = nullptr;
   std::set<string> phase21_option_slots_;
   const Stmt* phase21_codegen_statement_ = nullptr;
+  string codegen_body_context_;
 
   static bool handler_has_failure_captures(const Handler& handler) {
     if (handler.provider_abi)
@@ -17694,8 +17767,11 @@ class Generator {
   static string function_semantic_identity(
       const Function& function,
       const FunctionSpecialization* specialization = nullptr) {
-    return functional_function_context(function, specialization) + "@" +
-        std::to_string(function.line);
+    string identity = functional_function_context(function, specialization) +
+        "@" + std::to_string(function.line);
+    if (specialization)
+      identity += "#" + specialization->stable_type_key;
+    return identity;
   }
 
   static string method_semantic_identity(const ObjectType& object,
@@ -17827,6 +17903,30 @@ class Generator {
   const FunctionSpecialization* call_specialization(
       const Function& function, const vector<string>& arguments,
       const std::unordered_map<string,string>* types) const {
+    if (phase21_codegen_statement_) {
+      const Stmt& statement = *phase21_codegen_statement_;
+      auto selected = statement.open_call_keys_by_context.find(
+          codegen_body_context_);
+      if (selected == statement.open_call_keys_by_context.end())
+        selected = statement.open_call_keys_by_context.find("");
+      string direct_callee;
+      vector<string> direct_arguments;
+      if (selected != statement.open_call_keys_by_context.end() &&
+          parse_simple_call(trim(statement.b), direct_callee,
+                            direct_arguments) &&
+          direct_callee == function.name &&
+          direct_arguments == arguments) {
+        auto exact = std::find_if(function.specializations.begin(),
+                                  function.specializations.end(),
+                                  [&](const FunctionSpecialization& candidate) {
+          return candidate.stable_type_key == selected->second;
+        });
+        if (exact == function.specializations.end())
+          throw std::runtime_error(
+              "checked open-result specialization key is absent from native projection");
+        return &*exact;
+      }
+    }
     vector<string> concrete_types;
     for (const auto& argument : arguments)
       concrete_types.push_back(generated_expr_type(argument, types).value_or(""));
@@ -18343,13 +18443,9 @@ class Generator {
         for (const auto& argument : call_args)
           argument_types.push_back(generated_expr_type(argument, types).value_or(""));
         if (function->second->static_dispatch) {
-          auto specialization = std::find_if(
-              function->second->specializations.begin(),
-              function->second->specializations.end(),
-              [&](const FunctionSpecialization& candidate) {
-                return specialization_matches(*function->second, candidate, argument_types);
-              });
-          if (specialization != function->second->specializations.end())
+          const auto* specialization = call_specialization(
+              *function->second, call_args, types);
+          if (specialization)
             return specialization->return_type;
           return std::nullopt;
         }
@@ -18650,19 +18746,11 @@ class Generator {
     auto function = functions_.find(name);
     if (function == functions_.end() || !function->second->static_dispatch)
       return name;
-    vector<string> argument_types;
-    for (const auto& argument : arguments)
-      argument_types.push_back(generated_expr_type(argument, types).value_or(""));
-    auto specialization = std::find_if(
-        function->second->specializations.begin(),
-        function->second->specializations.end(),
-        [&](const FunctionSpecialization& candidate) {
-          return specialization_matches(*function->second, candidate, argument_types);
-        });
-    if (specialization == function->second->specializations.end())
+    const auto* specialization = call_specialization(*function->second,
+                                                     arguments, types);
+    if (!specialization)
       throw std::runtime_error("missing static specialization for function '" + name +
-                               "' with argument types (" + generated_type_list(argument_types) +
-                               ") from " + (arguments.empty() ? string() : arguments.front()));
+                               "' at its checked call site");
     return specialization->generated_name;
   }
 
@@ -21600,6 +21688,13 @@ class Generator {
             : slot(target), prior(target) { slot = current; }
         ~CodegenStatementScope() { slot = prior; }
       } codegen_statement_scope(phase21_codegen_statement_, &s);
+      struct CodegenContextScope {
+        string& slot;
+        string prior;
+        CodegenContextScope(string& target, const string& current)
+            : slot(target), prior(target) { slot = current; }
+        ~CodegenContextScope() { slot = std::move(prior); }
+      } codegen_context_scope(codegen_body_context_, functional_context);
 
       source_comment(o, (base + level) * 4, s.line, s.text);
 

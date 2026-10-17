@@ -101,6 +101,9 @@ struct Stmt {
   vector<int> continuation_lines;
   string semantic_type;
   std::unordered_map<string, OpenCallResultFacts> open_call_results_by_context;
+  // Exact checked specialization selected for an open-result call in this
+  // body context. Native lowering consumes this key at the source statement.
+  std::unordered_map<string, string> open_call_keys_by_context;
   // Concrete receiver after collection element inference, keyed by the exact
   // callable/specialization context. Native lowering projects this checked fact.
   std::unordered_map<string,string> receiver_types_by_context;
