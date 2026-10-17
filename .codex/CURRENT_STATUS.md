@@ -49,6 +49,17 @@ its source requirement chain. The isolated A3 occurrence patch passed
 `both(make(0), make(0))` across Fast Debug, Native Debug, and Native Release
 with distinct query keys. This is still Team A NOT READY.
 
+The next consolidated `make check` at `ad06b34` passed the Phase 20/21,
+Team A, typed API, nominal, runtime, and foundations cross-package checks, then
+failed foundations source-free acceptance: imported `bytes.from_range(Range)`
+specialization reported a Vector[Int] return against an imported `_generic:data`
+annotation instantiated to Range. Its `.mossi` body returns a Vector[Int].
+This is a real outstanding regression on that SHA; the A2 worker is tracing
+the exact first passing/failing commit. The check log is at
+`tmp/phase25-team-a-interim-make-check.log` and is disposable. `make examples`,
+40 generic specialization probes, 129 builtin probes, and nominal A–F passed
+on the immediately preceding combined source before the occurrence cherry-pick.
+
 ## Phase 25 Team A continuation — 2026-10-16 (active, NOT READY)
 
 The consolidated feature branch was pushed to `origin/phase25-g-type-core` at
