@@ -6,8 +6,8 @@ The L7 directive approved Architect findings G-A-1 and G-A-3. Team A branch
 `phase25-g-type-core` starts at the exact common baseline `5b29352`. The user
 authorized AGENTS.md/.codex edits, local commits, and normal push; AGENTS.md's
 push rule was clarified before the first push. The branch was pushed to
-`origin/phase25-g-type-core` at A1 SHA `5c2f078`; subsequent local commits need
-another push after validation. It is not merged into Team B, Team S, Team I, or
+`origin/phase25-g-type-core` at interim SHA `f78baac`; the final validation
+and status commits need another push. It is not merged into Team B, Team S, Team I, or
 `main`.
 
 - **A1:** Exact package/module nominal declaration identities, source-free
@@ -34,23 +34,17 @@ another push after validation. It is not merged into Team B, Team S, Team I, or
 - **A4:** `docs/phase25/TEAM_A_TYPED_SEMANTIC_API.md` is pushed as the Team B/I
   handoff shape; the compiler-facing typed projection is not implemented yet.
   The 13-case Team A compiler-path suite is registered in `tests/run.sh`.
-- **Validation at consolidated source `6d50d59` plus test-runner registration:**
-  `make -j2`, `make examples`, Type IR, A3 compiler-path keys, and all 13 Team A
-  cases passed. Builtin typing 129/129 and generic specialization 40/40 passed
-  on the isolated A2 worktree; G2 conformance passed 10/11 with Gate 10
-  intentionally PENDING on the consolidated source. Feedback validation
-  passed after resolving the open-loop observation. `make check` is currently
-  running on the consolidated source and has passed Phase 20/21, Phase 25,
-  Team A, and text/encoding gates reached so far; its final result is pending.
-  A prior A1 `make check` attempt was stopped after subsequent source edits
-  invalidated it. Independent Architect review remains required.
-- **Post-`52c8f7c` focused validation:** a separate compiler built from the
-  latest source passed Team A's 13 compiler-path cases, all 40 generic
-  specialization probes, A3 specialization keys, and nominal identity with
-  source-free consumers. The Type IR C++ test passed. The in-flight full
-  `make check` began before `0efa5ff`/`6e2d381`/`52c8f7c`; it does not validate those
-  final edits and must be rerun for an exact-SHA claim.
-- **Full-check diagnostic repair:** the first consolidated `make check`
+- **Final-source validation at implementation commit `00a0f34`:** `make -j2`,
+  `make examples` (32 ordinary examples), and the complete `make check`
+  passed with `all Moss v0.1 tests passed`. Type IR, A3 keys, Team A's 13
+  compiler-path cases, nominal source-free identity, generic specialization
+  40/40, built-in typing 129/129, and the Phase 15.14 SWARM-051 regression
+  passed. G2 conformance passed Gates 1–9 and 11; Gate 10 remains the
+  explicitly permitted joint-integration PENDING case. Feedback validation
+  and `git diff --check` passed before closeout. The full check includes
+  Phase 20/21 regressions and affected Fast Debug/native parity. Independent
+  Architect review remains required.
+- **Full-check repairs:** the first consolidated `make check`
   (started before the last A1/A3 edits) reached the late negative-fixture
   section and failed only because `tests/run.sh` expected the historical
   collection wording for `values = []; echo values`. The compiler correctly
@@ -60,14 +54,18 @@ another push after validation. It is not merged into Team B, Team S, Team I, or
   A3 key checks passed after that update. On the rebuilt latest-source
   compiler, all 129 built-in typing probes and all 13 Team A semantic cases
   passed; G2 conformance passed Gates 1–9 and 11 with Gate 10 PENDING joint
-  integration. A new full `make check` is running
-  from the latest source; its result is pending.
+  integration. The second full `make check` passed the corrected fixture and
+  advanced-data acceptance, then exposed a real Phase 15.14 SWARM-051
+  regression: the local collection prepass attempted to fix the result of a
+  generic callable when the destination `Vector[Int]` was already concrete.
+  The prepass now owns only bindings that start open. The third full
+  `make check` passed on implementation commit `00a0f34`.
 
 The delegated A2/A4 workers hit a service usage limit mid-turn. The Coordinator
 finished and integrated the isolated A2 patches; no result is claimed for
 unfinished A4. The branch is **NOT READY** for Team I at this checkpoint. The
-next step is to finish checker-wide TypeRef authority and the A4 typed API,
-complete the acceptance gates, then obtain an independent review of the exact
+next step is to finish checker-wide TypeRef authority, A3 open-result bindings
+and requirement solving, and the A4 typed API, then obtain an independent review of the exact
 consolidated implementation SHA.
 
 ## Phase 25 Team A A3 isolated workstream — 2026-10-16
