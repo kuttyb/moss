@@ -345,6 +345,15 @@ fn main():
 ''')
     error = rejected(user, {"DUPLICATE_SYMBOL"})
     assert error["line"] == 1 and "std.ParseError" in error["message"], error
+    user_trait = scratch / "user_parse_error_trait.moss"
+    user_trait.write_text('''trait ParseError:
+  fn describe() -> String
+
+fn main():
+  echo 1
+''')
+    error = rejected(user_trait, {"DUPLICATE_SYMBOL"})
+    assert error["line"] == 1 and "std.ParseError" in error["message"], error
 
 
 def main():
