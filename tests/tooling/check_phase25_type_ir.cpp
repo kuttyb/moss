@@ -43,6 +43,11 @@ int main() {
   context.declare(record("Node", app, "Node", {{"children", "vector[Node]", false}}));
   context.declare(record("Alpha__Token", alpha, "Token", {{"id", "int", false}}));
   context.declare(record("Beta__Token", beta, "Token", {{"id", "int", false}}));
+  context.bind_field_annotations();
+  const auto& recursive_field = context.field_annotations(context.find("Node")->id);
+  assert(recursive_field.size() == 1 && recursive_field[0]);
+  assert(recursive_field[0]->type_args[0]->declaration == context.find("Node"));
+  assert(context.field_annotations(context.find("Box")->id)[0] == nullptr);
   assert(context.find("Box")->interned_module_id == context.find("Cell")->interned_module_id);
   assert(context.find("Box")->interned_module_id == context.find_module(app));
   assert(context.find("Alpha__Token")->interned_module_id !=

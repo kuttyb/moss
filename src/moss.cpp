@@ -269,6 +269,21 @@ static void build_type_context(Program& program) {
   for (const auto& domain : program.domains)
     declare(moss::DeclarationKind::Domain, domain.name, domain.defining_module,
             domain.declaration_name, {});
+  try {
+    context->bind_field_annotations();
+  } catch (const moss::InvalidFieldAnnotation& invalid) {
+    for (const auto& object : program.objects) {
+      auto declaration = context->find(object.name);
+      if (!declaration || declaration->id != invalid.declaration_id) continue;
+      for (const auto& field : object.fields) {
+        if (field.name != invalid.field_name) continue;
+        CompileError error(field.line, invalid.what(), "MALFORMED_TYPE_EXPRESSION");
+        error.source_file = field.source_file;
+        throw error;
+      }
+    }
+    throw;
+  }
   program.type_context = std::move(context);
 }
 
@@ -26442,6 +26457,21 @@ static void write_typed_semantic_projection_json(std::ostream& out,
     out << "{\"id\": "; write_debug_json_string(out, entry.first);
     out << ", \"module_id\": ";
     write_debug_json_string(out, entry.second.declaration->module_id);
+    out << ", \"fields\": [";
+    for (size_t index = 0; index < entry.second.fields.size(); ++index) {
+      if (index) out << ",";
+      const auto& field = entry.second.fields[index];
+      out << "{\"name\": "; write_debug_json_string(out, field.name);
+      out << ", \"declared_type_key\": ";
+      if (field.declared_type)
+        write_debug_json_string(out, field.declared_type->stable_type_key());
+      else out << "null";
+      out << ", \"variable_ordinal\": ";
+      if (field.variable_ordinal) out << *field.variable_ordinal;
+      else out << "null";
+      out << "}";
+    }
+    out << "]";
     out << "}";
   }
   out << "], \"specializations\": [";

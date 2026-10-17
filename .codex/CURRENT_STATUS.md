@@ -1,5 +1,18 @@
 # Moss current status
 
+## Phase 25 Team A A4 field annotation completion — 2026-10-16 (isolated worktree)
+
+The isolated `phase25-g-a4-field-completion` worktree binds nominal field
+annotation `TypeRef` terms once after all nominal declaration IDs are interned.
+`Type::resolved_fields` and `TypedNominalTemplateV1` use those terms, while the
+typed projection obtains specialization provenance from the bound defining
+module fields instead of parsing callable display text. The compiler-path API,
+Type IR, Team A semantic, source-free nominal identity, and G2 conformance
+checks passed after the final deterministic annotation-order edit and rebuild.
+G2 Gate 10 remains PENDING joint integration.
+The consolidated Team A full suite and independent Architect review still
+belong to the coordinator after serial integration. This is not Team A READY.
+
 ## Phase 25 Team A A3 closure follow-up — 2026-10-16 (isolated milestone)
 
 The isolated `phase25-g-type-core-a3-v2` worktree extends A3 with a

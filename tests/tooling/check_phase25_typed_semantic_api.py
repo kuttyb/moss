@@ -20,6 +20,10 @@ with tempfile.TemporaryDirectory(prefix="phase25-typed-api-", dir=ROOT / "tmp") 
 type Cell:
   value
 
+type Holder:
+  payload: Vector[Int]
+  item
+
 fn unbox(item: Box):
   return item.value
 
@@ -43,6 +47,15 @@ fn main():
     for name in ("Box", "Cell"):
         identity = f"nominal-template-v1:{module}:type:{name}"
         assert templates[identity]["module_id"] == module, templates
+        assert templates[identity]["fields"] == [{"name": "value",
+            "declared_type_key": None, "variable_ordinal": 0}], templates
+    holder = templates[f"nominal-template-v1:{module}:type:Holder"]
+    assert holder["fields"][0]["name"] == "payload", holder
+    assert holder["fields"][0]["declared_type_key"].startswith(
+        "type-key-v1:sha256:"), holder
+    assert holder["fields"][0]["variable_ordinal"] is None, holder
+    assert holder["fields"][1] == {"name": "item", "declared_type_key": None,
+                                   "variable_ordinal": 0}, holder
     specializations = {entry["callable_id"]: entry
                        for entry in typed["specializations"]}
     box = specializations[f"callable-v1:{module}:fn:unbox"]

@@ -73,6 +73,14 @@ struct NominalFieldSlot {
   bool inferred{false};
 };
 
+struct InvalidFieldAnnotation : std::invalid_argument {
+  std::string declaration_id;
+  std::string field_name;
+  InvalidFieldAnnotation(std::string id, std::string field, std::string type)
+      : std::invalid_argument("invalid declared field type: " + type),
+        declaration_id(std::move(id)), field_name(std::move(field)) {}
+};
+
 struct NominalDeclaration {
   DeclarationKind kind{DeclarationKind::Record};
   std::string program_name;      // checker spelling used only for name lookup
@@ -160,6 +168,16 @@ class TypeContext : public std::enable_shared_from_this<TypeContext> {
     auto found = by_id_.find(std::string(id));
     return found == by_id_.end() ? nullptr : found->second;
   }
+  // Bind field annotations after every declaration name has been interned,
+  // so forward and recursive references resolve to their defining IDs once.
+  // Null entries are inferred field slots, ordered with the declaration.
+  void bind_field_annotations();
+  const std::vector<TypeRef>& field_annotations(std::string_view declaration_id) const {
+    auto found = field_annotations_.find(std::string(declaration_id));
+    if (found == field_annotations_.end())
+      throw std::invalid_argument("nominal field annotations have not been bound");
+    return found->second;
+  }
   static const TypeContext* current() {
     return stack().empty() ? nullptr : stack().back();
   }
@@ -207,6 +225,7 @@ class TypeContext : public std::enable_shared_from_this<TypeContext> {
   std::unordered_map<std::string, NominalDeclarationRef> by_name_;
   std::unordered_map<std::string, NominalDeclarationRef> by_id_;
   std::unordered_map<std::string, std::shared_ptr<const std::string>> modules_;
+  std::unordered_map<std::string, std::vector<TypeRef>> field_annotations_;
 };
 
 inline NominalDeclarationRef bind_declaration(std::string_view program_name,
@@ -593,6 +612,31 @@ public:
   }
 };
 
+inline void TypeContext::bind_field_annotations() {
+  Scope scope(this);
+  std::vector<std::string> ordered_ids;
+  ordered_ids.reserve(by_id_.size());
+  for (const auto& entry : by_id_) ordered_ids.push_back(entry.first);
+  std::sort(ordered_ids.begin(), ordered_ids.end());
+  for (const auto& id : ordered_ids) {
+    const auto& declaration = by_id_.at(id);
+    if (declaration->kind != DeclarationKind::Record) continue;
+    std::vector<TypeRef> fields;
+    fields.reserve(declaration->fields.size());
+    for (const auto& slot : declaration->fields) {
+      if (slot.inferred) {
+        fields.push_back(nullptr);
+        continue;
+      }
+      auto parsed = Type::parse_canonical(slot.declared_type);
+      if (!parsed || !(*parsed)->is_closed())
+        throw InvalidFieldAnnotation(declaration->id, slot.name, slot.declared_type);
+      fields.push_back(*parsed);
+    }
+    field_annotations_.emplace(declaration->id, std::move(fields));
+  }
+}
+
 // Ordered field types of a record instance: declared fields from the
 // template (resolved in the declaration's own session), inferred slots from
 // this instance's substitution.
@@ -603,19 +647,21 @@ inline std::vector<TypeRef> Type::resolved_fields() const {
   if (!owner)
     throw std::invalid_argument("declaration " + declaration->id +
                                 " outlived its compilation session");
-  TypeContext::Scope scope(owner.get());
+  const auto& annotations = owner->field_annotations(declaration->id);
+  if (annotations.size() != declaration->fields.size())
+    throw std::invalid_argument("nominal field annotation count mismatch");
   std::vector<TypeRef> fields;
   size_t inferred = 0;
-  for (const auto& slot : declaration->fields) {
+  for (size_t index = 0; index < declaration->fields.size(); ++index) {
+    const auto& slot = declaration->fields[index];
     if (slot.inferred) {
       fields.push_back(field_substitutions[inferred++].second);
       continue;
     }
-    auto declared = parse_canonical(slot.declared_type);
-    if (!declared)
+    if (!annotations[index])
       throw std::invalid_argument("declared field type of " + declaration->id +
-                                  " is malformed: " + slot.declared_type);
-    fields.push_back(*declared);
+                                  " was not bound");
+    fields.push_back(annotations[index]);
   }
   return fields;
 }

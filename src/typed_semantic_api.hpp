@@ -20,8 +20,13 @@ struct TypedSourceProvenanceV1 {
 };
 
 struct TypedNominalTemplateV1 {
+  struct Field {
+    std::string name;
+    TypeRef declared_type;  // null for an inferred slot
+    std::optional<uint32_t> variable_ordinal;
+  };
   NominalDeclarationRef declaration;
-  std::vector<NominalFieldSlot> fields;
+  std::vector<Field> fields;
   bool exported{false};
   TypedSourceProvenanceV1 provenance;
 };
@@ -144,8 +149,22 @@ inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) 
     if (!declaration)
       throw std::invalid_argument("checked nominal declaration has no interned identity");
     result.modules.emplace(declaration->module_id, declaration->interned_module_id);
+    std::vector<TypedNominalTemplateV1::Field> fields;
+    uint32_t variable_ordinal = 0;
+    if (declaration->kind == DeclarationKind::Record) {
+      const auto& annotations = program.type_context->field_annotations(declaration->id);
+      if (annotations.size() != declaration->fields.size())
+        throw std::invalid_argument("checked nominal field annotation count mismatch");
+      for (size_t index = 0; index < annotations.size(); ++index) {
+        const auto& slot = declaration->fields[index];
+        if (slot.inferred == static_cast<bool>(annotations[index]))
+          throw std::invalid_argument("checked nominal field annotation state mismatch");
+        fields.push_back({slot.name, annotations[index],
+            slot.inferred ? std::optional<uint32_t>(variable_ordinal++) : std::nullopt});
+      }
+    }
     result.nominal_templates.emplace(declaration->id, TypedNominalTemplateV1{
-        declaration, declaration->fields, exported,
+        declaration, std::move(fields), exported,
         {source_file, line, declaration->module_id, {}}});
   };
   for (const auto& object : program.objects)
@@ -187,13 +206,18 @@ inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) 
       record.parameter_access = specialization.parameter_effects;
       record.observable_effects = specialization.observable_effects;
       record.member_requirements = specialization.member_requirements;
-      const std::string callable_prefix = "callable-v1:";
-      const size_t module_end = function.semantic_callable_id.find(":fn:");
-      if (function.semantic_callable_id.rfind(callable_prefix, 0) != 0 ||
-          module_end == std::string::npos)
-        throw std::invalid_argument("checked function has malformed callable identity");
-      const std::string defining_module_id = function.semantic_callable_id.substr(
-          callable_prefix.size(), module_end - callable_prefix.size());
+      const auto bound_module = program.module_identities.find(function.defining_module);
+      std::string defining_module_id;
+      if (bound_module != program.module_identities.end()) {
+        defining_module_id = bound_module->second;
+      } else if (function.defining_module == "std") {
+        defining_module_id = module_identity("moss-std", "0.1.0", "std");
+      } else if (!program.package_identities) {
+        defining_module_id = module_identity("__standalone__", "0.0.0",
+            function.defining_module.empty() ? "main" : function.defining_module);
+      } else {
+        throw std::invalid_argument("checked function has no bound defining module identity");
+      }
       result.modules.emplace(defining_module_id,
           program.type_context->intern_module(defining_module_id));
       record.provenance = {function.source_file, function.line,
