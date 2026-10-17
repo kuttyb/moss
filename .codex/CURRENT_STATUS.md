@@ -1,5 +1,37 @@
 # Moss current status
 
+## Phase 25 Team A A2 checkpoint at `9249c11` — 2026-10-17 (BLOCKED on D5, NOT READY)
+
+**The tooling sweep is clean apart from one blocker.** `tmp/resume/all_tooling.sh`
+reports 112 of 119 passing; the seven remaining failures were the sweep
+harness passing wrong arguments, and running those seven exactly as `run.sh`
+does leaves **one** real failure: `check_borrowed_reads`.
+
+**Fixed since `b70e888`:**
+
+- `2a341a5`: `check_no_internal_type_leak` ran `moss check` in the worktree,
+  and the compiler writes a semantic cache beside each project it checks. It
+  therefore polluted fixtures that declare an exact file inventory and broke
+  the agent benchmark starter AB025 — **my own test caused the `make check`
+  failure at `e5af4ac`**. It now runs in a private export of HEAD, and the
+  working tree stays clean across a full run.
+
+**Blocked: decision D5** (`TEAM_G_UNRESOLVED_CONTRACT_DECISIONS.md`, with a
+20-line reproducer at `docs/phase25/repro/duplicate_open_result_specialization.moss`).
+A generic called from two handlers with the same concrete argument type
+registers two specializations differing only in `open_result_bindings`, so
+`concrete_specialization` refuses the parameter-only lookup and lowering
+throws `missing static specialization`. The fork point emits one
+specialization for the same program. Whether two call sites with identical
+argument types and an identical concrete result may carry different
+identities is an Option B identity question (§§3.3, 4.2), so it is recorded
+rather than guessed: **(a)** do not record a binding when the result closes
+to a concrete type the arguments already determine, or **(b)** keep both
+identities and make every call site supply its exact key.
+
+Blocker tally: **seven**, five pre-existing and two mine (the domain-handle
+masking and the leak-checker pollution). Six are fixed; D5 is open.
+
 ## Phase 25 Team A A2 checkpoint at `b70e888` — 2026-10-17 (NOT READY)
 
 Running the `tests/tooling` sweep instead of waiting on serial `make check`
