@@ -2407,7 +2407,6 @@ class Checker {
 
   void build_open_callable_summaries() {
     for (auto& function : p_.functions) {
-      if (!function.return_type) continue;
       OpenCallableSummaryFacts summary;
       summary.callable_id = function.semantic_callable_id;
       summary.origin.module_id =
@@ -2462,7 +2461,7 @@ class Checker {
         auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
         return parsed ? openize(*parsed) : nullptr;
       };
-      bool complete = function.constraints.empty();
+      bool complete = true;
       for (const auto& parameter : function.params) {
         moss::TypeRef term = parameter.type.empty() ? bound() :
             type_term(parameter.type);
@@ -2470,15 +2469,58 @@ class Checker {
         summary.parameter_types.push_back(term);
         parameter_variables.emplace(parameter.name, term);
       }
-      const string result = canonical_type_name(*function.return_type);
+      const string result = function.return_type
+          ? canonical_type_name(*function.return_type) : "unit";
       if (starts_with(result, "_generic:")) {
         auto source = parameter_variables.find(result.substr(9));
         if (source != parameter_variables.end()) summary.result_type = source->second;
         else complete = false;
+      } else if (starts_with(result, "_method_result:")) {
+        summary.result_type = bound();
       } else if (!contains_internal_placeholder(result)) {
         summary.result_type = type_term(result);
       } else {
         complete = false;
+      }
+      for (size_t ordinal = 0; ordinal < function.constraints.size(); ++ordinal) {
+        const auto& constraint = function.constraints[ordinal];
+        if (constraint.kind != ConstraintKind::Method) {
+          complete = false;
+          continue;
+        }
+        auto receiver = parameter_variables.find(constraint.subject);
+        if (receiver == parameter_variables.end() || !receiver->second) {
+          complete = false;
+          continue;
+        }
+        moss::MemberDispatchRequirement member;
+        member.requirement_id = function.semantic_callable_id + ":member:" +
+            std::to_string(ordinal);
+        member.receiver = receiver->second;
+        member.member_name = constraint.detail;
+        member.origin = {summary.origin.module_id, function.source_file,
+                         function.line, 1, function.semantic_callable_id,
+                         member.requirement_id};
+        for (const auto& argument : constraint.arguments) {
+          auto parameter = parameter_variables.find(trim(argument));
+          moss::TypeRef term = parameter != parameter_variables.end()
+              ? parameter->second : type_term(
+                    constraint_expression_type(function, argument).value_or(""));
+          if (!term) complete = false;
+          member.argument_types.push_back(term);
+          member.argument_access.push_back(moss::AccessMode::Read);
+        }
+        if (!constraint.result.empty() &&
+            starts_with(constraint.result, "_method_result:")) {
+          if (!summary.result_type) summary.result_type = bound();
+          member.result = summary.result_type;
+        } else if (!constraint.result_expectations.empty()) {
+          member.result = type_term(constraint.result_expectations.front());
+          if (!member.result) complete = false;
+        } else {
+          member.result = bound();
+        }
+        summary.member_requirements.push_back(std::move(member));
       }
       summary.complete = complete && summary.result_type &&
           std::all_of(summary.parameter_types.begin(),
@@ -5928,6 +5970,120 @@ class Checker {
           err(line, "argument " + std::to_string(index + 1) +
               " to function '" + callee + "' has incompatible type", "TYPE_MISMATCH");
       }
+      if (!summary.member_requirements.empty()) {
+        vector<moss::MemberDispatchRequirement> instantiated_requirements;
+        for (const auto& source : summary.member_requirements) {
+          moss::MemberDispatchRequirement requirement = source;
+          requirement.parent_requirement_id = source.requirement_id;
+          requirement.requirement_id = source.requirement_id + ":call:" +
+              (statement ? statement->source_file : current_source_file_) + ":" +
+              std::to_string(line);
+          requirement.receiver = instantiate(source.receiver);
+          for (auto& argument : requirement.argument_types)
+            argument = instantiate(argument);
+          if (source.result) requirement.result = instantiate(*source.result);
+          instantiated_requirements.push_back(std::move(requirement));
+        }
+        vector<string> concrete_parameters;
+        bool concrete = true;
+        for (const auto& parameter : summary.parameter_types) {
+          auto resolved = solver.resolve(instantiate(parameter));
+          concrete &= resolved && resolved->is_closed();
+          concrete_parameters.push_back(resolved
+              ? resolved->to_canonical_string() : "");
+        }
+        if (concrete) {
+          // Adapt the existing checker admission/visibility decision to the
+          // solver worklist. Team S will supply this callback at integration.
+          const auto selected = validate_method_requirements(
+              line, *function->second, concrete_parameters);
+          auto admit = [&](const moss::MemberDispatchRequirement& open)
+              -> moss::MemberAdmission {
+            moss::MemberAdmission decision;
+            const string source_id = open.parent_requirement_id.value_or("");
+            auto found = std::find_if(selected.begin(), selected.end(),
+                [&](const moss::MemberDispatchRequirement& item) {
+                  return item.requirement_id == source_id;
+                });
+            if (found == selected.end()) return decision;
+            decision.status = moss::MemberAdmission::Status::Admitted;
+            decision.admitted_template_or_builtin_family =
+                found->admitted_template_or_builtin_family;
+            decision.selected_callable_id = found->selected_callable_id;
+            decision.receiver_access = found->receiver_access;
+            decision.argument_access = found->argument_access;
+            decision.result = found->result;
+            return decision;
+          };
+          auto closure = moss::close_member_requirements(
+              solver, std::move(instantiated_requirements), admit);
+          if (closure.status ==
+              moss::MemberClosureResult::Status::UnificationFailed)
+            err(line, "required member result conflicts with call result",
+                "TYPE_MISMATCH");
+          if (closure.status ==
+              moss::MemberClosureResult::Status::Rejected)
+            err(line, closure.diagnostic, "TYPE_MISMATCH");
+        } else {
+          // The existing builtin descriptor is the current admission policy
+          // for a known collection head. It contributes equations to the
+          // TypeSolver even while an element/key/value slot remains open.
+          auto admit_builtin = [&](const moss::MemberDispatchRequirement& open)
+              -> moss::MemberAdmission {
+            moss::MemberAdmission decision;
+            if (!open.receiver ||
+                open.receiver->kind != moss::TypeKind::Builtin)
+              return decision;
+            const auto* operation = builtin_operation(
+                open.receiver->name, open.member_name);
+            if (!operation ||
+                operation->argument_types.size() != open.argument_types.size())
+              return decision;
+            auto pattern_type = [&](const string& pattern) -> moss::TypeRef {
+              const auto& args = open.receiver->type_args;
+              if (pattern == "$element" && args.size() == 1)
+                return args[0];
+              if (pattern == "$key" && args.size() == 2)
+                return args[0];
+              if (pattern == "$value" && args.size() == 2)
+                return args[1];
+              if (pattern == "$keys" && args.size() == 2)
+                return moss::Type::builtin("vector", {args[0]});
+              if (pattern == "$values" && args.size() == 2)
+                return moss::Type::builtin("vector", {args[1]});
+              auto parsed = moss::Type::parse_canonical(pattern);
+              return parsed ? *parsed : nullptr;
+            };
+            for (size_t index = 0; index < open.argument_types.size(); ++index) {
+              auto expected = pattern_type(operation->argument_types[index]);
+              if (!expected) return decision;
+              decision.contributes.emplace_back(
+                  open.argument_types[index], expected);
+            }
+            decision.result = pattern_type(operation->result);
+            if (!decision.result) return decision;
+            decision.status = moss::MemberAdmission::Status::Admitted;
+            decision.admitted_template_or_builtin_family =
+                "builtin:" + open.receiver->name;
+            decision.selected_callable_id =
+                "builtin:" + open.receiver->name + "." + open.member_name;
+            decision.receiver_access =
+                requirement_access(operation->receiver_effect);
+            for (auto effect : operation->argument_effects)
+              decision.argument_access.push_back(requirement_access(effect));
+            return decision;
+          };
+          auto closure = moss::close_member_requirements(
+              solver, std::move(instantiated_requirements), admit_builtin);
+          if (closure.status ==
+              moss::MemberClosureResult::Status::UnificationFailed)
+            err(line, "required member has incompatible argument or result types",
+                "TYPE_MISMATCH");
+          if (closure.status ==
+              moss::MemberClosureResult::Status::Rejected)
+            err(line, closure.diagnostic, "TYPE_MISMATCH");
+        }
+      }
       moss::TypeRef result = instantiate(summary.result_type);
       if (statement && result) {
         std::set<uint32_t> result_ordinals;
@@ -5954,6 +6110,7 @@ class Checker {
       if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
         string invocation = statement.a + "(" + join_arguments(statement.args) + ")";
         constrain_call(statement.line, invocation);
+        instantiate_summary(statement.line, invocation, nullptr);
       }
       if ((statement.kind == Stmt::Kind::Let ||
            statement.kind == Stmt::Kind::Var ||

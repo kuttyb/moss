@@ -171,6 +171,28 @@ fn main():
         checked(call_conflict, "TYPE_MISMATCH")
         print("PASS call and later push constrain the same local", flush=True)
 
+        member_constraint = source(scratch, "open_member_requirement", '''fn append_one(values):
+  values.push(1)
+
+fn main():
+  var values = []
+  append_one(values)
+  echo values[0]
+''')
+        parity(member_constraint, scratch, "1\n")
+        print("PASS generic member requirement closes open caller element", flush=True)
+
+        member_conflict = source(scratch, "open_member_conflict", '''fn append_one(values):
+  values.push(1)
+
+fn main():
+  var values = []
+  append_one(values)
+  values.push("wrong")
+''')
+        checked(member_conflict, "TYPE_MISMATCH")
+        print("PASS generic member constraint rejects conflicting element", flush=True)
+
         relay = source(scratch, "transitive_open_result", '''fn fresh():
   return []
 
