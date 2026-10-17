@@ -3001,12 +3001,11 @@ class Checker {
   bool contains_enum_type(const string& t) const {
     string type = canonical_type_name(t);
     if (enums_.count(type)) return true;
-    auto bracket = type.find('[');
-    if (bracket != string::npos && ends_with(type, "]"))
-      for (const auto& argument : split_top_level(
-               type.substr(bracket + 1, type.size() - bracket - 2), ','))
-        if (contains_enum_type(argument)) return true;
-    return false;
+    bool enumeration = false;
+    for_each_subterm(parsed_type(type), [&](const moss::TypeRef& nested) {
+      if (nested->kind == moss::TypeKind::Enum) enumeration = true;
+    });
+    return enumeration;
   }
 
   // Visit a term and every type nested in it: built-in arguments and a
@@ -3124,13 +3123,16 @@ class Checker {
         return true;
       }
     }
-    if ((starts_with(type, "seq[") || starts_with(type, "option[")) && ends_with(type, "]"))
-      return valid_type(trim(type.substr(type.find('[')+1, type.size()-type.find('[')-2)));
-    if (starts_with(type, "table[") && ends_with(type, "]")) {
-      auto inside = type.substr(6, type.size()-7);
-      auto ps = split_top_level(inside, ',');
-      return ps.size() == 2 && !contains_enum_type(ps[0]) &&
-          valid_type(ps[0]) && valid_type(ps[1]);
+    // seq and option carry one element; table is keyed like a map.
+    if (applied_builtin(*parsed, {"seq", "option"}) &&
+        (*parsed)->type_args.size() == 1)
+      return valid_type((*parsed)->type_args[0]->to_canonical_string());
+    if (applied_builtin(*parsed, {"table"})) {
+      const auto& args = (*parsed)->type_args;
+      return args.size() == 2 &&
+          !contains_enum_type(args[0]->to_canonical_string()) &&
+          valid_type(args[0]->to_canonical_string()) &&
+          valid_type(args[1]->to_canonical_string());
     }
     return false;
   }
@@ -7972,10 +7974,16 @@ class Checker {
               !contains_internal_placeholder(*function.return_type)) {
             auto declared = moss::Type::parse_canonical(
                 canonical_type_name(*function.return_type));
-            if (declared && (*declared)->is_closed() &&
+            // A result that still holds inference variables is not a
+            // mismatch to report here: it is an unresolved return, and the
+            // checker raises the TYPE_INFERENCE_FAILED teaching diagnostic
+            // for it. Reporting it here would also print a `_typevar:`
+            // spelling, which is compiler-internal.
+            const auto resolved = body_types.solver.resolve(term);
+            if (declared && (*declared)->is_closed() && resolved->is_closed() &&
                 !body_types.solver.unify(term, *declared))
               err(line, "function '" + function.name + "' returns '" +
-                  body_types.solver.resolve(term)->to_canonical_string() +
+                  resolved->to_canonical_string() +
                   "' but is annotated '" + *function.return_type + "'");
           }
           if (joined_result && !body_types.solver.unify(joined_result, term))
