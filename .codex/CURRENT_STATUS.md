@@ -35,14 +35,25 @@ with draft PRs and isolated CI. Do not merge to main.
 
 Pinned Team B `755f13172c37447bca981d1fefbb885ec46f3a59` has an
 ancestry-preserving, **non-PR** merge rehearsal at pushed branch
-`phase25-i-b-rehearsal` head `235b661`, based on S repair commit `9a04230`.
+`phase25-i-b-rehearsal` head `145034f`, based on S repair commit `9a04230`.
 The only conflicts were status history, duplicate Team A/Team B API document
 names, and the older unresolved-collection diagnostic expectation; resolutions
 are recorded in `docs/phase25/B_INTAKE_REHEARSAL.md` on that branch. Compiler
 build, Team B debug/release runtime checks, staged/adversarial ABI suites,
 feedback validation, and Team B acceptance (22 PASS, 1 PENDING Gate 10) pass.
 This branch is not a target-based B intake or accepted PR. The B compiler
-binding and nominal MapKeyProof remain open.
+binding and nominal MapKeyProof remain open. Follow-up `145034f` reconciles
+Team B's chained-bucket runtime with the frozen robin-hood open-addressing
+contract; a collision-heavy ordered-map oracle, debug/release runtime suite,
+and Team B acceptance still pass.
+
+Potential separate Set architecture decision: live `moss-0.1` bootstrap lists
+Vector/Map/Queue but no Set; `Set[Int]` emits `UNKNOWN_SYMBOL_OR_TYPE` in a
+minimal `moss check --json` probe. `TYPE_IR_CONTRACT.md` and
+`ABI_V10_DESIGN.md` preserve Set as a Phase 25 deliverable, while Team S's
+Set fixtures explicitly mark `Set()`, `insert`, `contains`, and `values()` as
+provisional pending Team G's source API. An L7 source-surface choice has been
+requested asynchronously; independent Map/integration work can continue.
 
 ## Phase 25 S reconciliation recovery point — 2026-10-18
 
