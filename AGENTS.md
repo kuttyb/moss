@@ -1,5 +1,15 @@
 # Moss repository instructions
 
+## Mandatory Team organization and PR gates
+
+For all new multi-agent engineering Teams, follow [docs/AGENT_TEAM_OPERATING_MODEL.md](docs/AGENT_TEAM_OPERATING_MODEL.md). Team I uses [docs/phase25/TEAM_I_INTEGRATION_EXECUTION.md](docs/phase25/TEAM_I_INTEGRATION_EXECUTION.md). This operating model supersedes older role/headcount/review-cadence instructions without altering Moss language contracts or the startup steps below.
+
+- L6 Coordinator owns task DAG and delivery; L6 Reviewer checks code after automated green PR evidence (the Coordinator may serve as Reviewer); normally 2 L5 implementation agents and NEVER more than 3 workers, and only as many as truly independent tasks and files allow. L6 independent adversarial Reviewer audits a few frozen architecture/integration checkpoints, not each PR.
+- L5 worker prepares a draft PR, lets automated parallel regression gates run, and requests L6 review ONLY after required PR tests pass. Review/merge never relies on claimed green tests in chat.
+- Execute builds with `make --jobs="$(nproc)"` when supported (with portable CPU detection if needed). CI runs independent suite groups concurrently on isolated checkouts. Do not parallelize tests sharing mutable caches/build paths in one checkout without isolation.
+- Agent instructions specify acceptance invariants and PR scope, NOT mundane step-by-step test commands; repository CI/script automation owns the test commands and logs. Every failed/blocked gate must be shown accurately.
+- Maintain exclusive writer ownership of `src/moss.cpp` during integrations; no direct merge to `main`. Preserve `docs/AGENT_TEAM_EFFICIENCY.md` reporting without inventing usage or defects.
+
 ## Mandatory Session Startup
 
 Every agent session must execute the following startup sequence before inspecting or editing Moss code:
