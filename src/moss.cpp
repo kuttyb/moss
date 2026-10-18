@@ -790,6 +790,19 @@ nominal_key_methods(const ObjectType& object, const string& key_type) {
   return std::make_pair(equality, hash);
 }
 
+static bool nominal_key_free_target(const Function& function,
+                                    const string& key_type) {
+  const size_t separator = function.name.rfind("__");
+  const string name = separator == string::npos
+      ? function.name : function.name.substr(separator + 2);
+  if (name == "hash" && function.params.size() == 1)
+    return canonical_type_name(function.params[0].type) == key_type;
+  if (name == "isequal" && function.params.size() == 2)
+    return canonical_type_name(function.params[0].type) == key_type &&
+        canonical_type_name(function.params[1].type) == key_type;
+  return false;
+}
+
 static abi_v10::Record nominal_key_proof_record(
     const ObjectType& object, const string& declaration_id);
 
@@ -3945,6 +3958,12 @@ class Checker {
             "Map key '" + key + "' requires pure READ isequal(" + key +
             ") -> Bool and hash() -> Int methods",
             "KEY_PROOF_INVALID");
+      for (const auto& function : p_.functions)
+        if (nominal_key_free_target(function, key))
+          err(function.source_file, function.line,
+              "free key callable '" + function.name +
+              "' conflicts with the provider-owned canonical proof for '" +
+              key + "'", "KEY_PROOF_COHERENCE_MISMATCH");
       const auto declared = p_.type_context->find(key);
       if (!declared)
         err(object.source_file, object.line,
