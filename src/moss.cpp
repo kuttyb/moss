@@ -349,6 +349,10 @@ static string canonical_type_name(string type) {
   return type;
 }
 
+static string canonical_type_name(const moss::TypeRef& type) {
+  return type ? type->to_canonical_string() : string();
+}
+
 // A record instance with at least one substituted slot (`Box[value=int]`);
 // a bare record spelling is its template or a fully declared record.
 static bool is_nominal_instance_type(const string& type) {
@@ -497,6 +501,10 @@ static moss::TypeRef parsed_type(const string& spelling) {
   return parsed ? *parsed : nullptr;
 }
 
+static moss::TypeRef parsed_type(const moss::TypeRef& type) {
+  return type;
+}
+
 static bool primitive_term(const moss::TypeRef& type, std::string_view name) {
   return type && type->kind == moss::TypeKind::Primitive && type->name == name;
 }
@@ -534,11 +542,22 @@ static bool open_generic(const string& type) {
   return starts_with(type, "_generic:");
 }
 
+static bool open_generic(const moss::TypeRef& type) {
+  if (!type) return false;
+  if (type->kind == moss::TypeKind::InferenceVar) return true;
+  return open_generic(type->to_canonical_string());
+}
+
 // The statically bounded callable identity `callable:<name>`. Like
 // open_generic, centralized so the conversion to a real callable type has one
 // place to change. A bare `callable:` carries no identity yet.
 static bool callable_identity(const string& type) {
   return starts_with(type, "callable:");
+}
+
+static bool callable_identity(const moss::TypeRef& type) {
+  if (!type) return false;
+  return callable_identity(type->to_canonical_string());
 }
 
 // An open built-in collection: named, with no type arguments yet.
@@ -661,6 +680,33 @@ static std::optional<string> builtin_operation_result(
   return builtin_operation_type(receiver_type, operation->result);
 }
 
+static std::optional<BuiltinReceiverFamily> builtin_receiver_family(
+    const moss::TypeRef& type) {
+  if (!type) return std::nullopt;
+  if (collection_named(type, {"vector"})) return BuiltinReceiverFamily::Vector;
+  if (collection_named(type, {"map"})) return BuiltinReceiverFamily::Map;
+  if (collection_named(type, {"queue"})) return BuiltinReceiverFamily::Queue;
+  if (primitive_term(type, "string")) return BuiltinReceiverFamily::String;
+  return std::nullopt;
+}
+
+static const BuiltinOperationDescriptor* builtin_operation(
+    const moss::TypeRef& receiver_type, const string& name) {
+  auto family = builtin_receiver_family(receiver_type);
+  if (!family) return nullptr;
+  auto operation = std::find_if(
+      builtin_operations().begin(), builtin_operations().end(),
+      [&](const BuiltinOperationDescriptor& candidate) {
+        return candidate.receiver == *family && candidate.name == name;
+      });
+  return operation == builtin_operations().end() ? nullptr : &*operation;
+}
+
+static std::optional<string> builtin_operation_result(
+    const moss::TypeRef& receiver_type, const string& name, size_t arity) {
+  return builtin_operation_result(canonical_type_name(receiver_type), name, arity);
+}
+
 static bool contains_internal_placeholder(const string& type) {
   string value = trim(type);
   if (internal_semantic_placeholder(value)) return true;
@@ -674,6 +720,12 @@ static bool contains_internal_placeholder(const string& type) {
     if (contains_internal_placeholder(part)) return true;
   }
   return false;
+}
+
+static bool contains_internal_placeholder(const moss::TypeRef& type) {
+  if (!type) return false;
+  if (type->kind == moss::TypeKind::InferenceVar) return true;
+  return contains_internal_placeholder(type->to_canonical_string());
 }
 
 
@@ -889,13 +941,208 @@ static bool parse_fileio_open(const string& text, vector<string>& args) {
   return receiver == "FileIO" && method == "open" && args.size() == 2;
 }
 
-static bool executor_typed(const std::unordered_map<string,string>& env,
-                           const string& name) {
-  auto it = env.find(trim(name));
-  return it != env.end() && primitive_term(parsed_type(it->second), "executor");
+struct TypeEnv {
+  std::unordered_map<string, moss::TypeRef> bindings;
+  std::unordered_map<string, moss::TypeRef> terms;
+
+  struct EntryRef {
+    moss::TypeRef& ref;
+    explicit EntryRef(moss::TypeRef& r) : ref(r) {}
+
+    EntryRef& operator=(const moss::TypeRef& t) {
+      ref = t;
+      return *this;
+    }
+    EntryRef& operator=(moss::TypeRef&& t) {
+      ref = std::move(t);
+      return *this;
+    }
+    EntryRef& operator=(const string& s) {
+      if (s.empty()) {
+        ref = nullptr;
+      } else if (auto parsed = moss::Type::parse_canonical(s)) {
+        ref = *parsed;
+      } else {
+        ref = moss::Type::primitive(s);
+      }
+      return *this;
+    }
+    EntryRef& operator=(const char* s) {
+      return *this = string(s ? s : "");
+    }
+    EntryRef& operator=(const std::optional<string>& s) {
+      if (!s) {
+        ref = nullptr;
+      } else {
+        *this = *s;
+      }
+      return *this;
+    }
+    operator moss::TypeRef() const { return ref; }
+    operator string() const { return ref ? ref->to_canonical_string() : string(); }
+    explicit operator bool() const { return ref != nullptr; }
+    bool empty() const { return ref == nullptr; }
+    string to_canonical_string() const { return ref ? ref->to_canonical_string() : string(); }
+    const moss::Type* operator->() const { return ref.get(); }
+
+    bool operator==(const string& s) const {
+      return (ref ? ref->to_canonical_string() : string()) == s;
+    }
+    bool operator!=(const string& s) const {
+      return !(*this == s);
+    }
+    bool operator==(const char* s) const {
+      return *this == string(s ? s : "");
+    }
+    bool operator!=(const char* s) const {
+      return !(*this == s);
+    }
+    bool operator==(const moss::TypeRef& other) const {
+      return ref == other || (ref && other && ref->structurally_equal(*other));
+    }
+    bool operator!=(const moss::TypeRef& other) const {
+      return !(*this == other);
+    }
+  };
+
+  EntryRef operator[](const string& key) {
+    return EntryRef(bindings[key]);
+  }
+
+  auto begin() { return bindings.begin(); }
+  auto end() { return bindings.end(); }
+  auto begin() const { return bindings.begin(); }
+  auto end() const { return bindings.end(); }
+  auto cbegin() const { return bindings.cbegin(); }
+  auto cend() const { return bindings.cend(); }
+
+  auto find(const string& key) { return bindings.find(key); }
+  auto find(const string& key) const { return bindings.find(key); }
+  size_t count(const string& key) const { return bindings.count(key); }
+  auto erase(const string& key) {
+    terms.erase(key);
+    return bindings.erase(key);
+  }
+  void clear() {
+    bindings.clear();
+    terms.clear();
+  }
+  bool empty() const { return bindings.empty(); }
+  size_t size() const { return bindings.size(); }
+
+  moss::TypeRef& at(const string& key) { return bindings.at(key); }
+  const moss::TypeRef& at(const string& key) const { return bindings.at(key); }
+
+  template <typename KeyT, typename ValT>
+  auto emplace(KeyT&& key, ValT&& val) {
+    if constexpr (std::is_convertible_v<std::decay_t<ValT>, moss::TypeRef>) {
+      return bindings.emplace(std::forward<KeyT>(key), std::forward<ValT>(val));
+    } else {
+      string s = std::forward<ValT>(val);
+      if (s.empty()) {
+        return bindings.emplace(std::forward<KeyT>(key), nullptr);
+      } else if (auto parsed = moss::Type::parse_canonical(s)) {
+        return bindings.emplace(std::forward<KeyT>(key), *parsed);
+      } else {
+        return bindings.emplace(std::forward<KeyT>(key), moss::Type::primitive(s));
+      }
+    }
+  }
+  template <typename... Args>
+  auto emplace(Args&&... args) {
+    return bindings.emplace(std::forward<Args>(args)...);
+  }
+
+  auto insert(const std::pair<const string, moss::TypeRef>& p) {
+    return bindings.insert(p);
+  }
+  auto insert(std::pair<string, moss::TypeRef>&& p) {
+    return bindings.insert(std::move(p));
+  }
+  template <typename P>
+  auto insert(P&& p) {
+    if constexpr (std::is_constructible_v<std::pair<const string, moss::TypeRef>, P>) {
+      return bindings.insert(std::forward<P>(p));
+    } else {
+      return emplace(p.first, p.second);
+    }
+  }
+
+  TypeEnv() = default;
+  TypeEnv(const TypeEnv&) = default;
+  TypeEnv(TypeEnv&&) = default;
+  TypeEnv& operator=(const TypeEnv&) = default;
+  TypeEnv& operator=(TypeEnv&&) = default;
+
+  TypeEnv(const std::unordered_map<string, string>& str_map) {
+    for (const auto& [k, v] : str_map) {
+      if (v.empty()) {
+        bindings[k] = nullptr;
+      } else if (auto parsed = moss::Type::parse_canonical(v)) {
+        bindings[k] = *parsed;
+      } else {
+        bindings[k] = moss::Type::primitive(v);
+      }
+    }
+  }
+
+  TypeEnv(std::initializer_list<std::pair<string, moss::TypeRef>> init) {
+    for (const auto& [k, v] : init) bindings[k] = v;
+  }
+  TypeEnv(std::initializer_list<std::pair<string, string>> init) {
+    for (const auto& [k, v] : init) {
+      if (v.empty()) {
+        bindings[k] = nullptr;
+      } else if (auto parsed = moss::Type::parse_canonical(v)) {
+        bindings[k] = *parsed;
+      } else {
+        bindings[k] = moss::Type::primitive(v);
+      }
+    }
+  }
+  TypeEnv(std::initializer_list<std::pair<const char*, const char*>> init) {
+    for (const auto& [k, v] : init) {
+      string val(v ? v : "");
+      if (val.empty()) {
+        bindings[k] = nullptr;
+      } else if (auto parsed = moss::Type::parse_canonical(val)) {
+        bindings[k] = *parsed;
+      } else {
+        bindings[k] = moss::Type::primitive(val);
+      }
+    }
+  }
+
+  operator std::unordered_map<string, string>() const {
+    std::unordered_map<string, string> result;
+    result.reserve(bindings.size());
+    for (const auto& [k, v] : bindings) {
+      auto term_it = terms.find(k);
+      if (term_it != terms.end() && term_it->second) {
+        result[k] = term_it->second->to_canonical_string();
+      } else {
+        result[k] = v ? v->to_canonical_string() : string();
+      }
+    }
+    return result;
+  }
+
+  std::unordered_map<string, string> to_string_map() const {
+    return static_cast<std::unordered_map<string, string>>(*this);
+  }
+};
+
+static inline string canonical_type_name(const TypeEnv::EntryRef& e) {
+  return canonical_type_name(e.ref);
 }
 
-static bool fileio_typed(const std::unordered_map<string,string>& env,
+static bool executor_typed(const TypeEnv& env,
+                           const string& name) {
+  auto it = env.find(trim(name));
+  return it != env.end() && primitive_term(it->second, "executor");
+}
+
+static bool fileio_typed(const TypeEnv& env,
                          const string& name) {
   auto it = env.find(trim(name));
   return it != env.end() && canonical_type_name(it->second) == "FileIO";
@@ -2444,7 +2691,7 @@ class Checker {
 
   vector<FunctionalOperationDescriptor> legal_functional_operations(
       const string& expression,
-      const std::unordered_map<string,string>& env) const {
+      const TypeEnv& env) const {
     auto state = inferred_functional_pipeline_state(expression, env, true);
     vector<FunctionalOperationDescriptor> legal;
     if (!state) return legal;
@@ -2481,20 +2728,7 @@ class Checker {
   vector<Warning> warnings_;
   bool phase21_warnings_enabled_ = true;
 
-  struct TypeEnv : std::unordered_map<string, string> {
-    using Projection = std::unordered_map<string, string>;
-    using Projection::Projection;
-    TypeEnv() = default;
-    TypeEnv(const TypeEnv&) = default;
-    TypeEnv(TypeEnv&&) = default;
-    TypeEnv& operator=(const TypeEnv&) = default;
-    TypeEnv& operator=(TypeEnv&&) = default;
-    TypeEnv(const Projection& projected) : Projection(projected) {}
-    TypeEnv(Projection&& projected) : Projection(std::move(projected)) {}
-    // The text map remains a projection for existing diagnostics and lowering.
-    // Checked source-order walks carry the exact solver terms alongside it.
-    std::unordered_map<string, moss::TypeRef> terms;
-  };
+  using TypeEnv = moss::TypeEnv;
   using TypeEnvVisitor = std::function<void(const Stmt&, const TypeEnv&)>;
   struct BodyTypeState;
   mutable BodyTypeState* current_body_types_ = nullptr;
@@ -2582,8 +2816,20 @@ class Checker {
     BodyTypeState*& slot;
     BodyTypeState* previous;
     BodyTypeScope(BodyTypeState*& target, BodyTypeState* current)
-        : slot(target), previous(target) { slot = current; }
-    ~BodyTypeScope() { slot = previous; }
+        : slot(target), previous(target) {
+      slot = current;
+      if (slot) {
+        slot->scoped_locals_active = false;
+        slot->scoped_locals.clear();
+      }
+    }
+    ~BodyTypeScope() {
+      if (slot) {
+        slot->scoped_locals_active = false;
+        slot->scoped_locals.clear();
+      }
+      slot = previous;
+    }
   };
 
   // Materialize only body forms whose operands can be tied to checked summary
@@ -3245,7 +3491,7 @@ class Checker {
 
   std::optional<string> constraint_expression_type(const Function& function,
                                                    const string& expression) const {
-    std::unordered_map<string,string> env;
+    TypeEnv env;
     for (const auto& parameter : function.params)
       if (!parameter.type.empty() && !traits_.count(parameter.type))
         env[parameter.name] = parameter.type;
@@ -3481,14 +3727,12 @@ class Checker {
     return canonical_type_name(actual) == "_none" &&
         starts_with(canonical_type_name(expected), "option[");
   }
-  static bool is_type_compatible(const string& bound_type_raw, const string& new_type_raw) {
-    const auto bound = moss::Type::parse_canonical(canonical_type_name(bound_type_raw));
-    const auto target = moss::Type::parse_canonical(canonical_type_name(new_type_raw));
+  static bool is_type_compatible(const moss::TypeRef& bound, const moss::TypeRef& target) {
     if (!bound || !target) return false;
     // None is the one language-defined value admitted by an Option without
     // sharing its type constructor. All other compatibility is unification.
-    if ((*target)->name == "_none" && (*bound)->kind == moss::TypeKind::Builtin &&
-        (*bound)->name == "option" && (*bound)->type_args.size() == 1)
+    if (target->name == "_none" && bound->kind == moss::TypeKind::Builtin &&
+        bound->name == "option" && bound->type_args.size() == 1)
       return true;
     moss::TypeSolver solver(1);
     std::map<string, moss::TypeRef> placeholders;
@@ -3532,9 +3776,22 @@ class Checker {
       }
       return type;
     };
-    auto expected = instantiate(*bound);
-    auto actual = instantiate(*target);
+    auto expected = instantiate(bound);
+    auto actual = instantiate(target);
     return expected && actual && solver.unify(expected, actual);
+  }
+  static bool is_type_compatible(const moss::TypeRef& bound, const string& new_type_raw) {
+    const auto target = moss::Type::parse_canonical(canonical_type_name(new_type_raw));
+    return bound && target && is_type_compatible(bound, *target);
+  }
+  static bool is_type_compatible(const string& bound_type_raw, const moss::TypeRef& target) {
+    const auto bound = moss::Type::parse_canonical(canonical_type_name(bound_type_raw));
+    return bound && target && is_type_compatible(*bound, target);
+  }
+  static bool is_type_compatible(const string& bound_type_raw, const string& new_type_raw) {
+    const auto bound = moss::Type::parse_canonical(canonical_type_name(bound_type_raw));
+    const auto target = moss::Type::parse_canonical(canonical_type_name(new_type_raw));
+    return bound && target && is_type_compatible(*bound, *target);
   }
   bool trait_conforms(const string& type, const string& trait,
                       string* reason = nullptr) const {
@@ -3726,7 +3983,7 @@ class Checker {
         string method_source = method.source_file.empty() ? object.source_file : method.source_file;
         current_source_file_ = method_source;
         string signature = method.name + "/" + std::to_string(method.params.size());
-        std::unordered_map<string,string> env;
+        TypeEnv env;
         env["self"] = object.name;
         for (const auto& field : object.fields)
           env[field.name] = (field.inferred || field.type.empty()) ? "_generic:" + field.name : field.type;
@@ -3884,6 +4141,11 @@ class Checker {
                value.substr(bracket + 1, value.size() - bracket - 2), ','))
         if (contains_domain_handle(trim(argument))) return true;
     return false;
+  }
+
+  bool contains_domain_handle(const moss::TypeRef& type) const {
+    if (!type) return false;
+    return contains_domain_handle(type->to_canonical_string());
   }
 
   void check_enums() const {
@@ -4069,8 +4331,8 @@ class Checker {
                                      const Handler& resolved_handler,
                                      const TypeEnv& env) const {
     auto self = env.find("self");
-    if (self != env.end() && domains_.count(self->second)) {
-      const Domain& domain = *domains_.at(self->second);
+    if (self != env.end() && domains_.count(canonical_type_name(self->second))) {
+      const Domain& domain = *domains_.at(canonical_type_name(self->second));
       if (receiver == "self") {
         teaching_err(
             line, "DOMAIN_SELF_MESSAGE",
@@ -4113,9 +4375,9 @@ class Checker {
         if (instance.domain == domain.name &&
             std::none_of(p_.concrete_domain_graph.edges.begin(),
                          p_.concrete_domain_graph.edges.end(),
-                [&](const ConcreteRouteEdge& edge) {
-                  return edge.source_instance == instance.identity && edge.route == receiver;
-                }))
+                 [&](const ConcreteRouteEdge& edge) {
+                   return edge.source_instance == instance.identity && edge.route == receiver;
+                 }))
           teaching_err(
               line, "DOMAIN_ROUTE_NOT_BOUND",
               "route '" + receiver + "' of domain instance '" +
@@ -4197,7 +4459,7 @@ class Checker {
           err(h_source, h.line, "reply handler '" + d.name + "." + h.name +
               "' must reply on every normal control-flow path");
       }
-      std::unordered_map<string,string> env;
+      TypeEnv env;
       env["self"] = d.name;
       for (const auto& p : h.params) {
         if (p.type.empty())
@@ -4249,7 +4511,8 @@ class Checker {
         arm.captures.clear();
         for (const auto& name :
              phase21_failure_capture_reads(arm, arm_env, local_candidates)) {
-          const string& candidate_type = local_candidates.at(name);
+          const moss::TypeRef& candidate_term = local_candidates.at(name);
+          const string candidate_type = canonical_type_name(candidate_term);
           if (candidate_type == "_ambiguous_capture_type")
             err(arm.line, "on_fail capture '" + name +
                 "' has incompatible handler-local types",
@@ -4257,7 +4520,7 @@ class Checker {
           if (arm.exceptional_alternatives.empty()) {
             // The checked warning-only arm can never be selected. Its body
             // remains typechecked, but no value crosses a Root boundary.
-            arm_env[name] = candidate_type;
+            arm_env[name] = candidate_term;
             continue;
           }
           std::optional<string> binding_identity;
@@ -4274,7 +4537,7 @@ class Checker {
               err(arm.line, "on_fail capture '" + name +
                   "' is not initialized on every selected raise path",
                   "ON_FAIL_CAPTURE_NOT_INITIALIZED");
-            if (!same_type(type->second, candidate_type))
+            if (!same_type(canonical_type_name(type->second), candidate_type))
               err(arm.line, "on_fail capture '" + name +
                   "' has different types on selected raise paths",
                   "ON_FAIL_CAPTURE_TYPE_MISMATCH");
@@ -4342,7 +4605,7 @@ class Checker {
   void check_main(const MainProc& m) {
     current_source_file_ = m.source_file;
     SourceFileScope semantic_context(current_semantic_context_, "main");
-    std::unordered_map<string,string> env;
+    TypeEnv env;
     env = check_stmts(m.body, std::move(env), nullptr, nullptr,
                       nullptr, true);
     check_closed_body_types(m.body, env, m.line);
@@ -4650,7 +4913,7 @@ class Checker {
     current_source_file_ = f.source_file;
     SourceFileScope semantic_context(
         current_semantic_context_, "fn:" + f.name);
-    std::unordered_map<string,string> env;
+    TypeEnv env;
     std::set<string> names;
     if (f.return_type && *f.return_type != "unit" && !valid_type(*f.return_type) && !contains_internal_placeholder(*f.return_type))
       invalid_type_err(f.source_file, f.line, *f.return_type,
@@ -4724,10 +4987,10 @@ class Checker {
 
   const Handler* check_call(int line, const string& receiver, const string& message,
                             const vector<string>& args,
-                            const std::unordered_map<string,string>& env) const {
+                            const TypeEnv& env) const {
     auto it = env.find(receiver);
     if (it == env.end()) err(line, "unknown message receiver '" + receiver + "'");
-    auto dit = domains_.find(it->second);
+    auto dit = domains_.find(canonical_type_name(it->second));
     if (dit == domains_.end())
       err(line, "'" + receiver + "' is not a domain reference; use a local function call or a domain reference");
     const Handler* h = find_handler(*dit->second, message);
@@ -4751,13 +5014,13 @@ class Checker {
   }
 
   static std::optional<string> obvious_expr_type(const string& expression,
-                                                  const std::unordered_map<string,string>& env) {
+                                                  const TypeEnv& env) {
     string e = trim(expression);
     if (e == "None") return "_none";
     if (e == "true" || e == "false") return "bool";
     if (e.size() >= 2 && e.front() == '"' && e.back() == '"') return "string";
     auto local = env.find(e);
-    if (local != env.end() && !local->second.empty() && local->second != "_value") return local->second;
+    if (local != env.end() && local->second && local->second->name != "_value") return local->second->to_canonical_string();
     size_t start = (!e.empty() && (e.front() == '+' || e.front() == '-')) ? 1 : 0;
     if (start < e.size() && std::all_of(e.begin() + static_cast<std::ptrdiff_t>(start), e.end(), [](char c) {
           return std::isdigit(static_cast<unsigned char>(c));
@@ -4815,7 +5078,7 @@ class Checker {
 
     auto local = env.find(value);
     if (local != env.end() && callable_identity(local->second))
-      value = local->second.substr(9);
+      value = canonical_type_name(local->second).substr(9);
     else if (local != env.end() && open_generic(local->second))
       return "_functional_callable_result:" + value;
     auto function = functions_.find(value);
@@ -4953,7 +5216,7 @@ class Checker {
   };
 
   struct OwnershipEnv {
-    std::unordered_map<string,string> types;
+    TypeEnv types;
     // Exact declarations selected for local names by the ordinary ownership
     // walk. Branch copies naturally preserve lexical shadowing.
     std::unordered_map<string,string> binding_identities;
@@ -5151,7 +5414,15 @@ class Checker {
     return copy_type_name(canonical_type_name(type));
   }
 
+  bool copy_type(const moss::TypeRef& type) const {
+    return copy_type_name(canonical_type_name(type));
+  }
+
   bool transfer_type(const string& type) const {
+    return !copy_type(type) && !domains_.count(canonical_type_name(type));
+  }
+
+  bool transfer_type(const moss::TypeRef& type) const {
     return !copy_type(type) && !domains_.count(canonical_type_name(type));
   }
 
@@ -5342,6 +5613,11 @@ class Checker {
       if (parsed && (*parsed)->is_closed()) return {*parsed, {}};
     }
     return {nullptr, spelling};
+  }
+
+  static InferredExpr inferred_leaf(const moss::TypeRef& type) {
+    if (type && type->is_closed()) return {type, {}};
+    return inferred_leaf(canonical_type_name(type));
   }
 
 
@@ -5563,7 +5839,7 @@ class Checker {
       auto binding = env.find(callee);
       if (binding != env.end()) {
         if (callable_identity(binding->second))
-          target = binding->second.substr(9);
+          target = canonical_type_name(binding->second).substr(9);
         else if (open_generic(binding->second))
           return InferredExpr{nullptr, "_functional_callable_result:" + callee};
       }
@@ -5637,7 +5913,7 @@ class Checker {
           if (relation != function->second->generic_results.end()) {
             auto base = env.find(relation->second);
             if (base != env.end()) {
-              auto object = objects_.find(base->second);
+              auto object = objects_.find(canonical_type_name(base->second));
               if (object != objects_.end() && pos != string::npos) for (const auto& f : object->second->fields)
                 if (f.name == key.substr(pos + 1)) return inferred_leaf(f.type);
             }
@@ -5747,6 +6023,22 @@ class Checker {
     return left_ir && right_ir && (*left_ir)->structurally_equal(**right_ir);
   }
 
+  static bool same_type(const moss::TypeRef& left, const moss::TypeRef& right) {
+    if (left == right) return true;
+    if (!left || !right) return false;
+    return left->structurally_equal(*right);
+  }
+
+  static bool same_type(const moss::TypeRef& left, const string& right) {
+    if (!left) return right.empty();
+    auto right_ir = moss::Type::parse_canonical(canonical_type_name(right));
+    return right_ir && left->structurally_equal(**right_ir);
+  }
+
+  static bool same_type(const string& left, const moss::TypeRef& right) {
+    return same_type(right, left);
+  }
+
   moss::TypeRef checked_expression_term(const string& expression,
                                         const TypeEnv& env) const {
     if (current_body_types_)
@@ -5780,9 +6072,9 @@ class Checker {
     return inferred && same_type(*inferred, declared);
   }
 
-  std::unordered_map<string,string> instantiated_function_env(
+  TypeEnv instantiated_function_env(
       const Function& function, const vector<string>& parameter_types) const {
-    std::unordered_map<string,string> env;
+    TypeEnv env;
     for (size_t index = 0;
          index < function.params.size() && index < parameter_types.size(); ++index)
       env[function.params[index].name] = canonical_type_name(parameter_types[index]);
@@ -5869,7 +6161,7 @@ class Checker {
   }
 
   void constrain_constructor_fields(int line, const string& expression,
-                                    const std::unordered_map<string,string>& env) {
+                                    const TypeEnv& env) {
     string normalized = normalize_pipeline(trim(expression));
     string constructor;
     vector<string> args;
@@ -5950,6 +6242,10 @@ class Checker {
     return !type.empty() && !contains_internal_placeholder(type);
   }
 
+  static bool concrete_environment_type(const moss::TypeRef& type) {
+    return type && !contains_internal_placeholder(type);
+  }
+
   static std::optional<string> refine_bare_collection(
       const string& current, const vector<string>& argument_names) {
     auto parsed = moss::Type::parse_canonical(canonical_type_name(current));
@@ -5973,9 +6269,14 @@ class Checker {
     return solver.resolve(open)->to_canonical_string();
   }
 
+  static std::optional<string> refine_bare_collection(
+      const moss::TypeRef& current, const vector<string>& argument_names) {
+    return refine_bare_collection(canonical_type_name(current), argument_names);
+  }
+
   void refine_map_index_assignment_type(const string& target,
                                         const string& value,
-                                        std::unordered_map<string, string>& env) const {
+                                        TypeEnv& env) const {
     string base, index;
     if (!parse_index(target, base, index)) return;
     auto container = env.find(base);
@@ -5984,7 +6285,7 @@ class Checker {
         ? current_body_types_->resolved_local(base) : nullptr;
     if (retained && retained->is_closed() &&
         !contains_internal_placeholder(retained->to_canonical_string())) {
-      container->second = retained->to_canonical_string();
+      env[base] = retained;
       return;
     }
     auto key_type = inferred_expr_type(index, env);
@@ -5992,7 +6293,7 @@ class Checker {
     if (key_type && value_type)
       if (auto refined = refine_bare_collection(container->second,
                                                  {*key_type, *value_type}))
-        container->second = *refined;
+        env[base] = *refined;
   }
 
   // This is the common control-flow join for inference, ordinary checking,
@@ -6029,11 +6330,11 @@ class Checker {
           }
         }
         if (fully_typed) {
-          merged.terms[binding] = joined;
           auto resolved = current_body_types_->solver.resolve(joined);
-          merged[binding] = resolved->is_closed()
-              ? resolved->to_canonical_string()
-              : canonical_type_name(entry.second);
+          merged.terms[binding] = (resolved && resolved->is_closed()) ? resolved : joined;
+          merged[binding] = (resolved && resolved->is_closed())
+              ? resolved
+              : (entry.second ? entry.second : (resolved ? resolved : joined));
           continue;
         }
       }
@@ -6047,14 +6348,11 @@ class Checker {
         if (retained && !contains_internal_placeholder(
                             retained->to_canonical_string())) {
           if (retained->is_closed()) {
-            auto entry_type = moss::Type::parse_canonical(
-                canonical_type_name(entry.second));
-            merged[binding] = entry_type &&
-                    (*entry_type)->structurally_equal(*retained)
-                ? canonical_type_name(entry.second)
-                : retained->to_canonical_string();
+            merged.terms[binding] = retained;
+            merged[binding] = entry.second && entry.second->structurally_equal(*retained)
+                ? entry.second : retained;
           } else {
-            merged[binding] = canonical_type_name(entry.second);
+            merged[binding] = entry.second;
           }
           continue;
         }
@@ -6066,7 +6364,7 @@ class Checker {
       moss::TypeSolver solver(1);
       std::function<moss::TypeRef(const moss::TypeRef&)> open_slots =
           [&](const moss::TypeRef& type) -> moss::TypeRef {
-        if (type->kind != moss::TypeKind::Builtin) return type;
+        if (!type || type->kind != moss::TypeKind::Builtin) return type;
         vector<moss::TypeRef> args;
         if (auto arity = moss::Type::collection_arity(type->name);
             arity && type->type_args.empty()) {
@@ -6082,17 +6380,16 @@ class Checker {
       bool disagrees = false;
       string conflicting;
       for (const auto& path : paths) {
-        const string& spelling = path.at(binding);
-        auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
-        if (!parsed) {
-          if (spelling != entry.second) disagrees = true;
+        auto it = path.find(binding);
+        if (it == path.end() || !it->second) {
+          disagrees = true;
           continue;
         }
-        auto candidate = open_slots(*parsed);
+        auto candidate = open_slots(it->second);
         if (!agreed) agreed = candidate;
         else if (!solver.unify(agreed, candidate)) {
           disagrees = true;
-          conflicting = spelling;
+          conflicting = canonical_type_name(it->second);
           break;
         }
       }
@@ -6115,10 +6412,9 @@ class Checker {
       }
       if (agreed) {
         auto resolved = solver.resolve(agreed);
-        merged[binding] = resolved->is_closed()
-            ? resolved->to_canonical_string() : canonical_type_name(entry.second);
+        merged[binding] = resolved;
       } else {
-        merged[binding] = canonical_type_name(entry.second);
+        merged[binding] = entry.second;
       }
     }
     return merged;
@@ -6164,10 +6460,8 @@ class Checker {
           auto binding = local ? local : retained;
           if (binding && binding->is_closed() &&
               !contains_internal_placeholder(binding->to_canonical_string())) {
-            // The body solver already related this RHS to the binding. The
-            // string environment is only the projection consumed by older
-            // walkers and lowering.
-            env[statement.a] = binding->to_canonical_string();
+            // The body solver already related this RHS to the binding.
+            env[statement.a] = binding;
           } else {
             // A local's open collection is one inference term for the whole
             // body. The solver may close it from a use after a loop; retain
@@ -6175,7 +6469,7 @@ class Checker {
             auto inferred_term = moss::Type::parse_canonical(cinf);
             if (inferred_term && !(*inferred_term)->is_closed()) {
               auto solved = solved_collections.find(statement.a);
-              if (solved != solved_collections.end()) cinf = solved->second;
+              if (solved != solved_collections.end()) cinf = canonical_type_name(solved->second);
             }
             auto candidate = moss::Type::parse_canonical(cinf);
             if (statement.kind == Stmt::Kind::Assign && existing != env.end() &&
@@ -6191,7 +6485,7 @@ class Checker {
           env[statement.a] = "_value";
         }
         if (record_semantic_types)
-          const_cast<Stmt&>(statement).semantic_type = env[statement.a];
+          const_cast<Stmt&>(statement).semantic_type = canonical_type_name(env[statement.a]);
       } else {
         string base, index_expression;
         if (parse_index(statement.a, base, index_expression)) {
@@ -6200,13 +6494,13 @@ class Checker {
               ? current_body_types_->resolved_local(base) : nullptr;
           if (container != env.end() && retained && retained->is_closed() &&
               !contains_internal_placeholder(retained->to_canonical_string())) {
-            container->second = retained->to_canonical_string();
+            container->second = retained;
             if (record_semantic_types)
               for (auto& prior : const_cast<vector<Stmt>&>(statements))
                 if (prior.a == base && prior.b == "Map()") {
-                  prior.semantic_type = container->second;
+                  prior.semantic_type = canonical_type_name(retained);
                   if (!join_context.empty())
-                    prior.semantic_types_by_context[join_context] = container->second;
+                    prior.semantic_types_by_context[join_context] = canonical_type_name(retained);
                 }
             return;
           }
@@ -6217,20 +6511,20 @@ class Checker {
               auto refined = refine_bare_collection(container->second,
                                                      {*key_type, *value_type});
               if (refined) {
-                container->second = *refined;
+                container->second = moss::Type::parse_canonical(*refined).value_or(nullptr);
                 if (record_semantic_types) {
                   for (auto& prior : const_cast<vector<Stmt>&>(statements))
                     if (prior.a == base && prior.b == "Map()") {
-                      prior.semantic_type = container->second;
+                      prior.semantic_type = *refined;
                       if (!join_context.empty())
-                        prior.semantic_types_by_context[join_context] = container->second;
+                        prior.semantic_types_by_context[join_context] = *refined;
                     }
                 }
               }
             }
             if (auto refined = refine_bare_collection(container->second,
                                                        {*value_type}))
-              container->second = *refined;
+              container->second = moss::Type::parse_canonical(*refined).value_or(nullptr);
           }
         }
       }
@@ -6260,7 +6554,7 @@ class Checker {
           ? current_body_types_->resolved_local(statement.a) : nullptr;
       if (container != env.end() && retained && retained->is_closed() &&
           !contains_internal_placeholder(retained->to_canonical_string())) {
-        container->second = retained->to_canonical_string();
+        container->second = retained;
         if (record_semantic_types)
           for (auto& prior : const_cast<vector<Stmt>&>(statements))
             if (prior.a == statement.a &&
@@ -6268,9 +6562,9 @@ class Checker {
                  parse_vector_literal(prior.b).has_value() ||
                  starts_with(prior.semantic_type, "vector") ||
                  starts_with(prior.semantic_type, "queue"))) {
-              prior.semantic_type = container->second;
+              prior.semantic_type = canonical_type_name(retained);
               if (!join_context.empty())
-                prior.semantic_types_by_context[join_context] = container->second;
+                prior.semantic_types_by_context[join_context] = canonical_type_name(retained);
             }
         return;
       }
@@ -6278,7 +6572,7 @@ class Checker {
       if (container != env.end() && argument) {
         if (auto refined = refine_bare_collection(container->second,
                                                    {*argument})) {
-          container->second = *refined;
+          container->second = moss::Type::parse_canonical(*refined).value_or(nullptr);
           if (record_semantic_types) {
             for (auto& prior : const_cast<vector<Stmt>&>(statements)) {
               if (prior.a == statement.a &&
@@ -6286,9 +6580,9 @@ class Checker {
                    parse_vector_literal(prior.b).has_value() ||
                    starts_with(prior.semantic_type, "vector") ||
                    starts_with(prior.semantic_type, "queue"))) {
-                prior.semantic_type = container->second;
+                prior.semantic_type = *refined;
                 if (!join_context.empty())
-                  prior.semantic_types_by_context[join_context] = container->second;
+                  prior.semantic_types_by_context[join_context] = *refined;
               }
             }
           }
@@ -6307,6 +6601,11 @@ class Checker {
                                    const TypeEnv& solved_collections) const {
     while (index < statements.size()) {
       const Stmt& statement = statements[index];
+      if (statement.indent < level) return;
+      if (statement.indent > level)
+        err(statement.line, "indentation jumps more than one block level");
+      if (statement.kind == Stmt::Kind::Else) return;
+
       if (current_body_types_) {
         auto found = current_body_types_->locals_at_statement.find(&statement);
         if (found != current_body_types_->locals_at_statement.end()) {
@@ -6315,10 +6614,6 @@ class Checker {
           env.terms = found->second;
         }
       }
-      if (statement.indent < level) return;
-      if (statement.indent > level)
-        err(statement.line, "indentation jumps more than one block level");
-      if (statement.kind == Stmt::Kind::Else) return;
 
       if (statement.kind == Stmt::Kind::Match) {
         visitor(statement, env);
@@ -6326,7 +6621,7 @@ class Checker {
         bool deferred = (scrutinee_type &&
             (open_generic(*scrutinee_type) ||
              *scrutinee_type == "_selected_error")) ||
-            (!scrutinee_type && env.count(statement.a) && env.at(statement.a).empty());
+            (!scrutinee_type && env.count(statement.a) && !env.at(statement.a));
         if (!deferred && (!scrutinee_type ||
             !enums_.count(canonical_type_name(*scrutinee_type))))
           err(statement.line, scrutinee_type && !contains_internal_placeholder(*scrutinee_type)
@@ -6374,8 +6669,15 @@ class Checker {
             if (!pattern_names.insert(arm.args[field_index]).second)
               err(arm.line, "duplicate enum pattern binding: " +
                   arm.args[field_index], "DUPLICATE_PATTERN_BINDING");
-            branch[arm.args[field_index]] = declaration
+            string field_type = declaration
                 ? item->fields[field_index].type : "_generic:" + arm.args[field_index];
+            branch[arm.args[field_index]] = field_type;
+            if (declaration) {
+              if (auto parsed = moss::Type::parse_canonical(canonical_type_name(field_type)))
+                branch.terms[arm.args[field_index]] = *parsed;
+              else
+                branch.terms[arm.args[field_index]] = moss::Type::primitive(field_type);
+            }
           }
           ++index;
           if (index >= statements.size() || statements[index].indent != level + 2)
@@ -6387,6 +6689,10 @@ class Checker {
             auto prior = env.find(name);
             if (prior == env.end()) branch.erase(name);
             else branch[name] = prior->second;
+            if (auto prior_term = env.terms.find(name); prior_term != env.terms.end())
+              branch.terms[name] = prior_term->second;
+            else
+              branch.terms.erase(name);
           }
           paths.push_back(std::move(branch));
         }
@@ -6760,8 +7066,14 @@ class Checker {
         return source;
       };
       for (size_t index = 0; index < arguments.size(); ++index) {
+        if (index < function->second->params.size() &&
+            traits_.count(function->second->params[index].type))
+          continue;
         auto actual = term_for(arguments[index]);
         auto expected = instantiate(summary.parameter_types[index]);
+        if (expected && (expected->kind == moss::TypeKind::TraitConstraint ||
+            (expected->kind == moss::TypeKind::Primitive && traits_.count(expected->name))))
+          continue;
         if (actual && expected && !solver.unify(actual, expected))
           err(line, "argument " + std::to_string(index + 1) +
               " to function '" + callee + "' has incompatible type", "TYPE_MISMATCH");
@@ -6954,6 +7266,7 @@ class Checker {
       bool in_else = false;
     };
     vector<BlockScope> block_scopes;
+    std::unordered_map<int, const EnumType*> match_enums;
     auto leave_blocks = [&](const Stmt* next) {
       while (!block_scopes.empty() &&
              (!next || next->indent <= block_scopes.back().indent)) {
@@ -6972,6 +7285,9 @@ class Checker {
             if (scope.incoming_locals.count(name)) continue;
             auto other = locals.find(name);
             if (other == locals.end()) continue;
+            if (contains_domain_handle(then_term) ||
+                contains_domain_handle(other->second))
+              continue;
             if (!solver.unify(then_term, other->second))
               err(scope.line,
                   "branch types conflict for binding '" + name + "'",
@@ -6990,6 +7306,12 @@ class Checker {
         }
         block_scopes.pop_back();
       }
+      for (auto it = match_enums.begin(); it != match_enums.end(); ) {
+        if (!next || it->first >= next->indent)
+          it = match_enums.erase(it);
+        else
+          ++it;
+      }
     };
     for (const Stmt& statement : statements) {
       leave_blocks(&statement);
@@ -6999,6 +7321,42 @@ class Checker {
         block_scopes.push_back({statement.indent, statement.line,
                                 statement.kind, locals, scan,
                                 {}, false});
+      if (statement.kind == Stmt::Kind::Match) {
+        auto scrutinee_type = inferred_expr_type(statement.a, scan);
+        if (scrutinee_type && enums_.count(canonical_type_name(*scrutinee_type))) {
+          match_enums[statement.indent] = enums_.at(canonical_type_name(*scrutinee_type));
+        }
+      } else if (statement.kind == Stmt::Kind::Case) {
+        const EnumType* declaration = nullptr;
+        for (int i = statement.indent - 1; i >= 0; --i) {
+          auto found = match_enums.find(i);
+          if (found != match_enums.end()) {
+            declaration = found->second;
+            break;
+          }
+        }
+        block_scopes.push_back({statement.indent, statement.line,
+                                statement.kind, locals, scan,
+                                {}, false});
+        if (declaration) {
+          auto case_it = std::find_if(
+              declaration->cases.begin(), declaration->cases.end(),
+              [&](const EnumCase& c) { return c.name == statement.a; });
+          if (case_it != declaration->cases.end()) {
+            for (size_t i = 0; i < statement.args.size() && i < case_it->fields.size(); ++i) {
+              const string& field_name = statement.args[i];
+              const string& field_type = case_it->fields[i].type;
+              moss::TypeRef field_term;
+              if (auto parsed = moss::Type::parse_canonical(canonical_type_name(field_type)))
+                field_term = *parsed;
+              else
+                field_term = moss::Type::primitive(field_type);
+              locals[field_name] = field_term;
+              scan[field_name] = field_type;
+            }
+          }
+        }
+      }
       body_types.locals_at_statement.emplace(&statement, locals);
       if (statement.kind == Stmt::Kind::For) {
         moss::TypeRef loop_term;
@@ -7092,11 +7450,11 @@ class Checker {
           scan[statement.a] = *constructed;
           continue;
         }
+        auto inferred = inferred_expr_type(statement.b, scan);
         constrain_call(statement.line, statement.b);
         auto instantiated = instantiate_summary(statement.line, statement.b,
                                                 &statement);
         auto retained_source = body_types.known_expression(statement.b);
-        auto inferred = inferred_expr_type(statement.b, scan);
         if (!instantiated && !retained_source && !inferred) continue;
         auto parsed = inferred ? moss::Type::parse_canonical(
             canonical_type_name(*inferred)) : std::nullopt;
@@ -7294,7 +7652,7 @@ class Checker {
   }
 
   void infer_statement_expressions(const vector<Stmt>& statements,
-                                   std::unordered_map<string,string>& env) {
+                                   TypeEnv& env) {
     TypeEnvVisitor infer_statement = [&](const Stmt& statement, const TypeEnv& current_env) {
       switch (statement.kind) {
         case Stmt::Kind::If:
@@ -7320,8 +7678,8 @@ class Checker {
             const string& receiver_name = statement.a;
             const string& handler_name = statement.b;
             auto receiver = current_env.find(receiver_name);
-            if (receiver != current_env.end() && domains_.count(receiver->second)) {
-              auto* handler = find_handler(*domains_.at(receiver->second), handler_name);
+            if (receiver != current_env.end() && domains_.count(canonical_type_name(receiver->second))) {
+              auto* handler = find_handler(*domains_.at(canonical_type_name(receiver->second)), handler_name);
               if (handler) {
                 for (size_t index = 0;
                      index < statement.args.size() && index < handler->params.size(); ++index) {
@@ -7343,7 +7701,7 @@ class Checker {
                     parameter.inferred = parameter.inferred || untyped_parameter;
                   } else if (!parameter.inferred && !same_type(parameter.type, *actual))
                     err(statement.line, "argument " + std::to_string(index + 1) +
-                        " to message " + receiver->second + "." + handler_name +
+                        " to message " + canonical_type_name(receiver->second) + "." + handler_name +
                         " has type '" + *actual + "', expected '" + parameter.type + "'");
                 }
               }
@@ -7362,8 +7720,8 @@ class Checker {
             vector<string> handler_args;
             auto receiver = parse_member_call(statement.args.front(), target, handler_name, handler_args)
                 ? current_env.find(target) : current_env.end();
-            if (receiver != current_env.end() && domains_.count(receiver->second)) {
-              if (auto* handler = find_handler(*domains_.at(receiver->second), handler_name)) {
+            if (receiver != current_env.end() && domains_.count(canonical_type_name(receiver->second))) {
+              if (auto* handler = find_handler(*domains_.at(canonical_type_name(receiver->second)), handler_name)) {
                 for (size_t index = 0;
                      index < handler_args.size() && index < handler->params.size(); ++index) {
                   auto inferred = inferred_expr(handler_args[index], current_env);
@@ -7430,7 +7788,7 @@ class Checker {
          round <= p_.objects.size() + p_.functions.size() + p_.domains.size() + 2; ++round) {
       for (const auto& function : p_.functions) {
         SourceFileScope function_source(current_source_file_, function.source_file);
-        std::unordered_map<string,string> env;
+        TypeEnv env;
         for (const auto& parameter : function.params)
           env[parameter.name] = parameter.type.empty()
               ? "_generic:" + parameter.name : parameter.type;
@@ -7451,7 +7809,7 @@ class Checker {
           string handler_source = handler.source_file.empty()
               ? domain.source_file : handler.source_file;
           SourceFileScope handler_scope(current_source_file_, handler_source);
-          std::unordered_map<string,string> env;
+          TypeEnv env;
           env["self"] = domain.name;
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
           // This pass precedes finalized domain-state inference. Seed each
@@ -7466,17 +7824,17 @@ class Checker {
       }
       if (p_.main) {
         SourceFileScope main_source(current_source_file_, p_.main->source_file);
-        std::unordered_map<string,string> env;
+        TypeEnv env;
         infer_statement_expressions(p_.main->body, env);
       }
       for (const auto& test : p_.tests) {
         SourceFileScope test_source(current_source_file_, test.source_file);
-        std::unordered_map<string,string> env;
+        TypeEnv env;
         infer_statement_expressions(test.body, env);
       }
       for (const auto& benchmark : p_.benchmarks) {
         SourceFileScope benchmark_source(current_source_file_, benchmark.source_file);
-        std::unordered_map<string,string> env;
+        TypeEnv env;
         infer_statement_expressions(benchmark.body, env);
       }
     }
@@ -7780,7 +8138,7 @@ class Checker {
          round <= p_.domains.size() * 3 + p_.objects.size() + 3; ++round) {
       for (auto& domain : p_.domains) {
         SourceFileScope domain_source(current_source_file_, domain.source_file);
-        std::unordered_map<string,string> initializer_env;
+        TypeEnv initializer_env;
         initializer_env["self"] = domain.name;
         for (const auto& field : domain.state) {
           if (!field.type.empty()) initializer_env[field.name] = field.type;
@@ -7835,7 +8193,7 @@ class Checker {
           string handler_source = handler.source_file.empty()
               ? domain.source_file : handler.source_file;
           SourceFileScope handler_scope(current_source_file_, handler_source);
-          std::unordered_map<string,string> env;
+          TypeEnv env;
           env["self"] = domain.name;
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
           for (const auto& field : domain.state) env[field.name] = field.type;
@@ -7847,9 +8205,9 @@ class Checker {
               false, true);
           for (auto& field : domain.state) {
             auto inferred = env.find(field.name);
-            if (inferred == env.end() || inferred->second.empty() || inferred->second == "_value") continue;
+            if (inferred == env.end() || !inferred->second || canonical_type_name(inferred->second) == "_value") continue;
             auto retained = body_types.resolved_local(field.name);
-            string incoming = inferred->second;
+            string incoming = canonical_type_name(inferred->second);
             if (retained && retained->is_closed()) {
               auto displayed = moss::Type::parse_canonical(
                   canonical_type_name(incoming));
@@ -7903,7 +8261,7 @@ class Checker {
           string handler_source = handler.source_file.empty()
               ? domain.source_file : handler.source_file;
           SourceFileScope handler_scope(current_source_file_, handler_source);
-          std::unordered_map<string,string> env;
+          TypeEnv env;
           env["self"] = domain.name;
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
           for (const auto& field : domain.state)
@@ -8192,7 +8550,7 @@ class Checker {
     for (size_t round = 0; round <= p_.functions.size() * 3 + 3; ++round) {
       for (auto& function : p_.functions) {
         SourceFileScope function_source(current_source_file_, function.source_file);
-        std::unordered_map<string,string> env;
+        TypeEnv env;
         for (const auto& parameter : function.params)
           env[parameter.name] = parameter.type.empty()
               ? "_generic:" + parameter.name : parameter.type;
@@ -8202,13 +8560,13 @@ class Checker {
         BodyTypeScope body_scope(current_body_types_, &body_types);
         moss::TypeRef joined_result;
         bool all_results_typed = true;
-        auto result_term = [&](const string& expression) -> moss::TypeRef {
+        auto result_term = [&](const string& expression, const TypeEnv& eval_env) -> moss::TypeRef {
           if (auto retained = body_types.known_expression(expression)) {
             auto resolved = body_types.solver.resolve(retained);
             if (!contains_internal_placeholder(resolved->to_canonical_string()))
               return retained;
           }
-          auto inferred = inferred_expr_type(expression, env);
+          auto inferred = inferred_expr_type(expression, eval_env);
           if (!inferred || contains_internal_placeholder(*inferred)) return nullptr;
           auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
           if (!parsed) return nullptr;
@@ -8228,8 +8586,9 @@ class Checker {
           };
           return open_collections(*parsed);
         };
-        auto include_typed_result = [&](int line, const string& expression) {
-          auto term = result_term(expression);
+        auto include_typed_result = [&](int line, const string& expression,
+                                        const TypeEnv& eval_env) {
+          auto term = result_term(expression, eval_env);
           if (!term) {
             all_results_typed = false;
             return;
@@ -8256,10 +8615,23 @@ class Checker {
           if (!joined_result) joined_result = term;
         };
         if (function.result_expression)
-          include_typed_result(function.result_line, *function.result_expression);
-        for (const auto& statement : function.body)
-          if (statement.kind == Stmt::Kind::Return && !statement.a.empty())
-            include_typed_result(statement.line, statement.a);
+          include_typed_result(function.result_line, *function.result_expression, env);
+        for (const auto& statement : function.body) {
+          if (statement.kind == Stmt::Kind::Return && !statement.a.empty()) {
+            TypeEnv eval_env = env;
+            auto found = body_types.locals_at_statement.find(&statement);
+            if (found != body_types.locals_at_statement.end()) {
+              body_types.scoped_locals = found->second;
+              body_types.scoped_locals_active = true;
+              for (const auto& [name, term] : found->second) {
+                eval_env[name] = term;
+                eval_env.terms[name] = term;
+              }
+            }
+            include_typed_result(statement.line, statement.a, eval_env);
+            body_types.scoped_locals_active = false;
+          }
+        }
         bool typed_result_closed = false;
         if (joined_result) {
           auto closed = body_types.solver.resolve(joined_result);
@@ -8305,7 +8677,7 @@ class Checker {
           string handler_source = handler.source_file.empty()
               ? domain.source_file : handler.source_file;
           SourceFileScope handler_scope(current_source_file_, handler_source);
-          std::unordered_map<string,string> env;
+          TypeEnv env;
           env["self"] = domain.name;
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
           for (const auto& field : domain.state)
@@ -8317,17 +8689,17 @@ class Checker {
       }
       if (p_.main) {
         SourceFileScope main_source(current_source_file_, p_.main->source_file);
-        std::unordered_map<string,string> env;
+        TypeEnv env;
         infer_statement_expressions(p_.main->body, env);
       }
       for (const auto& test : p_.tests) {
         SourceFileScope test_source(current_source_file_, test.source_file);
-        std::unordered_map<string,string> env;
+        TypeEnv env;
         infer_statement_expressions(test.body, env);
       }
       for (const auto& benchmark : p_.benchmarks) {
         SourceFileScope benchmark_source(current_source_file_, benchmark.source_file);
-        std::unordered_map<string,string> env;
+        TypeEnv env;
         infer_statement_expressions(benchmark.body, env);
       }
     }
@@ -8463,6 +8835,7 @@ class Checker {
     // This analysis derives parameter effects, independent of any surrounding
     // synchronization leaf capture. The latter separately expands this body.
     LeafCaptureScope no_leaves(leaf_effect_capture_, nullptr);
+    BodyTypeScope no_body_types(current_body_types_, nullptr);
     Effect receiver = Effect::Read;
     size_t index = 0;
     analyze_effect_block(function.body, index, 0, env, concrete_params,
@@ -8514,6 +8887,10 @@ class Checker {
     return true;
   }
 
+  bool effect_requires_borrow(const moss::TypeRef& type) const {
+    return type ? effect_requires_borrow(type->to_canonical_string()) : false;
+  }
+
   Effect vector_element_effect(const string& expression,
                                 const TypeEnv& env) const {
     auto type = inferred_expr_type(expression, env);
@@ -8534,9 +8911,10 @@ class Checker {
     return value;
   }
 
+  template <typename EnvT>
   std::optional<StorageLocation> storage_location(
       const string& expression,
-      const std::unordered_map<string,string>& env,
+      const EnvT& env,
       bool require_known_root = true) const {
     string value = strip_expression_parens(normalize_pipeline(trim(expression)));
     if (simple_identifier(value)) {
@@ -8562,6 +8940,19 @@ class Checker {
       return location;
     }
     return std::nullopt;
+  }
+
+  std::optional<StorageLocation> storage_location(
+      const string& expression,
+      const TypeEnv& env,
+      bool require_known_root = true) const {
+    return storage_location<TypeEnv>(expression, env, require_known_root);
+  }
+
+  std::optional<StorageLocation> storage_location(
+      const string& expression,
+      bool require_known_root = true) const {
+    return storage_location<TypeEnv>(expression, TypeEnv{}, require_known_root);
   }
 
   // Optional observation sink on the existing semantic effect traversal.
@@ -8658,7 +9049,7 @@ class Checker {
   void capture_callable_effects(
       const vector<Stmt>& body, const std::optional<string>& result,
       const vector<Param>& formals, const vector<string>& arguments,
-      const std::unordered_map<string,string>& caller_env,
+      const TypeEnv& caller_env,
       const vector<Param>& caller_params, vector<Effect>& caller_effects,
       Effect& caller_receiver, const std::set<string>& caller_fields,
       const ObjectType* object = nullptr, const string& receiver = "",
@@ -8666,7 +9057,7 @@ class Checker {
     LeafEffectCapture capture;
     capture.ignore_recovery = leaf_effect_capture_ &&
                               leaf_effect_capture_->ignore_recovery;
-    std::unordered_map<string,string> env;
+    TypeEnv env;
     std::map<string,string> substitutions;
     std::set<string> fields;
     for (size_t i = 0; i < formals.size(); ++i) {
@@ -8742,7 +9133,7 @@ class Checker {
       }
     LeafEffectCapture capture;
     capture.ignore_recovery = ignore_recovery;
-    std::unordered_map<string,string> env;
+    TypeEnv env;
     std::set<string> fields;
     for (const auto& field : domain.state) {
       string type = specialization ? specialization->state_types.at(field.name) : field.type;
@@ -8819,7 +9210,7 @@ class Checker {
       const DomainSpecialization* specialization,
       const TypeEnv* local_types = nullptr) const {
     LeafEffectCapture capture;
-    std::unordered_map<string,string> env;
+    TypeEnv env;
     std::set<string> fields;
     for (const auto& field : domain.state) {
       string type = specialization ? specialization->state_types.at(field.name) : field.type;
@@ -10154,7 +10545,7 @@ class Checker {
           (function.body.empty() && !function.result_expression)) continue;
       SourceFileScope function_source(current_source_file_, function.source_file);
       LeafEffectCapture capture;
-      std::unordered_map<string,string> env;
+      TypeEnv env;
       for (const auto& parameter : function.params) {
         capture.roots[parameter.name] = parameter.type;
         env[parameter.name] = parameter.type;
@@ -10246,9 +10637,11 @@ class Checker {
     // synchronization-summary invariant used by the normal effect pipeline.
     capture.allow_unresolved_methods = true;
     for (const auto& binding : env.types)
-      if (!binding.second.empty() &&
-          !contains_internal_placeholder(binding.second))
-        capture.roots[binding.first] = binding.second;
+      if (binding.second) {
+        string tname = canonical_type_name(binding.second);
+        if (!contains_internal_placeholder(tname))
+          capture.roots[binding.first] = tname;
+      }
     vector<Effect> unused_effects;
     Effect unused_receiver = Effect::Read;
     {
@@ -10367,7 +10760,7 @@ class Checker {
   }
 
   Effect projection_effect(const string& expression, Effect requested,
-                           const std::unordered_map<string,string>& env) const {
+                           const TypeEnv& env) const {
     if (requested != Effect::Consume) return requested;
     // Indexed reads materialize their checked result; they do not transfer the
     // collection. Match the ownership walker when deriving concrete effects.
@@ -10406,7 +10799,7 @@ class Checker {
 
   void mark_effect_name(const string& name, Effect effect,
                         const vector<Param>& params,
-                        const std::unordered_map<string,string>& env,
+                        const TypeEnv& env,
                         vector<Effect>& parameter_effects,
                         Effect& receiver_effect,
                         const std::set<string>& receiver_fields) const {
@@ -10435,7 +10828,7 @@ class Checker {
   }
 
   void analyze_effect_expression(
-      const string& expression, const std::unordered_map<string,string>& env,
+      const string& expression, const TypeEnv& env,
       const vector<Param>& params, vector<Effect>& parameter_effects,
       Effect& receiver_effect, const std::set<string>& receiver_fields,
       Effect requested = Effect::Read) const {
@@ -10752,7 +11145,7 @@ class Checker {
       }
       if (auto callable = env.find(callee);
           callable != env.end() && callable_identity(callable->second))
-        callee = callable->second.substr(9);
+        callee = canonical_type_name(callable->second).substr(9);
       auto function = functions_.find(callee);
       if (function != functions_.end()) {
         if (leaf_effect_capture_) {
@@ -10881,7 +11274,7 @@ class Checker {
   }
 
   void analyze_effect_block(const vector<Stmt>& statements, size_t& index, int level,
-                            std::unordered_map<string,string>& env,
+                            TypeEnv& env,
                             const vector<Param>& params,
                             vector<Effect>& parameter_effects,
                             Effect& receiver_effect,
@@ -11087,8 +11480,8 @@ class Checker {
                                       receiver_effect, receiver_fields, Effect::Read);
           if (leaf_effect_capture_ && !statement.message_result.empty()) {
             auto receiver = env.find(statement.a);
-            synchronization_require(receiver != env.end() && domains_.count(receiver->second), "unresolved message receiver");
-            auto target = find_handler(*domains_.at(receiver->second), statement.b);
+            synchronization_require(receiver != env.end() && domains_.count(canonical_type_name(receiver->second)), "unresolved message receiver");
+            auto target = find_handler(*domains_.at(canonical_type_name(receiver->second)), statement.b);
             synchronization_require(target && target->reply_type.has_value(), "unresolved message reply");
             env[statement.message_result] = *target->reply_type;
           }
@@ -11174,7 +11567,7 @@ class Checker {
 
   void collect_local_call_sites(
       int line, const string& expression,
-      const std::unordered_map<string,string>& env,
+      const TypeEnv& env,
       const ObjectType* implicit_owner,
       vector<LocalCallSite>& calls) const {
     (void)line;
@@ -11229,7 +11622,7 @@ class Checker {
           } else {
             auto local = env.find(identity);
             if (local != env.end() && callable_identity(local->second))
-              identity = local->second.substr(9);
+              identity = canonical_type_name(local->second).substr(9);
             if (functions_.count(identity))
               calls.push_back(LocalCallSite{"fn:" + identity, {}, argument_types});
           }
@@ -11821,7 +12214,7 @@ class Checker {
         if (std::filesystem::path(function.source_file).extension() == ".mossi")
           continue;
         SourceFileScope function_source(current_source_file_, function.source_file);
-        std::unordered_map<string,string> env;
+        TypeEnv env;
         for (const auto& parameter : function.params)
           env[parameter.name] = parameter.type.empty() ? "_generic:" + parameter.name : parameter.type;
         const TypeEnv entry_env = env;
@@ -11862,7 +12255,7 @@ class Checker {
           if (std::filesystem::path(method.source_file).extension() == ".mossi")
             continue;
           SourceFileScope method_source(current_source_file_, method.source_file);
-          std::unordered_map<string,string> env;
+          TypeEnv env;
           std::set<string> fields;
           for (const auto& field : object.fields) {
             env[field.name] = field.type;
@@ -12240,9 +12633,10 @@ class Checker {
       RaiseSet direct;
       if (statement.kind == Stmt::Kind::Message) {
         auto receiver = env.find(statement.a);
-        if (receiver != env.end() && domains_.count(receiver->second))
+        string receiver_type = receiver != env.end() ? canonical_type_name(receiver->second) : string();
+        if (!receiver_type.empty() && domains_.count(receiver_type))
           if (const Handler* target =
-                  find_handler(*domains_.at(receiver->second), statement.b)) {
+                  find_handler(*domains_.at(receiver_type), statement.b)) {
             // A message evaluated by main is a Root ingress. An exhaustive,
             // checked on_fail trailer consumes that Root's raised outcome;
             // nested messages never do.
@@ -12366,7 +12760,7 @@ class Checker {
       if (!type || contains_internal_placeholder(*type)) return;
       auto [item, inserted] = candidates.emplace(statement.a, *type);
       if (!inserted && !same_type(item->second, *type))
-        item->second = "_ambiguous_capture_type";
+        item->second = moss::Type::primitive("_ambiguous_capture_type");
     };
     (void)walk_type_environment(handler.body, entry, visit, false);
     return candidates;
@@ -12681,7 +13075,7 @@ class Checker {
           } else {
             auto local = env.find(identity);
             if (local != env.end() && callable_identity(local->second))
-              identity = local->second.substr(9);
+              identity = canonical_type_name(local->second).substr(9);
             auto function = functions_.find(identity);
             if (function != functions_.end()) {
               vector<string> input_types{element};
@@ -13528,7 +13922,7 @@ class Checker {
     const bool deferred_generic_callable =
         local != env.end() && open_generic(local->second);
     if (local != env.end() && callable_identity(local->second))
-      identity = local->second.substr(9);
+      identity = canonical_type_name(local->second).substr(9);
     auto function = functions_.find(identity);
     if (function == functions_.end()) {
       // Callable inference can be incomplete while a higher-order function is
@@ -14046,7 +14440,7 @@ class Checker {
         vector<Effect> capture_effects(captures.size(), Effect::Read);
         for (const auto& capture : captures)
           capture_parameters.push_back(
-              Param{capture, env.types.at(capture)});
+              Param{capture, canonical_type_name(env.types.at(capture))});
         Effect unused_receiver_effect = Effect::Read;
         analyze_effect_expression(
             callable, placeholder_env.types, capture_parameters,
@@ -14124,7 +14518,7 @@ class Checker {
         } else {
           auto local = env.types.find(identity);
           if (local != env.types.end() && callable_identity(local->second))
-            identity = local->second.substr(9);
+            identity = canonical_type_name(local->second).substr(9);
           auto function = functions_.find(identity);
           if (function != functions_.end()) {
             callback_raises = concrete_function_observable_effects(
@@ -14707,6 +15101,14 @@ class Checker {
       if (s.kind == Stmt::Kind::Else) return;
       if (!env.can_continue) { ++index; continue; }
       if (s.indent > level) return;
+      if (current_body_types_) {
+        auto found = current_body_types_->locals_at_statement.find(&s);
+        if (found != current_body_types_->locals_at_statement.end()) {
+          current_body_types_->scoped_locals = found->second;
+          current_body_types_->scoped_locals_active = true;
+          env.types.terms = found->second;
+        }
+      }
       struct OwnershipStatementScope {
         const Stmt*& slot;
         const Stmt* prior;
@@ -15199,12 +15601,12 @@ class Checker {
             if (container != env.types.end() && retained &&
                 retained->is_closed() &&
                 !contains_internal_placeholder(retained->to_canonical_string()))
-              container->second = retained->to_canonical_string();
+              container->second = retained;
             else {
               auto element = inferred_expr_type(s.args.front(), env.types);
               if (container != env.types.end() && element &&
                   bare_collection(parsed_type(container->second), {"queue", "vector"}))
-                container->second += "[" + *element + "]";
+                container->second = parsed_type(canonical_type_name(container->second) + "[" + *element + "]");
             }
           }
           ++index;
@@ -15378,15 +15780,16 @@ class Checker {
       const auto& requirement = function.constraints[ordinal];
       if (requirement.kind != ConstraintKind::Method) continue;
       auto receiver = instantiated.find(requirement.subject);
+      string receiver_type = receiver != instantiated.end() ? canonical_type_name(receiver->second) : string();
       if (receiver == instantiated.end() ||
-          !concrete_specialization_type(receiver->second) ||
-          traits_.count(receiver->second))
+          !concrete_specialization_type(receiver_type) ||
+          traits_.count(receiver_type))
         continue;
       vector<string> argument_types;
       for (const auto& argument : requirement.arguments)
         argument_types.push_back(inferred_expr_type(argument, instantiated).value_or(""));
       MethodResolutionFailure failure = MethodResolutionFailure::None;
-      const Method* method = resolve_method(canonical_type_name(receiver->second),
+      const Method* method = resolve_method(receiver_type,
                                             requirement.detail, argument_types,
                                             false, &failure);
       auto fileio_builtin = fileio_method_requirement_result(
@@ -15394,7 +15797,7 @@ class Checker {
       auto builtin = builtin_operation_result(receiver->second, requirement.detail,
                                                argument_types.size());
       if (builtin_receiver_family(receiver->second))
-        validate_builtin_argument_types(line, receiver->second, requirement.detail,
+        validate_builtin_argument_types(line, receiver_type, requirement.detail,
                                         argument_types);
       if (!method && !fileio_builtin && !builtin) {
         string prefix = "argument to function '" + function.name + "' has type '" +
@@ -15777,7 +16180,7 @@ class Checker {
     function.specializations.push_back(specialization);
     record_dependency();
 
-    std::unordered_map<string,string> specialized_env;
+    TypeEnv specialized_env;
     for (size_t index = 0; index < function.params.size(); ++index)
       specialized_env[function.params[index].name] = canonical_types[index];
     FunctionSpecialization* previous = checking_specialization_;
@@ -16603,7 +17006,7 @@ class Checker {
     auto local = env.find(identity);
     if (local != env.end()) {
       if (callable_identity(local->second)) {
-        identity = local->second.substr(9);
+        identity = canonical_type_name(local->second).substr(9);
       } else if (open_generic(local->second)) {
         return "_functional_callable_result:" + identity;
       } else {
@@ -17374,7 +17777,7 @@ class Checker {
     auto source_type = inferred_expr_type(source, env);
     if (!source_type) {
       auto local = env.find(trim(source));
-      if (local != env.end() && local->second.empty())
+      if (local != env.end() && (!local->second || canonical_type_name(local->second).empty()))
         return "_iterator_element:" + trim(source);
       err(line, "cannot infer the static iterator source type");
     }
@@ -17662,7 +18065,7 @@ class Checker {
                 }
               }
               if (container != current_env.end() && value_type &&
-                  container->second == "map" &&
+                  canonical_type_name(container->second) == "map" &&
                   !inferred_expr_type(index_expression, current_env))
                 err(statement.line, "cannot infer map key type");
               const auto container_shape = container != current_env.end()
@@ -17823,11 +18226,11 @@ class Checker {
                     inferred_expr_type(argument, current_env).value_or(""));
               if (!resolve_method(canonical_type_name(receiver->second), statement.b,
                                   argument_types))
-                err(statement.line, "no matching method '" + receiver->second + "." +
+                err(statement.line, "no matching method '" + canonical_type_name(receiver->second) + "." +
                     statement.b + "' for supplied arguments");
             } else if (receiver != current_env.end() && current_function &&
                        (open_generic(receiver->second) ||
-                        traits_.count(receiver->second))) {
+                        traits_.count(canonical_type_name(receiver->second)))) {
               bool constrained = std::any_of(
                   current_function->constraints.begin(),
                   current_function->constraints.end(), [&](const Constraint& constraint) {
@@ -17878,7 +18281,7 @@ class Checker {
                 checked_types.solver.unify(destination, *reply);
             if (!compatible)
               err(statement.line, "message assignment to '" + statement.message_result +
-                  "' has type '" + current_env.at(statement.message_result) +
+                  "' has type '" + canonical_type_name(current_env.at(statement.message_result)) +
                   "', expected '" + *handler->reply_type + "'");
           }
         }

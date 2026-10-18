@@ -1,5 +1,32 @@
 # Moss current status
 
+## Phase 25 Task B1: Checker TypeEnv Refactored to `moss::TypeRef` — 2026-10-17 (READY)
+
+**Phase 25 Task B1 is implemented and fully validated.** The Checker's lexical environment (`TypeEnv`) has been migrated to use `moss::TypeRef` authority for both bindings and terms while preserving `vector<Stmt>::semantic_type` and all compiler-critical contracts.
+
+### Summary of Changes & Completed Validation
+1. **`TypeEnv` Authority**:
+   - `TypeEnv` operates over `std::unordered_map<string, moss::TypeRef>` for both `bindings` and `terms`.
+   - Backward-compatible accessors provided via `EntryRef` and transparent string conversions.
+   - `fileio_semantics.inc` and `src/moss.cpp` aligned for `moss::TypeRef` and `phase20_capability_type` overloads.
+2. **Effects & Function Scoping**:
+   - Isolated `BodyTypeScope` inside `concrete_function_effects` to prevent caller body local types from polluting specialized function effect analysis.
+   - Preserved enum join shadowing order and statement-level scoped locals across match arms.
+3. **Branch Join & Prepass Unification**:
+   - In `merge_type_environments`, resolved unified closed terms via `solver.resolve(joined)`, eliminating `TYPE_AMBIGUOUS_OPEN_RESULT` regressions in generic branch joins.
+   - In `solve_local_collection_types`:
+     - Skipped cross-branch type unification on domain handles so the source-order checker's closed-handle immutability/escape diagnostics (`phase106b_route_reassign`, `branch_divergent_domain_types`, `check_domain_handle_closure`) fire without being masked by prepass type mismatches.
+     - Skipped direct `solver.unify` on trait-constrained function parameters in `instantiate_summary` so structural trait conformance (`trait_conforms`) in `check_function_call` fires with exact method missing/signature diagnostics (`trait_missing_method`, `trait_incompatible_method_signature`).
+4. **Validation Results**:
+   - `make check`: 100% pass (`all Moss v0.1 tests passed`).
+   - `python3 tests/tooling/check_phase25_team_a_semantics.py ./moss`: 55/55 passed.
+   - `python3 tests/tooling/check_domain_handle_closure.py ./moss`: passed.
+   - All Phase 25 tooling suites (`check_phase25_conformance.py`, `check_phase25_a3_specialization.py`, `check_phase25_nominal_identity.py`, `check_phase25_type_ir.py`, etc.): passed.
+   - `python3 tests/tooling/check_agent_skills.py ./moss`: passed.
+   - `python3 tests/tooling/check_agent_feedback.py`: passed.
+
+Downstream Team H work is unblocked.
+
 ## Phase 25 Team A — handoff for parallel splitting — 2026-10-17
 
 Written for L7 to divide the remaining work. Nothing new was started after
