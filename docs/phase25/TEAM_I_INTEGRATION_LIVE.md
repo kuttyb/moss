@@ -1,5 +1,20 @@
 # Team I live integration record
 
+## Staged canonical key-proof checkpoint — 2026-10-18
+
+L4 pushed `phase25-i-map-staging` at `7d9057e`. Staged ABI-v10 nominal
+KeyProof records now cross source-free provider/consumer interfaces with exact
+method/effect/semantic-hash checks, one proof ID in Map/Set operation identity
+and the native build fingerprint. Two independent consumers link and execute
+after provider source removal; resealed semantic-hash tampering rejects with
+`KEY_PROOF_INVALID`, and valid conflicting proof identities reject with
+`KEY_PROOF_COHERENCE_MISMATCH`. Activated G2 remains 11/11. The existing
+explicit-module runtime and Phase 20 FileIO probes pass after a process-root
+linkage repair. The older activated key-protocol fixture runner still needs
+its staged runtime extern and is correctly reported not green; L4 is repairing
+that harness next. This branch is a candidate, not target integration or
+production ABI-v10 acceptance.
+
 ## Staged Set checkpoint — 2026-10-18
 
 Sole L4 pushed `phase25-i-map-staging` at `dd44d5c`. Opt-in ABI-v10 Set now

@@ -1,5 +1,28 @@
 # Moss current status
 
+## Phase 25 canonical staged key-proof checkpoint — 2026-10-18
+
+Sole L4 compiler worker pushed `phase25-i-map-staging` at `7d9057e`, extending
+Set checkpoint `dd44d5c`. Opt-in ABI-v10 now emits and imports canonical
+nominal KeyProof records, checks selected provider method signatures, effects
+and semantic hashes, carries one proof across independent source-free
+consumers, and binds canonical proof ID into keyed Map/Set operation IDs and
+native build fingerprint. Focused provider-removal tests pass through native
+execution with two consumers; resealed semantic-hash tampering fails before
+link with `KEY_PROOF_INVALID`, and conflicting valid proof identities fail
+`KEY_PROOF_COHERENCE_MISMATCH`. Activated G2 conformance remains 11/11.
+Existing explicit-module runtime probe 43 and full Phase 20 FileIO suite pass
+after a process-root linkage repair. This is staged candidate evidence, not
+production cutover or full 62-gate acceptance.
+
+`tests/phase25/key_protocol/run_fixtures.py --activate` is **not green** at
+this checkpoint: its direct rustc invocation omits the staged shared
+`moss_runtime` extern. The worker is repairing that harness in a separate
+follow-up; direct native linking with the compiler runtime rlib passed the
+Set fixtures. H/T draft #5 remains at `9ddf9a4`; its three short exact-head
+CI jobs are green and full core regressions still runs. No target/main merge
+or L6 review verdict has occurred.
+
 ## Phase 25 staged Set checkpoint — 2026-10-18
 
 Sole L4 compiler worker pushed `phase25-i-map-staging` at `dd44d5c`, extending
