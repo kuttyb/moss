@@ -1,5 +1,17 @@
 # Team I live integration record
 
+## Activated key-fixture checkpoint — 2026-10-18
+
+L4 pushed staged branch `phase25-i-map-staging` through runner fix `bd1547e`
+and proof-negative fix `69b042b`. The activated 30-case Map/Set suite now
+links shared runtime native artifacts and passes 25/30. True two-consumer
+sealed-proof conflict still proves `KEY_PROOF_COHERENCE_MISMATCH`. The legacy
+free-only 05 fixture now expects `KEY_PROOF_INVALID`, because its provider
+declares no canonical methods; a local free override of valid provider methods
+remains a coherence error. Both pass, with the frozen-method rationale in the
+fixture docs. Remaining failures: Float Map 01/07 and Option B empty-Map
+09b/09c/09g. L4 is working Float Map; root continues exact-head H/T CI gating.
+
 ## Staged canonical key-proof checkpoint — 2026-10-18
 
 L4 pushed `phase25-i-map-staging` at `7d9057e`. Staged ABI-v10 nominal

@@ -1,5 +1,26 @@
 # Moss current status
 
+## Phase 25 staged key-fixture checkpoint — 2026-10-18
+
+Sole L4 pushed `phase25-i-map-staging` through `bd1547e` and `69b042b` after
+canonical proof checkpoint `7d9057e`. The activated 30-case Map/Set runner now
+links standalone generated Rust against the shared runtime and reaches
+**25/30 PASS**. Five positive Set/nominal-source-free fixtures pass in checker,
+Fast Debug and native modes. Both proof negatives pass: missing provider
+structural methods reject `KEY_PROOF_INVALID`; a consumer's proof-shaped free
+override of valid provider methods rejects
+`KEY_PROOF_COHERENCE_MISMATCH`. A separate resealed source-free two-consumer
+conflict test continues to prove transport coherence. The free-only fixture's
+old coherence expectation was corrected with explicit frozen-method rationale
+from `ABI_V10_DESIGN.md` §3.5 and the joint interface agreement; this is not
+a relaxation of genuine coherence coverage.
+
+Five exact staged fixture failures remain: Float Map 01/07 and Option B empty
+Map 09b/09c/09g. L4 retains exclusive compiler ownership and is implementing
+Float Map next. No production v10 cutover, strict 62/62 acceptance, target
+merge or main merge has occurred. H/T PR #5 remains at `9ddf9a4`; its core
+CI job is still in progress and the other three required jobs are green.
+
 ## Phase 25 canonical staged key-proof checkpoint — 2026-10-18
 
 Sole L4 compiler worker pushed `phase25-i-map-staging` at `7d9057e`, extending
