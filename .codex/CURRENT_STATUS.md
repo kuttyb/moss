@@ -1,5 +1,30 @@
 # Moss current status
 
+## STOP: Phase 25 Team I architectural blocker — 2026-10-18
+
+L7 decision is required before S integration continues. The identical program
+`fn main():\n  echo []` is required by two frozen contracts to emit mutually
+exclusive exact diagnostic codes in the same standalone context:
+
+- Type IR section 4.2 and G conformance require
+  `TYPE_AMBIGUOUS_OPEN_RESULT` for the reachable unbound Vector element type.
+- FAST_DEBUG display rules and accepted Team S ARCH-025 require
+  `ECHO_DISPLAY_UNSUPPORTED` for bare `echo []` in every engine.
+
+Independent live verification: H/T head `5cfdc163` emits the Type IR code;
+the S-preserving scratch emits the display code, both at line 2. No expected
+diagnostic was edited. S scratch is uncommitted and stopped. Team I recommends
+operation-specific `ECHO_DISPLAY_UNSUPPORTED` at an echo boundary while retaining
+the Type IR code for other unresolved values; this needs an explicit L7 contract
+amendment. Full evidence and the two decision options are in
+`docs/phase25/TEAM_I_ARCHITECTURAL_BLOCKER.md`.
+
+No input PR has been merged to `phase25-integration` or `main`. H #5 was still
+3/4 green with core running at the point work stopped. Pushed recovery points:
+H2 `0574de41`, G `76420353`, strict #6 `ccf2ca7c`, source-free #8 `9f1ca499`,
+coordinator branch current commit. Staffing remains combined L6 plus one idle L4;
+final-only adversarial review has not run.
+
 ## G intake recovery point — 2026-10-18
 
 Sole L4 worker reconciled G through a normal ancestry-preserving merge and

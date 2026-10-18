@@ -1,5 +1,14 @@
 # Team I live integration record
 
+## Architectural stop
+
+S integration stopped before commit after the exact program `echo []` proved a
+frozen diagnostic conflict: Type IR/G requires
+`TYPE_AMBIGUOUS_OPEN_RESULT`; Team S ARCH-025 requires
+`ECHO_DISPLAY_UNSUPPORTED`. Both apply in the same standalone context. See
+`docs/phase25/TEAM_I_ARCHITECTURAL_BLOCKER.md`. No expected tests were changed,
+and no integration or main merge occurred. L7 decision is required.
+
 ## G intake scratch recovery
 
 Sole L4 pushed `76420353eb2c83b56a90051f2865b00d3e530547`
