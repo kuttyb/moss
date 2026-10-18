@@ -2,6 +2,6 @@ module EffectConsumer
 import EffectProvider
 
 fn main():
-  x = EffectProvider.Item(tag: "resource")
+  x = EffectProvider.Item.Resource(tag: "resource")
   EffectProvider.consume_item(x)
   echo EffectProvider.read_item(x)
