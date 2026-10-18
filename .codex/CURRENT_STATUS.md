@@ -7,6 +7,12 @@ active agent and holds the exclusive compiler lease. Root completed the pinned
 S ancestry-preserving merge into H/T scratch, committed and pushed
 `phase25-i-s-intake` at `69b4d3319751c3707fcd7fa2dc52374954203740`
 (`tmp/phase25-i-s`). This is a recovery checkpoint, not an approved intake PR.
+Follow-up `759b399e1a929cbfbb5a16301559dd437835e398` is pushed: the full
+`make check` first found a nested-open-local diagnostic precedence failure;
+the minimized case, S-B display suite, and complete Team A compiler-path
+semantics suite pass after a narrow repair. Full `make check` is rerunning
+in the S worktree and has progressed through checked-body IR and foundations;
+its final result is still pending.
 After H #5 is reviewed and merged to `phase25-integration`, refresh S from the
 new target, open a draft PR, require all four exact-head CI jobs, then perform
 combined L6 review. No integration/main merge has occurred.
@@ -23,6 +29,18 @@ H #5 repair head is `bf1df10da2e7d2f5c0986a0a58e240053a1a1d62`, fixing
 CI checkout depth for historical baseline checks. Workflow `39168204061`
 currently has examples, semantic gates, and harness integrity green; core
 regressions still running. Do not review or merge H until all four green.
+
+Source-free draft #8 has two further pushed recovery commits, latest
+`2648c5955eb1fa5455dd2f1b89236c76e473490f`. It adds an explicit,
+evidence-labeled staged-v10 harness mode and corrects two bare-template
+consumer annotations plus an identity mutation that otherwise bypassed ABI
+validation. An exploratory **cross-worktree** debug run against S compiler
+`759b399` produced 8 PASS / 0 BLOCKED / 3 FAIL across 11 real source-removal
+scenarios. It is not same-SHA release proof. Failures are third-crate nominal
+exchange, missing-method exact diagnostic, and layout/cache invalidation.
+Further scenario 4 probing exposed duplicate process-root executor symbols when
+a package with `main` is also linked as an rlib; that stronger fixture is still
+uncommitted in the ABI worktree. No ABI cutover or release gate upgrade.
 
 ## Phase 25 diagnostic precedence decision — 2026-10-18
 
