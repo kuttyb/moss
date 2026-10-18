@@ -160,8 +160,13 @@ def remove_required_records(mossi_text: str, section: str = "binary_contract") -
     return mossi_text
 
 
-def alter_provider_identity(mossi_text: str, new_module_id: str = "module-v1:forged@1.0.0::Forged") -> str:
-    """Alter module_id in interface text."""
+def alter_provider_identity(mossi_text: str, new_module_id: Optional[str] = None) -> str:
+    """Alter module identity while keeping the importable module name discoverable."""
+    if new_module_id is None:
+        found = re.search(r"(?m)^module_id (.+)$", mossi_text)
+        if not found or "::" not in found.group(1):
+            raise AcceptanceFailure("cannot mutate an interface without a module identity")
+        new_module_id = "module-v1:forged@1.0.0::" + found.group(1).rsplit("::", 1)[1]
     return re.sub(r"(?m)^module_id .+$", f"module_id {new_module_id}", mossi_text)
 
 

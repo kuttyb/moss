@@ -48,6 +48,19 @@ compilation and production ABI-v10 emission are still missing from that target.
 The previous run's 1 PASS / 10 BLOCKED and exit 0 is retained in developer feedback
 `P25-I-ABI-CROSSCRATE-002`; no acceptance ledger entry is upgraded by this change.
 
+An exploratory staged-v10 run against the separate S/H reconciliation compiler
+at `759b399e1a929cbfbb5a16301559dd437835e398` now reaches **8 PASS, 0
+BLOCKED, 3 FAIL** in debug mode. This is cross-worktree development evidence,
+not same-SHA release acceptance. Removing invalid bare-template return
+annotations from the two typed consumer fixtures lets scenarios 2 and 3 run.
+Scenario 10 now mutates the provider identity while retaining its importable
+module name, so all five corruptions reach exact ABI validation. The remaining
+failures are scenario 4 (third-crate generic nominal forwarding reports an
+unknown type variable), scenario 7 (the missing-method provenance path reports
+`TYPE_MISMATCH` where its frozen harness requires `METHOD_NOT_FOUND`), and
+scenario 11 (layout change reaches an unstructured missing-constructor-field
+error instead of the required cache/layout diagnostic). They remain FAIL.
+
 Next: merge the newest approved integration baseline into this branch, rebuild,
 and rerun live scenarios in both native profiles. Coordinate exact diagnostic and
 private-helper artifact requirements with the sole compiler writer. Missing

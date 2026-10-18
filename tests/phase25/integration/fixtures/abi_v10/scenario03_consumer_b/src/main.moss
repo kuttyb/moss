@@ -1,7 +1,7 @@
 module ConsumerB
 import BoxProvider
 
-export fn make_str_box(s: String) -> BoxProvider.Box:
+export fn make_str_box(s: String):
   return BoxProvider.fresh(s)
 
 fn main():
