@@ -1,5 +1,16 @@
 # Team I live integration record
 
+## G intake scratch recovery
+
+Sole L4 pushed `76420353eb2c83b56a90051f2865b00d3e530547`
+on `phase25-i-g-intake`. The normal merge preserves exact G ancestry. Deliberate
+resolution of 28 hunks produced no compiler/header diff from H because H already
+contains or supersedes G's changes. Local Type IR, nominal identity, visibility,
+and conformance checks pass except the intentionally pending custom-key Gate 10
+(10/11). No PR, review, or integration is claimed. Refresh from the reviewed H
+target before draft submission; see `docs/phase25/G_INTAKE_RECONCILIATION.md`
+on the G branch.
+
 ## L7 Team I staffing override — 2026-10-18
 
 For this integration task, use exactly two active agents: one combined L6

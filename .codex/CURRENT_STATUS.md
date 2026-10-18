@@ -1,5 +1,27 @@
 # Moss current status
 
+## G intake recovery point — 2026-10-18
+
+Sole L4 worker reconciled G through a normal ancestry-preserving merge and
+pushed `phase25-i-g-intake` at
+`76420353eb2c83b56a90051f2865b00d3e530547` in
+`tmp/phase25-i-g`. All 28 conflict hunks were reviewed. The resulting compiler
+and header tree has no source diff from H because H already contains or
+supersedes G's semantic changes. Five non-compiler files retain G provenance,
+review documentation, and a stronger live diagnostic assertion.
+
+Worker-local optimized build/bootstrap, Type IR, G-A3 nominal identity,
+visibility, feedback, and whitespace checks pass. G2 conformance is honestly
+10/11: Gate 10 custom-key integration remains PENDING despite the historical
+runner returning zero. No G PR or L6 review exists yet. After H #5 is green,
+reviewed, and merged, refresh this branch from the approved target before
+opening a draft PR. Durable conflict decisions are in
+`docs/phase25/G_INTAKE_RECONCILIATION.md` on the G branch.
+
+H #5 remains unchanged at `5cfdc1630d67506146e4adcc52628e508ffdc7c5`:
+three required jobs green and core regression still in progress at last check.
+No target or main merge has occurred.
+
 ## H2 recovery point — 2026-10-18
 
 Sole L4 worker prepared and pushed `phase25-i-h2-erased-projections` at
