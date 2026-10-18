@@ -437,6 +437,29 @@ inline void encode_checked_body_expr_v1(std::string& out,
       for (const auto& child : expr.operands)
         encode_checked_body_expr_v1(out, child);
       break;
+    case CheckedBodyExprV1::Kind::Field:
+      if (expr.operands.size() != 1 || expr.semantic_target_id.empty() ||
+          !expr.integer_value.empty())
+        throw std::invalid_argument("invalid checked field node");
+      checked_body_field(out, expr.semantic_target_id);
+      checked_body_field(out, std::to_string(expr.member_ordinal));
+      encode_checked_body_expr_v1(out, expr.operands.front());
+      break;
+    case CheckedBodyExprV1::Kind::VectorLiteral:
+      if (!expr.semantic_target_id.empty() || !expr.integer_value.empty())
+        throw std::invalid_argument("invalid checked vector node");
+      checked_body_field(out, std::to_string(expr.operands.size()));
+      for (const auto& child : expr.operands)
+        encode_checked_body_expr_v1(out, child);
+      break;
+    case CheckedBodyExprV1::Kind::Call:
+      if (expr.semantic_target_id.empty() || !expr.integer_value.empty())
+        throw std::invalid_argument("invalid checked call node");
+      checked_body_field(out, expr.semantic_target_id);
+      checked_body_field(out, std::to_string(expr.operands.size()));
+      for (const auto& child : expr.operands)
+        encode_checked_body_expr_v1(out, child);
+      break;
   }
 }
 
@@ -469,6 +492,24 @@ inline checked_ir::Expr from_legacy_expr(const CheckedBodyExprV1& legacy) {
       break;
     case CheckedBodyExprV1::Kind::Add:
       expr.kind = checked_ir::ExprKind::Add;
+      for (const auto& op : legacy.operands)
+        expr.operands.push_back(from_legacy_expr(op));
+      break;
+    case CheckedBodyExprV1::Kind::Field:
+      expr.kind = checked_ir::ExprKind::Field;
+      expr.semantic_target_id = legacy.semantic_target_id;
+      expr.member_ordinal = legacy.member_ordinal;
+      if (!legacy.operands.empty())
+        expr.operands.push_back(from_legacy_expr(legacy.operands.front()));
+      break;
+    case CheckedBodyExprV1::Kind::VectorLiteral:
+      expr.kind = checked_ir::ExprKind::VectorLiteral;
+      for (const auto& op : legacy.operands)
+        expr.operands.push_back(from_legacy_expr(op));
+      break;
+    case CheckedBodyExprV1::Kind::Call:
+      expr.kind = checked_ir::ExprKind::Call;
+      expr.semantic_target_id = legacy.semantic_target_id;
       for (const auto& op : legacy.operands)
         expr.operands.push_back(from_legacy_expr(op));
       break;

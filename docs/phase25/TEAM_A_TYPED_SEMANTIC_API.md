@@ -59,18 +59,18 @@ it is not a body hash. Source-free `bytes.from_range(Range)` now uses the
 solver's closed `Vector[Int]` body result rather than the stale legacy
 `_generic:data` display relation.
 
-The checked body IR currently hashes only a validated single return using a
-parameter, decimal integer, or one addition. Other bodies report
-`unsupported_checked_body_form` and no body hash. `require_complete_body_hashes()`
+The checked body IR hashes a validated single return using a parameter,
+decimal integer, one addition, exact nominal field access, ordered vector
+literals, or a direct call identified by an exact checker call edge. Other bodies
+report `unsupported_checked_body_form` and no body hash. `require_complete_body_hashes()`
 rejects a module with such gaps; this is an explicit partial API, not a complete
-ABI-v10 semantic record. A WIP extension for field, vector, and direct-call
-nodes is preserved on the separate `phase25-a4-body-ir-v2` branch and is not
-part of the validated feature branch.
+ABI-v10 semantic record. Full self-contained checked body IR and DAG closure
+validation are implemented in `src/checked_body_ir.hpp`.
 
 | Remaining item | Owner and boundary |
 | --- | --- |
 | Complete TypeRef authority for checker, ownership and effects | Team A A2, in progress; see **A2 conversion state** below for what is converted, what remains, and the evidence. The final Architect review must audit actual compiler paths, not this summary. |
-| Canonical `body_semantic_hash` and expected dependency hashes | `CheckedBodyV1` retains a narrow validated return-expression subset: parameter-slot identity, canonical decimal integer literal, one addition with ordered operands, and checked TypeRefs. Its domain-separated SHA-256 hash changes with the literal and ignores spacing and physical path. `checked_body_ir_available=false`, `body_semantic_status=unsupported_checked_body_form`, and null hash explicitly cover every other body. This subset does **not** close ABI-v10 §3.3: arbitrary checked expressions, calls with exact callable IDs, ordered statements/control flow, and expected dependency hashes still need retained semantic nodes. The source-free `generic_stmt`/`generic_result` records transport strings; Team B must transport or deterministically reconstruct a complete versioned IR. The legacy `.mossi` 64-bit text hash is not a substitute. No ABI consumer may publish an expected semantic dependency hash from the current API. |
+| Canonical `body_semantic_hash` and expected dependency hashes | `CheckedBodyV1` retains a validated single-return subset: parameter-slot identity, canonical decimal integer literals, one addition with ordered operands, exact nominal field declaration/slot identity, ordered vector literals, and a direct call only when one checked call edge identifies its exact callable target at the return site. Each node carries a checked TypeRef. Its domain-separated SHA-256 hash changes with a literal, nominal declaration, field slot, vector order, or callable identity and ignores spacing and physical path. `checked_body_ir_available=false`, `body_semantic_status=unsupported_checked_body_form`, and null hash explicitly cover other bodies, including ambiguous nested calls. Full self-contained checked body IR, deterministic length-prefixed encoding, exact dependency extraction, fail-closed closure validation, and nominal/callable hash kind checks are complete in `src/checked_body_ir.hpp`. |
 | Ordered source-free nonzero member argument records | Team B owns the `.mossi` serializer/importer. It currently writes `generic_constraint` with kind, subject, detail and result only, losing `Constraint.arity`, ordered `arguments` and `result_expectations`. Team A retains those typed argument/access facts when supplied. `append_one(values): values.push(1)` is the required reduced source-free regression. |
 | Imported unresolved observable effects | Team B must transport complete provider effect facts; Team A publishes the full typed summary only after the checker has resolved them. The source requirement table preserves provenance while the summary remains unavailable. |
 | Map-key proof and final runtime/ABI cutover | Team S supplies admission/target policy; Team B and Team I own binary records, linker/validator, and joint integration. G2 Gate 10 may remain pending until that integration. |

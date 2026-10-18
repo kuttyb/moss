@@ -52,7 +52,7 @@ fn main():
 fn main():
   echo inc(10)
 """)
-    unsupported = summary(Path(scratch) / "unsupported.moss", """type Box:
+    field = summary(Path(scratch) / "field.moss", """type Box:
   value
 
 fn inc(item: Box):
@@ -61,14 +61,62 @@ fn inc(item: Box):
 fn main():
   echo inc(Box(value: 10))
 """)
+    other_field = summary(Path(scratch) / "other_field.moss", """type Cell:
+  value
+
+fn inc(item: Cell):
+  return item.value
+
+fn main():
+  echo inc(Cell(value: 10))
+""")
+    vector = summary(Path(scratch) / "vector.moss", """fn inc(unused):
+  return [1, 2]
+
+fn main():
+  echo inc(10)
+""")
+    reversed_vector = summary(Path(scratch) / "reversed_vector.moss", """fn inc(unused):
+  return [2, 1]
+
+fn main():
+  echo inc(10)
+""")
+    direct_call = summary(Path(scratch) / "direct_call.moss", """fn helper(value: Int) -> Int:
+  return value + 1
+
+fn inc(unused):
+  return helper(1)
+
+fn main():
+  echo inc(10)
+""")
+    nested_call = summary(Path(scratch) / "nested_call.moss", """fn helper(value: Int) -> Int:
+  return value + 1
+
+fn inc(unused):
+  return helper(helper(1))
+
+fn main():
+  echo inc(10)
+""")
     digest = first["body_semantic_hash"]
     assert re.fullmatch(r"body-semantic-v1:sha256:[0-9a-f]{64}", digest), first
     assert first["checked_body_ir_available"], first
     assert first["body_semantic_status"] == "available_checked_body_v1", first
     assert relocated["body_semantic_hash"] == digest, (first, relocated)
     assert changed["body_semantic_hash"] != digest, (first, changed)
-    assert not unsupported["checked_body_ir_available"], unsupported
-    assert unsupported["body_semantic_hash"] is None, unsupported
-    assert unsupported["body_semantic_status"] == "unsupported_checked_body_form", unsupported
+    assert field["checked_body_ir_available"], field
+    assert other_field["checked_body_ir_available"], other_field
+    assert field["body_semantic_hash"] != other_field["body_semantic_hash"]
+    assert vector["checked_body_ir_available"], vector
+    assert vector["body_semantic_hash"] != reversed_vector["body_semantic_hash"]
+    assert direct_call["checked_body_ir_available"], direct_call
+    assert direct_call["semantic_dependencies"] == [
+        "callable-v1:module-v1:__standalone__@0.0.0::main:fn:helper"
+    ], direct_call
+    assert not nested_call["checked_body_ir_available"], nested_call
+    assert nested_call["body_semantic_hash"] is None, nested_call
+    assert nested_call["body_semantic_status"] == "unsupported_checked_body_form", nested_call
 
-print("checked body IR hash: literal, path, whitespace, and fail-closed cases passed")
+print("checked body IR hash: literal, nominal field, vector order, path, and fail-closed cases passed")
