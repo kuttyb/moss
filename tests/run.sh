@@ -55,6 +55,26 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_generic_specialization.py 
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_imported_generic_expressions.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_same_module_type_resolution.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_bitwise_operations.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_recursive_layout.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_type_ir.py
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_a3_specialization.py "$compiler"
+# ABI-v10 container unit validation is staged; compiled-only Moss proof is
+# tracked separately by the Phase 25 G2 conformance gates below.
+mkdir -p tmp
+${CXX:-c++} -std=c++17 -Wall -Wextra -Werror -pedantic \
+  tests/tooling/abi_v10_staging.cpp -o tmp/abi_v10_staging
+tmp/abi_v10_staging
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_known_open_nominal.py "$compiler"
+${CXX:-c++} -std=c++17 -Wall -Wextra -Werror -pedantic -Isrc \
+  tests/tooling/abi_v10_adversarial.cpp -o tmp/abi_v10_adversarial
+tmp/abi_v10_adversarial
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_conformance.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_nominal_identity.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_field_visibility.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_team_a_semantics.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_typed_semantic_api.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_checked_body_ir.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/phase25/runtime/check_runtime.py
 PYTHONDONTWRITEBYTECODE=1 python3 sdk/foundations/acceptance/run_all.py
 PYTHONDONTWRITEBYTECODE=1 python3 sdk/text-encoding-acceptance/run_all.py
 PYTHONDONTWRITEBYTECODE=1 python3 sdk/advanced-data-acceptance/run_all.py
@@ -76,6 +96,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_chunk_fileio_raise
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_domain_field_physical.py "$compiler" "$test_build/phase20_domain_physical"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_r5_fair.py "$test_build/phase20_r5_fair"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_teaching_diagnostics.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_no_internal_type_leak.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_semantic_queries.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase225_semantic_ide.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase15_15_string_api.py
@@ -417,6 +438,10 @@ reject_case swarm_038_impure_state_init 'domain state initializers must be side-
 reject_case swarm_038_divergent_loop_state_init 'domain state initializers must be side-effect-free'
 reject_case swarm_038_empty_pop_state_init 'domain state initializers must be side-effect-free'
 run_case for_loop_mutable_update tests/for_loop_mutable_update.moss '60'
+run_case for_shadow_restores_outer tests/for_shadow_restores_outer.moss "$(printf '1\n2\ntext\n7\n8\n9\n5')"
+run_case for_shadow_open_type tests/for_shadow_open_type.moss "$(printf '1\n2\nouter')"
+run_case branch_confined_open_type tests/branch_confined_open_type.moss "$(printf '1\nouter\nafter\n1\ndone')"
+run_case trait_open_forwarding tests/trait_open_forwarding.moss '42'
 reject_case for_loop_local_leaked "unknown identifier 'y'"
 reject_case for_loop_local_leaked_empty "unknown identifier 'y'"
 reject_case for_loop_induction_leaked "unknown identifier 'i'"
@@ -1134,7 +1159,7 @@ grep -F 'fn square(x: i64) -> i64' "$test_build/frontend_syntax.rs" >/dev/null |
 grep -F 'square((quote).size)' "$test_build/frontend_syntax.rs" >/dev/null ||
   fail "frontend syntax example did not lower its pipeline"
 run_case inferred_frontend tests/inferred_frontend.moss '2 3 MOSS 12.5'
-grep -F 'fn Latest_shared(&self) -> Option<Quote>' \
+grep -F 'fn Latest_shared(&self) -> Option<Quote<String, f64>>' \
   "$test_build/inferred_frontend.rs" >/dev/null ||
   fail "inferred reply handler did not lower with its inferred reply type"
 grep -F '// Moss line 6: value = 0' "$test_build/inferred_frontend.rs" >/dev/null ||
@@ -1320,7 +1345,16 @@ fi
 reject_source use_after_transfer examples/use_after_transfer.moss \
   "value 'original' was transferred to 'destination' at line 10"
 reject_case naked_cross_domain_call "domain handler 'Worker.Ping' must be called with message"
-reject_case unresolved_field "cannot infer type for field 'Unresolved.field'"
+# An untyped field is a nominal template slot (TYPE_IR_CONTRACT §2): an
+# unconstructed template is legal, but a reachable value must close it.
+run_case unused_inferred_field_template tests/unused_inferred_field_template.moss '1'
+reject_case unresolved_field_value "unbound open result type for variable 'value'"
+# A parameterized built-in collection names every type argument (Vector and
+# Queue one, Map two); partial or excess arity is malformed, not open.
+reject_case partial_arity_map_field "[MALFORMED_TYPE_EXPRESSION] malformed type expression 'map[string]'"
+reject_case partial_arity_vector_parameter "[MALFORMED_TYPE_EXPRESSION] malformed type expression 'vector[int,int]'"
+# An enum Map key is detected from the key's term kind, not its spelling.
+reject_case enum_index_map_key "[ENUM_MAP_KEY_UNSUPPORTED] enum values cannot be Map keys"
 reject_case unresolved_state "cannot infer type for state field 'Worker.value'"
 reject_case state_annotation_mismatch "state field 'Counter.value' is annotated 'int' but its initializer has type 'float'"
 reject_case conflicting_reply_types "conflicting reply types in handler 'Worker.Maybe'"
@@ -1658,7 +1692,7 @@ reject_case domain_handle_prefix_collision_method "domain handles cannot be pass
 reject_case phase106b1_handler_payload "domain handles cannot be passed as handler payloads"
 reject_case phase106b1_historical_handle_calls "domain handles cannot be passed as handler payloads"
 reject_case phase106b1_historical_handle_reply "domain handles cannot be returned through reply"
-reject_case unresolved_collection_type "heterogeneous or unresolved collection element type"
+reject_case unresolved_collection_type "[TYPE_AMBIGUOUS_OPEN_RESULT]"
 reject_case heterogeneous_collection "heterogeneous or unresolved collection element type"
 reject_case functional_filter_not_bool "filter predicate returns 'int'; expected 'bool'"
 reject_case functional_map_argument_type \

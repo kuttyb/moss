@@ -1,0 +1,7 @@
+fn fresh():
+  return []
+
+fn main():
+  values = fresh()
+  values.push(1)
+  values.push("one")

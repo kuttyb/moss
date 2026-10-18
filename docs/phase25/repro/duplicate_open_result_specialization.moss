@@ -1,0 +1,20 @@
+type Data:
+  count: Int
+  fn score() -> Int:
+    return count
+
+fn generic_score(value):
+  return value.score()
+
+domain Store:
+  value: Data
+  fn Read() -> Int:
+    a = generic_score(value)
+    reply a
+  fn Mixed() -> Int:
+    reply generic_score(value)
+
+fn main():
+  store = Store(value: Data(count: 1))
+  echo message store.Read()
+  echo message store.Mixed()

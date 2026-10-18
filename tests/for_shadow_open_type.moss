@@ -1,0 +1,11 @@
+# The loop variable has its own type variable. Its Int element must not close
+# the outer empty Vector, which is later constrained to String.
+fn first(values: Vector[Int]) -> Int:
+  return values[0]
+
+fn main():
+  values = []
+  for values in [[1], [2]]:
+    echo first(values)
+  values.push("outer")
+  echo values[0]

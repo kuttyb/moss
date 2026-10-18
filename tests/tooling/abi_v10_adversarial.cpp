@@ -1,0 +1,159 @@
+#include "abi_v10_records.hpp"
+
+#include <cassert>
+#include <iostream>
+#include <string>
+#include <utility>
+
+using namespace moss::abi_v10;
+
+template <typename Action>
+void expect_error(Action&& action, const std::string& code) {
+  try {
+    std::forward<Action>(action)();
+  } catch (const Error& error) {
+    assert(error.code == code);
+    return;
+  }
+  assert(false && "malformed ABI-v10 record was accepted");
+}
+
+int main() {
+  const auto digest = "sha256:" + std::string(64, 'a');
+  const WireType variable{WireTypeKind::BoundVar, "", {}, 0};
+  Summary valid;
+  valid.callable_id = "module-v1:provider@1.0.0::Provider::outer";
+  valid.variable_count = 1;
+  valid.parameters = {variable};
+  valid.result = variable;
+  valid.parameter_access = {Access::Write};
+  valid.requirements = {
+      {variable, "relay", Access::Write, 0, "provider:outer:1"},
+      {variable, "required", Access::Read, 1, "provider:inner:2"},
+  };
+  valid.dependencies = {{"helper:inner", digest}};
+  valid.observable_effect_bits = 1;
+  valid.observable_effect_tags = {"raise:ProviderError"};
+  valid.body_semantic_hash = digest;
+  valid.provenance_id = "provider:outer:1";
+
+  const auto record = summary_record(valid);
+  validate_summary(record);
+  const auto roundtrip = read_summary(record.payload);
+  assert(roundtrip.parameter_access[0] == Access::Write);
+  assert(roundtrip.requirements[1].parent == 1);
+  assert(roundtrip.requirements[1].provenance_id == "provider:inner:2");
+  assert(roundtrip.observable_effect_tags == valid.observable_effect_tags);
+
+  validate_summary_nonweakening(valid, roundtrip);
+  auto weakened = valid;
+  weakened.parameter_access[0] = Access::Read;
+  expect_error([&] { validate_summary_nonweakening(valid, weakened); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  weakened = valid;
+  weakened.requirements.pop_back();
+  expect_error([&] { validate_summary_nonweakening(valid, weakened); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  weakened = valid;
+  weakened.dependencies.clear();
+  expect_error([&] { validate_summary_nonweakening(valid, weakened); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  weakened = valid;
+  weakened.observable_effect_bits = 0;
+  expect_error([&] { validate_summary_nonweakening(valid, weakened); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  weakened = valid;
+  weakened.observable_effect_tags.clear();
+  expect_error([&] { validate_summary_nonweakening(valid, weakened); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+
+  auto malformed = valid;
+  malformed.requirements[0].parent = 1;
+  expect_error([&] { (void)summary_payload(malformed); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  malformed = valid;
+  malformed.requirements[1].parent = 2;
+  expect_error([&] { (void)summary_payload(malformed); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+
+  malformed = valid;
+  malformed.parameter_access.clear();
+  expect_error([&] { (void)summary_payload(malformed); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  malformed = valid;
+  malformed.parameter_access[0] = static_cast<Access>(0);
+  expect_error([&] { (void)summary_payload(malformed); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  malformed = valid;
+  malformed.requirements[1].access = static_cast<Access>(4);
+  expect_error([&] { (void)summary_payload(malformed); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+
+  malformed = valid;
+  malformed.requirements[1].provenance_id.clear();
+  expect_error([&] { (void)summary_payload(malformed); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  malformed = valid;
+  malformed.provenance_id.clear();
+  expect_error([&] { (void)summary_payload(malformed); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+
+  malformed = valid;
+  malformed.dependencies[0].second = "sha256:bad";
+  expect_error([&] { (void)summary_payload(malformed); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  malformed = valid;
+  malformed.dependencies.push_back(malformed.dependencies[0]);
+  expect_error([&] { (void)summary_payload(malformed); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+
+  auto forged = record;
+  forged.id = "sha256:" + std::string(64, 'b');
+  expect_error([&] { validate_summary(forged); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  expect_error([&] { (void)read_summary(record.payload + "trailing"); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+
+  KeyProof proof;
+  proof.key_type = {WireTypeKind::Primitive, "int", {}, 0};
+  proof.equality_callable_id = "builtin::int_isequal";
+  proof.equality_specialization_key = digest;
+  proof.equality_semantic_hash = digest;
+  proof.hash_callable_id = "builtin::int_hash";
+  proof.hash_specialization_key = digest;
+  proof.hash_semantic_hash = digest;
+  proof.law_contract_version = "key-laws-v1";
+  proof.provenance_id = "builtin:int";
+  validate_key_proof(key_proof_record(proof));
+  auto impure = proof;
+  impure.equality_effect_bits = 1;
+  expect_error([&] { (void)key_proof_record(impure); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+  impure = proof;
+  impure.hash_effect_bits = 1;
+  expect_error([&] { (void)key_proof_record(impure); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+  impure = proof;
+  impure.equality_effect_tags = {"raise:KeyError"};
+  expect_error([&] { (void)key_proof_record(impure); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+  impure = proof;
+  impure.hash_effect_tags = {"panic"};
+  expect_error([&] { (void)key_proof_record(impure); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+
+  const auto base_proof = key_proof_record(proof);
+  auto conflicting = proof;
+  conflicting.hash_semantic_hash = "sha256:" + std::string(64, 'b');
+  expect_error([&] {
+    validate_key_proof_coherence({base_proof, key_proof_record(conflicting)});
+  }, "KEY_PROOF_COHERENCE_MISMATCH");
+
+  proof.key_type = {WireTypeKind::Nominal, "sha256:" + std::string(64, 'c'), {}, 0};
+  auto distinct_nominal = proof;
+  distinct_nominal.key_type.identity = "sha256:" + std::string(64, 'd');
+  validate_key_proof_coherence({key_proof_record(proof),
+                                key_proof_record(distinct_nominal)});
+
+  std::cout << "ABI-v10 staged summary adversarial tests passed\n";
+}

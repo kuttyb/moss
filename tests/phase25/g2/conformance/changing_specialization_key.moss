@@ -1,0 +1,5 @@
+fn grow(value):
+  return grow([value])
+
+fn main():
+  echo grow(1)

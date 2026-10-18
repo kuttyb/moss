@@ -1,0 +1,8 @@
+module provider_module
+
+type Record:
+  pub id: Int
+  secret_field: Int
+
+export fn make_record(val: Int) -> Record:
+  return Record(id: val, secret_field: val * 2)

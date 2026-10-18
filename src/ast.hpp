@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <string>
@@ -9,8 +11,11 @@
 #include "constraints.hpp"
 #include "functional_ir.hpp"
 #include "synchronization.hpp"
+#include "type_ir.hpp"
 
 namespace moss {
+
+struct TypedSemanticModuleV1;
 
 using std::string;
 using std::vector;
@@ -47,11 +52,104 @@ struct Field {
   // The source declaration remains the specialization template; this bit
   // lets semantic consumers distinguish it from an explicitly typed field.
   bool inferred = false;
+  bool exported = false;
 };
 struct Param {
   string name, type;
   // True when the concrete type was inferred from an untyped parameter.
   bool inferred = false;
+  TypeRef type_ref = nullptr;
+  Param() = default;
+  Param(string n, string t, bool inf = false)
+      : name(std::move(n)), inferred(inf) {
+    set_type(std::move(t));
+  }
+  Param(string n, TypeRef ref, bool inf = false)
+      : name(std::move(n)), inferred(inf) {
+    bind_type(std::move(ref));
+  }
+  void bind_type(TypeRef term) {
+    type_ref = std::move(term);
+    if (type_ref) type = type_ref->to_canonical_string();
+    else type.clear();
+  }
+  void set_type(string raw) {
+    type = std::move(raw);
+    if (!type.empty() && TypeContext::current()) {
+      auto parsed = Type::parse_canonical(type);
+      if (parsed && (*parsed)->is_closed()) {
+        type_ref = *parsed;
+        return;
+      }
+    }
+    type_ref = nullptr;
+  }
+  void sync() {
+    if (type_ref) {
+      type = type_ref->to_canonical_string();
+    } else if (!type.empty() && TypeContext::current()) {
+      auto parsed = Type::parse_canonical(type);
+      if (parsed && (*parsed)->is_closed()) type_ref = *parsed;
+    }
+  }
+  void assert_consistent() const {
+    if (type_ref && !type.empty() && type != type_ref->to_canonical_string()) {
+      throw std::logic_error("Param '" + name + "' type string projection '" +
+                             type + "' contradicts bound TypeRef '" +
+                             type_ref->to_canonical_string() + "'");
+    }
+  }
+};
+// A call that instantiates an open result has its own inference variables.
+// These checked facts survive body closure for specialization registration and
+// semantic export. Ordinals refer to the callee's result variables, not the
+// caller's local binding names.
+struct OpenCallResultFacts {
+  string expression_id;
+  string callable_id;
+  TypeRef result;
+  vector<std::pair<std::uint32_t, TypeRef>> ordered_bindings;
+};
+// A reusable open callable type scheme. Summary variables use session zero;
+// each call substitutes them with fresh variables in its caller's solver.
+struct OpenCallableSummaryFacts {
+  string callable_id;
+  std::uint32_t bound_variable_count = 0;
+  vector<TypeRef> parameter_types;
+  TypeRef result_type;
+  vector<Requirement> requirements;
+  vector<MemberDispatchRequirement> member_requirements;
+  vector<string> semantic_dependencies;
+  vector<AccessMode> parameter_access;
+  ObservableEffects observable_effects;
+  RequirementOrigin origin;
+  bool complete = false;
+};
+// A versioned, checked semantic body subset. Every published node has a
+// resolved operand identity and TypeRef. Other source forms have no body hash.
+struct CheckedBodyExprV1 {
+  enum class Kind {
+    Parameter,
+    Integer,
+    Add,
+    Field,
+    VectorLiteral,
+    Call
+  } kind;
+  TypeRef type;
+  std::uint32_t parameter_ordinal = 0;
+  string integer_value;
+  vector<CheckedBodyExprV1> operands;
+  string semantic_target_id;
+  std::uint32_t member_ordinal = 0;
+};
+struct CheckedBodyStmtV1 {
+  enum class Kind { Return } kind;
+  CheckedBodyExprV1 value;
+};
+struct CheckedBodyV1 {
+  vector<CheckedBodyStmtV1> statements;
+  string semantic_hash;
 };
 struct Stmt {
   enum class Kind {
@@ -70,6 +168,18 @@ struct Stmt {
   string message_result;
   vector<int> continuation_lines;
   string semantic_type;
+  std::unordered_map<string, OpenCallResultFacts> open_call_results_by_context;
+  // Solver-closed member facts for the direct call in this statement. The
+  // specialization registrar consumes these exact terms and access decisions.
+  std::unordered_map<string, vector<MemberDispatchRequirement>>
+      member_requirements_by_context;
+  // Exact checked specialization selected for an open-result call in this
+  // body context. Native lowering consumes this key at the source statement.
+  std::unordered_map<string, string> open_call_keys_by_context;
+  // Nested call results can close from an enclosing parameter type. Preserve
+  // each expression's exact checked key for native lowering in that context.
+  std::unordered_map<string, std::unordered_map<string, vector<string>>>
+      nested_open_call_keys_by_context;
   // Concrete receiver after collection element inference, keyed by the exact
   // callable/specialization context. Native lowering projects this checked fact.
   std::unordered_map<string,string> receiver_types_by_context;
@@ -151,6 +261,41 @@ struct Method {
   string owner, name;
   vector<Param> params;
   std::optional<string> return_type;
+  TypeRef return_type_ref = nullptr;
+  void bind_return_type(TypeRef term) {
+    return_type_ref = std::move(term);
+    if (return_type_ref) return_type = return_type_ref->to_canonical_string();
+    else return_type.reset();
+  }
+  void set_return_type(std::optional<string> raw) {
+    return_type = std::move(raw);
+    if (return_type && !return_type->empty() && TypeContext::current()) {
+      auto parsed = Type::parse_canonical(*return_type);
+      if (parsed && (*parsed)->is_closed()) {
+        return_type_ref = *parsed;
+        return;
+      }
+    }
+    return_type_ref = nullptr;
+  }
+  void sync() {
+    if (return_type_ref) {
+      return_type = return_type_ref->to_canonical_string();
+    } else if (return_type && !return_type->empty() && TypeContext::current()) {
+      auto parsed = Type::parse_canonical(*return_type);
+      if (parsed && (*parsed)->is_closed()) return_type_ref = *parsed;
+    }
+  }
+  void assert_consistent() const {
+    if (return_type_ref && return_type && !return_type->empty() &&
+        *return_type != return_type_ref->to_canonical_string()) {
+      throw std::logic_error("Method '" + owner + "." + name +
+                             "' return type string projection '" + *return_type +
+                             "' contradicts bound TypeRef '" +
+                             return_type_ref->to_canonical_string() + "'");
+    }
+    for (const auto& param : params) param.assert_consistent();
+  }
   vector<Stmt> body;
   std::optional<string> result_expression;
   int result_line = 0;
@@ -165,11 +310,87 @@ struct Method {
   int line = 0;
   string source_file;
 };
-struct TraitMethod { string name; vector<Param> params; std::optional<string> return_type; int line = 0; string source_file; };
+struct TraitMethod {
+  string name;
+  vector<Param> params;
+  std::optional<string> return_type;
+  TypeRef return_type_ref = nullptr;
+  void bind_return_type(TypeRef term) {
+    return_type_ref = std::move(term);
+    if (return_type_ref) return_type = return_type_ref->to_canonical_string();
+    else return_type.reset();
+  }
+  void set_return_type(std::optional<string> raw) {
+    return_type = std::move(raw);
+    if (return_type && !return_type->empty() && TypeContext::current()) {
+      auto parsed = Type::parse_canonical(*return_type);
+      if (parsed && (*parsed)->is_closed()) {
+        return_type_ref = *parsed;
+        return;
+      }
+    }
+    return_type_ref = nullptr;
+  }
+  void sync() {
+    if (return_type_ref) {
+      return_type = return_type_ref->to_canonical_string();
+    } else if (return_type && !return_type->empty() && TypeContext::current()) {
+      auto parsed = Type::parse_canonical(*return_type);
+      if (parsed && (*parsed)->is_closed()) return_type_ref = *parsed;
+    }
+  }
+  void assert_consistent() const {
+    if (return_type_ref && return_type && !return_type->empty() &&
+        *return_type != return_type_ref->to_canonical_string()) {
+      throw std::logic_error("TraitMethod '" + name +
+                             "' return type string projection '" + *return_type +
+                             "' contradicts bound TypeRef '" +
+                             return_type_ref->to_canonical_string() + "'");
+    }
+    for (const auto& param : params) param.assert_consistent();
+  }
+  int line = 0;
+  string source_file;
+};
 struct Handler {
   string name, header;
   vector<Param> params;
   std::optional<string> reply_type;
+  TypeRef reply_type_ref = nullptr;
+  void bind_reply_type(TypeRef term) {
+    reply_type_ref = std::move(term);
+    if (reply_type_ref) reply_type = reply_type_ref->to_canonical_string();
+    else reply_type.reset();
+  }
+  void set_reply_type(std::optional<string> raw) {
+    reply_type = std::move(raw);
+    if (reply_type && !reply_type->empty() && TypeContext::current()) {
+      auto parsed = Type::parse_canonical(*reply_type);
+      if (parsed && (*parsed)->is_closed()) {
+        reply_type_ref = *parsed;
+        return;
+      }
+    }
+    reply_type_ref = nullptr;
+  }
+  void sync() {
+    if (reply_type_ref) {
+      reply_type = reply_type_ref->to_canonical_string();
+    } else if (reply_type && !reply_type->empty() && TypeContext::current()) {
+      auto parsed = Type::parse_canonical(*reply_type);
+      if (parsed && (*parsed)->is_closed()) reply_type_ref = *parsed;
+    }
+  }
+  void assert_consistent() const {
+    if (reply_type_ref && reply_type && !reply_type->empty() &&
+        *reply_type != reply_type_ref->to_canonical_string()) {
+      throw std::logic_error("Handler '" + name +
+                             "' reply type string projection '" + *reply_type +
+                             "' contradicts bound TypeRef '" +
+                             reply_type_ref->to_canonical_string() + "'");
+    }
+    for (const auto& param : params) param.assert_consistent();
+  }
   vector<Stmt> body;
   vector<FailureArm> failure_arms;
   ObservableEffects observable_effects;
@@ -191,21 +412,36 @@ struct DomainRoute {
   int line = 0;
   string source_file;
 };
-struct Domain { string name, header; vector<Field> state; vector<DomainRoute> routes; vector<Handler> handlers; bool exported = false; int line = 0; string source_file; };
-struct ObjectType { string name, header; vector<Field> fields; vector<Method> methods; bool exported = false; int line = 0; string source_file; };
+// Nominal declarations keep their defining module spelling ("" for the root
+// of an unmodular program) and source declaration name, set where module
+// rewriting qualifies `name`. Identity is derived from these, never by
+// splitting the qualified spelling (TYPE_IR_CONTRACT §3.1).
+struct Domain { string name, header; vector<Field> state; vector<DomainRoute> routes; vector<Handler> handlers; bool exported = false; int line = 0; string source_file; string defining_module; string declaration_name; };
+struct ObjectType { string name, header; vector<Field> fields; vector<Method> methods; bool exported = false; int line = 0; string source_file; string defining_module; string declaration_name; };
 struct EnumCase { string name; vector<Field> fields; int line = 0; string source_file; };
-struct EnumType { string name, header; vector<EnumCase> cases; bool exported = false; int line = 0; string source_file; };
+struct EnumType { string name, header; vector<EnumCase> cases; bool exported = false; int line = 0; string source_file; string defining_module; string declaration_name; };
 struct MainProc { vector<Stmt> body; int line = 0; string header; string source_file; };
 struct StaticSpecializationDependency {
   // Canonical Moss callable identity and concrete parameter types.  This is
   // checked specialization metadata, not a backend symbol reference.
   string function_name;
   vector<string> parameter_types;
+  string specialization_key;
 };
 struct FunctionSpecialization {
   string generated_name;
   vector<string> parameter_types;
   string return_type;
+  // The complete input to specialization-v2. In particular, result bindings
+  // distinguish calls with equal parameters whose open results close apart.
+  SpecializationKey semantic_key;
+  // The checked semantic identity; text above is only an ABI/display projection.
+  vector<TypeRef> parameter_type_refs;
+  TypeRef return_type_ref;
+  string stable_type_key;
+  // A direct return of another open-result callable selects that callee's
+  // exact checked instance after this specialization's result closes.
+  string result_call_key;
   // Concrete observable effects drive the native Result ABI of this static
   // specialization. A duck-typed method may raise even when the unspecialized
   // function body cannot resolve that method's exact variant.
@@ -217,6 +453,8 @@ struct FunctionSpecialization {
   // projection closes this graph so an owned specialization never references
   // a specialization that exists only in some other artifact.
   vector<StaticSpecializationDependency> dependencies;
+  // Closed member requirements checked for this exact static instance.
+  vector<MemberDispatchRequirement> member_requirements;
 };
 
 struct DomainSpecialization {
@@ -236,7 +474,48 @@ struct DomainSpecialization {
   std::unordered_map<string,string> handler_reply_types;
 };
 struct Function {
-  string name, header; vector<Param> params; std::optional<string> return_type; vector<Stmt> body;
+  string name, header;
+  vector<Param> params;
+  std::optional<string> return_type;
+  TypeRef return_type_ref = nullptr;
+  void bind_return_type(TypeRef term) {
+    return_type_ref = std::move(term);
+    if (return_type_ref) return_type = return_type_ref->to_canonical_string();
+    else return_type.reset();
+  }
+  void set_return_type(std::optional<string> raw) {
+    return_type = std::move(raw);
+    if (return_type && !return_type->empty() && TypeContext::current()) {
+      auto parsed = Type::parse_canonical(*return_type);
+      if (parsed && (*parsed)->is_closed()) {
+        return_type_ref = *parsed;
+        return;
+      }
+    }
+    return_type_ref = nullptr;
+  }
+  void sync() {
+    if (return_type_ref) {
+      return_type = return_type_ref->to_canonical_string();
+    } else if (return_type && !return_type->empty() && TypeContext::current()) {
+      auto parsed = Type::parse_canonical(*return_type);
+      if (parsed && (*parsed)->is_closed()) return_type_ref = *parsed;
+    }
+  }
+  void assert_consistent() const {
+    if (return_type_ref && return_type && !return_type->empty() &&
+        *return_type != return_type_ref->to_canonical_string()) {
+      throw std::logic_error("Function '" + name +
+                             "' return type string projection '" + *return_type +
+                             "' contradicts bound TypeRef '" +
+                             return_type_ref->to_canonical_string() + "'");
+    }
+    for (const auto& param : params) param.assert_consistent();
+  }
+  vector<Stmt> body;
+  // Bound at module name resolution, before checking. Source-free functions
+  // retain the same defining package/module/declaration identity.
+  string defining_module, declaration_name, semantic_callable_id;
   std::optional<string> result_expression; int result_line = 0; bool expression_body = false;
   vector<int> result_continuation_lines;
   std::unordered_map<string,std::size_t> result_functional_pipeline_ids;
@@ -244,6 +523,8 @@ struct Function {
   std::unordered_map<string,string> generic_results; int line = 0;
   vector<Constraint> constraints;
   vector<FunctionSpecialization> specializations;
+  std::optional<OpenCallableSummaryFacts> open_summary;
+  std::optional<CheckedBodyV1> checked_body_v1;
   // Concrete callable specializations referenced by functional code.  This is
   // retained as semantic dependency information for later incremental work.
   vector<string> callable_dependencies;
@@ -295,6 +576,16 @@ struct SemanticCallEdge {
   // generated code.
   string invocation_kind = "ordinary_call";
   string receiver;
+  // A generic source statement can be checked under several concrete caller
+  // instances. This key keeps those call edges distinct after closure.
+  string source_specialization_key;
+  // Set by the checked call closure. Query and module projection consume this
+  // exact identity instead of reconstructing it from display argument types.
+  string specialization_key;
+  // Source-order occurrence among calls with the same caller, line, and
+  // target. This distinguishes two expressions on one source line without
+  // changing the callable or specialization identity.
+  uint32_t occurrence = 0;
 };
 
 // Minimal resolved-use facts retained by the ordinary checker for semantic
@@ -389,6 +680,9 @@ struct ExecutorStartPlan {
 };
 
 struct Program {
+  // Compiler-internal typed projection of checked facts, populated once by
+  // Checker::run. ABI serializers consume this rather than diagnostic text.
+  std::shared_ptr<TypedSemanticModuleV1> typed_semantics;
   // Parsed physical source lines retained for compiler-owned editor
   // resolution.  They preserve indentation and file identity, while all
   // semantic selection still comes from checked declarations/uses/calls.
@@ -400,6 +694,17 @@ struct Program {
   // participate in Moss name/type checking, but are never regenerated into
   // this build's Rust crates.
   std::set<string> external_modules;
+  // ABI module identity (`module-v1:<package>@<version>::<module>`) of each
+  // module spelling in this program; "" is the root of an unmodular program.
+  // Local modules take the package manifest; loaded providers take their
+  // interface's identity (TYPE_IR_CONTRACT §3.1).
+  std::map<string, string> module_identities;
+  // True when module identities come from a package manifest; a missing
+  // identity is then an error, never the standalone fallback.
+  bool package_identities = false;
+  // The session declaration table, built by the checker. It interns every
+  // record/enum/domain identity and outlives the checker with the program.
+  std::shared_ptr<TypeContext> type_context;
   vector<ModuleImport> imports;
   vector<Function> functions;
   vector<Trait> traits;
@@ -420,6 +725,15 @@ struct Program {
   vector<ExecutorStartPlan> executor_start_plans;
   ConcreteDomainGraph concrete_domain_graph;
   SynchronizationPlan synchronization_plan;
+  void assert_declaration_type_consistency() const {
+    for (const auto& f : functions) f.assert_consistent();
+    for (const auto& o : objects)
+      for (const auto& m : o.methods) m.assert_consistent();
+    for (const auto& t : traits)
+      for (const auto& m : t.methods) m.assert_consistent();
+    for (const auto& d : domains)
+      for (const auto& h : d.handlers) h.assert_consistent();
+  }
 };
 
 inline string functional_function_context(

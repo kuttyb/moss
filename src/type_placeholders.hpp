@@ -19,7 +19,8 @@ inline bool internal_semantic_placeholder(const std::string& type) {
       has_prefix("_functional_result:") ||
       has_prefix("_functional_element:") ||
       has_prefix("_functional_collection:") ||
-      has_prefix("_functional_callable_result:");
+      has_prefix("_functional_callable_result:") ||
+      has_prefix("_typevar:");
 }
 
 } // namespace moss

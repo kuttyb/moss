@@ -279,5 +279,5 @@ For each item, record in the table below: concur, concur with amendment
 | Party | Item(s) | Verdict | SHA | Notes |
 |---|---|---|---|---|
 | Team S L6 Coordinator | 1–5 | Proposed | this document's commit | — |
-| Team G L6 Coordinator | 1–5 | **pending** | — | — |
+| Team G L6 Coordinator | 1–5 | **Concur with item 4 implementation amendment** | `a50fa30` review baseline; completion SHA pending | Concur with §1 shared runtime ownership; §2 exact Team S deterministic scalar proof targets; §3 String/Char records and all six cross-crate tests at the joint cut; §4 Team S owns `admit_member` and target selection, Team G owns solver and closure, and the existing `Requirement` gains per-argument access plus a structured `MemberDispatchRequirement`; §5 trigger requires the exact Team G SHA, `MapKeyProof`, full `make check`, and the G2 foundations. Team G will not flip production ABI while Team S remains on v9. The §3 4 GiB failure form remains for L7 at the cut. |
 | L7 | Architecture (runtime crate, ownership, Set in Phase 25) | **Approved** | reviewed checkpoint `c2e106c` | 2026-10-15 decision; details still need Team G concurrence. §3 4 GiB failure form still open. |

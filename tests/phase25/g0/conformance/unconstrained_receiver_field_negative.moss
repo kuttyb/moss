@@ -1,0 +1,5 @@
+fn get_field(x):
+  return x.value
+
+fn main():
+  echo get_field(42)

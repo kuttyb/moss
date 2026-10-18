@@ -2,7 +2,9 @@
 // share ordinary helper/method bodies. No dynamic dispatch or source trait is added.
   bool view_object_type(const string& type) const {
     auto found = objects_.find(canonical_type_name(type));
-    return found != objects_.end() && !found->second->fields.empty();
+    return found != objects_.end() && !found->second->fields.empty() &&
+        !std::any_of(found->second->fields.begin(), found->second->fields.end(),
+                     [](const Field& f) { return f.inferred || f.type.empty(); });
   }
 
   string access_trait(const string& type) const {
@@ -77,11 +79,17 @@
   string viewed_function_name(const string& name, const vector<string>& args, const Domain* d,
       const std::set<string>& locals, const std::unordered_map<string,string>* types) const {
     string emitted = emitted_function_name(name, args, types);
-    auto found = functions_.find(name);
-    if (found == functions_.end()) return emitted;
-    const auto* specialization = call_specialization(*found->second, args, types);
+    const Function* found_fn = nullptr;
+    if (starts_with(name, "callable-v1:")) {
+      found_fn = find_function_by_callable_id(name);
+    } else {
+      auto found = functions_.find(name);
+      if (found != functions_.end()) found_fn = found->second;
+    }
+    if (!found_fn) return emitted;
+    const auto* specialization = call_specialization(*found_fn, args, types);
     for (size_t i = 0; i < args.size(); ++i)
-      if (function_effect(*found->second, i,
+      if (function_effect(*found_fn, i,
               generated_expr_type(args[i], types).value_or(""), specialization) != Effect::Consume &&
           is_object_view(args[i], d, locals, types))
         return "__moss_view_" + emitted;
