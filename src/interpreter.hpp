@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <exception>
 #include <charconv>
 #include <cctype>
 #include <cstdint>
@@ -20,6 +21,7 @@
 #include <vector>
 
 #include "ast.hpp"
+#include "numeric_literal.hpp"
 #include "numeric_runtime.hpp"
 #include "type_placeholders.hpp"
 
@@ -29,6 +31,59 @@ namespace moss {
 // It does not parse, resolve, or type-check anything itself.  The checker has
 // already rejected unsupported ownership/concurrency patterns before this
 // class is constructed.
+inline std::string moss_canonical_float_text(double value);
+inline std::string rust_f64_to_string(double value);
+
+inline std::string utf8_from_codepoint(uint32_t cp) {
+  std::string s;
+  if (cp <= 0x7F) {
+    s.push_back(static_cast<char>(cp));
+  } else if (cp <= 0x7FF) {
+    s.push_back(static_cast<char>(0xC0 | ((cp >> 6) & 0x1F)));
+    s.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+  } else if (cp <= 0xFFFF) {
+    s.push_back(static_cast<char>(0xE0 | ((cp >> 12) & 0x0F)));
+    s.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+    s.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+  } else if (cp <= 0x10FFFF) {
+    s.push_back(static_cast<char>(0xF0 | ((cp >> 18) & 0x07)));
+    s.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+    s.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+    s.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+  }
+  return s;
+}
+
+inline uint32_t decode_char(const std::string& raw) {
+  if (raw.empty()) return 0;
+  if (raw.front() == '\\' && raw.size() >= 2) {
+    if (raw[1] == 'n') return '\n';
+    if (raw[1] == 'r') return '\r';
+    if (raw[1] == 't') return '\t';
+    if (raw[1] == '0') return '\0';
+    if (raw[1] == '\'') return '\'';
+    if (raw[1] == '\\') return '\\';
+    if (raw[1] == 'u' && raw.size() >= 4 && raw[2] == '{' && raw.back() == '}') {
+      std::string hex = raw.substr(3, raw.size() - 4);
+      return static_cast<uint32_t>(std::stoul(hex, nullptr, 16));
+    }
+  }
+  unsigned char b0 = static_cast<unsigned char>(raw[0]);
+  if (b0 < 0x80) return b0;
+  if ((b0 & 0xE0) == 0xC0 && raw.size() >= 2) {
+    return ((b0 & 0x1F) << 6) | (static_cast<unsigned char>(raw[1]) & 0x3F);
+  }
+  if ((b0 & 0xF0) == 0xE0 && raw.size() >= 3) {
+    return ((b0 & 0x0F) << 12) | ((static_cast<unsigned char>(raw[1]) & 0x3F) << 6) |
+           (static_cast<unsigned char>(raw[2]) & 0x3F);
+  }
+  if ((b0 & 0xF8) == 0xF0 && raw.size() >= 4) {
+    return ((b0 & 0x07) << 18) | ((static_cast<unsigned char>(raw[1]) & 0x3F) << 12) |
+           ((static_cast<unsigned char>(raw[2]) & 0x3F) << 6) | (static_cast<unsigned char>(raw[3]) & 0x3F);
+  }
+  return b0;
+}
+
 class FastInterpreter {
  public:
   struct TraceEvent {
@@ -51,6 +106,9 @@ class FastInterpreter {
   struct Options {
     bool trace = false;
     std::string source_file;
+    // Test semantic identity -> FAIL detail for a test that the static
+    // target-capability preflight rejected; such a test is never executed.
+    std::map<std::string, std::string> unsupported_tests;
   };
 
   class RuntimeError : public std::runtime_error {
@@ -121,6 +179,12 @@ class FastInterpreter {
           test.semantic_identity.find(filter) == std::string::npos)
         continue;
       ++discovered;
+      if (auto unsupported = options_.unsupported_tests.find(test.semantic_identity);
+          unsupported != options_.unsupported_tests.end()) {
+        output << "FAIL " << test.name << ": " << unsupported->second << "\n";
+        ++failed;
+        continue;
+      }
       Frame frame;
       frame.function = "test:" + test.name;
       frame.functional_context = frame.function;
@@ -159,10 +223,11 @@ class FastInterpreter {
   struct DomainValue;
 
   struct Value {
-    enum class Kind { Unit, Bool, Int, Float, String, Callable, Struct, Vector, Queue, Map, DomainHandle } kind = Kind::Unit;
+    enum class Kind { Unit, Bool, Int, Float, String, Callable, Struct, Vector, Queue, Map, DomainHandle, Char } kind = Kind::Unit;
     bool boolean = false;
     std::int64_t integer = 0;
     double floating = 0.0;
+    uint32_t codepoint = 0;
     std::string string;
     DomainValue* domain = nullptr;
     std::shared_ptr<StructValue> object;
@@ -175,6 +240,7 @@ class FastInterpreter {
     static Value boolean_value(bool value);
     static Value int_value(std::int64_t value);
     static Value float_value(double value);
+    static Value char_value(uint32_t cp);
     static Value string_value(std::string value);
     static Value callable_value(std::string name);
     static Value struct_value(std::string type);
@@ -184,6 +250,35 @@ class FastInterpreter {
     bool truthy() const;
     std::string display() const;
   };
+
+  // Phase 25 S-B echo display contract (docs/FAST_DEBUG.md): scalars and
+  // Vectors of displayable elements only. The checker rejects every other
+  // type with ECHO_DISPLAY_UNSUPPORTED; this guard keeps Fast Debug from
+  // inventing text (such as "Map(1)" or a record's type name) if an
+  // unchecked path ever reaches it.
+  static std::string echo_text(const Value& value, int line) {
+    switch (value.kind) {
+      case Value::Kind::Bool:
+      case Value::Kind::Int:
+      case Value::Kind::Float:
+      case Value::Kind::Char:
+      case Value::Kind::String:
+        return value.display();
+      case Value::Kind::Vector: {
+        std::string out = "[";
+        if (value.vector)
+          for (size_t i = 0; i < value.vector->size(); ++i) {
+            if (i) out += ", ";
+            out += echo_text((*value.vector)[i], line);
+          }
+        return out + "]";
+      }
+      default:
+        throw RuntimeError(line, "[ECHO_DISPLAY_UNSUPPORTED] echo cannot display this "
+                                 "value; echo supports Int, Float, Bool, Char, String, "
+                                 "and Vector of those");
+    }
+  }
 
   struct StructValue {
     std::string type;
@@ -211,6 +306,86 @@ class FastInterpreter {
     DomainValue* domain = nullptr;
     std::string handler;
     bool handler_scope = false;
+    // Lexical block scopes. Each entry records the binding a block-local
+    // declaration shadowed so leaving the block restores it, matching the
+    // native Rust block structure.
+    struct ScopedBinding {
+      std::string name;
+      std::optional<Value> value;
+      std::optional<std::string> type;
+      std::optional<Place> alias;
+    };
+    std::vector<std::vector<ScopedBinding>> scopes;
+    // Names whose value was consumed but which remain lexically declared;
+    // `name = expr` reinitializes them rather than declaring a new binding.
+    std::set<std::string> consumed;
+  };
+
+  // Records `name` as declared in the innermost block before it is bound.
+  static void declare_local(Frame& frame, const std::string& name) {
+    if (frame.scopes.empty() || name.empty() || name == "_") return;
+    auto& scope = frame.scopes.back();
+    for (const auto& entry : scope) if (entry.name == name) return;
+    Frame::ScopedBinding saved{name, std::nullopt, std::nullopt, std::nullopt};
+    auto value = frame.locals.find(name);
+    if (value != frame.locals.end()) saved.value = value->second;
+    auto type = frame.local_types.find(name);
+    if (type != frame.local_types.end()) saved.type = type->second;
+    auto alias = frame.aliases.find(name);
+    if (alias != frame.aliases.end()) {
+      saved.alias = alias->second;
+      frame.aliases.erase(alias);
+    }
+    scope.push_back(std::move(saved));
+  }
+
+  struct BlockScope {
+    Frame& frame;
+    // Names bound in every alternative of the enclosing compound statement:
+    // native lowering hoists them, so they outlive this block.
+    // A block left by a raise did not complete its path, so its joined names
+    // are discarded (the exceptional edge snapshot keeps them for on_fail).
+    const std::set<std::string>* keep = nullptr;
+    int uncaught = 0;
+    explicit BlockScope(Frame& f, const std::set<std::string>* joined = nullptr)
+        : frame(f), keep(joined), uncaught(std::uncaught_exceptions()) {
+      frame.scopes.emplace_back();
+    }
+    ~BlockScope() {
+      auto scope = std::move(frame.scopes.back());
+      frame.scopes.pop_back();
+      if (keep && std::uncaught_exceptions() == uncaught) {
+        std::vector<Frame::ScopedBinding> dropped;
+        for (auto& item : scope) {
+          // A name that already resolves outside the block (a local, an
+          // alias, or the handler's domain state) is shadowed, not joined:
+          // native keeps such branch bindings block-local.
+          const bool shadows_state = frame.handler_scope && frame.domain &&
+              (frame.domain->state.count(item.name) || frame.domain->routes.count(item.name));
+          if (!keep->count(item.name) || item.value || item.alias || shadows_state) {
+            dropped.push_back(std::move(item));
+            continue;
+          }
+          if (!frame.scopes.empty()) {
+            bool known = false;
+            for (const auto& outer : frame.scopes.back()) known = known || outer.name == item.name;
+            if (!known) frame.scopes.back().push_back(std::move(item));
+          }
+        }
+        scope = std::move(dropped);
+      }
+      for (auto item = scope.rbegin(); item != scope.rend(); ++item) {
+        frame.consumed.erase(item->name);
+        frame.locals.erase(item->name);
+        frame.local_types.erase(item->name);
+        frame.aliases.erase(item->name);
+        if (item->value) frame.locals[item->name] = *item->value;
+        if (item->type) frame.local_types[item->name] = *item->type;
+        if (item->alias) frame.aliases[item->name] = *item->alias;
+      }
+    }
+    BlockScope(const BlockScope&) = delete;
+    BlockScope& operator=(const BlockScope&) = delete;
   };
 
   struct Flow {
@@ -223,10 +398,14 @@ class FastInterpreter {
     Value value;
     int line = 0;
     std::string source_file;
+    // Bindings visible at the raise point whose blocks have since unwound;
+    // on_fail captures read them at the exceptional edge.
+    std::unordered_map<std::string, Value> edge_locals;
   };
 
   const Program& program_;
   Options options_;
+  std::unordered_map<const Stmt*, std::set<std::string>> joined_cache_;
   std::vector<TraceEvent> trace_;
   std::vector<int> event_stack_;
   std::vector<int> call_stack_;
@@ -409,16 +588,18 @@ class FastInterpreter {
 
   static std::optional<std::pair<std::string, std::string>> split_operator(
       const std::string& input, const std::vector<std::string>& operators) {
-    int parens = 0, brackets = 0, braces = 0; bool quoted = false; bool escaped = false;
+    int parens = 0, brackets = 0, braces = 0; bool quoted = false;
     for (size_t pos = input.size(); pos-- > 0;) {
       char c = input[pos];
-      if (quoted) {
-        if (escaped) escaped = false;
-        else if (c == '\\') escaped = true;
-        else if (c == '"') quoted = false;
+      if (c == '"') {
+        // Scanning backwards: a quote preceded by an odd run of backslashes
+        // is escaped string content.
+        size_t slashes = 0;
+        while (slashes < pos && input[pos - 1 - slashes] == '\\') ++slashes;
+        if (slashes % 2 == 0) quoted = !quoted;
         continue;
       }
-      if (c == '"') { quoted = true; continue; }
+      if (quoted) continue;
       if (c == ')') ++parens; else if (c == '(') --parens;
       else if (c == ']') ++brackets; else if (c == '[') --brackets;
       else if (c == '}') ++braces; else if (c == '{') --braces;
@@ -454,6 +635,10 @@ class FastInterpreter {
               continue;
           }
           if (op == "-" || op == "+") {
+            // An exponent sign (`1e-3`) belongs to its numeric literal.
+            if (pos >= 2 && (input[pos - 1] == 'e' || input[pos - 1] == 'E') &&
+                inside_numeric_literal(input, pos))
+              continue;
             size_t before = pos;
             while (before > 0 && std::isspace(static_cast<unsigned char>(input[before - 1])))
               --before;
@@ -538,8 +723,12 @@ class FastInterpreter {
     if (lp == std::string::npos || value.back() != ')') return false;
     int depth = 0; bool quoted = false;
     for (size_t i = lp; i < value.size(); ++i) {
-      if (value[i] == '"') quoted = !quoted;
-      if (quoted) continue;
+      if (quoted) {
+        if (value[i] == '\\') ++i;
+        else if (value[i] == '"') quoted = false;
+        continue;
+      }
+      if (value[i] == '"') { quoted = true; continue; }
       if (value[i] == '(') ++depth;
       else if (value[i] == ')' && --depth == 0 && i + 1 != value.size()) return false;
     }
@@ -551,8 +740,12 @@ class FastInterpreter {
     int p = 0, b = 0, s = 0; size_t start = 0; quoted = false;
     for (size_t i = 0; i < inside.size(); ++i) {
       char c = inside[i];
-      if (c == '"') quoted = !quoted;
-      if (quoted) continue;
+      if (quoted) {
+        if (c == '\\') ++i;
+        else if (c == '"') quoted = false;
+        continue;
+      }
+      if (c == '"') { quoted = true; continue; }
       if (c == '(') ++p; else if (c == ')') --p;
       else if (c == '[') ++b; else if (c == ']') --b;
       else if (c == '{') ++s; else if (c == '}') --s;
@@ -569,7 +762,14 @@ class FastInterpreter {
     int p = 0, b = 0, s = 0; bool quoted = false;
     for (size_t i = input.size(); i-- > 0;) {
       char c = input[i];
-      if (c == '"') quoted = !quoted;
+      if (c == '"') {
+        // Scanning backwards: a quote preceded by an odd run of backslashes
+        // is escaped string content.
+        size_t slashes = 0;
+        while (slashes < i && input[i - 1 - slashes] == '\\') ++slashes;
+        if (slashes % 2 == 0) quoted = !quoted;
+        continue;
+      }
       if (quoted) continue;
       if (c == ')') ++p; else if (c == '(') --p;
       else if (c == ']') ++b; else if (c == '[') --b;
@@ -638,8 +838,12 @@ class FastInterpreter {
     int parens = 0, brackets = 0; bool quoted = false; size_t start = 0;
     for (size_t i = 0; i + 1 < input.size(); ++i) {
       char c = input[i];
-      if (c == '"') quoted = !quoted;
-      if (quoted) continue;
+      if (quoted) {
+        if (c == '\\') ++i;
+        else if (c == '"') quoted = false;
+        continue;
+      }
+      if (c == '"') { quoted = true; continue; }
       if (c == '(') ++parens; else if (c == ')') --parens;
       else if (c == '[') ++brackets; else if (c == ']') --brackets;
       if (!parens && !brackets && c == '|' && input[i + 1] == '>') {
@@ -845,15 +1049,12 @@ class FastInterpreter {
       return Value::unit();
     }
 
-    char* end = nullptr;
-    const auto numeric = e.c_str();
-    long long integer = std::strtoll(numeric, &end, 10);
-    if (end && *end == '\0' && e.find_first_of(".eE") == std::string::npos)
-      return Value::int_value(static_cast<std::int64_t>(integer));
-    char* float_end = nullptr;
-    double floating = std::strtod(numeric, &float_end);
-    if (float_end && *float_end == '\0' && e.find_first_of(".eE") != std::string::npos)
-      return Value::float_value(floating);
+    // Numeric literals decode through the shared specification used by the
+    // checker and native lowering (numeric_literal.hpp).
+    if (auto number = decode_numeric_literal_expression(e))
+      return number->kind == NumericLiteral::Kind::Int
+          ? Value::int_value(number->integer)
+          : Value::float_value(number->floating);
 
     if (auto binary = split_operator(e, {"==", "!=", "<=", ">=", "<", ">"}))
       return compare(binary->first, binary->second, e, frame, line, output);
@@ -878,6 +1079,9 @@ class FastInterpreter {
       return Value::int_value(~value.integer);
     }
     if (!e.empty() && e.front() == '-' && e.size() > 1) {
+      // The checker admits the magnitude 2^63 only as this negation.
+      if (trim_copy(e.substr(1)) == "9223372036854775808")
+        return Value::int_value(std::numeric_limits<std::int64_t>::min());
       Value value = eval(e.substr(1), frame, line, output);
       if (value.kind == Value::Kind::Int) return Value::int_value(wrapping_sub(0, value.integer));
       if (value.kind == Value::Kind::Float) return Value::float_value(-value.floating);
@@ -886,6 +1090,8 @@ class FastInterpreter {
     // falling back to a single String literal.
     if (e.size() >= 2 && e.front() == '"' && e.back() == '"')
       return Value::string_value(decode_string(e.substr(1, e.size() - 2)));
+    if (e.size() >= 2 && e.front() == '\'' && e.back() == '\'')
+      return Value::char_value(decode_char(e.substr(1, e.size() - 2)));
     // A final index may follow a computed value, including a vector literal.
     // Match the final bracket pair instead of treating every expression that
     // starts and ends with '['/']' as one literal (`[x][0]`). Lvalue-shaped
@@ -912,7 +1118,7 @@ class FastInterpreter {
                                line, output);
             if (base.kind == Value::Kind::Map && base.map) {
               for (const auto& entry : *base.map)
-                if (equal(entry.first, index)) return entry.second;
+                if (key_equal(entry.first, index)) return entry.second;
               throw RuntimeError(line, "missing map key");
             }
             auto values = base.kind == Value::Kind::Vector ? base.vector :
@@ -942,7 +1148,10 @@ class FastInterpreter {
             auto type = frame.local_types.find(source);
             if (type == frame.local_types.end() || type->second.empty())
               throw RuntimeError(line, "internal error: replace replacement lacks a checked type");
-            if (!copy_type_name(type->second)) frame.locals.erase(source);
+            if (!copy_type_name(type->second)) {
+              frame.locals.erase(source);
+              frame.consumed.insert(source);
+            }
           }
           auto place = locate(args[0], frame, line, output);
           if (!place.value)
@@ -1013,7 +1222,7 @@ class FastInterpreter {
           raised.object->case_name = variant;
           emit("raise", frame, line, "variant:" + error_type + "." + variant);
           throw RaisedSignal{RaisedIdentity::enum_variant(error_type, variant),
-                             std::move(raised), line, frame.source_file};
+                             std::move(raised), line, frame.source_file, {}};
         }
         if (numeric_name == "to_int") {
           auto argument = eval(args.front(), frame, line, output);
@@ -1027,7 +1236,66 @@ class FastInterpreter {
           raised.object->case_name = variant;
           emit("raise", frame, line, "variant:" + error_type + "." + variant);
           throw RaisedSignal{RaisedIdentity::enum_variant(error_type, variant),
-                             std::move(raised), line, frame.source_file};
+                             std::move(raised), line, frame.source_file, {}};
+        }
+        if (callee == "Char" && args.size() == 1 && !function(callee)) {
+          auto cp_val = eval(args.front(), frame, line, output);
+          if (cp_val.kind != Value::Kind::Int)
+            throw RuntimeError(line, "Char expects an Int codepoint");
+          int64_t cp = cp_val.integer;
+          if (cp < 0 || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF))
+            throw RuntimeError(line, "ValueError: invalid Unicode scalar value " + std::to_string(cp));
+          return Value::char_value(static_cast<uint32_t>(cp));
+        }
+        if (callee == "less" && args.size() == 2 && !function(callee)) {
+          auto left = eval(args[0], frame, line, output);
+          auto right = eval(args[1], frame, line, output);
+          return Value::boolean_value(moss_less(left, right));
+        }
+        if (callee == "isequal" && args.size() == 2 && !function(callee)) {
+          auto left = eval(args[0], frame, line, output);
+          auto right = eval(args[1], frame, line, output);
+          return Value::boolean_value(moss_isequal(left, right));
+        }
+        if (callee == "hash" && args.size() == 1 && !function(callee)) {
+          auto val = eval(args.front(), frame, line, output);
+          return Value::int_value(moss_hash(val));
+        }
+        if (callee == "sort" && (args.size() == 1 || args.size() == 2) && !function(callee)) {
+          Place place = locate(args[0], frame, line, output);
+          if (!place.value || place.value->kind != Value::Kind::Vector || !place.value->vector)
+            throw RuntimeError(line, "sort requires a writable Vector");
+          auto& vec = *place.value->vector;
+          if (args.size() == 1) {
+            std::stable_sort(vec.begin(), vec.end(), [&](const Value& a, const Value& b) {
+              return moss_less(a, b);
+            });
+          } else {
+            std::string key_expr = args[1];
+            size_t colon = args[1].find(':');
+            size_t eq = args[1].find('=');
+            size_t delim = std::string::npos;
+            if (colon != std::string::npos && (eq == std::string::npos || colon < eq)) delim = colon;
+            else if (eq != std::string::npos) delim = eq;
+            if (delim != std::string::npos) {
+              key_expr = args[1].substr(delim + 1);
+            }
+            while (!key_expr.empty() && std::isspace(static_cast<unsigned char>(key_expr.front()))) key_expr.erase(0, 1);
+            while (!key_expr.empty() && std::isspace(static_cast<unsigned char>(key_expr.back()))) key_expr.pop_back();
+            bool is_reverse = false;
+            std::string inner_fn = key_expr;
+            std::string rev_callee; std::vector<std::string> rev_args;
+            if (parse_call(key_expr, rev_callee, rev_args) && rev_callee == "Reverse" && rev_args.size() == 1) {
+              is_reverse = true;
+              inner_fn = rev_args[0];
+            }
+            std::stable_sort(vec.begin(), vec.end(), [&](const Value& a, const Value& b) {
+              Value ka = invoke_pipeline_callable(inner_fn, {a}, frame, line, output);
+              Value kb = invoke_pipeline_callable(inner_fn, {b}, frame, line, output);
+              return is_reverse ? moss_less(kb, ka) : moss_less(ka, kb);
+            });
+          }
+          return Value::unit();
         }
         if (auto fn = function(callee)) return call(*fn, args, frame, line, output);
         auto callable_local = frame.locals.find(callee);
@@ -1086,7 +1354,75 @@ class FastInterpreter {
               emit("LocalWrite", frame, line, member->first);
             return Value::unit();
           }
+          if (member->first == "Int" || member->first == "Float" || member->first == "Char" ||
+              member->first == "String" || member->first == "Bool") {
+            if (method_name == "less" && method_args.size() == 2) {
+              Value a = eval(method_args[0], frame, line, output);
+              Value b = eval(method_args[1], frame, line, output);
+              return Value::boolean_value(moss_less(a, b));
+            }
+            if (method_name == "isequal" && method_args.size() == 2) {
+              Value a = eval(method_args[0], frame, line, output);
+              Value b = eval(method_args[1], frame, line, output);
+              return Value::boolean_value(moss_isequal(a, b));
+            }
+            if (method_name == "hash" && method_args.size() == 1) {
+              Value a = eval(method_args[0], frame, line, output);
+              return Value::int_value(moss_hash(a));
+            }
+          }
           auto receiver = eval(member->first, frame, line, output);
+          if (receiver.kind == Value::Kind::Float) {
+            if (method_name == "to_string" && method_args.empty()) {
+              return Value::string_value(rust_f64_to_string(receiver.floating));
+            }
+            if (method_name == "less" && method_args.size() == 1) {
+              Value other = eval(method_args[0], frame, line, output);
+              return Value::boolean_value(moss_less(receiver, other));
+            }
+            if (method_name == "isequal" && method_args.size() == 1) {
+              Value other = eval(method_args[0], frame, line, output);
+              return Value::boolean_value(moss_isequal(receiver, other));
+            }
+            if (method_name == "hash" && method_args.empty()) {
+              return Value::int_value(moss_hash(receiver));
+            }
+          }
+          if (receiver.kind == Value::Kind::Int) {
+            if (method_name == "to_string" && method_args.empty()) {
+              return Value::string_value(std::to_string(receiver.integer));
+            }
+            if (method_name == "less" && method_args.size() == 1) {
+              Value other = eval(method_args[0], frame, line, output);
+              return Value::boolean_value(moss_less(receiver, other));
+            }
+            if (method_name == "isequal" && method_args.size() == 1) {
+              Value other = eval(method_args[0], frame, line, output);
+              return Value::boolean_value(moss_isequal(receiver, other));
+            }
+            if (method_name == "hash" && method_args.empty()) {
+              return Value::int_value(moss_hash(receiver));
+            }
+          }
+          if (receiver.kind == Value::Kind::Char) {
+            if (method_name == "to_string" && method_args.empty()) {
+              return Value::string_value(utf8_from_codepoint(receiver.codepoint));
+            }
+            if (method_name == "codepoint" && method_args.empty()) {
+              return Value::int_value(static_cast<int64_t>(receiver.codepoint));
+            }
+            if (method_name == "less" && method_args.size() == 1) {
+              Value other = eval(method_args[0], frame, line, output);
+              return Value::boolean_value(moss_less(receiver, other));
+            }
+            if (method_name == "isequal" && method_args.size() == 1) {
+              Value other = eval(method_args[0], frame, line, output);
+              return Value::boolean_value(moss_isequal(receiver, other));
+            }
+            if (method_name == "hash" && method_args.empty()) {
+              return Value::int_value(moss_hash(receiver));
+            }
+          }
           if (receiver.kind == Value::Kind::String) {
             auto characters = [&]() {
               std::vector<std::string> result;
@@ -1113,12 +1449,25 @@ class FastInterpreter {
               if (index.kind != Value::Kind::Int || index.integer < 0 ||
                   static_cast<uint64_t>(index.integer) >= chars.size())
                 throw RuntimeError(line, "String character index out of bounds");
-              return Value::string_value(chars[static_cast<size_t>(index.integer)]);
+              uint32_t cp = decode_char(chars[static_cast<size_t>(index.integer)]);
+              return Value::char_value(cp);
             }
             if (method_name == "chars" && method_args.empty()) {
               std::vector<Value> result;
-              for (const auto& c : characters()) result.push_back(Value::string_value(c));
-              return Value::vector_value(std::move(result));
+              for (const auto& c : characters())
+                result.push_back(Value::char_value(decode_char(c)));
+              return Value::vector_value(std::move(result), "char");
+            }
+            if (method_name == "less" && method_args.size() == 1) {
+              Value other = eval(method_args[0], frame, line, output);
+              return Value::boolean_value(moss_less(receiver, other));
+            }
+            if (method_name == "isequal" && method_args.size() == 1) {
+              Value other = eval(method_args[0], frame, line, output);
+              return Value::boolean_value(moss_isequal(receiver, other));
+            }
+            if (method_name == "hash" && method_args.empty()) {
+              return Value::int_value(moss_hash(receiver));
             }
             if (method_name == "find" && method_args.size() == 1) {
               Value pattern = eval(method_args[0], frame, line, output);
@@ -1211,7 +1560,7 @@ class FastInterpreter {
               Value key = eval(method_args[0], frame, line, output);
               Value fallback = eval(method_args[1], frame, line, output);
               for (auto it = receiver.map->begin(); it != receiver.map->end(); ++it) {
-                if (!equal(it->first, key)) continue;
+                if (!key_equal(it->first, key)) continue;
                 Value removed = independent(it->second);
                 receiver.map->erase(it);
                 assign(method_args[2], Value::boolean_value(true), frame, line, output);
@@ -1224,7 +1573,7 @@ class FastInterpreter {
               Value key = eval(method_args[0], frame, line, output);
               Value fallback = eval(method_args[1], frame, line, output);
               for (const auto& entry : *receiver.map)
-                if (equal(entry.first, key)) return independent(entry.second);
+                if (key_equal(entry.first, key)) return independent(entry.second);
               return independent(fallback);
             }
             if ((method_name == "keys" || method_name == "values") && method_args.empty()) {
@@ -1262,16 +1611,30 @@ class FastInterpreter {
     throw RuntimeError(line, "unsupported expression '" + e + "'");
   }
 
+  // Native lowering hands String literals to Rust unchanged, so decode the
+  // same escape set: \n \r \t \0 \\ \' \" \xHH (ASCII) and \u{HEX}.
   static std::string decode_string(const std::string& value) {
     std::string result;
-    bool escaped = false;
-    for (char c : value) {
-      if (escaped) {
-        if (c == 'n') result.push_back('\n'); else if (c == 'r') result.push_back('\r');
-        else if (c == 't') result.push_back('\t'); else result.push_back(c);
-        escaped = false;
-      } else if (c == '\\') escaped = true;
-      else result.push_back(c);
+    for (size_t i = 0; i < value.size(); ++i) {
+      char c = value[i];
+      if (c != '\\' || i + 1 >= value.size()) { result.push_back(c); continue; }
+      char e = value[++i];
+      if (e == 'n') result.push_back('\n');
+      else if (e == 'r') result.push_back('\r');
+      else if (e == 't') result.push_back('\t');
+      else if (e == '0') result.push_back('\0');
+      else if (e == 'x' && i + 2 < value.size() &&
+               std::isxdigit(static_cast<unsigned char>(value[i + 1])) &&
+               std::isxdigit(static_cast<unsigned char>(value[i + 2]))) {
+        result.push_back(static_cast<char>(std::stoi(value.substr(i + 1, 2), nullptr, 16)));
+        i += 2;
+      } else if (e == 'u' && i + 1 < value.size() && value[i + 1] == '{') {
+        size_t close = value.find('}', i + 2);
+        if (close == std::string::npos) { result += "\\u"; continue; }
+        result += utf8_from_codepoint(static_cast<uint32_t>(
+            std::stoul(value.substr(i + 2, close - i - 2), nullptr, 16)));
+        i = close;
+      } else result.push_back(e);
     }
     return result;
   }
@@ -1279,8 +1642,13 @@ class FastInterpreter {
   static std::vector<std::string> split_arguments(const std::string& input) {
     std::vector<std::string> result; int p = 0, b = 0, s = 0; bool quoted = false; size_t start = 0;
     for (size_t i = 0; i < input.size(); ++i) {
-      char c = input[i]; if (c == '"') quoted = !quoted;
-      if (quoted) continue;
+      char c = input[i];
+      if (quoted) {
+        if (c == '\\') ++i;
+        else if (c == '"') quoted = false;
+        continue;
+      }
+      if (c == '"') { quoted = true; continue; }
       if (c == '(') ++p; else if (c == ')') --p; else if (c == '[') ++b; else if (c == ']') --b;
       else if (c == '{') ++s; else if (c == '}') --s;
       else if (c == ',' && p == 0 && b == 0 && s == 0) {
@@ -1300,6 +1668,18 @@ class FastInterpreter {
     auto left = eval(left_text, frame, line, output), right = eval(right_text, frame, line, output);
     if (op == "==") return Value::boolean_value(equal(left, right));
     if (op == "!=") return Value::boolean_value(!equal(left, right));
+    if (left.kind == Value::Kind::Char && right.kind == Value::Kind::Char) {
+      if (op == "<") return Value::boolean_value(left.codepoint < right.codepoint);
+      if (op == ">") return Value::boolean_value(left.codepoint > right.codepoint);
+      if (op == "<=") return Value::boolean_value(left.codepoint <= right.codepoint);
+      return Value::boolean_value(left.codepoint >= right.codepoint);
+    }
+    if (left.kind == Value::Kind::Int && right.kind == Value::Kind::Int) {
+      if (op == "<") return Value::boolean_value(left.integer < right.integer);
+      if (op == ">") return Value::boolean_value(left.integer > right.integer);
+      if (op == "<=") return Value::boolean_value(left.integer <= right.integer);
+      return Value::boolean_value(left.integer >= right.integer);
+    }
     double l = left.kind == Value::Kind::Int ? left.integer : left.floating;
     double r = right.kind == Value::Kind::Int ? right.integer : right.floating;
     if (op == "<") return Value::boolean_value(l < r);
@@ -1375,7 +1755,10 @@ class FastInterpreter {
       case Value::Kind::Unit: return true;
       case Value::Kind::Bool: return left.boolean == right.boolean;
       case Value::Kind::Int: return left.integer == right.integer;
+      // IEEE-754 operator semantics: NaN != NaN and -0.0 == +0.0. Total
+      // isequal semantics are reserved for isequal() and Map key identity.
       case Value::Kind::Float: return left.floating == right.floating;
+      case Value::Kind::Char: return left.codepoint == right.codepoint;
       case Value::Kind::String: return left.string == right.string;
       case Value::Kind::Callable: return left.string == right.string;
       case Value::Kind::Struct:
@@ -1400,12 +1783,93 @@ class FastInterpreter {
         for (const auto& entry : *left.map) {
           bool found = false;
           for (const auto& other : *right.map)
-            if (equal(entry.first, other.first) && equal(entry.second, other.second)) { found = true; break; }
+            if (key_equal(entry.first, other.first) && equal(entry.second, other.second)) { found = true; break; }
           if (!found) return false;
         }
         return true;
     }
     return false;
+  }
+
+  // Map key identity follows key-protocol-v1 isequal, not operator ==.
+  static bool key_equal(const Value& left, const Value& right) {
+    if (left.kind == Value::Kind::Float && right.kind == Value::Kind::Float)
+      return moss_isequal(left, right);
+    return equal(left, right);
+  }
+
+  static bool moss_less(const Value& left, const Value& right) {
+    if (left.kind == Value::Kind::Int && right.kind == Value::Kind::Int) {
+      return left.integer < right.integer;
+    }
+    if (left.kind == Value::Kind::Float && right.kind == Value::Kind::Float) {
+      if (std::isnan(left.floating)) return false;
+      if (std::isnan(right.floating)) return true;
+      if (left.floating == 0.0 && right.floating == 0.0) {
+        uint64_t lb = 0, rb = 0;
+        std::memcpy(&lb, &left.floating, sizeof(lb));
+        std::memcpy(&rb, &right.floating, sizeof(rb));
+        return (lb >> 63) > (rb >> 63);
+      }
+      return left.floating < right.floating;
+    }
+    if (left.kind == Value::Kind::Char && right.kind == Value::Kind::Char) {
+      return left.codepoint < right.codepoint;
+    }
+    if (left.kind == Value::Kind::String && right.kind == Value::Kind::String) {
+      return left.string < right.string;
+    }
+    if (left.kind == Value::Kind::Bool && right.kind == Value::Kind::Bool) {
+      return !left.boolean && right.boolean;
+    }
+    return false;
+  }
+
+  static bool moss_isequal(const Value& left, const Value& right) {
+    if (left.kind == Value::Kind::Int && right.kind == Value::Kind::Int) {
+      return left.integer == right.integer;
+    }
+    if (left.kind == Value::Kind::Float && right.kind == Value::Kind::Float) {
+      if (std::isnan(left.floating) && std::isnan(right.floating)) return true;
+      if (left.floating == 0.0 && right.floating == 0.0) {
+        uint64_t lb = 0, rb = 0;
+        std::memcpy(&lb, &left.floating, sizeof(lb));
+        std::memcpy(&rb, &right.floating, sizeof(rb));
+        return lb == rb;
+      }
+      return left.floating == right.floating;
+    }
+    if (left.kind == Value::Kind::Char && right.kind == Value::Kind::Char) {
+      return left.codepoint == right.codepoint;
+    }
+    if (left.kind == Value::Kind::String && right.kind == Value::Kind::String) {
+      return left.string == right.string;
+    }
+    if (left.kind == Value::Kind::Bool && right.kind == Value::Kind::Bool) {
+      return left.boolean == right.boolean;
+    }
+    return false;
+  }
+
+  static int64_t moss_hash(const Value& val) {
+    if (val.kind == Value::Kind::Int) return val.integer;
+    if (val.kind == Value::Kind::Float) {
+      if (std::isnan(val.floating)) return static_cast<int64_t>(0x7ff8000000000000ULL);
+      uint64_t bits = 0;
+      std::memcpy(&bits, &val.floating, sizeof(bits));
+      return static_cast<int64_t>(bits);
+    }
+    if (val.kind == Value::Kind::Char) return static_cast<int64_t>(val.codepoint);
+    if (val.kind == Value::Kind::String) {
+      uint64_t h = 0xcbf29ce484222325ULL;
+      for (unsigned char b : val.string) {
+        h ^= b;
+        h *= 0x100000001b3ULL;
+      }
+      return static_cast<int64_t>(h);
+    }
+    if (val.kind == Value::Kind::Bool) return val.boolean ? 1 : 0;
+    return 0;
   }
 
   Value construct(const ObjectType& object, const std::vector<std::string>& args,
@@ -1498,13 +1962,14 @@ class FastInterpreter {
   void assign(const std::string& target, Value value, Frame& frame, int line,
               std::ostream& output) {
     auto name = trim_copy(target);
+    if (name == "_") return;
     auto bracket = name.find('[');
     if (bracket != std::string::npos && name.back() == ']') {
       Value receiver = eval(name.substr(0, bracket), frame, line, output);
       if (receiver.kind == Value::Kind::Map && receiver.map) {
         Value key = eval(name.substr(bracket + 1, name.size() - bracket - 2), frame, line, output);
         for (auto& entry : *receiver.map) {
-          if (equal(entry.first, key)) { entry.second = std::move(value); return; }
+          if (key_equal(entry.first, key)) { entry.second = std::move(value); return; }
         }
         receiver.map->push_back({std::move(key), std::move(value)});
         return;
@@ -1524,10 +1989,109 @@ class FastInterpreter {
       }
     } else if (identifier(name)) {
       std::string after = summary(value);
+      // An implicit `name = expr` declares, unless it reinitializes a
+      // consumed binding that is still lexically in scope.
+      if (!frame.consumed.erase(name)) declare_local(frame, name);
       frame.locals[name] = std::move(value);
       int event_id = emit("LocalWrite", frame, line, name);
       if (event_id) trace_.back().after = after;
     } else throw RuntimeError(line, "unsupported assignment target '" + name + "'");
+  }
+
+  // Static candidates for names a block binds at its own level, including the
+  // joins of nested if/else, match, and try/recover statements.
+  std::set<std::string> block_binders(const std::vector<Stmt>& statements,
+                                      size_t begin, size_t end) {
+    std::set<std::string> out;
+    if (begin >= end) return out;
+    const int level = statements[begin].indent;
+    for (size_t i = begin; i < end;) {
+      const Stmt& statement = statements[i];
+      if (statement.indent != level) { ++i; continue; }
+      if ((statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
+           (statement.kind == Stmt::Kind::Assign && identifier(statement.a))) &&
+          statement.a != "_")
+        out.insert(statement.a);
+      if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::Match ||
+          statement.kind == Stmt::Kind::Try) {
+        const auto& joined = joined_binders(statements, i, end);
+        out.insert(joined.begin(), joined.end());
+      }
+      ++i;
+    }
+    return out;
+  }
+
+  // Names bound by every alternative of the compound statement at `index`.
+  const std::set<std::string>& joined_binders(const std::vector<Stmt>& statements,
+                                              size_t index, size_t end) {
+    auto cached = joined_cache_.find(&statements[index]);
+    if (cached != joined_cache_.end()) return cached->second;
+    const Stmt& statement = statements[index];
+    const auto block_end = [&](size_t from, int indent) {
+      while (from < end && statements[from].indent > indent) ++from;
+      return from;
+    };
+    std::vector<std::set<std::string>> alternatives;
+    if (statement.kind == Stmt::Kind::If) {
+      size_t body_end = block_end(index + 1, statement.indent);
+      alternatives.push_back(block_binders(statements, index + 1, body_end));
+      if (body_end < end && statements[body_end].kind == Stmt::Kind::Else &&
+          statements[body_end].indent == statement.indent)
+        alternatives.push_back(block_binders(statements, body_end + 1,
+                                             block_end(body_end + 1, statement.indent)));
+      else
+        alternatives.emplace_back();
+    } else if (statement.kind == Stmt::Kind::Match) {
+      size_t cursor = index + 1;
+      while (cursor < end && statements[cursor].indent == statement.indent + 1) {
+        size_t arm_end = block_end(cursor + 1, statements[cursor].indent);
+        alternatives.push_back(block_binders(statements, cursor + 1, arm_end));
+        cursor = arm_end;
+      }
+    } else if (statement.kind == Stmt::Kind::Try) {
+      size_t try_end = block_end(index + 1, statement.indent);
+      alternatives.push_back(block_binders(statements, index + 1, try_end));
+      size_t cursor = try_end;
+      while (cursor < end && statements[cursor].kind == Stmt::Kind::Recover &&
+             statements[cursor].indent == statement.indent) {
+        size_t arm_end = block_end(cursor + 1, statement.indent);
+        alternatives.push_back(block_binders(statements, cursor + 1, arm_end));
+        cursor = arm_end;
+      }
+    }
+    std::set<std::string> joined;
+    if (!alternatives.empty()) {
+      joined = alternatives.front();
+      for (size_t k = 1; k < alternatives.size(); ++k) {
+        std::set<std::string> next;
+        for (const auto& name : joined) if (alternatives[k].count(name)) next.insert(name);
+        joined = std::move(next);
+      }
+    }
+    return joined_cache_.emplace(&statements[index], std::move(joined)).first->second;
+  }
+
+  Flow execute_block(const std::vector<Stmt>& statements, Frame& frame,
+                     std::ostream& output, size_t begin, size_t end,
+                     const std::set<std::string>* joined = nullptr) {
+    BlockScope scope(frame, joined);
+    try {
+      return execute(statements, frame, output, begin, end);
+    } catch (RaisedSignal& raised) {
+      record_edge_locals(frame, raised);
+      throw;
+    }
+  }
+
+  // Innermost visible binding wins: deeper blocks unwind (and record) first.
+  static void record_edge_locals(const Frame& frame, RaisedSignal& raised) {
+    if (frame.scopes.empty()) return;
+    for (const auto& entry : frame.scopes.back()) {
+      if (raised.edge_locals.count(entry.name)) continue;
+      auto value = frame.locals.find(entry.name);
+      if (value != frame.locals.end()) raised.edge_locals[entry.name] = value->second;
+    }
   }
 
   Flow execute(const std::vector<Stmt>& statements, Frame& frame,
@@ -1550,7 +2114,8 @@ class FastInterpreter {
             ++after;
         }
         try {
-          Flow flow = execute(statements, frame, output, index + 1, try_end);
+          Flow flow = execute_block(statements, frame, output, index + 1, try_end,
+                                    &joined_binders(statements, index, end));
           if (flow.returned) return flow;
         } catch (const RaisedSignal& raised) {
           size_t arm = try_end;
@@ -1604,8 +2169,9 @@ class FastInterpreter {
                 bind(item.first, item.second.first, item.second.second);
               selected_errors_.push_back(raised);
               try {
-                Flow flow = execute(
-                    statements, frame, output, arm + 1, arm_end);
+                Flow flow = execute_block(
+                    statements, frame, output, arm + 1, arm_end,
+                    &joined_binders(statements, index, end));
                 selected_errors_.pop_back();
                 restore();
                 if (flow.returned) return flow;
@@ -1627,8 +2193,10 @@ class FastInterpreter {
         if (selected.kind != Value::Kind::Struct || !selected.object ||
             selected.object->case_name.empty())
           throw RuntimeError(statement.line, "match requires an enum value");
-        if (statement.b == "consume" && identifier(statement.a))
+        if (statement.b == "consume" && identifier(statement.a)) {
           frame.locals.erase(statement.a);
+          frame.consumed.insert(statement.a);
+        }
         const EnumType* declaration = nullptr;
         for (const auto& candidate : program_.enums)
           if (candidate.name == selected.object->type) declaration = &candidate;
@@ -1676,7 +2244,8 @@ class FastInterpreter {
                 frame.aliases[arm.args[field_index]] = Place{&field->second, nullptr, {}};
               frame.local_types[binding] = item->fields[field_index].type;
             }
-            flow = execute(statements, frame, output, cursor + 1, arm_end);
+            flow = execute_block(statements, frame, output, cursor + 1, arm_end,
+                                 &joined_binders(statements, index, end));
             for (const auto& binding : arm.args) {
               frame.locals.erase(binding);
               frame.local_types.erase(binding);
@@ -1713,8 +2282,11 @@ class FastInterpreter {
         {
           EventScope branch_scope(*this, branch_id, false, false, true);
           flow = condition
-              ? execute(statements, frame, output, index + 1, body_end)
-              : (after != body_end ? execute(statements, frame, output, body_end + 1, else_end) : Flow{});
+              ? execute_block(statements, frame, output, index + 1, body_end,
+                              &joined_binders(statements, index, end))
+              : (after != body_end ? execute_block(statements, frame, output, body_end + 1, else_end,
+                                                   &joined_binders(statements, index, end))
+                                   : Flow{});
         }
         if (flow.returned) return flow;
         index = after;
@@ -1742,17 +2314,18 @@ class FastInterpreter {
           if (prior_alias) frame.aliases[statement.a] = *prior_alias;
           else frame.aliases.erase(statement.a);
         };
-        size_t iterations = 0;
+        // Checked for loops run to their native termination condition. An
+        // interpreter-only cap would change valid program behavior.
+        uint64_t iterations = 0;
         const auto iteration = [&](Value value, const std::string& type) -> Flow {
-          if (++iterations > 10000000)
-            throw RuntimeError(statement.line, "interpreter loop exceeded safety limit");
+          ++iterations;
           frame.aliases.erase(statement.a);
           frame.locals[statement.a] = std::move(value);
           frame.local_types[statement.a] = type;
           int loop_id = emit("LoopIteration", frame, statement.line,
                              std::to_string(iterations));
           EventScope loop_scope(*this, loop_id, false, false, true);
-          return execute(statements, frame, output, index + 1, body_end);
+          return execute_block(statements, frame, output, index + 1, body_end);
         };
         try {
           std::string callee;
@@ -1797,17 +2370,85 @@ class FastInterpreter {
       if (statement.kind == Stmt::Kind::While) {
         size_t body_end = index + 1;
         while (body_end < end && statements[body_end].indent > statement.indent) ++body_end;
-        size_t iterations = 0;
+        // No interpreter-only iteration cap: a checked program must run the
+        // same number of iterations as native code.
+        uint64_t iterations = 0;
         while (eval(statement.a, frame, statement.line, output).truthy()) {
-          if (++iterations > 10000000) throw RuntimeError(statement.line, "interpreter loop exceeded safety limit");
+          ++iterations;
           int loop_id = emit("LoopIteration", frame, statement.line, std::to_string(iterations));
           Flow flow;
           {
             EventScope loop_scope(*this, loop_id, false, false, true);
-            flow = execute(statements, frame, output, index + 1, body_end);
+            flow = execute_block(statements, frame, output, index + 1, body_end);
           }
           if (flow.returned) return flow;
         }
+        index = body_end;
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::For) {
+        size_t body_end = index + 1;
+        while (body_end < end && statements[body_end].indent > statement.indent) ++body_end;
+        std::string callee;
+        std::vector<std::string> range_args;
+        bool is_range = parse_call(statement.b, callee, range_args) && callee == "range";
+
+        Flow flow;
+        uint64_t iterations = 0;
+        // The loop variable is scoped to the loop, like native `for x in ..`;
+        // an outer binding of the same name is restored afterwards.
+        BlockScope loop_variable_scope(frame);
+        try {
+        const auto run_iteration = [&](Value element) {
+          ++iterations;
+          frame.locals[statement.a] = std::move(element);
+          emit("LocalWrite", frame, statement.line, statement.a);
+          int loop_id = emit("LoopIteration", frame, statement.line, std::to_string(iterations));
+          EventScope loop_scope(*this, loop_id, false, false, true);
+          flow = execute_block(statements, frame, output, index + 1, body_end);
+          return !flow.returned;
+        };
+
+        if (is_range) {
+          if (range_args.size() < 2 || range_args.size() > 3)
+            throw RuntimeError(statement.line, "range() expects 2 or 3 arguments");
+          int64_t start = eval(range_args[0], frame, statement.line, output).integer;
+          int64_t stop = eval(range_args[1], frame, statement.line, output).integer;
+          int64_t step = 1;
+          if (range_args.size() == 3) {
+            step = eval(range_args[2], frame, statement.line, output).integer;
+            if (step <= 0) throw RuntimeError(statement.line, "range() step must be positive");
+          }
+          declare_local(frame, statement.a);
+          frame.local_types[statement.a] = "int";
+          // Native lowering is Rust `start..stop` (`.step_by(step)`), which
+          // never overflows; stop instead of wrapping past Int max.
+          for (int64_t cur = start; cur < stop;) {
+            if (!run_iteration(Value::int_value(cur))) break;
+            int64_t next = 0;
+            if (__builtin_add_overflow(cur, step, &next)) break;
+            cur = next;
+          }
+        } else {
+          Value iterable = eval(statement.b, frame, statement.line, output);
+          std::shared_ptr<std::vector<Value>> source =
+              iterable.kind == Value::Kind::Vector ? iterable.vector :
+              iterable.kind == Value::Kind::Queue ? iterable.queue : nullptr;
+          if (!source)
+            throw RuntimeError(statement.line, "for loop requires an iterable collection or range");
+          declare_local(frame, statement.a);
+          if (!iterable.element_type.empty())
+            frame.local_types[statement.a] = iterable.element_type;
+          const auto elements = *source;
+          for (const auto& element : elements)
+            if (!run_iteration(element)) break;
+        }
+        } catch (RaisedSignal& raised) {
+          record_edge_locals(frame, raised);
+          throw;
+        }
+
+        if (flow.returned) return flow;
         index = body_end;
         continue;
       }
@@ -1816,21 +2457,25 @@ class FastInterpreter {
       if (interp_phase20_statement(statement, frame, output)) { ++index; continue; }
       switch (statement.kind) {
         case Stmt::Kind::Let:
-        case Stmt::Kind::Var:
-          frame.locals[statement.a] = eval(statement.b, frame, statement.line, output);
+        case Stmt::Kind::Var: {
+          Value initial = eval(statement.b, frame, statement.line, output);
+          declare_local(frame, statement.a);
+          frame.locals[statement.a] = std::move(initial);
           frame.local_types[statement.a] = checked_binding_type(statement, frame);
           if (emit("LocalWrite", frame, statement.line, statement.a))
             trace_.back().after = summary(frame.locals.at(statement.a));
           break;
+        }
         case Stmt::Kind::Assign:
           assign(statement.a, eval(statement.b, frame, statement.line, output), frame, statement.line, output);
-          if (identifier(statement.a))
+          if (identifier(statement.a) && statement.a != "_")
             frame.local_types[statement.a] = checked_binding_type(statement, frame);
           break;
         case Stmt::Kind::Echo:
           for (size_t i = 0; i < statement.args.size(); ++i) {
             if (i) output << " ";
-            output << eval(statement.args[i], frame, statement.line, output).display();
+            output << echo_text(eval(statement.args[i], frame, statement.line, output),
+                                statement.line);
           }
           output << "\n";
           break;
@@ -1899,7 +2544,7 @@ class FastInterpreter {
             throw RuntimeError(statement.line,
                                "raised error variant is outside the checked effect set");
           RaisedSignal raised{identity, std::move(value),
-                              statement.line, frame.source_file};
+                              statement.line, frame.source_file, {}};
           emit("raise", frame, statement.line, raised.identity.canonical());
           throw raised;
         }
@@ -1928,6 +2573,9 @@ inline FastInterpreter::Value FastInterpreter::Value::int_value(std::int64_t val
 }
 inline FastInterpreter::Value FastInterpreter::Value::float_value(double value) {
   Value result; result.kind = Kind::Float; result.floating = value; return result;
+}
+inline FastInterpreter::Value FastInterpreter::Value::char_value(uint32_t cp) {
+  Value result; result.kind = Kind::Char; result.codepoint = cp; return result;
 }
 inline FastInterpreter::Value FastInterpreter::Value::string_value(std::string value) {
   Value result; result.kind = Kind::String; result.string = std::move(value); return result;
@@ -1962,6 +2610,7 @@ inline bool FastInterpreter::Value::truthy() const {
   if (kind == Kind::Bool) return boolean;
   if (kind == Kind::Int) return integer != 0;
   if (kind == Kind::Float) return floating != 0.0;
+  if (kind == Kind::Char) return codepoint != 0;
   if (kind == Kind::String) return !string.empty();
   if (kind == Kind::Vector) return vector && !vector->empty();
   if (kind == Kind::Queue) return queue && !queue->empty();
@@ -2004,6 +2653,39 @@ inline std::string moss_canonical_float_text(double value) {
   }
   return std::signbit(value) ? "-" + result : result;
 }
+
+inline std::string rust_f64_to_string(double value) {
+  if (std::isnan(value)) return "NaN";
+  if (std::isinf(value)) return std::signbit(value) ? "-inf" : "inf";
+  if (value == 0.0) return std::signbit(value) ? "-0" : "0";
+
+  char buffer[128];
+  auto converted = std::to_chars(buffer, buffer + sizeof(buffer),
+                                 std::fabs(value), std::chars_format::scientific);
+  if (converted.ec != std::errc{})
+    throw std::runtime_error("failed to format Float");
+  std::string scientific(buffer, converted.ptr);
+  size_t exponent_at = scientific.find('e');
+  if (exponent_at == std::string::npos)
+    throw std::runtime_error("scientific Float format lacks exponent");
+  int exponent = std::stoi(scientific.substr(exponent_at + 1));
+  std::string digits;
+  for (size_t index = 0; index < exponent_at; ++index)
+    if (scientific[index] != '.') digits += scientific[index];
+
+  std::string result;
+  int decimal_at = exponent + 1;
+  if (decimal_at <= 0) {
+    result = "0." + std::string(static_cast<size_t>(-decimal_at), '0') + digits;
+  } else if (static_cast<size_t>(decimal_at) >= digits.size()) {
+    result = digits + std::string(static_cast<size_t>(decimal_at) - digits.size(), '0');
+  } else {
+    result = digits.substr(0, static_cast<size_t>(decimal_at)) + "." +
+        digits.substr(static_cast<size_t>(decimal_at));
+  }
+  return std::signbit(value) ? "-" + result : result;
+}
+
 inline std::string FastInterpreter::Value::display() const {
   std::ostringstream out;
   switch (kind) {
@@ -2012,6 +2694,7 @@ inline std::string FastInterpreter::Value::display() const {
     case Kind::Bool: return boolean ? "true" : "false";
     case Kind::Int: return std::to_string(integer);
     case Kind::Float: return moss_canonical_float_text(floating);
+    case Kind::Char: return utf8_from_codepoint(codepoint);
     case Kind::String: return string;
     case Kind::Callable: return "<callable:" + string + ">";
     case Kind::Struct:

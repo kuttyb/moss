@@ -85,7 +85,7 @@
         if (place.value->map) {
           bool found = false;
           for (auto& entry : *place.value->map) {
-            if (equal(entry.first, index)) { place.value = &entry.second; found = true; break; }
+            if (key_equal(entry.first, index)) { place.value = &entry.second; found = true; break; }
           }
           if (!found) throw RuntimeError(line, "missing map key");
         } else {
@@ -305,12 +305,15 @@
             failure.local_types[parameter.name] = type->second;
         }
         for (const auto& capture : selected->captures) {
+          auto edge = raised.edge_locals.find(capture.name);
           auto value = frame.locals.find(capture.name);
-          if (value == frame.locals.end())
+          const Value* captured = edge != raised.edge_locals.end() ? &edge->second
+              : value != frame.locals.end() ? &value->second : nullptr;
+          if (!captured)
             throw RuntimeError(selected->line,
                 "checked on_fail capture '" + capture.name +
                 "' is absent at its exceptional edge");
-          failure.locals[capture.name] = independent(value->second);
+          failure.locals[capture.name] = independent(*captured);
           failure.local_types[capture.name] = capture.type;
         }
         if (!selected->binding.empty()) {

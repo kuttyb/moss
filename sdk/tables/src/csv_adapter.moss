@@ -110,14 +110,14 @@ export fn validate_csv_schema(schema: CsvSchema) -> Bool:
 fn decode_csv_cell(value: String, missing_token: String) -> DecodedCsvCell:
   if value == missing_token:
     return DecodedCsvCell(missing: true, value: "")
-  if value.length() > 0 and value.char_at(0) == "\\":
+  if value.length() > 0 and value.char_at(0) == '\\':
     return DecodedCsvCell(missing: false, value: value.slice(1, value.length() - 1))
   return DecodedCsvCell(missing: false, value: value + "")
 
 fn encode_present_csv_cell(value: String, missing_token: String) -> String:
   if value == missing_token:
     return "\\" + value
-  if value.length() > 0 and value.char_at(0) == "\\":
+  if value.length() > 0 and value.char_at(0) == '\\':
     return "\\" + value
   return value + ""
 

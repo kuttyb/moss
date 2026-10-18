@@ -43,18 +43,18 @@ export fn position(cursor: Cursor) -> SourcePos:
 export fn peek(input: String, cursor: Cursor) -> String:
   if cursor.offset >= input.length():
     return ""
-  return input.char_at(cursor.offset)
+  return input.char_at(cursor.offset).to_string()
 
 export fn peek_at(input: String, cursor: Cursor, lookahead: Int) -> String:
   pos = cursor.offset + lookahead
   if pos >= input.length() or pos < 0:
     return ""
-  return input.char_at(pos)
+  return input.char_at(pos).to_string()
 
 export fn advance(input: String, cursor: Cursor) -> String:
   if cursor.offset >= input.length():
     return ""
-  ch = input.char_at(cursor.offset)
+  ch = input.char_at(cursor.offset).to_string()
   cursor.offset = cursor.offset + 1
   line_feed = "\n"
   if ch == line_feed:

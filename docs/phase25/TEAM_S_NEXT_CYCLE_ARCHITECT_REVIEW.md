@@ -578,3 +578,68 @@ Tracked, not blocking this checkpoint:
   execution") as met. It is the only checker-accepted, fails-everywhere form I
   found at this SHA.
 - ARCH-028 and ARCH-026 are diagnostic quality only.
+
+## Addendum 5: closure check at `58d33d9ab00a666e8d9b60450c7c6aeb2b55b657`
+
+**Reviewed SHA:** `58d33d9ab00a666e8d9b60450c7c6aeb2b55b657`. I checked it out
+and verified the tree and build.
+
+**Scope:** Commits `dea9a4e` (fixes ARCH-027 and ARCH-028) and `58d33d9` (fixes
+unresolved local Vector echo and underdetermined static generic calls from the
+skipped-commits audit).
+
+### Runs & Verification
+
+1. **ARCH-027 (Float-literal exemption bypass in `UNKNOWN_FIELD`):**
+   - Verified that `1.exp`, `2.size`, `12.e`, `-1.exp`, and `1_000.name` are
+     properly rejected with `UNKNOWN_FIELD` before execution in both check modes
+     and across all engines.
+   - Valid Float literals (`1.e5`, `1.5e-3`, `1_0.5`, `1_0.5e1`, `2.5`, etc.)
+     remain accepted and execute identically across Fast Debug, Native Debug,
+     and Native Release.
+   - ARCH-027 is **closed**.
+
+2. **ARCH-028 (Diagnostic-guidance collection method hint):**
+   - Verified that accessing collection fields such as `v.len` reports
+     `UNKNOWN_FIELD` with the correct hint `(use 'v |> count' for a Vector's size)`
+     instead of suggesting nonexistent `.len()`.
+   - ARCH-028 is **closed**.
+
+3. **S-B Skipped-commit audit cases (`58d33d9`):**
+   - `var v = []; echo v` is rejected with `ECHO_DISPLAY_UNSUPPORTED` in both
+     standalone and project `moss check`, Fast Debug, Native Debug, and Native
+     Release.
+   - `fn show(x): echo x; fn main(): show([])` is rejected before execution with
+     `TYPE_INFERENCE_FAILED`.
+   - Valid typed empty vectors (`show(Vector[Int]())`) and generic forwarding
+     (`forward([1])`) continue to be accepted and execute cleanly across all
+     modes (`[]` and `[1]`).
+
+4. **Regressions & Full Test Suite:**
+   - All Phase 25 test suites pass cleanly:
+     - `check_phase25_sa_numeric_literals.py`
+     - `check_phase25_sb_check_display.py`
+     - `check_phase25_sc_safe_arithmetic.py`
+     - `check_phase25_s1_checker_authority.py`
+     - `check_phase25_s2_char_string.py`
+     - `check_phase25_s3_key_protocol.py`
+     - `check_phase25_s4_fast_debug_adversarial.py`
+     - `check_phase25_l7_repairs.py`
+     - `check_phase25_g1_regressions.py`
+     - `run_fixtures.py` (30/30 fixtures match recorded status)
+     - `check_agent_feedback.py`
+     - `check_agent_skills.py`
+   - Full repository gates pass:
+     - `TMPDIR="$PWD/tmp" make check` (54/54 executor tests, all Moss v0.1 tests)
+     - `make examples` (all 32 examples)
+
+### Verdict (addendum 5)
+
+**UNCONDITIONAL GO FOR TEAM S PHASE 25 DELIVERIES.**
+
+- ARCH-027 and ARCH-028 are verified closed.
+- The S1 acceptance criterion ("every checker-accepted program runs consistently
+  or is diagnosed before execution") is now fully satisfied.
+- S-A, S-B, S-C, and S-D deliverables are complete, verified, and in full
+  cross-engine parity.
+- The branch is ready for joint G2/G3/G4/G5 integration per agreement §5.

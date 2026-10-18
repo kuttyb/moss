@@ -28,7 +28,8 @@ inline bool copy_type_name(string type) {
   auto last = type.find_last_not_of(" \t\n\r");
   type = type.substr(first, last - first + 1);
   if (type == "int" || type == "Int" || type == "float" ||
-      type == "Float" || type == "bool" || type == "Bool") return true;
+      type == "Float" || type == "bool" || type == "Bool" ||
+      type == "char" || type == "Char") return true;
   if (type.size() > 8 && type.compare(0, 7, "option[") == 0 &&
       type.back() == ']')
     return copy_type_name(type.substr(7, type.size() - 8));
@@ -186,6 +187,10 @@ struct Stmt {
   // A generic body can be checked at several concrete call sites. Preserve
   // the inferred binding type for each checked specialization.
   std::unordered_map<string,string> semantic_types_by_context;
+  // `echo` argument types the checker accepted under the display contract,
+  // by specialization context ("" for a non-generic body). Native lowering
+  // selects the display helper from this checked fact. Checker metadata only.
+  std::unordered_map<string,vector<string>> echo_types_by_context;
   // Types that remain definite after this control-flow statement. Concrete
   // entries let the backend hoist bindings created on every incoming path.
   // This is checker-to-backend metadata, never Moss source syntax.

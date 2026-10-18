@@ -1,0 +1,14 @@
+# S1.5 unpinned empty Map: unannotated domain state Map() pinned by handler use.
+domain Store:
+  table = Map()
+
+  fn Put(k: String, v: Int):
+    table[k] = v
+
+  fn Get(k: String) -> Int:
+    reply table.get(k, -1)
+
+fn main():
+  s = Store()
+  message s.Put("a", 1)
+  echo message s.Get("a")

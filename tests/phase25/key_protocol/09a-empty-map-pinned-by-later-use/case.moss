@@ -1,0 +1,6 @@
+# S1.5 unpinned empty Map: control: a later insert pins K and V today.
+fn main():
+  var m = Map()
+  m["a"] = 1
+  echo m["a"]
+  echo m.get("b", 0)

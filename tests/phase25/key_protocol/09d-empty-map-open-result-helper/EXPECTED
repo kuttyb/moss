@@ -1,0 +1,9 @@
+title: Unpinned empty Map: Option B open result: fresh() -> Map() pinned by the caller
+covers: S1.5 (Team G Option B handoff)
+layout: standalone
+expect: stdout
+current: known-failing accepted-rustc-fails
+defect: P25-S3-D3: an empty Map whose K/V are not fixed at its construction passes moss check and fails in rustc (Team G Option B handoff)
+owner: Team G Option B
+---
+3

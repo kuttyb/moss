@@ -1,0 +1,26 @@
+# key-protocol-v1 Float keys: -0.0 and +0.0 are distinct keys; every NaN is one key.
+fn main():
+  let zero = 0.0
+  let nan_a = zero / zero
+  let nan_b = 0.0 - nan_a
+  let inf = 1.0 / zero
+  let nan_c = inf - inf
+  var m = Map()
+  m[0.0] = "positive zero"
+  m[-0.0] = "negative zero"
+  m[nan_a] = "nan a"
+  m[nan_b] = "nan b"
+  m[1.5] = "one and a half"
+  let ks = m.keys()
+  echo ks |> count
+  echo m[0.0]
+  echo m[-0.0]
+  echo m[nan_c]
+  echo m.get(nan_a, "missing")
+  echo m.get(2.0, "missing")
+  var found = false
+  let removed = m.delete(-0.0, "none", found)
+  echo removed
+  echo found
+  echo m.get(-0.0, "gone")
+  echo m[0.0]

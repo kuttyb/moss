@@ -436,11 +436,8 @@
         return answer;
       }
     }
-    try {
-      size_t used = 0;
-      int64_t value = std::stoll(source, &used, 0);
-      if (used == source.size()) return value;
-    } catch (const std::exception&) {}
+    if (auto number = decode_numeric_literal_expression(source))
+      if (number->kind == NumericLiteral::Kind::Int) return number->integer;
     return std::nullopt;
   }
 

@@ -1,0 +1,12 @@
+module alpha
+
+import keyprov
+
+fn isequal(a: keyprov.Code, b: keyprov.Code) -> Bool:
+  return a.value.ascii_lower() == b.value.ascii_lower()
+
+fn hash(k: keyprov.Code) -> Int:
+  return k.value.ascii_lower().hash()
+
+export fn record(m: Map[keyprov.Code, Int], text: String):
+  m[keyprov.Code(value: text)] = 1

@@ -79,6 +79,19 @@ PYTHONDONTWRITEBYTECODE=1 python3 sdk/foundations/acceptance/run_all.py
 PYTHONDONTWRITEBYTECODE=1 python3 sdk/text-encoding-acceptance/run_all.py
 PYTHONDONTWRITEBYTECODE=1 python3 sdk/advanced-data-acceptance/run_all.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_adversarial_architect.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_g1_regressions.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_g4_unicode.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_g3_ordering.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_l7_repairs.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_indexed_string.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_s2_char_string.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_s1_checker_authority.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_s3_key_protocol.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_s4_fast_debug_adversarial.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_sc_safe_arithmetic.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_sa_numeric_literals.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_sb_check_display.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/phase25/key_protocol/run_fixtures.py --moss "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_builtin_generic_typing.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tools/check_swarm_feedback.py --self-test
 PYTHONDONTWRITEBYTECODE=1 python3 tools/check_swarm_issues.py --self-test
@@ -131,12 +144,17 @@ lowered_rust() {
   runtime_end='^// ─── End Phase 20 Executor Runtime '
   float_start='^// ─── Begin Moss Float Format Runtime '
   float_end='^// ─── End Moss Float Format Runtime '
+  string_start='^// ─── Begin Moss String Runtime '
+  string_end='^// ─── End Moss String Runtime '
   if [ "$(grep -c "$runtime_start" "$1")" -eq 1 ] &&
      [ "$(grep -c "$runtime_end" "$1")" -eq 1 ] &&
      [ "$(grep -c "$float_start" "$1")" -eq 1 ] &&
-     [ "$(grep -c "$float_end" "$1")" -eq 1 ]; then
+     [ "$(grep -c "$float_end" "$1")" -eq 1 ] &&
+     [ "$(grep -c "$string_start" "$1")" -eq 1 ] &&
+     [ "$(grep -c "$string_end" "$1")" -eq 1 ]; then
     sed -e "\#$runtime_start#,\#$runtime_end#d" \
-        -e "\#$float_start#,\#$float_end#d" "$1"
+        -e "\#$float_start#,\#$float_end#d" \
+        -e "\#$string_start#,\#$string_end#d" "$1"
   else
     cat "$1"
   fi
@@ -1692,7 +1710,7 @@ reject_case domain_handle_prefix_collision_method "domain handles cannot be pass
 reject_case phase106b1_handler_payload "domain handles cannot be passed as handler payloads"
 reject_case phase106b1_historical_handle_calls "domain handles cannot be passed as handler payloads"
 reject_case phase106b1_historical_handle_reply "domain handles cannot be returned through reply"
-reject_case unresolved_collection_type "[TYPE_AMBIGUOUS_OPEN_RESULT]"
+reject_case unresolved_collection_type "[ECHO_DISPLAY_UNSUPPORTED]"
 reject_case heterogeneous_collection "heterogeneous or unresolved collection element type"
 reject_case functional_filter_not_bool "filter predicate returns 'int'; expected 'bool'"
 reject_case functional_map_argument_type \

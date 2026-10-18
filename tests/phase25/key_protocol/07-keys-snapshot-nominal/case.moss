@@ -1,0 +1,30 @@
+# keys() snapshot of nominal keys: owned clones, unaffected by later mutation.
+type Name:
+  text: String
+
+  fn isequal(other: Name) -> Bool:
+    return text.ascii_lower() == other.text.ascii_lower()
+
+  fn hash() -> Int:
+    return text.ascii_lower().hash()
+
+fn main():
+  var m = Map()
+  m[Name(text: "Ada")] = 1
+  m[Name(text: "Grace")] = 2
+  let snapshot = m.keys()
+  var found = false
+  let old = m.delete(Name(text: "ADA"), 0, found)
+  m[Name(text: "Linus")] = 3
+  m[Name(text: "grace")] = 4
+  echo snapshot |> count
+  var ada = 0
+  for k in snapshot:
+    if k.isequal(Name(text: "ada")):
+      ada = ada + 1
+  echo ada
+  echo found
+  echo old
+  let later = m.keys()
+  echo later |> count
+  echo m.get(Name(text: "GRACE"), 0)

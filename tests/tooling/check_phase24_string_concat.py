@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory(dir=ROOT / "tmp") as directory:
     assert compiled.returncode == 0, compiled.stderr
     rust = generated.read_text(encoding="utf-8")
     assert 'format!("{}{}"' not in rust
-    assert "String::with_capacity" in rust
+    assert "MossStr::with_capacity" in rust
     assert "__moss_concat_result.push_str" in rust
     assert "__moss_append_1" in rust
     assert ").reserve(__moss_append_1.len().saturating_add(" in rust

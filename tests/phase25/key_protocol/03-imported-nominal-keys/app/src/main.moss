@@ -1,0 +1,16 @@
+module app
+import keyprov
+
+fn main():
+  var ages = Map()
+  ages[keyprov.name("Ada")] = 36
+  ages[keyprov.name("GRACE")] = 45
+  ages[keyprov.name("ada")] = 37
+  let ks = ages.keys()
+  echo ks |> count
+  echo ages[keyprov.name("ADA")]
+  echo ages.get(keyprov.name("grace"), 0)
+  echo ages.get(keyprov.name("Linus"), 0)
+  let k = keyprov.name("Ada")
+  echo k.isequal(keyprov.name("aDA"))
+  echo k.hash() == keyprov.name("ADA").hash()

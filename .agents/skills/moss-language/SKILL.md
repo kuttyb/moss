@@ -183,6 +183,15 @@ Facts the Phase 24 SDK swarm repeatedly rediscovered:
 
 - Mixed `Int`/`Float` operands in `+`, `-`, `*`, `/` and comparisons convert the
   `Int` to `Float`; `%` is `Int`-only and `Int / Int` truncates.
+- Numeric literals: decimal Int (`1_000`), lowercase-prefix hex Int (`0x10`,
+  `0xff_ff`; `0X10` is rejected), and decimal Float (`2.5`, `1_0.5`, `.5`,
+  `1.`, `1e5`, `1E-3`). `_` must sit between two digits. Int literals range
+  over signed 64-bit; `-9223372036854775808` (or `-0x8000000000000000`) is the
+  only way to spell Int minimum, and `0x8000000000000000` alone is
+  `INT_LITERAL_OUT_OF_RANGE`. There is no `Int.MIN` name. `1e400` is
+  `FLOAT_LITERAL_OUT_OF_RANGE`. `0b`/`0o` prefixes and suffixes such as `3i64`
+  or `1.5f32` are `UNSUPPORTED_NUMERIC_LITERAL`; malformed spellings are
+  `INVALID_NUMERIC_LITERAL` or `INVALID_DIGIT_SEPARATOR`.
 - An empty `[]`, `Map()` or `Queue()` takes its types from later use, and every
   control-flow path must agree: a first assignment only inside a loop body or one
   branch is rejected. Only `Vector[T]()` is a typed empty constructor.
@@ -191,15 +200,33 @@ Facts the Phase 24 SDK swarm repeatedly rediscovered:
   yet, so library types annotate their fields.
 - Ownership is per binding: moving one non-Copy field consumes the whole value.
   A mutating call on a local's field as a statement (`h.data.push(x)` with `h`
-  local) is rejected with "local member calls are not implemented"; the same call
-  through a parameter or inside a method works. That limitation is a tracked
-  defect; report it rather than designing around it.
-- String positions are code points over UTF-8: `length()`, `char_at()` and
-  `slice()` are O(n) per call, so index loops over long text are quadratic, and
-  `chars()` allocates one String per character.
-- Fast Debug currently diverges on `for`, `Float.to_string()` and `Int` ordering
-  above 2^53. These are defects, not limits to code around; validate such code
-  natively and record the divergence.
+  a local `var`) works in every engine. A member call on a receiver whose
+  element type is still open (`var v = []` then `v.push(1)`, ledger #12) is
+  still rejected with "local member calls are not implemented"; that is tracked
+  joint Team S/Team G work, so report it rather than designing around it.
+- String positions are code points over UTF-8. `char_at()` returns a scalar
+  `Char` and `chars()` a `Vector[Char]`. `Char` is distinct from String:
+  compare with a Char literal (`c == 'x'`) and use `c.to_string()` where a
+  String is needed; `c == "x"` is a `TYPE_MISMATCH`. Records have no
+  `==`/`!=` (`RECORD_EQUALITY_UNSUPPORTED`). With the default plain
+  representation `length()`, `char_at()` and `slice()` are O(n) per call, so
+  index loops over long text are quadratic; the indexed representation is
+  staged for ABI v10, not yet the default.
+- `echo` prints Int, Float, Bool, Char, String, and `Vector` of those. A Vector
+  prints as `[` + element texts joined by `, ` + `]` (`[]` when empty, nested
+  recursively), with raw unquoted String/Char elements and the same Float text
+  as scalar `echo`. Every engine prints the same text. A Map, Queue, record, enum,
+  function, Unit result, or Vector of them is rejected by `moss check` with
+  `ECHO_DISPLAY_UNSUPPORTED`; echo fields or elements instead. Project-mode
+  and standalone `moss check` give the same verdict for the same source.
+- Fast Debug runs `for`, has native block scoping, and uses IEEE `==` for
+  Float (`isequal` is the separate total equality). It rejects programs whose
+  `main` reaches FileIO before executing (`FAST_DEBUG_FILEIO`); in
+  `margo test --interp` each test that reaches FileIO is reported `FAIL` without
+  running while the other tests run. Any other divergence is a defect.
+- Function and message arguments are positional: `f(x: 1)` and
+  `message c.Bump(step: 2)` are rejected (`CALL_/MESSAGE_NAMED_ARGUMENT_UNSUPPORTED`).
+  Labels are for constructors (`Counter(value: 0)`) and builtins (`sort(v, by: key)`).
 
 ```moss
 fn adjusted(value: Int) -> Int:
