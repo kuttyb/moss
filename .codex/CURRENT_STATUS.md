@@ -1,5 +1,26 @@
 # Moss current status
 
+## Phase 25 Team I staged Map/Set and Option B checkpoint — 2026-10-18
+
+The `phase25-i-map-staging` branch is pushed through `9e7c729`. ABI-v10
+staging now admits Float and proven nominal Map keys and the frozen Set API
+through the shared `moss_runtime` kernels. Canonical nominal proofs survive
+source-free ABI-v10 transport, and Map/Set operation identities include the
+same proof ID. The staged Option B closure also infers empty Map key/value
+types from get-only use, immediate `Map().get`, and unannotated domain state
+handler use. Default ABI-v9 behavior remains gated; no main merge occurred.
+
+Completed validation after the final compiler edit: `make --jobs="$(nproc)"
+moss`; default key fixture verification 30/30; activated ABI-v10 key fixtures
+30/30 across Fast Debug, native debug, and native release; staged G2 conformance
+11/11; `check_agent_feedback.py`; and `git diff --check`. A negative get-only
+Map probe rejects a conflicting later key with `TYPE_MISMATCH`; bare `echo []`
+still reports `ECHO_DISPLAY_UNSUPPORTED`. Seven stale default fixture
+`current:` observations were corrected after checking a clean compiler rebuilt
+from pre-Option-B checkpoint `dd7f97f`; source and `expect:` remain unchanged.
+Required remaining work is automated PR regression evidence and final L6
+review. These have not run on `9e7c729` in this worker session.
+
 ## Phase 25 Team I staged Set compiler checkpoint — 2026-10-18
 
 The `phase25-i-map-staging` compiler worktree now has staged ABI-v10 `Set()`
