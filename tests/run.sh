@@ -439,6 +439,8 @@ reject_case swarm_038_divergent_loop_state_init 'domain state initializers must 
 reject_case swarm_038_empty_pop_state_init 'domain state initializers must be side-effect-free'
 run_case for_loop_mutable_update tests/for_loop_mutable_update.moss '60'
 run_case for_shadow_restores_outer tests/for_shadow_restores_outer.moss "$(printf '1\n2\ntext\n7\n8\n9\n5')"
+run_case for_shadow_open_type tests/for_shadow_open_type.moss "$(printf '1\n2\nouter')"
+run_case branch_confined_open_type tests/branch_confined_open_type.moss "$(printf '1\nouter\nafter\n1\ndone')"
 run_case trait_open_forwarding tests/trait_open_forwarding.moss '42'
 reject_case for_loop_local_leaked "unknown identifier 'y'"
 reject_case for_loop_local_leaked_empty "unknown identifier 'y'"

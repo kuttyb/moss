@@ -2481,7 +2481,20 @@ class Checker {
   vector<Warning> warnings_;
   bool phase21_warnings_enabled_ = true;
 
-  using TypeEnv = std::unordered_map<string,string>;
+  struct TypeEnv : std::unordered_map<string, string> {
+    using Projection = std::unordered_map<string, string>;
+    using Projection::Projection;
+    TypeEnv() = default;
+    TypeEnv(const TypeEnv&) = default;
+    TypeEnv(TypeEnv&&) = default;
+    TypeEnv& operator=(const TypeEnv&) = default;
+    TypeEnv& operator=(TypeEnv&&) = default;
+    TypeEnv(const Projection& projected) : Projection(projected) {}
+    TypeEnv(Projection&& projected) : Projection(std::move(projected)) {}
+    // The text map remains a projection for existing diagnostics and lowering.
+    // Checked source-order walks carry the exact solver terms alongside it.
+    std::unordered_map<string, moss::TypeRef> terms;
+  };
   using TypeEnvVisitor = std::function<void(const Stmt&, const TypeEnv&)>;
   struct BodyTypeState;
   mutable BodyTypeState* current_body_types_ = nullptr;
@@ -2492,6 +2505,13 @@ class Checker {
   struct BodyTypeState {
     moss::TypeSolver solver{1};
     std::unordered_map<string, moss::TypeRef> locals;
+    std::unordered_map<const Stmt*,
+        std::unordered_map<string, moss::TypeRef>> locals_at_statement;
+    // A for binding is lexical, even when it uses the name of an outer open
+    // local. Keep its term at the statement and activate it only in the body.
+    std::unordered_map<const Stmt*, moss::TypeRef> for_bindings;
+    std::unordered_map<string, moss::TypeRef> scoped_locals;
+    bool scoped_locals_active = false;
     std::unordered_map<const Stmt*, moss::TypeRef> assignment_values;
     TypeEnv closed_projection;
 
@@ -2502,6 +2522,10 @@ class Checker {
     }
 
     moss::TypeRef resolved_local(const string& name) {
+      auto scoped = scoped_locals.find(name);
+      if (scoped != scoped_locals.end())
+        return scoped->second ? solver.resolve(scoped->second) : nullptr;
+      if (scoped_locals_active) return nullptr;
       auto found = locals.find(name);
       return found == locals.end() ? nullptr : solver.resolve(found->second);
     }
@@ -5951,7 +5975,7 @@ class Checker {
 
   void refine_map_index_assignment_type(const string& target,
                                         const string& value,
-                                        TypeEnv& env) const {
+                                        std::unordered_map<string, string>& env) const {
     string base, index;
     if (!parse_index(target, base, index)) return;
     auto container = env.find(base);
@@ -5984,6 +6008,35 @@ class Checker {
       for (size_t index = 1; index < paths.size(); ++index)
         if (!paths[index].count(binding)) present_everywhere = false;
       if (!present_everywhere) continue;
+
+      if (current_body_types_) {
+        moss::TypeRef joined;
+        bool fully_typed = true;
+        for (const auto& path : paths) {
+          auto found = path.terms.find(binding);
+          if (found == path.terms.end() || !found->second) {
+            fully_typed = false;
+            break;
+          }
+          if (!joined) joined = found->second;
+          else if (!current_body_types_->solver.unify(joined, found->second)) {
+            if (reject_conflicts)
+              err(line, "binding '" + binding +
+                  "' has conflicting types across control-flow paths",
+                  "TYPE_MISMATCH");
+            fully_typed = false;
+            break;
+          }
+        }
+        if (fully_typed) {
+          merged.terms[binding] = joined;
+          auto resolved = current_body_types_->solver.resolve(joined);
+          merged[binding] = resolved->is_closed()
+              ? resolved->to_canonical_string()
+              : canonical_type_name(entry.second);
+          continue;
+        }
+      }
 
       // The body's prepass has already unified every assignment to this
       // binding, including assignments under zero-iteration loops and both
@@ -6108,12 +6161,13 @@ class Checker {
               ? current_body_types_->assignment_value(statement) : nullptr;
           auto local = retained && current_body_types_
               ? current_body_types_->resolved_local(statement.a) : nullptr;
-          if (local && local->is_closed() &&
-              !contains_internal_placeholder(local->to_canonical_string())) {
+          auto binding = local ? local : retained;
+          if (binding && binding->is_closed() &&
+              !contains_internal_placeholder(binding->to_canonical_string())) {
             // The body solver already related this RHS to the binding. The
             // string environment is only the projection consumed by older
             // walkers and lowering.
-            env[statement.a] = local->to_canonical_string();
+            env[statement.a] = binding->to_canonical_string();
           } else {
             // A local's open collection is one inference term for the whole
             // body. The solver may close it from a use after a loop; retain
@@ -6253,6 +6307,14 @@ class Checker {
                                    const TypeEnv& solved_collections) const {
     while (index < statements.size()) {
       const Stmt& statement = statements[index];
+      if (current_body_types_) {
+        auto found = current_body_types_->locals_at_statement.find(&statement);
+        if (found != current_body_types_->locals_at_statement.end()) {
+          current_body_types_->scoped_locals = found->second;
+          current_body_types_->scoped_locals_active = true;
+          env.terms = found->second;
+        }
+      }
       if (statement.indent < level) return;
       if (statement.indent > level)
         err(statement.line, "indentation jumps more than one block level");
@@ -6467,11 +6529,33 @@ class Checker {
         string element_type = iterator_element_type(
             statement.line, statement.b, incoming).value_or("_value");
         body_env[statement.a] = element_type;
+        BodyTypeState* scoped_types = current_body_types_;
+        if (scoped_types) {
+          auto binding = scoped_types->for_bindings.find(&statement);
+          if (binding != scoped_types->for_bindings.end() && binding->second)
+            body_env.terms[statement.a] = binding->second;
+        }
         if (record_semantic_types)
           const_cast<Stmt&>(statement).semantic_type = element_type;
+        bool has_loop_term = false;
+        std::optional<moss::TypeRef> previous_term;
+        if (scoped_types) {
+          auto binding = scoped_types->for_bindings.find(&statement);
+          if (binding != scoped_types->for_bindings.end()) {
+            has_loop_term = true;
+            auto previous = scoped_types->scoped_locals.find(statement.a);
+            if (previous != scoped_types->scoped_locals.end())
+              previous_term = previous->second;
+            scoped_types->scoped_locals[statement.a] = binding->second;
+          }
+        }
         walk_type_environment_block(statements, index, level + 1, body_env,
                                     visitor, reject_conflicts, record_join_types,
                                     record_semantic_types, join_context, solved_collections);
+        if (has_loop_term) {
+          if (previous_term) scoped_types->scoped_locals[statement.a] = *previous_term;
+          else scoped_types->scoped_locals.erase(statement.a);
+        }
         // The loop variable is scoped to the body. On exit a binding it
         // shadowed is restored, as a match arm's pattern bindings are;
         // erasing it would drop the outer binding at the join.
@@ -6479,6 +6563,11 @@ class Checker {
           body_env[statement.a] = shadowed->second;
         else
           body_env.erase(statement.a);
+        if (auto shadowed = incoming.terms.find(statement.a);
+            shadowed != incoming.terms.end())
+          body_env.terms[statement.a] = shadowed->second;
+        else
+          body_env.terms.erase(statement.a);
         env = merge_type_environments({incoming, body_env}, statement.line,
                                       reject_conflicts);
         if (record_join_types) {
@@ -6492,6 +6581,14 @@ class Checker {
       visitor(statement, env);
       advance_type_environment(statement, env, statements, record_semantic_types,
                                join_context, solved_collections);
+      if (current_body_types_ &&
+          (statement.kind == Stmt::Kind::Let ||
+           statement.kind == Stmt::Kind::Var ||
+           statement.kind == Stmt::Kind::Assign) &&
+          simple_identifier(statement.a)) {
+        if (auto term = current_body_types_->assignment_value(statement))
+          env.terms[statement.a] = term;
+      }
       if (record_semantic_types && statement.kind == Stmt::Kind::Call &&
           !statement.b.empty()) {
         if (auto receiver = inferred_expr_type(statement.a, env))
@@ -6843,7 +6940,106 @@ class Checker {
       }
       return result;
     };
+    // The statement vector is flat, but local identities obey lexical block
+    // joins. Save the environment at each control-flow boundary so a binding
+    // first made in one path cannot constrain a later binding of the same
+    // spelling. Existing terms remain shared and keep their monotype.
+    struct BlockScope {
+      int indent;
+      int line;
+      Stmt::Kind kind;
+      std::unordered_map<string, moss::TypeRef> incoming_locals;
+      TypeEnv incoming_scan;
+      std::unordered_map<string, moss::TypeRef> then_locals;
+      bool in_else = false;
+    };
+    vector<BlockScope> block_scopes;
+    auto leave_blocks = [&](const Stmt* next) {
+      while (!block_scopes.empty() &&
+             (!next || next->indent <= block_scopes.back().indent)) {
+        auto& scope = block_scopes.back();
+        if (next && next->indent == scope.indent &&
+            next->kind == Stmt::Kind::Else &&
+            scope.kind == Stmt::Kind::If && !scope.in_else) {
+          scope.then_locals = locals;
+          locals = scope.incoming_locals;
+          scan = scope.incoming_scan;
+          scope.in_else = true;
+          return;
+        }
+        if (scope.kind == Stmt::Kind::If && scope.in_else) {
+          for (const auto& [name, then_term] : scope.then_locals) {
+            if (scope.incoming_locals.count(name)) continue;
+            auto other = locals.find(name);
+            if (other == locals.end()) continue;
+            if (!solver.unify(then_term, other->second))
+              err(scope.line,
+                  "branch types conflict for binding '" + name + "'",
+                  "TYPE_MISMATCH");
+            scope.incoming_locals.emplace(name, then_term);
+          }
+        }
+        // Preserve existing identities and the newly joined identities only.
+        // Their solver terms carry refinements made inside the block.
+        locals = std::move(scope.incoming_locals);
+        scan = std::move(scope.incoming_scan);
+        for (const auto& [name, term] : locals) {
+          auto resolved = solver.resolve(term);
+          if (resolved && resolved->is_closed())
+            scan[name] = resolved->to_canonical_string();
+        }
+        block_scopes.pop_back();
+      }
+    };
     for (const Stmt& statement : statements) {
+      leave_blocks(&statement);
+      if (statement.kind == Stmt::Kind::If ||
+          statement.kind == Stmt::Kind::While ||
+          statement.kind == Stmt::Kind::For)
+        block_scopes.push_back({statement.indent, statement.line,
+                                statement.kind, locals, scan,
+                                {}, false});
+      body_types.locals_at_statement.emplace(&statement, locals);
+      if (statement.kind == Stmt::Kind::For) {
+        moss::TypeRef loop_term;
+        string callee;
+        vector<string> arguments;
+        if (parse_simple_call(trim(statement.b), callee, arguments) &&
+            callee == "range") {
+          loop_term = moss::Type::primitive("int");
+        } else if (auto source = term_for(statement.b)) {
+          auto resolved = solver.resolve(source);
+          if (resolved->kind == moss::TypeKind::Builtin &&
+              (resolved->name == "vector" || resolved->name == "seq") &&
+              resolved->type_args.size() == 1)
+            loop_term = resolved->type_args[0];
+          else if (resolved->kind == moss::TypeKind::Primitive &&
+                   resolved->name == "RangeBatch")
+            loop_term = moss::Type::primitive("Range");
+          else if (resolved->kind == moss::TypeKind::Primitive &&
+                   resolved->name == "Range")
+            loop_term = moss::Type::primitive("int");
+        }
+        if (!loop_term) {
+          const string element = iterator_element_type(
+              statement.line, statement.b, scan).value_or("_value");
+          auto parsed = moss::Type::parse_canonical(canonical_type_name(element));
+          if (parsed && !contains_internal_placeholder(element))
+            loop_term = freshen_open_type(*parsed);
+        }
+        body_types.for_bindings[&statement] = loop_term;
+        if (loop_term) {
+          locals[statement.a] = loop_term;
+          auto resolved = solver.resolve(loop_term);
+          scan[statement.a] = resolved->is_closed()
+              ? resolved->to_canonical_string()
+              : "_iterator_element:" + statement.a;
+        } else {
+          locals.erase(statement.a);
+          scan[statement.a] = "_value";
+        }
+        continue;
+      }
       if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
         string invocation = statement.a + "(" + join_arguments(statement.args) + ")";
         constrain_call(statement.line, invocation);
@@ -6923,14 +7119,6 @@ class Checker {
         body_types.assignment_values.emplace(&statement, term);
         const bool prior_open = prior != locals.end() &&
             !solver.resolve(prior->second)->is_closed();
-        // Fresh declarations inside separate branches have separate lexical
-        // identities. The legacy walker owns their scope until its branch join.
-        if (!instantiated && (record_call_facts || retain_all_types) &&
-            statement.indent > 0 &&
-            prior == locals.end() && term->is_closed()) {
-          scan[statement.a] = *inferred;
-          continue;
-        }
         if (prior != locals.end() && !solver.unify(prior->second, term))
           err(statement.line, "assignment type mismatch for binding '" +
               statement.a + "'", "TYPE_MISMATCH");
@@ -7009,6 +7197,7 @@ class Checker {
               statement.a + "'", "TYPE_MISMATCH");
       }
     }
+    leave_blocks(nullptr);
     for (const auto& [line, requirement] : structural_requirements) {
       // The closed built-in '+' family admits Int and Float when the other
       // operand is Int. Keep this check on the instantiated TypeRefs so a
@@ -7084,7 +7273,7 @@ class Checker {
                                 BodyTypeState* retained_types = nullptr) const {
     BodyTypeState body_types =
         solve_local_collection_types(statements, env, join_context,
-                                     record_semantic_types);
+                                     record_semantic_types, true);
     if (retained_types) *retained_types = std::move(body_types);
     // The prepass has already assigned one solver term to each local and
     // assignment. Keep that exact state active while the source-order checker

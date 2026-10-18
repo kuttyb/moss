@@ -97,6 +97,20 @@ fn main():
         parity(independent, scratch, "1\nhello\n")
         print("PASS independent open-result calls and three-engine parity", flush=True)
 
+        branch_conflict = source(scratch, "branch_conflict_at_end", '''fn main():
+  if true:
+    values = []
+    values.push(1)
+  else:
+    values = []
+    values.push("text")
+''')
+        diagnostic = checked(branch_conflict, code="TYPE_MISMATCH")["error"]
+        assert diagnostic["source"]["line"] == 2, diagnostic
+        assert diagnostic["source"]["span"]["start_line"] == 2, diagnostic
+        print("PASS end-of-body branch conflict retains source location",
+              flush=True)
+
         signature_join = source(scratch, "signature_return_join", '''fn choose(flag: Bool):
   if flag:
     return []

@@ -1,0 +1,23 @@
+fn main():
+  if true:
+    values = []
+    values.push(1)
+    echo values[0]
+  values = []
+  values.push("outer")
+  echo values[0]
+
+  while false:
+    later = []
+    later.push(2)
+  later = []
+  later.push("after")
+  echo later[0]
+
+  for item in [1]:
+    result = []
+    result.push(item)
+    echo result[0]
+  result = []
+  result.push("done")
+  echo result[0]
