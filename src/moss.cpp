@@ -17762,8 +17762,21 @@ class Checker {
       in_unspecialized_static_function = enclosing != functions_.end() &&
           enclosing->second->static_dispatch;
     }
+    // A named local with an open TypeRef is diagnosed at body closure, at its
+    // binding. An open temporary argument has no such binding and needs the
+    // call-site inference diagnostic (for example, show([])).
+    bool open_local_argument = std::any_of(args.begin(), args.end(),
+        [&](const string& argument) {
+          const string name = trim(argument);
+          if (!plain_identifier(name)) return false;
+          auto binding = env.find(name);
+          if (binding == env.end()) return false;
+          auto term = moss::Type::parse_canonical(
+              canonical_type_name(binding->second));
+          return term && !(*term)->is_closed();
+        });
     if (function->second->static_dispatch && !concrete_call &&
-        !in_unspecialized_static_function)
+        !in_unspecialized_static_function && !open_local_argument)
       err(line, "cannot infer concrete argument types for static specialization of function '" +
           name + "'; give empty collections a typed constructor such as Vector[Int]()",
           "TYPE_INFERENCE_FAILED");
