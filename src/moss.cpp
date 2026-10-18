@@ -345,6 +345,7 @@ static string canonical_type_name(string type) {
   if (type == "Vector") return "vector";
   if (type == "Map") return "map";
   if (type == "Queue") return "queue";
+  if (type == "Set") return "set";
   auto bracket = type.find('[');
   if (bracket != string::npos && ends_with(type, "]")) {
     string head = canonical_type_name(type.substr(0, bracket));
@@ -616,7 +617,7 @@ static std::optional<std::pair<string, string>> map_key_value_types(
                         term->type_args[1]->to_canonical_string());
 }
 
-enum class BuiltinReceiverFamily { Vector, Map, Queue, String, Char, Int, Float, Bool };
+enum class BuiltinReceiverFamily { Vector, Map, Queue, Set, String, Char, Int, Float, Bool };
 
 
 struct BuiltinOperationDescriptor {
@@ -642,6 +643,9 @@ static const vector<BuiltinOperationDescriptor>& builtin_operations() {
       {BuiltinReceiverFamily::Map, "delete", "delete(key, fallback, found)", "$value", Effect::Write, {Effect::Read, Effect::Consume, Effect::Write}, {"$key", "$value", "bool"}},
       {BuiltinReceiverFamily::Queue, "push", "push(item)", "unit", Effect::Write, {Effect::Consume}, {"$element"}},
       {BuiltinReceiverFamily::Queue, "pop", "pop()", "$element", Effect::Write, {}, {}, true},
+      {BuiltinReceiverFamily::Set, "insert", "insert(key)", "unit", Effect::Write, {Effect::Consume}, {"$element"}},
+      {BuiltinReceiverFamily::Set, "contains", "contains(key)", "bool", Effect::Read, {Effect::Read}, {"$element"}},
+      {BuiltinReceiverFamily::Set, "values", "values()", "$setvalues", Effect::Read, {}, {}},
       {BuiltinReceiverFamily::String, "length", "length()", "int", Effect::Read, {}, {}},
       {BuiltinReceiverFamily::String, "char_at", "char_at(index)", "char", Effect::Read, {Effect::Read}, {"int"}, true},
       {BuiltinReceiverFamily::String, "chars", "chars()", "vector[char]", Effect::Read, {}, {}},
@@ -684,6 +688,7 @@ static std::optional<BuiltinReceiverFamily> builtin_receiver_family(
   if (collection_named(term, {"vector"})) return BuiltinReceiverFamily::Vector;
   if (collection_named(term, {"map"})) return BuiltinReceiverFamily::Map;
   if (collection_named(term, {"queue"})) return BuiltinReceiverFamily::Queue;
+  if (staged_abi_v10() && collection_named(term, {"set"})) return BuiltinReceiverFamily::Set;
   if (primitive_term(term, "string")) return BuiltinReceiverFamily::String;
   if (primitive_term(term, "char")) return BuiltinReceiverFamily::Char;
   if (primitive_term(term, "int")) return BuiltinReceiverFamily::Int;
@@ -713,6 +718,12 @@ static std::optional<string> builtin_operation_type(
     if (open == string::npos || !ends_with(concrete, "]")) return std::nullopt;
     return concrete.substr(open + 1, concrete.size() - open - 2);
   }
+  if (pattern == "$setvalues") {
+    auto term = parsed_type(receiver_type);
+    if (!applied_builtin(term, {"set"}) || term->type_args.size() != 1)
+      return std::nullopt;
+    return "vector[" + term->type_args[0]->to_canonical_string() + "]";
+  }
   if (!pattern.empty() && pattern.front() == '$') {
     auto types = map_key_value_types(receiver_type);
     if (!types) return std::nullopt;
@@ -736,6 +747,7 @@ static std::optional<BuiltinReceiverFamily> builtin_receiver_family(
   if (collection_named(type, {"vector"})) return BuiltinReceiverFamily::Vector;
   if (collection_named(type, {"map"})) return BuiltinReceiverFamily::Map;
   if (collection_named(type, {"queue"})) return BuiltinReceiverFamily::Queue;
+  if (staged_abi_v10() && collection_named(type, {"set"})) return BuiltinReceiverFamily::Set;
   if (primitive_term(type, "string")) return BuiltinReceiverFamily::String;
   return std::nullopt;
 }
@@ -2918,7 +2930,6 @@ class Checker {
       }
     }
     { CompilerStageTimer timer("effects"); infer_effects(); infer_observable_effects(); }
-    validate_staged_nominal_map_key_proofs();
     for (auto& function : p_.functions)
       if (function.open_summary) {
         function.open_summary->observable_effects = function.observable_effects;
@@ -2946,6 +2957,7 @@ class Checker {
     for (const auto& d : p_.domains) check_domain(d);
     if (p_.main) check_main(*p_.main);
     check_test_and_benchmark_declarations();
+    validate_staged_nominal_map_key_proofs();
     p_.concrete_domain_graph.closed = true;
     std::ostringstream graph_material;
     for (const auto& instance : p_.concrete_domain_graph.instances)
@@ -3792,6 +3804,19 @@ class Checker {
           "MAP_KEY_TYPE_UNSUPPORTED");
   }
 
+  void check_set_key_type(int line, const string& key) const {
+    const string type = canonical_type_name(key);
+    if (contains_internal_placeholder(type)) return;
+    if (type == "float") return;  // Float's total key protocol is staged in v10.
+    if (contains_record_type(type)) {
+      check_map_key_type(line, type);  // The same nominal proof is used by Map.
+      return;
+    }
+    if (type != "int" && type != "bool" && type != "char" && type != "string")
+      err(line, "'" + type + "' cannot be a Set key; use a scalar or proven nominal key",
+          "SET_KEY_TYPE_UNSUPPORTED");
+  }
+
 
   // Apply check_map_key_type to every Map nested in a declared type.
   void check_declared_map_keys(const string& source_file, int line,
@@ -3803,6 +3828,9 @@ class Checker {
     for_each_subterm(term, [&](const moss::TypeRef& nested) {
       if (applied_builtin(nested, {"map"}) && nested->type_args.size() == 2)
         check_map_key_type(line, nested->type_args[0]->to_canonical_string());
+      if (staged_abi_v10() && applied_builtin(nested, {"set"}) &&
+          nested->type_args.size() == 1)
+        check_set_key_type(line, nested->type_args[0]->to_canonical_string());
     });
   }
 
@@ -4059,6 +4087,7 @@ class Checker {
     if (domains_.count(type) || objects_.count(type) || enums_.count(type)) return true;
     if (traits_.count(type)) return true;
     if ((*parsed)->kind == moss::TypeKind::Builtin) {
+      if ((*parsed)->name == "set" && !staged_abi_v10()) return false;
       const auto arity = moss::Type::collection_arity((*parsed)->name);
       if (arity) {
         const auto& args = (*parsed)->type_args;
@@ -4074,6 +4103,13 @@ class Checker {
               (contains_record_type(key) && !staged_abi_v10()) ||
               (builtin_equality_type(key) && !hashable_map_key_type(key)))
             return false;
+        }
+        if ((*parsed)->name == "set") {
+          const string key = args.front()->to_canonical_string();
+          if (contains_enum_type(key)) return false;
+          if (key != "int" && key != "float" && key != "bool" &&
+              key != "char" && key != "string" &&
+              !contains_record_type(key)) return false;
         }
         return true;
       }
@@ -6278,6 +6314,8 @@ class Checker {
     }
     if (callee == "Map" && args.empty())
       return BuiltinCallSemantics{"map", false};
+    if (staged_abi_v10() && callee == "Set" && args.empty())
+      return BuiltinCallSemantics{"set", false};
     if (callee == "Queue" && args.empty())
       return BuiltinCallSemantics{"queue", false};
     if (callee == "range" && (args.size() == 2 || args.size() == 3))
@@ -7435,7 +7473,9 @@ class Checker {
     }
 
     if (statement.kind == Stmt::Kind::Call && !statement.b.empty() &&
-        statement.b == "push" && statement.args.size() == 1) {
+        (statement.b == "push" ||
+         (staged_abi_v10() && statement.b == "insert")) &&
+        statement.args.size() == 1) {
       auto container = env.find(statement.a);
       auto retained = current_body_types_
           ? current_body_types_->resolved_local(statement.a) : nullptr;
@@ -7446,9 +7486,11 @@ class Checker {
           for (auto& prior : const_cast<vector<Stmt>&>(statements))
             if (prior.a == statement.a &&
                 (prior.b == "[]" || prior.b == "Queue()" ||
+                 (staged_abi_v10() && prior.b == "Set()") ||
                  parse_vector_literal(prior.b).has_value() ||
                  starts_with(prior.semantic_type, "vector") ||
-                 starts_with(prior.semantic_type, "queue"))) {
+                 starts_with(prior.semantic_type, "queue") ||
+                 (staged_abi_v10() && starts_with(prior.semantic_type, "set")))) {
               prior.semantic_type = canonical_type_name(retained);
               if (!join_context.empty())
                 prior.semantic_types_by_context[join_context] = canonical_type_name(retained);
@@ -7464,9 +7506,11 @@ class Checker {
             for (auto& prior : const_cast<vector<Stmt>&>(statements)) {
               if (prior.a == statement.a &&
                   (prior.b == "[]" || prior.b == "Queue()" ||
+                   (staged_abi_v10() && prior.b == "Set()") ||
                    parse_vector_literal(prior.b).has_value() ||
                    starts_with(prior.semantic_type, "vector") ||
-                   starts_with(prior.semantic_type, "queue"))) {
+                   starts_with(prior.semantic_type, "queue") ||
+                   (staged_abi_v10() && starts_with(prior.semantic_type, "set")))) {
                 prior.semantic_type = *refined;
                 if (!join_context.empty())
                   prior.semantic_types_by_context[join_context] = *refined;
@@ -8390,7 +8434,9 @@ class Checker {
         scan[statement.a] = prior_open || !term->is_closed()
             ? solver.resolve(locals.at(statement.a))->to_canonical_string()
             : inferred.value_or(term->to_canonical_string());
-      } else if (statement.kind == Stmt::Kind::Call && statement.b == "push" &&
+      } else if (statement.kind == Stmt::Kind::Call &&
+                 (statement.b == "push" ||
+                  (staged_abi_v10() && statement.b == "insert")) &&
                  statement.args.size() == 1) {
         auto local = locals.find(statement.a);
         if (local == locals.end()) continue;
@@ -8398,7 +8444,8 @@ class Checker {
         if (!argument) continue;
         auto current = solver.resolve(local->second);
         if (current->kind != moss::TypeKind::Builtin ||
-            (current->name != "vector" && current->name != "queue") ||
+            (current->name != "vector" && current->name != "queue" &&
+             !(staged_abi_v10() && current->name == "set")) ||
             current->type_args.size() != 1) continue;
         // Report a conflict only for a resolved value. A domain handle cannot
         // enter a collection at all and the closed-handle rule says so
@@ -8409,7 +8456,7 @@ class Checker {
             !contains_internal_placeholder(argument->to_canonical_string());
         if (resolved_argument &&
             !solver.unify(current->type_args.front(), argument))
-          err(statement.line, "push argument conflicts with the element type of '" +
+          err(statement.line, statement.b + " argument conflicts with the element type of '" +
               statement.a + "'", "TYPE_MISMATCH");
         scan[statement.a] = solver.resolve(local->second)->to_canonical_string();
       } else if (statement.kind == Stmt::Kind::Assign &&
@@ -18972,6 +19019,10 @@ class Checker {
         if (*receiver_type == "map" && handler == "get")
           err(line, "Map.get requires a concrete key and value type before use",
               "TYPE_AMBIGUOUS_OPEN_RESULT");
+        if (staged_abi_v10() && *receiver_type == "set" &&
+            (handler == "contains" || handler == "values"))
+          err(line, "Set operation requires a concrete key type before use",
+              "TYPE_AMBIGUOUS_OPEN_RESULT");
         if (builtin_receiver_family(*receiver_type)) {
           check_expression(line, receiver, env);
           for (const auto& arg : args) check_expression(line, arg, env);
@@ -18980,6 +19031,10 @@ class Checker {
             argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
           const auto* operation = validate_builtin_argument_types(
               line, *receiver_type, handler, argument_types);
+          auto set_type = parsed_type(*receiver_type);
+          if (staged_abi_v10() && applied_builtin(set_type, {"set"}) &&
+              set_type->type_args.size() == 1)
+            check_set_key_type(line, set_type->type_args[0]->to_canonical_string());
           for (size_t index = 0; index < args.size(); ++index)
             if (operation->argument_effects[index] == Effect::Write &&
                 !storage_location(args[index], env))
@@ -19249,7 +19304,8 @@ class Checker {
               "INVALID_TYPED_VECTOR_CONSTRUCTOR");
         return;
       }
-      if (callee == "Map" || callee == "Queue") {
+      if (callee == "Map" || callee == "Queue" ||
+          (staged_abi_v10() && callee == "Set")) {
         if (!args.empty())
           err(line, "built-in " + callee + " constructor takes no arguments; use " +
               callee + "()", "BUILTIN_COLLECTION_CONSTRUCTOR_ARGUMENTS");
@@ -22267,6 +22323,8 @@ class Generator {
       return "std::vec::Vec<" + rust_type(x.substr(4, x.size()-5)) + ">";
     if (starts_with(x, "vector[") && ends_with(x, "]")) return "std::vec::Vec<" + rust_type(x.substr(7, x.size()-8)) + ">";
     if (starts_with(x, "queue[") && ends_with(x, "]")) return "std::collections::VecDeque<" + rust_type(x.substr(6, x.size()-7)) + ">";
+    if (staged_abi_v10() && starts_with(x, "set[") && ends_with(x, "]"))
+      return "moss_runtime::MossSet<" + rust_type(x.substr(4, x.size()-5)) + ">";
     if (starts_with(x, "map[") && ends_with(x, "]")) {
       auto ps = split_top_level(x.substr(4, x.size()-5), ',');
       if (shared_nominal_map_key(ps[0]))
@@ -24337,6 +24395,8 @@ class Generator {
     if (e == "Map()") return staged_abi_v10()
         ? "std::default::Default::default()"
         : "std::collections::HashMap::new()";
+    if (staged_abi_v10() && e == "Set()")
+      return "moss_runtime::MossSet::new()";
     if (e == "Queue()") return "std::collections::VecDeque::new()";
     {
       string callee;
@@ -24939,6 +24999,32 @@ class Generator {
                                         expr(member_arguments[0], d, locals, types));
           if (member_name == "hash" && member_arguments.empty())
             return scalar_protocol_rust("hash", concrete, source);
+        }
+        if (staged_abi_v10() && starts_with(concrete, "set[") &&
+            ends_with(concrete, "]")) {
+          const string key_type = concrete.substr(4, concrete.size() - 5);
+          const bool nominal = shared_nominal_map_key(key_type);
+          const string equal = nominal ? "a.isequal(b)"
+              : scalar_protocol_rust("isequal", key_type, "*a", "*b");
+          if (member_name == "values" && member_arguments.empty())
+            return "(" + receiver_expression + ").keys()";
+          if ((member_name == "insert" || member_name == "contains") &&
+              member_arguments.size() == 1) {
+            string key = expr(member_arguments[0], d, locals, types);
+            if (nominal && is_object_view(member_arguments[0], d, locals, types))
+              key = "(" + key + ").__moss_value()";
+            const string borrowed = borrowed_function_parameters_.count(
+                trim(member_arguments[0])) ? "__moss_key" : "&__moss_key";
+            const string hash = nominal ? "__moss_key.hash()"
+                : scalar_protocol_rust("hash", key_type, "__moss_key");
+            if (member_name == "insert")
+              return "{ let __moss_key = " + key + "; let __moss_hash = " +
+                  hash + "; (" + write_call_place(member_receiver, d, locals, types) +
+                  ").insert_with(__moss_hash, __moss_key, |a, b| " + equal + "); }";
+            return "{ let __moss_key = " + key + "; (" + receiver_expression +
+                ").contains_with(" + hash + ", " + borrowed +
+                ", |a, b| " + equal + ") }";
+          }
         }
         if (auto map_types = map_key_value_types(concrete)) {
           const bool shared_nominal_key =
@@ -27427,10 +27513,13 @@ class Generator {
             locals.insert(s.a);
             auto generated_type = generated_expr_type(s.b, &types);
             types[s.a] = !inferred_map_type.empty() ? inferred_map_type
+                : (staged_abi_v10() && generated_type && *generated_type == "set" &&
+                   starts_with(statement_type, "set[")) ? statement_type
                 : generated_type ? *generated_type
                 : !statement_type.empty() ? statement_type
                 : s.b == "Map()" ? "map"
                 : s.b == "Queue()" ? "queue"
+                : staged_abi_v10() && s.b == "Set()" ? "set"
                 : (s.b.size() && s.b.front() == '[' ? "vector" : "_value");
             auto source_binding = domain_instance_bindings_.find(trim(s.b));
             if (source_binding != domain_instance_bindings_.end())
@@ -27562,6 +27651,9 @@ class Generator {
                starts_with(statement_receiver_type, "vector[") ||
                statement_receiver_type == "queue" ||
                starts_with(statement_receiver_type, "queue[") ||
+               (staged_abi_v10() &&
+                (statement_receiver_type == "set" ||
+                 starts_with(statement_receiver_type, "set["))) ||
                (s.b == "delete" && (statement_receiver_type == "map" ||
                                     starts_with(statement_receiver_type, "map["))))) {
             string call = s.a + "." + s.b + "(";
@@ -27881,7 +27973,9 @@ class Generator {
             o << ";\n";
             auto generated_type = generated_expr_type(s.b, &types);
             bool unspecialized_collection = generated_type &&
-                (*generated_type == "vector" || *generated_type == "queue" || *generated_type == "map");
+                (*generated_type == "vector" || *generated_type == "queue" ||
+                 *generated_type == "map" ||
+                 (staged_abi_v10() && *generated_type == "set"));
             types[s.a] = domain_capability ? source->second
                 : !inferred_map_type.empty() ? inferred_map_type
                 : (unspecialized_collection && !statement_type.empty() && statement_type != *generated_type)

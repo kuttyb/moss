@@ -22,6 +22,11 @@
       for (const auto& entry : *source.map)
         result.map->push_back({independent(entry.first), independent(entry.second)});
     }
+    if (source.set) {
+      result.set = std::make_shared<std::vector<Value>>();
+      for (const auto& key : *source.set)
+        result.set->push_back(independent(key));
+    }
     return result;
   }
 
@@ -33,6 +38,8 @@
       return "Queue(size=" + std::to_string(value.queue ? value.queue->size() : 0) + ")";
     if (value.kind == Value::Kind::Map)
       return "Map(size=" + std::to_string(value.map ? value.map->size() : 0) + ")";
+    if (value.kind == Value::Kind::Set)
+      return "Set(size=" + std::to_string(value.set ? value.set->size() : 0) + ")";
     return value.display().substr(0, 256);
   }
 

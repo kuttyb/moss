@@ -27,6 +27,8 @@
 
 namespace moss {
 
+static bool staged_abi_v10();
+
 // Fast Debug is deliberately an execution backend over the checked Moss AST.
 // It does not parse, resolve, or type-check anything itself.  The checker has
 // already rejected unsupported ownership/concurrency patterns before this
@@ -223,7 +225,7 @@ class FastInterpreter {
   struct DomainValue;
 
   struct Value {
-    enum class Kind { Unit, Bool, Int, Float, String, Callable, Struct, Vector, Queue, Map, DomainHandle, Char } kind = Kind::Unit;
+    enum class Kind { Unit, Bool, Int, Float, String, Callable, Struct, Vector, Queue, Map, Set, DomainHandle, Char } kind = Kind::Unit;
     bool boolean = false;
     std::int64_t integer = 0;
     double floating = 0.0;
@@ -234,6 +236,7 @@ class FastInterpreter {
     std::shared_ptr<std::vector<Value>> vector;
     std::shared_ptr<std::vector<Value>> queue;
     std::shared_ptr<std::vector<std::pair<Value, Value>>> map;
+    std::shared_ptr<std::vector<Value>> set;
     std::string element_type;
 
     static Value unit();
@@ -247,6 +250,7 @@ class FastInterpreter {
     static Value vector_value(std::vector<Value> values, std::string element_type = {});
     static Value queue_value();
     static Value map_value();
+    static Value set_value();
     bool truthy() const;
     std::string display() const;
   };
@@ -1118,7 +1122,8 @@ class FastInterpreter {
                                line, output);
             if (base.kind == Value::Kind::Map && base.map) {
               for (const auto& entry : *base.map)
-                if (key_equal(entry.first, index)) return entry.second;
+                if (protocol_key_equal(entry.first, index, frame, line, output))
+                  return entry.second;
               throw RuntimeError(line, "missing map key");
             }
             auto values = base.kind == Value::Kind::Vector ? base.vector :
@@ -1169,6 +1174,8 @@ class FastInterpreter {
           return Value::vector_value({}, callee.substr(7, callee.size() - 8));
         if (callee == "Queue" && args.empty()) return Value::queue_value();
         if (callee == "Map" && args.empty()) return Value::map_value();
+        if (staged_abi_v10() && callee == "Set" && args.empty())
+          return Value::set_value();
         if (callee == "assert") {
           if (args.size() != 1) throw RuntimeError(line, "assert expects one argument");
           if (!eval(args.front(), frame, line, output).truthy()) {
@@ -1560,7 +1567,7 @@ class FastInterpreter {
               Value key = eval(method_args[0], frame, line, output);
               Value fallback = eval(method_args[1], frame, line, output);
               for (auto it = receiver.map->begin(); it != receiver.map->end(); ++it) {
-                if (!key_equal(it->first, key)) continue;
+                if (!protocol_key_equal(it->first, key, frame, line, output)) continue;
                 Value removed = independent(it->second);
                 receiver.map->erase(it);
                 assign(method_args[2], Value::boolean_value(true), frame, line, output);
@@ -1573,7 +1580,8 @@ class FastInterpreter {
               Value key = eval(method_args[0], frame, line, output);
               Value fallback = eval(method_args[1], frame, line, output);
               for (const auto& entry : *receiver.map)
-                if (key_equal(entry.first, key)) return independent(entry.second);
+                if (protocol_key_equal(entry.first, key, frame, line, output))
+                  return independent(entry.second);
               return independent(fallback);
             }
             if ((method_name == "keys" || method_name == "values") && method_args.empty()) {
@@ -1581,6 +1589,25 @@ class FastInterpreter {
               for (const auto& entry : *receiver.map)
                 values.push_back(independent(method_name == "keys" ? entry.first : entry.second));
               return Value::vector_value(std::move(values));
+            }
+          }
+          if (staged_abi_v10() && receiver.kind == Value::Kind::Set) {
+            if (method_name == "values" && method_args.empty()) {
+              std::vector<Value> values;
+              for (const auto& key : *receiver.set)
+                values.push_back(independent(key));
+              return Value::vector_value(std::move(values));
+            }
+            if ((method_name == "insert" || method_name == "contains") &&
+                method_args.size() == 1) {
+              Value key = eval(method_args[0], frame, line, output);
+              for (const auto& stored : *receiver.set)
+                if (protocol_key_equal(stored, key, frame, line, output))
+                  return method_name == "contains" ? Value::boolean_value(true)
+                                                   : Value::unit();
+              if (method_name == "contains") return Value::boolean_value(false);
+              receiver.set->push_back(independent(key));
+              return Value::unit();
             }
           }
           if (receiver.kind != Value::Kind::Struct || !receiver.object)
@@ -1787,6 +1814,9 @@ class FastInterpreter {
           if (!found) return false;
         }
         return true;
+      case Value::Kind::Set:
+        // Set operator equality is not in the staged source contract.
+        return false;
     }
     return false;
   }
@@ -1796,6 +1826,39 @@ class FastInterpreter {
     if (left.kind == Value::Kind::Float && right.kind == Value::Kind::Float)
       return moss_isequal(left, right);
     return equal(left, right);
+  }
+
+  int64_t protocol_key_hash(const Value& key, Frame& frame, int line,
+                            std::ostream& output) {
+    if (staged_abi_v10() && key.kind == Value::Kind::Struct && key.object) {
+      const Method* selected = method(key.object->type, "hash");
+      if (!selected) throw RuntimeError(line, "missing nominal key hash proof");
+      Value result = call_method(*selected, key, {}, frame, line, output, {});
+      if (result.kind != Value::Kind::Int)
+        throw RuntimeError(line, "nominal key hash must return Int");
+      return result.integer;
+    }
+    return moss_hash(key);
+  }
+
+  bool protocol_key_equal(const Value& left, const Value& right,
+                          Frame& frame, int line, std::ostream& output) {
+    if (!staged_abi_v10() || left.kind != Value::Kind::Struct ||
+        right.kind != Value::Kind::Struct)
+      return key_equal(left, right);
+    if (!left.object || !right.object || left.object->type != right.object->type)
+      return false;
+    if (protocol_key_hash(left, frame, line, output) !=
+        protocol_key_hash(right, frame, line, output)) return false;
+    const Method* selected = method(left.object->type, "isequal");
+    if (!selected) throw RuntimeError(line, "missing nominal key equality proof");
+    Frame args = frame;
+    args.locals["__moss_set_key_other"] = independent(right);
+    Value result = call_method(*selected, left, {"__moss_set_key_other"},
+                               args, line, output, {});
+    if (result.kind != Value::Kind::Bool)
+      throw RuntimeError(line, "nominal key equality must return Bool");
+    return result.boolean;
   }
 
   static bool moss_less(const Value& left, const Value& right) {
@@ -1969,7 +2032,9 @@ class FastInterpreter {
       if (receiver.kind == Value::Kind::Map && receiver.map) {
         Value key = eval(name.substr(bracket + 1, name.size() - bracket - 2), frame, line, output);
         for (auto& entry : *receiver.map) {
-          if (key_equal(entry.first, key)) { entry.second = std::move(value); return; }
+          if (protocol_key_equal(entry.first, key, frame, line, output)) {
+            entry.second = std::move(value); return;
+          }
         }
         receiver.map->push_back({std::move(key), std::move(value)});
         return;
@@ -2606,6 +2671,11 @@ inline FastInterpreter::Value FastInterpreter::Value::map_value() {
   result.map = std::make_shared<std::vector<std::pair<Value, Value>>>();
   return result;
 }
+inline FastInterpreter::Value FastInterpreter::Value::set_value() {
+  Value result; result.kind = Kind::Set;
+  result.set = std::make_shared<std::vector<Value>>();
+  return result;
+}
 inline bool FastInterpreter::Value::truthy() const {
   if (kind == Kind::Bool) return boolean;
   if (kind == Kind::Int) return integer != 0;
@@ -2615,6 +2685,7 @@ inline bool FastInterpreter::Value::truthy() const {
   if (kind == Kind::Vector) return vector && !vector->empty();
   if (kind == Kind::Queue) return queue && !queue->empty();
   if (kind == Kind::Map) return map && !map->empty();
+  if (kind == Kind::Set) return set && !set->empty();
   return kind != Kind::Unit;
 }
 inline std::string moss_canonical_float_text(double value) {
@@ -2713,6 +2784,9 @@ inline std::string FastInterpreter::Value::display() const {
       return out.str();
     case Kind::Map:
       out << "Map(" << (map ? std::to_string(map->size()) : "0") << ")";
+      return out.str();
+    case Kind::Set:
+      out << "Set(" << (set ? std::to_string(set->size()) : "0") << ")";
       return out.str();
   }
   return "()";

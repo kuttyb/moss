@@ -1,5 +1,25 @@
 # Moss current status
 
+## Phase 25 Team I staged Set compiler checkpoint — 2026-10-18
+
+The `phase25-i-map-staging` compiler worktree now has staged ABI-v10 `Set()`
+with `insert(k)`, `contains(k)`, and eager owned `values()`. Nominal Set keys
+reuse the staged Map proof validator and the shared `moss_runtime::MossSet`
+kernel. Scalar Int, Float, Bool, Char, and String keys are supported under
+`MOSS_STAGED_ABI=v10`; default ABI-v9 still rejects `Set()` with
+`UNKNOWN_SYMBOL_OR_TYPE`. Fast Debug applies the checked nominal key methods
+for staged Map/Set identity. Proof validation now runs after main/test body
+checking so keys discovered there cannot bypass it.
+
+Completed validation: compiler `make --jobs="$(nproc)" moss`; fixture 08 and 02
+staged `moss check`, Fast Debug, native Rust compilation/link against
+`moss_runtime`, and exact expected stdout; a separate Int/String/Char/Bool
+probe with native/Fast Debug parity; missing, impure, and divergent nominal
+proof checks reporting `KEY_PROOF_INVALID`; default-v9 fixture 08 rejection;
+`git diff --check`; and `check_agent_feedback.py`. The full repository and PR
+CI suites have not yet run on this checkpoint. The staged Set path remains
+opt-in pending the L7 ABI-v10 cutover; this worktree has not merged to main.
+
 ## Phase 25 Integration Team Preparation Cycle Complete & Frozen — 2026-10-16
 
 Team I completed the Phase 25 Preparation Cycle on `phase25-integration-prep` (baseline `fa3a340a0a6652568b97869489da1a84038b9857`, reviewed implementation `6ab05c6e4c92f63b7dd612856afb14242ecc3830`, review artifact `docs/phase25/INTEGRATION_PREP_ARCHITECT_REVIEW.md` at `b0edeeb`), preparing Phase 25 for rapid, rigorous integration while Team G finishes remaining compiler and runtime work:
