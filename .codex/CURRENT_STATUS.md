@@ -1,5 +1,34 @@
 # Moss current status
 
+## Phase 25 shared indexed String staging checkpoint — 2026-10-18
+
+Pushed `phase25-i-b-rehearsal` at `641a577` (from `145034f`). The opt-in
+`MOSS_STAGED_ABI=v10` plus `MOSS_STAGED_STRING_REPR=indexed-v1` path now uses a
+single content-addressed `moss_runtime` rlib for generated provider/consumer
+crates, imports Team S's exact indexed String implementation from that crate,
+records indexed representation plus exact runtime build/artifact identity in
+the v10 binary contract, checks a source-free provider runtime identity before
+Rust linking, and includes runtime identity in the native cache key. Margo
+supplies the runtime source directory to package builds. No production ABI-v10
+default cutover occurred.
+
+New `tests/phase25/runtime/check_shared_string_linkage.py` passes: provider
+source physically removed; two independent consumers execute in both debug
+and release; a changed runtime source returns exact
+`SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH` before native linking. Existing G4
+indexed String test passes its 12,800 randomized Unicode comparisons and
+plain/staged parity. Team B acceptance remains 22 PASS / 1 PENDING Gate 10;
+feedback validator and whitespace checks pass. This is staged boundary proof,
+not full same-SHA acceptance. Typed ABI records, compiler Map/Set lowering,
+nominal MapKeyProof, 62 strict gates, and final review remain open.
+
+H/T draft #5 is still at `bf1df10`, with three exact-head CI jobs green and
+core regressions in progress in workflow `39168204061` at latest check. Do not
+L6-review or merge it until all four checks pass. Target `phase25-integration`
+remains at `fbd2f729caf1a96c3ffe184068e88ba6b09288cc`; no merge to main.
+L7's provisional Set source-surface decision is still pending. Root remains
+the sole active compiler writer; no independent adversarial review has run.
+
 ## Phase 25 source-free linkage and diagnostics checkpoint — 2026-10-18
 
 Staffing remains one active root acting as combined L6 coordinator/reviewer and
