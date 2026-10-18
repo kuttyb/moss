@@ -48,21 +48,27 @@ compilation and production ABI-v10 emission are still missing from that target.
 The previous run's 1 PASS / 10 BLOCKED and exit 0 is retained in developer feedback
 `P25-I-ABI-CROSSCRATE-002`; no acceptance ledger entry is upgraded by this change.
 
-An exploratory staged-v10 run against the separate S/H reconciliation compiler
-at `759b399e1a929cbfbb5a16301559dd437835e398` now reaches **8 PASS, 0
-BLOCKED, 3 FAIL** in debug mode. This is cross-worktree development evidence,
-not same-SHA release acceptance. Removing invalid bare-template return
-annotations from the two typed consumer fixtures lets scenarios 2 and 3 run.
-Scenario 10 now mutates the provider identity while retaining its importable
-module name, so all five corruptions reach exact ABI validation. The remaining
-failures are scenario 4 (third-crate generic nominal forwarding reports an
-unknown type variable), scenario 7 (the missing-method provenance path reports
-`TYPE_MISMATCH` where its frozen harness requires `METHOD_NOT_FOUND`), and
-scenario 11 (layout change reaches an unstructured missing-constructor-field
-error instead of the required cache/layout diagnostic). They remain FAIL.
+An earlier exploratory staged-v10 run against separate S/H compiler
+`759b399e1a929cbfbb5a16301559dd437835e398` reached **8 PASS, 0 BLOCKED,
+3 FAIL** in debug mode. Removing invalid bare-template return annotations let
+scenarios 2 and 3 run; all five Scenario 10 corruptions reached exact ABI
+validation. Its remaining failures were third-crate nominal forwarding,
+missing-method diagnostic provenance, and an unstructured layout error.
+
+With fixture head `ed524b7` and the separately checkpointed compiler source at
+`9a04230`, staged ABI-v10 runs now reach **11 PASS, 0 BLOCKED, 0 FAIL** in
+both debug and release profiles. Scenario 4 now actually passes a Box produced
+by ConsumerA through ConsumerB's exported generic function after both consumer
+and provider source trees are removed. The compiler fix gives each explicit
+module a provider runtime in its rlib and reserves process symbols for its
+executable build. Scenario 7 reports `METHOD_NOT_FOUND` with a consumer primary
+span and original logical `provider.moss` related spans. Scenario 11 reports
+`FIELD_COUNT_MISMATCH` during semantic checking after the provider layout
+changes at the same artifact path. These are cross-worktree candidate probes,
+not same-SHA integrated release evidence; no production ABI-v10 default cutover
+or 62-gate claim follows from them.
 
 Next: merge the newest approved integration baseline into this branch, rebuild,
-and rerun live scenarios in both native profiles. Coordinate exact diagnostic and
-private-helper artifact requirements with the sole compiler writer. Missing
-compiler facilities remain failed acceptance. Open a draft integration PR and
-request L6 review only after required automated checks pass on its latest head.
+and rerun live scenarios on one exact SHA in both native profiles. Open a draft
+integration PR and request L6 review only after required automated checks pass
+on its latest head.
