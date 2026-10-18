@@ -1,5 +1,24 @@
 # Team I live integration record
 
+## Staged Map Gate 10 and current lease — 2026-10-18
+
+`phase25-i-map-staging` checkpoint `4165e75` extends staged shared-runtime
+checkpoint `641a577`. Its opt-in ABI-v10 nominal Map lowering passes a clean
+provider build and all 11 activated G2 conformance gates, including the two
+source-free Gate 10 consumers and identity-conflict negative. It remains an
+unreviewed, non-target-based staging branch; a passing conformance runner does
+not establish the complete serialized MapKeyProof, all 62 strict acceptance
+gates, Set, or production cutover. Feedback validator and whitespace checks
+pass. See `.codex/CURRENT_STATUS.md` for precise recovery state.
+
+The single active L4 worker owns compiler edits in that worktree while root
+handles combined L6 coordination/review and Git/CI; do not start another
+compiler writer. L4 is implementing the L7-frozen four-method Set source API.
+Final independent adversarial L6 review is deferred until implementation is
+complete, with L4 idle during that review. H/T draft #5 still has three green
+checks and core regressions running on exact head `bf1df10`; no target or main
+merge has occurred.
+
 ## L7 Set source-surface decision — 2026-10-18
 
 L7 selected the recommended Phase 25 option: freeze the existing provisional

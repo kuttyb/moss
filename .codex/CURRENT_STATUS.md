@@ -1,5 +1,30 @@
 # Moss current status
 
+## Phase 25 staged nominal Map checkpoint — 2026-10-18
+
+Pushed `phase25-i-map-staging` at `4165e752319c120275ac2a8268e25da599a62fdd`,
+based on the staged shared-runtime checkpoint `641a577`. Under the opt-in
+`MOSS_STAGED_ABI=v10` path, the checker admits nominal Map keys with pure READ
+`isequal(Self) -> Bool` and `hash() -> Int`; generated Rust uses the shared
+robin-hood `MossMap`, preserves a concrete type for a locally inferred empty
+Map, and materializes borrowed object-view lookup keys. A clean Margo provider
+build passes. `MOSS_G2_ACTIVATE_JOINT=1` conformance passes 11/11 actual Moss
+gates, including Gate 10's two source-free consumers and negative identity
+case. Feedback validation and whitespace checks pass. This is a staged Map
+checkpoint, not full canonical MapKeyProof record emission, Set, production
+ABI-v10 cutover, or Phase 25 acceptance. No draft PR to target has been opened
+for this branch because its B/S ancestry is not yet accepted into target.
+
+The requested two-agent layout is restored: root is combined L6
+coordinator/reviewer and owns Git/CI/integration; a single L4 worker owns
+compiler files exclusively in `phase25-i-map-staging` and is implementing the
+L7-frozen Set source API using the Map kernel. Root will not concurrently edit
+compiler files. The independent adversarial L6 review remains deferred until
+the final candidate. H/T draft PR #5 at `bf1df10` has three green exact-head
+jobs; core regressions is still in progress at workflow `39168204061`. Target
+`phase25-integration` remains `fbd2f729caf1a96c3ffe184068e88ba6b09288cc`;
+no merge to main.
+
 ## Phase 25 L7 Set decision — 2026-10-18
 
 L7 chose to freeze the existing provisional Set source API for this phase:
