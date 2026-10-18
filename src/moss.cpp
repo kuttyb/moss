@@ -2918,6 +2918,7 @@ class Checker {
       }
     }
     { CompilerStageTimer timer("effects"); infer_effects(); infer_observable_effects(); }
+    validate_staged_nominal_map_key_proofs();
     for (auto& function : p_.functions)
       if (function.open_summary) {
         function.open_summary->observable_effects = function.observable_effects;
@@ -3044,6 +3045,7 @@ class Checker {
   }
   std::unordered_map<string, Domain*> domains_;
   std::unordered_map<string, ObjectType*> objects_;
+  mutable std::set<string> staged_nominal_map_keys_;
   std::unordered_map<string, EnumType*> enums_;
   std::unordered_map<string, Trait*> traits_;
   Trait iterator_trait_;
@@ -3774,9 +3776,14 @@ class Checker {
     if (contains_internal_placeholder(type)) return;
     if (contains_float_type(type))
       err(line, "Float Map keys require the canonical MossMap<K,V> under key-protocol-v1, which is not yet available; Float isequal/hash/less are available as functions", "FLOAT_MAP_KEY_UNSUPPORTED");
-    if (contains_record_type(type))
+    if (contains_record_type(type)) {
+      if (staged_abi_v10()) {
+        staged_nominal_map_keys_.insert(type);
+        return;
+      }
       err(line, "record Map keys ('" + type + "') require the canonical MossMap<K,V> and a key-protocol-v1 key proof (isequal/hash), which are not yet available",
           "RECORD_MAP_KEY_UNSUPPORTED");
+    }
     if (contains_enum_type(type))
       err(line, "enum values cannot be Map keys; enum equality and hashing are unsupported",
           "ENUM_MAP_KEY_UNSUPPORTED");
@@ -3822,6 +3829,56 @@ class Checker {
       for (const auto& handler : domain.handlers)
         for (const auto& parameter : handler.params)
           check_declared_map_keys(handler.source_file, handler.line, parameter.type);
+    }
+  }
+
+  // Admission happens during type checking, before the effect fixed point.
+  // Resolve exact nominal methods only after their inferred effects settle;
+  // a malformed or impure proof never reaches the Rust backend.
+  void validate_staged_nominal_map_key_proofs() const {
+    for (const auto& key : staged_nominal_map_keys_) {
+      auto owner = objects_.find(key);
+      if (owner == objects_.end())
+        err(0, "Map key '" + key + "' has no concrete nominal key proof",
+            "KEY_PROOF_INVALID");
+      const ObjectType& object = *owner->second;
+      const Method* equality = nullptr;
+      const Method* hash = nullptr;
+      for (const auto& method : object.methods) {
+        if (method.name == "isequal") {
+          if (equality) err(object.source_file, method.line,
+              "Map key '" + key + "' has duplicate isequal methods",
+              "KEY_PROOF_INVALID");
+          equality = &method;
+        } else if (method.name == "hash") {
+          if (hash) err(object.source_file, method.line,
+              "Map key '" + key + "' has duplicate hash methods",
+              "KEY_PROOF_INVALID");
+          hash = &method;
+        }
+      }
+      const auto pure_read = [](const Method& method) {
+        return method.receiver_effect == Effect::Read &&
+            std::all_of(method.parameter_effects.begin(),
+                        method.parameter_effects.end(),
+                        [](Effect effect) { return effect == Effect::Read; }) &&
+            method.observable_effects.fusion_safe() &&
+            !method.observable_effects.fileio_unknown &&
+            !method.observable_effects.may_diverge;
+      };
+      const bool equality_valid = equality && equality->params.size() == 1 &&
+          canonical_type_name(equality->params[0].type) == key &&
+          equality->return_type &&
+          canonical_type_name(*equality->return_type) == "bool" &&
+          equality->parameter_effects.size() == 1 && pure_read(*equality);
+      const bool hash_valid = hash && hash->params.empty() &&
+          hash->return_type && canonical_type_name(*hash->return_type) == "int" &&
+          hash->parameter_effects.empty() && pure_read(*hash);
+      if (!equality_valid || !hash_valid)
+        err(object.source_file, object.line,
+            "Map key '" + key + "' requires pure READ isequal(" + key +
+            ") -> Bool and hash() -> Int methods",
+            "KEY_PROOF_INVALID");
     }
   }
 
@@ -4014,7 +4071,7 @@ class Checker {
         if ((*parsed)->name == "map") {
           const string key = args.front()->to_canonical_string();
           if (contains_enum_type(key) || contains_float_type(key) ||
-              contains_record_type(key) ||
+              (contains_record_type(key) && !staged_abi_v10()) ||
               (builtin_equality_type(key) && !hashable_map_key_type(key)))
             return false;
         }
@@ -22161,6 +22218,20 @@ class Generator {
     return std::nullopt;
   }
 
+  bool shared_nominal_map_key(const string& key) const {
+    const string concrete = canonical_type_name(key);
+    return staged_abi_v10() &&
+        (objects_.count(concrete) || is_nominal_instance_type(concrete));
+  }
+
+  std::optional<string> shared_nominal_map_key_from_type(
+      const string& type) const {
+    auto elements = map_key_value_types(canonical_type_name(type));
+    if (elements && shared_nominal_map_key(elements->first))
+      return elements->first;
+    return std::nullopt;
+  }
+
   string rust_type(const string& t) const {
     string x = canonical_type_name(t);
     if (x == "int") return "i64";
@@ -22198,6 +22269,9 @@ class Generator {
     if (starts_with(x, "queue[") && ends_with(x, "]")) return "std::collections::VecDeque<" + rust_type(x.substr(6, x.size()-7)) + ">";
     if (starts_with(x, "map[") && ends_with(x, "]")) {
       auto ps = split_top_level(x.substr(4, x.size()-5), ',');
+      if (shared_nominal_map_key(ps[0]))
+        return "moss_runtime::MossMap<" + rust_type(ps[0]) + ", " +
+               rust_type(ps[1]) + ">";
       return "std::collections::HashMap<" + rust_type(ps[0]) + ", " + rust_type(ps[1]) + ">";
     }
     if (starts_with(x, "option[") && ends_with(x, "]"))
@@ -22486,6 +22560,10 @@ class Generator {
     string storage = write_call_place(base, d, locals, types);
     string key = expr(index, d, locals, types);
     auto type = generated_expr_type(base, types);
+    if (type && shared_nominal_map_key_from_type(*type))
+      return "*({ let __moss_key = " + key + "; (" + storage +
+          ").get_mut_with(__moss_key.hash(), &__moss_key, "
+          "|a, b| a.isequal(b)).expect(\"Moss missing map key\") })";
     if (type && (starts_with(canonical_type_name(*type), "map[") || canonical_type_name(*type) == "map"))
       return "*(" + storage + ").get_mut(&(" + key + ")).expect(\"Moss missing map key\")";
     if (type && (canonical_type_name(*type) == "RangeBatch" || canonical_type_name(*type) == "Range"))
@@ -22501,6 +22579,10 @@ class Generator {
     string storage = read_call_place(base, d, locals, types);
     string key = expr(index, d, locals, types);
     auto type = generated_expr_type(base, types);
+    if (type && shared_nominal_map_key_from_type(*type))
+      return "*({ let __moss_key = " + key + "; (" + storage +
+          ").get_with(__moss_key.hash(), &__moss_key, "
+          "|a, b| a.isequal(b)).expect(\"Moss missing map key\") })";
     if (type && (starts_with(canonical_type_name(*type), "map[") || canonical_type_name(*type) == "map"))
       return "*(" + storage + ").get(&(" + key + ")).expect(\"Moss missing map key\")";
     if (type && (canonical_type_name(*type) == "RangeBatch" || canonical_type_name(*type) == "Range"))
@@ -24252,7 +24334,9 @@ class Generator {
       string element = trim(typed_vector->substr(7, typed_vector->size() - 8));
       return "std::vec::Vec::<" + rust_type(element) + ">::new()";
     }
-    if (e == "Map()") return "std::collections::HashMap::new()";
+    if (e == "Map()") return staged_abi_v10()
+        ? "std::default::Default::default()"
+        : "std::collections::HashMap::new()";
     if (e == "Queue()") return "std::collections::VecDeque::new()";
     {
       string callee;
@@ -24495,6 +24579,15 @@ class Generator {
     string ib, ii;
     if (parse_index(e, ib, ii)) {
       auto base_type = generated_expr_type(ib, types);
+      if (base_type && shared_nominal_map_key_from_type(*base_type)) {
+        const string key = expr(ii, d, locals, types);
+        const string borrowed = borrowed_function_parameters_.count(trim(ii))
+            ? "__moss_key" : "&__moss_key";
+        return "{ let __moss_key = " + key + "; (" +
+            expr(ib, d, locals, types) +
+            ").get_with(__moss_key.hash(), " + borrowed +
+            ", |a, b| a.isequal(b)).expect(\"Moss missing map key\").clone() }";
+      }
       if (base_type && canonical_type_name(*base_type) == "RangeBatch")
         return "(" + expr(ib, d, locals, types) + ").get(" +
             expr(ii, d, locals, types) + ")";
@@ -24848,10 +24941,25 @@ class Generator {
             return scalar_protocol_rust("hash", concrete, source);
         }
         if (auto map_types = map_key_value_types(concrete)) {
+          const bool shared_nominal_key =
+              shared_nominal_map_key(map_types->first);
           if (member_name == "delete" && member_arguments.size() == 3) {
             string key = expr(member_arguments[0], d, locals, types);
             string fallback = expr(member_arguments[1], d, locals, types);
             string flag = write_call_place(member_arguments[2], d, locals, types);
+            if (shared_nominal_key) {
+              const bool view_key = is_object_view(member_arguments[0], d, locals, types);
+              if (view_key) key = "(" + key + ").__moss_value()";
+              const string borrowed = !view_key && borrowed_function_parameters_.count(
+                  trim(member_arguments[0])) ? "__moss_key" : "&__moss_key";
+              return "{ let __moss_key = " + key +
+                  "; let __moss_fallback = " + fallback +
+                  "; let __moss_removed = (" + receiver_expression +
+                  ").remove_with(__moss_key.hash(), " + borrowed +
+                  ", |a, b| a.isequal(b)); let _ = &( " + flag +
+                  " ); " + flag + " = __moss_removed.is_some(); " +
+                  "__moss_removed.unwrap_or(__moss_fallback) }";
+            }
             string lookup = map_types->first == "string" ? "__moss_key.as_str()" : "&__moss_key";
             return "{ let __moss_key = " + key + "; let __moss_fallback = " + fallback +
                 "; let __moss_removed = (" + receiver_expression + ").remove(" + lookup +
@@ -24860,6 +24968,18 @@ class Generator {
           }
           if (member_name == "get" && member_arguments.size() == 2) {
             string key = expr(member_arguments[0], d, locals, types);
+            if (shared_nominal_key) {
+              string fallback = expr(member_arguments[1], d, locals, types);
+              const bool view_key = is_object_view(member_arguments[0], d, locals, types);
+              if (view_key) key = "(" + key + ").__moss_value()";
+              const string borrowed = !view_key && borrowed_function_parameters_.count(
+                  trim(member_arguments[0])) ? "__moss_key" : "&__moss_key";
+              return "{ let __moss_key = " + key +
+                  "; (" + receiver_expression +
+                  ").get_with(__moss_key.hash(), " + borrowed +
+                  ", |a, b| a.isequal(b)).cloned().unwrap_or(" +
+                  fallback + ") }";
+            }
             if (map_types->first == "string")
               key = "(" + key + ").as_str()";
             else
@@ -24870,12 +24990,16 @@ class Generator {
             return "(" + receiver_expression + ").get(" + key + ").cloned().unwrap_or(" + fallback + ")";
           }
           if (member_name == "keys" && member_arguments.empty()) {
+            if (shared_nominal_key)
+              return "(" + receiver_expression + ").keys()";
             if (map_types->first == "float")
               return "(" + receiver_expression + ").keys().map(|k| k.0).collect::<std::vec::Vec<_>>()";
             return "(" + receiver_expression + ").keys().cloned().collect::<std::vec::Vec<_>>()";
           }
           if (member_name == "values" && member_arguments.empty())
-            return "(" + receiver_expression + ").values().cloned().collect::<std::vec::Vec<_>>()";
+            return shared_nominal_key
+                ? "(" + receiver_expression + ").values()"
+                : "(" + receiver_expression + ").values().cloned().collect::<std::vec::Vec<_>>()";
         }
         if (collection_named(parsed_type(concrete), {"queue"}))
           member_name = member_name == "push" ? "push_back" : member_name == "pop" ? "pop_front" : member_name;
@@ -27267,7 +27391,29 @@ class Generator {
             backend_comment(o, (base + level) * 4,
                             "LOCAL assignment: introduce an inferred Moss binding");
             string annotation;
-            if (starts_with(statement_type, "map[") && ends_with(statement_type, "]")) annotation = rust_type(statement_type);
+            string inferred_map_type;
+            if (staged_abi_v10() && s.b == "Map()" &&
+                !starts_with(statement_type, "map[")) {
+              // A bare Map constructor has no intrinsic element types. The
+              // checked body may close it at a later indexed assignment;
+              // preserve that evidence before emitting its Rust declaration.
+              for (size_t next = i + 1; next < ss.size(); ++next) {
+                string map_base, index_expression;
+                if (ss[next].kind != Stmt::Kind::Assign ||
+                    !parse_index(ss[next].a, map_base, index_expression) ||
+                    map_base != s.a) continue;
+                auto key_type = generated_expr_type(index_expression, &types);
+                auto value_type = generated_expr_type(ss[next].b, &types);
+                if (key_type && value_type && shared_nominal_map_key(*key_type)) {
+                  inferred_map_type = "map[" + canonical_type_name(*key_type) +
+                      "," + canonical_type_name(*value_type) + "]";
+                  break;
+                }
+              }
+            }
+            if (starts_with(statement_type, "map[") && ends_with(statement_type, "]"))
+              annotation = rust_type(statement_type);
+            else if (!inferred_map_type.empty()) annotation = rust_type(inferred_map_type);
             else if (canonical_type_name(statement_type) == "float" ||
                      canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float")
               annotation = "f64";
@@ -27280,7 +27426,8 @@ class Generator {
               << ";\n";
             locals.insert(s.a);
             auto generated_type = generated_expr_type(s.b, &types);
-            types[s.a] = generated_type ? *generated_type
+            types[s.a] = !inferred_map_type.empty() ? inferred_map_type
+                : generated_type ? *generated_type
                 : !statement_type.empty() ? statement_type
                 : s.b == "Map()" ? "map"
                 : s.b == "Queue()" ? "queue"
@@ -27310,10 +27457,17 @@ class Generator {
                   statement_functional_pipeline_id(s, functional_context, 0));
               if (borrowed_function_parameters_.count(trim(s.b)))
                 inserted = "(" + inserted + ").clone()";
-              o << indent(level) << "(" << write_call_place(mb, d, locals, &types)
-                << ").insert(" << key << ", "
-                << inserted
-                << ");\n";
+              if (shared_nominal_map_key_from_type(*map_assignment_type)) {
+                o << indent(level) << "{ let __moss_key = " << key
+                  << "; (" << write_call_place(mb, d, locals, &types)
+                  << ").insert_with(__moss_key.hash(), __moss_key, "
+                  << inserted << ", |a, b| a.isequal(b)); }\n";
+              } else {
+                o << indent(level) << "(" << write_call_place(mb, d, locals, &types)
+                  << ").insert(" << key << ", "
+                  << inserted
+                  << ");\n";
+              }
             }
             else if (is_object_view(s.a, d, locals, &types))
               o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
@@ -27690,6 +27844,23 @@ class Generator {
           } else {
             auto source = types.find(trim(s.b));
             bool domain_capability = source != types.end() && domains_.count(source->second);
+            string inferred_map_type;
+            if (staged_abi_v10() && s.b == "Map()" &&
+                !starts_with(statement_type, "map[")) {
+              for (size_t next = i + 1; next < ss.size(); ++next) {
+                string map_base, index_expression;
+                if (ss[next].kind != Stmt::Kind::Assign ||
+                    !parse_index(ss[next].a, map_base, index_expression) ||
+                    map_base != s.a) continue;
+                auto key_type = generated_expr_type(index_expression, &types);
+                auto value_type = generated_expr_type(ss[next].b, &types);
+                if (key_type && value_type && shared_nominal_map_key(*key_type)) {
+                  inferred_map_type = "map[" + canonical_type_name(*key_type) +
+                      "," + canonical_type_name(*value_type) + "]";
+                  break;
+                }
+              }
+            }
             o << indent(level);
             if (!joined_assignment)
               o << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "");
@@ -27698,6 +27869,10 @@ class Generator {
                 (canonical_type_name(statement_type) == "float" ||
                  canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float"))
               o << ": f64";
+            else if (!joined_assignment && !domain_capability &&
+                     (starts_with(statement_type, "map[") || !inferred_map_type.empty()))
+              o << ": " << rust_type(!inferred_map_type.empty()
+                  ? inferred_map_type : statement_type);
             o << " = "
               << expr(s.b, d, locals, &types,
                       statement_functional_pipeline_id(
@@ -27708,6 +27883,7 @@ class Generator {
             bool unspecialized_collection = generated_type &&
                 (*generated_type == "vector" || *generated_type == "queue" || *generated_type == "map");
             types[s.a] = domain_capability ? source->second
+                : !inferred_map_type.empty() ? inferred_map_type
                 : (unspecialized_collection && !statement_type.empty() && statement_type != *generated_type)
                     ? statement_type
                 : generated_type ? *generated_type
@@ -37865,7 +38041,7 @@ static NativeArtifact compile_native_artifact(
   source_key << "sources\n";
   vector<string> shared_runtime_flags;
   std::optional<abi_v10::RuntimeCrateIdentity> shared_runtime_identity;
-  if (staged_abi_v10() && indexed_strings_staged()) {
+  if (staged_abi_v10()) {
     std::filesystem::path runtime_dir;
     if (const char* configured = std::getenv("MOSS_RUNTIME_SOURCE_DIR")) {
       runtime_dir = configured;
