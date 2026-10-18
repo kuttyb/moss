@@ -1,14 +1,15 @@
 # Moss current status
 
-## Phase 25 Team H — A4 Checked Body IR & Dependency Hashing Complete (H0–H3) — 2026-10-17
+## Phase 25 Team H — A4 Checked Body IR Integration with Team T Baseline (9ed6830) — 2026-10-17
 
-Team H has completed all milestones for Phase 25 A4 (Checked semantic body IR and dependency hashing) on feature branch `phase25-checked-body-ir`. The compiler wiring, deterministic encoding, DAG closure validation, fail-closed source-free handling, and end-to-end regression tests have been audited by the independent L6 Adversarial Reviewer and received an unconditional full pass. Exclusive compiler ownership is hereby released for downstream integration by Team I.
+Team H has integrated Team T's final reviewed TypeRef baseline (`9ed6830`) into feature branch `phase25-checked-body-ir` following publication of `TEAM H UNBLOCK — READY` and `COMPILER_OWNERSHIP_RELEASED`. Team H has acquired exclusive compiler-writing ownership of `src/moss.cpp`.
 
 1. **Implementation Baseline & Commits:**
-   - Initial base commit: `7c3f18d8badcaf6a346bb5044cd03d5100cc714a`.
-   - Independent H0/H1 commits: `da2718e`, `0eb80d3`, `e9c32b7` (zero modifications to compiler files while Team T held compiler lease).
-   - Upstream Type Authority integration: `0f057b3` (clean merge of `origin/phase25-type-authority` at `a3620ae` upon authorized "GO").
-   - Milestone H2/H3 completion commit: `46c50fa69cc1d1751673858b13d487dd64fe6512`.
+   - Base commit: `7c3f18d8badcaf6a346bb5044cd03d5100cc714a`.
+   - Independent H0/H1 commits: `da2718e`, `0eb80d3`, `e9c32b7`.
+   - Milestone H2/H3 implementation commit: `46c50fa69cc1d1751673858b13d487dd64fe6512`.
+   - Upstream Type Authority baseline integrated: `9ed6830` via merge commit.
+   - Exclusive compiler ownership: Acquired by Team H.
 
 2. **Milestone Deliverables & Contract Hardening:**
    - **Self-contained Checked Body IR (`src/checked_body_ir.hpp`):** Full expression hierarchy (`Parameter`, `IntegerLiteral`, `FloatLiteral`, `BoolLiteral`, `StringLiteral`, `LocalRead`, `Unary`, `Binary`, `Field`, `VectorLiteral`, `MapLiteral`, `Call`, `Message`), statement hierarchy (`Let`, `Var`, `Assign`, `AssignField`, `AssignIndex`, `ExprStmt`, `Return`, `Reply`), and control flow (`If`, `While`, `For`, `Match` with `CaseBranch`).
@@ -28,32 +29,41 @@ Team H has completed all milestones for Phase 25 A4 (Checked semantic body IR an
    - **Developer Experience Feedback:** Recorded observations 001, 002, and 003 in `agent-feedback/phase25/team-h-checked-body-ir/checked-body-ir/observations.jsonl`.
    - **Documentation:** Updated `docs/phase25/TEAM_A_TYPED_SEMANTIC_API.md` with checked body IR retainers, dependency validation, and fail-closed contracts.
 
-3. **Validation & Quality Gates (100% Pass):**
-   - C++17 unit tests: `tests/tooling/check_phase25_checked_body_ir.cpp` compiled with `-Wall -Wextra -Werror -pedantic` and passed 100%.
-   - C++ compiler syntax & build: `make -j4` compiled cleanly with zero warnings/errors.
-   - Checked body IR test runner: `python3 tests/tooling/check_phase25_checked_body_ir.py ./moss` passed.
-   - Typed semantic API test runner: `python3 tests/tooling/check_phase25_typed_semantic_api.py ./moss` passed.
-   - Team A semantics test runner: `python3 tests/tooling/check_phase25_team_a_semantics.py ./moss` passed.
-   - Phase 25 full suite: `check_phase25_type_ir.py`, `check_phase25_conformance.py`, `check_phase25_nominal_identity.py`, `check_phase25_field_visibility.py`, `check_phase25_recursive_layout.py`, `check_phase25_a3_specialization.py`, `abi_v10_staging.cpp`, `abi_v10_adversarial.cpp` all passed cleanly (0 regressions).
-   - Examples corpus: `make examples` passed cleanly (30 examples built).
-   - Agent feedback validation: `python3 tests/tooling/check_agent_feedback.py` passed cleanly.
-   - Git hygiene: `git diff --check` passed cleanly.
+3. **Current Team H Status:**
+   - Baseline integration of Team T commit `9ed6830` complete.
+   - Exclusive compiler writing lease acquired by Team H.
+   - Active work: Full verification and end-to-end regression validation of the combined baseline before final handoff to Team I.
 
-4. **Independent L6 Adversarial Reviewer Sign-Off:**
-   - Independent L6 Adversarial Reviewer audited candidate commit `46c50fa`.
-   - Proved hash invariance across comments/whitespace, sensitive ordering on vector literals, distinct nominal field hashes, fail-closed handling on nested calls, and fail-closed handling on source-free `.mossi` interfaces.
-   - Issued an unconditional **FULL PASS (READY FOR TEAM I / ABI-v10 INTEGRATION)** verdict.
+## Phase 25 Tasks T1, T2, T3: Type Authority, Pseudo-Type Conversion, and Fallback Retirement — 2026-10-17 (ACCEPTED BASELINE)
 
-5. **Current Team H Status (L7 Coordination Correction — Preserved & Parked):**
-   - Branch `phase25-checked-body-ir` is preserved at `46c50fa` / `4814ccf` with existing H0/H1/H2/H3 deliverables intact.
-   - Per L7 Directive, exclusive compiler-writing ownership of `src/moss.cpp` is held by Team T while completing T2/T3 (inference variables, parameter/return annotations, unknown-argument fallback removal).
-   - Team H is **PARKED** and will make zero modifications to `src/moss.cpp` while Team T finishes A2.
-   - Upon Team T's publication of its final reviewed TypeRef handoff (`TEAM H UNBLOCK — READY` and `COMPILER_OWNERSHIP_RELEASED`), Team H will:
-     1. Incorporate Team T's exact accepted SHA into `phase25-checked-body-ir`.
-     2. Acquire exclusive compiler ownership.
-     3. Complete compiler-backed multi-statement/control-flow checked IR and dependency-hash integration.
-     4. Run full acceptance tests and obtain independent L6 Adversarial Reviewer sign-off.
-     5. Hand off the completed branch to Team I for ABI-v10 multi-team integration.
+**Phase 25 Tasks T1, T2, and T3 implemented and validated by Team T at commit `9ed6830`.**
+The Checker's lexical environment (`TypeEnv`) operates under `moss::TypeRef` authority (T1), open pseudo-types are converted to solver inference variables with requirements without leaking internal markers (T2), and the unknown-argument fallback in `check_function_call` has been retired with type checking fully term-driven (T3).
+
+### Summary of Changes & Completed Validation
+1. **`TypeEnv` Authority (T1)**:
+   - `TypeEnv` operates over `std::unordered_map<string, moss::TypeRef>` for both `bindings` and `terms`.
+   - Backward-compatible accessors provided via `EntryRef` and transparent string conversions.
+   - `fileio_semantics.inc` and `src/moss.cpp` aligned for `moss::TypeRef` and `phase20_capability_type` overloads.
+2. **Pseudo-Types & Inference Variables (T2)**:
+   - Added `_typevar:` prefix to `internal_semantic_placeholder` in `src/type_placeholders.hpp` to prevent type variable leaking.
+   - Guarded `InferredExpr::projection()` and `inferred_expr_type()` to ensure only closed terms project strings and open `_typevar:` markers never escape into error diagnostics.
+   - Allocated fresh `solver.fresh(0)` inference variables for open iterator elements (`_iterator_element:`) in `solve_local_collection_types` and `checked_expression_term`, enabling full solver unification during unspecialized template checking (`bytes.from_range`).
+   - Deferral in `check_functional_pipeline` for open/untyped generic pipeline sources preserves downstream specialization while preventing premature unknown-symbol errors on built-in pipeline stages (`parts |> count`).
+   - Resolved all pre-existing internal type leaks: `KNOWN_OPEN` in `tests/tooling/check_no_internal_type_leak.py` is now empty (`KNOWN_OPEN = set()`, 0 leaks across 1,864 tracked `.moss` sources).
+3. **Retirement of Unknown-Argument Fallback (T3)**:
+   - Retired `actual_type.empty() || contains_internal_placeholder(actual_type) || param.type.empty() || contains_internal_placeholder(param.type)` from `check_function_call`.
+   - Function calls strictly enforce argument compatibility via `current_body_types_->solver.unify(*formal_term, actual_term)` when terms are present, traits/container matching, and concrete compatibility.
+4. **Validation Results**:
+   - `make check`: 100% pass (`all Moss v0.1 tests passed`, 54 executor tests passed).
+   - `python3 tests/tooling/check_phase25_team_a_semantics.py ./moss`: 55/55 passed (including `source_free_range` with `bytes.from_range(Range)` returning owned `Vector[Int]`).
+   - `python3 tests/tooling/check_no_internal_type_leak.py ./moss`: 0 leaks across 1864 sources (0 known open).
+   - `python3 tests/tooling/check_domain_handle_closure.py ./moss`: passed.
+   - `python3 tests/tooling/check_generic_specialization.py ./moss`: 40/40 passed.
+   - All Phase 25 tooling suites (`check_phase25_conformance.py`, `check_phase25_a3_specialization.py`, `check_phase25_nominal_identity.py`, `check_phase25_type_ir.py`, etc.): passed.
+   - `python3 tests/tooling/check_agent_skills.py ./moss`: passed.
+   - `python3 tests/tooling/check_agent_feedback.py`: passed.
+
+Compiler ownership for `src/moss.cpp` was released at `9ed6830` and transferred to Team H.
 
 ## Phase 25 Team A — handoff for parallel splitting — 2026-10-17
 

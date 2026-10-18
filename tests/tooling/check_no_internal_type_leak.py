@@ -32,10 +32,8 @@ MARKERS = ("_typevar:", "_generic:", "_element:", "_field:", "_method_value",
            "_functional_collection:", "_functional_callable_result:")
 
 # Pre-existing leaks, each a pseudo-type the Type IR conversion still owes.
-KNOWN_OPEN = {
-    "examples/swarm/modules/algo_chain/repro/untyped_method_value/single/src/main.moss",
-    "examples/swarm/polymorphism/sort_search/reproducers/probe_swap_assign.moss",
-}
+# All previous leaks resolved (0 open).
+KNOWN_OPEN = set()
 
 
 def leaked(moss: Path, corpus: Path, source: str) -> str:
