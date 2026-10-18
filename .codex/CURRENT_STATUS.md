@@ -1,5 +1,20 @@
 # Moss current status
 
+## Phase 25 staged Float Map checkpoint — 2026-10-18
+
+Sole L4 pushed `phase25-i-map-staging` at `dd7f97f`. Under opt-in ABI-v10,
+Float Map uses shared `MossMap<f64,V>` with Team S's canonical
+`moss_float_isequal`/`moss_float_hash` and the same built-in proof ID as Float
+Set; Map and Set operation IDs remain distinct. Signed-zero/NaN fixture 01
+and eager Float-key snapshot fixture 07 pass Fast Debug, native debug and
+native release, as do Set 02 and shared Map/Set 08. Source-free proof
+transport, activated G2 11/11 and default-v9 Float Map fail-closed checks pass.
+The full staged key suite is **27/30 PASS**; only Option B empty-Map fixtures
+09b/09c (`TYPE_AMBIGUOUS_OPEN_RESULT`) and 09g (`MOSS_COMPILE_ERROR`) remain.
+L4 retains exclusive compiler lease and has begun that separate Option B slice.
+H/T PR #5 is unchanged at `9ddf9a4` with three exact-head CI jobs green and
+core regressions in progress. No target/main merge or L6 verdict yet.
+
 ## Phase 25 staged key-fixture checkpoint — 2026-10-18
 
 Sole L4 pushed `phase25-i-map-staging` through `bd1547e` and `69b042b` after

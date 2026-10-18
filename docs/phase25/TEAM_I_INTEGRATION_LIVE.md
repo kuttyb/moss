@@ -1,5 +1,15 @@
 # Team I live integration record
 
+## Staged Float Map checkpoint — 2026-10-18
+
+L4 pushed `phase25-i-map-staging` at `dd7f97f`. Opt-in ABI-v10 Float Map uses
+shared `MossMap<f64,V>` and Team S scalar equality/hash with the same proof ID
+as Float Set. Signed-zero/NaN and eager-key-snapshot fixtures pass Fast Debug,
+native debug and release; source-free proof transport and staged G2 11/11 also
+pass. Default v9 still rejects Float Map. Activated key fixtures are **27/30**;
+only Option B 09b/09c/09g remain. L4 is working those separately. H/T core
+CI remains the last prerequisite to its combined L6 review.
+
 ## Activated key-fixture checkpoint — 2026-10-18
 
 L4 pushed staged branch `phase25-i-map-staging` through runner fix `bd1547e`
