@@ -15,9 +15,11 @@ The single active L4 worker owns compiler edits in that worktree while root
 handles combined L6 coordination/review and Git/CI; do not start another
 compiler writer. L4 is implementing the L7-frozen four-method Set source API.
 Final independent adversarial L6 review is deferred until implementation is
-complete, with L4 idle during that review. H/T draft #5 still has three green
-checks and core regressions running on exact head `bf1df10`; no target or main
-merge has occurred.
+complete, with L4 idle during that review. H/T draft #5 advanced to `9ddf9a4`
+after trimming an inherited Team T closeout trailing blank line;
+target-range `git diff --check` now passes. The earlier three-green/one-running
+CI result applies only to old head `bf1df10`; all four checks must rerun on
+`9ddf9a4` before L6 review. No target or main merge has occurred.
 
 ## L7 Set source-surface decision — 2026-10-18
 

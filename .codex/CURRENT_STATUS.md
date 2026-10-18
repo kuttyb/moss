@@ -23,7 +23,11 @@ compiler files. The independent adversarial L6 review remains deferred until
 the final candidate. H/T draft PR #5 at `bf1df10` has three green exact-head
 jobs; core regressions is still in progress at workflow `39168204061`. Target
 `phase25-integration` remains `fbd2f729caf1a96c3ffe184068e88ba6b09288cc`;
-no merge to main.
+no merge to main. H/T draft #5 advanced to `9ddf9a4` after trimming one
+inherited final blank line in Team T's closeout. The target-range
+`git diff --check` now passes. The earlier three-green/one-running result
+was for `bf1df10` and is invalidated by this new head; wait for all four new
+exact-head CI jobs before combined L6 review or integration.
 
 ## Phase 25 L7 Set decision — 2026-10-18
 
