@@ -270,6 +270,9 @@ static void build_type_context(Program& program) {
   for (const auto& domain : program.domains)
     declare(moss::DeclarationKind::Domain, domain.name, domain.defining_module,
             domain.declaration_name, {});
+  context->register_trait("Iterator");
+  for (const auto& trait : program.traits)
+    context->register_trait(trait.name);
   try {
     context->bind_field_annotations();
   } catch (const moss::InvalidFieldAnnotation& invalid) {
@@ -2591,6 +2594,7 @@ class Checker {
         }
       }
     }
+    p_.assert_declaration_type_consistency();
     for (auto& t : p_.traits) {
       if (!traits_.emplace(t.name, &t).second)
         err(t.source_file, t.line, "duplicate trait: " + t.name);
@@ -2755,6 +2759,7 @@ class Checker {
     // This pass neither infers types nor parses diagnostic/display strings.
     p_.typed_semantics = std::make_shared<moss::TypedSemanticModuleV1>(
         moss::project_typed_semantics_v1(p_));
+    p_.assert_declaration_type_consistency();
   }
 
   const vector<Warning>& warnings() const { return warnings_; }
@@ -3449,7 +3454,7 @@ class Checker {
   // one that parses but names nothing known keeps its specific message.
   [[noreturn]] void invalid_type_err(const string& source_file, int line,
                                      const string& type, const string& message) const {
-    if (!moss::Type::parse_canonical(canonical_type_name(type)))
+    if (!moss::Type::is_well_formed_syntax(canonical_type_name(type)))
       err(source_file, line, "malformed type expression '" + type + "'",
           "MALFORMED_TYPE_EXPRESSION");
     err(source_file, line, message);
@@ -6283,8 +6288,12 @@ class Checker {
   }
 
   static bool same_type(const string& left, const string& right) {
-    auto left_ir = moss::Type::parse_canonical(canonical_type_name(left));
-    auto right_ir = moss::Type::parse_canonical(canonical_type_name(right));
+    if (left == right) return true;
+    auto c_left = canonical_type_name(left);
+    auto c_right = canonical_type_name(right);
+    if (c_left == c_right) return true;
+    auto left_ir = moss::Type::parse_canonical(c_left);
+    auto right_ir = moss::Type::parse_canonical(c_right);
     return left_ir && right_ir && (*left_ir)->structurally_equal(**right_ir);
   }
 
@@ -6296,6 +6305,7 @@ class Checker {
 
   static bool same_type(const moss::TypeRef& left, const string& right) {
     if (!left) return right.empty();
+    if (left->to_canonical_string() == right || left->to_canonical_string() == canonical_type_name(right)) return true;
     auto right_ir = moss::Type::parse_canonical(canonical_type_name(right));
     return right_ir && left->structurally_equal(**right_ir);
   }
@@ -6391,7 +6401,9 @@ class Checker {
   std::optional<string> specialized_function_return_type(
       const Function& function, const vector<string>& parameter_types) const {
     string result = function.return_type ? canonical_type_name(*function.return_type) : "";
-    bool requires_concrete_result = result.empty() || contains_internal_placeholder(result) || traits_.count(result);
+    auto parsed_result = result.empty() ? std::nullopt : moss::Type::parse_canonical(result);
+    bool requires_concrete_result = result.empty() || contains_internal_placeholder(result) ||
+        traits_.count(result) || (parsed_result && !(*parsed_result)->is_closed());
     if (requires_concrete_result) {
       auto env = instantiated_function_env(function, parameter_types);
       BodyTypeState body_types = solve_local_collection_types(
@@ -6546,7 +6558,9 @@ class Checker {
     vector<moss::TypeRef> concrete_arguments;
     for (const auto& name : argument_names) {
       auto argument = moss::Type::parse_canonical(canonical_type_name(name));
-      if (!argument || !(*argument)->is_closed()) return std::nullopt;
+      if (!argument) return std::nullopt;
+      if (!(*argument)->is_closed() && !contains_internal_placeholder(name) && !open_generic(name))
+        return std::nullopt;
       open_arguments.push_back(solver.fresh(0));
       concrete_arguments.push_back(*argument);
     }

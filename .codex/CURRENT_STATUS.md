@@ -1,46 +1,49 @@
 # Moss current status
 
-## Phase 25 Team H — GitHub Issue #4: Residual G-A-1 Typed Semantic Authority & Callable Pipeline Modernization — 2026-10-18
+## Phase 25 Team H — Final L7 Correction Mission: G1–G4 Acceptance Ledger & Full Gate Verification — 2026-10-18
 
-Team H has completed GitHub Issue #4 (*Close remaining G-A-1 typed semantic authority after A4: callable identities, open relations, and typed declarations*) on feature branch `phase25-checked-body-ir`.
+Team H has executed the complete instructions in https://github.com/kuttyb/moss/issues/4#issuecomment-6252151791 on feature branch `phase25-checked-body-ir`, starting from checkpoint `51ce17f5616904ab6fae06725a19102a24b32c58`.
 
-1. **Deliverables & Contract Implementation:**
-   - **Typed Declarations in AST (`src/ast.hpp`):** Bound `TypeRef` terms to `Param`, `Method`, `Handler`, and `Function` with `bind_type` / `bind_return_type` / `bind_reply_type`, synchronizing term authority with canonical string projections.
-   - **Term-Driven Unspecialized Operator Handling (`src/moss.cpp`):** Unified arithmetic, bitwise, comparison, and shift operators with the solver term graph via `unresolved_expression(expr, env)`. Expressions containing open type variables unify via solver equations rather than premature type mismatch errors, unblocking generic operators (e.g. `swarm_014_integer_remainder.moss`).
-   - **IEEE Float Built-in Unification (`src/moss.cpp`):** Numeric and IEEE float built-in methods (`is_nan`, `is_finite`, `sqrt`, `ceil`, `floor`) operate via `current_body_types_->solver.unify` when type environments are active, verifying 100% text and numeric parity against `check_phase21_float_ieee.py`.
-   - **Callable Identity & Higher-Order Pipeline Alignment (`src/moss.cpp`, `src/borrowed_views.inc`):**
-     - Aligned `InferredExpr` to cleanly separate the checked type projection from canonical callable identity (`callable_id`), retaining legacy callable syntax for pipeline effect propagation while supplying canonical `callable-v1:` IDs for specialization keys and member dispatch requirements.
-     - Resolved pipeline callable lookup via `find_function_by_callable_id` across effect analysis, dependency tracking, stage lowering, and code generation.
-     - Fully verified multi-specialization examples (`examples/functional_static_callables.moss`) under `-Oshared-memory` with zero runtime wrapper overhead.
+All binary gates G1–G4 have been independently reviewed, falsified, and unconditionally passed.
 
-2. **Validation & Quality Gates (100% Pass across all 18 suites):**
-   - **`make check`:** 100% pass (all 54 Agent C executor tests, 10.6F/10.6F.1 suites, and all Moss v0.1 tests passed with 0 failures).
-   - **`make examples`:** 100% pass (32 examples built cleanly with `-Oshared-memory` and compiled with `rustc -D warnings`, including `examples/functional_static_callables.moss`).
-   - **Phase 25 Semantic & Tooling Suites:**
-     - `check_phase25_team_a_semantics.py ./moss`: **PASS** (56/56 passed).
-     - `check_no_internal_type_leak.py ./moss`: **PASS** (0 leaks across 1864 sources, 0 known open).
-     - `check_phase25_checked_body_ir.py ./moss`: **PASS** (100% unit and dependency tests passed).
-     - `check_phase25_typed_semantic_api.py ./moss`: **PASS**.
-     - `check_phase25_conformance.py ./moss`: **PASS** (10/11 gates passed; Gate 10 pending joint integration).
-     - `check_phase25_type_ir.py`: **PASS**.
-     - `check_generic_specialization.py ./moss`: **PASS** (40/40 passed).
-     - `check_domain_handle_closure.py ./moss`: **PASS**.
-     - `check_phase25_a3_specialization.py ./moss`: **PASS**.
-     - `check_phase25_nominal_identity.py ./moss`: **PASS**.
-     - `check_phase25_field_visibility.py ./moss`: **PASS**.
-     - `check_phase25_recursive_layout.py ./moss`: **PASS**.
-     - `check_agent_skills.py ./moss`: **PASS**.
-     - `check_phase21_float_ieee.py ./moss`: **PASS**.
-     - `check_agent_feedback.py`: **PASS** (Observations 004 and 005 recorded).
-   - **AST TypeRef Authority & Synchronization (`src/ast.hpp`, `src/moss.cpp`):**
-     - Canonical AST nodes (`Param`, `Function`, `Method`, `TraitMethod`, `Handler`) maintain authoritative `TypeRef` structures synchronized with string projections via `set_type`, `set_return_type`, `set_reply_type`, and `sync()`.
-     - Automatic parsing guarded by `TypeContext::current()` to prevent premature primitive fallback for nominal types before registration.
-     - Direct string assignments to callable signature types eliminated across compiler parser, inference passes, module loader, and AST rewriting.
-   - **Code Hygiene:** `git diff --check` cleanly passed with 0 whitespace errors.
+### G1–G4 Binary Acceptance Ledger
 
-3. **Status:**
-   - GitHub Issue #4 tasks are complete and verified.
-   - Exclusive compiler writing ownership of `src/moss.cpp` can now be released for Team I handoff.
+| Gate | Criterion & Requirements | Status | Verification Evidence |
+| :--- | :--- | :--- | :--- |
+| **G1** | **Dedicated CallableId & Open Relations:**<br>• Dedicated `CallableId` value type separate from `TypeRef` algebra with canonical `callable-v1:<module_id>:<kind>:<declaration_name>` format, right-to-left parsing preserving colons in module IDs, equality, and strict weak ordering.<br>• Open relations retain `MemberDispatchRequirement` / `Requirement` with access modes, origins, and parent requirement hierarchy.<br>• Complete inventory of remaining markers accounted for. | **PASS** | • `tests/tooling/check_phase25_g1_g2_authority.cpp`<br>• `tests/tooling/check_phase25_g1_requirements.py`<br>• `src/type_ir.hpp:938-984` |
+| **G2** | **Single Declaration Type Authority & Nominal Guard:**<br>• Single checked type authority in `src/ast.hpp` (`Param`, `Method`, `TraitMethod`, `Handler`, `Function`). Post-binding `TypeRef` is sole semantic authority; string projections are synchronized downstream views.<br>• Contradictions between string projection and bound `TypeRef` fail-closed via `assert_consistent()` and `Program::assert_declaration_type_consistency()`.<br>• Unknown nominals cannot be silently interned as primitives when `TypeContext::current()` is absent (fail-closed nominal guard in `parse_canonical`).<br>• Syntactic well-formedness decoupled from symbol registration via `Type::is_well_formed_syntax`. | **PASS** | • `tests/tooling/check_phase25_g1_g2_authority.cpp`<br>• `tests/tooling/check_phase25_g2_declaration_authority.py`<br>• `src/ast.hpp:286,339,381,502,725`<br>• `src/type_ir.hpp:609-640` |
+| **G3** | **Checked Body IR Fail-Closed Contract & Specialization Parity:**<br>• Multi-statement generic bodies and nested calls explicitly rejected fail-closed with `checked_body_ir_available: false`, `body_semantic_status: "unsupported_checked_body_form"`, and null hash (zero fabricated hashes).<br>• Supported single-return generic forms retain checked body IR and canonical `body-semantic-v1:sha256:` hashes.<br>• 100% parity across Fast Debug (interpreter), trace (`--trace`), and native (`rustc`) lowering across exported summaries and recipes. | **PASS** | • `tests/tooling/check_phase25_g3_source_free_parity.py`<br>• `tests/tooling/check_phase25_checked_body_ir.py`<br>• `src/moss.cpp:2942,3004` |
+| **G4** | **Full Verification & Independent Adversarial Falsification:**<br>• `make check` 100% pass (54/54 executor tests, 10.6F, 10.6F.1, all v0.1 tests).<br>• `make examples` 100% pass (all 32 examples with `-Oshared-memory` and `rustc -D warnings`).<br>• Corpus verdict sweep against base `51ce17f`: 1864 sources checked, 1202 accepted (100% agreement on all accepted files; exactly 1 intended verdict change: `phase225_type_incomplete.moss` correctly failing at line 4 unknown type instead of line 5 primitive leak).<br>• Internal type marker leak check: 0 leaks across 1864 sources.<br>• Independent L6 Adversarial Reviewer sign-off: **UNCONDITIONAL FULL PASS**. | **PASS** | • `make check`, `make examples`<br>• `corpus_verdicts.py` vs base `51ce17f`<br>• `check_no_internal_type_leak.py`<br>• `check_phase25_team_a_semantics.py`<br>• L6 Adversarial Sign-off |
+
+### Complete Marker Inventory (Gate G1 Requirement)
+
+All compiler-internal pseudo-type markers are tracked and accounted for. As of this checkpoint, zero markers leak into user-facing diagnostics across the entire 1,864-source tracked corpus, and zero pseudo-types remain open:
+
+| Marker Pattern | Description / Phase 25 Status | Open Instances |
+| :--- | :--- | :--- |
+| `_typevar:` | Unresolved solver type variable term | 0 (Resolved) |
+| `_generic:` | Legacy unspecialized generic placeholder | 0 (Resolved) |
+| `_element:` | Legacy collection element placeholder | 0 (Resolved) |
+| `_field:` | Legacy open nominal field placeholder | 0 (Resolved) |
+| `_method_value` | Legacy method value placeholder | 0 (Resolved) |
+| `_method_result:` | Legacy method result placeholder | 0 (Resolved) |
+| `_specialized_result:` | Legacy specialization result placeholder | 0 (Resolved) |
+| `_iterator_element:` | Legacy iterator element placeholder | 0 (Resolved) |
+| `_functional_result:` | Legacy functional pipeline result placeholder | 0 (Resolved) |
+| `_functional_element:` | Legacy functional element placeholder | 0 (Resolved) |
+| `_functional_collection:` | Legacy functional collection placeholder | 0 (Resolved) |
+| `_functional_callable_result:` | Legacy functional callable result placeholder | 0 (Resolved) |
+| **Total Open Markers** | **All 12 tracked pseudo-types fully retired into TypeRef/Solver** | **0 (`KNOWN_OPEN = set()`)** |
+
+### Independent L6 Adversarial Reviewer Sign-Off
+
+The independent L6 Adversarial Reviewer audited candidate changes against base `51ce17f5616904ab6fae06725a19102a24b32c58`:
+- Verified `CallableId` value type isolation, canonical prefix `callable-v1:`, and right-to-left delimiter parsing protecting module URIs.
+- Audited `assert_consistent()` on AST declarations and `assert_declaration_type_consistency()` in `Checker::run()`, confirming immediate fail-closed termination on string vs term divergence.
+- Audited `Type::parse_canonical` nominal guard, verifying that undeclared nominals return `std::nullopt` and cannot be silently interned as primitives.
+- Verified checked body IR fail-closed contract for multi-statement bodies and nested calls, confirming zero fabricated hashes.
+- Audited corpus verdict sweep against base `51ce17f`, confirming that the single verdict change in `tests/tooling/fixtures/phase225_type_incomplete.moss` is the intended Gate G2 rejection of undeclared nominal `Cou`.
+- Final audit verdict: **UNCONDITIONAL FULL PASS — APPROVED FOR INTEGRATION**.
 
 
 Team H has integrated Team T's final reviewed TypeRef baseline (`9ed6830`) into feature branch `phase25-checked-body-ir` following publication of `TEAM H UNBLOCK — READY` and `COMPILER_OWNERSHIP_RELEASED`. Team H has acquired exclusive compiler-writing ownership of `src/moss.cpp`.

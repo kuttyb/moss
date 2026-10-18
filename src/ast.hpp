@@ -92,6 +92,13 @@ struct Param {
       if (parsed && (*parsed)->is_closed()) type_ref = *parsed;
     }
   }
+  void assert_consistent() const {
+    if (type_ref && !type.empty() && type != type_ref->to_canonical_string()) {
+      throw std::logic_error("Param '" + name + "' type string projection '" +
+                             type + "' contradicts bound TypeRef '" +
+                             type_ref->to_canonical_string() + "'");
+    }
+  }
 };
 // A call that instantiates an open result has its own inference variables.
 // These checked facts survive body closure for specialization registration and
@@ -279,6 +286,16 @@ struct Method {
       if (parsed && (*parsed)->is_closed()) return_type_ref = *parsed;
     }
   }
+  void assert_consistent() const {
+    if (return_type_ref && return_type && !return_type->empty() &&
+        *return_type != return_type_ref->to_canonical_string()) {
+      throw std::logic_error("Method '" + owner + "." + name +
+                             "' return type string projection '" + *return_type +
+                             "' contradicts bound TypeRef '" +
+                             return_type_ref->to_canonical_string() + "'");
+    }
+    for (const auto& param : params) param.assert_consistent();
+  }
   vector<Stmt> body;
   std::optional<string> result_expression;
   int result_line = 0;
@@ -322,6 +339,16 @@ struct TraitMethod {
       if (parsed && (*parsed)->is_closed()) return_type_ref = *parsed;
     }
   }
+  void assert_consistent() const {
+    if (return_type_ref && return_type && !return_type->empty() &&
+        *return_type != return_type_ref->to_canonical_string()) {
+      throw std::logic_error("TraitMethod '" + name +
+                             "' return type string projection '" + *return_type +
+                             "' contradicts bound TypeRef '" +
+                             return_type_ref->to_canonical_string() + "'");
+    }
+    for (const auto& param : params) param.assert_consistent();
+  }
   int line = 0;
   string source_file;
 };
@@ -353,6 +380,16 @@ struct Handler {
       auto parsed = Type::parse_canonical(*reply_type);
       if (parsed && (*parsed)->is_closed()) reply_type_ref = *parsed;
     }
+  }
+  void assert_consistent() const {
+    if (reply_type_ref && reply_type && !reply_type->empty() &&
+        *reply_type != reply_type_ref->to_canonical_string()) {
+      throw std::logic_error("Handler '" + name +
+                             "' reply type string projection '" + *reply_type +
+                             "' contradicts bound TypeRef '" +
+                             reply_type_ref->to_canonical_string() + "'");
+    }
+    for (const auto& param : params) param.assert_consistent();
   }
   vector<Stmt> body;
   vector<FailureArm> failure_arms;
@@ -464,6 +501,16 @@ struct Function {
       auto parsed = Type::parse_canonical(*return_type);
       if (parsed && (*parsed)->is_closed()) return_type_ref = *parsed;
     }
+  }
+  void assert_consistent() const {
+    if (return_type_ref && return_type && !return_type->empty() &&
+        *return_type != return_type_ref->to_canonical_string()) {
+      throw std::logic_error("Function '" + name +
+                             "' return type string projection '" + *return_type +
+                             "' contradicts bound TypeRef '" +
+                             return_type_ref->to_canonical_string() + "'");
+    }
+    for (const auto& param : params) param.assert_consistent();
   }
   vector<Stmt> body;
   // Bound at module name resolution, before checking. Source-free functions
@@ -678,6 +725,15 @@ struct Program {
   vector<ExecutorStartPlan> executor_start_plans;
   ConcreteDomainGraph concrete_domain_graph;
   SynchronizationPlan synchronization_plan;
+  void assert_declaration_type_consistency() const {
+    for (const auto& f : functions) f.assert_consistent();
+    for (const auto& o : objects)
+      for (const auto& m : o.methods) m.assert_consistent();
+    for (const auto& t : traits)
+      for (const auto& m : t.methods) m.assert_consistent();
+    for (const auto& d : domains)
+      for (const auto& h : d.handlers) h.assert_consistent();
+  }
 };
 
 inline string functional_function_context(

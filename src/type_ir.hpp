@@ -199,6 +199,12 @@ class TypeContext : public std::enable_shared_from_this<TypeContext> {
       throw std::invalid_argument("nominal field annotations have not been bound");
     return found->second;
   }
+  void register_trait(std::string name) {
+    traits_.insert(std::move(name));
+  }
+  bool has_trait(std::string_view name) const {
+    return traits_.count(std::string(name)) > 0;
+  }
   static const TypeContext* current() {
     return stack().empty() ? nullptr : stack().back();
   }
@@ -247,6 +253,7 @@ class TypeContext : public std::enable_shared_from_this<TypeContext> {
   std::unordered_map<std::string, NominalDeclarationRef> by_id_;
   std::unordered_map<std::string, std::shared_ptr<const std::string>> modules_;
   std::unordered_map<std::string, std::vector<TypeRef>> field_annotations_;
+  std::unordered_set<std::string> traits_;
 };
 
 inline NominalDeclarationRef bind_declaration(std::string_view program_name,
@@ -383,6 +390,7 @@ public:
 
   bool is_closed() const {
     if (kind == TypeKind::InferenceVar) return false;
+    if (kind == TypeKind::Primitive && !name.empty() && name[0] == '_') return false;
     if (declaration_kind() && !declaration) return false;
     if (kind == TypeKind::NominalInstance) {
       // Every inferred slot is substituted exactly once, in template order.
@@ -593,18 +601,26 @@ public:
         if (head == "Float" || head == "float") return Type::primitive("float");
         if (head == "Bool" || head == "bool") return Type::primitive("bool");
         if (head == "String" || head == "string") return Type::primitive("string");
+        if (head == "Range") return Type::primitive("Range");
+        if (head == "RangeBatch") return Type::primitive("RangeBatch");
+        if (head == "FileIO") return Type::primitive("FileIO");
+        if (head == "executor") return Type::primitive("executor");
         if (head == "Vector") head = "vector";
         else if (head == "Map") head = "map";
         else if (head == "Queue") head = "queue";
         if (head == "vector" || head == "map" || head == "queue")
           return Type::builtin(head, {});
-        if (const TypeContext* context = TypeContext::current())
+        if (const TypeContext* context = TypeContext::current()) {
           if (auto declared = context->find(head)) {
             if (declared->kind == DeclarationKind::Record)
               return Type::nominal_bound(declared, head, {});
             if (declared->kind == DeclarationKind::Enum) return Type::enumeration(head);
             return Type::domain(head);
           }
+          if (context->has_trait(head)) {
+            return Type::trait_constraint(head);
+          }
+        }
         constexpr std::string_view prefix = "_typevar:";
         if (head.rfind(prefix, 0) == 0) {
           std::string_view ids(head.data() + prefix.size(), head.size() - prefix.size());
@@ -618,12 +634,74 @@ public:
           if (!session || !owner || !ordinal) return std::nullopt;
           return Type::var({*session, *owner, *ordinal});
         }
-        return Type::primitive(head);
+        if (!head.empty() && head[0] == '_') {
+          return Type::primitive(head);
+        }
+        return std::nullopt;
       }
     } parser{raw};
     auto parsed = parser.parse();
     parser.space();
     return parsed && parser.pos == raw.size() ? parsed : std::nullopt;
+  }
+
+  static bool is_well_formed_syntax(std::string_view raw) {
+    struct SyntaxChecker {
+      std::string_view text;
+      size_t pos{0};
+      void space() {
+        while (pos < text.size() && (text[pos] == ' ' || text[pos] == '\t' ||
+               text[pos] == '\n' || text[pos] == '\r')) ++pos;
+      }
+      std::string token() {
+        space();
+        size_t begin = pos;
+        while (pos < text.size() && text[pos] != '[' && text[pos] != ']' &&
+               text[pos] != ',' && text[pos] != '=' && text[pos] != ' ' &&
+               text[pos] != '\t' && text[pos] != '\n' && text[pos] != '\r') ++pos;
+        return std::string(text.substr(begin, pos - begin));
+      }
+      bool check(unsigned depth = 0) {
+        if (depth >= 128) return false;
+        std::string head = token();
+        if (head.empty()) return false;
+        space();
+        if (pos < text.size() && text[pos] == '[') {
+          ++pos;
+          size_t count = 0;
+          do {
+            space();
+            if (pos == text.size() || text[pos] == ']') return false;
+            size_t start = pos;
+            std::string candidate = token();
+            space();
+            if (pos < text.size() && text[pos] == '=') {
+              ++pos;
+              if (!check(depth + 1)) return false;
+            } else {
+              pos = start;
+              if (!check(depth + 1)) return false;
+            }
+            ++count;
+            space();
+            if (pos < text.size() && text[pos] == ']') { ++pos; break; }
+            if (pos == text.size() || text[pos] != ',') return false;
+            ++pos;
+          } while (true);
+          std::string norm = head;
+          if (norm == "Vector") norm = "vector";
+          else if (norm == "Map") norm = "map";
+          else if (norm == "Queue") norm = "queue";
+          if (auto arity = collection_arity(norm); arity && count != *arity)
+            return false;
+          return true;
+        }
+        return true;
+      }
+    } checker{raw};
+    bool ok = checker.check();
+    checker.space();
+    return ok && checker.pos == raw.size();
   }
 
   static TypeRef from_canonical_string(const std::string& raw) {
@@ -855,6 +933,53 @@ struct MemberAdmission {
   std::optional<TypeRef> result;
   std::vector<std::pair<TypeRef, TypeRef>> contributes;
   std::string diagnostic;
+};
+
+// Preserves exact statically selected callable identity via a dedicated
+// canonical CallableId record/key separate from the TypeRef algebra.
+struct CallableId {
+  std::string module_id;
+  std::string kind;
+  std::string declaration_name;
+  std::string canonical_id;
+
+  CallableId() = default;
+  explicit CallableId(std::string id) : canonical_id(std::move(id)) {
+    parse_id();
+  }
+  CallableId(std::string mod, std::string k, std::string decl)
+      : module_id(std::move(mod)), kind(std::move(k)), declaration_name(std::move(decl)) {
+    canonical_id = "callable-v1:" + module_id + ":" + kind + ":" + declaration_name;
+  }
+
+  static std::optional<CallableId> parse(std::string_view raw) {
+    if (raw.rfind("callable-v1:", 0) != 0) return std::nullopt;
+    CallableId result{std::string(raw)};
+    if (result.module_id.empty() || result.kind.empty() || result.declaration_name.empty())
+      return std::nullopt;
+    return result;
+  }
+
+  bool empty() const { return canonical_id.empty(); }
+  const std::string& str() const { return canonical_id; }
+  const char* c_str() const { return canonical_id.c_str(); }
+
+  bool operator==(const CallableId& o) const { return canonical_id == o.canonical_id; }
+  bool operator!=(const CallableId& o) const { return canonical_id != o.canonical_id; }
+  bool operator<(const CallableId& o) const { return canonical_id < o.canonical_id; }
+
+ private:
+  void parse_id() {
+    if (canonical_id.rfind("callable-v1:", 0) != 0) return;
+    std::string_view rest(canonical_id.data() + 12, canonical_id.size() - 12);
+    auto colon2 = rest.rfind(':');
+    if (colon2 == std::string_view::npos || colon2 == 0) return;
+    auto colon1 = rest.rfind(':', colon2 - 1);
+    if (colon1 == std::string_view::npos || colon1 == 0) return;
+    module_id = std::string(rest.substr(0, colon1));
+    kind = std::string(rest.substr(colon1 + 1, colon2 - colon1 - 1));
+    declaration_name = std::string(rest.substr(colon2 + 1));
+  }
 };
 
 // All consumers use the same length-prefixed specialization-v2 encoding.
