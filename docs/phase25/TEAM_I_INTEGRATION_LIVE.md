@@ -79,3 +79,13 @@ Observed `rejected erased projections: 0/5`, exit 1 (expected 5/5).
 Source cause: assertions guard on nonempty/present projection before comparing
 against bound TypeRef. This verifies inherited L7 H2; no new discovery credit.
 Focused regression and semantic/ABI boundary enforcement remain required.
+
+## Submission ledger
+
+| Submission | Exact implementation SHA | State | Review |
+| --- | --- | --- | --- |
+| [H/T intake PR #5](https://github.com/kuttyb/moss/pull/5) | `5cfdc1630d67506146e4adcc52628e508ffdc7c5` | Draft; automated workflow 39165091036 running all four isolated jobs | Not requested; CI pending |
+
+Worker-local optimized build/bootstrap and G1/G2/G3 checks passed on H intake;
+these do not substitute for PR checks. Coordinator confirmed four separate CI
+jobs in progress. No target merge yet.
