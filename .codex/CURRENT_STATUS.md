@@ -1,5 +1,37 @@
 # Moss current status
 
+## Phase 25 source-free linkage and diagnostics checkpoint — 2026-10-18
+
+Staffing remains one active root acting as combined L6 coordinator/reviewer and
+exclusive compiler writer; the sole L4 worker is idle after reaching its usage
+limit. No adversarial reviewer has run. No PR has been merged to the Phase 25
+target or main. H intake draft #5 remains at `bf1df10` with three of four
+required exact-head jobs green and core regressions still running at last
+check; defer L6 review and target merge until all four pass.
+
+S intake branch `phase25-i-s-intake` now has pushed repair commit `9a04230`.
+It resolves duplicate process runtime, FileIO and `moss__main` symbols when an
+explicit module with `main` is also linked as an rlib; it checks newly required
+constructor fields before native lowering, emits `METHOD_NOT_FOUND` for a
+source-free missing method, and retains provider logical source names in
+generic interface records for related diagnostic spans. A separately built
+compiler from these sources passed the full Phase 20 FileIO suite, all 54
+executor checks, and all 11 staged ABI-v10 source-free scenarios in both debug
+and release against the ABI harness worktree. These are cross-worktree
+candidate checks, not exact-SHA integrated release acceptance. The earlier
+S `make check` rerun uses the pre-repair binary from `759b399` and was still
+running in advanced-data acceptance; any eventual result does not validate
+the newer source edits.
+
+Source-free draft #8 is pushed at `af94a3f`. Its Scenario 4 fixture now passes
+ConsumerA's provider-owned Box through ConsumerB's exported generic function
+after both consumers and provider sources are removed. Its evidence document
+records the 11/11 candidate result. Same-SHA PR CI, 62 strict gates, Gate 10
+custom keys, and production ABI-v10 default cutover remain pending. Continue
+normal intake order after H #5 becomes green: exact-head L6 review, merge H
+into `phase25-integration`, then refresh/review H2, G, S, and B/ABI branches
+with draft PRs and isolated CI. Do not merge to main.
+
 ## Phase 25 S reconciliation recovery point — 2026-10-18
 
 The sole L4 compiler worker reached a usage limit; root is currently the only
