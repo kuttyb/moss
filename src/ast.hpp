@@ -58,6 +58,11 @@ struct Param {
   string name, type;
   // True when the concrete type was inferred from an untyped parameter.
   bool inferred = false;
+  TypeRef type_ref = nullptr;
+  void bind_type(TypeRef term) {
+    type_ref = std::move(term);
+    if (type_ref) type = type_ref->to_canonical_string();
+  }
 };
 // A call that instantiates an open result has its own inference variables.
 // These checked facts survive body closure for specialization registration and
@@ -220,6 +225,11 @@ struct Method {
   string owner, name;
   vector<Param> params;
   std::optional<string> return_type;
+  TypeRef return_type_ref;
+  void bind_return_type(TypeRef term) {
+    return_type_ref = std::move(term);
+    if (return_type_ref) return_type = return_type_ref->to_canonical_string();
+  }
   vector<Stmt> body;
   std::optional<string> result_expression;
   int result_line = 0;
@@ -239,6 +249,11 @@ struct Handler {
   string name, header;
   vector<Param> params;
   std::optional<string> reply_type;
+  TypeRef reply_type_ref;
+  void bind_reply_type(TypeRef term) {
+    reply_type_ref = std::move(term);
+    if (reply_type_ref) reply_type = reply_type_ref->to_canonical_string();
+  }
   vector<Stmt> body;
   vector<FailureArm> failure_arms;
   ObservableEffects observable_effects;
@@ -322,7 +337,15 @@ struct DomainSpecialization {
   std::unordered_map<string,string> handler_reply_types;
 };
 struct Function {
-  string name, header; vector<Param> params; std::optional<string> return_type; vector<Stmt> body;
+  string name, header;
+  vector<Param> params;
+  std::optional<string> return_type;
+  TypeRef return_type_ref;
+  void bind_return_type(TypeRef term) {
+    return_type_ref = std::move(term);
+    if (return_type_ref) return_type = return_type_ref->to_canonical_string();
+  }
+  vector<Stmt> body;
   // Bound at module name resolution, before checking. Source-free functions
   // retain the same defining package/module/declaration identity.
   string defining_module, declaration_name, semantic_callable_id;

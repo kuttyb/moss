@@ -1,6 +1,43 @@
 # Moss current status
 
-## Phase 25 Team H — A4 Checked Body IR Integration with Team T Baseline (9ed6830) — 2026-10-17
+## Phase 25 Team H — GitHub Issue #4: Residual G-A-1 Typed Semantic Authority & Callable Pipeline Modernization — 2026-10-18
+
+Team H has completed GitHub Issue #4 (*Close remaining G-A-1 typed semantic authority after A4: callable identities, open relations, and typed declarations*) on feature branch `phase25-checked-body-ir`.
+
+1. **Deliverables & Contract Implementation:**
+   - **Typed Declarations in AST (`src/ast.hpp`):** Bound `TypeRef` terms to `Param`, `Method`, `Handler`, and `Function` with `bind_type` / `bind_return_type` / `bind_reply_type`, synchronizing term authority with canonical string projections.
+   - **Term-Driven Unspecialized Operator Handling (`src/moss.cpp`):** Unified arithmetic, bitwise, comparison, and shift operators with the solver term graph via `unresolved_expression(expr, env)`. Expressions containing open type variables unify via solver equations rather than premature type mismatch errors, unblocking generic operators (e.g. `swarm_014_integer_remainder.moss`).
+   - **IEEE Float Built-in Unification (`src/moss.cpp`):** Numeric and IEEE float built-in methods (`is_nan`, `is_finite`, `sqrt`, `ceil`, `floor`) operate via `current_body_types_->solver.unify` when type environments are active, verifying 100% text and numeric parity against `check_phase21_float_ieee.py`.
+   - **Callable Identity & Higher-Order Pipeline Alignment (`src/moss.cpp`, `src/borrowed_views.inc`):**
+     - Aligned `InferredExpr` to cleanly separate the checked type projection from canonical callable identity (`callable_id`), retaining legacy callable syntax for pipeline effect propagation while supplying canonical `callable-v1:` IDs for specialization keys and member dispatch requirements.
+     - Resolved pipeline callable lookup via `find_function_by_callable_id` across effect analysis, dependency tracking, stage lowering, and code generation.
+     - Fully verified multi-specialization examples (`examples/functional_static_callables.moss`) under `-Oshared-memory` with zero runtime wrapper overhead.
+
+2. **Validation & Quality Gates (100% Pass across all 18 suites):**
+   - **`make check`:** 100% pass (all 54 Agent C executor tests, 10.6F/10.6F.1 suites, and all Moss v0.1 tests passed with 0 failures).
+   - **`make examples`:** 100% pass (32 examples built cleanly with `-Oshared-memory` and compiled with `rustc -D warnings`, including `examples/functional_static_callables.moss`).
+   - **Phase 25 Semantic & Tooling Suites:**
+     - `check_phase25_team_a_semantics.py ./moss`: **PASS** (56/56 passed).
+     - `check_no_internal_type_leak.py ./moss`: **PASS** (0 leaks across 1864 sources, 0 known open).
+     - `check_phase25_checked_body_ir.py ./moss`: **PASS** (100% unit and dependency tests passed).
+     - `check_phase25_typed_semantic_api.py ./moss`: **PASS**.
+     - `check_phase25_conformance.py ./moss`: **PASS** (10/11 gates passed; Gate 10 pending joint integration).
+     - `check_phase25_type_ir.py`: **PASS**.
+     - `check_generic_specialization.py ./moss`: **PASS** (40/40 passed).
+     - `check_domain_handle_closure.py ./moss`: **PASS**.
+     - `check_phase25_a3_specialization.py ./moss`: **PASS**.
+     - `check_phase25_nominal_identity.py ./moss`: **PASS**.
+     - `check_phase25_field_visibility.py ./moss`: **PASS**.
+     - `check_phase25_recursive_layout.py ./moss`: **PASS**.
+     - `check_agent_skills.py ./moss`: **PASS**.
+     - `check_phase21_float_ieee.py ./moss`: **PASS**.
+     - `check_agent_feedback.py`: **PASS** (Observation 004 recorded).
+   - **Code Hygiene:** `git diff --check` cleanly passed with 0 whitespace errors.
+
+3. **Status:**
+   - GitHub Issue #4 tasks are complete and verified.
+   - Exclusive compiler writing ownership of `src/moss.cpp` can now be released for Team I handoff.
+
 
 Team H has integrated Team T's final reviewed TypeRef baseline (`9ed6830`) into feature branch `phase25-checked-body-ir` following publication of `TEAM H UNBLOCK — READY` and `COMPILER_OWNERSHIP_RELEASED`. Team H has acquired exclusive compiler-writing ownership of `src/moss.cpp`.
 

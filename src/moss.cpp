@@ -548,11 +548,14 @@ static bool open_generic(const moss::TypeRef& type) {
   return open_generic(type->to_canonical_string());
 }
 
-// The statically bounded callable identity `callable:<name>`. Like
-// open_generic, centralized so the conversion to a real callable type has one
-// place to change. A bare `callable:` carries no identity yet.
+// Statically bounded callable identity. Canonical identities use `callable-v1:`;
+// legacy strings may carry `callable:`.
+[[maybe_unused]] static bool is_canonical_callable_id(const string& type) {
+  return starts_with(type, "callable-v1:");
+}
+
 static bool callable_identity(const string& type) {
-  return starts_with(type, "callable:");
+  return starts_with(type, "callable:") || starts_with(type, "callable-v1:");
 }
 
 static bool callable_identity(const moss::TypeRef& type) {
@@ -757,11 +760,16 @@ static std::optional<moss::SpecializationKey> specialization_key_inputs(
     const auto& type = types[index];
     // A static higher-order argument is a resolved callable identity, not a
     // type or the lookup spelling used by its caller.
-    if (callable_identity(type)) {
-      const string callable_id = type.substr(9);
-      if (!starts_with(callable_id, "callable-v1:")) return std::nullopt;
+    if (starts_with(type, "callable-v1:")) {
       key.arguments.push_back(moss::Type::unit());
-      key.callable_arguments.push_back(callable_id);
+      key.callable_arguments.push_back(type);
+      continue;
+    }
+    if (callable_identity(type)) {
+      const string cid = starts_with(type, "callable:") ? type.substr(9) : type;
+      if (!starts_with(cid, "callable-v1:")) return std::nullopt;
+      key.arguments.push_back(moss::Type::unit());
+      key.callable_arguments.push_back(cid);
       continue;
     }
     auto parsed = moss::Type::parse_canonical(canonical_type_name(type));
@@ -1703,7 +1711,13 @@ class Parser {
         Method m; m.name = trim(sig.substr(0, lp)); m.params = parse_params(L, sig.substr(lp + 1, rp - lp - 1)); m.line = L.no;
         m.owner = o.name;
         string suffix = trim(sig.substr(rp + 1)); if (ends_with(suffix, ":")) suffix.pop_back(); suffix = trim(suffix);
-        if (!suffix.empty() && starts_with(suffix, "->")) m.return_type = canonical_type_name(trim(suffix.substr(2)));
+        if (!suffix.empty() && starts_with(suffix, "->")) {
+          m.return_type = canonical_type_name(trim(suffix.substr(2)));
+          if (m.return_type && !m.return_type->empty()) {
+            auto parsed = moss::Type::parse_canonical(*m.return_type);
+            if (parsed && (*parsed)->is_closed()) m.return_type_ref = *parsed;
+          }
+        }
         m.body = parse_stmt_block(L.indent + indent_unit_);
         if (!m.body.empty() && (m.body.back().kind == Stmt::Kind::Raw || m.body.back().kind == Stmt::Kind::Call)) {
           m.result_expression = m.body.back().text;
@@ -1956,6 +1970,10 @@ class Parser {
       string type = trim(suffix.substr(2));
       if (type.empty()) fail(head, "reply type is required after '->'");
       h.reply_type = canonical_type_name(std::move(type));
+      if (h.reply_type && !h.reply_type->empty()) {
+        auto parsed = moss::Type::parse_canonical(*h.reply_type);
+        if (parsed && (*parsed)->is_closed()) h.reply_type_ref = *parsed;
+      }
     }
     h.line = head.no;
     h.body = parse_stmt_block(member_indent + indent_unit_);
@@ -2016,6 +2034,10 @@ class Parser {
       string type = trim(suffix.substr(0, end));
       if (type.empty()) fail(head, "function return type is required after '->'");
       f.return_type = canonical_type_name(type);
+      if (f.return_type && !f.return_type->empty()) {
+        auto parsed = moss::Type::parse_canonical(*f.return_type);
+        if (parsed && (*parsed)->is_closed()) f.return_type_ref = *parsed;
+      }
       suffix = trim(suffix.substr(end));
     }
     f.line = head.no;
@@ -2482,6 +2504,8 @@ class Checker {
                         "' is reserved by Moss test assertions");
       if (!functions_.emplace(f.name, &f).second)
         err(f.source_file, f.line, "duplicate function: " + f.name);
+      if (!f.semantic_callable_id.empty())
+        callable_id_to_function_[f.semantic_callable_id] = &f;
     }
     for (auto& d : p_.domains) {
       if (!domains_.emplace(d.name, &d).second)
@@ -2521,6 +2545,49 @@ class Checker {
     // and stays bound to its identity for the rest of this session.
     build_type_context(p_);
     type_scope_ = std::make_unique<moss::TypeContext::Scope>(p_.type_context.get());
+    for (auto& f : p_.functions) {
+      for (auto& param : f.params) {
+        if (!param.type_ref && !param.type.empty() && !open_generic(param.type)) {
+          auto parsed = moss::Type::parse_canonical(param.type);
+          if (parsed && (*parsed)->is_closed()) param.type_ref = *parsed;
+        }
+      }
+      if (!f.return_type_ref && f.return_type && !f.return_type->empty() &&
+          !open_generic(*f.return_type) && !contains_internal_placeholder(*f.return_type)) {
+        auto parsed = moss::Type::parse_canonical(*f.return_type);
+        if (parsed && (*parsed)->is_closed()) f.return_type_ref = *parsed;
+      }
+    }
+    for (auto& obj : p_.objects) {
+      for (auto& m : obj.methods) {
+        for (auto& param : m.params) {
+          if (!param.type_ref && !param.type.empty() && !open_generic(param.type)) {
+            auto parsed = moss::Type::parse_canonical(param.type);
+            if (parsed && (*parsed)->is_closed()) param.type_ref = *parsed;
+          }
+        }
+        if (!m.return_type_ref && m.return_type && !m.return_type->empty() &&
+            !open_generic(*m.return_type) && !contains_internal_placeholder(*m.return_type)) {
+          auto parsed = moss::Type::parse_canonical(*m.return_type);
+          if (parsed && (*parsed)->is_closed()) m.return_type_ref = *parsed;
+        }
+      }
+    }
+    for (auto& d : p_.domains) {
+      for (auto& h : d.handlers) {
+        for (auto& param : h.params) {
+          if (!param.type_ref && !param.type.empty() && !open_generic(param.type)) {
+            auto parsed = moss::Type::parse_canonical(param.type);
+            if (parsed && (*parsed)->is_closed()) param.type_ref = *parsed;
+          }
+        }
+        if (!h.reply_type_ref && h.reply_type && !h.reply_type->empty() &&
+            !open_generic(*h.reply_type) && !contains_internal_placeholder(*h.reply_type)) {
+          auto parsed = moss::Type::parse_canonical(*h.reply_type);
+          if (parsed && (*parsed)->is_closed()) h.reply_type_ref = *parsed;
+        }
+      }
+    }
     for (auto& t : p_.traits) {
       if (!traits_.emplace(t.name, &t).second)
         err(t.source_file, t.line, "duplicate trait: " + t.name);
@@ -2704,6 +2771,27 @@ class Checker {
  private:
   Program& p_;
   std::unordered_map<string, Function*> functions_;
+  std::unordered_map<string, Function*> callable_id_to_function_;
+
+  Function* find_function_by_callable_id(const string& id) {
+    if (id.empty()) return nullptr;
+    auto it = callable_id_to_function_.find(id);
+    if (it != callable_id_to_function_.end()) return it->second;
+    for (auto& [name, fn] : functions_) {
+      if (fn && fn->semantic_callable_id == id) return fn;
+    }
+    return nullptr;
+  }
+
+  const Function* find_function_by_callable_id(const string& id) const {
+    if (id.empty()) return nullptr;
+    auto it = callable_id_to_function_.find(id);
+    if (it != callable_id_to_function_.end()) return it->second;
+    for (const auto& [name, fn] : functions_) {
+      if (fn && fn->semantic_callable_id == id) return fn;
+    }
+    return nullptr;
+  }
   std::unordered_map<string, Domain*> domains_;
   std::unordered_map<string, ObjectType*> objects_;
   std::unordered_map<string, EnumType*> enums_;
@@ -5169,25 +5257,32 @@ class Checker {
     }
 
     auto local = env.find(value);
-    if (local != env.end() && callable_identity(local->second))
-      value = canonical_type_name(local->second).substr(9);
-    else if (local != env.end() && open_generic(local->second))
+    if (local != env.end() && callable_identity(local->second)) {
+      value = canonical_type_name(local->second);
+      if (starts_with(value, "callable:")) value = value.substr(9);
+    } else if (local != env.end() && open_generic(local->second)) {
       return "_functional_callable_result:" + value;
-    auto function = functions_.find(value);
-    if (function == functions_.end() ||
-        function->second->params.size() != input_types.size())
+    }
+    const Function* function_ptr = nullptr;
+    if (starts_with(value, "callable-v1:"))
+      function_ptr = find_function_by_callable_id(value);
+    if (!function_ptr) {
+      auto it = functions_.find(value);
+      if (it != functions_.end()) function_ptr = it->second;
+    }
+    if (!function_ptr || function_ptr->params.size() != input_types.size())
       return std::nullopt;
     for (size_t index = 0; index < input_types.size(); ++index) {
-      const string& expected = function->second->params[index].type;
+      const string& expected = function_ptr->params[index].type;
       if (!expected.empty() && !traits_.count(expected) &&
           !unresolved_semantic_type(input_types[index]) &&
           !same_type(expected, input_types[index]))
         return std::nullopt;
     }
-    string result = function->second->return_type
-        ? canonical_type_name(*function->second->return_type) : "";
+    string result = function_ptr->return_type
+        ? canonical_type_name(*function_ptr->return_type) : "";
     if (result.empty() || contains_internal_placeholder(result) || traits_.count(result))
-      return specialized_function_return_type(*function->second, input_types);
+      return specialized_function_return_type(*function_ptr, input_types);
     return result;
   }
 
@@ -5689,8 +5784,17 @@ class Checker {
   // collection) that later A2 slices replace with inference variables and
   // requirements. Exactly one of the two is set.
   struct InferredExpr {
-    moss::TypeRef term;
-    string legacy;
+    moss::TypeRef term = nullptr;
+    string legacy = "";
+    string callable_id = "";
+
+    InferredExpr() = default;
+    InferredExpr(moss::TypeRef t, string l = "", string c = "")
+        : term(std::move(t)), legacy(std::move(l)), callable_id(std::move(c)) {}
+    InferredExpr(std::nullptr_t, string l, string c = "")
+        : term(nullptr), legacy(std::move(l)), callable_id(std::move(c)) {}
+
+    bool is_callable() const { return !callable_id.empty(); }
     string projection() const {
       if (term && term->is_closed() && !contains_internal_placeholder(term))
         return term->to_canonical_string();
@@ -5704,13 +5808,15 @@ class Checker {
     if (!spelling.empty() && !contains_internal_placeholder(spelling) &&
         !callable_identity(spelling)) {
       auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
-      if (parsed && (*parsed)->is_closed()) return {*parsed, {}};
+      if (parsed && (*parsed)->is_closed()) return {*parsed, {}, {}};
     }
-    return {nullptr, spelling};
+    if (starts_with(spelling, "callable-v1:"))
+      return {nullptr, spelling, spelling};
+    return {nullptr, spelling, {}};
   }
 
   static InferredExpr inferred_leaf(const moss::TypeRef& type) {
-    if (type && type->is_closed()) return {type, {}};
+    if (type && type->is_closed()) return {type, {}, {}};
     return inferred_leaf(canonical_type_name(type));
   }
 
@@ -5827,8 +5933,15 @@ class Checker {
           ? primitive("bool") : std::nullopt;
     if (auto type = obvious_expr_type(e, env))
       return inferred_leaf(canonical_type_name(*type));
-    if (plain_identifier(e) && functions_.count(e))
-      return InferredExpr{nullptr, "callable:" + e};
+    if (plain_identifier(e)) {
+      auto fn_it = functions_.find(e);
+      if (fn_it != functions_.end() && fn_it->second) {
+        const string& cid = !fn_it->second->semantic_callable_id.empty()
+            ? fn_it->second->semantic_callable_id
+            : "callable-v1:" + program_module_identity(p_, fn_it->second->defining_module) + ":fn:" + fn_it->second->name;
+        return InferredExpr{nullptr, "callable:" + e, cid};
+      }
+    }
     if (auto typed_vector = typed_empty_vector_constructor(e))
       return inferred_leaf(*typed_vector);
     // Phase 20: `Executor()` begins a compiler-recognized configuration chain
@@ -5951,33 +6064,41 @@ class Checker {
       string target = callee;
       auto binding = env.find(callee);
       if (binding != env.end()) {
-        if (callable_identity(binding->second))
-          target = canonical_type_name(binding->second).substr(9);
-        else if (open_generic(binding->second))
+        if (callable_identity(binding->second)) {
+          target = canonical_type_name(binding->second);
+          if (starts_with(target, "callable:")) target = target.substr(9);
+        } else if (open_generic(binding->second)) {
           return InferredExpr{nullptr, "_functional_callable_result:" + callee};
+        }
       }
-      auto function = functions_.find(target);
-      if (function == functions_.end() && current_object_) {
+      const Function* function_target = nullptr;
+      if (starts_with(target, "callable-v1:"))
+        function_target = find_function_by_callable_id(target);
+      if (!function_target) {
+        auto it = functions_.find(target);
+        if (it != functions_.end()) function_target = it->second;
+      }
+      if (!function_target && current_object_) {
         vector<string> argument_types;
         for (const auto& argument : args)
           argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
         auto method = resolve_method(current_object_->name, callee, argument_types);
         if (method && method->return_type) return inferred_leaf(*method->return_type);
       }
-      if (function != functions_.end() && function->second->return_type) {
-        string r = canonical_type_name(*function->second->return_type);
-        if (function->second->static_dispatch) {
+      if (function_target && function_target->return_type) {
+        string r = canonical_type_name(*function_target->return_type);
+        if (function_target->static_dispatch) {
           vector<string> actual_types;
           for (const auto& arg : args)
             actual_types.push_back(inferred_expr_type(arg, env).value_or(""));
-          bool concrete = actual_types.size() == function->second->params.size() &&
+          bool concrete = actual_types.size() == function_target->params.size() &&
               std::all_of(actual_types.begin(), actual_types.end(),
                           [](const string& type) {
                             return !type.empty() && concrete_specialization_type(type);
                           });
           if (concrete) {
             auto specialized = specialized_function_return_type(
-                *function->second, actual_types);
+                *function_target, actual_types);
             if (specialized) return inferred_leaf(*specialized);
           }
         }
@@ -5985,36 +6106,42 @@ class Checker {
           vector<string> actual_types;
           for (const auto& arg : args)
             actual_types.push_back(inferred_expr_type(arg, env).value_or(""));
-          auto specialized = specialized_function_return_type(*function->second, actual_types);
+          auto specialized = specialized_function_return_type(*function_target, actual_types);
           if (!specialized) return std::nullopt;
           return inferred_leaf(*specialized);
         }
         if (open_generic(r)) {
-          auto relation = function->second->generic_results.find(r.substr(9));
-          if (relation == function->second->generic_results.end()) return std::nullopt;
-          auto it = env.find(relation->second);
-          if (it != env.end()) return inferred_leaf(it->second);
+          auto relation = function_target->generic_results.find(r.substr(9));
+          if (relation != function_target->generic_results.end()) {
+            auto it = env.find(relation->second);
+            if (it != env.end()) return inferred_leaf(it->second);
+          }
+          if (current_body_types_)
+            return InferredExpr{current_body_types_->solver.fresh(0), {}};
         }
         if (starts_with(r, "_element:")) {
-          auto relation = function->second->generic_results.find(r.substr(9));
-          if (relation == function->second->generic_results.end()) return std::nullopt;
-          auto it = env.find(relation->second);
-          if (it != env.end()) {
-            auto container = inferred_leaf(it->second).term;
-            if (container && container->kind == moss::TypeKind::Builtin &&
-                container->name == "vector" && container->type_args.size() == 1)
-              return InferredExpr{container->type_args[0], {}};
-            if (const auto bound = parsed_type(it->second);
-                applied_builtin(bound, {"vector"}) && bound->type_args.size() == 1)
-              return inferred_leaf(bound->type_args[0]->to_canonical_string());
+          auto relation = function_target->generic_results.find(r.substr(9));
+          if (relation != function_target->generic_results.end()) {
+            auto it = env.find(relation->second);
+            if (it != env.end()) {
+              auto container = inferred_leaf(it->second).term;
+              if (container && container->kind == moss::TypeKind::Builtin &&
+                  container->name == "vector" && container->type_args.size() == 1)
+                return InferredExpr{container->type_args[0], {}};
+              if (const auto bound = parsed_type(it->second);
+                  applied_builtin(bound, {"vector"}) && bound->type_args.size() == 1)
+                return inferred_leaf(bound->type_args[0]->to_canonical_string());
+            }
           }
+          if (current_body_types_)
+            return InferredExpr{current_body_types_->solver.fresh(0), {}};
         }
         if (starts_with(r, "_field:")) {
           auto key = r.substr(7); auto pos = key.find(':');
           if (pos != string::npos) pos = key.find(':', pos + 1);
           string source = pos == string::npos ? key : key.substr(0, pos);
-          for (size_t ai = 0; ai < args.size() && ai < function->second->params.size(); ++ai)
-            if (function->second->params[ai].name == source) {
+          for (size_t ai = 0; ai < args.size() && ai < function_target->params.size(); ++ai)
+            if (function_target->params[ai].name == source) {
               auto at = inferred_expr_type(args[ai], env);
               if (at) {
                 auto object = objects_.find(*at);
@@ -6022,8 +6149,8 @@ class Checker {
                   if (f.name == key.substr(pos + 1)) return inferred_leaf(f.type);
               }
             }
-          auto relation = function->second->generic_results.find(key);
-          if (relation != function->second->generic_results.end()) {
+          auto relation = function_target->generic_results.find(key);
+          if (relation != function_target->generic_results.end()) {
             auto base = env.find(relation->second);
             if (base != env.end()) {
               auto object = objects_.find(canonical_type_name(base->second));
@@ -6031,6 +6158,8 @@ class Checker {
                 if (f.name == key.substr(pos + 1)) return inferred_leaf(f.type);
             }
           }
+          if (current_body_types_)
+            return InferredExpr{current_body_types_->solver.fresh(0), {}};
         }
         return inferred_leaf(r);
       }
@@ -6093,8 +6222,11 @@ class Checker {
             return InferredExpr{current_body_types_->solver.fresh(0), {}};
           }
         }
-        if (!base->term && open_generic(base->legacy))
+        if (!base->term && open_generic(base->legacy)) {
+          if (current_body_types_)
+            return InferredExpr{current_body_types_->solver.fresh(0), {}};
           return InferredExpr{nullptr, "_method_value"};
+        }
         auto trait = traits_.find(canonical_type_name(base->projection()));
         if (trait != traits_.end()) {
           auto declared = std::find_if(trait->second->methods.begin(), trait->second->methods.end(),
@@ -6102,8 +6234,13 @@ class Checker {
                                          return candidate.name == method_name &&
                                                 candidate.params.size() == method_args.size();
                                        });
-          if (declared != trait->second->methods.end())
-            return inferred_leaf(declared->return_type.value_or("_method_value"));
+          if (declared != trait->second->methods.end()) {
+            if (declared->return_type && !declared->return_type->empty())
+              return inferred_leaf(*declared->return_type);
+            if (current_body_types_)
+              return InferredExpr{current_body_types_->solver.fresh(0), {}};
+            return inferred_leaf("_method_value");
+          }
         }
       }
     }
@@ -6118,6 +6255,12 @@ class Checker {
         if (auto field_type = BodyTypeState::nominal_field(receiver, field))
           return base->term ? InferredExpr{field_type, {}}
                             : inferred_leaf(field_type->to_canonical_string());
+      if (current_body_types_) {
+        if ((receiver && receiver->kind == moss::TypeKind::InferenceVar) ||
+            (base && !base->term && open_generic(base->legacy))) {
+          return InferredExpr{current_body_types_->solver.fresh(0), {}};
+        }
+      }
     }
 
     string mr, mh; vector<string> ma;
@@ -6168,8 +6311,14 @@ class Checker {
     auto expr = inferred_expr(expression, env);
     if (expr && expr->term) return expr->term;
     if (!expr || contains_internal_placeholder(expr->legacy)) {
-      if (current_body_types_ && expr && starts_with(expr->legacy, "_iterator_element:"))
-        return current_body_types_->solver.fresh(0);
+      if (current_body_types_ && expr) {
+        if (starts_with(expr->legacy, "_iterator_element:") ||
+            open_generic(expr->legacy) ||
+            starts_with(expr->legacy, "_element:") ||
+            starts_with(expr->legacy, "_field:") ||
+            expr->legacy == "_method_value")
+          return current_body_types_->solver.fresh(0);
+      }
       return nullptr;
     }
     auto parsed = moss::Type::parse_canonical(canonical_type_name(expr->legacy));
@@ -6196,6 +6345,13 @@ class Checker {
       return current_body_types_->solver.unify(actual, *expected);
     auto inferred = inferred_expr_type(expression, env);
     return inferred && same_type(*inferred, declared);
+  }
+
+  bool unresolved_expression(const string& expression, const TypeEnv& env) const {
+    auto term = checked_expression_term(expression, env);
+    if (term) return !term->is_closed();
+    auto type = inferred_expr_type(expression, env);
+    return !type || unresolved_semantic_type(*type);
   }
 
   TypeEnv instantiated_function_env(
@@ -7101,6 +7257,7 @@ class Checker {
     auto term_for = [&](const string& expression) -> moss::TypeRef {
       string value = trim(expression);
       if (auto retained = body_types.known_expression(value)) return retained;
+      if (auto term = inferred_expr_term(value, scan)) return term;
       auto inferred = inferred_expr_type(value, scan);
       if (!inferred) return nullptr;
       auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
@@ -7136,13 +7293,21 @@ class Checker {
             "' for '" + trim(expression) + "'", "TYPE_MISMATCH");
     };
     if (record_call_facts || retain_all_types)
-      for (const auto& [name, spelling] : entry) {
+      for (const auto& [name, binding_term] : entry) {
         auto term_it = entry.terms.find(name);
         if (term_it != entry.terms.end() && term_it->second) {
           locals.emplace(name, freshen_open_type(term_it->second));
           continue;
         }
-        if (contains_internal_placeholder(spelling)) continue;
+        string spelling = binding_term ? binding_term->to_canonical_string() : "";
+        if (contains_internal_placeholder(spelling)) {
+          if (open_generic(spelling) || starts_with(spelling, "_generic:")) {
+            auto fresh_var = solver.fresh(0);
+            locals.emplace(name, fresh_var);
+            scan.terms[name] = fresh_var;
+          }
+          continue;
+        }
         auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
         if (parsed) locals.emplace(name, freshen_open_type(*parsed));
       }
@@ -8687,9 +8852,15 @@ class Checker {
       for (auto& function : p_.functions) {
         SourceFileScope function_source(current_source_file_, function.source_file);
         TypeEnv env;
-        for (const auto& parameter : function.params)
-          env[parameter.name] = parameter.type.empty()
-              ? "_generic:" + parameter.name : parameter.type;
+        for (const auto& parameter : function.params) {
+          if (parameter.type_ref) {
+            env[parameter.name] = parameter.type_ref->to_canonical_string();
+            env.terms[parameter.name] = parameter.type_ref;
+          } else {
+            env[parameter.name] = parameter.type.empty()
+                ? "_generic:" + parameter.name : parameter.type;
+          }
+        }
         infer_statement_expressions(function.body, env);
         BodyTypeState body_types = solve_local_collection_types(
             function.body, env, function.semantic_callable_id, false, true);
@@ -8775,19 +8946,28 @@ class Checker {
               !contains_internal_placeholder(closed->to_canonical_string());
           if (typed_result_closed &&
               (!function.return_type ||
-               starts_with(*function.return_type, "_field:")))
+               starts_with(*function.return_type, "_field:"))) {
+            function.return_type_ref = closed;
             function.return_type = closed->to_canonical_string();
+          }
         }
         if (function.return_type && starts_with(*function.return_type, "_field:") && function.result_expression) {
-          if (auto resolved = inferred_expr_type(*function.result_expression, env)) function.return_type = *resolved;
+          if (auto resolved = inferred_expr_type(*function.result_expression, env)) {
+            function.return_type = *resolved;
+            auto parsed = moss::Type::parse_canonical(canonical_type_name(*resolved));
+            if (parsed && (*parsed)->is_closed()) function.return_type_ref = *parsed;
+          }
         }
         if (function.result_expression) {
           constrain_constructor_fields(function.result_line, *function.result_expression, env);
           if (!typed_result_closed) {
             if (auto result = inferred_expr_type(*function.result_expression, env)) {
               if (!function.return_type) {
-                if (!contains_internal_placeholder(*result))
+                if (!contains_internal_placeholder(*result)) {
                   function.return_type = *result;
+                  auto parsed = moss::Type::parse_canonical(canonical_type_name(*result));
+                  if (parsed && (*parsed)->is_closed()) function.return_type_ref = *parsed;
+                }
               } else if (!contains_internal_placeholder(*function.return_type) &&
                          !contains_internal_placeholder(*result) &&
                          !(*result == "_method_value" || starts_with(*result, "_method_result:")) &&
@@ -8802,8 +8982,11 @@ class Checker {
             if (statement.kind != Stmt::Kind::Return || statement.a.empty()) continue;
             auto result = inferred_expr_type(statement.a, env);
             if (!result || contains_internal_placeholder(*result)) continue;
-            if (!function.return_type) function.return_type = *result;
-            else if (!starts_with(*function.return_type, "_method_result:") &&
+            if (!function.return_type) {
+              function.return_type = *result;
+              auto parsed = moss::Type::parse_canonical(canonical_type_name(*result));
+              if (parsed && (*parsed)->is_closed()) function.return_type_ref = *parsed;
+            } else if (!starts_with(*function.return_type, "_method_result:") &&
                      !(*result == "_method_value" || starts_with(*result, "_method_result:")) &&
                      !same_type(*function.return_type, *result))
               err(statement.line, "function '" + function.name + "' returns '" + *result +
@@ -11283,12 +11466,17 @@ class Checker {
         return;
       }
       if (auto callable = env.find(callee);
-          callable != env.end() && callable_identity(callable->second))
-        callee = canonical_type_name(callable->second).substr(9);
-      auto function = functions_.find(callee);
-      if (function != functions_.end()) {
+          callable != env.end() && callable_identity(callable->second)) {
+        string cid = canonical_type_name(callable->second);
+        if (starts_with(cid, "callable:")) cid = cid.substr(9);
+        callee = cid;
+      }
+      const Function* function = starts_with(callee, "callable-v1:")
+          ? find_function_by_callable_id(callee)
+          : (functions_.count(callee) ? functions_.at(callee) : nullptr);
+      if (function) {
         if (leaf_effect_capture_) {
-          const auto& target = *function->second;
+          const auto& target = *function;
           const StateLeafEffects* recorded = nullptr;
           if (target.body.empty() && !target.result_expression) {
             if (!target.parameter_leaf_effects)
@@ -11302,7 +11490,7 @@ class Checker {
         }
         for (size_t index = 0; index < call_arguments.size(); ++index) {
           Effect argument_effect = concrete_function_parameter_effect(
-              *function->second, index,
+              *function, index,
               concrete_argument_types(call_arguments, env));
           analyze_effect_expression(call_arguments[index], env, params,
                                     parameter_effects, receiver_effect,
@@ -11760,10 +11948,16 @@ class Checker {
             }
           } else {
             auto local = env.find(identity);
-            if (local != env.end() && callable_identity(local->second))
-              identity = canonical_type_name(local->second).substr(9);
-            if (functions_.count(identity))
-              calls.push_back(LocalCallSite{"fn:" + identity, {}, argument_types});
+            if (local != env.end() && callable_identity(local->second)) {
+              string cid = canonical_type_name(local->second);
+              if (starts_with(cid, "callable:")) cid = cid.substr(9);
+              identity = cid;
+            }
+            const Function* fn = starts_with(identity, "callable-v1:")
+                ? find_function_by_callable_id(identity)
+                : (functions_.count(identity) ? functions_.at(identity) : nullptr);
+            if (fn)
+              calls.push_back(LocalCallSite{"fn:" + fn->name, {}, argument_types});
           }
         }
         if (stage.kind == FunctionalNodeKind::Map) {
@@ -13213,17 +13407,22 @@ class Checker {
             }
           } else {
             auto local = env.find(identity);
-            if (local != env.end() && callable_identity(local->second))
-              identity = canonical_type_name(local->second).substr(9);
-            auto function = functions_.find(identity);
-            if (function != functions_.end()) {
+            if (local != env.end() && callable_identity(local->second)) {
+              string cid = canonical_type_name(local->second);
+              if (starts_with(cid, "callable:")) cid = cid.substr(9);
+              identity = cid;
+            }
+            const Function* function = starts_with(identity, "callable-v1:")
+                ? find_function_by_callable_id(identity)
+                : (functions_.count(identity) ? functions_.at(identity) : nullptr);
+            if (function) {
               vector<string> input_types{element};
               if (stage.kind == FunctionalNodeKind::Reduce &&
                   stage.arguments.size() == 2)
                 input_types.insert(input_types.begin(),
                     inferred_expr_type(stage.arguments.front(), env).value_or(""));
               effects.merge(concrete_function_observable_effects(
-                  *function->second, input_types));
+                  *function, input_types));
             } else
               effects.unresolved = true;
           }
@@ -14060,10 +14259,23 @@ class Checker {
     auto local = env.find(identity);
     const bool deferred_generic_callable =
         local != env.end() && open_generic(local->second);
-    if (local != env.end() && callable_identity(local->second))
-      identity = canonical_type_name(local->second).substr(9);
-    auto function = functions_.find(identity);
-    if (function == functions_.end()) {
+    const Function* function = nullptr;
+    if (local != env.end() && callable_identity(local->second)) {
+      string cid = canonical_type_name(local->second);
+      if (starts_with(cid, "callable:")) cid = cid.substr(9);
+      if (starts_with(cid, "callable-v1:")) {
+        function = find_function_by_callable_id(cid);
+        identity = cid;
+      } else {
+        auto it = functions_.find(cid);
+        if (it != functions_.end()) function = it->second;
+        identity = cid;
+      }
+    } else {
+      auto it = functions_.find(identity);
+      if (it != functions_.end()) function = it->second;
+    }
+    if (!function) {
       // Callable inference can be incomplete while a higher-order function is
       // awaiting its concrete input specialization. Preserve that fact for
       // conservative planning; checked source must never reach an internal
@@ -14073,7 +14285,7 @@ class Checker {
       return effects;
     }
     effects = concrete_function_observable_effects(
-        *function->second, input_types);
+        *function, input_types);
     return effects;
   }
 
@@ -14194,10 +14406,12 @@ class Checker {
                       node.callable_identity) ==
                 owning_function->callable_dependencies.end())
           owning_function->callable_dependencies.push_back(node.callable_identity);
-        auto function = functions_.find(node.callable_identity);
-        if (function != functions_.end() && !callback_input_types.empty())
+        const Function* function = starts_with(node.callable_identity, "callable-v1:")
+            ? find_function_by_callable_id(node.callable_identity)
+            : (functions_.count(node.callable_identity) ? functions_.at(node.callable_identity) : nullptr);
+        if (function && !callback_input_types.empty())
           node.ownership = concrete_function_parameter_effect(
-              *function->second, 0, callback_input_types);
+              *function, 0, callback_input_types);
         string bound_receiver, bound_method;
         if (parse_bound_method_callable(node.callable_identity, bound_receiver,
                                         bound_method)) {
@@ -16027,13 +16241,23 @@ class Checker {
     vector<string> resolved = parameter_types;
     for (auto& type : resolved) {
       if (!callable_identity(type)) continue;
-      const string lookup_name = type.substr(9);
-      const auto callable = functions_.find(lookup_name);
-      if (callable == functions_.end() ||
-          callable->second->semantic_callable_id.empty())
+      if (starts_with(type, "callable-v1:")) continue;
+      if (starts_with(type, "callable:callable-v1:")) {
+        type = type.substr(9);
+        continue;
+      }
+      const string lookup_name = starts_with(type, "callable:") ? type.substr(9) : type;
+      const Function* target_fn = nullptr;
+      if (starts_with(lookup_name, "callable-v1:")) {
+        target_fn = find_function_by_callable_id(lookup_name);
+      } else {
+        auto callable = functions_.find(lookup_name);
+        if (callable != functions_.end()) target_fn = callable->second;
+      }
+      if (!target_fn || target_fn->semantic_callable_id.empty())
         err(line, "static callable argument has no resolved semantic identity",
             "TYPE_AMBIGUOUS_OPEN_RESULT");
-      type = "callable:" + callable->second->semantic_callable_id;
+      type = target_fn->semantic_callable_id;
     }
     return resolved;
   }
@@ -16302,6 +16526,10 @@ class Checker {
     specialization.parameter_types = canonical_types;
     specialization.return_type = canonical_type_name(*result);
     for (const auto& type : canonical_types) {
+      if (starts_with(type, "callable-v1:") || starts_with(type, "callable:")) {
+        specialization.parameter_type_refs.push_back(moss::Type::unit());
+        continue;
+      }
       auto parsed = moss::Type::parse_canonical(type);
       if (!parsed || !(*parsed)->is_closed())
         err(line, "static specialization has an unresolved argument type",
@@ -16532,6 +16760,12 @@ class Checker {
     if (name == "is_nan" || name == "is_finite") {
       if (args.size() != 1)
         err(line, name + " expects one Float argument", "INVALID_ARITY");
+      auto actual_term = checked_expression_term(args.front(), env);
+      if (current_body_types_ && actual_term) {
+        if (!current_body_types_->solver.unify(actual_term, moss::Type::primitive("float")))
+          err(line, name + " argument must have type 'Float'", "TYPE_MISMATCH");
+        return;
+      }
       auto actual = inferred_expr_type(args.front(), env);
       if (!actual || (!unresolved_semantic_type(*actual) &&
                       canonical_type_name(*actual) != "float"))
@@ -16543,12 +16777,20 @@ class Checker {
       if (args.size() != 1)
         err(line, name + " expects one argument", "INVALID_ARITY");
       const string expected = numeric_name == "to_int" ? "float" : "string";
-      auto actual = inferred_expr_type(args.front(), env);
-      if (!actual || (!unresolved_semantic_type(*actual) &&
-                      canonical_type_name(*actual) != expected))
-        err(line, name + " argument must have type '" +
-                  (expected == "float" ? "Float" : "String") + "'",
-            "TYPE_MISMATCH");
+      auto actual_term = checked_expression_term(args.front(), env);
+      if (current_body_types_ && actual_term) {
+        if (!current_body_types_->solver.unify(actual_term, moss::Type::primitive(expected)))
+          err(line, name + " argument must have type '" +
+                    (expected == "float" ? "Float" : "String") + "'",
+              "TYPE_MISMATCH");
+      } else {
+        auto actual = inferred_expr_type(args.front(), env);
+        if (!actual || (!unresolved_semantic_type(*actual) &&
+                        canonical_type_name(*actual) != expected))
+          err(line, name + " argument must have type '" +
+                    (expected == "float" ? "Float" : "String") + "'",
+              "TYPE_MISMATCH");
+      }
       const string error_type = numeric_builtin_error_type(name);
       auto declaration = enums_.find(error_type);
       if (declaration == enums_.end())
@@ -16604,11 +16846,20 @@ class Checker {
     auto binding = env.find(name);
     if (binding != env.end()) {
       if (open_generic(binding->second)) return;
-      if (callable_identity(binding->second))
-        target = binding->second.substr(9);
+      if (callable_identity(binding->second)) {
+        string cid = canonical_type_name(binding->second);
+        if (starts_with(cid, "callable:")) cid = cid.substr(9);
+        target = cid;
+      }
     }
-    auto function = functions_.find(target);
-    if (function == functions_.end()) {
+    Function* function_target = nullptr;
+    if (starts_with(target, "callable-v1:"))
+      function_target = find_function_by_callable_id(target);
+    if (!function_target) {
+      auto it = functions_.find(target);
+      if (it != functions_.end()) function_target = it->second;
+    }
+    if (!function_target) {
       if (builtin_call_semantics(name, args, env)) return;
       if (current_object_) {
         vector<string> argument_types;
@@ -16618,6 +16869,11 @@ class Checker {
       }
       err(line, "unknown local function '" + name + "'");
     }
+    struct FnWrapper {
+      Function* second;
+      const FnWrapper* operator->() const { return this; }
+      FnWrapper* operator->() { return this; }
+    } function{function_target};
     if (function->second->params.size() != args.size())
       err(line, "function " + name + " expects " +
           std::to_string(function->second->params.size()) + " arguments, got " +
@@ -16720,17 +16976,25 @@ class Checker {
               "' has type '" + actual_type + "' which does not satisfy trait '" +
               param.type + "': " + reason);
       }
-      auto formal_term = moss::Type::parse_canonical(
+      auto formal_term = param.type_ref ? param.type_ref : moss::Type::parse_canonical(
           canonical_type_name(param.type));
       bool container_match = bare_collection_accepts(param.type, actual_result);
       auto actual_term = checked_expression_term(args[index], env);
       if (!actual_term && current_body_types_ && starts_with(actual_type, "_iterator_element:"))
         actual_term = current_body_types_->solver.fresh(0);
+      moss::TypeRef check_term = formal_term ? *formal_term : nullptr;
+      if (check_term && check_term->is_bare_template() && current_body_types_) {
+        std::vector<std::pair<string, moss::TypeRef>> substitutions;
+        for (const auto& slot : check_term->declaration->fields)
+          if (slot.inferred) substitutions.emplace_back(slot.name, current_body_types_->solver.fresh(0));
+        check_term = moss::Type::nominal_bound(check_term->declaration, check_term->name,
+                                               std::move(substitutions));
+      }
       const bool typed_check = current_body_types_ &&
           !param.type.empty() && !traits_.count(param.type) &&
-          formal_term && (*formal_term)->is_closed() && actual_term;
+          check_term && check_term->is_closed() && actual_term;
       bool argument_compatible = typed_check
-          ? current_body_types_->solver.unify(*formal_term, actual_term)
+          ? current_body_types_->solver.unify(check_term, actual_term)
           : param.type.empty() ||
                 traits_.count(param.type) || container_match ||
                 (!actual_type.empty() && is_type_compatible(param.type, actual_type));
@@ -16756,8 +17020,9 @@ class Checker {
             err(line, "argument " + std::to_string(index + 1) +
                 " to function '" + name +
                 "' is not a statically typed functional collection");
-          // Callable identities are not yet terms (pseudo-type slice).
+          // Callable identities are statically bounded callable capabilities.
           if (c.kind == ConstraintKind::Callable &&
+              !actual_result.is_callable() &&
               !callable_identity(actual_result.legacy))
             err(line, "argument " + std::to_string(index + 1) +
                 " to function '" + name +
@@ -17146,7 +17411,9 @@ class Checker {
     auto local = env.find(identity);
     if (local != env.end()) {
       if (callable_identity(local->second)) {
-        identity = canonical_type_name(local->second).substr(9);
+        string cid = canonical_type_name(local->second);
+        if (starts_with(cid, "callable:")) cid = cid.substr(9);
+        identity = cid;
       } else if (open_generic(local->second)) {
         return "_functional_callable_result:" + identity;
       } else {
@@ -17154,8 +17421,14 @@ class Checker {
             "' is not statically bounded to one function");
       }
     }
-    auto function = functions_.find(identity);
-    if (function == functions_.end()) {
+    Function* function_ptr = nullptr;
+    if (starts_with(identity, "callable-v1:"))
+      function_ptr = find_function_by_callable_id(identity);
+    if (!function_ptr) {
+      auto it = functions_.find(identity);
+      if (it != functions_.end()) function_ptr = it->second;
+    }
+    if (!function_ptr) {
       string invoked;
       vector<string> invoked_arguments;
       if (parse_simple_call(identity, invoked, invoked_arguments) &&
@@ -17197,6 +17470,11 @@ class Checker {
       }
       err(line, "unresolved functional callable '" + identity + "'");
     }
+    struct FnWrapper {
+      Function* second;
+      const FnWrapper* operator->() const { return this; }
+      FnWrapper* operator->() { return this; }
+    } function{function_ptr};
     if (function->second->params.size() != input_types.size())
       err(line, "functional callable '" + identity + "' expects " +
           std::to_string(function->second->params.size()) + " arguments, got " +
@@ -17559,8 +17837,8 @@ class Checker {
             "ENUM_OPERATOR_UNSUPPORTED");
       if (binary->first.empty() || binary->second.empty())
         err(line, "invalid comparison expression");
-      if ((left_type && unresolved_semantic_type(*left_type)) ||
-          (right_type && unresolved_semantic_type(*right_type))) return;
+      if (unresolved_expression(binary->first, env) ||
+          unresolved_expression(binary->second, env)) return;
       if (left_type && right_type) {
         string lt = canonical_type_name(*left_type);
         string rt = canonical_type_name(*right_type);
@@ -17577,8 +17855,8 @@ class Checker {
         check_expression(line, binary->second, env);
         auto left_type = inferred_expr_type(binary->first, env);
         auto right_type = inferred_expr_type(binary->second, env);
-        if ((left_type && unresolved_semantic_type(*left_type)) ||
-            (right_type && unresolved_semantic_type(*right_type))) return;
+        if (unresolved_expression(binary->first, env) ||
+            unresolved_expression(binary->second, env)) return;
         if (!left_type || !right_type ||
             canonical_type_name(*left_type) != "int" ||
             canonical_type_name(*right_type) != "int")
@@ -17592,8 +17870,8 @@ class Checker {
       check_expression(line, binary->second, env);
       auto left_type = inferred_expr_type(binary->first, env);
       auto right_type = inferred_expr_type(binary->second, env);
-      if ((left_type && unresolved_semantic_type(*left_type)) ||
-          (right_type && unresolved_semantic_type(*right_type))) return;
+      if (unresolved_expression(binary->first, env) ||
+          unresolved_expression(binary->second, env)) return;
       if (!left_type || !right_type ||
           canonical_type_name(*left_type) != "int" ||
           canonical_type_name(*right_type) != "int")
@@ -17614,8 +17892,8 @@ class Checker {
             err(line, "invalid arithmetic expression");
           // A template records operator requirements; operand legality is
           // decided when this expression is checked in a concrete TypeEnv.
-          if ((left_type && unresolved_semantic_type(*left_type)) ||
-              (right_type && unresolved_semantic_type(*right_type))) return;
+          if (unresolved_expression(binary->first, env) ||
+              unresolved_expression(binary->second, env)) return;
           if ((left_type && canonical_type_name(*left_type) == "Range") ||
               (right_type && canonical_type_name(*right_type) == "Range")) {
             err(line, "Range arithmetic is unsupported", "TYPE_MISMATCH");
@@ -17635,7 +17913,7 @@ class Checker {
       string operand = trim(value.substr(1));
       check_expression(line, operand, env);
       auto operand_type = inferred_expr_type(operand, env);
-      if (operand_type && unresolved_semantic_type(*operand_type)) return;
+      if (unresolved_expression(operand, env)) return;
       if (!operand_type || canonical_type_name(*operand_type) != "int")
         err(line, "bitwise operator '~' requires an Int operand", "TYPE_MISMATCH");
       return;
@@ -20053,7 +20331,11 @@ class Generator {
     }
     for (const auto& o : p.objects) objects_[o.name] = &o;
     for (const auto& e : p.enums) enums_[e.name] = &e;
-    for (const auto& f : p.functions) functions_[f.name] = &f;
+    for (const auto& f : p.functions) {
+      functions_[f.name] = &f;
+      if (!f.semantic_callable_id.empty())
+        callable_id_to_function_[f.semantic_callable_id] = &f;
+    }
     if (resolution_program) {
       for (const auto& d : resolution_program->domains)
         domains_.emplace(d.name, &d);
@@ -20061,8 +20343,11 @@ class Generator {
         objects_.emplace(o.name, &o);
       for (const auto& e : resolution_program->enums)
         enums_.emplace(e.name, &e);
-      for (const auto& f : resolution_program->functions)
+      for (const auto& f : resolution_program->functions) {
         functions_.emplace(f.name, &f);
+        if (!f.semantic_callable_id.empty())
+          callable_id_to_function_.emplace(f.semantic_callable_id, &f);
+      }
     }
   }
 
@@ -20253,6 +20538,21 @@ class Generator {
   std::unordered_map<string, const ObjectType*> objects_;
   std::unordered_map<string, const EnumType*> enums_;
   std::unordered_map<string, const Function*> functions_;
+  std::unordered_map<string, const Function*> callable_id_to_function_;
+
+  const Function* find_function_by_callable_id(const string& id) const {
+    if (id.empty()) return nullptr;
+    auto it = callable_id_to_function_.find(id);
+    if (it != callable_id_to_function_.end()) return it->second;
+    for (const auto& [name, fn] : functions_) {
+      if (fn && fn->semantic_callable_id == id) return fn;
+    }
+    return nullptr;
+  }
+
+  static bool is_compile_time_callable(const string& type) {
+    return callable_identity(type);
+  }
   struct DomainInstanceBinding {
     // This is the semantic specialization key carried by a source binding;
     // it is intentionally independent of the generated Rust type name.
@@ -21150,8 +21450,11 @@ class Generator {
     callable = trim(std::move(callable));
     if (types) {
       auto local = types->find(callable);
-      if (local != types->end() && callable_identity(local->second))
+      if (local != types->end() && callable_identity(local->second)) {
+        if (starts_with(local->second, "callable-v1:"))
+          return local->second;
         return local->second.substr(9);
+      }
     }
     return callable;
   }
@@ -21206,17 +21509,23 @@ class Generator {
       return std::nullopt;
     }
     string identity = resolved_callable_identity(callable, types);
-    auto function = functions_.find(identity);
-    if (function == functions_.end()) return std::nullopt;
-    if (function->second->static_dispatch) {
+    const Function* fn = nullptr;
+    if (starts_with(identity, "callable-v1:")) {
+      fn = find_function_by_callable_id(identity);
+    } else {
+      auto function = functions_.find(identity);
+      if (function != functions_.end()) fn = function->second;
+    }
+    if (!fn) return std::nullopt;
+    if (fn->static_dispatch) {
       if (const auto* specialization =
-              functional_specialization(*function->second, input_types))
+              functional_specialization(*fn, input_types))
         return specialization->return_type;
       return std::nullopt;
     }
-    if (function->second->return_type &&
-        !contains_internal_placeholder(*function->second->return_type))
-      return canonical_type_name(*function->second->return_type);
+    if (fn->return_type &&
+        !contains_internal_placeholder(*fn->return_type))
+      return canonical_type_name(*fn->return_type);
     return std::nullopt;
   }
 
@@ -21414,23 +21723,30 @@ class Generator {
       }
       if (callee == "range" && (call_args.size() == 2 || call_args.size() == 3))
         return "range[int]";
-      auto function = functions_.find(resolved_callable_identity(callee, types));
-      if (function != functions_.end() && function->second->return_type) {
+      string callee_id = resolved_callable_identity(callee, types);
+      const Function* function_target = nullptr;
+      if (starts_with(callee_id, "callable-v1:")) {
+        function_target = find_function_by_callable_id(callee_id);
+      } else {
+        auto function = functions_.find(callee_id);
+        if (function != functions_.end()) function_target = function->second;
+      }
+      if (function_target && function_target->return_type) {
         vector<string> argument_types;
         for (const auto& argument : call_args)
           argument_types.push_back(generated_expr_type(argument, types).value_or(""));
-        if (function->second->static_dispatch) {
+        if (function_target->static_dispatch) {
           const auto* specialization = call_specialization(
-              *function->second, call_args, types);
+              *function_target, call_args, types);
           if (specialization)
             return specialization->return_type;
           return std::nullopt;
         }
-        string result = canonical_type_name(*function->second->return_type);
+        string result = canonical_type_name(*function_target->return_type);
         if (open_generic(result)) {
           string parameter = result.substr(9);
-          for (size_t index = 0; index < function->second->params.size(); ++index)
-            if (function->second->params[index].name == parameter &&
+          for (size_t index = 0; index < function_target->params.size(); ++index)
+            if (function_target->params[index].name == parameter &&
                 index < argument_types.size() && !argument_types[index].empty())
               return argument_types[index];
           return std::nullopt;
@@ -21629,8 +21945,8 @@ class Generator {
     for (size_t index = 0; index < arguments.size(); ++index) {
       NestedArgumentScope nested_scope(codegen_nested_argument_occurrence_,
                                        nested_occurrence(index));
-      bool compile_time_callable = generated_expr_type(arguments[index], types)
-          .value_or("").rfind("callable:", 0) == 0;
+      bool compile_time_callable = is_compile_time_callable(
+          generated_expr_type(arguments[index], types).value_or(""));
       if (compile_time_callable) continue;
       if (emitted_arguments++) call << ", ";
       {
@@ -21732,13 +22048,18 @@ class Generator {
   string emitted_function_name(
       const string& name, const vector<string>& arguments,
       const std::unordered_map<string,string>* types) const {
-    auto function = functions_.find(name);
-    if (function == functions_.end() || !function->second->static_dispatch)
-      return name;
-    const auto* specialization = call_specialization(*function->second,
-                                                     arguments, types);
+    const Function* fn = nullptr;
+    if (starts_with(name, "callable-v1:")) {
+      fn = find_function_by_callable_id(name);
+    } else {
+      auto function = functions_.find(name);
+      if (function != functions_.end()) fn = function->second;
+    }
+    if (!fn || !fn->static_dispatch)
+      return fn ? fn->name : name;
+    const auto* specialization = call_specialization(*fn, arguments, types);
     if (!specialization)
-      throw std::runtime_error("missing static specialization for function '" + name +
+      throw std::runtime_error("missing static specialization for function '" + (fn ? fn->name : name) +
                                "' at its checked call site");
     return specialization->generated_name;
   }
@@ -21897,30 +22218,36 @@ class Generator {
     }
 
     string identity = resolved_callable_identity(callable, types);
-    auto function = functions_.find(identity);
-    if (function == functions_.end())
+    const Function* function_target = nullptr;
+    if (starts_with(identity, "callable-v1:")) {
+      function_target = find_function_by_callable_id(identity);
+    } else {
+      auto function = functions_.find(identity);
+      if (function != functions_.end()) function_target = function->second;
+    }
+    if (!function_target)
       throw std::runtime_error("missing statically resolved functional callable '" +
                                identity + "'");
-    string emitted = identity;
+    string emitted = function_target->name;
     vector<string> argument_types;
     for (const auto& argument : arguments) argument_types.push_back(argument.type);
     const FunctionSpecialization* concrete = nullptr;
-    if (function->second->static_dispatch) {
+    if (function_target->static_dispatch) {
       // Functional callbacks register the key with no receiver or open-result
       // binding. Select that exact checked key even when a separate ordinary
       // call of the same callable and arguments has a bound result key.
-      concrete = functional_specialization(*function->second, argument_types);
+      concrete = functional_specialization(*function_target, argument_types);
       if (!concrete)
         throw std::runtime_error("missing functional specialization for '" +
                                  identity + "'");
       emitted = concrete->generated_name;
-    } else concrete = concrete_specialization(*function->second, argument_types);
+    } else concrete = concrete_specialization(*function_target, argument_types);
     std::ostringstream rendered;
     rendered << emitted << "(";
     for (size_t index = 0; index < arguments.size(); ++index) {
       if (index) rendered << ", ";
       const auto& argument = arguments[index];
-      auto abi = function_parameter_abi(*function->second, index, argument.type, concrete);
+      auto abi = function_parameter_abi(*function_target, index, argument.type, concrete);
       Effect effect = abi.effect;
       bool borrow = abi.passing != ParameterPassingMode::Value;
       if (domains_.count(canonical_type_name(argument.type))) {
@@ -21936,7 +22263,7 @@ class Generator {
     }
     rendered << ")";
     const bool raises = !(concrete ? concrete->observable_effects
-                                  : function->second->observable_effects)
+                                  : function_target->observable_effects)
                              .raise_set.empty();
     if (raises) {
       if (!phase21_result_context_)
@@ -23458,9 +23785,16 @@ class Generator {
       vector<string> call_args;
       if (parse_simple_call(e, head, call_args)) {
         head = resolved_callable_identity(head, types);
-        bool known_function = functions_.count(head);
+        const Function* function_target = nullptr;
+        if (starts_with(head, "callable-v1:")) {
+          function_target = find_function_by_callable_id(head);
+        } else {
+          auto it = functions_.find(head);
+          if (it != functions_.end()) function_target = it->second;
+        }
+        bool known_function = (function_target != nullptr);
         if (known_function)
-          return render_known_function_call(*functions_.at(head), head, call_args,
+          return render_known_function_call(*function_target, function_target->name, call_args,
                                             d, locals, types);
         const Method* sibling_method = nullptr;
         if (d && objects_.count(d->name) && !known_function) {
@@ -23492,8 +23826,7 @@ class Generator {
         size_t emitted_arguments = 0;
         for (size_t i = 0; i < call_args.size(); ++i) {
           bool compile_time_callable = known_function &&
-              generated_expr_type(call_args[i], types).value_or("").rfind(
-                  "callable:", 0) == 0;
+              is_compile_time_callable(generated_expr_type(call_args[i], types).value_or(""));
           if (compile_time_callable) continue;
           if (emitted_arguments++) r << ", ";
           if (sibling_method)
@@ -25683,10 +26016,17 @@ class Generator {
             break;
           }
           string function_name = resolved_callable_identity(s.a, &types);
-          bool known_function = functions_.count(function_name);
+          const Function* function_target = nullptr;
+          if (starts_with(function_name, "callable-v1:")) {
+            function_target = find_function_by_callable_id(function_name);
+          } else {
+            auto it = functions_.find(function_name);
+            if (it != functions_.end()) function_target = it->second;
+          }
+          bool known_function = (function_target != nullptr);
           if (s.b.empty() && known_function && !benchmark_body_) {
             o << indent(level)
-              << render_known_function_call(*functions_.at(function_name), function_name, s.args,
+              << render_known_function_call(*function_target, function_target->name, s.args,
                                            d, locals, &types)
               << ";\n";
             ++i;
@@ -25762,7 +26102,7 @@ class Generator {
           }
           string method_receiver_expression = (implicit_method ? "self." : "") +
             (s.b.empty() && known_function
-                    ? viewed_function_name(function_name, s.args, d, locals, &types)
+                    ? viewed_function_name(function_target->name, s.args, d, locals, &types)
                     : !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
                     : expr(s.a, d, locals, &types));
           std::ostringstream bridge_before, bridge_after, call_output;
@@ -25779,19 +26119,18 @@ class Generator {
           size_t emitted_arguments = 0;
           for (size_t k = 0; k < s.args.size(); ++k) {
             bool compile_time_callable = known_function &&
-                starts_with(generated_expr_type(s.args[k], &types).value_or(""),
-                            "callable:");
+                is_compile_time_callable(generated_expr_type(s.args[k], &types).value_or(""));
             if (compile_time_callable) continue;
             if (emitted_arguments++) call_output << ", ";
             if (benchmark_body_) call_output << "std::hint::black_box(";
             string argument_expression = argument_temporaries[k].empty()
                 ? s.args[k] : argument_temporaries[k];
             if (known_function) {
-              call_output << function_call_argument(*functions_.at(function_name), k, argument_expression, d,
+              call_output << function_call_argument(*function_target, k, argument_expression, d,
                                           locals, &types,
                                           statement_functional_pipeline_id(
                                               s, functional_context, k),
-                                          call_specialization(*functions_.at(function_name),
+                                          call_specialization(*function_target,
                                                               s.args, &types));
             } else if (!s.b.empty() || implicit_method) {
               if (call_method) {
