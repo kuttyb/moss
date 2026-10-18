@@ -1,0 +1,115 @@
+name: Phase 25 Team PR regression gates
+
+on:
+  pull_request:
+    branches: [phase25-integration]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [phase25-integration]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase25-team-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Jobs run concurrently on isolated checkouts. tests/run.sh still serializes
+# its shared-output tests; don't run two copies in one checkout.
+jobs:
+  core-regressions:
+    name: Core regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with available CPU cores
+        run: make --jobs="$(nproc)"
+      - name: Full Moss repository regression suite
+        run: |
+          mkdir -p tmp
+          TMPDIR="$PWD/tmp" make --jobs="$(nproc)" check
+
+  optimized-examples:
+    name: Optimized examples
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with available CPU cores
+        run: make --jobs="$(nproc)"
+      - name: All Rust-emitted examples
+        run: make --jobs="$(nproc)" examples
+
+  phase25-semantic-gates:
+    name: Phase 25 semantic gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with available CPU cores
+        run: make --jobs="$(nproc)"
+      - name: H/T authority and Phase 25 semantic regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tmp
+          export TMPDIR="$PWD/tmp"
+          # Missing a promised gate is a failure, not a green skip.
+          for f in \
+            tests/tooling/check_phase25_g1_requirements.py \
+            tests/tooling/check_phase25_g2_declaration_authority.py \
+            tests/tooling/check_phase25_g3_source_free_parity.py \
+            tests/tooling/check_phase25_checked_body_ir.py \
+            tests/tooling/check_phase25_team_a_semantics.py \
+            tests/tooling/check_phase25_conformance.py \
+            tests/tooling/check_no_internal_type_leak.py \
+            tests/tooling/check_generic_specialization.py; do
+            test -f "$f" || { echo "BLOCKED missing required suite: $f"; exit 1; }
+            python3 "$f" ./moss
+          done
+          python3 tests/tooling/check_agent_feedback.py
+
+  integration-harness-health:
+    name: Integration harness integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with available CPU cores
+        run: make --jobs="$(nproc)"
+      - name: Anti-false-green harness checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tmp
+          python3 tests/phase25/integration/run_acceptance.py --self-test
+          python3 tests/phase25/integration/cross_crate_harness.py --self-test
+          python3 tests/phase25/integration/run_differential_adversarial.py --self-test
+          python3 tests/phase25/integration/sdk_compatibility_smoke.py --self-test
+
+  # Run only at frozen final candidate. Unlike normal PR gates, this refuses
+  # BLOCKED/NOT IMPLEMENTED across all 62 Phase 25 acceptance requirements.
+  final-integration-release:
+    name: Final 62-gate source-free release
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    needs:
+      - core-regressions
+      - optimized-examples
+      - phase25-semantic-gates
+      - integration-harness-health
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with available CPU cores
+        run: make --jobs="$(nproc)"
+      - name: Full cross-crate source-free ABI-v10 scenarios
+        run: python3 tests/phase25/integration/cross_crate_harness.py --all
+      - name: Phase 24 SDK compatibility (all modes)
+        run: python3 tests/phase25/integration/sdk_compatibility_smoke.py --full --mode all
+      - name: Multi-engine differential adversarial cases
+        run: python3 tests/phase25/integration/run_differential_adversarial.py --all
+      - name: Strict machine-checkable Phase 25 gate ledger (62/62 required)
+        run: python3 tests/phase25/integration/run_acceptance.py --strict
