@@ -115,6 +115,34 @@ impl<K, V> MossMap<K, V> {
         Some(self.buckets[index].swap_remove(position).value)
     }
 
+    /// Check for key existence through the exact statically selected equality target.
+    pub fn contains_key_with<F>(&self, hash: i64, key: &K, isequal: F) -> bool
+    where
+        F: FnMut(&K, &K) -> bool,
+    {
+        self.get_with(hash, key, isequal).is_some()
+    }
+
+    /// Mutable lookup through the exact statically selected equality target.
+    pub fn get_mut_with<F>(&mut self, hash: i64, key: &K, mut isequal: F) -> Option<&mut V>
+    where
+        F: FnMut(&K, &K) -> bool,
+    {
+        let index = Self::bucket_index(hash, self.buckets.len());
+        self.buckets[index]
+            .iter_mut()
+            .find(|entry| entry.hash == hash && isequal(&entry.key, key))
+            .map(|entry| &mut entry.value)
+    }
+
+    /// Clear all entries from the map, resetting length while keeping bucket allocation.
+    pub fn clear(&mut self) {
+        for bucket in &mut self.buckets {
+            bucket.clear();
+        }
+        self.len = 0;
+    }
+
     /// An eager, owned snapshot. Clone means the result cannot borrow a key
     /// from storage, including when the map changes after this call.
     pub fn keys(&self) -> Vec<K>
@@ -128,6 +156,20 @@ impl<K, V> MossMap<K, V> {
             }
         }
         keys
+    }
+
+    /// An eager, owned snapshot of values.
+    pub fn values(&self) -> Vec<V>
+    where
+        V: Clone,
+    {
+        let mut values = Vec::with_capacity(self.len);
+        for bucket in &self.buckets {
+            for entry in bucket {
+                values.push(entry.value.clone());
+            }
+        }
+        values
     }
 }
 
@@ -174,6 +216,10 @@ impl<K> MossSet<K> {
         F: FnMut(&K, &K) -> bool,
     {
         self.storage.remove_with(hash, key, isequal).is_some()
+    }
+
+    pub fn clear(&mut self) {
+        self.storage.clear();
     }
 
     pub fn keys(&self) -> Vec<K>
@@ -226,6 +272,35 @@ mod tests {
         assert!(!set.insert_with(4, 4, |a, b| a == b));
         assert!(set.contains_with(4, &4, |a, b| a == b));
         assert!(set.remove_with(4, &4, |a, b| a == b));
+        assert!(set.is_empty());
+    }
+
+    #[test]
+    fn test_values_get_mut_contains_and_clear() {
+        let mut map = MossMap::new();
+        map.insert_with(10, 1, "one".to_string(), |a, b| a == b);
+        map.insert_with(20, 2, "two".to_string(), |a, b| a == b);
+        assert!(map.contains_key_with(10, &1, |a, b| a == b));
+        assert!(!map.contains_key_with(30, &3, |a, b| a == b));
+        if let Some(v) = map.get_mut_with(10, &1, |a, b| a == b) {
+            v.push_str("_updated");
+        }
+        assert_eq!(map.get_with(10, &1, |a, b| a == b), Some(&"one_updated".to_string()));
+
+        let values = map.values();
+        assert_eq!(values.len(), 2);
+        assert!(values.contains(&"one_updated".to_string()));
+        assert!(values.contains(&"two".to_string()));
+
+        map.clear();
+        assert_eq!(map.len(), 0);
+        assert!(map.is_empty());
+        assert_eq!(map.get_with(10, &1, |a, b| a == b), None);
+
+        let mut set = MossSet::new();
+        set.insert_with(1, 10, |a, b| a == b);
+        set.clear();
+        assert_eq!(set.len(), 0);
         assert!(set.is_empty());
     }
 }

@@ -325,12 +325,13 @@ import Provider
 fn main():
   echo Provider.outer(1)
 ''')
-    error = check_negative(source, {"MEMBER_NOT_FOUND", "UNKNOWN_METHOD", "TYPE_MEMBER_NOT_FOUND", "TYPE_MISMATCH"},
+    error = check_negative(source, {"METHOD_NOT_FOUND"},
                            ("outer", "middle", "required", "Provider"), env)
     assert error["source_file"] == str(source), error
     related = error.get("related") or []
     assert len(related) >= 2, "missing imported outer-to-provider provenance chain"
-    assert any("Provider" in json.dumps(note) for note in related), related
+    assert any((note.get("source") or {}).get("file", "").endswith("provider.moss")
+               for note in related), related
 
 
 def g6(s):

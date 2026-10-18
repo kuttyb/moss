@@ -360,6 +360,70 @@ inline void validate_summary_nonweakening(const Summary& provider,
   }
 }
 
+struct SourceProvenance {
+  std::string provenance_id;
+  std::string module_id;
+  std::string logical_source_id;
+  std::string source_file_display;
+  std::uint32_t start_line = 0;
+  std::uint32_t start_column = 0;
+  std::uint32_t end_line = 0;
+  std::uint32_t end_column = 0;
+  std::string declaration_id;
+};
+
+inline std::string provenance_payload(const SourceProvenance& value) {
+  require(!value.provenance_id.empty() && valid_utf8(value.provenance_id) &&
+              module_id_valid(value.module_id) &&
+              !value.logical_source_id.empty() && valid_utf8(value.logical_source_id) &&
+              valid_utf8(value.source_file_display) &&
+              (value.start_line < value.end_line ||
+               (value.start_line == value.end_line && value.start_column <= value.end_column)) &&
+              valid_utf8(value.declaration_id),
+          "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 source provenance is invalid");
+  WireWriter writer;
+  writer.byte(1);
+  writer.string(value.provenance_id);
+  writer.string(value.module_id);
+  writer.string(value.logical_source_id);
+  writer.string(value.source_file_display);
+  writer.number(value.start_line);
+  writer.number(value.start_column);
+  writer.number(value.end_line);
+  writer.number(value.end_column);
+  writer.string(value.declaration_id);
+  return writer.finish();
+}
+
+inline SourceProvenance read_provenance(std::string_view payload) {
+  WireReader reader(payload);
+  require(reader.byte() == 1, "SOURCE_FREE_CONTRACT_INVALID",
+          "ABI-v10 source provenance record version is unsupported");
+  SourceProvenance value;
+  value.provenance_id = reader.string();
+  value.module_id = reader.string();
+  value.logical_source_id = reader.string();
+  value.source_file_display = reader.string();
+  value.start_line = reader.number();
+  value.start_column = reader.number();
+  value.end_line = reader.number();
+  value.end_column = reader.number();
+  value.declaration_id = reader.string();
+  require(reader.done() && provenance_payload(value) == payload,
+          "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 source provenance is noncanonical");
+  return value;
+}
+
+inline Record provenance_record(const SourceProvenance& value) {
+  return {value.provenance_id, provenance_payload(value)};
+}
+
+inline void validate_provenance(const Record& record) {
+  const auto value = read_provenance(record.payload);
+  require(value.provenance_id == record.id, "SOURCE_FREE_CONTRACT_INVALID",
+          "ABI-v10 provenance ID disagrees with its record");
+}
+
 struct Field {
   std::string name;
   WireType type;
@@ -374,6 +438,7 @@ struct NominalTemplate {
   std::uint32_t variable_count = 0;
   std::vector<Field> fields;
   std::string representation_hash;
+  std::vector<std::string> method_template_ids;
   std::string provenance_id;
 };
 
@@ -381,6 +446,7 @@ inline std::string template_payload(const NominalTemplate& value) {
   require(hex_hash(value.template_id) && module_id_valid(value.module_id) &&
               !value.declaration_name.empty() && value.variable_count <= 4096 &&
               value.fields.size() <= 4096 && hex_hash(value.representation_hash) &&
+              value.method_template_ids.size() <= 4096 &&
               !value.provenance_id.empty(),
           "SOURCE_FREE_TYPE_IDENTITY_MISMATCH", "ABI-v10 nominal template shape is invalid");
   WireWriter writer;
@@ -402,6 +468,15 @@ inline std::string template_payload(const NominalTemplate& value) {
     writer.string(field.provenance_id);
   }
   writer.string(value.representation_hash);
+  writer.number(static_cast<std::uint32_t>(value.method_template_ids.size()));
+  std::string previous_method;
+  for (const auto& mid : value.method_template_ids) {
+    require(!mid.empty() && (previous_method.empty() || previous_method < mid),
+            "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+            "ABI-v10 method template IDs are not canonical");
+    previous_method = mid;
+    writer.string(mid);
+  }
   writer.string(value.provenance_id);
   return writer.finish();
 }
@@ -430,6 +505,11 @@ inline NominalTemplate read_template(std::string_view payload) {
     value.fields.push_back(std::move(field));
   }
   value.representation_hash = reader.string();
+  const auto method_count = reader.number();
+  require(method_count <= 4096, "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+          "ABI-v10 method count exceeds the limit");
+  for (std::uint32_t i = 0; i < method_count; ++i)
+    value.method_template_ids.push_back(reader.string());
   value.provenance_id = reader.string();
   require(reader.done() && template_payload(value) == payload,
           "SOURCE_FREE_TYPE_IDENTITY_MISMATCH", "ABI-v10 nominal template is noncanonical");
@@ -445,6 +525,185 @@ inline void validate_template(const Record& record) {
   require(value.template_id == record.id,
           "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
           "ABI-v10 nominal template ID disagrees with its record");
+}
+
+struct MethodTemplate {
+  std::string method_id;
+  std::string template_id;
+  std::string method_name;
+  bool exported = false;
+  std::uint32_t variable_count = 0;
+  std::vector<WireType> parameters;
+  WireType result;
+  Access receiver_access = Access::Read;
+  std::vector<Access> parameter_access;
+  std::vector<Requirement> requirements;
+  std::vector<std::pair<std::string, std::string>> dependencies;
+  std::uint32_t observable_effect_bits = 0;
+  std::vector<std::string> observable_effect_tags;
+  std::string provenance_id;
+};
+
+inline std::string method_template_payload(const MethodTemplate& value) {
+  require(!value.method_id.empty() && hex_hash(value.template_id) &&
+              !value.method_name.empty() && value.variable_count <= 4096 &&
+              value.parameters.size() <= 256 &&
+              value.parameters.size() == value.parameter_access.size() &&
+              value.requirements.size() <= 4096 &&
+              value.dependencies.size() <= 4096 &&
+              !value.provenance_id.empty(),
+          "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 method template shape is invalid");
+  WireWriter writer;
+  writer.byte(1);
+  writer.string(value.method_id);
+  writer.string(value.template_id);
+  writer.string(value.method_name);
+  writer.byte(value.exported ? 1 : 0);
+  writer.number(value.variable_count);
+  writer.number(static_cast<std::uint32_t>(value.parameters.size()));
+  for (std::size_t i = 0; i < value.parameters.size(); ++i) {
+    write_type(writer, value.parameters[i], value.variable_count);
+    require(static_cast<std::uint8_t>(value.parameter_access[i]) >= 1 &&
+                static_cast<std::uint8_t>(value.parameter_access[i]) <= 3,
+            "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 access mode is invalid");
+    writer.byte(static_cast<std::uint8_t>(value.parameter_access[i]));
+  }
+  write_type(writer, value.result, value.variable_count);
+  require(static_cast<std::uint8_t>(value.receiver_access) >= 1 &&
+              static_cast<std::uint8_t>(value.receiver_access) <= 3,
+          "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 access mode is invalid");
+  writer.byte(static_cast<std::uint8_t>(value.receiver_access));
+  writer.number(static_cast<std::uint32_t>(value.requirements.size()));
+  for (std::size_t i = 0; i < value.requirements.size(); ++i) {
+    const auto& requirement = value.requirements[i];
+    require(requirement.parent <= i && !requirement.operation.empty() &&
+                !requirement.provenance_id.empty(),
+            "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 requirement DAG is invalid");
+    write_type(writer, requirement.receiver, value.variable_count);
+    writer.string(requirement.operation);
+    require(static_cast<std::uint8_t>(requirement.access) >= 1 &&
+                static_cast<std::uint8_t>(requirement.access) <= 3,
+            "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 access mode is invalid");
+    writer.byte(static_cast<std::uint8_t>(requirement.access));
+    writer.number(requirement.parent);
+    writer.string(requirement.provenance_id);
+  }
+  writer.number(static_cast<std::uint32_t>(value.dependencies.size()));
+  std::string previous;
+  for (const auto& dep : value.dependencies) {
+    require(!dep.first.empty() && (previous.empty() || previous < dep.first) &&
+                hex_hash(dep.second),
+            "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 dependencies are not canonical");
+    previous = dep.first;
+    writer.string(dep.first);
+    writer.string(dep.second);
+  }
+  writer.number(value.observable_effect_bits);
+  write_effect_tags(writer, value.observable_effect_tags);
+  writer.string(value.provenance_id);
+  return writer.finish();
+}
+
+inline MethodTemplate read_method_template(std::string_view payload) {
+  WireReader reader(payload);
+  require(reader.byte() == 1, "SOURCE_FREE_CONTRACT_INVALID",
+          "ABI-v10 method template version is unsupported");
+  MethodTemplate value;
+  value.method_id = reader.string();
+  value.template_id = reader.string();
+  value.method_name = reader.string();
+  const auto exported = reader.byte();
+  require(exported <= 1, "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 visibility invalid");
+  value.exported = exported == 1;
+  value.variable_count = reader.number();
+  require(value.variable_count <= 4096, "SOURCE_FREE_CONTRACT_INVALID", "Too many variables");
+  const auto params = reader.number();
+  require(params <= 256, "SOURCE_FREE_CONTRACT_INVALID", "Too many parameters");
+  for (std::uint32_t i = 0; i < params; ++i) {
+    value.parameters.push_back(read_type(reader, value.variable_count));
+    value.parameter_access.push_back(read_access(reader));
+  }
+  value.result = read_type(reader, value.variable_count);
+  value.receiver_access = read_access(reader);
+  const auto reqs = reader.number();
+  require(reqs <= 4096, "SOURCE_FREE_CONTRACT_INVALID", "Too many requirements");
+  for (std::uint32_t i = 0; i < reqs; ++i) {
+    Requirement req;
+    req.receiver = read_type(reader, value.variable_count);
+    req.operation = reader.string();
+    req.access = read_access(reader);
+    req.parent = reader.number();
+    req.provenance_id = reader.string();
+    value.requirements.push_back(std::move(req));
+  }
+  const auto deps = reader.number();
+  require(deps <= 4096, "SOURCE_FREE_CONTRACT_INVALID", "Too many dependencies");
+  for (std::uint32_t i = 0; i < deps; ++i)
+    value.dependencies.push_back({reader.string(), reader.string()});
+  value.observable_effect_bits = reader.number();
+  value.observable_effect_tags = read_effect_tags(reader);
+  value.provenance_id = reader.string();
+  require(reader.done() && method_template_payload(value) == payload,
+          "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 method template is noncanonical");
+  return value;
+}
+
+inline Record method_template_record(const MethodTemplate& value) {
+  return {value.method_id, method_template_payload(value)};
+}
+
+inline void validate_method_template(const Record& record) {
+  const auto value = read_method_template(record.payload);
+  require(value.method_id == record.id, "SOURCE_FREE_CONTRACT_INVALID",
+          "ABI-v10 method template ID disagrees with its record");
+}
+
+struct ModuleRecord {
+  std::string module_id;
+  std::string package_name;
+  std::string package_version;
+  std::string module_name;
+  std::string provider_binary_id;
+};
+
+inline std::string module_record_payload(const ModuleRecord& value) {
+  require(module_id_valid(value.module_id) && !value.package_name.empty() &&
+              !value.package_version.empty() && !value.module_name.empty() &&
+              hex_hash(value.provider_binary_id),
+          "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 module record is invalid");
+  WireWriter writer;
+  writer.byte(1);
+  writer.string(value.module_id);
+  writer.string(value.package_name);
+  writer.string(value.package_version);
+  writer.string(value.module_name);
+  writer.string(value.provider_binary_id);
+  return writer.finish();
+}
+
+inline ModuleRecord read_module_record(std::string_view payload) {
+  WireReader reader(payload);
+  require(reader.byte() == 1, "SOURCE_FREE_CONTRACT_INVALID",
+          "ABI-v10 module record version is unsupported");
+  ModuleRecord value;
+  value.module_id = reader.string();
+  value.package_name = reader.string();
+  value.package_version = reader.string();
+  value.module_name = reader.string();
+  value.provider_binary_id = reader.string();
+  require(reader.done() && module_record_payload(value) == payload,
+          "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 module record is noncanonical");
+  return value;
+}
+
+inline Record module_record(const ModuleRecord& value) {
+  return {value.module_id, module_record_payload(value)};
+}
+
+inline void validate_module_record(const Record& record) {
+  const auto value = read_module_record(record.payload);
+  require(value.module_id == record.id, "SOURCE_FREE_CONTRACT_INVALID",
+          "ABI-v10 module record ID disagrees with its record");
 }
 
 struct ConcreteInstance {
@@ -714,6 +973,276 @@ inline void validate_key_proof_coherence(const std::vector<Record>& proofs) {
             "KEY_PROOF_COHERENCE_MISMATCH",
             "ABI-v10 consumers bind conflicting proofs for one key type");
     by_type[key] = record.id;
+  }
+}
+
+inline KeyProof make_builtin_key_proof(std::string_view type_name) {
+  std::string name(type_name);
+  if (name == "int" || name == "Int") name = "Int";
+  else if (name == "float" || name == "Float") name = "Float";
+  else if (name == "char" || name == "Char") name = "Char";
+  else if (name == "string" || name == "String") name = "String";
+  else if (name == "bool" || name == "Bool") name = "Bool";
+  else throw Error("SOURCE_FREE_CONTRACT_INVALID", "Unsupported builtin key proof type: " + name);
+
+  KeyProof proof;
+  std::string prim_name;
+  if (name == "Int") prim_name = "int";
+  else if (name == "Float") prim_name = "float";
+  else if (name == "Char") prim_name = "char";
+  else if (name == "String") prim_name = "string";
+  else prim_name = "bool";
+
+  proof.key_type = {WireTypeKind::Primitive, prim_name, {}, 0};
+  proof.equality_callable_id = "builtin:key-protocol-v1:isequal:" + name;
+  proof.hash_callable_id = "builtin:key-protocol-v1:hash:" + name;
+  proof.equality_specialization_key = hash("moss-abi-v10-specialization", proof.equality_callable_id);
+  proof.hash_specialization_key = hash("moss-abi-v10-specialization", proof.hash_callable_id);
+
+  std::string eq_text, hash_text;
+  if (name == "Int") { eq_text = "a == b"; hash_text = "a"; }
+  else if (name == "Float") { eq_text = "moss_float_isequal(a, b)"; hash_text = "moss_float_hash(a)"; }
+  else if (name == "Char") { eq_text = "a == b"; hash_text = "a as u32 as i64"; }
+  else if (name == "String") { eq_text = "byte equality"; hash_text = "moss_string_hash"; }
+  else if (name == "Bool") { eq_text = "a == b"; hash_text = "0 / 1"; }
+
+  proof.equality_semantic_hash = hash("moss-abi-v10-key-lowering", eq_text);
+  proof.hash_semantic_hash = hash("moss-abi-v10-key-lowering", hash_text);
+  proof.equality_effect_bits = 0;
+  proof.equality_effect_tags.clear();
+  proof.hash_effect_bits = 0;
+  proof.hash_effect_tags.clear();
+  proof.law_contract_version = "key-laws-v1";
+  proof.provenance_id = "builtin:key-protocol-v1:" + name;
+  return proof;
+}
+
+inline void validate_complete_interface(
+    const SealedInterface& sealed,
+    std::string_view selected_provider_binary_id = "",
+    std::string_view selected_rlib_archive = "") {
+  validate_identity(sealed.value);
+
+  const auto encoded = encode(sealed.value);
+  require(digest_matches(encoded, sealed), "SOURCE_FREE_CONTRACT_INVALID",
+          "ABI-v10 provider contract digest mismatch");
+
+  if (!selected_rlib_archive.empty()) {
+    const auto mod_info = parse_module_id(sealed.value.module_id);
+    validate_selected_rlib(selected_rlib_archive, mod_info.module_name, sealed.digest);
+  }
+
+  std::string binary_hash, semantic_hash;
+  (void)canonical_body(sealed.value, &binary_hash, &semantic_hash);
+  require(binary_hash == sealed.binary_hash, "SOURCE_FREE_CONTRACT_INVALID",
+          "ABI-v10 binary contract hash mismatch");
+  require(semantic_hash == sealed.semantic_hash, "SOURCE_FREE_CONTRACT_INVALID",
+          "ABI-v10 semantic contract hash mismatch");
+
+  std::set<std::string> import_modules;
+  for (const auto& imp : sealed.value.imports) {
+    require(module_id_valid(imp.module_id), "SOURCE_FREE_CONTRACT_INVALID",
+            "ABI-v10 import module ID is malformed");
+    require(hex_hash(imp.binary_hash) && hex_hash(imp.semantic_hash),
+            "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 import hash is malformed");
+    require(import_modules.insert(imp.module_id).second,
+            "SOURCE_FREE_CONTRACT_INVALID", "Duplicate import module ID");
+  }
+
+  std::set<std::string> known_provenances;
+  for (const auto& rec : sealed.value.provenance) {
+    validate_provenance(rec);
+    known_provenances.insert(rec.id);
+  }
+
+  std::map<std::string, NominalTemplate> known_templates;
+  std::vector<ConcreteInstance> known_instances;
+  for (const auto& rec : sealed.value.binary_contract) {
+    if (!rec.payload.empty() && rec.payload[0] == 1 && rec.id.rfind("sha256:", 0) == 0) {
+      try {
+        const auto tmpl = read_template(rec.payload);
+        validate_template(rec);
+        known_templates[tmpl.template_id] = tmpl;
+        continue;
+      } catch (const Error&) {}
+      try {
+        const auto inst = read_instance(rec.payload);
+        require(instance_key(inst) == rec.id, "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                "ConcreteInstance key mismatch");
+        known_instances.push_back(inst);
+        continue;
+      } catch (const Error&) {}
+    }
+  }
+
+  std::vector<Summary> public_summaries;
+  std::vector<MethodTemplate> public_methods;
+  std::vector<Record> key_proof_records;
+  for (const auto& rec : sealed.value.semantic_contract) {
+    if (!rec.payload.empty() && rec.payload[0] == 1) {
+      if (rec.payload.size() >= 2 && rec.payload.find("key-protocol-v1") != std::string::npos) {
+        validate_key_proof(rec);
+        key_proof_records.push_back(rec);
+        continue;
+      }
+      try {
+        const auto sum = read_summary(rec.payload);
+        validate_summary(rec);
+        public_summaries.push_back(sum);
+        continue;
+      } catch (const Error&) {}
+      try {
+        const auto m = read_method_template(rec.payload);
+        validate_method_template(rec);
+        public_methods.push_back(m);
+        continue;
+      } catch (const Error&) {}
+      try {
+        const auto tmpl = read_template(rec.payload);
+        validate_template(rec);
+        known_templates[tmpl.template_id] = tmpl;
+        continue;
+      } catch (const Error&) {}
+    }
+  }
+
+  std::map<std::string, Summary> private_summaries;
+  std::map<std::string, MethodTemplate> private_methods;
+  std::set<std::string> known_private_dep_ids;
+  for (const auto& rec : sealed.value.private_semantic_dependencies) {
+    known_private_dep_ids.insert(rec.id);
+    if (!rec.payload.empty() && rec.payload[0] == 1) {
+      try {
+        const auto sum = read_summary(rec.payload);
+        validate_summary(rec);
+        private_summaries[sum.callable_id] = sum;
+        continue;
+      } catch (const Error&) {}
+      try {
+        const auto m = read_method_template(rec.payload);
+        validate_method_template(rec);
+        private_methods[m.method_id] = m;
+        continue;
+      } catch (const Error&) {}
+      try {
+        const auto tmpl = read_template(rec.payload);
+        validate_template(rec);
+        known_templates[tmpl.template_id] = tmpl;
+        continue;
+      } catch (const Error&) {}
+    }
+  }
+
+  for (const auto& inst : known_instances) {
+    const auto it = known_templates.find(inst.template_id);
+    require(it != known_templates.end(), "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+            "ConcreteInstance references unknown template ID: " + inst.template_id);
+    if (!selected_provider_binary_id.empty()) {
+      require(inst.provider_binary_id == selected_provider_binary_id,
+              "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+              "ConcreteInstance provider_binary_id does not match selected provider");
+    }
+    validate_instance(instance_record(inst), it->second, inst.provider_binary_id);
+  }
+
+  std::set<std::string> required_deps;
+  for (const auto& sum : public_summaries) {
+    for (const auto& dep : sum.dependencies) {
+      required_deps.insert(dep.first);
+    }
+  }
+  for (const auto& m : public_methods) {
+    for (const auto& dep : m.dependencies) {
+      required_deps.insert(dep.first);
+    }
+  }
+  std::vector<std::string> dep_worklist(required_deps.begin(), required_deps.end());
+  std::set<std::string> visited_deps = required_deps;
+  while (!dep_worklist.empty()) {
+    const auto current = dep_worklist.back();
+    dep_worklist.pop_back();
+    const auto sum_it = private_summaries.find(current);
+    if (sum_it != private_summaries.end()) {
+      for (const auto& dep : sum_it->second.dependencies) {
+        if (visited_deps.insert(dep.first).second) {
+          dep_worklist.push_back(dep.first);
+        }
+      }
+    }
+  }
+  for (const auto& dep : visited_deps) {
+    bool found = known_private_dep_ids.count(dep) > 0 ||
+                 private_summaries.count(dep) > 0 ||
+                 private_methods.count(dep) > 0;
+    if (!found) {
+      for (const auto& sum : public_summaries) {
+        if (sum.callable_id == dep) { found = true; break; }
+      }
+    }
+    require(found, "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
+            "Missing private semantic dependency: " + dep);
+  }
+
+  if (!key_proof_records.empty()) {
+    validate_key_proof_coherence(key_proof_records);
+  }
+
+  // Referential integrity checks across templates, methods, summaries, and provenance
+  for (const auto& pair : known_templates) {
+    if (!pair.second.provenance_id.empty()) {
+      require(known_provenances.count(pair.second.provenance_id) > 0,
+              "SOURCE_FREE_CONTRACT_INVALID",
+              "NominalTemplate references unknown provenance ID: " + pair.second.provenance_id);
+    }
+    for (const auto& f : pair.second.fields) {
+      if (!f.provenance_id.empty()) {
+        require(known_provenances.count(f.provenance_id) > 0,
+                "SOURCE_FREE_CONTRACT_INVALID",
+                "Field references unknown provenance ID: " + f.provenance_id);
+      }
+    }
+    for (const auto& mid : pair.second.method_template_ids) {
+      bool method_found = false;
+      for (const auto& m : public_methods) {
+        if (m.method_id == mid) { method_found = true; break; }
+      }
+      if (!method_found && private_methods.count(mid) > 0) method_found = true;
+      require(method_found, "SOURCE_FREE_CONTRACT_INVALID",
+              "NominalTemplate references unknown method template: " + mid);
+    }
+  }
+
+  for (const auto& sum : public_summaries) {
+    if (!sum.provenance_id.empty()) {
+      require(known_provenances.count(sum.provenance_id) > 0,
+              "SOURCE_FREE_CONTRACT_INVALID",
+              "Summary references unknown provenance ID: " + sum.provenance_id);
+    }
+    for (const auto& req : sum.requirements) {
+      if (!req.provenance_id.empty()) {
+        require(known_provenances.count(req.provenance_id) > 0,
+                "SOURCE_FREE_CONTRACT_INVALID",
+                "Requirement references unknown provenance ID: " + req.provenance_id);
+      }
+    }
+  }
+
+  for (const auto& m : public_methods) {
+    if (!m.provenance_id.empty()) {
+      require(known_provenances.count(m.provenance_id) > 0,
+              "SOURCE_FREE_CONTRACT_INVALID",
+              "MethodTemplate references unknown provenance ID: " + m.provenance_id);
+    }
+    for (const auto& req : m.requirements) {
+      if (!req.provenance_id.empty()) {
+        require(known_provenances.count(req.provenance_id) > 0,
+                "SOURCE_FREE_CONTRACT_INVALID",
+                "Method requirement references unknown provenance ID: " + req.provenance_id);
+      }
+    }
+    require(known_templates.count(m.template_id) > 0,
+            "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+            "MethodTemplate references unknown template ID: " + m.template_id);
   }
 }
 
