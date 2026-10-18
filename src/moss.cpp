@@ -6880,6 +6880,18 @@ class Checker {
     if (object_call) return object_call;
     string method_receiver, method_name; vector<string> method_args;
     if (parse_member_call(e, method_receiver, method_name, method_args)) {
+      if (staged_abi_v10() && trim(method_receiver) == "Map()" &&
+          method_name == "get" && method_args.size() == 2) {
+        auto key = inferred_expr_type(method_args[0], env);
+        auto value = inferred_expr_type(method_args[1], env);
+        if (key && value) {
+          auto key_term = parsed_type(*key);
+          auto value_term = parsed_type(*value);
+          if (key_term && value_term && key_term->is_closed() &&
+              value_term->is_closed())
+            return inferred_leaf(*value);
+        }
+      }
       string canon_recv = canonical_type_name(method_receiver);
       if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" ||
           canon_recv == "string" || canon_recv == "bool") {
@@ -8006,6 +8018,26 @@ class Checker {
       auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
       return parsed ? freshen_open_type(*parsed) : nullptr;
     };
+    auto constrain_map_lookup = [&](int line, const string& expression) {
+      if (!staged_abi_v10()) return;
+      string receiver, method;
+      vector<string> arguments;
+      if (!parse_member_call(trim(expression), receiver, method, arguments) ||
+          (method != "get" && method != "delete") ||
+          arguments.size() != (method == "get" ? 2u : 3u)) return;
+      auto map = body_types.known_expression(receiver);
+      if (!map || map->kind != moss::TypeKind::Builtin ||
+          map->name != "map" || map->type_args.size() != 2) return;
+      auto key = term_for(arguments[0]);
+      auto value = term_for(arguments[1]);
+      if (key && !solver.unify(map->type_args[0], key))
+        err(line, "Map key conflicts with the binding's key type", "TYPE_MISMATCH");
+      if (value && !solver.unify(map->type_args[1], value))
+        err(line, "Map fallback conflicts with the binding's value type", "TYPE_MISMATCH");
+      auto resolved = solver.resolve(map);
+      if (resolved && resolved->is_closed() && simple_identifier(receiver))
+        scan[receiver] = resolved->to_canonical_string();
+    };
     auto require_type = [&](int line, const string& expression,
                             const string& expected, const string& context) {
       string callee;
@@ -8400,6 +8432,17 @@ class Checker {
         }
       }
       body_types.locals_at_statement.emplace(&statement, locals);
+      if (statement.kind == Stmt::Kind::Echo) {
+        for (const auto& argument : statement.args)
+          constrain_map_lookup(statement.line, argument);
+      } else if (statement.kind == Stmt::Kind::Let ||
+                 statement.kind == Stmt::Kind::Var ||
+                 statement.kind == Stmt::Kind::Assign) {
+        constrain_map_lookup(statement.line, statement.b);
+      } else if (statement.kind == Stmt::Kind::Reply ||
+                 statement.kind == Stmt::Kind::Return) {
+        constrain_map_lookup(statement.line, statement.a);
+      }
       if (statement.kind == Stmt::Kind::For) {
         moss::TypeRef loop_term;
         string callee;
@@ -8580,9 +8623,19 @@ class Checker {
           compatible = solver.unify(container->type_args[0], value);
         } else if (container->name == "map" &&
                  container->type_args.size() == 2) {
-          expected_element = describe(container->type_args[1]);
-          compatible = (!key || solver.unify(container->type_args[0], key)) &&
-              solver.unify(container->type_args[1], value);
+          if (staged_abi_v10()) {
+            const string expected_key = describe(container->type_args[0]);
+            const string actual_key = key ? describe(key) : string();
+            if (key && !solver.unify(container->type_args[0], key))
+              err(statement.line, "indexed assignment requires key of type '" +
+                  expected_key + "', found '" + actual_key + "'", "TYPE_MISMATCH");
+            expected_element = describe(container->type_args[1]);
+            compatible = solver.unify(container->type_args[1], value);
+          } else {
+            expected_element = describe(container->type_args[1]);
+            compatible = (!key || solver.unify(container->type_args[0], key)) &&
+                solver.unify(container->type_args[1], value);
+          }
         }
         if (!compatible && !expected_element.empty() && !actual_value.empty())
           err(statement.line, "indexed assignment requires value of type '" +
@@ -9265,6 +9318,14 @@ class Checker {
               field.type = incoming;
               field.inferred = true;
             } else if (!field.inferred) {
+              // A bare Map() initializer supplies the collection head, while
+              // handler use may still close its key and value slots.
+              if (staged_abi_v10() && field.init == "Map()" &&
+                  canonical_type_name(field.type) == "map" &&
+                  starts_with(incoming, "map[") && ends_with(incoming, "]")) {
+                field.type = incoming;
+                continue;
+              }
               auto expected = moss::Type::parse_canonical(
                   canonical_type_name(field.type));
               const bool compatible = retained && expected && (*expected)->is_closed()
@@ -19110,6 +19171,20 @@ class Checker {
       }
       if (check_fileio_operation(line, receiver, handler, args, env)) return;
       if (auto receiver_type = inferred_expr_type(receiver, env)) {
+        if (staged_abi_v10() && *receiver_type == "map" &&
+            trim(receiver) == "Map()" && handler == "get" &&
+            args.size() == 2) {
+          auto key = inferred_expr_type(args[0], env);
+          auto value = inferred_expr_type(args[1], env);
+          if (key && value) {
+            auto key_term = parsed_type(*key);
+            auto value_term = parsed_type(*value);
+            if (key_term && value_term && key_term->is_closed() &&
+                value_term->is_closed())
+              *receiver_type = "map[" + canonical_type_name(*key) + "," +
+                  canonical_type_name(*value) + "]";
+          }
+        }
         // A bare Map has no key or value type. In particular, a default passed
         // to get cannot silently turn an untyped temporary into a Rust
         // HashMap::get call with the wrong arity.
@@ -19121,6 +19196,9 @@ class Checker {
           err(line, "Set operation requires a concrete key type before use",
               "TYPE_AMBIGUOUS_OPEN_RESULT");
         if (builtin_receiver_family(*receiver_type)) {
+          if (staged_abi_v10() && trim(receiver) == "Map()" &&
+              starts_with(*receiver_type, "map["))
+            check_map_key_type(line, map_key_value_types(*receiver_type)->first);
           check_expression(line, receiver, env);
           for (const auto& arg : args) check_expression(line, arg, env);
           vector<string> argument_types;
@@ -23163,6 +23241,9 @@ class Generator {
     string receiver, method_name;
     vector<string> method_args;
     if (parse_member_call(value, receiver, method_name, method_args)) {
+      if (staged_abi_v10() && trim(receiver) == "Map()" &&
+          method_name == "get" && method_args.size() == 2)
+        return generated_expr_type(method_args[1], types);
       string canon_recv = canonical_type_name(receiver);
       if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" ||
           canon_recv == "string" || canon_recv == "bool") {
@@ -24856,6 +24937,17 @@ class Generator {
       string receiver_expression = method_receiver_place(member_receiver, member_name, member_arguments, d, locals, types);
       if (starts_with(receiver_expression, "*")) receiver_expression = "(" + receiver_expression + ")";
       auto receiver_type = generated_expr_type(member_receiver, types);
+      if (staged_abi_v10() && trim(member_receiver) == "Map()" &&
+          member_name == "get" &&
+          member_arguments.size() == 2) {
+        auto key = generated_expr_type(member_arguments[0], types);
+        auto value = generated_expr_type(member_arguments[1], types);
+        if (key && value) {
+          receiver_type = "map[" + canonical_type_name(*key) + "," +
+              canonical_type_name(*value) + "]";
+          receiver_expression = "<" + rust_type(*receiver_type) + ">::new()";
+        }
+      }
       if (receiver_type) {
         string concrete = canonical_type_name(*receiver_type);
         if (concrete == "FileIO" && member_name == "read" &&

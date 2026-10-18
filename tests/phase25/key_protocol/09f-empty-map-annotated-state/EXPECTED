@@ -2,7 +2,7 @@ title: Unpinned empty Map: annotated domain state initialized with Map()
 covers: S1.5 (Team G Option B handoff)
 layout: standalone
 expect: stdout
-current: fail-closed TYPE_MISMATCH
+current: passes
 owner: Team G Option B
 ---
 1

@@ -3,7 +3,7 @@ covers: S1.5 (Team G Option B handoff)
 layout: packages
 entry: app
 expect: stdout
-current: fail-closed MOSS_COMPILE_ERROR
+current: passes
 owner: Team G Option B
 ---
 x
