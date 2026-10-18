@@ -1,5 +1,18 @@
 # Team I live integration record
 
+## Activated key-surface checkpoint — 2026-10-18
+
+L4 pushed `phase25-i-map-staging` at `9e7c729`. Opt-in ABI-v10 Map/Set
+fixtures pass 30/30 in Fast Debug, native debug and native release, with G2
+11/11. The default-v9 30-case ledger now matches observed outcomes; its seven
+updated `current:` entries were reproduced on the clean pre-Option-B compiler
+`dd7f97f`, without changing fixture source or `expect:`. Negative probes still
+reject a later contradictory Map key pin and an unresolved `echo []`. This is
+staging evidence only: H1/H3, target-based PR checks, strict 62-gate release
+and final independent review remain open. L4 retains exclusive compiler
+ownership for H1 then H3. H/T draft #5 still has three green exact-head CI
+jobs and core regressions running; no target/main merge has occurred.
+
 ## Staged Float Map checkpoint — 2026-10-18
 
 L4 pushed `phase25-i-map-staging` at `dd7f97f`. Opt-in ABI-v10 Float Map uses

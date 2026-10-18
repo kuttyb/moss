@@ -1,5 +1,25 @@
 # Moss current status
 
+## Phase 25 staged key-surface checkpoint — 2026-10-18
+
+Sole L4 pushed `phase25-i-map-staging` at `9e7c729`, closing the three
+remaining Option B empty-Map cases. At that exact compiler edit,
+`MOSS_STAGED_ABI=v10` activated key fixtures pass **30/30** across Fast Debug,
+native debug and native release; activated G2 conformance passes **11/11**.
+The default-v9 fixture ledger matches **30/30** observed outcomes. Seven
+default `current:` lines were corrected only after a clean pre-Option-B
+`dd7f97f` compiler reproduced the older drift; fixture source and `expect:`
+lines were not changed. A get-only String Map followed by an Int indexed
+insert rejects with precise `TYPE_MISMATCH`; unpinned `echo []` retains
+`ECHO_DISPLAY_UNSUPPORTED`. Feedback and diff checks pass. This is still an
+opt-in, non-target-based staging branch, not complete strict 62-gate release
+acceptance. L4 retains the compiler lease for inherited H1/H3 work.
+
+H/T draft PR #5 remains at `9ddf9a4` with semantic, optimized examples and
+harness integrity green. Core regressions of exact-head workflow
+`39174097677` are still running. Combined L6 review and target integration
+wait for that final job; target and main remain unchanged.
+
 ## Phase 25 staged Float Map checkpoint — 2026-10-18
 
 Sole L4 pushed `phase25-i-map-staging` at `dd7f97f`. Under opt-in ABI-v10,
