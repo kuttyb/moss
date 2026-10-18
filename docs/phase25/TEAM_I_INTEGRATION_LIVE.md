@@ -128,3 +128,13 @@ exit 1. It is not integrated/reviewed. ABI worker now owns
 the accurately blocked missing pre-H G1 suite. H #5 has three green checks,
 core still running at checkpoint. Coordinator [PR #7](https://github.com/kuttyb/moss/pull/7)
 contains recovery/policy plus full-history CI checkout change; awaiting H target.
+
+## H2 scratch recovery
+
+Sole L4 pushed `0574de41d3c13d6af0448a80ad3708ce7a91e402` on
+`phase25-i-h2-erased-projections` (`tmp/phase25-i-h2`). Local full compiler
+build/bootstrap and G1/G2/G3 pass; direct regression rejects all 36 empty/reset
+boundary cases. No PR/review/integration yet. H #5 remains unchanged while
+core CI runs. After H integration, refresh H2 from approved target and open
+its draft PR; all new automated gates still required. Actual source details
+and next steps are committed in `docs/phase25/H2_DECLARATION_PROJECTIONS.md`.

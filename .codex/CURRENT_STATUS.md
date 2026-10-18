@@ -1,5 +1,21 @@
 # Moss current status
 
+## H2 recovery point — 2026-10-18
+
+Sole L4 worker prepared and pushed `phase25-i-h2-erased-projections` at
+`0574de41d3c13d6af0448a80ad3708ce7a91e402`, isolated scratch worktree
+`tmp/phase25-i-h2`. Frozen H intake #5 remains unchanged at 5cfdc163.
+H2 has no PR yet: wait for H required core check, L6 review and target merge,
+then merge reviewed target into H2 and open draft PR with fresh CI. Seven-file
+H2 scope: AST erased projections, compiler ABI guard, typed-semantic guard,
+G2 runner, actual compiler-boundary C++ regression, H2 doc and feedback.
+Worker-local optimized build/bootstrap + G1/G2/G3 + feedback/whitespace pass;
+36 direct empty/reset boundary rejections cover Program/Checker/typed/ABI.
+This is pre-PR evidence, not reviewed/integrated H2 closure. Durable handoff:
+`docs/phase25/H2_DECLARATION_PROJECTIONS.md` on the H2 branch.
+H #5 last observed 3/4 required jobs green, core running; no target/main merge.
+Only root combined L6 + sole L4 remain active, adversarial review final-only.
+
 ## Latest L7 staffing override — 2026-10-18
 
 **Recover using this override, not older two-worker records.** Exactly two active
