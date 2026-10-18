@@ -24,6 +24,9 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Acceptance evidence verifies implementation ancestry, not only HEAD.
+          fetch-depth: 0
       - name: Build with available CPU cores
         run: make --jobs="$(nproc)"
       - name: Full Moss repository regression suite
@@ -37,6 +40,9 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Acceptance evidence verifies implementation ancestry, not only HEAD.
+          fetch-depth: 0
       - name: Build with available CPU cores
         run: make --jobs="$(nproc)"
       - name: All Rust-emitted examples
@@ -48,6 +54,9 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Acceptance evidence verifies implementation ancestry, not only HEAD.
+          fetch-depth: 0
       - name: Build with available CPU cores
         run: make --jobs="$(nproc)"
       - name: H/T authority and Phase 25 semantic regressions
@@ -77,6 +86,9 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Acceptance evidence verifies implementation ancestry, not only HEAD.
+          fetch-depth: 0
       - name: Build with available CPU cores
         run: make --jobs="$(nproc)"
       - name: Anti-false-green harness checks
@@ -104,6 +116,9 @@ jobs:
       - integration-harness-health
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Acceptance evidence verifies implementation ancestry, not only HEAD.
+          fetch-depth: 0
       - name: Build with available CPU cores
         run: make --jobs="$(nproc)"
       - name: Full cross-crate source-free ABI-v10 scenarios
