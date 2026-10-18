@@ -26,6 +26,26 @@ Recovery references and exclusive leases:
   Strict evidence repair and CLI fault regressions locally passed, current CI
   pending; missing pre-H semantic suites may fail. **Not yet L6 reviewed.**
 
+Checkpoint update (same session): coordinator [draft PR #7](https://github.com/kuttyb/moss/pull/7)
+contains recovery records, AGENTS authorization and full-history CI checkouts
+at `d37cf330b76671318ca3cabb2fed6429580d75c3`. H #5 has three green jobs
+(examples, harness, semantics); core still running, so no L6 review yet.
+Strict #6 current run `39165205082`: examples/harness green, semantic FAIL
+with `BLOCKED missing required suite: tests/tooling/check_phase25_g1_requirements.py`
+on pre-H target; core pending at observation. Merge reviewed H target and rerun.
+
+ABI worker now uses same isolated worktree on `phase25-i-cross-crate`:
+[draft PR #8](https://github.com/kuttyb/moss/pull/8),
+`ac317c65caecac0d9916d58318106fc13225939e` (committed/pushed recovery point).
+It removes provider packages, uses compiled roots, executes independent typed
+consumers and fails release on blocked scenarios. Local harness self-tests pass;
+real release result **0 PASS / 1 BLOCKED / 10 FAIL, exit 1** on preintegration
+compiler, not acceptance. Durable reproduction/handoff lives in
+`tests/phase25/integration/SOURCE_FREE_EXECUTION.md` on that branch. Exact enum
+ownership diagnostic `OWNERSHIP_USE_AFTER_CONSUME`; source-free failures require
+production compiler integration, not relaxed fixtures. #8 CI and L6 review pending.
+H, #6, #7, #8 latest reviewed target base remains fbd2f72. No main/target merge.
+
 All pinned input refs match execution plan after fetch: H/T `2d457245`,
 G `2938d257`, S `53d04fbf`, B `755f1317`. Bootstrap verified `moss-0.1`.
 GitHub connector works (inspect tool schemas via ALL_TOOLS descriptions); `gh`

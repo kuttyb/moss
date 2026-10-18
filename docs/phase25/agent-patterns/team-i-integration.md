@@ -7,8 +7,8 @@ In progress, 2026-10-18. This is a live record, not final phase acceptance.
 | **Leaf agents** | 2 actual separately instantiated L5 agents: compiler and ABI/harness; both have dedicated worktrees. Planned optional third worker not instantiated. |
 | **Peak leaf concurrency** | 2, observed concurrent compiler intake and harness integrity repair. |
 | **Non-leaf reviewers/managers** | 1 Coordinator combining L6 PR review; independent adversarial reviewer not yet invoked (milestone not frozen). |
-| **Submissions** | 2 draft PRs: [#5](https://github.com/kuttyb/moss/pull/5) H/T intake and [#6](https://github.com/kuttyb/moss/pull/6) strict evidence repair. Neither integrated yet. No non-PR review handoff. |
-| **Coordinator reviews** | 0/2 reviewed; both await automated CI, no requested repair round yet. |
+| **Submissions** | 4 draft PRs: [#5](https://github.com/kuttyb/moss/pull/5) H/T intake and [#6](https://github.com/kuttyb/moss/pull/6) strict evidence repair. plus [#7](https://github.com/kuttyb/moss/pull/7) Coordinator CI/recovery and [#8](https://github.com/kuttyb/moss/pull/8) real source-free harness. None integrated yet. No non-PR review handoff. |
+| **Coordinator reviews** | 0/4 reviewed; both await automated CI, no requested repair round yet. |
 | **Other review events** | No Architect/adversarial event yet. L7 GO authorized execution; no final L7 review. |
 | **Defects** | I-001 strict CLI bypass and I-002 insufficient source-removal/release evidence first identified by ABI worker, open; H2 verification is inherited L7 discovery, not new Coordinator credit. See live integration record. |
 | **Test evidence** | H worker reports optimized build/bootstrap and G1/G2/G3 passed; PR automated evidence pending, no full regression or phase gate totals claimed. |

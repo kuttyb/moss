@@ -98,3 +98,15 @@ review, integration or new validated blocker). Worker branches are committed and
 pushed independently; target remains unchanged until required CI/L6 approval.
 PR #6 latest recovery head is `ccf2ca7c6628882617ad5f830fce19b463bcce23`
 (feedback-only follow-up to `afcf693`); exact-head CI is pending.
+
+## Source-free harness recovery handoff
+
+[PR #8](https://github.com/kuttyb/moss/pull/8), exact head
+`ac317c65caecac0d9916d58318106fc13225939e`, makes source removal and
+consumer execution real; baseline release is **0 PASS / 1 BLOCKED / 10 FAIL**,
+exit 1. It is not integrated/reviewed. ABI worker now owns
+`phase25-i-cross-crate` in its existing isolated worktree. Frozen strict #6 remains
+`ccf2ca7c6628882617ad5f830fce19b463bcce23`. Its current semantic CI failure is
+the accurately blocked missing pre-H G1 suite. H #5 has three green checks,
+core still running at checkpoint. Coordinator [PR #7](https://github.com/kuttyb/moss/pull/7)
+contains recovery/policy plus full-history CI checkout change; awaiting H target.
