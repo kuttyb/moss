@@ -1,5 +1,27 @@
 # Moss current status
 
+## Phase 25 staged Set checkpoint — 2026-10-18
+
+Sole L4 compiler worker pushed `phase25-i-map-staging` at `dd44d5c`, extending
+nominal Map checkpoint `4165e75`. Under opt-in `MOSS_STAGED_ABI=v10`, Set uses
+the L7-frozen `Set()`, `insert(k)`, `contains(k)`, `values()` source API and the
+shared `MossSet` robin-hood kernel with Map's nominal proof validation. Native
+and Fast Debug outputs match the expected nominal Map+Set fixture 08
+(`true/2/2/2/2`) and Float Set fixture 02 (`3/true/true/false`); an
+Int/String/Char/Bool Set probe also has checker/Fast Debug/native parity.
+Default ABI v9 retains its prior `UNKNOWN_SYMBOL_OR_TYPE` Set rejection.
+Missing, impure, and divergent nominal proofs return `KEY_PROOF_INVALID`.
+The worker repaired proof-validation timing after main-body key discovery;
+feedback validation and whitespace checks pass. Full PR/repository suites and
+canonical serialized KeyProof identity/coherence remain open; worker retains
+exclusive compiler/ABI edit lease for that next slice.
+
+H/T draft #5 is now exact head `9ddf9a4c27cefcfe19284b4b9f87cbdadf2fa97c`.
+Workflow `39174097677` has semantic gates, examples, and harness integrity
+green; core regressions still runs. Previous CI results for `bf1df10` were
+cancelled after the whitespace follow-up and are not current acceptance.
+No target/main merge or L6 verdict has occurred.
+
 ## Phase 25 staged nominal Map checkpoint — 2026-10-18
 
 Pushed `phase25-i-map-staging` at `4165e752319c120275ac2a8268e25da599a62fdd`,

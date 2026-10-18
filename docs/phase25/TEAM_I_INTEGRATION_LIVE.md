@@ -1,5 +1,21 @@
 # Team I live integration record
 
+## Staged Set checkpoint — 2026-10-18
+
+Sole L4 pushed `phase25-i-map-staging` at `dd44d5c`. Opt-in ABI-v10 Set now
+implements the L7-frozen four-operation source API on shared `MossSet`, with
+native and Fast Debug parity for nominal Map+Set fixture 08, Float Set fixture
+02, and an Int/String/Char/Bool probe. Default v9 continues to reject Set.
+Missing, impure and divergent nominal key proofs fail at Moss checking with
+`KEY_PROOF_INVALID`; proof validation now occurs after main-body discovery.
+Full PR/repository checks and serialized canonical proof coherence remain
+open. L4 retains exclusive compiler/ABI edits for that proof slice; root owns
+Git/CI coordination. No staging branch has been integrated into the target.
+
+H/T draft #5 exact head is `9ddf9a4`. Its refreshed workflow `39174097677`
+has semantic, examples and harness jobs green, with core regressions running.
+Combined L6 review and target integration wait for that last exact-head job.
+
 ## Staged Map Gate 10 and current lease — 2026-10-18
 
 `phase25-i-map-staging` checkpoint `4165e75` extends staged shared-runtime
