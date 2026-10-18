@@ -28,7 +28,7 @@ Each implementation worker gets a dedicated worktree and feature branch. L6 owns
 
 ### Automated testing rules
 
-- The workflow at `.github/workflows/phase25-team-pr.yml` is the default Phase 25 PR evidence source. Three independent groups (core regressions, examples, Phase 25/integration smoke) run concurrently on **separate checkout instances** and each build with available cores.
+- The workflow at `.github/workflows/phase25-team-pr.yml` is the default Phase 25 PR evidence source. Four independent groups (core regressions, optimized examples, Phase 25 semantic gates, integration-harness integrity) run concurrently on **separate checkout instances** and each build with available cores.
 - The existing `tests/run.sh` has shared artifact paths and runs serial suites. `make --jobs=N check` still runs this script serially; do not claim internal parallelism. Concurrency is across isolated CI jobs or isolated worktrees. Split further only after auditing fixed paths, cache writes, build outputs, and toolchain CPU/memory contention.
 - `run_acceptance.py --strict` is the **Phase 25 release gate**, not a substitute for PR unit/regression tests. It must reject missing, blocked, stale, or mocked evidence. Final full ABI-v10 source-removal, cross-crate, SDK, native/Fast Debug/differential tests are release-only where not yet supported; their pending state must be explicit during development.
 - The regression suite includes negative reproducers with exact Moss diagnostic codes, source-backed/native parity where relevant, source-free import without provider `.moss` sources where required, and stale/tampered metadata fail-closed behavior.
