@@ -1,31 +1,36 @@
 # Moss current status
 
-## Phase 25 Task B1: Checker TypeEnv Refactored to `moss::TypeRef` — 2026-10-17 (READY)
+## Phase 25 Tasks T1, T2, T3: Type Authority, Pseudo-Type Conversion, and Fallback Retirement — 2026-10-17 (READY)
 
-**Phase 25 Task B1 is implemented and fully validated.** The Checker's lexical environment (`TypeEnv`) has been migrated to use `moss::TypeRef` authority for both bindings and terms while preserving `vector<Stmt>::semantic_type` and all compiler-critical contracts.
+**Phase 25 Tasks T1, T2, and T3 are implemented and fully validated.**
+The Checker's lexical environment (`TypeEnv`) operates under `moss::TypeRef` authority (T1), open pseudo-types are converted to solver inference variables with requirements without leaking internal markers (T2), and the unknown-argument fallback in `check_function_call` has been retired with type checking fully term-driven (T3).
 
 ### Summary of Changes & Completed Validation
-1. **`TypeEnv` Authority**:
+1. **`TypeEnv` Authority (T1)**:
    - `TypeEnv` operates over `std::unordered_map<string, moss::TypeRef>` for both `bindings` and `terms`.
    - Backward-compatible accessors provided via `EntryRef` and transparent string conversions.
    - `fileio_semantics.inc` and `src/moss.cpp` aligned for `moss::TypeRef` and `phase20_capability_type` overloads.
-2. **Effects & Function Scoping**:
-   - Isolated `BodyTypeScope` inside `concrete_function_effects` to prevent caller body local types from polluting specialized function effect analysis.
-   - Preserved enum join shadowing order and statement-level scoped locals across match arms.
-3. **Branch Join & Prepass Unification**:
-   - In `merge_type_environments`, resolved unified closed terms via `solver.resolve(joined)`, eliminating `TYPE_AMBIGUOUS_OPEN_RESULT` regressions in generic branch joins.
-   - In `solve_local_collection_types`:
-     - Skipped cross-branch type unification on domain handles so the source-order checker's closed-handle immutability/escape diagnostics (`phase106b_route_reassign`, `branch_divergent_domain_types`, `check_domain_handle_closure`) fire without being masked by prepass type mismatches.
-     - Skipped direct `solver.unify` on trait-constrained function parameters in `instantiate_summary` so structural trait conformance (`trait_conforms`) in `check_function_call` fires with exact method missing/signature diagnostics (`trait_missing_method`, `trait_incompatible_method_signature`).
+2. **Pseudo-Types & Inference Variables (T2)**:
+   - Added `_typevar:` prefix to `internal_semantic_placeholder` in `src/type_placeholders.hpp` to prevent type variable leaking.
+   - Guarded `InferredExpr::projection()` and `inferred_expr_type()` to ensure only closed terms project strings and open `_typevar:` markers never escape into error diagnostics.
+   - Allocated fresh `solver.fresh(0)` inference variables for open iterator elements (`_iterator_element:`) in `solve_local_collection_types` and `checked_expression_term`, enabling full solver unification during unspecialized template checking (`bytes.from_range`).
+   - Deferral in `check_functional_pipeline` for open/untyped generic pipeline sources preserves downstream specialization while preventing premature unknown-symbol errors on built-in pipeline stages (`parts |> count`).
+   - Resolved all pre-existing internal type leaks: `KNOWN_OPEN` in `tests/tooling/check_no_internal_type_leak.py` is now empty (`KNOWN_OPEN = set()`, 0 leaks across 1,864 tracked `.moss` sources).
+3. **Retirement of Unknown-Argument Fallback (T3)**:
+   - Retired `actual_type.empty() || contains_internal_placeholder(actual_type) || param.type.empty() || contains_internal_placeholder(param.type)` from `check_function_call`.
+   - Function calls strictly enforce argument compatibility via `current_body_types_->solver.unify(*formal_term, actual_term)` when terms are present, traits/container matching, and concrete compatibility.
 4. **Validation Results**:
-   - `make check`: 100% pass (`all Moss v0.1 tests passed`).
-   - `python3 tests/tooling/check_phase25_team_a_semantics.py ./moss`: 55/55 passed.
+   - `make check`: 100% pass (`all Moss v0.1 tests passed`, 54 executor tests passed).
+   - `python3 tests/tooling/check_phase25_team_a_semantics.py ./moss`: 55/55 passed (including `source_free_range` with `bytes.from_range(Range)` returning owned `Vector[Int]`).
+   - `python3 tests/tooling/check_no_internal_type_leak.py ./moss`: 0 leaks across 1864 sources (0 known open).
    - `python3 tests/tooling/check_domain_handle_closure.py ./moss`: passed.
+   - `python3 tests/tooling/check_generic_specialization.py ./moss`: 40/40 passed.
    - All Phase 25 tooling suites (`check_phase25_conformance.py`, `check_phase25_a3_specialization.py`, `check_phase25_nominal_identity.py`, `check_phase25_type_ir.py`, etc.): passed.
    - `python3 tests/tooling/check_agent_skills.py ./moss`: passed.
    - `python3 tests/tooling/check_agent_feedback.py`: passed.
 
-Downstream Team H work is unblocked.
+Downstream Team H work is unblocked; compiler ownership for `src/moss.cpp` is released.
+
 
 ## Phase 25 Team A — handoff for parallel splitting — 2026-10-17
 

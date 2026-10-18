@@ -539,7 +539,7 @@ static std::optional<string> indexed_element(const moss::TypeRef& type) {
 // inference variable with requirements (TYPE_IR_CONTRACT §§2, 4) has one
 // place to change, rather than two dozen prefix tests.
 static bool open_generic(const string& type) {
-  return starts_with(type, "_generic:");
+  return starts_with(type, "_generic:") || starts_with(type, "_typevar:");
 }
 
 static bool open_generic(const moss::TypeRef& type) {
@@ -4010,7 +4010,7 @@ class Checker {
         for (const auto& s : method.body) {
           if (s.kind == Stmt::Kind::Return && !s.a.empty()) {
             auto result = inferred_expr_type(s.a, inferred_env);
-            if (result) {
+            if (result && !contains_internal_placeholder(*result)) {
               if (!method.return_type) method.return_type = *result;
               else if (!option_none_compatible(*result, *method.return_type) &&
                        !same_type(*method.return_type, *result)) {
@@ -4023,7 +4023,7 @@ class Checker {
         }
         if (method.result_expression) {
           auto result = inferred_expr_type(*method.result_expression, inferred_env);
-          if (result) {
+          if (result && !contains_internal_placeholder(*result)) {
             if (!method.return_type) method.return_type = *result;
             else if (!option_none_compatible(*result, *method.return_type) &&
                      !same_type(*method.return_type, *result))
@@ -4928,6 +4928,10 @@ class Checker {
                          "unknown parameter type '" + param.type + "'");
       if (!names.insert(param.name).second) err(f.source_file, f.line, "duplicate parameter: " + param.name);
       env[param.name] = param.type.empty() ? "_generic:" + param.name : param.type;
+      if (!param.type.empty()) {
+        if (auto parsed = moss::Type::parse_canonical(canonical_type_name(param.type)))
+          env.terms[param.name] = *parsed;
+      }
     }
     TypeEnv entry_env = env;
     TypeEnv inferred_env = env;
@@ -4960,8 +4964,10 @@ class Checker {
       if (!f.return_type && actual) {
         // The signature pass normally fills this in. Keep this assignment as a
         // defensive fallback for a function whose result was inferred late.
-        const_cast<Function&>(f).return_type = *actual;
+        if (!contains_internal_placeholder(*actual))
+          const_cast<Function&>(f).return_type = *actual;
       } else if (f.return_type && actual && !contains_internal_placeholder(*f.return_type) &&
+                 !contains_internal_placeholder(*actual) &&
                  !(*actual == "_method_value" || starts_with(*actual, "_method_result:")) &&
                   !starts_with(*actual, "_functional_callable_result:") &&
                  !option_none_compatible(*actual, *f.return_type) &&
@@ -5600,7 +5606,9 @@ class Checker {
     moss::TypeRef term;
     string legacy;
     string projection() const {
-      return term ? term->to_canonical_string() : legacy;
+      if (term && term->is_closed() && !contains_internal_placeholder(term))
+        return term->to_canonical_string();
+      return legacy;
     }
   };
 
@@ -5641,7 +5649,9 @@ class Checker {
                                            const TypeEnv& env) const {
     auto inferred = inferred_expr(expression, env);
     if (!inferred) return std::nullopt;
-    return inferred->projection();
+    auto proj = inferred->projection();
+    if (proj.empty() || starts_with(proj, "_typevar:")) return std::nullopt;
+    return proj;
   }
 
   // The closed term of an expression, or null when it is open or unknown.
@@ -5656,8 +5666,10 @@ class Checker {
                                             const TypeEnv& env) const {
     auto inferred = inferred_expr_core(expression, env);
     if (inferred && inferred->term &&
-        contains_internal_placeholder(inferred->term->to_canonical_string()))
-      inferred = InferredExpr{nullptr, inferred->term->to_canonical_string()};
+        contains_internal_placeholder(inferred->term)) {
+      if (inferred->term->is_closed())
+        inferred = InferredExpr{nullptr, inferred->term->to_canonical_string()};
+    }
     return inferred;
   }
 
@@ -5812,11 +5824,26 @@ class Checker {
       if (!base) return std::nullopt;
       if (primitive_term(base->term, "RangeBatch")) return primitive("Range");
       if (primitive_term(base->term, "Range")) return primitive("int");
-      if (!base->term && open_generic(base->legacy))
+      if (current_body_types_) {
+        auto base_term = operand_term(index_base);
+        if (base_term && base_term->kind == moss::TypeKind::InferenceVar) {
+          auto elem = current_body_types_->solver.fresh(0);
+          current_body_types_->solver.unify(
+              base_term, moss::Type::builtin("vector", {elem}));
+          return InferredExpr{elem, {}};
+        }
+      }
+      if (!base->term && open_generic(base->legacy)) {
+        if (current_body_types_)
+          return InferredExpr{current_body_types_->solver.fresh(0), {}};
         return InferredExpr{nullptr, "_element:element:" + base->legacy.substr(9)};
+      }
       // A bare collection is open: legacy spelling, not a term.
-      if (!base->term && (base->legacy == "vector" || base->legacy == "queue"))
+      if (!base->term && (base->legacy == "vector" || base->legacy == "queue")) {
+        if (current_body_types_)
+          return InferredExpr{current_body_types_->solver.fresh(0), {}};
         return InferredExpr{nullptr, "_element:element:" + index_base};
+      }
       const auto container = inferred_shape(*base);
       if (container && container->kind == moss::TypeKind::Builtin) {
         if ((container->name == "vector" || container->name == "queue") &&
@@ -5974,6 +6001,12 @@ class Checker {
         for (const auto& arg : method_args) argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
         if (auto method = resolve_method(method_owner, method_name, argument_types))
           if (method->return_type) return inferred_leaf(*method->return_type);
+        if (current_body_types_) {
+          if ((receiver_ir && receiver_ir->kind == moss::TypeKind::InferenceVar) ||
+              (!base->term && open_generic(base->legacy))) {
+            return InferredExpr{current_body_types_->solver.fresh(0), {}};
+          }
+        }
         if (!base->term && open_generic(base->legacy))
           return InferredExpr{nullptr, "_method_value"};
         auto trait = traits_.find(canonical_type_name(base->projection()));
@@ -6044,9 +6077,16 @@ class Checker {
     if (current_body_types_)
       if (auto retained = current_body_types_->known_expression(expression))
         return retained;
-    auto inferred = inferred_expr_type(expression, env);
-    if (!inferred || contains_internal_placeholder(*inferred)) return nullptr;
-    auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
+    auto it = env.terms.find(trim(expression));
+    if (it != env.terms.end() && it->second) return it->second;
+    auto expr = inferred_expr(expression, env);
+    if (expr && expr->term) return expr->term;
+    if (!expr || contains_internal_placeholder(expr->legacy)) {
+      if (current_body_types_ && expr && starts_with(expr->legacy, "_iterator_element:"))
+        return current_body_types_->solver.fresh(0);
+      return nullptr;
+    }
+    auto parsed = moss::Type::parse_canonical(canonical_type_name(expr->legacy));
     return parsed && (*parsed)->is_closed() ? *parsed : nullptr;
   }
 
@@ -6076,8 +6116,11 @@ class Checker {
       const Function& function, const vector<string>& parameter_types) const {
     TypeEnv env;
     for (size_t index = 0;
-         index < function.params.size() && index < parameter_types.size(); ++index)
+         index < function.params.size() && index < parameter_types.size(); ++index) {
       env[function.params[index].name] = canonical_type_name(parameter_types[index]);
+      if (auto parsed = moss::Type::parse_canonical(canonical_type_name(parameter_types[index])))
+        env.terms[function.params[index].name] = *parsed;
+    }
     env = walk_type_environment(function.body, std::move(env),
         [](const Stmt&, const TypeEnv&) {}, false);
     return env;
@@ -7008,6 +7051,11 @@ class Checker {
     };
     if (record_call_facts || retain_all_types)
       for (const auto& [name, spelling] : entry) {
+        auto term_it = entry.terms.find(name);
+        if (term_it != entry.terms.end() && term_it->second) {
+          locals.emplace(name, freshen_open_type(term_it->second));
+          continue;
+        }
         if (contains_internal_placeholder(spelling)) continue;
         auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
         if (parsed) locals.emplace(name, freshen_open_type(*parsed));
@@ -7384,6 +7432,8 @@ class Checker {
           auto parsed = moss::Type::parse_canonical(canonical_type_name(element));
           if (parsed && !contains_internal_placeholder(element))
             loop_term = freshen_open_type(*parsed);
+          else if (starts_with(element, "_iterator_element:") || open_generic(element) || element == "_value")
+            loop_term = solver.fresh(0);
         }
         body_types.for_bindings[&statement] = loop_term;
         if (loop_term) {
@@ -8649,11 +8699,14 @@ class Checker {
           constrain_constructor_fields(function.result_line, *function.result_expression, env);
           if (!typed_result_closed) {
             if (auto result = inferred_expr_type(*function.result_expression, env)) {
-              if (!function.return_type) function.return_type = *result;
-              else if (!contains_internal_placeholder(*function.return_type) &&
-                       !(*result == "_method_value" || starts_with(*result, "_method_result:")) &&
-                        !starts_with(*result, "_functional_callable_result:") &&
-                       !same_type(*function.return_type, *result))
+              if (!function.return_type) {
+                if (!contains_internal_placeholder(*result))
+                  function.return_type = *result;
+              } else if (!contains_internal_placeholder(*function.return_type) &&
+                         !contains_internal_placeholder(*result) &&
+                         !(*result == "_method_value" || starts_with(*result, "_method_result:")) &&
+                          !starts_with(*result, "_functional_callable_result:") &&
+                         !same_type(*function.return_type, *result))
                 err(function.result_line, "function '" + function.name + "' returns '" + *result +
                     "' but is annotated '" + *function.return_type + "'");
             }
@@ -8662,7 +8715,7 @@ class Checker {
           for (const auto& statement : function.body) {
             if (statement.kind != Stmt::Kind::Return || statement.a.empty()) continue;
             auto result = inferred_expr_type(statement.a, env);
-            if (!result) continue;
+            if (!result || contains_internal_placeholder(*result)) continue;
             if (!function.return_type) function.return_type = *result;
             else if (!starts_with(*function.return_type, "_method_result:") &&
                      !(*result == "_method_value" || starts_with(*result, "_method_result:")) &&
@@ -16585,15 +16638,16 @@ class Checker {
           canonical_type_name(param.type));
       bool container_match = bare_collection_accepts(param.type, actual_result);
       auto actual_term = checked_expression_term(args[index], env);
+      if (!actual_term && current_body_types_ && starts_with(actual_type, "_iterator_element:"))
+        actual_term = current_body_types_->solver.fresh(0);
       const bool typed_check = current_body_types_ &&
           !param.type.empty() && !traits_.count(param.type) &&
           formal_term && (*formal_term)->is_closed() && actual_term;
       bool argument_compatible = typed_check
           ? current_body_types_->solver.unify(*formal_term, actual_term)
-          : actual_type.empty() || contains_internal_placeholder(actual_type) ||
-                param.type.empty() || contains_internal_placeholder(param.type) ||
+          : param.type.empty() ||
                 traits_.count(param.type) || container_match ||
-                is_type_compatible(param.type, actual_type);
+                (!actual_type.empty() && is_type_compatible(param.type, actual_type));
       if (!argument_compatible)
         err(line, "argument " + std::to_string(index + 1) + " to function '" + name +
             "' has type '" + actual_type + "', expected '" +
@@ -17112,8 +17166,26 @@ class Checker {
                                  const TypeEnv& env) {
     auto parsed = parse_functional_pipeline(expression);
     if (!parsed) return false;
+    auto source_expr = inferred_expr(parsed->source, env);
+    if (source_expr) {
+      if ((source_expr->term && !source_expr->term->is_closed()) ||
+          open_generic(source_expr->legacy) ||
+          (source_expr->term && contains_internal_placeholder(source_expr->term))) {
+        check_expression(line, parsed->source, env);
+        return true;  // Rechecked with the specialization's concrete TypeEnv.
+      }
+    }
     auto source_type = inferred_expr_type(parsed->source, env);
-    if (!source_type) return false;
+    if (!source_type) {
+      if (auto local = env.find(trim(parsed->source));
+          local != env.end() && (!local->second || canonical_type_name(local->second).empty() ||
+                                 canonical_type_name(local->second) == "_value" ||
+                                 contains_internal_placeholder(canonical_type_name(local->second)))) {
+        check_expression(line, parsed->source, env);
+        return true;  // Rechecked with the specialization's concrete TypeEnv.
+      }
+      return false;
+    }
     if (unresolved_semantic_type(*source_type)) {
       check_expression(line, parsed->source, env);
       return true;  // Rechecked with the specialization's concrete TypeEnv.
@@ -17900,9 +17972,18 @@ class Checker {
                                       const string& declared) {
       auto expected = moss::Type::parse_canonical(canonical_type_name(declared));
       auto term = checked_term(expression, actual);
-      if (expected && (*expected)->is_closed() && term)
-        return checked_types.solver.unify(term, *expected);
+      if (expected && term) {
+        if ((*expected)->is_closed())
+          return checked_types.solver.unify(term, *expected);
+        if ((*expected)->kind == moss::TypeKind::Builtin &&
+            (*expected)->type_args.empty() &&
+            term->kind == moss::TypeKind::Builtin &&
+            term->name == (*expected)->name)
+          return true;
+      }
       if (option_none_compatible(actual, declared)) return true;
+      if (bare_matches_applied(canonical_type_name(declared), canonical_type_name(actual)))
+        return true;
       return same_type(actual, declared);
     };
     TypeEnvVisitor check_statement = [&](const Stmt& statement,
