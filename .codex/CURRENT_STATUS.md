@@ -1,5 +1,29 @@
 # Moss current status
 
+## Phase 25 S reconciliation recovery point — 2026-10-18
+
+The sole L4 compiler worker reached a usage limit; root is currently the only
+active agent and holds the exclusive compiler lease. Root completed the pinned
+S ancestry-preserving merge into H/T scratch, committed and pushed
+`phase25-i-s-intake` at `69b4d3319751c3707fcd7fa2dc52374954203740`
+(`tmp/phase25-i-s`). This is a recovery checkpoint, not an approved intake PR.
+After H #5 is reviewed and merged to `phase25-integration`, refresh S from the
+new target, open a draft PR, require all four exact-head CI jobs, then perform
+combined L6 review. No integration/main merge has occurred.
+
+S reconciles the L7 option 1 `echo []` diagnostic, distinct Char and numeric
+semantics, scalar method result inference, checked static callable values, and
+Fast Debug for-loop iteration/lexical scope parity. Local Type IR, G1/G3/G4,
+S1/S2/S3/S4/S-C, L7 repairs, indexed String, and feedback checks pass. G2
+conformance is 10/11 with Gate 10 explicitly PENDING. `make check` is running
+in the S worktree; its result must be recorded after completion. S source and
+feedback are checkpointed; no S PR or L6 review yet.
+
+H #5 repair head is `bf1df10da2e7d2f5c0986a0a58e240053a1a1d62`, fixing
+CI checkout depth for historical baseline checks. Workflow `39168204061`
+currently has examples, semantic gates, and harness integrity green; core
+regressions still running. Do not review or merge H until all four green.
+
 ## Phase 25 diagnostic precedence decision — 2026-10-18
 
 L7 resolved the blocker by selecting option 1. The identical program
