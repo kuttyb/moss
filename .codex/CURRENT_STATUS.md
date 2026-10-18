@@ -29,10 +29,24 @@ Team H has integrated Team T's final reviewed TypeRef baseline (`9ed6830`) into 
    - **Developer Experience Feedback:** Recorded observations 001, 002, and 003 in `agent-feedback/phase25/team-h-checked-body-ir/checked-body-ir/observations.jsonl`.
    - **Documentation:** Updated `docs/phase25/TEAM_A_TYPED_SEMANTIC_API.md` with checked body IR retainers, dependency validation, and fail-closed contracts.
 
-3. **Current Team H Status:**
-   - Baseline integration of Team T commit `9ed6830` complete.
-   - Exclusive compiler writing lease acquired by Team H.
-   - Active work: Full verification and end-to-end regression validation of the combined baseline before final handoff to Team I.
+3. **Validation & Quality Gates (100% Pass across all 18 suites):**
+   - Unit tests: `check_phase25_checked_body_ir.cpp` passed with zero warnings/errors (`-Wall -Wextra -Werror -pedantic`).
+   - ABI staging tests: `abi_v10_staging.cpp` and `abi_v10_adversarial.cpp` passed cleanly.
+   - Tooling tests: `check_phase25_checked_body_ir.py ./moss` and `check_phase25_typed_semantic_api.py ./moss` passed.
+   - Semantic suites: `check_phase25_team_a_semantics.py ./moss` (56/56 passed), `check_no_internal_type_leak.py ./moss` (0 leaks across 1864 sources).
+   - Phase 25 full suite: `check_phase25_conformance.py` (10/11 gates passed, Gate 10 pending joint integration), `check_generic_specialization.py` (40/40), `check_domain_handle_closure.py`, `check_phase25_a3_specialization.py`, `check_phase25_nominal_identity.py`, `check_phase25_field_visibility.py`, `check_phase25_recursive_layout.py`, `check_phase25_type_ir.py`, `check_agent_skills.py` all passed.
+   - Full repository build & check: `make examples` (30 examples cleanly built with `-Oshared-memory`) and `make check` (100% pass: 54 executor tests, 10.6F/10.6F.1 suites, all Moss v0.1 tests).
+   - Hygiene: `git diff --check` and `python3 tests/tooling/check_agent_feedback.py` passed cleanly.
+
+4. **Independent L6 Adversarial Reviewer Sign-Off:**
+   - Independent L6 Adversarial Reviewer audited candidate commit `048e58a`.
+   - Verified exact preservation of all Team H checked body IR and DAG closure contracts under Team T TypeRef authority baseline (`9ed6830`).
+   - Final verdict: **UNCONDITIONAL FULL PASS — APPROVED FOR TEAM I HANDOFF**.
+
+5. **Current Team H Status & Next Mission (GitHub Issue #4):**
+   - Phase 25 A4 (Checked Body IR and Dependency Hashing) is fully complete and verified.
+   - Per L7 Directive, Team H retains exclusive compiler writing ownership of `src/moss.cpp` and transitions immediately to execute GitHub Issue #4: *Close remaining G-A-1 typed semantic authority after A4* (callable identities, open field/element/method relations, and typed declarations).
+   - Feature branch `phase25-checked-body-ir` is pushed to remote `origin`. Exclusive compiler ownership will be released to Team I upon completion of Issue #4.
 
 ## Phase 25 Tasks T1, T2, T3: Type Authority, Pseudo-Type Conversion, and Fallback Retirement — 2026-10-17 (ACCEPTED BASELINE)
 
