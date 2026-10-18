@@ -26,3 +26,11 @@ staged/adversarial C++ suites pass. Team B's acceptance suite reports
 **22 PASS, 1 PENDING, 0 FAIL**; the pending check is correctly Gate 10. Its
 source-free G2 Gate 5 test was tightened to require the new exact
 `METHOD_NOT_FOUND` code and original `provider.moss` related origin.
+
+The frozen ABI design requires robin-hood open addressing for production
+`MossMap`, while the pinned Team B delivery used chained bucket vectors.
+The rehearsal follow-up replaces that storage kernel with robin-hood probes,
+growth, and backward-shift deletion without changing the public operation API
+or adding Rust `Eq`/`Hash` bounds. A collision-heavy differential check against
+an independent ordered-map oracle and Team B's complete debug/release runtime
+suite pass. Compiler lowering and key-proof wiring remain separate work.
