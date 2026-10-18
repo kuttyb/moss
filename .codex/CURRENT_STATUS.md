@@ -31,7 +31,11 @@ Team H has completed GitHub Issue #4 (*Close remaining G-A-1 typed semantic auth
      - `check_phase25_recursive_layout.py ./moss`: **PASS**.
      - `check_agent_skills.py ./moss`: **PASS**.
      - `check_phase21_float_ieee.py ./moss`: **PASS**.
-     - `check_agent_feedback.py`: **PASS** (Observation 004 recorded).
+     - `check_agent_feedback.py`: **PASS** (Observations 004 and 005 recorded).
+   - **AST TypeRef Authority & Synchronization (`src/ast.hpp`, `src/moss.cpp`):**
+     - Canonical AST nodes (`Param`, `Function`, `Method`, `TraitMethod`, `Handler`) maintain authoritative `TypeRef` structures synchronized with string projections via `set_type`, `set_return_type`, `set_reply_type`, and `sync()`.
+     - Automatic parsing guarded by `TypeContext::current()` to prevent premature primitive fallback for nominal types before registration.
+     - Direct string assignments to callable signature types eliminated across compiler parser, inference passes, module loader, and AST rewriting.
    - **Code Hygiene:** `git diff --check` cleanly passed with 0 whitespace errors.
 
 3. **Status:**

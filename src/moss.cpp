@@ -1672,7 +1672,7 @@ class Parser {
         p.name = trim(part);
       } else {
         p.name = trim(part.substr(0, c));
-        p.type = canonical_type_name(trim(part.substr(c + 1)));
+        p.set_type(canonical_type_name(trim(part.substr(c + 1))));
       }
       if (p.name.empty() || !identifier(p.name)) throw CompileError(L.no, "invalid parameter: " + part);
       ps.push_back(std::move(p));
@@ -1712,11 +1712,7 @@ class Parser {
         m.owner = o.name;
         string suffix = trim(sig.substr(rp + 1)); if (ends_with(suffix, ":")) suffix.pop_back(); suffix = trim(suffix);
         if (!suffix.empty() && starts_with(suffix, "->")) {
-          m.return_type = canonical_type_name(trim(suffix.substr(2)));
-          if (m.return_type && !m.return_type->empty()) {
-            auto parsed = moss::Type::parse_canonical(*m.return_type);
-            if (parsed && (*parsed)->is_closed()) m.return_type_ref = *parsed;
-          }
+          m.set_return_type(canonical_type_name(trim(suffix.substr(2))));
         }
         m.body = parse_stmt_block(L.indent + indent_unit_);
         if (!m.body.empty() && (m.body.back().kind == Stmt::Kind::Raw || m.body.back().kind == Stmt::Kind::Call)) {
@@ -1830,7 +1826,7 @@ class Parser {
       suffix = trim(suffix);
       if (!suffix.empty()) {
         if (!starts_with(suffix, "->")) fail(L, "trait method return type must follow '->'");
-        m.return_type = canonical_type_name(trim(suffix.substr(2)));
+        m.set_return_type(canonical_type_name(trim(suffix.substr(2))));
       }
       t.methods.push_back(std::move(m));
     }
@@ -1969,11 +1965,7 @@ class Parser {
         fail(head, "handler must be 'on Name(args...)' or 'fn Name(args...) -> Type'");
       string type = trim(suffix.substr(2));
       if (type.empty()) fail(head, "reply type is required after '->'");
-      h.reply_type = canonical_type_name(std::move(type));
-      if (h.reply_type && !h.reply_type->empty()) {
-        auto parsed = moss::Type::parse_canonical(*h.reply_type);
-        if (parsed && (*parsed)->is_closed()) h.reply_type_ref = *parsed;
-      }
+      h.set_reply_type(canonical_type_name(std::move(type)));
     }
     h.line = head.no;
     h.body = parse_stmt_block(member_indent + indent_unit_);
@@ -2033,11 +2025,7 @@ class Parser {
                             equal == string::npos ? suffix.size() : equal);
       string type = trim(suffix.substr(0, end));
       if (type.empty()) fail(head, "function return type is required after '->'");
-      f.return_type = canonical_type_name(type);
-      if (f.return_type && !f.return_type->empty()) {
-        auto parsed = moss::Type::parse_canonical(*f.return_type);
-        if (parsed && (*parsed)->is_closed()) f.return_type_ref = *parsed;
-      }
+      f.set_return_type(canonical_type_name(type));
       suffix = trim(suffix.substr(end));
     }
     f.line = head.no;
@@ -2549,13 +2537,13 @@ class Checker {
       for (auto& param : f.params) {
         if (!param.type_ref && !param.type.empty() && !open_generic(param.type)) {
           auto parsed = moss::Type::parse_canonical(param.type);
-          if (parsed && (*parsed)->is_closed()) param.type_ref = *parsed;
+          if (parsed && (*parsed)->is_closed()) param.bind_type(*parsed);
         }
       }
       if (!f.return_type_ref && f.return_type && !f.return_type->empty() &&
           !open_generic(*f.return_type) && !contains_internal_placeholder(*f.return_type)) {
         auto parsed = moss::Type::parse_canonical(*f.return_type);
-        if (parsed && (*parsed)->is_closed()) f.return_type_ref = *parsed;
+        if (parsed && (*parsed)->is_closed()) f.bind_return_type(*parsed);
       }
     }
     for (auto& obj : p_.objects) {
@@ -2563,13 +2551,13 @@ class Checker {
         for (auto& param : m.params) {
           if (!param.type_ref && !param.type.empty() && !open_generic(param.type)) {
             auto parsed = moss::Type::parse_canonical(param.type);
-            if (parsed && (*parsed)->is_closed()) param.type_ref = *parsed;
+            if (parsed && (*parsed)->is_closed()) param.bind_type(*parsed);
           }
         }
         if (!m.return_type_ref && m.return_type && !m.return_type->empty() &&
             !open_generic(*m.return_type) && !contains_internal_placeholder(*m.return_type)) {
           auto parsed = moss::Type::parse_canonical(*m.return_type);
-          if (parsed && (*parsed)->is_closed()) m.return_type_ref = *parsed;
+          if (parsed && (*parsed)->is_closed()) m.bind_return_type(*parsed);
         }
       }
     }
@@ -2578,13 +2566,28 @@ class Checker {
         for (auto& param : h.params) {
           if (!param.type_ref && !param.type.empty() && !open_generic(param.type)) {
             auto parsed = moss::Type::parse_canonical(param.type);
-            if (parsed && (*parsed)->is_closed()) param.type_ref = *parsed;
+            if (parsed && (*parsed)->is_closed()) param.bind_type(*parsed);
           }
         }
         if (!h.reply_type_ref && h.reply_type && !h.reply_type->empty() &&
             !open_generic(*h.reply_type) && !contains_internal_placeholder(*h.reply_type)) {
           auto parsed = moss::Type::parse_canonical(*h.reply_type);
-          if (parsed && (*parsed)->is_closed()) h.reply_type_ref = *parsed;
+          if (parsed && (*parsed)->is_closed()) h.bind_reply_type(*parsed);
+        }
+      }
+    }
+    for (auto& t : p_.traits) {
+      for (auto& m : t.methods) {
+        for (auto& param : m.params) {
+          if (!param.type_ref && !param.type.empty() && !open_generic(param.type)) {
+            auto parsed = moss::Type::parse_canonical(param.type);
+            if (parsed && (*parsed)->is_closed()) param.bind_type(*parsed);
+          }
+        }
+        if (!m.return_type_ref && m.return_type && !m.return_type->empty() &&
+            !open_generic(*m.return_type) && !contains_internal_placeholder(*m.return_type)) {
+          auto parsed = moss::Type::parse_canonical(*m.return_type);
+          if (parsed && (*parsed)->is_closed()) m.bind_return_type(*parsed);
         }
       }
     }
@@ -2617,7 +2620,7 @@ class Checker {
     iterator_trait_.header = "trait Iterator";
     TraitMethod next;
     next.name = "next";
-    next.return_type = "option[_]";
+    next.set_return_type("option[_]");
     iterator_trait_.methods.push_back(std::move(next));
     if (!traits_.emplace(iterator_trait_.name, &iterator_trait_).second)
       err(p_.traits.front().source_file, p_.traits.front().line,
@@ -3696,7 +3699,7 @@ class Checker {
     if (expected_result == "$function_result") {
       requirement.result = method_result_marker(index);
       if (!function.return_type || starts_with(*function.return_type, "_method_result:"))
-        function.return_type = requirement.result;
+        function.set_return_type(requirement.result);
     } else if (!expected_result.empty() && !contains_internal_placeholder(expected_result)) {
       string expected = canonical_type_name(expected_result);
       if (!requirement.result_expectations.empty() &&
@@ -3773,7 +3776,7 @@ class Checker {
       // typed inference pass below to derive their terminal type.
       if (function.generic && expected_result == "$function_result" &&
           (!function.return_type || contains_internal_placeholder(*function.return_type)))
-        function.return_type = "_functional_result:" + function.name;
+        function.set_return_type("_functional_result:" + function.name);
       return;
     }
     string e = normalize_pipeline(std::move(original));
@@ -3782,7 +3785,7 @@ class Checker {
       string candidate = strip_redundant_outer_parentheses(trim(operand));
       for (auto& parameter : function.params)
         if (parameter.type.empty() && candidate == parameter.name)
-          parameter.type = "bool";
+          parameter.bind_type(moss::Type::primitive("bool"));
       derive_expression_constraints(function, operand, "bool");
     };
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
@@ -3791,7 +3794,7 @@ class Checker {
         constrain_boolean_operand(binary->second);
         if (expected_result == "$function_result" &&
             (!function.return_type || contains_internal_placeholder(*function.return_type)))
-          function.return_type = "bool";
+          function.bind_return_type(moss::Type::primitive("bool"));
         return;
       }
     }
@@ -3799,7 +3802,7 @@ class Checker {
       constrain_boolean_operand(trim(e.substr(4)));
       if (expected_result == "$function_result" &&
           (!function.return_type || contains_internal_placeholder(*function.return_type)))
-        function.return_type = "bool";
+        function.bind_return_type(moss::Type::primitive("bool"));
       return;
     }
     string receiver, method;
@@ -4185,7 +4188,7 @@ class Checker {
           if (s.kind == Stmt::Kind::Return && !s.a.empty()) {
             auto result = inferred_expr_type(s.a, inferred_env);
             if (result && !contains_internal_placeholder(*result)) {
-              if (!method.return_type) method.return_type = *result;
+              if (!method.return_type) method.set_return_type(*result);
               else if (!option_none_compatible(*result, *method.return_type) &&
                        !same_type(*method.return_type, *result)) {
                 string stmt_source = s.source_file.empty() ? method_source : s.source_file;
@@ -4198,7 +4201,7 @@ class Checker {
         if (method.result_expression) {
           auto result = inferred_expr_type(*method.result_expression, inferred_env);
           if (result && !contains_internal_placeholder(*result)) {
-            if (!method.return_type) method.return_type = *result;
+            if (!method.return_type) method.set_return_type(*result);
             else if (!option_none_compatible(*result, *method.return_type) &&
                      !same_type(*method.return_type, *result))
               err(method_source, method.result_line ? method.result_line : method.line,
@@ -4210,8 +4213,8 @@ class Checker {
             std::any_of(method.body.begin(), method.body.end(), [](const Stmt& statement) {
               return statement.kind == Stmt::Kind::Return && !statement.a.empty();
             });
-        if (!method.return_type && !has_value_return) method.return_type = "unit";
-        Function method_function; method_function.name = object.name + "." + method.name; method_function.params = method.params; method_function.return_type = method.return_type;
+        if (!method.return_type && !has_value_return) method.set_return_type("unit");
+        Function method_function; method_function.name = object.name + "." + method.name; method_function.params = method.params; method_function.set_return_type(method.return_type);
         method_function.source_file = method_source;
         TypeEnv final_env = check_stmts(method.body, std::move(entry_env), nullptr,
                                         nullptr, &method_function);
@@ -5139,7 +5142,7 @@ class Checker {
         // The signature pass normally fills this in. Keep this assignment as a
         // defensive fallback for a function whose result was inferred late.
         if (!contains_internal_placeholder(*actual))
-          const_cast<Function&>(f).return_type = *actual;
+          const_cast<Function&>(f).set_return_type(*actual);
       } else if (f.return_type && actual && !contains_internal_placeholder(*f.return_type) &&
                  !contains_internal_placeholder(*actual) &&
                  !(*actual == "_method_value" || starts_with(*actual, "_method_result:")) &&
@@ -5152,7 +5155,7 @@ class Checker {
       }
     } else if (!f.return_type) {
       if (!f.generic && !f.static_dispatch)
-        const_cast<Function&>(f).return_type = "unit";
+        const_cast<Function&>(f).set_return_type("unit");
     }
   }
 
@@ -6471,7 +6474,7 @@ class Checker {
             auto& parameter = function->second->params[index];
             if (parameter.type.empty() && !function->second->generic &&
                 !function->second->static_dispatch)
-              parameter.type = *actual;
+              parameter.set_type(*actual);
             else if (!function->second->generic && !function->second->static_dispatch &&
                      !traits_.count(parameter.type) &&
                      !contains_internal_placeholder(*actual) &&
@@ -7998,7 +8001,7 @@ class Checker {
                   bool inferred_container = bare_collection_accepts(parameter.type, *inferred);
                   bool untyped_parameter = parameter.type.empty();
                   if (untyped_parameter || inferred_container) {
-                    parameter.type = *actual;
+                    parameter.set_type(*actual);
                     parameter.inferred = parameter.inferred || untyped_parameter;
                   } else if (!parameter.inferred && !same_type(parameter.type, *actual))
                     err(statement.line, "argument " + std::to_string(index + 1) +
@@ -8032,7 +8035,7 @@ class Checker {
                   bool inferred_container = bare_collection_accepts(parameter.type, *inferred);
                   bool untyped_parameter = parameter.type.empty();
                   if (untyped_parameter || inferred_container) {
-                    parameter.type = *actual;
+                    parameter.set_type(*actual);
                     parameter.inferred = parameter.inferred || untyped_parameter;
                   }
                 }
@@ -8048,7 +8051,7 @@ class Checker {
                 auto& parameter = function->second->params[i];
                 if (parameter.type.empty() && !function->second->generic &&
                     !function->second->static_dispatch)
-                  parameter.type = *actual;
+                  parameter.set_type(*actual);
                 else if (!function->second->generic &&
                          !function->second->static_dispatch &&
                          !traits_.count(parameter.type) &&
@@ -8607,7 +8610,7 @@ class Checker {
               }
             }
             if (!handler.reply_type) {
-              handler.reply_type = actual_type;
+              handler.set_reply_type(actual_type);
             } else if (!same_type(*handler.reply_type, actual_type)) {
               string statement_source = statement.source_file.empty()
                   ? handler_source : statement.source_file;
@@ -8746,7 +8749,7 @@ class Checker {
           function.generic = true;
           function.static_dispatch = true;
           function.generic_results[parameter.name] = parameter.name;
-          function.return_type = "_generic:" + parameter.name;
+          function.set_return_type("_generic:" + parameter.name);
           break;
         }
       }
@@ -8846,7 +8849,7 @@ class Checker {
       }
       if (!function.return_type || contains_internal_placeholder(*function.return_type))
         for (const auto& kv : function.generic_results)
-          function.return_type = kv.first.rfind("element:", 0) == 0 ? "_element:" + kv.first : kv.first.rfind("field:", 0) == 0 ? "_field:" + kv.first : "_generic:" + kv.first;
+          function.set_return_type(kv.first.rfind("element:", 0) == 0 ? "_element:" + kv.first : kv.first.rfind("field:", 0) == 0 ? "_field:" + kv.first : "_generic:" + kv.first);
     }
     for (size_t round = 0; round <= p_.functions.size() * 3 + 3; ++round) {
       for (auto& function : p_.functions) {
@@ -8946,16 +8949,14 @@ class Checker {
               !contains_internal_placeholder(closed->to_canonical_string());
           if (typed_result_closed &&
               (!function.return_type ||
-               starts_with(*function.return_type, "_field:"))) {
-            function.return_type_ref = closed;
-            function.return_type = closed->to_canonical_string();
+               contains_internal_placeholder(*function.return_type))) {
+            function.bind_return_type(closed);
           }
         }
-        if (function.return_type && starts_with(*function.return_type, "_field:") && function.result_expression) {
+        if (function.return_type && contains_internal_placeholder(*function.return_type) && function.result_expression) {
           if (auto resolved = inferred_expr_type(*function.result_expression, env)) {
-            function.return_type = *resolved;
-            auto parsed = moss::Type::parse_canonical(canonical_type_name(*resolved));
-            if (parsed && (*parsed)->is_closed()) function.return_type_ref = *parsed;
+            if (!contains_internal_placeholder(*resolved))
+              function.set_return_type(*resolved);
           }
         }
         if (function.result_expression) {
@@ -8964,9 +8965,7 @@ class Checker {
             if (auto result = inferred_expr_type(*function.result_expression, env)) {
               if (!function.return_type) {
                 if (!contains_internal_placeholder(*result)) {
-                  function.return_type = *result;
-                  auto parsed = moss::Type::parse_canonical(canonical_type_name(*result));
-                  if (parsed && (*parsed)->is_closed()) function.return_type_ref = *parsed;
+                  function.set_return_type(*result);
                 }
               } else if (!contains_internal_placeholder(*function.return_type) &&
                          !contains_internal_placeholder(*result) &&
@@ -8983,9 +8982,7 @@ class Checker {
             auto result = inferred_expr_type(statement.a, env);
             if (!result || contains_internal_placeholder(*result)) continue;
             if (!function.return_type) {
-              function.return_type = *result;
-              auto parsed = moss::Type::parse_canonical(canonical_type_name(*result));
-              if (parsed && (*parsed)->is_closed()) function.return_type_ref = *parsed;
+              function.set_return_type(*result);
             } else if (!starts_with(*function.return_type, "_method_result:") &&
                      !(*result == "_method_value" || starts_with(*result, "_method_result:")) &&
                      !same_type(*function.return_type, *result))
@@ -9053,7 +9050,7 @@ class Checker {
                 function.generic_results[p.name] = p.name;
               }
             }
-            function.return_type = "_generic:" + trim(binary->first);
+            function.set_return_type("_generic:" + trim(binary->first));
           }
         }
       }
@@ -9073,7 +9070,7 @@ class Checker {
             function.generic = true;
             function.static_dispatch = true;
             function.generic_results[parameter.name] = parameter.name;
-            function.return_type = "_generic:" + parameter.name;
+            function.set_return_type("_generic:" + parameter.name);
             break;
           }
         }
@@ -9097,12 +9094,12 @@ class Checker {
               return statement.kind == Stmt::Kind::Return && !statement.a.empty();
             });
         if ((has_value_return || function.result_expression) && function.static_dispatch) {
-          function.return_type = "_specialized_result:" + function.name;
+          function.set_return_type("_specialized_result:" + function.name);
           continue;
         }
         if (has_value_return)
           err(function.line, "cannot infer return type for function '" + function.name + "'");
-        function.return_type = "unit";
+        function.set_return_type("unit");
       }
       // A compiled interface already records whether this declaration is
       // concrete or generic. Reclassifying its return from display text can
@@ -9148,7 +9145,7 @@ class Checker {
     vector<Param> concrete_params = function.params;
     for (size_t index = 0; index < types.size(); ++index) {
       env[concrete_params[index].name] = types[index];
-      concrete_params[index].type = types[index];
+      concrete_params[index].set_type(types[index]);
     }
     vector<Effect> effects(types.size(), Effect::Read);
     vector<bool> writes(types.size(), false);
@@ -16562,9 +16559,9 @@ class Checker {
     infer_statement_expressions(function.body, specialized_env);
     static_bindings_for_body(function.body, specialized_env);
     Function concrete_function = function;
-    concrete_function.return_type = specialization.return_type;
+    concrete_function.set_return_type(specialization.return_type);
     for (size_t index = 0; index < concrete_function.params.size(); ++index)
-      concrete_function.params[index].type = canonical_types[index];
+      concrete_function.params[index].set_type(canonical_types[index]);
     check_stmts(function.body, specialized_env, nullptr, nullptr, &concrete_function);
     OwnershipEnv specialized_ownership;
     for (size_t index = 0; index < function.params.size(); ++index)
@@ -16976,13 +16973,21 @@ class Checker {
               "' has type '" + actual_type + "' which does not satisfy trait '" +
               param.type + "': " + reason);
       }
-      auto formal_term = param.type_ref ? param.type_ref : moss::Type::parse_canonical(
-          canonical_type_name(param.type));
+      moss::TypeRef formal_term = param.type_ref;
+      if (!formal_term && !param.type.empty()) {
+        auto parsed = moss::Type::parse_canonical(canonical_type_name(param.type));
+        if (parsed) formal_term = *parsed;
+      }
       bool container_match = bare_collection_accepts(param.type, actual_result);
       auto actual_term = checked_expression_term(args[index], env);
-      if (!actual_term && current_body_types_ && starts_with(actual_type, "_iterator_element:"))
+      if (!actual_term && current_body_types_ &&
+          (starts_with(actual_type, "_iterator_element:") ||
+           open_generic(actual_type) ||
+           starts_with(actual_type, "_element:") ||
+           starts_with(actual_type, "_field:") ||
+           actual_type == "_method_value"))
         actual_term = current_body_types_->solver.fresh(0);
-      moss::TypeRef check_term = formal_term ? *formal_term : nullptr;
+      moss::TypeRef check_term = formal_term;
       if (check_term && check_term->is_bare_template() && current_body_types_) {
         std::vector<std::pair<string, moss::TypeRef>> substitutions;
         for (const auto& slot : check_term->declaration->fields)
@@ -20314,11 +20319,11 @@ class Generator {
                index < handler.params.size() && index < parameters->second.size();
                ++index)
             if (!parameters->second[index].empty())
-              handler.params[index].type = parameters->second[index];
+              handler.params[index].set_type(parameters->second[index]);
         }
         auto reply = specialization.handler_reply_types.find(handler.name);
         if (reply != specialization.handler_reply_types.end())
-          handler.reply_type = reply->second;
+          handler.set_reply_type(reply->second);
       }
       specialized_domains_.push_back(std::move(specialized));
       specialization_sources_[specialized_domains_.back().name] = specialization.source_domain;
@@ -32141,7 +32146,7 @@ static void rewrite_module_program(
     return rewrite_module_expression(std::move(value), module, modules, public_exports, nullptr, locals);
   };
   auto params = [&](vector<Param>& values) {
-    for (auto& param : values) param.type = type(param.type);
+    for (auto& param : values) param.set_type(type(param.type));
   };
   auto body = [&](vector<Stmt>& statements,
                   const std::set<string>& initial_locals = {},
@@ -32350,7 +32355,7 @@ static void rewrite_module_program(
     function.declaration_name = old;
     function.name = module_symbol(module, old);
     params(function.params);
-    if (function.return_type) *function.return_type = type(*function.return_type);
+    if (function.return_type) function.set_return_type(type(*function.return_type));
     std::set<string> initial_locals;
     for (const auto& p : function.params) initial_locals.insert(p.name);
     auto body_locals = body(function.body, initial_locals);
@@ -32372,7 +32377,7 @@ static void rewrite_module_program(
     for (auto& method : object.methods) {
       method.owner = object.name;
       params(method.params);
-      if (method.return_type) *method.return_type = type(*method.return_type);
+      if (method.return_type) method.set_return_type(type(*method.return_type));
       std::set<string> initial_locals{"self"};
       for (const auto& p : method.params) initial_locals.insert(p.name);
       auto body_locals = body(method.body, initial_locals, &sibling_methods);
@@ -32394,7 +32399,7 @@ static void rewrite_module_program(
     trait.name = module_symbol(module, trait.name);
     for (auto& method : trait.methods) {
       params(method.params);
-      if (method.return_type) *method.return_type = type(*method.return_type);
+      if (method.return_type) method.set_return_type(type(*method.return_type));
     }
   }
   for (auto& domain : program.domains) {
@@ -32408,7 +32413,7 @@ static void rewrite_module_program(
     for (auto& route : domain.routes) route.type = type(route.type);
     for (auto& handler : domain.handlers) {
       params(handler.params);
-      if (handler.reply_type) *handler.reply_type = type(*handler.reply_type);
+      if (handler.reply_type) handler.set_reply_type(type(*handler.reply_type));
       std::set<string> initial_locals{"self"};
       for (const auto& p : handler.params) initial_locals.insert(p.name);
       body(handler.body, initial_locals);
@@ -32573,7 +32578,7 @@ static void prepare_and_validate_module_exports(Program& program,
                         });
         if (has_value_result && !source_parameter.empty()) {
           function.generic_results[source_parameter] = source_parameter;
-          function.return_type = "_generic:" + source_parameter;
+          function.set_return_type("_generic:" + source_parameter);
         }
       }
       for (const auto& parameter : function.params)
@@ -33264,7 +33269,7 @@ static ParsedModuleUnit load_module_interface(
       function.generic = kind == "generic";
       function.static_dispatch = function.generic || kind == "static";
       string return_type = interface_field(rest, "return");
-      if (!return_type.empty()) function.return_type = std::move(return_type);
+      if (!return_type.empty()) function.set_return_type(std::move(return_type));
       function.observable_effects = interface_effects(rest);
       provider.functions.push_back(std::move(function));
       current = &provider.functions.back();
@@ -33353,7 +33358,7 @@ static ParsedModuleUnit load_module_interface(
       function.generic = kind == "generic";
       function.static_dispatch = function.generic || kind == "static";
       string return_type = interface_field(rest, "return");
-      if (!return_type.empty()) function.return_type = std::move(return_type);
+      if (!return_type.empty()) function.set_return_type(std::move(return_type));
       function.observable_effects = interface_effects(rest);
       provider.functions.push_back(std::move(function));
       current = &provider.functions.back();
@@ -33495,6 +33500,7 @@ static ParsedModuleUnit load_module_interface(
       Param parameter;
       fields >> std::quoted(handler_name) >> std::quoted(parameter.name)
              >> std::quoted(parameter.type);
+      parameter.sync();
       auto handler = std::find_if(current_domain->handlers.begin(),
           current_domain->handlers.end(), [&](const Handler& candidate) {
             return candidate.name == handler_name;
@@ -34048,7 +34054,7 @@ static ParsedModuleUnit load_module_interface(
       std::getline(method_line, rest);
       string return_type = interface_field(rest, "return");
       if (!return_type.empty() && return_type != "unit")
-        method.return_type = std::move(return_type);
+        method.set_return_type(std::move(return_type));
       string count_text = interface_field(rest, "params");
       size_t count = count_text.empty() ? 0 : static_cast<size_t>(std::stoul(count_text));
       size_t parameters = rest.find("params=");
@@ -34061,6 +34067,7 @@ static ParsedModuleUnit load_module_interface(
           Param parameter;
           if (!(types >> std::quoted(parameter.type)))
             throw CompileError(0, "incomplete trait method parameters in module interface");
+          parameter.sync();
           method.params.push_back(std::move(parameter));
         }
       }
@@ -34078,7 +34085,7 @@ static ParsedModuleUnit load_module_interface(
       method.source_file = file.string();
       string return_type = interface_field(rest, "return");
       if (!return_type.empty() && return_type != "unit")
-        method.return_type = std::move(return_type);
+        method.set_return_type(std::move(return_type));
       string receiver = interface_field(rest, "receiver");
       auto receiver_effect = interface_effect(receiver);
       if (!receiver_effect)
@@ -34101,6 +34108,7 @@ static ParsedModuleUnit load_module_interface(
         if (!(values >> std::quoted(parameter.name) >> std::quoted(parameter.type)
                     >> effect_name))
           throw CompileError(0, "incomplete object method in module interface");
+        parameter.sync();
         method.params.push_back(std::move(parameter));
         auto parameter_effect = interface_effect(effect_name);
         if (!parameter_effect)
@@ -34132,7 +34140,7 @@ static ParsedModuleUnit load_module_interface(
       handler.name = name;
       handler.source_file = file.string();
       string reply = interface_field(line, "reply");
-      if (!reply.empty() && reply != "unit") handler.reply_type = std::move(reply);
+      if (!reply.empty() && reply != "unit") handler.set_reply_type(std::move(reply));
       handler.observable_effects = interface_effects(line);
       current_domain->handlers.push_back(std::move(handler));
       continue;
@@ -34163,7 +34171,7 @@ static ParsedModuleUnit load_module_interface(
         type.clear();
       }
       if (current->params.size() <= index) current->params.resize(index + 1);
-      current->params[index].type = type;
+      current->params[index].set_type(type);
       current->params[index].name = name_token;
       if (starts_with(current->params[index].name, "name=\"")) {
         current->params[index].name = current->params[index].name.substr(6);

@@ -59,9 +59,38 @@ struct Param {
   // True when the concrete type was inferred from an untyped parameter.
   bool inferred = false;
   TypeRef type_ref = nullptr;
+  Param() = default;
+  Param(string n, string t, bool inf = false)
+      : name(std::move(n)), inferred(inf) {
+    set_type(std::move(t));
+  }
+  Param(string n, TypeRef ref, bool inf = false)
+      : name(std::move(n)), inferred(inf) {
+    bind_type(std::move(ref));
+  }
   void bind_type(TypeRef term) {
     type_ref = std::move(term);
     if (type_ref) type = type_ref->to_canonical_string();
+    else type.clear();
+  }
+  void set_type(string raw) {
+    type = std::move(raw);
+    if (!type.empty() && TypeContext::current()) {
+      auto parsed = Type::parse_canonical(type);
+      if (parsed && (*parsed)->is_closed()) {
+        type_ref = *parsed;
+        return;
+      }
+    }
+    type_ref = nullptr;
+  }
+  void sync() {
+    if (type_ref) {
+      type = type_ref->to_canonical_string();
+    } else if (!type.empty() && TypeContext::current()) {
+      auto parsed = Type::parse_canonical(type);
+      if (parsed && (*parsed)->is_closed()) type_ref = *parsed;
+    }
   }
 };
 // A call that instantiates an open result has its own inference variables.
@@ -225,10 +254,30 @@ struct Method {
   string owner, name;
   vector<Param> params;
   std::optional<string> return_type;
-  TypeRef return_type_ref;
+  TypeRef return_type_ref = nullptr;
   void bind_return_type(TypeRef term) {
     return_type_ref = std::move(term);
     if (return_type_ref) return_type = return_type_ref->to_canonical_string();
+    else return_type.reset();
+  }
+  void set_return_type(std::optional<string> raw) {
+    return_type = std::move(raw);
+    if (return_type && !return_type->empty() && TypeContext::current()) {
+      auto parsed = Type::parse_canonical(*return_type);
+      if (parsed && (*parsed)->is_closed()) {
+        return_type_ref = *parsed;
+        return;
+      }
+    }
+    return_type_ref = nullptr;
+  }
+  void sync() {
+    if (return_type_ref) {
+      return_type = return_type_ref->to_canonical_string();
+    } else if (return_type && !return_type->empty() && TypeContext::current()) {
+      auto parsed = Type::parse_canonical(*return_type);
+      if (parsed && (*parsed)->is_closed()) return_type_ref = *parsed;
+    }
   }
   vector<Stmt> body;
   std::optional<string> result_expression;
@@ -244,15 +293,66 @@ struct Method {
   int line = 0;
   string source_file;
 };
-struct TraitMethod { string name; vector<Param> params; std::optional<string> return_type; int line = 0; string source_file; };
+struct TraitMethod {
+  string name;
+  vector<Param> params;
+  std::optional<string> return_type;
+  TypeRef return_type_ref = nullptr;
+  void bind_return_type(TypeRef term) {
+    return_type_ref = std::move(term);
+    if (return_type_ref) return_type = return_type_ref->to_canonical_string();
+    else return_type.reset();
+  }
+  void set_return_type(std::optional<string> raw) {
+    return_type = std::move(raw);
+    if (return_type && !return_type->empty() && TypeContext::current()) {
+      auto parsed = Type::parse_canonical(*return_type);
+      if (parsed && (*parsed)->is_closed()) {
+        return_type_ref = *parsed;
+        return;
+      }
+    }
+    return_type_ref = nullptr;
+  }
+  void sync() {
+    if (return_type_ref) {
+      return_type = return_type_ref->to_canonical_string();
+    } else if (return_type && !return_type->empty() && TypeContext::current()) {
+      auto parsed = Type::parse_canonical(*return_type);
+      if (parsed && (*parsed)->is_closed()) return_type_ref = *parsed;
+    }
+  }
+  int line = 0;
+  string source_file;
+};
 struct Handler {
   string name, header;
   vector<Param> params;
   std::optional<string> reply_type;
-  TypeRef reply_type_ref;
+  TypeRef reply_type_ref = nullptr;
   void bind_reply_type(TypeRef term) {
     reply_type_ref = std::move(term);
     if (reply_type_ref) reply_type = reply_type_ref->to_canonical_string();
+    else reply_type.reset();
+  }
+  void set_reply_type(std::optional<string> raw) {
+    reply_type = std::move(raw);
+    if (reply_type && !reply_type->empty() && TypeContext::current()) {
+      auto parsed = Type::parse_canonical(*reply_type);
+      if (parsed && (*parsed)->is_closed()) {
+        reply_type_ref = *parsed;
+        return;
+      }
+    }
+    reply_type_ref = nullptr;
+  }
+  void sync() {
+    if (reply_type_ref) {
+      reply_type = reply_type_ref->to_canonical_string();
+    } else if (reply_type && !reply_type->empty() && TypeContext::current()) {
+      auto parsed = Type::parse_canonical(*reply_type);
+      if (parsed && (*parsed)->is_closed()) reply_type_ref = *parsed;
+    }
   }
   vector<Stmt> body;
   vector<FailureArm> failure_arms;
@@ -340,10 +440,30 @@ struct Function {
   string name, header;
   vector<Param> params;
   std::optional<string> return_type;
-  TypeRef return_type_ref;
+  TypeRef return_type_ref = nullptr;
   void bind_return_type(TypeRef term) {
     return_type_ref = std::move(term);
     if (return_type_ref) return_type = return_type_ref->to_canonical_string();
+    else return_type.reset();
+  }
+  void set_return_type(std::optional<string> raw) {
+    return_type = std::move(raw);
+    if (return_type && !return_type->empty() && TypeContext::current()) {
+      auto parsed = Type::parse_canonical(*return_type);
+      if (parsed && (*parsed)->is_closed()) {
+        return_type_ref = *parsed;
+        return;
+      }
+    }
+    return_type_ref = nullptr;
+  }
+  void sync() {
+    if (return_type_ref) {
+      return_type = return_type_ref->to_canonical_string();
+    } else if (return_type && !return_type->empty() && TypeContext::current()) {
+      auto parsed = Type::parse_canonical(*return_type);
+      if (parsed && (*parsed)->is_closed()) return_type_ref = *parsed;
+    }
   }
   vector<Stmt> body;
   // Bound at module name resolution, before checking. Source-free functions
