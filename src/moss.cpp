@@ -3855,6 +3855,10 @@ class Checker {
   void check_map_key_type(int line, const string& key) const {
     string type = canonical_type_name(key);
     if (contains_internal_placeholder(type)) return;
+    if (type == "float" && staged_abi_v10()) {
+      staged_scalar_map_keys_.insert(type);
+      return;
+    }
     if (contains_float_type(type))
       err(line, "Float Map keys require the canonical MossMap<K,V> under key-protocol-v1, which is not yet available; Float isequal/hash/less are available as functions", "FLOAT_MAP_KEY_UNSUPPORTED");
     if (contains_record_type(type)) {
@@ -3984,9 +3988,13 @@ class Checker {
       for (const char* operation : {"insert", "get", "delete", "keys", "values"})
         bind_operation("map", operation, key, proof_id);
     }
-    for (const auto& key : staged_scalar_map_keys_)
-      p_.key_proof_ids_by_type[key] =
-          abi_v10::key_proof_record(abi_v10::make_builtin_key_proof(key)).id;
+    for (const auto& key : staged_scalar_map_keys_) {
+      const string proof_id = abi_v10::key_proof_record(
+          abi_v10::make_builtin_key_proof(key)).id;
+      p_.key_proof_ids_by_type[key] = proof_id;
+      for (const char* operation : {"insert", "get", "delete", "keys", "values"})
+        bind_operation("map", operation, key, proof_id);
+    }
     for (const auto& key : staged_set_keys_) {
       auto proof = p_.key_proof_ids_by_type.find(key);
       if (proof == p_.key_proof_ids_by_type.end()) {
@@ -22381,10 +22389,17 @@ class Generator {
         (objects_.count(concrete) || is_nominal_instance_type(concrete));
   }
 
-  std::optional<string> shared_nominal_map_key_from_type(
+  bool shared_protocol_map_key(const string& key) const {
+    const string concrete = canonical_type_name(key);
+    return shared_nominal_map_key(concrete) ||
+        (staged_abi_v10() && concrete == "float" &&
+         p_.key_proof_ids_by_type.count(concrete));
+  }
+
+  std::optional<string> shared_protocol_map_key_from_type(
       const string& type) const {
     auto elements = map_key_value_types(canonical_type_name(type));
-    if (elements && shared_nominal_map_key(elements->first))
+    if (elements && shared_protocol_map_key(elements->first))
       return elements->first;
     return std::nullopt;
   }
@@ -22428,7 +22443,7 @@ class Generator {
       return "moss_runtime::MossSet<" + rust_type(x.substr(4, x.size()-5)) + ">";
     if (starts_with(x, "map[") && ends_with(x, "]")) {
       auto ps = split_top_level(x.substr(4, x.size()-5), ',');
-      if (shared_nominal_map_key(ps[0]))
+      if (shared_protocol_map_key(ps[0]))
         return "moss_runtime::MossMap<" + rust_type(ps[0]) + ", " +
                rust_type(ps[1]) + ">";
       return "std::collections::HashMap<" + rust_type(ps[0]) + ", " + rust_type(ps[1]) + ">";
@@ -22635,6 +22650,17 @@ class Generator {
     return "moss_string_hash(&(" + a + "))";
   }
 
+  string shared_map_hash(const string& key_type, const string& key) const {
+    return shared_nominal_map_key(key_type) ? "(" + key + ").hash()"
+        : scalar_protocol_rust("hash", key_type, key);
+  }
+
+  string shared_map_equal(const string& key_type, const string& a,
+                          const string& b) const {
+    return shared_nominal_map_key(key_type) ? "(" + a + ").isequal(" + b + ")"
+        : scalar_protocol_rust("isequal", key_type, "*" + a, "*" + b);
+  }
+
   // Rust comparator for a key-protocol-v1 total-order scalar. Float uses
   // the Julia-like total order; the other scalars' Rust Ord already matches
   // Moss `less` (Bool false < true, String by UTF-8 bytes = code points).
@@ -22719,10 +22745,13 @@ class Generator {
     string storage = write_call_place(base, d, locals, types);
     string key = expr(index, d, locals, types);
     auto type = generated_expr_type(base, types);
-    if (type && shared_nominal_map_key_from_type(*type))
+    if (type && shared_protocol_map_key_from_type(*type)) {
+      const string key_type = *shared_protocol_map_key_from_type(*type);
       return "*({ let __moss_key = " + key + "; (" + storage +
-          ").get_mut_with(__moss_key.hash(), &__moss_key, "
-          "|a, b| a.isequal(b)).expect(\"Moss missing map key\") })";
+          ").get_mut_with(" + shared_map_hash(key_type, "__moss_key") +
+          ", &__moss_key, |a, b| " + shared_map_equal(key_type, "a", "b") +
+          ").expect(\"Moss missing map key\") })";
+    }
     if (type && (starts_with(canonical_type_name(*type), "map[") || canonical_type_name(*type) == "map"))
       return "*(" + storage + ").get_mut(&(" + key + ")).expect(\"Moss missing map key\")";
     if (type && (canonical_type_name(*type) == "RangeBatch" || canonical_type_name(*type) == "Range"))
@@ -22738,10 +22767,13 @@ class Generator {
     string storage = read_call_place(base, d, locals, types);
     string key = expr(index, d, locals, types);
     auto type = generated_expr_type(base, types);
-    if (type && shared_nominal_map_key_from_type(*type))
+    if (type && shared_protocol_map_key_from_type(*type)) {
+      const string key_type = *shared_protocol_map_key_from_type(*type);
       return "*({ let __moss_key = " + key + "; (" + storage +
-          ").get_with(__moss_key.hash(), &__moss_key, "
-          "|a, b| a.isequal(b)).expect(\"Moss missing map key\") })";
+          ").get_with(" + shared_map_hash(key_type, "__moss_key") +
+          ", &__moss_key, |a, b| " + shared_map_equal(key_type, "a", "b") +
+          ").expect(\"Moss missing map key\") })";
+    }
     if (type && (starts_with(canonical_type_name(*type), "map[") || canonical_type_name(*type) == "map"))
       return "*(" + storage + ").get(&(" + key + ")).expect(\"Moss missing map key\")";
     if (type && (canonical_type_name(*type) == "RangeBatch" || canonical_type_name(*type) == "Range"))
@@ -24740,14 +24772,17 @@ class Generator {
     string ib, ii;
     if (parse_index(e, ib, ii)) {
       auto base_type = generated_expr_type(ib, types);
-      if (base_type && shared_nominal_map_key_from_type(*base_type)) {
+      if (base_type && shared_protocol_map_key_from_type(*base_type)) {
+        const string key_type = *shared_protocol_map_key_from_type(*base_type);
         const string key = expr(ii, d, locals, types);
         const string borrowed = borrowed_function_parameters_.count(trim(ii))
             ? "__moss_key" : "&__moss_key";
         return "{ let __moss_key = " + key + "; (" +
             expr(ib, d, locals, types) +
-            ").get_with(__moss_key.hash(), " + borrowed +
-            ", |a, b| a.isequal(b)).expect(\"Moss missing map key\").clone() }";
+            ").get_with(" + shared_map_hash(key_type, "__moss_key") +
+            ", " + borrowed + ", |a, b| " +
+            shared_map_equal(key_type, "a", "b") +
+            ").expect(\"Moss missing map key\").clone() }";
       }
       if (base_type && canonical_type_name(*base_type) == "RangeBatch")
         return "(" + expr(ib, d, locals, types) + ").get(" +
@@ -25128,13 +25163,12 @@ class Generator {
           }
         }
         if (auto map_types = map_key_value_types(concrete)) {
-          const bool shared_nominal_key =
-              shared_nominal_map_key(map_types->first);
+          const bool shared_key = shared_protocol_map_key(map_types->first);
           if (member_name == "delete" && member_arguments.size() == 3) {
             string key = expr(member_arguments[0], d, locals, types);
             string fallback = expr(member_arguments[1], d, locals, types);
             string flag = write_call_place(member_arguments[2], d, locals, types);
-            if (shared_nominal_key) {
+            if (shared_key) {
               const bool view_key = is_object_view(member_arguments[0], d, locals, types);
               if (view_key) key = "(" + key + ").__moss_value()";
               const string borrowed = !view_key && borrowed_function_parameters_.count(
@@ -25142,8 +25176,10 @@ class Generator {
               return "{ let __moss_key = " + key +
                   "; let __moss_fallback = " + fallback +
                   "; let __moss_removed = (" + receiver_expression +
-                  ").remove_with(__moss_key.hash(), " + borrowed +
-                  ", |a, b| a.isequal(b)); let _ = &( " + flag +
+                  ").remove_with(" + shared_map_hash(map_types->first, "__moss_key") +
+                  ", " + borrowed + ", |a, b| " +
+                  shared_map_equal(map_types->first, "a", "b") +
+                  "); let _ = &( " + flag +
                   " ); " + flag + " = __moss_removed.is_some(); " +
                   "__moss_removed.unwrap_or(__moss_fallback) }";
             }
@@ -25155,7 +25191,7 @@ class Generator {
           }
           if (member_name == "get" && member_arguments.size() == 2) {
             string key = expr(member_arguments[0], d, locals, types);
-            if (shared_nominal_key) {
+            if (shared_key) {
               string fallback = expr(member_arguments[1], d, locals, types);
               const bool view_key = is_object_view(member_arguments[0], d, locals, types);
               if (view_key) key = "(" + key + ").__moss_value()";
@@ -25163,8 +25199,10 @@ class Generator {
                   trim(member_arguments[0])) ? "__moss_key" : "&__moss_key";
               return "{ let __moss_key = " + key +
                   "; (" + receiver_expression +
-                  ").get_with(__moss_key.hash(), " + borrowed +
-                  ", |a, b| a.isequal(b)).cloned().unwrap_or(" +
+                  ").get_with(" + shared_map_hash(map_types->first, "__moss_key") +
+                  ", " + borrowed + ", |a, b| " +
+                  shared_map_equal(map_types->first, "a", "b") +
+                  ").cloned().unwrap_or(" +
                   fallback + ") }";
             }
             if (map_types->first == "string")
@@ -25177,14 +25215,14 @@ class Generator {
             return "(" + receiver_expression + ").get(" + key + ").cloned().unwrap_or(" + fallback + ")";
           }
           if (member_name == "keys" && member_arguments.empty()) {
-            if (shared_nominal_key)
+            if (shared_key)
               return "(" + receiver_expression + ").keys()";
             if (map_types->first == "float")
               return "(" + receiver_expression + ").keys().map(|k| k.0).collect::<std::vec::Vec<_>>()";
             return "(" + receiver_expression + ").keys().cloned().collect::<std::vec::Vec<_>>()";
           }
           if (member_name == "values" && member_arguments.empty())
-            return shared_nominal_key
+            return shared_key
                 ? "(" + receiver_expression + ").values()"
                 : "(" + receiver_expression + ").values().cloned().collect::<std::vec::Vec<_>>()";
         }
@@ -27592,7 +27630,7 @@ class Generator {
                     map_base != s.a) continue;
                 auto key_type = generated_expr_type(index_expression, &types);
                 auto value_type = generated_expr_type(ss[next].b, &types);
-                if (key_type && value_type && shared_nominal_map_key(*key_type)) {
+                if (key_type && value_type && shared_protocol_map_key(*key_type)) {
                   inferred_map_type = "map[" + canonical_type_name(*key_type) +
                       "," + canonical_type_name(*value_type) + "]";
                   break;
@@ -27651,11 +27689,13 @@ class Generator {
                   statement_functional_pipeline_id(s, functional_context, 0));
               if (borrowed_function_parameters_.count(trim(s.b)))
                 inserted = "(" + inserted + ").clone()";
-              if (shared_nominal_map_key_from_type(*map_assignment_type)) {
+              if (auto shared_key =
+                      shared_protocol_map_key_from_type(*map_assignment_type)) {
                 o << indent(level) << "{ let __moss_key = " << key
                   << "; (" << write_call_place(mb, d, locals, &types)
-                  << ").insert_with(__moss_key.hash(), __moss_key, "
-                  << inserted << ", |a, b| a.isequal(b)); }\n";
+                  << ").insert_with(" << shared_map_hash(*shared_key, "__moss_key")
+                  << ", __moss_key, " << inserted << ", |a, b| "
+                  << shared_map_equal(*shared_key, "a", "b") << "); }\n";
               } else {
                 o << indent(level) << "(" << write_call_place(mb, d, locals, &types)
                   << ").insert(" << key << ", "
@@ -28051,7 +28091,7 @@ class Generator {
                     map_base != s.a) continue;
                 auto key_type = generated_expr_type(index_expression, &types);
                 auto value_type = generated_expr_type(ss[next].b, &types);
-                if (key_type && value_type && shared_nominal_map_key(*key_type)) {
+                if (key_type && value_type && shared_protocol_map_key(*key_type)) {
                   inferred_map_type = "map[" + canonical_type_name(*key_type) +
                       "," + canonical_type_name(*value_type) + "]";
                   break;

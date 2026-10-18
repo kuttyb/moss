@@ -166,6 +166,18 @@ def main():
         both_operations = operation_ids(both, "Name")
         assert both_operations[("map", "insert")][0] == both_operations[("set", "insert")][0]
         assert both_operations[("map", "insert")][1] != both_operations[("set", "insert")][1]
+        float_operations = {}
+        for family, fixture_name in (("map", "01-float-keys-map"),
+                                     ("set", "02-float-keys-set")):
+            rust = work / f"float-{family}.rs"
+            run([MOSS, HERE / fixture_name / "case.moss", "-o", rust], ROOT, env)
+            float_operations[family] = operation_ids(rust, "float")[(family, "insert")]
+        assert float_operations["map"][0] == float_operations["set"][0]
+        assert float_operations["map"][1] != float_operations["set"][1]
+        float_map_rust = (work / "float-map.rs").read_text()
+        assert "moss_runtime::MossMap<f64," in float_map_rust
+        assert ".insert_with(moss_float_hash(__moss_key)" in float_map_rust
+        assert "|a, b| moss_float_isequal(*a, *b)" in float_map_rust
     print("PASS: one proof ID across source-free consumers; resealed tamper -> KEY_PROOF_INVALID / KEY_PROOF_COHERENCE_MISMATCH")
 
 
