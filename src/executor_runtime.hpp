@@ -38,15 +38,14 @@
 namespace moss {
 
 enum class ExecutorRuntimeRole {
-  // The crate is always its program's executable: an implicit-module
-  // program, or the explicit module that declares `main`.
+  // The crate is always its program's executable: an implicit-module program.
   ProcessRoot,
   // The crate is only ever a library of an executable whose `main` lives in
   // another crate.
   Provider,
-  // A unit with no `main`: the same crate source is built as a provider
-  // .rlib and as the unit's (stub or test) executable, so the role is chosen
-  // by `--cfg moss_process_root`, which only the executable build passes.
+  // An explicit module can be built both as a provider .rlib and as the
+  // program's executable (including a unit with no `main`). The role is
+  // chosen by `--cfg moss_process_root`, which only the executable passes.
   SelectedByExecutableBuild,
 };
 

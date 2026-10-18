@@ -7056,6 +7056,10 @@ class Checker {
         err(line, "field '" + constructor + "." + field->name + "' has conflicting inferred types '" +
             field->type + "' and '" + inferred + "'", "TYPE_MISMATCH");
     }
+    for (const auto& field : object->second->fields)
+      if (!supplied.count(field.name) && field.init.empty())
+        err(line, "missing object constructor field: " + constructor + "." + field.name,
+            "FIELD_COUNT_MISMATCH");
   }
 
   static bool concrete_environment_type(const string& type) {
@@ -16760,8 +16764,9 @@ class Checker {
   // requirement names the provider statement that introduced it.
   [[noreturn]] void requirement_err(int line, const Function& function,
                                     const Constraint& requirement,
-                                    const string& message) const {
-    CompileError error(line, message);
+                                    const string& message,
+                                    const string& code = {}) const {
+    CompileError error(line, message, code);
     if (!current_source_file_.empty()) error.source_file = current_source_file_;
     if (compiled_interface_file(function.source_file)) {
       const string use = requirement.subject + "." + requirement.detail + "(";
@@ -16772,7 +16777,9 @@ class Checker {
           break;
         }
       error.teaching.related.push_back(
-          {function.source_file, origin, 1,
+          {function.provider_origin_file.empty()
+               ? function.source_file : function.provider_origin_file,
+           origin, 1,
            "provider function '" + provider_callable_display(function.name) +
                "' requires method '" + requirement.detail + "' on '" +
                requirement.subject + "'"});
@@ -16790,7 +16797,9 @@ class Checker {
     if (!compiled_interface_file(error.source_file)) return;
     error.teaching.related.insert(
         error.teaching.related.begin(),
-        {error.source_file, error.line, 1,
+        {function.provider_origin_file.empty()
+             ? error.source_file : function.provider_origin_file,
+         error.line, 1,
          "inside provider function '" +
              provider_callable_display(function.name) + "'"});
     if (compiled_interface_file(call_source) || call_source.empty()) return;
@@ -16848,7 +16857,8 @@ class Checker {
           requirement_err(line, function, requirement, prefix +
               " with ambiguous required method '" + requirement.detail + "'");
         requirement_err(line, function, requirement, prefix +
-            " missing required method '" + requirement.detail + "'");
+            " missing required method '" + requirement.detail + "'",
+            compiled_interface_file(function.source_file) ? "METHOD_NOT_FOUND" : "");
       }
       string result = builtin.value_or(fileio_builtin.value_or(
           method ? method->return_type.value_or("unit") : "unit"));
@@ -21474,16 +21484,25 @@ class Generator {
     if (program_uses_fileio(p_)) {
       o << fileio_runtime_rust();
     }
-    if (!p_.explicit_module || p_.main) {
+    if (!p_.explicit_module) {
       o << fileio_root_runtime_rust();
+    } else if (p_.main) {
+      // A module with main may also be exported as an rlib. Only its executable
+      // build owns process-wide FileIO symbols; linked library builds borrow
+      // the selected executable's root runtime.
+      o << "#[cfg(moss_process_root)]\nmod __moss_fileio_root_runtime {\nuse super::*;\n";
+      o << fileio_root_runtime_rust();
+      o << "}\n#[cfg(moss_process_root)]\npub use __moss_fileio_root_runtime::*;\n";
     }
     // Executor runtime ownership follows C's executable/provider role. The
     // Agent B FileIO root runtime remains emitted only in the process root.
     const ExecutorRuntimeRole executor_role =
-        !p_.explicit_module || p_.main.has_value()
+        !p_.explicit_module
             ? ExecutorRuntimeRole::ProcessRoot
             : semantic_program_->main.has_value()
-                ? ExecutorRuntimeRole::Provider
+                ? (p_.main.has_value()
+                    ? ExecutorRuntimeRole::SelectedByExecutableBuild
+                    : ExecutorRuntimeRole::Provider)
                 : ExecutorRuntimeRole::SelectedByExecutableBuild;
     o << executor_runtime_rust(executor_role);
     for (const auto& e : p_.enums) gen_enum(o, e);
@@ -26266,7 +26285,15 @@ class Generator {
                   "moss__main");
     source_comment(o, 0, m.line, m.header.empty() ? "proc main()" : m.header);
     backend_comment(o, 0, "main entry point; domain calls below retain their statically selected lowering");
-    debug_symbol_attributes(o, 0, "moss__main");
+    // An explicit module may also be compiled as a provider rlib. Its main
+    // remains a local Rust item there; only the executable owns this native
+    // debug symbol when several such modules are linked together.
+    if (p_.explicit_module) {
+      if (debug_build_) o << "#[inline(never)]\n";
+      o << "#[cfg_attr(moss_process_root, export_name = \"moss__main\")]\n";
+    } else {
+      debug_symbol_attributes(o, 0, "moss__main");
+    }
     o << "fn main() {\n";
     if (program_uses_fileio(p_))
       o << "    moss_set_solo_hooks(executor_fileio_solo_enter_callback(), "
@@ -34286,6 +34313,8 @@ static void parse_generic_ir_line(const string& line, Function& function) {
       statement.args.push_back(std::move(argument));
     }
     function.body.push_back(std::move(statement));
+  } else if (record == "generic_source") {
+    input >> std::quoted(function.provider_origin_file);
   } else if (record == "generic_result") {
     if (input >> function.result_line) {
       string expression;
@@ -35673,6 +35702,7 @@ static ParsedModuleUnit load_module_interface(
         starts_with(line, "generic_param") ||
         starts_with(line, "generic_constraint") ||
         starts_with(line, "generic_stmt") ||
+        starts_with(line, "generic_source") ||
         starts_with(line, "generic_result")) {
       if (current) parse_generic_ir_line(line, *current);
       continue;
@@ -37416,6 +37446,8 @@ static vector<std::filesystem::path> write_module_interfaces(
       out << "  generic_ir_version 1\n";
       out << "  generic_entity_id " << std::quoted("fn:" + function.name +
                                                     "@" + std::to_string(function.line)) << "\n";
+      out << "  generic_source " << std::quoted(
+          std::filesystem::path(function.source_file).filename().string()) << "\n";
       for (size_t index = 0; index < function.params.size(); ++index)
         out << "  generic_param " << index << " "
             << std::quoted(function.params[index].name) << " "
@@ -37463,6 +37495,8 @@ static vector<std::filesystem::path> write_module_interfaces(
         << " return=" << function.return_type.value_or("unit")
         << " effects=" << interface_effects_text(function.observable_effects)
         << "\n";
+    out << "  generic_source " << std::quoted(
+        std::filesystem::path(function.source_file).filename().string()) << "\n";
     for (size_t index = 0; index < function.params.size(); ++index)
       out << "  generic_param " << index << " "
           << std::quoted(function.params[index].name) << " "

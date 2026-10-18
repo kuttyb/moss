@@ -544,6 +544,9 @@ struct Function {
   vector<bool> parameter_mutations;
   std::optional<StateLeafEffects> parameter_leaf_effects;
   string source_file;
+  // Optional provider-authored logical source name retained by a compiled
+  // interface for consumer diagnostics after its source tree is removed.
+  string provider_origin_file;
 };
 struct Trait { string name, header; vector<TraitMethod> methods; bool exported = false; int line = 0; string source_file; };
 
