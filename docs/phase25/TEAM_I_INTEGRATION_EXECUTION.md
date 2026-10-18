@@ -1,5 +1,18 @@
 # Phase 25 Team I — Final Integration Execution Plan
 
+## L7 Team I staffing override — 2026-10-18
+
+For this integration task, use exactly two active agents: one combined L6
+Coordinator/Reviewer and one L4 implementation worker. Work is serial through
+that sole worker, preserving exclusive compiler ownership. The independent L6
+adversarial reviewer runs once at the end, after implementation is complete;
+idle the L4 worker during that review to keep at most two agents active.
+This L7 instruction supersedes the default L5 headcount and intermediate
+adversarial checkpoints below. Keep draft PRs, automated isolated regression
+checks, exact-SHA L6 review, normal integration commits, and no main merge.
+Minimize repeated chat, duplicate CI polling and redundant review work.
+
+
 **Authorized target:** `phase25-integration`, branched from the frozen prep commit `a6e706bf99d3a96389cb63af87a3788bfe9056ac`. No direct main merge or production ABI-v10 cutover without L7 final acceptance.
 
 Read `AGENTS.md` and `docs/AGENT_TEAM_OPERATING_MODEL.md`. This file is the Team I mission; do not reprompt organizational instructions. One L6 Coordinator, one L6 code-review role (Coordinator may fill it), **two L5 workers by default, maximum three active implementation workers only on independent file/task areas**, plus an independent L6 adversarial reviewer at major frozen milestones. L5 worker opens draft PR to integration, automated CI tests, requests L6 review **only after all required checks pass**; no manual ritual scripts or per-test LLM prompting.

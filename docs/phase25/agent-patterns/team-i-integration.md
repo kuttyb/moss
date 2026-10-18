@@ -2,6 +2,10 @@
 
 In progress, 2026-10-18. This is a live record, not final phase acceptance.
 
+L7 staffing override: root combined L6 + one L4 worker only. Second worker
+interrupted; its prior activity remains counted historically. Adversarial review
+once at final completion, with L4 idle during review.
+
 | Category | Report |
 | --- | --- |
 | **Leaf agents** | 2 actual separately instantiated L5 agents: compiler and ABI/harness; both have dedicated worktrees. Planned optional third worker not instantiated. |

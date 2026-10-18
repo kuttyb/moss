@@ -1,5 +1,23 @@
 # Team I live integration record
 
+## L7 Team I staffing override — 2026-10-18
+
+For this integration task, use exactly two active agents: one combined L6
+Coordinator/Reviewer and one L4 implementation worker. Work is serial through
+that sole worker, preserving exclusive compiler ownership. The independent L6
+adversarial reviewer runs once at the end, after implementation is complete;
+idle the L4 worker during that review to keep at most two agents active.
+This L7 instruction supersedes the default L5 headcount and intermediate
+adversarial checkpoints below. Keep draft PRs, automated isolated regression
+checks, exact-SHA L6 review, normal integration commits, and no main merge.
+Minimize repeated chat, duplicate CI polling and redundant review work.
+
+ABI worker stopped at L7 instruction. Sole L4 inherits its frozen work serially:
+strict PR #6 `ccf2ca7c6628882617ad5f830fce19b463bcce23`, source-free PR #8
+`9f1ca499f57f935d34b9462c252f12043cdc677c`. Historical two-L5 concurrency
+below describes earlier observed work, not current staffing authorization.
+
+
 L7 authorized execution on 2026-10-18. Target `phase25-integration`; initial
 SHA `fbd2f729caf1a96c3ffe184068e88ba6b09288cc`. No main merge or ABI production
 cutover. Coordinator also serves as L6 PR Reviewer; independent milestone

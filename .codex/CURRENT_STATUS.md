@@ -1,5 +1,26 @@
 # Moss current status
 
+## Latest L7 staffing override — 2026-10-18
+
+**Recover using this override, not older two-worker records.** Exactly two active
+agents: root combined L6 Coordinator/Reviewer and sole L4 worker (existing compiler
+agent). ABI worker interrupted and must not resume. All worker implementation
+scopes now transfer serially to sole L4, including frozen ABI branches. Independent
+L6 adversarial review only once at the END; L4 idles then to preserve two-active cap.
+Tool-based draft PR / isolated automated CI / latest-SHA L6 review flow unchanged.
+No main merge. Avoid duplicate CI polls and repetitive chat/status updates.
+
+Compiler worker owns H #5 CI monitoring and exclusive compiler lease. ABI handoff:
+#6 ccf2ca7c6628882617ad5f830fce19b463bcce23; #8 latest
+9f1ca499f57f935d34b9462c252f12043cdc677c. ABI worktree remains
+`tmp/phase25-i-abi` for sole worker's serial use; recovery notes there in
+`tests/phase25/integration/SOURCE_FREE_EXECUTION.md` and feedback.
+Root coordination #7 is pending, target still fbd2f72 at latest checkpoint.
+H #5 last observed three green / core pending; no integration/review yet.
+Potential followup: control explicit staged-v10 test mode so candidate source-free
+proof does not require unauthorized production-default cutover before L7 acceptance.
+
+
 ## Phase 25 Team I integration recovery checkpoint — 2026-10-18
 
 L7 GO and periodic recovery checkpoint request received. Target remains
