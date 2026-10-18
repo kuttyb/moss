@@ -9,7 +9,8 @@ target or main. H intake draft #5 remains at `bf1df10` with three of four
 required exact-head jobs green and core regressions still running at last
 check; defer L6 review and target merge until all four pass.
 
-S intake branch `phase25-i-s-intake` now has pushed repair commit `9a04230`.
+S intake branch `phase25-i-s-intake` now has pushed head `012f81d` after
+repair commit `9a04230` and a tightened G2 Gate 5 provenance assertion.
 It resolves duplicate process runtime, FileIO and `moss__main` symbols when an
 explicit module with `main` is also linked as an rlib; it checks newly required
 constructor fields before native lowering, emits `METHOD_NOT_FOUND` for a
@@ -17,11 +18,11 @@ source-free missing method, and retains provider logical source names in
 generic interface records for related diagnostic spans. A separately built
 compiler from these sources passed the full Phase 20 FileIO suite, all 54
 executor checks, and all 11 staged ABI-v10 source-free scenarios in both debug
-and release against the ABI harness worktree. These are cross-worktree
-candidate checks, not exact-SHA integrated release acceptance. The earlier
-S `make check` rerun uses the pre-repair binary from `759b399` and was still
-running in advanced-data acceptance; any eventual result does not validate
-the newer source edits.
+and release against the ABI harness worktree. G2 conformance passes 10/11;
+Gate 10 is still PENDING. These are cross-worktree candidate checks, not
+exact-SHA integrated release acceptance. The earlier S `make check` rerun
+used the pre-repair binary from `759b399` and was stopped with exit 143
+during advanced-data Fast Debug because later source edits invalidated it.
 
 Source-free draft #8 is pushed at `af94a3f`. Its Scenario 4 fixture now passes
 ConsumerA's provider-owned Box through ConsumerB's exported generic function
@@ -31,6 +32,17 @@ custom keys, and production ABI-v10 default cutover remain pending. Continue
 normal intake order after H #5 becomes green: exact-head L6 review, merge H
 into `phase25-integration`, then refresh/review H2, G, S, and B/ABI branches
 with draft PRs and isolated CI. Do not merge to main.
+
+Pinned Team B `755f13172c37447bca981d1fefbb885ec46f3a59` has an
+ancestry-preserving, **non-PR** merge rehearsal at pushed branch
+`phase25-i-b-rehearsal` head `235b661`, based on S repair commit `9a04230`.
+The only conflicts were status history, duplicate Team A/Team B API document
+names, and the older unresolved-collection diagnostic expectation; resolutions
+are recorded in `docs/phase25/B_INTAKE_REHEARSAL.md` on that branch. Compiler
+build, Team B debug/release runtime checks, staged/adversarial ABI suites,
+feedback validation, and Team B acceptance (22 PASS, 1 PENDING Gate 10) pass.
+This branch is not a target-based B intake or accepted PR. The B compiler
+binding and nominal MapKeyProof remain open.
 
 ## Phase 25 S reconciliation recovery point — 2026-10-18
 
