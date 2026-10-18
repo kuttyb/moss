@@ -1,5 +1,9 @@
 # Moss current status
 
+## Phase 25 Team I integration active — 2026-10-18
+
+L7 GO received. Checked out `phase25-integration` at `fbd2f729caf1a96c3ffe184068e88ba6b09288cc`; all four pinned source tips verified. Two isolated L5 workers are active: exclusive compiler writer on H/T intake, and ABI/harness audit with disjoint ownership. Coordinator combines L6 PR review; independent adversarial checkpoints remain required. See `docs/phase25/TEAM_I_INTEGRATION_LIVE.md` for DAG and leases. No PR gates, input integrations, H1–H3 closure, or final 62-gate acceptance have passed in this session yet. No main merge authorized.
+
 ## Phase 25 Integration Team Preparation Cycle Complete & Frozen — 2026-10-16
 
 Team I completed the Phase 25 Preparation Cycle on `phase25-integration-prep` (baseline `fa3a340a0a6652568b97869489da1a84038b9857`, reviewed implementation `6ab05c6e4c92f63b7dd612856afb14242ecc3830`, review artifact `docs/phase25/INTEGRATION_PREP_ARCHITECT_REVIEW.md` at `b0edeeb`), preparing Phase 25 for rapid, rigorous integration while Team G finishes remaining compiler and runtime work:
