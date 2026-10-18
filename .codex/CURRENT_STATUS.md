@@ -1,8 +1,8 @@
 # Moss current status
 
-## STOP: Phase 25 Team I architectural blocker — 2026-10-18
+## Phase 25 diagnostic precedence decision — 2026-10-18
 
-L7 decision is required before S integration continues. The identical program
+L7 resolved the blocker by selecting option 1. The identical program
 `fn main():\n  echo []` is required by two frozen contracts to emit mutually
 exclusive exact diagnostic codes in the same standalone context:
 
@@ -13,10 +13,11 @@ exclusive exact diagnostic codes in the same standalone context:
 
 Independent live verification: H/T head `5cfdc163` emits the Type IR code;
 the S-preserving scratch emits the display code, both at line 2. No expected
-diagnostic was edited. S scratch is uncommitted and stopped. Team I recommends
-operation-specific `ECHO_DISPLAY_UNSUPPORTED` at an echo boundary while retaining
-the Type IR code for other unresolved values; this needs an explicit L7 contract
-amendment. Full evidence and the two decision options are in
+diagnostic was edited to resolve the conflict before L7 decided. Option 1 is now
+authoritative: `ECHO_DISPLAY_UNSUPPORTED` at an echo boundary, while retaining
+`TYPE_AMBIGUOUS_OPEN_RESULT` for other unresolved values. Sole L4 is implementing
+the narrow contract and conformance update in S scratch. Full evidence and the
+decision are in
 `docs/phase25/TEAM_I_ARCHITECTURAL_BLOCKER.md`.
 
 No input PR has been merged to `phase25-integration` or `main`. H #5 was still

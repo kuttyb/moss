@@ -1,7 +1,7 @@
 # Team I architectural blocker: empty-vector diagnostic precedence
 
-**Status:** L7 decision required. Integration stopped before committing the S
-reconciliation. No expected diagnostic was changed.
+**Status:** Resolved by L7 on 2026-10-18, selecting option 1. Implementation
+and combined validation are in progress.
 
 ## Minimal reproducer
 
@@ -46,14 +46,15 @@ Choose the authoritative diagnostic for an unbound collection directly at an
 2. `TYPE_AMBIGUOUS_OPEN_RESULT` for all unbound values including `echo`. This
    requires amending Team S ARCH-025, its display contract, and exact-code tests.
 
-Team I recommends option 1 because it retains the Type IR closure invariant and
-uses the more actionable operation-specific diagnostic at the user-visible
-display boundary. No default type, implicit `Any`, or semantic acceptance is
-introduced.
+L7 selected option 1: retain `TYPE_AMBIGUOUS_OPEN_RESULT` for every unresolved
+value except an unresolved collection immediately presented to `echo`; that
+boundary reports `ECHO_DISPLAY_UNSUPPORTED`. This keeps the no-default/no-`Any`
+type rule while applying the operation-specific diagnostic at the display
+boundary.
 
 ## Integration state
 
-The S scratch branch is intentionally uncommitted and frozen pending L7. H #5,
+The S scratch branch is being updated to implement the accepted decision. H #5,
 H2, G, strict-evidence, source-free harness, and coordinator recovery branches
 remain pushed at the SHAs recorded in `.codex/CURRENT_STATUS.md`. Nothing has
 been merged to `phase25-integration` or `main` during this decision point.
