@@ -1,4 +1,7 @@
 module MethodProvider
 
-export fn invoke_action(item):
+fn private_action(item):
   return item.custom_action()
+
+export fn invoke_action(item):
+  return private_action(item)

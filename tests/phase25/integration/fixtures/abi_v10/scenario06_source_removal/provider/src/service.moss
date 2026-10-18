@@ -3,8 +3,17 @@ module Service
 export type Box:
   value
 
+fn private_box(x):
+  result = Box(value: x)
+  return result
+
+fn nested_private_box(x):
+  result = private_box(x)
+  return result
+
 export fn fresh(x):
-  return Box(value: x)
+  result = nested_private_box(x)
+  return result
 
 export fn relay(b: Box):
   return b.value

@@ -1,14 +1,14 @@
 module EffectProvider
 
 export enum Item:
-  Have(tag: String)
+  Resource(tag: String)
 
 export fn consume_item(item: Item):
   match consume item:
-    case Have(tag):
+    case Resource(tag):
       echo tag
 
 export fn read_item(item: Item) -> Int:
   match item:
-    case Have(tag):
-      return 1
+    case Resource(tag):
+      return tag.length()
