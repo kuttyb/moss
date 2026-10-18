@@ -42,13 +42,15 @@ def find_tool(name: str, fallback_path: Optional[Path] = None) -> Path:
 
 
 class HarnessContext:
-    def __init__(self, profile: str = "debug", work_dir: Optional[Path] = None):
+    def __init__(self, profile: str = "debug", work_dir: Optional[Path] = None,
+                 staged_v10: bool = False):
         self.repo_root = REPO_ROOT
         self.fixtures_dir = FIXTURES_DIR
         self.compiler = self.repo_root / "moss"
         self.project_driver = self.repo_root / "margo"
         self.rustc = find_tool("rustc")
         self.profile = profile
+        self.staged_v10 = staged_v10
         self.work_dir = work_dir or (self.repo_root / "tmp")
         self.work_dir.mkdir(parents=True, exist_ok=True)
         self.executions: List[Dict[str, Any]] = []
@@ -69,6 +71,8 @@ class HarnessContext:
         full_env["TMPDIR"] = str(self.work_dir)
         if env:
             full_env.update(env)
+        if self.staged_v10:
+            full_env["MOSS_STAGED_ABI"] = "v10"
         cmd_strs = [str(x) for x in args]
         proc = subprocess.run(
             cmd_strs,
@@ -768,12 +772,14 @@ def main():
     parser.add_argument("--all", action="store_true", help="Run all 11 integration scenarios")
     parser.add_argument("--scenario", type=int, choices=range(1, 12), help="Run a specific scenario (1-11)")
     parser.add_argument("--profile", choices=["debug", "release"], default="debug", help="Build profile")
+    parser.add_argument("--staged-v10", action="store_true",
+                        help="Exercise the candidate ABI-v10 compiler path without changing the production default")
     parser.add_argument("--cache-test", action="store_true", help="Execute cache invalidation / rebuild testing")
     parser.add_argument("--json", action="store_true", help="Output results in JSON format")
 
     args = parser.parse_args()
 
-    ctx = HarnessContext(profile=args.profile)
+    ctx = HarnessContext(profile=args.profile, staged_v10=args.staged_v10)
 
     if args.fault_injection:
         success = run_fault_injection_tests(ctx)
@@ -825,6 +831,7 @@ def main():
             "compiler": {"path": str(ctx.compiler), "sha256": hashlib.sha256(ctx.compiler.read_bytes()).hexdigest()},
             "backend": ctx.run_cmd([ctx.rustc, "-vV"]).stdout,
             "profile": ctx.profile,
+            "abi_mode": "staged-v10" if ctx.staged_v10 else "production-default",
             "results": [r.to_dict() for r in results],
             "summary": {
                 "total": len(results),
