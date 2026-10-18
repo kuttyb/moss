@@ -61,6 +61,8 @@ class HarnessContext:
         timeout: int = 120,
     ) -> subprocess.CompletedProcess:
         full_env = dict(os.environ)
+        for name in ("MOSS_MODULE_PATH", "MOSS_FAST_DEBUG_SOURCE_ROOTS", "MOSS_STAGED_ABI"):
+            full_env.pop(name, None)
         full_env["MOSS"] = str(self.compiler)
         full_env["MARGO"] = str(self.project_driver)
         full_env["MARGO_HOME"] = str(self.work_dir / "margo-home")
@@ -809,7 +811,9 @@ def main():
 
     for sid in scenarios_to_run:
         runner = scenario_runners[sid]
+        first_command = len(ctx.executions)
         res = runner(ctx)
+        res.details.setdefault("executions", ctx.executions[first_command:])
         results.append(res)
 
     if args.json:
