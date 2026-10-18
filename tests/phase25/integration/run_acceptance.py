@@ -15,7 +15,7 @@ CLI flags:
   --self-test    Executes harness self-test and exits 0 on main / prep branch
   --summary      Prints formatted markdown/tabular summary table
   --json         Outputs machine-readable JSON acceptance report
-  --strict       Exits with non-zero code if any gate is not PASS
+  --strict       Requires all gates PASS with current-commit machine evidence
   --gate <ID>    Inspects / checks specific gate by identifier
 """
 
@@ -23,8 +23,10 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -196,6 +198,81 @@ def format_markdown_summary(summary: dict[str, Any], git_info: dict[str, str]) -
     return "\n".join(lines)
 
 
+def validate_matrix(gates: list[dict[str, Any]], repo_root: Path = ROOT) -> list[str]:
+    """Validate the complete ledger before using its status claims."""
+    errors: list[str] = []
+    # Check total gate count
+    expected_total = sum(EXPECTED_GROUPS.values())
+    if len(gates) != expected_total:
+        errors.append(f"Expected {expected_total} gates in matrix, found {len(gates)}")
+
+    # 3. Check group counts
+    found_groups: dict[str, int] = {}
+    gate_ids = set()
+    for i, gate in enumerate(gates, 1):
+        if not isinstance(gate, dict):
+            errors.append(f"Gate index {i} must be an object")
+            continue
+        gid = gate.get("id")
+        if not isinstance(gid, str) or not gid:
+            errors.append(f"Gate index {i} missing 'id'")
+            continue
+        if gid in gate_ids:
+            errors.append(f"Duplicate gate ID: {gid}")
+        gate_ids.add(gid)
+
+        # Check required fields
+        for field in REQUIRED_FIELDS:
+            if field not in gate or (gate[field] is None and field != "blocking_dependency"):
+                errors.append(f"Gate {gid}: missing required field '{field}'")
+            elif isinstance(gate[field], str) and not gate[field].strip():
+                errors.append(f"Gate {gid}: empty string in required field '{field}'")
+
+        # Check group
+        group = gate.get("group")
+        if not isinstance(group, str) or group not in EXPECTED_GROUPS:
+            errors.append(f"Gate {gid}: unexpected group '{group}'")
+        group = str(group)
+        found_groups[group] = found_groups.get(group, 0) + 1
+
+        # Check status
+        status = gate.get("current_status")
+        if not isinstance(status, str) or status not in VALID_STATUSES:
+            errors.append(f"Gate {gid}: invalid status '{status}'")
+
+        # Check owner
+        owner = gate.get("owning_team")
+        if not isinstance(owner, str) or owner not in VALID_OWNERS:
+            errors.append(f"Gate {gid}: invalid owner '{owner}'")
+
+        # Check engine configs
+        configs = gate.get("engine_configs")
+        if not isinstance(configs, list) or not configs or not all(isinstance(c, str) and c for c in configs):
+            errors.append(f"Gate {gid}: engine_configs must be a non-empty array")
+
+        # Check blocking dependency rules
+        dep = gate.get("blocking_dependency")
+        if status == "BLOCKED" and (not isinstance(dep, str) or not dep.strip()):
+            errors.append(f"Gate {gid}: status is BLOCKED but blocking_dependency is missing")
+        elif status != "BLOCKED" and isinstance(dep, str) and dep.strip():
+            pass
+
+        # Strict evidence validation against false-greens
+        gate_errs = validate_gate_evidence(gate, repo_root)
+        errors.extend(gate_errs)
+
+    for grp, expected_count in EXPECTED_GROUPS.items():
+        actual_count = found_groups.get(grp, 0)
+        if actual_count != expected_count:
+            errors.append(f"Group {grp}: expected {expected_count} gates, found {actual_count}")
+
+    expected_ids = {f"GATE-{group}-{number:02d}"
+                    for group, count in EXPECTED_GROUPS.items() for number in range(1, count + 1)}
+    if gate_ids != expected_ids:
+        errors.append("Acceptance matrix gate identities differ from the frozen 62-gate contract")
+    return errors
+
+
 def run_self_test(matrix_path: Path) -> int:
     """Self-test harness validating matrix structure and integrity."""
     print("Running acceptance runner self-test...")
@@ -208,66 +285,11 @@ def run_self_test(matrix_path: Path) -> int:
         print(f"[FAIL] Could not load matrix: {exc}")
         return 1
 
-    # 2. Check total gate count
-    expected_total = sum(EXPECTED_GROUPS.values())
-    if len(gates) != expected_total:
-        errors.append(f"Expected {expected_total} gates in matrix, found {len(gates)}")
-
-    # 3. Check group counts
-    found_groups: dict[str, int] = {}
-    gate_ids = set()
-    for i, gate in enumerate(gates, 1):
-        gid = gate.get("id")
-        if not gid:
-            errors.append(f"Gate index {i} missing 'id'")
-            continue
-        if gid in gate_ids:
-            errors.append(f"Duplicate gate ID: {gid}")
-        gate_ids.add(gid)
-
-        # Check required fields
-        for field in REQUIRED_FIELDS:
-            if field not in gate or gate[field] is None:
-                errors.append(f"Gate {gid}: missing required field '{field}'")
-            elif isinstance(gate[field], str) and not gate[field].strip():
-                errors.append(f"Gate {gid}: empty string in required field '{field}'")
-
-        # Check group
-        group = gate.get("group")
-        if group not in EXPECTED_GROUPS:
-            errors.append(f"Gate {gid}: unexpected group '{group}'")
-        found_groups[group] = found_groups.get(group, 0) + 1
-
-        # Check status
-        status = gate.get("current_status")
-        if status not in VALID_STATUSES:
-            errors.append(f"Gate {gid}: invalid status '{status}'")
-
-        # Check owner
-        owner = gate.get("owning_team")
-        if owner not in VALID_OWNERS:
-            errors.append(f"Gate {gid}: invalid owner '{owner}'")
-
-        # Check engine configs
-        configs = gate.get("engine_configs")
-        if not isinstance(configs, list) or len(configs) == 0:
-            errors.append(f"Gate {gid}: engine_configs must be a non-empty array")
-
-        # Check blocking dependency rules
-        dep = gate.get("blocking_dependency")
-        if status == "BLOCKED" and (not dep or not dep.strip()):
-            errors.append(f"Gate {gid}: status is BLOCKED but blocking_dependency is missing")
-        elif status != "BLOCKED" and dep is not None and dep.strip():
-            pass
-
-        # Strict evidence validation against false-greens
-        gate_errs = validate_gate_evidence(gate, ROOT)
-        errors.extend(gate_errs)
-
-    for grp, expected_count in EXPECTED_GROUPS.items():
-        actual_count = found_groups.get(grp, 0)
-        if actual_count != expected_count:
-            errors.append(f"Group {grp}: expected {expected_count} gates, found {actual_count}")
+    errors.extend(validate_matrix(gates))
+    if errors:
+        for error in errors:
+            print(f"[FAIL] {error}")
+        return 1
 
     # 4. Check summary calculation
     summary = compute_summary(gates)
@@ -283,6 +305,10 @@ def run_self_test(matrix_path: Path) -> int:
     json_repr = json.dumps(summary)
     if not json_repr:
         errors.append("Failed to serialize summary to JSON")
+
+    # Exercise the public strict CLI and post-commit report integrity in PR CI.
+    from test_fault_injection import test_strict_release_integrity
+    test_strict_release_integrity()
 
     # 7. Run deliberate fault-injection suite (anti-false-green proof)
     fi_rc = run_fault_injection_tests(ROOT)
@@ -391,7 +417,9 @@ def validate_gate_evidence(gate: dict[str, Any], repo_root: Path = ROOT) -> list
             errors.append(f"Gate {gid}: PASS requires non-empty 'test_path'")
         else:
             full_path = repo_root / test_path_str
-            if not full_path.exists():
+            if not full_path.resolve().is_relative_to(repo_root.resolve()) or ".." in Path(test_path_str).parts:
+                errors.append(f"Gate {gid}: test_path must stay within the repository")
+            elif not full_path.exists():
                 errors.append(f"Gate {gid}: test_path '{test_path_str}' does not exist on disk")
             elif full_path.is_file() and full_path.stat().st_size == 0:
                 errors.append(f"Gate {gid}: test_path '{test_path_str}' is an empty file")
@@ -410,6 +438,8 @@ def validate_gate_evidence(gate: dict[str, Any], repo_root: Path = ROOT) -> list
             )
             if res.returncode != 0:
                 errors.append(f"Gate {gid}: implementation_sha '{sha_clean}' does not exist in git history")
+            elif subprocess.run(["git", "merge-base", "--is-ancestor", sha_clean, "HEAD"], cwd=repo_root, capture_output=True).returncode != 0:
+                errors.append(f"Gate {gid}: implementation_sha is not integrated into HEAD")
 
         # Rule 3: test_evidence must be non-empty and free of pending/placeholder/mock markers
         evidence = str(gate.get("test_evidence", "")).strip()
@@ -424,7 +454,7 @@ def validate_gate_evidence(gate: dict[str, Any], repo_root: Path = ROOT) -> list
 
         # Rule 4: No blocking dependency allowed when PASS
         dep = gate.get("blocking_dependency")
-        if dep and dep.strip():
+        if dep and (not isinstance(dep, str) or dep.strip()):
             errors.append(f"Gate {gid}: status is PASS but blocking_dependency is present: '{dep}'")
 
     elif status == "BLOCKED":
@@ -432,6 +462,65 @@ def validate_gate_evidence(gate: dict[str, Any], repo_root: Path = ROOT) -> list
         if not dep or not isinstance(dep, str) or not dep.strip():
             errors.append(f"Gate {gid}: status is BLOCKED but blocking_dependency is missing or empty")
 
+    return errors
+
+
+def validate_release_evidence(gate: dict[str, Any], evidence_dir: Path,
+                              git_info: dict[str, str], repo_root: Path = ROOT) -> list[str]:
+    """Validate post-commit machine reports, separate from historical ledger prose."""
+    gid = gate["id"]
+    errors: list[str] = []
+    if not re.fullmatch(r"GATE-[A-Z0-9]+-[0-9]{2}", gid):
+        return [f"Gate {gid}: invalid release gate ID"]
+    report_path = evidence_dir / f"{gid}.json"
+    if not report_path.resolve().is_relative_to(repo_root.resolve()):
+        return [f"Gate {gid}: machine evidence must stay within repository"]
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return [f"Gate {gid}: missing or invalid machine evidence {report_path}: {exc}"]
+    if not isinstance(report, dict):
+        return [f"Gate {gid}: machine evidence must be an object"]
+    if type(report.get("schema_version")) is not int or report["schema_version"] != 1 or report.get("gate_id") != gid or report.get("status") != "PASS":
+        errors.append(f"Gate {gid}: machine evidence schema, identity or status mismatch")
+    if git_info.get("dirty") != "false":
+        errors.append(f"Gate {gid}: release evidence requires a clean committed checkout")
+    if report.get("evidence_sha") != git_info.get("commit") or git_info.get("commit") == "unknown":
+        errors.append(f"Gate {gid}: stale evidence_sha; exact HEAD required")
+    results = report.get("results")
+    if not isinstance(results, list) or not results:
+        return errors + [f"Gate {gid}: machine evidence requires execution results"]
+    seen: set[str] = set()
+    for result in results:
+        if not isinstance(result, dict):
+            errors.append(f"Gate {gid}: execution result must be an object")
+            continue
+        engine = result.get("engine")
+        if not isinstance(engine, str) or engine in seen:
+            errors.append(f"Gate {gid}: invalid or duplicate execution engine")
+        else:
+            seen.add(engine)
+        command = result.get("command")
+        if not isinstance(command, list) or not command or not all(isinstance(c, str) and c for c in command):
+            errors.append(f"Gate {gid}: execution command must be a non-empty argument list")
+        if type(result.get("returncode")) is not int or result["returncode"] != 0:
+            errors.append(f"Gate {gid}: execution did not exit successfully")
+        log_path = result.get("log_path")
+        if not isinstance(log_path, str) or not log_path:
+            errors.append(f"Gate {gid}: execution log_path required")
+            continue
+        log = (repo_root / log_path).resolve()
+        if not log.is_relative_to(repo_root.resolve()):
+            errors.append(f"Gate {gid}: execution log must stay within repository")
+            continue
+        try:
+            content = log.read_bytes()
+            if not content or hashlib.sha256(content).hexdigest() != result.get("log_sha256"):
+                errors.append(f"Gate {gid}: execution log is empty or its digest differs")
+        except OSError as exc:
+            errors.append(f"Gate {gid}: execution log unavailable: {exc}")
+    if seen != set(gate["engine_configs"]):
+        errors.append(f"Gate {gid}: machine evidence engine coverage mismatch")
     return errors
 
 
@@ -553,6 +642,7 @@ def main() -> int:
     parser.add_argument("--fault-injection", action="store_true", help="Execute deliberate fault-injection suite")
     parser.add_argument("--summary", action="store_true", help="Print formatted markdown summary")
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON acceptance report")
+    parser.add_argument("--evidence-dir", type=Path, default=ROOT / "tmp" / "phase25-acceptance", help="Post-commit per-gate machine reports for strict acceptance")
     parser.add_argument("--strict", action="store_true", help="Exit with non-zero code if any gate is not PASS")
     parser.add_argument("--live", action="store_true", help="Execute mapped same-SHA gate proofs (implied by --strict)")
     parser.add_argument("--gate", type=str, default=None, help="Inspect / check specific gate by ID")
@@ -580,6 +670,15 @@ def main() -> int:
             return 1
 
     git_info = get_git_info()
+    validation_errors = validate_matrix(gates)
+    if args.strict and not validation_errors:
+        for gate in gates:
+            if gate.get("current_status") == "PASS":
+                validation_errors.extend(validate_release_evidence(gate, args.evidence_dir, git_info))
+    if validation_errors:
+        for error in validation_errors:
+            print(f"INVALID ACCEPTANCE EVIDENCE: {error}", file=sys.stderr)
+        return 1
     summary = compute_summary(gates)
 
     if args.gate:
