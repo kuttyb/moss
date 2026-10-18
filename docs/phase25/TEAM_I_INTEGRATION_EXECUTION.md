@@ -16,6 +16,40 @@ Read `AGENTS.md` and `docs/AGENT_TEAM_OPERATING_MODEL.md`. This file is the Team
 
 Team T `9ed6830` is already contained in H; do not redundantly merge it. Team G and Team B **diverged** from H: H does not contain their entire branch history. I prep is divergent from H and S. The old rehearsal conflict ledger is historical and must be rerun. Reconfirm SHA/ancestry immediately before starting merges. Preserve original commit ancestry, reconcile semantic overlaps, use normal merge commits where possible; no blind cherry-pick, wholesale ours/theirs, rebase/force push of shared branches or unreviewed main merge.
 
+## A1. Executable Git intake recipe (Coordinator/assigned single-file writer)
+
+The following is a **template**, not permission to blindly merge conflicting code. Repeat on a fresh per-input PR branch, in the dependency order above, substituting the exact source ref and a new target-based branch name. Never use this template to push directly to `main`.
+
+```sh
+git fetch origin --prune
+git switch phase25-integration || git switch --track origin/phase25-integration
+git pull --ff-only origin phase25-integration
+git status --porcelain
+git rev-parse HEAD
+git rev-parse origin/phase25-checked-body-ir
+git rev-parse origin/phase25-semantics-engines
+git rev-parse origin/phase25-generic-types
+git rev-parse origin/phase25-g-abi-runtime
+
+# Example: Team H/T intake (only the assigned compiler writer).
+git switch -c phase25-i-h-intake
+git merge-base --all HEAD origin/phase25-checked-body-ir
+git diff --stat HEAD...origin/phase25-checked-body-ir
+git merge --no-ff --no-commit origin/phase25-checked-body-ir
+# At conflicts: inspect both implementations and frozen semantics.
+# Resolve in the owned worktree, record actual provenance, build and commit.
+git status --short
+git diff --check
+git commit -m "Phase 25 integrate reviewed H/T compiler baseline"
+git push --set-upstream origin phase25-i-h-intake
+# Open DRAFT PR to phase25-integration. CI starts automatically.
+# Only after CI green and L6 review approval, merge PR into target.
+```
+
+The H intake above is an illustration. If `git merge` is conflict-free it still uses `--no-commit` and requires deliberate code/test review. If it stops on conflicts, resolve and stage intended files before committing. Do not execute subsequent `git commit` while the tree still contains unmerged paths. In the compiler intake branch, never allow another writer of `src/moss.cpp`.
+
+For S, G and B intakes, start **new PR branches based on the latest reviewed/merged integration target** (not on each other's stale feature branches). Check ancestry and exact changed-file overlap first. Do not merge all branches into a single unreviewed mega-commit. If a feature branch already contains a source commit, preserve it once; record that it was subsumed rather than merging it again. Every PR must pass automated gates before L6 review; an intake cannot declare PASS when required suites are missing.
+
 ## B. Work allocation, leases and DAG
 
 **Coordinator:** owns DAG and `src/moss.cpp` single-writer lease; reconciles input branches in disposable worktrees, reviews approved PRs and publishes consolidated `phase25-integration`. Build the DAG from actual file conflicts. Begin from Team H/T, bring in distinct G, S, then B while preserving all prep fixtures. Dependency order may be revised if exact ancestry/interface comparisons warrant it; record reason and SHA. Team I owns all integration fixes. Coordinate API boundary, not dual-writer compiler sessions.
