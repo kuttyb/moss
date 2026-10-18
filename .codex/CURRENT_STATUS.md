@@ -1,8 +1,55 @@
 # Moss current status
 
-## Phase 25 Team I integration active — 2026-10-18
+## Phase 25 Team I integration recovery checkpoint — 2026-10-18
 
-L7 GO received. Checked out `phase25-integration` at `fbd2f729caf1a96c3ffe184068e88ba6b09288cc`; all four pinned source tips verified. Two isolated L5 workers are active: exclusive compiler writer on H/T intake, and ABI/harness audit with disjoint ownership. Coordinator combines L6 PR review; independent adversarial checkpoints remain required. See `docs/phase25/TEAM_I_INTEGRATION_LIVE.md` for DAG and leases. No PR gates, input integrations, H1–H3 closure, or final 62-gate acceptance have passed in this session yet. No main merge authorized.
+L7 GO and periodic recovery checkpoint request received. Target remains
+`phase25-integration`, initial/latest integrated SHA
+`fbd2f729caf1a96c3ffe184068e88ba6b09288cc`; no input PR integrated yet.
+Coordinator combines L6 PR review. **Never merge to main.** Normal configured
+remote pushes authorized; AGENTS now states this explicitly on coordination branch.
+
+Recovery references and exclusive leases:
+
+- Coordinator branch `phase25-i-coordination` (root checkout) owns status,
+  AGENTS, live record and team efficiency record. Publish checkpoint commits here;
+  merge latest reviewed target into this branch before final docs PR integration.
+- L5 compiler: `tmp/phase25-i-compiler`, branch `phase25-i-h-intake`, exclusive
+  `src/moss.cpp` / AST / type IR lease. [Draft PR #5](https://github.com/kuttyb/moss/pull/5),
+  exact head `5cfdc1630d67506146e4adcc52628e508ffdc7c5`. Four isolated CI jobs in
+  workflow `39165091036` running. Worker-local optimized build/bootstrap and H
+  G1/G2/G3 suites passed. **Not yet L6 reviewed.** H merge retained prep and
+  histories; no compiler conflict, four deliberately resolved documentation conflicts.
+- L5 ABI/harness: `tmp/phase25-i-abi`, branch `phase25-i-abi-preparation`, owns
+  ABI/runtime headers and `tests/phase25/integration/**`; runtime/header edits
+  held until H interface handoff. [Draft PR #6](https://github.com/kuttyb/moss/pull/6),
+  latest head `ccf2ca7c6628882617ad5f830fce19b463bcce23`; supersedes `afcf693`.
+  Strict evidence repair and CLI fault regressions locally passed, current CI
+  pending; missing pre-H semantic suites may fail. **Not yet L6 reviewed.**
+
+All pinned input refs match execution plan after fetch: H/T `2d457245`,
+G `2938d257`, S `53d04fbf`, B `755f1317`. Bootstrap verified `moss-0.1`.
+GitHub connector works (inspect tool schemas via ALL_TOOLS descriptions); `gh`
+CLI unavailable. Tools use `repository_full_name` for PR creation, `repo_full_name`
+for workflow inspection. PR workflows are actual machine evidence; chat reports
+and pending checks are not green.
+
+Next actions: observe exact-head #5 required checks, fix failures first, then
+L6 code review and normal merge to target only when green. Update #6 with reviewed
+H target, rerun its CI and review separately. Compiler follows with focused H2
+boundary fix, then G/S reconciliation; ABI worker follows with real source-removal
+cross-crate harness. Fresh target-based PR per intake; no blind cherry-picks or
+whole-file ours/theirs. Independent adversarial review at combined architecture,
+source-free Gate 10, and final acceptance freezes remains outstanding.
+
+Open findings: inherited H2 independently reproduces 0/5 rejected erased
+projections; fix must include production boundaries. H1 has mixed live structured
+facts and remaining semantic-marker branches/unavailable callable summaries; H3
+not proven. I-001 strict CLI bypass repaired on #6 but not integrated; I-002
+cross-crate --all returns 0 with 1 source-backed PASS / 10 BLOCKED and cannot
+prove E3; next bounded repair. Historical D3/D4 ownership questions are covered by
+Team I plan, not an architectural blocker. No H1–H3 closure or 62-gate release
+acceptance claimed. See `docs/phase25/TEAM_I_INTEGRATION_LIVE.md` and
+`docs/phase25/agent-patterns/team-i-integration.md` for provenance.
 
 ## Phase 25 Integration Team Preparation Cycle Complete & Frozen — 2026-10-16
 

@@ -89,3 +89,12 @@ Focused regression and semantic/ABI boundary enforcement remain required.
 Worker-local optimized build/bootstrap and G1/G2/G3 checks passed on H intake;
 these do not substitute for PR checks. Coordinator confirmed four separate CI
 jobs in progress. No target merge yet.
+
+## Recovery checkpoint policy
+
+L7 requested periodic crash/token recovery on 2026-10-18. Coordinator commits
+and pushes `.codex/CURRENT_STATUS.md` at meaningful boundaries (PR submission,
+review, integration or new validated blocker). Worker branches are committed and
+pushed independently; target remains unchanged until required CI/L6 approval.
+PR #6 latest recovery head is `ccf2ca7c6628882617ad5f830fce19b463bcce23`
+(feedback-only follow-up to `afcf693`); exact-head CI is pending.
