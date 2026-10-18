@@ -95,13 +95,32 @@ class Runner:
             return {"status": f"fail-closed {code}" if not leaked else f"check-only-reject {code}",
                     "code": code, "fast": fast}
         outputs = {"fast-debug": fast}
+        runtime = work / "libmoss_runtime.rlib"
         for mode, flag, rustc_flags in (("native-debug", "--debug", []),
                                         ("native-release", "-O", ["-O"])):
             rust, binary = work / f"{mode}.rs", work / mode
             gen = self.run([self.moss, case, flag, "-o", rust], work)
             if gen.returncode != 0:
                 return {"status": f"lowering-reject {first_code(gen.stderr)}", "fast": fast}
-            build = self.run(["rustc", *rustc_flags, "--crate-name", "case", rust, "-o", binary], work)
+            runtime_flags = []
+            if "moss_runtime::" in rust.read_text():
+                if not runtime.exists():
+                    runtime_build = self.run([
+                        "rustc", "--edition=2021", "--crate-name", "moss_runtime",
+                        "--crate-type", "rlib",
+                        ROOT / "runtime/moss_runtime/src/lib.rs", "-o", runtime,
+                    ], work)
+                    if runtime_build.returncode != 0:
+                        return {"status": "runtime-build-fails", "fast": fast,
+                                "detail": first_rustc_error(runtime_build.stderr)}
+                runtime_flags = [
+                    "--extern", f"moss_runtime={runtime}",
+                    "-L", f"dependency={work}",
+                ]
+            build = self.run([
+                "rustc", "--edition=2021", *rustc_flags,
+                "--crate-name", "case", rust, *runtime_flags, "-o", binary,
+            ], work)
             if build.returncode != 0:
                 return {"status": "known-failing accepted-rustc-fails", "fast": fast,
                         "detail": first_rustc_error(build.stderr)}
