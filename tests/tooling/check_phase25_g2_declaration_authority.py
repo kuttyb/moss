@@ -30,6 +30,16 @@ run_cpp = subprocess.run([str(cpp_bin)], capture_output=True, text=True, check=T
 print(run_cpp.stdout.strip())
 print("PASS G2 C++ declaration authority & consistency assertions", flush=True)
 
+# Inject erased checked projections at the real compiler export/checking boundaries.
+boundary_test = ROOT / "tests" / "tooling" / "check_phase25_declaration_boundaries.cpp"
+boundary_bin = ROOT / "tmp" / "check_phase25_declaration_boundaries_bin"
+subprocess.run([
+    "g++", "-std=c++17", "-O0", "-g0",
+    str(boundary_test), "-o", str(boundary_bin)
+], check=True)
+subprocess.run([str(boundary_bin)], check=True)
+
+
 def check_moss(source_text: str) -> subprocess.CompletedProcess:
     with tempfile.NamedTemporaryFile("w", suffix=".moss", dir=ROOT / "tmp", delete=False) as f:
         f.write(source_text)
