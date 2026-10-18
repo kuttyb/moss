@@ -1,5 +1,14 @@
 # Moss current status
 
+## Phase 25 L7 Set decision — 2026-10-18
+
+L7 chose to freeze the existing provisional Set source API for this phase:
+`Set()`, `insert(k)`, `contains(k)`, and `values()`. Team I must implement Set
+using Map's canonical key proof and shared runtime kernel. This resolves the
+source-surface choice documented in `docs/phase25/TEAM_I_INTEGRATION_LIVE.md`;
+the implementation and acceptance remain open. Earlier status entries that
+call the L7 Set decision pending are historical.
+
 ## Phase 25 shared indexed String staging checkpoint — 2026-10-18
 
 Pushed `phase25-i-b-rehearsal` at `641a577` (from `145034f`). The opt-in

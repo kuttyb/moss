@@ -1,5 +1,17 @@
 # Team I live integration record
 
+## L7 Set source-surface decision — 2026-10-18
+
+L7 selected the recommended Phase 25 option: freeze the existing provisional
+Set API as `Set()`, `insert(k)`, `contains(k)`, and `values()`. Team I must deliver
+Set in this phase using the same canonical key proof and shared runtime kernel
+as Map. This resolves the source-surface question raised after a live
+`moss-0.1` bootstrap and a minimal `Set[Int]` probe showed no implemented Set
+surface. The accepted spelling is the one already recorded as provisional in
+`docs/phase25/TEAM_S_KEY_PROTOCOL_V1_SCALARS.md` and
+`tests/phase25/key_protocol/README.md`; implementation and acceptance remain
+pending. No Set deferral or second key protocol is authorized.
+
 ## L7 diagnostic decision
 
 L7 selected option 1 for the proven `echo []` conflict:
