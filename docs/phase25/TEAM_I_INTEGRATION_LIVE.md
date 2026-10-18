@@ -66,3 +66,16 @@ rejection is required for negative cases but is not positive H3/E3 evidence.
 | H1–H3 | Inherited L7 execution-plan findings | Team I owns structured requirements, stale AST projection and true generic source-free proof |
 
 These are open implementation/validation defects, not architectural escalation.
+
+## Inherited H2 live reproduction
+
+Coordinator verified against H/T intake header before any authority fix:
+construct each `Param`, `Method`, `TraitMethod`, `Handler`, `Function`; bind
+`Type::primitive("int")` via its `bind_type`, `bind_return_type` or
+`bind_reply_type`; erase the string projection (`clear()`, optional `reset()`
+or assign empty string); call `assert_consistent()` and count `logic_error`.
+Built with `g++ -std=c++17 -O0 -I tmp/phase25-i-compiler/src`.
+Observed `rejected erased projections: 0/5`, exit 1 (expected 5/5).
+Source cause: assertions guard on nonempty/present projection before comparing
+against bound TypeRef. This verifies inherited L7 H2; no new discovery credit.
+Focused regression and semantic/ABI boundary enforcement remain required.
