@@ -1,7 +1,7 @@
 module ConsumerA
 import BoxProvider
 
-export fn make_int_box(v: Int) -> BoxProvider.Box:
+export fn make_int_box(v: Int):
   return BoxProvider.fresh(v)
 
 fn main():

@@ -3,11 +3,8 @@ import BoxProvider
 import ConsumerA
 import ConsumerB
 
-fn inspect_int_box(b: BoxProvider.Box) -> Int:
-  return BoxProvider.relay(b)
-
 fn main():
   b_int = ConsumerA.make_int_box(100)
   b_str = ConsumerB.make_str_box("shared")
-  echo inspect_int_box(b_int)
+  echo BoxProvider.relay(ConsumerB.identity_box(b_int))
   echo BoxProvider.relay(b_str)

@@ -1,8 +1,11 @@
 module ConsumerB
 import BoxProvider
 
-export fn make_str_box(s: String) -> BoxProvider.Box:
+export fn make_str_box(s: String):
   return BoxProvider.fresh(s)
+
+export fn identity_box(item):
+  return item
 
 fn main():
   b = make_str_box("hello v10")
