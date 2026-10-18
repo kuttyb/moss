@@ -10,7 +10,11 @@ physically deletes the entire provider package. Copied consumer manifests remove
 path dependency tables so Margo cannot rebuild providers from source; explicit
 `MOSS_MODULE_PATH` roots select only staged compiled artifacts. Ambient module paths,
 Fast Debug source roots and staged-ABI opt-ins are cleared from subprocess environments
-so they cannot supply hidden source or turn a staging path into production evidence. Every consumer
+so they cannot supply hidden source or turn an ambient staging path into production evidence.
+`--staged-v10` explicitly sets `MOSS_STAGED_ABI=v10` for every harness subprocess
+and labels JSON evidence `abi_mode: staged-v10`. This exercises the candidate
+emitter/importer before L7 authorizes a production-default ABI cutover; a staged
+result must retain that label in release evidence. Every consumer
 build/run records its real command, working directory, profile, exit status,
 stdout and stderr in the scenario JSON. Artifact byte hashes, source-removal facts,
 compiler hash, backend identity, candidate SHA and dirty-checkout status are also
