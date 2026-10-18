@@ -20,4 +20,3 @@ Task T3 (retirement of the unknown-argument fallback in `check_function_call`).
 | **Value** | Refactoring `TypeEnv` to `moss::TypeRef` establishes term authority for local lexical environments and unblocks downstream Team H consumption of typed ASTs. Eliminating prepass unifications that masked closed-handle and trait diagnostics restored exact compiler diagnostic contracts across all test suites. Retiring the unknown-argument fallback and routing open pseudo-types to solver inference variables eliminates internal type leaks while ensuring 100% test and build parity. |
 
 Team T releases compiler editing ownership for `src/moss.cpp` for the completed T1, T2, and T3 scopes, unblocking Team H.
-
