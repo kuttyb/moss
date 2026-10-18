@@ -47,6 +47,7 @@
 #include "synchronization_lowering.hpp"
 #include "source_free_abi_v9.hpp"
 #include "source_free_abi_v10.hpp"
+#include "abi_v10_records.hpp"
 #include "moss_runtime_linkage.hpp"
 #include "char_string_ordering_runtime.hpp"
 
@@ -750,6 +751,59 @@ static std::optional<BuiltinReceiverFamily> builtin_receiver_family(
   if (staged_abi_v10() && collection_named(type, {"set"})) return BuiltinReceiverFamily::Set;
   if (primitive_term(type, "string")) return BuiltinReceiverFamily::String;
   return std::nullopt;
+}
+
+static bool nominal_key_method_pure_read(const Method& method) {
+  return method.receiver_effect == Effect::Read &&
+      std::all_of(method.parameter_effects.begin(),
+                  method.parameter_effects.end(),
+                  [](Effect effect) { return effect == Effect::Read; }) &&
+      !method.observable_effects.local_capture_read &&
+      method.observable_effects.fusion_safe() &&
+      !method.observable_effects.fileio_unknown &&
+      !method.observable_effects.may_diverge;
+}
+
+static std::optional<std::pair<const Method*, const Method*>>
+nominal_key_methods(const ObjectType& object, const string& key_type) {
+  const Method* equality = nullptr;
+  const Method* hash = nullptr;
+  for (const auto& method : object.methods) {
+    if (method.name == "isequal") {
+      if (equality) return std::nullopt;
+      equality = &method;
+    } else if (method.name == "hash") {
+      if (hash) return std::nullopt;
+      hash = &method;
+    }
+  }
+  if (!equality || !hash || equality->params.size() != 1 ||
+      canonical_type_name(equality->params[0].type) != key_type ||
+      !equality->return_type ||
+      canonical_type_name(*equality->return_type) != "bool" ||
+      equality->parameter_effects.size() != 1 ||
+      !nominal_key_method_pure_read(*equality) ||
+      !hash->params.empty() || !hash->return_type ||
+      canonical_type_name(*hash->return_type) != "int" ||
+      !hash->parameter_effects.empty() ||
+      !nominal_key_method_pure_read(*hash)) return std::nullopt;
+  return std::make_pair(equality, hash);
+}
+
+static abi_v10::Record nominal_key_proof_record(
+    const ObjectType& object, const string& declaration_id);
+
+static string keyed_operation_specialization_id(
+    const string& key_type, const string& proof_id,
+    const string& family, const string& operation) {
+  moss::SpecializationKey key;
+  key.callable_id = "builtin:key-protocol-v1:" + family + "." + operation;
+  key.receiver = parsed_type(key_type);
+  key.key_proof_id = proof_id;
+  const auto identity = key.stable_key();
+  synchronization_require(identity.has_value(),
+                          "key operation requires a closed proven key type");
+  return *identity;
 }
 
 static const BuiltinOperationDescriptor* builtin_operation(
@@ -3058,6 +3112,8 @@ class Checker {
   std::unordered_map<string, Domain*> domains_;
   std::unordered_map<string, ObjectType*> objects_;
   mutable std::set<string> staged_nominal_map_keys_;
+  mutable std::set<string> staged_scalar_map_keys_;
+  mutable std::set<string> staged_set_keys_;
   std::unordered_map<string, EnumType*> enums_;
   std::unordered_map<string, Trait*> traits_;
   Trait iterator_trait_;
@@ -3799,6 +3855,9 @@ class Checker {
     if (contains_enum_type(type))
       err(line, "enum values cannot be Map keys; enum equality and hashing are unsupported",
           "ENUM_MAP_KEY_UNSUPPORTED");
+    if (staged_abi_v10() &&
+        (type == "int" || type == "bool" || type == "char" || type == "string"))
+      staged_scalar_map_keys_.insert(type);
     if (builtin_equality_type(type) && !hashable_map_key_type(type))
       err(line, "'" + type + "' cannot be a Map key; keys are Int, Bool, Char, String, or a Vector/Queue of those until MossMap<K,V> lands",
           "MAP_KEY_TYPE_UNSUPPORTED");
@@ -3807,14 +3866,19 @@ class Checker {
   void check_set_key_type(int line, const string& key) const {
     const string type = canonical_type_name(key);
     if (contains_internal_placeholder(type)) return;
-    if (type == "float") return;  // Float's total key protocol is staged in v10.
+    if (type == "float") {
+      staged_set_keys_.insert(type);
+      return;  // Float's total key protocol is staged in v10.
+    }
     if (contains_record_type(type)) {
+      staged_set_keys_.insert(type);
       check_map_key_type(line, type);  // The same nominal proof is used by Map.
       return;
     }
     if (type != "int" && type != "bool" && type != "char" && type != "string")
       err(line, "'" + type + "' cannot be a Set key; use a scalar or proven nominal key",
           "SET_KEY_TYPE_UNSUPPORTED");
+    staged_set_keys_.insert(type);
   }
 
 
@@ -3864,49 +3928,55 @@ class Checker {
   // Resolve exact nominal methods only after their inferred effects settle;
   // a malformed or impure proof never reaches the Rust backend.
   void validate_staged_nominal_map_key_proofs() const {
+    auto bind_operation = [&](const string& family, const string& operation,
+                              const string& key, const string& proof_id) {
+      p_.key_operation_specialization_ids[
+          family + "." + operation + "|" + key] =
+          keyed_operation_specialization_id(key, proof_id, family, operation);
+    };
     for (const auto& key : staged_nominal_map_keys_) {
       auto owner = objects_.find(key);
       if (owner == objects_.end())
         err(0, "Map key '" + key + "' has no concrete nominal key proof",
             "KEY_PROOF_INVALID");
       const ObjectType& object = *owner->second;
-      const Method* equality = nullptr;
-      const Method* hash = nullptr;
-      for (const auto& method : object.methods) {
-        if (method.name == "isequal") {
-          if (equality) err(object.source_file, method.line,
-              "Map key '" + key + "' has duplicate isequal methods",
-              "KEY_PROOF_INVALID");
-          equality = &method;
-        } else if (method.name == "hash") {
-          if (hash) err(object.source_file, method.line,
-              "Map key '" + key + "' has duplicate hash methods",
-              "KEY_PROOF_INVALID");
-          hash = &method;
-        }
-      }
-      const auto pure_read = [](const Method& method) {
-        return method.receiver_effect == Effect::Read &&
-            std::all_of(method.parameter_effects.begin(),
-                        method.parameter_effects.end(),
-                        [](Effect effect) { return effect == Effect::Read; }) &&
-            method.observable_effects.fusion_safe() &&
-            !method.observable_effects.fileio_unknown &&
-            !method.observable_effects.may_diverge;
-      };
-      const bool equality_valid = equality && equality->params.size() == 1 &&
-          canonical_type_name(equality->params[0].type) == key &&
-          equality->return_type &&
-          canonical_type_name(*equality->return_type) == "bool" &&
-          equality->parameter_effects.size() == 1 && pure_read(*equality);
-      const bool hash_valid = hash && hash->params.empty() &&
-          hash->return_type && canonical_type_name(*hash->return_type) == "int" &&
-          hash->parameter_effects.empty() && pure_read(*hash);
-      if (!equality_valid || !hash_valid)
+      if (!nominal_key_methods(object, key))
         err(object.source_file, object.line,
             "Map key '" + key + "' requires pure READ isequal(" + key +
             ") -> Bool and hash() -> Int methods",
             "KEY_PROOF_INVALID");
+      const auto declared = p_.type_context->find(key);
+      if (!declared)
+        err(object.source_file, object.line,
+            "Map/Set key '" + key + "' has no canonical type identity",
+            "KEY_PROOF_INVALID");
+      string proof_id;
+      if (p_.external_modules.count(module_name_from_symbol(key))) {
+        auto imported = p_.imported_key_proof_ids.find(declared->id);
+        if (imported == p_.imported_key_proof_ids.end())
+          err(object.source_file, object.line,
+              "Map/Set key '" + key + "' has no sealed ABI-v10 key proof",
+              "KEY_PROOF_INVALID");
+        proof_id = imported->second;
+      } else {
+        proof_id = nominal_key_proof_record(object, declared->id).id;
+      }
+      p_.key_proof_ids_by_type[key] = proof_id;
+      for (const char* operation : {"insert", "get", "delete", "keys", "values"})
+        bind_operation("map", operation, key, proof_id);
+    }
+    for (const auto& key : staged_scalar_map_keys_)
+      p_.key_proof_ids_by_type[key] =
+          abi_v10::key_proof_record(abi_v10::make_builtin_key_proof(key)).id;
+    for (const auto& key : staged_set_keys_) {
+      auto proof = p_.key_proof_ids_by_type.find(key);
+      if (proof == p_.key_proof_ids_by_type.end()) {
+        const string id = abi_v10::key_proof_record(
+            abi_v10::make_builtin_key_proof(key)).id;
+        proof = p_.key_proof_ids_by_type.emplace(key, id).first;
+      }
+      for (const char* operation : {"insert", "contains", "values"})
+        bind_operation("set", operation, key, proof->second);
     }
   }
 
@@ -21568,6 +21638,17 @@ class Generator {
     o << "// Generated by Moss v0.1. Do not edit by hand.\n";
     o << "// Synchronous domain calls enter compiler-planned handler-level 2PL.\n";
     for (const auto& domain : p_.domains) o << "// Moss backend plan: " << domain.name << " = Handler2PL.\n";
+    if (staged_abi_v10())
+      for (const auto& operation : p_.key_operation_specialization_ids) {
+        const auto separator = operation.first.rfind('|');
+        synchronization_require(separator != string::npos &&
+            p_.key_proof_ids_by_type.count(operation.first.substr(separator + 1)),
+            "key operation specialization is missing its proof");
+        o << "// Moss key operation specialization: " << operation.first
+          << " proof="
+          << p_.key_proof_ids_by_type.at(operation.first.substr(separator + 1))
+          << " id=" << operation.second << "\n";
+      }
     o << "#![allow(non_snake_case)]\n#![allow(non_camel_case_types)]\n#![allow(dead_code)]\n";
     o << "#![allow(unused_imports)]\n#![allow(unused_mut)]\n#![allow(unused_variables)]\n#![allow(unused_assignments)]\n\n";
     for (const auto& dependency : rust_dependencies_) {
@@ -22277,6 +22358,7 @@ class Generator {
   bool shared_nominal_map_key(const string& key) const {
     const string concrete = canonical_type_name(key);
     return staged_abi_v10() &&
+        p_.key_proof_ids_by_type.count(concrete) &&
         (objects_.count(concrete) || is_nominal_instance_type(concrete));
   }
 
@@ -26510,6 +26592,7 @@ class Generator {
     // remains a local Rust item there; only the executable owns this native
     // debug symbol when several such modules are linked together.
     if (p_.explicit_module) {
+      o << "#[cfg(moss_process_root)]\n";
       if (debug_build_) o << "#[inline(never)]\n";
       o << "#[cfg_attr(moss_process_root, export_name = \"moss__main\")]\n";
     } else {
@@ -27539,7 +27622,10 @@ class Generator {
               string key = mi.size() >= 2 && mi.front() == '"' && mi.back() == '"'
                   ? "MossStr::from(" + mi + ")" : expr(mi, d, locals, &types);
               auto key_type = generated_expr_type(mi, &types);
-              if (key_type && !copy_type(*key_type) &&
+              if (key_type && shared_nominal_map_key(*key_type) &&
+                  is_object_view(mi, d, locals, &types))
+                key = "(" + key + ").__moss_value()";
+              else if (key_type && !copy_type(*key_type) &&
                   !(mi.size() >= 2 && mi.front() == '"' && mi.back() == '"'))
                 key = "(" + key + ").clone()";
               string inserted = expr(s.b, d, locals, &types,
@@ -33673,10 +33759,17 @@ struct ParsedModuleUnit {
   string binary_contract_hash;
   string semantic_contract_hash;
   vector<abi_v10::Import> required_imports;
+  vector<abi_v10::Record> key_proof_records;
+  std::map<string, string> key_method_hashes;
   bool explicit_module = false;
   vector<std::pair<Program,string>> files;
   vector<ModuleImport> imports;
 };
+
+static void validate_imported_nominal_key_proofs(
+    const std::map<string, ParsedModuleUnit>& modules,
+    const std::set<string>& loaded_external_modules,
+    std::map<string, string>& proof_ids);
 
 // True when expression[begin, end) is the label of a named argument such as
 // `Table(row_count: n)`: preceded by `(` or `,` and followed by `:` or a
@@ -34911,7 +35004,18 @@ static string verified_abi_v10_interface_records(
   records += "contract\n";
   for (const auto& record : parsed.value.binary_contract) records += record.payload;
   records += "semantic_exports\n";
-  for (const auto& record : parsed.value.semantic_contract) records += record.payload;
+  for (const auto& record : parsed.value.semantic_contract) {
+    if (!record.payload.empty() &&
+        static_cast<unsigned char>(record.payload.front()) == 1) {
+      try {
+        abi_v10::validate_key_proof(record);
+      } catch (const abi_v10::Error& error) {
+        throw CompileError(0, error.what(), error.code);
+      }
+      continue;
+    }
+    records += record.payload;
+  }
   if (sealed) *sealed = parsed;
   return records;
 }
@@ -35003,6 +35107,10 @@ static ParsedModuleUnit load_module_interface(
     unit.binary_contract_hash = sealed.binary_hash;
     unit.semantic_contract_hash = sealed.semantic_hash;
     unit.required_imports = sealed.value.imports;
+    for (const auto& record : sealed.value.semantic_contract)
+      if (!record.payload.empty() &&
+          static_cast<unsigned char>(record.payload.front()) == 1)
+        unit.key_proof_records.push_back(record);
   }
   unit.explicit_module = true;
   Program provider;
@@ -35897,6 +36005,16 @@ static ParsedModuleUnit load_module_interface(
                            "SOURCE_FREE_METHOD_CONTRACT_INVALID");
       method.receiver_effect = *receiver_effect;
       method.observable_effects = interface_effects(rest);
+      const string key_semantic_hash = interface_field(rest, "key_semantic_hash");
+      if (!key_semantic_hash.empty()) {
+        if (!abi_v10::hex_hash(key_semantic_hash) ||
+            (method.name != "isequal" && method.name != "hash") ||
+            !unit.key_method_hashes.emplace(
+                current_object->name + "." + method.name,
+                key_semantic_hash).second)
+          throw CompileError(0, "invalid ABI-v10 key method semantic hash",
+                             "KEY_PROOF_INVALID");
+      }
       if (method.observable_effects.unresolved)
         throw CompileError(0, "unresolved effects in ABI-v9 object method",
                            "SOURCE_FREE_METHOD_CONTRACT_INVALID");
@@ -36403,6 +36521,9 @@ static CheckedProjectUnit check_project_sources(
         program.module_identities[entry.first] =
             source_module_identity(entry.second.files.front().second, entry.first);
     }
+    if (staged_abi_v10())
+      validate_imported_nominal_key_proofs(
+          modules, loaded_external_modules, program.imported_key_proof_ids);
     program.package_identities = true;
     if (!has_explicit_modules)
       program.module_identities[""] = moss::module_identity(manifest.name,
@@ -36944,6 +37065,10 @@ static Program module_program(const Program& whole, const string& module,
   result.module_name = module;
   result.explicit_module = true;
   result.module_identities = whole.module_identities;
+  result.imported_key_proof_ids = whole.imported_key_proof_ids;
+  result.key_proof_ids_by_type = whole.key_proof_ids_by_type;
+  result.key_operation_specialization_ids =
+      whole.key_operation_specialization_ids;
   result.type_context = whole.type_context;
   result.imports = whole.imports;
   string target_module = !root_module.empty() ? root_module : whole.main_module;
@@ -37613,6 +37738,120 @@ static string exported_declaration_identity(const Program& program,
                          "' has no interned declaration identity");
 }
 
+static string nominal_key_method_semantic_hash(const Method& method) {
+  std::ostringstream body;
+  body << std::quoted(method.name) << " "
+       << std::quoted(method.return_type.value_or("unit")) << " "
+       << ownership_effect_name(method.receiver_effect) << " "
+       << interface_effects_text(method.observable_effects);
+  for (size_t index = 0; index < method.params.size(); ++index)
+    body << " " << std::quoted(method.params[index].type) << " "
+         << ownership_effect_name(method.parameter_effects.at(index));
+  for (const auto& statement : method.body)
+    body << "\n" << static_cast<int>(statement.kind) << " "
+         << std::quoted(statement.text) << " " << std::quoted(statement.a)
+         << " " << std::quoted(statement.b);
+  if (method.result_expression)
+    body << "\nresult " << std::quoted(*method.result_expression);
+  return abi_v10::hash("moss-abi-v10-key-method", body.str());
+}
+
+static string nominal_key_callable_id(const string& declaration_id,
+                                      const string& method) {
+  return declaration_id + ":method:" + method;
+}
+
+static string nominal_key_specialization_key(const string& callable_id) {
+  return abi_v10::hash("moss-abi-v10-specialization", callable_id);
+}
+
+static abi_v10::Record nominal_key_proof_record(
+    const ObjectType& object, const string& declaration_id) {
+  const auto methods = nominal_key_methods(object, object.name);
+  synchronization_require(methods.has_value(),
+                          "nominal key proof requires checked pure READ methods");
+  abi_v10::KeyProof proof;
+  proof.key_type = {abi_v10::WireTypeKind::Nominal, declaration_id, {}, 0};
+  proof.equality_callable_id = nominal_key_callable_id(declaration_id, "isequal");
+  proof.equality_specialization_key =
+      nominal_key_specialization_key(proof.equality_callable_id);
+  proof.equality_semantic_hash =
+      nominal_key_method_semantic_hash(*methods->first);
+  proof.hash_callable_id = nominal_key_callable_id(declaration_id, "hash");
+  proof.hash_specialization_key =
+      nominal_key_specialization_key(proof.hash_callable_id);
+  proof.hash_semantic_hash = nominal_key_method_semantic_hash(*methods->second);
+  proof.law_contract_version = "key-laws-v1";
+  proof.provenance_id = declaration_id;
+  return abi_v10::key_proof_record(proof);
+}
+
+static void validate_imported_nominal_key_proofs(
+    const std::map<string, ParsedModuleUnit>& modules,
+    const std::set<string>& loaded_external_modules,
+    std::map<string, string>& proof_ids) {
+  vector<abi_v10::Record> all;
+  for (const auto& name : loaded_external_modules) {
+    const auto& records = modules.at(name).key_proof_records;
+    all.insert(all.end(), records.begin(), records.end());
+  }
+  try {
+    abi_v10::validate_key_proof_coherence(all);
+    for (const auto& record : all) {
+      const auto proof = abi_v10::read_key_proof(record);
+      if (proof.key_type.kind != abi_v10::WireTypeKind::Nominal ||
+          !proof.key_type.arguments.empty() || proof.key_type.ordinal != 0 ||
+          proof.law_contract_version != "key-laws-v1" ||
+          proof.provenance_id != proof.key_type.identity)
+        throw abi_v10::Error("KEY_PROOF_INVALID",
+                            "ABI-v10 nominal key proof has invalid type or provenance");
+      const string& declaration_id = proof.key_type.identity;
+      const ObjectType* owner = nullptr;
+      const ParsedModuleUnit* owner_unit = nullptr;
+      for (const auto& name : loaded_external_modules) {
+        const auto& unit = modules.at(name);
+        if (declaration_id.rfind("nominal-template-v1:" + unit.module_identity +
+                                 ":type:", 0) != 0) continue;
+        const string declared_name = declaration_id.substr(
+            ("nominal-template-v1:" + unit.module_identity + ":type:").size());
+        for (const auto& file : unit.files)
+          for (const auto& object : file.first.objects)
+            if (object.name == declared_name) {
+              owner = &object;
+              owner_unit = &unit;
+            }
+      }
+      if (!owner || !owner_unit)
+        throw abi_v10::Error("KEY_PROOF_INVALID",
+                            "ABI-v10 nominal key proof has no selected owner declaration");
+      const auto methods = nominal_key_methods(
+          *owner, owner_unit->name + "__" + owner->name);
+      if (!methods ||
+          proof.equality_callable_id !=
+              nominal_key_callable_id(declaration_id, "isequal") ||
+          proof.hash_callable_id !=
+              nominal_key_callable_id(declaration_id, "hash") ||
+          proof.equality_specialization_key !=
+              nominal_key_specialization_key(proof.equality_callable_id) ||
+          proof.hash_specialization_key !=
+              nominal_key_specialization_key(proof.hash_callable_id) ||
+          owner_unit->key_method_hashes.find(owner->name + ".isequal") ==
+              owner_unit->key_method_hashes.end() ||
+          owner_unit->key_method_hashes.find(owner->name + ".hash") ==
+              owner_unit->key_method_hashes.end() ||
+          proof.equality_semantic_hash !=
+              owner_unit->key_method_hashes.at(owner->name + ".isequal") ||
+          proof.hash_semantic_hash !=
+              owner_unit->key_method_hashes.at(owner->name + ".hash"))
+        throw abi_v10::Error("KEY_PROOF_INVALID",
+                            "ABI-v10 nominal key proof disagrees with its exact method contract");
+      proof_ids[declaration_id] = record.id;
+    }
+  } catch (const abi_v10::Error& error) {
+    throw CompileError(0, error.what(), error.code);
+  }
+}
+
 static vector<std::filesystem::path> write_module_interfaces(
     const ProjectManifest& manifest, const Program& program,
     const std::filesystem::path& directory,
@@ -37621,6 +37860,7 @@ static vector<std::filesystem::path> write_module_interfaces(
     const std::optional<abi_v10::RuntimeCrateIdentity>& shared_runtime) {
   std::map<string,std::ostringstream> contents;
   std::map<string,std::ostringstream> interface_contents;
+  std::map<string, vector<abi_v10::Record>> local_key_proofs;
   std::set<string> module_names;
   for (const auto& function : program.functions)
     if (!module_name_from_symbol(function.name).empty() &&
@@ -37831,14 +38071,23 @@ static vector<std::filesystem::path> write_module_interfaces(
     out << "export type " << object.name.substr(module.size() + 2) << " nominal\n";
     out << "  declaration_id " << exported_declaration_identity(
         program, moss::DeclarationKind::Record, object.name) << "\n";
+    if (staged_abi_v10() && nominal_key_methods(object, object.name))
+      local_key_proofs[module].push_back(nominal_key_proof_record(
+          object, exported_declaration_identity(
+              program, moss::DeclarationKind::Record, object.name)));
     for (const auto& field : object.fields)
       out << "  public_representation field " << field.name << " " << field.type << "\n";
     for (const auto& method : object.methods) {
       out << "  object_method " << method.name << " return="
           << method.return_type.value_or("unit") << " receiver="
           << ownership_effect_name(method.receiver_effect) << " effects="
-          << interface_effects_text(method.observable_effects) << " params="
-          << method.params.size();
+          << interface_effects_text(method.observable_effects);
+      if (staged_abi_v10() &&
+          (method.name == "isequal" || method.name == "hash") &&
+          nominal_key_methods(object, object.name))
+        out << " key_semantic_hash="
+            << nominal_key_method_semantic_hash(method);
+      out << " params=" << method.params.size();
       for (size_t index = 0; index < method.params.size(); ++index) {
         Effect effect = index < method.parameter_effects.size()
             ? method.parameter_effects[index] : Effect::Read;
@@ -37956,6 +38205,7 @@ static vector<std::filesystem::path> write_module_interfaces(
   }
   vector<std::filesystem::path> result;
   std::map<string, abi_v10::Import> sealed_v10;
+  std::map<string, vector<abi_v10::Record>> proofs_by_module;
   std::function<string(const string&)> encode_v10 = [&](const string& module) {
     abi_v10::Interface value;
     value.module_id = abi_v10_module_id(manifest, module);
@@ -37963,11 +38213,14 @@ static vector<std::filesystem::path> write_module_interfaces(
     value.backend_fingerprint = backend.fingerprint;
     value.backend_rustc = backend.version_verbose.substr(
         0, backend.version_verbose.find('\n'));
+    vector<abi_v10::Record> proofs = local_key_proofs[module];
     for (const auto& import : program.imports) {
       if (import.owner_module != module) continue;
       if (contents.count(import.name)) {
         if (!sealed_v10.count(import.name)) encode_v10(import.name);
         value.imports.push_back(sealed_v10.at(import.name));
+        const auto& imported = proofs_by_module.at(import.name);
+        proofs.insert(proofs.end(), imported.begin(), imported.end());
         continue;
       }
       auto selected = external_interfaces.find(import.name);
@@ -37979,6 +38232,10 @@ static vector<std::filesystem::path> write_module_interfaces(
           selected->second, "MOSS_INTERFACE_ERROR"));
       value.imports.push_back({provider.value.module_id, provider.binary_hash,
                                provider.semantic_hash});
+      for (const auto& record : provider.value.semantic_contract)
+        if (!record.payload.empty() &&
+            static_cast<unsigned char>(record.payload.front()) == 1)
+          proofs.push_back(record);
     }
     std::sort(value.imports.begin(), value.imports.end(),
               [](const abi_v10::Import& left, const abi_v10::Import& right) {
@@ -37995,12 +38252,20 @@ static vector<std::filesystem::path> write_module_interfaces(
     value.binary_contract =
         abi_v10_declaration_records(binary_contract.str());
     value.semantic_contract = abi_v10_declaration_records(contents[module].str());
+    std::map<string, abi_v10::Record> unique_proofs;
+    for (const auto& proof : proofs) unique_proofs.emplace(proof.id, proof);
+    proofs.clear();
+    for (const auto& proof : unique_proofs) proofs.push_back(proof.second);
     string text;
     try {
+      abi_v10::validate_key_proof_coherence(proofs);
+      value.semantic_contract.insert(value.semantic_contract.end(),
+                                     proofs.begin(), proofs.end());
       text = abi_v10::encode(value);
       auto sealed = abi_v10::decode(text);
       sealed_v10[module] = {value.module_id, sealed.binary_hash,
                             sealed.semantic_hash};
+      proofs_by_module[module] = std::move(proofs);
     } catch (const abi_v10::Error& error) {
       throw ProjectError(error.code, error.what(), directory.string());
     }
@@ -38266,6 +38531,10 @@ static NativeArtifact compile_native_artifact(
   CompiledProjectUnit unit = analyze_project_sources(
       manifest, sources, optimized, debug_build, mode, declaration_filter,
       declaration_ids);
+  if (staged_abi_v10())
+    for (const auto& operation : unit.program.key_operation_specialization_ids)
+      source_key << "key-operation " << operation.first << " "
+                 << operation.second << "\n";
   if (shared_runtime_identity) {
     const string expected = "runtime moss_runtime " +
         shared_runtime_identity->version + " " +

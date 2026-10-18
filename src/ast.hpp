@@ -707,6 +707,14 @@ struct Program {
   // Local modules take the package manifest; loaded providers take their
   // interface's identity (TYPE_IR_CONTRACT §3.1).
   std::map<string, string> module_identities;
+  // Staged ABI-v10 canonical key proof IDs supplied by compiled providers,
+  // keyed by interned nominal declaration identity. Source-owned proofs are
+  // checked from the methods and emitted when writing the local interface.
+  std::map<string, string> imported_key_proof_ids;
+  // Checked key-protocol bindings and keyed operation specializations used by
+  // staged native lowering and the project build fingerprint.
+  std::map<string, string> key_proof_ids_by_type;
+  std::map<string, string> key_operation_specialization_ids;
   // True when module identities come from a package manifest; a missing
   // identity is then an error, never the standalone fallback.
   bool package_identities = false;

@@ -997,6 +997,9 @@ struct SpecializationKey {
   std::vector<TypeRef> arguments;
   std::vector<std::string> callable_arguments;
   std::vector<std::pair<uint32_t, TypeRef>> open_result_bindings;
+  // Staged Map/Set key operations use the provider's canonical KeyProofId.
+  // An absent value preserves every existing v9/function specialization key.
+  std::optional<std::string> key_proof_id;
 
   std::optional<std::string> stable_key() const {
     if (callable_id.empty()) return std::nullopt;
@@ -1028,6 +1031,11 @@ struct SpecializationKey {
       if (!binding.second || !binding.second->is_closed()) return std::nullopt;
       Type::append_part(material, std::to_string(binding.first));
       Type::append_part(material, binding.second->stable_type_key());
+    }
+    if (key_proof_id) {
+      if (key_proof_id->rfind("sha256:", 0) != 0) return std::nullopt;
+      Type::append_part(material, "key-proof-v1");
+      Type::append_part(material, *key_proof_id);
     }
     return "specialization-v2:sha256:" + source_free_contract_sha256(material);
   }

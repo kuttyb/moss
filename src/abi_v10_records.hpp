@@ -896,6 +896,12 @@ struct KeyProof {
   std::string provenance_id;
 };
 
+inline bool is_key_proof_payload(std::string_view payload) {
+  return payload.size() >= 20 && payload[1] == 0 && payload[2] == 0 &&
+      payload[3] == 0 && static_cast<unsigned char>(payload[4]) == 15 &&
+      payload.substr(5, 15) == "key-protocol-v1";
+}
+
 inline std::string key_proof_payload(const KeyProof& value) {
   require(!value.equality_callable_id.empty() &&
               hex_hash(value.equality_specialization_key) &&
@@ -936,7 +942,7 @@ inline Record key_proof_record(const KeyProof& value) {
   return {hash("key-proof-v1", payload), std::move(payload)};
 }
 
-inline void validate_key_proof(const Record& record) {
+inline KeyProof read_key_proof(const Record& record) {
   WireReader reader(record.payload);
   require(reader.byte() == 1 && reader.string() == "key-protocol-v1",
           "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 key proof version is unsupported");
@@ -957,17 +963,18 @@ inline void validate_key_proof(const Record& record) {
   require(reader.done() && key_proof_payload(value) == record.payload &&
               key_proof_record(value).id == record.id,
           "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 key proof ID or body is noncanonical");
+  return value;
+}
+
+inline void validate_key_proof(const Record& record) {
+  (void)read_key_proof(record);
 }
 
 inline void validate_key_proof_coherence(const std::vector<Record>& proofs) {
   std::map<std::string, std::string> by_type;
   for (const auto& record : proofs) {
-    validate_key_proof(record);
-    WireReader reader(record.payload);
-    (void)reader.byte();
-    (void)reader.string();
-    const auto type = read_type(reader, 0);
-    const auto key = type_bytes(type, 0);
+    const auto proof = read_key_proof(record);
+    const auto key = type_bytes(proof.key_type, 0);
     const auto prior = by_type.find(key);
     require(prior == by_type.end() || prior->second == record.id,
             "KEY_PROOF_COHERENCE_MISMATCH",
