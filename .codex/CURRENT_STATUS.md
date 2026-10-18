@@ -44,10 +44,16 @@ Team H has completed all milestones for Phase 25 A4 (Checked semantic body IR an
    - Proved hash invariance across comments/whitespace, sensitive ordering on vector literals, distinct nominal field hashes, fail-closed handling on nested calls, and fail-closed handling on source-free `.mossi` interfaces.
    - Issued an unconditional **FULL PASS (READY FOR TEAM I / ABI-v10 INTEGRATION)** verdict.
 
-5. **Ownership Status & Handoff:**
-   - Milestone H2/H3 implementation complete and verified.
-   - Exclusive compiler writing lease released (`COMPILER_OWNERSHIP_RELEASED`).
-   - Branch `phase25-checked-body-ir` is ready for final multi-team integration by Team I.
+5. **Current Team H Status (L7 Coordination Correction — Preserved & Parked):**
+   - Branch `phase25-checked-body-ir` is preserved at `46c50fa` / `4814ccf` with existing H0/H1/H2/H3 deliverables intact.
+   - Per L7 Directive, exclusive compiler-writing ownership of `src/moss.cpp` is held by Team T while completing T2/T3 (inference variables, parameter/return annotations, unknown-argument fallback removal).
+   - Team H is **PARKED** and will make zero modifications to `src/moss.cpp` while Team T finishes A2.
+   - Upon Team T's publication of its final reviewed TypeRef handoff (`TEAM H UNBLOCK — READY` and `COMPILER_OWNERSHIP_RELEASED`), Team H will:
+     1. Incorporate Team T's exact accepted SHA into `phase25-checked-body-ir`.
+     2. Acquire exclusive compiler ownership.
+     3. Complete compiler-backed multi-statement/control-flow checked IR and dependency-hash integration.
+     4. Run full acceptance tests and obtain independent L6 Adversarial Reviewer sign-off.
+     5. Hand off the completed branch to Team I for ABI-v10 multi-team integration.
 
 ## Phase 25 Team A — handoff for parallel splitting — 2026-10-17
 
