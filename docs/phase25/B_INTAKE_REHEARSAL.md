@@ -34,3 +34,23 @@ growth, and backward-shift deletion without changing the public operation API
 or adding Rust `Eq`/`Hash` bounds. A collision-heavy differential check against
 an independent ordered-map oracle and Team B's complete debug/release runtime
 suite pass. Compiler lowering and key-proof wiring remain separate work.
+
+## Shared indexed String staging checkpoint
+
+The opt-in combination `MOSS_STAGED_ABI=v10` and
+`MOSS_STAGED_STRING_REPR=indexed-v1` now links every generated Rust crate to one
+content-addressed `moss_runtime` rlib. The runtime's String module contains
+Team S's indexed-v1 implementation; generated crates import its type and
+operations rather than defining separate nominal Rust types. Margo supplies
+the runtime source path to dependency builds. The v10 binary contract records
+the String representation and exact runtime build/artifact hashes, and a
+source-free consumer checks the selected provider's runtime identity before
+Rust linking. A runtime change also invalidates a warm native cache.
+
+`tests/phase25/runtime/check_shared_string_linkage.py` builds a provider,
+removes its Moss source, compiles two independent consumers in debug and
+release, executes both, then changes the runtime source and requires the exact
+`SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH` diagnostic before native linking. This
+is a staged boundary proof, not a production ABI-v10 cutover or Gate 10 closure.
+Typed ABI records, compiler Map/Set lowering, nominal MapKeyProof, and the full
+same-SHA acceptance suite remain open.

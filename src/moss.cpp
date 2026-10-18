@@ -47,6 +47,7 @@
 #include "synchronization_lowering.hpp"
 #include "source_free_abi_v9.hpp"
 #include "source_free_abi_v10.hpp"
+#include "moss_runtime_linkage.hpp"
 #include "char_string_ordering_runtime.hpp"
 
 using std::string;
@@ -21478,7 +21479,17 @@ class Generator {
 
     o << handler_runtime_rust();
     o << float_format_runtime_rust();
-    o << char_string_ordering_runtime_rust(indexed_strings_staged());
+    if (staged_abi_v10() && indexed_strings_staged()) {
+      // A provider and its source-free consumers must name the same Rust
+      // MossString type. The opt-in v10 path imports Team S's exact indexed
+      // implementation from the compiler-owned shared runtime crate.
+      o << char_ordering_runtime_rust();
+      o << "pub use moss_runtime::string::{MossStr, MossString, "
+           "__moss_string_length, __moss_string_char_at, "
+           "__moss_string_slice, __moss_string_find};\n";
+    } else {
+      o << char_string_ordering_runtime_rust(indexed_strings_staged());
+    }
     o << display_runtime_rust();
     if (program_uses_numeric_builtins()) o << numeric_runtime_rust();
     if (program_uses_fileio(p_)) {
@@ -34687,8 +34698,26 @@ static ParsedModuleUnit load_module_interface(
       declared_hashes["generic_semantic_hash"] != generic_hash)
     throw CompileError(0, "compiled provider module interface hash mismatch; rebuild its .mossi provider");
   }
-  const bool provider_indexed =
-      text.find("\n" + string(kIndexedStringRecord) + "\n") != string::npos;
+  bool provider_indexed = false;
+  if (v10_interface) {
+    size_t representation_records = 0;
+    for (const auto& record : sealed.value.binary_contract) {
+      if (!starts_with(record.payload, "string_representation ")) continue;
+      ++representation_records;
+      if (record.payload != string(kIndexedStringRecord) + "\n")
+        throw CompileError(0,
+            "compiled provider has an unknown ABI-v10 String representation",
+            "STRING_REPRESENTATION_MISMATCH");
+      provider_indexed = true;
+    }
+    if (representation_records > 1)
+      throw CompileError(0,
+          "compiled provider has duplicate ABI-v10 String representation records",
+          "STRING_REPRESENTATION_MISMATCH");
+  } else {
+    provider_indexed =
+        text.find("\n" + string(kIndexedStringRecord) + "\n") != string::npos;
+  }
   if (provider_indexed != indexed_strings_staged())
     throw CompileError(0, string("compiled provider uses the ") +
                        (provider_indexed ? "staged indexed-v1" : "plain") +
@@ -37318,7 +37347,8 @@ static vector<std::filesystem::path> write_module_interfaces(
     const ProjectManifest& manifest, const Program& program,
     const std::filesystem::path& directory,
     const BackendToolchainIdentity& backend,
-    const std::map<string, std::filesystem::path>& external_interfaces) {
+    const std::map<string, std::filesystem::path>& external_interfaces,
+    const std::optional<abi_v10::RuntimeCrateIdentity>& shared_runtime) {
   std::map<string,std::ostringstream> contents;
   std::map<string,std::ostringstream> interface_contents;
   std::set<string> module_names;
@@ -37684,8 +37714,16 @@ static vector<std::filesystem::path> write_module_interfaces(
               [](const abi_v10::Import& left, const abi_v10::Import& right) {
                 return left.module_id < right.module_id;
               });
+    std::ostringstream binary_contract;
+    if (indexed_strings_staged())
+      binary_contract << kIndexedStringRecord << "\n";
+    if (shared_runtime)
+      binary_contract << "runtime moss_runtime " << shared_runtime->version
+                      << " " << shared_runtime->build_key << " "
+                      << shared_runtime->artifact_hash << "\n";
+    binary_contract << interface_contents[module].str();
     value.binary_contract =
-        abi_v10_declaration_records(interface_contents[module].str());
+        abi_v10_declaration_records(binary_contract.str());
     value.semantic_contract = abi_v10_declaration_records(contents[module].str());
     string text;
     try {
@@ -37825,6 +37863,45 @@ static NativeArtifact compile_native_artifact(
       optimized, debug_build, mode);
   std::ostringstream source_key;
   source_key << "sources\n";
+  vector<string> shared_runtime_flags;
+  std::optional<abi_v10::RuntimeCrateIdentity> shared_runtime_identity;
+  if (staged_abi_v10() && indexed_strings_staged()) {
+    std::filesystem::path runtime_dir;
+    if (const char* configured = std::getenv("MOSS_RUNTIME_SOURCE_DIR")) {
+      runtime_dir = configured;
+    } else {
+      auto candidate = std::filesystem::current_path();
+      while (true) {
+        const auto path = candidate / "runtime" / "moss_runtime";
+        if (std::filesystem::is_regular_file(path / "Cargo.toml")) {
+          runtime_dir = path;
+          break;
+        }
+        if (candidate == candidate.root_path()) break;
+        candidate = candidate.parent_path();
+      }
+    }
+    if (runtime_dir.empty() ||
+        !std::filesystem::is_regular_file(runtime_dir / "Cargo.toml"))
+      throw ProjectError("BUILD_TOOL_NOT_FOUND",
+          "staged ABI-v10 indexed String requires the compiler-owned "
+          "moss_runtime source; set MOSS_RUNTIME_SOURCE_DIR");
+    try {
+      const auto runtime = abi_v10::build_or_resolve_moss_runtime(
+          runtime_dir, runtime_dir / "build",
+          optimized ? "release" : "debug",
+          artifact.backend_toolchain.rustc_executable);
+      shared_runtime_flags = abi_v10::generate_compiler_runtime_flags(
+          runtime.first);
+      shared_runtime_identity = runtime.second;
+      // A runtime source, toolchain or artifact change invalidates even a
+      // warm application cache before provider selection and native linking.
+      source_key << "shared-runtime " << runtime.second.build_key << " "
+                 << runtime.second.artifact_hash << "\n";
+    } catch (const abi_v10::Error& failure) {
+      throw ProjectError(failure.code, failure.what());
+    }
+  }
   std::set<string> local_source_modules;
   bool source_has_import = false;
   for (const auto& source : sources) {
@@ -37919,6 +37996,35 @@ static NativeArtifact compile_native_artifact(
   CompiledProjectUnit unit = analyze_project_sources(
       manifest, sources, optimized, debug_build, mode, declaration_filter,
       declaration_ids);
+  if (shared_runtime_identity) {
+    const string expected = "runtime moss_runtime " +
+        shared_runtime_identity->version + " " +
+        shared_runtime_identity->build_key + " " +
+        shared_runtime_identity->artifact_hash + "\n";
+    for (const auto& selected : unit.external_module_interfaces) {
+      try {
+        auto provider = abi_v10::decode(read_text_file(
+            selected.second, "MOSS_INTERFACE_ERROR"));
+        size_t runtime_records = 0;
+        for (const auto& record : provider.value.binary_contract)
+          if (starts_with(record.payload, "runtime ")) {
+            ++runtime_records;
+            if (record.payload != expected)
+              throw ProjectError("SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH",
+                  "provider '" + selected.first +
+                  "' uses a different shared moss_runtime artifact",
+                  selected.second.string());
+          }
+        if (runtime_records != 1)
+          throw ProjectError("SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH",
+              "provider '" + selected.first +
+              "' lacks one exact shared moss_runtime identity",
+              selected.second.string());
+      } catch (const abi_v10::Error& failure) {
+        throw ProjectError(failure.code, failure.what(), selected.second.string());
+      }
+    }
+  }
   for (const auto& selected : unit.external_module_interfaces) {
     const auto& interface_file = selected.second;
     const auto provider_rlib = selected_provider_rlib(interface_file);
@@ -37934,11 +38040,9 @@ static NativeArtifact compile_native_artifact(
   source_fingerprint = stable_hash(source_key.str());
   cache_text = backend_cache_metadata(
       artifact.backend_toolchain, source_fingerprint);
-  // Each module crate embeds its own runtime, so a staged MossString would be
-  // a distinct Rust type per crate. Cross-crate indexed Strings need the
-  // compiler-owned shared runtime crate of the joint ABI-v10 design. Reject
-  // before any interface or crate is written.
-  if (indexed_strings_staged() && unit.program.explicit_module) {
+  // Indexed Strings outside the shared v10 runtime still differ per crate.
+  if (indexed_strings_staged() && !staged_abi_v10() &&
+      unit.program.explicit_module) {
     const auto modules = module_topological_order(unit.program);
     if (modules.size() > 1 ||
         std::any_of(modules.begin(), modules.end(), [&](const string& module) {
@@ -37953,7 +38057,7 @@ static NativeArtifact compile_native_artifact(
   vector<string> local_module_names = module_names_for_program(unit.program);
   const auto emitted_interfaces = write_module_interfaces(
       manifest, unit.program, directory, artifact.backend_toolchain,
-      unit.external_module_interfaces);
+      unit.external_module_interfaces, shared_runtime_identity);
   artifact.module_interfaces = emitted_interfaces;
   for (const auto& interface_file : preexisting_interfaces) {
     string module = interface_file.stem().string();
@@ -38081,6 +38185,8 @@ static NativeArtifact compile_native_artifact(
       module_command.insert(module_command.end(),
                             artifact.backend_toolchain.compile_flags.begin(),
                             artifact.backend_toolchain.compile_flags.end());
+      module_command.insert(module_command.end(), shared_runtime_flags.begin(),
+                            shared_runtime_flags.end());
       module_command.push_back("--crate-type=rlib");
       module_command.push_back("--crate-name");
       module_command.push_back(tooling_name("moss_" + module));
@@ -38143,6 +38249,8 @@ static NativeArtifact compile_native_artifact(
     vector<string> command = {artifact.backend_toolchain.rustc_executable};
     command.insert(command.end(), artifact.backend_toolchain.compile_flags.begin(),
                    artifact.backend_toolchain.compile_flags.end());
+    command.insert(command.end(), shared_runtime_flags.begin(),
+                   shared_runtime_flags.end());
     command.push_back(artifact.rust.string());
     // The executable crate owns the process runtime for main-less units.
     command.push_back("--cfg");
@@ -38185,6 +38293,8 @@ static NativeArtifact compile_native_artifact(
     vector<string> command = {artifact.backend_toolchain.rustc_executable};
     command.insert(command.end(), artifact.backend_toolchain.compile_flags.begin(),
                    artifact.backend_toolchain.compile_flags.end());
+    command.insert(command.end(), shared_runtime_flags.begin(),
+                   shared_runtime_flags.end());
     command.push_back(artifact.rust.string());
     command.push_back("-o");
     command.push_back(artifact.executable.string());
