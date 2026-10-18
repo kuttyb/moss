@@ -1,47 +1,53 @@
 # Moss current status
 
-## Phase 25 Team H — H0/H1 Checked Body IR & Dependency Model Complete (Remediated) — 2026-10-17
+## Phase 25 Team H — A4 Checked Body IR & Dependency Hashing Complete (H0–H3) — 2026-10-17
 
-Team H completed the independent Milestone H0 (Checked Body IR representation and deterministic encoding) and Milestone H1 (exact semantic dependency identification, mandatory expected hashes, canonical hash kind validation, and DAG closure validation) on feature branch `phase25-checked-body-ir`.
+Team H has completed all milestones for Phase 25 A4 (Checked semantic body IR and dependency hashing) on feature branch `phase25-checked-body-ir`. The compiler wiring, deterministic encoding, DAG closure validation, fail-closed source-free handling, and end-to-end regression tests have been audited by the independent L6 Adversarial Reviewer and received an unconditional full pass. Exclusive compiler ownership is hereby released for downstream integration by Team I.
 
 1. **Implementation Baseline & Commits:**
-   - Base commit: `7c3f18d8badcaf6a346bb5044cd03d5100cc714a`.
-   - Initial H0/H1 commit: `da2718e`.
-   - Contract remediation commit: `0eb80d3`.
-   - Compiler writing lease respected: Absolute zero modifications to `src/moss.cpp`, `src/ast.hpp`, or `src/typed_semantic_api.hpp`.
+   - Initial base commit: `7c3f18d8badcaf6a346bb5044cd03d5100cc714a`.
+   - Independent H0/H1 commits: `da2718e`, `0eb80d3`, `e9c32b7` (zero modifications to compiler files while Team T held compiler lease).
+   - Upstream Type Authority integration: `0f057b3` (clean merge of `origin/phase25-type-authority` at `a3620ae` upon authorized "GO").
+   - Milestone H2/H3 completion commit: `46c50fa69cc1d1751673858b13d487dd64fe6512`.
 
 2. **Milestone Deliverables & Contract Hardening:**
-   - **Self-contained Checked Body IR (`src/checked_body_ir.hpp`):** Expression nodes (`Parameter`, `IntegerLiteral`, `FloatLiteral`, `BoolLiteral`, `StringLiteral`, `LocalRead`, `Unary`, `Binary`, `Field`, `VectorLiteral`, `MapLiteral`, `Call`, `Message`), statement nodes (`Let`, `Var`, `Assign`, `AssignField`, `AssignIndex`, `ExprStmt`, `Return`, `Reply`), and control flow (`If`, `While`, `For`, `Match` with `CaseBranch`).
-   - **Deterministic Canonical Encoding & Hashing:** Canonical length-prefixed encoding (`<len>:<value>`), numeric ordinal binding for parameters and locals ensuring variable name and formatting invariance, deterministic field substitution ordering for nominal types, and SHA-256 domain-separated hashing (`body-semantic-v1:sha256:`). Backward compatibility with legacy AST nodes preserved.
-   - **Exact Semantic Dependency Model:** Recursive extraction of exact semantic dependencies from body IR (`callable-v1:...`, `nominal-template-v1:...`).
-   - **Fail-Closed Dependency Closure Validation:**
-     - Rejects missing expected hashes with `ClosureValidationStatus::MissingExpectedHash`.
-     - Rejects mismatched hash kinds (e.g. nominal vs callable prefix) with `ClosureValidationStatus::InvalidHashKind`.
-     - Rejects malformed hex with `ClosureValidationStatus::ForgedHash`.
-     - Rejects hash discrepancies with `ClosureValidationStatus::HashMismatch`.
-     - Rejects dependency cycles with `ClosureValidationStatus::CyclicDependency`.
-     - Rejects unsupported dependency facts with `ClosureValidationStatus::UnsupportedDependency` (zero fabricated semantic hashes).
-   - **Incomplete Dependency Contract Handling:** `make_checked_function` marks functions with unprovided expected dependency hashes as unsupported (`has_supported_body = false`, empty `body_semantic_hash`, `unsupported_reason = "incomplete_dependency_contract: missing expected hash for ..."`).
-   - **Executable Unit Tests (`tests/tooling/check_phase25_checked_body_ir.cpp`):** Comprehensive C++17 unit test suite covering expression nodes, statement nodes, control flow, deterministic hashing, malformed IR rejection, and all eight dependency closure scenarios. Integrated into `tests/tooling/check_phase25_checked_body_ir.py`.
-   - **Developer Experience Feedback:** Recorded observations in `agent-feedback/phase25/team-h-checked-body-ir/checked-body-ir/observations.jsonl` (records 001 and 002).
+   - **Self-contained Checked Body IR (`src/checked_body_ir.hpp`):** Full expression hierarchy (`Parameter`, `IntegerLiteral`, `FloatLiteral`, `BoolLiteral`, `StringLiteral`, `LocalRead`, `Unary`, `Binary`, `Field`, `VectorLiteral`, `MapLiteral`, `Call`, `Message`), statement hierarchy (`Let`, `Var`, `Assign`, `AssignField`, `AssignIndex`, `ExprStmt`, `Return`, `Reply`), and control flow (`If`, `While`, `For`, `Match` with `CaseBranch`).
+   - **AST & IR Alignment (`src/ast.hpp`):** Extended `CheckedBodyExprV1` with `Kind::Field`, `Kind::VectorLiteral`, and `Kind::Call`, storing `semantic_target_id` and `member_ordinal` for 1:1 roundtrip compatibility with `checked_ir::Expr`.
+   - **Authoritative Checker Wiring (`src/moss.cpp` - `retain_checked_body_ir`):**
+     - Binds checked `TypeRef` terms and exact operand identities.
+     - Supports exact nominal field reads (`Kind::Field`), resolving declaration ID and member ordinal.
+     - Supports ordered vector literals (`Kind::VectorLiteral`), preserving element order and element types.
+     - Supports single direct return calls (`Kind::Call`), verifying against open summary callable dependencies; rejects ambiguous, overloaded, or nested calls fail-closed with `checked_body_ir_available: false` and `unsupported_checked_body_form`.
+   - **Fail-Closed Source-Free Handling:** Compiled provider interface files (`.mossi`) are explicitly detected in `retain_checked_body_ir` via `compiled_interface_file(function.source_file)`; bodies from compiled interfaces fail closed without synthetic IR or fabricated hashes (`checked_body_ir_available = false`, empty `body_semantic_hash`).
+   - **Deterministic Canonical Encoding & Hashing:** Canonical length-prefixed encoding (`<len>:<value>`), numeric ordinal binding for parameters and locals ensuring variable name and formatting invariance, deterministic field substitution ordering for nominal types, and SHA-256 domain-separated hashing (`body-semantic-v1:sha256:`).
+   - **Exact Semantic Dependency Model & DAG Closure Validation:** Recursive extraction of callable (`callable-v1:...`) and nominal (`nominal-template-v1:...`) dependencies.
+     - Mandatory expected hashes enforced (`ClosureValidationStatus::MissingExpectedHash`).
+     - Canonical hash kind prefixes validated (`is_canonical_dependency_hash` validates `nominal-instance-v1:` vs `body-semantic-v1:`).
+     - Full DAG cycle, forgery, and mismatch detection.
+     - Zero fabricated semantic hashes: incomplete dependency contracts mark function unsupported fail-closed.
+   - **Developer Experience Feedback:** Recorded observations 001, 002, and 003 in `agent-feedback/phase25/team-h-checked-body-ir/checked-body-ir/observations.jsonl`.
+   - **Documentation:** Updated `docs/phase25/TEAM_A_TYPED_SEMANTIC_API.md` with checked body IR retainers, dependency validation, and fail-closed contracts.
 
-3. **Validation & Quality Gates:**
-   - Strict C++17 build: `g++ -std=c++17 -O0 -Wall -Wextra -Werror -pedantic tests/tooling/check_phase25_checked_body_ir.cpp` compiled with zero warnings and zero errors; 100% assertions passed.
-   - Syntax validation: `g++ -std=c++17 -Wall -Wextra -Werror -pedantic -fsyntax-only src/moss.cpp` passed with zero warnings and zero errors.
-   - Python test runner: `python3 tests/tooling/check_phase25_checked_body_ir.py ./moss` passed.
-   - Phase 25 suite: Full regression check (`check_phase25_type_ir.py`, `check_phase25_recursive_layout.py`, `check_phase25_a3_specialization.py`, `check_phase25_known_open_nominal.py`, `check_phase25_conformance.py`, `check_phase25_nominal_identity.py`, `check_phase25_field_visibility.py`, `check_phase25_team_a_semantics.py`, `check_phase25_typed_semantic_api.py`, `check_phase25_checked_body_ir.py`) passed cleanly (0 regressions).
-   - Agent feedback validation: `python3 tests/tooling/check_agent_feedback.py` passed.
+3. **Validation & Quality Gates (100% Pass):**
+   - C++17 unit tests: `tests/tooling/check_phase25_checked_body_ir.cpp` compiled with `-Wall -Wextra -Werror -pedantic` and passed 100%.
+   - C++ compiler syntax & build: `make -j4` compiled cleanly with zero warnings/errors.
+   - Checked body IR test runner: `python3 tests/tooling/check_phase25_checked_body_ir.py ./moss` passed.
+   - Typed semantic API test runner: `python3 tests/tooling/check_phase25_typed_semantic_api.py ./moss` passed.
+   - Team A semantics test runner: `python3 tests/tooling/check_phase25_team_a_semantics.py ./moss` passed.
+   - Phase 25 full suite: `check_phase25_type_ir.py`, `check_phase25_conformance.py`, `check_phase25_nominal_identity.py`, `check_phase25_field_visibility.py`, `check_phase25_recursive_layout.py`, `check_phase25_a3_specialization.py`, `abi_v10_staging.cpp`, `abi_v10_adversarial.cpp` all passed cleanly (0 regressions).
+   - Examples corpus: `make examples` passed cleanly (30 examples built).
+   - Agent feedback validation: `python3 tests/tooling/check_agent_feedback.py` passed cleanly.
    - Git hygiene: `git diff --check` passed cleanly.
 
 4. **Independent L6 Adversarial Reviewer Sign-Off:**
-   - Independent L6 Adversarial Reviewer audited candidate commit `da2718e` and identified the H1 empty expected hash gap.
-   - Team H implemented the remediation (mandatory expected hashes, kind-specific prefix checks, fail-closed `make_checked_function`).
-   - Reviewer audited the remediation and issued an unconditional **FULL PASS (H0 and H1 ACCEPTED FOR ABI-v10)** verdict.
+   - Independent L6 Adversarial Reviewer audited candidate commit `46c50fa`.
+   - Proved hash invariance across comments/whitespace, sensitive ordering on vector literals, distinct nominal field hashes, fail-closed handling on nested calls, and fail-closed handling on source-free `.mossi` interfaces.
+   - Issued an unconditional **FULL PASS (READY FOR TEAM I / ABI-v10 INTEGRATION)** verdict.
 
-5. **Current Team H Status:**
-   - Independent implementation work (H0 & H1) is fully complete and verified.
-   - Team H is **PARKED** awaiting Team T's accepted SHA, test evidence, interface contract, independent review verdict, and `COMPILER_OWNERSHIP_RELEASED` marker.
-   - Upon receipt of the marker, Team H will resume for Milestone H2 (ownership transfer, Git reconciliation, compiler wiring) and Milestone H3 (full A4 completion).
+5. **Ownership Status & Handoff:**
+   - Milestone H2/H3 implementation complete and verified.
+   - Exclusive compiler writing lease released (`COMPILER_OWNERSHIP_RELEASED`).
+   - Branch `phase25-checked-body-ir` is ready for final multi-team integration by Team I.
 
 ## Phase 25 Team A — handoff for parallel splitting — 2026-10-17
 
