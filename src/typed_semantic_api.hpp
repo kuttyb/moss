@@ -187,6 +187,7 @@ struct TypedSemanticModuleV1 {
 };
 
 inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) {
+  program.assert_declaration_type_consistency();
   if (!program.type_context)
     throw std::invalid_argument("typed semantic projection requires a checked type context");
   TypeContext::Scope scope(program.type_context.get());
