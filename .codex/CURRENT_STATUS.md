@@ -8310,3 +8310,29 @@ initializer warnings in `type_ir.hpp`; it passed with only that warning policy
 relaxed by a temporary repository-local compiler wrapper. No producer or ABI
 default changes were made. Keep this work on its feature branch; do not merge it
 into `phase25-integration` before authorization.
+
+## Phase 25-C2b — Arithmetic producer blocked
+
+Started `phase25-c2b-arithmetic-producer` from the exact C2a baseline
+`e9a193a79349133e81f3430f62b23e5b86b5b455`. The required staged-v10 provider
+build succeeds, but its `compute(x): return x * 2 + 20` interface has zero
+`checked-body-v1:` records and one legacy `generic_stmt`. The checked summary
+types the open parameter/result as `_generic:x`. C2a's arithmetic decoder
+requires primitive `int` types (`is_integer_type()` in
+`src/checked_body_ir.hpp`), so a truthful generic-variable typed body cannot
+pass import. C2b forbids importer changes; the attempted producer changes and
+test files were removed. No C2b commit or push was made; the branch remains at
+the C2a baseline. Do not proceed until the importer scope is authorized.
+
+## Phase 25-C2a.1 — Generic arithmetic TypeRef preservation
+
+On `phase25-c2a1-generic-arithmetic` from baseline
+`e9a193a79349133e81f3430f62b23e5b86b5b455`, extended only the H3 checked-body
+decoder's arithmetic type validation. Open inference variables are accepted
+only when their exact TypeVarId matches a parameter TypeRef and each generic
+arithmetic node's result agrees with its generic operands; integer operands
+remain primitive `int`. The direct checked-body test first confirmed baseline
+rejection, then passed with identity preservation, integer literal types,
+concrete arithmetic, mismatched generic identities, H3 let/return decoding,
+invalid records, and unsupported expressions. `make --jobs="$(nproc)"` and
+`git diff --check` passed. No producer or ABI encoding changes were made.

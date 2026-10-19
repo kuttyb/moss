@@ -91,6 +91,69 @@ int main() {
          decoded[0].expr->operands[1].literal_value == "20");
   assert(decoded[0].expr->type->structurally_equal(*int_type));
 
+  // Open generic identity from the ABI summary. Parameter, arithmetic result,
+  // and return retain the same authoritative TypeRef variable; literals
+  // remain checked Int values.
+  const auto generic_type = moss::Type::var(moss::TypeVarId{0, 0, 0});
+  auto generic_arithmetic = binary(
+      generic_type, cir::BinaryOp::Add,
+      binary(generic_type, cir::BinaryOp::Mul, parameter(generic_type, 0),
+             integer(int_type, "2")),
+      integer(int_type, "20"));
+  const auto generic_statements =
+      std::vector<cir::Stmt>{returned(generic_arithmetic)};
+  const auto generic_body = cir::encode_checked_body_v1(generic_statements);
+  const auto generic_hash =
+      cir::compute_checked_body_hash_v1(generic_statements);
+  const auto generic_decoded = cir::decode_h3_checked_body_v1(
+      generic_body, context, {generic_type}, generic_type, generic_hash);
+  const auto& generic_add = *generic_decoded[0].expr;
+  const auto& generic_multiply = generic_add.operands[0];
+  assert(generic_decoded[0].expr->type->structurally_equal(*generic_type));
+  assert(generic_multiply.type->structurally_equal(*generic_type));
+  assert(generic_multiply.operands[0].kind == cir::ExprKind::Parameter &&
+         generic_multiply.operands[0].type->structurally_equal(*generic_type));
+  assert(generic_multiply.operands[1].kind == cir::ExprKind::IntegerLiteral &&
+         generic_multiply.operands[1].type->structurally_equal(*int_type));
+  assert(generic_add.operands[1].kind == cir::ExprKind::IntegerLiteral &&
+         generic_add.operands[1].type->structurally_equal(*int_type));
+
+  // An unrelated open variable cannot be substituted as an operand or result.
+  const auto other_generic = moss::Type::var(moss::TypeVarId{0, 0, 1});
+  auto mismatched_arithmetic = binary(
+      generic_type, cir::BinaryOp::Add,
+      binary(generic_type, cir::BinaryOp::Mul, parameter(generic_type, 0),
+             parameter(other_generic, 1)),
+      integer(int_type, "20"));
+  const auto mismatched_statements =
+      std::vector<cir::Stmt>{returned(mismatched_arithmetic)};
+  const auto mismatched_body =
+      cir::encode_checked_body_v1(mismatched_statements);
+  const auto mismatched_hash =
+      cir::compute_checked_body_hash_v1(mismatched_statements);
+  assert(throws_invalid([&] {
+    (void)cir::decode_h3_checked_body_v1(
+        mismatched_body, context, {generic_type, other_generic}, generic_type,
+        mismatched_hash);
+  }));
+
+  // A generic result cannot claim the parameter's identity when its checked
+  // operands only establish concrete integer arithmetic.
+  auto mismatched_result = binary(
+      generic_type, cir::BinaryOp::Add,
+      integer(int_type, "2"), integer(int_type, "20"));
+  const auto mismatched_result_statements =
+      std::vector<cir::Stmt>{returned(mismatched_result)};
+  const auto mismatched_result_body =
+      cir::encode_checked_body_v1(mismatched_result_statements);
+  const auto mismatched_result_hash =
+      cir::compute_checked_body_hash_v1(mismatched_result_statements);
+  assert(throws_invalid([&] {
+    (void)cir::decode_h3_checked_body_v1(
+        mismatched_result_body, context, {generic_type}, generic_type,
+        mismatched_result_hash);
+  }));
+
   // Existing H3 two-statement local-result form, including its exact call ID.
   cir::Expr call;
   call.kind = cir::ExprKind::Call;

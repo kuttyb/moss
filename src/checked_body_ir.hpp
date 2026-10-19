@@ -570,6 +570,27 @@ class H3BodyReader {
     return type && type->kind == TypeKind::Primitive && type->name == "int";
   }
 
+  bool is_generic_parameter_type(const TypeRef& type) const {
+    return type && type->kind == TypeKind::InferenceVar &&
+        std::any_of(parameters_.begin(), parameters_.end(), [&](const TypeRef& p) {
+          return p && p->structurally_equal(*type);
+        });
+  }
+
+  bool arithmetic_types_match(const TypeRef& result, const TypeRef& left,
+                              const TypeRef& right) const {
+    if (is_integer_type(result))
+      return is_integer_type(left) && is_integer_type(right);
+    if (!is_generic_parameter_type(result)) return false;
+    const bool left_generic = left && left->structurally_equal(*result);
+    const bool right_generic = right && right->structurally_equal(*result);
+    const bool left_integer = is_integer_type(left);
+    const bool right_integer = is_integer_type(right);
+    return (left_generic || left_integer) &&
+           (right_generic || right_integer) &&
+           (left_generic || right_generic);
+  }
+
   static bool is_canonical_integer(std::string_view value) {
     if (value.empty()) return false;
     std::size_t first_digit = value.front() == '-' ? 1 : 0;
@@ -613,12 +634,13 @@ class H3BodyReader {
           !expression.type->structurally_equal(*parameters_[expression.ordinal]))
         fail("checked body parameter type is mismatched");
     } else if (expression.kind == ExprKind::Add) {
-      if (!is_integer_type(expression.type) || number() != 2)
+      if (number() != 2)
         fail("checked body addition has an unsupported type or arity");
       expression.operands.push_back(read_expr(depth + 1));
       expression.operands.push_back(read_expr(depth + 1));
-      if (!is_integer_type(expression.operands[0].type) ||
-          !is_integer_type(expression.operands[1].type))
+      if (!arithmetic_types_match(expression.type,
+                                  expression.operands[0].type,
+                                  expression.operands[1].type))
         fail("checked body addition operand type is mismatched");
     } else if (expression.kind == ExprKind::Binary) {
       const auto operation = number();
@@ -626,13 +648,13 @@ class H3BodyReader {
           operation > static_cast<std::uint32_t>(BinaryOp::Xor))
         fail("checked body binary operator is unknown");
       expression.binary_op = static_cast<BinaryOp>(operation);
-      if (!is_integer_arithmetic(expression.binary_op) ||
-          !is_integer_type(expression.type))
+      if (!is_integer_arithmetic(expression.binary_op))
         fail("checked body binary expression is outside integer arithmetic");
       expression.operands.push_back(read_expr(depth + 1));
       expression.operands.push_back(read_expr(depth + 1));
-      if (!is_integer_type(expression.operands[0].type) ||
-          !is_integer_type(expression.operands[1].type))
+      if (!arithmetic_types_match(expression.type,
+                                  expression.operands[0].type,
+                                  expression.operands[1].type))
         fail("checked body binary operand type is mismatched");
     } else if (expression.kind == ExprKind::LocalRead) {
       expression.ordinal = number();
