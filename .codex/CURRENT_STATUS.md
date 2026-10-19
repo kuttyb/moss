@@ -1,5 +1,19 @@
 # Moss current status
 
+## Phase 25 strict 62-gate ledger audit — 2026-10-19
+
+On clean staged head `d5cb5e3`, `MOSS_STAGED_ABI=v10 python3
+tests/phase25/integration/run_acceptance.py --strict --json` exits 1 and
+reports **0 PASS / 1 FAIL / 51 BLOCKED / 10 NOT IMPLEMENTED**. The runner
+currently reads a static matrix; it does not execute test cases, and its
+`implementation_sha` check only proves that a commit exists. Twenty listed
+`test_path` targets do not exist on this head. Sole L4 is mapping each gate to
+actual same-HEAD executable case evidence, retaining non-PASS for unmet
+requirements. Existing staged E3 11/11, B 23/23, activated G2 11/11 and key
+30/30 cannot by themselves establish all 62 gates; final independent L6
+sign-off is explicitly deferred until the integrated candidate. No gate
+status has been flipped and strict release remains red.
+
 ## Phase 25 staged E3 cross-crate execution checkpoint — 2026-10-19
 
 Sole L4 pushed clean `phase25-i-map-staging` at
