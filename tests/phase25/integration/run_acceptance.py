@@ -352,6 +352,13 @@ def run_self_test(matrix_path: Path) -> int:
         "=== All Phase 25 S-C safe-arithmetic cases passed (23 cases) ===\n")
     if parse_suite("sc", partial_arithmetic, 0).get("arithmetic"):
         errors.append("Partial safe arithmetic audit was accepted as complete")
+    partial_integrity = (
+        "  [PASS — Codec] abi_v10_adversarial: payload bit flips, forged digests, "
+        "duplicate/conflicting KeyProof records rejected.\n"
+        "Joint Gate 10 integration verified with live source-free Moss artifacts.\n"
+        "Total Verification Checks: 23 PASS, 0 PENDING, 0 FAIL\n")
+    if parse_suite("b", partial_integrity, 0).get("integrity"):
+        errors.append("Partial ABI integrity result was accepted as complete")
     fake_suites = {"g2": {"cases": {"1": True}, "stdout_sha256": "a" * 64}}
     forged_gate = {"id": "GATE-TYPEIR-01", "current_status": "PASS",
                    "blocking_dependency": None}

@@ -106,6 +106,11 @@ PROOFS: dict[str, tuple[tuple[str, str], ...]] = {
     "GATE-G6-03": (("sa", "numeric"), ("sc", "arithmetic"),
                     ("g3-ordering", "float"), ("l7", "float-payload"),
                     ("g1-regression", "1"), ("g1-regression", "7")),
+    "GATE-G6-02": (("b", "integrity"),
+                    ("key", "06e-proof-impure-hash"),
+                    ("key", "06f-proof-raising-hash"),
+                    ("key", "06g-proof-divergent-isequal"),
+                    ("key", "06j-proof-forged-interface")),
     "GATE-G1-01": (("g1-ledger", "1"), ("g1-regression", "1")),
     "GATE-G1-02": (("g1-ledger", "2"), ("g1-regression", "2-3")),
     "GATE-G1-03": (("g1-ledger", "3"), ("g1-regression", "2-3")),
@@ -207,6 +212,18 @@ def parse_suite(suite: str, stdout: str, returncode: int) -> dict[str, bool]:
         cases["gate10"] = complete and bool(re.search(
             r"G2 Gate 10: one sealed nominal proof sha256:[0-9a-f]{64}; "
             r"two independent source-free native consumers", stdout))
+        integrity = (
+            "abi_v10_staging & adversarial: RequirementRecord parent chains, effect bits, and dangling provenance rejection.",
+            "abi_v10_staging: moss-module-interface-v2, schema_version 9, native_abi 9 rejected with SOURCE_FREE_ABI_REBUILD_REQUIRED.",
+            "G2 Gate 9: v9 container header in .mossi rejected with SOURCE_FREE_ABI_REBUILD_REQUIRED.",
+            "abi_v10_staging & adversarial: verify_runtime_compatibility rejects name, version, hash, and build key mismatches.",
+            "abi_v10_adversarial: payload bit flips, forged digests, duplicate/conflicting KeyProof records rejected.",
+            "G2 Gate 9: bit-flipped provider .mossi rejected with SOURCE_FREE_CONTRACT_INVALID, forged digest rejected.",
+        )
+        cases["integrity"] = complete and all(
+            stdout.count("  [PASS — Codec] " + marker) == 1 or
+            stdout.count("  [PASS — Moss] " + marker) == 1
+            for marker in integrity)
     elif suite == "g1-ledger":
         rows = re.findall(r"(?m)^\| (#[^|]+) \| ([^|]+) \|$", stdout)
         observed = {name: result.strip() for name, result in rows}
