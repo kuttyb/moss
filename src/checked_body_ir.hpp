@@ -440,10 +440,11 @@ inline std::string compute_checked_body_hash_v1(const std::vector<Stmt>& stateme
       source_free_contract_sha256(encode_checked_body_v1(statements));
 }
 
-// The first source-free rich-body importer accepts only the checked H3
-// straight-line form. It resolves declaration IDs against the importing
-// TypeContext and proves the exact parameter/result and canonical byte shape;
-// unsupported node kinds fail closed instead of falling back to source text.
+// The source-free rich-body importer accepts the checked H3 straight-line
+// form and single-return integer arithmetic. It resolves declaration IDs
+// against the importing TypeContext and proves parameter/result types and the
+// canonical byte shape; unsupported node kinds fail closed instead of falling
+// back to source text.
 class H3BodyReader {
  public:
   H3BodyReader(std::string_view bytes, const TypeContext& context,
@@ -455,10 +456,16 @@ class H3BodyReader {
     if (bytes_.substr(0, header.size()) != header)
       fail("checked body version is unsupported");
     position_ = header.size();
-    if (number() != 2) fail("H3 checked body must have two statements");
     std::vector<Stmt> statements;
-    statements.push_back(read_let());
-    statements.push_back(read_return());
+    const auto statement_count = number();
+    if (statement_count == 1) {
+      statements.push_back(read_single_return());
+    } else if (statement_count == 2) {
+      statements.push_back(read_let());
+      statements.push_back(read_return());
+    } else {
+      fail("checked body statement shape is unsupported");
+    }
     if (position_ != bytes_.size() ||
         encode_checked_body_v1(statements) != bytes_)
       fail("H3 checked body is noncanonical");
@@ -559,6 +566,34 @@ class H3BodyReader {
     fail("checked body type shape is unsupported");
   }
 
+  static bool is_integer_type(const TypeRef& type) {
+    return type && type->kind == TypeKind::Primitive && type->name == "int";
+  }
+
+  static bool is_canonical_integer(std::string_view value) {
+    if (value.empty()) return false;
+    std::size_t first_digit = value.front() == '-' ? 1 : 0;
+    if (first_digit == value.size()) return false;
+    if (value[first_digit] == '0' && value.size() - first_digit > 1)
+      return false;
+    for (std::size_t index = first_digit; index < value.size(); ++index)
+      if (!std::isdigit(static_cast<unsigned char>(value[index]))) return false;
+    return true;
+  }
+
+  static bool is_integer_arithmetic(BinaryOp operation) {
+    switch (operation) {
+      case BinaryOp::Add:
+      case BinaryOp::Sub:
+      case BinaryOp::Mul:
+      case BinaryOp::Div:
+      case BinaryOp::Mod:
+        return true;
+      default:
+        return false;
+    }
+  }
+
   Expr read_expr(unsigned depth = 0) {
     if (depth >= 64) fail("checked body expression is too deep");
     const auto tag = number();
@@ -567,11 +602,38 @@ class H3BodyReader {
     Expr expression;
     expression.kind = static_cast<ExprKind>(tag);
     expression.type = read_type();
-    if (expression.kind == ExprKind::Parameter) {
+    if (expression.kind == ExprKind::IntegerLiteral) {
+      expression.literal_value = field();
+      if (!is_integer_type(expression.type) ||
+          !is_canonical_integer(expression.literal_value))
+        fail("checked body integer literal is invalid or mistyped");
+    } else if (expression.kind == ExprKind::Parameter) {
       expression.ordinal = number();
       if (expression.ordinal >= parameters_.size() ||
           !expression.type->structurally_equal(*parameters_[expression.ordinal]))
         fail("checked body parameter type is mismatched");
+    } else if (expression.kind == ExprKind::Add) {
+      if (!is_integer_type(expression.type) || number() != 2)
+        fail("checked body addition has an unsupported type or arity");
+      expression.operands.push_back(read_expr(depth + 1));
+      expression.operands.push_back(read_expr(depth + 1));
+      if (!is_integer_type(expression.operands[0].type) ||
+          !is_integer_type(expression.operands[1].type))
+        fail("checked body addition operand type is mismatched");
+    } else if (expression.kind == ExprKind::Binary) {
+      const auto operation = number();
+      if (operation < static_cast<std::uint32_t>(BinaryOp::Add) ||
+          operation > static_cast<std::uint32_t>(BinaryOp::Xor))
+        fail("checked body binary operator is unknown");
+      expression.binary_op = static_cast<BinaryOp>(operation);
+      if (!is_integer_arithmetic(expression.binary_op) ||
+          !is_integer_type(expression.type))
+        fail("checked body binary expression is outside integer arithmetic");
+      expression.operands.push_back(read_expr(depth + 1));
+      expression.operands.push_back(read_expr(depth + 1));
+      if (!is_integer_type(expression.operands[0].type) ||
+          !is_integer_type(expression.operands[1].type))
+        fail("checked body binary operand type is mismatched");
     } else if (expression.kind == ExprKind::LocalRead) {
       expression.ordinal = number();
       if (expression.ordinal != 0 || !local_type_ ||
@@ -605,6 +667,19 @@ class H3BodyReader {
       fail("checked body expression is outside the H3 subset");
     }
     return expression;
+  }
+
+  Stmt read_single_return() {
+    if (field() != "return")
+      fail("single-statement checked body is not a return");
+    Stmt statement;
+    statement.kind = StmtKind::Return;
+    statement.expr = read_expr();
+    if (!result_ ||
+        !statement.expr->type->structurally_equal(*result_))
+      fail("single-return checked body result type is mismatched");
+    statement.type = result_;
+    return statement;
   }
 
   Stmt read_let() {

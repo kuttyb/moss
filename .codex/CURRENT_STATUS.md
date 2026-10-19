@@ -8296,3 +8296,17 @@ API consistency issue. Added transactional multi-equality unification and a
 focused C++ test covering contribution and result rollback, successful commit,
 and preservation of prior bindings. Both focused C++ tests passed at `-O0`; no
 Moss compiler rebuild or broad suite was run.
+
+## Phase 25-C2a — General checked-body importer
+
+On `phase25-c2a-checked-body-importer`, extended the checked-body reader to
+decode a single terminal return with integer literals and integer arithmetic,
+while retaining the existing two-statement H3 form and fail-closed handling for
+unsupported expressions. Added a direct checked-IR test that does not consume
+provider emission or `generic_stmt` records. The focused decoder test, existing
+H3 source-free direct-record test, and `make --jobs="$(nproc)"` compiler build
+passed. The existing H3 runner's `-Werror` rejects unrelated aggregate
+initializer warnings in `type_ir.hpp`; it passed with only that warning policy
+relaxed by a temporary repository-local compiler wrapper. No producer or ABI
+default changes were made. Keep this work on its feature branch; do not merge it
+into `phase25-integration` before authorization.
