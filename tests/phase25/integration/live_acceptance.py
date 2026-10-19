@@ -17,6 +17,8 @@ import subprocess
 import sys
 from typing import Any
 
+from test_sdk_matrix import PRIMARY_PACKAGES as SDK_PRIMARY_PACKAGES
+
 
 ROOT = Path(__file__).resolve().parents[3]
 G2_PATH = "tests/tooling/check_phase25_conformance.py"
@@ -31,6 +33,9 @@ L7_PATH = "tests/tooling/check_phase25_l7_repairs.py"
 G4_CHAR_PATH = "tests/tooling/check_phase25_s2_char_string.py"
 G4_INDEXED_PATH = "tests/tooling/check_phase25_indexed_string.py"
 G4_LINKAGE_PATH = "tests/phase25/runtime/check_shared_string_linkage.py"
+G5_RUNTIME_PATH = "tests/phase25/runtime/check_runtime.py"
+G5_JOINT_PATH = "tests/phase25/integration/test_joint_ledger_12.py"
+G5_SDK_PATH = "tests/phase25/integration/test_sdk_matrix.py"
 
 G1_LEDGER_ROWS = {
     "1": "#1 Int ordering above 2^53",
@@ -86,6 +91,11 @@ PROOFS: dict[str, tuple[tuple[str, str], ...]] = {
     "GATE-G3-07": (("b", "gate10"),
                    ("key", "05-coherence-mismatch-method-override")),
     "GATE-G5-04": (("key", "all30"),),
+    "GATE-G5-01": (("g5-runtime", "all"), ("b", "gate10"),
+                    ("g4-linkage", "source-free")),
+    "GATE-G5-02": (("g5-joint", "all"), ("g1-ledger", "12")),
+    "GATE-G5-03": (("g5-sdk", "all"),),
+    "GATE-G1-07": (("g1-ledger", "7"), ("g1-regression", "7")),
     "GATE-G1-01": (("g1-ledger", "1"), ("g1-regression", "1")),
     "GATE-G1-02": (("g1-ledger", "2"), ("g1-regression", "2-3")),
     "GATE-G1-03": (("g1-ledger", "3"), ("g1-regression", "2-3")),
@@ -128,7 +138,10 @@ SUITE_PATHS = {"g2": G2_PATH, "e3-debug": E3_PATH,
                "s3": S3_PATH, "g3-ordering": G3_ORDERING_PATH,
                "l7": L7_PATH, "g4-char": G4_CHAR_PATH,
                "g4-indexed": G4_INDEXED_PATH,
-               "g4-linkage": G4_LINKAGE_PATH}
+               "g4-linkage": G4_LINKAGE_PATH,
+               "g5-runtime": G5_RUNTIME_PATH,
+               "g5-joint": G5_JOINT_PATH,
+               "g5-sdk": G5_SDK_PATH}
 KEY_EXACT_STATUS = {
     "01-float-keys-map": "passes",
     "02-float-keys-set": "passes",
@@ -274,6 +287,38 @@ def parse_suite(suite: str, stdout: str, returncode: int) -> dict[str, bool]:
                     all(lines.count(marker) == 1 for marker in (*source_free, mismatch)))
         cases["source-free"] = complete and all(marker in lines for marker in source_free)
         cases["mismatch"] = complete and mismatch in lines
+    elif suite == "g5-runtime":
+        lines = stdout.splitlines()
+        identities = re.findall(
+            r"^moss_runtime (debug|release) \(-[gO]\) passed; "
+            r"artifact SHA-256: ([0-9a-f]{64})$", stdout, re.M)
+        complete = (returncode == 0 and len(lines) == 3 and
+                    len(identities) == 2 and
+                    {profile for profile, _ in identities} == {"debug", "release"} and
+                    lines[-1] == "moss_runtime all unit, profile, source-removal, "
+                    "and identity-mismatch proofs passed;")
+        cases["all"] = complete
+    elif suite == "g5-joint":
+        expected = (
+            "G5-02 Fast Debug open Vector member admission PASS",
+            "G5-02 Native debug open Vector member admission PASS",
+            "G5-02 Native release open Vector member admission PASS",
+            "G5-02 three-engine joint ledger #12 PASS",
+        )
+        cases["all"] = returncode == 0 and tuple(stdout.splitlines()) == expected
+    elif suite == "g5-sdk":
+        matches = re.findall(
+            r"^G5 SDK (debug|release) (sdk/[\w/-]+) PASS sha256:([0-9a-f]{64})$",
+            stdout, re.M)
+        expected = {(profile, package)
+                    for profile in ("debug", "release")
+                    for package in SDK_PRIMARY_PACKAGES}
+        summary = (f"G5 SDK ABI-v10 matrix: {len(expected)}/{len(expected)} builds, "
+                   f"{len(SDK_PRIMARY_PACKAGES)} packages, 2 profiles")
+        cases["all"] = (returncode == 0 and len(matches) == len(expected) and
+                        {(profile, package) for profile, package, _ in matches} == expected and
+                        len(stdout.splitlines()) == len(expected) + 1 and
+                        stdout.splitlines()[-1] == summary)
     return cases
 
 
@@ -303,6 +348,12 @@ def suite_command(suite: str, compiler: Path) -> list[str]:
         return [sys.executable, str(ROOT / G4_INDEXED_PATH), str(compiler)]
     if suite == "g4-linkage":
         return [sys.executable, str(ROOT / G4_LINKAGE_PATH)]
+    if suite == "g5-runtime":
+        return [sys.executable, str(ROOT / G5_RUNTIME_PATH)]
+    if suite == "g5-joint":
+        return [sys.executable, str(ROOT / G5_JOINT_PATH)]
+    if suite == "g5-sdk":
+        return [sys.executable, str(ROOT / G5_SDK_PATH)]
     raise ValueError(f"Unknown live suite {suite}")
 
 
