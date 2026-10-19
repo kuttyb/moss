@@ -1,5 +1,28 @@
 # Moss current status
 
+## Phase 25 Consolidated Integration Candidate (S + B + Map/Set + G5/G6) — 2026-10-19
+
+Team I reached a major integration milestone: full unification of Team S,
+Team B, staged Map/Set lowering, Option B type inference, Fast Debug O(1)
+HashIndex scaling, and the complete G5/G6 harness into a single verified
+candidate branch `phase25-i-b-reviewed-intake` at commit `8212f89`, pushed to origin.
+
+Completed live verifications on the consolidated candidate:
+1. Compiler build: clean 0-error build with `make --jobs="$(nproc)"`.
+2. G5-05 Scaling Benchmarks:
+   - Fast Debug Map/Set 10x workload ratio: 7.88x (<=30.0x bound PASS).
+   - Native Release Map/Set 10x workload ratio: 8.62x PASS.
+   - Margo bench execution: PASS.
+3. Conformance & Acceptance:
+   - G2 conformance: 11/11 PASS under `MOSS_G2_ACTIVATE_JOINT=1`.
+   - Team B Acceptance: 23 PASS, 0 PENDING, 0 FAIL (Joint Gate 10 fully verified with live source-free artifacts).
+   - Shared indexed String linkage: 2 source-free consumers debug/release PASS, runtime mismatch rejected PASS.
+   - Agent feedback validation: PASS.
+4. CI Progress:
+   - PR #11 CI workflow `39204684467`: Integration harness integrity PASS,
+     Phase 25 semantic gates PASS, Optimized examples PASS, Core regressions executing.
+   - Coordination and L6 review records up to date.
+
 ## Phase 25 Team B intake on reviewed Team S and staged G5-05 resolution — 2026-10-19
 
 Team I continued parallel integration milestones across worktrees:
