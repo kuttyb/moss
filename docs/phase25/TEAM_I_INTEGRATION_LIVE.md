@@ -1,5 +1,21 @@
 # Team I live integration record
 
+## G5 benchmark red and G6 proof mapping — 2026-10-19
+
+Root's noncompiler harness branch `a7d5fab` now has a strict Map/Set
+benchmark and complete G6-02 forged ABI/proof and G6-03 numeric proof
+mappings. The ABI-v10 SDK matrix passed twice at 34/34 and its complete
+output passed the exact live parser. Full S-A, S-C and Team B suites passed
+locally; partial-output self-tests reject incomplete evidence. G5-05 is
+honestly red: Fast Debug's exact-output 1K→10K Map/Set workload took
+0.116900s→8.104803s (69.33x), beyond the <=30x tenfold bound. A separate
+staged native-release Int Set package fails Rust `-D warnings` on generated
+redundant hash parentheses. The sole L4 is repairing both compiler paths
+under the lease. L4's G4-05 benchmark fix `1a28679` measures indexed
+99,990→999,990 codepoints at about 9.4x and is separately checkpointed.
+No G4-05/G5-05 gate is promoted until same-head validation. S and post-G
+core CI remain in progress; no target/main merge or release claim.
+
 ## Disjoint G5 harness and staged G1/G3 checkpoints — 2026-10-19
 
 Root pushed a separate noncompiler branch `phase25-i-g5-g6-harness` at

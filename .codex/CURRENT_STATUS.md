@@ -1,5 +1,22 @@
 # Moss current status
 
+## Phase 25 G5 benchmark and G6 proof checkpoint — 2026-10-19
+
+Root pushed noncompiler harness `a7d5fab` and proved its strict ABI-v10 SDK
+matrix twice: 34/34 builds, 17 primary SDK packages in debug/release; the
+exact complete output parses as live `g5-sdk all=True`. Local S-A numeric
+and S-C arithmetic full suites passed and parse as `sa numeric=True` and
+`sc arithmetic=True`; Team B's 23-check live suite passed and its exact
+forgery/integrity markers parse as `b integrity=True`. Root wired G6-02/03
+to those suites plus existing key/Float gates, with partial-output self-tests.
+G5-05 remains red: new exact-output Fast Debug Map/Set benchmark grows
+69.33x for 10x keys (0.116900s to 8.104803s), exceeding its <=30x
+anti-quadratic bound. A separate staged native-release Int Set package build
+fails `-D warnings` on generated redundant hash parentheses. Both minimal
+reproducers are under the harness worktree `tmp/` and sole L4 owns compiler
+repairs. L4 G4-05 String benchmark repair is pushed at `1a28679`; no G4-05
+or G5-05 live promotion yet. S PR and post-G target core CI remain running.
+
 ## Phase 25 independent G5 harness checkpoint — 2026-10-19
 
 Root pushed noncompiler `phase25-i-g5-g6-harness` at `7ecd3f6` from
