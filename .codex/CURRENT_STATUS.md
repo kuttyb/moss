@@ -1,5 +1,22 @@
 # Moss current status
 
+## Phase 25 staged Team B Gate 10 acceptance checkpoint — 2026-10-19
+
+Sole L4 pushed `phase25-i-map-staging` at
+`9f600facadc21b0470ce8a6ab61e44e2969e3892`. Team B Behavior 10 retains
+its separate codec/cache invalidation PASS and now executes joint Gate 10:
+one provider-owned `UserKey` KeyProof with a canonical nominal ID; two
+independently built native consumers after physical provider source removal,
+each with the exact same sealed proof ID and output `7`; a same-layout
+KeyA/KeyB conflict rejected at line 22 with `TYPE_MISMATCH`. The real Team B
+runner reports **23 PASS / 0 PENDING / 0 FAIL**. Activated G2 conformance is
+11/11 and ABI-v10 activated Map/Set fixtures are 30/30; feedback and diff
+checks pass. The key fixture runner requires both `MOSS_STAGED_ABI=v10` and
+`--activate`; a default-v9 invocation appropriately gave 13 mismatches and
+was not used as activated evidence. This is non-target staging, not strict
+62/62 or production cutover. Post-H2 target CI and G draft #10 exact-head
+CI remain in progress; S pre-intake awaits post-G refresh.
+
 ## Phase 25 S pre-intake reconciliation checkpoint — 2026-10-19
 
 Sole L4 pushed `phase25-i-s-reviewed-intake` at

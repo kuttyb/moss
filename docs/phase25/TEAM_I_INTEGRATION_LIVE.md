@@ -1,5 +1,15 @@
 # Team I live integration record
 
+## Team B staged Gate 10 executable checkpoint — 2026-10-19
+
+L4 pushed `9f600fa`. The Team B acceptance runner now proves provider-owned
+nominal KeyProof transport into two independently built source-free native
+consumers (`7` each) and rejects a same-layout key identity conflict at exact
+line 22. Its existing codec/cache check remains intact. The runner reports
+23 PASS/0 PENDING/0 FAIL; activated G2 is 11/11 and activated Map/Set fixtures
+30/30. This is staged, non-target evidence; strict integrated release remains
+open. H2 target and G PR CI run, while S awaits refresh after G.
+
 ## S pre-intake checkpoint — 2026-10-19
 
 L4 pushed fresh H2-target-based S reconciliation `c5640fd`, retaining pinned
