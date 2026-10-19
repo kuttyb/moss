@@ -1,5 +1,25 @@
 # Moss current status
 
+## Phase 25 Team B intake on reviewed Team S and staged G5-05 resolution — 2026-10-19
+
+Team I continued parallel integration milestones across worktrees:
+1. Team S PR #11 exact head `7b08599`: 3 of 4 CI jobs passed on workflow `39204684467`
+   (Integration harness integrity PASS, Phase 25 semantic gates PASS, Optimized examples PASS),
+   with Core regressions actively executing on GitHub Actions runners.
+2. Combined Coordinator/L6 review for Team S PR #11 completed and recorded in
+   `docs/phase25/TEAM_I_L6_REVIEW_S.md`.
+3. G5-05 Fast Debug Map/Set performance fix and redundant Set hash parentheses fix
+   committed to `phase25-i-map-staging` (`9b614df`). Non-compiler harness updates from
+   `phase25-i-g5-g6-harness` were merged cleanly into `phase25-i-map-staging` (`75cf215`).
+   Verified: G5-05 benchmark suite PASS (10x ratio 6.17x vs <=30.0x bound), G2
+   conformance 11/11 PASS (Gate 10 PASS with joint activation), 34/34 SDK builds PASS.
+4. Team B ABI-v10 runtime/linkage (`phase25-i-b-rehearsal`) merged cleanly onto
+   the reviewed Team S candidate (`7b08599`) on branch `phase25-i-b-reviewed-intake`
+   (`82a24c3`), resolving the single conflict in `write_module_interfaces`. Built
+   cleanly with `make`; verified: 22 PASS, 1 PENDING (Gate 10), 0 FAIL on
+   `check_phase25_b_acceptance.py`, and shared indexed String linkage debug/release/mismatch
+   checks verified PASS. Branch pushed to origin.
+
 ## Phase 25 S PR #11 exact-head namespace and root-ID repair pushed — 2026-10-19
 
 The replacement Team I sole worker diagnosed and repaired the PR #11 CI failure
