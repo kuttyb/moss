@@ -1,5 +1,23 @@
 # Moss current status
 
+## Phase 25 G draft intake checkpoint — 2026-10-19
+
+Sole L4 pushed `phase25-i-g-reviewed-intake` at
+`6859041f0ed46f54a4e7d59e017eaa599ecbcd5c`, a normal merge of reviewed
+H2 target `56d68ce` and G rehearsal `7642035`; pinned G `2938d25` and H2
+head `9d7d354` are ancestors. Exact target delta has no compiler `src/`
+change: G history/status, reconciliation/review documents, feedback, and one
+stronger unresolved-collection diagnostic assertion. Local optimized build,
+live `moss-0.1` bootstrap, Type IR, G-A3 nominal identity, field visibility,
+H2/G2 authority (36 boundary checks), exact diagnostic, feedback and diff
+check pass. Baseline G2 is 10/11 with joint Gate 10 pending; no release claim.
+Draft PR [#10](https://github.com/kuttyb/moss/pull/10) targets
+`phase25-integration`; exact-head workflow `39187310886` is in progress.
+Post-H2 target workflow `39186996122` is also in progress. Combined L6
+review/target merge wait for four green PR jobs and green prior target run.
+Sole L4 is preparing S in a separate fresh target-based worktree; no second
+compiler writer. H3 staged checkpoint `4a57515` remains unintegrated.
+
 ## Phase 25 H2 integrated target checkpoint — 2026-10-19
 
 After four green exact-head PR jobs and combined L6 review, PR #9 was marked

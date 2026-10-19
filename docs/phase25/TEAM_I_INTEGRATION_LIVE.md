@@ -1,5 +1,16 @@
 # Team I live integration record
 
+## G draft intake and S preparation — 2026-10-19
+
+The sole L4 pushed target-based G head `6859041` with pinned G ancestry and
+no compiler-source delta versus H2 target `56d68ce`. Local optimized,
+Type IR, G-A3, visibility, H2/G2 declaration authority, feedback and exact
+diagnostic checks pass. Draft [PR #10](https://github.com/kuttyb/moss/pull/10)
+has exact-head CI `39187310886` running; post-H2 target CI `39186996122`
+also runs. G review/merge waits for both required green results. L4 is now
+preparing a fresh S reconciliation branch serially; no target/main direct
+push or release claim.
+
 ## H2 target merge and H3 guard checkpoint — 2026-10-19
 
 H2 draft PR #9 passed four exact-head jobs, received combined L6 approval,
