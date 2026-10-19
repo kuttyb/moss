@@ -39352,7 +39352,7 @@ static vector<std::filesystem::path> write_module_interfaces(
     const std::filesystem::path& directory,
     const BackendToolchainIdentity& backend,
     const std::map<string, std::filesystem::path>& external_interfaces,
-    const std::optional<abi_v10::RuntimeCrateIdentity>& shared_runtime) {
+    const std::optional<abi_v10::RuntimeCrateIdentity>& shared_runtime = std::nullopt) {
   program.assert_declaration_type_consistency();
   std::map<string,std::ostringstream> contents;
   std::map<string,std::ostringstream> interface_contents;
