@@ -1,5 +1,36 @@
 # Moss current status
 
+## L7 integration checkpoint — 2026-10-19 14:27 UTC
+
+The remote `phase25-integration` target remains `31ceebe3d1f3733c3605b77dcaa62b2e560c4241`.
+The combined target-based candidate now contains the parallel test intake, the
+authoritative G2 Gate 10 acceptance, the corrected integrated diagnostic
+expectations, and the reconciled PR #8/#6 acceptance harness work. It is being
+prepared for push to the existing target PR branch so the newly triggered CI
+uses `make check-parallel`; the active earlier CI attempt still uses the serial
+runner and cannot be cancelled through the connected GitHub actions interface.
+
+Confirmed validation and remaining work:
+- A prior full run on the 16-CPU host took 968.41s: 128/131 jobs passed. The
+  failures were the interim Gate 10 path, a source-free artifact race (fixed
+  and its focused rerun passed), and a branch-error stress failure (isolated
+  rerun passed; final full-run confirmation remains required).
+- Parallel intake now makes `make check` use `check-parallel`, requires both
+  compiler variants, keeps `check-serial`, isolates package build artifacts,
+  and runs expensive suites with `moss-opt`. Compiler and runner path checks
+  passed before this combined candidate.
+- The combined candidate has not yet had its one final full parallel run. The
+  available host reports 16 CPUs; a 24-CPU measurement host is unavailable.
+- Reconciled acceptance harness checks passed locally: strict self-test,
+  ledger/source-free fault injections, and source-free ABI-v10 staged Debug and
+  Release suites at 11/11 each. Those are dirty-candidate results, not frozen
+  release evidence.
+- The target acceptance ledger remains 0 PASS / 1 FAIL / 51 BLOCKED / 10 NOT
+  IMPLEMENTED. Debug/Release/Fast Debug parity, H1/H3 evidence, and strict
+  acceptance on one frozen HEAD remain open.
+- PR #7's stale broad coordination history was not merged. No changes have
+  been merged to `main`.
+
 ## Phase 25 Mid-Phase Test Acceleration & Parallelization Infrastructure — 2026-10-19
 
 Delivered complete test and build acceleration infrastructure on branch `phase25-parallel-tests` (based on `origin/phase25-integration` @ `31ceebe`, latest checkpoint commit `3104a30`):
@@ -24,8 +55,10 @@ Delivered complete test and build acceleration infrastructure on branch `phase25
 4. **Sharding of Serial Regression Runner (`tests/shards/`):**
    - Extracted shared shell test helpers into `tests/lib_test.sh`.
    - Decomposed `tests/run.sh` into 12 logical shards in `tests/shards/` (`shard_negative.sh`, `shard_abi_v10_units.sh`, `shard_showcase.sh`, `shard_swarm_cases.sh`, `shard_phase4_diff.sh`, `shard_phase46_opt.sh`, `shard_concurrency.sh`, `shard_phase25_int_payloads.sh`, `shard_enum_modules.sh`, `shard_fast_debug.sh`, `shard_phase5_tooling.sh`, `shard_phase106_runtime.sh`).
-   - Original `tests/run.sh` preserved 100% intact for `make check-serial`.
-   - Zero modifications to Moss language semantics, compiler algorithms, runtime behavior, or test expectations.
+   - The original serial test runner remains available as `make check-serial`;
+     its inferred shared-string ABI assertion is pinned to `MossStr`.
+   - No Moss language semantics, compiler algorithms, or runtime behavior were
+     changed by this test-infrastructure intake.
 
 ## Phase 25 Team I integrated candidate (Team S + Team B + Map/Set + G5/G6 Harness) — 2026-10-19
 
