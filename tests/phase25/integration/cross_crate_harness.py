@@ -247,8 +247,13 @@ def stage_removed_provider(ctx: HarnessContext, res: ScenarioResult, source: Pat
     if not interfaces or not list(output.glob("*.rlib")):
         raise AcceptanceFailure(f"provider {name} did not emit both .mossi and .rlib")
     for interface in interfaces:
-        content = interface.read_text(encoding="utf-8")
-        if not re.search(r"(?m)^schema_version 10$", content) or not re.search(r"(?m)^native_abi 10$", content):
+        # ABI-v10 interfaces may contain length-framed binary checked-body
+        # records after their textual contract header. Validate the version
+        # fields in the header without decoding the binary tail as UTF-8.
+        content = interface.read_bytes()
+        header = content.split(b"binary_contract\n", 1)[0]
+        if not re.search(rb"(?m)^schema_version 10$", header) or not re.search(
+                rb"(?m)^native_abi 10$", header):
             raise AcceptanceFailure(f"provider {name} did not emit ABI-v10 records")
     artifact_dir = root / f"{name}-artifacts"
     shutil.copytree(output, artifact_dir)

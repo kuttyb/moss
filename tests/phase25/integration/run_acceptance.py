@@ -661,6 +661,15 @@ def main() -> int:
         print(f"Error loading acceptance matrix: {exc}", file=sys.stderr)
         return 1
 
+    # Reject malformed or forged input before starting the expensive live
+    # acceptance suites. Besides avoiding wasted runs, this keeps the public
+    # strict CLI's first failure tied to the ledger that failed validation.
+    input_errors = validate_matrix(gates)
+    if input_errors:
+        for error in input_errors:
+            print(f"INVALID ACCEPTANCE EVIDENCE: {error}", file=sys.stderr)
+        return 1
+
     live_report = None
     if args.live or args.strict:
         try:
