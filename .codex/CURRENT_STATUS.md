@@ -1141,6 +1141,109 @@ integration (runner exit 0; G2 conformance is not complete).
   failing in rustc. The pre-G2 `unresolved_field` negative (unconstructed
   template) became a positive case; `unresolved_field_value` is the new negative.
 
+- `0cabf6b` the `unresolved_collection_type` negative expects the echo closure
+  diagnostic (same `TYPE_AMBIGUOUS_OPEN_RESULT`, more precise message).
+- `1e72261` (L7 request) partial-arity built-in collection types are rejected
+  in the Type IR (`map[int]`, `vector[int,string]`, nested) and `is_closed`
+  requires exact arity; unparsable parameter/result annotations report
+  `MALFORMED_TYPE_EXPRESSION`. Type IR unit cases plus run.sh negatives
+  `partial_arity_map_field` and `partial_arity_vector_parameter`.
+
+**L7 decision (2026-10-16, supersedes the deferral below):** Architect
+findings G-A-3 (stable nominal identity) and G-A-1 (authoritative
+TypeRef/TypeSolver) are **approved as P0 for Phase 25**. The plan:
+
+- G-A3 first, as Checkpoint A.
+- Then G-A1, as Checkpoints B–E: checker type environments, constraint and
+  dispatch paths, closure and downstream consumers, and a full audit.
+- Commit each checkpoint, sequentially.
+- Close with a fresh independent L6 Architect review that must falsify both
+  findings.
+
+No narrower string hybrid, and no new deferral without L7. ABI v10 stays
+staged, and gate 10 stays on the joint integration.
+
+**Checkpoint A (G-A3): implemented, awaiting independent review.**
+
+- Interned record/enum/domain identities are wired through the checker,
+  generator, module projection, interface emission/loading, provider selection,
+  and semantic queries (details in
+  `docs/phase25/TEAM_G_UNRESOLVED_CONTRACT_DECISIONS.md`).
+- Validation (focused, at the Checkpoint A commit):
+  - Type IR unit;
+  - G-A3 cases A–E (`check_phase25_nominal_identity.py`, wired into run.sh);
+  - conformance 10/11 with gate 10 pending;
+  - generic specialization 40/40 and builtin generic typing 129/129;
+  - known-open nominal, recursive layout, and teaching diagnostics;
+  - Phase 21 source-free ABI and v9 migration;
+  - module provider ambiguity, multi-file project, enum source-free, and
+    same-module type resolution;
+  - Phase 20 executor/FileIO and Phase 10 Fast Debug project.
+- The full `make check` at that SHA is run separately.
+
+**Checkpoint A independent review (`docs/phase25/TEAM_G_GA3_ARCHITECT_REVIEW.md`,
+at `2a7454b`):** CONDITIONAL GO as a checkpoint; NO-GO for declaring G-A3
+complete. The full `make check` and `make examples` at `2a7454b` passed
+(G-A3 identity suite included). Conditions:
+
+1. ARCH-001 (identity derived by splitting `__` spellings): fixed. Records,
+   enums, and domains carry `defining_module`/`declaration_name` from the
+   module rewrite; a missing identity inside a project fails closed
+   (`MODULE_IDENTITY_UNRESOLVED`).
+2. ARCH-002/003 (cross-kind name clashes): fixed. Type, enum, domain, trait,
+   and the reserved `Iterator` share one namespace, and a clash is a
+   positioned `DUPLICATE_SYMBOL`.
+3. **Needs L7:** record that gate item 2 (ARCH-004, spelling-based
+   comparisons outside the Type IR) and the instance-key part of item 5
+   (ARCH-007, typed ABI-v10 records) carry into G-A1 Checkpoints B/C and the
+   ABI-v10 record work.
+
+Also fixed:
+
+- ARCH-010: declarations hold a `weak_ptr` to their session, and scope exit
+  releases its own entry.
+- The reviewer's baseline `FIELD_VISIBILITY_ERROR`: unmodular programs are
+  one module, and record privacy uses the declaration's module.
+
+Open for L7/Team S: ARCH-008 (ratify the `nominal-enum-v1`/`nominal-domain-v1`
+formats), ARCH-009 (bind claimed package/version to Moss.toml/Moss.lock), and
+the reviewer's baseline transitive-provider rustc failure. Non-blocking
+latent items: ARCH-005 and ARCH-006.
+
+**Closure check (Addendum 1, at `235072d`): CONDITIONAL GO for Checkpoint A.**
+ARCH-001, 002, 003, and 010 are closed, and the privacy change was verified
+not to weaken explicit-module privacy. The only open condition is the L7
+record (condition 3). New findings, all fixed in the next commit:
+
+- ARCH-011: a legacy `enum ParseError` keeps the std identity.
+- ARCH-012: a user `type ParseError` is a positioned `DUPLICATE_SYMBOL`
+  naming `std.ParseError`.
+- ARCH-013: `check_phase25_field_visibility.py` (explicit-module privacy
+  across modules, same module across files, unmodular projects) is wired into
+  run.sh.
+
+**Verification (Addendum 2, at `27fc2fb`): CONDITIONAL GO for Checkpoint A.**
+ARCH-011/012/013 verified closed; the only open condition is still the L7
+record (condition 3). New non-blocking ARCH-014 (a trait named like a
+standard error showed the mangled `std__` spelling) is fixed at `d682e28`,
+which also adds the reviewer's recommended unmodular-consumer privacy case to
+`check_phase25_field_visibility.py`. Focused validation at `d682e28`: nominal
+identity A–F, field visibility, Phase 21 standard error namespace, Type IR
+unit, conformance 10/11 (gate 10 PENDING joint). Full `make check` not rerun
+since `2a7454b`.
+
+**L7 record (2026-10-16): Checkpoint A is GO.** ARCH-004 carries into G-A1
+Checkpoints B/C, and the ARCH-007 instance keys carry into the ABI-v10 record
+work (`TEAM_G_UNRESOLVED_CONTRACT_DECISIONS.md`). G-A3 as a whole stays open
+until both close. **Next: G-A1 Checkpoint B** (structured `TypeRef` checker
+type environments), sequential and inline.
+
+**L7 feedback (2026-10-16):** keep gate 10 on joint integration; authoritative
+Type IR, nominal identity, typed ABI-v10 payloads, and runtime linkage need
+architectural resolution before Team G is declared ready. These are recorded
+as explicit open decisions D1–D4 in
+`docs/phase25/TEAM_G_UNRESOLVED_CONTRACT_DECISIONS.md`. **Team G is not ready.**
+
 **Deferred to L7 (user decision, 2026-10-16):** Architect G-A findings 1
 (TypeRef/TypeSolver as the checker's source of truth — the checker still
 carries string `TypeEnv`s and string-prefix compatibility) and 3 (interned
@@ -1160,8 +1263,22 @@ Validation:
 - `4e7f44b`: `make examples` passed; suite without the conformance line
   stopped at `check_builtin_generic_typing.py` (3 pre-existing failures).
 - `d75c11f` (clean detached worktree `tmp/moss-worktrees/phase25-g-validate`):
-  `make` and `make examples` passed; full `make check` running — result not
-  yet recorded. `2a5314d` validated only by focused suites (generic
+  `make` and `make examples` passed; `make check` failed at `tests/run.sh:1153`
+  (stale `Option<Quote>` text check, fixed in `50e4b1b`).
+- **`0cabf6b`: full uninterrupted validation PASSED** in the clean detached
+  worktree: `make` exit 0; `TMPDIR="$PWD/tmp" make examples` exit 0;
+  `TMPDIR="$PWD/tmp" make check` exit 0 ("all Moss v0.1 tests passed";
+  Executor 54/54; generic specialization 40/40; builtin generic typing
+  129/129; G2 conformance 10/11 with gate 10 PENDING joint integration).
+  Earlier segmented runs at `50e4b1b` and `5baff68` found the stale checks
+  fixed in `5baff68` and `0cabf6b`.
+- **`9f68822` (handoff SHA, includes `1e72261`): full uninterrupted validation
+  PASSED** in the clean detached worktree: `make` exit 0; `make examples` exit
+  0; `make check` exit 0 ("all Moss v0.1 tests passed"; Executor 54/54;
+  generic specialization 40/40; builtin generic typing 129/129; G2
+  conformance 10/11, gate 10 PENDING joint integration).
+- L7 then approved Architect findings G-A-3 and G-A-1 as P0 (see the L7
+  decision entry); Checkpoint A (G-A3 nominal identities) is in progress. `2a5314d` validated only by focused suites (generic
   specialization 40/40, builtin generic typing 129/129, conformance, multi-file
   project, module ambiguity, same-module types, Phase 21 pipelines).
 
