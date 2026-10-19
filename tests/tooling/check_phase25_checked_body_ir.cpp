@@ -44,6 +44,8 @@ int main() {
   auto box_decl = context.declare(record("Box", app_module, "Box", {{"value", "int", false}}));
   auto cell_decl = context.declare(record("Cell", app_module, "Cell", {{"item", "int", false}}));
   auto point_decl = context.declare(record("Point", app_module, "Point", {{"x", "int", false}, {"y", "int", false}}));
+  auto open_box_decl = context.declare(record("OpenBox", app_module,
+                                           "OpenBox", {{"value", "", true}}));
   context.bind_field_annotations();
 
   auto int_type = moss::Type::primitive("int");
@@ -54,6 +56,9 @@ int main() {
   auto box_type = moss::Type::nominal_bound(box_decl, "Box", {{"value", int_type}});
   auto cell_type = moss::Type::nominal_bound(cell_decl, "Cell", {{"item", int_type}});
   auto vector_int_type = moss::Type::builtin("vector", {int_type});
+  auto open_value = moss::Type::var({0, 0, 0});
+  auto open_box_type = moss::Type::nominal_bound(
+      open_box_decl, "OpenBox", {{"value", open_value}});
 
   // 2. Test Expression Nodes
   // Parameter
@@ -97,6 +102,30 @@ int main() {
   const std::string other_helper_id = "callable-v1:module-v1:app@1.0.0::main:fn:other_helper";
   cir::Expr call_helper{cir::ExprKind::Call, int_type, 0, {}, cir::UnaryOp::Neg, cir::BinaryOp::Add, {p0}, helper_id, 0, {}, {}};
   cir::Expr call_other{cir::ExprKind::Call, int_type, 0, {}, cir::UnaryOp::Neg, cir::BinaryOp::Add, {p0}, other_helper_id, 0, {}, {}};
+
+  // A nominal constructor is distinct from a callable target and carries
+  // exact template/field-slot identities plus the inferred field TypeRef.
+  cir::Expr open_param{cir::ExprKind::Parameter, open_value, 0, {},
+                       cir::UnaryOp::Neg, cir::BinaryOp::Add, {}, {}, 0, {}, {}};
+  cir::Expr construct_open{cir::ExprKind::NominalConstruct, open_box_type, 0, {},
+                           cir::UnaryOp::Neg, cir::BinaryOp::Add,
+                           {open_param}, open_box_decl->id, 0, {}, {}};
+  cir::Stmt return_construct{cir::StmtKind::Return, open_box_type, 0,
+                             construct_open, {}, {}, 0, {}, {}, {}, {}, {}};
+  assert(moss::is_canonical_semantic_hash(
+      cir::compute_checked_body_hash_v1({return_construct})));
+  auto malformed_construct = construct_open;
+  malformed_construct.semantic_target_id = box_decl->id;
+  assert(throws_invalid([&] {
+    std::string encoded;
+    cir::encode_checked_expr(encoded, malformed_construct);
+  }));
+  auto constructor_dependencies = moss::extract_semantic_dependencies(
+      {return_construct});
+  assert(constructor_dependencies.size() == 1 &&
+         constructor_dependencies[0].target_id == open_box_decl->id &&
+         constructor_dependencies[0].kind ==
+             moss::SemanticDependency::Kind::NominalType);
 
   // Message
   const std::string audit_handler_id = "callable-v1:module-v1:app@1.0.0::main:domain:Audit:handler:Record";

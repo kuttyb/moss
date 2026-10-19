@@ -76,7 +76,8 @@ enum class ExprKind : uint32_t {
   Unary = 10,
   Binary = 11,
   Message = 12,
-  MapLiteral = 13
+  MapLiteral = 13,
+  NominalConstruct = 14
 };
 
 enum class UnaryOp : uint32_t {
@@ -278,6 +279,32 @@ inline void encode_checked_expr(std::string& out, const Expr& expr) {
       checked_body_field(out, std::to_string(expr.operands.size()));
       for (const auto& child : expr.operands)
         encode_checked_expr(out, child);
+      break;
+
+    case ExprKind::NominalConstruct:
+      if (!expr.type || expr.type->kind != TypeKind::NominalInstance ||
+          !expr.type->declaration ||
+          expr.semantic_target_id != expr.type->declaration->id ||
+          !expr.literal_value.empty() ||
+          expr.operands.size() != expr.type->declaration->fields.size())
+        throw std::invalid_argument(
+            "invalid checked nominal constructor: target or field shape mismatch");
+      checked_body_field(out, expr.semantic_target_id);
+      checked_body_field(out, std::to_string(expr.operands.size()));
+      for (std::size_t index = 0; index < expr.operands.size(); ++index) {
+        const auto& slot = expr.type->declaration->fields[index];
+        auto bound = std::find_if(expr.type->field_substitutions.begin(),
+                                  expr.type->field_substitutions.end(),
+            [&](const auto& field) { return field.first == slot.name; });
+        if (!slot.inferred || bound == expr.type->field_substitutions.end() ||
+            !bound->second || !expr.operands[index].type ||
+            !bound->second->structurally_equal(*expr.operands[index].type))
+          throw std::invalid_argument(
+              "checked nominal constructor has an unbound or mismatched field");
+        checked_body_field(out, expr.semantic_target_id + ":field:" +
+                                std::to_string(index) + ":" + slot.name);
+        encode_checked_expr(out, expr.operands[index]);
+      }
       break;
 
     case ExprKind::Message:
@@ -567,6 +594,10 @@ inline void collect_expr_dependencies(const checked_ir::Expr& expr,
     if (!expr.semantic_target_id.empty()) {
       out.insert({SemanticDependency::Kind::NominalType, expr.semantic_target_id, ""});
     }
+  } else if (expr.kind == checked_ir::ExprKind::NominalConstruct) {
+    if (expr.semantic_target_id.empty())
+      throw std::invalid_argument("nominal constructor has empty template id");
+    out.insert({SemanticDependency::Kind::NominalType, expr.semantic_target_id, ""});
   }
   for (const auto& operand : expr.operands) {
     collect_expr_dependencies(operand, out);

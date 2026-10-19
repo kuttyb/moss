@@ -2774,6 +2774,136 @@ class SourceFileScope {
   string previous_;
 };
 
+struct CheckedPrivateChainBody {
+  vector<checked_ir::Stmt> statements;
+  vector<SemanticDependency> dependencies;
+  string semantic_hash;
+};
+
+// Bridge the checked straight-line local-result form into the versioned rich
+// body IR. Each parameter, nominal field slot, and callee comes from the
+// retained typed summary and exact checker edge; source spelling is used only
+// to select the already checked occurrence.
+static std::optional<CheckedPrivateChainBody> checked_private_chain_body(
+    const Program& program, const Function& function) {
+  if (!function.open_summary || !function.open_summary->complete ||
+      function.body.size() != 2 ||
+      function.body.back().kind != Stmt::Kind::Return ||
+      !plain_identifier(trim(function.body.back().a)) ||
+      (function.body.front().kind != Stmt::Kind::Let &&
+       function.body.front().kind != Stmt::Kind::Var &&
+       function.body.front().kind != Stmt::Kind::Assign) ||
+      trim(function.body.front().a) != trim(function.body.back().a) ||
+      function.body.front().indent != function.body.back().indent)
+    return std::nullopt;
+  const auto& summary = *function.open_summary;
+  if (!summary.result_type ||
+      summary.parameter_types.size() != function.params.size())
+    return std::nullopt;
+  string target;
+  vector<string> arguments;
+  if (!parse_simple_call(trim(function.body.front().b), target, arguments))
+    return std::nullopt;
+  string qualified = target;
+  auto function_by_name = [&](const string& name) -> const Function* {
+    auto found = std::find_if(program.functions.begin(), program.functions.end(),
+        [&](const Function& candidate) { return candidate.name == name; });
+    return found == program.functions.end() ? nullptr : &*found;
+  };
+  auto object_by_name = [&](const string& name) -> const ObjectType* {
+    auto found = std::find_if(program.objects.begin(), program.objects.end(),
+        [&](const ObjectType& candidate) { return candidate.name == name; });
+    return found == program.objects.end() ? nullptr : &*found;
+  };
+  if (!function_by_name(qualified) && !object_by_name(qualified) &&
+      !function.defining_module.empty())
+    qualified = function.defining_module + "__" + target;
+  auto parameter_expr = [&](const string& name)
+      -> std::optional<checked_ir::Expr> {
+    for (size_t index = 0; index < function.params.size(); ++index)
+      if (function.params[index].name == trim(name) &&
+          summary.parameter_types[index]) {
+        checked_ir::Expr expression;
+        expression.kind = checked_ir::ExprKind::Parameter;
+        expression.type = summary.parameter_types[index];
+        expression.ordinal = static_cast<std::uint32_t>(index);
+        return expression;
+      }
+    return std::nullopt;
+  };
+  checked_ir::Expr value;
+  value.type = summary.result_type;
+  if (const ObjectType* object = object_by_name(qualified)) {
+    if (summary.result_type->kind != TypeKind::NominalInstance ||
+        !summary.result_type->declaration ||
+        summary.result_type->name != object->name ||
+        arguments.size() != object->fields.size())
+      return std::nullopt;
+    value.kind = checked_ir::ExprKind::NominalConstruct;
+    value.semantic_target_id = summary.result_type->declaration->id;
+    for (const auto& field : object->fields) {
+      std::optional<checked_ir::Expr> operand;
+      for (const auto& argument : arguments) {
+        string name, expression;
+        if (parse_named_argument(argument, name, expression) &&
+            name == field.name) {
+          if (operand) return std::nullopt;
+          operand = parameter_expr(expression);
+        }
+      }
+      if (!operand) return std::nullopt;
+      value.operands.push_back(*operand);
+    }
+  } else if (const Function* callee = function_by_name(qualified)) {
+    if (!callee->open_summary || !callee->open_summary->complete ||
+        callee->semantic_callable_id.empty() ||
+        arguments.size() != callee->params.size())
+      return std::nullopt;
+    const bool exact_edge = std::any_of(
+        program.semantic_call_edges.begin(), program.semantic_call_edges.end(),
+        [&](const SemanticCallEdge& edge) {
+      return edge.source == "fn:" + function.name &&
+          edge.target == "fn:" + callee->name &&
+          edge.line == function.body.front().line &&
+          edge.invocation_kind == "ordinary_call" &&
+          edge.occurrence == 0 && edge.source_specialization_key.empty();
+    });
+    if (!exact_edge) return std::nullopt;
+    value.kind = checked_ir::ExprKind::Call;
+    value.semantic_target_id = callee->semantic_callable_id;
+    for (const auto& argument : arguments) {
+      auto operand = parameter_expr(argument);
+      if (!operand) return std::nullopt;
+      value.operands.push_back(*operand);
+    }
+  } else {
+    return std::nullopt;
+  }
+  checked_ir::Stmt bind;
+  bind.kind = checked_ir::StmtKind::Let;
+  bind.type = summary.result_type;
+  bind.local_ordinal = 0;
+  bind.expr = value;
+  checked_ir::Expr local;
+  local.kind = checked_ir::ExprKind::LocalRead;
+  local.type = summary.result_type;
+  local.ordinal = 0;
+  checked_ir::Stmt returned;
+  returned.kind = checked_ir::StmtKind::Return;
+  returned.type = summary.result_type;
+  returned.expr = local;
+  CheckedPrivateChainBody body;
+  body.statements = {std::move(bind), std::move(returned)};
+  try {
+    body.semantic_hash = checked_ir::compute_checked_body_hash_v1(
+        body.statements);
+    body.dependencies = extract_semantic_dependencies(body.statements);
+  } catch (const std::invalid_argument&) {
+    return std::nullopt;
+  }
+  return body;
+}
+
 class Checker {
  public:
   explicit Checker(Program& p) : p_(p) {
@@ -3085,15 +3215,19 @@ class Checker {
         std::vector<const Function*> pending{&exported};
         bool reaches_private = false;
         bool unsupported_multi_statement = false;
+        bool rich_body_ready = true;
         while (!pending.empty()) {
           const Function* current = pending.back();
           pending.pop_back();
           if (!visited.insert(current->name).second) continue;
           if (!current->exported) reaches_private = true;
-          if (current->body.size() > 1 &&
-              (!current->open_summary || !current->open_summary->complete ||
-               !current->checked_body_v1))
-            unsupported_multi_statement = true;
+          if (current->body.size() > 1) {
+            if (!checked_private_chain_body(p_, *current))
+              rich_body_ready = false;
+            if (!current->open_summary || !current->open_summary->complete ||
+                !current->checked_body_v1)
+              unsupported_multi_statement = true;
+          }
           for (const auto& edge : p_.semantic_call_edges) {
             if (edge.source != "fn:" + current->name ||
                 !starts_with(edge.target, "fn:")) continue;
@@ -3106,8 +3240,11 @@ class Checker {
         if (reaches_private && unsupported_multi_statement)
           err(exported.source_file, exported.line,
               "exported callable '" + exported.name +
-                  "' reaches a private multi-statement body without checked "
-                  "ABI-v10 type facts and body IR",
+                  (rich_body_ready
+                    ? "' reaches a private multi-statement body without "
+                      "canonical ABI-v10 dependency/body records"
+                    : "' reaches a private multi-statement body without "
+                      "checked ABI-v10 type facts and body IR"),
               "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE");
       }
     { CompilerStageTimer timer("synchronization_plan"); build_synchronization_plan(p_.concrete_domain_graph); }
