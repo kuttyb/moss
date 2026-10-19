@@ -1,5 +1,17 @@
 # Team I live integration record
 
+## G target integration checkpoint — 2026-10-19
+
+Reviewed G PR #10 passed four exact-head jobs, was marked ready, and merged
+normally at target `64d22251d7090d6bbe36369cc80a5f95f7890ce7`.
+Parents are prior H2 target `56d68ce` and reviewed G head `6859041`;
+normal ancestry and whitespace checks pass. Post-G target workflow
+`39193878297` is in progress and must pass before S target merge. L4 is
+refreshing pretested S onto that exact target; root will add the final
+workflow v10 selector and current status before S draft PR. Staged G4 is
+44/62 live PASS with span and scaling gaps open. No main merge or final
+release claim.
+
 ## G exact-head L6 review and G4 bounded staged proof — 2026-10-19
 
 Draft G PR #10 head `6859041` passed its four required exact-head jobs in

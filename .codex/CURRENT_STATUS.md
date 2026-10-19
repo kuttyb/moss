@@ -1,5 +1,18 @@
 # Moss current status
 
+## Phase 25 G target merge checkpoint — 2026-10-19
+
+After four green exact-head PR jobs and combined L6 review, PR #10 was marked
+ready and merged normally to `phase25-integration` at
+`64d22251d7090d6bbe36369cc80a5f95f7890ce7`. Its parents are prior H2
+target `56d68ce9437057061922f00da7bc55ce97ce1391` and reviewed G head
+`6859041f0ed46f54a4e7d59e017eaa599ecbcd5c`. The post-G target
+workflow `39193878297` is running; it must pass before S target merge. The
+sole L4 is refreshing the pretested S intake onto this exact target before
+draft PR/CI. Root will add the final-workflow v10 selector and current status
+to that branch before PR creation. Staged G4 checkpoint remains 44/62 live
+PASS with the span and scaling gaps open. No main merge or release claim.
+
 ## Phase 25 G exact-head L6 approval and G4 staged checkpoint — 2026-10-19
 
 Draft PR #10 exact head `6859041f0ed46f54a4e7d59e017eaa599ecbcd5c`
