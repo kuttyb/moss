@@ -140,6 +140,14 @@ fn main():
   assert(decoded_summary.requirements[0].operation == "operator:*");
   assert(decoded_summary.requirements[1].operation == "operator:+");
 
+  auto unsupported_requirements = summary.requirements;
+  unsupported_requirements[0].target_id = "operator:/";
+  vector<abi_v10::SourceProvenance> rejected_provenance;
+  assert(!abi_v10_checked_requirements(
+      unsupported_requirements, summary.bound_variable_count,
+      rejected_provenance));
+  assert(rejected_provenance.empty());
+
   const Function& identity = find_function(program, "identity");
   assert(identity.open_summary);
   assert(identity.open_summary->requirements.empty());

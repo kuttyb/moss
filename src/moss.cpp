@@ -39164,7 +39164,9 @@ static void append_abi_v10_direct_checked_records(
     auto requirements = abi_v10_checked_requirements(
         summary_facts.requirements, summary.variable_count,
         requirement_provenance);
-    if (!requirements) continue;
+    if (!requirements)
+      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+                         "checked ABI-v10 operator requirement is unsupported");
     summary.requirements = std::move(*requirements);
     summary.body_semantic_hash = checked->semantic_hash;
     const auto function_provenance = abi_v10_checked_provenance(

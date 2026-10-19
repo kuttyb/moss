@@ -8437,3 +8437,24 @@ Focused validation passed:
   Int/Float output and String rejection still pass.
 - `abi_v10_adversarial.cpp` and `make moss-dev` passed.
 - Feedback validation and `git diff --check` passed.
+
+## Phase 25-C2b.4c — Connect typed requirements to checked summary emitters
+
+Starting from `e5fe69b3667dcf89bb4ec985b9d8dda82039ec09` on
+`phase25-integration`. Both direct checked-record and private-chain summary
+emitters call `abi_v10_checked_requirements()` and append the resulting
+requirement provenance records. The direct emitter now rejects failed
+conversion with `SOURCE_FREE_SUMMARY_INVALID` instead of silently skipping the
+summary. Existing eligibility guards are unchanged.
+
+Focused validation:
+- `make moss-dev` passed.
+- `python3 tests/tooling/check_phase25_generic_arithmetic_requirements.py ./moss`
+  passed, including typed requirement conversion, codec roundtrip, provenance,
+  and rejection of an unsupported operator requirement.
+- `python3 tests/phase25/integration/cross_crate_harness.py --scenario 6
+  --staged-v10 --json` failed during consumer compilation with
+  `SOURCE_FREE_SUMMARY_INVALID: checked ABI-v10 body has no callable summary`.
+  Provider artifact generation and source removal succeeded. This consumer
+  failure is outside the emitter conversion change.
+- `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` passed.
