@@ -1,5 +1,21 @@
 # Moss current status
 
+## Phase 25 S draft PR checkpoint — 2026-10-19
+
+The sole L4 pushed clean target-based S head
+`99aebffe4ef818abb921372504e4ec3160a3cd07` and opened draft
+[PR #11](https://github.com/kuttyb/moss/pull/11) against reviewed post-G
+target `64d22251d7090d6bbe36369cc80a5f95f7890ce7`. Normal S refresh
+`9aaf056923083a579d3bb51c2517db7ac998e26f` retains pinned S history;
+the final root-owned commit adds only the final-CI v10 selector, current
+status and H2/G L6 review records. Exact-head PR workflow `39194794707` is
+queued. Local forced build/bootstrap, S1–S4, S-A/B/C, Type IR, Team A,
+G3/G4/L7, indexed String, feedback and diff checks pass; G2 is 10/11 with
+Gate 10 pending on this S-only default-v9 baseline. Post-G target workflow
+`39193878297` has examples, harness and semantic green, core in progress.
+No S L6 approval/target merge before both workflows are four-job green.
+Staging `cc8b80a` remains 44/62 live PASS, with final release open.
+
 ## Phase 25 G target merge checkpoint — 2026-10-19
 
 After four green exact-head PR jobs and combined L6 review, PR #10 was marked

@@ -1,5 +1,20 @@
 # Team I live integration record
 
+## S draft intake exact-head checkpoint — 2026-10-19
+
+The sole L4 pushed clean S head `99aebffe4ef818abb921372504e4ec3160a3cd07`
+and opened draft [PR #11](https://github.com/kuttyb/moss/pull/11) against
+post-G target `64d22251d7090d6bbe36369cc80a5f95f7890ce7`. Its normal
+S refresh `9aaf056` retains pinned S history and resolves the one
+`tests/run.sh` overlap to L7's approved unresolved-echo diagnostic; root's
+final commit carries the final-CI v10 selector, current status, and H2/G
+L6 review records. Exact-head PR workflow `39194794707` is queued. Forced
+build/bootstrap, S1–S4, S-A/B/C, Type IR, Team A, G3/G4/L7, indexed String,
+feedback and diff checks pass locally; default-v9 G2 is 10/11 with joint
+Gate 10 pending. Post-G target workflow `39193878297` is 3/4 green with
+core running. S review/merge waits for both four-job green results. Staging
+`cc8b80a` remains 44/62 same-HEAD live PASS; no main/release claim.
+
 ## G target integration checkpoint — 2026-10-19
 
 Reviewed G PR #10 passed four exact-head jobs, was marked ready, and merged
