@@ -150,14 +150,16 @@ def test_record_equality_rejected():
 def test_map_keys_fail_closed():
     print("S1: record and Float-containing Map keys fail closed (P25-S3-D2)")
     tag = "type Tag:\n  label: String\n\n"
+    staged = os.environ.get("MOSS_STAGED_ABI") == "v10"
+    nominal_code = "KEY_PROOF_INVALID" if staged else "RECORD_MAP_KEY_UNSUPPORTED"
     rejected(tag + "fn main():\n  var m = Map()\n  m[Tag(label: \"a\")] = 1\n  echo 1\n",
-             "record key assignment", "RECORD_MAP_KEY_UNSUPPORTED", 6)
+             "record key assignment", nominal_code, 1 if staged else 6)
     rejected(tag + "fn main():\n  var m = Map()\n  m[[Tag(label: \"a\")]] = 1\n  echo 1\n",
-             "Vector-of-record key", "RECORD_MAP_KEY_UNSUPPORTED", 6)
+             "Vector-of-record key", nominal_code, 6)
     rejected("fn main():\n  var m = Map()\n  m[[1.5]] = 1\n  echo 1\n",
              "Vector[Float] key", "FLOAT_MAP_KEY_UNSUPPORTED", 3)
     rejected(tag + "fn size(m: Map[Tag, Int]) -> Int:\n  return 0\n\nfn main():\n  echo 1\n",
-             "declared Map[Record, V] parameter", "RECORD_MAP_KEY_UNSUPPORTED")
+             "declared Map[Record, V] parameter", nominal_code)
     engines(tag + "fn main():\n  var m = Map()\n  m[\"a\"] = Tag(label: \"x\")\n"
             "  echo m[\"a\"].label\n  var k = Map()\n  k[[1, 2]] = 3\n  echo k.get([1, 2], 0)\n",
             "record values and Vector[Int] keys still work", "x\n3\n")

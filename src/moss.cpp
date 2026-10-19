@@ -4533,6 +4533,12 @@ class Checker {
       err(line, "Float Map keys require the canonical MossMap<K,V> under key-protocol-v1, which is not yet available; Float isequal/hash/less are available as functions", "FLOAT_MAP_KEY_UNSUPPORTED");
     if (contains_record_type(type)) {
       if (staged_abi_v10()) {
+        // A Vector or other composite containing a nominal has no provider-
+        // owned proof for the composite itself. Reject at this key use while
+        // its source line is still available, before the deferred proof pass.
+        if (!objects_.count(type))
+          err(line, "Map key '" + type + "' has no concrete nominal key proof",
+              "KEY_PROOF_INVALID");
         staged_nominal_map_keys_.insert(type);
         return;
       }
