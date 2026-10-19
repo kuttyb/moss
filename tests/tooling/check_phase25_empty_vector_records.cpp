@@ -187,6 +187,50 @@ static void check_artifact(const std::string& bytes, bool experimental) {
   assert(body.semantic_hash == canonical_hash);
   assert(checked_ir::encode_checked_body_v1(canonical) == body.checked_ir_bytes);
 
+  auto decoded_empty = checked_ir::decode_empty_vector_return_checked_body_v1(
+      body.checked_ir_bytes, context, vector_type, body.semantic_hash);
+  assert(decoded_empty.size() == 1 &&
+         decoded_empty.front().expr->kind ==
+             checked_ir::ExprKind::VectorLiteral &&
+         decoded_empty.front().expr->operands.empty() &&
+         decoded_empty.front().expr->type->structurally_equal(*vector_type));
+  auto rejects_empty_vector_body = [&](const std::string& bytes,
+                                       const TypeRef& result,
+                                       const std::string& hash) {
+    try {
+      (void)checked_ir::decode_empty_vector_return_checked_body_v1(
+          bytes, context, result, hash);
+    } catch (const std::invalid_argument&) {
+      return true;
+    }
+    return false;
+  };
+  auto nonempty_literal = literal;
+  nonempty_literal.operands.push_back(checked_ir::Expr{
+      checked_ir::ExprKind::IntegerLiteral, Type::primitive("int"), 0, "1"});
+  auto nonempty_return = returned;
+  nonempty_return.expr = nonempty_literal;
+  const std::vector<checked_ir::Stmt> nonempty_body{nonempty_return};
+  const auto nonempty_bytes = checked_ir::encode_checked_body_v1(nonempty_body);
+  const auto nonempty_hash =
+      checked_ir::compute_checked_body_hash_v1(nonempty_body);
+  assert(rejects_empty_vector_body(nonempty_bytes, vector_type, nonempty_hash));
+  assert(rejects_empty_vector_body(canonical_bytes, vector_type,
+                                   "body-semantic-v1:sha256:" +
+                                       std::string(64, '0')));
+  assert(rejects_empty_vector_body(canonical_bytes, Type::primitive("int"),
+                                   canonical_hash));
+  auto scalar_return = returned;
+  scalar_return.expr = checked_ir::Expr{
+      checked_ir::ExprKind::IntegerLiteral, Type::primitive("int"), 0, "1"};
+  scalar_return.type = Type::primitive("int");
+  const std::vector<checked_ir::Stmt> unsupported_shape{scalar_return};
+  const auto unsupported_bytes =
+      checked_ir::encode_checked_body_v1(unsupported_shape);
+  assert(rejects_empty_vector_body(
+      unsupported_bytes, vector_type,
+      checked_ir::compute_checked_body_hash_v1(unsupported_shape)));
+
   std::size_t callable_provenance_count = 0;
   for (const auto& record : iface.provenance) {
     abi_v10::validate_provenance(record);

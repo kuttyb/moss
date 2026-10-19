@@ -26,7 +26,8 @@ def load_g2_helpers():
 
 
 def check_case(g2, root, env, name, source_text, code, consumer_line,
-               provider_symbol=None, provider_line=None, require_provider=True):
+               provider_symbol=None, provider_line=None, provider_identity=None,
+               require_provider=True, forbid_provider=False):
     _, source = g2.consumer(root, name, source_text)
     assert not (root / "provider" / "src").exists(), "provider source remained available"
     result = g2.run(g2.MOSS, "check", source, "--json", env=env)
@@ -67,6 +68,15 @@ def check_case(g2, root, env, name, source_text, code, consumer_line,
             note.get("source", {}).get("line") == provider_line
             for note in provider_notes):
         failures.append(f"provider provenance does not identify declaration line {provider_line}")
+    if provider_identity and not any(provider_identity in note.get("message", "")
+                                     for note in provider_notes):
+        failures.append("provider provenance does not include the semantic callable identity")
+    if (provider_identity and ":fn:fresh" in provider_identity and
+            f"MOSS_CHECKED_BODY_PROJECTED|{provider_identity}|checked-body-v1"
+            not in result.stderr):
+        failures.append("fresh callable did not use its checked-body projection")
+    if forbid_provider and provider_notes:
+        failures.append("ordinary local collection conflict acquired provider provenance")
 
     return {
         "case": name,
@@ -76,6 +86,7 @@ def check_case(g2, root, env, name, source_text, code, consumer_line,
         "expected_consumer_line": consumer_line,
         "expect_provider_provenance": require_provider,
         "returncode": result.returncode,
+        "compiler_stderr": result.stderr,
         "diagnostic": error,
         "failures": failures,
     }
@@ -98,7 +109,8 @@ import Provider
 fn main():
   echo Provider.relay()
 """,
-            "TYPE_AMBIGUOUS_OPEN_RESULT", 4, "Provider.relay", 5))
+            "TYPE_AMBIGUOUS_OPEN_RESULT", 4, "Provider.relay", 5,
+            "callable-v1:module-v1:g2provider@0.1.0::Provider:fn:relay"))
         evidence["cases"].append(check_case(
             g2, scratch / "provider_setup", env, "conflicting_fresh_use",
             """module Consumer
@@ -108,7 +120,17 @@ fn main():
   values.push(1)
   values.push("one")
 """,
-            "TYPE_MISMATCH", 6, require_provider=False))
+            "TYPE_MISMATCH", 6, "Provider.fresh", 2,
+            "callable-v1:module-v1:g2provider@0.1.0::Provider:fn:fresh"))
+        evidence["cases"].append(check_case(
+            g2, scratch / "provider_setup", env, "ordinary_local_conflict",
+            """module Consumer
+fn main():
+  values = []
+  values.push(1)
+  values.push("one")
+""",
+            "TYPE_MISMATCH", 5, require_provider=False, forbid_provider=True))
 
     evidence_path = ROOT / "tmp/phase25_m2b1_diagnostics.json"
     evidence_path.write_text(json.dumps(evidence, indent=2) + "\n")

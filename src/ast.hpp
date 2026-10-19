@@ -589,6 +589,9 @@ struct Function {
   string imported_checked_summary_payload;
   string imported_checked_body_payload;
   vector<std::pair<string, string>> imported_checked_provenance_records;
+  // True once a validated ABI-v10 checked body replaced the imported legacy
+  // generic_stmt projection for this callable.
+  bool imported_checked_body_projected = false;
 };
 struct Trait { string name, header; vector<TraitMethod> methods; bool exported = false; int line = 0; string source_file; };
 

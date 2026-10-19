@@ -15,3 +15,5 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_known_open_nominal
 ${CXX:-c++} -std=c++17 -Wall -Wextra -Werror -pedantic -Isrc \
   tests/tooling/abi_v10_adversarial.cpp -o tmp/abi_v10_adversarial
 tmp/abi_v10_adversarial
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_empty_vector_records.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_r2c_empty_vector_consumer.py "$compiler"

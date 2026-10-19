@@ -448,8 +448,10 @@ inline std::string compute_checked_body_hash_v1(const std::vector<Stmt>& stateme
 class H3BodyReader {
  public:
   H3BodyReader(std::string_view bytes, const TypeContext& context,
-               const std::vector<TypeRef>& parameters, const TypeRef& result)
-      : bytes_(bytes), context_(context), parameters_(parameters), result_(result) {}
+               const std::vector<TypeRef>& parameters, const TypeRef& result,
+               bool allow_empty_vector_return = false)
+      : bytes_(bytes), context_(context), parameters_(parameters), result_(result),
+        allow_empty_vector_return_(allow_empty_vector_return) {}
 
   std::vector<Stmt> read() {
     constexpr std::string_view header = "moss-checked-body-v1\n";
@@ -479,6 +481,7 @@ class H3BodyReader {
   TypeRef result_;
   std::size_t position_ = 0;
   TypeRef local_type_;
+  bool allow_empty_vector_return_ = false;
 
   [[noreturn]] static void fail(const char* message) {
     throw std::invalid_argument(message);
@@ -661,6 +664,14 @@ class H3BodyReader {
       if (expression.ordinal != 0 || !local_type_ ||
           !expression.type->structurally_equal(*local_type_))
         fail("checked body local type is mismatched");
+    } else if (expression.kind == ExprKind::VectorLiteral &&
+               allow_empty_vector_return_) {
+      if (number() != 0 ||
+          expression.type->kind != TypeKind::Builtin ||
+          expression.type->name != "vector" ||
+          expression.type->type_args.size() != 1 ||
+          (result_ && !expression.type->structurally_equal(*result_)))
+        fail("checked empty-vector return type or arity is mismatched");
     } else if (expression.kind == ExprKind::Call ||
                expression.kind == ExprKind::NominalConstruct) {
       expression.semantic_target_id = field();
@@ -697,10 +708,10 @@ class H3BodyReader {
     Stmt statement;
     statement.kind = StmtKind::Return;
     statement.expr = read_expr();
-    if (!result_ ||
-        !statement.expr->type->structurally_equal(*result_))
+    if ((!result_ && !allow_empty_vector_return_) ||
+        (result_ && !statement.expr->type->structurally_equal(*result_)))
       fail("single-return checked body result type is mismatched");
-    statement.type = result_;
+    statement.type = result_ ? result_ : statement.expr->type;
     return statement;
   }
 
@@ -744,6 +755,43 @@ inline std::vector<Stmt> decode_h3_checked_body_v1(
   if (compute_checked_body_hash_v1(statements) != expected_hash)
     throw std::invalid_argument("H3 checked body hash is mismatched");
   return statements;
+}
+
+// Narrow ABI-v10 consumer entry point for the R2b canonical empty-vector body.
+// This deliberately accepts exactly one `return VectorLiteral([])` whose
+// authoritative type is the typed summary result. It does not enable vector
+// literals in the broader H3 body decoder.
+inline std::vector<Stmt> decode_empty_vector_return_checked_body_v1(
+    std::string_view bytes, const TypeContext& context, const TypeRef& result,
+    std::string_view expected_hash) {
+  if (!result || result->kind != TypeKind::Builtin ||
+      result->name != "vector" || result->type_args.size() != 1)
+    throw std::invalid_argument("checked empty-vector summary result is unsupported");
+  H3BodyReader reader(bytes, context, {}, result, true);
+  auto statements = reader.read();
+  if (statements.size() != 1 ||
+      statements.front().kind != StmtKind::Return ||
+      !statements.front().expr ||
+      statements.front().expr->kind != ExprKind::VectorLiteral ||
+      !statements.front().expr->operands.empty() ||
+      compute_checked_body_hash_v1(statements) != expected_hash)
+    throw std::invalid_argument("checked body is not the canonical empty-vector return");
+  return statements;
+}
+
+inline bool is_empty_vector_return_checked_body_candidate_v1(
+    std::string_view bytes, const TypeContext& context) {
+  try {
+    H3BodyReader reader(bytes, context, {}, nullptr, true);
+    const auto statements = reader.read();
+    return statements.size() == 1 &&
+        statements.front().kind == StmtKind::Return &&
+        statements.front().expr &&
+        statements.front().expr->kind == ExprKind::VectorLiteral &&
+        statements.front().expr->operands.empty();
+  } catch (const std::invalid_argument&) {
+    return false;
+  }
 }
 
 } // namespace checked_ir

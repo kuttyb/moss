@@ -3288,6 +3288,24 @@ static bool abi_v10_checked_arithmetic_summary_candidate(
       });
 }
 
+static bool abi_v10_empty_vector_summary_candidate(
+    const abi_v10::Summary& summary) {
+  const auto bound_zero = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::BoundVar &&
+        type.ordinal == 0 && type.arguments.empty();
+  };
+  return summary.variable_count == 1 && summary.parameters.empty() &&
+      summary.parameter_access.empty() && summary.requirements.empty() &&
+      summary.dependencies.empty() &&
+      summary.observable_effect_bits == 0 &&
+      summary.observable_effect_tags.empty() &&
+      summary.result.kind == abi_v10::WireTypeKind::Builtin &&
+      summary.result.identity == "vector" &&
+      summary.result.arguments.size() == 1 &&
+      bound_zero(summary.result.arguments.front()) &&
+      abi_v10::checked_body_hash_valid(summary.body_semantic_hash);
+}
+
 static void validate_abi_v10_checked_arithmetic_summary(
     const abi_v10::Summary& summary, const Function& function) {
   auto invalid = [&](const string& reason) -> void {
@@ -3397,9 +3415,17 @@ static void project_imported_h3_checked_bodies(Program& program) {
     if (!result) invalid("checked ABI-v10 result TypeRef is unresolved");
     vector<checked_ir::Stmt> statements;
     try {
-      statements = checked_ir::decode_h3_checked_body_v1(
-          body.checked_ir_bytes, *program.type_context, parameters, result,
-          body.semantic_hash);
+      if (abi_v10_empty_vector_summary_candidate(summary)) {
+        if (!parameters.empty())
+          invalid("checked empty-vector body has unexpected parameters");
+        statements = checked_ir::decode_empty_vector_return_checked_body_v1(
+            body.checked_ir_bytes, *program.type_context, result,
+            body.semantic_hash);
+      } else {
+        statements = checked_ir::decode_h3_checked_body_v1(
+            body.checked_ir_bytes, *program.type_context, parameters, result,
+            body.semantic_hash);
+      }
     } catch (const std::invalid_argument& error) {
       invalid(string("checked ABI-v10 body cannot be decoded: ") + error.what());
     }
@@ -3417,7 +3443,16 @@ static void project_imported_h3_checked_bodies(Program& program) {
     }
     const auto& expression = *statements.front().expr;
     string lowered;
-    if (statements.size() == 1 &&
+    if (abi_v10_empty_vector_summary_candidate(summary) &&
+        statements.size() == 1 &&
+        statements.front().kind == checked_ir::StmtKind::Return &&
+        expression.kind == checked_ir::ExprKind::VectorLiteral &&
+        expression.operands.empty()) {
+      // The checked type is the typed summary's Vector[BoundVar(0)]. Keep the
+      // ordinary Moss empty literal in the existing checker/native lowering
+      // path, where its element variable closes at each imported call site.
+      lowered = "[]";
+    } else if (statements.size() == 1 &&
         statements.front().kind == checked_ir::StmtKind::Return &&
         expression.kind == checked_ir::ExprKind::Binary &&
         expression.binary_op == checked_ir::BinaryOp::Add) {
@@ -3577,6 +3612,11 @@ static void project_imported_h3_checked_bodies(Program& program) {
     returned.text = "return " + local;
     function.body = {std::move(bind), std::move(returned)};
     function.result_expression.reset();
+    function.imported_checked_body_projected = true;
+    if (const char* trace = std::getenv("MOSS_PHASE25_CHECKED_BODY_TRACE");
+        trace && string(trace) == "1")
+      std::cerr << "MOSS_CHECKED_BODY_PROJECTED|"
+                << function.semantic_callable_id << "|checked-body-v1\n";
   }
 }
 
@@ -4100,6 +4140,13 @@ class Checker {
     bool scoped_locals_active = false;
     std::unordered_map<const Stmt*, moss::TypeRef> assignment_values;
     TypeEnv closed_projection;
+    struct ProviderCallableOrigin {
+      string file;
+      string display_name;
+      string callable_id;
+      int line = 0;
+    };
+    std::unordered_map<string, ProviderCallableOrigin> provider_origins;
 
     moss::TypeRef assignment_value(const Stmt& statement) {
       auto found = assignment_values.find(&statement);
@@ -9888,6 +9935,25 @@ class Checker {
         constrain_call(statement.line, statement.b);
         auto instantiated = instantiate_summary(statement.line, statement.b,
                                                 &statement);
+        body_types.provider_origins.erase(statement.a);
+        string assigned_callee;
+        vector<string> assigned_arguments;
+        if (parse_simple_call(trim(statement.b), assigned_callee,
+                              assigned_arguments)) {
+          auto target = functions_.find(assigned_callee);
+          if (target != functions_.end() &&
+              target->second->imported_checked_body_projected &&
+              !target->second->imported_checked_summary_payload.empty()) {
+            const auto& function = *target->second;
+            body_types.provider_origins.emplace(statement.a,
+                BodyTypeState::ProviderCallableOrigin{
+                    function.provider_origin_file.empty()
+                        ? function.source_file : function.provider_origin_file,
+                    provider_callable_display(function.name),
+                    function.semantic_callable_id,
+                    std::max(function.line, 1)});
+          }
+        }
         auto retained_source = body_types.known_expression(statement.b);
         if (!instantiated && !retained_source && !inferred) continue;
         auto parsed = inferred ? moss::Type::parse_canonical(
@@ -9942,9 +10008,24 @@ class Checker {
         const bool resolved_argument = argument->kind != moss::TypeKind::Domain &&
             !contains_internal_placeholder(argument->to_canonical_string());
         if (resolved_argument &&
-            !solver.unify(current->type_args.front(), argument))
-          err(statement.line, statement.b + " argument conflicts with the element type of '" +
-              statement.a + "'", "TYPE_MISMATCH");
+            !solver.unify(current->type_args.front(), argument)) {
+          const string message = statement.b +
+              " argument conflicts with the element type of '" +
+              statement.a + "'";
+          auto origin = body_types.provider_origins.find(statement.a);
+          if (origin != body_types.provider_origins.end()) {
+            CompileError error(statement.line, message, "TYPE_MISMATCH");
+            if (!current_source_file_.empty())
+              error.source_file = current_source_file_;
+            error.teaching.related.push_back({
+                origin->second.file, origin->second.line, 1,
+                "provider callable '" + origin->second.display_name +
+                    "' (" + origin->second.callable_id +
+                    ") is declared here"});
+            throw error;
+          }
+          err(statement.line, message, "TYPE_MISMATCH");
+        }
         scan[statement.a] = solver.resolve(local->second)->to_canonical_string();
       } else if (statement.kind == Stmt::Kind::Assign &&
                  statement.a.find('[') != string::npos) {
@@ -38000,10 +38081,20 @@ static ParsedModuleUnit load_module_interface(
       auto body_records = bodies.find(id);
       const ImportedSummaryRecord* arithmetic_summary_record = nullptr;
       abi_v10::Summary arithmetic_summary;
+      const ImportedSummaryRecord* empty_vector_summary_record = nullptr;
+      abi_v10::Summary empty_vector_summary;
       if (summary_records != summaries.end()) {
         for (const auto& candidate : summary_records->second) {
           if (!candidate.typed_v2) continue;
           const auto decoded = abi_v10::read_summary(candidate.payload);
+          if (abi_v10_empty_vector_summary_candidate(decoded)) {
+            if (empty_vector_summary_record)
+              throw CompileError(0,
+                  "duplicate checked ABI-v10 empty-vector summary",
+                  "SOURCE_FREE_SUMMARY_INVALID");
+            empty_vector_summary_record = &candidate;
+            empty_vector_summary = decoded;
+          }
           if (!abi_v10_checked_arithmetic_summary_candidate(decoded)) continue;
           if (arithmetic_summary_record)
             throw CompileError(0, "duplicate checked ABI-v10 arithmetic summary",
@@ -38013,6 +38104,25 @@ static ParsedModuleUnit load_module_interface(
         }
       }
       const bool has_body = body_records != bodies.end();
+      const bool has_typed_summary = summary_records != summaries.end() &&
+          std::any_of(summary_records->second.begin(),
+                      summary_records->second.end(),
+                      [](const ImportedSummaryRecord& record) {
+            return record.typed_v2;
+          });
+      moss::TypeContext checked_body_type_context;
+      const bool empty_vector_body_without_typed_summary =
+          has_body && !has_typed_summary &&
+          std::any_of(body_records->second.begin(), body_records->second.end(),
+              [&](const auto& body_record) {
+            return checked_ir::is_empty_vector_return_checked_body_candidate_v1(
+                body_record.first.checked_ir_bytes,
+                checked_body_type_context);
+          });
+      if (empty_vector_body_without_typed_summary)
+        throw CompileError(std::max(function.line, 1),
+            "checked ABI-v10 empty-vector body is missing its typed v2 summary",
+            "SOURCE_FREE_SUMMARY_INVALID");
       if (arithmetic_summary_record) {
         validate_abi_v10_checked_arithmetic_summary(arithmetic_summary,
                                                     function);
@@ -38029,6 +38139,22 @@ static ParsedModuleUnit load_module_interface(
             checked_body.semantic_hash != arithmetic_summary.body_semantic_hash)
           throw CompileError(std::max(function.line, 1),
               "checked ABI-v10 arithmetic body identity or semantic hash does not match its summary",
+              "SOURCE_FREE_CHECKED_BODY_INVALID");
+      }
+      if (empty_vector_summary_record) {
+        if (summary_records->second.size() != 1)
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 empty-vector callable has duplicate summaries",
+              "SOURCE_FREE_SUMMARY_INVALID");
+        if (!has_body || body_records->second.size() != 1)
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 empty-vector summary requires exactly one checked body",
+              "SOURCE_FREE_CHECKED_BODY_INVALID");
+        const auto& checked_body = body_records->second.front().first;
+        if (checked_body.callable_id != id ||
+            checked_body.semantic_hash != empty_vector_summary.body_semantic_hash)
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 empty-vector body identity or semantic hash does not match its summary",
               "SOURCE_FREE_CHECKED_BODY_INVALID");
       }
       if (!has_body) continue;

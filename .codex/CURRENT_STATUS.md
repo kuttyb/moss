@@ -8703,3 +8703,100 @@ Validation:
   fresh/relay positives, source-backed ambiguity, and transitive missing-method
   provider provenance.
 - `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` passed.
+
+## Phase 25-M2b.1-R2 — Provider origin for conflicting collection uses
+
+Starting from `387b662c0c12627bad1f16b16af046c813783259`. The source-free
+Provider artifact retains `provider_origin_file=provider.moss`, declaration
+line 2, and the semantic callable identity for `Provider.fresh`, but the
+imported Function has no complete `open_summary` (`summary=0`, no result
+TypeRef or element-variable relation). Its ABI-v10 semantic record contains
+only `return=vector` and legacy `generic_stmt "return []"`. The required
+binding-to-origin relationship therefore cannot be recovered safely under the
+specified complete-summary-only rule.
+
+The focused R2 test updates are retained locally and fail on the conflicting-
+push provenance assertion; R1 ambiguity and ordinary-local-no-provenance cases
+pass. The exploratory `src/moss.cpp` changes were removed. See
+`tmp/phase25_m2b1r2_failure.md` and `tmp/m2b2-debug/provider_setup/artifacts/Provider.mossi`.
+No commit or push was made; provider summary emission/import is the prerequisite
+and is outside this gate's scope.
+
+## Phase 25-M2b.1-R2b — Emit checked empty-vector ABI-v10 records
+
+Starting from `387b662c0c12627bad1f16b16af046c813783259` on
+`phase25-integration`. Commit `a92e510d` adds a provider-only path guarded by
+both `MOSS_STAGED_ABI=v10` and `MOSS_PHASE25_EMPTY_VECTOR_EMIT=1`. It accepts
+only an exported static zero-parameter `return []` function with complete,
+pure checker-owned `Vector[BoundVar(0)]` facts and valid callable provenance.
+The emitted v2 summary and checked-body record are validated, canonical, hash
+matched, and have one callable provenance record. Legacy `generic_stmt` is
+retained. Consumer decoding and lowering remain intentionally unsupported for
+this vector literal body.
+
+Validation on the committed source:
+- `make moss-dev` passed (pre-existing TypeSolver missing-field-initializer
+  warnings only).
+- `python3 tests/tooling/check_phase25_empty_vector_records.py
+  build/compiler/moss-dev` passed: experimental artifact counts are 1 typed
+  summary, 1 matching body, 1 callable provenance, and 1 legacy statement;
+  canonical empty-vector bytes/hash and interface validation passed. Negative
+  eligibility probes passed for nonempty, parameterized, parameter-dependent,
+  non-vector, multi-statement, absent/inconsistent-summary, and unresolved
+  effect cases. Switch-disabled staged-v10 emitted 0 summaries/0 bodies and
+  retained 1 legacy statement; staged-v9 plus the experimental variable emitted
+  no records.
+- `python3 tests/tooling/check_phase25_conformance.py
+  build/compiler/moss-dev` passed G2 11/11.
+- `python3 tests/tooling/check_phase25_c2b6c_source_free_arithmetic.py
+  build/compiler/moss-dev` passed checked arithmetic Int/Float, negatives,
+  unsupported legacy forms, and ABI-v9 compatibility.
+- `python3 tests/phase25/integration/cross_crate_harness.py --scenario 6
+  --staged-v10 --json` passed with source removed and output `99`.
+- Agent-feedback validation and `git diff --check` passed.
+
+Pushed `a92e510d` to `origin/phase25-integration`. The pre-existing R2
+conflicting-push provenance test remains uncommitted and intentionally failing
+pending consumer work. `AGENTS.md` already permits normal pushes when the task
+authorization permits them; no no-push rule was present to remove.
+
+## Phase 25-M2b.1-R2c — Consume checked empty-vector ABI-v10 bodies
+
+Started from the R2b baseline `a92e510d5accbe380f75258469a6d14cca9ce065`
+on dedicated branch `phase25-m2b1-r2c`. Added a narrow checked-body decoder for
+canonical `Return(VectorLiteral([]))`, selected only for the complete typed v2
+summary `Vector[BoundVar(0)]` with zero parameters and requirements. The importer
+validates the body against the summary type/hash and uses the existing Moss empty
+vector expression path for specialization and native vector construction.
+Imported checked-body projection replaces the retained legacy `generic_stmt`;
+an opt-in branch trace makes that path observable in acceptance tests.
+
+The consumer test compiles an opt-in staged-v10 provider, removes its source,
+then compiles and executes `Vector[i32]` and `Vector[bool]` specializations with
+empty and populated values. It also covers missing typed summary/body, summary
+and body identity/hash mismatches, invalid provenance, unbound checked-body type
+variables, nonempty vectors, unsupported body shapes, ABI-mode mismatch, and
+M2b.1 source-free provenance. Default ABI-v9 source-free behavior is exercised
+separately. Missing summary/body and malformed checked-body cases reject with
+source-free summary/body diagnostics; no legacy fallback is accepted for a
+checked-body record missing its typed v2 summary.
+
+Validation after the final compiler edit:
+- `make moss-dev` passed (pre-existing TypeSolver aggregate-initializer warnings).
+- `python3 tests/tooling/check_phase25_empty_vector_records.py
+  build/compiler/moss-dev` passed, including switch-off and staged-v9 emission.
+- `python3 tests/tooling/check_phase25_r2c_empty_vector_consumer.py
+  build/compiler/moss-dev` passed all positive and negative cases, including the
+  checked-body trace and M2b.1 provider-origin assertions.
+- `python3 tests/tooling/check_phase25_conformance.py
+  build/compiler/moss-dev` passed G2 11/11.
+- `python3 tests/tooling/check_phase25_c2b6c_source_free_arithmetic.py
+  build/compiler/moss-dev` passed checked arithmetic and ABI-v9 controls.
+- `python3 tests/phase25/integration/cross_crate_harness.py --scenario 6
+  --staged-v10 --json` passed with source removed and output `99`.
+- Agent-feedback validation and `git diff --check` passed.
+
+Registered the R2b and R2c acceptance runners in the ABI-v10 test shard. The
+full repository regression suite has not been run. The working tree also began
+with uncommitted R2b status, feedback, and M2b.1 test changes; those task-related
+changes are preserved and included in the pending feature commit.
