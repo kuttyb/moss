@@ -84,13 +84,16 @@ impl<K, V> MossMap<K, V> {
         }
     }
 
-    fn grow(&mut self) {
-        let next_count = self.slots.len() * 2;
+    fn resize(&mut self, next_count: usize) {
         let old = std::mem::replace(&mut self.slots, (0..next_count).map(|_| None).collect());
         self.len = 0;
         for entry in old.into_iter().flatten() {
             self.insert_rehashed(entry);
         }
+    }
+
+    fn grow(&mut self) {
+        self.resize(self.slots.len() * 2);
     }
 
     fn find_slot<F>(&self, hash: i64, key: &K, mut isequal: F) -> Option<usize>
@@ -165,6 +168,13 @@ impl<K, V> MossMap<K, V> {
             hole = next;
         }
         self.len -= 1;
+        // Keep the bucket scan in keys()/values() proportional to the number
+        // of live entries, even after a map once held many more keys. Shrink
+        // below 1/8 load; the resulting load is at most 1/4, so repeated
+        // deletes do not cause a rehash per operation.
+        if self.slots.len() > INITIAL_BUCKETS && self.len < self.slots.len() / 8 {
+            self.resize((self.slots.len() / 2).max(INITIAL_BUCKETS));
+        }
         Some(removed.value)
     }
 
@@ -185,12 +195,10 @@ impl<K, V> MossMap<K, V> {
             .map(|slot| &mut self.slots[slot].as_mut().expect("occupied map slot").value)
     }
 
-    /// Clear all entries from the map, resetting length while keeping bucket allocation.
+    /// Clear all entries and release excess buckets so an empty snapshot is
+    /// constant-time even after the map reached a large peak size.
     pub fn clear(&mut self) {
-        for slot in &mut self.slots {
-            *slot = None;
-        }
-        self.len = 0;
+        *self = Self::new();
     }
 
     /// An eager, owned snapshot. Clone means the result cannot borrow a key
@@ -321,6 +329,85 @@ mod tests {
         assert!(set.contains_with(4, &4, |a, b| a == b));
         assert!(set.remove_with(4, &4, |a, b| a == b));
         assert!(set.is_empty());
+    }
+
+    #[test]
+    fn sparse_map_snapshot_scans_and_clones_only_linear_live_storage() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        struct CountedKey {
+            id: i64,
+            clones: Rc<Cell<usize>>,
+        }
+
+        impl Clone for CountedKey {
+            fn clone(&self) -> Self {
+                self.clones.set(self.clones.get() + 1);
+                Self {
+                    id: self.id,
+                    clones: Rc::clone(&self.clones),
+                }
+            }
+        }
+
+        let clones = Rc::new(Cell::new(0));
+        let mut map = MossMap::new();
+        for id in 0..8192 {
+            map.insert_with(
+                id,
+                CountedKey {
+                    id,
+                    clones: Rc::clone(&clones),
+                },
+                id,
+                |a, b| a.id == b.id,
+            );
+        }
+        for id in 0..8191 {
+            let key = CountedKey {
+                id,
+                clones: Rc::clone(&clones),
+            };
+            assert_eq!(map.remove_with(id, &key, |a, b| a.id == b.id), Some(id));
+        }
+        assert_eq!(map.len(), 1);
+        assert!(
+            map.slots.len() <= 8 * map.len(),
+            "keys() must scan O(live entries), not O(peak entries)"
+        );
+        let snapshot = map.keys();
+        assert_eq!(snapshot.len(), 1);
+        assert_eq!(snapshot[0].id, 8191);
+        assert_eq!(clones.get(), 1, "snapshot must clone each live key once");
+
+        let last = CountedKey {
+            id: 8191,
+            clones: Rc::clone(&clones),
+        };
+        assert_eq!(
+            map.remove_with(8191, &last, |a, b| a.id == b.id),
+            Some(8191)
+        );
+        assert_eq!(map.slots.len(), super::INITIAL_BUCKETS);
+        assert!(map.keys().is_empty());
+        assert_eq!(snapshot[0].id, 8191, "snapshot must own its key");
+
+        for id in 0..8192 {
+            map.insert_with(
+                id,
+                CountedKey {
+                    id,
+                    clones: Rc::clone(&clones),
+                },
+                id,
+                |a, b| a.id == b.id,
+            );
+        }
+        map.clear();
+        assert_eq!(map.slots.len(), super::INITIAL_BUCKETS);
+        assert!(map.keys().is_empty());
+        assert_eq!(clones.get(), 1);
     }
 
     #[test]
