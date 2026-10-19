@@ -52,6 +52,28 @@ export fn relay(b: Box):
     assert accepted.returncode == 0 and json.loads(accepted.stdout)["ok"], (
         accepted.stdout, accepted.stderr)
 
+    probe = Path(scratch) / "probe.moss"
+    probe.write_text(source.read_text() + '\nfn main():\n  item = fresh(99)\n'
+                     '  echo relay(item)\n')
+    inspected = subprocess.run([str(MOSS), "inspect", "main", "--source",
+                                str(probe), "--json"], env=default,
+                               capture_output=True, text=True)
+    assert inspected.returncode == 0, (inspected.stdout, inspected.stderr)
+    typed = json.loads(inspected.stdout)["result"]["typed_semantic_v1"]
+    summaries = {entry["callable_id"].split(":fn:")[-1]: entry
+                 for entry in typed["open_summaries"]}
+    assert {"fresh", "nested_private_box", "private_box"} <= summaries.keys(), typed
+    expected_field = {"name": "value", "type": {"kind": "bound_var", "ordinal": 0}}
+    for name in ("fresh", "nested_private_box", "private_box"):
+        result = summaries[name]["result_type"]
+        assert result["kind"] == "nominal" and result["fields"] == [
+            expected_field], (name, result)
+        assert not summaries[name]["checked_body_ir_available"], summaries[name]
+    assert summaries["nested_private_box"]["semantic_dependencies"] == [
+        summaries["private_box"]["callable_id"]], summaries
+    assert summaries["fresh"]["semantic_dependencies"] == [
+        summaries["nested_private_box"]["callable_id"]], summaries
+
     # The pre-cutover ABI-v9 path still accepts the same provider and keeps
     # two independently typed source-free consumers working from one artifact.
     provider = Path(scratch) / "provider"

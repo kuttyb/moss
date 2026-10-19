@@ -2979,6 +2979,10 @@ class Checker {
     check_objects();
     check_declared_map_key_types();
     check_local_call_cycles();
+    // The first summary pass seeds result relations for call-cycle analysis.
+    // A second pass can bind straight-line private-call results to the exact
+    // call edges retained by that analysis, without guessing from spelling.
+    build_open_callable_summaries();
     for (auto& function : p_.functions) {
       if (!function.open_summary) continue;
       for (const auto& edge : p_.semantic_call_edges) {
@@ -3536,6 +3540,128 @@ class Checker {
       };
       const string result = function.return_type
           ? canonical_type_name(*function.return_type) : "unit";
+      // A straight-line local can carry the returned open value. Resolve only
+      // the exact assignment/return pair; branches and reassignment retain the
+      // existing incomplete-summary behavior.
+      std::optional<std::pair<string, int>> local_result;
+      if (function.body.size() == 2 &&
+          function.body.back().kind == Stmt::Kind::Return &&
+          plain_identifier(trim(function.body.back().a)) &&
+          (function.body.front().kind == Stmt::Kind::Let ||
+           function.body.front().kind == Stmt::Kind::Var ||
+           function.body.front().kind == Stmt::Kind::Assign) &&
+          trim(function.body.front().a) == trim(function.body.back().a) &&
+          function.body.front().indent == function.body.back().indent)
+        local_result = std::make_pair(trim(function.body.front().b),
+                                      function.body.front().line);
+      moss::TypeRef local_result_type;
+      if (local_result) {
+        string target;
+        vector<string> arguments;
+        if (parse_simple_call(local_result->first, target, arguments)) {
+          string qualified = target;
+          if (!functions_.count(qualified) && !objects_.count(qualified) &&
+              !function.defining_module.empty())
+            qualified = function.defining_module + "__" + target;
+          auto nominal = objects_.find(qualified);
+          if (nominal != objects_.end()) {
+            auto declaration = type_term(qualified);
+            if (declaration &&
+                declaration->kind == moss::TypeKind::NominalInstance &&
+                declaration->declaration &&
+                arguments.size() == nominal->second->fields.size()) {
+              vector<std::pair<string, moss::TypeRef>> substitutions;
+              bool valid = true;
+              for (const auto& field : nominal->second->fields) {
+                auto found = std::find_if(arguments.begin(), arguments.end(),
+                    [&](const string& argument) {
+                  string name, value;
+                  return parse_named_argument(argument, name, value) &&
+                      name == field.name;
+                });
+                if (found == arguments.end()) { valid = false; break; }
+                string name, value;
+                (void)parse_named_argument(*found, name, value);
+                auto parameter = parameter_variables.find(trim(value));
+                moss::TypeRef term = parameter != parameter_variables.end()
+                    ? parameter->second : type_term(
+                        constraint_expression_type(function, value).value_or(""));
+                if (!term) { valid = false; break; }
+                if (field.type.empty())
+                  substitutions.emplace_back(name, term);
+                else if (auto declared = type_term(field.type);
+                         !declared || !declared->structurally_equal(*term)) {
+                  valid = false;
+                  break;
+                }
+              }
+              if (valid)
+                local_result_type = moss::Type::nominal_bound(
+                    declaration->declaration, declaration->name,
+                    std::move(substitutions));
+            }
+          } else {
+            auto callee = functions_.find(qualified);
+            if (callee != functions_.end() && callee->second->open_summary &&
+                callee->second->open_summary->complete &&
+                arguments.size() == callee->second->params.size()) {
+              const auto& source = *callee->second->open_summary;
+              const bool exact_edge = std::any_of(
+                  p_.semantic_call_edges.begin(), p_.semantic_call_edges.end(),
+                  [&](const moss::SemanticCallEdge& edge) {
+                return edge.source == "fn:" + function.name &&
+                    edge.target == "fn:" + qualified &&
+                    edge.line == local_result->second &&
+                    edge.invocation_kind == "ordinary_call";
+              });
+              std::map<std::uint32_t, moss::TypeRef> replacements;
+              bool valid = exact_edge;
+              for (size_t index = 0; valid && index < arguments.size(); ++index) {
+                auto argument = parameter_variables.find(trim(arguments[index]));
+                const auto& formal = source.parameter_types[index];
+                if (argument == parameter_variables.end() || !formal ||
+                    formal->kind != moss::TypeKind::InferenceVar ||
+                    formal->var_id.session_id || formal->var_id.owner_id)
+                  valid = false;
+                else
+                  replacements.emplace(formal->var_id.ordinal,
+                                       argument->second);
+              }
+              std::function<moss::TypeRef(const moss::TypeRef&)> substitute =
+                  [&](const moss::TypeRef& type) -> moss::TypeRef {
+                if (!type) return nullptr;
+                if (type->kind == moss::TypeKind::InferenceVar) {
+                  auto replacement = replacements.find(type->var_id.ordinal);
+                  return replacement == replacements.end() ? nullptr
+                      : replacement->second;
+                }
+                if (type->kind == moss::TypeKind::NominalInstance) {
+                  vector<std::pair<string, moss::TypeRef>> fields;
+                  for (const auto& field : type->field_substitutions) {
+                    auto term = substitute(field.second);
+                    if (!term) return nullptr;
+                    fields.emplace_back(field.first, term);
+                  }
+                  return moss::Type::nominal_bound(type->declaration,
+                                                   type->name,
+                                                   std::move(fields));
+                }
+                if (type->kind == moss::TypeKind::Builtin) {
+                  vector<moss::TypeRef> args;
+                  for (const auto& arg : type->type_args) {
+                    auto term = substitute(arg);
+                    if (!term) return nullptr;
+                    args.push_back(term);
+                  }
+                  return moss::Type::builtin(type->name, std::move(args));
+                }
+                return type;
+              };
+              if (valid) local_result_type = substitute(source.result_type);
+            }
+          }
+        }
+      }
       std::optional<std::pair<string, string>> returned_member;
       std::optional<std::pair<string, vector<string>>> returned_callable;
       {
@@ -3555,7 +3681,9 @@ class Checker {
             }))
           returned_callable = std::make_pair(callee, arguments);
       }
-      if (open_generic(result)) {
+      if (local_result_type)
+        summary.result_type = local_result_type;
+      else if (open_generic(result)) {
         auto source = parameter_variables.find(result.substr(9));
         if (source == parameter_variables.end()) {
           complete = false;
