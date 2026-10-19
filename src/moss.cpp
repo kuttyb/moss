@@ -2963,6 +2963,141 @@ static Effect imported_abi_v10_effect(abi_v10::Access access) {
       access == abi_v10::Access::Write ? Effect::Write : Effect::Read;
 }
 
+static moss::AccessMode imported_abi_v10_requirement_access(
+    abi_v10::Access access) {
+  switch (access) {
+    case abi_v10::Access::Read: return moss::AccessMode::Read;
+    case abi_v10::Access::Write: return moss::AccessMode::Write;
+    case abi_v10::Access::Consume: return moss::AccessMode::Consume;
+  }
+  throw abi_v10::Error("SOURCE_FREE_SUMMARY_INVALID",
+                       "ABI-v10 requirement access mode is unsupported");
+}
+
+static vector<moss::Requirement> imported_abi_v10_requirements(
+    const abi_v10::Summary& summary, const Function& function,
+    const moss::TypeContext& context) {
+  auto invalid = [&](const string& reason) -> void {
+    CompileError error(std::max(function.line, 1), reason,
+                       "SOURCE_FREE_SUMMARY_INVALID");
+    error.source_file = function.source_file;
+    throw error;
+  };
+  if (summary.requirements.empty()) {
+    if (!function.imported_checked_provenance_records.empty())
+      invalid("checked ABI-v10 summary has unexpected requirement provenance");
+    return {};
+  }
+  if (summary.requirements.size() != 2)
+    invalid("checked ABI-v10 arithmetic requirement chain is incomplete");
+  if (summary.requirements[0].operation != "operator:*" ||
+      summary.requirements[1].operation != "operator:+" ||
+      summary.requirements[0].parent != 0 ||
+      summary.requirements[1].parent != 1)
+    invalid("checked ABI-v10 arithmetic requirement order or parent is invalid");
+
+  const auto& multiply = summary.requirements[0];
+  const auto& add = summary.requirements[1];
+  if (multiply.receiver.kind != abi_v10::WireTypeKind::BoundVar ||
+      add.receiver.kind != abi_v10::WireTypeKind::BoundVar ||
+      multiply.receiver.ordinal != add.receiver.ordinal ||
+      multiply.receiver.ordinal >= summary.variable_count ||
+      multiply.arguments.size() != 1 || add.arguments.size() != 1 ||
+      !multiply.result || !add.result ||
+      multiply.result->kind != abi_v10::WireTypeKind::BoundVar ||
+      add.result->kind != abi_v10::WireTypeKind::BoundVar ||
+      multiply.result->ordinal != multiply.receiver.ordinal ||
+      add.result->ordinal != multiply.receiver.ordinal ||
+      multiply.arguments.front().kind != abi_v10::WireTypeKind::Primitive ||
+      add.arguments.front().kind != abi_v10::WireTypeKind::Primitive ||
+      multiply.arguments.front().identity != "int" ||
+      add.arguments.front().identity != "int")
+    invalid("checked ABI-v10 arithmetic requirement type relationship is invalid");
+  const bool subject_is_parameter = std::any_of(
+      summary.parameters.begin(), summary.parameters.end(),
+      [&](const abi_v10::WireType& parameter) {
+    return parameter.kind == abi_v10::WireTypeKind::BoundVar &&
+        parameter.ordinal == multiply.receiver.ordinal;
+  });
+  if (!subject_is_parameter ||
+      summary.result.kind != abi_v10::WireTypeKind::BoundVar ||
+      summary.result.ordinal != multiply.receiver.ordinal)
+    invalid("checked ABI-v10 arithmetic requirement is detached from its generic callable type");
+
+  auto callable = moss::CallableId::parse(summary.callable_id);
+  if (!callable || callable->kind != "fn" ||
+      callable->canonical_id != function.semantic_callable_id)
+    invalid("checked ABI-v10 requirement callable identity is invalid");
+
+  std::map<string, abi_v10::SourceProvenance> provenance_by_id;
+  for (const auto& entry : function.imported_checked_provenance_records) {
+    abi_v10::Record record{entry.first, entry.second};
+    try {
+      abi_v10::validate_provenance(record);
+      auto provenance = abi_v10::read_provenance(record.payload);
+      if (!provenance_by_id.emplace(provenance.provenance_id,
+                                    std::move(provenance)).second)
+        invalid("checked ABI-v10 requirement provenance identity is duplicated");
+    } catch (const abi_v10::Error& error) {
+      invalid(error.what());
+    }
+  }
+  if (provenance_by_id.size() != summary.requirements.size())
+    invalid("checked ABI-v10 requirement provenance set is incomplete");
+
+  vector<moss::Requirement> converted;
+  std::set<string> requirement_ids;
+  for (std::size_t index = 0; index < summary.requirements.size(); ++index) {
+    const auto& wire = summary.requirements[index];
+    auto provenance = provenance_by_id.find(wire.provenance_id);
+    if (provenance == provenance_by_id.end())
+      invalid("checked ABI-v10 requirement has no verified provenance record");
+    const auto& origin = provenance->second;
+    if (origin.module_id != callable->module_id ||
+        origin.declaration_id.empty() || origin.start_line == 0 ||
+        origin.start_column == 0 ||
+        origin.start_line > static_cast<std::uint32_t>(
+            std::numeric_limits<int>::max()) ||
+        origin.start_column > static_cast<std::uint32_t>(
+            std::numeric_limits<int>::max()) ||
+        !requirement_ids.insert(origin.declaration_id).second)
+      invalid("checked ABI-v10 requirement provenance is inconsistent");
+    auto subject = imported_abi_v10_type(
+        wire.receiver, context, summary.variable_count);
+    auto argument = imported_abi_v10_type(
+        wire.arguments.front(), context, summary.variable_count);
+    auto result = imported_abi_v10_type(
+        *wire.result, context, summary.variable_count);
+    if (!subject || !argument || !result)
+      invalid("checked ABI-v10 requirement TypeRef is unresolved");
+
+    moss::Requirement requirement;
+    requirement.id = origin.declaration_id;
+    requirement.kind = moss::RequirementKind::Operator;
+    requirement.target_id = wire.operation;
+    requirement.subject = std::move(subject);
+    requirement.arguments.push_back(std::move(argument));
+    requirement.result = std::move(result);
+    requirement.access = imported_abi_v10_requirement_access(wire.access);
+    for (const auto access : wire.argument_access)
+      requirement.argument_access.push_back(
+          imported_abi_v10_requirement_access(access));
+    if (wire.parent) {
+      const auto parent_index = static_cast<std::size_t>(wire.parent - 1);
+      if (parent_index >= converted.size())
+        invalid("checked ABI-v10 requirement parent index is dangling");
+      requirement.parent_requirement_id = converted[parent_index].id;
+    }
+    requirement.origin = {
+        origin.module_id, origin.source_file_display,
+        static_cast<int>(origin.start_line),
+        static_cast<int>(origin.start_column), summary.callable_id,
+        origin.declaration_id};
+    converted.push_back(std::move(requirement));
+  }
+  return converted;
+}
+
 // Stage-v10 H3 import projection. It derives an AST lowering view solely from
 // sealed checked IR; legacy generic_stmt lines are discarded for these bodies.
 // Every target is selected by exact provider identity before inference starts.
@@ -3919,6 +4054,58 @@ class Checker {
         visit_imported(function);
     for (Function* selected : summary_order) {
       auto& function = *selected;
+      if (!function.imported_checked_summary_payload.empty()) {
+        const auto sealed = abi_v10::read_summary(
+            function.imported_checked_summary_payload);
+        auto invalid = [&](const string& reason) -> void {
+          CompileError error(std::max(function.line, 1), reason,
+                             "SOURCE_FREE_SUMMARY_INVALID");
+          error.source_file = function.source_file;
+          throw error;
+        };
+        if (sealed.callable_id != function.semantic_callable_id)
+          invalid("checked ABI-v10 imported summary callable identity is invalid");
+        if (sealed.parameters.size() != function.params.size() ||
+            sealed.parameter_access.size() != function.params.size())
+          invalid("checked ABI-v10 imported summary arity is invalid");
+        OpenCallableSummaryFacts summary;
+        summary.callable_id = sealed.callable_id;
+        summary.bound_variable_count = sealed.variable_count;
+        auto callable = moss::CallableId::parse(sealed.callable_id);
+        if (!callable || callable->kind != "fn")
+          invalid("checked ABI-v10 imported summary callable identity is invalid");
+        summary.origin.module_id = callable->module_id;
+        summary.origin.source_file = function.provider_origin_file.empty()
+            ? function.source_file : function.provider_origin_file;
+        summary.origin.line = function.line;
+        summary.origin.enclosing_callable = sealed.callable_id;
+        for (std::size_t index = 0; index < sealed.parameters.size(); ++index) {
+          auto parameter = imported_abi_v10_type(
+              sealed.parameters[index], *p_.type_context,
+              sealed.variable_count);
+          if (!parameter)
+            invalid("checked ABI-v10 imported parameter TypeRef is unresolved");
+          summary.parameter_types.push_back(std::move(parameter));
+          summary.parameter_access.push_back(
+              imported_abi_v10_requirement_access(
+                  sealed.parameter_access[index]));
+        }
+        summary.result_type = imported_abi_v10_type(
+            sealed.result, *p_.type_context, sealed.variable_count);
+        if (!summary.result_type)
+          invalid("checked ABI-v10 imported result TypeRef is unresolved");
+        summary.requirements = imported_abi_v10_requirements(
+            sealed, function, *p_.type_context);
+        for (const auto& dependency : sealed.dependencies)
+          summary.semantic_dependencies.push_back(dependency.first);
+        summary.observable_effects = function.observable_effects;
+        if (!moss::close_open_summary_ordinals(summary) ||
+            summary.bound_variable_count != sealed.variable_count)
+          invalid("checked ABI-v10 imported summary has invalid bound variables");
+        summary.complete = true;
+        function.open_summary = std::move(summary);
+        continue;
+      }
       OpenCallableSummaryFacts summary;
       summary.callable_id = function.semantic_callable_id;
       summary.origin.module_id =
@@ -37452,6 +37639,20 @@ static ParsedModuleUnit load_module_interface(
                            "SOURCE_FREE_SUMMARY_INVALID");
       function.imported_checked_summary_payload = summary->second;
       function.imported_checked_body_payload = body->second;
+      const auto decoded_summary = abi_v10::read_summary(summary->second);
+      for (const auto& requirement : decoded_summary.requirements) {
+        auto provenance = std::find_if(sealed.value.provenance.begin(),
+            sealed.value.provenance.end(), [&](const abi_v10::Record& record) {
+          return record.id == requirement.provenance_id;
+        });
+        if (provenance == sealed.value.provenance.end())
+          throw CompileError(0,
+              "checked ABI-v10 requirement has no verified provenance record",
+              "SOURCE_FREE_SUMMARY_INVALID");
+        abi_v10::validate_provenance(*provenance);
+        function.imported_checked_provenance_records.emplace_back(
+            provenance->id, provenance->payload);
+      }
       bodies.erase(body);
     }
     if (!bodies.empty())

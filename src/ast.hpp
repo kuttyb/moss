@@ -588,6 +588,7 @@ struct Function {
   // decodes these before inference and replaces any legacy generic_stmt body.
   string imported_checked_summary_payload;
   string imported_checked_body_payload;
+  vector<std::pair<string, string>> imported_checked_provenance_records;
 };
 struct Trait { string name, header; vector<TraitMethod> methods; bool exported = false; int line = 0; string source_file; };
 

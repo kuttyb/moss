@@ -8485,3 +8485,25 @@ Focused validation passed:
 - `abi_v10_staging.cpp` and `abi_v10_adversarial.cpp` passed; the adversarial
   test confirms version-1 and malformed typed summaries are rejected.
 - `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` passed.
+
+## Phase 25-C2b.5a — Reconstruct imported typed requirements
+
+Starting from `2ca35b88ae524d4c92ca472ab4053cffd67ccf1e` on
+`phase25-integration`. The loader retains verified requirement provenance
+records on imported functions. `build_open_callable_summaries()` now constructs
+imported `OpenCallableSummaryFacts` from the validated v2 summary, converting
+wire types through `imported_abi_v10_type()` and restoring ordered operator
+requirements, access modes, parent IDs, and provenance. It accepts the supported
+`operator:*` then `operator:+` pair, rejects incomplete or inconsistent pairs,
+and leaves zero-requirement H3 summaries empty. It does not derive imported
+requirements from legacy text or add specialization enforcement.
+
+Focused validation:
+- `make moss-dev` passed (existing TypeSolver initializer warnings only).
+- `python3 tests/tooling/check_phase25_generic_arithmetic_requirements.py ./moss`
+  passed synthetic v2 import, exact T/Int type relations, parent/access/
+  provenance preservation, and malformed/missing/unsupported rejection.
+  Existing source-backed arithmetic outputs and nonnumeric rejection passed.
+- `python3 tests/phase25/integration/cross_crate_harness.py --scenario 6
+  --staged-v10` passed; source-removed provider consumer output was `99`.
+- `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` passed.
