@@ -1,0 +1,445 @@
+#!/usr/bin/env python3
+"""Run the complete Moss v0.1 regression suite concurrently.
+
+Standard-library Python implementation using ThreadPoolExecutor for DAG-scheduled
+parallel testing, isolated workspaces, stdout/stderr capture, and timing metrics.
+"""
+from __future__ import annotations
+
+import argparse
+from concurrent.futures import Future, ThreadPoolExecutor, wait, FIRST_COMPLETED
+from dataclasses import dataclass, field
+import fnmatch
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import time
+
+
+REPO = Path(__file__).resolve().parents[1]
+
+
+@dataclass
+class Job:
+    name: str
+    cmd_template: list[str]
+    cwd: Path = field(default_factory=lambda: REPO)
+    dependencies: list[str] = field(default_factory=list)
+    use_opt_compiler: bool = False
+    env_overrides: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class JobResult:
+    job: Job
+    returncode: int
+    duration: float
+    stdout: str
+    stderr: str
+    output_dir: Path
+
+
+# All individual standalone Python regressions from tests/run.sh
+TOOLING_TESTS: list[tuple] = [
+    ("check_retired_syntax", [sys.executable, "tests/tooling/check_retired_syntax.py", "--self-test"]),
+    ("check_agent_skills", [sys.executable, "tests/tooling/check_agent_skills.py", "{compiler}"]),
+    ("check_agent_feedback", [sys.executable, "tests/tooling/check_agent_feedback.py", "--self-test"]),
+    ("check_phase21_shared_abi", [sys.executable, "tests/tooling/check_phase21_shared_abi.py", "{out}/phase21-shared-abi"]),
+    ("check_phase21_source_free_abi", [sys.executable, "tests/tooling/check_phase21_source_free_abi.py", "{compiler}", "{out}/phase21-source-free"]),
+    ("check_phase21_abi_v9_migration", [sys.executable, "tests/tooling/check_phase21_abi_v9_migration.py", "{compiler}"]),
+    ("check_phase21_source_free_cache_binding", [sys.executable, "tests/tooling/check_phase21_source_free_cache_binding.py", "{compiler}"]),
+    ("check_phase21_source_free_proof_edges", [sys.executable, "tests/tooling/check_phase21_source_free_proof_edges.py", "{compiler}"]),
+    ("check_phase21_source_free_standard_write_recovery", [sys.executable, "tests/tooling/check_phase21_source_free_standard_write_recovery.py", "{compiler}"]),
+    ("check_phase21_standard_write_order", [sys.executable, "tests/tooling/check_phase21_standard_write_order.py", "{compiler}"]),
+    ("check_phase21_addendum_a_c", [sys.executable, "tests/tooling/check_phase21_addendum_a_c.py", "{compiler}"]),
+    ("check_phase21_original_af", [sys.executable, "tests/tooling/check_phase21_original_af.py", "{compiler}"]),
+    ("check_phase21_imported_effects", [sys.executable, "tests/tooling/check_phase21_imported_effects.py", "{compiler}", "{out}/phase21-imported-effects"]),
+    ("check_phase21_sourcefree_noop_warning", [sys.executable, "tests/tooling/check_phase21_sourcefree_noop_warning.py", "{compiler}"]),
+    ("repro_phase21_mossi_pattern_forgery", [sys.executable, "tests/tooling/repro_phase21_mossi_pattern_forgery.py", "{compiler}"]),
+    ("check_phase21_abi_v9_external_cache", [sys.executable, "tests/tooling/check_phase21_abi_v9_external_cache.py", "{compiler}"]),
+    ("check_phase20_cross_crate_range_abi", [sys.executable, "tests/tooling/check_phase20_cross_crate_range_abi.py", "{compiler}"]),
+    ("check_phase21_on_fail_capture", [sys.executable, "tests/tooling/check_phase21_on_fail_capture.py", "{compiler}"]),
+    ("check_phase21_recovery_semantics", [sys.executable, "tests/tooling/check_phase21_recovery_semantics.py", "{compiler}"]),
+    ("check_phase21_peer_recovery", [sys.executable, "tests/tooling/check_phase21_peer_recovery.py", "{compiler}"]),
+    ("check_phase21_peer_warnings", [sys.executable, "tests/tooling/check_phase21_peer_warnings.py", "{compiler}"]),
+    ("check_phase21_unary_not_effects", [sys.executable, "tests/tooling/check_phase21_unary_not_effects.py", "{compiler}"]),
+    ("check_phase21_field_projection_effects", [sys.executable, "tests/tooling/check_phase21_field_projection_effects.py", "{compiler}"]),
+    ("check_phase21_early_condition_raise", [sys.executable, "tests/tooling/check_phase21_early_condition_raise.py", "{compiler}"]),
+    ("check_phase21_recover_reinit", [sys.executable, "tests/tooling/check_phase21_recover_reinit.py", "{compiler}"]),
+    ("check_phase21_expression_ownership_edges", [sys.executable, "tests/tooling/check_phase21_expression_ownership_edges.py", "{compiler}"]),
+    ("check_phase21_raising_iterators", [sys.executable, "tests/tooling/check_phase21_raising_iterators.py", "{compiler}"]),
+    ("check_phase21_early_placement_proof", [sys.executable, "tests/tooling/check_phase21_early_placement_proof.py", "{compiler}"]),
+    ("check_phase21_method_noop_warning", [sys.executable, "tests/tooling/check_phase21_method_noop_warning.py", "{compiler}"]),
+    ("check_phase21_recovery_native", [sys.executable, "tests/tooling/check_phase21_recovery_native.py", "{compiler}"]),
+    ("check_phase21_root_totality", [sys.executable, "tests/tooling/check_phase21_root_totality.py", "{compiler}"]),
+    ("check_phase21_root_expression_ingress", [sys.executable, "tests/tooling/check_phase21_root_expression_ingress.py", "{compiler}"]),
+    ("check_phase21_absolute_root_boundary", [sys.executable, "tests/tooling/check_phase21_absolute_root_boundary.py", "{compiler}"]),
+    ("check_phase21_handler_failure_native", [sys.executable, "tests/tooling/check_phase21_handler_failure_native.py", "{compiler}"]),
+    ("check_phase21_fileio_errors", [sys.executable, "tests/tooling/check_phase21_fileio_errors.py"]),
+    ("check_phase21_fileio_close_full", [sys.executable, "tests/tooling/check_phase21_fileio_close_full.py", "{compiler}"]),
+    ("check_phase21_fileio_root_cleanup", [sys.executable, "tests/tooling/check_phase21_fileio_root_cleanup.py", "{compiler}"]),
+    ("check_phase21_lock_fileio_adversarial", [sys.executable, "tests/tooling/check_phase21_lock_fileio_adversarial.py", "{compiler}"]),
+    ("check_phase21_float_ieee", [sys.executable, "tests/tooling/check_phase21_float_ieee.py", "{compiler}"]),
+    ("check_phase21_numeric_parse", [sys.executable, "tests/tooling/check_phase21_numeric_parse.py", "{compiler}"]),
+    ("check_phase21_builtin_error_contract", [sys.executable, "tests/tooling/check_phase21_builtin_error_contract.py", "{compiler}"]),
+    ("check_phase21_standard_error_namespace", [sys.executable, "tests/tooling/check_phase21_standard_error_namespace.py", "{compiler}"]),
+    ("check_phase21_borrowed_view_write", [sys.executable, "tests/tooling/check_phase21_borrowed_view_write.py", "{compiler}"]),
+    ("check_generic_specialization", [sys.executable, "tests/tooling/check_generic_specialization.py", "{compiler}"]),
+    ("check_phase24_imported_generic_expressions", [sys.executable, "tests/tooling/check_phase24_imported_generic_expressions.py", "{compiler}"]),
+    ("check_phase24_same_module_type_resolution", [sys.executable, "tests/tooling/check_phase24_same_module_type_resolution.py", "{compiler}"]),
+    ("check_phase24_bitwise_operations", [sys.executable, "tests/tooling/check_phase24_bitwise_operations.py", "{compiler}"]),
+    ("check_phase25_recursive_layout", [sys.executable, "tests/tooling/check_phase25_recursive_layout.py", "{compiler}"]),
+    ("check_phase25_type_ir", [sys.executable, "tests/tooling/check_phase25_type_ir.py"]),
+    ("check_phase25_a3_specialization", [sys.executable, "tests/tooling/check_phase25_a3_specialization.py", "{compiler}"]),
+    ("check_phase25_conformance", [sys.executable, "tests/tooling/check_phase25_conformance.py", "{compiler}"]),
+    ("check_phase25_nominal_identity", [sys.executable, "tests/tooling/check_phase25_nominal_identity.py", "{compiler}"]),
+    ("check_phase25_field_visibility", [sys.executable, "tests/tooling/check_phase25_field_visibility.py", "{compiler}"]),
+    ("check_phase25_team_a_semantics", [sys.executable, "tests/tooling/check_phase25_team_a_semantics.py", "{compiler}"]),
+    ("check_phase25_typed_semantic_api", [sys.executable, "tests/tooling/check_phase25_typed_semantic_api.py", "{compiler}"]),
+    ("check_phase25_checked_body_ir", [sys.executable, "tests/tooling/check_phase25_checked_body_ir.py", "{compiler}"]),
+    ("check_runtime", [sys.executable, "tests/phase25/runtime/check_runtime.py"]),
+    ("check_shared_string_linkage", [sys.executable, "tests/phase25/runtime/check_shared_string_linkage.py"]),
+    ("sdk_foundations", [sys.executable, "sdk/foundations/acceptance/run_all.py"]),
+    ("sdk_text_encoding", [sys.executable, "sdk/text-encoding-acceptance/run_all.py"]),
+    ("sdk_adv_data_cbor", [sys.executable, "sdk/advanced-data-acceptance/run_all.py", "--step", "cbor"]),
+    ("sdk_adv_data_oracle_debug", [sys.executable, "sdk/advanced-data-acceptance/run_all.py", "--step", "oracle-debug"]),
+    ("sdk_adv_data_oracle_release", [sys.executable, "sdk/advanced-data-acceptance/run_all.py", "--step", "oracle-release"]),
+    ("sdk_adv_data_oracle_fast_debug", [sys.executable, "sdk/advanced-data-acceptance/run_all.py", "--step", "oracle-fast-debug"]),
+    ("sdk_adv_data_margo_run", [sys.executable, "sdk/advanced-data-acceptance/run_all.py", "--step", "margo-run"]),
+    ("sdk_adv_data_margo_release", [sys.executable, "sdk/advanced-data-acceptance/run_all.py", "--step", "margo-release"]),
+    ("sdk_adv_data_margo_debug", [sys.executable, "sdk/advanced-data-acceptance/run_all.py", "--step", "margo-debug"]),
+    ("sdk_adv_data_source_free", [sys.executable, "sdk/advanced-data-acceptance/run_all.py", "--step", "source-free"]),
+    ("check_phase24_adversarial_architect", [sys.executable, "tests/tooling/check_phase24_adversarial_architect.py", "{compiler}"]),
+    ("check_phase25_g1_regressions", [sys.executable, "tests/tooling/check_phase25_g1_regressions.py", "{compiler}"]),
+    ("check_phase25_g4_unicode", [sys.executable, "tests/tooling/check_phase25_g4_unicode.py", "{compiler}"]),
+    ("check_phase25_g3_ordering", [sys.executable, "tests/tooling/check_phase25_g3_ordering.py", "{compiler}"]),
+    ("check_phase25_l7_repairs", [sys.executable, "tests/tooling/check_phase25_l7_repairs.py", "{compiler}"]),
+    ("check_phase25_indexed_string", [sys.executable, "tests/tooling/check_phase25_indexed_string.py", "{compiler}"]),
+    ("check_phase25_s2_char_string", [sys.executable, "tests/tooling/check_phase25_s2_char_string.py", "{compiler}"]),
+    ("check_phase25_s1_checker_authority", [sys.executable, "tests/tooling/check_phase25_s1_checker_authority.py", "{compiler}"]),
+    ("check_phase25_s3_key_protocol", [sys.executable, "tests/tooling/check_phase25_s3_key_protocol.py", "{compiler}"]),
+    ("check_phase25_s4_fast_debug_adversarial", [sys.executable, "tests/tooling/check_phase25_s4_fast_debug_adversarial.py", "{compiler}"]),
+    ("check_phase25_sc_safe_arithmetic", [sys.executable, "tests/tooling/check_phase25_sc_safe_arithmetic.py", "{compiler}"]),
+    ("check_phase25_sa_numeric_literals", [sys.executable, "tests/tooling/check_phase25_sa_numeric_literals.py", "{compiler}"]),
+    ("check_phase25_sb_check_display", [sys.executable, "tests/tooling/check_phase25_sb_check_display.py", "{compiler}"]),
+    ("phase25_key_protocol_fixtures", [sys.executable, "tests/phase25/key_protocol/run_fixtures.py", "--moss", "{compiler}"]),
+    ("check_builtin_generic_typing", [sys.executable, "tests/tooling/check_builtin_generic_typing.py", "{compiler}"]),
+    ("check_swarm_feedback", [sys.executable, "tools/check_swarm_feedback.py", "--self-test"]),
+    ("check_swarm_issues", [sys.executable, "tools/check_swarm_issues.py", "--self-test"]),
+    ("check_agent_benchmark", [sys.executable, "tests/tooling/check_agent_benchmark.py", "{compiler}"]),
+    ("check_agent_baseline", [sys.executable, "tests/tooling/check_agent_baseline.py", "{compiler}"]),
+    ("check_agent_baseline_analysis", [sys.executable, "tests/tooling/check_agent_baseline_analysis.py"]),
+    ("check_phase22_3_ab", [sys.executable, "tests/tooling/check_phase22_3_ab.py", "{compiler}"]),
+    ("check_phase20_executor_fileio", [sys.executable, "tests/tooling/check_phase20_executor_fileio.py", "{compiler}", "{out}/phase20_executor_fileio"]),
+    ("check_phase21c_branch_errors", [sys.executable, "tests/tooling/check_phase21c_branch_errors.py", "{compiler}", "{out}/phase21c_branch_errors"]),
+    ("check_phase21_peer_effects", [sys.executable, "tests/tooling/check_phase21_peer_effects.py", "{compiler}"]),
+    ("check_phase21_peer_open_pipelines", [sys.executable, "tests/tooling/check_phase21_peer_open_pipelines.py", "{compiler}"]),
+    ("check_phase21_pipeline_try_placeholder", [sys.executable, "tests/tooling/check_phase21_pipeline_try_placeholder.py", "{compiler}"]),
+    ("check_phase21_unary_not_speculation", [sys.executable, "tests/tooling/check_phase21_unary_not_speculation.py", "{compiler}"]),
+    ("check_phase21_chunk_fileio_raise", [sys.executable, "tests/tooling/check_phase21_chunk_fileio_raise.py", "{compiler}"]),
+    ("check_phase20_domain_field_physical", [sys.executable, "tests/tooling/check_phase20_domain_field_physical.py", "{compiler}", "{out}/phase20_domain_physical"]),
+    ("check_phase20_r5_fair", [sys.executable, "tests/tooling/check_phase20_r5_fair.py", "{out}/phase20_r5_fair"]),
+    ("check_teaching_diagnostics", [sys.executable, "tests/tooling/check_teaching_diagnostics.py", "{compiler}"]),
+    ("check_no_internal_type_leak", [sys.executable, "tests/tooling/check_no_internal_type_leak.py", "{compiler}"]),
+    ("check_semantic_queries", [sys.executable, "tests/tooling/check_semantic_queries.py", "{compiler}"]),
+    ("check_phase225_semantic_ide", [sys.executable, "tests/tooling/check_phase225_semantic_ide.py", "{compiler}"]),
+    ("check_phase15_15_string_api", [sys.executable, "tests/tooling/check_phase15_15_string_api.py"]),
+    ("check_phase24_string_concat", [sys.executable, "tests/tooling/check_phase24_string_concat.py"]),
+    ("check_swarm_003_formatter", [sys.executable, "tests/tooling/check_swarm_003_formatter.py", "{compiler}"]),
+    ("check_swarm_032_formatter_parentheses", [sys.executable, "tests/tooling/check_swarm_032_formatter_parentheses.py", "{compiler}"]),
+    ("check_formatter_indexing", [sys.executable, "tests/tooling/check_formatter_indexing.py", "{compiler}"]),
+    ("check_swarm_059_project_diagnostics", [sys.executable, "tests/tooling/check_swarm_059_project_diagnostics.py", "{compiler}"]),
+    ("check_phase15_7_formatter_convergence", [sys.executable, "tests/tooling/check_phase15_7_formatter_convergence.py", "{compiler}"]),
+    ("check_phase15_8_cross_package_fast_debug", [sys.executable, "tests/tooling/check_phase15_8_cross_package_fast_debug.py", "{compiler}"]),
+    ("check_phase15_9_cross_package_specialization", [sys.executable, "tests/tooling/check_phase15_9_cross_package_specialization.py", "{compiler}"]),
+    ("check_swarm_039_project_fast_debug_tests", [sys.executable, "tests/tooling/check_swarm_039_project_fast_debug_tests.py"]),
+    ("check_swarm_059_diagnostic_provenance", [sys.executable, "tests/tooling/check_swarm_059_diagnostic_provenance.py"]),
+    ("check_swarm_060_qualified_rename", [sys.executable, "tests/tooling/check_swarm_060_qualified_rename.py"]),
+    ("check_phase20_fileio_semantics", [sys.executable, "tests/tooling/check_phase20_fileio_semantics.py", "{compiler}", "{out}/phase20_fileio_semantics"]),
+    ("check_phase20_fileio_runtime", [sys.executable, "tests/tooling/check_phase20_fileio_runtime.py", "{compiler}", "{out}/phase20_fileio"]),
+    ("phase20_review_probes", [sys.executable, "tests/tooling/phase20_review/run_review_probes.py", "{compiler}", "--strict"]),
+    ("check_phase20_release_semantics", [sys.executable, "tests/tooling/check_phase20_release_semantics.py", "{compiler}"]),
+    ("check_phase20_doc_examples", [sys.executable, "tests/tooling/check_phase20_doc_examples.py"]),
+]
+
+SHELL_SHARDS: list[tuple] = [
+    ("shard_negative", ["tests/shards/shard_negative.sh", "{compiler}", "{out}"]),
+    ("shard_abi_v10_units", ["tests/shards/shard_abi_v10_units.sh", "{compiler}", "{out}"]),
+    ("shard_showcase", ["tests/shards/shard_showcase.sh", "{compiler}", "{out}"]),
+    ("shard_swarm_cases", ["tests/shards/shard_swarm_cases.sh", "{compiler}", "{out}"]),
+    ("shard_phase4_diff", ["tests/shards/shard_phase4_diff.sh", "{compiler}", "{out}"]),
+    ("shard_phase46_opt", ["tests/shards/shard_phase46_opt.sh", "{compiler}", "{out}"]),
+    ("shard_concurrency", ["tests/shards/shard_concurrency.sh", "{compiler}", "{out}"]),
+    ("shard_phase25_int_payloads", ["tests/shards/shard_phase25_int_payloads.sh", "{compiler}", "{out}"]),
+    ("shard_enum_modules", ["tests/shards/shard_enum_modules.sh", "{compiler}", "{out}"]),
+    ("shard_fast_debug", ["tests/shards/shard_fast_debug.sh", "{compiler}", "{out}"]),
+    ("shard_phase5_tooling", ["tests/shards/shard_phase5_tooling.sh", "{compiler}", "{out}"], ["shard_phase4_diff"]),
+    ("shard_phase106_runtime", ["tests/shards/shard_phase106_runtime.sh", "{compiler}", "{out}"]),
+]
+
+
+def build_manifest() -> list[Job]:
+    jobs: list[Job] = []
+    for item in TOOLING_TESTS:
+        name, cmd = item[0], item[1]
+        use_opt = name.startswith("sdk_")
+        jobs.append(Job(name=name, cmd_template=cmd, use_opt_compiler=use_opt))
+
+    for item in SHELL_SHARDS:
+        name, cmd = item[0], item[1]
+        deps = item[2] if len(item) > 2 else []
+        jobs.append(Job(name=name, cmd_template=cmd, dependencies=deps))
+
+    return jobs
+
+
+def run_single_job(
+    job: Job,
+    compiler_dev: Path,
+    compiler_opt: Path,
+    output_base: Path,
+) -> JobResult:
+    compiler = compiler_opt if job.use_opt_compiler else compiler_dev
+    job_out = output_base / job.name
+    job_out.mkdir(parents=True, exist_ok=True)
+    margo_home = job_out / "margo_home"
+    margo_home.mkdir(exist_ok=True)
+
+    cmd = [
+        arg.format(compiler=str(compiler), out=str(job_out))
+        for arg in job.cmd_template
+    ]
+
+    env = os.environ.copy()
+    env.update(
+        MOSS=str(compiler),
+        MARGO_HOME=str(margo_home),
+        TMPDIR=str(REPO / "tmp"),
+        PYTHONDONTWRITEBYTECODE="1",
+        test_build=str(job_out),
+    )
+    env.update(job.env_overrides)
+
+    start_time = time.monotonic()
+    stdout_file = job_out / "stdout.log"
+    stderr_file = job_out / "stderr.log"
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=job.cwd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        duration = time.monotonic() - start_time
+        stdout_file.write_text(proc.stdout, encoding="utf-8")
+        stderr_file.write_text(proc.stderr, encoding="utf-8")
+        return JobResult(
+            job=job,
+            returncode=proc.returncode,
+            duration=duration,
+            stdout=proc.stdout,
+            stderr=proc.stderr,
+            output_dir=job_out,
+        )
+    except Exception as exc:
+        duration = time.monotonic() - start_time
+        err_msg = f"Execution exception: {exc}\n"
+        stderr_file.write_text(err_msg, encoding="utf-8")
+        return JobResult(
+            job=job,
+            returncode=1,
+            duration=duration,
+            stdout="",
+            stderr=err_msg,
+            output_dir=job_out,
+        )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Run Moss regression suite in parallel.")
+    parser.add_argument(
+        "--jobs", "-j",
+        type=int,
+        default=os.cpu_count() or 16,
+        help="Number of concurrent test worker threads (default: CPU cores)",
+    )
+    parser.add_argument(
+        "--compiler-dev",
+        type=Path,
+        default=REPO / "build" / "compiler" / "moss-dev",
+        help="Path to development Moss compiler (-O0)",
+    )
+    parser.add_argument(
+        "--compiler-opt",
+        type=Path,
+        default=REPO / "build" / "compiler" / "moss-opt",
+        help="Path to optimized Moss compiler (-O2)",
+    )
+    parser.add_argument(
+        "--filter", "-k",
+        type=str,
+        default=None,
+        help="Only run jobs whose names match this pattern (e.g. 'shard_*')",
+    )
+    parser.add_argument(
+        "--output-base",
+        type=Path,
+        default=REPO / "build" / "tests" / "parallel",
+        help="Base directory for isolated job build outputs",
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List all jobs in the suite and exit",
+    )
+    args = parser.parse_args()
+
+    manifest = build_manifest()
+
+    if args.list:
+        print(f"Total jobs in manifest: {len(manifest)}")
+        for job in manifest:
+            deps = f" (deps: {', '.join(job.dependencies)})" if job.dependencies else ""
+            print(f"  {job.name}{deps}")
+        return 0
+
+    # Fall back if specified compiler binaries do not exist
+    compiler_dev = args.compiler_dev.resolve()
+    if not compiler_dev.exists():
+        fallback = REPO / "moss"
+        if fallback.exists():
+            compiler_dev = fallback.resolve()
+        else:
+            print(f"Error: compiler {compiler_dev} not found. Run make first.", file=sys.stderr)
+            return 1
+
+    compiler_opt = args.compiler_opt.resolve()
+    if not compiler_opt.exists():
+        compiler_opt = compiler_dev
+
+    # Filter jobs if requested
+    selected_jobs = manifest
+    if args.filter:
+        selected_jobs = [j for j in manifest if fnmatch.fnmatch(j.name, args.filter)]
+        if not selected_jobs:
+            print(f"No jobs matched filter: {args.filter}", file=sys.stderr)
+            return 1
+
+    args.output_base.mkdir(parents=True, exist_ok=True)
+    (REPO / "tmp").mkdir(parents=True, exist_ok=True)
+
+    print("=" * 72)
+    print("MOSS PARALLEL REGRESSION SUITE")
+    print(f"  Concurrency:   {args.jobs} worker threads")
+    print(f"  Selected jobs: {len(selected_jobs)} of {len(manifest)}")
+    print(f"  Dev compiler:  {compiler_dev.relative_to(REPO)}")
+    print(f"  Opt compiler:  {compiler_opt.relative_to(REPO)}")
+    print(f"  Output base:   {args.output_base.relative_to(REPO)}")
+    print("=" * 72)
+
+    suite_start = time.monotonic()
+    pending: dict[str, Job] = {j.name: j for j in selected_jobs}
+    running: dict[Future[JobResult], str] = {}
+    passed: set[str] = set()
+    failed: dict[str, JobResult] = {}
+    skipped: dict[str, str] = {}
+    results: list[JobResult] = []
+
+    with ThreadPoolExecutor(max_workers=args.jobs) as executor:
+        while pending or running:
+            # Schedule jobs whose dependencies are satisfied
+            ready: list[str] = []
+            for name, job in list(pending.items()):
+                # If any dependency failed, mark skipped
+                failed_deps = [d for d in job.dependencies if d in failed or d in skipped]
+                if failed_deps:
+                    skipped[name] = f"dependency {failed_deps[0]} failed/skipped"
+                    del pending[name]
+                    print(f"  [SKIP] {name} ({skipped[name]})", flush=True)
+                    continue
+
+                # If all dependencies passed, ready to run
+                if all(d in passed for d in job.dependencies):
+                    ready.append(name)
+
+            for name in ready:
+                job = pending.pop(name)
+                fut = executor.submit(
+                    run_single_job,
+                    job,
+                    compiler_dev,
+                    compiler_opt,
+                    args.output_base,
+                )
+                running[fut] = name
+
+            if not running:
+                if pending:
+                    # Unresolvable cycle or missing dependency
+                    for name in list(pending):
+                        skipped[name] = "unresolved dependencies"
+                        print(f"  [SKIP] {name} (unresolved dependencies)", flush=True)
+                        del pending[name]
+                break
+
+            # Wait for at least one running job to complete
+            done, _ = wait(running.keys(), return_when=FIRST_COMPLETED)
+            for fut in done:
+                name = running.pop(fut)
+                res = fut.result()
+                results.append(res)
+                if res.returncode == 0:
+                    passed.add(name)
+                    print(f"  [PASS] {name:<46} ({res.duration:6.2f}s)", flush=True)
+                else:
+                    failed[name] = res
+                    print(f"  [FAIL] {name:<46} (exit {res.returncode}, {res.duration:6.2f}s)", flush=True)
+
+    suite_duration = time.monotonic() - suite_start
+    cumulative_duration = sum(r.duration for r in results)
+    speedup = cumulative_duration / max(0.001, suite_duration)
+
+    print("\n" + "=" * 72)
+    print("REGRESSION SUITE SUMMARY")
+    print(f"  Total jobs:      {len(selected_jobs)}")
+    print(f"  Passed:          {len(passed)}")
+    print(f"  Failed:          {len(failed)}")
+    print(f"  Skipped:         {len(skipped)}")
+    print(f"  Suite wall time: {suite_duration:.2f}s ({suite_duration / 60:.1f}m)")
+    print(f"  Cumulative time: {cumulative_duration:.2f}s ({cumulative_duration / 60:.1f}m)")
+    print(f"  Parallel speedup:{speedup:6.1f}x")
+    print("=" * 72)
+
+    # Top 10 slowest jobs
+    print("\nTop 10 slowest test jobs:")
+    sorted_by_duration = sorted(results, key=lambda r: r.duration, reverse=True)
+    for i, res in enumerate(sorted_by_duration[:10], start=1):
+        status = "PASS" if res.returncode == 0 else f"FAIL (exit {res.returncode})"
+        print(f"  {i:2d}. {res.job.name:<44} {res.duration:6.2f}s  [{status}]")
+
+    if failed:
+        print("\n" + "=" * 72)
+        print("FAILED JOBS DETAIL:")
+        for name, res in failed.items():
+            print(f"\n--- [FAIL] {name} (exit {res.returncode}, {res.duration:.2f}s) ---")
+            print(f"Build output: {res.output_dir}")
+            tail = (res.stderr or res.stdout).strip().splitlines()[-15:]
+            if tail:
+                print("Last log lines:")
+                for line in tail:
+                    print(f"  {line}")
+        print("=" * 72)
+        return 1
+
+    print("\nAll regression jobs passed successfully.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

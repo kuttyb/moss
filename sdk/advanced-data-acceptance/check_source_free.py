@@ -12,7 +12,7 @@ import tempfile
 
 PROJECT = Path(__file__).resolve().parent
 REPO = PROJECT.parents[1]
-MOSS = REPO / "moss"
+MOSS = Path(os.environ.get("MOSS", REPO / "moss")).resolve()
 MARGO = REPO / "margo"
 SCRATCH = REPO / "tmp"
 CONSUMER = PROJECT / "fixtures" / "source_free_consumer.moss"

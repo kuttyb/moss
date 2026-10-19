@@ -1,18 +1,45 @@
 CXX ?= c++
-CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -pedantic
+CXXFLAGS_BASE ?= -std=c++17 -Wall -Wextra -pedantic
+CXXFLAGS_DEV ?= $(CXXFLAGS_BASE) -O0
+CXXFLAGS_OPT ?= $(CXXFLAGS_BASE) -O2
 
-.PHONY: all check examples examples-optimized clean
+COMPILER_DIR = build/compiler
+MOSS_DEV = $(COMPILER_DIR)/moss-dev
+MOSS_OPT = $(COMPILER_DIR)/moss-opt
 
 MOSS ?= ./moss
 RUSTC ?= rustc
 EXAMPLE_BUILD_DIR ?= build/examples/optimized
+TEST_JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 16)
 
-all: moss
+.PHONY: all moss moss-dev moss-opt moss-release check check-parallel check-serial examples examples-optimized clean help
 
-moss: src/moss.cpp $(wildcard src/*.hpp src/*.inc)
-	$(CXX) $(CXXFLAGS) $< -o $@
+# Default target: build fast development compiler (-O0) and update ./moss
+all: moss-dev
 
-check: moss
+moss: moss-dev
+
+moss-dev: $(MOSS_DEV)
+	@cp -f $(MOSS_DEV) moss
+
+$(MOSS_DEV): src/moss.cpp $(wildcard src/*.hpp src/*.inc)
+	@mkdir -p $(COMPILER_DIR)
+	$(CXX) $(CXXFLAGS_DEV) $< -o $@
+
+moss-opt: $(MOSS_OPT)
+
+moss-release: moss-opt
+
+$(MOSS_OPT): src/moss.cpp $(wildcard src/*.hpp src/*.inc)
+	@mkdir -p $(COMPILER_DIR)
+	$(CXX) $(CXXFLAGS_OPT) $< -o $@
+
+check: check-parallel
+
+check-parallel: moss-dev
+	python3 tests/run_parallel.py --jobs $(TEST_JOBS) --compiler-dev $(MOSS_DEV) --compiler-opt $(MOSS_OPT)
+
+check-serial: moss
 	sh tests/run.sh ./moss build/tests
 
 examples: examples-optimized
@@ -37,4 +64,16 @@ clean:
 	rm -f moss build/counter build/counter.rs build/checkout build/checkout.rs
 	rm -f build/object_pipeline build/object_pipeline.rs
 	rm -f build/use_after_transfer build/use_after_transfer.rs
-	rm -rf build/tests build/examples
+	rm -rf build/tests build/examples build/compiler
+
+help:
+	@echo "Available Makefile targets:"
+	@echo "  make              - Build fast development compiler (-O0) and update ./moss (default)"
+	@echo "  make moss-dev     - Build development compiler (-O0) in build/compiler/moss-dev"
+	@echo "  make moss-opt     - Build optimized compiler (-O2) in build/compiler/moss-opt"
+	@echo "  make moss-release - Alias for moss-opt"
+	@echo "  make check        - Run parallel test suite (check-parallel)"
+	@echo "  make check-parallel - Run tests concurrently with tests/run_parallel.py (TEST_JOBS=N)"
+	@echo "  make check-serial - Run original serial regression runner (tests/run.sh)"
+	@echo "  make examples     - Build and verify optimized examples"
+	@echo "  make clean        - Remove build artifacts and binaries"
