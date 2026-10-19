@@ -1,5 +1,18 @@
 # Team I live integration record
 
+## S PR source-generation repair checkpoint — 2026-10-19
+
+The sole L4 pushed clean S PR #11 head `e5d111a6ccded842399d9930a1d8dbf849e9d00b`.
+An explicit generation context now limits `moss_process_root` cfg selection
+to Margo's reusable module artifacts; direct explicit-module `moss -o` Rust
+has an unconditional main and process-root runtime. Local forced compiler
+build, plain `rustc -D warnings`, source-removed generic and Range/FileIO,
+Phase20 FileIO, feedback and diff checks pass. The exact-head four-job
+workflow is `39195771959`; prior failed CI was on obsolete `99aebff`.
+Combined L6 inspected the focused repair, but full exact-head review/merge
+awaits four green PR jobs and post-G target CI. S remains draft; L4 resumes
+independent staged gates under the sole compiler lease.
+
 ## G1-07 Float Display counterexample — 2026-10-19
 
 L4 pushed clean staging `f9e4f16` before taking the sole compiler lease on

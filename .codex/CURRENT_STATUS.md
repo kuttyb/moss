@@ -1,5 +1,19 @@
 # Moss current status
 
+## Phase 25 S exact-head CI repair pushed — 2026-10-19
+
+The sole L4 pushed clean S PR #11 repair `e5d111a6ccded842399d9930a1d8dbf849e9d00b`.
+`Generator` now selects Margo's reusable project module artifact explicitly:
+direct `moss -o` explicit modules retain an unconditional process root, while
+Margo projected modules retain cfg-selected rlib/executable runtime ownership.
+Focused plain `rustc -D warnings`, source-removed generic and Range/FileIO,
+Phase20 FileIO, forced compiler build, feedback and diff checks pass locally.
+Combined L6 inspection of this narrow repair found the context split sound;
+the new exact-head PR workflow `39195771959` is running. The prior failed
+run `39194794707` is invalid for this head. PR stays draft until all four
+jobs and post-G target CI pass, followed by exact-head L6 review. L4 has
+returned the sole compiler lease to staged acceptance work; G1-08 awaits L7.
+
 ## Phase 25 G1-07 Float Display counterexample — 2026-10-19
 
 Before switching to the S PR repair, L4 pushed clean staging `f9e4f1685d9effbc8dc2ccd2d28388d346ac9f9e`.
