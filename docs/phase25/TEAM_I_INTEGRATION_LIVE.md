@@ -1,5 +1,22 @@
 # Team I live integration record
 
+## G exact-head L6 review and G4 bounded staged proof — 2026-10-19
+
+Draft G PR #10 head `6859041` passed its four required exact-head jobs in
+`39187310886`, and prior H2 target run `39186996122` passed its four jobs.
+Combined L6 review approved the bounded ancestry/diagnostic intake; verdict
+is `TEAM_I_L6_REVIEW_G.md`. PR is still draft/unmerged at this checkpoint.
+
+Separately, L4 pushed clean staging `a93aa802d1f5b8c472c6997b0cb8fbc08d77e296`.
+Strict v10 same-HEAD acceptance ran 13 complete suites and reports 44 PASS,
+0 FAIL, 15 BLOCKED, 3 NOT IMPLEMENTED; exit 1. G4-04 now proves shared and
+inline MossString layout, sparse offsets, ASCII metadata and bounded
+4 GiB arithmetic after a pre-mutation guard repair. G4-06 executes two
+distinct source-free String/Char consumers in debug/release against sealed
+provider artifacts and rejects runtime mismatch before link. G4-05 scaling
+and the staged Vector[Tag] diagnostic span remain open. No final release or
+main merge.
+
 ## G3/G4 bounded same-HEAD proof checkpoint — 2026-10-19
 
 L4 pushed staged `66a57c5`; strict v10 rebuilt that clean HEAD and ran

@@ -1,5 +1,20 @@
 # Moss current status
 
+## Phase 25 G exact-head L6 approval and G4 staged checkpoint — 2026-10-19
+
+Draft PR #10 exact head `6859041f0ed46f54a4e7d59e017eaa599ecbcd5c`
+passed all four required jobs in workflow `39187310886`; prior H2 target
+workflow `39186996122` also passed all four. Combined Coordinator/L6 review
+approves the bounded G ancestry and exact diagnostic intake; see
+`docs/phase25/TEAM_I_L6_REVIEW_G.md`. PR is still draft/unmerged at this
+checkpoint; S/B and final 62-gate work remain open. Separately, L4 pushed
+clean staging `a93aa802d1f5b8c472c6997b0cb8fbc08d77e296` with strict
+same-HEAD **44 PASS / 0 FAIL / 15 BLOCKED / 3 NOT IMPLEMENTED**, exit 1.
+G4-04 now tests and guards the actual shared and inline String runtimes'
+global 4 GiB bound; G4-06 uses two source-free String/Char consumers with
+sealed artifact checks. G4-05 traversal scaling and the staged Vector[Tag]
+diagnostic span remain open. No main merge or final release claim.
+
 ## Phase 25 G3/G4 live-proof checkpoint — 2026-10-19
 
 Sole L4 pushed clean staging head `66a57c58db9195774df5755b1877baebe0cb1276`.
