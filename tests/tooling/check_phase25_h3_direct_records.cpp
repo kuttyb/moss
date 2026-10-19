@@ -1,4 +1,5 @@
 #include "abi_v10_records.hpp"
+#include "checked_body_ir.hpp"
 
 #include <cassert>
 #include <fstream>
@@ -61,6 +62,30 @@ int main(int argc, char** argv) {
              moss::abi_v10::CheckedBodyRecord::Dependency::Kind::NominalType &&
          body->dependencies[0].target_id == nominal_id &&
          body->dependencies[0].expected_hash == nominal->representation_hash);
+  moss::TypeContext context;
+  moss::NominalDeclaration declaration;
+  declaration.kind = moss::DeclarationKind::Record;
+  declaration.program_name = "Service__Box";
+  declaration.module_id = iface.module_id;
+  declaration.declaration_name = "Box";
+  declaration.fields = {{"value", "", true}};
+  auto interned = context.declare(std::move(declaration));
+  assert(interned->id == nominal_id);
+  auto variable = moss::Type::var(moss::TypeVarId{0, 0, 0});
+  auto result = moss::Type::nominal_bound(
+      interned, interned->program_name, {{"value", variable}});
+  auto decoded = moss::checked_ir::decode_h3_checked_body_v1(
+      body->checked_ir_bytes, context, {variable}, result, body->semantic_hash);
+  assert(decoded.size() == 2 &&
+         decoded[0].expr->kind == moss::checked_ir::ExprKind::NominalConstruct &&
+         decoded[1].expr->kind == moss::checked_ir::ExprKind::LocalRead);
+  bool rejected = false;
+  try {
+    (void)moss::checked_ir::decode_h3_checked_body_v1(
+        body->checked_ir_bytes, context, {variable}, result,
+        "body-semantic-v1:sha256:" + std::string(64, '0'));
+  } catch (const std::invalid_argument&) { rejected = true; }
+  assert(rejected);
   assert(iface.provenance.size() == 2);
   std::cout << "H3 direct checked ABI-v10 records: PASS\n";
 }
