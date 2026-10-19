@@ -8799,4 +8799,6 @@ Validation after the final compiler edit:
 Registered the R2b and R2c acceptance runners in the ABI-v10 test shard. The
 full repository regression suite has not been run. The working tree also began
 with uncommitted R2b status, feedback, and M2b.1 test changes; those task-related
-changes are preserved and included in the pending feature commit.
+changes are included in implementation commit
+`3d0a5faae0711d16f5c8c4854c54eb865bcb5199`, pushed on
+`origin/phase25-m2b1-r2c`.
