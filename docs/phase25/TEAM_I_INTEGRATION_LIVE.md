@@ -1,5 +1,17 @@
 # Team I live integration record
 
+## H1 callable/effects checkpoint — 2026-10-19
+
+L4 pushed `phase25-i-map-staging` at `c4b0729`. Inspect exposes a typed
+Callable requirement and concrete pure/raising exact-ID specializations close
+their distinct checked effects. The generic summary remains unavailable while
+callback effects are unresolved. Staged-v10 provider export and source-free
+import fail before link with a structured effect diagnostic and provider
+provenance; default v9 remains valid. Typed API, Team A, G1, staged G2 11/11,
+both key fixture ledgers 30/30, feedback and diff checks pass. H3 and strict
+release acceptance remain open. L4 now prepares target-based H2 intake.
+Post-H/T target CI run `39180139206` is in progress at `f63e03b`.
+
 ## H/T baseline target merge — 2026-10-19
 
 PR #5 merged normally into `phase25-integration` at

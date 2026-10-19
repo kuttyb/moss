@@ -1,5 +1,24 @@
 # Moss current status
 
+## Phase 25 H1 callable/effects checkpoint — 2026-10-19
+
+Sole L4 pushed `phase25-i-map-staging` at `c4b07293e489de3201b3cf57a25f8e8989d0349e`.
+Live typed inspection now exposes the bound callable subject, ordered Int
+argument/result, READ access and provenance even when the generic open
+summary is withheld as `unresolved_effects`. Concrete pure and raising
+callbacks specialize under distinct exact callable IDs; effects close, and
+the raising specialization retains `CalcError`. Staged ABI-v10 now rejects
+export of unresolved callback effects and stale source-free import before
+link with `SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED`, including provider
+provenance after physical source removal. Default v9 provider checking stays
+valid. Typed API, Team A, G1, staged G2 11/11, default and activated key
+fixtures 30/30, feedback and whitespace checks pass. This closes the bounded
+H1 callable evidence without inventing effect-polymorphic ABI support; H3
+and full release acceptance remain open. L4 has begun fresh target-based H2
+intake under the exclusive compiler lease.
+
+Post-H/T-merge target CI run `39180139206` is in progress at `f63e03b`.
+
 ## Phase 25 H/T baseline integrated — 2026-10-19
 
 After exact-head four-job CI and combined L6 review, draft PR #5 was moved
