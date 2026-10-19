@@ -1,13 +1,19 @@
 # Moss current status
 
-## Phase 25 Consolidated Integration Candidate (S + B + Map/Set + G5/G6) — 2026-10-19
+## Phase 25 Integrated Target HEAD (Team S + Team B + Map/Set + G5/G6) — 2026-10-19
 
-Team I reached a major integration milestone: full unification of Team S,
-Team B, staged Map/Set lowering, Option B type inference, Fast Debug O(1)
-HashIndex scaling, and the complete G5/G6 harness into a single verified
-candidate branch `phase25-i-b-reviewed-intake` at commit `8212f89`, pushed to origin.
+Team I completed and pushed the Phase 25 integration of Team S, Team B,
+staged Map/Set lowering, Option B type inference, Fast Debug O(1) HashIndex
+scaling, and the G5/G6 test and verification harness directly to the remote
+integration branch `phase25-integration`.
 
-Completed live verifications on the consolidated candidate:
+- Prior integration HEAD: `64d22251d7090d6bbe36369cc80a5f95f7890ce7`
+- Merge 1 (Team S semantics): `ee083d4` ("Phase 25 integrate reviewed Team S semantics after Team G")
+- Merge 2 (Team B ABI-v10 runtime + Map/Set + G5/G6 harness): `31ceebe` ("Phase 25 integrate reviewed Team B ABI-v10 runtime, Map/Set key lowering, and G5/G6 harness")
+- New verified integration HEAD: `31ceebe9e19d3ea7db4b143714b17935ae4f3f01` (pushed to `origin/phase25-integration`)
+- Source branch: `phase25-i-b-reviewed-intake` at `fe230d2` (pushed to `origin/phase25-i-b-reviewed-intake`)
+
+Completed live verifications on this integration lineage:
 1. Compiler build: clean 0-error build with `make --jobs="$(nproc)"`.
 2. G5-05 Scaling Benchmarks:
    - Fast Debug Map/Set 10x workload ratio: 7.88x (<=30.0x bound PASS).
@@ -17,11 +23,22 @@ Completed live verifications on the consolidated candidate:
    - G2 conformance: 11/11 PASS under `MOSS_G2_ACTIVATE_JOINT=1`.
    - Team B Acceptance: 23 PASS, 0 PENDING, 0 FAIL (Joint Gate 10 fully verified with live source-free artifacts).
    - Shared indexed String linkage: 2 source-free consumers debug/release PASS, runtime mismatch rejected PASS.
+   - G2 Declaration Type Authority: PASS across all C++ and Python gates.
+   - G1 Regressions: #1–#15 PASS across all engines.
+   - G3 Ordering: Julia isless/isequal/hash axioms, scalar ordering, and sort/Reverse PASS.
+   - S3 Key Protocol: 28/28 cases PASS.
+   - S2 Char/String Parity: PASS.
+   - G4 Indexed String Record: PASS.
+   - L7 Repairs: PASS.
+   - Key Protocol Fixtures: 30/30 match recorded status.
+   - Key Proof Transport: PASS.
    - Agent feedback validation: PASS.
-4. CI Progress:
-   - PR #11 CI workflow `39204684467`: Integration harness integrity PASS,
-     Phase 25 semantic gates PASS, Optimized examples PASS, Core regressions executing.
-   - Coordination and L6 review records up to date.
+4. Remote Branches Synchronized:
+   - `phase25-integration` -> `31ceebe` (pushed to `origin/phase25-integration`)
+   - `phase25-i-b-reviewed-intake` -> `fe230d2` (pushed to `origin/phase25-i-b-reviewed-intake`)
+   - `phase25-i-s-reviewed-intake` -> `7b08599` (pushed to `origin/phase25-i-s-reviewed-intake`)
+   - `phase25-i-map-staging` -> `75cf215` (pushed to `origin/phase25-i-map-staging`)
+   - `phase25-i-coordination` -> up to date.
 
 ## Phase 25 Team B intake on reviewed Team S and staged G5-05 resolution — 2026-10-19
 
