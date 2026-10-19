@@ -46,6 +46,8 @@ PROOFS: dict[str, tuple[tuple[str, str], ...]] = {
     "GATE-ABIV10-11": (("g2", "11"),),
     "GATE-G3-06": (("g2", "10"), ("b", "gate10"),
                    ("key", "03-imported-nominal-keys-source-free")),
+    "GATE-G3-07": (("b", "gate10"),
+                   ("key", "05-coherence-mismatch-method-override")),
     "GATE-G5-04": (("key", "all30"),),
 }
 
@@ -55,6 +57,12 @@ PROOFS["GATE-TYPEIR-10"] += (("b", "gate10"),)
 
 SUITE_PATHS = {"g2": G2_PATH, "e3-debug": E3_PATH,
                "e3-release": E3_PATH, "key": KEY_PATH, "b": B_PATH}
+KEY_EXACT_STATUS = {
+    "03-imported-nominal-keys-source-free": "passes",
+    "04-two-consumers-shared-map": "passes",
+    "05-coherence-mismatch-method-override":
+        "fail-closed KEY_PROOF_COHERENCE_MISMATCH",
+}
 
 
 def parse_suite(suite: str, stdout: str, returncode: int) -> dict[str, bool]:
@@ -87,7 +95,11 @@ def parse_suite(suite: str, stdout: str, returncode: int) -> dict[str, bool]:
         complete = (returncode == 0 and len(matches) == 30 and
                     fixture_names == {name for _, name, _ in matches} and
                     "=== all fixtures activated ===" in stdout)
-        cases = {name: complete and status == "PASS" for status, name, _ in matches}
+        cases = {
+            name: complete and status == "PASS" and
+            (name not in KEY_EXACT_STATUS or observed == KEY_EXACT_STATUS[name])
+            for status, name, observed in matches
+        }
         cases["all30"] = complete and all(status == "PASS" for status, _, _ in matches)
     elif suite == "b":
         complete = (returncode == 0 and
