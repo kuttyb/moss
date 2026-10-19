@@ -1,0 +1,19 @@
+# Malformed key proof: hash may raise.
+enum KeyError:
+  Empty
+
+type Tag:
+  label: String
+
+  fn isequal(other: Tag) -> Bool:
+    return label == other.label
+
+  fn hash() -> Int:
+    if label == "":
+      raise KeyError.Empty
+    return label.hash()
+
+fn main():
+  var m = Map()
+  m[Tag(label: "a")] = 1
+  echo m.get(Tag(label: "a"), 0)

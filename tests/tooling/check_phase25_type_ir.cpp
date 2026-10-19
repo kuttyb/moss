@@ -58,6 +58,17 @@ int main() {
   assert(throws_invalid([&] { (void)context.intern_module("module-v1:app@1.0::"); }));
   TypeContext::Scope scope(&context);
 
+  // Team S's Char stays a distinct primitive in H's authoritative Type IR.
+  auto character = Type::parse_canonical("Char");
+  auto canonical_character = Type::parse_canonical("char");
+  assert(character && canonical_character);
+  assert((*character)->kind == TypeKind::Primitive);
+  assert((*character)->name == "char");
+  assert((*character)->structurally_equal(**canonical_character));
+  assert((*character)->stable_type_key() !=
+         Type::primitive("string")->stable_type_key());
+
+
   // Canonical identities follow TYPE_IR_CONTRACT §3.1.
   assert(context.find("Alpha__Token")->id ==
          "nominal-template-v1:module-v1:alpha@1.0.0::Alpha:type:Token");

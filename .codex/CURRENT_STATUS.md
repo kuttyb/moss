@@ -1383,6 +1383,240 @@ open-result probes fail at `fresh` with `TYPE_INFERENCE_FAILED`, and the local
 pin probe reaches Team S's known local-member dispatch error. Major shared-IR
 work remains blocked pending Team S, both Architects, and signed L7 G0 approval.
 
+## Phase 25 Team S final Architect closure & delivery closeout — 2026-10-16
+
+Implementation commit `58d33d9ab00a666e8d9b60450c7c6aeb2b55b657` received
+attributable **UNCONDITIONAL GO FOR TEAM S PHASE 25 DELIVERIES** from the
+independent L6 Architect in `docs/phase25/TEAM_S_NEXT_CYCLE_ARCHITECT_REVIEW.md`
+(Addendum 5).
+
+- **Architect findings closed:** ARCH-027 (Float-literal exemption bypass in
+  `UNKNOWN_FIELD` for `1.exp`, `2.size`, `12.e`, `-1.exp`, `1_000.name`) and
+  ARCH-028 (collection field method hint `|> count`) fixed at `dea9a4e`. S-B
+  audit cases (`var v = []; echo v` -> `ECHO_DISPLAY_UNSUPPORTED`, `show([])` ->
+  `TYPE_INFERENCE_FAILED`) fixed at `58d33d9`.
+- **S1 checker authority criterion:** Fully satisfied ("every checker-accepted
+  program runs consistently or is diagnosed before execution").
+- **Interface agreement:** Team G L6 Coordinator concurrence recorded in
+  `docs/phase25/TEAM_S_TEAM_G_INTERFACE_AGREEMENT.md` (§Concurrence).
+- **Validation:** 100% green across all quality gates:
+  `make -j2`, focused suites (`check_phase25_sa_numeric_literals.py`,
+  `check_phase25_sb_check_display.py`, `check_phase25_sc_safe_arithmetic.py`,
+  `check_phase25_s1_checker_authority.py`, `check_phase25_s2_char_string.py`,
+  `check_phase25_s3_key_protocol.py`, `check_phase25_s4_fast_debug_adversarial.py`,
+  `check_phase25_l7_repairs.py`, `check_phase25_g1_regressions.py`,
+  `tests/phase25/key_protocol/run_fixtures.py` 30/30),
+  `python3 tests/tooling/check_agent_feedback.py`,
+  `python3 tests/tooling/check_agent_skills.py`,
+  `TMPDIR="$PWD/tmp" make check` (54/54 executor tests, all Moss v0.1 tests), and
+  `make examples` (all 32 examples).
+- **Handoff status:** Team S feature branch `phase25-semantics-engines` is
+  complete, verified, and ready for joint G2/G3/G4/G5 integration per agreement §5.
+
+## Phase 25 Team S skipped-commit audit — 2026-10-16
+
+Auditing local commits `8224e2f` and `22f7c20` against the integrated branch
+found two S-B cases that were not covered by the server suite. At `043d12a`,
+`moss check` accepted an unresolved local Vector echo and an untyped `show([])`
+specialization; Fast Debug printed `[]`, while native execution failed in rustc
+or lowering. The checker now rejects the unresolved local echo with
+`ECHO_DISPLAY_UNSUPPORTED` and the underdetermined static function call with
+`TYPE_INFERENCE_FAILED`. The S-B suite tests both modes and every execution
+path, plus typed empty Vectors and generic forwarding. The 30 Map/Set fixtures
+retain their recorded verdicts. Validation passed: `make -j2`, the S-B suite,
+the 30 Map/Set fixtures, `python3 tests/tooling/check_agent_feedback.py`, and
+`TMPDIR="$PWD/tmp" make check` (all Moss v0.1 tests, executor 54/54).
+
+Other differences in the skipped commits were superseded by reviewed server
+contracts: `.5`, `1.`, and `1.e5` are accepted Float literals; uppercase `0X`
+is rejected; Vector of record echo has no display contract. The skipped commits
+remain available at `backup/phase25-semantics-engines-pre-rebase-20261016`.
+
+## Phase 25 Team S branch reconciliation — 2026-10-16
+
+Branch `phase25-semantics-engines` was rebased to the fetched server tip
+`d6bc0b1`. The two unpushed local commits (`8224e2f`, `22f7c20`) were kept at
+`backup/phase25-semantics-engines-pre-rebase-20261016` and skipped during the
+rebase after conflict review. Most S-A, S-B, S-C, and S-D behavior is covered by
+the server's independently integrated commits and focused suites; the two missed
+S-B cases are recorded in the follow-up audit above. The local
+consolidated suite contained older expectations, including Vector-of-record
+display, that conflict with the later reviewed display contract; it was not
+carried forward. No compiler semantics were changed in this reconciliation.
+
+Validation on the aligned branch: `make -j2`,
+`check_phase25_sa_numeric_literals.py`, `check_phase25_sb_check_display.py`,
+`check_phase25_sc_safe_arithmetic.py`, `check_phase25_s2_char_string.py`, and
+`check_agent_feedback.py` all passed. The full `make check` suite was not run
+for this Git-only reconciliation.
+
+## Phase 25 Team S L7 parallel-execution cycle (S-A, S-B, S-C, S-D) — 2026-10-15
+
+Branch `phase25-semantics-engines`, pushed.
+
+- **Starting point:** L7 checkpoint `c2e106c`.
+- **Delivered implementation SHA:** `dea9a4e21f9925e6d69943960eee0239460f2a3b`; the Architect GO SHA is `8d62f0a`.
+- **Report:** `docs/phase25/TEAM_S_L7_PARALLEL_CYCLE_REPORT.md`.
+- **Not merged** into `main` or `phase25-integration`. No ABI-v10 switch.
+
+**Delivered:**
+- **S-A:** numeric literals through one shared parser (`src/numeric_literal.hpp`):
+  separators, hex, 64-bit bounds, `1e400` rejected, no other forms.
+- **S-B:** one semantic `moss check` pipeline for standalone and project mode, and
+  the Vector echo display contract with `ECHO_DISPLAY_UNSUPPORTED`.
+- **S-C:** Int `/` and `%` by a literal other than 0 and -1 are proven
+  non-panicking in the shared effect analysis.
+- **Architect:** fixes 022–025.
+
+**Validation:** `make check` and `make examples` passed at `dea9a4e`, `8d62f0a`,
+and `906b99d`, all in clean worktrees.
+
+**Review:**
+- The Architect found CONDITIONAL GO at `3577dbc` and again at `906b99d`.
+- Conditions 022–025 are fixed at `8d62f0a`.
+- The closure check at `8d62f0a` gave **GO** for the L7 checkpoint (Addendum 4).
+- Post-GO fix of ARCH-027/028 at `dea9a4e`, with regressions; not
+  Architect-reviewed.
+
+**Open:**
+- **Team G:** Coordinator concurrence on `TEAM_S_TEAM_G_INTERFACE_AGREEMENT.md`
+  (checklist recorded, pending); `moss_runtime`; `MapKeyProof`; `09c`.
+- **Item 6:** deferred by L7.
+- **ARCH-026:** tracked.
+
+## Phase 25 Team S next execution cycle (S1–S4, Team G interface) — 2026-10-15
+
+Branch `phase25-semantics-engines`, pushed. Started at `ee8dcea`. Delivered
+implementation SHA: `3577dbce6080aa1320a2b60e31d926866fbb3f54`. Milestone:
+**ready for joint G2/G3/G4 integration**, not ABI-v10 or Phase 25 completion.
+Not merged into `main` or `phase25-integration`. Full detail:
+`docs/phase25/TEAM_S_NEXT_CYCLE_REPORT.md`.
+
+- **S1 checker authority.** Rejected before execution:
+  - record and mixed-type `==` and arithmetic (`RECORD_EQUALITY_UNSUPPORTED`,
+    `TYPE_MISMATCH`);
+  - named call, message, and builtin arguments;
+  - juxtaposed operands (`INVALID_EXPRESSION`);
+  - Map keys other than Int/Bool/Char/String and Vector/Queue of those;
+  - `range(...)` used as a value.
+
+  The Fast Debug FileIO preflight also runs per test entry point, with fewer
+  false positives. The empty-Map Option B cases are Team G fixtures.
+- **S2.** Char is distinct: transparent `Char == String` and mixed `assertEqual`
+  are removed, and callers are migrated
+  (`docs/phase25/TEAM_S_CHAR_STRING_MIGRATION.md`). A randomized Unicode
+  oracle test passes in 5 engine configurations. The indexed String is still
+  staged, and the benchmark was rerun.
+- **S3.** The scalar key protocol is frozen
+  (`docs/phase25/TEAM_S_KEY_PROTOCOL_V1_SCALARS.md`), with 26 law/purity cases.
+  30 Map/Set fixtures are in `tests/phase25/key_protocol/`, pending activation.
+- **S4.** 324 adversarial programs; 12 defects (P25-S-S4-001..012) fixed.
+- **Team G:** `docs/phase25/TEAM_S_TEAM_G_INTERFACE_AGREEMENT.md`, proposed;
+  Team G concurrence pending.
+
+**Validation:** at `3577dbc` (and earlier at `baefd1f`), in a clean worktree,
+`TMPDIR="$PWD/tmp" make check` passed (Executor 54/54, editor 61/61, all Moss
+v0.1 tests) and `make examples` passed (32). New suites:
+`check_phase25_s{1,2,3,4}_*.py` and `tests/phase25/key_protocol/run_fixtures.py`,
+all registered in `tests/run.sh`.
+
+**Review:**
+- The independent Architect reviewed `b6d45cf`: CONDITIONAL GO, findings
+  P25-S-ARCH-013..020 and DOC-1..7.
+- Closure check at `baefd1f`: CONDITIONAL GO. 013–017 and DOC-1..7 are
+  verified fixed; the condition was the new regression ARCH-021.
+- ARCH-021 (and 020) are fixed at `3577dbc`, with a regression test; that fix
+  is not Architect-reviewed. 018 and 019 are tracked.
+
+**Open:**
+- Team G: MossMap/Set and user/Float keys, ABI-v10 String default and runtime
+  crate, #12, Option B empty Map.
+- L7 decisions: literal grammar, builtin-name precedence, Rust-colliding
+  identifiers, `Float.to_string`, `recover err` typing, unary minus on calls,
+  non-Copy shadow before raise, and the typed `Char(Int)` failure.
+
+## Phase 25 Team S L7 repair pass (NO-GO of 983acb2) — 2026-10-15
+
+Branch `phase25-semantics-engines` continues on the Team S feature branch after
+the L7 **NO-GO for G5 integration** of `983acb2`. Full item-by-item status,
+evidence, outstanding limitations, and coordination requests are in
+`docs/phase25/TEAM_S_L7_REPAIR_REPORT.md`; benchmark data in
+`docs/phase25/TEAM_S_UNICODE_STRING_BENCHMARK.md`.
+
+- Repaired: Fast Debug IEEE Float `==`; range overflow, iteration cap, and
+  join-aware block scoping (with `on_fail` edge captures and consumed-binding
+  reinitialization); escaped-quote and Char-delimiter scanning; FileIO
+  preflight; ledger #10 constructor/enum-payload labels; `sort` effects,
+  lowering, typing, and key purity; scalar key-protocol operand typing; `Char`
+  as a declarable type; `match` constructor-literal scrutinee.
+- Retracted: `MossFloatKey`, the Rust ordering trait layer, and the solo
+  ABI-v10 bump (native ABI is v9 again; migration tests restored).
+  `Map[Float, V]` fails closed pending Team G's `MossMap<K,V>`.
+- Staged: indexed `MossString` (`MOSS_STAGED_STRING_REPR=indexed-v1`), proven
+  equivalent and linear; default flip and cross-crate use wait for the joint
+  ABI-v10 cut and shared runtime crate.
+- Migrated: in-repo SDK `char_at`/`chars` callers broken by `983acb2`.
+
+Validated at implementation SHA `511b259b60c22748d5fa508d8bd9ff406d7c1bf4`:
+`TMPDIR="$PWD/tmp" make check` passed (Executor 54/54, editor 61/61, all
+Moss v0.1 tests) and `make examples` passed (32), in a clean worktree. The
+independent L6 Architect reviewed three SHAs (`5920e38`, `6ee8fee`, `8e70b9c`,
+all CONDITIONAL GO) and found 12 net-new defects, all fixed with regressions;
+the remaining conditions (012 fix and the validation record) are met at
+`511b259`. The branch is ready for L7 re-review and is not merged anywhere.
+
+Open: joint ABI-v10 decisions with L7/Team G (default indexed String, shared
+runtime crate); Map/Set user and Float keys (Team G `MossMap<K,V>`); #12
+open-receiver admission (joint with Team G G2); pre-existing native `==` on
+structs, named message arguments, and `Map().get` on a never-inserted map.
+
+## Phase 25 Team S Semantics & Engines (G1, G4, G3) Progress — 2026-10-15
+
+Team S implemented and verified Phase 25 language features, compiler defects, and engine parity across Fast Debug (`moss run --interp`), Native Debug (`moss --debug`), and Native Release (`moss -O`):
+
+1. **G1: Compiler Defect Remediation (10 Non-Retired Defects)**
+   - **Defect #1 (64-bit Int Precision):** Added large integer support beyond $2^{53}$ without IEEE-754 precision loss across AST constant evaluation and Fast Debug interpreter.
+   - **Defect #2 & #3 (Duplicate Identifiers):** Emitted semantic errors for duplicate function parameter names and duplicate pattern variable bindings in match expressions.
+   - **Defect #4 (Conflicting Index Expression Borrow):** Corrected rustc lowering for conflicting borrow expressions in indexing scenarios.
+   - **Defect #5 (`_ = expr` Discard):** Lowered wildcard discard assignment statements cleanly without synthetic unused variable warnings.
+   - **Defect #6 (Assert String Escaping):** Escaped newline and quote sequences properly in generated assertion diagnostics.
+   - **Defect #7 (`Float.to_string` Agreement):** Standardized float formatting to match across interpreter and native lowering.
+   - **Defect #8 (Fast Debug Loop Index Shadowing):** Scoped loop induction variables cleanly in Fast Debug environment to prevent variable leakage and preserve parity with lowered rustc semantics.
+   - **Defect #10 (Member Call vs Free Function Precedence):** Unified call resolution precedence to prioritize method lookup over free function scope when receiver type matches.
+   - **Defect #12 / #15 (Dotted Receiver Statement Calls):** Enabled chained member call statements on dotted receivers without requiring discarded assignment.
+   - **Defect #14 (Raising Calls inside Benchmarks):** Handled error propagation and return lowering for raising functions inside benchmark harness blocks.
+   - **Validation:** Verified via `tests/tooling/check_phase25_g1_regressions.py` (100% pass across all 3 execution modes).
+
+2. **G4: Unicode Indexing, Scalar `Char`, and ABI-v10 Migration**
+   - **Scalar `Char` Type & Literals:** Added first-class `Char` literal syntax (`'a'`, `'\n'`, `'\u{...}'`, `'😀'`), constructor `Char(codepoint: Int)`, and scalar methods `.codepoint()`, `.to_string()`, `.less()`, `.isequal()`, `.hash()`.
+   - **Unicode String Indexing:** Implemented `String.char_at(index)` returning `Char` and `String.chars()` returning `Vector[Char]`.
+   - **Transparent Equality:** Implemented transparent equality comparison between scalar `Char` and 1-character `String` values.
+   - **ABI-v10 Migration:** Promoted `kNativeAbiVersion = 10`. Enforced rejection of legacy ABI-v9 providers while maintaining backward test compatibility.
+   - **Validation:** Verified via `tests/tooling/check_phase25_g4_unicode.py` (100% pass across all 3 execution modes).
+
+3. **G3: Total Ordering, Map Float Keys, and Sort Operations**
+   - **Julia-Compliant Total Ordering:** Implemented `Float` total ordering axioms matching Julia's `isless` / `isequal` / `hash`:
+     - Ordering: $-0.0 < +0.0 < \text{NaN}$.
+     - Equality: `isequal(-0.0, +0.0) == false`, `isequal(NaN, NaN) == true`.
+     - Hashing: `hash(-0.0) != hash(+0.0)`, `hash(NaN) == hash(NaN)`.
+   - **Scalar Total Ordering:** Standardized `.less()`, `.isequal()`, and `.hash()` across `Int`, `Float`, `Char`, `String`, and `Bool` (both free functions and static/instance methods).
+   - **Map[Float, V] Key Dispatch:** Enabled `Float` keys in `Map[Float, V]` with distinct representation for `-0.0`, `+0.0`, and `NaN` via `MossFloatKey` wrapping in native lowered Rust and hash/isequal dispatch in interpreter.
+   - **In-Place Sort & Reverse:** Implemented `sort(v)`, `sort(v, by: key_fn)`, and `sort(v, by: Reverse(key_fn))` in-place sorting statements with complete semantic parity.
+   - **Validation:** Verified via `tests/tooling/check_phase25_g3_ordering.py` (100% pass across all 3 execution modes).
+
+4. **Integration & Regression Gates:**
+   - `python3 tests/tooling/check_phase25_g1_regressions.py` PASSED
+   - `python3 tests/tooling/check_phase25_g4_unicode.py` PASSED
+   - `python3 tests/tooling/check_phase25_g3_ordering.py` PASSED
+   - `python3 tests/tooling/check_phase21_abi_v9_migration.py ./moss` PASSED
+   - `python3 tests/tooling/check_phase106f1.py ./moss tmp/test_phase106f1` PASSED
+   - `python3 tests/tooling/check_handler_2pl.py ./moss tmp/test_handler_2pl` PASSED
+   - `python3 tests/tooling/check_numerics_abi_v9.py ./moss tmp/test_numerics` PASSED
+   - `python3 tests/tooling/check_phase21_source_free_abi.py ./moss tmp/test_source_free` PASSED
+   - `python3 tests/tooling/check_agent_feedback.py` PASSED
+   - `python3 tests/tooling/check_agent_skills.py` PASSED
+   - `python3 tests/tooling/check_agent_api.py ./moss` PASSED
+
 ## Phase 24 Aggregate SDK Integration Complete (Teams A & R Integrated) — 2026-10-13
 
 Team I completed the aggregate integration of all approved Phase 24 SDK deliveries into `phase24-integration`, incorporating Team A (`phase24-advanced-data`) and Team R (`phase24-data-utils`) alongside all previously integrated components:

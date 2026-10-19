@@ -1,0 +1,11 @@
+[package]
+name = "coherenceapp"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+keyprov = { path = "../keyprov" }
+alpha = { path = "../alpha" }
+beta = { path = "../beta" }

@@ -1,0 +1,10 @@
+module app
+
+import keyprov
+import alpha
+import beta
+
+fn main():
+  var m = Map()
+  alpha.record(m, "X")
+  echo beta.seen(m, "x")

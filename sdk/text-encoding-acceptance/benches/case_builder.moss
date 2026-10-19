@@ -71,8 +71,8 @@ bench "segment builder 1024 segments":
   built = text.builder_build(builder)
   assertEqual(text.builder_segment_count(builder), 1024)
   assertEqual(built.length(), 8192)
-  assertEqual(built.char_at(0), "a")
-  assertEqual(built.char_at(8191), "h")
+  assertEqual(built.char_at(0), 'a')
+  assertEqual(built.char_at(8191), 'h')
 
 bench "profile builder build preconstructed 128 segments x16":
   var builder = text.new_builder()
@@ -98,8 +98,8 @@ bench "capacity builder finish 8 segments":
     i = i + 1
   built = text.capacity_builder_finish(builder)
   assertEqual(built.length(), 64)
-  assertEqual(built.char_at(0), "a")
-  assertEqual(built.char_at(63), "h")
+  assertEqual(built.char_at(0), 'a')
+  assertEqual(built.char_at(63), 'h')
 
 bench "capacity builder finish 128 segments":
   part = "abcdefgh"
@@ -110,8 +110,8 @@ bench "capacity builder finish 128 segments":
     i = i + 1
   built = text.capacity_builder_finish(builder)
   assertEqual(built.length(), 1024)
-  assertEqual(built.char_at(0), "a")
-  assertEqual(built.char_at(1023), "h")
+  assertEqual(built.char_at(0), 'a')
+  assertEqual(built.char_at(1023), 'h')
 
 bench "capacity builder finish 1024 segments":
   part = "abcdefgh"
@@ -122,8 +122,8 @@ bench "capacity builder finish 1024 segments":
     i = i + 1
   built = text.capacity_builder_finish(builder)
   assertEqual(built.length(), 8192)
-  assertEqual(built.char_at(0), "a")
-  assertEqual(built.char_at(8191), "h")
+  assertEqual(built.char_at(0), 'a')
+  assertEqual(built.char_at(8191), 'h')
 
 bench "capacity builder append preconstructed input 128 segments":
   part = "abcdefgh"

@@ -1,0 +1,8 @@
+title: Unpinned empty Map: a Map whose K/V nothing fixes must be rejected, not defaulted
+covers: S1.5 (Team G Option B handoff)
+layout: standalone
+expect: reject TYPE_AMBIGUOUS_OPEN_RESULT
+current: fail-closed TYPE_AMBIGUOUS_OPEN_RESULT
+defect: P25-S3-D3: an empty Map whose K/V are not fixed at its construction passes moss check and fails in rustc (Team G Option B handoff)
+owner: Team G Option B
+---

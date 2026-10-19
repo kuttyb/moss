@@ -109,6 +109,31 @@ Moss is statically checked even when you leave the annotation out. Omitting a
 type does not make the value dynamically typed. Local annotations such as
 `var count: Int = 10` are not part of v0.1; use inference instead.
 
+Numeric literals come in three forms:
+
+```moss
+fn main():
+  population = 8_100_000_000   # decimal Int; `_` separates digits
+  mask = 0xff_ff               # hexadecimal Int; lowercase `0x` prefix
+  ratio = 1_0.5                # decimal Float: also .5, 1., 1e5, 1E-3, 2.5e+10
+```
+
+A `_` must sit between two digits, so `1__0`, `1_`, `1_.5`, and `0x_1` are
+rejected (`INVALID_DIGIT_SEPARATOR`). The prefix must be lowercase: `0X10` is
+rejected, while hexadecimal digits may be either case. `Int` is a signed 64-bit
+integer, so Int literals run from `-9223372036854775808` through
+`9223372036854775807` (`INT_LITERAL_OUT_OF_RANGE` otherwise). The magnitude
+`9223372036854775808` (or `0x8000000000000000`) is accepted only directly after
+unary minus, which is how you write the Int minimum; Moss has no `Int.MIN`
+name. A Float literal that would round to infinity, such as `1e400`, is
+rejected (`FLOAT_LITERAL_OUT_OF_RANGE`); a tiny one such as `1e-400` rounds to
+`0.0`. Binary and octal prefixes (`0b101`, `0o7`), hexadecimal fractions, and
+type suffixes (`3i64`, `1.5f32`) are not Moss syntax
+(`UNSUPPORTED_NUMERIC_LITERAL`); other malformed spellings such as `0x`, `0xG`,
+`1e`, `1e+`, or `2abc` are `INVALID_NUMERIC_LITERAL`. Every engine reads a
+literal through the same specification, so a literal has one value in Fast
+Debug and native builds.
+
 `Float` uses IEEE binary64 values. `is_nan(value)` and `is_finite(value)`
 accept a `Float` and return a `Bool` without raising; use them to distinguish
 NaN and infinity from finite values.
@@ -152,14 +177,15 @@ String ordering with `<`, `<=`, `>`, or `>=` is not part of v0.1.
 String inspection and transformation methods read their inputs and return
 independent values. Character positions are zero-based Unicode code-point
 positions (like Python), not UTF-8 byte offsets or grapheme clusters. A
-character is a one-code-point `String`:
+single code point is a scalar `Char` (`'a'`, `'\n'`, `'\u{1F642}'`, or
+`Char(codepoint)`), with `codepoint()` and `to_string()`:
 
 ```moss
 fn main():
   text = "aé🙂"
   echo text.length()          # 3
-  echo text.char_at(1)        # é
-  letters = text.chars()      # Vector[String]
+  echo text.char_at(1)        # é (a Char)
+  letters = text.chars()      # Vector[Char]
   echo text.find("é🙂")       # 1 (code-point index)
   echo text.slice(1, 2)       # é🙂
   echo "MÖSS".ascii_lower()  # mÖss
@@ -174,6 +200,14 @@ reads but does not consume its part, and overlapping access such as
 `text.append(text)` is rejected. Use `text = text + text` for an intentional
 self-copy.
 
+`Char` is a distinct scalar type, not a one-code-point String. Compare a Char
+with a Char literal (`text.char_at(1) == 'é'`) and call `c.to_string()` where a
+String value is required; `'é' == "é"`, `isequal('é', "é")`, and
+`assertEqual('é', "é")` are rejected (`TYPE_MISMATCH`, `KEY_PROTOCOL_TYPE`,
+and `TEST_ASSERTION_CONFIGURATION_ERROR` respectively). Records have no `==`/`!=`
+(`RECORD_EQUALITY_UNSUPPORTED`); compare their fields. `Char(codepoint)` fails
+for surrogates and values above `0x10FFFF`.
+
 `char_at` requires a valid nonnegative position; `split` requires a nonempty
 separator. Invalid inputs fail under current runtime precondition behavior.
 `find` returns the first code-point position, `-1` when absent, and `0` for an
@@ -183,14 +217,14 @@ preserve every other Unicode scalar.
 `join` accepts `Vector[String]` and returns an empty String for an empty vector.
 String numeric parsing and recoverable invalid-input behavior are described above.
 
-Know the current cost of positions. Strings are stored as UTF-8, so `length()`,
-`char_at(i)`, `slice`, and the position `find` returns each walk the text: they
-cost time proportional to the String's length on every call. A loop such as
-`while i < text.length(): c = text.char_at(i)` is therefore quadratic; a 32,000-
-character scan already takes about 100 ms. `chars()` allocates one String per
-character. For long text, prefer `find`, `split`, and one `chars()` call over
-index loops, and hoist `length()` out of loop conditions. Constant-time positions
-and a scalar `Char` type are planned for Phase 25.
+Know the current cost of positions. The default String representation is plain
+UTF-8, so `length()`, `char_at(i)`, `slice`, and the position `find` returns each
+walk the text: they cost time proportional to the String's length on every
+call. A loop such as `while i < text.length(): c = text.char_at(i)` is therefore
+quadratic. For long text, prefer `find`, `split`, and one `chars()` call over
+index loops, and hoist `length()` out of loop conditions. An indexed String
+representation with O(1) `length()` and bounded-cost `char_at` is implemented
+and staged for the Phase 25 ABI-v10 transition; it is not yet the default.
 
 Integer bitwise and shift operators (`&`, `|`, `^`, `~`, `<<`, `>>`) operate strictly
 on 64-bit signed `Int` values with total two's-complement semantics. Boolean logic
@@ -238,7 +272,8 @@ fn main():
   pending.push(10)
 ```
 
-The native compiler supports `for`. The current Fast Debug interpreter is still smaller than the production execution engine and does not yet execute `for` traversal.
+`for` traverses ranges, Vectors, and Queues in native code and Fast Debug. The
+loop variable and any binding made inside the body are scoped to the loop.
 
 Ranges use the same form:
 
@@ -534,6 +569,29 @@ fn main():
 Vectors support `push(item)`, `pop()`, indexed reads (`vec[i]`) and writes
 (`vec[i] = item`). Use `vec |> count` for cardinality.
 
+`echo` can print a whole Vector when its elements can be printed. Every
+engine prints the same text: `[`, then each element as `echo` would print it
+on its own, separated by `, `, then `]`:
+
+```moss
+fn main():
+  echo [1, -2, 3]             # [1, -2, 3]
+  echo [0.5, -0.0, 1e21]      # [0.5, -0.0, 1e21]
+  echo ["a", "b c"]           # [a, b c]
+  echo "hé".chars()           # [h, é]
+  echo [[1], [2, 3]]          # [[1], [2, 3]]
+  echo Vector[Int]()          # []
+```
+
+Strings and Chars inside a Vector are printed as plain text, with no quotes
+or escapes, so `["a, b"]` and `["a", "b"]` both print `[a, b]`. When you need
+an unambiguous form, echo the elements one at a time. `echo` prints only
+Int, Float, Bool, Char, String, and Vectors of those. A Map, Queue, record,
+enum, function, or a Vector containing one of them is rejected with
+`ECHO_DISPLAY_UNSUPPORTED`. Echo its fields or elements instead. Map has no
+deterministic iteration order, so it has no display form. There is also no
+`to_string()` or `+` concatenation for collections.
+
 An untyped helper can index built-in collections. Moss checks each concrete
 call separately, so `fn first(items): return items[0]` can return `Int` for a
 `Vector[Int]` caller and `String` for a `Vector[String]` caller. The container
@@ -725,10 +783,12 @@ fn swap(p: Pair) -> Pair:
 ```
 
 Clone the field you still need before the first move. Mutating a field in
-place through a parameter works (`fn add(p: Pair, x: Int): p.a.push(x)`), but
-the same statement on a local variable's field (`p.a.push(x)` where `p` is a
-local) is currently rejected with `local member calls are not implemented`; move
-that update into a function that takes the value as a parameter.
+place works both through a parameter (`fn add(p: Pair, x: Int): p.a.push(x)`)
+and on a local variable's field (`p.a.push(x)` where `p` is a local). A member
+call on a collection whose element type is still unknown (`var v = []` followed
+by `v.push(1)`) is still rejected with `local member calls are not implemented`;
+start from a literal with elements or a typed constructor such as
+`Vector[Int]()`.
 
 You do not write Rust-style lifetime or borrow annotations in Moss source.
 
@@ -995,7 +1055,11 @@ default written in the domain declaration, such as `value = 0` or one that
 calls a helper function, and a value passed to the constructor in `main`. The
 checker permits pure ordinary helper calls there, but rejects messages, domain
 access, I/O, failing, divergent, and unresolved work. **Failing** work includes
-operations that can fail at run time, such as division, indexing, or `pop()`. A
+operations that can fail at run time, such as division, indexing, or `pop()`.
+Integer division or remainder by an `Int` literal other than `0` or `-1`, such
+as `x % 10` or `x / 10`, is proven not to fail and is allowed. A `-1` literal
+divisor is still treated as possibly failing (the `Int`-minimum case), even
+though it wraps at run time. A
 helper's `while` loop is accepted when the checker can prove it terminates. In
 practice that means a simple counting loop, such as `while i < n:`, that moves
 `i` toward the bound by a fixed step once per pass. The bound must have no side
@@ -1481,14 +1545,11 @@ pipeline surface execute directly in Fast Debug.
 
 FileIO requires native execution; Fast Debug does not perform FileIO operations.
 
-Fast Debug is meant to be a full peer of native execution: a program that passes
-`moss check` should produce the same results in both. These known differences are
-defects being fixed in Phase 25, not intended behavior:
-
-- `for` loops do not run in Fast Debug.
-- `Float.to_string()` fails in Fast Debug ("method receiver is not a Moss object").
-- Ordering comparisons (`<`, `>`, and so on) between `Int` values larger than
-  2^53 can give the wrong answer in Fast Debug; `==` and arithmetic are correct.
+Fast Debug is a full peer of native execution: a program that passes `moss check`
+should produce the same results in both. The Phase 24 divergences (`for` loops,
+`Float.to_string()`, and `Int` ordering above 2^53) are fixed. A program whose
+`main` can reach FileIO is rejected before Fast Debug runs any statement. Treat
+any other difference as a defect and report it.
 
 A program accepted and executed by Fast Debug has passed Moss's own static checks. Native compilation additionally passes the generated Rust through Rust's type and borrow checker before machine code is produced.
 

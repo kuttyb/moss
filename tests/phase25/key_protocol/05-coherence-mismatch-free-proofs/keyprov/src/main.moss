@@ -1,0 +1,4 @@
+module keyprov
+
+export type Code:
+  value: String

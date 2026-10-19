@@ -300,6 +300,12 @@ The final expression of a block is its result. Explicit `return value` may be re
 for migration and early exits. A call such as `normalize(value, total)` is an ordinary
 local, intra-domain call. It has no mailbox, request/reply, or domain scheduling meaning.
 
+Function and message arguments are positional. A labelled argument such as
+`normalize(value: 1, total: 2)` or `message counter.Bump(step: 2)` is rejected before
+execution with `CALL_NAMED_ARGUMENT_UNSUPPORTED` or
+`MESSAGE_NAMED_ARGUMENT_UNSUPPORTED`. Labels belong to type, enum-case, and domain
+constructors (`Counter(value: 0)`) and to builtin options such as `sort(v, by: key)`.
+
 `fn main()` is the preferred spelling for the program entry point; `proc main()` remains
 a compatibility spelling while existing programs migrate. A `fn` declared directly
 inside a `domain` is a domain message handler; `fn Handler(...)` is the canonical
@@ -596,7 +602,12 @@ State initializers may compute ordinary runtime values, including through pure h
 calls, but must be side-effect-free. The rule covers defaults written in the domain
 declaration and constructor arguments in `main` alike. Messages, domain access, I/O,
 possibly failing work (for example division, indexing, or `pop`), possibly divergent
-loops, and unresolved calls are rejected. A helper `while` loop counts as terminating
+loops, and unresolved calls are rejected. Integer `/` and `%` count as possibly failing
+unless the divisor is a proven-safe constant: an `Int` literal, optionally
+parenthesized or signed, whose value is neither `0` nor `-1` (so `x % 10` and
+`x / 10` are proven not to fail, while `x % y`, `x % 0`, and `x / -1` are treated as
+possibly failing; `-1` is excluded conservatively even though the `Int`-minimum case
+wraps). A helper `while` loop counts as terminating
 only when the checker can prove it bounded. The accepted shape is a counting loop:
 
 - The condition compares the counter, written on the left, against a bound with `<`,

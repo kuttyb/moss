@@ -1,0 +1,4 @@
+module maps
+
+export fn fresh():
+  return Map()

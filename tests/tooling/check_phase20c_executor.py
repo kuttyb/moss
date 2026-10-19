@@ -72,7 +72,24 @@ def runtime_preamble(generated_rs: str) -> str:
     if start < 0 or end < 0:
         print("ERROR: runtime markers not found in generated Rust", file=sys.stderr)
         sys.exit(1)
-    return generated_rs[start:generated_rs.index("\n", end) + 1]
+    preamble = generated_rs[start:generated_rs.index("\n", end) + 1]
+    # These white-box runtime probes inspect private scheduler state from the
+    # crate root. Production explicit modules now select the process runtime
+    # behind a cfg-gated module so their rlib has only a provider wrapper.
+    # Flatten that selected root body for the probes; the project-build tests
+    # below still exercise the generated module and its actual link contract.
+    root_marker = "#[cfg(moss_process_root)]\nmod __moss_executor_runtime {\nuse super::*;\n"
+    provider_marker = "\n}\n#[cfg(not(moss_process_root))]\nmod __moss_executor_runtime {"
+    root_start = preamble.find(root_marker)
+    if root_start >= 0:
+        root_end = preamble.find(provider_marker, root_start)
+        assert root_end >= 0, "selected runtime lacks provider boundary"
+        leaf_start = preamble.find("// FIFO leaf lock.", root_end)
+        assert leaf_start >= 0, "selected runtime lacks shared fair-lock support"
+        preamble = (preamble[:root_start] +
+                    preamble[root_start + len(root_marker):root_end] +
+                    preamble[leaf_start:])
+    return preamble
 
 
 def executor_runtime_block(generated_rs: str) -> str:
@@ -1730,7 +1747,8 @@ def test_cross_crate_provider(module_root_preamble: str, provider_preamble: str)
         report(name, False, "provider rlib compile failed:\n" + lib_cr.stderr)
         return
     main_src = module_root_preamble + TEST_PRELUDE + ROOT_PROVIDER_MAIN.replace("{crate}", "p20c_provider")
-    cr, binary = write_and_compile("t_30", main_src, ["--extern", f"p20c_provider={rlib}"])
+    cr, binary = write_and_compile("t_30", main_src,
+                                   ["--cfg", "moss_process_root", "--extern", f"p20c_provider={rlib}"])
     if cr.returncode != 0:
         report(name, False, "root compile failed:\n" + cr.stderr)
         return
@@ -1904,7 +1922,9 @@ fn main() {
     println!("ok");
 }
 """
-            cr, binary = write_and_compile("t_43", main_src, ["--extern", f"moss_pricing={rlib}", "-L", f"dependency={out}"])
+            cr, binary = write_and_compile("t_43", main_src,
+                                           ["--cfg", "moss_process_root", "--extern", f"moss_pricing={rlib}",
+                                            "-L", f"dependency={out}"])
             if cr.returncode != 0:
                 problems.append("root/provider link failed:\n" + cr.stderr)
             else:

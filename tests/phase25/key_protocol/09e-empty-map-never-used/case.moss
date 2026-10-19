@@ -1,0 +1,4 @@
+# S1.5 unpinned empty Map: a Map whose K/V nothing fixes must be rejected, not defaulted.
+fn main():
+  var m = Map()
+  echo 1

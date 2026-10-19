@@ -23,8 +23,8 @@ bench "text slice 256 code points":
   assertEqual(value.length(), 256)
   sliced = text.slice(value, 64, 128)
   assertEqual(sliced.length(), 128)
-  assertEqual(sliced.char_at(0), "é")
-  assertEqual(sliced.char_at(127), "🙂")
+  assertEqual(sliced.char_at(0), 'é')
+  assertEqual(sliced.char_at(127), '🙂')
 
 bench "ASCII lower 256 code points":
   var value = ""
@@ -151,7 +151,7 @@ bench "profile text find long ASCII early late no match x128":
     checksum = checksum + text.find(value, absent_pattern)
     run = run + 1
   assertEqual(value.length(), 1030)
-  assertEqual(value.char_at(1024), "n")
+  assertEqual(value.char_at(1024), 'n')
   assertEqual(checksum, 130944)
 
 bench "profile text find multibyte early late no match x128":
@@ -172,7 +172,7 @@ bench "profile text find multibyte early late no match x128":
     checksum = checksum + text.find(value, absent_pattern)
     run = run + 1
   assertEqual(value.length(), 1028)
-  assertEqual(value.char_at(1024), "界")
+  assertEqual(value.char_at(1024), '界')
   assertEqual(checksum, 130944)
 
 bench "profile text slice long ASCII x128":
@@ -200,8 +200,8 @@ bench "profile text slice long multibyte x128":
   var run = 0
   while run < 128:
     sliced = text.slice(value, 255, 512)
-    assertEqual(sliced.char_at(0), "🙂")
-    assertEqual(sliced.char_at(511), "é")
+    assertEqual(sliced.char_at(0), '🙂')
+    assertEqual(sliced.char_at(511), 'é')
     total = total + sliced.length()
     run = run + 1
   assertEqual(value.length(), 1024)

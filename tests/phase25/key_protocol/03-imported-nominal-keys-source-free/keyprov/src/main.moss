@@ -1,0 +1,13 @@
+module keyprov
+
+export type Name:
+  text: String
+
+  fn isequal(other: Name) -> Bool:
+    return text.ascii_lower() == other.text.ascii_lower()
+
+  fn hash() -> Int:
+    return text.ascii_lower().hash()
+
+export fn name(text: String) -> Name:
+  return Name(text: text)

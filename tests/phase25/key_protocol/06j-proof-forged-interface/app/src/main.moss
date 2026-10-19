@@ -1,0 +1,7 @@
+module app
+import keyprov
+
+fn main():
+  var m = Map()
+  m[keyprov.name("a")] = 1
+  echo m.get(keyprov.name("a"), 0)

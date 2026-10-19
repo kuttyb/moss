@@ -1,0 +1,10 @@
+module app
+
+import keyprov
+import alpha
+
+fn main():
+  var m = Map()
+  alpha.record(m, "Ada")
+  m[keyprov.name("Grace")] = 2
+  echo m.get(keyprov.name("ada"), 0)

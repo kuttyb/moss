@@ -55,6 +55,12 @@ def check_negative(source, codes, required=(), env=None):
     return error
 
 
+def check_negative_at(source, codes, line):
+    error = check_negative(source, codes)
+    assert error.get("line") == line, (source, error)
+    return error
+
+
 def native(source, scratch):
     rust = scratch / (source.stem + ".rs")
     binary = scratch / (source.stem + ".bin")
@@ -283,8 +289,11 @@ def g3(s):
 def g4(s):
     cases(source_multihop=lambda: parity(FIX / "open_result_multihop.moss", s, "1\none\n"),
           ambiguous_source=lambda: check_negative(FIX / "open_result_ambiguous.moss", {"TYPE_AMBIGUOUS_OPEN_RESULT"}),
-          unpinned_map=lambda: check_negative(G2 / "unpinned_map.moss", {"TYPE_AMBIGUOUS_OPEN_RESULT"}),
-          unpinned_vector=lambda: check_negative(G2 / "unpinned_vector.moss", {"TYPE_AMBIGUOUS_OPEN_RESULT"}),
+          unpinned_map=lambda: check_negative_at(G2 / "unpinned_map.moss", {"ECHO_DISPLAY_UNSUPPORTED"}, 2),
+          unpinned_vector=lambda: check_negative_at(G2 / "unpinned_vector.moss", {"ECHO_DISPLAY_UNSUPPORTED"}, 2),
+          echo_local_vector=lambda: check_negative_at(G2 / "echo_local_unpinned_vector.moss", {"ECHO_DISPLAY_UNSUPPORTED"}, 3),
+          echo_local_map=lambda: check_negative_at(G2 / "echo_local_unpinned_map.moss", {"ECHO_DISPLAY_UNSUPPORTED"}, 3),
+          unresolved_elsewhere=lambda: check_negative_at(G2 / "unpinned_local_without_echo.moss", {"TYPE_AMBIGUOUS_OPEN_RESULT"}, 2),
           source_free=lambda: g4_source_free(s))
 
 
@@ -316,12 +325,13 @@ import Provider
 fn main():
   echo Provider.outer(1)
 ''')
-    error = check_negative(source, {"MEMBER_NOT_FOUND", "UNKNOWN_METHOD", "TYPE_MEMBER_NOT_FOUND", "TYPE_MISMATCH"},
+    error = check_negative(source, {"METHOD_NOT_FOUND"},
                            ("outer", "middle", "required", "Provider"), env)
     assert error["source_file"] == str(source), error
     related = error.get("related") or []
     assert len(related) >= 2, "missing imported outer-to-provider provenance chain"
-    assert any("Provider" in json.dumps(note) for note in related), related
+    assert any((note.get("source") or {}).get("file", "").endswith("provider.moss")
+               for note in related), related
 
 
 def g6(s):

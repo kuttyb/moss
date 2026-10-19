@@ -1,0 +1,10 @@
+module app
+import maps
+
+fn main():
+  var m = maps.fresh()
+  m[2] = "x"
+  var n = maps.fresh()
+  n["k"] = 7
+  echo m.get(2, "none")
+  echo n["k"]

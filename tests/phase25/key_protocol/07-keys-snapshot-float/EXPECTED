@@ -1,0 +1,12 @@
+title: Map[Float, Int].keys() snapshot is detached from later mutation
+covers: 5 (eager owned keys() snapshot)
+layout: standalone
+expect: stdout
+current: fail-closed FLOAT_MAP_KEY_UNSUPPORTED
+owner: Team G G2/G3 MossMap<K,V> + Team S Float key proof
+---
+2
+1
+1
+2
+1
