@@ -21500,7 +21500,9 @@ class Generator {
     // Agent B FileIO root runtime remains emitted only in the process root.
     const ExecutorRuntimeRole executor_role =
         !project_module_artifact_
-            ? ExecutorRuntimeRole::ProcessRoot
+            ? (p_.explicit_module && !p_.main.has_value()
+                ? ExecutorRuntimeRole::SelectedByExecutableBuild
+                : ExecutorRuntimeRole::ProcessRoot)
             : semantic_program_->main.has_value()
                 ? (p_.main.has_value()
                     ? ExecutorRuntimeRole::SelectedByExecutableBuild
