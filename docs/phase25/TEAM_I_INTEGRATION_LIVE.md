@@ -1,5 +1,13 @@
 # Team I live integration record
 
+## Gate 10 staged-run correction — 2026-10-19
+
+The preceding 10/11 G2 result omitted the required joint-activation switch
+and therefore ran legacy interim Gate 10 assertions. Re-running the **same
+`9621fca` staging head** with `MOSS_G2_ACTIVATE_JOINT=1` passes all 11/11,
+including Gate 10. The suspected regression is withdrawn. The H3 export
+guard still needs its exact emitted-closure review fix before target intake.
+
 ## H3 nested private-chain staging checkpoint — 2026-10-19
 
 L4 pushed `9621fca`. Source-removed Int/String consumers execute from one

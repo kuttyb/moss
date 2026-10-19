@@ -1,5 +1,16 @@
 # Moss current status
 
+## Phase 25 H3 Gate 10 conformance correction — 2026-10-19
+
+The prior checkpoint's 10/11 staged G2 result used the runner without its
+required `MOSS_G2_ACTIVATE_JOINT=1` switch, selecting legacy interim Gate 10
+assertions. On the **same pushed `9621fca` head**, L4 reran
+`MOSS_G2_ACTIVATE_JOINT=1 PYTHONDONTWRITEBYTECODE=1 python3
+tests/tooling/check_phase25_conformance.py ./moss` and obtained **11/11 PASS**,
+including Gate 10. There is no demonstrated compiler regression in this
+runner. The H3 guard-scope review finding remains under repair, and target
+integration/strict release remain pending.
+
 ## Phase 25 H3 nested private-chain staging checkpoint — 2026-10-19
 
 Sole L4 pushed `phase25-i-map-staging` at `9621fca`. One provider now emits
