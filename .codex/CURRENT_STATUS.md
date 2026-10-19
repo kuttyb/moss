@@ -8458,3 +8458,30 @@ Focused validation:
   Provider artifact generation and source removal succeeded. This consumer
   failure is outside the emitter conversion change.
 - `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` passed.
+
+## Phase 25-C2b.4c-R1 — Fix ABI-v10 summary version dispatch
+
+Starting from `6ee48e0dba635f8079be8e45369290470e3bfe25` on
+`phase25-integration`. The v3-to-legacy semantic projection now validates and
+excludes hash-identified version-2 summaries while preserving the typed-record
+and KeyProof exclusions. Private checked-summary discovery now validates and
+imports version-2 summaries; version-1 records still fail the existing strict
+summary decoder. Updated the direct H3 verifier and legacy-poison helper to
+classify version-2 summaries as typed binary records. No checker conversion,
+emission eligibility, ABI encoding, or specialization behavior changed.
+
+Focused validation passed:
+- `make moss-dev` passed (existing TypeSolver initializer warnings only).
+- `python3 tests/phase25/integration/cross_crate_harness.py --scenario 6
+  --staged-v10 --json` passed with output `99` after physical provider source
+  removal.
+- `python3 tests/tooling/check_phase25_h3_source_free_chain.py ./moss` passed;
+  its verifier matched the private callable summaries to checked-body records
+  and checked two source-free consumers plus missing/unrecorded-body negatives.
+- `PATH="$PWD/tmp/cxx-wrapper:$PATH"
+  python3 tests/tooling/check_phase25_h3_direct_records.py ./moss` passed.
+  The wrapper only downgrades the pre-existing missing-field-initializer
+  warning promoted by that script's `-Werror` compile.
+- `abi_v10_staging.cpp` and `abi_v10_adversarial.cpp` passed; the adversarial
+  test confirms version-1 and malformed typed summaries are rejected.
+- `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` passed.

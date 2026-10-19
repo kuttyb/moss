@@ -31,7 +31,13 @@ int main(int argc, char** argv) {
   const auto old_digest = sealed.digest;
   std::size_t removed = 0;
   for (auto& record : sealed.value.semantic_contract) {
-    if (record.payload.empty() || record.payload.front() == 1) continue;
+    const bool typed_summary_v2 = moss::abi_v10::hex_hash(record.id) &&
+        !record.payload.empty() &&
+        static_cast<unsigned char>(record.payload.front()) == 2;
+    if (record.payload.empty() || record.payload.front() == 1 ||
+        typed_summary_v2 ||
+        moss::abi_v10::is_key_proof_payload(record.payload))
+      continue;
     std::istringstream lines(record.payload);
     std::string line, replacement;
     std::string callable;

@@ -36152,7 +36152,16 @@ static string verified_abi_v10_interface_records(
       records += record.payload;
   records += "semantic_exports\n";
   for (const auto& record : parsed.value.semantic_contract) {
-    if (!record.payload.empty() && record.payload.front() == 1) continue;
+    const bool typed_summary_v2 = abi_v10::hex_hash(record.id) &&
+        !record.payload.empty() &&
+        static_cast<unsigned char>(record.payload.front()) == 2;
+    if (typed_summary_v2) {
+      abi_v10::validate_summary(record);
+      continue;
+    }
+    if (abi_v10::is_key_proof_payload(record.payload) ||
+        (!record.payload.empty() && record.payload.front() == 1))
+      continue;
     records += record.payload;
   }
   if (sealed) *sealed = parsed;
@@ -37418,9 +37427,11 @@ static ParsedModuleUnit load_module_interface(
       summaries.emplace(summary.callable_id, record.payload);
     }
     for (const auto& record : sealed.value.private_semantic_dependencies)
-      if (abi_v10::hex_hash(record.id) &&
-          !record.payload.empty() && record.payload.front() == 1) {
+      if (abi_v10::hex_hash(record.id) && !record.payload.empty() &&
+          (static_cast<unsigned char>(record.payload.front()) == 1 ||
+           static_cast<unsigned char>(record.payload.front()) == 2)) {
         auto summary = abi_v10::read_summary(record.payload);
+        abi_v10::validate_summary(record);
         if (!summaries.emplace(summary.callable_id, record.payload).second)
           throw CompileError(0, "duplicate checked ABI-v10 callable summary",
                              "SOURCE_FREE_SUMMARY_INVALID");
