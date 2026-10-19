@@ -23,6 +23,7 @@
 #include "ast.hpp"
 #include "numeric_literal.hpp"
 #include "numeric_runtime.hpp"
+#include "rust_float_display.hpp"
 #include "type_placeholders.hpp"
 
 namespace moss {
@@ -2729,31 +2730,12 @@ inline std::string rust_f64_to_string(double value) {
   if (std::isnan(value)) return "NaN";
   if (std::isinf(value)) return std::signbit(value) ? "-inf" : "inf";
   if (value == 0.0) return std::signbit(value) ? "-0" : "0";
-
-  char buffer[128];
-  auto converted = std::to_chars(buffer, buffer + sizeof(buffer),
-                                 std::fabs(value), std::chars_format::scientific);
-  if (converted.ec != std::errc{})
-    throw std::runtime_error("failed to format Float");
-  std::string scientific(buffer, converted.ptr);
-  size_t exponent_at = scientific.find('e');
-  if (exponent_at == std::string::npos)
-    throw std::runtime_error("scientific Float format lacks exponent");
-  int exponent = std::stoi(scientific.substr(exponent_at + 1));
-  std::string digits;
-  for (size_t index = 0; index < exponent_at; ++index)
-    if (scientific[index] != '.') digits += scientific[index];
-
-  std::string result;
-  int decimal_at = exponent + 1;
-  if (decimal_at <= 0) {
-    result = "0." + std::string(static_cast<size_t>(-decimal_at), '0') + digits;
-  } else if (static_cast<size_t>(decimal_at) >= digits.size()) {
-    result = digits + std::string(static_cast<size_t>(decimal_at) - digits.size(), '0');
-  } else {
-    result = digits.substr(0, static_cast<size_t>(decimal_at)) + "." +
-        digits.substr(static_cast<size_t>(decimal_at));
-  }
+  double magnitude = std::fabs(value);
+  auto decimal = moss_float_display_detail::grisu_shortest(magnitude);
+  if (!decimal)
+    decimal = moss_float_display_detail::dragon_shortest(magnitude);
+  std::string result = moss_float_display_detail::fixed_decimal(
+      decimal->first, decimal->second);
   return std::signbit(value) ? "-" + result : result;
 }
 
