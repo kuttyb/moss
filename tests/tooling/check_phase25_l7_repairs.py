@@ -473,7 +473,17 @@ def test_scalar_protocol_types():
     rejected("fn main():\n  echo isequal(1, \"a\")\n", "isequal across Int/String", "KEY_PROTOCOL_TYPE")
     rejected("fn main():\n  echo Int.less(1, 2.5)\n", "static less with Float", "KEY_PROTOCOL_TYPE")
     rejected("fn main():\n  echo hash([1])\n", "hash of a Vector", "KEY_PROTOCOL_TYPE")
-    rejected("fn main():\n  var m = Map()\n  m[1.5] = 1\n", "Float Map key", "FLOAT_MAP_KEY_UNSUPPORTED")
+    float_map_source = "fn main():\n  var m = Map()\n  m[1.5] = 1\n"
+    if os.environ.get("MOSS_STAGED_ABI") == "v10":
+        with tempfile.TemporaryDirectory(prefix="p25-l7-float-map-", dir=SCRATCH) as td:
+            source = Path(td) / "case.moss"
+            source.write_text(float_map_source)
+            checked = run([str(MOSS), "check", str(source), "--json"])
+            assert checked.returncode == 0 and json.loads(checked.stdout).get("ok"), (
+                checked.stdout + checked.stderr)
+        print("  PASS: staged Float Map key accepted by the checker")
+    else:
+        rejected(float_map_source, "Float Map key", "FLOAT_MAP_KEY_UNSUPPORTED")
     three_modes("""
 fn hash(x: Int) -> Int:
   return 7

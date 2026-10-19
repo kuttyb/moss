@@ -41,7 +41,22 @@ def native(source, td, mode, staged=False):
     binary = Path(td) / tag
     gen = run([str(MOSS), str(source), flag, "-o", str(rust)], env=env)
     assert gen.returncode == 0, f"{tag} lowering failed:\n{gen.stderr}"
-    build = run(["rustc", *rustc_flags, "--crate-name", "case", str(rust), "-o", str(binary)])
+    runtime_flags = []
+    if "moss_runtime::" in rust.read_text():
+        runtime = Path(td) / "libmoss_runtime.rlib"
+        if not runtime.is_file():
+            runtime_build = run([
+                "rustc", "--edition=2021", "--crate-name", "moss_runtime",
+                "--crate-type", "rlib", str(ROOT / "runtime/moss_runtime/src/lib.rs"),
+                "-o", str(runtime),
+            ])
+            assert runtime_build.returncode == 0, (
+                f"{tag} shared runtime failed:\n{runtime_build.stderr[:4000]}")
+        runtime_flags = ["--extern", f"moss_runtime={runtime}",
+                         "-L", f"dependency={td}"]
+    build = run(["rustc", "--edition=2021", *rustc_flags,
+                 "--crate-name", "case", str(rust), *runtime_flags,
+                 "-o", str(binary)])
     assert build.returncode == 0, f"{tag} rustc failed:\n{build.stderr[:4000]}"
     return run([str(binary)])
 
@@ -481,6 +496,15 @@ def test_randomized_unicode_properties():
 
 
 def main():
+    if "--g4-only" in sys.argv[2:]:
+        # G4's Char/String evidence is independent of S1's pre-activation Map
+        # key expectations. Keep the full S1+S2 runner unchanged for E5.
+        test_char_string_distinct()
+        test_char_conversion_and_failure()
+        test_escaped_literal_parity()
+        test_randomized_unicode_properties()
+        print("=== Phase 25 G4 Char/String cases passed ===")
+        return
     test_record_equality_rejected()
     test_imported_record_equality_rejected()
     test_mixed_operands_rejected()

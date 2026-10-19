@@ -25,6 +25,10 @@ KEY_PATH = "tests/phase25/key_protocol/run_fixtures.py"
 B_PATH = "tests/phase25/check_phase25_b_acceptance.py"
 G1_LEDGER_PATH = "tests/phase25/ledger/run_ledger.py"
 G1_REGRESSION_PATH = "tests/tooling/check_phase25_g1_regressions.py"
+S3_PATH = "tests/tooling/check_phase25_s3_key_protocol.py"
+G3_ORDERING_PATH = "tests/tooling/check_phase25_g3_ordering.py"
+L7_PATH = "tests/tooling/check_phase25_l7_repairs.py"
+G4_CHAR_PATH = "tests/tooling/check_phase25_s2_char_string.py"
 
 G1_LEDGER_ROWS = {
     "1": "#1 Int ordering above 2^53",
@@ -93,6 +97,18 @@ PROOFS: dict[str, tuple[tuple[str, str], ...]] = {
     "GATE-G1-13": (("g1-ledger", "12d"), ("g1-regression", "12-15")),
     "GATE-G1-14": (("g1-ledger", "14"), ("g1-regression", "14")),
     "GATE-G1-15": (("g1-ledger", "15"), ("g1-regression", "12-15")),
+    "GATE-G3-01": (("s3", "scalar-hashes"), ("g3-ordering", "scalar"),
+                   ("l7", "laws")),
+    "GATE-G3-02": (("g3-ordering", "float"), ("g3-ordering", "float-keys"),
+                   ("s3", "nan"), ("l7", "float-payload"),
+                   ("key", "01-float-keys-map"),
+                   ("key", "02-float-keys-set")),
+    "GATE-G3-03": (("l7", "laws"), ("l7", "float-payload")),
+    "GATE-G3-04": (("l7", "laws"), ("l7", "float-payload")),
+    "GATE-G4-01": (("g4-char", "char"), ("g4-char", "unicode"),
+                   ("l7", "char")),
+    "GATE-G4-02": (("g4-char", "constructor"), ("l7", "char")),
+    "GATE-G4-03": (("g4-char", "escapes"), ("l7", "invalid-escapes")),
 }
 
 # Gate 10's exact sealed proof identity is asserted by Team B, beyond G2's
@@ -102,8 +118,12 @@ PROOFS["GATE-TYPEIR-10"] += (("b", "gate10"),)
 SUITE_PATHS = {"g2": G2_PATH, "e3-debug": E3_PATH,
                "e3-release": E3_PATH, "key": KEY_PATH, "b": B_PATH,
                "g1-ledger": G1_LEDGER_PATH,
-               "g1-regression": G1_REGRESSION_PATH}
+               "g1-regression": G1_REGRESSION_PATH,
+               "s3": S3_PATH, "g3-ordering": G3_ORDERING_PATH,
+               "l7": L7_PATH, "g4-char": G4_CHAR_PATH}
 KEY_EXACT_STATUS = {
+    "01-float-keys-map": "passes",
+    "02-float-keys-set": "passes",
     "03-imported-nominal-keys-source-free": "passes",
     "04-two-consumers-shared-map": "passes",
     "05-coherence-mismatch-method-override":
@@ -169,6 +189,61 @@ def parse_suite(suite: str, stdout: str, returncode: int) -> dict[str, bool]:
                     all(lines.count(marker) == 1 for marker in G1_REGRESSION_MARKERS.values()))
         cases = {number: complete and marker in lines
                  for number, marker in G1_REGRESSION_MARKERS.items()}
+    elif suite == "s3":
+        lines = stdout.splitlines()
+        passed = [line for line in lines if line.startswith("  PASS:")]
+        complete = (returncode == 0 and len(passed) == len(set(passed)) == 26 and
+                    "=== All Phase 25 S3 key-protocol cases passed (26 cases) ===" in lines)
+        cases["scalar-hashes"] = complete and (
+            "  PASS: pinned hash values (Int identity, Float bits, Char code point, String FNV-1a)" in lines)
+        cases["nan"] = complete and all(marker in lines for marker in (
+            "  PASS: computed NaNs are isequal, hash-equal, unordered among themselves, last",
+            "  PASS: eight NaN payloads: one hash, isequal, unordered, stable-last (debug and -O)",
+        ))
+    elif suite == "g3-ordering":
+        lines = stdout.splitlines()
+        markers = {
+            "float": "  PASS: Float total ordering axioms verified.",
+            "scalar": "  PASS: Scalar ordering suite verified.",
+            "float-keys": "  PASS: staged Float Map/Set signed zeros and NaNs agree across engines.",
+            "sort": "  PASS: sort and Reverse verified.",
+        }
+        complete = (returncode == 0 and
+                    "=== All Phase 25 G3 Tests Passed Cleanly! ===" in lines and
+                    all(lines.count(marker) == 1 for marker in markers.values()))
+        cases = {name: complete and marker in lines for name, marker in markers.items()}
+    elif suite == "l7":
+        lines = stdout.splitlines()
+        passed = [line for line in lines if line.startswith("  PASS:")]
+        complete = (returncode == 0 and len(passed) == len(set(passed)) == 48 and
+                    "=== All Phase 25 L7 repair regressions passed ===" in lines)
+        laws = [f"  PASS: {type_name} ordering laws"
+                for type_name in ("Float", "Int", "Char", "String", "Bool")]
+        cases["laws"] = complete and all(lines.count(marker) == 1 for marker in laws)
+        cases["float-payload"] = complete and (
+            "  PASS: quiet/signaling/negative NaN payloads satisfy the Float laws" in lines)
+        cases["char"] = complete and all(marker in lines for marker in (
+            "  PASS: Char fields, parameters, returns, vectors, and conversions",
+            "  PASS: surrogates and out-of-range scalars fail in every engine",
+        ))
+        invalid = [line for line in lines if line.startswith("  PASS: 010 escape ")]
+        cases["invalid-escapes"] = (complete and len(invalid) == 11 and
+                                    len(set(invalid)) == 11 and
+                                    all(line.endswith(" -> INVALID_ESCAPE") for line in invalid))
+    elif suite == "g4-char":
+        lines = stdout.splitlines()
+        passed = [line for line in lines if line.startswith("  PASS:")]
+        complete = (returncode == 0 and len(passed) == len(set(passed)) == 21 and
+                    "=== Phase 25 G4 Char/String cases passed ===" in lines)
+        cases["char"] = complete and (
+            "  PASS: Char literal and explicit to_string comparisons (3 engines)" in lines)
+        invalid = [line for line in lines if line.startswith("  PASS: dynamic Char(")]
+        cases["constructor"] = (complete and
+            "  PASS: valid Char(Int) boundaries and a dynamic sweep (3 engines)" in lines and
+            len(invalid) == 5 and len(set(invalid)) == 5)
+        cases["escapes"] = complete and "  PASS: 14 escapes x 4 forms (3 engines)" in lines
+        cases["unicode"] = complete and (
+            "  PASS: 36 random strings, 880 property checks vs Python oracle (5 engines)" in lines)
     return cases
 
 
@@ -186,6 +261,14 @@ def suite_command(suite: str, compiler: Path) -> list[str]:
         return [sys.executable, str(ROOT / G1_LEDGER_PATH), f"STAGED={compiler}"]
     if suite == "g1-regression":
         return [sys.executable, str(ROOT / G1_REGRESSION_PATH), str(compiler)]
+    if suite == "s3":
+        return [sys.executable, str(ROOT / S3_PATH), str(compiler)]
+    if suite == "g3-ordering":
+        return [sys.executable, str(ROOT / G3_ORDERING_PATH), str(compiler)]
+    if suite == "l7":
+        return [sys.executable, str(ROOT / L7_PATH), str(compiler)]
+    if suite == "g4-char":
+        return [sys.executable, str(ROOT / G4_CHAR_PATH), str(compiler), "--g4-only"]
     raise ValueError(f"Unknown live suite {suite}")
 
 

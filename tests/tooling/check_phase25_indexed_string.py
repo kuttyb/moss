@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -188,7 +189,20 @@ def native(source, td, env, tag, release):
     gen = run([str(MOSS), str(source), "-O" if release else "--debug", "-o", str(rust)], env=env)
     assert gen.returncode == 0, gen.stderr
     flags = ["-O"] if release else []
-    build = run(["rustc", "--edition=2021", *flags, "--crate-name", "case", str(rust), "-o", str(binary)], env=env)
+    runtime_flags = []
+    if "moss_runtime::" in rust.read_text():
+        runtime = Path(td) / "libmoss_runtime.rlib"
+        if not runtime.is_file():
+            runtime_build = run([
+                "rustc", "--edition=2021", "--crate-name", "moss_runtime",
+                "--crate-type", "rlib", str(ROOT / "runtime/moss_runtime/src/lib.rs"),
+                "-o", str(runtime),
+            ], env=env)
+            assert runtime_build.returncode == 0, runtime_build.stderr[-4000:]
+        runtime_flags = ["--extern", f"moss_runtime={runtime}",
+                         "-L", f"dependency={td}"]
+    build = run(["rustc", "--edition=2021", *flags, "--crate-name", "case",
+                 str(rust), *runtime_flags, "-o", str(binary)], env=env)
     assert build.returncode == 0, build.stderr[-4000:]
     result = run([str(binary)], env=env)
     assert result.returncode == 0, result.stderr
@@ -207,7 +221,12 @@ def test_staged_program():
             plain_out, plain_rust = native(source, td, PLAIN, f"plain{int(release)}", release)
             staged_out, staged_rust = native(source, td, STAGED, f"staged{int(release)}", release)
             assert "pub type MossStr = String;" in plain_rust
-            assert "pub type MossStr = MossString;" in staged_rust
+            if os.environ.get("MOSS_STAGED_ABI") == "v10":
+                assert "pub use moss_runtime::string::{MossStr, MossString," in staged_rust
+                assert "pub type MossStr = MossString;" in (
+                    ROOT / "runtime/moss_runtime/src/string.rs").read_text()
+            else:
+                assert "pub type MossStr = MossString;" in staged_rust
             outputs[f"plain-{release}"] = plain_out
             outputs[f"staged-{release}"] = staged_out
         assert len(set(outputs.values())) == 1, outputs
@@ -229,6 +248,28 @@ def test_representations_never_mix():
         assert plain.returncode == 0, plain.stdout + plain.stderr
         interface = (proj / "build" / "debug" / "provider.mossi").read_text()
         assert "string_representation" not in interface
+        if os.environ.get("MOSS_STAGED_ABI") == "v10":
+            plain_artifacts = Path(td) / "plain_artifacts"
+            plain_artifacts.mkdir()
+            for name in ("provider.mossi", "libprovider.rlib"):
+                shutil.copy2(proj / "build" / "debug" / name,
+                             plain_artifacts / name)
+            staged = run([str(MARGO), "run"], cwd=proj, env=STAGED)
+            assert staged.returncode == 0 and staged.stdout == "é!\n", (
+                staged.stdout + staged.stderr)
+            consumer = Path(td) / "mixed_consumer"
+            (consumer / "src").mkdir(parents=True)
+            (consumer / "Moss.toml").write_text(
+                '[package]\nname = "mixed_consumer"\nversion = "0.1.0"\n')
+            shutil.copy2(src / "main.moss", consumer / "src" / "main.moss")
+            mixed_env = {**STAGED, "MOSS_MODULE_PATH": str(plain_artifacts)}
+            mixed = run([str(MOSS), "check", "src/main.moss", "--json"],
+                        cwd=consumer, env=mixed_env)
+            assert mixed.returncode != 0, mixed.stdout
+            assert json.loads(mixed.stdout)["error"]["code"] == (
+                "STRING_REPRESENTATION_MISMATCH"), mixed.stdout
+            print("  PASS: staged multi-crate execution and plain/indexed mismatch rejection")
+            return
         staged = run([str(MOSS), "build", "--json"], cwd=proj, env=STAGED)
         assert staged.returncode != 0
         assert "STRING_REPRESENTATION_STAGED_SINGLE_CRATE" in staged.stdout, staged.stdout

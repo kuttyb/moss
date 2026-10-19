@@ -309,6 +309,14 @@ def run_self_test(matrix_path: Path) -> int:
                   "=== All Phase 25 G1 Regressions Passed Cleanly! ===\n")
     if parse_suite("g1-regression", partial_g1, 0).get("1"):
         errors.append("Partial G1 regression output was accepted as complete")
+    partial_laws = ("  PASS: Float ordering laws\n"
+                    "=== All Phase 25 L7 repair regressions passed ===\n")
+    if parse_suite("l7", partial_laws, 0).get("laws"):
+        errors.append("Partial five-type law corpus was accepted as complete")
+    partial_g4 = ("  PASS: 14 escapes x 4 forms (3 engines)\n"
+                  "=== Phase 25 G4 Char/String cases passed ===\n")
+    if parse_suite("g4-char", partial_g4, 0).get("escapes"):
+        errors.append("Partial G4 Char suite was accepted as complete")
     fake_suites = {"g2": {"cases": {"1": True}, "stdout_sha256": "a" * 64}}
     forged_gate = {"id": "GATE-TYPEIR-01", "current_status": "PASS",
                    "blocking_dependency": None}
