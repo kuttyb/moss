@@ -8680,3 +8680,26 @@ Focused validation passed:
   --staged-v10 --json` passed with source-removed output `99`.
 - `python3 tests/tooling/check_agent_feedback.py` and `git diff --check`
   passed. Broad regression suites were not run. C2d was not started.
+
+## Phase 25-M2b.1-R1 — Provider provenance for ambiguous open results
+
+Starting from `76459abdcf6849f2af524bfe20d83456c8d7a1d1` on
+`phase25-integration`, preserved the uncommitted M2b.1 work and added a narrow
+provider-origin related span for imported unresolved-result ambiguities in
+`register_static_specialization()`. It uses retained `provider_origin_file`,
+declaration line, and semantic callable identity; consumer primary location,
+message, and `TYPE_AMBIGUOUS_OPEN_RESULT` remain unchanged. Conflicting-push
+diagnostic provenance remains deferred.
+
+Validation:
+- `make moss-dev` passed (existing TypeSolver missing-field-initializer
+  warnings only).
+- `python3 tests/tooling/check_phase25_m2b1_provenance.py
+  build/compiler/moss-dev` passed; relay ambiguity points to `provider.moss:5`
+  and names `Provider.relay` plus callable identity. Conflicting push remains
+  `TYPE_MISMATCH` at consumer line 6.
+- `python3 tests/tooling/check_phase25_conformance.py
+  build/compiler/moss-dev` passed, G2 conformance 11/11, including source-free
+  fresh/relay positives, source-backed ambiguity, and transitive missing-method
+  provider provenance.
+- `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` passed.

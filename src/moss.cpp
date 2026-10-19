@@ -18723,15 +18723,28 @@ class Checker {
     vector<string> canonical_types;
     for (const auto& type : parameter_types)
       canonical_types.push_back(canonical_type_name(type));
+    auto unresolved_result_error = [&](const string& message) -> void {
+      if (compiled_interface_file(function.source_file) &&
+          !function.provider_origin_file.empty() && function.line > 0 &&
+          !function.semantic_callable_id.empty()) {
+        CompileError error(line, message, "TYPE_AMBIGUOUS_OPEN_RESULT");
+        error.source_file = current_source_file_;
+        error.teaching.related.push_back({
+            function.provider_origin_file, function.line, 1,
+            "provider callable '" + provider_callable_display(function.name) +
+                "' (" + function.semantic_callable_id + ") is declared here"});
+        throw error;
+      }
+      err(line, message, "TYPE_AMBIGUOUS_OPEN_RESULT");
+    };
     if (closed_result_type && *closed_result_type &&
         contains_internal_placeholder(
             (*closed_result_type)->to_canonical_string())) {
       if (!checking_specialization_ &&
           starts_with(current_semantic_context_, "fn:"))
         return;  // An open source scheme closes in each concrete caller.
-      err(line, "static specialization of function '" + function.name +
-          "' has an unresolved result type",
-          "TYPE_AMBIGUOUS_OPEN_RESULT");
+      unresolved_result_error("static specialization of function '" +
+          function.name + "' has an unresolved result type");
     }
     auto semantic_key = specialization_key_inputs(
         function.semantic_callable_id,
@@ -18840,9 +18853,8 @@ class Checker {
       if (!checking_specialization_ &&
           starts_with(current_semantic_context_, "fn:"))
         return;
-      err(line, "static specialization of function '" + function.name +
-          "' has an unresolved result type",
-          "TYPE_AMBIGUOUS_OPEN_RESULT");
+      unresolved_result_error("static specialization of function '" +
+          function.name + "' has an unresolved result type");
     }
     FunctionSpecialization specialization;
     specialization.generated_name = "__moss_specialize_" + function.name + "_" +
