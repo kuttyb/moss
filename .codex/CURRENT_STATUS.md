@@ -8336,3 +8336,19 @@ rejection, then passed with identity preservation, integer literal types,
 concrete arithmetic, mismatched generic identities, H3 let/return decoding,
 invalid records, and unsupported expressions. `make --jobs="$(nproc)"` and
 `git diff --check` passed. No producer or ABI encoding changes were made.
+
+## Phase 25-C2b v2 — Generic arithmetic producer blocked
+
+Started `phase25-c2b-arithmetic-producer-v2` at C2a.1 commit
+`c77db2c985b110a542021f5486423ed2dbefd211`. The staged-v10 generic arithmetic
+provider builds, but its open summary is incomplete: parameter/result identity
+is retained as the same TypeRef, while the returned arithmetic expression has
+no retained checked expression type and no operator requirement facts. The
+summary builder marks it incomplete when `BodyTypeState::known_expression()`
+cannot resolve the arithmetic expression, and the v10 producer skips
+incomplete summaries. The `.mossi` contains zero checked-body records for
+`compute` and one legacy `generic_stmt`; after provider removal the consumer
+still prints `30` through that fallback. An exploratory producer projection
+was removed rather than bypassing the incomplete checked-summary contract.
+Focused decoder, H3 Scenario 6, source-backed ABI-v9 checks, and
+`git diff --check` pass. No production source change remains.
