@@ -1,5 +1,17 @@
 # Team I live integration record
 
+## H2 target merge and H3 guard checkpoint — 2026-10-19
+
+H2 draft PR #9 passed four exact-head jobs, received combined L6 approval,
+was marked ready and merged normally to `phase25-integration` at `56d68ce`.
+Reviewed head `9d7d354` and prior target `f63e03b` are its two parents.
+Post-merge target CI `39186996122` is queued; no further target intake until
+it passes. No `main` merge. Separately, L4 pushed H3 staging `4a57515` to
+bind guard lifting to an actually emitted, validated private checked closure;
+the unrecorded-root negative rejects, source-removed Int/String consumers
+still run, and activated G2 11/11 plus Map/Set 30/30 pass. H3 is not yet
+target-integrated or accepted for strict release.
+
 ## H2 exact-head L6 review — 2026-10-19
 
 PR #9 at `9d7d354` passed four exact-head CI jobs in `39180625856`; the

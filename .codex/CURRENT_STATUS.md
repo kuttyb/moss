@@ -1,5 +1,26 @@
 # Moss current status
 
+## Phase 25 H2 integrated target checkpoint — 2026-10-19
+
+After four green exact-head PR jobs and combined L6 review, PR #9 was marked
+ready and merged by GitHub's normal merge method into `phase25-integration`
+at `56d68ce9437057061922f00da7bc55ce97ce1391`. Parents are prior target
+`f63e03b18ac07c66a0f21594220dab7a7512d512` and reviewed H2 head
+`9d7d354dc9abdfaaaaeb917f4a8f401f28b6d01a`. No main merge. Post-H2
+target workflow `39186996122` was queued at this checkpoint and must pass
+before the next target intake. Review is in
+`docs/phase25/TEAM_I_L6_REVIEW_H2.md` on coordination branch. H1/H3 and
+remaining G/S/B intakes/release gates stay open.
+
+Sole L4 pushed H3 guard follow-up `4a57515`: checked call edges, body and
+summary dependencies must match for every selected private-chain body; an
+exported root reaching a private multi-statement chain without an actually
+emitted checked closure fails before interface/link. Supported Int/String
+source-free consumers and missing-private-body negative still pass, as do
+optimized build, focused H3 suites, activated key fixtures 30/30 and staged
+G2 11/11 with `MOSS_G2_ACTIVATE_JOINT=1`. This is staging evidence awaiting
+target-based intake and CI; not final H3 or Phase 25 acceptance.
+
 ## Phase 25 H2 exact-head combined L6 approval — 2026-10-19
 
 Draft PR #9 exact head `9d7d354dc9abdfaaaaeb917f4a8f401f28b6d01a`
