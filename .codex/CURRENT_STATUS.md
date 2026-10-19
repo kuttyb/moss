@@ -1,5 +1,18 @@
 # Moss current status
 
+## Phase 25 H/T baseline integrated — 2026-10-19
+
+After exact-head four-job CI and combined L6 review, draft PR #5 was moved
+ready and merged by GitHub's normal merge method into `phase25-integration` at
+`f63e03b18ac07c66a0f21594220dab7a7512d512`. Its parents are prior
+target `fbd2f729caf1a96c3ffe184068e88ba6b09288cc` and reviewed head
+`9ddf9a4c27cefcfe19284b4b9f87cbdadf2fa97c`; pinned H/T history remains
+ancestral. No main merge. Post-merge target CI must run and pass before the
+next target integration. H2, G, S, B, strict ABI/harness and staged Map/Set,
+H1/H3, and final 62/62 remain open. The L6 review is in
+`docs/phase25/TEAM_I_L6_REVIEW_H_T.md` on the coordination branch, to be
+carried into a later reviewed target intake.
+
 ## Phase 25 H/T intake L6 review — 2026-10-19
 
 Combined Coordinator/L6 review approved **baseline intake only** for draft

@@ -1,5 +1,13 @@
 # Team I live integration record
 
+## H/T baseline target merge — 2026-10-19
+
+PR #5 merged normally into `phase25-integration` at
+`f63e03b18ac07c66a0f21594220dab7a7512d512`, with prior target `fbd2f72`
+and exact reviewed head `9ddf9a4` as parents. Four PR jobs were green before
+combined L6 approval; the target's post-merge CI remains pending. H1–H3 and
+all later Phase 25 intake/release gates remain open. No main merge.
+
 ## H/T exact-head review checkpoint — 2026-10-19
 
 Draft PR #5 at `9ddf9a4` passed all four required jobs in workflow
