@@ -12,6 +12,10 @@ the Vector[Tag] Map-key line-0 diagnostic; default-v9 full S1+S2 passes.
 The worker is fixing the span and proving the actual shared String runtime.
 No target/main merge or release claim; G draft and prior target core CI run.
 
+The runtime audit then found that the u32/4 GiB bound is checked only when
+recording a sparse offset; all-ASCII growth could bypass it. G4-04 remains
+open while L4 adds a pre-mutation length guard and a bounded regression.
+
 ## G1 same-HEAD live acceptance checkpoint — 2026-10-19
 
 L4 pushed staging `7dfe201`: strict v10 acceptance rebuilt the checkout and

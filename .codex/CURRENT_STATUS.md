@@ -15,6 +15,11 @@ default-v9 full S1+S2 passes. The worker is repairing that span and adding
 shared-runtime String proof. G PR #10 and post-H2 target core CI remain
 in progress; no target/main merge or release claim.
 
+Follow-up: shared `runtime/moss_runtime/src/string.rs` checks its u32/4 GiB
+limit only when adding a sparse offset; an all-ASCII growth path can cross
+the global limit without that check. L4 is adding a pre-mutation checked
+length guard and a bounded regression before G4-04 can pass.
+
 ## Phase 25 G1 live-proof checkpoint — 2026-10-19
 
 The sole L4 pushed clean staging head `7dfe201eacb7ecdf9f67cc293c4e8695bfc8ee47`.
