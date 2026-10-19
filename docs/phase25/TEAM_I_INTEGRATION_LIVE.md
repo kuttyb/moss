@@ -1,5 +1,21 @@
 # Team I live integration record
 
+## Disjoint G5 harness and staged G1/G3 checkpoints — 2026-10-19
+
+Root pushed a separate noncompiler branch `phase25-i-g5-g6-harness` at
+`7ecd3f6`, based on staging `7136771`. Its strict G5-03 script passed
+34/34 debug/release ABI-v10 builds across all 17 primary SDK packages;
+it verifies emitted v10 interfaces and rlibs. G5-02's open Vector member
+source passed in all three engines; shared runtime unit/two-consumer and
+mismatch checks passed. Live acceptance now maps G5-01..03, G1-07 and
+G3-08 to complete exact-suite evidence, but these are **provisional**
+until combined with L4 implementation and rerun on a clean same HEAD.
+The G3-08 wrapper fails as expected on this pre-fix branch. L4 has separately
+pushed Float parity `d34fb4f`, sparse Map snapshot repair `935c78e`,
+and bounded G3-05 selector probes `8c3e04e`. G3-05 and G1-08 await
+L7 frozen-contract direction; neither has been promoted. S/post-G core
+CI remains in progress and no target/main/release status changed.
+
 ## Preliminary B intake conflict inventory — 2026-10-19
 
 Read-only merge-tree analysis of S PR head `e5d111a` and pinned Team B

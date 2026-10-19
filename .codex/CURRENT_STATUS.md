@@ -1,5 +1,22 @@
 # Moss current status
 
+## Phase 25 independent G5 harness checkpoint — 2026-10-19
+
+Root pushed noncompiler `phase25-i-g5-g6-harness` at `7ecd3f6` from
+staging `7136771`, with exact live-proof mappings for G1-07, G3-08 and
+G5-01..03. The new G5-02 open Vector member source runs in Fast Debug,
+native debug and native release. Shared runtime unit/two-consumer/mismatch
+checks pass. The strict G5-03 SDK matrix locally passed all **34/34**
+ABI-v10 builds for 17 primary SDK packages across debug/release, checking
+every generated interface's schema/native ABI 10 metadata and rlib existence.
+This is provisional until combined with the sole L4's compiler/runtime
+commits and rerun on the same clean head; the root branch deliberately fails
+the G3-08 test because it predates L4 `935c78e`. Acceptance self-test,
+feedback and diff checks pass. The sole L4 pushed Float parity `d34fb4f`,
+Map snapshot bound `935c78e`, and G3-05 bounded probe `8c3e04e`; G3-05
+remains unresolved pending L7 direction. G1-08 Queue also awaits L7. S PR
+#11/post-G target have three green jobs each, with core still running.
+
 ## Phase 25 provisional Team B merge analysis — 2026-10-19
 
 A read-only `git merge-tree` of exact S PR head `e5d111a` with pinned Team B
