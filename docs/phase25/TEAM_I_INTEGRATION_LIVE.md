@@ -1,5 +1,17 @@
 # Team I live integration record
 
+## G1 same-HEAD live acceptance checkpoint — 2026-10-19
+
+L4 pushed staging `7dfe201`: strict v10 acceptance rebuilt the checkout and
+passed G2 11/11, E3 Debug/Release 11/11, key 30/30, B 23/23, and mapped
+13 of 15 G1 gates to complete named suite output. The aggregate is 35 PASS,
+0 FAIL, 24 BLOCKED, 3 NOT IMPLEMENTED; strict exits 1. G1-07 awaits Float
+display breadth and G1-08 Queue traversal. The static matrix remains
+unchanged. G3/G4 audit uncovered a staged-v10 invalid `Vector[Tag]` Map-key
+diagnostic with line 0; S2 isolation is only evidence collection, and full
+S1+S2 must pass before final acceptance. G draft/target core CI jobs remain
+in progress. No target/main merge or release claim.
+
 ## Final-workflow ABI selector checkpoint — 2026-10-19
 
 The coordination branch now supplies `MOSS_STAGED_ABI=v10` to the frozen

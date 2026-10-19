@@ -1,5 +1,19 @@
 # Moss current status
 
+## Phase 25 G1 live-proof checkpoint — 2026-10-19
+
+The sole L4 pushed clean staging head `7dfe201eacb7ecdf9f67cc293c4e8695bfc8ee47`.
+Strict same-HEAD v10 acceptance rebuilt Moss and reports **35 PASS / 0 FAIL /
+24 BLOCKED / 3 NOT IMPLEMENTED**, exit 1. Thirteen G1 gates (01–06, 09–15)
+now have complete named ledger/regression or G2 case evidence. G1-07 remains
+open because Float display was checked only for ordinary values; G1-08 lacks
+Queue traversal. G2 11/11, E3 Debug/Release 11/11, key 30/30 and B 23/23
+still pass. Static matrix statuses were not changed. The worker is auditing
+G3/G4; an S2 prerequisite run exposed staged-v10 invalid `Vector[Tag]` Map
+key diagnostic line 0, which must be repaired rather than accepted as valid
+source provenance. G PR #10 and post-H2 target each still have three green
+jobs and core in progress. No target/main merge or final release acceptance.
+
 ## Phase 25 final-workflow environment checkpoint — 2026-10-19
 
 The coordination branch now sets `MOSS_STAGED_ABI=v10` on the frozen final
