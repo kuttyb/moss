@@ -425,6 +425,29 @@ int main() {
 
   const auto sealed_full = decode(encode(full_iface));
   validate_complete_interface(sealed_full, instance.provider_binary_id);
+  Interface forged_instance_iface = full_iface;
+  for (auto& record : forged_instance_iface.binary_contract)
+    if (record.id == instance_wire.id)
+      record = instance_record(wrong_instance);
+  const auto sealed_forged_instance = decode(encode(forged_instance_iface));
+  try {
+    validate_complete_interface(sealed_forged_instance,
+                                instance.provider_binary_id);
+    assert(false && "tampered concrete instance escaped complete validation");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+  }
+  Interface unknown_binary_iface = full_iface;
+  unknown_binary_iface.binary_contract.push_back({"unknown:binary", "\1bad"});
+  sort_records(unknown_binary_iface.binary_contract);
+  const auto sealed_unknown_binary = decode(encode(unknown_binary_iface));
+  try {
+    validate_complete_interface(sealed_unknown_binary,
+                                instance.provider_binary_id);
+    assert(false && "unknown versioned binary record escaped validation");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+  }
 
   // Linkage tests (Workstream B5)
   using moss::abi_v10::RuntimeCrateIdentity;

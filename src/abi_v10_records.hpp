@@ -1098,21 +1098,23 @@ inline void validate_complete_interface(
   std::map<std::string, NominalTemplate> known_templates;
   std::vector<ConcreteInstance> known_instances;
   for (const auto& rec : sealed.value.binary_contract) {
-    if (!rec.payload.empty() && rec.payload[0] == 1 &&
-        nominal_template_id_valid(rec.id)) {
-      try {
-        const auto tmpl = read_template(rec.payload);
-        validate_template(rec);
-        known_templates[tmpl.template_id] = tmpl;
-        continue;
-      } catch (const Error&) {}
-      try {
-        const auto inst = read_instance(rec.payload);
-        require(instance_key(inst) == rec.id, "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
-                "ConcreteInstance key mismatch");
-        known_instances.push_back(inst);
-        continue;
-      } catch (const Error&) {}
+    // Versioned records use distinct identities: declaration IDs are nominal
+    // strings, while concrete instance keys are SHA-256. Never swallow a
+    // malformed versioned record and fall through to the legacy text section.
+    if (rec.payload.empty() || rec.payload[0] != 1) continue;
+    if (nominal_template_id_valid(rec.id)) {
+      const auto tmpl = read_template(rec.payload);
+      validate_template(rec);
+      known_templates[tmpl.template_id] = tmpl;
+    } else if (hex_hash(rec.id)) {
+      const auto inst = read_instance(rec.payload);
+      require(instance_key(inst) == rec.id,
+              "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+              "ConcreteInstance key mismatch");
+      known_instances.push_back(inst);
+    } else {
+      throw Error("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                  "ABI-v10 binary record has an unknown canonical identity");
     }
   }
 
