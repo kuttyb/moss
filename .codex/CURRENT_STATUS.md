@@ -1,5 +1,1061 @@
 # Moss current status
 
+## Phase 25 Consolidated Integration Candidate (S + B + Map/Set + G5/G6) — 2026-10-19
+
+Team I reached a major integration milestone: full unification of Team S,
+Team B, staged Map/Set lowering, Option B type inference, Fast Debug O(1)
+HashIndex scaling, and the complete G5/G6 harness into a single verified
+candidate branch `phase25-i-b-reviewed-intake` at commit `8212f89`, pushed to origin.
+
+Completed live verifications on the consolidated candidate:
+1. Compiler build: clean 0-error build with `make --jobs="$(nproc)"`.
+2. G5-05 Scaling Benchmarks:
+   - Fast Debug Map/Set 10x workload ratio: 7.88x (<=30.0x bound PASS).
+   - Native Release Map/Set 10x workload ratio: 8.62x PASS.
+   - Margo bench execution: PASS.
+3. Conformance & Acceptance:
+   - G2 conformance: 11/11 PASS under `MOSS_G2_ACTIVATE_JOINT=1`.
+   - Team B Acceptance: 23 PASS, 0 PENDING, 0 FAIL (Joint Gate 10 fully verified with live source-free artifacts).
+   - Shared indexed String linkage: 2 source-free consumers debug/release PASS, runtime mismatch rejected PASS.
+   - Agent feedback validation: PASS.
+4. CI Progress:
+   - PR #11 CI workflow `39204684467`: Integration harness integrity PASS,
+     Phase 25 semantic gates PASS, Optimized examples PASS, Core regressions executing.
+   - Coordination and L6 review records up to date.
+
+## Phase 25 Team B intake on reviewed Team S and staged G5-05 resolution — 2026-10-19
+
+Team I continued parallel integration milestones across worktrees:
+1. Team S PR #11 exact head `7b08599`: 3 of 4 CI jobs passed on workflow `39204684467`
+   (Integration harness integrity PASS, Phase 25 semantic gates PASS, Optimized examples PASS),
+   with Core regressions actively executing on GitHub Actions runners.
+2. Combined Coordinator/L6 review for Team S PR #11 completed and recorded in
+   `docs/phase25/TEAM_I_L6_REVIEW_S.md`.
+3. G5-05 Fast Debug Map/Set performance fix and redundant Set hash parentheses fix
+   committed to `phase25-i-map-staging` (`9b614df`). Non-compiler harness updates from
+   `phase25-i-g5-g6-harness` were merged cleanly into `phase25-i-map-staging` (`75cf215`).
+   Verified: G5-05 benchmark suite PASS (10x ratio 6.17x vs <=30.0x bound), G2
+   conformance 11/11 PASS (Gate 10 PASS with joint activation), 34/34 SDK builds PASS.
+4. Team B ABI-v10 runtime/linkage (`phase25-i-b-rehearsal`) merged cleanly onto
+   the reviewed Team S candidate (`7b08599`) on branch `phase25-i-b-reviewed-intake`
+   (`82a24c3`), resolving the single conflict in `write_module_interfaces`. Built
+   cleanly with `make`; verified: 22 PASS, 1 PENDING (Gate 10), 0 FAIL on
+   `check_phase25_b_acceptance.py`, and shared indexed String linkage debug/release/mismatch
+   checks verified PASS. Branch pushed to origin.
+
+## Phase 25 S PR #11 exact-head namespace and root-ID repair pushed — 2026-10-19
+
+The replacement Team I sole worker diagnosed and repaired the PR #11 CI failure
+at commit `7b08599693965b87618ee650854fe784fdc106b1` on `phase25-i-s-reviewed-intake`
+and pushed to origin.
+1. Root cause 1: `src/file_chunk_codegen.inc` lowered chunk pipelines with
+   unqualified calls to `branch_scope_new_current`, `branch_publish`, and `branch_join`.
+   When consumer modules imported provider dependencies via `use moss_<dep>::*;`,
+   both provider and local `pub use __moss_executor_runtime::*;` brought those
+   names into module scope via glob imports, causing Rust `E0659` ambiguity.
+   Resolved by explicitly importing `{branch_scope_new_current, branch_publish,
+   branch_join, current_root_id, MossBranchScope}` in `SelectedByExecutableBuild`.
+2. Root cause 2: `executor_runtime_provider_items()` did not declare or define
+   `current_root_id()`. Resolved by exporting `__moss_current_root_id` C-ABI from
+   root runtime and wrapping it as `current_root_id() -> Option<u64>` in provider items.
+3. Root cause 3: Test 37 `37-symbol-ownership` required `SelectedByExecutableBuild`
+   for explicit modules without main. `executor_role` was refined to select
+   `SelectedByExecutableBuild` for standalone explicit modules without main.
+Local validation: `check_phase20_executor_fileio.py` passed,
+`check_phase20c_executor.py` passed (54/54), `check_phase21_float_ieee.py` passed,
+full Team S suites (S1–S4, SA–SC, Team A) passed, feedback validation passed.
+CI workflow `39204684467` is currently running all four parallel jobs.
+Next steps: monitor workflow `39204684467` to completion, record L6 review,
+merge PR #11 into `phase25-integration`, then integrate staged G5-05 Map/Set O(1)
+index and Team B runtime.
+
+## Phase 25 G5 benchmark and G6 proof checkpoint — 2026-10-19
+
+Root pushed noncompiler harness `a7d5fab` and proved its strict ABI-v10 SDK
+matrix twice: 34/34 builds, 17 primary SDK packages in debug/release; the
+exact complete output parses as live `g5-sdk all=True`. Local S-A numeric
+and S-C arithmetic full suites passed and parse as `sa numeric=True` and
+`sc arithmetic=True`; Team B's 23-check live suite passed and its exact
+forgery/integrity markers parse as `b integrity=True`. Root wired G6-02/03
+to those suites plus existing key/Float gates, with partial-output self-tests.
+G5-05 remains red: new exact-output Fast Debug Map/Set benchmark grows
+69.33x for 10x keys (0.116900s to 8.104803s), exceeding its <=30x
+anti-quadratic bound. A separate staged native-release Int Set package build
+fails `-D warnings` on generated redundant hash parentheses. Both minimal
+reproducers are under the harness worktree `tmp/` and sole L4 owns compiler
+repairs. L4 G4-05 String benchmark repair is pushed at `1a28679`; no G4-05
+or G5-05 live promotion yet. S PR and post-G target core CI remain running.
+
+## Phase 25 independent G5 harness checkpoint — 2026-10-19
+
+Root pushed noncompiler `phase25-i-g5-g6-harness` at `7ecd3f6` from
+staging `7136771`, with exact live-proof mappings for G1-07, G3-08 and
+G5-01..03. The new G5-02 open Vector member source runs in Fast Debug,
+native debug and native release. Shared runtime unit/two-consumer/mismatch
+checks pass. The strict G5-03 SDK matrix locally passed all **34/34**
+ABI-v10 builds for 17 primary SDK packages across debug/release, checking
+every generated interface's schema/native ABI 10 metadata and rlib existence.
+This is provisional until combined with the sole L4's compiler/runtime
+commits and rerun on the same clean head; the root branch deliberately fails
+the G3-08 test because it predates L4 `935c78e`. Acceptance self-test,
+feedback and diff checks pass. The sole L4 pushed Float parity `d34fb4f`,
+Map snapshot bound `935c78e`, and G3-05 bounded probe `8c3e04e`; G3-05
+remains unresolved pending L7 direction. G1-08 Queue also awaits L7. S PR
+#11/post-G target have three green jobs each, with core still running.
+
+## Phase 25 provisional Team B merge analysis — 2026-10-19
+
+A read-only `git merge-tree` of exact S PR head `e5d111a` with pinned Team B
+`755f131` reports three textual conflict paths: `.codex/CURRENT_STATUS.md`,
+`docs/phase25/TEAM_A_TYPED_SEMANTIC_API.md`, and `tests/run.sh`. The B
+`tests/run.sh` alternative conditionally accepts an older unresolved echo
+diagnostic; the approved S-B `ECHO_DISPLAY_UNSUPPORTED` assertion must remain
+when the future target-based B intake is reconciled. This is preliminary
+conflict analysis, not a merged branch, test result or B review. S exact-head
+and post-G target core CI are still running; B intake waits for S integration.
+
+## Phase 25 S exact-head CI repair pushed — 2026-10-19
+
+The sole L4 pushed clean S PR #11 repair `e5d111a6ccded842399d9930a1d8dbf849e9d00b`.
+`Generator` now selects Margo's reusable project module artifact explicitly:
+direct `moss -o` explicit modules retain an unconditional process root, while
+Margo projected modules retain cfg-selected rlib/executable runtime ownership.
+Focused plain `rustc -D warnings`, source-removed generic and Range/FileIO,
+Phase20 FileIO, forced compiler build, feedback and diff checks pass locally.
+Combined L6 inspection of this narrow repair found the context split sound;
+the new exact-head PR workflow `39195771959` is running. The prior failed
+run `39194794707` is invalid for this head. PR stays draft until all four
+jobs and post-G target CI pass, followed by exact-head L6 review. L4 has
+returned the sole compiler lease to staged acceptance work; G1-08 awaits L7.
+
+## Phase 25 G1-07 Float Display counterexample — 2026-10-19
+
+Before switching to the S PR repair, L4 pushed clean staging `f9e4f1685d9effbc8dc2ccd2d28388d346ac9f9e`.
+A 4,096-value Float display differential found a concrete Fast Debug/native
+mismatch at f64 bits `0x4306a67789fbfd12`: Fast Debug prints
+`796935229243298.2`, native prints `796935229243298.3`. G1-07 remains red;
+the worker recorded feedback and will preserve a tracked minimal regression
+on returning to staging. The current sole compiler lease is on the S PR
+direct-rustc repair; no concurrent compiler edit.
+
+## Phase 25 S PR core CI repair checkpoint — 2026-10-19
+
+Draft S PR #11 exact head `99aebff` has examples and harness green but core
+workflow `39194794707` failed early in
+`tests/tooling/check_phase21_float_ieee.py`. That test uses direct Moss
+generated Rust for an explicit module and plain `rustc -D warnings`; S's
+source-free rlib repair emits `#[cfg(moss_process_root)]`, which triggers
+unexpected-cfg warnings and hides `main`, producing E0601. This is a real
+standalone/native compatibility regression, not a flaky CI result. The
+sole L4 is taking the S compiler lease to preserve both direct rustc use and
+source-free rlib gating, with a focused regression; the PR stays draft and
+unmerged until a revised exact head passes all four jobs. Post-G target
+workflow `39193878297` is 3/4 green with core still running. The G1-08
+contract question remains with L7; other staged gates continue afterward.
+
+## Phase 25 G1-08 frozen Queue contract question — 2026-10-19
+
+The sole L4 reduced G1-08 to `for x in q` on a Queue; the staged checker
+rejects it with `MOSS_COMPILE_ERROR` at line 5, expecting Vector, range or
+Iterator. Frozen `GATE-G1-08` and `ARCHITECT_INITIAL_REVIEW.md` require
+Queue traversal in Fast Debug/native, while current canonical
+`GENTLE_INTRODUCTION_TO_MOSS.md` (later section), `LANGUAGE_SYNTAX.md` and
+`FAST_DEBUG.md` explicitly say Queue is not a `for` source. The guide's
+earlier section contradicts its later one. Bootstrap still reports
+`moss-0.1`; its Queue source surface lists construction/push/pop but no
+iteration. Root has asked L7 to choose which contract governs; no Queue
+compiler edit or gate promotion until the answer. L4 continues independent
+Float display/acceptance work, and S PR #11/post-G target CI continue.
+
+## Phase 25 S draft PR checkpoint — 2026-10-19
+
+The sole L4 pushed clean target-based S head
+`99aebffe4ef818abb921372504e4ec3160a3cd07` and opened draft
+[PR #11](https://github.com/kuttyb/moss/pull/11) against reviewed post-G
+target `64d22251d7090d6bbe36369cc80a5f95f7890ce7`. Normal S refresh
+`9aaf056923083a579d3bb51c2517db7ac998e26f` retains pinned S history;
+the final root-owned commit adds only the final-CI v10 selector, current
+status and H2/G L6 review records. Exact-head PR workflow `39194794707` is
+queued. Local forced build/bootstrap, S1–S4, S-A/B/C, Type IR, Team A,
+G3/G4/L7, indexed String, feedback and diff checks pass; G2 is 10/11 with
+Gate 10 pending on this S-only default-v9 baseline. Post-G target workflow
+`39193878297` has examples, harness and semantic green, core in progress.
+No S L6 approval/target merge before both workflows are four-job green.
+Staging `cc8b80a` remains 44/62 live PASS, with final release open.
+
+## Phase 25 G target merge checkpoint — 2026-10-19
+
+After four green exact-head PR jobs and combined L6 review, PR #10 was marked
+ready and merged normally to `phase25-integration` at
+`64d22251d7090d6bbe36369cc80a5f95f7890ce7`. Its parents are prior H2
+target `56d68ce9437057061922f00da7bc55ce97ce1391` and reviewed G head
+`6859041f0ed46f54a4e7d59e017eaa599ecbcd5c`. The post-G target
+workflow `39193878297` is running; it must pass before S target merge. The
+sole L4 is refreshing the pretested S intake onto this exact target before
+draft PR/CI. Root will add the final-workflow v10 selector and current status
+to that branch before PR creation. Staged G4 checkpoint remains 44/62 live
+PASS with the span and scaling gaps open. No main merge or release claim.
+
+## Phase 25 G exact-head L6 approval and G4 staged checkpoint — 2026-10-19
+
+Draft PR #10 exact head `6859041f0ed46f54a4e7d59e017eaa599ecbcd5c`
+passed all four required jobs in workflow `39187310886`; prior H2 target
+workflow `39186996122` also passed all four. Combined Coordinator/L6 review
+approves the bounded G ancestry and exact diagnostic intake; see
+`docs/phase25/TEAM_I_L6_REVIEW_G.md`. PR is still draft/unmerged at this
+checkpoint; S/B and final 62-gate work remain open. Separately, L4 pushed
+clean staging `a93aa802d1f5b8c472c6997b0cb8fbc08d77e296` with strict
+same-HEAD **44 PASS / 0 FAIL / 15 BLOCKED / 3 NOT IMPLEMENTED**, exit 1.
+G4-04 now tests and guards the actual shared and inline String runtimes'
+global 4 GiB bound; G4-06 uses two source-free String/Char consumers with
+sealed artifact checks. G4-05 traversal scaling and the staged Vector[Tag]
+diagnostic span remain open. No main merge or final release claim.
+
+## Phase 25 G3/G4 live-proof checkpoint — 2026-10-19
+
+Sole L4 pushed clean staging head `66a57c58db9195774df5755b1877baebe0cb1276`.
+Strict v10 same-HEAD acceptance rebuilt Moss, ran 11 complete suites, and
+reports **42 PASS / 0 FAIL / 17 BLOCKED / 3 NOT IMPLEMENTED**, exit 1.
+G3-01–04 now require pinned scalar hashes, staged Float Map/Set signed-zero
+and NaN behavior, a five-scalar three-engine law corpus, and native NaN
+payload laws. G4-01–03 require focused three-engine Char constructor and
+escape suites. The strict parser rejects partial markers. G3-05/08 and
+G4-04–06 remain open for untested contract breadth, as do G1-07/08. Full
+staged S1+S2 still exposes the invalid Vector[Tag] Map-key line-0 diagnostic;
+default-v9 full S1+S2 passes. The worker is repairing that span and adding
+shared-runtime String proof. G PR #10 and post-H2 target core CI remain
+in progress; no target/main merge or release claim.
+
+Follow-up: shared `runtime/moss_runtime/src/string.rs` checks its u32/4 GiB
+limit only when adding a sparse offset; an all-ASCII growth path can cross
+the global limit without that check. L4 is adding a pre-mutation checked
+length guard and a bounded regression before G4-04 can pass.
+
+## Phase 25 G1 live-proof checkpoint — 2026-10-19
+
+The sole L4 pushed clean staging head `7dfe201eacb7ecdf9f67cc293c4e8695bfc8ee47`.
+Strict same-HEAD v10 acceptance rebuilt Moss and reports **35 PASS / 0 FAIL /
+24 BLOCKED / 3 NOT IMPLEMENTED**, exit 1. Thirteen G1 gates (01–06, 09–15)
+now have complete named ledger/regression or G2 case evidence. G1-07 remains
+open because Float display was checked only for ordinary values; G1-08 lacks
+Queue traversal. G2 11/11, E3 Debug/Release 11/11, key 30/30 and B 23/23
+still pass. Static matrix statuses were not changed. The worker is auditing
+G3/G4; an S2 prerequisite run exposed staged-v10 invalid `Vector[Tag]` Map
+key diagnostic line 0, which must be repaired rather than accepted as valid
+source provenance. G PR #10 and post-H2 target each still have three green
+jobs and core in progress. No target/main merge or final release acceptance.
+
+## Phase 25 final-workflow environment checkpoint — 2026-10-19
+
+The coordination branch now sets `MOSS_STAGED_ABI=v10` on the frozen final
+integration CI job. The live strict runner requires that selector and would
+otherwise reject the release job before checking its 62 gates. This workflow
+change is checkpointed on coordination only; it must be carried into a
+target-based reviewed intake before `[phase25-final]` is used. Post-H2 target
+and G draft PR #10 still each have three green jobs and core in progress.
+No additional target/main merge or release claim has occurred.
+
+## Phase 25 same-HEAD live acceptance checkpoint — 2026-10-19
+
+Sole L4 pushed clean staged `phase25-i-map-staging` at
+`a766dfaacb48a1e0baaac1761eabb31dcdfe8b70` (after `4f27f4e`).
+`MOSS_STAGED_ABI=v10 PYTHONDONTWRITEBYTECODE=1 python3
+tests/phase25/integration/run_acceptance.py --strict --json` now forces a
+checkout-local `make -B moss`, runs named G2, E3 Debug/Release, key and Team B
+suites serially, checks complete per-case output, and requires an unchanged,
+clean HEAD. At this exact SHA the suites pass G2 11/11, E3 11/11 in each
+profile, key 30/30 and B 23/23. The live report promotes only mapped proof
+cases and reads **22 PASS / 1 historical-unmapped FAIL / 36 BLOCKED / 3 NOT
+IMPLEMENTED**; strict exits 1 because 40 gates remain unmet. PASS includes
+TYPEIR 01–11; ABIV10 01,02,03,06,07,08,10,11; G3 06,07; G5 04. ABIV10
+04/05/09 lack their broader distinct proof and remain non-PASS. No static
+matrix statuses were flipped. Self-test, deliberate partial-output and
+dirty-head false-green injections, feedback and diff checks pass. This is
+staged, not target-integrated or final release acceptance. H2 target and G
+PR #10 core CI continue; S awaits post-G refresh.
+
+## Phase 25 strict 62-gate ledger audit — 2026-10-19
+
+On clean staged head `d5cb5e3`, `MOSS_STAGED_ABI=v10 python3
+tests/phase25/integration/run_acceptance.py --strict --json` exits 1 and
+reports **0 PASS / 1 FAIL / 51 BLOCKED / 10 NOT IMPLEMENTED**. The runner
+currently reads a static matrix; it does not execute test cases, and its
+`implementation_sha` check only proves that a commit exists. Twenty listed
+`test_path` targets do not exist on this head. Sole L4 is mapping each gate to
+actual same-HEAD executable case evidence, retaining non-PASS for unmet
+requirements. Existing staged E3 11/11, B 23/23, activated G2 11/11 and key
+30/30 cannot by themselves establish all 62 gates; final independent L6
+sign-off is explicitly deferred until the integrated candidate. No gate
+status has been flipped and strict release remains red.
+
+## Phase 25 staged E3 cross-crate execution checkpoint — 2026-10-19
+
+Sole L4 pushed clean `phase25-i-map-staging` at
+`d5cb5e370f09dc99efb3791ad72432653b9ef7d4`. The exact-checkout
+`MOSS_STAGED_ABI=v10` cross-crate harness reports **11 PASS / 0 BLOCKED /
+0 FAIL in both Debug and Release**. It pins repository `./moss`/`./margo`;
+Scenarios 2–5 build and execute against source-removed sealed provider
+artifacts, with Scenario 4 jointly linking two independently compiled
+consumers (A `42`, B `hello v10`, joint `100`/`shared`). Scenario 6 executes
+the canonical H3 private checked-IR chain with six legacy body lines removed,
+provider source removed, Int/String native outputs and missing/unsupported
+body negatives. Scenario 7 reports `METHOD_NOT_FOUND` at consumer line 9
+with provider.moss line 4; 8 reports `OWNERSHIP_USE_AFTER_CONSUME` line 7
+with consume line 6. Scenario 9 builds a real v9 provider artifact and
+requires `SOURCE_FREE_ABI_REBUILD_REQUIRED` when selected under v10, with an
+unselected control. Scenario 10 exercises five real tampered metadata
+mutations with exact ABI diagnostics. Scenario 11 verifies cold cache miss,
+warm reuse, changed provider digest and `FIELD_COUNT_MISMATCH` line 5.
+Harness self-test/fault injection, feedback, Python syntax and diff checks
+pass. **This is staged E3 evidence, not integrated E3 acceptance:** target-
+based intake, exact-head CI/L6 review, production cutover and strict 62/62
+remain open. Post-H2 target workflow `39186996122` and G draft #10 workflow
+`39187310886` continue running their core jobs.
+
+## Phase 25 staged Team B Gate 10 acceptance checkpoint — 2026-10-19
+
+Sole L4 pushed `phase25-i-map-staging` at
+`9f600facadc21b0470ce8a6ab61e44e2969e3892`. Team B Behavior 10 retains
+its separate codec/cache invalidation PASS and now executes joint Gate 10:
+one provider-owned `UserKey` KeyProof with a canonical nominal ID; two
+independently built native consumers after physical provider source removal,
+each with the exact same sealed proof ID and output `7`; a same-layout
+KeyA/KeyB conflict rejected at line 22 with `TYPE_MISMATCH`. The real Team B
+runner reports **23 PASS / 0 PENDING / 0 FAIL**. Activated G2 conformance is
+11/11 and ABI-v10 activated Map/Set fixtures are 30/30; feedback and diff
+checks pass. The key fixture runner requires both `MOSS_STAGED_ABI=v10` and
+`--activate`; a default-v9 invocation appropriately gave 13 mismatches and
+was not used as activated evidence. This is non-target staging, not strict
+62/62 or production cutover. Post-H2 target CI and G draft #10 exact-head
+CI remain in progress; S pre-intake awaits post-G refresh.
+
+## Phase 25 S pre-intake reconciliation checkpoint — 2026-10-19
+
+Sole L4 pushed `phase25-i-s-reviewed-intake` at
+`c5640fdeb4936163158470057cdb708b8d67a22f`, a normal merge of H2
+target `56d68ce` and S rehearsal `012f81d`; pinned S `53d04fb` and H2
+`9d7d354` remain ancestors. The merge was textually clean but exposed two
+semantic overlaps. Team A's source-free absent-method assertion now expects
+`METHOD_NOT_FOUND` with original `provider.moss` provenance, with a separate
+existing-method incompatible-argument `TYPE_MISMATCH` negative. Explicit-
+module `main` is compiled only for `moss_process_root`, avoiding rlib Rust
+E0425 missing FileIO/executor hooks; source-removed native Range/FileIO
+validation runs `source-free generic ok` and `329`. Nine key-fixture `current:`
+observations were corrected from clean-target/S evidence; Moss source and
+`expect:` remain fixed. Optimized compiler, S1–S4/S-A–C, Team A, Type IR,
+H2/G2 authority (36 checks), source-free native validator, default key
+fixtures 30/30, feedback and diff checks pass. G2 Gate 10 remains PENDING on
+this baseline. See `docs/phase25/S_INTAKE_RECONCILIATION.md` on S branch.
+S **must be refreshed onto reviewed post-G target** before a draft PR/CI; no
+S target/main push has occurred. Sole L4 has returned to staged Team B Gate
+10 acceptance-harness repair. G PR #10 exact-head and post-H2 target CI run.
+
+## Phase 25 G draft intake checkpoint — 2026-10-19
+
+Sole L4 pushed `phase25-i-g-reviewed-intake` at
+`6859041f0ed46f54a4e7d59e017eaa599ecbcd5c`, a normal merge of reviewed
+H2 target `56d68ce` and G rehearsal `7642035`; pinned G `2938d25` and H2
+head `9d7d354` are ancestors. Exact target delta has no compiler `src/`
+change: G history/status, reconciliation/review documents, feedback, and one
+stronger unresolved-collection diagnostic assertion. Local optimized build,
+live `moss-0.1` bootstrap, Type IR, G-A3 nominal identity, field visibility,
+H2/G2 authority (36 boundary checks), exact diagnostic, feedback and diff
+check pass. Baseline G2 is 10/11 with joint Gate 10 pending; no release claim.
+Draft PR [#10](https://github.com/kuttyb/moss/pull/10) targets
+`phase25-integration`; exact-head workflow `39187310886` is in progress.
+Post-H2 target workflow `39186996122` is also in progress. Combined L6
+review/target merge wait for four green PR jobs and green prior target run.
+Sole L4 is preparing S in a separate fresh target-based worktree; no second
+compiler writer. H3 staged checkpoint `4a57515` remains unintegrated.
+
+## Phase 25 H2 integrated target checkpoint — 2026-10-19
+
+After four green exact-head PR jobs and combined L6 review, PR #9 was marked
+ready and merged by GitHub's normal merge method into `phase25-integration`
+at `56d68ce9437057061922f00da7bc55ce97ce1391`. Parents are prior target
+`f63e03b18ac07c66a0f21594220dab7a7512d512` and reviewed H2 head
+`9d7d354dc9abdfaaaaeb917f4a8f401f28b6d01a`. No main merge. Post-H2
+target workflow `39186996122` was queued at this checkpoint and must pass
+before the next target intake. Review is in
+`docs/phase25/TEAM_I_L6_REVIEW_H2.md` on coordination branch. H1/H3 and
+remaining G/S/B intakes/release gates stay open.
+
+Sole L4 pushed H3 guard follow-up `4a57515`: checked call edges, body and
+summary dependencies must match for every selected private-chain body; an
+exported root reaching a private multi-statement chain without an actually
+emitted checked closure fails before interface/link. Supported Int/String
+source-free consumers and missing-private-body negative still pass, as do
+optimized build, focused H3 suites, activated key fixtures 30/30 and staged
+G2 11/11 with `MOSS_G2_ACTIVATE_JOINT=1`. This is staging evidence awaiting
+target-based intake and CI; not final H3 or Phase 25 acceptance.
+
+## Phase 25 H2 exact-head combined L6 approval — 2026-10-19
+
+Draft PR #9 exact head `9d7d354dc9abdfaaaaeb917f4a8f401f28b6d01a`
+passed all four required jobs in workflow `39180625856`; H/T target workflow
+`39180139206` also passed all four. Combined Coordinator/L6 review approved
+the bounded H2 projection repair only after checking target ancestry, exact
+source patch, 36 boundary checks and target-range whitespace. Review record:
+`docs/phase25/TEAM_I_L6_REVIEW_H2.md`. PR remains draft/not yet merged at
+this checkpoint; no main merge. H1/H3 and strict release remain open.
+
+## Phase 25 H3 Gate 10 conformance correction — 2026-10-19
+
+The prior checkpoint's 10/11 staged G2 result used the runner without its
+required `MOSS_G2_ACTIVATE_JOINT=1` switch, selecting legacy interim Gate 10
+assertions. On the **same pushed `9621fca` head**, L4 reran
+`MOSS_G2_ACTIVATE_JOINT=1 PYTHONDONTWRITEBYTECODE=1 python3
+tests/tooling/check_phase25_conformance.py ./moss` and obtained **11/11 PASS**,
+including Gate 10. There is no demonstrated compiler regression in this
+runner. The H3 guard-scope review finding remains under repair, and target
+integration/strict release remain pending.
+
+## Phase 25 H3 nested private-chain staging checkpoint — 2026-10-19
+
+Sole L4 pushed `phase25-i-map-staging` at `9621fca`. One provider now emits
+three canonical Summary/CheckedBody pairs: public `fresh` and private
+`nested_private_box`/`private_box`, with exact callable/nominal hash edges.
+A fixture strips all six legacy `generic_stmt` lines, re-seals `.mossi` and
+`.rlib`, removes provider source, and independently builds/runs Int (`99`)
+and String (`hello`) consumers. Dropping the private helper body rejects
+before native link as `SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING`; unsupported
+three-statement source remains `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE` and
+default-v9 original baseline passes. Optimized compiler, ABI staging and
+adversarial, checked decoder, summary density, typed API, Team A, G2
+declaration authority and both activated/default key fixtures 30/30 pass.
+**Staged G2 conformance is 10/11:** Gate 10 now fails `identity_conflict`
+(`TYPE_MISMATCH`) and `compiled_only_custom_key`. L4 is treating this as a
+regression and repairing it before intake. Combined L6 review also flagged
+that H3 export guard lifting must be bound to actual emitted/validated closure.
+This remains non-target staging, not H3 final acceptance or strict release.
+H/T target post-merge CI workflow `39180139206` has all four required jobs
+green (release job skipped); H2 PR #9 exact-head core CI is still running.
+
+## Phase 25 H3 direct checked-IR import checkpoint — 2026-10-19
+
+Sole L4 pushed staged `b4c045096c4508386bf758405b2079c684b17726`
+and `cfc5bfa71426e7311835f0f2c30efcce498656db`. The bounded H3 IR
+decoder accepts canonical two-statement Let/Return with exact Parameter,
+LocalRead, Call and NominalConstruct TypeRef/target IDs; it rejects tampered
+bytes and unsupported shapes. The importer attaches sealed Summary/body
+records, checks dependency identity, call arity/result, pure effects and
+parameter access, then derives an AST lowering view before inference. A
+provider interface with **all legacy `generic_stmt` lines removed and hashes
+re-sealed** still runs two independent Int/String consumers after provider
+source removal. This is genuine checked-IR execution for the bounded direct
+constructor, with optimized build, typed API, H3 guard/default-v9 baseline,
+staged/default key ledgers 30/30 and focused decoder/ABI tests green. The
+three-function nested private-helper chain remains staged-v10 guarded; H3
+acceptance, target integration and strict release are still open. H/T target
+and H2 PR core CI continue running.
+
+## Phase 25 H3 direct live transport checkpoint — 2026-10-19
+
+Sole L4 pushed `phase25-i-map-staging` at `c5446b5123708b4ef7784a4c3e8afb620b71568c`.
+A bounded direct two-statement constructor now emits canonical ABI-v10
+NominalTemplate, open Summary, CheckedBodyRecord and provenance from the live
+compiler. The container accepts byte-framed binary payloads while retaining
+UTF-8 validation for record IDs and logical text; summary variable ordinals
+are dense, rejecting trailing/interior holes. A direct provider and two
+independent physically source-removed consumers pass, as do forced compiler
+build, ABI staging/adversarial, typed API, default-v9 H3 baseline, activated
+and default key fixtures 30/30, feedback and diff check. **This is transport
+evidence, not H3 acceptance:** execution still uses legacy `generic_stmt`,
+and the nested private-helper staged-v10 export guard remains active. Next:
+structural checked-IR import/execution and full private-chain closure. H/T
+target and H2 PR core CI are still pending; no new target merge.
+
+## Phase 25 H3 fail-closed record and rich-body substrate — 2026-10-19
+
+Sole L4 pushed staged `50bf7ba` and `ffa945d`. Versioned semantic/private
+records now dispatch by identity without swallowing malformed decodes;
+duplicate private IDs and unknown versions reject. A new private
+`CheckedBodyRecord` binds canonical rich checked-IR bytes to a callable,
+`body-semantic-v1:sha256` hash, and kinded callable/nominal dependencies;
+whole-interface validation compares actual local summary/template hashes.
+ABI staging/adversarial, checked-body IR, compiler build, default-v9 H3
+two-consumer baseline and feedback pass across these commits, with staged
+30/30 key fixtures at `50bf7ba`. This is substrate only. Structural rich-IR
+decode, live H3 emission/import, and source-removed staged-v10 two-consumer
+execution remain open; the export guard is still active. H/T target and H2 PR
+have three green CI jobs each, core regression jobs still in progress.
+
+## Phase 25 H3 callable hash-contract checkpoint — 2026-10-19
+
+Sole L4 pushed staged branch `b4bf765` with canonical
+`body-semantic-v1:sha256:<64>` summary/dependency hashes and whole-interface
+local callable dependency matching. Focused ABI-v10 tests accept a valid
+public-to-private chain and reject tampered helper hashes, bare/foreign hash
+kinds, and an unresolved imported callable. ABI staging/adversarial suites,
+forced compiler build, default-v9 H3 two-consumer baseline, both key ledgers
+30/30 and feedback pass. Combined L6 read-only review is checking the
+MethodTemplate/summary relationship and duplicate private records. The live
+H3 emitter/importer and actual staged-v10 two-consumer execution remain open;
+the export guard remains active. H/T target and H2 exact-head CI each have
+three green jobs with core regressions still running. No further target merge.
+
+## Phase 25 canonical nominal ABI codec checkpoint — 2026-10-19
+
+Sole L4 pushed `phase25-i-map-staging` at `029eef9` and corrective
+`e5db01c`. Frozen `nominal-template-v1:<ModuleIdentity>:type:<name>` IDs now
+round-trip through staged TypeExpr, NominalTemplate, MethodTemplate and
+ConcreteInstance records; SHA-256 remains for contract, representation and
+instance hashes. Adversarial tests reject hashed substitutes, declaration
+mismatch, unknown local nominal references, a tampered concrete resolved
+field, and unknown versioned binary identities with
+`SOURCE_FREE_TYPE_IDENTITY_MISMATCH`. Combined L6 review caught that the
+first codec patch skipped SHA-256-keyed concrete instances; `e5db01c`
+separated template and instance dispatch and removed catch-and-skip for
+versioned binary records. ABI staging/adversarial C++ suites, checked-body
+IR, G-A3 nominal identity, both key ledgers 30/30, feedback and diff checks
+pass across the reported checkpoints. H3 rich body/dependency record emission
+and source-free validation remain open; staging is not target acceptance.
+
+## Phase 25 H3 checked rich-IR checkpoint — 2026-10-19
+
+Sole L4 pushed `phase25-i-map-staging` at
+`d269319b22ef3ca4755ec0d7cec2a74eb9a90641`. The checked rich IR now
+has a `NominalConstruct` node with exact template/field-slot identity and
+inferred-field TypeRef validation; a C++ test proves canonical hash and
+dependency extraction plus forged-target rejection. The H3 fixture's
+two-statement local binding and return bridge to rich `Let`/`Return` IR using
+exact private call edges. The staged guard deliberately remains active with
+`SOURCE_FREE_CHECKED_BODY_UNAVAILABLE` because canonical ABI-v10
+dependency/body records and source-free import validation are unfinished.
+Compiler build, checked-body IR suite, default-v9 two-consumer H3 baseline,
+typed API, staged G2 11/11, feedback and diff checks pass. H3 is not accepted.
+L4 is resolving the frozen TypeRef template ID versus wire codec key mapping
+without changing nominal identity, then implementing actual records.
+
+## Phase 25 H3 typed-summary checkpoint — 2026-10-19
+
+Sole L4 pushed `phase25-i-map-staging` at `71991a0c6fdf50aafe7f3cc57996f8414142b6ae`.
+For the exact straight-line `result = expr; return result` case, the checker
+now binds a nominal constructor's inferred `value` field to the open
+parameter and substitutes private-call result relations after exact semantic
+call edges exist. Live inspect publishes complete open summaries for
+`Service.fresh`, `nested_private_box`, and `private_box`, all with
+`Box[value: bound var 0]`, and retains fresh→nested→private dependencies.
+Typed API, Team A, staged G2 11/11, default-v9 two-consumer H3 guard,
+feedback and diff checks pass. Versioned multi-statement checked body IR and
+canonical private dependency/provenance records are **still absent**; the
+staged-v10 export guard remains active and H3 is not accepted. L4 continues
+the rich IR and record bridge with exclusive compiler ownership.
+
+## Phase 25 H3 fail-closed checkpoint — 2026-10-19
+
+Sole L4 pushed `phase25-i-map-staging` at `466eb7a64d3e750dcc906e2a53e371aa99cec04a`.
+A real one-provider, source-removed, independent Int/String two-consumer
+reduction previously ran (`99`, `hello`) under staged v10, but inspection
+showed `missing_typed_facts` for all three generic/private callables and the
+interface had zero private semantic dependencies and provenance records.
+That was a legacy text-IR fallback, not H3 acceptance. Staged v10 now rejects
+the unsupported exported/private multi-statement chain before interface/link
+with structured `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE` at Service.fresh.
+Default-v9 two-consumer execution still works. Compiler build, typed API,
+Team A, G2 11/11, default and staged key fixtures 30/30, and feedback pass.
+The staged cross-crate harness is now 10 PASS / Scenario 6 FAIL by design;
+H3 remains open until complete typed result flow, versioned checked body IR,
+canonical private dependency hashes/provenance and two-consumer execution are
+proved together. L4 continues that implementation with exclusive compiler
+ownership. No production cutover or full release acceptance.
+
+## Phase 25 H2 draft intake — 2026-10-19
+
+Sole L4 prepared fresh target-based `phase25-i-h2-intake` at
+`9d7d354dc9abdfaaaaeb917f4a8f401f28b6d01a`, direct parent H/T target
+`f63e03b`. It reapplies the exact H2 patch from staging `0574de4` (matching
+stable patch ID `c32981aa...`) without Map/Set staging changes. Local
+optimized build, live `moss-0.1` bootstrap, G2 declaration authority with 36
+boundary checks, typed semantic API, Team A semantics, feedback and diff
+checks pass. Draft PR [#9](https://github.com/kuttyb/moss/pull/9) targets
+`phase25-integration`; its exact-head CI and combined L6 review are pending.
+The worker has returned to H3 under the exclusive compiler lease.
+
+Post-H/T target workflow `39180139206` is running at `f63e03b`; harness
+integrity and optimized examples are green, semantic/core jobs still running.
+No H2 target merge or main merge.
+
+## Phase 25 H1 callable/effects checkpoint — 2026-10-19
+
+Sole L4 pushed `phase25-i-map-staging` at `c4b07293e489de3201b3cf57a25f8e8989d0349e`.
+Live typed inspection now exposes the bound callable subject, ordered Int
+argument/result, READ access and provenance even when the generic open
+summary is withheld as `unresolved_effects`. Concrete pure and raising
+callbacks specialize under distinct exact callable IDs; effects close, and
+the raising specialization retains `CalcError`. Staged ABI-v10 now rejects
+export of unresolved callback effects and stale source-free import before
+link with `SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED`, including provider
+provenance after physical source removal. Default v9 provider checking stays
+valid. Typed API, Team A, G1, staged G2 11/11, default and activated key
+fixtures 30/30, feedback and whitespace checks pass. This closes the bounded
+H1 callable evidence without inventing effect-polymorphic ABI support; H3
+and full release acceptance remain open. L4 has begun fresh target-based H2
+intake under the exclusive compiler lease.
+
+Post-H/T-merge target CI run `39180139206` is in progress at `f63e03b`.
+
+## Phase 25 H/T baseline integrated — 2026-10-19
+
+After exact-head four-job CI and combined L6 review, draft PR #5 was moved
+ready and merged by GitHub's normal merge method into `phase25-integration` at
+`f63e03b18ac07c66a0f21594220dab7a7512d512`. Its parents are prior
+target `fbd2f729caf1a96c3ffe184068e88ba6b09288cc` and reviewed head
+`9ddf9a4c27cefcfe19284b4b9f87cbdadf2fa97c`; pinned H/T history remains
+ancestral. No main merge. Post-merge target CI must run and pass before the
+next target integration. H2, G, S, B, strict ABI/harness and staged Map/Set,
+H1/H3, and final 62/62 remain open. The L6 review is in
+`docs/phase25/TEAM_I_L6_REVIEW_H_T.md` on the coordination branch, to be
+carried into a later reviewed target intake.
+
+## Phase 25 H/T intake L6 review — 2026-10-19
+
+Combined Coordinator/L6 review approved **baseline intake only** for draft
+PR #5 exact head `9ddf9a4c27cefcfe19284b4b9f87cbdadf2fa97c` against
+target `fbd2f72`. Workflow `39174097677` has all four required jobs green;
+the final 62-gate release job is intentionally skipped. Original pinned H/T
+ancestry, conflict resolutions, push policy and target-range whitespace were
+checked. Review record: `docs/phase25/TEAM_I_L6_REVIEW_H_T.md`. H1–H3 and
+full Phase 25 acceptance remain open. At this checkpoint, PR has not yet been
+merged; target and main remain unchanged.
+
+## Phase 25 H1 structured index checkpoint — 2026-10-19
+
+The sole L4 compiler worker pushed `phase25-i-map-staging` at `e395a10`.
+Live generic indexing now exposes complete structured index requirements in
+`moss inspect` with receiver, argument/result terms, READ access and origin.
+Two distinct index expressions retain separate stable requirement IDs; an
+invalid String index rejects `TYPE_MISMATCH`. Source-backed and source-free
+calls now agree that a truly absent generic member is `METHOD_NOT_FOUND` with
+the provider chain retained, while a present method with incompatible
+arguments remains `TYPE_MISMATCH`. Typed semantic API and Team A suites pass;
+staged G2 is 11/11; default and activated key fixtures remain 30/30; feedback
+and diff checks pass. H1 callable argument/result summary is still open,
+followed by H3 source-free multi-statement specialization. L4 retains the
+exclusive compiler lease. H/T PR #5 still awaits exact-head core CI before
+combined L6 review or target merge; no main merge.
+
+## Phase 25 staged key-surface checkpoint — 2026-10-18
+
+Sole L4 pushed `phase25-i-map-staging` at `9e7c729`, closing the three
+remaining Option B empty-Map cases. At that exact compiler edit,
+`MOSS_STAGED_ABI=v10` activated key fixtures pass **30/30** across Fast Debug,
+native debug and native release; activated G2 conformance passes **11/11**.
+The default-v9 fixture ledger matches **30/30** observed outcomes. Seven
+default `current:` lines were corrected only after a clean pre-Option-B
+`dd7f97f` compiler reproduced the older drift; fixture source and `expect:`
+lines were not changed. A get-only String Map followed by an Int indexed
+insert rejects with precise `TYPE_MISMATCH`; unpinned `echo []` retains
+`ECHO_DISPLAY_UNSUPPORTED`. Feedback and diff checks pass. This is still an
+opt-in, non-target-based staging branch, not complete strict 62-gate release
+acceptance. L4 retains the compiler lease for inherited H1/H3 work.
+
+H/T draft PR #5 remains at `9ddf9a4` with semantic, optimized examples and
+harness integrity green. Core regressions of exact-head workflow
+`39174097677` are still running. Combined L6 review and target integration
+wait for that final job; target and main remain unchanged.
+
+## Phase 25 staged Float Map checkpoint — 2026-10-18
+
+Sole L4 pushed `phase25-i-map-staging` at `dd7f97f`. Under opt-in ABI-v10,
+Float Map uses shared `MossMap<f64,V>` with Team S's canonical
+`moss_float_isequal`/`moss_float_hash` and the same built-in proof ID as Float
+Set; Map and Set operation IDs remain distinct. Signed-zero/NaN fixture 01
+and eager Float-key snapshot fixture 07 pass Fast Debug, native debug and
+native release, as do Set 02 and shared Map/Set 08. Source-free proof
+transport, activated G2 11/11 and default-v9 Float Map fail-closed checks pass.
+The full staged key suite is **27/30 PASS**; only Option B empty-Map fixtures
+09b/09c (`TYPE_AMBIGUOUS_OPEN_RESULT`) and 09g (`MOSS_COMPILE_ERROR`) remain.
+L4 retains exclusive compiler lease and has begun that separate Option B slice.
+H/T PR #5 is unchanged at `9ddf9a4` with three exact-head CI jobs green and
+core regressions in progress. No target/main merge or L6 verdict yet.
+
+## Phase 25 staged key-fixture checkpoint — 2026-10-18
+
+Sole L4 pushed `phase25-i-map-staging` through `bd1547e` and `69b042b` after
+canonical proof checkpoint `7d9057e`. The activated 30-case Map/Set runner now
+links standalone generated Rust against the shared runtime and reaches
+**25/30 PASS**. Five positive Set/nominal-source-free fixtures pass in checker,
+Fast Debug and native modes. Both proof negatives pass: missing provider
+structural methods reject `KEY_PROOF_INVALID`; a consumer's proof-shaped free
+override of valid provider methods rejects
+`KEY_PROOF_COHERENCE_MISMATCH`. A separate resealed source-free two-consumer
+conflict test continues to prove transport coherence. The free-only fixture's
+old coherence expectation was corrected with explicit frozen-method rationale
+from `ABI_V10_DESIGN.md` §3.5 and the joint interface agreement; this is not
+a relaxation of genuine coherence coverage.
+
+Five exact staged fixture failures remain: Float Map 01/07 and Option B empty
+Map 09b/09c/09g. L4 retains exclusive compiler ownership and is implementing
+Float Map next. No production v10 cutover, strict 62/62 acceptance, target
+merge or main merge has occurred. H/T PR #5 remains at `9ddf9a4`; its core
+CI job is still in progress and the other three required jobs are green.
+
+## Phase 25 canonical staged key-proof checkpoint — 2026-10-18
+
+Sole L4 compiler worker pushed `phase25-i-map-staging` at `7d9057e`, extending
+Set checkpoint `dd44d5c`. Opt-in ABI-v10 now emits and imports canonical
+nominal KeyProof records, checks selected provider method signatures, effects
+and semantic hashes, carries one proof across independent source-free
+consumers, and binds canonical proof ID into keyed Map/Set operation IDs and
+native build fingerprint. Focused provider-removal tests pass through native
+execution with two consumers; resealed semantic-hash tampering fails before
+link with `KEY_PROOF_INVALID`, and conflicting valid proof identities fail
+`KEY_PROOF_COHERENCE_MISMATCH`. Activated G2 conformance remains 11/11.
+Existing explicit-module runtime probe 43 and full Phase 20 FileIO suite pass
+after a process-root linkage repair. This is staged candidate evidence, not
+production cutover or full 62-gate acceptance.
+
+`tests/phase25/key_protocol/run_fixtures.py --activate` is **not green** at
+this checkpoint: its direct rustc invocation omits the staged shared
+`moss_runtime` extern. The worker is repairing that harness in a separate
+follow-up; direct native linking with the compiler runtime rlib passed the
+Set fixtures. H/T draft #5 remains at `9ddf9a4`; its three short exact-head
+CI jobs are green and full core regressions still runs. No target/main merge
+or L6 review verdict has occurred.
+
+## Phase 25 staged Set checkpoint — 2026-10-18
+
+Sole L4 compiler worker pushed `phase25-i-map-staging` at `dd44d5c`, extending
+nominal Map checkpoint `4165e75`. Under opt-in `MOSS_STAGED_ABI=v10`, Set uses
+the L7-frozen `Set()`, `insert(k)`, `contains(k)`, `values()` source API and the
+shared `MossSet` robin-hood kernel with Map's nominal proof validation. Native
+and Fast Debug outputs match the expected nominal Map+Set fixture 08
+(`true/2/2/2/2`) and Float Set fixture 02 (`3/true/true/false`); an
+Int/String/Char/Bool Set probe also has checker/Fast Debug/native parity.
+Default ABI v9 retains its prior `UNKNOWN_SYMBOL_OR_TYPE` Set rejection.
+Missing, impure, and divergent nominal proofs return `KEY_PROOF_INVALID`.
+The worker repaired proof-validation timing after main-body key discovery;
+feedback validation and whitespace checks pass. Full PR/repository suites and
+canonical serialized KeyProof identity/coherence remain open; worker retains
+exclusive compiler/ABI edit lease for that next slice.
+
+H/T draft #5 is now exact head `9ddf9a4c27cefcfe19284b4b9f87cbdadf2fa97c`.
+Workflow `39174097677` has semantic gates, examples, and harness integrity
+green; core regressions still runs. Previous CI results for `bf1df10` were
+cancelled after the whitespace follow-up and are not current acceptance.
+No target/main merge or L6 verdict has occurred.
+
+## Phase 25 staged nominal Map checkpoint — 2026-10-18
+
+Pushed `phase25-i-map-staging` at `4165e752319c120275ac2a8268e25da599a62fdd`,
+based on the staged shared-runtime checkpoint `641a577`. Under the opt-in
+`MOSS_STAGED_ABI=v10` path, the checker admits nominal Map keys with pure READ
+`isequal(Self) -> Bool` and `hash() -> Int`; generated Rust uses the shared
+robin-hood `MossMap`, preserves a concrete type for a locally inferred empty
+Map, and materializes borrowed object-view lookup keys. A clean Margo provider
+build passes. `MOSS_G2_ACTIVATE_JOINT=1` conformance passes 11/11 actual Moss
+gates, including Gate 10's two source-free consumers and negative identity
+case. Feedback validation and whitespace checks pass. This is a staged Map
+checkpoint, not full canonical MapKeyProof record emission, Set, production
+ABI-v10 cutover, or Phase 25 acceptance. No draft PR to target has been opened
+for this branch because its B/S ancestry is not yet accepted into target.
+
+The requested two-agent layout is restored: root is combined L6
+coordinator/reviewer and owns Git/CI/integration; a single L4 worker owns
+compiler files exclusively in `phase25-i-map-staging` and is implementing the
+L7-frozen Set source API using the Map kernel. Root will not concurrently edit
+compiler files. The independent adversarial L6 review remains deferred until
+the final candidate. H/T draft PR #5 at `bf1df10` has three green exact-head
+jobs; core regressions is still in progress at workflow `39168204061`. Target
+`phase25-integration` remains `fbd2f729caf1a96c3ffe184068e88ba6b09288cc`;
+no merge to main. H/T draft #5 advanced to `9ddf9a4` after trimming one
+inherited final blank line in Team T's closeout. The target-range
+`git diff --check` now passes. The earlier three-green/one-running result
+was for `bf1df10` and is invalidated by this new head; wait for all four new
+exact-head CI jobs before combined L6 review or integration.
+
+## Phase 25 L7 Set decision — 2026-10-18
+
+L7 chose to freeze the existing provisional Set source API for this phase:
+`Set()`, `insert(k)`, `contains(k)`, and `values()`. Team I must implement Set
+using Map's canonical key proof and shared runtime kernel. This resolves the
+source-surface choice documented in `docs/phase25/TEAM_I_INTEGRATION_LIVE.md`;
+the implementation and acceptance remain open. Earlier status entries that
+call the L7 Set decision pending are historical.
+
+## Phase 25 shared indexed String staging checkpoint — 2026-10-18
+
+Pushed `phase25-i-b-rehearsal` at `641a577` (from `145034f`). The opt-in
+`MOSS_STAGED_ABI=v10` plus `MOSS_STAGED_STRING_REPR=indexed-v1` path now uses a
+single content-addressed `moss_runtime` rlib for generated provider/consumer
+crates, imports Team S's exact indexed String implementation from that crate,
+records indexed representation plus exact runtime build/artifact identity in
+the v10 binary contract, checks a source-free provider runtime identity before
+Rust linking, and includes runtime identity in the native cache key. Margo
+supplies the runtime source directory to package builds. No production ABI-v10
+default cutover occurred.
+
+New `tests/phase25/runtime/check_shared_string_linkage.py` passes: provider
+source physically removed; two independent consumers execute in both debug
+and release; a changed runtime source returns exact
+`SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH` before native linking. Existing G4
+indexed String test passes its 12,800 randomized Unicode comparisons and
+plain/staged parity. Team B acceptance remains 22 PASS / 1 PENDING Gate 10;
+feedback validator and whitespace checks pass. This is staged boundary proof,
+not full same-SHA acceptance. Typed ABI records, compiler Map/Set lowering,
+nominal MapKeyProof, 62 strict gates, and final review remain open.
+
+H/T draft #5 is still at `bf1df10`, with three exact-head CI jobs green and
+core regressions in progress in workflow `39168204061` at latest check. Do not
+L6-review or merge it until all four checks pass. Target `phase25-integration`
+remains at `fbd2f729caf1a96c3ffe184068e88ba6b09288cc`; no merge to main.
+L7's provisional Set source-surface decision is still pending. Root remains
+the sole active compiler writer; no independent adversarial review has run.
+
+## Phase 25 source-free linkage and diagnostics checkpoint — 2026-10-18
+
+Staffing remains one active root acting as combined L6 coordinator/reviewer and
+exclusive compiler writer; the sole L4 worker is idle after reaching its usage
+limit. No adversarial reviewer has run. No PR has been merged to the Phase 25
+target or main. H intake draft #5 remains at `bf1df10` with three of four
+required exact-head jobs green and core regressions still running at last
+check; defer L6 review and target merge until all four pass.
+
+S intake branch `phase25-i-s-intake` now has pushed head `012f81d` after
+repair commit `9a04230` and a tightened G2 Gate 5 provenance assertion.
+It resolves duplicate process runtime, FileIO and `moss__main` symbols when an
+explicit module with `main` is also linked as an rlib; it checks newly required
+constructor fields before native lowering, emits `METHOD_NOT_FOUND` for a
+source-free missing method, and retains provider logical source names in
+generic interface records for related diagnostic spans. A separately built
+compiler from these sources passed the full Phase 20 FileIO suite, all 54
+executor checks, and all 11 staged ABI-v10 source-free scenarios in both debug
+and release against the ABI harness worktree. G2 conformance passes 10/11;
+Gate 10 is still PENDING. These are cross-worktree candidate checks, not
+exact-SHA integrated release acceptance. The earlier S `make check` rerun
+used the pre-repair binary from `759b399` and was stopped with exit 143
+during advanced-data Fast Debug because later source edits invalidated it.
+
+Source-free draft #8 is pushed at `af94a3f`. Its Scenario 4 fixture now passes
+ConsumerA's provider-owned Box through ConsumerB's exported generic function
+after both consumers and provider sources are removed. Its evidence document
+records the 11/11 candidate result. Same-SHA PR CI, 62 strict gates, Gate 10
+custom keys, and production ABI-v10 default cutover remain pending. Continue
+normal intake order after H #5 becomes green: exact-head L6 review, merge H
+into `phase25-integration`, then refresh/review H2, G, S, and B/ABI branches
+with draft PRs and isolated CI. Do not merge to main.
+
+Pinned Team B `755f13172c37447bca981d1fefbb885ec46f3a59` has an
+ancestry-preserving, **non-PR** merge rehearsal at pushed branch
+`phase25-i-b-rehearsal` head `145034f`, based on S repair commit `9a04230`.
+The only conflicts were status history, duplicate Team A/Team B API document
+names, and the older unresolved-collection diagnostic expectation; resolutions
+are recorded in `docs/phase25/B_INTAKE_REHEARSAL.md` on that branch. Compiler
+build, Team B debug/release runtime checks, staged/adversarial ABI suites,
+feedback validation, and Team B acceptance (22 PASS, 1 PENDING Gate 10) pass.
+This branch is not a target-based B intake or accepted PR. The B compiler
+binding and nominal MapKeyProof remain open. Follow-up `145034f` reconciles
+Team B's chained-bucket runtime with the frozen robin-hood open-addressing
+contract; a collision-heavy ordered-map oracle, debug/release runtime suite,
+and Team B acceptance still pass.
+
+Potential separate Set architecture decision: live `moss-0.1` bootstrap lists
+Vector/Map/Queue but no Set; `Set[Int]` emits `UNKNOWN_SYMBOL_OR_TYPE` in a
+minimal `moss check --json` probe. `TYPE_IR_CONTRACT.md` and
+`ABI_V10_DESIGN.md` preserve Set as a Phase 25 deliverable, while Team S's
+Set fixtures explicitly mark `Set()`, `insert`, `contains`, and `values()` as
+provisional pending Team G's source API. An L7 source-surface choice has been
+requested asynchronously; independent Map/integration work can continue.
+
+## Phase 25 S reconciliation recovery point — 2026-10-18
+
+The sole L4 compiler worker reached a usage limit; root is currently the only
+active agent and holds the exclusive compiler lease. Root completed the pinned
+S ancestry-preserving merge into H/T scratch, committed and pushed
+`phase25-i-s-intake` at `69b4d3319751c3707fcd7fa2dc52374954203740`
+(`tmp/phase25-i-s`). This is a recovery checkpoint, not an approved intake PR.
+Follow-up `759b399e1a929cbfbb5a16301559dd437835e398` is pushed: the full
+`make check` first found a nested-open-local diagnostic precedence failure;
+the minimized case, S-B display suite, and complete Team A compiler-path
+semantics suite pass after a narrow repair. Full `make check` is rerunning
+in the S worktree and has progressed through checked-body IR and foundations;
+its final result is still pending.
+After H #5 is reviewed and merged to `phase25-integration`, refresh S from the
+new target, open a draft PR, require all four exact-head CI jobs, then perform
+combined L6 review. No integration/main merge has occurred.
+
+S reconciles the L7 option 1 `echo []` diagnostic, distinct Char and numeric
+semantics, scalar method result inference, checked static callable values, and
+Fast Debug for-loop iteration/lexical scope parity. Local Type IR, G1/G3/G4,
+S1/S2/S3/S4/S-C, L7 repairs, indexed String, and feedback checks pass. G2
+conformance is 10/11 with Gate 10 explicitly PENDING. `make check` is running
+in the S worktree; its result must be recorded after completion. S source and
+feedback are checkpointed; no S PR or L6 review yet.
+
+H #5 repair head is `bf1df10da2e7d2f5c0986a0a58e240053a1a1d62`, fixing
+CI checkout depth for historical baseline checks. Workflow `39168204061`
+currently has examples, semantic gates, and harness integrity green; core
+regressions still running. Do not review or merge H until all four green.
+
+Source-free draft #8 has two further pushed recovery commits, latest
+`2648c5955eb1fa5455dd2f1b89236c76e473490f`. It adds an explicit,
+evidence-labeled staged-v10 harness mode and corrects two bare-template
+consumer annotations plus an identity mutation that otherwise bypassed ABI
+validation. An exploratory **cross-worktree** debug run against S compiler
+`759b399` produced 8 PASS / 0 BLOCKED / 3 FAIL across 11 real source-removal
+scenarios. It is not same-SHA release proof. Failures are third-crate nominal
+exchange, missing-method exact diagnostic, and layout/cache invalidation.
+Further scenario 4 probing exposed duplicate process-root executor symbols when
+a package with `main` is also linked as an rlib; that stronger fixture is still
+uncommitted in the ABI worktree. No ABI cutover or release gate upgrade.
+
+## Phase 25 diagnostic precedence decision — 2026-10-18
+
+L7 resolved the blocker by selecting option 1. The identical program
+`fn main():\n  echo []` is required by two frozen contracts to emit mutually
+exclusive exact diagnostic codes in the same standalone context:
+
+- Type IR section 4.2 and G conformance require
+  `TYPE_AMBIGUOUS_OPEN_RESULT` for the reachable unbound Vector element type.
+- FAST_DEBUG display rules and accepted Team S ARCH-025 require
+  `ECHO_DISPLAY_UNSUPPORTED` for bare `echo []` in every engine.
+
+Independent live verification: H/T head `5cfdc163` emits the Type IR code;
+the S-preserving scratch emits the display code, both at line 2. No expected
+diagnostic was edited to resolve the conflict before L7 decided. Option 1 is now
+authoritative: `ECHO_DISPLAY_UNSUPPORTED` at an echo boundary, while retaining
+`TYPE_AMBIGUOUS_OPEN_RESULT` for other unresolved values. Sole L4 is implementing
+the narrow contract and conformance update in S scratch. Full evidence and the
+decision are in
+`docs/phase25/TEAM_I_ARCHITECTURAL_BLOCKER.md`.
+
+No input PR has been merged to `phase25-integration` or `main`. H #5 was still
+3/4 green with core running at the point work stopped. Pushed recovery points:
+H2 `0574de41`, G `76420353`, strict #6 `ccf2ca7c`, source-free #8 `9f1ca499`,
+coordinator branch current commit. Staffing remains combined L6 plus one idle L4;
+final-only adversarial review has not run.
+
+## G intake recovery point — 2026-10-18
+
+Sole L4 worker reconciled G through a normal ancestry-preserving merge and
+pushed `phase25-i-g-intake` at
+`76420353eb2c83b56a90051f2865b00d3e530547` in
+`tmp/phase25-i-g`. All 28 conflict hunks were reviewed. The resulting compiler
+and header tree has no source diff from H because H already contains or
+supersedes G's semantic changes. Five non-compiler files retain G provenance,
+review documentation, and a stronger live diagnostic assertion.
+
+Worker-local optimized build/bootstrap, Type IR, G-A3 nominal identity,
+visibility, feedback, and whitespace checks pass. G2 conformance is honestly
+10/11: Gate 10 custom-key integration remains PENDING despite the historical
+runner returning zero. No G PR or L6 review exists yet. After H #5 is green,
+reviewed, and merged, refresh this branch from the approved target before
+opening a draft PR. Durable conflict decisions are in
+`docs/phase25/G_INTAKE_RECONCILIATION.md` on the G branch.
+
+H #5 remains unchanged at `5cfdc1630d67506146e4adcc52628e508ffdc7c5`:
+three required jobs green and core regression still in progress at last check.
+No target or main merge has occurred.
+
+## H2 recovery point — 2026-10-18
+
+Sole L4 worker prepared and pushed `phase25-i-h2-erased-projections` at
+`0574de41d3c13d6af0448a80ad3708ce7a91e402`, isolated scratch worktree
+`tmp/phase25-i-h2`. Frozen H intake #5 remains unchanged at 5cfdc163.
+H2 has no PR yet: wait for H required core check, L6 review and target merge,
+then merge reviewed target into H2 and open draft PR with fresh CI. Seven-file
+H2 scope: AST erased projections, compiler ABI guard, typed-semantic guard,
+G2 runner, actual compiler-boundary C++ regression, H2 doc and feedback.
+Worker-local optimized build/bootstrap + G1/G2/G3 + feedback/whitespace pass;
+36 direct empty/reset boundary rejections cover Program/Checker/typed/ABI.
+This is pre-PR evidence, not reviewed/integrated H2 closure. Durable handoff:
+`docs/phase25/H2_DECLARATION_PROJECTIONS.md` on the H2 branch.
+H #5 last observed 3/4 required jobs green, core running; no target/main merge.
+Only root combined L6 + sole L4 remain active, adversarial review final-only.
+
+## Latest L7 staffing override — 2026-10-18
+
+**Recover using this override, not older two-worker records.** Exactly two active
+agents: root combined L6 Coordinator/Reviewer and sole L4 worker (existing compiler
+agent). ABI worker interrupted and must not resume. All worker implementation
+scopes now transfer serially to sole L4, including frozen ABI branches. Independent
+L6 adversarial review only once at the END; L4 idles then to preserve two-active cap.
+Tool-based draft PR / isolated automated CI / latest-SHA L6 review flow unchanged.
+No main merge. Avoid duplicate CI polls and repetitive chat/status updates.
+
+Compiler worker owns H #5 CI monitoring and exclusive compiler lease. ABI handoff:
+#6 ccf2ca7c6628882617ad5f830fce19b463bcce23; #8 latest
+9f1ca499f57f935d34b9462c252f12043cdc677c. ABI worktree remains
+`tmp/phase25-i-abi` for sole worker's serial use; recovery notes there in
+`tests/phase25/integration/SOURCE_FREE_EXECUTION.md` and feedback.
+Root coordination #7 is pending, target still fbd2f72 at latest checkpoint.
+H #5 last observed three green / core pending; no integration/review yet.
+Potential followup: control explicit staged-v10 test mode so candidate source-free
+proof does not require unauthorized production-default cutover before L7 acceptance.
+
+
+## Phase 25 Team I integration recovery checkpoint — 2026-10-18
+
+L7 GO and periodic recovery checkpoint request received. Target remains
+`phase25-integration`, initial/latest integrated SHA
+`fbd2f729caf1a96c3ffe184068e88ba6b09288cc`; no input PR integrated yet.
+Coordinator combines L6 PR review. **Never merge to main.** Normal configured
+remote pushes authorized; AGENTS now states this explicitly on coordination branch.
+
+Recovery references and exclusive leases:
+
+- Coordinator branch `phase25-i-coordination` (root checkout) owns status,
+  AGENTS, live record and team efficiency record. Publish checkpoint commits here;
+  merge latest reviewed target into this branch before final docs PR integration.
+- L5 compiler: `tmp/phase25-i-compiler`, branch `phase25-i-h-intake`, exclusive
+  `src/moss.cpp` / AST / type IR lease. [Draft PR #5](https://github.com/kuttyb/moss/pull/5),
+  exact head `5cfdc1630d67506146e4adcc52628e508ffdc7c5`. Four isolated CI jobs in
+  workflow `39165091036` running. Worker-local optimized build/bootstrap and H
+  G1/G2/G3 suites passed. **Not yet L6 reviewed.** H merge retained prep and
+  histories; no compiler conflict, four deliberately resolved documentation conflicts.
+- L5 ABI/harness: `tmp/phase25-i-abi`, branch `phase25-i-abi-preparation`, owns
+  ABI/runtime headers and `tests/phase25/integration/**`; runtime/header edits
+  held until H interface handoff. [Draft PR #6](https://github.com/kuttyb/moss/pull/6),
+  latest head `ccf2ca7c6628882617ad5f830fce19b463bcce23`; supersedes `afcf693`.
+  Strict evidence repair and CLI fault regressions locally passed, current CI
+  pending; missing pre-H semantic suites may fail. **Not yet L6 reviewed.**
+
+Checkpoint update (same session): coordinator [draft PR #7](https://github.com/kuttyb/moss/pull/7)
+contains recovery records, AGENTS authorization and full-history CI checkouts
+at `d37cf330b76671318ca3cabb2fed6429580d75c3`. H #5 has three green jobs
+(examples, harness, semantics); core still running, so no L6 review yet.
+Strict #6 current run `39165205082`: examples/harness green, semantic FAIL
+with `BLOCKED missing required suite: tests/tooling/check_phase25_g1_requirements.py`
+on pre-H target; core pending at observation. Merge reviewed H target and rerun.
+
+ABI worker now uses same isolated worktree on `phase25-i-cross-crate`:
+[draft PR #8](https://github.com/kuttyb/moss/pull/8),
+`ac317c65caecac0d9916d58318106fc13225939e` (committed/pushed recovery point).
+It removes provider packages, uses compiled roots, executes independent typed
+consumers and fails release on blocked scenarios. Local harness self-tests pass;
+real release result **0 PASS / 1 BLOCKED / 10 FAIL, exit 1** on preintegration
+compiler, not acceptance. Durable reproduction/handoff lives in
+`tests/phase25/integration/SOURCE_FREE_EXECUTION.md` on that branch. Exact enum
+ownership diagnostic `OWNERSHIP_USE_AFTER_CONSUME`; source-free failures require
+production compiler integration, not relaxed fixtures. #8 CI and L6 review pending.
+H, #6, #7, #8 latest reviewed target base remains fbd2f72. No main/target merge.
+
+All pinned input refs match execution plan after fetch: H/T `2d457245`,
+G `2938d257`, S `53d04fbf`, B `755f1317`. Bootstrap verified `moss-0.1`.
+GitHub connector works (inspect tool schemas via ALL_TOOLS descriptions); `gh`
+CLI unavailable. Tools use `repository_full_name` for PR creation, `repo_full_name`
+for workflow inspection. PR workflows are actual machine evidence; chat reports
+and pending checks are not green.
+
+Next actions: observe exact-head #5 required checks, fix failures first, then
+L6 code review and normal merge to target only when green. Update #6 with reviewed
+H target, rerun its CI and review separately. Compiler follows with focused H2
+boundary fix, then G/S reconciliation; ABI worker follows with real source-removal
+cross-crate harness. Fresh target-based PR per intake; no blind cherry-picks or
+whole-file ours/theirs. Independent adversarial review at combined architecture,
+source-free Gate 10, and final acceptance freezes remains outstanding.
+
+Open findings: inherited H2 independently reproduces 0/5 rejected erased
+projections; fix must include production boundaries. H1 has mixed live structured
+facts and remaining semantic-marker branches/unavailable callable summaries; H3
+not proven. I-001 strict CLI bypass repaired on #6 but not integrated; I-002
+cross-crate --all returns 0 with 1 source-backed PASS / 10 BLOCKED and cannot
+prove E3; next bounded repair. Historical D3/D4 ownership questions are covered by
+Team I plan, not an architectural blocker. No H1–H3 closure or 62-gate release
+acceptance claimed. See `docs/phase25/TEAM_I_INTEGRATION_LIVE.md` and
+`docs/phase25/agent-patterns/team-i-integration.md` for provenance.
+
 ## Phase 25 Integration Team Preparation Cycle Complete & Frozen — 2026-10-16
 
 Team I completed the Phase 25 Preparation Cycle on `phase25-integration-prep` (baseline `fa3a340a0a6652568b97869489da1a84038b9857`, reviewed implementation `6ab05c6e4c92f63b7dd612856afb14242ecc3830`, review artifact `docs/phase25/INTEGRATION_PREP_ARCHITECT_REVIEW.md` at `b0edeeb`), preparing Phase 25 for rapid, rigorous integration while Team G finishes remaining compiler and runtime work:

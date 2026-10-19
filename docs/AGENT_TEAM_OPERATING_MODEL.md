@@ -1,5 +1,18 @@
 # Moss multi-agent engineering operating model
 
+## L7 Team I staffing override — 2026-10-18
+
+For this integration task, use exactly two active agents: one combined L6
+Coordinator/Reviewer and one L4 implementation worker. Work is serial through
+that sole worker, preserving exclusive compiler ownership. The independent L6
+adversarial reviewer runs once at the end, after implementation is complete;
+idle the L4 worker during that review to keep at most two agents active.
+This L7 instruction supersedes the default L5 headcount and intermediate
+adversarial checkpoints below. Keep draft PRs, automated isolated regression
+checks, exact-SHA L6 review, normal integration commits, and no main merge.
+Minimize repeated chat, duplicate CI polling and redundant review work.
+
+
 **Status:** Mandatory repository-level Team policy for new work. **Scope:** All engineering Teams, including Phase 25 Team I. **Precedence:** Complements `AGENTS.md`, the frozen Moss design contracts, and `docs/AGENT_TEAM_EFFICIENCY.md`. This is organizational policy, not authority to change language semantics or merge `main`.
 
 ## 1. Default team and scaling

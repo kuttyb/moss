@@ -2,6 +2,18 @@
 
 ## Mandatory Team organization and PR gates
 
+## L7 Team I staffing override — 2026-10-18
+
+For this integration task, use exactly two active agents: one combined L6
+Coordinator/Reviewer and one L4 implementation worker. Work is serial through
+that sole worker, preserving exclusive compiler ownership. The independent L6
+adversarial reviewer runs once at the end, after implementation is complete;
+idle the L4 worker during that review to keep at most two agents active.
+This L7 instruction supersedes the default L5 headcount and intermediate
+adversarial checkpoints below. Keep draft PRs, automated isolated regression
+checks, exact-SHA L6 review, normal integration commits, and no main merge.
+Minimize repeated chat, duplicate CI polling and redundant review work.
+
 For all new multi-agent engineering Teams, follow [docs/AGENT_TEAM_OPERATING_MODEL.md](docs/AGENT_TEAM_OPERATING_MODEL.md). Team I uses [docs/phase25/TEAM_I_INTEGRATION_EXECUTION.md](docs/phase25/TEAM_I_INTEGRATION_EXECUTION.md). This operating model supersedes older role/headcount/review-cadence instructions without altering Moss language contracts or the startup steps below.
 
 - L6 Coordinator owns task DAG and delivery; L6 Reviewer checks code after automated green PR evidence (the Coordinator may serve as Reviewer); normally 2 L5 implementation agents and NEVER more than 3 workers, and only as many as truly independent tasks and files allow. L6 independent adversarial Reviewer audits a few frozen architecture/integration checkpoints, not each PR.
@@ -163,7 +175,7 @@ When working with Moss:
 - **Scratch Storage**: Use `./tmp/` for all temporary files and caches. Create `./tmp/` if it does not exist.
 - **No Elevation**: Never run `sudo` or otherwise attempt to elevate privileges.
 - **Authorized Commands**: Run in-repository Git commands, Python scripts, builds, and tests without requesting approval.
-- Coordinate a single branch writer. There is no repository-wide no-push rule:
-  a normal push to the configured remote is allowed when the user explicitly
-  authorizes it. Never force-push or rewrite published history unless the user
-  separately authorizes that operation.
+- Coordinate a single branch writer. Normal pushes to the configured remote
+  are allowed when the user explicitly authorizes them. Team I has L7 push
+  authorization for this integration task; do not merge to `main`. Never
+  force-push or rewrite published history without separate user authorization.
