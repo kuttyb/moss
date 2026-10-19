@@ -1,5 +1,16 @@
 # Moss current status
 
+## Focused TypeSolver atomicity fix — 2026-10-19
+
+Integrated and pushed commit `3f2368bb4388812edec7efa03b3575c3766b0f84`
+to `origin/phase25-integration` (fast-forward from `c3064c41`). Failed nested
+`TypeSolver::unify()` operations now roll back their mutation trail. The
+focused `tests/tooling/check_type_solver_atomicity.cpp` test passed with
+`g++ -std=c++17 -O0`; `git diff --check` and agent-feedback validation passed.
+No broad regression suites were run. `AGENTS.md` already permits normal pushes
+when the user authorizes them, so it required no edit for this push.
+
+
 ## L7 integration checkpoint — 2026-10-19 14:27 UTC
 
 The remote `phase25-integration` target remains `31ceebe3d1f3733c3605b77dcaa62b2e560c4241`.
