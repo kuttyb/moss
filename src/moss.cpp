@@ -38972,6 +38972,77 @@ static abi_v10::Access abi_v10_checked_access(moss::AccessMode access) {
                       "ABI-v10 checked parameter access is unknown");
 }
 
+static abi_v10::SourceProvenance abi_v10_checked_provenance(
+    const string& module_id, const string& declaration_id,
+    const string& source_file, int line);
+
+static std::optional<vector<abi_v10::Requirement>>
+abi_v10_checked_requirements(
+    const vector<moss::Requirement>& source, std::uint32_t variable_count,
+    vector<abi_v10::SourceProvenance>& provenance_records) {
+  vector<abi_v10::Requirement> converted;
+  vector<abi_v10::SourceProvenance> converted_provenance;
+  std::map<string, std::uint32_t> prior_ids;
+  std::set<string> provenance_ids;
+  for (const auto& requirement : source) {
+    if (requirement.kind != moss::RequirementKind::Operator ||
+        (requirement.target_id != "operator:*" &&
+         requirement.target_id != "operator:+") ||
+        requirement.id.empty() || requirement.origin.module_id.empty() ||
+        requirement.origin.enclosing_callable.empty() ||
+        requirement.origin.call_expression_id.empty() ||
+        requirement.origin.line < 1 || requirement.origin.column < 1 ||
+        requirement.arguments.size() != requirement.argument_access.size())
+      return std::nullopt;
+    auto subject = abi_v10_checked_type(requirement.subject, variable_count);
+    if (!subject) return std::nullopt;
+
+    abi_v10::Requirement wire;
+    wire.receiver = *subject;
+    wire.operation = requirement.target_id;
+    wire.access = abi_v10_checked_access(requirement.access);
+    if (requirement.parent_requirement_id) {
+      const auto parent = prior_ids.find(*requirement.parent_requirement_id);
+      if (parent == prior_ids.end()) return std::nullopt;
+      wire.parent = parent->second;
+    } else {
+      wire.parent = 0;
+    }
+    for (const auto& argument : requirement.arguments) {
+      auto type = abi_v10_checked_type(argument, variable_count);
+      if (!type) return std::nullopt;
+      wire.arguments.push_back(*type);
+    }
+    if (requirement.result) {
+      auto result = abi_v10_checked_type(*requirement.result, variable_count);
+      if (!result) return std::nullopt;
+      wire.result = *result;
+    }
+    for (const auto access : requirement.argument_access)
+      wire.argument_access.push_back(abi_v10_checked_access(access));
+
+    auto provenance = abi_v10_checked_provenance(
+        requirement.origin.module_id,
+        requirement.origin.call_expression_id,
+        requirement.origin.source_file,
+        requirement.origin.line);
+    provenance.start_column = static_cast<std::uint32_t>(
+        requirement.origin.column);
+    provenance.end_column = provenance.start_column;
+    wire.provenance_id = provenance.provenance_id;
+    if (!provenance_ids.insert(wire.provenance_id).second ||
+        !prior_ids.emplace(requirement.id,
+                           static_cast<std::uint32_t>(converted.size() + 1)).second)
+      return std::nullopt;
+    converted_provenance.push_back(std::move(provenance));
+    converted.push_back(std::move(wire));
+  }
+  provenance_records.insert(provenance_records.end(),
+      std::make_move_iterator(converted_provenance.begin()),
+      std::make_move_iterator(converted_provenance.end()));
+  return converted;
+}
+
 static bool abi_v10_effects_pure(const ObservableEffects& effects) {
   return !effects.local_capture_read && !effects.local_mutation &&
       !effects.domain_read && !effects.domain_write && !effects.message &&
@@ -39089,6 +39160,12 @@ static void append_abi_v10_direct_checked_records(
                                        summary.variable_count);
     if (!valid_types || !result) continue;
     summary.result = *result;
+    vector<abi_v10::SourceProvenance> requirement_provenance;
+    auto requirements = abi_v10_checked_requirements(
+        summary_facts.requirements, summary.variable_count,
+        requirement_provenance);
+    if (!requirements) continue;
+    summary.requirements = std::move(*requirements);
     summary.body_semantic_hash = checked->semantic_hash;
     const auto function_provenance = abi_v10_checked_provenance(
         value.module_id, summary.callable_id,
@@ -39113,6 +39190,8 @@ static void append_abi_v10_direct_checked_records(
         abi_v10::checked_body_record(body));
     value.provenance.push_back(
         abi_v10::provenance_record(function_provenance));
+    for (const auto& provenance : requirement_provenance)
+      value.provenance.push_back(abi_v10::provenance_record(provenance));
   }
 }
 
@@ -39324,6 +39403,13 @@ static void append_abi_v10_private_chain_records(
       throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
                          "checked ABI-v10 result TypeRef is unresolved");
     summary.result = *result;
+    vector<abi_v10::SourceProvenance> requirement_provenance;
+    auto requirements = abi_v10_checked_requirements(
+        facts.requirements, summary.variable_count, requirement_provenance);
+    if (!requirements)
+      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+                         "checked ABI-v10 operator requirement is unsupported");
+    summary.requirements = std::move(*requirements);
     summary.body_semantic_hash = checked.semantic_hash;
     auto provenance = abi_v10_checked_provenance(
         value.module_id, id, function.source_file, function.line);
@@ -39361,6 +39447,9 @@ static void append_abi_v10_private_chain_records(
     value.private_semantic_dependencies.push_back(
         abi_v10::checked_body_record(body));
     value.provenance.push_back(abi_v10::provenance_record(provenance));
+    for (const auto& requirement_origin : requirement_provenance)
+      value.provenance.push_back(
+          abi_v10::provenance_record(requirement_origin));
   }
 }
 

@@ -8420,3 +8420,20 @@ Focused validation:
 Final focused rerun passed `abi_v10_adversarial.cpp` and
 `abi_v10_staging.cpp`; `make moss-dev`, feedback validation, and
 `git diff --check` passed. Checker wiring and broad suites are out of scope.
+
+## Phase 25-C2b.4b — Convert checker operator requirements to ABI-v10
+
+Starting from `0227938ebbf9e7e1a2119d5ddd3e67778f03da5e` on
+`phase25-integration`. Added a fail-closed adapter from checked `moss::Requirement`
+records to version-2 `abi_v10::Requirement` fields for `operator:*` and
+`operator:+`. It preserves subject/argument/result WireTypes, receiver and
+argument access, prior parent links, and requirement-origin provenance records.
+No producer eligibility or consumer specialization changes were made.
+
+Focused validation passed:
+- `python3 tests/tooling/check_phase25_generic_arithmetic_requirements.py ./moss`
+  confirms two converted requirements roundtrip byte-identically and preserves
+  `BoundVar(0)`, `Int`, parent order, and provenance; existing source-backed
+  Int/Float output and String rejection still pass.
+- `abi_v10_adversarial.cpp` and `make moss-dev` passed.
+- Feedback validation and `git diff --check` passed.
