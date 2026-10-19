@@ -1,5 +1,17 @@
 # Team I live integration record
 
+## Canonical nominal ABI codec checkpoint — 2026-10-19
+
+L4 pushed `029eef9` and L6-review correction `e5db01c` on the staging
+branch. Staged ABI-v10 records now preserve frozen `nominal-template-v1`
+declaration IDs; only contract/representation/instance hashes use SHA-256.
+The first patch accidentally skipped concrete-instance validation. Combined
+L6 review caught it, and the follow-up dispatches template and instance
+records separately with tampered-instance and unknown-versioned-record
+negatives. ABI staging/adversarial, checked-body IR, nominal identity and
+both key ledgers pass. H3 record emission/import remains open; no target/main
+acceptance claim.
+
 ## H3 checked rich-IR checkpoint — 2026-10-19
 
 L4 pushed staged branch `d269319`. H3's two-statement local-result chain now

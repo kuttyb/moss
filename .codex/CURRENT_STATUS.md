@@ -1,5 +1,22 @@
 # Moss current status
 
+## Phase 25 canonical nominal ABI codec checkpoint — 2026-10-19
+
+Sole L4 pushed `phase25-i-map-staging` at `029eef9` and corrective
+`e5db01c`. Frozen `nominal-template-v1:<ModuleIdentity>:type:<name>` IDs now
+round-trip through staged TypeExpr, NominalTemplate, MethodTemplate and
+ConcreteInstance records; SHA-256 remains for contract, representation and
+instance hashes. Adversarial tests reject hashed substitutes, declaration
+mismatch, unknown local nominal references, a tampered concrete resolved
+field, and unknown versioned binary identities with
+`SOURCE_FREE_TYPE_IDENTITY_MISMATCH`. Combined L6 review caught that the
+first codec patch skipped SHA-256-keyed concrete instances; `e5db01c`
+separated template and instance dispatch and removed catch-and-skip for
+versioned binary records. ABI staging/adversarial C++ suites, checked-body
+IR, G-A3 nominal identity, both key ledgers 30/30, feedback and diff checks
+pass across the reported checkpoints. H3 rich body/dependency record emission
+and source-free validation remain open; staging is not target acceptance.
+
 ## Phase 25 H3 checked rich-IR checkpoint — 2026-10-19
 
 Sole L4 pushed `phase25-i-map-staging` at
