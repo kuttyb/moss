@@ -280,6 +280,98 @@ fn main():
         "indices must be Int" in invalid_index_error["message"]), (
         invalid_index_error)
 
+    callable_source = Path(scratch_path) / "generic_callable_effects.moss"
+    callable_source.write_text("""enum CalcError:
+  InvalidInput
+
+fn plus(value: Int) -> Int:
+  return value + 1
+
+fn raising(value: Int) -> Int:
+  if value < 0:
+    raise CalcError.InvalidInput
+  return value + 1
+
+fn apply(f, value: Int) -> Int:
+  return f(value)
+
+fn main():
+  echo apply(plus, 2)
+  try:
+    echo apply(raising, 2)
+  recover CalcError.InvalidInput:
+    echo -1
+""")
+    callable_checked = subprocess.run([str(MOSS), "inspect", "main", "--source",
+        str(callable_source), "--json"], text=True, capture_output=True)
+    assert callable_checked.returncode == 0, (
+        callable_checked.stdout, callable_checked.stderr)
+    callable_typed = json.loads(callable_checked.stdout)["result"][
+        "typed_semantic_v1"]
+    apply_id = f"callable-v1:{module}:fn:apply"
+    gaps = [entry for entry in callable_typed["unavailable_open_summaries"]
+            if entry["callable_id"] == apply_id]
+    assert len(gaps) == 1 and gaps[0]["gap"] == "unresolved_effects", gaps
+    assert not any(entry["callable_id"] == apply_id
+                   for entry in callable_typed["open_summaries"]), callable_typed
+    callable_requirements = [entry for entry in
+        callable_typed["source_requirements"]
+        if entry["origin"]["enclosing_callable"] == apply_id]
+    assert len(callable_requirements) == 1, callable_requirements
+    callback = callable_requirements[0]
+    assert callback["kind"] == "callable" and callback["target_id"] == (
+        "static callable"), callback
+    assert callback["subject"] == {"kind": "bound_var", "ordinal": 0}, callback
+    assert callback["argument_types"] == [{"kind": "primitive", "id": "int",
+        "arguments": [], "fields": []}], callback
+    assert callback["result"] == {"kind": "primitive", "id": "int",
+        "arguments": [], "fields": []}, callback
+    assert callback["subject_access"] == "READ" and (
+        callback["argument_access"] == ["READ"]), callback
+    assert callback["origin"]["module_id"] == module and (
+        callback["origin"]["call_expression_id"]), callback
+    apply_specs = [entry for entry in callable_typed["specializations"]
+                   if entry["callable_id"] == apply_id]
+    assert len(apply_specs) == 2, apply_specs
+    by_target = {entry["callable_arguments"][0].split(":fn:")[-1]: entry
+                 for entry in apply_specs}
+    assert set(by_target) == {"plus", "raising"}, by_target
+    assert len({entry["key"] for entry in apply_specs}) == 2, apply_specs
+    assert by_target["plus"]["callable_arguments"] == [
+        f"callable-v1:{module}:fn:plus"], by_target
+    assert by_target["raising"]["callable_arguments"] == [
+        f"callable-v1:{module}:fn:raising"], by_target
+    assert not by_target["plus"]["observable_effects"]["unresolved"] and (
+        by_target["plus"]["observable_effects"]["raise_set"] == []), by_target
+    assert not by_target["raising"]["observable_effects"]["unresolved"] and (
+        by_target["raising"]["observable_effects"]["raise_set"] == [
+            "enum:CalcError:InvalidInput"]), by_target
+
+    exported_callback = Path(scratch_path) / "exported_callback.moss"
+    exported_callback.write_text("""module Provider
+export fn plus(value: Int) -> Int:
+  return value + 1
+export fn apply(f, value: Int) -> Int:
+  return f(value)
+""")
+    export_env = os.environ.copy()
+    export_env["MOSS_STAGED_ABI"] = "v10"
+    rejected_export = subprocess.run([str(MOSS), "check", str(exported_callback),
+        "--json"], text=True, capture_output=True, env=export_env)
+    assert rejected_export.returncode != 0, (
+        rejected_export.stdout, rejected_export.stderr)
+    export_error = json.loads(rejected_export.stdout)["error"]
+    assert export_error["code"] == (
+        "SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED") and (
+        export_error["source"]["line"] == 4), export_error
+    default_env = os.environ.copy()
+    default_env.pop("MOSS_STAGED_ABI", None)
+    default_export = subprocess.run([str(MOSS), "check", str(exported_callback),
+        "--json"], text=True, capture_output=True, env=default_env)
+    assert default_export.returncode == 0 and (
+        json.loads(default_export.stdout)["ok"]), (
+        default_export.stdout, default_export.stderr)
+
     provider = Path(scratch_path) / "provider"
     consumer = Path(scratch_path) / "consumer"
     for package_name, path in (("typed_provider", provider),

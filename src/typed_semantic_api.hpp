@@ -123,6 +123,10 @@ struct TypedSemanticModuleV1 {
   std::map<std::string, TypedClosedTypeV1> closed_types;
   std::map<std::string, TypedNominalInstanceV1> nominal_instances;
   std::map<std::string, TypedOpenCallableSummaryV1> open_summaries;
+  // Checked source requirements remain inspectable when unresolved callback
+  // effects prevent publication of their enclosing open summary. These facts
+  // are not an ABI-publishable callable summary.
+  std::map<std::string, Requirement> source_requirements;
   // Source requirements remain addressable when a generic summary cannot
   // publish its unresolved observable effects yet. This table does not make
   // such a summary callable through the typed API.
@@ -227,6 +231,15 @@ inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) 
   for (const auto& function : program.functions) {
     if (function.semantic_callable_id.empty())
       throw std::invalid_argument("checked function has no semantic callable identity");
+    if (function.open_summary && function.open_summary->complete)
+      for (const auto& requirement : function.open_summary->requirements) {
+        if (requirement.id.empty() || requirement.origin.module_id.empty() ||
+            requirement.origin.enclosing_callable != function.semantic_callable_id ||
+            !result.source_requirements.emplace(requirement.id,
+                                                requirement).second)
+          throw std::invalid_argument(
+              "checked source requirement lacks exact provenance");
+      }
     if (function.open_summary && function.open_summary->complete)
       for (const auto& requirement : function.open_summary->member_requirements) {
         if (requirement.requirement_id.empty() ||

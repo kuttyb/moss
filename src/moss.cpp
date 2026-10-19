@@ -2997,6 +2997,24 @@ class Checker {
       }
     }
     { CompilerStageTimer timer("effects"); infer_effects(); infer_observable_effects(); }
+    // ABI-v10 has no effect-polymorphic callable summary. A concrete static
+    // specialization can resolve the selected callback's effects, but an
+    // exported open callback cannot promise checked effects to a source-free
+    // consumer. Keep the incomplete summary inspectable and reject export.
+    if (staged_abi_v10() && p_.explicit_module)
+      for (const auto& function : p_.functions) {
+        if (!function.exported || compiled_interface_file(function.source_file) ||
+            !std::any_of(function.constraints.begin(), function.constraints.end(),
+                         [](const Constraint& constraint) {
+              return constraint.kind == ConstraintKind::Callable;
+            })) continue;
+        if (!function.open_summary || !function.open_summary->complete ||
+            function.observable_effects.unresolved)
+          err(function.source_file, function.line,
+              "exported callable '" + function.name +
+                  "' has unresolved callback effects in its open ABI-v10 summary",
+              "SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED");
+      }
     for (auto& function : p_.functions)
       if (function.open_summary) {
         function.open_summary->observable_effects = function.observable_effects;
@@ -3482,6 +3500,24 @@ class Checker {
       const string result = function.return_type
           ? canonical_type_name(*function.return_type) : "unit";
       std::optional<std::pair<string, string>> returned_member;
+      std::optional<std::pair<string, vector<string>>> returned_callable;
+      {
+        const string* returned = function.result_expression
+            ? &*function.result_expression
+            : !function.body.empty() &&
+                  function.body.back().kind == Stmt::Kind::Return
+                ? &function.body.back().a : nullptr;
+        string callee;
+        vector<string> arguments;
+        if (returned && parse_simple_call(trim(*returned), callee, arguments) &&
+            std::any_of(function.constraints.begin(), function.constraints.end(),
+                        [&](const Constraint& constraint) {
+              return constraint.kind == ConstraintKind::Callable &&
+                  constraint.subject == callee &&
+                  constraint.arguments == arguments;
+            }))
+          returned_callable = std::make_pair(callee, arguments);
+      }
       if (open_generic(result)) {
         auto source = parameter_variables.find(result.substr(9));
         if (source == parameter_variables.end()) {
@@ -3534,6 +3570,9 @@ class Checker {
       } else if (starts_with(result, "_element:")) {
         summary.result_type = element_relation(result.substr(9));
         if (!summary.result_type) complete = false;
+      } else if (starts_with(result, "_specialized_result:")) {
+        if (returned_callable)
+          summary.result_type = bound();
       } else if (!contains_internal_placeholder(result)) {
         summary.result_type = type_term(result);
       }
@@ -3686,6 +3725,12 @@ class Checker {
             else if (starts_with(constraint.result, "element:")) {
               requirement.result = element_relation(constraint.result);
               if (!requirement.result) complete = false;
+            } else if (constraint.kind == ConstraintKind::Callable &&
+                       constraint.result == "callable-result") {
+              requirement.result = returned_callable &&
+                  returned_callable->first == constraint.subject &&
+                  returned_callable->second == constraint.arguments
+                  ? summary.result_type : bound();
             } else if (!contains_internal_placeholder(constraint.result)) {
               requirement.result = type_term(constraint.result);
             }
@@ -4489,11 +4534,20 @@ class Checker {
     if (parse_simple_call(e, callee, call_args) && !member_call) {
       for (const auto& parameter : function.params)
         if (callee == parameter.name && parameter.type.empty()) {
-          if (!has_structural_requirement(function, parameter.name,
-                                          ConstraintKind::Callable,
-                                          "static callable"))
-            function.constraints.push_back({ConstraintKind::Callable,
-                                            parameter.name, "static callable", ""});
+          auto existing = std::find_if(function.constraints.begin(),
+              function.constraints.end(), [&](const Constraint& requirement) {
+                return requirement.kind == ConstraintKind::Callable &&
+                    requirement.subject == parameter.name &&
+                    requirement.detail == "static callable" &&
+                    requirement.arguments == call_args;
+              });
+          if (existing == function.constraints.end()) {
+            Constraint requirement{ConstraintKind::Callable, parameter.name,
+                                   "static callable", "callable-result"};
+            requirement.arguments = call_args;
+            requirement.arity = call_args.size();
+            function.constraints.push_back(std::move(requirement));
+          }
           function.generic = true;
           function.static_dispatch = true;
         }
@@ -14053,10 +14107,15 @@ class Checker {
                     }))
       return summary;
 
+    // Legacy specialization parameter spellings may still be `callable:name`.
+    // Resolve them through the same exact callable IDs used by the key before
+    // checking the concrete callback's effects.
+    const auto resolved_arguments = semantic_specialization_arguments(
+        function.line, argument_types);
     TypeEnv env;
     std::set<string> parameters;
     for (size_t i = 0; i < argument_types.size(); ++i) {
-      env[function.params[i].name] = canonical_type_name(argument_types[i]);
+      env[function.params[i].name] = canonical_type_name(resolved_arguments[i]);
       parameters.insert(function.params[i].name);
     }
     ObservableEffects concrete = observable_body_effects(
@@ -14566,16 +14625,30 @@ class Checker {
             env, domain_fields, implicit_object, parameters,
             proven_indices, root_ingress));
       }
-      auto function = functions_.find(callee);
-      if (function != functions_.end()) {
+      const Function* selected = nullptr;
+      auto bound = env.find(callee);
+      if (bound != env.end() && callable_identity(bound->second)) {
+        string identity = canonical_type_name(bound->second);
+        if (starts_with(identity, "callable:")) identity = identity.substr(9);
+        if (starts_with(identity, "callable-v1:"))
+          selected = find_function_by_callable_id(identity);
+      } else if (bound != env.end() && open_generic(bound->second)) {
+        effects.unresolved = true;
+        return effects;
+      }
+      if (!selected) {
+        auto function = functions_.find(callee);
+        if (function != functions_.end()) selected = function->second;
+      }
+      if (selected) {
         vector<string> argument_types;
         for (const auto& argument : arguments_call)
           argument_types.push_back(
               inferred_expr_type(argument, env).value_or(""));
         effects.merge(concrete_function_observable_effects(
-            *function->second, argument_types));
+            *selected, argument_types));
         auto parameter_effects = concrete_function_effects(
-            *function->second, argument_types);
+            *selected, argument_types);
         for (size_t index = 0;
              index < arguments_call.size() && index < parameter_effects.size();
              ++index)
@@ -17874,6 +17947,32 @@ class Checker {
       const FnWrapper* operator->() const { return this; }
       FnWrapper* operator->() { return this; }
     } function{function_target};
+    // Legacy generic IR in a sealed provider may describe a callable
+    // parameter without a complete effect-polymorphic open summary. Never
+    // let that fallback turn an absent ABI-v10 contract into an importable
+    // source-free call, even if the provider binary predates the export guard.
+    if (staged_abi_v10() && compiled_interface_file(function->second->source_file) &&
+        std::any_of(function->second->constraints.begin(),
+                    function->second->constraints.end(),
+                    [](const Constraint& constraint) {
+          return constraint.kind == ConstraintKind::Callable;
+        }) &&
+        (!function->second->open_summary ||
+         !function->second->open_summary->complete ||
+         function->second->observable_effects.unresolved)) {
+      CompileError error(line,
+          "source-free callable '" + name +
+              "' has no checked callback effects in its ABI-v10 open summary",
+          "SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED");
+      error.source_file = current_source_file_;
+      error.teaching.related.push_back({
+          function->second->provider_origin_file.empty()
+              ? function->second->source_file
+              : function->second->provider_origin_file,
+          function->second->line, 1,
+          "provider callable requires an effect-polymorphic summary"});
+      throw error;
+    }
     // Ordinary function arguments are positional in Moss v0.1; labels are
     // only part of constructor, enum-case, route, and builtin (e.g. 'by:')
     // surfaces, which are handled before this point.
@@ -32121,6 +32220,13 @@ static void write_typed_semantic_projection_json(std::ostream& out,
     out << "}";
   }
   out << "]";
+  out << ", \"source_requirements\": ";
+  {
+    vector<moss::Requirement> source_requirements;
+    for (const auto& entry : projection.source_requirements)
+      source_requirements.push_back(entry.second);
+    write_requirements(source_requirements);
+  }
   out << ", \"source_member_requirements\": ";
   {
     vector<moss::MemberDispatchRequirement> source_requirements;
@@ -32186,6 +32292,8 @@ static void write_typed_semantic_projection_json(std::ostream& out,
     out << ", \"exported\": " << (specialization.exported ? "true" : "false");
     out << ", \"parameter_leaf_effects\": ";
     write_parameter_leaf_effects(specialization.parameter_leaf_effects);
+    out << ", \"observable_effects\": ";
+    write_observable_effects_json(out, specialization.observable_effects);
     out << ", \"parameter_type_keys\": [";
     for (size_t index = 0; index < specialization.parameter_types.size(); ++index) {
       if (index) out << ",";
@@ -34895,6 +35003,20 @@ static void parse_generic_ir_line(const string& line, Function& function) {
     if (input >> index >> std::quoted(name) >> std::quoted(type)) {
       if (function.params.size() <= index) function.params.resize(index + 1);
       function.params[index] = {std::move(name), std::move(type)};
+    }
+  } else if (record == "generic_entity_id") {
+    string identity;
+    if (input >> std::quoted(identity)) {
+      const size_t separator = identity.rfind('@');
+      if (separator != string::npos) {
+        int source_line = 0;
+        const char* first = identity.data() + separator + 1;
+        const char* last = identity.data() + identity.size();
+        auto parsed = std::from_chars(first, last, source_line);
+        if (parsed.ec == std::errc{} && parsed.ptr == last &&
+            source_line > 0 && function.line == 0)
+          function.line = source_line;
+      }
     }
   } else if (record == "generic_constraint") {
     int kind = 0;
