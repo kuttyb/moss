@@ -21361,6 +21361,7 @@ class Generator {
             ProgramGenerationMode mode = ProgramGenerationMode::Application,
             vector<string> rust_dependencies = {},
             const Program* resolution_program = nullptr,
+            bool project_module_artifact = false,
             bool emit_static_specializations = true,
             bool public_specializations = false)
       : p_(p),
@@ -21368,7 +21369,8 @@ class Generator {
         debug_build_(debug_build), mode_(mode),
         rust_dependencies_(std::move(rust_dependencies)),
         emit_static_specializations_(emit_static_specializations),
-        public_specializations_(public_specializations) {
+        public_specializations_(public_specializations),
+        project_module_artifact_(project_module_artifact) {
     for (const auto& d : p.domains) domains_[d.name] = &d;
     const Program& semantic_program = resolution_program ? *resolution_program : p;
     semantic_program_ = &semantic_program;
@@ -21484,7 +21486,7 @@ class Generator {
     if (program_uses_fileio(p_)) {
       o << fileio_runtime_rust();
     }
-    if (!p_.explicit_module) {
+    if (!project_module_artifact_) {
       o << fileio_root_runtime_rust();
     } else if (p_.main) {
       // A module with main may also be exported as an rlib. Only its executable
@@ -21497,7 +21499,7 @@ class Generator {
     // Executor runtime ownership follows C's executable/provider role. The
     // Agent B FileIO root runtime remains emitted only in the process root.
     const ExecutorRuntimeRole executor_role =
-        !p_.explicit_module
+        !project_module_artifact_
             ? ExecutorRuntimeRole::ProcessRoot
             : semantic_program_->main.has_value()
                 ? (p_.main.has_value()
@@ -21634,6 +21636,9 @@ class Generator {
   vector<string> rust_dependencies_;
   bool emit_static_specializations_ = true;
   bool public_specializations_ = false;
+  // Only Margo's per-module projection is reused as both an rlib and the
+  // selected executable. Direct `moss -o` Rust is a standalone process root.
+  bool project_module_artifact_ = false;
   bool benchmark_body_ = false;
   bool exported_domain_bridge_body_ = false;
   std::unordered_map<string, const Domain*> domains_;
@@ -26288,7 +26293,7 @@ class Generator {
     // An explicit module may also be compiled as a provider rlib. Its main
     // belongs to the executable build only: even a local rlib main body may
     // reference process-root FileIO and executor items absent from the rlib.
-    if (p_.explicit_module) {
+    if (project_module_artifact_) {
       o << "#[cfg(moss_process_root)]\n";
       if (debug_build_) o << "#[inline(never)]\n";
       o << "#[cfg_attr(moss_process_root, export_name = \"moss__main\")]\n";
@@ -38012,7 +38017,8 @@ static NativeArtifact compile_native_artifact(
       OptimizationPlan projected_plan = module_plan(unit.plan, projected);
       vector<string> dependencies = module_dependencies(unit.program, module);
       string generated = Generator(projected, projected_plan, debug_build,
-                                   mode, dependencies, &unit.program).generate();
+                                   mode, dependencies, &unit.program,
+                                   true).generate();
       const auto provider_interface = directory /
           (tooling_name(module) + ".mossi");
       if (std::find(emitted_interfaces.begin(), emitted_interfaces.end(),

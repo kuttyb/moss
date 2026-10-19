@@ -262,6 +262,11 @@ fn main():
   echo generic_nan(0.0)
 """)
 subprocess.run([str(COMPILER), str(generic_source), "-o", str(generic_rust)], check=True)
+# Direct `moss -o` Rust is a standalone executable even when the source
+# declares an explicit module. Project-only cfg selectors must not hide main
+# or trip plain rustc's -D warnings check below.
+if "moss_process_root" in generic_rust.read_text():
+    raise SystemExit("standalone explicit-module Rust used project-only process-root cfg")
 subprocess.run(["rustc", "-D", "warnings", "--check-cfg", "cfg(moss_perf)",
                 "--check-cfg", "cfg(test)", str(generic_rust), "-o",
                 str(generic_native)], check=True)
