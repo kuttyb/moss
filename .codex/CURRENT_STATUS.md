@@ -8397,3 +8397,26 @@ feedback validation, and `git diff --check`. The H3 chain test required a
 temporary compiler wrapper to downgrade only the existing initializer warnings
 because its script promotes them to errors. No broad suite or source-free claim
 for the new generic arithmetic body has been made.
+
+## Phase 25-C2b.4a — Serialize Typed Operator Requirements
+
+Working on `phase25-integration` from `2a4f9fcea674df305bd5d087c6b4112397a413a1`.
+The internal OpenCallableSummary record is now version 2. Its requirement wire
+records preserve ordered argument WireTypes, an optional result WireType, and
+ordered argument access modes. Decode validates count agreement, access values,
+WireType structure and bound-variable scope; ordinal density and nominal
+reference checks include requirement argument/result types. Nonweakening
+comparison includes the full typed requirement bytes. Version-1 summaries are
+rejected by `read_summary`; v2 summaries are routed to that decoder by semantic
+and private record loaders.
+
+Focused validation:
+- `abi_v10_adversarial.cpp`: roundtrip byte identity, typed fields, argument and
+  result tampering, invalid ordinals/access counts, nonweakening, and v1
+  rejection passed.
+- `abi_v10_staging.cpp` passed.
+- `make moss-dev` passed with the existing TypeSolver initializer warnings.
+
+Final focused rerun passed `abi_v10_adversarial.cpp` and
+`abi_v10_staging.cpp`; `make moss-dev`, feedback validation, and
+`git diff --check` passed. Checker wiring and broad suites are out of scope.

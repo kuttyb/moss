@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <set>
 #include <string>
 #include <string_view>
@@ -216,6 +217,9 @@ struct Requirement {
   Access access = Access::Read;
   std::uint32_t parent = 0;  // 0 = root; otherwise 1-based earlier index.
   std::string provenance_id;
+  std::vector<WireType> arguments;
+  std::optional<WireType> result;
+  std::vector<Access> argument_access;
 };
 
 struct Summary {
@@ -234,16 +238,87 @@ struct Summary {
 
 inline bool summary_ordinals_dense(const Summary& summary) {
   std::vector<bool> used(summary.variable_count, false);
-  auto visit = [&](const auto& self, const WireType& type) -> void {
+  bool bounded = true;
+  auto visit = [&](const auto& self, const WireType& type,
+                   unsigned depth) -> void {
+    if (depth >= 64 || type.arguments.size() > 64) {
+      bounded = false;
+      return;
+    }
     if (type.kind == WireTypeKind::BoundVar &&
         type.ordinal < summary.variable_count) used[type.ordinal] = true;
-    for (const auto& argument : type.arguments) self(self, argument);
+    for (const auto& argument : type.arguments)
+      self(self, argument, depth + 1);
   };
-  for (const auto& type : summary.parameters) visit(visit, type);
-  visit(visit, summary.result);
-  for (const auto& requirement : summary.requirements)
-    visit(visit, requirement.receiver);
-  return std::find(used.begin(), used.end(), false) == used.end();
+  for (const auto& type : summary.parameters) visit(visit, type, 0);
+  visit(visit, summary.result, 0);
+  for (const auto& requirement : summary.requirements) {
+    visit(visit, requirement.receiver, 0);
+    for (const auto& argument : requirement.arguments)
+      visit(visit, argument, 0);
+    if (requirement.result) visit(visit, *requirement.result, 0);
+  }
+  return bounded &&
+      std::find(used.begin(), used.end(), false) == used.end();
+}
+
+inline void write_requirement(WireWriter& writer,
+                              const Requirement& requirement,
+                              std::uint32_t variable_count) {
+  require(requirement.arguments.size() <= 64 &&
+              requirement.arguments.size() ==
+                  requirement.argument_access.size(),
+          "SOURCE_FREE_SUMMARY_INVALID",
+          "ABI-v10 requirement argument/access counts disagree");
+  write_type(writer, requirement.receiver, variable_count);
+  writer.string(requirement.operation);
+  require(static_cast<std::uint8_t>(requirement.access) >= 1 &&
+              static_cast<std::uint8_t>(requirement.access) <= 3,
+          "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 access mode is invalid");
+  writer.byte(static_cast<std::uint8_t>(requirement.access));
+  writer.number(requirement.parent);
+  writer.string(requirement.provenance_id);
+  writer.number(static_cast<std::uint32_t>(requirement.arguments.size()));
+  for (const auto& argument : requirement.arguments)
+    write_type(writer, argument, variable_count);
+  writer.byte(requirement.result ? 1 : 0);
+  if (requirement.result)
+    write_type(writer, *requirement.result, variable_count);
+  writer.number(static_cast<std::uint32_t>(requirement.argument_access.size()));
+  for (const auto access : requirement.argument_access) {
+    require(static_cast<std::uint8_t>(access) >= 1 &&
+                static_cast<std::uint8_t>(access) <= 3,
+            "SOURCE_FREE_SUMMARY_INVALID",
+            "ABI-v10 argument access mode is invalid");
+    writer.byte(static_cast<std::uint8_t>(access));
+  }
+}
+
+inline Requirement read_requirement(WireReader& reader,
+                                    std::uint32_t variable_count) {
+  Requirement requirement;
+  requirement.receiver = read_type(reader, variable_count);
+  requirement.operation = reader.string();
+  requirement.access = read_access(reader);
+  requirement.parent = reader.number();
+  requirement.provenance_id = reader.string();
+  const auto arguments = reader.number();
+  require(arguments <= 64, "SOURCE_FREE_SUMMARY_INVALID",
+          "ABI-v10 requirement has too many arguments");
+  for (std::uint32_t i = 0; i < arguments; ++i)
+    requirement.arguments.push_back(read_type(reader, variable_count));
+  const auto has_result = reader.byte();
+  require(has_result <= 1, "SOURCE_FREE_SUMMARY_INVALID",
+          "ABI-v10 requirement result presence tag is invalid");
+  if (has_result)
+    requirement.result = read_type(reader, variable_count);
+  const auto accesses = reader.number();
+  require(accesses <= 64 && accesses == arguments,
+          "SOURCE_FREE_SUMMARY_INVALID",
+          "ABI-v10 requirement argument/access counts disagree");
+  for (std::uint32_t i = 0; i < accesses; ++i)
+    requirement.argument_access.push_back(read_access(reader));
+  return requirement;
 }
 
 inline std::string summary_payload(const Summary& summary) {
@@ -257,7 +332,7 @@ inline std::string summary_payload(const Summary& summary) {
               summary_ordinals_dense(summary),
           "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 summary shape is invalid");
   WireWriter writer;
-  writer.byte(1);  // OpenCallableSummary record version.
+  writer.byte(2);  // OpenCallableSummary typed-requirement record version.
   writer.string(summary.callable_id);
   writer.number(summary.variable_count);
   writer.number(static_cast<std::uint32_t>(summary.parameters.size()));
@@ -275,14 +350,7 @@ inline std::string summary_payload(const Summary& summary) {
     require(requirement.parent <= i && !requirement.operation.empty() &&
                 !requirement.provenance_id.empty(),
             "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 requirement DAG is invalid");
-    write_type(writer, requirement.receiver, summary.variable_count);
-    writer.string(requirement.operation);
-    require(static_cast<std::uint8_t>(requirement.access) >= 1 &&
-                static_cast<std::uint8_t>(requirement.access) <= 3,
-            "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 access mode is invalid");
-    writer.byte(static_cast<std::uint8_t>(requirement.access));
-    writer.number(requirement.parent);
-    writer.string(requirement.provenance_id);
+    write_requirement(writer, requirement, summary.variable_count);
   }
   writer.number(static_cast<std::uint32_t>(summary.dependencies.size()));
   std::string previous;
@@ -304,7 +372,7 @@ inline std::string summary_payload(const Summary& summary) {
 
 inline Summary read_summary(std::string_view payload) {
   WireReader reader(payload);
-  require(reader.byte() == 1, "SOURCE_FREE_SUMMARY_INVALID",
+  require(reader.byte() == 2, "SOURCE_FREE_SUMMARY_INVALID",
           "ABI-v10 summary record version is unsupported");
   Summary summary;
   summary.callable_id = reader.string();
@@ -323,13 +391,8 @@ inline Summary read_summary(std::string_view payload) {
   require(requirements <= 4096, "SOURCE_FREE_SUMMARY_INVALID",
           "ABI-v10 summary has too many requirements");
   for (std::uint32_t i = 0; i < requirements; ++i) {
-    Requirement requirement;
-    requirement.receiver = read_type(reader, summary.variable_count);
-    requirement.operation = reader.string();
-    requirement.access = read_access(reader);
-    requirement.parent = reader.number();
-    requirement.provenance_id = reader.string();
-    summary.requirements.push_back(std::move(requirement));
+    summary.requirements.push_back(
+        read_requirement(reader, summary.variable_count));
   }
   const auto dependencies = reader.number();
   require(dependencies <= 4096, "SOURCE_FREE_SUMMARY_INVALID",
@@ -447,11 +510,7 @@ inline void validate_checked_body_record(const Record& record) {
 inline std::string requirement_bytes(const Requirement& value,
                                       std::uint32_t variable_count) {
   WireWriter writer;
-  write_type(writer, value.receiver, variable_count);
-  writer.string(value.operation);
-  writer.byte(static_cast<std::uint8_t>(value.access));
-  writer.number(value.parent);
-  writer.string(value.provenance_id);
+  write_requirement(writer, value, variable_count);
   return writer.finish();
 }
 
@@ -1239,11 +1298,13 @@ inline void validate_complete_interface(
   std::vector<Record> key_proof_records;
   for (const auto& rec : sealed.value.semantic_contract) {
     if (rec.payload.empty()) continue;
+    const bool summary_v2 = hex_hash(rec.id) && rec.payload[0] == 2;
     require(rec.payload[0] == 1 ||
-                static_cast<unsigned char>(rec.payload[0]) >= 32,
+                static_cast<unsigned char>(rec.payload[0]) >= 32 ||
+                summary_v2,
             "SOURCE_FREE_CONTRACT_INVALID",
             "Unknown ABI-v10 semantic record version");
-    if (rec.payload[0] != 1) continue;
+    if (rec.payload[0] != 1 && !summary_v2) continue;
     // The record ID selects the versioned schema. A failed decode is fatal;
     // trying other schemas could hide a forged or truncated public contract.
     if (nominal_template_id_valid(rec.id)) {
@@ -1271,11 +1332,13 @@ inline void validate_complete_interface(
   std::map<std::string, CheckedBodyRecord> private_bodies;
   for (const auto& rec : sealed.value.private_semantic_dependencies) {
     if (rec.payload.empty()) continue;
+    const bool summary_v2 = hex_hash(rec.id) && rec.payload[0] == 2;
     require(rec.payload[0] == 1 ||
-                static_cast<unsigned char>(rec.payload[0]) >= 32,
+                static_cast<unsigned char>(rec.payload[0]) >= 32 ||
+                summary_v2,
             "SOURCE_FREE_CONTRACT_INVALID",
             "Unknown ABI-v10 private dependency record version");
-    if (rec.payload[0] != 1) continue;
+    if (rec.payload[0] != 1 && !summary_v2) continue;
     if (rec.id.rfind("checked-body-v1:", 0) == 0) {
       const auto body = read_checked_body_record(rec.payload);
       validate_checked_body_record(rec);
@@ -1333,16 +1396,26 @@ inline void validate_complete_interface(
     for (const auto& parameter : sum.parameters)
       validate_nominal_references(parameter);
     validate_nominal_references(sum.result);
-    for (const auto& requirement : sum.requirements)
+    for (const auto& requirement : sum.requirements) {
       validate_nominal_references(requirement.receiver);
+      for (const auto& argument : requirement.arguments)
+        validate_nominal_references(argument);
+      if (requirement.result)
+        validate_nominal_references(*requirement.result);
+    }
   }
   for (const auto& pair : private_summaries) {
     const auto& sum = pair.second;
     for (const auto& parameter : sum.parameters)
       validate_nominal_references(parameter);
     validate_nominal_references(sum.result);
-    for (const auto& requirement : sum.requirements)
+    for (const auto& requirement : sum.requirements) {
       validate_nominal_references(requirement.receiver);
+      for (const auto& argument : requirement.arguments)
+        validate_nominal_references(argument);
+      if (requirement.result)
+        validate_nominal_references(*requirement.result);
+    }
   }
   for (const auto& method : public_methods) {
     for (const auto& parameter : method.parameters)

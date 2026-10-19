@@ -23,6 +23,76 @@ void expect_error(Action&& action, const std::string& code) {
   assert(false && "malformed ABI-v10 record was accepted");
 }
 
+static std::uint32_t read_number(const std::string& bytes, std::size_t& offset) {
+  assert(offset + 4 <= bytes.size());
+  std::uint32_t result = 0;
+  for (int i = 0; i < 4; ++i)
+    result = (result << 8) | static_cast<unsigned char>(bytes[offset++]);
+  return result;
+}
+
+static void skip_string(const std::string& bytes, std::size_t& offset) {
+  const auto size = read_number(bytes, offset);
+  assert(size <= bytes.size() - offset);
+  offset += size;
+}
+
+static void skip_type(const std::string& bytes, std::size_t& offset) {
+  assert(offset < bytes.size());
+  const auto tag = static_cast<unsigned char>(bytes[offset++]);
+  if (tag == static_cast<unsigned char>(WireTypeKind::BoundVar)) {
+    (void)read_number(bytes, offset);
+    return;
+  }
+  if (tag == static_cast<unsigned char>(WireTypeKind::Unit)) return;
+  skip_string(bytes, offset);
+  const auto count = read_number(bytes, offset);
+  for (std::uint32_t i = 0; i < count; ++i) skip_type(bytes, offset);
+}
+
+struct FirstRequirementOffsets {
+  std::size_t argument_type = 0;
+  std::size_t result_type = 0;
+  std::size_t argument_access_count = 0;
+};
+
+static FirstRequirementOffsets first_requirement_offsets(
+    const std::string& bytes) {
+  std::size_t offset = 1;  // Summary record version.
+  skip_string(bytes, offset);
+  (void)read_number(bytes, offset);  // Variable count.
+  const auto parameters = read_number(bytes, offset);
+  for (std::uint32_t i = 0; i < parameters; ++i) {
+    skip_type(bytes, offset);
+    ++offset;  // Parameter access.
+  }
+  skip_type(bytes, offset);  // Summary result.
+  assert(read_number(bytes, offset) > 0);
+  skip_type(bytes, offset);  // Requirement receiver.
+  skip_string(bytes, offset);
+  ++offset;  // Requirement access.
+  (void)read_number(bytes, offset);  // Parent.
+  skip_string(bytes, offset);
+  const auto arguments = read_number(bytes, offset);
+  assert(arguments > 0);
+  FirstRequirementOffsets result;
+  result.argument_type = offset;
+  for (std::uint32_t i = 0; i < arguments; ++i) skip_type(bytes, offset);
+  const auto has_result = static_cast<unsigned char>(bytes[offset++]);
+  assert(has_result == 1);
+  result.result_type = offset;
+  skip_type(bytes, offset);
+  result.argument_access_count = offset;
+  return result;
+}
+
+static void write_number(std::string& bytes, std::size_t offset,
+                         std::uint32_t value) {
+  assert(offset + 4 <= bytes.size());
+  for (int shift = 24; shift >= 0; shift -= 8)
+    bytes[offset++] = static_cast<char>((value >> shift) & 0xff);
+}
+
 int main() {
   const auto digest = "sha256:" + std::string(64, 'a');
   const auto body_digest = "body-semantic-v1:" + digest;
@@ -34,8 +104,10 @@ int main() {
   valid.result = variable;
   valid.parameter_access = {Access::Write};
   valid.requirements = {
-      {variable, "relay", Access::Write, 0, "provider:outer:1"},
-      {variable, "required", Access::Read, 1, "provider:inner:2"},
+      {variable, "operator:*", Access::Read, 0, "provider:outer:1",
+       {{WireTypeKind::Primitive, "int", {}, 0}}, variable, {Access::Read}},
+      {variable, "operator:+", Access::Read, 1, "provider:inner:2",
+       {{WireTypeKind::Primitive, "int", {}, 0}}, variable, {Access::Read}},
   };
   valid.dependencies = {{"helper:inner", body_digest}};
   valid.observable_effect_bits = 1;
@@ -46,9 +118,24 @@ int main() {
   const auto record = summary_record(valid);
   validate_summary(record);
   const auto roundtrip = read_summary(record.payload);
+  assert(summary_payload(roundtrip) == record.payload);
   assert(roundtrip.parameter_access[0] == Access::Write);
   assert(roundtrip.requirements[1].parent == 1);
   assert(roundtrip.requirements[1].provenance_id == "provider:inner:2");
+  assert(roundtrip.requirements[0].operation == "operator:*");
+  assert(roundtrip.requirements[1].operation == "operator:+");
+  for (std::size_t i = 0; i < roundtrip.requirements.size(); ++i) {
+    const auto& requirement = roundtrip.requirements[i];
+    assert(requirement.receiver.kind == WireTypeKind::BoundVar &&
+           requirement.receiver.ordinal == 0);
+    assert(requirement.arguments.size() == 1 &&
+           requirement.arguments[0].kind == WireTypeKind::Primitive &&
+           requirement.arguments[0].identity == "int");
+    assert(requirement.result &&
+           requirement.result->kind == WireTypeKind::BoundVar &&
+           requirement.result->ordinal == 0);
+    assert(requirement.argument_access == std::vector<Access>{Access::Read});
+  }
   assert(roundtrip.observable_effect_tags == valid.observable_effect_tags);
 
   validate_summary_nonweakening(valid, roundtrip);
@@ -58,6 +145,15 @@ int main() {
                "SOURCE_FREE_SUMMARY_INVALID");
   weakened = valid;
   weakened.requirements.pop_back();
+  expect_error([&] { validate_summary_nonweakening(valid, weakened); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  weakened = valid;
+  weakened.requirements[0].arguments[0].identity = "float";
+  expect_error([&] { validate_summary_nonweakening(valid, weakened); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  weakened = valid;
+  weakened.requirements[0].result =
+      WireType{WireTypeKind::Primitive, "int", {}, 0};
   expect_error([&] { validate_summary_nonweakening(valid, weakened); },
                "SOURCE_FREE_SUMMARY_INVALID");
   weakened = valid;
@@ -94,6 +190,15 @@ int main() {
   malformed.requirements[1].access = static_cast<Access>(4);
   expect_error([&] { (void)summary_payload(malformed); },
                "SOURCE_FREE_SUMMARY_INVALID");
+  malformed = valid;
+  malformed.requirements[0].argument_access[0] = static_cast<Access>(0);
+  expect_error([&] { (void)summary_payload(malformed); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  malformed = valid;
+  malformed.requirements[0].arguments.resize(65);
+  malformed.requirements[0].argument_access.resize(65, Access::Read);
+  expect_error([&] { (void)summary_payload(malformed); },
+               "SOURCE_FREE_SUMMARY_INVALID");
 
   malformed = valid;
   malformed.requirements[1].provenance_id.clear();
@@ -119,6 +224,53 @@ int main() {
                "SOURCE_FREE_SUMMARY_INVALID");
   expect_error([&] { (void)read_summary(record.payload + "trailing"); },
                "SOURCE_FREE_SUMMARY_INVALID");
+
+  auto old_version = record.payload;
+  old_version[0] = 1;
+  expect_error([&] { (void)read_summary(old_version); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  const auto offsets = first_requirement_offsets(record.payload);
+  auto corrupt_type = record.payload;
+  corrupt_type[offsets.argument_type] = 0;
+  expect_error([&] { (void)read_summary(corrupt_type); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+  corrupt_type = record.payload;
+  corrupt_type[offsets.result_type] = 0;
+  expect_error([&] { (void)read_summary(corrupt_type); },
+               "SOURCE_FREE_CONTRACT_INVALID");
+  auto bad_access_count = record.payload;
+  write_number(bad_access_count, offsets.argument_access_count, 0);
+  expect_error([&] { (void)read_summary(bad_access_count); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+
+  auto out_of_scope = valid;
+  out_of_scope.requirements[0].arguments[0] =
+      WireType{WireTypeKind::BoundVar, "", {}, 1};
+  expect_error([&] { (void)summary_payload(out_of_scope); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  out_of_scope = valid;
+  out_of_scope.requirements[0].result =
+      WireType{WireTypeKind::BoundVar, "", {}, 1};
+  expect_error([&] { (void)summary_payload(out_of_scope); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+
+  auto argument_only_var = valid;
+  argument_only_var.parameters = {
+      WireType{WireTypeKind::Primitive, "int", {}, 0}};
+  argument_only_var.result = WireType{WireTypeKind::Unit, "", {}, 0};
+  argument_only_var.requirements.resize(1);
+  argument_only_var.requirements[0].receiver =
+      WireType{WireTypeKind::Primitive, "int", {}, 0};
+  argument_only_var.requirements[0].arguments[0] = variable;
+  argument_only_var.requirements[0].result.reset();
+  assert(summary_ordinals_dense(argument_only_var));
+  assert(!summary_payload(argument_only_var).empty());
+  auto result_only_var = argument_only_var;
+  result_only_var.requirements[0].arguments[0] =
+      WireType{WireTypeKind::Primitive, "int", {}, 0};
+  result_only_var.requirements[0].result = variable;
+  assert(summary_ordinals_dense(result_only_var));
+  assert(!summary_payload(result_only_var).empty());
 
   KeyProof proof;
   proof.key_type = {WireTypeKind::Primitive, "int", {}, 0};
@@ -387,7 +539,7 @@ int main() {
     validate_complete_interface(decode(encode(malformed_private)));
   }, "SOURCE_FREE_CONTRACT_INVALID");
   Interface unknown_private_version = iface_with_helper;
-  unknown_private_version.private_semantic_dependencies.front().payload[0] = 2;
+  unknown_private_version.private_semantic_dependencies.front().payload[0] = 3;
   expect_error([&] {
     validate_complete_interface(decode(encode(unknown_private_version)));
   }, "SOURCE_FREE_CONTRACT_INVALID");
