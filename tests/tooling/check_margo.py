@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Hermetic package-DAG, Git-cache, lockfile, and compatibility checks."""
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -67,7 +68,8 @@ fn main():
 (app / "tests" / "answer.moss").write_text('import Geometry\n\ntest "dependency answer":\n  assertEqual(Geometry.answer(), 42)\n', encoding="utf-8")
 (app / "benches").mkdir()
 (app / "benches" / "answer.moss").write_text('import Geometry\n\nbench "dependency answer":\n  value = Geometry.answer()\n  value + 0\n', encoding="utf-8")
-env = dict(**__import__("os").environ, MARGO_HOME=str(home), MOSS=str(moss))
+env = dict(os.environ)
+env.update(MARGO_HOME=str(home), MOSS=str(moss))
 
 first = run([margo, "build", "--json"], app, env=env)
 result = json.loads(first.stdout)

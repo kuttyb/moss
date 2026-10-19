@@ -86,7 +86,7 @@ Use `docs/phase25/TYPE_IR_CONTRACT.md`, `ABI_V10_DESIGN.md`, `TEAM_A_TYPED_SEMAN
 
 ## E. Automated PR CI and final verification
 
-`.github/workflows/phase25-team-pr.yml` supplies parallel isolated CI jobs: core regression, optimized examples, Phase 25 tests + prep-harness self-tests. Each job independently builds using `make --jobs="$(nproc)"`. The preexisting `tests/run.sh` uses shared outputs and is sequential **inside its checkout**; do not claim `make -j` parallelizes it internally. Never launch interfering suites simultaneously in one worktree; parallelize at isolated CI job/worktree level.
+`.github/workflows/phase25-team-pr.yml` supplies parallel isolated CI jobs: core regression, optimized examples, Phase 25 tests + prep-harness self-tests. Each job independently builds using `make --jobs="$(nproc)"`. `make check` now schedules isolated regression worktrees through `tests/run_parallel.py`; `make check-serial` retains the original sequential `tests/run.sh` for comparison. Never launch interfering suites simultaneously in one worktree.
 
 Every L5 worker waits for all required green PR checks on the *latest head SHA* before requesting L6 review. L6 Reviewer inspects changed code and failing counterexamples, not mundane test-command instructions. Coordinator reruns combined-branch CI after every merge. At the frozen final candidate, push an integration commit whose message contains `[phase25-final]` (or dispatch the workflow where available) to trigger the full cross-crate release acceptance and `run_acceptance.py --strict`. A green PR is **not** a green Phase release.
 

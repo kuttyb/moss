@@ -96,3 +96,52 @@ historical ledger views; use `--live` for current executable evidence.
 5. **`GATE-G4-01..06` (6 gates)**: G4 String, Char, Unicode scalar, and MossStr indexed-v1 layout.
 6. **`GATE-G5-01..06` (6 gates)**: Final G5 compiler and runtime integration, `moss_runtime` crate, full SDK matrix, and differential CI parity.
 7. **`GATE-G6-01..05` (5 gates)**: Final G6 adversarial falsification, corrupt proof rejection, 64-bit edge-case audit, memory safety, and whole-system Architect sign-off.
+
+
+## Strict release evidence freshness
+
+`run_acceptance.py --strict` validates all 62 gate identities and ledger fields
+before considering status, including when `--gate` selects a single gate.
+Historical `implementation_sha` entries must be ancestors of the candidate.
+Narrative `test_evidence` remains useful history but cannot establish release PASS.
+
+For every PASS gate, strict mode requires a machine report named
+`<gate-id>.json` in `tmp/phase25-acceptance/` (override with `--evidence-dir`).
+The release executor must create these reports and logs **after committing the
+candidate**, in the clean checkout where its acceptance commands actually ran.
+Reports are disposable CI artifacts, not committed ledger updates; this avoids a
+self-referential evidence commit. Every later commit, including documentation-only
+changes, requires fresh reports at its exact HEAD. No source files are excluded
+from freshness. Failed reports and logs should remain in CI artifacts/history;
+the validator never rewrites them or upgrades a failed status.
+
+Report version 1 has the following shape (replace all illustrative values with
+actual execution records):
+
+```json
+{
+  "schema_version": 1,
+  "gate_id": "GATE-TYPEIR-01",
+  "status": "PASS",
+  "evidence_sha": "<full candidate HEAD>",
+  "results": [
+    {
+      "engine": "<exact engine_configs entry>",
+      "command": ["<acceptance executable>", "<argument>"],
+      "returncode": 0,
+      "log_path": "tmp/phase25-acceptance/typeir-01-native.log",
+      "log_sha256": "<SHA-256 of captured nonempty execution log>"
+    }
+  ]
+}
+```
+
+`results` must cover every declared engine exactly once. Commands must be argument
+arrays; each acceptance command must exit zero, including test wrappers that verify
+expected negative compiler diagnostics. Each log must exist within the repository,
+be nonempty, and match its digest. Missing reports, stale SHAs, dirty checkouts,
+failed commands, wrong engines, missing logs and tampered output all fail closed.
+The report producer still owns exercising the actual invariant and recording honest
+commands/output; a JSON validator cannot substitute for the L6 review of those paths.
+This integrity change does not provide the still-required 62-gate release executor
+or upgrade any inherited BLOCKED gate.

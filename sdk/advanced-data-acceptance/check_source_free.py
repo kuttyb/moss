@@ -8,11 +8,13 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import threading
+from contextlib import ExitStack
 
 
 PROJECT = Path(__file__).resolve().parent
 REPO = PROJECT.parents[1]
-MOSS = REPO / "moss"
+MOSS = Path(os.environ.get("MOSS", REPO / "moss")).resolve()
 MARGO = REPO / "margo"
 SCRATCH = REPO / "tmp"
 CONSUMER = PROJECT / "fixtures" / "source_free_consumer.moss"
@@ -38,9 +40,16 @@ TEAM_A_MODULES = ("ndarray", "datastructures", "tables", "binary", "cbor")
 
 
 def run(command: list[str], cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        command, cwd=cwd, env=env, check=True, capture_output=True, text=True
+    result = subprocess.run(
+        command, cwd=cwd, env=env, check=False, capture_output=True, text=True
     )
+    if result.returncode:
+        raise RuntimeError(
+            f"{command} failed in {cwd} (exit {result.returncode})\n"
+            f"stdout tail:\n{result.stdout[-4000:]}\n"
+            f"stderr tail:\n{result.stderr[-4000:]}"
+        )
+    return result
 
 
 def digest(path: Path) -> str:
@@ -56,12 +65,70 @@ def main() -> None:
         TMPDIR=str(SCRATCH),
     )
 
-    # Serial builds avoid package-local/shared Margo artifact races.
+    # Parallel builds scheduled by Moss.toml dependency DAG
+    from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+    import tomllib
+
+    dep_graph: dict[str, set[str]] = {}
+    pkg_by_name: dict[str, Path] = {}
     for module, package in PROVIDERS:
-        run([str(MARGO), "build", "--json"], package, env)
-        artifact_dir = package / "build" / "debug"
-        assert (artifact_dir / f"{module}.mossi").is_file(), module
-        assert (artifact_dir / f"lib{module}.rlib").is_file(), module
+        pkg_by_name[module] = package
+        manifest = package / "Moss.toml" if (package / "Moss.toml").exists() else package / "moss.toml"
+        data = tomllib.loads(manifest.read_text(encoding="utf-8"))
+        raw_deps = data.get("dependencies", {})
+        dependencies = {dep.removeprefix("moss.") for dep in raw_deps}
+        unknown = dependencies - dict(PROVIDERS).keys()
+        if unknown:
+            raise RuntimeError(f"Provider {module} has untracked dependencies: {sorted(unknown)}")
+        dep_graph[module] = dependencies
+
+    # Margo rebuilds every dependency in a package's closure. A topological
+    # provider DAG alone does not stop two independent parents from writing the
+    # same dependency's build/debug artifacts at once.
+    def package_closure(module: str) -> set[str]:
+        closure = {module}
+        for dependency in dep_graph[module]:
+            closure.update(package_closure(dependency))
+        return closure
+
+    closures = {module: package_closure(module) for module in dep_graph}
+    package_locks = {module: threading.Lock() for module in dep_graph}
+
+    completed: set[str] = set()
+    pending = dict(dep_graph)
+
+    def build_provider(mod: str, pkg: Path) -> None:
+        provider_env = env.copy()
+        provider_env["MARGO_HOME"] = str(SCRATCH / "margo-advanced-data-source-free" / mod)
+        with ExitStack() as locks:
+            for dependency in sorted(closures[mod]):
+                locks.enter_context(package_locks[dependency])
+            run([str(MARGO), "build", "--json"], pkg, provider_env)
+        artifact_dir = pkg / "build" / "debug"
+        assert (artifact_dir / f"{mod}.mossi").is_file(), mod
+        assert (artifact_dir / f"lib{mod}.rlib").is_file(), mod
+
+    max_workers = min(len(PROVIDERS), os.cpu_count() or 8)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        running: dict = {}
+        while pending or running:
+            ready = [mod for mod, deps in pending.items() if deps <= completed]
+            for mod in ready:
+                del pending[mod]
+                pkg = pkg_by_name[mod]
+                fut = executor.submit(build_provider, mod, pkg)
+                running[fut] = mod
+
+            if not running:
+                if pending:
+                    raise RuntimeError(f"Cyclic or unresolved provider dependencies: {pending}")
+                break
+
+            done, _ = wait(running.keys(), return_when=FIRST_COMPLETED)
+            for fut in done:
+                mod = running.pop(fut)
+                fut.result()
+                completed.add(mod)
 
     with tempfile.TemporaryDirectory(
         prefix="advanced-data-source-free-", dir=SCRATCH
