@@ -340,6 +340,94 @@ inline void validate_summary(const Record& record) {
           "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 summary ID is forged");
 }
 
+// The body bytes are the checked_ir::encode_checked_body_v1 projection, not
+// source statements. The record binds that versioned IR to the open summary
+// and to exact callable/nominal dependencies before source-free import.
+struct CheckedBodyRecord {
+  struct Dependency {
+    enum class Kind : std::uint8_t { Callable = 1, NominalType = 2 };
+    Kind kind = Kind::Callable;
+    std::string target_id;
+    std::string expected_hash;
+  };
+  std::string callable_id;
+  std::string semantic_hash;
+  std::string checked_ir_bytes;
+  std::vector<Dependency> dependencies;
+};
+
+inline std::string checked_body_record_payload(const CheckedBodyRecord& body) {
+  require(!body.callable_id.empty() &&
+              body.checked_ir_bytes.rfind("moss-checked-body-v1\n", 0) == 0 &&
+              checked_body_hash_valid(body.semantic_hash) &&
+              body.semantic_hash == "body-semantic-v1:sha256:" +
+                  source_free_contract_sha256(body.checked_ir_bytes) &&
+              body.dependencies.size() <= 4096,
+          "SOURCE_FREE_SUMMARY_INVALID",
+          "ABI-v10 checked body has invalid version or semantic hash");
+  WireWriter writer;
+  writer.byte(1);
+  writer.string("checked-body-v1");
+  writer.string(body.callable_id);
+  writer.string(body.semantic_hash);
+  writer.string(body.checked_ir_bytes);
+  writer.number(static_cast<std::uint32_t>(body.dependencies.size()));
+  std::string previous;
+  for (const auto& dep : body.dependencies) {
+    require(!dep.target_id.empty() && previous < dep.target_id &&
+                ((dep.kind == CheckedBodyRecord::Dependency::Kind::Callable &&
+                  checked_body_hash_valid(dep.expected_hash)) ||
+                 (dep.kind == CheckedBodyRecord::Dependency::Kind::NominalType &&
+                  nominal_template_id_valid(dep.target_id) &&
+                  hex_hash(dep.expected_hash))),
+            "SOURCE_FREE_SUMMARY_INVALID",
+            "ABI-v10 checked body dependency kind or hash is invalid");
+    previous = dep.target_id;
+    writer.byte(static_cast<std::uint8_t>(dep.kind));
+    writer.string(dep.target_id);
+    writer.string(dep.expected_hash);
+  }
+  return writer.finish();
+}
+
+inline Record checked_body_record(const CheckedBodyRecord& body) {
+  return {"checked-body-v1:" + body.callable_id,
+          checked_body_record_payload(body)};
+}
+
+inline CheckedBodyRecord read_checked_body_record(std::string_view payload) {
+  WireReader reader(payload);
+  require(reader.byte() == 1 && reader.string() == "checked-body-v1",
+          "SOURCE_FREE_SUMMARY_INVALID",
+          "ABI-v10 checked body record version is unsupported");
+  CheckedBodyRecord body;
+  body.callable_id = reader.string();
+  body.semantic_hash = reader.string();
+  body.checked_ir_bytes = reader.string();
+  const auto count = reader.number();
+  require(count <= 4096, "SOURCE_FREE_SUMMARY_INVALID",
+          "ABI-v10 checked body has too many dependencies");
+  for (std::uint32_t index = 0; index < count; ++index) {
+    const auto kind = reader.byte();
+    require(kind >= 1 && kind <= 2, "SOURCE_FREE_SUMMARY_INVALID",
+            "ABI-v10 checked body dependency kind is unknown");
+    body.dependencies.push_back({
+        static_cast<CheckedBodyRecord::Dependency::Kind>(kind),
+        reader.string(), reader.string()});
+  }
+  require(reader.done() && checked_body_record_payload(body) == payload,
+          "SOURCE_FREE_SUMMARY_INVALID",
+          "ABI-v10 checked body record is noncanonical");
+  return body;
+}
+
+inline void validate_checked_body_record(const Record& record) {
+  const auto body = read_checked_body_record(record.payload);
+  require(checked_body_record(body).id == record.id,
+          "SOURCE_FREE_SUMMARY_INVALID",
+          "ABI-v10 checked body record ID is forged");
+}
+
 inline std::string requirement_bytes(const Requirement& value,
                                       std::uint32_t variable_count) {
   WireWriter writer;
@@ -1164,6 +1252,7 @@ inline void validate_complete_interface(
 
   std::map<std::string, Summary> private_summaries;
   std::map<std::string, MethodTemplate> private_methods;
+  std::map<std::string, CheckedBodyRecord> private_bodies;
   for (const auto& rec : sealed.value.private_semantic_dependencies) {
     if (rec.payload.empty()) continue;
     require(rec.payload[0] == 1 ||
@@ -1171,7 +1260,13 @@ inline void validate_complete_interface(
             "SOURCE_FREE_CONTRACT_INVALID",
             "Unknown ABI-v10 private dependency record version");
     if (rec.payload[0] != 1) continue;
-    if (nominal_template_id_valid(rec.id)) {
+    if (rec.id.rfind("checked-body-v1:", 0) == 0) {
+      const auto body = read_checked_body_record(rec.payload);
+      validate_checked_body_record(rec);
+      require(private_bodies.emplace(body.callable_id, body).second,
+              "SOURCE_FREE_CONTRACT_INVALID",
+              "Duplicate checked body record ID");
+    } else if (nominal_template_id_valid(rec.id)) {
       const auto tmpl = read_template(rec.payload);
       validate_template(rec);
       require(known_templates.emplace(tmpl.template_id, tmpl).second,
@@ -1268,6 +1363,33 @@ inline void validate_complete_interface(
                                          pair.second.body_semantic_hash).second,
             "SOURCE_FREE_CONTRACT_INVALID",
             "Callable summary appears in both public and private sections");
+  for (const auto& pair : private_bodies) {
+    const auto& body = pair.second;
+    const auto owner = callable_body_hashes.find(body.callable_id);
+    require(owner != callable_body_hashes.end() &&
+                owner->second == body.semantic_hash,
+            "SOURCE_FREE_SUMMARY_INVALID",
+            "Checked body has no matching callable summary hash");
+    for (const auto& dep : body.dependencies) {
+      if (dep.kind == CheckedBodyRecord::Dependency::Kind::Callable) {
+        const auto target = callable_body_hashes.find(dep.target_id);
+        require(target != callable_body_hashes.end(),
+                "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
+                "Checked body references an unknown callable dependency");
+        require(target->second == dep.expected_hash,
+                "SOURCE_FREE_CONTRACT_INVALID",
+                "Checked body callable dependency hash mismatch");
+      } else {
+        const auto target = known_templates.find(dep.target_id);
+        require(target != known_templates.end(),
+                "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                "Checked body references an unknown nominal template");
+        require(target->second.representation_hash == dep.expected_hash,
+                "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                "Checked body nominal representation hash mismatch");
+      }
+    }
+  }
 
   std::set<std::string> required_deps;
   for (const auto& sum : public_summaries) {

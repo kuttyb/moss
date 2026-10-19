@@ -418,7 +418,7 @@ inline void encode_checked_stmt(std::string& out, const Stmt& stmt) {
   }
 }
 
-inline std::string compute_checked_body_hash_v1(const std::vector<Stmt>& statements) {
+inline std::string encode_checked_body_v1(const std::vector<Stmt>& statements) {
   if (statements.empty())
     throw std::invalid_argument("empty checked body statement sequence");
   std::string encoded = "moss-checked-body-v1\n";
@@ -431,7 +431,12 @@ inline std::string compute_checked_body_hash_v1(const std::vector<Stmt>& stateme
       encode_checked_stmt(encoded, statement);
     }
   }
-  return "body-semantic-v1:sha256:" + source_free_contract_sha256(encoded);
+  return encoded;
+}
+
+inline std::string compute_checked_body_hash_v1(const std::vector<Stmt>& statements) {
+  return "body-semantic-v1:sha256:" +
+      source_free_contract_sha256(encode_checked_body_v1(statements));
 }
 
 } // namespace checked_ir
