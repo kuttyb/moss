@@ -29,6 +29,8 @@ S3_PATH = "tests/tooling/check_phase25_s3_key_protocol.py"
 G3_ORDERING_PATH = "tests/tooling/check_phase25_g3_ordering.py"
 L7_PATH = "tests/tooling/check_phase25_l7_repairs.py"
 G4_CHAR_PATH = "tests/tooling/check_phase25_s2_char_string.py"
+G4_INDEXED_PATH = "tests/tooling/check_phase25_indexed_string.py"
+G4_LINKAGE_PATH = "tests/phase25/runtime/check_shared_string_linkage.py"
 
 G1_LEDGER_ROWS = {
     "1": "#1 Int ordering above 2^53",
@@ -109,6 +111,10 @@ PROOFS: dict[str, tuple[tuple[str, str], ...]] = {
                    ("l7", "char")),
     "GATE-G4-02": (("g4-char", "constructor"), ("l7", "char")),
     "GATE-G4-03": (("g4-char", "escapes"), ("l7", "invalid-escapes")),
+    "GATE-G4-04": (("g4-indexed", "layout"),
+                   ("g4-linkage", "source-free")),
+    "GATE-G4-06": (("g4-linkage", "source-free"),
+                   ("g4-linkage", "mismatch")),
 }
 
 # Gate 10's exact sealed proof identity is asserted by Team B, beyond G2's
@@ -120,7 +126,9 @@ SUITE_PATHS = {"g2": G2_PATH, "e3-debug": E3_PATH,
                "g1-ledger": G1_LEDGER_PATH,
                "g1-regression": G1_REGRESSION_PATH,
                "s3": S3_PATH, "g3-ordering": G3_ORDERING_PATH,
-               "l7": L7_PATH, "g4-char": G4_CHAR_PATH}
+               "l7": L7_PATH, "g4-char": G4_CHAR_PATH,
+               "g4-indexed": G4_INDEXED_PATH,
+               "g4-linkage": G4_LINKAGE_PATH}
 KEY_EXACT_STATUS = {
     "01-float-keys-map": "passes",
     "02-float-keys-set": "passes",
@@ -244,6 +252,28 @@ def parse_suite(suite: str, stdout: str, returncode: int) -> dict[str, bool]:
         cases["escapes"] = complete and "  PASS: 14 escapes x 4 forms (3 engines)" in lines
         cases["unicode"] = complete and (
             "  PASS: 36 random strings, 880 property checks vs Python oracle (5 engines)" in lines)
+    elif suite == "g4-indexed":
+        lines = stdout.splitlines()
+        markers = (
+            "  PASS: inline runtime 12800 randomized comparisons, offsets and limit",
+            "  PASS: shared runtime 12800 randomized comparisons, offsets and limit",
+            "  PASS: identical output in Fast Debug and plain/staged debug and release",
+            "  PASS: staged multi-crate execution and plain/indexed mismatch rejection",
+        )
+        cases["layout"] = (returncode == 0 and
+            "=== Phase 25 indexed String checks passed ===" in lines and
+            all(lines.count(marker) == 1 for marker in markers))
+    elif suite == "g4-linkage":
+        lines = stdout.splitlines()
+        source_free = (
+            "shared indexed String debug: two source-free consumers passed with sealed imports",
+            "shared indexed String release: two source-free consumers passed with sealed imports",
+        )
+        mismatch = "shared indexed String runtime mismatch rejected before native linking"
+        complete = (returncode == 0 and len(lines) == 3 and
+                    all(lines.count(marker) == 1 for marker in (*source_free, mismatch)))
+        cases["source-free"] = complete and all(marker in lines for marker in source_free)
+        cases["mismatch"] = complete and mismatch in lines
     return cases
 
 
@@ -269,6 +299,10 @@ def suite_command(suite: str, compiler: Path) -> list[str]:
         return [sys.executable, str(ROOT / L7_PATH), str(compiler)]
     if suite == "g4-char":
         return [sys.executable, str(ROOT / G4_CHAR_PATH), str(compiler), "--g4-only"]
+    if suite == "g4-indexed":
+        return [sys.executable, str(ROOT / G4_INDEXED_PATH), str(compiler)]
+    if suite == "g4-linkage":
+        return [sys.executable, str(ROOT / G4_LINKAGE_PATH)]
     raise ValueError(f"Unknown live suite {suite}")
 
 

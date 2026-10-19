@@ -317,6 +317,15 @@ def run_self_test(matrix_path: Path) -> int:
                   "=== Phase 25 G4 Char/String cases passed ===\n")
     if parse_suite("g4-char", partial_g4, 0).get("escapes"):
         errors.append("Partial G4 Char suite was accepted as complete")
+    partial_indexed = ("  PASS: shared runtime 12800 randomized comparisons, offsets and limit\n"
+                       "=== Phase 25 indexed String checks passed ===\n")
+    if parse_suite("g4-indexed", partial_indexed, 0).get("layout"):
+        errors.append("Shared runtime-only result was accepted without native parity")
+    partial_linkage = (
+        "shared indexed String debug: two source-free consumers passed with sealed imports\n"
+        "shared indexed String runtime mismatch rejected before native linking\n")
+    if parse_suite("g4-linkage", partial_linkage, 0).get("source-free"):
+        errors.append("One source-free consumer profile was accepted as complete")
     fake_suites = {"g2": {"cases": {"1": True}, "stdout_sha256": "a" * 64}}
     forged_gate = {"id": "GATE-TYPEIR-01", "current_status": "PASS",
                    "blocking_dependency": None}

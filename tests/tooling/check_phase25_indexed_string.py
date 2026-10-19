@@ -1,12 +1,12 @@
 """Phase 25 G4 indexed String record (staged for the joint ABI-v10 cut).
 
-1. Differential property test: the indexed-v1 runtime agrees with the plain
-   runtime on length/char_at/slice/find after random Unicode appends, and its
-   offset metadata satisfies the documented invariants.
+1. Differential property test: both inline and actual shared indexed-v1
+   runtimes agree with the plain runtime after random Unicode appends; their
+   offset metadata and checked 4 GiB arithmetic satisfy the contract.
 2. Staged builds (MOSS_STAGED_STRING_REPR=indexed-v1) of a String-heavy
    program agree with plain native builds and Fast Debug.
 3. The two representations never mix: a staged consumer rejects a plain
-   provider interface, and staged multi-crate builds fail closed.
+   provider interface; ABI-v10 indexed multi-crate execution succeeds.
 """
 
 import json
@@ -66,6 +66,7 @@ fn check_invariants(s: &indexed::MossString) {
     let text: &str = s;
     let count = text.chars().count();
     assert_eq!(indexed::__moss_string_length(s) as usize, count);
+    assert_eq!(s.as_str().len(), text.len());
     let mut expected = Vec::new();
     if !text.is_ascii() {
         for (cp, (byte, _)) in text.char_indices().enumerate() {
@@ -73,9 +74,29 @@ fn check_invariants(s: &indexed::MossString) {
         }
     }
     assert_eq!(s.offsets_for_test(), &expected[..]);
+    if text.is_ascii() {
+        assert_eq!(count, text.len());
+        assert!(s.offsets_for_test().is_empty());
+    }
 }
 
 fn main() {
+    assert_eq!(std::mem::size_of::<indexed::MossString>(), 56);
+    assert_eq!(indexed::MossString::checked_length_for_test(u32::MAX as usize - 1, 1),
+               u32::MAX as usize);
+    if usize::BITS > 32 {
+        for (base, additional) in [(u32::MAX as usize, 1), (usize::MAX, 1)] {
+            let failure = std::panic::catch_unwind(|| {
+                indexed::MossString::checked_length_for_test(base, additional)
+            }).unwrap_err();
+            let message = failure.downcast_ref::<String>().map(String::as_str)
+                .or_else(|| failure.downcast_ref::<&str>().copied()).unwrap();
+            assert_eq!(message, "String exceeds the 4 GiB indexed offset limit");
+        }
+    }
+    let mut ascii = indexed::MossString::from("ASCII");
+    ascii.push_str(" growth");
+    check_invariants(&ascii);
     let mut rng = Rng(0x9e3779b97f4a7c15);
     let mut cases = 0usize;
     for _round in 0..200 {
@@ -128,24 +149,32 @@ fn main() {
 
 
 def test_runtime_property():
-    print("indexed-v1 runtime vs plain runtime (random Unicode appends)")
-    ordering, plain, indexed = runtime_sections()
-    indexed = indexed.replace(
-        "    // Bytes of index metadata",
-        "    pub fn offsets_for_test(&self) -> &[u32] { &self.offsets }\n\n    // Bytes of index metadata")
-    source = ("#![allow(dead_code)]\n" + ordering +
-              "mod plain {\n#![allow(dead_code)]\nuse super::*;\n" + plain + "}\n" +
-              "mod indexed {\n#![allow(dead_code)]\nuse super::*;\n" + indexed + "}\n" +
-              PROPERTY_MAIN)
+    print("indexed-v1 inline and shared runtimes vs plain runtime")
+    ordering, plain, inline_indexed = runtime_sections()
+    shared = (ROOT / "runtime/moss_runtime/src/string.rs").read_text()
+    shared = shared[shared.index("// ─── Begin Moss String Runtime (indexed-v1)"):]
     with tempfile.TemporaryDirectory(prefix="p25-indexed-", dir=SCRATCH) as td:
-        path = Path(td) / "property.rs"
-        path.write_text(source)
-        binary = Path(td) / "property"
-        build = run(["rustc", "--edition=2021", "-O", str(path), "-o", str(binary)])
-        assert build.returncode == 0, build.stderr[-4000:]
-        result = run([str(binary)])
-        assert result.returncode == 0, result.stderr
-        print(f"  PASS: {result.stdout.strip()} randomized char_at/slice/find comparisons")
+        for name, indexed in (("inline", inline_indexed), ("shared", shared)):
+            assert indexed.count("    // Bytes of index metadata") == 1
+            indexed = indexed.replace(
+                "    // Bytes of index metadata",
+                "    pub fn offsets_for_test(&self) -> &[u32] { &self.offsets }\n"
+                "    pub fn checked_length_for_test(base: usize, additional: usize) -> usize {"
+                " Self::checked_length(base, additional) }\n\n"
+                "    // Bytes of index metadata")
+            source = ("#![allow(dead_code)]\n" + ordering +
+                      "mod plain {\n#![allow(dead_code)]\nuse super::*;\n" + plain + "}\n" +
+                      "mod indexed {\n#![allow(dead_code)]\nuse super::*;\n" + indexed + "}\n" +
+                      PROPERTY_MAIN)
+            path = Path(td) / f"property-{name}.rs"
+            path.write_text(source)
+            binary = Path(td) / f"property-{name}"
+            build = run(["rustc", "--edition=2021", "-O", str(path), "-o", str(binary)])
+            assert build.returncode == 0, build.stderr[-4000:]
+            result = run([str(binary)])
+            assert result.returncode == 0, result.stderr
+            assert result.stdout.strip() == "12800", result.stdout
+            print(f"  PASS: {name} runtime 12800 randomized comparisons, offsets and limit")
 
 
 PROGRAM = """
