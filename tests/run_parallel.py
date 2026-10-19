@@ -15,10 +15,12 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import threading
 import time
 
 
 REPO = Path(__file__).resolve().parents[1]
+GIT_LOCK = threading.Lock()
 
 
 @dataclass
@@ -29,6 +31,7 @@ class Job:
     dependencies: list[str] = field(default_factory=list)
     use_opt_compiler: bool = False
     env_overrides: dict[str, str] = field(default_factory=dict)
+    isolate_worktree: bool = False
 
 
 @dataclass
@@ -185,7 +188,16 @@ def build_manifest() -> list[Job]:
     for item in TOOLING_TESTS:
         name, cmd = item[0], item[1]
         use_opt = name.startswith("sdk_")
-        jobs.append(Job(name=name, cmd_template=cmd, use_opt_compiler=use_opt))
+        isolate = name in (
+            "sdk_foundations",
+            "sdk_text_encoding",
+            "sdk_adv_data_oracle_debug",
+            "sdk_adv_data_oracle_release",
+            "sdk_adv_data_margo_run",
+            "sdk_adv_data_margo_release",
+            "sdk_adv_data_source_free",
+        )
+        jobs.append(Job(name=name, cmd_template=cmd, use_opt_compiler=use_opt, isolate_worktree=isolate))
 
     for item in SHELL_SHARDS:
         name, cmd = item[0], item[1]
@@ -206,6 +218,46 @@ def run_single_job(
     job_out.mkdir(parents=True, exist_ok=True)
     margo_home = job_out / "margo_home"
     margo_home.mkdir(exist_ok=True)
+    job_tmp = job_out / "tmp"
+    job_tmp.mkdir(parents=True, exist_ok=True)
+
+    worktree_dir: Path | None = None
+    cwd = job.cwd
+    if job.isolate_worktree:
+        worktree_dir = job_out / "wt"
+        with GIT_LOCK:
+            if worktree_dir.exists():
+                subprocess.run(
+                    ["git", "worktree", "remove", "--force", str(worktree_dir)],
+                    cwd=REPO,
+                    check=False,
+                    capture_output=True,
+                )
+            subprocess.run(
+                ["git", "worktree", "add", "--detach", str(worktree_dir), "HEAD"],
+                cwd=REPO,
+                check=True,
+                capture_output=True,
+            )
+            # Overlay modified tracked and untracked files into the worktree
+            diff_proc = subprocess.run(
+                ["git", "diff", "--name-only", "HEAD"],
+                cwd=REPO, capture_output=True, text=True, check=True
+            )
+            untracked_proc = subprocess.run(
+                ["git", "ls-files", "--others", "--exclude-standard"],
+                cwd=REPO, capture_output=True, text=True, check=True
+            )
+            for rel in diff_proc.stdout.splitlines() + untracked_proc.stdout.splitlines():
+                src_file = REPO / rel
+                dst_file = worktree_dir / rel
+                if src_file.is_file():
+                    dst_file.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src_file, dst_file)
+        if job.cwd == REPO:
+            cwd = worktree_dir
+        elif job.cwd.is_relative_to(REPO):
+            cwd = worktree_dir / job.cwd.relative_to(REPO)
 
     cmd = [
         arg.format(compiler=str(compiler), out=str(job_out))
@@ -216,7 +268,7 @@ def run_single_job(
     env.update(
         MOSS=str(compiler),
         MARGO_HOME=str(margo_home),
-        TMPDIR=str(REPO / "tmp"),
+        TMPDIR=str(job_tmp),
         PYTHONDONTWRITEBYTECODE="1",
         test_build=str(job_out),
     )
@@ -229,7 +281,7 @@ def run_single_job(
     try:
         proc = subprocess.run(
             cmd,
-            cwd=job.cwd,
+            cwd=cwd,
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -259,6 +311,15 @@ def run_single_job(
             stderr=err_msg,
             output_dir=job_out,
         )
+    finally:
+        if worktree_dir and worktree_dir.exists():
+            with GIT_LOCK:
+                subprocess.run(
+                    ["git", "worktree", "remove", "--force", str(worktree_dir)],
+                    cwd=REPO,
+                    check=False,
+                    capture_output=True,
+                )
 
 
 def main() -> int:
