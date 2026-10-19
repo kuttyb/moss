@@ -3069,6 +3069,43 @@ class Checker {
               "SOURCE_FREE_SPECIALIZATION_MISMATCH");
       }
     retain_checked_body_ir();
+    // The staged ABI cannot publish a multi-statement generic/private-helper
+    // chain through the legacy generic_stmt fallback. Until every reachable
+    // body has checked typed facts and versioned body IR, reject the provider
+    // before it can emit an interface that a source-free consumer may trust.
+    if (staged_abi_v10() && p_.explicit_module)
+      for (const auto& exported : p_.functions) {
+        if (!exported.exported || !exported.static_dispatch ||
+            compiled_interface_file(exported.source_file)) continue;
+        std::set<string> visited;
+        std::vector<const Function*> pending{&exported};
+        bool reaches_private = false;
+        bool unsupported_multi_statement = false;
+        while (!pending.empty()) {
+          const Function* current = pending.back();
+          pending.pop_back();
+          if (!visited.insert(current->name).second) continue;
+          if (!current->exported) reaches_private = true;
+          if (current->body.size() > 1 &&
+              (!current->open_summary || !current->open_summary->complete ||
+               !current->checked_body_v1))
+            unsupported_multi_statement = true;
+          for (const auto& edge : p_.semantic_call_edges) {
+            if (edge.source != "fn:" + current->name ||
+                !starts_with(edge.target, "fn:")) continue;
+            auto dependency = functions_.find(edge.target.substr(3));
+            if (dependency != functions_.end() &&
+                dependency->second->defining_module == exported.defining_module)
+              pending.push_back(dependency->second);
+          }
+        }
+        if (reaches_private && unsupported_multi_statement)
+          err(exported.source_file, exported.line,
+              "exported callable '" + exported.name +
+                  "' reaches a private multi-statement body without checked "
+                  "ABI-v10 type facts and body IR",
+              "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE");
+      }
     { CompilerStageTimer timer("synchronization_plan"); build_synchronization_plan(p_.concrete_domain_graph); }
     warn_fileio_blocking_with_shared_write();
     retain_checked_type_uses();
