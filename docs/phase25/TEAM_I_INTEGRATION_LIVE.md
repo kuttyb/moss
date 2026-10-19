@@ -1,5 +1,18 @@
 # Team I live integration record
 
+## H3 fail-closed checkpoint — 2026-10-19
+
+L4 pushed staged branch `466eb7a`. A one-provider, source-removed Int/String
+two-consumer reduction ran via the old generic text IR, but all three typed
+summaries were `missing_typed_facts` and the interface had no private semantic
+dependency/provenance records. Staged v10 now rejects the unsupported
+multi-statement helper chain with `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE`
+before interface/link; default v9 still executes both consumers. Focused
+compiler/typed API/Team A/G2 11/11/key 30/30 checks pass. Cross-crate
+Scenario 6 is now intentionally red (10/11 staged scenarios); H3 remains
+open for genuine checked IR and exact dependency records. L4 continues that
+work; no target or main release claim.
+
 ## H2 draft intake — 2026-10-19
 
 L4 pushed target-based H2 branch `phase25-i-h2-intake` at `9d7d354`, direct

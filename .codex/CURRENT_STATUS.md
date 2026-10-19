@@ -1,5 +1,23 @@
 # Moss current status
 
+## Phase 25 H3 fail-closed checkpoint — 2026-10-19
+
+Sole L4 pushed `phase25-i-map-staging` at `466eb7a64d3e750dcc906e2a53e371aa99cec04a`.
+A real one-provider, source-removed, independent Int/String two-consumer
+reduction previously ran (`99`, `hello`) under staged v10, but inspection
+showed `missing_typed_facts` for all three generic/private callables and the
+interface had zero private semantic dependencies and provenance records.
+That was a legacy text-IR fallback, not H3 acceptance. Staged v10 now rejects
+the unsupported exported/private multi-statement chain before interface/link
+with structured `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE` at Service.fresh.
+Default-v9 two-consumer execution still works. Compiler build, typed API,
+Team A, G2 11/11, default and staged key fixtures 30/30, and feedback pass.
+The staged cross-crate harness is now 10 PASS / Scenario 6 FAIL by design;
+H3 remains open until complete typed result flow, versioned checked body IR,
+canonical private dependency hashes/provenance and two-consumer execution are
+proved together. L4 continues that implementation with exclusive compiler
+ownership. No production cutover or full release acceptance.
+
 ## Phase 25 H2 draft intake — 2026-10-19
 
 Sole L4 prepared fresh target-based `phase25-i-h2-intake` at
