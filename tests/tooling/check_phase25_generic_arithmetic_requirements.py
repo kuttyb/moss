@@ -29,19 +29,26 @@ with tempfile.TemporaryDirectory(prefix="phase25-generic-arithmetic-",
 
 fn main():
   echo compute(5)
+  echo compute(2.5)
 """)
     run = subprocess.run([str(MOSS), "run", "--interp", str(source)],
                          text=True, capture_output=True)
     assert run.returncode == 0, (run.stdout, run.stderr)
-    assert run.stdout == "30\n", run.stdout
+    assert run.stdout == "30\n25.0\n", run.stdout
     inspected = subprocess.run([str(MOSS), "inspect", "fn:compute",
         "--source", str(source), "--json"], text=True, capture_output=True)
     assert inspected.returncode == 0, (inspected.stdout, inspected.stderr)
     projection = json.loads(inspected.stdout)["result"]["typed_semantic_v1"]
-    compute_gap = [entry for entry in projection["unavailable_open_summaries"]
-                   if entry["callable_id"].endswith(":fn:compute")]
-    assert len(compute_gap) == 1, projection
-    assert compute_gap[0]["gap"] == "missing_typed_facts", compute_gap
+    assert projection["open_summaries_complete"], projection
+    assert not projection["unavailable_open_summaries"], projection
+    summaries = [entry for entry in projection["open_summaries"]
+                 if entry["callable_id"].endswith(":fn:compute")]
+    assert len(summaries) == 1, projection
+    assert summaries[0]["parameter_types"] == [
+        {"kind": "bound_var", "ordinal": 0}], summaries[0]
+    assert summaries[0]["result_type"] == {
+        "kind": "bound_var", "ordinal": 0}, summaries[0]
+    assert summaries[0]["requirement_count"] == 2, summaries[0]
 
     nonnumeric = Path(scratch) / "nonnumeric.moss"
     nonnumeric.write_text("""fn compute(x):
@@ -55,4 +62,5 @@ fn main():
     assert rejected.returncode != 0, (rejected.stdout, rejected.stderr)
     diagnostic = json.loads(rejected.stdout)
     assert not diagnostic.get("ok", True), diagnostic
-    print("PASS source-backed compute(5) returns 30; nonnumeric specialization remains rejected")
+    print("PASS complete open summary preserves T with two requirements; "
+          "Int/Float source-backed executions and nonnumeric rejection agree")

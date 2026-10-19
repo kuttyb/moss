@@ -8368,3 +8368,32 @@ Focused decoder, H3 Scenario 6, source-backed ABI-v9 checks, and
 - Added an internal Checker test plus a focused Python runner. It verifies the incomplete summary and empty requirements for a non-arithmetic generic identity function.
 - Focused tests pass: `python3 tests/tooling/check_phase25_generic_arithmetic_requirements.py ./moss` verifies ordered typed facts, source-backed output `30`, `missing_typed_facts` remains public, and a string specialization is rejected.
 - `make moss-dev`, `python3 tests/tooling/check_agent_feedback.py`, and `git diff --check` pass. The focused test runner passes against the rebuilt `-O0` compiler.
+
+## Phase 25-C2b.3 — Open Arithmetic Result Type
+
+Working on `phase25-integration` from `5baf54982787d8f6f689c02033b8ecf754598d2d`.
+The open arithmetic summary builder now assigns the checked expression's exact
+open `TypeRef` as its result only after validating that every captured arithmetic
+operation has a typed, linked `Requirement`. The focused checker test covers the
+complete `compute(x) -> T` summary and keeps an arithmetic expression with no
+captured operator facts incomplete. The public projection and Int/Float source-
+backed runs pass; `compute("bad")` remains rejected.
+
+Validation completed on the current edits:
+- `make moss-dev` passed (with existing `TypeSolver::Undo::binding` initializer
+  warnings).
+- `python3 tests/tooling/check_phase25_generic_arithmetic_requirements.py ./moss`
+  passed.
+- `python3 tests/tooling/check_phase25_h3_arithmetic_decode.py ./moss` passed.
+- H3 source-free private-chain focused test passed using a temporary `g++`
+  wrapper to downgrade the existing missing-field-initializer warnings.
+- `check_phase25_checked_body_ir.py` and the unwrapped H3 chain script fail at
+  compilation because `-Werror` promotes those same existing warnings in
+  `src/type_ir.hpp:1072,1118`; no type solver changes are in this task.
+
+Final focused rerun after the last rebuild passed the arithmetic checker test,
+the H3 arithmetic decoder test, H3 private-chain source-free validation, agent
+feedback validation, and `git diff --check`. The H3 chain test required a
+temporary compiler wrapper to downgrade only the existing initializer warnings
+because its script promotes them to errors. No broad suite or source-free claim
+for the new generic arithmetic body has been made.

@@ -4375,10 +4375,53 @@ class Checker {
         };
         auto arithmetic_result = retain(*single_result_expression);
         if (arithmetic_result && arithmetic_result->requirement_id &&
-            !captured_arithmetic_requirements.empty())
+            !captured_arithmetic_requirements.empty()) {
+          // The checked expression walker above derives an open result only
+          // alongside a typed Requirement for every generic arithmetic node.
+          // Validate that retained chain before using its result as the
+          // callable's open result type. This keeps the TypeRef authoritative
+          // and prevents an unsupported or partially captured expression
+          // from completing the summary.
+          bool requirements_complete =
+              captured_arithmetic_requirements.back().id ==
+                  *arithmetic_result->requirement_id;
+          std::set<string> prior_requirement_ids;
+          for (size_t index = 0;
+               requirements_complete &&
+                   index < captured_arithmetic_requirements.size(); ++index) {
+            const auto& requirement = captured_arithmetic_requirements[index];
+            requirements_complete =
+                requirement.kind == moss::RequirementKind::Operator &&
+                !requirement.target_id.empty() && requirement.subject &&
+                requirement.subject->structurally_equal(
+                    *arithmetic_result->type) &&
+                requirement.arguments.size() == 1 &&
+                requirement.arguments.front() &&
+                requirement.arguments.front()->structurally_equal(
+                    *moss::Type::primitive("int")) &&
+                requirement.result &&
+                (*requirement.result)->structurally_equal(
+                    *arithmetic_result->type) &&
+                !requirement.id.empty() &&
+                !prior_requirement_ids.count(requirement.id);
+            if (index == 0) {
+              requirements_complete = requirements_complete &&
+                  !requirement.parent_requirement_id;
+            } else {
+              requirements_complete = requirements_complete &&
+                  requirement.parent_requirement_id &&
+                  prior_requirement_ids.count(
+                      *requirement.parent_requirement_id) == 1;
+            }
+            prior_requirement_ids.insert(requirement.id);
+          }
+          if (requirements_complete)
+            summary.result_type =
+                *captured_arithmetic_requirements.back().result;
           summary.requirements.insert(summary.requirements.end(),
               std::make_move_iterator(captured_arithmetic_requirements.begin()),
               std::make_move_iterator(captured_arithmetic_requirements.end()));
+        }
       }
       for (size_t ordinal = 0; ordinal < function.constraints.size(); ++ordinal) {
         const auto& constraint = function.constraints[ordinal];

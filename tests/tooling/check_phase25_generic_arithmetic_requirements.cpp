@@ -40,11 +40,12 @@ fn main():
   const Function& compute = find_function(program, "compute");
   assert(compute.open_summary);
   const auto& summary = *compute.open_summary;
-  assert(!summary.complete);
+  assert(summary.complete);
   assert(summary.parameter_types.size() == 1);
   const TypeRef generic = summary.parameter_types.front();
   assert(generic && generic->kind == TypeKind::InferenceVar);
   assert(generic->var_id.session_id == 0 && generic->var_id.owner_id == 0);
+  assert(summary.result_type == generic);
   if (summary.requirements.size() != 2) {
     std::cerr << "result=" << compute.return_type.value_or("<none>")
               << " body=" << compute.body.size()
@@ -81,6 +82,15 @@ fn main():
   assert(identity.open_summary);
   assert(identity.open_summary->requirements.empty());
 
+  auto missing_facts = checked_program(R"moss(export fn compute(x):
+  return x + 1.5
+)moss");
+  const Function& unsupported = find_function(missing_facts, "compute");
+  assert(unsupported.open_summary);
+  assert(!unsupported.open_summary->complete);
+  assert(!unsupported.open_summary->result_type);
+  assert(unsupported.open_summary->requirements.empty());
+
   std::cout << "PASS checker retained ordered typed operator requirements for * and +; "
-               "summary remains incomplete and identity has no requirements\n";
+               "summary result preserves T; missing arithmetic facts stay incomplete\n";
 }
