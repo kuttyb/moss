@@ -426,6 +426,33 @@ int main() {
 
   const auto sealed_full = decode(encode(full_iface));
   validate_complete_interface(sealed_full, instance.provider_binary_id);
+  // A method dependency on an ordinary callable binds the exact checked
+  // callable summary hash, just like an open function summary dependency.
+  MethodTemplate method_with_dependency = method;
+  method_with_dependency.dependencies.push_back({
+      summary.callable_id, summary.body_semantic_hash});
+  Interface iface_method_dependency = full_iface;
+  for (auto& record : iface_method_dependency.semantic_contract)
+    if (record.id == method_rec.id)
+      record = method_template_record(method_with_dependency);
+  const auto matched_method_record =
+      method_template_record(method_with_dependency);
+  sort_records(iface_method_dependency.semantic_contract);
+  validate_complete_interface(decode(encode(iface_method_dependency)),
+                              instance.provider_binary_id);
+  method_with_dependency.dependencies[0].second =
+      "body-semantic-v1:sha256:" + std::string(64, 'f');
+  for (auto& record : iface_method_dependency.semantic_contract)
+    if (record.id == matched_method_record.id)
+      record = method_template_record(method_with_dependency);
+  sort_records(iface_method_dependency.semantic_contract);
+  try {
+    validate_complete_interface(decode(encode(iface_method_dependency)),
+                                instance.provider_binary_id);
+    assert(false && "mismatched method dependency hash accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_CONTRACT_INVALID");
+  }
   Interface forged_instance_iface = full_iface;
   for (auto& record : forged_instance_iface.binary_contract)
     if (record.id == instance_wire.id)

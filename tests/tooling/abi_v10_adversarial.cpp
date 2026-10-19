@@ -289,6 +289,22 @@ int main() {
       summary_record(private_helper)};
   validate_complete_interface(decode(encode(iface_with_helper)));
 
+  Interface malformed_public = iface_with_helper;
+  malformed_public.semantic_contract.front().payload.resize(10);
+  expect_error([&] {
+    validate_complete_interface(decode(encode(malformed_public)));
+  }, "SOURCE_FREE_CONTRACT_INVALID");
+  Interface malformed_private = iface_with_helper;
+  malformed_private.private_semantic_dependencies.front().payload.resize(10);
+  expect_error([&] {
+    validate_complete_interface(decode(encode(malformed_private)));
+  }, "SOURCE_FREE_CONTRACT_INVALID");
+  Interface unknown_private_version = iface_with_helper;
+  unknown_private_version.private_semantic_dependencies.front().payload[0] = 2;
+  expect_error([&] {
+    validate_complete_interface(decode(encode(unknown_private_version)));
+  }, "SOURCE_FREE_CONTRACT_INVALID");
+
   Summary mismatched_helper = private_helper;
   mismatched_helper.body_semantic_hash =
       "body-semantic-v1:sha256:" + std::string(64, 'b');
@@ -297,6 +313,18 @@ int main() {
       summary_record(mismatched_helper)};
   expect_error([&] {
     validate_complete_interface(decode(encode(iface_bad_hash)));
+  }, "SOURCE_FREE_CONTRACT_INVALID");
+
+  Interface iface_duplicate_private = iface_with_helper;
+  iface_duplicate_private.private_semantic_dependencies.push_back(
+      summary_record(mismatched_helper));
+  std::sort(iface_duplicate_private.private_semantic_dependencies.begin(),
+            iface_duplicate_private.private_semantic_dependencies.end(),
+            [](const Record& left, const Record& right) {
+              return left.id < right.id;
+            });
+  expect_error([&] {
+    validate_complete_interface(decode(encode(iface_duplicate_private)));
   }, "SOURCE_FREE_CONTRACT_INVALID");
 
   Interface iface_unresolved_import = iface_with_helper;

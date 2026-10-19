@@ -1108,7 +1108,12 @@ inline void validate_complete_interface(
     // Versioned records use distinct identities: declaration IDs are nominal
     // strings, while concrete instance keys are SHA-256. Never swallow a
     // malformed versioned record and fall through to the legacy text section.
-    if (rec.payload.empty() || rec.payload[0] != 1) continue;
+    if (rec.payload.empty()) continue;
+    require(rec.payload[0] == 1 ||
+                static_cast<unsigned char>(rec.payload[0]) >= 32,
+            "SOURCE_FREE_CONTRACT_INVALID",
+            "Unknown ABI-v10 binary record version");
+    if (rec.payload[0] != 1) continue;
     if (nominal_template_id_valid(rec.id)) {
       const auto tmpl = read_template(rec.payload);
       validate_template(rec);
@@ -1129,55 +1134,61 @@ inline void validate_complete_interface(
   std::vector<MethodTemplate> public_methods;
   std::vector<Record> key_proof_records;
   for (const auto& rec : sealed.value.semantic_contract) {
-    if (!rec.payload.empty() && rec.payload[0] == 1) {
-      if (rec.payload.size() >= 2 && rec.payload.find("key-protocol-v1") != std::string::npos) {
-        validate_key_proof(rec);
-        key_proof_records.push_back(rec);
-        continue;
-      }
-      try {
-        const auto sum = read_summary(rec.payload);
-        validate_summary(rec);
-        public_summaries.push_back(sum);
-        continue;
-      } catch (const Error&) {}
-      try {
-        const auto m = read_method_template(rec.payload);
-        validate_method_template(rec);
-        public_methods.push_back(m);
-        continue;
-      } catch (const Error&) {}
-      try {
-        const auto tmpl = read_template(rec.payload);
-        validate_template(rec);
-        known_templates[tmpl.template_id] = tmpl;
-        continue;
-      } catch (const Error&) {}
+    if (rec.payload.empty()) continue;
+    require(rec.payload[0] == 1 ||
+                static_cast<unsigned char>(rec.payload[0]) >= 32,
+            "SOURCE_FREE_CONTRACT_INVALID",
+            "Unknown ABI-v10 semantic record version");
+    if (rec.payload[0] != 1) continue;
+    // The record ID selects the versioned schema. A failed decode is fatal;
+    // trying other schemas could hide a forged or truncated public contract.
+    if (nominal_template_id_valid(rec.id)) {
+      const auto tmpl = read_template(rec.payload);
+      validate_template(rec);
+      require(known_templates.emplace(tmpl.template_id, tmpl).second,
+              "SOURCE_FREE_CONTRACT_INVALID",
+              "Duplicate nominal template record ID");
+    } else if (is_key_proof_payload(rec.payload)) {
+      validate_key_proof(rec);
+      key_proof_records.push_back(rec);
+    } else if (hex_hash(rec.id)) {
+      const auto sum = read_summary(rec.payload);
+      validate_summary(rec);
+      public_summaries.push_back(sum);
+    } else {
+      const auto method = read_method_template(rec.payload);
+      validate_method_template(rec);
+      public_methods.push_back(method);
     }
   }
 
   std::map<std::string, Summary> private_summaries;
   std::map<std::string, MethodTemplate> private_methods;
   for (const auto& rec : sealed.value.private_semantic_dependencies) {
-    if (!rec.payload.empty() && rec.payload[0] == 1) {
-      try {
-        const auto sum = read_summary(rec.payload);
-        validate_summary(rec);
-        private_summaries[sum.callable_id] = sum;
-        continue;
-      } catch (const Error&) {}
-      try {
-        const auto m = read_method_template(rec.payload);
-        validate_method_template(rec);
-        private_methods[m.method_id] = m;
-        continue;
-      } catch (const Error&) {}
-      try {
-        const auto tmpl = read_template(rec.payload);
-        validate_template(rec);
-        known_templates[tmpl.template_id] = tmpl;
-        continue;
-      } catch (const Error&) {}
+    if (rec.payload.empty()) continue;
+    require(rec.payload[0] == 1 ||
+                static_cast<unsigned char>(rec.payload[0]) >= 32,
+            "SOURCE_FREE_CONTRACT_INVALID",
+            "Unknown ABI-v10 private dependency record version");
+    if (rec.payload[0] != 1) continue;
+    if (nominal_template_id_valid(rec.id)) {
+      const auto tmpl = read_template(rec.payload);
+      validate_template(rec);
+      require(known_templates.emplace(tmpl.template_id, tmpl).second,
+              "SOURCE_FREE_CONTRACT_INVALID",
+              "Duplicate nominal template record ID");
+    } else if (hex_hash(rec.id)) {
+      const auto sum = read_summary(rec.payload);
+      validate_summary(rec);
+      require(private_summaries.emplace(sum.callable_id, sum).second,
+              "SOURCE_FREE_CONTRACT_INVALID",
+              "Duplicate private callable summary ID");
+    } else {
+      const auto method = read_method_template(rec.payload);
+      validate_method_template(rec);
+      require(private_methods.emplace(method.method_id, method).second,
+              "SOURCE_FREE_CONTRACT_INVALID",
+              "Duplicate private method template ID");
     }
   }
 
