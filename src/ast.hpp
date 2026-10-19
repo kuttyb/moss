@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -126,6 +127,42 @@ struct OpenCallableSummaryFacts {
   RequirementOrigin origin;
   bool complete = false;
 };
+// Body analysis may allocate a provisional result variable before discovering
+// that the result aliases a parameter. Discard only unused trailing ordinals;
+// an interior hole is noncanonical and must not be silently renumbered.
+inline bool close_open_summary_ordinals(OpenCallableSummaryFacts& summary) {
+  vector<bool> used(summary.bound_variable_count, false);
+  bool valid = true;
+  auto visit = [&](const auto& self, const TypeRef& type) -> void {
+    if (!type) return;
+    if (type->kind == TypeKind::InferenceVar) {
+      const auto& id = type->var_id;
+      if (id.session_id || id.owner_id ||
+          id.ordinal >= summary.bound_variable_count) valid = false;
+      else used[id.ordinal] = true;
+    }
+    for (const auto& argument : type->type_args) self(self, argument);
+    for (const auto& field : type->field_substitutions)
+      self(self, field.second);
+  };
+  for (const auto& type : summary.parameter_types) visit(visit, type);
+  visit(visit, summary.result_type);
+  for (const auto& requirement : summary.requirements) {
+    visit(visit, requirement.subject);
+    for (const auto& argument : requirement.arguments) visit(visit, argument);
+    if (requirement.result) visit(visit, *requirement.result);
+  }
+  for (const auto& member : summary.member_requirements) {
+    visit(visit, member.receiver);
+    for (const auto& argument : member.argument_types) visit(visit, argument);
+    if (member.result) visit(visit, *member.result);
+  }
+  while (!used.empty() && !used.back()) used.pop_back();
+  if (!valid || std::find(used.begin(), used.end(), false) != used.end())
+    return false;
+  summary.bound_variable_count = static_cast<std::uint32_t>(used.size());
+  return true;
+}
 // A versioned, checked semantic body subset. Every published node has a
 // resolved operand identity and TypeRef. Other source forms have no body hash.
 struct CheckedBodyExprV1 {

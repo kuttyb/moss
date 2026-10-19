@@ -4081,7 +4081,8 @@ class Checker {
           member.result = summary.result_type;
         summary.member_requirements.push_back(std::move(member));
       }
-      summary.complete = complete && summary.result_type &&
+      const bool dense_ordinals = moss::close_open_summary_ordinals(summary);
+      summary.complete = complete && dense_ordinals && summary.result_type &&
           std::all_of(summary.parameter_types.begin(),
                       summary.parameter_types.end(),
                       [](const moss::TypeRef& type) { return type != nullptr; });
@@ -35644,6 +35645,7 @@ static string verified_abi_v10_interface_records(
         read_text_file(rlib, "SOURCE_FREE_PROVIDER_ARTIFACT_MISSING"),
         tooling_name(file.stem().string()), parsed.digest);
     abi_v10::verify_canonical(text, parsed);
+    abi_v10::validate_complete_interface(parsed);
   } catch (const abi_v10::Error& error) {
     throw CompileError(0, error.what(), error.code);
   }
@@ -35658,18 +35660,12 @@ static string verified_abi_v10_interface_records(
   for (const auto& import : parsed.value.imports)
     records += "  " + import.module_id.substr(import.module_id.rfind("::") + 2) + "\n";
   records += "contract\n";
-  for (const auto& record : parsed.value.binary_contract) records += record.payload;
+  for (const auto& record : parsed.value.binary_contract)
+    if (record.payload.empty() || record.payload.front() != 1)
+      records += record.payload;
   records += "semantic_exports\n";
   for (const auto& record : parsed.value.semantic_contract) {
-    if (!record.payload.empty() &&
-        static_cast<unsigned char>(record.payload.front()) == 1) {
-      try {
-        abi_v10::validate_key_proof(record);
-      } catch (const abi_v10::Error& error) {
-        throw CompileError(0, error.what(), error.code);
-      }
-      continue;
-    }
+    if (!record.payload.empty() && record.payload.front() == 1) continue;
     records += record.payload;
   }
   if (sealed) *sealed = parsed;
@@ -35764,8 +35760,7 @@ static ParsedModuleUnit load_module_interface(
     unit.semantic_contract_hash = sealed.semantic_hash;
     unit.required_imports = sealed.value.imports;
     for (const auto& record : sealed.value.semantic_contract)
-      if (!record.payload.empty() &&
-          static_cast<unsigned char>(record.payload.front()) == 1)
+      if (abi_v10::is_key_proof_payload(record.payload))
         unit.key_proof_records.push_back(record);
   }
   unit.explicit_module = true;
@@ -38375,6 +38370,226 @@ static vector<abi_v10::Record> abi_v10_declaration_records(const string& section
   return records;
 }
 
+static std::optional<abi_v10::WireType> abi_v10_checked_type(
+    const moss::TypeRef& type, std::uint32_t variable_count,
+    unsigned depth = 0) {
+  if (!type || depth >= 64) return std::nullopt;
+  abi_v10::WireType wire;
+  switch (type->kind) {
+    case moss::TypeKind::Primitive:
+      wire.kind = abi_v10::WireTypeKind::Primitive;
+      wire.identity = type->name;
+      break;
+    case moss::TypeKind::Builtin:
+      wire.kind = abi_v10::WireTypeKind::Builtin;
+      wire.identity = type->name;
+      for (const auto& argument : type->type_args) {
+        auto nested = abi_v10_checked_type(argument, variable_count, depth + 1);
+        if (!nested) return std::nullopt;
+        wire.arguments.push_back(*nested);
+      }
+      break;
+    case moss::TypeKind::NominalInstance:
+      if (!type->declaration ||
+          type->declaration->kind != moss::DeclarationKind::Record)
+        return std::nullopt;
+      wire.kind = abi_v10::WireTypeKind::Nominal;
+      wire.identity = type->declaration->id;
+      for (const auto& slot : type->declaration->fields) {
+        if (!slot.inferred) continue;
+        auto binding = std::find_if(type->field_substitutions.begin(),
+                                    type->field_substitutions.end(),
+            [&](const auto& field) { return field.first == slot.name; });
+        if (binding == type->field_substitutions.end()) return std::nullopt;
+        auto nested = abi_v10_checked_type(binding->second, variable_count,
+                                           depth + 1);
+        if (!nested) return std::nullopt;
+        wire.arguments.push_back(*nested);
+      }
+      if (wire.arguments.size() != type->field_substitutions.size())
+        return std::nullopt;
+      break;
+    case moss::TypeKind::Enum:
+    case moss::TypeKind::Domain:
+      if (!type->declaration) return std::nullopt;
+      wire.kind = type->kind == moss::TypeKind::Enum
+          ? abi_v10::WireTypeKind::Enum : abi_v10::WireTypeKind::Domain;
+      wire.identity = type->declaration->id;
+      break;
+    case moss::TypeKind::InferenceVar:
+      if (type->var_id.session_id || type->var_id.owner_id ||
+          type->var_id.ordinal >= variable_count) return std::nullopt;
+      wire.kind = abi_v10::WireTypeKind::BoundVar;
+      wire.ordinal = type->var_id.ordinal;
+      break;
+    case moss::TypeKind::Unit:
+      wire.kind = abi_v10::WireTypeKind::Unit;
+      break;
+    case moss::TypeKind::TraitConstraint:
+      return std::nullopt;
+  }
+  try {
+    (void)abi_v10::type_bytes(wire, variable_count);
+  } catch (const abi_v10::Error&) {
+    return std::nullopt;
+  }
+  return wire;
+}
+
+static abi_v10::Access abi_v10_checked_access(moss::AccessMode access) {
+  switch (access) {
+    case moss::AccessMode::Read: return abi_v10::Access::Read;
+    case moss::AccessMode::Write: return abi_v10::Access::Write;
+    case moss::AccessMode::Consume: return abi_v10::Access::Consume;
+  }
+  throw abi_v10::Error("SOURCE_FREE_SUMMARY_INVALID",
+                      "ABI-v10 checked parameter access is unknown");
+}
+
+static bool abi_v10_effects_pure(const ObservableEffects& effects) {
+  return !effects.local_capture_read && !effects.local_mutation &&
+      !effects.domain_read && !effects.domain_write && !effects.message &&
+      !effects.external_io && !effects.fileio && !effects.fileio_unknown &&
+      !effects.may_panic && effects.raise_set.empty() &&
+      !effects.may_diverge && !effects.unresolved;
+}
+
+static abi_v10::SourceProvenance abi_v10_checked_provenance(
+    const string& module_id, const string& declaration_id,
+    const string& source_file, int line) {
+  const string display = std::filesystem::path(source_file).filename().string();
+  abi_v10::SourceProvenance provenance;
+  provenance.module_id = module_id;
+  provenance.declaration_id = declaration_id;
+  provenance.source_file_display = display;
+  provenance.logical_source_id = abi_v10::hash(
+      "moss-abi-v10-logical-source", module_id + "\n" + display);
+  provenance.start_line = static_cast<std::uint32_t>(std::max(line, 1));
+  provenance.end_line = provenance.start_line;
+  provenance.start_column = 1;
+  provenance.end_column = 1;
+  provenance.provenance_id = abi_v10::hash(
+      "moss-abi-v10-provenance",
+      declaration_id + "\n" + provenance.logical_source_id + "\n" +
+          std::to_string(provenance.start_line));
+  return provenance;
+}
+
+// First live producer of the rich ABI-v10 subset: a checked two-statement
+// exported constructor with no callable dependency. The private-chain form
+// remains guarded until source-free import can decode its body records.
+static void append_abi_v10_direct_checked_records(
+    abi_v10::Interface& value, const Program& program,
+    const string& module) {
+  std::set<string> emitted_templates;
+  for (const auto& function : program.functions) {
+    if (!function.exported || !function.static_dispatch ||
+        !belongs_to_module(function.name, module) ||
+        std::filesystem::path(function.source_file).extension() == ".mossi" ||
+        !function.open_summary || !function.open_summary->complete ||
+        !function.open_summary->requirements.empty() ||
+        !function.open_summary->member_requirements.empty() ||
+        !abi_v10_effects_pure(function.open_summary->observable_effects))
+      continue;
+    auto checked = checked_private_chain_body(program, function);
+    if (!checked || checked->dependencies.size() != 1 ||
+        checked->dependencies.front().kind !=
+            SemanticDependency::Kind::NominalType)
+      continue;
+    const auto& summary_facts = *function.open_summary;
+    const string& template_id = checked->dependencies.front().target_id;
+    auto object = std::find_if(program.objects.begin(), program.objects.end(),
+        [&](const ObjectType& candidate) {
+      if (!candidate.exported ||
+          !belongs_to_module(candidate.name, module) ||
+          !program.type_context) return false;
+      auto candidate_declaration = program.type_context->find(candidate.name);
+      return candidate_declaration &&
+          candidate_declaration->id == template_id;
+    });
+    if (object == program.objects.end() || !object->methods.empty() ||
+        !program.type_context) continue;
+    auto declaration = program.type_context->find(object->name);
+    if (!declaration || declaration->id != template_id ||
+        declaration->fields.size() != object->fields.size()) continue;
+    const auto object_provenance = abi_v10_checked_provenance(
+        value.module_id, template_id, object->source_file, object->line);
+    abi_v10::NominalTemplate tmpl;
+    tmpl.template_id = template_id;
+    tmpl.module_id = value.module_id;
+    tmpl.declaration_name = declaration->declaration_name;
+    tmpl.provenance_id = object_provenance.provenance_id;
+    for (std::size_t index = 0; index < declaration->fields.size(); ++index) {
+      const auto& slot = declaration->fields[index];
+      if (!slot.inferred || slot.name != object->fields[index].name) {
+        tmpl.fields.clear();
+        break;
+      }
+      abi_v10::WireType bound;
+      bound.kind = abi_v10::WireTypeKind::BoundVar;
+      bound.ordinal = tmpl.variable_count++;
+      tmpl.fields.push_back({slot.name, bound, true,
+                             object_provenance.provenance_id});
+    }
+    if (tmpl.fields.size() != declaration->fields.size()) continue;
+    abi_v10::WireWriter representation;
+    representation.string(tmpl.template_id);
+    representation.number(tmpl.variable_count);
+    for (const auto& field : tmpl.fields) {
+      representation.string(field.name);
+      representation.byte(field.exported ? 1 : 0);
+      representation.string(abi_v10::type_bytes(field.type,
+                                                 tmpl.variable_count));
+    }
+    tmpl.representation_hash = abi_v10::hash(
+        "moss-abi-v10-nominal-representation", representation.finish());
+
+    abi_v10::Summary summary;
+    summary.callable_id = function.semantic_callable_id;
+    summary.variable_count = summary_facts.bound_variable_count;
+    if (summary_facts.parameter_types.size() != function.params.size() ||
+        summary_facts.parameter_access.size() != function.params.size())
+      continue;
+    bool valid_types = true;
+    for (std::size_t index = 0; index < function.params.size(); ++index) {
+      auto parameter = abi_v10_checked_type(
+          summary_facts.parameter_types[index], summary.variable_count);
+      if (!parameter) { valid_types = false; break; }
+      summary.parameters.push_back(*parameter);
+      summary.parameter_access.push_back(abi_v10_checked_access(
+          summary_facts.parameter_access[index]));
+    }
+    auto result = abi_v10_checked_type(summary_facts.result_type,
+                                       summary.variable_count);
+    if (!valid_types || !result) continue;
+    summary.result = *result;
+    summary.body_semantic_hash = checked->semantic_hash;
+    const auto function_provenance = abi_v10_checked_provenance(
+        value.module_id, summary.callable_id,
+        function.source_file, function.line);
+    summary.provenance_id = function_provenance.provenance_id;
+
+    abi_v10::CheckedBodyRecord body;
+    body.callable_id = summary.callable_id;
+    body.semantic_hash = checked->semantic_hash;
+    body.checked_ir_bytes = checked_ir::encode_checked_body_v1(
+        checked->statements);
+    body.dependencies.push_back({
+        abi_v10::CheckedBodyRecord::Dependency::Kind::NominalType,
+        template_id, tmpl.representation_hash});
+    if (emitted_templates.insert(template_id).second) {
+      value.binary_contract.push_back(abi_v10::template_record(tmpl));
+      value.provenance.push_back(
+          abi_v10::provenance_record(object_provenance));
+    }
+    value.semantic_contract.push_back(abi_v10::summary_record(summary));
+    value.private_semantic_dependencies.push_back(
+        abi_v10::checked_body_record(body));
+    value.provenance.push_back(
+        abi_v10::provenance_record(function_provenance));
+  }
+}
+
 static string abi_v10_module_id(const ProjectManifest& manifest,
                                 const string& module) {
   return "module-v1:" + manifest.name + "@" + manifest.version + "::" + module;
@@ -38889,8 +39104,7 @@ static vector<std::filesystem::path> write_module_interfaces(
       value.imports.push_back({provider.value.module_id, provider.binary_hash,
                                provider.semantic_hash});
       for (const auto& record : provider.value.semantic_contract)
-        if (!record.payload.empty() &&
-            static_cast<unsigned char>(record.payload.front()) == 1)
+        if (abi_v10::is_key_proof_payload(record.payload))
           proofs.push_back(record);
     }
     std::sort(value.imports.begin(), value.imports.end(),
@@ -38908,6 +39122,7 @@ static vector<std::filesystem::path> write_module_interfaces(
     value.binary_contract =
         abi_v10_declaration_records(binary_contract.str());
     value.semantic_contract = abi_v10_declaration_records(contents[module].str());
+    append_abi_v10_direct_checked_records(value, program, module);
     std::map<string, abi_v10::Record> unique_proofs;
     for (const auto& proof : proofs) unique_proofs.emplace(proof.id, proof);
     proofs.clear();
@@ -38917,8 +39132,20 @@ static vector<std::filesystem::path> write_module_interfaces(
       abi_v10::validate_key_proof_coherence(proofs);
       value.semantic_contract.insert(value.semantic_contract.end(),
                                      proofs.begin(), proofs.end());
+      const auto sort_records = [](vector<abi_v10::Record>& records) {
+        std::sort(records.begin(), records.end(),
+                  [](const auto& left, const auto& right) {
+                    return left.id < right.id;
+                  });
+      };
+      sort_records(value.binary_contract);
+      sort_records(value.semantic_contract);
+      sort_records(value.private_semantic_dependencies);
+      sort_records(value.provenance);
       text = abi_v10::encode(value);
       auto sealed = abi_v10::decode(text);
+      if (!value.private_semantic_dependencies.empty())
+        abi_v10::validate_complete_interface(sealed);
       sealed_v10[module] = {value.module_id, sealed.binary_hash,
                             sealed.semantic_hash};
       proofs_by_module[module] = std::move(proofs);

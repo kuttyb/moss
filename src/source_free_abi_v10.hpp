@@ -162,7 +162,7 @@ inline std::string frame_records(const std::vector<Record>& records,
   std::string previous;
   for (const auto& record : records) {
     require(!record.id.empty() && record.id.find('\n') == std::string::npos &&
-                valid_utf8(record.id) && valid_utf8(record.payload) &&
+                valid_utf8(record.id) &&
                 record.payload.size() <= 1 << 20 &&
                 (previous.empty() || previous < record.id),
             "SOURCE_FREE_CONTRACT_INVALID",

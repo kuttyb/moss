@@ -6,6 +6,7 @@
 
 #include "source_free_abi_v10.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <set>
@@ -231,6 +232,20 @@ struct Summary {
   std::string provenance_id;
 };
 
+inline bool summary_ordinals_dense(const Summary& summary) {
+  std::vector<bool> used(summary.variable_count, false);
+  auto visit = [&](const auto& self, const WireType& type) -> void {
+    if (type.kind == WireTypeKind::BoundVar &&
+        type.ordinal < summary.variable_count) used[type.ordinal] = true;
+    for (const auto& argument : type.arguments) self(self, argument);
+  };
+  for (const auto& type : summary.parameters) visit(visit, type);
+  visit(visit, summary.result);
+  for (const auto& requirement : summary.requirements)
+    visit(visit, requirement.receiver);
+  return std::find(used.begin(), used.end(), false) == used.end();
+}
+
 inline std::string summary_payload(const Summary& summary) {
   require(!summary.callable_id.empty() && summary.variable_count <= 4096 &&
               summary.parameters.size() <= 256 &&
@@ -238,7 +253,8 @@ inline std::string summary_payload(const Summary& summary) {
               summary.requirements.size() <= 4096 &&
               summary.dependencies.size() <= 4096 &&
               checked_body_hash_valid(summary.body_semantic_hash) &&
-              !summary.provenance_id.empty(),
+              !summary.provenance_id.empty() &&
+              summary_ordinals_dense(summary),
           "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 summary shape is invalid");
   WireWriter writer;
   writer.byte(1);  // OpenCallableSummary record version.

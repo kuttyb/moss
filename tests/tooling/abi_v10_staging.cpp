@@ -57,6 +57,19 @@ int main() {
   assert(decoded.value.semantic_contract[0].payload == "bound-var 0\n");
   assert(decoded.binary_hash != decoded.semantic_hash);
   assert(moss::abi_v10::encode(decoded.value) == sealed);
+  // Versioned record payloads are byte-framed binary. A 200-byte string
+  // yields a non-UTF-8 length byte (0xc8) while its logical text stays UTF-8.
+  moss::abi_v10::WireWriter binary_writer;
+  binary_writer.byte(1);
+  binary_writer.string(std::string(200, 'x'));
+  Interface binary_payload_iface = value;
+  binary_payload_iface.private_semantic_dependencies.insert(
+      binary_payload_iface.private_semantic_dependencies.begin(),
+      {"binary:long", binary_writer.finish()});
+  const auto sealed_binary_payload =
+      moss::abi_v10::decode(moss::abi_v10::encode(binary_payload_iface));
+  assert(sealed_binary_payload.value.private_semantic_dependencies.front().payload ==
+         binary_payload_iface.private_semantic_dependencies.front().payload);
 
   auto changed = sealed;
   replace_once(changed, "bound-var 0", "bound-var 1");
@@ -81,10 +94,17 @@ int main() {
     assert(error.code == "SOURCE_FREE_CONTRACT_INVALID");
   }
   value.binary_contract.pop_back();
-  value.semantic_contract[0].payload = std::string("\xc0\xaf", 2);
+  value.semantic_contract[0].id = std::string("\xc0\xaf", 2);
   try {
     (void)moss::abi_v10::encode(value);
-    assert(false && "invalid UTF-8 accepted");
+    assert(false && "invalid UTF-8 record ID accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_CONTRACT_INVALID");
+  }
+  try {
+    moss::abi_v10::WireWriter writer;
+    writer.string(std::string("\xc0\xaf", 2));
+    assert(false && "invalid UTF-8 logical string accepted");
   } catch (const Error& error) {
     assert(error.code == "SOURCE_FREE_CONTRACT_INVALID");
   }
@@ -209,6 +229,26 @@ int main() {
   } catch (const Error& error) {
     assert(error.code == "SOURCE_FREE_SUMMARY_INVALID");
   }
+  // Declaring an unused trailing variable or an interior ordinal hole is
+  // noncanonical even when every mentioned ordinal is within range.
+  summary.variable_count = 2;
+  try {
+    (void)summary_record(summary);
+    assert(false && "trailing summary ordinal accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_SUMMARY_INVALID");
+  }
+  summary.variable_count = 3;
+  summary.requirements.push_back({WireType{WireTypeKind::BoundVar, "", {}, 2},
+                                   "describe", Access::Read, 0, "boxes:fn:4"});
+  try {
+    (void)summary_record(summary);
+    assert(false && "interior summary ordinal hole accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_SUMMARY_INVALID");
+  }
+  summary.requirements.pop_back();
+  summary.variable_count = 1;
   summary.requirements[0].parent = 1;
   try {
     (void)summary_payload(summary);
