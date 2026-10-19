@@ -36,35 +36,8 @@ int main(int argc, char** argv) {
   const auto old_digest = sealed.digest;
   const std::string callable_id =
       "callable-v1:" + sealed.value.module_id + ":fn:compute";
-  std::size_t changed = 0;
 
-  if (mode == "strip-legacy") {
-    for (auto& record : sealed.value.semantic_contract) {
-      if (record.payload.empty() || record.payload.front() == 1 ||
-          (moss::abi_v10::hex_hash(record.id) &&
-           static_cast<unsigned char>(record.payload.front()) == 2) ||
-          moss::abi_v10::is_key_proof_payload(record.payload))
-        continue;
-      std::istringstream lines(record.payload);
-      std::string line, replacement;
-      std::string current_callable;
-      while (std::getline(lines, line)) {
-        if (line.rfind("export fn ", 0) == 0) {
-          current_callable = line.substr(10);
-          const auto end = current_callable.find_first_of(" (\t");
-          if (end != std::string::npos) current_callable.resize(end);
-        }
-        if (current_callable == "compute" &&
-            line.find("generic_stmt ") != std::string::npos) {
-          ++changed;
-          continue;
-        }
-        replacement += line + "\n";
-      }
-      record.payload = std::move(replacement);
-    }
-    assert(changed == 1);
-  } else if (mode == "unsupported-body") {
+  if (mode == "unsupported-body") {
     moss::abi_v10::Summary summary;
     bool found_summary = false;
     for (auto& record : sealed.value.semantic_contract) {
@@ -125,7 +98,32 @@ int main(int argc, char** argv) {
         replaced_body = true;
       }
     assert(replaced_summary && replaced_body);
-    changed = 1;
+  } else if (mode == "drop-body-alternative-legacy") {
+    auto& records = sealed.value.private_semantic_dependencies;
+    const auto before = records.size();
+    records.erase(std::remove_if(records.begin(), records.end(),
+        [&](const moss::abi_v10::Record& record) {
+      return record.id == "checked-body-v1:" + callable_id;
+    }), records.end());
+    assert(before == records.size() + 1);
+    const std::string alternative =
+        "  generic_stmt 15 2 0 \"return x * 2 + 21\" "
+        "\"x * 2 + 21\" \"\" \"\" 0";
+    bool injected = false;
+    for (auto& record : sealed.value.semantic_contract) {
+      if (record.payload.rfind("export fn compute ", 0) != 0) continue;
+      std::istringstream lines(record.payload);
+      std::string line, replacement;
+      while (std::getline(lines, line)) {
+        if (line == "  generic_ir_end") {
+          replacement += alternative + "\n";
+          injected = true;
+        }
+        replacement += line + "\n";
+      }
+      record.payload = std::move(replacement);
+    }
+    assert(injected);
   } else {
     assert(false && "unknown mutation mode");
   }

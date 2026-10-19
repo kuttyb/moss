@@ -40608,6 +40608,130 @@ static vector<std::filesystem::path> write_module_interfaces(
     append_abi_v10_direct_checked_records(value, program, module);
     append_abi_v10_arithmetic_records(value, program, module);
     append_abi_v10_private_chain_records(value, program, module);
+    // Drop legacy executable statements only when this interface contains a
+    // matching emitted v2 arithmetic summary and checked-body record. This
+    // intentionally keys off the sealed records, not producer eligibility.
+    std::set<string> emitted_checked_arithmetic;
+    if (program.type_context) {
+      for (const auto& summary_record : value.semantic_contract) {
+        if (!abi_v10::hex_hash(summary_record.id) ||
+            summary_record.payload.empty() ||
+            static_cast<unsigned char>(summary_record.payload.front()) != 2)
+          continue;
+        const auto summary = abi_v10::read_summary(summary_record.payload);
+        if (summary.variable_count != 1 || summary.parameters.size() != 1 ||
+            summary.parameters.front().kind !=
+                abi_v10::WireTypeKind::BoundVar ||
+            summary.parameters.front().ordinal != 0 ||
+            summary.result.kind != abi_v10::WireTypeKind::BoundVar ||
+            summary.result.ordinal != 0 || summary.requirements.size() != 2 ||
+            summary.requirements[0].operation != "operator:*" ||
+            summary.requirements[0].parent != 0 ||
+            summary.requirements[1].operation != "operator:+" ||
+            summary.requirements[1].parent != 1)
+          continue;
+        const auto& multiply = summary.requirements[0];
+        const auto& add = summary.requirements[1];
+        auto same_bound = [](const abi_v10::WireType& type) {
+          return type.kind == abi_v10::WireTypeKind::BoundVar &&
+              type.ordinal == 0;
+        };
+        auto typed_arithmetic_requirement = [&](const auto& requirement) {
+          return same_bound(requirement.receiver) &&
+              requirement.arguments.size() == 1 &&
+              requirement.arguments.front().kind ==
+                  abi_v10::WireTypeKind::Primitive &&
+              requirement.arguments.front().identity == "int" &&
+              requirement.result && same_bound(*requirement.result) &&
+              requirement.access == abi_v10::Access::Read &&
+              requirement.argument_access ==
+                  vector<abi_v10::Access>{abi_v10::Access::Read};
+        };
+        if (!typed_arithmetic_requirement(multiply) ||
+            !typed_arithmetic_requirement(add))
+          continue;
+
+        const string body_id = "checked-body-v1:" + summary.callable_id;
+        const abi_v10::Record* body_record = nullptr;
+        std::size_t matching_body_count = 0;
+        for (const auto& candidate : value.private_semantic_dependencies)
+          if (candidate.id == body_id) {
+            body_record = &candidate;
+            ++matching_body_count;
+          }
+        if (matching_body_count != 1 || !body_record) continue;
+        const auto body = abi_v10::read_checked_body_record(
+            body_record->payload);
+        if (body.callable_id != summary.callable_id ||
+            body.semantic_hash != summary.body_semantic_hash)
+          continue;
+
+        auto parameter_type = imported_abi_v10_type(
+            summary.parameters.front(), *program.type_context,
+            summary.variable_count);
+        auto result_type = imported_abi_v10_type(
+            summary.result, *program.type_context, summary.variable_count);
+        if (!parameter_type || !result_type) continue;
+        vector<checked_ir::Stmt> checked_statements;
+        try {
+          checked_statements = checked_ir::decode_h3_checked_body_v1(
+              body.checked_ir_bytes, *program.type_context,
+              {parameter_type}, result_type, body.semantic_hash);
+        } catch (const std::invalid_argument&) {
+          continue;
+        }
+        if (checked_statements.size() != 1 ||
+            checked_statements.front().kind != checked_ir::StmtKind::Return ||
+            !checked_statements.front().expr ||
+            checked_statements.front().expr->kind !=
+                checked_ir::ExprKind::Binary ||
+            checked_statements.front().expr->binary_op !=
+                checked_ir::BinaryOp::Add)
+          continue;
+        const auto& expression = *checked_statements.front().expr;
+        if (expression.operands.size() != 2 ||
+            expression.operands.front().kind != checked_ir::ExprKind::Binary ||
+            expression.operands.front().binary_op != checked_ir::BinaryOp::Mul ||
+            expression.operands.front().operands.size() != 2 ||
+            expression.operands.front().operands.front().kind !=
+                checked_ir::ExprKind::Parameter ||
+            expression.operands.front().operands.front().ordinal != 0 ||
+            expression.operands.front().operands.back().kind !=
+                checked_ir::ExprKind::IntegerLiteral ||
+            expression.operands.back().kind !=
+                checked_ir::ExprKind::IntegerLiteral)
+          continue;
+        emitted_checked_arithmetic.insert(summary.callable_id);
+      }
+    }
+    if (!emitted_checked_arithmetic.empty()) {
+      for (auto& record : value.semantic_contract) {
+        if (!starts_with(record.payload, "export fn ")) continue;
+        std::istringstream lines(record.payload);
+        string line, first_line;
+        if (!std::getline(lines, first_line) ||
+            !starts_with(first_line, "export fn ")) continue;
+        std::istringstream declaration(first_line.substr(10));
+        string public_name;
+        declaration >> public_name;
+        const string qualified_name = module + "__" + public_name;
+        auto function = std::find_if(program.functions.begin(),
+                                     program.functions.end(),
+            [&](const Function& candidate) {
+          return candidate.exported && candidate.name == qualified_name &&
+              belongs_to_module(candidate.name, module) &&
+              emitted_checked_arithmetic.count(
+                  candidate.semantic_callable_id) != 0;
+        });
+        if (function == program.functions.end()) continue;
+        std::ostringstream retained;
+        retained << first_line << "\n";
+        while (std::getline(lines, line))
+          if (!starts_with(line, "  generic_stmt "))
+            retained << line << "\n";
+        record.payload = retained.str();
+      }
+    }
     std::map<string, abi_v10::Record> unique_proofs;
     for (const auto& proof : proofs) unique_proofs.emplace(proof.id, proof);
     proofs.clear();

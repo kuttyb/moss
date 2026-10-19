@@ -8615,3 +8615,34 @@ Focused validation passed:
 - `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` passed.
 - Broad regression suites were not run. C2c was not started.
 
+## Phase 25-C2c — Eliminate legacy arithmetic body emission
+
+Starting at `08ca8e1e753a65910d10aa82a62ab12e7e3387ef` on
+`phase25-integration`. After all ABI-v10 checked-body producers run,
+`write_module_interfaces()` now scans the actual emitted typed summary and
+matching checked-body record, verifies their callable/hash binding and the
+narrow arithmetic shape, then removes only that callable's `generic_stmt`
+lines from its semantic declaration record. It leaves the declaration,
+parameters, identity, and other generic metadata intact. The staged producer
+emits exactly one `compute` summary/body pair and zero legacy statements;
+unsupported arithmetic and ABI-v9 legacy records remain present.
+
+Focused results:
+- `make moss-dev` passed (pre-existing TypeSolver missing-field-initializer
+  warnings only).
+- The normal unmodified staged-provider artifact passed canonical validation
+  and the summary/body count verifier. After provider source removal,
+  `compute(5)` returned `30` and `compute(2.5)` returned `25.0`; String/Bool
+  returned `TYPE_MISMATCH`. Unsupported legacy forms returned `-10` and `30`.
+- Default ABI-v9 retained `generic_stmt` and source-free `compute(5)` returned
+  `30`. H3 Scenario 6 passed with source removed and output `99`.
+- The C2b.6b artifact verifier and generic arithmetic requirement checks also
+  passed. The C2c focused script exits non-zero after its success-path checks
+  because the explicit missing-body probe below found a blocker.
+- The missing-body probe found a separate blocker: a correctly re-sealed
+  artifact with the checked body removed and an alternate legacy statement
+  returned `31` instead of failing closed. This was recorded in feedback and
+  left outside the requested producer-emission scope.
+- `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` passed.
+  Broad regression suites were not run. C2d was not started.
+
