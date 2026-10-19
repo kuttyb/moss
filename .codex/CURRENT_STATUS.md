@@ -8286,3 +8286,13 @@ Commit `0ae6b1d5be231c3ab9cffb97c05d81dcdcfbdebb` adds
 Fast Debug, and native checks. The exact `/tmp/negation.moss` reproducer now rejects
 in both check and interpreter modes. It was fast-forwarded and pushed to
 `origin/phase25-integration`; no broad suite or PR was run.
+
+## L7 atomic member admission
+
+At the latest `origin/phase25-integration` head, the standalone C++ reproducer
+returned `UnificationFailed` but left `T` bound to `int`. Compiler callers throw
+on this status and do not reuse the failed solver; the finding is an internal
+API consistency issue. Added transactional multi-equality unification and a
+focused C++ test covering contribution and result rollback, successful commit,
+and preservation of prior bindings. Both focused C++ tests passed at `-O0`; no
+Moss compiler rebuild or broad suite was run.

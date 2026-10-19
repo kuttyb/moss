@@ -1181,6 +1181,21 @@ public:
   TypeRef resolve(const TypeRef& value) {
     return resolve_impl(value, nullptr);
   }
+  // Apply one admission's equations as a single transaction. The existing
+  // mutation trail rolls back bindings, representatives, and requirements.
+  bool unify_all(const std::vector<std::pair<TypeRef, TypeRef>>& equalities,
+                 size_t* failed_equality = nullptr) {
+    Trail trail;
+    for (size_t index = 0; index < equalities.size(); ++index) {
+      const auto& equality = equalities[index];
+      if (equality.first && equality.second &&
+          unify_impl(equality.first, equality.second, trail)) continue;
+      if (failed_equality) *failed_equality = index;
+      rollback(trail);
+      return false;
+    }
+    return true;
+  }
   bool unify(const TypeRef& left, const TypeRef& right) {
     Trail trail;
     if (unify_impl(left, right, trail)) return true;
@@ -1259,20 +1274,21 @@ inline MemberClosureResult close_member_requirements(
         closure.diagnostic = "member admission omitted its target or access contract";
         return closure;
       }
-      for (const auto& equality : admission.contributes) {
-        if (!equality.first || !equality.second ||
-            !solver.unify(equality.first, equality.second)) {
-          closure.status = MemberClosureResult::Status::UnificationFailed;
-          closure.failing_requirement = index;
-          closure.diagnostic = "member admission contributed incompatible types";
-          return closure;
-        }
+      std::vector<std::pair<TypeRef, TypeRef>> equalities =
+          admission.contributes;
+      std::optional<size_t> result_equality;
+      if (current.result && admission.result) {
+        result_equality = equalities.size();
+        equalities.emplace_back(*current.result, *admission.result);
       }
-      if (current.result && admission.result &&
-          !solver.unify(*current.result, *admission.result)) {
+      size_t failed_equality = 0;
+      if (!solver.unify_all(equalities, &failed_equality)) {
         closure.status = MemberClosureResult::Status::UnificationFailed;
         closure.failing_requirement = index;
-        closure.diagnostic = "member result conflicts with its expected type";
+        closure.diagnostic = result_equality &&
+                failed_equality == *result_equality
+            ? "member result conflicts with its expected type"
+            : "member admission contributed incompatible types";
         return closure;
       }
       current.admitted_template_or_builtin_family =
