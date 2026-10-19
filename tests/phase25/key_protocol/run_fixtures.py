@@ -23,8 +23,8 @@ known-failing fixture that starts failing closed or passing must have its
 
 `--activate` runs every fixture for real against EXPECTED (stdout in Fast
 Debug, Native Debug, and Native Release; or a checker rejection before native
-emission). It is expected to fail until Team G's G2 foundations pass and
-`MossMap<K,V>` is available (see README.md).
+emission). Use `MOSS_STAGED_ABI=v10` to exercise the staged Map/Set contract;
+without it, the runner observes the production ABI-v9 fail-closed behavior.
 
 `--observe` prints the observed status line of each fixture and never fails.
 """
