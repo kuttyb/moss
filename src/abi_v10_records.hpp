@@ -1392,6 +1392,9 @@ inline void validate_complete_interface(
         require(target != callable_body_hashes.end(),
                 "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
                 "Checked body references an unknown callable dependency");
+        require(private_bodies.count(dep.target_id) > 0,
+                "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
+                "Checked body callable dependency has no checked body record");
         require(target->second == dep.expected_hash,
                 "SOURCE_FREE_CONTRACT_INVALID",
                 "Checked body callable dependency hash mismatch");

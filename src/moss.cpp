@@ -2958,11 +2958,31 @@ static abi_v10::Access imported_abi_v10_access(Effect effect) {
                                 abi_v10::Access::Read;
 }
 
+static Effect imported_abi_v10_effect(abi_v10::Access access) {
+  return access == abi_v10::Access::Consume ? Effect::Consume :
+      access == abi_v10::Access::Write ? Effect::Write : Effect::Read;
+}
+
 // Stage-v10 H3 import projection. It derives an AST lowering view solely from
 // sealed checked IR; legacy generic_stmt lines are discarded for these bodies.
 // Every target is selected by exact provider identity before inference starts.
 static void project_imported_h3_checked_bodies(Program& program) {
   if (!staged_abi_v10() || !program.type_context) return;
+  // Private generic_dependency declarations do not have the public v9 param
+  // mode lines. Seed their declared access from the sealed v10 summary before
+  // resolving a caller; the checker compares its derived access after closure.
+  for (auto& function : program.functions)
+    if (!function.imported_checked_summary_payload.empty() &&
+        !function.exported && function.parameter_effects.empty()) {
+      auto summary = abi_v10::read_summary(
+          function.imported_checked_summary_payload);
+      if (summary.parameters.size() != function.params.size())
+        throw CompileError(0, "private checked ABI-v10 parameter count is mismatched",
+                           "SOURCE_FREE_CHECKED_BODY_INVALID");
+      for (const auto access : summary.parameter_access)
+        function.parameter_effects.push_back(
+            imported_abi_v10_effect(access));
+    }
   for (auto& function : program.functions) {
     if (function.imported_checked_body_payload.empty()) continue;
     auto invalid = [&](const string& reason) {
@@ -3051,8 +3071,9 @@ static void project_imported_h3_checked_bodies(Program& program) {
         return candidate.semantic_callable_id == expression.semantic_target_id;
       });
       if (callee == program.functions.end() ||
-          callee->imported_checked_summary_payload.empty())
-        invalid("checked ABI-v10 call target has no sealed summary");
+          callee->imported_checked_summary_payload.empty() ||
+          callee->imported_checked_body_payload.empty())
+        invalid("checked ABI-v10 call target has no sealed summary and body");
       auto target = abi_v10::read_summary(
           callee->imported_checked_summary_payload);
       if (target.observable_effect_bits ||
@@ -3108,6 +3129,65 @@ static void project_imported_h3_checked_bodies(Program& program) {
     returned.text = "return " + local;
     function.body = {std::move(bind), std::move(returned)};
     function.result_expression.reset();
+  }
+}
+
+static void validate_imported_h3_summary_closure(const Program& program) {
+  if (!staged_abi_v10() || !program.type_context) return;
+  for (const auto& function : program.functions) {
+    if (function.imported_checked_body_payload.empty()) continue;
+    auto mismatch = [&](const string& reason) {
+      CompileError error(std::max(function.line, 1), reason,
+                         "SOURCE_FREE_CHECKED_BODY_INVALID");
+      error.source_file = function.source_file;
+      error.teaching.related.push_back({
+          function.provider_origin_file.empty() ? function.source_file :
+              function.provider_origin_file,
+          std::max(function.line, 1), 1,
+          "sealed provider callable '" + function.name + "'"});
+      throw error;
+    };
+    const auto summary = abi_v10::read_summary(
+        function.imported_checked_summary_payload);
+    if (!function.open_summary || !function.open_summary->complete ||
+        function.open_summary->bound_variable_count != summary.variable_count ||
+        function.open_summary->parameter_types.size() != summary.parameters.size() ||
+        function.parameter_effects.size() != summary.parameter_access.size() ||
+        !abi_v10_effects_pure(function.observable_effects))
+      mismatch("checked ABI-v10 imported summary did not close in the checker " +
+          string("(complete=") +
+          (function.open_summary && function.open_summary->complete ? "1" : "0") +
+          ", variables=" +
+          std::to_string(function.open_summary
+              ? function.open_summary->bound_variable_count : 0) +
+          ", expected=" + std::to_string(summary.variable_count) +
+          ", parameters=" + std::to_string(function.open_summary
+              ? function.open_summary->parameter_types.size() : 0) +
+          ", access=" + std::to_string(function.parameter_effects.size()) +
+          ")");
+    for (std::size_t index = 0; index < summary.parameters.size(); ++index) {
+      auto term = imported_abi_v10_type(
+          summary.parameters[index], *program.type_context,
+          summary.variable_count);
+      if (!term || !function.open_summary->parameter_types[index] ||
+          !term->structurally_equal(
+              *function.open_summary->parameter_types[index]) ||
+          summary.parameter_access[index] !=
+              imported_abi_v10_access(function.parameter_effects[index]))
+        mismatch("checked ABI-v10 parameter type or access weakened");
+    }
+    auto result = imported_abi_v10_type(
+        summary.result, *program.type_context, summary.variable_count);
+    if (!result || !function.open_summary->result_type ||
+        !result->structurally_equal(*function.open_summary->result_type))
+      mismatch("checked ABI-v10 result relation changed after inference");
+    std::set<string> declared, inferred(
+        function.open_summary->semantic_dependencies.begin(),
+        function.open_summary->semantic_dependencies.end());
+    for (const auto& dependency : summary.dependencies)
+      declared.insert(dependency.first);
+    if (declared != inferred)
+      mismatch("checked ABI-v10 callable dependency changed after inference");
   }
 }
 
@@ -3339,6 +3419,7 @@ class Checker {
       }
     }
     { CompilerStageTimer timer("effects"); infer_effects(); infer_observable_effects(); }
+    validate_imported_h3_summary_closure(p_);
     // ABI-v10 has no effect-polymorphic callable summary. A concrete static
     // specialization can resolve the selected callback's effects, but an
     // exported open callback cannot promise checked effects to a source-free
@@ -3445,7 +3526,8 @@ class Checker {
               pending.push_back(dependency->second);
           }
         }
-        if (reaches_private && unsupported_multi_statement)
+        if (reaches_private && unsupported_multi_statement &&
+            !rich_body_ready)
           err(exported.source_file, exported.line,
               "exported callable '" + exported.name +
                   (rich_body_ready
@@ -3804,7 +3886,42 @@ class Checker {
   }
 
   void build_open_callable_summaries() {
-    for (auto& function : p_.functions) {
+    vector<Function*> summary_order;
+    std::map<string, int> imported_state;
+    for (auto& function : p_.functions)
+      if (function.imported_checked_summary_payload.empty())
+        summary_order.push_back(&function);
+    std::function<void(Function&)> visit_imported = [&](Function& function) {
+      const string& id = function.semantic_callable_id;
+      if (imported_state[id] == 2) return;
+      if (imported_state[id] == 1)
+        err(function.source_file, function.line,
+            "checked ABI-v10 callable dependency graph is cyclic",
+            "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING");
+      imported_state[id] = 1;
+      auto sealed = abi_v10::read_summary(
+          function.imported_checked_summary_payload);
+      for (const auto& dependency : sealed.dependencies) {
+        auto callee = std::find_if(p_.functions.begin(), p_.functions.end(),
+            [&](const Function& candidate) {
+          return candidate.semantic_callable_id == dependency.first;
+        });
+        if (callee == p_.functions.end() ||
+            callee->imported_checked_summary_payload.empty() ||
+            callee->imported_checked_body_payload.empty())
+          err(function.source_file, function.line,
+              "checked ABI-v10 callable dependency has no sealed body",
+              "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING");
+        visit_imported(*callee);
+      }
+      imported_state[id] = 2;
+      summary_order.push_back(&function);
+    };
+    for (auto& function : p_.functions)
+      if (!function.imported_checked_summary_payload.empty())
+        visit_imported(function);
+    for (Function* selected : summary_order) {
+      auto& function = *selected;
       OpenCallableSummaryFacts summary;
       summary.callable_id = function.semantic_callable_id;
       summary.origin.module_id =
@@ -37139,6 +37256,14 @@ static ParsedModuleUnit load_module_interface(
       summaries.emplace(summary.callable_id, record.payload);
     }
     for (const auto& record : sealed.value.private_semantic_dependencies)
+      if (abi_v10::hex_hash(record.id) &&
+          !record.payload.empty() && record.payload.front() == 1) {
+        auto summary = abi_v10::read_summary(record.payload);
+        if (!summaries.emplace(summary.callable_id, record.payload).second)
+          throw CompileError(0, "duplicate checked ABI-v10 callable summary",
+                             "SOURCE_FREE_SUMMARY_INVALID");
+      }
+    for (const auto& record : sealed.value.private_semantic_dependencies)
       if (starts_with(record.id, "checked-body-v1:")) {
         auto body = abi_v10::read_checked_body_record(record.payload);
         bodies.emplace(body.callable_id, record.payload);
@@ -38829,6 +38954,205 @@ static void append_abi_v10_direct_checked_records(
   }
 }
 
+// Close the checked H3 private-helper graph into one provider interface.
+// Public and private summaries occupy their distinct ABI-v10 sections; every
+// callable and nominal edge carries the callee body/representation hash.
+static void append_abi_v10_private_chain_records(
+    abi_v10::Interface& value, const Program& program, const string& module) {
+  std::map<string, const Function*> selected;
+  std::map<string, CheckedPrivateChainBody> checked_bodies;
+  auto find_callable = [&](const string& id) -> const Function* {
+    auto found = std::find_if(program.functions.begin(), program.functions.end(),
+        [&](const Function& candidate) {
+      return candidate.semantic_callable_id == id &&
+          belongs_to_module(candidate.name, module) &&
+          std::filesystem::path(candidate.source_file).extension() != ".mossi";
+    });
+    return found == program.functions.end() ? nullptr : &*found;
+  };
+  std::set<string> visiting;
+  std::function<void(const Function&)> visit = [&](const Function& function) {
+    const string& id = function.semantic_callable_id;
+    if (selected.count(id)) return;
+    if (!visiting.insert(id).second)
+      throw ProjectError("SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+                         "checked ABI-v10 callable dependency is cyclic");
+    if (!function.static_dispatch || !function.open_summary ||
+        !function.open_summary->complete ||
+        !function.open_summary->requirements.empty() ||
+        !function.open_summary->member_requirements.empty() ||
+        !abi_v10_effects_pure(function.open_summary->observable_effects))
+      throw ProjectError("SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+                         "private checked ABI-v10 callable has incomplete type or effect facts");
+    auto body = checked_private_chain_body(program, function);
+    if (!body)
+      throw ProjectError("SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+                         "private checked ABI-v10 callable has no canonical body IR");
+    std::set<string> callable_edges;
+    for (const auto& dependency : body->dependencies)
+      if (dependency.kind == SemanticDependency::Kind::Callable) {
+        callable_edges.insert(dependency.target_id);
+        const Function* callee = find_callable(dependency.target_id);
+        if (!callee)
+          throw ProjectError("SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
+                             "checked ABI-v10 body names an unresolved private callable");
+        visit(*callee);
+      }
+    const std::set<string> summary_edges(
+        function.open_summary->semantic_dependencies.begin(),
+        function.open_summary->semantic_dependencies.end());
+    if (callable_edges != summary_edges)
+      throw ProjectError("SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
+                         "checked ABI-v10 body and summary dependency IDs disagree");
+    checked_bodies.emplace(id, std::move(*body));
+    selected.emplace(id, &function);
+    visiting.erase(id);
+  };
+  for (const auto& function : program.functions) {
+    if (!function.exported || !function.static_dispatch ||
+        !belongs_to_module(function.name, module) ||
+        std::filesystem::path(function.source_file).extension() == ".mossi")
+      continue;
+    auto body = checked_private_chain_body(program, function);
+    if (!body || !std::any_of(body->dependencies.begin(),
+                             body->dependencies.end(),
+        [](const SemanticDependency& dep) {
+      return dep.kind == SemanticDependency::Kind::Callable;
+    })) continue;
+    visit(function);
+  }
+  if (selected.empty()) return;
+
+  std::map<string, string> representation_hashes;
+  for (const auto& record : value.binary_contract)
+    if (abi_v10::nominal_template_id_valid(record.id) &&
+        !record.payload.empty() && record.payload.front() == 1) {
+      auto tmpl = abi_v10::read_template(record.payload);
+      representation_hashes.emplace(tmpl.template_id,
+                                    tmpl.representation_hash);
+    }
+  auto ensure_template = [&](const string& template_id) -> string {
+    auto existing = representation_hashes.find(template_id);
+    if (existing != representation_hashes.end()) return existing->second;
+    if (!program.type_context)
+      throw ProjectError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                         "checked ABI-v10 nominal has no TypeContext");
+    auto object = std::find_if(program.objects.begin(), program.objects.end(),
+        [&](const ObjectType& candidate) {
+      auto declaration = program.type_context->find(candidate.name);
+      return candidate.exported && belongs_to_module(candidate.name, module) &&
+          declaration && declaration->id == template_id;
+    });
+    if (object == program.objects.end() || !object->methods.empty())
+      throw ProjectError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                         "checked ABI-v10 nominal template is not exported");
+    auto declaration = program.type_context->find(object->name);
+    if (!declaration || declaration->fields.size() != object->fields.size())
+      throw ProjectError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                         "checked ABI-v10 nominal fields are incomplete");
+    auto provenance = abi_v10_checked_provenance(
+        value.module_id, template_id, object->source_file, object->line);
+    abi_v10::NominalTemplate tmpl;
+    tmpl.template_id = template_id;
+    tmpl.module_id = value.module_id;
+    tmpl.declaration_name = declaration->declaration_name;
+    tmpl.provenance_id = provenance.provenance_id;
+    for (std::size_t index = 0; index < declaration->fields.size(); ++index) {
+      const auto& slot = declaration->fields[index];
+      if (!slot.inferred || slot.name != object->fields[index].name)
+        throw ProjectError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                           "checked ABI-v10 nominal field slot is unsupported");
+      abi_v10::WireType variable;
+      variable.kind = abi_v10::WireTypeKind::BoundVar;
+      variable.ordinal = tmpl.variable_count++;
+      tmpl.fields.push_back({slot.name, variable, true,
+                             provenance.provenance_id});
+    }
+    abi_v10::WireWriter representation;
+    representation.string(tmpl.template_id);
+    representation.number(tmpl.variable_count);
+    for (const auto& field : tmpl.fields) {
+      representation.string(field.name);
+      representation.byte(field.exported ? 1 : 0);
+      representation.string(abi_v10::type_bytes(field.type,
+                                                 tmpl.variable_count));
+    }
+    tmpl.representation_hash = abi_v10::hash(
+        "moss-abi-v10-nominal-representation", representation.finish());
+    representation_hashes.emplace(template_id, tmpl.representation_hash);
+    value.binary_contract.push_back(abi_v10::template_record(tmpl));
+    value.provenance.push_back(abi_v10::provenance_record(provenance));
+    return tmpl.representation_hash;
+  };
+
+  for (const auto& entry : selected) {
+    const string& id = entry.first;
+    const Function& function = *entry.second;
+    const auto& facts = *function.open_summary;
+    const auto& checked = checked_bodies.at(id);
+    if (facts.parameter_types.size() != function.params.size() ||
+        facts.parameter_access.size() != function.params.size())
+      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+                         "checked ABI-v10 callable parameter facts are incomplete");
+    abi_v10::Summary summary;
+    summary.callable_id = id;
+    summary.variable_count = facts.bound_variable_count;
+    for (std::size_t index = 0; index < facts.parameter_types.size(); ++index) {
+      auto parameter = abi_v10_checked_type(
+          facts.parameter_types[index], summary.variable_count);
+      if (!parameter)
+        throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+                           "checked ABI-v10 parameter TypeRef is unresolved");
+      summary.parameters.push_back(*parameter);
+      summary.parameter_access.push_back(
+          abi_v10_checked_access(facts.parameter_access[index]));
+    }
+    auto result = abi_v10_checked_type(facts.result_type,
+                                       summary.variable_count);
+    if (!result)
+      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+                         "checked ABI-v10 result TypeRef is unresolved");
+    summary.result = *result;
+    summary.body_semantic_hash = checked.semantic_hash;
+    auto provenance = abi_v10_checked_provenance(
+        value.module_id, id, function.source_file, function.line);
+    summary.provenance_id = provenance.provenance_id;
+    abi_v10::CheckedBodyRecord body;
+    body.callable_id = id;
+    body.semantic_hash = checked.semantic_hash;
+    body.checked_ir_bytes = checked_ir::encode_checked_body_v1(
+        checked.statements);
+    for (const auto& dependency : checked.dependencies) {
+      if (dependency.kind == SemanticDependency::Kind::Callable) {
+        const auto callee = checked_bodies.find(dependency.target_id);
+        if (callee == checked_bodies.end())
+          throw ProjectError("SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
+                             "checked ABI-v10 callable dependency has no body hash");
+        const string& hash = callee->second.semantic_hash;
+        summary.dependencies.push_back({dependency.target_id, hash});
+        body.dependencies.push_back({
+            abi_v10::CheckedBodyRecord::Dependency::Kind::Callable,
+            dependency.target_id, hash});
+      } else if (dependency.kind == SemanticDependency::Kind::NominalType) {
+        body.dependencies.push_back({
+            abi_v10::CheckedBodyRecord::Dependency::Kind::NominalType,
+            dependency.target_id, ensure_template(dependency.target_id)});
+      } else {
+        throw ProjectError("SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
+                           "checked ABI-v10 body has unsupported dependency kind");
+      }
+    }
+    if (function.exported)
+      value.semantic_contract.push_back(abi_v10::summary_record(summary));
+    else
+      value.private_semantic_dependencies.push_back(
+          abi_v10::summary_record(summary));
+    value.private_semantic_dependencies.push_back(
+        abi_v10::checked_body_record(body));
+    value.provenance.push_back(abi_v10::provenance_record(provenance));
+  }
+}
+
 static string abi_v10_module_id(const ProjectManifest& manifest,
                                 const string& module) {
   return "module-v1:" + manifest.name + "@" + manifest.version + "::" + module;
@@ -39362,6 +39686,7 @@ static vector<std::filesystem::path> write_module_interfaces(
         abi_v10_declaration_records(binary_contract.str());
     value.semantic_contract = abi_v10_declaration_records(contents[module].str());
     append_abi_v10_direct_checked_records(value, program, module);
+    append_abi_v10_private_chain_records(value, program, module);
     std::map<string, abi_v10::Record> unique_proofs;
     for (const auto& proof : proofs) unique_proofs.emplace(proof.id, proof);
     proofs.clear();

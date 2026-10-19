@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Execute a direct checked body after removing legacy generic statements.
-
-The nested private-helper H3 guard remains until its whole chain has records.
-"""
+"""Execute a direct checked body after removing legacy generic statements."""
 
 import os
 from pathlib import Path
@@ -66,7 +63,7 @@ export fn fresh(x):
     assert interface.is_file() and (artifacts / "libService.rlib").is_file()
     run([str(verifier), str(interface)])
     run([str(poison), str(interface), str(artifacts / "libService.rlib"),
-         "Service"])
+         "Service", "2"])
     assert b"generic_stmt " not in interface.read_bytes()
     run([str(verifier), str(interface)])
     shutil.rmtree(provider)

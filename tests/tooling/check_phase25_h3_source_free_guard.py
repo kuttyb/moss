@@ -37,14 +37,18 @@ export fn fresh(x):
 export fn relay(b: Box):
   return b.value
 """)
-    command = [str(MOSS), "check", str(source), "--json"]
+    unsupported = Path(scratch) / "unsupported.moss"
+    unsupported.write_text(source.read_text().replace(
+        "  result = Box(value: x)\n  return result",
+        "  alias = x\n  result = Box(value: alias)\n  return result"))
+    command = [str(MOSS), "check", str(unsupported), "--json"]
     staged = os.environ.copy()
     staged["MOSS_STAGED_ABI"] = "v10"
     rejected = subprocess.run(command, env=staged, capture_output=True, text=True)
     assert rejected.returncode != 0, (rejected.stdout, rejected.stderr)
     error = json.loads(rejected.stdout)["error"]
     assert error["code"] == "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE", error
-    assert error["source"]["line"] == 14 and "fresh" in error["message"], error
+    assert error["source"]["line"] == 15 and "fresh" in error["message"], error
 
     default = os.environ.copy()
     default.pop("MOSS_STAGED_ABI", None)

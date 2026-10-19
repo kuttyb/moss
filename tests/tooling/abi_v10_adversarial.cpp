@@ -336,16 +336,31 @@ int main() {
       moss::checked_ir::encode_checked_body_v1(checked_statements);
   checked_body.dependencies.push_back({
       CheckedBodyRecord::Dependency::Kind::Callable,
-      private_helper.callable_id, private_helper.body_semantic_hash});
+      private_helper.callable_id, body_owner.body_semantic_hash});
   CheckedBodyRecord wrong_kind_body = checked_body;
   wrong_kind_body.dependencies[0].kind =
       CheckedBodyRecord::Dependency::Kind::NominalType;
   expect_error([&] { (void)checked_body_record(wrong_kind_body); },
                "SOURCE_FREE_SUMMARY_INVALID");
+  Summary checked_private_helper = private_helper;
+  checked_private_helper.body_semantic_hash = body_owner.body_semantic_hash;
   iface_with_body.private_semantic_dependencies.push_back(
-      summary_record(private_helper));
+      summary_record(checked_private_helper));
   iface_with_body.private_semantic_dependencies[0] =
       checked_body_record(checked_body);
+  std::sort(iface_with_body.private_semantic_dependencies.begin(),
+            iface_with_body.private_semantic_dependencies.end(),
+            [](const Record& left, const Record& right) {
+              return left.id < right.id;
+            });
+  expect_error([&] {
+    validate_complete_interface(decode(encode(iface_with_body)));
+  }, "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING");
+  CheckedBodyRecord private_checked_body = checked_body;
+  private_checked_body.callable_id = checked_private_helper.callable_id;
+  private_checked_body.dependencies.clear();
+  iface_with_body.private_semantic_dependencies.push_back(
+      checked_body_record(private_checked_body));
   std::sort(iface_with_body.private_semantic_dependencies.begin(),
             iface_with_body.private_semantic_dependencies.end(),
             [](const Record& left, const Record& right) {
