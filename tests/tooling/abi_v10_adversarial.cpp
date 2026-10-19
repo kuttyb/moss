@@ -153,9 +153,12 @@ int main() {
     validate_key_proof_coherence({base_proof, key_proof_record(conflicting)});
   }, "KEY_PROOF_COHERENCE_MISMATCH");
 
-  proof.key_type = {WireTypeKind::Nominal, "sha256:" + std::string(64, 'c'), {}, 0};
+  proof.key_type = {WireTypeKind::Nominal,
+                    "nominal-template-v1:module-v1:provider@1.0.0::Provider:type:Code",
+                    {}, 0};
   auto distinct_nominal = proof;
-  distinct_nominal.key_type.identity = "sha256:" + std::string(64, 'd');
+  distinct_nominal.key_type.identity =
+      "nominal-template-v1:module-v1:provider@1.0.0::Provider:type:Other";
   validate_key_proof_coherence({key_proof_record(proof),
                                 key_proof_record(distinct_nominal)});
 
@@ -189,7 +192,8 @@ int main() {
   // Adversarial tests for MethodTemplate
   MethodTemplate method;
   method.method_id = "method:Provider.func";
-  method.template_id = digest;
+  method.template_id =
+      "nominal-template-v1:module-v1:provider@1.0.0::Provider:type:Code";
   method.method_name = "func";
   method.exported = true;
   method.variable_count = 1;
@@ -270,6 +274,18 @@ int main() {
   expect_error([&] { validate_complete_interface(sealed_bad_prov2); },
                "SOURCE_FREE_CONTRACT_INVALID");
 
+  // A syntactically canonical nominal ID cannot invent a local declaration.
+  Summary forged_nominal_summary = valid_summary;
+  forged_nominal_summary.result = {
+      WireTypeKind::Nominal,
+      "nominal-template-v1:module-v1:provider@1.0.0::Provider:type:Missing",
+      {variable}, 0};
+  Interface iface_bad_nominal = iface;
+  iface_bad_nominal.semantic_contract = {summary_record(forged_nominal_summary)};
+  const auto sealed_bad_nominal = decode(encode(iface_bad_nominal));
+  expect_error([&] { validate_complete_interface(sealed_bad_nominal); },
+               "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+
   // Duplicate records within a section
   Interface iface_dup = iface;
   iface_dup.semantic_contract = {summary_record(summary_with_dep), summary_record(summary_with_dep)};
@@ -288,7 +304,8 @@ int main() {
 
   // Bound variable in closed ConcreteInstance
   ConcreteInstance ci;
-  ci.template_id = "sha256:" + std::string(64, '1');
+  ci.template_id =
+      "nominal-template-v1:module-v1:provider@1.0.0::Provider:type:Code";
   ci.substitution = {esc_var};
   expect_error([&] { (void)instance_key(ci); }, "SOURCE_FREE_SUMMARY_INVALID");
 
@@ -304,7 +321,8 @@ int main() {
   // MethodTemplate referencing unknown template ID
   MethodTemplate mt;
   mt.method_id = "method:unattached";
-  mt.template_id = "sha256:" + std::string(64, '9');
+  mt.template_id =
+      "nominal-template-v1:module-v1:provider@1.0.0::Provider:type:Unknown";
   mt.method_name = "orphan";
   mt.provenance_id = prov.provenance_id;
   Interface iface_bad_mt = iface;

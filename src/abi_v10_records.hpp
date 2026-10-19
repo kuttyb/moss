@@ -7,6 +7,7 @@
 #include "source_free_abi_v10.hpp"
 
 #include <cstdint>
+#include <functional>
 #include <set>
 #include <string>
 #include <string_view>
@@ -68,6 +69,25 @@ enum class WireTypeKind : std::uint8_t {
   Domain = 5, BoundVar = 6, Unit = 7
 };
 
+inline bool nominal_template_id_valid(std::string_view identity) {
+  constexpr std::string_view prefix = "nominal-template-v1:";
+  if (identity.substr(0, prefix.size()) != prefix) return false;
+  const auto separator = identity.rfind(":type:");
+  if (separator == std::string_view::npos ||
+      separator <= prefix.size() || separator + 6 >= identity.size() ||
+      !module_id_valid(identity.substr(prefix.size(),
+                                       separator - prefix.size())))
+    return false;
+  const auto name = identity.substr(separator + 6);
+  if (!((name.front() >= 'A' && name.front() <= 'Z') ||
+        (name.front() >= 'a' && name.front() <= 'z') ||
+        name.front() == '_')) return false;
+  return std::all_of(name.begin() + 1, name.end(), [](char ch) {
+    return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+        (ch >= '0' && ch <= '9') || ch == '_';
+  });
+}
+
 struct WireType {
   WireTypeKind kind = WireTypeKind::Unit;
   std::string identity;
@@ -97,6 +117,10 @@ inline void write_type(WireWriter& writer, const WireType& type,
   }
   require(!type.identity.empty() && valid_utf8(type.identity),
           "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 type identity is missing");
+  if (type.kind == WireTypeKind::Nominal)
+    require(nominal_template_id_valid(type.identity),
+            "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+            "ABI-v10 nominal TypeExpr has a noncanonical template ID");
   if (type.kind != WireTypeKind::Builtin && type.kind != WireTypeKind::Nominal)
     require(type.arguments.empty(), "SOURCE_FREE_CONTRACT_INVALID",
             "ABI-v10 scalar type has arguments");
@@ -125,6 +149,10 @@ inline WireType read_type(WireReader& reader, std::uint32_t variable_count,
   type.identity = reader.string();
   require(!type.identity.empty(), "SOURCE_FREE_CONTRACT_INVALID",
           "ABI-v10 type identity is missing");
+  if (type.kind == WireTypeKind::Nominal)
+    require(nominal_template_id_valid(type.identity),
+            "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+            "ABI-v10 nominal TypeExpr has a noncanonical template ID");
   const auto count = reader.number();
   require(count <= 64, "SOURCE_FREE_CONTRACT_INVALID",
           "ABI-v10 type argument count exceeds the limit");
@@ -443,7 +471,10 @@ struct NominalTemplate {
 };
 
 inline std::string template_payload(const NominalTemplate& value) {
-  require(hex_hash(value.template_id) && module_id_valid(value.module_id) &&
+  require(nominal_template_id_valid(value.template_id) &&
+              value.template_id == "nominal-template-v1:" + value.module_id +
+                  ":type:" + value.declaration_name &&
+              module_id_valid(value.module_id) &&
               !value.declaration_name.empty() && value.variable_count <= 4096 &&
               value.fields.size() <= 4096 && hex_hash(value.representation_hash) &&
               value.method_template_ids.size() <= 4096 &&
@@ -545,7 +576,8 @@ struct MethodTemplate {
 };
 
 inline std::string method_template_payload(const MethodTemplate& value) {
-  require(!value.method_id.empty() && hex_hash(value.template_id) &&
+  require(!value.method_id.empty() &&
+              nominal_template_id_valid(value.template_id) &&
               !value.method_name.empty() && value.variable_count <= 4096 &&
               value.parameters.size() <= 256 &&
               value.parameters.size() == value.parameter_access.size() &&
@@ -716,7 +748,8 @@ struct ConcreteInstance {
 };
 
 inline std::string instance_key(const ConcreteInstance& value) {
-  require(hex_hash(value.template_id) && value.substitution.size() <= 4096,
+  require(nominal_template_id_valid(value.template_id) &&
+              value.substitution.size() <= 4096,
           "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
           "ABI-v10 concrete instance template is invalid");
   WireWriter writer;
@@ -1065,7 +1098,8 @@ inline void validate_complete_interface(
   std::map<std::string, NominalTemplate> known_templates;
   std::vector<ConcreteInstance> known_instances;
   for (const auto& rec : sealed.value.binary_contract) {
-    if (!rec.payload.empty() && rec.payload[0] == 1 && rec.id.rfind("sha256:", 0) == 0) {
+    if (!rec.payload.empty() && rec.payload[0] == 1 &&
+        nominal_template_id_valid(rec.id)) {
       try {
         const auto tmpl = read_template(rec.payload);
         validate_template(rec);
@@ -1138,6 +1172,59 @@ inline void validate_complete_interface(
         continue;
       } catch (const Error&) {}
     }
+  }
+
+  const auto validate_nominal_references = [&](const WireType& root) {
+    std::function<void(const WireType&)> visit = [&](const WireType& type) {
+      if (type.kind == WireTypeKind::Nominal) {
+        require(nominal_template_id_valid(type.identity),
+                "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                "Nominal TypeExpr has a forged template ID");
+        const auto found = known_templates.find(type.identity);
+        if (found != known_templates.end()) {
+          require(type.arguments.size() == found->second.variable_count,
+                  "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                  "Nominal TypeExpr has the wrong template argument count");
+        } else {
+          constexpr std::string_view prefix = "nominal-template-v1:";
+          const auto separator = type.identity.rfind(":type:");
+          const auto owner = type.identity.substr(
+              prefix.size(), separator - prefix.size());
+          require(owner != sealed.value.module_id &&
+                      import_modules.count(owner) > 0,
+                  "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                  "Nominal TypeExpr references an unknown provider template");
+        }
+      }
+      for (const auto& argument : type.arguments) visit(argument);
+    };
+    visit(root);
+  };
+  for (const auto& sum : public_summaries) {
+    for (const auto& parameter : sum.parameters)
+      validate_nominal_references(parameter);
+    validate_nominal_references(sum.result);
+    for (const auto& requirement : sum.requirements)
+      validate_nominal_references(requirement.receiver);
+  }
+  for (const auto& pair : private_summaries) {
+    const auto& sum = pair.second;
+    for (const auto& parameter : sum.parameters)
+      validate_nominal_references(parameter);
+    validate_nominal_references(sum.result);
+    for (const auto& requirement : sum.requirements)
+      validate_nominal_references(requirement.receiver);
+  }
+  for (const auto& method : public_methods) {
+    for (const auto& parameter : method.parameters)
+      validate_nominal_references(parameter);
+    validate_nominal_references(method.result);
+  }
+  for (const auto& pair : private_methods) {
+    const auto& method = pair.second;
+    for (const auto& parameter : method.parameters)
+      validate_nominal_references(parameter);
+    validate_nominal_references(method.result);
   }
 
   for (const auto& inst : known_instances) {

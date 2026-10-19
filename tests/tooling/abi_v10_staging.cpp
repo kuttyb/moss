@@ -111,7 +111,8 @@ int main() {
   const WireType int_type{WireTypeKind::Primitive, "int", {}, 0};
   const WireType var_type{WireTypeKind::BoundVar, "", {}, 0};
   const WireType box_of_var{WireTypeKind::Nominal,
-                            "sha256:" + std::string(64, 'c'), {var_type}, 0};
+                            "nominal-template-v1:" + value.module_id +
+                                ":type:Box", {var_type}, 0};
   const auto nested = type_bytes(
       {WireTypeKind::Builtin, "Vector", {box_of_var}, 0}, 1);
   WireReader type_reader(nested);
@@ -125,7 +126,7 @@ int main() {
   }
 
   NominalTemplate nominal;
-  nominal.template_id = "sha256:" + std::string(64, 'c');
+  nominal.template_id = box_of_var.identity;
   nominal.module_id = value.module_id;
   nominal.declaration_name = "Box";
   nominal.variable_count = 1;
@@ -135,6 +136,25 @@ int main() {
   const auto nominal_record = template_record(nominal);
   validate_template(nominal_record);
   assert(read_template(nominal_record.payload).fields[0].name == "value");
+  assert(read_template(nominal_record.payload).template_id ==
+         box_of_var.identity);
+  auto forged_nominal = nominal;
+  forged_nominal.template_id = "sha256:" + std::string(64, 'c');
+  try {
+    (void)template_payload(forged_nominal);
+    assert(false && "hashed substitute for nominal identity accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+  }
+  forged_nominal = nominal;
+  forged_nominal.template_id = "nominal-template-v1:" + value.module_id +
+                               ":type:Other";
+  try {
+    (void)template_payload(forged_nominal);
+    assert(false && "mismatched nominal declaration identity accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+  }
   nominal.fields.push_back(nominal.fields[0]);
   try {
     (void)template_payload(nominal);
