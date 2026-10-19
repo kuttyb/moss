@@ -1,5 +1,16 @@
 # Team I live integration record
 
+## G1-08 Queue source-surface conflict — 2026-10-19
+
+L4's minimal direct `for` over Queue fails at Moss checking with
+`MOSS_COMPILE_ERROR` line 5, expecting Vector, range or Iterator. Frozen
+G1-08/initial architect review require Queue traversal, whereas current
+canonical language/syntax/Fast Debug docs prohibit it (and the guide itself
+has an earlier contradictory sentence). Bootstrap `moss-0.1` lists Queue
+construction/push/pop without iteration. Root asked L7 which contract wins;
+G1-08 remains red and L4 continues independent gates. This does not block
+draft S CI or prior post-G target checks.
+
 ## S draft intake exact-head checkpoint — 2026-10-19
 
 The sole L4 pushed clean S head `99aebffe4ef818abb921372504e4ec3160a3cd07`

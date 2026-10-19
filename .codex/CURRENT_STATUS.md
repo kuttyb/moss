@@ -1,5 +1,19 @@
 # Moss current status
 
+## Phase 25 G1-08 frozen Queue contract question — 2026-10-19
+
+The sole L4 reduced G1-08 to `for x in q` on a Queue; the staged checker
+rejects it with `MOSS_COMPILE_ERROR` at line 5, expecting Vector, range or
+Iterator. Frozen `GATE-G1-08` and `ARCHITECT_INITIAL_REVIEW.md` require
+Queue traversal in Fast Debug/native, while current canonical
+`GENTLE_INTRODUCTION_TO_MOSS.md` (later section), `LANGUAGE_SYNTAX.md` and
+`FAST_DEBUG.md` explicitly say Queue is not a `for` source. The guide's
+earlier section contradicts its later one. Bootstrap still reports
+`moss-0.1`; its Queue source surface lists construction/push/pop but no
+iteration. Root has asked L7 to choose which contract governs; no Queue
+compiler edit or gate promotion until the answer. L4 continues independent
+Float display/acceptance work, and S PR #11/post-G target CI continue.
+
 ## Phase 25 S draft PR checkpoint — 2026-10-19
 
 The sole L4 pushed clean target-based S head
