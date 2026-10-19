@@ -1,5 +1,15 @@
 # Moss current status
 
+## Phase 25 H2 exact-head combined L6 approval — 2026-10-19
+
+Draft PR #9 exact head `9d7d354dc9abdfaaaaeb917f4a8f401f28b6d01a`
+passed all four required jobs in workflow `39180625856`; H/T target workflow
+`39180139206` also passed all four. Combined Coordinator/L6 review approved
+the bounded H2 projection repair only after checking target ancestry, exact
+source patch, 36 boundary checks and target-range whitespace. Review record:
+`docs/phase25/TEAM_I_L6_REVIEW_H2.md`. PR remains draft/not yet merged at
+this checkpoint; no main merge. H1/H3 and strict release remain open.
+
 ## Phase 25 H3 Gate 10 conformance correction — 2026-10-19
 
 The prior checkpoint's 10/11 staged G2 result used the runner without its
