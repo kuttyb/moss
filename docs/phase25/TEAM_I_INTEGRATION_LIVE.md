@@ -1,5 +1,16 @@
 # Team I live integration record
 
+## H3 direct checked-IR importer checkpoint — 2026-10-19
+
+L4 pushed `b4c0450` and `cfc5bfa`. A bounded structural decoder validates
+canonical H3 Let/Return bodies and their TypeRefs/targets; source-free import
+attaches sealed records and projects validated IR to the checker/native path
+before inference. The direct provider's re-sealed interface has all legacy
+`generic_stmt` lines removed, yet two physically source-removed consumers
+still build and run. Optimized compiler, typed API, focused decoder/ABI,
+H3 default-v9 baseline and both key fixture modes 30/30 pass. The nested
+private-helper chain is still guarded in staged v10, so H3 is not accepted.
+
 ## H3 bounded direct transport checkpoint — 2026-10-19
 
 L4 pushed staging `c5446b5`. Live compiler emission now includes versioned

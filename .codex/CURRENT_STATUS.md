@@ -1,5 +1,23 @@
 # Moss current status
 
+## Phase 25 H3 direct checked-IR import checkpoint — 2026-10-19
+
+Sole L4 pushed staged `b4c045096c4508386bf758405b2079c684b17726`
+and `cfc5bfa71426e7311835f0f2c30efcce498656db`. The bounded H3 IR
+decoder accepts canonical two-statement Let/Return with exact Parameter,
+LocalRead, Call and NominalConstruct TypeRef/target IDs; it rejects tampered
+bytes and unsupported shapes. The importer attaches sealed Summary/body
+records, checks dependency identity, call arity/result, pure effects and
+parameter access, then derives an AST lowering view before inference. A
+provider interface with **all legacy `generic_stmt` lines removed and hashes
+re-sealed** still runs two independent Int/String consumers after provider
+source removal. This is genuine checked-IR execution for the bounded direct
+constructor, with optimized build, typed API, H3 guard/default-v9 baseline,
+staged/default key ledgers 30/30 and focused decoder/ABI tests green. The
+three-function nested private-helper chain remains staged-v10 guarded; H3
+acceptance, target integration and strict release are still open. H/T target
+and H2 PR core CI continue running.
+
 ## Phase 25 H3 direct live transport checkpoint — 2026-10-19
 
 Sole L4 pushed `phase25-i-map-staging` at `c5446b5123708b4ef7784a4c3e8afb620b71568c`.
