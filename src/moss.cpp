@@ -534,6 +534,27 @@ static bool primitive_term(const moss::TypeRef& type, std::string_view name) {
   return type && type->kind == moss::TypeKind::Primitive && type->name == name;
 }
 
+enum class BuiltinOperatorAdmission { Admitted, Deferred, Rejected };
+
+// The checked arithmetic subset carried by ABI-v10 currently describes
+// `T * Int -> T` and `T + Int -> T`. Keep its closed admission rule shared
+// between imported-call admission and specialization-body closure.
+static BuiltinOperatorAdmission admit_typed_arithmetic_operator(
+    const string& operation, const moss::TypeRef& subject,
+    const moss::TypeRef& argument, const moss::TypeRef& result) {
+  if (operation != "operator:*" && operation != "operator:+")
+    return BuiltinOperatorAdmission::Rejected;
+  if (!subject || !argument || !result || !subject->is_closed() ||
+      !argument->is_closed() || !result->is_closed())
+    return BuiltinOperatorAdmission::Deferred;
+  if ((!primitive_term(subject, "int") &&
+       !primitive_term(subject, "float")) ||
+      !primitive_term(argument, "int") ||
+      !result->structurally_equal(*subject))
+    return BuiltinOperatorAdmission::Rejected;
+  return BuiltinOperatorAdmission::Admitted;
+}
+
 // A parameterized built-in application named one of `names`.
 static bool applied_builtin(const moss::TypeRef& type,
                             std::initializer_list<std::string_view> names) {
@@ -9685,25 +9706,23 @@ class Checker {
     }
     leave_blocks(nullptr);
     for (const auto& [line, requirement] : structural_requirements) {
-      // The closed built-in '+' family admits Int and Float when the other
-      // operand is Int. Keep this check on the instantiated TypeRefs so a
-      // concrete invalid call fails before open-result closure/codegen.
+      // Keep operator admission on the instantiated TypeRefs so a concrete
+      // invalid call fails before open-result closure/codegen.
       if (requirement.kind != moss::RequirementKind::Operator ||
-          requirement.target_id != "operator:+" ||
-          requirement.arguments.size() != 1) continue;
-      auto subject = solver.resolve(requirement.subject);
-      auto argument = solver.resolve(requirement.arguments.front());
-      if (subject->kind == moss::TypeKind::InferenceVar ||
-          argument->kind == moss::TypeKind::InferenceVar) continue;
-      if (subject->kind != moss::TypeKind::Primitive ||
-          (subject->name != "int" && subject->name != "float") ||
-          argument->kind != moss::TypeKind::Primitive ||
-          argument->name != "int")
-        err(line, "required '+' operator has incompatible operand type",
-            "TYPE_MISMATCH");
-      if (requirement.result &&
-          !solver.unify(*requirement.result, subject))
-        err(line, "required '+' operator has incompatible result type",
+          (requirement.target_id != "operator:*" &&
+           requirement.target_id != "operator:+")) continue;
+      auto subject = requirement.subject
+          ? solver.resolve(requirement.subject) : nullptr;
+      auto argument = requirement.arguments.size() == 1
+          ? solver.resolve(requirement.arguments.front()) : nullptr;
+      auto result = requirement.result
+          ? solver.resolve(*requirement.result) : nullptr;
+      const auto admission = admit_typed_arithmetic_operator(
+          requirement.target_id, subject, argument, result);
+      if (admission == BuiltinOperatorAdmission::Deferred) continue;
+      if (admission == BuiltinOperatorAdmission::Rejected)
+        err(line, "required '" + requirement.target_id.substr(9) +
+            "' operator has incompatible operand or result type",
             "TYPE_MISMATCH");
     }
     for (const auto& [name, term] : locals) {
@@ -18999,21 +19018,49 @@ class Checker {
       const auto& summary = *function->second->open_summary;
       for (const auto& requirement : summary.requirements) {
         if (requirement.kind != moss::RequirementKind::Operator ||
-            requirement.target_id != "operator:+" ||
-            requirement.arguments.size() != 1 ||
-            requirement.arguments.front()->kind != moss::TypeKind::Primitive ||
-            requirement.arguments.front()->name != "int") continue;
+            (requirement.target_id != "operator:*" &&
+             requirement.target_id != "operator:+")) continue;
+        const auto operation = requirement.target_id.substr(9);
+        if (requirement.arguments.size() != 1 || !requirement.subject ||
+            !requirement.result || !*requirement.result ||
+            !(*requirement.result)->structurally_equal(
+                *requirement.subject)) {
+          err(line, "function '" + name + "' has an invalid typed '" +
+              operation + "' requirement", "TYPE_MISMATCH");
+          continue;
+        }
+        bool subject_parameter_found = false;
         for (size_t index = 0; index < summary.parameter_types.size() &&
                                index < actual_types.size(); ++index) {
           if (!summary.parameter_types[index]->structurally_equal(
                   *requirement.subject)) continue;
+          subject_parameter_found = true;
           const auto& actual = actual_results[index].term;
-          if (!actual) continue;
-          if (!primitive_term(actual, "int") && !primitive_term(actual, "float"))
+          if (!actual) {
+            if (concrete_specialization_type(actual_types[index]))
+              err(line, "argument " + std::to_string(index + 1) +
+                  " to function '" + name +
+                  "' has no typed term for its '" + operation +
+                  "' requirement", "TYPE_INFERENCE_FAILED");
+            continue;
+          }
+          const auto admission = admit_typed_arithmetic_operator(
+              requirement.target_id, actual, requirement.arguments.front(),
+              actual);
+          if (admission == BuiltinOperatorAdmission::Rejected)
             err(line, "argument " + std::to_string(index + 1) +
                 " to function '" + name +
-                "' has no compatible '+' operation with Int", "TYPE_MISMATCH");
+                "' has no compatible '" + operation +
+                "' operation with Int", "TYPE_MISMATCH");
+          else if (admission == BuiltinOperatorAdmission::Deferred &&
+                   concrete_specialization_type(actual_types[index]))
+            err(line, "argument " + std::to_string(index + 1) +
+                " to function '" + name + "' has unresolved typed '" +
+                operation + "' requirements", "TYPE_INFERENCE_FAILED");
         }
+        if (!subject_parameter_found)
+          err(line, "function '" + name + "' has an operator requirement "
+              "that is not tied to a parameter", "TYPE_MISMATCH");
       }
     }
     // Each explicit module currently emits its own nominal FileIO runtime.

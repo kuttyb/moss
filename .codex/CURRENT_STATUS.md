@@ -8507,3 +8507,24 @@ Focused validation:
 - `python3 tests/phase25/integration/cross_crate_harness.py --scenario 6
   --staged-v10` passed; source-removed provider consumer output was `99`.
 - `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` passed.
+
+## Phase 25-C2b.5b — Enforce imported arithmetic requirements
+
+Starting from `a72561a64c835fae1b8e138f7bab2808c4471d24` on
+`phase25-integration`. The specialization-body closure and imported-call
+admission checks now share one typed rule for `operator:*` and `operator:+`:
+Int/Float subjects with Int arguments must preserve the subject as the result.
+Concrete incompatible or unresolved terms fail with checker diagnostics;
+unresolved open terms defer. Synthetic version-2 imports verify Int/Float
+admission, String/Bool rejection, operator rule behavior, and malformed result
+relationship rejection. ABI records, producer eligibility, and body lowering
+were not changed.
+
+Focused validation passed:
+- `make moss-dev` passed (existing TypeSolver initializer warnings only).
+- `python3 tests/tooling/check_phase25_generic_arithmetic_requirements.py
+  build/compiler/moss-dev` passed; source-backed `compute(5)` returned `30`,
+  Float returned `25.0`, and nonnumeric calls were rejected.
+- `python3 tests/phase25/integration/cross_crate_harness.py --scenario 6
+  --staged-v10` passed with source-removed output `99`.
+- `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` passed.

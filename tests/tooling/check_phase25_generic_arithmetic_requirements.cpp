@@ -110,6 +110,34 @@ static bool synthetic_summary_rejected(
   return false;
 }
 
+static bool synthetic_imported_call_rejected(const string& argument,
+    const string& payload,
+    const vector<std::pair<string, string>>& provenance_records) {
+  try {
+    std::istringstream input("module Service\n"
+        "export fn compute(x):\n  return x\n"
+        "fn main():\n  value = compute(" + argument + ")\n");
+    Program program = Parser(lex_lines(input, "Service.mossi")).parse();
+    program.package_identities = true;
+    program.module_identities["Service"] = kImportedModuleId;
+    auto& function = program.functions.front();
+    function.semantic_callable_id = kImportedCallableId;
+    function.defining_module = "Service";
+    function.imported_checked_summary_payload = payload;
+    function.imported_checked_provenance_records = provenance_records;
+    Checker checker(program);
+    checker.run();
+    return false;
+  } catch (const CompileError& error) {
+    assert(error.code == "TYPE_MISMATCH" ||
+           error.code == "TYPE_INFERENCE_FAILED");
+    assert(string(error.what()).find("compatible '") != string::npos ||
+           string(error.what()).find("invalid typed '") != string::npos ||
+           string(error.what()).find("required '") != string::npos);
+    return true;
+  }
+}
+
 int main() {
   auto program = checked_program(R"moss(export fn compute(x):
   return x * 2 + 20
@@ -289,6 +317,39 @@ fn main():
   assert(imported_add.parent_requirement_id == imported_multiply.id);
   assert(imported_multiply.id != imported_add.id);
 
+  for (const char* operation : {"operator:*", "operator:+"}) {
+    assert(admit_typed_arithmetic_operator(operation, Type::primitive("int"),
+        Type::primitive("int"), Type::primitive("int")) ==
+        BuiltinOperatorAdmission::Admitted);
+    assert(admit_typed_arithmetic_operator(operation, Type::primitive("float"),
+        Type::primitive("int"), Type::primitive("float")) ==
+        BuiltinOperatorAdmission::Admitted);
+    assert(admit_typed_arithmetic_operator(operation, Type::primitive("string"),
+        Type::primitive("int"), Type::primitive("string")) ==
+        BuiltinOperatorAdmission::Rejected);
+    assert(admit_typed_arithmetic_operator(operation, Type::primitive("bool"),
+        Type::primitive("int"), Type::primitive("bool")) ==
+        BuiltinOperatorAdmission::Rejected);
+    assert(admit_typed_arithmetic_operator(operation, Type::primitive("int"),
+        Type::primitive("string"), Type::primitive("int")) ==
+        BuiltinOperatorAdmission::Rejected);
+    assert(admit_typed_arithmetic_operator(operation, Type::primitive("int"),
+        Type::primitive("int"), Type::primitive("float")) ==
+        BuiltinOperatorAdmission::Rejected);
+  }
+  const TypeRef open = Type::var({0, 0, 0});
+  assert(admit_typed_arithmetic_operator("operator:*", open,
+      Type::primitive("int"), open) ==
+      BuiltinOperatorAdmission::Deferred);
+  assert(!synthetic_imported_call_rejected("5", imported_payload,
+                                           imported_provenance));
+  assert(!synthetic_imported_call_rejected("2.5", imported_payload,
+                                           imported_provenance));
+  assert(synthetic_imported_call_rejected("\"bad\"", imported_payload,
+                                           imported_provenance));
+  assert(synthetic_imported_call_rejected("true", imported_payload,
+                                           imported_provenance));
+
   auto incomplete_wire = imported_wire;
   incomplete_wire.requirements.pop_back();
   assert(synthetic_summary_rejected(
@@ -311,6 +372,13 @@ fn main():
   inconsistent_wire.requirements[1].result->ordinal = 1;
   assert(synthetic_summary_rejected(
       abi_v10::summary_payload(inconsistent_wire), imported_provenance));
+  auto wrong_result_wire = imported_wire;
+  abi_v10::WireType wrong_result;
+  wrong_result.kind = abi_v10::WireTypeKind::Primitive;
+  wrong_result.identity = "int";
+  wrong_result_wire.requirements[1].result = wrong_result;
+  assert(synthetic_summary_rejected(
+      abi_v10::summary_payload(wrong_result_wire), imported_provenance));
   assert(synthetic_summary_rejected(imported_payload,
                                     {imported_provenance.front()}));
   assert(synthetic_summary_rejected(imported_payload + "x",
