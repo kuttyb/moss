@@ -8269,3 +8269,20 @@ Fast Debug frames now carry the checker-compatible functional context separately
 their human-readable trace name. Pipeline metadata lookup matches canonical context,
 line, and checked stage source, including static function specializations and multiple
 pipeline expressions on one line.
+
+## L7 source-free generic body investigation
+
+On `fix/source-free-generic-bodies` at `d62edd9d`, reproduced the requested generic
+provider/consumer and both controls with `MOSS_STAGED_ABI=v10`; all source-free
+consumers built and ran after the provider source was removed. No production fix was
+made. These examples import serialized `generic_stmt` records; the checked-body-v1
+projection remains unavailable for the multi-statement arithmetic body. Focused
+provider/consumer artifacts and the probe scripts are under disposable `tmp/`.
+
+## L7 unsupported unary bang
+
+Commit `0ae6b1d5be231c3ab9cffb97c05d81dcdcfbdebb` adds
+`UNSUPPORTED_EXPRESSION_OPERATOR` validation for unary `!` and focused checker,
+Fast Debug, and native checks. The exact `/tmp/negation.moss` reproducer now rejects
+in both check and interpreter modes. It was fast-forwarded and pushed to
+`origin/phase25-integration`; no broad suite or PR was run.
