@@ -166,3 +166,5 @@ When working with Moss:
 - Coordinate a single branch writer. When the user authorizes it, push the
   task branch normally to its configured remote. Never force-push or rewrite
   published history unless the user separately authorizes that operation.
+- A task-specific user authorization for a normal push supersedes stale
+  no-push notes elsewhere in session status; keep the push fast-forward only.

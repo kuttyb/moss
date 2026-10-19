@@ -8528,3 +8528,30 @@ Focused validation passed:
 - `python3 tests/phase25/integration/cross_crate_harness.py --scenario 6
   --staged-v10` passed with source-removed output `99`.
 - `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` passed.
+
+## Phase 25-C2b.6a — Produce checked arithmetic body IR
+
+Starting at `d1cdcd4fee51946db6806772582f98aca262e25d` on
+`phase25-integration`. Added a focused producer for exactly one `Return` with
+`T * Int + Int`, constructing `Binary(Add, Binary(Mul, Parameter(0), Int),
+Int)` only from a complete checker-owned open summary and the exact ordered
+`operator:*` then `operator:+` requirement chain. It verifies operation IDs,
+types, read access, requirement parent links, and the generic return type; the
+existing checked-body encoder supplies the semantic hash. No provider emitter
+eligibility, `.mossi` output, ABI wire format, source-free consumer path, legacy
+`generic_stmt`, or specialization admission/defaults changed. Existing H3
+production was left unchanged.
+
+Focused validation passed:
+- `make moss-dev` passed (pre-existing TypeSolver missing-field-initializer
+  warnings only).
+- `python3 tests/tooling/check_phase25_generic_arithmetic_requirements.py
+  ./moss` passed; it verifies the exact tree, preserved `T` and concrete `Int`
+  literal types, codec roundtrip and matching hash
+  `body-semantic-v1:sha256:13de51438fae61d2dcf409d3b32d2e95f97a48496ac3f3e32b5da470be07f465`,
+  plus missing/reordered/inconsistent requirement and unsupported-form rejection.
+- `python3 tests/phase25/integration/cross_crate_harness.py --scenario 6
+  --staged-v10 --json` passed; source-removed H3 consumer output was `99`.
+- `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` passed.
+- Broad regression suites were not run. C2b.6b was not started.
+

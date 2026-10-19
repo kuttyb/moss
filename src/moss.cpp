@@ -2801,6 +2801,155 @@ struct CheckedPrivateChainBody {
   string semantic_hash;
 };
 
+struct CheckedArithmeticBody {
+  vector<checked_ir::Stmt> statements;
+  string semantic_hash;
+};
+
+static std::optional<std::pair<string, string>>
+checked_arithmetic_split_binary(const string& expression, const string& op) {
+  int depth = 0;
+  bool in_string = false;
+  for (size_t index = expression.size(); index-- > 0;) {
+    const char c = expression[index];
+    if (c == '"' && (index == 0 || expression[index - 1] != '\\'))
+      in_string = !in_string;
+    if (in_string) continue;
+    if (c == ')') ++depth;
+    else if (c == '(') --depth;
+    if (depth != 0 || index + op.size() > expression.size() ||
+        expression.compare(index, op.size(), op) != 0)
+      continue;
+    // A leading unary sign is not a binary operator.
+    if ((op == "+" || op == "-") &&
+        (index == 0 || string("+-*/%(<>=!&|,").find(expression[index - 1]) !=
+                           string::npos))
+      continue;
+    return std::make_pair(trim(expression.substr(0, index)),
+                          trim(expression.substr(index + op.size())));
+  }
+  return std::nullopt;
+}
+
+// Produce the intentionally narrow open arithmetic return supported by the
+// checked body bridge. Source text selects the expression shape and literal
+// values; every type and operator identity comes from the complete retained
+// checker summary and its ordered requirement chain.
+[[maybe_unused]] static std::optional<CheckedArithmeticBody> checked_arithmetic_body(
+    const Function& function) {
+  if (!function.open_summary || !function.open_summary->complete ||
+      function.body.size() != 1 ||
+      function.body.front().kind != Stmt::Kind::Return)
+    return std::nullopt;
+  const auto& summary = *function.open_summary;
+  if (!summary.result_type || function.params.size() != 1 ||
+      summary.parameter_types.size() != 1 ||
+      !summary.parameter_types.front() || summary.bound_variable_count != 1 ||
+      summary.requirements.size() != 2)
+    return std::nullopt;
+
+  const TypeRef type_t = summary.parameter_types.front();
+  const auto is_summary_variable = [&](const TypeRef& type) {
+    return type && type->kind == TypeKind::InferenceVar &&
+        type->var_id.session_id == 0 && type->var_id.owner_id == 0 &&
+        type->var_id.ordinal < summary.bound_variable_count;
+  };
+  if (!is_summary_variable(type_t) ||
+      !summary.result_type->structurally_equal(*type_t))
+    return std::nullopt;
+
+  const Requirement& multiply = summary.requirements[0];
+  const Requirement& add = summary.requirements[1];
+  const TypeRef int_type = Type::primitive("int");
+  auto valid_requirement = [&](const Requirement& requirement,
+                               const string& operation) {
+    return requirement.kind == RequirementKind::Operator &&
+        requirement.target_id == operation && !requirement.id.empty() &&
+        requirement.subject && requirement.subject->structurally_equal(*type_t) &&
+        requirement.arguments.size() == 1 && requirement.arguments.front() &&
+        requirement.arguments.front()->structurally_equal(*int_type) &&
+        requirement.result && (*requirement.result)->structurally_equal(*type_t) &&
+        requirement.access == AccessMode::Read &&
+        requirement.argument_access == vector<AccessMode>{AccessMode::Read};
+  };
+  if (!valid_requirement(multiply, "operator:*") ||
+      !valid_requirement(add, "operator:+") || multiply.id == add.id ||
+      multiply.parent_requirement_id || !add.parent_requirement_id ||
+      *add.parent_requirement_id != multiply.id)
+    return std::nullopt;
+
+  const auto& returned = function.body.front();
+  auto addition = checked_arithmetic_split_binary(
+      strip_redundant_outer_parentheses(trim(returned.a)), "+");
+  if (!addition) return std::nullopt;
+  auto product = checked_arithmetic_split_binary(
+      strip_redundant_outer_parentheses(trim(addition->first)), "*");
+  if (!product || trim(product->first) != function.params.front().name)
+    return std::nullopt;
+  auto integer_literal = [&](const string& source)
+      -> std::optional<string> {
+    const string value = strip_redundant_outer_parentheses(trim(source));
+    if (value.empty() || !std::all_of(value.begin(), value.end(),
+          [](unsigned char c) { return std::isdigit(c); }))
+      return std::nullopt;
+    try {
+      size_t consumed = 0;
+      const long long number = std::stoll(value, &consumed, 10);
+      if (consumed != value.size()) return std::nullopt;
+      return std::to_string(number);
+    } catch (const std::exception&) {
+      return std::nullopt;
+    }
+  };
+  auto multiplier = integer_literal(product->second);
+  auto addend = integer_literal(addition->second);
+  if (!multiplier || !addend) return std::nullopt;
+
+  checked_ir::Expr parameter;
+  parameter.kind = checked_ir::ExprKind::Parameter;
+  parameter.type = type_t;
+  parameter.ordinal = 0;
+
+  auto make_integer = [&](const string& value) {
+    checked_ir::Expr literal;
+    literal.kind = checked_ir::ExprKind::IntegerLiteral;
+    literal.type = multiply.arguments.front();
+    literal.literal_value = value;
+    return literal;
+  };
+  checked_ir::Expr multiplication;
+  multiplication.kind = checked_ir::ExprKind::Binary;
+  multiplication.type = *multiply.result;
+  multiplication.binary_op = checked_ir::BinaryOp::Mul;
+  multiplication.operands = {parameter, make_integer(*multiplier)};
+
+  checked_ir::Expr addition_expr;
+  addition_expr.kind = checked_ir::ExprKind::Binary;
+  addition_expr.type = *add.result;
+  addition_expr.binary_op = checked_ir::BinaryOp::Add;
+  // The add requirement supplies the concrete type of its own literal.
+  checked_ir::Expr addend_expr;
+  addend_expr.kind = checked_ir::ExprKind::IntegerLiteral;
+  addend_expr.type = add.arguments.front();
+  addend_expr.literal_value = *addend;
+  addition_expr.operands = {std::move(multiplication), std::move(addend_expr)};
+
+  checked_ir::Stmt return_stmt;
+  return_stmt.kind = checked_ir::StmtKind::Return;
+  return_stmt.type = summary.result_type;
+  return_stmt.expr = std::move(addition_expr);
+
+  CheckedArithmeticBody body;
+  body.statements.push_back(std::move(return_stmt));
+  try {
+    body.semantic_hash = checked_ir::compute_checked_body_hash_v1(
+        body.statements);
+  } catch (const std::invalid_argument&) {
+    return std::nullopt;
+  }
+  return body;
+}
+
 // Bridge the checked straight-line local-result form into the versioned rich
 // body IR. Each parameter, nominal field slot, and callee comes from the
 // retained typed summary and exact checker edge; source spelling is used only
