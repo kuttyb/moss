@@ -8360,3 +8360,11 @@ Focused decoder, H3 Scenario 6, source-backed ABI-v9 checks, and
 - Focused evidence: `./moss inspect fn:compute --source tmp/c2b1_compute.moss --json` reports `missing_typed_facts`; source-backed `./moss run --interp tmp/c2b1_compute.moss` prints `30`; specialization effects are resolved.
 - Existing in-memory `moss::Requirement` is sufficient; current ABI-v10 wire requirements omit explicit argument/result terms. No implementation was undertaken, per task scope.
 - Feedback validation (`python3 tests/tooling/check_agent_feedback.py`) and `git diff --check` pass. The focused audit/status/feedback documentation is ready for commit and push to `phase25-integration`.
+
+## Phase 25-C2b.2 — Capture generic arithmetic requirements — 2026-10-19
+
+- Starting baseline: `238d7ab59ea4dfc0b4b0f4f25d73ce9f48a37633`; working directly on `phase25-integration`.
+- `build_open_callable_summaries()` now retains typed `operator:*` and `operator:+` requirements in evaluation order for the single-return `compute(x): return x * 2 + 20` pattern. Both use the same open parameter TypeRef for subject/result and an Int argument; the addition links to the multiplication requirement. Summary completion and concrete admission behavior were not changed.
+- Added an internal Checker test plus a focused Python runner. It verifies the incomplete summary and empty requirements for a non-arithmetic generic identity function.
+- Focused tests pass: `python3 tests/tooling/check_phase25_generic_arithmetic_requirements.py ./moss` verifies ordered typed facts, source-backed output `30`, `missing_typed_facts` remains public, and a string specialization is rejected.
+- `make moss-dev`, `python3 tests/tooling/check_agent_feedback.py`, and `git diff --check` pass. The focused test runner passes against the rebuilt `-O0` compiler.

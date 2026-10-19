@@ -4277,6 +4277,109 @@ class Checker {
           }
         }
       }
+      // Retain the typed operator edges in an open arithmetic return even
+      // when another expression fact (for example, the complete return type)
+      // is still unavailable. This records evidence already expressible by
+      // Requirement; it does not complete the summary or admit an operation.
+      if (single_result_expression && function.body.size() == 1 &&
+          function.body.front().kind == Stmt::Kind::Return) {
+        struct OpenArithmeticExpr {
+          moss::TypeRef type;
+          std::optional<string> requirement_id;
+        };
+        auto parameter_for_type = [&](const moss::TypeRef& type)
+            -> std::optional<string> {
+          if (!type) return std::nullopt;
+          for (const auto& parameter : function.params) {
+            if (!parameter.type.empty()) continue;
+            auto entry = parameter_variables.find(parameter.name);
+            if (entry != parameter_variables.end() && entry->second &&
+                entry->second->kind == moss::TypeKind::InferenceVar &&
+                entry->second->structurally_equal(*type))
+              return parameter.name;
+          }
+          return std::nullopt;
+        };
+        std::uint32_t arithmetic_requirement_ordinal = 0;
+        vector<moss::Requirement> captured_arithmetic_requirements;
+        std::function<std::optional<OpenArithmeticExpr>(const string&)> retain =
+            [&](const string& source) -> std::optional<OpenArithmeticExpr> {
+          const string expression = strip_redundant_outer_parentheses(
+              trim(source));
+          if (auto parameter = parameter_variables.find(expression);
+              parameter != parameter_variables.end() && parameter->second)
+            return OpenArithmeticExpr{parameter->second, std::nullopt};
+          if (auto spelling = constraint_expression_type(function, expression)) {
+            auto literal_type = type_term(*spelling);
+            if (literal_type && literal_type->is_closed())
+              return OpenArithmeticExpr{literal_type, std::nullopt};
+          }
+          static const vector<vector<string>> arithmetic_precedence = {
+              {"+", "-"}, {"*", "/", "%"}};
+          for (const auto& operators : arithmetic_precedence) {
+            auto binary = split_binary(expression, operators);
+            if (!binary) continue;
+            string operation;
+            for (const auto& candidate : operators) {
+              auto matching = split_binary(expression, {candidate});
+              if (matching && *matching == *binary) {
+                operation = candidate;
+                break;
+              }
+            }
+            if (operation.empty()) return std::nullopt;
+            auto left = retain(binary->first);
+            auto right = retain(binary->second);
+            if (!left || !right) return std::nullopt;
+            auto left_parameter = parameter_for_type(left->type);
+            auto right_parameter = parameter_for_type(right->type);
+            const bool left_is_int = left->type->kind == moss::TypeKind::Primitive &&
+                left->type->name == "int";
+            const bool right_is_int = right->type->kind == moss::TypeKind::Primitive &&
+                right->type->name == "int";
+            moss::TypeRef subject;
+            moss::TypeRef argument;
+            if (left_parameter && right_is_int) {
+              subject = left->type;
+              argument = right->type;
+            } else if (right_parameter && left_is_int) {
+              subject = right->type;
+              argument = left->type;
+            } else {
+              return std::nullopt;
+            }
+            if (left_parameter && right_parameter) return std::nullopt;
+            const string requirement_id = function.semantic_callable_id +
+                ":requirement:checked-arithmetic:" +
+                std::to_string(arithmetic_requirement_ordinal++);
+            moss::Requirement requirement;
+            requirement.id = requirement_id;
+            requirement.kind = moss::RequirementKind::Operator;
+            requirement.target_id = "operator:" + operation;
+            requirement.subject = subject;
+            requirement.arguments.push_back(argument);
+            requirement.argument_access.push_back(moss::AccessMode::Read);
+            requirement.result = subject;
+            const auto& return_statement = function.body.front();
+            requirement.origin = {summary.origin.module_id,
+                                  function.source_file,
+                                  return_statement.line, 1,
+                                  function.semantic_callable_id,
+                                  requirement_id};
+            requirement.parent_requirement_id = left->requirement_id
+                ? left->requirement_id : right->requirement_id;
+            captured_arithmetic_requirements.push_back(std::move(requirement));
+            return OpenArithmeticExpr{subject, requirement_id};
+          }
+          return std::nullopt;
+        };
+        auto arithmetic_result = retain(*single_result_expression);
+        if (arithmetic_result && arithmetic_result->requirement_id &&
+            !captured_arithmetic_requirements.empty())
+          summary.requirements.insert(summary.requirements.end(),
+              std::make_move_iterator(captured_arithmetic_requirements.begin()),
+              std::make_move_iterator(captured_arithmetic_requirements.end()));
+      }
       for (size_t ordinal = 0; ordinal < function.constraints.size(); ++ordinal) {
         const auto& constraint = function.constraints[ordinal];
         if (constraint.kind != ConstraintKind::Method) {
