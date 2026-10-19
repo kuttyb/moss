@@ -1,5 +1,19 @@
 # Team I live integration record
 
+## H3 nested private-chain staging checkpoint — 2026-10-19
+
+L4 pushed `9621fca`. Source-removed Int/String consumers execute from one
+provider's public `fresh` and two private helper Summary/CheckedBody pairs;
+all six legacy generic statement lines are stripped before re-sealing and
+execution. A missing private body fails pre-link, and unsupported three-
+statement H3 remains guarded. Compiler, focused ABI/typed/Team A/G2 authority
+and both key fixture ledgers 30/30 pass. The broader staged G2 conformance
+runner is **10/11**, with Gate 10 `identity_conflict` and
+`compiled_only_custom_key` failures; L4 is fixing this regression before
+intake. Combined L6 also requested exact emission/validation linkage for
+lifting the H3 guard. H3 is not yet accepted or integrated. H/T target
+post-merge CI is green; H2 PR core CI remains pending.
+
 ## H3 direct checked-IR importer checkpoint — 2026-10-19
 
 L4 pushed `b4c0450` and `cfc5bfa`. A bounded structural decoder validates

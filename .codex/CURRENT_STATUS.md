@@ -1,5 +1,26 @@
 # Moss current status
 
+## Phase 25 H3 nested private-chain staging checkpoint — 2026-10-19
+
+Sole L4 pushed `phase25-i-map-staging` at `9621fca`. One provider now emits
+three canonical Summary/CheckedBody pairs: public `fresh` and private
+`nested_private_box`/`private_box`, with exact callable/nominal hash edges.
+A fixture strips all six legacy `generic_stmt` lines, re-seals `.mossi` and
+`.rlib`, removes provider source, and independently builds/runs Int (`99`)
+and String (`hello`) consumers. Dropping the private helper body rejects
+before native link as `SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING`; unsupported
+three-statement source remains `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE` and
+default-v9 original baseline passes. Optimized compiler, ABI staging and
+adversarial, checked decoder, summary density, typed API, Team A, G2
+declaration authority and both activated/default key fixtures 30/30 pass.
+**Staged G2 conformance is 10/11:** Gate 10 now fails `identity_conflict`
+(`TYPE_MISMATCH`) and `compiled_only_custom_key`. L4 is treating this as a
+regression and repairing it before intake. Combined L6 review also flagged
+that H3 export guard lifting must be bound to actual emitted/validated closure.
+This remains non-target staging, not H3 final acceptance or strict release.
+H/T target post-merge CI workflow `39180139206` has all four required jobs
+green (release job skipped); H2 PR #9 exact-head core CI is still running.
+
 ## Phase 25 H3 direct checked-IR import checkpoint — 2026-10-19
 
 Sole L4 pushed staged `b4c045096c4508386bf758405b2079c684b17726`
