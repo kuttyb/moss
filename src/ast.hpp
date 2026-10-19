@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -126,6 +127,42 @@ struct OpenCallableSummaryFacts {
   RequirementOrigin origin;
   bool complete = false;
 };
+// Body analysis may allocate a provisional result variable before discovering
+// that the result aliases a parameter. Discard only unused trailing ordinals;
+// an interior hole is noncanonical and must not be silently renumbered.
+inline bool close_open_summary_ordinals(OpenCallableSummaryFacts& summary) {
+  vector<bool> used(summary.bound_variable_count, false);
+  bool valid = true;
+  auto visit = [&](const auto& self, const TypeRef& type) -> void {
+    if (!type) return;
+    if (type->kind == TypeKind::InferenceVar) {
+      const auto& id = type->var_id;
+      if (id.session_id || id.owner_id ||
+          id.ordinal >= summary.bound_variable_count) valid = false;
+      else used[id.ordinal] = true;
+    }
+    for (const auto& argument : type->type_args) self(self, argument);
+    for (const auto& field : type->field_substitutions)
+      self(self, field.second);
+  };
+  for (const auto& type : summary.parameter_types) visit(visit, type);
+  visit(visit, summary.result_type);
+  for (const auto& requirement : summary.requirements) {
+    visit(visit, requirement.subject);
+    for (const auto& argument : requirement.arguments) visit(visit, argument);
+    if (requirement.result) visit(visit, *requirement.result);
+  }
+  for (const auto& member : summary.member_requirements) {
+    visit(visit, member.receiver);
+    for (const auto& argument : member.argument_types) visit(visit, argument);
+    if (member.result) visit(visit, *member.result);
+  }
+  while (!used.empty() && !used.back()) used.pop_back();
+  if (!valid || std::find(used.begin(), used.end(), false) != used.end())
+    return false;
+  summary.bound_variable_count = static_cast<std::uint32_t>(used.size());
+  return true;
+}
 // A versioned, checked semantic body subset. Every published node has a
 // resolved operand identity and TypeRef. Other source forms have no body hash.
 struct CheckedBodyExprV1 {
@@ -547,6 +584,10 @@ struct Function {
   // Optional provider-authored logical source name retained by a compiled
   // interface for consumer diagnostics after its source tree is removed.
   string provider_origin_file;
+  // ABI-v10 sealed records retained across module rewriting. The checker
+  // decodes these before inference and replaces any legacy generic_stmt body.
+  string imported_checked_summary_payload;
+  string imported_checked_body_payload;
 };
 struct Trait { string name, header; vector<TraitMethod> methods; bool exported = false; int line = 0; string source_file; };
 
@@ -707,6 +748,14 @@ struct Program {
   // Local modules take the package manifest; loaded providers take their
   // interface's identity (TYPE_IR_CONTRACT §3.1).
   std::map<string, string> module_identities;
+  // Staged ABI-v10 canonical key proof IDs supplied by compiled providers,
+  // keyed by interned nominal declaration identity. Source-owned proofs are
+  // checked from the methods and emitted when writing the local interface.
+  std::map<string, string> imported_key_proof_ids;
+  // Checked key-protocol bindings and keyed operation specializations used by
+  // staged native lowering and the project build fingerprint.
+  std::map<string, string> key_proof_ids_by_type;
+  std::map<string, string> key_operation_specialization_ids;
   // True when module identities come from a package manifest; a missing
   // identity is then an error, never the standalone fallback.
   bool package_identities = false;

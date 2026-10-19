@@ -106,6 +106,28 @@ inline bool module_id_valid(std::string_view id) {
          valid_part(id.substr(split + 2));
 }
 
+struct ModuleIdentity {
+  std::string package_name;
+  std::string package_version;
+  std::string module_name;
+  std::string raw_id;
+};
+
+inline ModuleIdentity parse_module_id(std::string_view id) {
+  if (!module_id_valid(id)) {
+    throw Error("SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 module identity is malformed");
+  }
+  std::string_view rest = id.substr(10); // remove "module-v1:"
+  const auto at = rest.find('@');
+  const auto split = rest.find("::");
+  ModuleIdentity result;
+  result.package_name = std::string(rest.substr(0, at));
+  result.package_version = std::string(rest.substr(at + 1, split - at - 1));
+  result.module_name = std::string(rest.substr(split + 2));
+  result.raw_id = std::string(id);
+  return result;
+}
+
 inline std::string hash(std::string_view domain, std::string_view bytes) {
   std::string input(domain);
   input.push_back('\0');
@@ -114,6 +136,10 @@ inline std::string hash(std::string_view domain, std::string_view bytes) {
 }
 
 inline void require(bool condition, const char* code, const char* message) {
+  if (!condition) throw Error(code, message);
+}
+
+inline void require(bool condition, const char* code, const std::string& message) {
   if (!condition) throw Error(code, message);
 }
 
@@ -136,7 +162,7 @@ inline std::string frame_records(const std::vector<Record>& records,
   std::string previous;
   for (const auto& record : records) {
     require(!record.id.empty() && record.id.find('\n') == std::string::npos &&
-                valid_utf8(record.id) && valid_utf8(record.payload) &&
+                valid_utf8(record.id) &&
                 record.payload.size() <= 1 << 20 &&
                 (previous.empty() || previous < record.id),
             "SOURCE_FREE_CONTRACT_INVALID",
@@ -260,6 +286,7 @@ inline std::vector<Record> read_records(Reader& reader, const char* section) {
   const auto size = count_number(field(reader, "count"), 100000);
   std::vector<Record> records;
   records.reserve(size);
+  std::string previous;
   for (std::size_t i = 0; i < size; ++i) {
     const auto frame = field(reader, "record");
     const auto split = frame.find(' ');
@@ -270,6 +297,9 @@ inline std::vector<Record> read_records(Reader& reader, const char* section) {
     Record record{reader.bytes(id_size), reader.bytes(payload_size)};
     require(reader.line().empty(), "SOURCE_FREE_CONTRACT_INVALID",
             "ABI-v10 frame has trailing data");
+    require(previous.empty() || previous < record.id, "SOURCE_FREE_CONTRACT_INVALID",
+            "ABI-v10 record is duplicate, malformed, or out of order");
+    previous = record.id;
     records.push_back(std::move(record));
   }
   return records;
@@ -310,13 +340,18 @@ inline SealedInterface parse(std::string_view text) {
   require(reader.line() == "imports", "SOURCE_FREE_CONTRACT_INVALID",
           "ABI-v10 imports section is missing");
   const auto import_count = count_number(field(reader, "count"), 100000);
+  std::string prev_import;
   for (std::size_t i = 0; i < import_count; ++i) {
     const auto line = reader.line();
     const auto first = line.find(' '), second = line.find(' ', first + 1);
     require(first != std::string::npos && second != std::string::npos &&
                 line.find(' ', second + 1) == std::string::npos,
             "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 import record is malformed");
-    result.value.imports.push_back({line.substr(0, first),
+    const auto mod_id = line.substr(0, first);
+    require(prev_import.empty() || prev_import < mod_id, "SOURCE_FREE_CONTRACT_INVALID",
+            "ABI-v10 import order is invalid or duplicate");
+    prev_import = mod_id;
+    result.value.imports.push_back({mod_id,
                                      line.substr(first + 1, second - first - 1),
                                      line.substr(second + 1)});
   }

@@ -46,7 +46,7 @@ when the API is frozen.
 | `03-imported-nominal-keys`, `...-source-free` | provider-owned nominal key with custom `isequal`/`hash` methods, source-backed and compiled-only | fail-closed in the checker (P25-S3-D2 interim fix) |
 | `04-two-consumers-shared-map` | two consumer packages message one provider domain that owns `Map[Name, Int]` | fail-closed in the checker (P25-S3-D2 interim fix) |
 | `04-two-consumers-shared-map-control` | same four-package topology with String keys | passes |
-| `05-coherence-mismatch-*` | conflicting free-function proofs; a free proof overriding canonical methods (`KEY_PROOF_COHERENCE_MISMATCH`) | fail-closed in the checker (P25-S3-D2 interim fix) |
+| `05-coherence-mismatch-*` | a free-only key with no provider methods is `KEY_PROOF_INVALID`; proof-shaped consumer free callables alongside canonical provider methods are `KEY_PROOF_COHERENCE_MISMATCH` | staged ABI-v10 checker negatives |
 | `06a`–`06i` | malformed (wrong result/arity/operand), impure (I/O, raise, divergence), missing, and partial proofs | fail-closed in the checker (P25-S3-D2 interim fix) |
 | `06j-proof-forged-interface` | compiled-only provider whose `.mossi` claims an I/O `hash` is pure | fail-closed (`SOURCE_FREE_CONTRACT_MISMATCH`) |
 | `07-keys-snapshot-*` | `keys()` is an eager owned snapshot (Float, nominal; String control) | fail-closed / fail-closed / passes |
@@ -61,6 +61,15 @@ P25-S3-D3. `09e` must become `TYPE_AMBIGUOUS_OPEN_RESULT`, never a default.
 `09f`/`09g` (domain state `Map()`, annotated or pinned by handlers) and `09h`
 (an exported open result used by a consumer) are rejected today but are valid
 under Option B.
+
+Nominal proof selection follows `ABI_V10_DESIGN.md` §3.5 and the Team S/Team G
+interface agreement: the defining type's structural `isequal`/`hash` methods are
+canonical. The free-only `05` case has no provider proof, so its expected
+diagnostic is `KEY_PROOF_INVALID`; there is no second valid proof to compare.
+The method-override `05` case rejects consumer free callables that would
+compete with a valid provider proof. A separate source-free test,
+`test_proof_transport.py`, reseals a conflicting consumer proof record and
+requires `KEY_PROOF_COHERENCE_MISMATCH` before native linking.
 
 ## Running
 

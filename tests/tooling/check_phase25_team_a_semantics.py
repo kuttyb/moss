@@ -382,6 +382,34 @@ fn main():
         checked(member_conflict, "TYPE_MISMATCH")
         print("PASS generic member constraint rejects conflicting element", flush=True)
 
+        missing_member = source(scratch, "missing_generic_member", '''fn size(value):
+  return value.length()
+
+fn main():
+  echo size(42)
+''')
+        missing_error = checked(missing_member, "METHOD_NOT_FOUND")["error"]
+        assert "missing required method 'length'" in missing_error["message"], (
+            missing_error)
+        incompatible_member_argument = source(
+            scratch, "incompatible_generic_member_argument", '''type Probe:
+  value: Int
+  fn accept(other: Int) -> Int:
+    return other
+
+fn invoke(receiver, value):
+  return receiver.accept(value)
+
+fn main():
+  echo invoke(Probe(value: 1), "wrong")
+''')
+        incompatible_error = checked(incompatible_member_argument,
+                                     "TYPE_MISMATCH")["error"]
+        assert "method 'accept' is incompatible with argument types (string)" in (
+            incompatible_error["message"]), incompatible_error
+        print("PASS generic missing member differs from method argument mismatch",
+              flush=True)
+
         nested_member = source(scratch, "nested_and_pipeline_member", '''fn length(value):
   return value.length()
 
@@ -1090,7 +1118,11 @@ fn main():
         })
         rejected = project_check(scratch / "bad_consumer",
                                  code="METHOD_NOT_FOUND", env=env)
+        assert "missing required method 'length'" in rejected["error"]["message"], (
+            rejected)
         related = rejected["error"].get("related", [])
+        # The provider source location survives interface export. The caller
+        # sees the same missing-method diagnostic as a source-backed generic call.
         assert any(note["source"]["file"].endswith("provider.moss") and
                    "requires method 'length'" in note["message"]
                    for note in related), related

@@ -1,12 +1,16 @@
 use moss_runtime::{MossMap, MossSet};
-use provider::UserKey;
+use provider::{GenericRecord, UserKey};
 
-pub fn read(map: &MossMap<UserKey, i64>, id: i64) -> Option<i64> {
-    map.get_with(id, &UserKey { id }, |a, b| a.id == b.id).copied()
+pub fn read(map: &MossMap<UserKey, GenericRecord<i64>>, id: i64) -> Option<i64> {
+    map.get_with(id, &UserKey { id }, |a, b| a.id == b.id).map(|rec| rec.field_0)
 }
 
-pub fn remove(map: &mut MossMap<UserKey, i64>, id: i64) -> Option<i64> {
+pub fn remove(map: &mut MossMap<UserKey, GenericRecord<i64>>, id: i64) -> Option<GenericRecord<i64>> {
     map.remove_with(id, &UserKey { id }, |a, b| a.id == b.id)
+}
+
+pub fn contains(map: &MossMap<UserKey, GenericRecord<i64>>, id: i64) -> bool {
+    map.contains_key_with(id, &UserKey { id }, |a, b| a.id == b.id)
 }
 
 pub fn set_roundtrip(id: i64) -> bool {

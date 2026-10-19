@@ -219,6 +219,159 @@ fn main():
     assert push["admitted_template_or_builtin_family"] == (
         "builtin:vector[int]"), push
 
+    index_source = Path(scratch_path) / "generic_index.moss"
+    index_source.write_text("""fn first(values):
+  return values[0]
+
+fn main():
+  echo first([2, 3])
+""")
+    index_checked = subprocess.run([str(MOSS), "inspect", "main", "--source",
+        str(index_source), "--json"], text=True, capture_output=True)
+    assert index_checked.returncode == 0, (
+        index_checked.stdout, index_checked.stderr)
+    index_typed = json.loads(index_checked.stdout)["result"]["typed_semantic_v1"]
+    first_summary = [entry for entry in index_typed["open_summaries"]
+                     if entry["callable_id"].endswith(":fn:first")]
+    assert len(first_summary) == 1, first_summary
+    assert first_summary[0]["requirement_count"] == 1, first_summary
+    index = first_summary[0]["requirements"][0]
+    assert index["kind"] == "index" and index["target_id"] == "builtin:index", index
+    assert index["subject"] == {"kind": "bound_var", "ordinal": 0}, index
+    assert index["argument_types"] == [{"kind": "primitive", "id": "int",
+        "arguments": [], "fields": []}], index
+    assert index["result"] == {"kind": "bound_var", "ordinal": 1}, index
+    assert index["subject_access"] == "READ" and index["argument_access"] == ["READ"], index
+    assert index["origin"]["enclosing_callable"] == first_summary[0]["callable_id"], index
+    assert index["origin"]["module_id"].startswith("module-v1:"), index
+
+    two_index_source = Path(scratch_path) / "generic_two_indices.moss"
+    two_index_source.write_text("""fn both(values):
+  first = values[0]
+  return values[1]
+
+fn main():
+  echo both([1, 2])
+""")
+    two_index_checked = subprocess.run([str(MOSS), "inspect", "both", "--source",
+        str(two_index_source), "--json"], text=True, capture_output=True)
+    assert two_index_checked.returncode == 0, (
+        two_index_checked.stdout, two_index_checked.stderr)
+    two_index_typed = json.loads(two_index_checked.stdout)["result"][
+        "typed_semantic_v1"]
+    both_summary = [entry for entry in two_index_typed["open_summaries"]
+                    if entry["callable_id"].endswith(":fn:both")]
+    assert len(both_summary) == 1, both_summary
+    both_requirements = both_summary[0]["requirements"]
+    assert len(both_requirements) == 2, both_requirements
+    assert all(entry["kind"] == "index" and len(entry["argument_types"]) == 1
+               for entry in both_requirements), both_requirements
+    assert len({entry["requirement_id"] for entry in both_requirements}) == 2, (
+        both_requirements)
+
+    two_index_source.write_text(two_index_source.read_text().replace(
+        "values[1]", 'values["bad"]'))
+    invalid_index = subprocess.run([str(MOSS), "check", str(two_index_source),
+        "--json"], text=True, capture_output=True)
+    assert invalid_index.returncode != 0, (
+        invalid_index.stdout, invalid_index.stderr)
+    invalid_index_error = json.loads(invalid_index.stdout)["error"]
+    assert invalid_index_error["code"] == "TYPE_MISMATCH" and (
+        "indices must be Int" in invalid_index_error["message"]), (
+        invalid_index_error)
+
+    callable_source = Path(scratch_path) / "generic_callable_effects.moss"
+    callable_source.write_text("""enum CalcError:
+  InvalidInput
+
+fn plus(value: Int) -> Int:
+  return value + 1
+
+fn raising(value: Int) -> Int:
+  if value < 0:
+    raise CalcError.InvalidInput
+  return value + 1
+
+fn apply(f, value: Int) -> Int:
+  return f(value)
+
+fn main():
+  echo apply(plus, 2)
+  try:
+    echo apply(raising, 2)
+  recover CalcError.InvalidInput:
+    echo -1
+""")
+    callable_checked = subprocess.run([str(MOSS), "inspect", "main", "--source",
+        str(callable_source), "--json"], text=True, capture_output=True)
+    assert callable_checked.returncode == 0, (
+        callable_checked.stdout, callable_checked.stderr)
+    callable_typed = json.loads(callable_checked.stdout)["result"][
+        "typed_semantic_v1"]
+    apply_id = f"callable-v1:{module}:fn:apply"
+    gaps = [entry for entry in callable_typed["unavailable_open_summaries"]
+            if entry["callable_id"] == apply_id]
+    assert len(gaps) == 1 and gaps[0]["gap"] == "unresolved_effects", gaps
+    assert not any(entry["callable_id"] == apply_id
+                   for entry in callable_typed["open_summaries"]), callable_typed
+    callable_requirements = [entry for entry in
+        callable_typed["source_requirements"]
+        if entry["origin"]["enclosing_callable"] == apply_id]
+    assert len(callable_requirements) == 1, callable_requirements
+    callback = callable_requirements[0]
+    assert callback["kind"] == "callable" and callback["target_id"] == (
+        "static callable"), callback
+    assert callback["subject"] == {"kind": "bound_var", "ordinal": 0}, callback
+    assert callback["argument_types"] == [{"kind": "primitive", "id": "int",
+        "arguments": [], "fields": []}], callback
+    assert callback["result"] == {"kind": "primitive", "id": "int",
+        "arguments": [], "fields": []}, callback
+    assert callback["subject_access"] == "READ" and (
+        callback["argument_access"] == ["READ"]), callback
+    assert callback["origin"]["module_id"] == module and (
+        callback["origin"]["call_expression_id"]), callback
+    apply_specs = [entry for entry in callable_typed["specializations"]
+                   if entry["callable_id"] == apply_id]
+    assert len(apply_specs) == 2, apply_specs
+    by_target = {entry["callable_arguments"][0].split(":fn:")[-1]: entry
+                 for entry in apply_specs}
+    assert set(by_target) == {"plus", "raising"}, by_target
+    assert len({entry["key"] for entry in apply_specs}) == 2, apply_specs
+    assert by_target["plus"]["callable_arguments"] == [
+        f"callable-v1:{module}:fn:plus"], by_target
+    assert by_target["raising"]["callable_arguments"] == [
+        f"callable-v1:{module}:fn:raising"], by_target
+    assert not by_target["plus"]["observable_effects"]["unresolved"] and (
+        by_target["plus"]["observable_effects"]["raise_set"] == []), by_target
+    assert not by_target["raising"]["observable_effects"]["unresolved"] and (
+        by_target["raising"]["observable_effects"]["raise_set"] == [
+            "enum:CalcError:InvalidInput"]), by_target
+
+    exported_callback = Path(scratch_path) / "exported_callback.moss"
+    exported_callback.write_text("""module Provider
+export fn plus(value: Int) -> Int:
+  return value + 1
+export fn apply(f, value: Int) -> Int:
+  return f(value)
+""")
+    export_env = os.environ.copy()
+    export_env["MOSS_STAGED_ABI"] = "v10"
+    rejected_export = subprocess.run([str(MOSS), "check", str(exported_callback),
+        "--json"], text=True, capture_output=True, env=export_env)
+    assert rejected_export.returncode != 0, (
+        rejected_export.stdout, rejected_export.stderr)
+    export_error = json.loads(rejected_export.stdout)["error"]
+    assert export_error["code"] == (
+        "SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED") and (
+        export_error["source"]["line"] == 4), export_error
+    default_env = os.environ.copy()
+    default_env.pop("MOSS_STAGED_ABI", None)
+    default_export = subprocess.run([str(MOSS), "check", str(exported_callback),
+        "--json"], text=True, capture_output=True, env=default_env)
+    assert default_export.returncode == 0 and (
+        json.loads(default_export.stdout)["ok"]), (
+        default_export.stdout, default_export.stderr)
+
     provider = Path(scratch_path) / "provider"
     consumer = Path(scratch_path) / "consumer"
     for package_name, path in (("typed_provider", provider),

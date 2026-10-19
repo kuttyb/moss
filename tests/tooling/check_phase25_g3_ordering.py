@@ -169,13 +169,23 @@ fn main():
     print("  PASS: Scalar ordering suite verified.")
 
 
-def test_map_float_key_fails_closed():
-    """Float Map keys wait for the canonical MossMap<K,V> under key-protocol-v1.
+def test_map_float_key_contract():
+    """Exercise the staged shared kernel; preserve the production-v9 guard."""
+    if os.environ.get("MOSS_STAGED_ABI") == "v10":
+        print("Testing staged Float Map/Set signed-zero and NaN keys...")
+        proc = run_cmd([
+            sys.executable, str(ROOT / "tests/phase25/key_protocol/run_fixtures.py"),
+            "--moss", str(MOSS), "--activate",
+            "01-float-keys-map", "02-float-keys-set",
+        ])
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        for name in ("01-float-keys-map", "02-float-keys-set"):
+            assert f"  PASS: {name} -> passes" in proc.stdout, proc.stdout
+        assert "=== all fixtures activated ===" in proc.stdout, proc.stdout
+        print("  PASS: staged Float Map/Set signed zeros and NaNs agree across engines.")
+        return
 
-    The earlier MossFloatKey adapter competed with Team G's policy-free map and
-    was retracted per the L7 review; the checker must reject before lowering.
-    """
-    print("Testing Map[Float, V] fails closed pending canonical MossMap...")
+    print("Testing production-v9 Map[Float, V] fail-closed guard...")
     cases = {
         "index assignment": "fn main():\n  var m = Map()\n  m[0.5] = 1\n  echo m[0.5]\n",
         "declared type": "fn total(m: Map[Float, Int]) -> Int:\n  return 0\n\nfn main():\n  echo 1\n",
@@ -249,7 +259,7 @@ def main():
     print("=== Running Phase 25 G3 Ordering & Comparator Suite ===")
     test_float_total_ordering_laws()
     test_scalar_ordering_suite()
-    test_map_float_key_fails_closed()
+    test_map_float_key_contract()
     test_sort_and_reverse()
     print("=== All Phase 25 G3 Tests Passed Cleanly! ===")
 

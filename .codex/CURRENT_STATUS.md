@@ -1,30 +1,23 @@
 # Moss current status
 
-## Phase 25 Team I S draft candidate — 2026-10-19
+## Phase 25 Team I integrated candidate (Team S + Team B + Map/Set + G5/G6 Harness) — 2026-10-19
 
-This target-based S intake contains the pinned Team S delivery
-`53d04fbf48c007d912a47836959c488bcbb6c450`, reconciled with reviewed
-H2/G target `64d22251d7090d6bbe36369cc80a5f95f7890ce7` at normal
-merge `9aaf056923083a579d3bb51c2517db7ac998e26f`. The S pre-intake
-repaired source-free missing-method provenance, gated explicit-module
-`main` to process-root native builds, and corrected nine observed key
-fixture statuses without changing their source or expected contract. The
-post-G merge reconciles its one `tests/run.sh` overlap to L7's approved
-`ECHO_DISPLAY_UNSUPPORTED` for unresolved collections immediately sent to
-`echo`; non-echo unresolved values remain `TYPE_AMBIGUOUS_OPEN_RESULT`.
-Local optimized S1–S4, S-A/B/C, Type IR, Team A, G3/G4/L7, indexed String,
-feedback and whitespace checks pass; G2 is 10/11 with joint Gate 10 pending
-on this default-v9 baseline. This branch also carries exact-head combined
-L6 H2/G review records and sets final CI's `MOSS_STAGED_ABI=v10` selector.
-It still requires an exact-head draft PR, four green isolated CI jobs and
-combined L6 review before S target integration. Post-G target workflow
-`39193878297` is in progress and must pass before the next merge.
+This consolidated candidate unifies reviewed Team S semantics, Team B ABI-v10
+runtime and shared linkage, staged Map/Set key-protocol lowering and Option B
+type inference, Fast Debug O(1) HashIndex scaling, redundant Set hash paren
+removal, and the full G5/G6 test and verification harness.
 
-Separately, unintegrated staging head `cc8b80a60081c68915633ddadb3f14116cac85cd`
-has strict same-HEAD v10 **44 PASS / 0 FAIL / 15 BLOCKED /
-3 NOT IMPLEMENTED**. Its G4 shared String bound/source-free proofs and
-Vector[Tag] diagnostic-span repair pass focused staged/default suites; this
-does not turn this S-only PR into final release acceptance. No `main` merge.
+Completed validations on this lineage:
+- Compiler build clean (`make --jobs="$(nproc)"`).
+- Fast Debug Map/Set scaling benchmark: 6.17x (<=30.0x bound PASS).
+- Native release Set scaling benchmark: 8.14x PASS.
+- G2 conformance: 11/11 PASS (Gate 10 PASS under MOSS_G2_ACTIVATE_JOINT=1).
+- Team B acceptance: 22 PASS, 1 PENDING Gate 10.
+- Shared string linkage: 2 source-free consumers debug/release PASS, runtime mismatch rejected PASS.
+- SDK matrix: 34/34 debug/release builds PASS across 17 primary packages.
+- Team S suites (S1–S4, SA–SC, Team A, Phase 20 FileIO/executor) PASS.
+- Developer experience feedback check: PASS.
+- No direct merge to main; integration targeted to phase25-integration.
 
 ## Phase 25 Integration Team Preparation Cycle Complete & Frozen — 2026-10-16
 

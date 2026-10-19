@@ -4,8 +4,3 @@ version = "0.1.0"
 
 [build]
 source = "src"
-
-[dependencies]
-box_provider = { path = "../scenario01_provider" }
-consumer_a = { path = "../scenario02_consumer_a" }
-consumer_b = { path = "../scenario03_consumer_b" }

@@ -1,4 +1,5 @@
 #include "../../src/abi_v10_records.hpp"
+#include "../../src/moss_runtime_linkage.hpp"
 
 #include <cassert>
 #include <iostream>
@@ -56,6 +57,19 @@ int main() {
   assert(decoded.value.semantic_contract[0].payload == "bound-var 0\n");
   assert(decoded.binary_hash != decoded.semantic_hash);
   assert(moss::abi_v10::encode(decoded.value) == sealed);
+  // Versioned record payloads are byte-framed binary. A 200-byte string
+  // yields a non-UTF-8 length byte (0xc8) while its logical text stays UTF-8.
+  moss::abi_v10::WireWriter binary_writer;
+  binary_writer.byte(1);
+  binary_writer.string(std::string(200, 'x'));
+  Interface binary_payload_iface = value;
+  binary_payload_iface.private_semantic_dependencies.insert(
+      binary_payload_iface.private_semantic_dependencies.begin(),
+      {"binary:long", binary_writer.finish()});
+  const auto sealed_binary_payload =
+      moss::abi_v10::decode(moss::abi_v10::encode(binary_payload_iface));
+  assert(sealed_binary_payload.value.private_semantic_dependencies.front().payload ==
+         binary_payload_iface.private_semantic_dependencies.front().payload);
 
   auto changed = sealed;
   replace_once(changed, "bound-var 0", "bound-var 1");
@@ -80,10 +94,17 @@ int main() {
     assert(error.code == "SOURCE_FREE_CONTRACT_INVALID");
   }
   value.binary_contract.pop_back();
-  value.semantic_contract[0].payload = std::string("\xc0\xaf", 2);
+  value.semantic_contract[0].id = std::string("\xc0\xaf", 2);
   try {
     (void)moss::abi_v10::encode(value);
-    assert(false && "invalid UTF-8 accepted");
+    assert(false && "invalid UTF-8 record ID accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_CONTRACT_INVALID");
+  }
+  try {
+    moss::abi_v10::WireWriter writer;
+    writer.string(std::string("\xc0\xaf", 2));
+    assert(false && "invalid UTF-8 logical string accepted");
   } catch (const Error& error) {
     assert(error.code == "SOURCE_FREE_CONTRACT_INVALID");
   }
@@ -110,7 +131,8 @@ int main() {
   const WireType int_type{WireTypeKind::Primitive, "int", {}, 0};
   const WireType var_type{WireTypeKind::BoundVar, "", {}, 0};
   const WireType box_of_var{WireTypeKind::Nominal,
-                            "sha256:" + std::string(64, 'c'), {var_type}, 0};
+                            "nominal-template-v1:" + value.module_id +
+                                ":type:Box", {var_type}, 0};
   const auto nested = type_bytes(
       {WireTypeKind::Builtin, "Vector", {box_of_var}, 0}, 1);
   WireReader type_reader(nested);
@@ -124,7 +146,7 @@ int main() {
   }
 
   NominalTemplate nominal;
-  nominal.template_id = "sha256:" + std::string(64, 'c');
+  nominal.template_id = box_of_var.identity;
   nominal.module_id = value.module_id;
   nominal.declaration_name = "Box";
   nominal.variable_count = 1;
@@ -134,6 +156,25 @@ int main() {
   const auto nominal_record = template_record(nominal);
   validate_template(nominal_record);
   assert(read_template(nominal_record.payload).fields[0].name == "value");
+  assert(read_template(nominal_record.payload).template_id ==
+         box_of_var.identity);
+  auto forged_nominal = nominal;
+  forged_nominal.template_id = "sha256:" + std::string(64, 'c');
+  try {
+    (void)template_payload(forged_nominal);
+    assert(false && "hashed substitute for nominal identity accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+  }
+  forged_nominal = nominal;
+  forged_nominal.template_id = "nominal-template-v1:" + value.module_id +
+                               ":type:Other";
+  try {
+    (void)template_payload(forged_nominal);
+    assert(false && "mismatched nominal declaration identity accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+  }
   nominal.fields.push_back(nominal.fields[0]);
   try {
     (void)template_payload(nominal);
@@ -172,7 +213,8 @@ int main() {
   summary.callable_id = "module-v1:boxes@1.0.0::Boxes::fresh";
   summary.variable_count = 1;
   summary.result = box_of_var;
-  summary.body_semantic_hash = "sha256:" + std::string(64, 'e');
+  summary.body_semantic_hash =
+      "body-semantic-v1:sha256:" + std::string(64, 'e');
   summary.provenance_id = "boxes:fn:2";
   summary.requirements.push_back({var_type, "to_string", Access::Read, 0,
                                    "boxes:fn:3"});
@@ -187,6 +229,26 @@ int main() {
   } catch (const Error& error) {
     assert(error.code == "SOURCE_FREE_SUMMARY_INVALID");
   }
+  // Declaring an unused trailing variable or an interior ordinal hole is
+  // noncanonical even when every mentioned ordinal is within range.
+  summary.variable_count = 2;
+  try {
+    (void)summary_record(summary);
+    assert(false && "trailing summary ordinal accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_SUMMARY_INVALID");
+  }
+  summary.variable_count = 3;
+  summary.requirements.push_back({WireType{WireTypeKind::BoundVar, "", {}, 2},
+                                   "describe", Access::Read, 0, "boxes:fn:4"});
+  try {
+    (void)summary_record(summary);
+    assert(false && "interior summary ordinal hole accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_SUMMARY_INVALID");
+  }
+  summary.requirements.pop_back();
+  summary.variable_count = 1;
   summary.requirements[0].parent = 1;
   try {
     (void)summary_payload(summary);
@@ -295,5 +357,253 @@ int main() {
   } catch (const Error& error) {
     assert(error.code == "SOURCE_FREE_CONTRACT_INVALID");
   }
+
+  // Test SourceProvenance record
+  SourceProvenance prov;
+  prov.provenance_id = "provenance:boxes:1";
+  prov.module_id = value.module_id;
+  prov.logical_source_id = "sha256:" + std::string(64, '9');
+  prov.source_file_display = "src/boxes.moss";
+  prov.start_line = 10;
+  prov.start_column = 1;
+  prov.end_line = 20;
+  prov.end_column = 15;
+  prov.declaration_id = "Box";
+  const auto prov_rec = provenance_record(prov);
+  validate_provenance(prov_rec);
+  const auto decoded_prov = read_provenance(prov_rec.payload);
+  assert(decoded_prov.provenance_id == prov.provenance_id);
+  assert(decoded_prov.start_line == 10 && decoded_prov.end_line == 20);
+
+  // Negative: invalid line range
+  auto bad_prov = prov;
+  bad_prov.start_line = 30;
+  bad_prov.end_line = 20;
+  try {
+    (void)provenance_payload(bad_prov);
+    assert(false && "inverted line range accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_CONTRACT_INVALID");
+  }
+
+  // Test MethodTemplate record
+  MethodTemplate method;
+  method.method_id = "method:Box.unbox";
+  method.template_id = nominal.template_id;
+  method.method_name = "unbox";
+  method.exported = true;
+  method.variable_count = 1;
+  method.parameters = {var_type};
+  method.parameter_access = {Access::Read};
+  method.result = var_type;
+  method.receiver_access = Access::Read;
+  method.provenance_id = prov.provenance_id;
+  const auto method_rec = method_template_record(method);
+  validate_method_template(method_rec);
+  const auto decoded_method = read_method_template(method_rec.payload);
+  assert(decoded_method.method_name == "unbox");
+  assert(decoded_method.template_id == nominal.template_id);
+
+  // Test ModuleRecord
+  ModuleRecord mod_rec_data;
+  mod_rec_data.module_id = value.module_id;
+  mod_rec_data.package_name = "boxes";
+  mod_rec_data.package_version = "1.0.0";
+  mod_rec_data.module_name = "Boxes";
+  mod_rec_data.provider_binary_id = "sha256:" + std::string(64, 'b');
+  const auto mod_rec = module_record(mod_rec_data);
+  validate_module_record(mod_rec);
+  const auto decoded_mod = read_module_record(mod_rec.payload);
+  assert(decoded_mod.package_name == "boxes");
+
+  // Test Builtin KeyProofs
+  const auto int_proof = make_builtin_key_proof("Int");
+  assert(int_proof.equality_callable_id == "builtin:key-protocol-v1:isequal:Int");
+  assert(int_proof.hash_callable_id == "builtin:key-protocol-v1:hash:Int");
+  validate_key_proof(key_proof_record(int_proof));
+
+  const auto float_proof = make_builtin_key_proof("Float");
+  assert(float_proof.equality_callable_id == "builtin:key-protocol-v1:isequal:Float");
+  validate_key_proof(key_proof_record(float_proof));
+
+  const auto char_proof = make_builtin_key_proof("Char");
+  validate_key_proof(key_proof_record(char_proof));
+
+  const auto str_proof = make_builtin_key_proof("String");
+  validate_key_proof(key_proof_record(str_proof));
+
+  const auto bool_proof = make_builtin_key_proof("Bool");
+  validate_key_proof(key_proof_record(bool_proof));
+
+  // Build a complete valid SealedInterface and run validate_complete_interface
+  Interface full_iface;
+  full_iface.module_id = value.module_id;
+  full_iface.compiler = value.compiler;
+  full_iface.backend_fingerprint = value.backend_fingerprint;
+  full_iface.backend_rustc = value.backend_rustc;
+  full_iface.imports = value.imports;
+  full_iface.provenance.push_back(prov_rec);
+  nominal.provenance_id = prov.provenance_id;
+  nominal.fields[0].provenance_id = prov.provenance_id;
+  nominal.method_template_ids.push_back(method.method_id);
+  full_iface.binary_contract.push_back(template_record(nominal));
+  full_iface.binary_contract.push_back(instance_record(instance));
+  full_iface.semantic_contract.push_back(method_rec);
+  summary.provenance_id = prov.provenance_id;
+  summary.requirements[0].provenance_id = prov.provenance_id;
+  summary.dependencies.clear(); // self-contained
+  full_iface.semantic_contract.push_back(summary_record(summary));
+  full_iface.semantic_contract.push_back(key_proof_record(int_proof));
+
+  auto sort_records = [](std::vector<Record>& recs) {
+    std::sort(recs.begin(), recs.end(), [](const Record& a, const Record& b) {
+      return a.id < b.id;
+    });
+  };
+  sort_records(full_iface.binary_contract);
+  sort_records(full_iface.semantic_contract);
+  sort_records(full_iface.provenance);
+
+  const auto sealed_full = decode(encode(full_iface));
+  validate_complete_interface(sealed_full, instance.provider_binary_id);
+  // A method dependency on an ordinary callable binds the exact checked
+  // callable summary hash, just like an open function summary dependency.
+  MethodTemplate method_with_dependency = method;
+  method_with_dependency.dependencies.push_back({
+      summary.callable_id, summary.body_semantic_hash});
+  Interface iface_method_dependency = full_iface;
+  for (auto& record : iface_method_dependency.semantic_contract)
+    if (record.id == method_rec.id)
+      record = method_template_record(method_with_dependency);
+  const auto matched_method_record =
+      method_template_record(method_with_dependency);
+  sort_records(iface_method_dependency.semantic_contract);
+  validate_complete_interface(decode(encode(iface_method_dependency)),
+                              instance.provider_binary_id);
+  method_with_dependency.dependencies[0].second =
+      "body-semantic-v1:sha256:" + std::string(64, 'f');
+  for (auto& record : iface_method_dependency.semantic_contract)
+    if (record.id == matched_method_record.id)
+      record = method_template_record(method_with_dependency);
+  sort_records(iface_method_dependency.semantic_contract);
+  try {
+    validate_complete_interface(decode(encode(iface_method_dependency)),
+                                instance.provider_binary_id);
+    assert(false && "mismatched method dependency hash accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_CONTRACT_INVALID");
+  }
+  Interface forged_instance_iface = full_iface;
+  for (auto& record : forged_instance_iface.binary_contract)
+    if (record.id == instance_wire.id)
+      record = instance_record(wrong_instance);
+  const auto sealed_forged_instance = decode(encode(forged_instance_iface));
+  try {
+    validate_complete_interface(sealed_forged_instance,
+                                instance.provider_binary_id);
+    assert(false && "tampered concrete instance escaped complete validation");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+  }
+  Interface unknown_binary_iface = full_iface;
+  unknown_binary_iface.binary_contract.push_back({"unknown:binary", "\1bad"});
+  sort_records(unknown_binary_iface.binary_contract);
+  const auto sealed_unknown_binary = decode(encode(unknown_binary_iface));
+  try {
+    validate_complete_interface(sealed_unknown_binary,
+                                instance.provider_binary_id);
+    assert(false && "unknown versioned binary record escaped validation");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+  }
+
+  // Linkage tests (Workstream B5)
+  using moss::abi_v10::RuntimeCrateIdentity;
+  using moss::abi_v10::ContractChangeKind;
+  RuntimeCrateIdentity rt_provider;
+  rt_provider.name = "moss_runtime";
+  rt_provider.version = "0.1.0";
+  rt_provider.artifact_hash = "sha256:" + std::string(64, 'a');
+  rt_provider.profile = "debug";
+
+  RuntimeCrateIdentity rt_consumer = rt_provider;
+  moss::abi_v10::verify_runtime_compatibility(rt_provider, rt_consumer);
+
+  // Mismatch name
+  rt_consumer.name = "other_runtime";
+  try {
+    moss::abi_v10::verify_runtime_compatibility(rt_provider, rt_consumer);
+    assert(false && "name mismatch accepted");
+  } catch (const Error& err) {
+    assert(err.code == "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
+  }
+  rt_consumer.name = rt_provider.name;
+
+  // Mismatch version
+  rt_consumer.version = "0.2.0";
+  try {
+    moss::abi_v10::verify_runtime_compatibility(rt_provider, rt_consumer);
+    assert(false && "version mismatch accepted");
+  } catch (const Error& err) {
+    assert(err.code == "SOURCE_FREE_ABI_REBUILD_REQUIRED");
+  }
+  rt_consumer.version = rt_provider.version;
+
+  // Mismatch hash
+  rt_consumer.artifact_hash = "sha256:" + std::string(64, 'b');
+  try {
+    moss::abi_v10::verify_runtime_compatibility(rt_provider, rt_consumer);
+    assert(false && "artifact hash mismatch accepted");
+  } catch (const Error& err) {
+    assert(err.code == "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
+  }
+
+  // Contract change detection
+  auto altered_iface = sealed_full;
+  assert(moss::abi_v10::detect_contract_change(sealed_full, altered_iface) == ContractChangeKind::None);
+
+  altered_iface.binary_hash = "sha256:" + std::string(64, '1');
+  assert(moss::abi_v10::detect_contract_change(sealed_full, altered_iface) == ContractChangeKind::BinaryChange);
+
+  altered_iface = sealed_full;
+  altered_iface.semantic_hash = "sha256:" + std::string(64, '2');
+  assert(moss::abi_v10::detect_contract_change(sealed_full, altered_iface) == ContractChangeKind::SemanticChange);
+
+  altered_iface = sealed_full;
+  altered_iface.interface_hash = "sha256:" + std::string(64, '3');
+  assert(moss::abi_v10::detect_contract_change(sealed_full, altered_iface) == ContractChangeKind::InterfaceHashOnly);
+
+  // Cache key derivation and sensitivity
+  const std::string base_key = moss::abi_v10::compute_cache_dependency_key(
+      sealed_full, rt_provider, "moss-0.1.0", "backend-x86_64");
+  assert(!base_key.empty());
+  assert(base_key.rfind("sha256:", 0) == 0);
+
+  // Stable across invocations with same inputs
+  const std::string base_key_repeat = moss::abi_v10::compute_cache_dependency_key(
+      sealed_full, rt_provider, "moss-0.1.0", "backend-x86_64");
+  assert(base_key == base_key_repeat);
+
+  // Invalidated when runtime artifact hash changes
+  rt_consumer.artifact_hash = "sha256:" + std::string(64, 'f');
+  const std::string rt_changed_key = moss::abi_v10::compute_cache_dependency_key(
+      sealed_full, rt_consumer, "moss-0.1.0", "backend-x86_64");
+  assert(base_key != rt_changed_key);
+
+  // Invalidated when provider interface changes
+  altered_iface = sealed_full;
+  altered_iface.binary_hash = "sha256:" + std::string(64, '9');
+  const std::string iface_changed_key = moss::abi_v10::compute_cache_dependency_key(
+      altered_iface, rt_provider, "moss-0.1.0", "backend-x86_64");
+  assert(base_key != iface_changed_key);
+
+  // Flags generation
+  const auto flags = moss::abi_v10::generate_compiler_runtime_flags("/path/to/libmoss_runtime.rlib");
+  assert(flags.size() == 4);
+  assert(flags[0] == "-L");
+  assert(flags[1] == "dependency=/path/to");
+  assert(flags[2] == "--extern");
+  assert(flags[3] == "moss_runtime=/path/to/libmoss_runtime.rlib");
+
   std::cout << "ABI-v10 staged container tests passed\n";
 }

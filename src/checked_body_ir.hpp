@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -76,7 +77,8 @@ enum class ExprKind : uint32_t {
   Unary = 10,
   Binary = 11,
   Message = 12,
-  MapLiteral = 13
+  MapLiteral = 13,
+  NominalConstruct = 14
 };
 
 enum class UnaryOp : uint32_t {
@@ -280,6 +282,32 @@ inline void encode_checked_expr(std::string& out, const Expr& expr) {
         encode_checked_expr(out, child);
       break;
 
+    case ExprKind::NominalConstruct:
+      if (!expr.type || expr.type->kind != TypeKind::NominalInstance ||
+          !expr.type->declaration ||
+          expr.semantic_target_id != expr.type->declaration->id ||
+          !expr.literal_value.empty() ||
+          expr.operands.size() != expr.type->declaration->fields.size())
+        throw std::invalid_argument(
+            "invalid checked nominal constructor: target or field shape mismatch");
+      checked_body_field(out, expr.semantic_target_id);
+      checked_body_field(out, std::to_string(expr.operands.size()));
+      for (std::size_t index = 0; index < expr.operands.size(); ++index) {
+        const auto& slot = expr.type->declaration->fields[index];
+        auto bound = std::find_if(expr.type->field_substitutions.begin(),
+                                  expr.type->field_substitutions.end(),
+            [&](const auto& field) { return field.first == slot.name; });
+        if (!slot.inferred || bound == expr.type->field_substitutions.end() ||
+            !bound->second || !expr.operands[index].type ||
+            !bound->second->structurally_equal(*expr.operands[index].type))
+          throw std::invalid_argument(
+              "checked nominal constructor has an unbound or mismatched field");
+        checked_body_field(out, expr.semantic_target_id + ":field:" +
+                                std::to_string(index) + ":" + slot.name);
+        encode_checked_expr(out, expr.operands[index]);
+      }
+      break;
+
     case ExprKind::Message:
       if (expr.target_domain.empty() || expr.semantic_target_id.empty() || !expr.literal_value.empty())
         throw std::invalid_argument("invalid checked message node: missing domain or handler id");
@@ -391,7 +419,7 @@ inline void encode_checked_stmt(std::string& out, const Stmt& stmt) {
   }
 }
 
-inline std::string compute_checked_body_hash_v1(const std::vector<Stmt>& statements) {
+inline std::string encode_checked_body_v1(const std::vector<Stmt>& statements) {
   if (statements.empty())
     throw std::invalid_argument("empty checked body statement sequence");
   std::string encoded = "moss-checked-body-v1\n";
@@ -404,7 +432,221 @@ inline std::string compute_checked_body_hash_v1(const std::vector<Stmt>& stateme
       encode_checked_stmt(encoded, statement);
     }
   }
-  return "body-semantic-v1:sha256:" + source_free_contract_sha256(encoded);
+  return encoded;
+}
+
+inline std::string compute_checked_body_hash_v1(const std::vector<Stmt>& statements) {
+  return "body-semantic-v1:sha256:" +
+      source_free_contract_sha256(encode_checked_body_v1(statements));
+}
+
+// The first source-free rich-body importer accepts only the checked H3
+// straight-line form. It resolves declaration IDs against the importing
+// TypeContext and proves the exact parameter/result and canonical byte shape;
+// unsupported node kinds fail closed instead of falling back to source text.
+class H3BodyReader {
+ public:
+  H3BodyReader(std::string_view bytes, const TypeContext& context,
+               const std::vector<TypeRef>& parameters, const TypeRef& result)
+      : bytes_(bytes), context_(context), parameters_(parameters), result_(result) {}
+
+  std::vector<Stmt> read() {
+    constexpr std::string_view header = "moss-checked-body-v1\n";
+    if (bytes_.substr(0, header.size()) != header)
+      fail("checked body version is unsupported");
+    position_ = header.size();
+    if (number() != 2) fail("H3 checked body must have two statements");
+    std::vector<Stmt> statements;
+    statements.push_back(read_let());
+    statements.push_back(read_return());
+    if (position_ != bytes_.size() ||
+        encode_checked_body_v1(statements) != bytes_)
+      fail("H3 checked body is noncanonical");
+    return statements;
+  }
+
+ private:
+  std::string_view bytes_;
+  const TypeContext& context_;
+  const std::vector<TypeRef>& parameters_;
+  TypeRef result_;
+  std::size_t position_ = 0;
+  TypeRef local_type_;
+
+  [[noreturn]] static void fail(const char* message) {
+    throw std::invalid_argument(message);
+  }
+
+  std::string field() {
+    const std::size_t begin = position_;
+    while (position_ < bytes_.size() &&
+           std::isdigit(static_cast<unsigned char>(bytes_[position_])))
+      ++position_;
+    if (begin == position_ || position_ >= bytes_.size() ||
+        bytes_[position_] != ':' ||
+        (position_ - begin > 1 && bytes_[begin] == '0'))
+      fail("malformed checked body field length");
+    std::size_t length = 0;
+    auto parsed = std::from_chars(bytes_.data() + begin,
+                                  bytes_.data() + position_, length);
+    if (parsed.ec != std::errc{} || ++position_ > bytes_.size() ||
+        length > bytes_.size() - position_ || length > (1u << 20))
+      fail("checked body field exceeds bounds");
+    std::string value(bytes_.substr(position_, length));
+    position_ += length;
+    return value;
+  }
+
+  std::uint32_t number() {
+    const std::string value = field();
+    if (value.empty() || (value.size() > 1 && value[0] == '0'))
+      fail("checked body integer is noncanonical");
+    std::uint32_t result = 0;
+    auto parsed = std::from_chars(value.data(), value.data() + value.size(),
+                                  result);
+    if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size())
+      fail("checked body integer is invalid");
+    return result;
+  }
+
+  TypeRef read_type(unsigned depth = 0) {
+    if (depth >= 64) fail("checked body type is too deep");
+    const auto tag = number();
+    if (tag > static_cast<std::uint32_t>(TypeKind::Unit))
+      fail("checked body type kind is unknown");
+    const auto kind = static_cast<TypeKind>(tag);
+    const std::string identity = field();
+    const auto type_count = number();
+    if (type_count > 64) fail("checked body type has too many arguments");
+    std::vector<TypeRef> arguments;
+    for (std::uint32_t index = 0; index < type_count; ++index)
+      arguments.push_back(read_type(depth + 1));
+    const auto field_count = number();
+    if (field_count > 64) fail("checked body type has too many fields");
+    std::vector<std::pair<std::string, TypeRef>> fields;
+    for (std::uint32_t index = 0; index < field_count; ++index) {
+      std::string name = field();
+      TypeRef value = read_type(depth + 1);
+      fields.emplace_back(std::move(name), std::move(value));
+    }
+    if (kind == TypeKind::InferenceVar) {
+      if (type_count || field_count) fail("checked body variable has payload");
+      std::uint32_t ordinal = 0;
+      auto parsed = std::from_chars(identity.data(),
+                                    identity.data() + identity.size(), ordinal);
+      if (identity.empty() || (identity.size() > 1 && identity[0] == '0') ||
+          parsed.ec != std::errc{} ||
+          parsed.ptr != identity.data() + identity.size())
+        fail("checked body variable ordinal is invalid");
+      return Type::var(TypeVarId{0, 0, ordinal});
+    }
+    if (kind == TypeKind::Primitive && !identity.empty() &&
+        !type_count && !field_count)
+      return Type::primitive(identity);
+    if (kind == TypeKind::Builtin && !identity.empty() && !field_count)
+      return Type::builtin(identity, std::move(arguments));
+    if (kind == TypeKind::Unit && identity.empty() && !type_count &&
+        !field_count)
+      return Type::unit();
+    if (kind == TypeKind::NominalInstance && !type_count) {
+      auto declaration = context_.find_id(identity);
+      if (!declaration || declaration->kind != DeclarationKind::Record ||
+          declaration->inferred_slot_count() != fields.size())
+        fail("checked body nominal template ID is unknown or mismatched");
+      return Type::nominal_bound(declaration, declaration->program_name,
+                                 std::move(fields));
+    }
+    fail("checked body type shape is unsupported");
+  }
+
+  Expr read_expr(unsigned depth = 0) {
+    if (depth >= 64) fail("checked body expression is too deep");
+    const auto tag = number();
+    if (tag > static_cast<std::uint32_t>(ExprKind::NominalConstruct))
+      fail("checked body expression kind is unknown");
+    Expr expression;
+    expression.kind = static_cast<ExprKind>(tag);
+    expression.type = read_type();
+    if (expression.kind == ExprKind::Parameter) {
+      expression.ordinal = number();
+      if (expression.ordinal >= parameters_.size() ||
+          !expression.type->structurally_equal(*parameters_[expression.ordinal]))
+        fail("checked body parameter type is mismatched");
+    } else if (expression.kind == ExprKind::LocalRead) {
+      expression.ordinal = number();
+      if (expression.ordinal != 0 || !local_type_ ||
+          !expression.type->structurally_equal(*local_type_))
+        fail("checked body local type is mismatched");
+    } else if (expression.kind == ExprKind::Call ||
+               expression.kind == ExprKind::NominalConstruct) {
+      expression.semantic_target_id = field();
+      const auto count = number();
+      if (count > 64) fail("checked body expression has too many operands");
+      if (expression.kind == ExprKind::Call) {
+        if (expression.semantic_target_id.rfind("callable-v1:", 0) != 0)
+          fail("checked body call target is not a callable ID");
+        for (std::uint32_t index = 0; index < count; ++index)
+          expression.operands.push_back(read_expr(depth + 1));
+      } else {
+        if (expression.type->kind != TypeKind::NominalInstance ||
+            !expression.type->declaration ||
+            expression.semantic_target_id != expression.type->declaration->id ||
+            count != expression.type->declaration->fields.size())
+          fail("checked body constructor target is mismatched");
+        for (std::uint32_t index = 0; index < count; ++index) {
+          const auto& slot = expression.type->declaration->fields[index];
+          if (field() != expression.semantic_target_id + ":field:" +
+                             std::to_string(index) + ":" + slot.name)
+            fail("checked body constructor field ID is mismatched");
+          expression.operands.push_back(read_expr(depth + 1));
+        }
+      }
+    } else {
+      fail("checked body expression is outside the H3 subset");
+    }
+    return expression;
+  }
+
+  Stmt read_let() {
+    if (number() != static_cast<std::uint32_t>(StmtKind::Let))
+      fail("H3 checked body has no leading let");
+    Stmt statement;
+    statement.kind = StmtKind::Let;
+    statement.local_ordinal = number();
+    if (statement.local_ordinal != 0)
+      fail("H3 checked body local ordinal is not zero");
+    statement.type = read_type();
+    statement.expr = read_expr();
+    if (!statement.type->structurally_equal(*statement.expr->type))
+      fail("H3 checked body let type is mismatched");
+    local_type_ = statement.type;
+    return statement;
+  }
+
+  Stmt read_return() {
+    if (number() != static_cast<std::uint32_t>(StmtKind::Return) ||
+        number() != 1)
+      fail("H3 checked body has no terminal return");
+    Stmt statement;
+    statement.kind = StmtKind::Return;
+    statement.expr = read_expr();
+    if (statement.expr->kind != ExprKind::LocalRead || !result_ ||
+        !statement.expr->type->structurally_equal(*result_))
+      fail("H3 checked body return type is mismatched");
+    statement.type = result_;
+    return statement;
+  }
+};
+
+inline std::vector<Stmt> decode_h3_checked_body_v1(
+    std::string_view bytes, const TypeContext& context,
+    const std::vector<TypeRef>& parameters, const TypeRef& result,
+    std::string_view expected_hash) {
+  H3BodyReader reader(bytes, context, parameters, result);
+  auto statements = reader.read();
+  if (compute_checked_body_hash_v1(statements) != expected_hash)
+    throw std::invalid_argument("H3 checked body hash is mismatched");
+  return statements;
 }
 
 } // namespace checked_ir
@@ -567,6 +809,10 @@ inline void collect_expr_dependencies(const checked_ir::Expr& expr,
     if (!expr.semantic_target_id.empty()) {
       out.insert({SemanticDependency::Kind::NominalType, expr.semantic_target_id, ""});
     }
+  } else if (expr.kind == checked_ir::ExprKind::NominalConstruct) {
+    if (expr.semantic_target_id.empty())
+      throw std::invalid_argument("nominal constructor has empty template id");
+    out.insert({SemanticDependency::Kind::NominalType, expr.semantic_target_id, ""});
   }
   for (const auto& operand : expr.operands) {
     collect_expr_dependencies(operand, out);
