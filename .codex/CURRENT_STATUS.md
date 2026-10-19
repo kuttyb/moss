@@ -8585,3 +8585,33 @@ Focused validation passed:
 - `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` passed.
 - Broad regression suites were not run. C2b.6c was not started.
 
+## Phase 25-C2b.6c — Import and execute checked arithmetic bodies
+
+Starting at `2295477381fcbae107ac7091fe692064234c55a1` on
+`phase25-integration`. Extended `project_imported_h3_checked_bodies()` to
+recognize only a single checked `Return(Add(Mul(Parameter(0), Int), Int))`
+whose decoded types and ordered `operator:*`/`operator:+` requirements agree
+with the sealed summary. It uses the existing imported requirement validator,
+provenance validation, and checker specialization admission, then builds a
+direct Moss return expression from the parameter name and decoded literal
+values. Unsupported or inconsistent checked bodies fail closed; constructor
+and private-chain lowering remain unchanged.
+
+Focused validation passed:
+- `make moss-dev` passed (pre-existing TypeSolver missing-field-initializer
+  warnings only).
+- `python3 tests/tooling/check_phase25_c2b6c_source_free_arithmetic.py ./moss`
+  built a real staged provider, removed its source and `compute`'s legacy
+  `generic_stmt`, and compiled/ran the consumer from checked IR: Int output
+  `30`, Float output `25.0`. String and Bool were rejected with
+  `TYPE_MISMATCH`. A canonically re-sealed `Sub` body was rejected with
+  `SOURCE_FREE_CHECKED_BODY_INVALID`. A default ABI-v9 source-removed consumer
+  still returned `30`.
+- `python3 tests/tooling/check_phase25_generic_arithmetic_requirements.py
+  ./moss` and `python3 tests/tooling/check_phase25_c2b6b_arithmetic_records.py
+  ./moss` passed.
+- `python3 tests/phase25/integration/cross_crate_harness.py --scenario 6
+  --staged-v10 --json` passed; source-removed H3 output was `99`.
+- `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` passed.
+- Broad regression suites were not run. C2c was not started.
+

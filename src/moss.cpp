@@ -3352,7 +3352,85 @@ static void project_imported_h3_checked_bodies(Program& program) {
     }
     const auto& expression = *statements.front().expr;
     string lowered;
-    if (expression.kind == checked_ir::ExprKind::NominalConstruct) {
+    if (statements.size() == 1 &&
+        statements.front().kind == checked_ir::StmtKind::Return &&
+        expression.kind == checked_ir::ExprKind::Binary &&
+        expression.binary_op == checked_ir::BinaryOp::Add) {
+      // Keep arithmetic import deliberately limited to the checked generic
+      // T * Int + Int form. Types and the operation chain come from the
+      // sealed summary; only the executable spelling is reconstructed from
+      // the decoded IR values.
+      const auto int_type = moss::Type::primitive("int");
+      const auto requirements = imported_abi_v10_requirements(
+          summary, function, *program.type_context);
+      const bool summary_shape = summary.variable_count == 1 &&
+          parameters.size() == 1 &&
+          parameters.front()->kind == moss::TypeKind::InferenceVar &&
+          parameters.front()->var_id.session_id == 0 &&
+          parameters.front()->var_id.owner_id == 0 &&
+          parameters.front()->var_id.ordinal == 0 &&
+          result->structurally_equal(*parameters.front()) &&
+          function.params.size() == 1 &&
+          plain_identifier(function.params.front().name);
+      if (!summary_shape || requirements.size() != 2)
+        invalid("checked ABI-v10 arithmetic summary shape is unsupported");
+      const auto& multiply_requirement = requirements[0];
+      const auto& add_requirement = requirements[1];
+      auto valid_requirement = [&](const moss::Requirement& requirement,
+                                   const string& operation) {
+        return requirement.kind == moss::RequirementKind::Operator &&
+            requirement.target_id == operation && requirement.subject &&
+            requirement.subject->structurally_equal(*parameters.front()) &&
+            requirement.arguments.size() == 1 &&
+            requirement.arguments.front() &&
+            requirement.arguments.front()->structurally_equal(*int_type) &&
+            requirement.result &&
+            (*requirement.result)->structurally_equal(*parameters.front()) &&
+            requirement.access == moss::AccessMode::Read &&
+            requirement.argument_access ==
+                vector<moss::AccessMode>{moss::AccessMode::Read};
+      };
+      if (!valid_requirement(multiply_requirement, "operator:*") ||
+          !valid_requirement(add_requirement, "operator:+") ||
+          multiply_requirement.id == add_requirement.id ||
+          multiply_requirement.parent_requirement_id ||
+          !add_requirement.parent_requirement_id ||
+          *add_requirement.parent_requirement_id != multiply_requirement.id)
+        invalid("checked ABI-v10 arithmetic requirements disagree with body");
+
+      const bool add_shape = expression.operands.size() == 2 &&
+          expression.type->structurally_equal(*parameters.front()) &&
+          expression.operands[0].kind == checked_ir::ExprKind::Binary &&
+          expression.operands[0].binary_op == checked_ir::BinaryOp::Mul &&
+          expression.operands[0].operands.size() == 2;
+      if (!add_shape)
+        invalid("checked ABI-v10 arithmetic expression is unsupported");
+      const auto& multiplication = expression.operands[0];
+      const auto& parameter = multiplication.operands[0];
+      const auto& multiplier = multiplication.operands[1];
+      const auto& addend = expression.operands[1];
+      if (!multiplication.type->structurally_equal(*parameters.front()) ||
+          parameter.kind != checked_ir::ExprKind::Parameter ||
+          parameter.ordinal != 0 ||
+          !parameter.type->structurally_equal(*parameters.front()) ||
+          multiplier.kind != checked_ir::ExprKind::IntegerLiteral ||
+          !multiplier.type->structurally_equal(*int_type) ||
+          addend.kind != checked_ir::ExprKind::IntegerLiteral ||
+          !addend.type->structurally_equal(*int_type))
+        invalid("checked ABI-v10 arithmetic node types or parameter are mismatched");
+
+      lowered = function.params.front().name + " * " +
+          multiplier.literal_value + " + " + addend.literal_value;
+      Stmt returned;
+      returned.kind = Stmt::Kind::Return;
+      returned.line = std::max(function.line, 1);
+      returned.indent = 0;
+      returned.a = lowered;
+      returned.text = "return " + lowered;
+      function.body = {std::move(returned)};
+      function.result_expression.reset();
+      continue;
+    } else if (expression.kind == checked_ir::ExprKind::NominalConstruct) {
       auto declaration = program.type_context->find_id(
           expression.semantic_target_id);
       if (!declaration || declaration->kind != moss::DeclarationKind::Record ||
