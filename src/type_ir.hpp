@@ -1049,49 +1049,126 @@ class TypeSolver {
     std::optional<TypeRef> binding;
     std::vector<Requirement> requirements;
   };
+  struct Undo {
+    enum class Kind { Parent, Binding, RequirementSize } kind;
+    TypeVarId id;
+    TypeVarId parent;
+    std::optional<TypeRef> binding;
+    size_t requirement_size{0};
+  };
+  using Trail = std::vector<Undo>;
+
   uint32_t session_;
   uint32_t next_ordinal_{0};
   std::map<TypeVarId, Variable> variables_;
 
-  TypeVarId root(TypeVarId id) {
+  TypeVarId root(TypeVarId id, Trail* trail = nullptr) {
     auto found = variables_.find(id);
     if (found == variables_.end()) throw std::invalid_argument("unknown type variable");
     if (found->second.parent == id) return id;
-    found->second.parent = root(found->second.parent);
+    const TypeVarId parent = root(found->second.parent, trail);
+    if (found->second.parent != parent) {
+      if (trail)
+        trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      found->second.parent = parent;
+    }
     return found->second.parent;
   }
-  bool occurs(TypeVarId id, const TypeRef& value) {
-    TypeRef resolved = resolve(value);
-    if (resolved->kind == TypeKind::InferenceVar) return root(resolved->var_id) == id;
+  TypeRef resolve_impl(const TypeRef& value, Trail* trail) {
+    if (value->kind == TypeKind::InferenceVar) {
+      TypeVarId id = root(value->var_id, trail);
+      auto& variable = variables_.at(id);
+      return variable.binding ? resolve_impl(*variable.binding, trail) : Type::var(id);
+    }
+    if (value->type_args.empty() && value->field_substitutions.empty()) return value;
+    if (value->kind == TypeKind::Builtin) {
+      std::vector<TypeRef> args;
+      for (const auto& arg : value->type_args)
+        args.push_back(resolve_impl(arg, trail));
+      return Type::builtin(value->name, std::move(args));
+    }
+    if (value->kind == TypeKind::NominalInstance) {
+      std::vector<std::pair<std::string, TypeRef>> fields;
+      for (const auto& field : value->field_substitutions)
+        fields.emplace_back(field.first, resolve_impl(field.second, trail));
+      return Type::nominal_bound(value->declaration, value->name, std::move(fields));
+    }
+    return value;
+  }
+  bool occurs(TypeVarId id, const TypeRef& value, Trail& trail) {
+    TypeRef resolved = resolve_impl(value, &trail);
+    if (resolved->kind == TypeKind::InferenceVar)
+      return root(resolved->var_id, &trail) == id;
     for (const auto& arg : resolved->type_args)
-      if (occurs(id, arg)) return true;
+      if (occurs(id, arg, trail)) return true;
     for (const auto& field : resolved->field_substitutions)
-      if (occurs(id, field.second)) return true;
+      if (occurs(id, field.second, trail)) return true;
     return false;
   }
-  bool bind(TypeVarId id, const TypeRef& value) {
-    id = root(id);
-    TypeRef resolved = resolve(value);
+  bool bind(TypeVarId id, const TypeRef& value, Trail& trail) {
+    id = root(id, &trail);
+    TypeRef resolved = resolve_impl(value, &trail);
     if (resolved->kind == TypeKind::InferenceVar) {
-      TypeVarId other = root(resolved->var_id);
+      TypeVarId other = root(resolved->var_id, &trail);
       if (id == other) return true;
       // Deterministic representative independent of constraint order.
       if (other < id) std::swap(id, other);
       auto& primary = variables_.at(id);
       auto& secondary = variables_.at(other);
+      trail.push_back({Undo::Kind::Parent, other, secondary.parent});
       secondary.parent = id;
+      trail.push_back({Undo::Kind::RequirementSize, id, {}, {},
+                       primary.requirements.size()});
       primary.requirements.insert(primary.requirements.end(),
           secondary.requirements.begin(), secondary.requirements.end());
       if (primary.binding && secondary.binding)
-        return unify(*primary.binding, *secondary.binding);
-      if (!primary.binding) primary.binding = secondary.binding;
+        return unify_impl(*primary.binding, *secondary.binding, trail);
+      if (!primary.binding) {
+        trail.push_back({Undo::Kind::Binding, id, {}, primary.binding});
+        primary.binding = secondary.binding;
+      }
       return true;
     }
-    if (occurs(id, resolved)) return false;
+    if (occurs(id, resolved, trail)) return false;
     auto& variable = variables_.at(id);
-    if (variable.binding) return unify(*variable.binding, resolved);
+    if (variable.binding) return unify_impl(*variable.binding, resolved, trail);
+    trail.push_back({Undo::Kind::Binding, id, {}, variable.binding});
     variable.binding = resolved;
     return true;
+  }
+  bool unify_impl(const TypeRef& left, const TypeRef& right, Trail& trail) {
+    TypeRef a = resolve_impl(left, &trail), b = resolve_impl(right, &trail);
+    if (a->kind == TypeKind::InferenceVar)
+      return bind(a->var_id, b, trail);
+    if (b->kind == TypeKind::InferenceVar)
+      return bind(b->var_id, a, trail);
+    if (!a->same_head(*b) ||
+        a->type_args.size() != b->type_args.size() ||
+        a->field_substitutions.size() != b->field_substitutions.size()) return false;
+    for (size_t i = 0; i < a->type_args.size(); ++i)
+      if (!unify_impl(a->type_args[i], b->type_args[i], trail)) return false;
+    for (size_t i = 0; i < a->field_substitutions.size(); ++i)
+      if (a->field_substitutions[i].first != b->field_substitutions[i].first ||
+          !unify_impl(a->field_substitutions[i].second,
+                      b->field_substitutions[i].second, trail))
+        return false;
+    return true;
+  }
+  void rollback(Trail& trail) {
+    for (auto change = trail.rbegin(); change != trail.rend(); ++change) {
+      auto& variable = variables_.at(change->id);
+      switch (change->kind) {
+        case Undo::Kind::Parent:
+          variable.parent = change->parent;
+          break;
+        case Undo::Kind::Binding:
+          variable.binding = change->binding;
+          break;
+        case Undo::Kind::RequirementSize:
+          variable.requirements.resize(change->requirement_size);
+          break;
+      }
+    }
   }
 
 public:
@@ -1102,39 +1179,13 @@ public:
     return Type::var(id);
   }
   TypeRef resolve(const TypeRef& value) {
-    if (value->kind == TypeKind::InferenceVar) {
-      TypeVarId id = root(value->var_id);
-      auto& variable = variables_.at(id);
-      return variable.binding ? resolve(*variable.binding) : Type::var(id);
-    }
-    if (value->type_args.empty() && value->field_substitutions.empty()) return value;
-    if (value->kind == TypeKind::Builtin) {
-      std::vector<TypeRef> args;
-      for (const auto& arg : value->type_args) args.push_back(resolve(arg));
-      return Type::builtin(value->name, std::move(args));
-    }
-    if (value->kind == TypeKind::NominalInstance) {
-      std::vector<std::pair<std::string, TypeRef>> fields;
-      for (const auto& field : value->field_substitutions)
-        fields.emplace_back(field.first, resolve(field.second));
-      return Type::nominal_bound(value->declaration, value->name, std::move(fields));
-    }
-    return value;
+    return resolve_impl(value, nullptr);
   }
   bool unify(const TypeRef& left, const TypeRef& right) {
-    TypeRef a = resolve(left), b = resolve(right);
-    if (a->kind == TypeKind::InferenceVar) return bind(a->var_id, b);
-    if (b->kind == TypeKind::InferenceVar) return bind(b->var_id, a);
-    if (!a->same_head(*b) ||
-        a->type_args.size() != b->type_args.size() ||
-        a->field_substitutions.size() != b->field_substitutions.size()) return false;
-    for (size_t i = 0; i < a->type_args.size(); ++i)
-      if (!unify(a->type_args[i], b->type_args[i])) return false;
-    for (size_t i = 0; i < a->field_substitutions.size(); ++i)
-      if (a->field_substitutions[i].first != b->field_substitutions[i].first ||
-          !unify(a->field_substitutions[i].second, b->field_substitutions[i].second))
-        return false;
-    return true;
+    Trail trail;
+    if (unify_impl(left, right, trail)) return true;
+    rollback(trail);
+    return false;
   }
   void require(TypeVarId id, Requirement requirement) {
     variables_.at(root(id)).requirements.push_back(std::move(requirement));
