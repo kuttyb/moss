@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix="phase25-h3-chain-", dir=TMP) as td:
     env = os.environ.copy()
     env.update(MOSS_STAGED_ABI="v10", MOSS=str(MOSS), TMPDIR=str(TMP))
     provider = scratch / "provider"
-    package(provider, "h3_provider", """module Service
+    provider_source = """module Service
 
 export type Box:
   value
@@ -64,7 +64,8 @@ export fn fresh(x):
 
 export fn relay(b: Box):
   return b.value
-""")
+"""
+    package(provider, "h3_provider", provider_source)
     command([str(MARGO), "build"], cwd=provider, env=env)
     artifacts = scratch / "artifacts"
     shutil.copytree(provider / "build" / "debug", artifacts)
@@ -90,6 +91,21 @@ export fn relay(b: Box):
         command([str(MARGO), "build"], cwd=consumer, env=env)
         assert command([str(MARGO), "run"], cwd=consumer, env=env) == expected
 
+    # A checked private helper reached through an exported body outside the
+    # supported two-statement producer must not ship a generic_stmt fallback.
+    unrecorded = scratch / "unrecorded"
+    package(unrecorded, "h3_unrecorded", provider_source.replace(
+        "  result = nested_private_box(x)\n  return result",
+        "  return nested_private_box(x)"))
+    rejected_unrecorded = subprocess.run(
+        [str(MOSS), "build", "--json"], cwd=unrecorded, env=env,
+        capture_output=True, text=True)
+    assert rejected_unrecorded.returncode != 0, (
+        rejected_unrecorded.stdout, rejected_unrecorded.stderr)
+    unrecorded_error = json.loads(rejected_unrecorded.stdout)["error"]
+    assert unrecorded_error["code"] == "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE", (
+        unrecorded_error, rejected_unrecorded.stderr)
+
     forged = scratch / "forged-artifacts"
     shutil.copytree(artifacts, forged)
     command([str(poison), str(forged / "Service.mossi"),
@@ -108,4 +124,4 @@ export fn relay(b: Box):
     assert diagnostic["code"] == "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING", (
         diagnostic, rejected.stderr)
 
-print("H3 checked private chain, two source-free consumers, and missing-body rejection: PASS")
+print("H3 checked private chain, two source-free consumers, unrecorded-chain and missing-body rejection: PASS")

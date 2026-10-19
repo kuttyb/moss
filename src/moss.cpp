@@ -3530,11 +3530,8 @@ class Checker {
             !rich_body_ready)
           err(exported.source_file, exported.line,
               "exported callable '" + exported.name +
-                  (rich_body_ready
-                    ? "' reaches a private multi-statement body without "
-                      "canonical ABI-v10 dependency/body records"
-                    : "' reaches a private multi-statement body without "
-                      "checked ABI-v10 type facts and body IR"),
+                  "' reaches a private multi-statement body without "
+                  "checked ABI-v10 type facts and body IR",
               "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE");
       }
     { CompilerStageTimer timer("synchronization_plan"); build_synchronization_plan(p_.concrete_domain_graph); }
@@ -39001,9 +38998,23 @@ static void append_abi_v10_private_chain_records(
     const std::set<string> summary_edges(
         function.open_summary->semantic_dependencies.begin(),
         function.open_summary->semantic_dependencies.end());
-    if (callable_edges != summary_edges)
+    std::set<string> checked_call_edges;
+    for (const auto& edge : program.semantic_call_edges) {
+      if (edge.source != "fn:" + function.name ||
+          !starts_with(edge.target, "fn:")) continue;
+      const string callee_name = edge.target.substr(3);
+      auto callee = std::find_if(program.functions.begin(),
+          program.functions.end(), [&](const Function& candidate) {
+        return candidate.name == callee_name &&
+            belongs_to_module(candidate.name, module);
+      });
+      if (callee != program.functions.end())
+        checked_call_edges.insert(callee->semantic_callable_id);
+    }
+    if (callable_edges != summary_edges ||
+        callable_edges != checked_call_edges)
       throw ProjectError("SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
-                         "checked ABI-v10 body and summary dependency IDs disagree");
+                         "checked ABI-v10 body, summary, and checked call edges disagree");
     checked_bodies.emplace(id, std::move(*body));
     selected.emplace(id, &function);
     visiting.erase(id);
@@ -39020,6 +39031,41 @@ static void append_abi_v10_private_chain_records(
       return dep.kind == SemanticDependency::Kind::Callable;
     })) continue;
     visit(function);
+  }
+  // The checker may lift its provisional private-chain guard only for a
+  // chain that this producer actually emitted. In particular, an omitted
+  // call dependency must not leave a legacy generic_stmt-only fallback.
+  for (const auto& exported : program.functions) {
+    if (!exported.exported || !exported.static_dispatch ||
+        !belongs_to_module(exported.name, module) ||
+        std::filesystem::path(exported.source_file).extension() == ".mossi")
+      continue;
+    std::set<string> reached;
+    std::vector<const Function*> pending{&exported};
+    bool reaches_private = false;
+    bool multi_statement = false;
+    while (!pending.empty()) {
+      const Function* current = pending.back();
+      pending.pop_back();
+      if (!reached.insert(current->semantic_callable_id).second) continue;
+      reaches_private |= !current->exported;
+      multi_statement |= current->body.size() > 1;
+      for (const auto& edge : program.semantic_call_edges) {
+        if (edge.source != "fn:" + current->name ||
+            !starts_with(edge.target, "fn:")) continue;
+        const string name = edge.target.substr(3);
+        auto callee = std::find_if(program.functions.begin(),
+            program.functions.end(), [&](const Function& candidate) {
+          return candidate.name == name &&
+              belongs_to_module(candidate.name, module);
+        });
+        if (callee != program.functions.end()) pending.push_back(&*callee);
+      }
+    }
+    if (reaches_private && multi_statement &&
+        !selected.count(exported.semantic_callable_id))
+      throw ProjectError("SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+                         "private multi-statement chain has no emitted checked ABI-v10 closure");
   }
   if (selected.empty()) return;
 
