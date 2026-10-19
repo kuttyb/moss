@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Exercise the first live rich body records with two source-free consumers.
+"""Execute a direct checked body after removing legacy generic statements.
 
-This is transport evidence only: the imported generic body still uses the
-legacy textual lowering path, so the private-helper H3 guard remains required.
+The nested private-helper H3 guard remains until its whole chain has records.
 """
 
 import os
@@ -38,9 +37,13 @@ def package(path, name, source):
 with tempfile.TemporaryDirectory(prefix="phase25-h3-direct-records-", dir=TMP) as td:
     scratch = Path(td)
     verifier = scratch / "verify_records"
+    poison = scratch / "poison_legacy"
     run(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
          "-pedantic", "-Isrc", "tests/tooling/check_phase25_h3_direct_records.cpp",
          "-o", str(verifier)])
+    run(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
+         "-pedantic", "-Isrc", "tests/tooling/check_phase25_h3_poison_legacy.cpp",
+         "-o", str(poison)])
 
     env = os.environ.copy()
     env["MOSS_STAGED_ABI"] = "v10"
@@ -62,6 +65,10 @@ export fn fresh(x):
     interface = artifacts / "Service.mossi"
     assert interface.is_file() and (artifacts / "libService.rlib").is_file()
     run([str(verifier), str(interface)])
+    run([str(poison), str(interface), str(artifacts / "libService.rlib"),
+         "Service"])
+    assert b"generic_stmt " not in interface.read_bytes()
+    run([str(verifier), str(interface)])
     shutil.rmtree(provider)
     assert not list(artifacts.rglob("*.moss"))
 
@@ -77,4 +84,4 @@ export fn fresh(x):
         run([str(MARGO), "build"], cwd=consumer, env=env)
         assert run([str(MARGO), "run"], cwd=consumer, env=env) == expected
 
-print("H3 direct record transport and two source-free consumers: PASS")
+print("H3 direct checked import without legacy statements: PASS")

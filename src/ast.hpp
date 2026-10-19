@@ -584,6 +584,10 @@ struct Function {
   // Optional provider-authored logical source name retained by a compiled
   // interface for consumer diagnostics after its source tree is removed.
   string provider_origin_file;
+  // ABI-v10 sealed records retained across module rewriting. The checker
+  // decodes these before inference and replaces any legacy generic_stmt body.
+  string imported_checked_summary_payload;
+  string imported_checked_body_payload;
 };
 struct Trait { string name, header; vector<TraitMethod> methods; bool exported = false; int line = 0; string source_file; };
 

@@ -2904,6 +2904,213 @@ static std::optional<CheckedPrivateChainBody> checked_private_chain_body(
   return body;
 }
 
+static moss::TypeRef imported_abi_v10_type(
+    const abi_v10::WireType& wire, const moss::TypeContext& context,
+    std::uint32_t variable_count, unsigned depth = 0) {
+  if (depth >= 64) return nullptr;
+  switch (wire.kind) {
+    case abi_v10::WireTypeKind::Primitive:
+      return moss::Type::primitive(wire.identity);
+    case abi_v10::WireTypeKind::Builtin: {
+      vector<moss::TypeRef> arguments;
+      for (const auto& argument : wire.arguments) {
+        auto term = imported_abi_v10_type(argument, context, variable_count,
+                                          depth + 1);
+        if (!term) return nullptr;
+        arguments.push_back(term);
+      }
+      return moss::Type::builtin(wire.identity, std::move(arguments));
+    }
+    case abi_v10::WireTypeKind::Nominal: {
+      auto declaration = context.find_id(wire.identity);
+      if (!declaration || declaration->kind != moss::DeclarationKind::Record ||
+          declaration->inferred_slot_count() != wire.arguments.size())
+        return nullptr;
+      vector<std::pair<string, moss::TypeRef>> substitutions;
+      std::size_t index = 0;
+      for (const auto& field : declaration->fields) {
+        if (!field.inferred) continue;
+        auto term = imported_abi_v10_type(wire.arguments[index++], context,
+                                          variable_count, depth + 1);
+        if (!term) return nullptr;
+        substitutions.emplace_back(field.name, term);
+      }
+      return moss::Type::nominal_bound(
+          declaration, declaration->program_name, std::move(substitutions));
+    }
+    case abi_v10::WireTypeKind::BoundVar:
+      return wire.ordinal < variable_count
+          ? moss::Type::var(moss::TypeVarId{0, 0, wire.ordinal}) : nullptr;
+    case abi_v10::WireTypeKind::Unit:
+      return moss::Type::unit();
+    case abi_v10::WireTypeKind::Enum:
+    case abi_v10::WireTypeKind::Domain:
+      return nullptr;
+  }
+  return nullptr;
+}
+
+static bool abi_v10_effects_pure(const ObservableEffects& effects);
+
+static abi_v10::Access imported_abi_v10_access(Effect effect) {
+  return effect == Effect::Consume ? abi_v10::Access::Consume :
+      effect == Effect::Write ? abi_v10::Access::Write :
+                                abi_v10::Access::Read;
+}
+
+// Stage-v10 H3 import projection. It derives an AST lowering view solely from
+// sealed checked IR; legacy generic_stmt lines are discarded for these bodies.
+// Every target is selected by exact provider identity before inference starts.
+static void project_imported_h3_checked_bodies(Program& program) {
+  if (!staged_abi_v10() || !program.type_context) return;
+  for (auto& function : program.functions) {
+    if (function.imported_checked_body_payload.empty()) continue;
+    auto invalid = [&](const string& reason) {
+      CompileError error(std::max(function.line, 1), reason,
+                         "SOURCE_FREE_CHECKED_BODY_INVALID");
+      error.source_file = function.source_file;
+      error.teaching.related.push_back({
+          function.provider_origin_file.empty() ? function.source_file :
+              function.provider_origin_file,
+          std::max(function.line, 1), 1,
+          "sealed provider callable '" + function.name + "'"});
+      throw error;
+    };
+    if (std::filesystem::path(function.source_file).extension() != ".mossi" ||
+        function.imported_checked_summary_payload.empty())
+      invalid("checked ABI-v10 body is detached from its provider summary");
+    const abi_v10::Summary summary = abi_v10::read_summary(
+        function.imported_checked_summary_payload);
+    const abi_v10::CheckedBodyRecord body = abi_v10::read_checked_body_record(
+        function.imported_checked_body_payload);
+    if (summary.callable_id != function.semantic_callable_id ||
+        body.callable_id != summary.callable_id ||
+        body.semantic_hash != summary.body_semantic_hash ||
+        summary.parameters.size() != function.params.size() ||
+        summary.parameter_access.size() != function.parameter_effects.size() ||
+        summary.observable_effect_bits || !summary.observable_effect_tags.empty() ||
+        !abi_v10_effects_pure(function.observable_effects))
+      invalid("checked ABI-v10 body disagrees with its callable summary");
+    for (std::size_t index = 0; index < summary.parameter_access.size(); ++index)
+      if (summary.parameter_access[index] !=
+          imported_abi_v10_access(function.parameter_effects[index]))
+        invalid("checked ABI-v10 parameter access is mismatched");
+    vector<moss::TypeRef> parameters;
+    for (const auto& wire : summary.parameters) {
+      auto term = imported_abi_v10_type(
+          wire, *program.type_context, summary.variable_count);
+      if (!term) invalid("checked ABI-v10 parameter TypeRef is unresolved");
+      parameters.push_back(term);
+    }
+    auto result = imported_abi_v10_type(
+        summary.result, *program.type_context, summary.variable_count);
+    if (!result) invalid("checked ABI-v10 result TypeRef is unresolved");
+    vector<checked_ir::Stmt> statements;
+    try {
+      statements = checked_ir::decode_h3_checked_body_v1(
+          body.checked_ir_bytes, *program.type_context, parameters, result,
+          body.semantic_hash);
+    } catch (const std::invalid_argument& error) {
+      invalid(string("checked ABI-v10 body cannot be decoded: ") + error.what());
+    }
+    const auto dependencies = extract_semantic_dependencies(statements);
+    if (dependencies.size() != body.dependencies.size())
+      invalid("checked ABI-v10 body dependency set is incomplete");
+    for (std::size_t index = 0; index < dependencies.size(); ++index) {
+      const auto& found = dependencies[index];
+      const auto& declared = body.dependencies[index];
+      if (found.target_id != declared.target_id ||
+          (found.kind == SemanticDependency::Kind::Callable) !=
+              (declared.kind ==
+               abi_v10::CheckedBodyRecord::Dependency::Kind::Callable))
+        invalid("checked ABI-v10 body dependency identity is mismatched");
+    }
+    const auto& expression = *statements.front().expr;
+    string lowered;
+    if (expression.kind == checked_ir::ExprKind::NominalConstruct) {
+      auto declaration = program.type_context->find_id(
+          expression.semantic_target_id);
+      if (!declaration || declaration->kind != moss::DeclarationKind::Record ||
+          expression.operands.size() != declaration->fields.size())
+        invalid("checked ABI-v10 constructor target is unresolved");
+      lowered = declaration->program_name + "(";
+      for (std::size_t index = 0; index < expression.operands.size(); ++index) {
+        const auto& operand = expression.operands[index];
+        if (operand.kind != checked_ir::ExprKind::Parameter ||
+            operand.ordinal >= function.params.size())
+          invalid("checked ABI-v10 constructor operand is unsupported");
+        if (index) lowered += ", ";
+        lowered += declaration->fields[index].name + ": " +
+            function.params[operand.ordinal].name;
+      }
+      lowered += ")";
+    } else if (expression.kind == checked_ir::ExprKind::Call) {
+      auto callee = std::find_if(program.functions.begin(),
+                                 program.functions.end(),
+          [&](const Function& candidate) {
+        return candidate.semantic_callable_id == expression.semantic_target_id;
+      });
+      if (callee == program.functions.end() ||
+          callee->imported_checked_summary_payload.empty())
+        invalid("checked ABI-v10 call target has no sealed summary");
+      auto target = abi_v10::read_summary(
+          callee->imported_checked_summary_payload);
+      if (target.observable_effect_bits ||
+          !target.observable_effect_tags.empty() ||
+          !abi_v10_effects_pure(callee->observable_effects) ||
+          target.parameters.size() != expression.operands.size() ||
+          target.parameter_access.size() != callee->parameter_effects.size())
+        invalid("checked ABI-v10 call target effects or arity are mismatched");
+      for (std::size_t index = 0; index < target.parameter_access.size(); ++index)
+        if (target.parameter_access[index] !=
+            imported_abi_v10_access(callee->parameter_effects[index]))
+          invalid("checked ABI-v10 callee parameter access is mismatched");
+      for (std::size_t index = 0; index < expression.operands.size(); ++index) {
+        auto expected = imported_abi_v10_type(
+            target.parameters[index], *program.type_context,
+            target.variable_count);
+        const auto& operand = expression.operands[index];
+        if (!expected || operand.kind != checked_ir::ExprKind::Parameter ||
+            operand.ordinal >= function.params.size() ||
+            !operand.type->structurally_equal(*expected))
+          invalid("checked ABI-v10 call parameter relation is mismatched");
+      }
+      auto target_result = imported_abi_v10_type(
+          target.result, *program.type_context, target.variable_count);
+      if (!target_result ||
+          !expression.type->structurally_equal(*target_result))
+        invalid("checked ABI-v10 call result relation is mismatched");
+      lowered = callee->name + "(";
+      for (std::size_t index = 0; index < expression.operands.size(); ++index) {
+        if (index) lowered += ", ";
+        lowered += function.params[expression.operands[index].ordinal].name;
+      }
+      lowered += ")";
+    } else {
+      invalid("checked ABI-v10 expression is outside the H3 subset");
+    }
+    const string local = "__moss_h3_result";
+    if (std::any_of(function.params.begin(), function.params.end(),
+                    [&](const Param& param) { return param.name == local; }))
+      invalid("checked ABI-v10 internal local collides with a parameter");
+    Stmt bind;
+    bind.kind = Stmt::Kind::Let;
+    bind.line = std::max(function.line, 1);
+    bind.indent = 0;
+    bind.a = local;
+    bind.b = lowered;
+    bind.text = "let " + local + " = " + lowered;
+    Stmt returned;
+    returned.kind = Stmt::Kind::Return;
+    returned.line = bind.line + 1;
+    returned.indent = 0;
+    returned.a = local;
+    returned.text = "return " + local;
+    function.body = {std::move(bind), std::move(returned)};
+    function.result_expression.reset();
+  }
+}
+
 class Checker {
  public:
   explicit Checker(Program& p) : p_(p) {
@@ -2986,6 +3193,7 @@ class Checker {
     // and stays bound to its identity for the rest of this session.
     build_type_context(p_);
     type_scope_ = std::make_unique<moss::TypeContext::Scope>(p_.type_context.get());
+    project_imported_h3_checked_bodies(p_);
     for (auto& f : p_.functions) {
       for (auto& param : f.params) {
         if (!param.type_ref && !param.type.empty() && !open_generic(param.type)) {
@@ -36920,6 +37128,37 @@ static ParsedModuleUnit load_module_interface(
         open_generic(*function.return_type))
       function.generic_results[function.return_type->substr(9)] =
           function.return_type->substr(9);
+  }
+  if (v10_interface) {
+    std::map<string, string> summaries;
+    std::map<string, string> bodies;
+    for (const auto& record : sealed.value.semantic_contract) {
+      if (!abi_v10::hex_hash(record.id) ||
+          abi_v10::is_key_proof_payload(record.payload)) continue;
+      auto summary = abi_v10::read_summary(record.payload);
+      summaries.emplace(summary.callable_id, record.payload);
+    }
+    for (const auto& record : sealed.value.private_semantic_dependencies)
+      if (starts_with(record.id, "checked-body-v1:")) {
+        auto body = abi_v10::read_checked_body_record(record.payload);
+        bodies.emplace(body.callable_id, record.payload);
+      }
+    for (auto& function : provider.functions) {
+      const string id = "callable-v1:" + unit.module_identity +
+          ":fn:" + function.name;
+      auto body = bodies.find(id);
+      if (body == bodies.end()) continue;
+      auto summary = summaries.find(id);
+      if (summary == summaries.end())
+        throw CompileError(0, "checked ABI-v10 body has no callable summary",
+                           "SOURCE_FREE_SUMMARY_INVALID");
+      function.imported_checked_summary_payload = summary->second;
+      function.imported_checked_body_payload = body->second;
+      bodies.erase(body);
+    }
+    if (!bodies.empty())
+      throw CompileError(0, "checked ABI-v10 body has no imported callable",
+                         "SOURCE_FREE_SUMMARY_INVALID");
   }
   unit.files.push_back({std::move(provider), file.string()});
   return unit;
