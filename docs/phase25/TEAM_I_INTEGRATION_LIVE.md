@@ -1,5 +1,13 @@
 # Team I live integration record
 
+## Final-workflow ABI selector checkpoint — 2026-10-19
+
+The coordination branch now supplies `MOSS_STAGED_ABI=v10` to the frozen
+final-release CI job, matching the strict same-HEAD runner's explicit
+requirement. Carry this root-owned workflow change through a reviewed
+target-based intake before triggering `[phase25-final]`. This is a readiness
+fix, not a release result; G PR #10 and post-H2 target core jobs still run.
+
 ## Same-HEAD live acceptance checkpoint — 2026-10-19
 
 L4 pushed `a766dfa`. Strict mode now rebuilds this checkout's compiler and

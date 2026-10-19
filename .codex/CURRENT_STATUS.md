@@ -1,5 +1,15 @@
 # Moss current status
 
+## Phase 25 final-workflow environment checkpoint — 2026-10-19
+
+The coordination branch now sets `MOSS_STAGED_ABI=v10` on the frozen final
+integration CI job. The live strict runner requires that selector and would
+otherwise reject the release job before checking its 62 gates. This workflow
+change is checkpointed on coordination only; it must be carried into a
+target-based reviewed intake before `[phase25-final]` is used. Post-H2 target
+and G draft PR #10 still each have three green jobs and core in progress.
+No additional target/main merge or release claim has occurred.
+
 ## Phase 25 same-HEAD live acceptance checkpoint — 2026-10-19
 
 Sole L4 pushed clean staged `phase25-i-map-staging` at
