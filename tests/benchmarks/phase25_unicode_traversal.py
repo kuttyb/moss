@@ -83,8 +83,25 @@ def compile_binary(td, mode, blocks, traverse):
     gen = subprocess.run([str(MOSS), str(source), "-O", "-o", str(rust)], env=env,
                          capture_output=True, text=True)
     assert gen.returncode == 0, gen.stderr
+    rust_text = rust.read_text()
+    if mode == "indexed-v1" and env.get("MOSS_STAGED_ABI") == "v10":
+        assert "pub use moss_runtime::string::{MossStr, MossString," in rust_text, (
+            "staged indexed benchmark must use the shared runtime")
+    runtime_flags = []
+    if "moss_runtime::" in rust_text:
+        runtime = Path(td) / "libmoss_runtime.rlib"
+        if not runtime.is_file():
+            runtime_build = subprocess.run([
+                "rustc", "--edition=2021", "--crate-name", "moss_runtime",
+                "--crate-type", "rlib", str(ROOT / "runtime/moss_runtime/src/lib.rs"),
+                "-o", str(runtime),
+            ], env=env, capture_output=True, text=True)
+            assert runtime_build.returncode == 0, runtime_build.stderr[-3000:]
+        runtime_flags = ["--extern", f"moss_runtime={runtime}",
+                         "-L", f"dependency={td}"]
     build = subprocess.run(["rustc", "--edition=2021", "-O", "-C", "debuginfo=1",
-                            "--crate-name", "bench", str(rust), "-o", str(binary)],
+                            "--crate-name", "bench", str(rust), *runtime_flags,
+                            "-o", str(binary)],
                            env=env, capture_output=True, text=True)
     assert build.returncode == 0, build.stderr[-3000:]
     return binary
@@ -155,7 +172,7 @@ def main():
                 blocks = size // FRAGMENT_CODEPOINTS
                 row = {"mode": mode, "codepoints": blocks * FRAGMENT_CODEPOINTS}
                 if skip:
-                    row["skipped"] = f"previous size exceeded {PLAIN_BUDGET_SECONDS}s budget"
+                    row["skipped"] = f"next plain 10x scan exceeds {PLAIN_BUDGET_SECONDS}s budget by quadratic extrapolation"
                     report["results"].append(row)
                     print(json.dumps(row))
                     continue
@@ -167,9 +184,16 @@ def main():
                             "build_and_scan_median_s": round(scan_s, 6),
                             "scan_s": round(max(scan_s - build_s, 0.0), 6),
                             "output": out.split()})
+                expected_structure = sum(c in '{}",:' for c in FRAGMENT)
+                assert row["output"] == [str(blocks * FRAGMENT_CODEPOINTS),
+                                         str(blocks * expected_structure)], row
                 report["results"].append(row)
                 print(json.dumps(row))
-                if mode == "plain" and scan_s > PLAIN_BUDGET_SECONDS / 10:
+                # The plain control has measured quadratic growth. At each
+                # 10x step, budget for roughly 100x work and leave a 2x
+                # margin for timing noise. A 0.6s 100k scan would otherwise
+                # launch five ~60s 1M scans despite the 60s budget.
+                if mode == "plain" and scan_s * 100 > PLAIN_BUDGET_SECONDS / 2:
                     skip = True
     for mode in ("plain", "indexed-v1"):
         rows = [r for r in report["results"] if r["mode"] == mode and "scan_s" in r]
@@ -181,6 +205,17 @@ def main():
         if "output" in r:
             outputs.setdefault(r["codepoints"], set()).add(tuple(r["output"]))
     assert all(len(v) == 1 for v in outputs.values()), f"modes disagree: {outputs}"
+    indexed_rows = {r["codepoints"]: r for r in report["results"]
+                    if r["mode"] == "indexed-v1" and "output" in r}
+    assert len(indexed_rows) == len(SIZES), f"incomplete indexed traversal: {indexed_rows}"
+    medium = indexed_rows[(100_000 // FRAGMENT_CODEPOINTS) * FRAGMENT_CODEPOINTS]
+    large = indexed_rows[(1_000_000 // FRAGMENT_CODEPOINTS) * FRAGMENT_CODEPOINTS]
+    # Whole build+scan time is less sensitive to subtractive timer noise than
+    # scan_s at 100k. A quadratic traversal grows about 100x at this 10x step;
+    # 30x leaves wide CI headroom while rejecting that regression.
+    assert large["build_and_scan_median_s"] <= 30 * medium["build_and_scan_median_s"], (
+        f"indexed traversal scaled superlinearly: {medium} -> {large}")
+    print("PASS: indexed-v1 non-ASCII traversal matches exact output and 10x-size scaling")
     print(json.dumps(report["metadata"], indent=1))
     if JSON_OUT:
         Path(JSON_OUT).write_text(json.dumps(report, indent=1) + "\n")

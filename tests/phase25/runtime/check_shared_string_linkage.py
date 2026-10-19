@@ -2,8 +2,10 @@
 """Prove staged indexed String uses one runtime across source-free Moss crates."""
 
 import json
+import hashlib
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 
@@ -47,15 +49,34 @@ def run(path: Path, profile: str, expected: str) -> None:
     assert result.stdout == expected, result.stdout
 
 
+def field(interface: str, name: str) -> str:
+    matches = re.findall(rf"^{re.escape(name)} (\S+)$", interface, re.M)
+    assert len(matches) == 1, (name, matches)
+    return matches[0]
+
+
+def runtime_identity(interface: str) -> tuple[str, str]:
+    matches = re.findall(
+        r"runtime moss_runtime 0\.1\.0 (sha256:[0-9a-f]{64}) (sha256:[0-9a-f]{64})",
+        interface,
+    )
+    assert len(matches) == 1, matches
+    return matches[0]
+
+
 shutil.rmtree(SCRATCH, ignore_errors=True)
 SCRATCH.mkdir(parents=True)
 provider = SCRATCH / "provider_pkg"
 project(provider, "provider_pkg",
-        'module provider\nexport fn shout(s: String) -> String:\n  return s + "!"\n')
-consumers = [("consumer_a", "é"), ("consumer_b", "世界")]
-for name, word in consumers:
+        'module provider\n'
+        'export fn shout(s: String) -> String:\n  return s + "!"\n'
+        'export fn last(s: String) -> Char:\n  return s.char_at(s.length() - 1)\n')
+consumers = [("consumer_a", "é", "é"), ("consumer_b", "世界", "界")]
+for name, word, _ in consumers:
     project(SCRATCH / name, name,
-            f'module app\nimport provider\nfn main():\n  echo provider.shout("{word}")\n')
+            f'module app\nimport provider\nfn main():\n'
+            f'  echo provider.shout("{word}")\n'
+            f'  echo provider.last("{word}")\n')
 
 for profile in ("debug", "release"):
     accepted(build(provider, profile))
@@ -63,6 +84,9 @@ for profile in ("debug", "release"):
     interface = (artifacts / "provider.mossi").read_text()
     assert "string_representation indexed-v1" in interface
     assert "runtime moss_runtime 0.1.0 sha256:" in interface
+    assert "schema_version 10\nnative_abi 10" in interface
+    assert "export fn shout kind=concrete" in interface and "return=string" in interface
+    assert "export fn last kind=concrete" in interface and "return=char" in interface
     generated = (artifacts / "provider.rs").read_text()
     assert "pub use moss_runtime::string::" in generated
     assert "pub struct MossString" not in generated
@@ -73,11 +97,23 @@ assert not list((provider / "src").glob("*.moss"))
 
 for profile in ("debug", "release"):
     artifacts = provider / "build" / profile
-    for name, word in consumers:
+    interface = (artifacts / "provider.mossi").read_text()
+    sealed_import = " ".join((field(interface, "module_id"),
+                              field(interface, "binary_contract_hash"),
+                              field(interface, "semantic_contract_hash")))
+    sealed_runtime = runtime_identity(interface)
+    provider_rlib = artifacts / "libprovider.rlib"
+    sealed_rlib_hash = hashlib.sha256(provider_rlib.read_bytes()).hexdigest()
+    for name, word, last in consumers:
         consumer = SCRATCH / name
+        assert not list((provider / "src").glob("*.moss"))
         accepted(build(consumer, profile, artifacts))
-        run(consumer, profile, word + "!\n")
-    print(f"shared indexed String {profile}: two source-free consumers passed")
+        consumer_interface = (consumer / "build" / profile / "app.mossi").read_text()
+        assert consumer_interface.splitlines().count(sealed_import) == 1
+        assert runtime_identity(consumer_interface) == sealed_runtime
+        assert hashlib.sha256(provider_rlib.read_bytes()).hexdigest() == sealed_rlib_hash
+        run(consumer, profile, word + "!\n" + last + "\n")
+    print(f"shared indexed String {profile}: two source-free consumers passed with sealed imports")
 
 # A different runtime source must fail at the Moss contract boundary, even
 # when the consumer has a warm native artifact from the original runtime.

@@ -1,12 +1,14 @@
 module EffectProvider
 
-export type Item:
-  tag: String
+export enum Item:
+  Have(tag: String)
 
 export fn consume_item(item: Item):
   match consume item:
-    case Item(tag):
+    case Have(tag):
       echo tag
 
-export fn read_item(item: Item) -> String:
-  return item.tag
+export fn read_item(item: Item) -> Int:
+  match item:
+    case Have(tag):
+      return 1

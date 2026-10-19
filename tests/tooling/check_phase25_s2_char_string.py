@@ -41,7 +41,22 @@ def native(source, td, mode, staged=False):
     binary = Path(td) / tag
     gen = run([str(MOSS), str(source), flag, "-o", str(rust)], env=env)
     assert gen.returncode == 0, f"{tag} lowering failed:\n{gen.stderr}"
-    build = run(["rustc", *rustc_flags, "--crate-name", "case", str(rust), "-o", str(binary)])
+    runtime_flags = []
+    if "moss_runtime::" in rust.read_text():
+        runtime = Path(td) / "libmoss_runtime.rlib"
+        if not runtime.is_file():
+            runtime_build = run([
+                "rustc", "--edition=2021", "--crate-name", "moss_runtime",
+                "--crate-type", "rlib", str(ROOT / "runtime/moss_runtime/src/lib.rs"),
+                "-o", str(runtime),
+            ])
+            assert runtime_build.returncode == 0, (
+                f"{tag} shared runtime failed:\n{runtime_build.stderr[:4000]}")
+        runtime_flags = ["--extern", f"moss_runtime={runtime}",
+                         "-L", f"dependency={td}"]
+    build = run(["rustc", "--edition=2021", *rustc_flags,
+                 "--crate-name", "case", str(rust), *runtime_flags,
+                 "-o", str(binary)])
     assert build.returncode == 0, f"{tag} rustc failed:\n{build.stderr[:4000]}"
     return run([str(binary)])
 
@@ -135,14 +150,16 @@ def test_record_equality_rejected():
 def test_map_keys_fail_closed():
     print("S1: record and Float-containing Map keys fail closed (P25-S3-D2)")
     tag = "type Tag:\n  label: String\n\n"
+    staged = os.environ.get("MOSS_STAGED_ABI") == "v10"
+    nominal_code = "KEY_PROOF_INVALID" if staged else "RECORD_MAP_KEY_UNSUPPORTED"
     rejected(tag + "fn main():\n  var m = Map()\n  m[Tag(label: \"a\")] = 1\n  echo 1\n",
-             "record key assignment", "RECORD_MAP_KEY_UNSUPPORTED", 6)
+             "record key assignment", nominal_code, 1 if staged else 6)
     rejected(tag + "fn main():\n  var m = Map()\n  m[[Tag(label: \"a\")]] = 1\n  echo 1\n",
-             "Vector-of-record key", "RECORD_MAP_KEY_UNSUPPORTED", 6)
+             "Vector-of-record key", nominal_code, 6)
     rejected("fn main():\n  var m = Map()\n  m[[1.5]] = 1\n  echo 1\n",
              "Vector[Float] key", "FLOAT_MAP_KEY_UNSUPPORTED", 3)
     rejected(tag + "fn size(m: Map[Tag, Int]) -> Int:\n  return 0\n\nfn main():\n  echo 1\n",
-             "declared Map[Record, V] parameter", "RECORD_MAP_KEY_UNSUPPORTED")
+             "declared Map[Record, V] parameter", nominal_code)
     engines(tag + "fn main():\n  var m = Map()\n  m[\"a\"] = Tag(label: \"x\")\n"
             "  echo m[\"a\"].label\n  var k = Map()\n  k[[1, 2]] = 3\n  echo k.get([1, 2], 0)\n",
             "record values and Vector[Int] keys still work", "x\n3\n")
@@ -481,6 +498,15 @@ def test_randomized_unicode_properties():
 
 
 def main():
+    if "--g4-only" in sys.argv[2:]:
+        # G4's Char/String evidence is independent of S1's pre-activation Map
+        # key expectations. Keep the full S1+S2 runner unchanged for E5.
+        test_char_string_distinct()
+        test_char_conversion_and_failure()
+        test_escaped_literal_parity()
+        test_randomized_unicode_properties()
+        print("=== Phase 25 G4 Char/String cases passed ===")
+        return
     test_record_equality_rejected()
     test_imported_record_equality_rejected()
     test_mixed_operands_rejected()

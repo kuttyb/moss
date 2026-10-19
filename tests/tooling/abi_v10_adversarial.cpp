@@ -1,4 +1,5 @@
 #include "abi_v10_records.hpp"
+#include "checked_body_ir.hpp"
 #include "moss_runtime_linkage.hpp"
 
 #include <cassert>
@@ -24,6 +25,7 @@ void expect_error(Action&& action, const std::string& code) {
 
 int main() {
   const auto digest = "sha256:" + std::string(64, 'a');
+  const auto body_digest = "body-semantic-v1:" + digest;
   const WireType variable{WireTypeKind::BoundVar, "", {}, 0};
   Summary valid;
   valid.callable_id = "module-v1:provider@1.0.0::Provider::outer";
@@ -35,10 +37,10 @@ int main() {
       {variable, "relay", Access::Write, 0, "provider:outer:1"},
       {variable, "required", Access::Read, 1, "provider:inner:2"},
   };
-  valid.dependencies = {{"helper:inner", digest}};
+  valid.dependencies = {{"helper:inner", body_digest}};
   valid.observable_effect_bits = 1;
   valid.observable_effect_tags = {"raise:ProviderError"};
-  valid.body_semantic_hash = digest;
+  valid.body_semantic_hash = body_digest;
   valid.provenance_id = "provider:outer:1";
 
   const auto record = summary_record(valid);
@@ -153,9 +155,12 @@ int main() {
     validate_key_proof_coherence({base_proof, key_proof_record(conflicting)});
   }, "KEY_PROOF_COHERENCE_MISMATCH");
 
-  proof.key_type = {WireTypeKind::Nominal, "sha256:" + std::string(64, 'c'), {}, 0};
+  proof.key_type = {WireTypeKind::Nominal,
+                    "nominal-template-v1:module-v1:provider@1.0.0::Provider:type:Code",
+                    {}, 0};
   auto distinct_nominal = proof;
-  distinct_nominal.key_type.identity = "sha256:" + std::string(64, 'd');
+  distinct_nominal.key_type.identity =
+      "nominal-template-v1:module-v1:provider@1.0.0::Provider:type:Other";
   validate_key_proof_coherence({key_proof_record(proof),
                                 key_proof_record(distinct_nominal)});
 
@@ -189,7 +194,8 @@ int main() {
   // Adversarial tests for MethodTemplate
   MethodTemplate method;
   method.method_id = "method:Provider.func";
-  method.template_id = digest;
+  method.template_id =
+      "nominal-template-v1:module-v1:provider@1.0.0::Provider:type:Code";
   method.method_name = "func";
   method.exported = true;
   method.variable_count = 1;
@@ -243,7 +249,7 @@ int main() {
   summary_with_dep.provenance_id = prov.provenance_id;
   summary_with_dep.requirements[0].provenance_id = prov.provenance_id;
   summary_with_dep.requirements[1].provenance_id = prov.provenance_id;
-  summary_with_dep.dependencies = {{"missing:private_helper", digest}};
+  summary_with_dep.dependencies = {{"missing:private_helper", body_digest}};
   iface.semantic_contract.push_back(summary_record(summary_with_dep));
 
   const auto sealed_bad_dep = decode(encode(iface));
@@ -270,6 +276,181 @@ int main() {
   expect_error([&] { validate_complete_interface(sealed_bad_prov2); },
                "SOURCE_FREE_CONTRACT_INVALID");
 
+  // A sealed container must bind an expected callable dependency hash to
+  // the actual private summary, not merely prove that its ID exists.
+  Summary private_helper = valid_summary;
+  private_helper.callable_id = "helper:inner";
+  private_helper.body_semantic_hash = body_digest;
+  Summary public_with_helper = valid_summary;
+  public_with_helper.dependencies = {
+      {private_helper.callable_id, private_helper.body_semantic_hash}};
+  Interface iface_with_helper = iface;
+  iface_with_helper.semantic_contract = {summary_record(public_with_helper)};
+  iface_with_helper.private_semantic_dependencies = {
+      summary_record(private_helper)};
+  validate_complete_interface(decode(encode(iface_with_helper)));
+
+  moss::checked_ir::Expr literal;
+  literal.kind = moss::checked_ir::ExprKind::IntegerLiteral;
+  literal.type = moss::Type::primitive("int");
+  literal.literal_value = "7";
+  moss::checked_ir::Stmt returned;
+  returned.kind = moss::checked_ir::StmtKind::Return;
+  returned.type = literal.type;
+  returned.expr = literal;
+  const std::vector<moss::checked_ir::Stmt> checked_statements{returned};
+  Summary body_owner = valid_summary;
+  body_owner.callable_id = "callable-v1:module-v1:provider@1.0.0::Provider:fn:body_owner";
+  body_owner.parameters.clear();
+  body_owner.parameter_access.clear();
+  body_owner.requirements.clear();
+  body_owner.variable_count = 0;
+  body_owner.result = {WireTypeKind::Primitive, "int", {}, 0};
+  body_owner.body_semantic_hash =
+      moss::checked_ir::compute_checked_body_hash_v1(checked_statements);
+  CheckedBodyRecord checked_body;
+  checked_body.callable_id = body_owner.callable_id;
+  checked_body.semantic_hash = body_owner.body_semantic_hash;
+  checked_body.checked_ir_bytes =
+      moss::checked_ir::encode_checked_body_v1(checked_statements);
+  Interface iface_with_body = iface;
+  iface_with_body.semantic_contract = {summary_record(body_owner)};
+  iface_with_body.private_semantic_dependencies = {
+      checked_body_record(checked_body)};
+  validate_complete_interface(decode(encode(iface_with_body)));
+  Interface malformed_body_iface = iface_with_body;
+  malformed_body_iface.private_semantic_dependencies.front().payload.resize(12);
+  expect_error([&] {
+    validate_complete_interface(decode(encode(malformed_body_iface)));
+  }, "SOURCE_FREE_CONTRACT_INVALID");
+  Interface forged_body_id_iface = iface_with_body;
+  forged_body_id_iface.private_semantic_dependencies.front().id += ":forged";
+  expect_error([&] {
+    validate_complete_interface(decode(encode(forged_body_id_iface)));
+  }, "SOURCE_FREE_SUMMARY_INVALID");
+  checked_body.checked_ir_bytes.back() =
+      checked_body.checked_ir_bytes.back() == '0' ? '1' : '0';
+  expect_error([&] { (void)checked_body_record(checked_body); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  checked_body.checked_ir_bytes =
+      moss::checked_ir::encode_checked_body_v1(checked_statements);
+  checked_body.dependencies.push_back({
+      CheckedBodyRecord::Dependency::Kind::Callable,
+      private_helper.callable_id, body_owner.body_semantic_hash});
+  CheckedBodyRecord wrong_kind_body = checked_body;
+  wrong_kind_body.dependencies[0].kind =
+      CheckedBodyRecord::Dependency::Kind::NominalType;
+  expect_error([&] { (void)checked_body_record(wrong_kind_body); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  Summary checked_private_helper = private_helper;
+  checked_private_helper.body_semantic_hash = body_owner.body_semantic_hash;
+  iface_with_body.private_semantic_dependencies.push_back(
+      summary_record(checked_private_helper));
+  iface_with_body.private_semantic_dependencies[0] =
+      checked_body_record(checked_body);
+  std::sort(iface_with_body.private_semantic_dependencies.begin(),
+            iface_with_body.private_semantic_dependencies.end(),
+            [](const Record& left, const Record& right) {
+              return left.id < right.id;
+            });
+  expect_error([&] {
+    validate_complete_interface(decode(encode(iface_with_body)));
+  }, "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING");
+  CheckedBodyRecord private_checked_body = checked_body;
+  private_checked_body.callable_id = checked_private_helper.callable_id;
+  private_checked_body.dependencies.clear();
+  iface_with_body.private_semantic_dependencies.push_back(
+      checked_body_record(private_checked_body));
+  std::sort(iface_with_body.private_semantic_dependencies.begin(),
+            iface_with_body.private_semantic_dependencies.end(),
+            [](const Record& left, const Record& right) {
+              return left.id < right.id;
+            });
+  validate_complete_interface(decode(encode(iface_with_body)));
+  checked_body.dependencies[0].expected_hash =
+      "body-semantic-v1:sha256:" + std::string(64, 'b');
+  for (auto& record : iface_with_body.private_semantic_dependencies)
+    if (record.id == "checked-body-v1:" + body_owner.callable_id)
+      record = checked_body_record(checked_body);
+  expect_error([&] {
+    validate_complete_interface(decode(encode(iface_with_body)));
+  }, "SOURCE_FREE_CONTRACT_INVALID");
+
+  Interface malformed_public = iface_with_helper;
+  malformed_public.semantic_contract.front().payload.resize(10);
+  expect_error([&] {
+    validate_complete_interface(decode(encode(malformed_public)));
+  }, "SOURCE_FREE_CONTRACT_INVALID");
+  Interface malformed_private = iface_with_helper;
+  malformed_private.private_semantic_dependencies.front().payload.resize(10);
+  expect_error([&] {
+    validate_complete_interface(decode(encode(malformed_private)));
+  }, "SOURCE_FREE_CONTRACT_INVALID");
+  Interface unknown_private_version = iface_with_helper;
+  unknown_private_version.private_semantic_dependencies.front().payload[0] = 2;
+  expect_error([&] {
+    validate_complete_interface(decode(encode(unknown_private_version)));
+  }, "SOURCE_FREE_CONTRACT_INVALID");
+
+  Summary mismatched_helper = private_helper;
+  mismatched_helper.body_semantic_hash =
+      "body-semantic-v1:sha256:" + std::string(64, 'b');
+  Interface iface_bad_hash = iface_with_helper;
+  iface_bad_hash.private_semantic_dependencies = {
+      summary_record(mismatched_helper)};
+  expect_error([&] {
+    validate_complete_interface(decode(encode(iface_bad_hash)));
+  }, "SOURCE_FREE_CONTRACT_INVALID");
+
+  Interface iface_duplicate_private = iface_with_helper;
+  iface_duplicate_private.private_semantic_dependencies.push_back(
+      summary_record(mismatched_helper));
+  std::sort(iface_duplicate_private.private_semantic_dependencies.begin(),
+            iface_duplicate_private.private_semantic_dependencies.end(),
+            [](const Record& left, const Record& right) {
+              return left.id < right.id;
+            });
+  expect_error([&] {
+    validate_complete_interface(decode(encode(iface_duplicate_private)));
+  }, "SOURCE_FREE_CONTRACT_INVALID");
+
+  Interface iface_unresolved_import = iface_with_helper;
+  iface_unresolved_import.imports.push_back({
+      "module-v1:other@1.0.0::Other", digest, digest});
+  Summary external_dependency = public_with_helper;
+  external_dependency.dependencies = {{
+      "callable-v1:module-v1:other@1.0.0::Other:fn:helper", body_digest}};
+  iface_unresolved_import.semantic_contract = {
+      summary_record(external_dependency)};
+  expect_error([&] {
+    validate_complete_interface(decode(encode(iface_unresolved_import)));
+  }, "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING");
+
+  Summary foreign_hash_kind = public_with_helper;
+  foreign_hash_kind.dependencies[0].second = digest;
+  expect_error([&] { (void)summary_record(foreign_hash_kind); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  foreign_hash_kind.dependencies[0].second =
+      "nominal-instance-v1:" + digest;
+  expect_error([&] { (void)summary_record(foreign_hash_kind); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  foreign_hash_kind = public_with_helper;
+  foreign_hash_kind.body_semantic_hash = digest;
+  expect_error([&] { (void)summary_record(foreign_hash_kind); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+
+  // A syntactically canonical nominal ID cannot invent a local declaration.
+  Summary forged_nominal_summary = valid_summary;
+  forged_nominal_summary.result = {
+      WireTypeKind::Nominal,
+      "nominal-template-v1:module-v1:provider@1.0.0::Provider:type:Missing",
+      {variable}, 0};
+  Interface iface_bad_nominal = iface;
+  iface_bad_nominal.semantic_contract = {summary_record(forged_nominal_summary)};
+  const auto sealed_bad_nominal = decode(encode(iface_bad_nominal));
+  expect_error([&] { validate_complete_interface(sealed_bad_nominal); },
+               "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+
   // Duplicate records within a section
   Interface iface_dup = iface;
   iface_dup.semantic_contract = {summary_record(summary_with_dep), summary_record(summary_with_dep)};
@@ -288,7 +469,8 @@ int main() {
 
   // Bound variable in closed ConcreteInstance
   ConcreteInstance ci;
-  ci.template_id = "sha256:" + std::string(64, '1');
+  ci.template_id =
+      "nominal-template-v1:module-v1:provider@1.0.0::Provider:type:Code";
   ci.substitution = {esc_var};
   expect_error([&] { (void)instance_key(ci); }, "SOURCE_FREE_SUMMARY_INVALID");
 
@@ -304,7 +486,8 @@ int main() {
   // MethodTemplate referencing unknown template ID
   MethodTemplate mt;
   mt.method_id = "method:unattached";
-  mt.template_id = "sha256:" + std::string(64, '9');
+  mt.template_id =
+      "nominal-template-v1:module-v1:provider@1.0.0::Provider:type:Unknown";
   mt.method_name = "orphan";
   mt.provenance_id = prov.provenance_id;
   Interface iface_bad_mt = iface;

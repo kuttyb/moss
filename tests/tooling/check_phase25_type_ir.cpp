@@ -190,6 +190,13 @@ int main() {
   instance.arguments = {box};
   auto base_key = instance.stable_key();
   assert(base_key && base_key->find("specialization-v2:sha256:") == 0);
+  instance.key_proof_id = "sha256:" + std::string(64, 'a');
+  const auto first_proven_key = instance.stable_key();
+  assert(first_proven_key && first_proven_key != base_key);
+  instance.key_proof_id = "sha256:" + std::string(64, 'b');
+  assert(instance.stable_key() != first_proven_key);
+  instance.key_proof_id.reset();
+  assert(instance.stable_key() == base_key);
   instance.callable_id = "callable-v1:" + beta + ":fn:unwrap";
   assert(instance.stable_key() != base_key);
   instance.callable_id = "callable-v1:" + app + ":fn:unwrap";

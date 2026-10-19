@@ -1,18 +1,19 @@
 """Phase 25 G4 indexed String record (staged for the joint ABI-v10 cut).
 
-1. Differential property test: the indexed-v1 runtime agrees with the plain
-   runtime on length/char_at/slice/find after random Unicode appends, and its
-   offset metadata satisfies the documented invariants.
+1. Differential property test: both inline and actual shared indexed-v1
+   runtimes agree with the plain runtime after random Unicode appends; their
+   offset metadata and checked 4 GiB arithmetic satisfy the contract.
 2. Staged builds (MOSS_STAGED_STRING_REPR=indexed-v1) of a String-heavy
    program agree with plain native builds and Fast Debug.
 3. The two representations never mix: a staged consumer rejects a plain
-   provider interface, and staged multi-crate builds fail closed.
+   provider interface; ABI-v10 indexed multi-crate execution succeeds.
 """
 
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -65,6 +66,7 @@ fn check_invariants(s: &indexed::MossString) {
     let text: &str = s;
     let count = text.chars().count();
     assert_eq!(indexed::__moss_string_length(s) as usize, count);
+    assert_eq!(s.as_str().len(), text.len());
     let mut expected = Vec::new();
     if !text.is_ascii() {
         for (cp, (byte, _)) in text.char_indices().enumerate() {
@@ -72,9 +74,29 @@ fn check_invariants(s: &indexed::MossString) {
         }
     }
     assert_eq!(s.offsets_for_test(), &expected[..]);
+    if text.is_ascii() {
+        assert_eq!(count, text.len());
+        assert!(s.offsets_for_test().is_empty());
+    }
 }
 
 fn main() {
+    assert_eq!(std::mem::size_of::<indexed::MossString>(), 56);
+    assert_eq!(indexed::MossString::checked_length_for_test(u32::MAX as usize - 1, 1),
+               u32::MAX as usize);
+    if usize::BITS > 32 {
+        for (base, additional) in [(u32::MAX as usize, 1), (usize::MAX, 1)] {
+            let failure = std::panic::catch_unwind(|| {
+                indexed::MossString::checked_length_for_test(base, additional)
+            }).unwrap_err();
+            let message = failure.downcast_ref::<String>().map(String::as_str)
+                .or_else(|| failure.downcast_ref::<&str>().copied()).unwrap();
+            assert_eq!(message, "String exceeds the 4 GiB indexed offset limit");
+        }
+    }
+    let mut ascii = indexed::MossString::from("ASCII");
+    ascii.push_str(" growth");
+    check_invariants(&ascii);
     let mut rng = Rng(0x9e3779b97f4a7c15);
     let mut cases = 0usize;
     for _round in 0..200 {
@@ -127,24 +149,32 @@ fn main() {
 
 
 def test_runtime_property():
-    print("indexed-v1 runtime vs plain runtime (random Unicode appends)")
-    ordering, plain, indexed = runtime_sections()
-    indexed = indexed.replace(
-        "    // Bytes of index metadata",
-        "    pub fn offsets_for_test(&self) -> &[u32] { &self.offsets }\n\n    // Bytes of index metadata")
-    source = ("#![allow(dead_code)]\n" + ordering +
-              "mod plain {\n#![allow(dead_code)]\nuse super::*;\n" + plain + "}\n" +
-              "mod indexed {\n#![allow(dead_code)]\nuse super::*;\n" + indexed + "}\n" +
-              PROPERTY_MAIN)
+    print("indexed-v1 inline and shared runtimes vs plain runtime")
+    ordering, plain, inline_indexed = runtime_sections()
+    shared = (ROOT / "runtime/moss_runtime/src/string.rs").read_text()
+    shared = shared[shared.index("// ─── Begin Moss String Runtime (indexed-v1)"):]
     with tempfile.TemporaryDirectory(prefix="p25-indexed-", dir=SCRATCH) as td:
-        path = Path(td) / "property.rs"
-        path.write_text(source)
-        binary = Path(td) / "property"
-        build = run(["rustc", "--edition=2021", "-O", str(path), "-o", str(binary)])
-        assert build.returncode == 0, build.stderr[-4000:]
-        result = run([str(binary)])
-        assert result.returncode == 0, result.stderr
-        print(f"  PASS: {result.stdout.strip()} randomized char_at/slice/find comparisons")
+        for name, indexed in (("inline", inline_indexed), ("shared", shared)):
+            assert indexed.count("    // Bytes of index metadata") == 1
+            indexed = indexed.replace(
+                "    // Bytes of index metadata",
+                "    pub fn offsets_for_test(&self) -> &[u32] { &self.offsets }\n"
+                "    pub fn checked_length_for_test(base: usize, additional: usize) -> usize {"
+                " Self::checked_length(base, additional) }\n\n"
+                "    // Bytes of index metadata")
+            source = ("#![allow(dead_code)]\n" + ordering +
+                      "mod plain {\n#![allow(dead_code)]\nuse super::*;\n" + plain + "}\n" +
+                      "mod indexed {\n#![allow(dead_code)]\nuse super::*;\n" + indexed + "}\n" +
+                      PROPERTY_MAIN)
+            path = Path(td) / f"property-{name}.rs"
+            path.write_text(source)
+            binary = Path(td) / f"property-{name}"
+            build = run(["rustc", "--edition=2021", "-O", str(path), "-o", str(binary)])
+            assert build.returncode == 0, build.stderr[-4000:]
+            result = run([str(binary)])
+            assert result.returncode == 0, result.stderr
+            assert result.stdout.strip() == "12800", result.stdout
+            print(f"  PASS: {name} runtime 12800 randomized comparisons, offsets and limit")
 
 
 PROGRAM = """
@@ -188,7 +218,20 @@ def native(source, td, env, tag, release):
     gen = run([str(MOSS), str(source), "-O" if release else "--debug", "-o", str(rust)], env=env)
     assert gen.returncode == 0, gen.stderr
     flags = ["-O"] if release else []
-    build = run(["rustc", "--edition=2021", *flags, "--crate-name", "case", str(rust), "-o", str(binary)], env=env)
+    runtime_flags = []
+    if "moss_runtime::" in rust.read_text():
+        runtime = Path(td) / "libmoss_runtime.rlib"
+        if not runtime.is_file():
+            runtime_build = run([
+                "rustc", "--edition=2021", "--crate-name", "moss_runtime",
+                "--crate-type", "rlib", str(ROOT / "runtime/moss_runtime/src/lib.rs"),
+                "-o", str(runtime),
+            ], env=env)
+            assert runtime_build.returncode == 0, runtime_build.stderr[-4000:]
+        runtime_flags = ["--extern", f"moss_runtime={runtime}",
+                         "-L", f"dependency={td}"]
+    build = run(["rustc", "--edition=2021", *flags, "--crate-name", "case",
+                 str(rust), *runtime_flags, "-o", str(binary)], env=env)
     assert build.returncode == 0, build.stderr[-4000:]
     result = run([str(binary)], env=env)
     assert result.returncode == 0, result.stderr
@@ -207,7 +250,12 @@ def test_staged_program():
             plain_out, plain_rust = native(source, td, PLAIN, f"plain{int(release)}", release)
             staged_out, staged_rust = native(source, td, STAGED, f"staged{int(release)}", release)
             assert "pub type MossStr = String;" in plain_rust
-            assert "pub type MossStr = MossString;" in staged_rust
+            if os.environ.get("MOSS_STAGED_ABI") == "v10":
+                assert "pub use moss_runtime::string::{MossStr, MossString," in staged_rust
+                assert "pub type MossStr = MossString;" in (
+                    ROOT / "runtime/moss_runtime/src/string.rs").read_text()
+            else:
+                assert "pub type MossStr = MossString;" in staged_rust
             outputs[f"plain-{release}"] = plain_out
             outputs[f"staged-{release}"] = staged_out
         assert len(set(outputs.values())) == 1, outputs
@@ -229,6 +277,28 @@ def test_representations_never_mix():
         assert plain.returncode == 0, plain.stdout + plain.stderr
         interface = (proj / "build" / "debug" / "provider.mossi").read_text()
         assert "string_representation" not in interface
+        if os.environ.get("MOSS_STAGED_ABI") == "v10":
+            plain_artifacts = Path(td) / "plain_artifacts"
+            plain_artifacts.mkdir()
+            for name in ("provider.mossi", "libprovider.rlib"):
+                shutil.copy2(proj / "build" / "debug" / name,
+                             plain_artifacts / name)
+            staged = run([str(MARGO), "run"], cwd=proj, env=STAGED)
+            assert staged.returncode == 0 and staged.stdout == "é!\n", (
+                staged.stdout + staged.stderr)
+            consumer = Path(td) / "mixed_consumer"
+            (consumer / "src").mkdir(parents=True)
+            (consumer / "Moss.toml").write_text(
+                '[package]\nname = "mixed_consumer"\nversion = "0.1.0"\n')
+            shutil.copy2(src / "main.moss", consumer / "src" / "main.moss")
+            mixed_env = {**STAGED, "MOSS_MODULE_PATH": str(plain_artifacts)}
+            mixed = run([str(MOSS), "check", "src/main.moss", "--json"],
+                        cwd=consumer, env=mixed_env)
+            assert mixed.returncode != 0, mixed.stdout
+            assert json.loads(mixed.stdout)["error"]["code"] == (
+                "STRING_REPRESENTATION_MISMATCH"), mixed.stdout
+            print("  PASS: staged multi-crate execution and plain/indexed mismatch rejection")
+            return
         staged = run([str(MOSS), "build", "--json"], cwd=proj, env=STAGED)
         assert staged.returncode != 0
         assert "STRING_REPRESENTATION_STAGED_SINGLE_CRATE" in staged.stdout, staged.stdout

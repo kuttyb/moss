@@ -23,9 +23,12 @@
 #include "ast.hpp"
 #include "numeric_literal.hpp"
 #include "numeric_runtime.hpp"
+#include "rust_float_display.hpp"
 #include "type_placeholders.hpp"
 
 namespace moss {
+
+static bool staged_abi_v10();
 
 // Fast Debug is deliberately an execution backend over the checked Moss AST.
 // It does not parse, resolve, or type-check anything itself.  The checker has
@@ -223,7 +226,8 @@ class FastInterpreter {
   struct DomainValue;
 
   struct Value {
-    enum class Kind { Unit, Bool, Int, Float, String, Callable, Struct, Vector, Queue, Map, DomainHandle, Char } kind = Kind::Unit;
+    using HashIndex = std::unordered_map<std::int64_t, std::vector<size_t>>;
+    enum class Kind { Unit, Bool, Int, Float, String, Callable, Struct, Vector, Queue, Map, Set, DomainHandle, Char } kind = Kind::Unit;
     bool boolean = false;
     std::int64_t integer = 0;
     double floating = 0.0;
@@ -234,6 +238,13 @@ class FastInterpreter {
     std::shared_ptr<std::vector<Value>> vector;
     std::shared_ptr<std::vector<Value>> queue;
     std::shared_ptr<std::vector<std::pair<Value, Value>>> map;
+    std::shared_ptr<std::vector<Value>> set;
+    // Staged key-protocol lookup indexes. The vectors above retain snapshot
+    // order; aliases share both the values and their index. Independent Moss
+    // copies clone all three pieces in independent().
+    std::shared_ptr<HashIndex> map_index;
+    std::shared_ptr<std::vector<std::int64_t>> map_hashes;
+    std::shared_ptr<HashIndex> set_index;
     std::string element_type;
 
     static Value unit();
@@ -247,6 +258,7 @@ class FastInterpreter {
     static Value vector_value(std::vector<Value> values, std::string element_type = {});
     static Value queue_value();
     static Value map_value();
+    static Value set_value();
     bool truthy() const;
     std::string display() const;
   };
@@ -1117,8 +1129,8 @@ class FastInterpreter {
             Value index = eval(e.substr(open + 1, i - open - 1), frame,
                                line, output);
             if (base.kind == Value::Kind::Map && base.map) {
-              for (const auto& entry : *base.map)
-                if (key_equal(entry.first, index)) return entry.second;
+              if (auto position = map_position(base, index, frame, line, output))
+                return base.map->at(*position).second;
               throw RuntimeError(line, "missing map key");
             }
             auto values = base.kind == Value::Kind::Vector ? base.vector :
@@ -1169,6 +1181,8 @@ class FastInterpreter {
           return Value::vector_value({}, callee.substr(7, callee.size() - 8));
         if (callee == "Queue" && args.empty()) return Value::queue_value();
         if (callee == "Map" && args.empty()) return Value::map_value();
+        if (staged_abi_v10() && callee == "Set" && args.empty())
+          return Value::set_value();
         if (callee == "assert") {
           if (args.size() != 1) throw RuntimeError(line, "assert expects one argument");
           if (!eval(args.front(), frame, line, output).truthy()) {
@@ -1559,10 +1573,13 @@ class FastInterpreter {
             if (method_name == "delete" && method_args.size() == 3) {
               Value key = eval(method_args[0], frame, line, output);
               Value fallback = eval(method_args[1], frame, line, output);
-              for (auto it = receiver.map->begin(); it != receiver.map->end(); ++it) {
-                if (!key_equal(it->first, key)) continue;
-                Value removed = independent(it->second);
-                receiver.map->erase(it);
+              if (auto position = map_position(receiver, key, frame, line, output)) {
+                Value removed = independent(receiver.map->at(*position).second);
+                receiver.map->erase(receiver.map->begin() + *position);
+                if (staged_abi_v10()) {
+                  receiver.map_hashes->erase(receiver.map_hashes->begin() + *position);
+                  rebuild_map_index(receiver);
+                }
                 assign(method_args[2], Value::boolean_value(true), frame, line, output);
                 return removed;
               }
@@ -1572,8 +1589,8 @@ class FastInterpreter {
             if (method_name == "get" && method_args.size() == 2) {
               Value key = eval(method_args[0], frame, line, output);
               Value fallback = eval(method_args[1], frame, line, output);
-              for (const auto& entry : *receiver.map)
-                if (key_equal(entry.first, key)) return independent(entry.second);
+              if (auto position = map_position(receiver, key, frame, line, output))
+                return independent(receiver.map->at(*position).second);
               return independent(fallback);
             }
             if ((method_name == "keys" || method_name == "values") && method_args.empty()) {
@@ -1581,6 +1598,26 @@ class FastInterpreter {
               for (const auto& entry : *receiver.map)
                 values.push_back(independent(method_name == "keys" ? entry.first : entry.second));
               return Value::vector_value(std::move(values));
+            }
+          }
+          if (staged_abi_v10() && receiver.kind == Value::Kind::Set) {
+            if (method_name == "values" && method_args.empty()) {
+              std::vector<Value> values;
+              for (const auto& key : *receiver.set)
+                values.push_back(independent(key));
+              return Value::vector_value(std::move(values));
+            }
+            if ((method_name == "insert" || method_name == "contains") &&
+                method_args.size() == 1) {
+              Value key = eval(method_args[0], frame, line, output);
+              std::int64_t hash = 0;
+              if (set_position(receiver, key, frame, line, output, &hash))
+                return method_name == "contains" ? Value::boolean_value(true)
+                                                 : Value::unit();
+              if (method_name == "contains") return Value::boolean_value(false);
+              (*receiver.set_index)[hash].push_back(receiver.set->size());
+              receiver.set->push_back(independent(key));
+              return Value::unit();
             }
           }
           if (receiver.kind != Value::Kind::Struct || !receiver.object)
@@ -1787,6 +1824,9 @@ class FastInterpreter {
           if (!found) return false;
         }
         return true;
+      case Value::Kind::Set:
+        // Set operator equality is not in the staged source contract.
+        return false;
     }
     return false;
   }
@@ -1796,6 +1836,77 @@ class FastInterpreter {
     if (left.kind == Value::Kind::Float && right.kind == Value::Kind::Float)
       return moss_isequal(left, right);
     return equal(left, right);
+  }
+
+  std::optional<size_t> map_position(const Value& receiver, const Value& key,
+                                     Frame& frame, int line, std::ostream& output,
+                                     std::int64_t* key_hash = nullptr) {
+    if (staged_abi_v10() && receiver.map_index) {
+      const std::int64_t hash = protocol_key_hash(key, frame, line, output);
+      if (key_hash) *key_hash = hash;
+      auto bucket = receiver.map_index->find(hash);
+      if (bucket == receiver.map_index->end()) return std::nullopt;
+      for (size_t position : bucket->second)
+        if (protocol_key_equal(receiver.map->at(position).first, key,
+                               frame, line, output)) return position;
+      return std::nullopt;
+    }
+    for (size_t position = 0; position < receiver.map->size(); ++position)
+      if (protocol_key_equal(receiver.map->at(position).first, key,
+                             frame, line, output)) return position;
+    return std::nullopt;
+  }
+
+  std::optional<size_t> set_position(const Value& receiver, const Value& key,
+                                     Frame& frame, int line, std::ostream& output,
+                                     std::int64_t* key_hash = nullptr) {
+    const std::int64_t hash = protocol_key_hash(key, frame, line, output);
+    if (key_hash) *key_hash = hash;
+    auto bucket = receiver.set_index->find(hash);
+    if (bucket == receiver.set_index->end()) return std::nullopt;
+    for (size_t position : bucket->second)
+      if (protocol_key_equal(receiver.set->at(position), key,
+                             frame, line, output)) return position;
+    return std::nullopt;
+  }
+
+  static void rebuild_map_index(Value& receiver) {
+    receiver.map_index->clear();
+    for (size_t position = 0; position < receiver.map_hashes->size(); ++position)
+      (*receiver.map_index)[receiver.map_hashes->at(position)].push_back(position);
+  }
+
+  int64_t protocol_key_hash(const Value& key, Frame& frame, int line,
+                            std::ostream& output) {
+    if (staged_abi_v10() && key.kind == Value::Kind::Struct && key.object) {
+      const Method* selected = method(key.object->type, "hash");
+      if (!selected) throw RuntimeError(line, "missing nominal key hash proof");
+      Value result = call_method(*selected, key, {}, frame, line, output, {});
+      if (result.kind != Value::Kind::Int)
+        throw RuntimeError(line, "nominal key hash must return Int");
+      return result.integer;
+    }
+    return moss_hash(key);
+  }
+
+  bool protocol_key_equal(const Value& left, const Value& right,
+                          Frame& frame, int line, std::ostream& output) {
+    if (!staged_abi_v10() || left.kind != Value::Kind::Struct ||
+        right.kind != Value::Kind::Struct)
+      return key_equal(left, right);
+    if (!left.object || !right.object || left.object->type != right.object->type)
+      return false;
+    if (protocol_key_hash(left, frame, line, output) !=
+        protocol_key_hash(right, frame, line, output)) return false;
+    const Method* selected = method(left.object->type, "isequal");
+    if (!selected) throw RuntimeError(line, "missing nominal key equality proof");
+    Frame args = frame;
+    args.locals["__moss_set_key_other"] = independent(right);
+    Value result = call_method(*selected, left, {"__moss_set_key_other"},
+                               args, line, output, {});
+    if (result.kind != Value::Kind::Bool)
+      throw RuntimeError(line, "nominal key equality must return Bool");
+    return result.boolean;
   }
 
   static bool moss_less(const Value& left, const Value& right) {
@@ -1968,8 +2079,14 @@ class FastInterpreter {
       Value receiver = eval(name.substr(0, bracket), frame, line, output);
       if (receiver.kind == Value::Kind::Map && receiver.map) {
         Value key = eval(name.substr(bracket + 1, name.size() - bracket - 2), frame, line, output);
-        for (auto& entry : *receiver.map) {
-          if (key_equal(entry.first, key)) { entry.second = std::move(value); return; }
+        std::int64_t hash = 0;
+        if (auto position = map_position(receiver, key, frame, line, output, &hash)) {
+          receiver.map->at(*position).second = std::move(value);
+          return;
+        }
+        if (staged_abi_v10()) {
+          (*receiver.map_index)[hash].push_back(receiver.map->size());
+          receiver.map_hashes->push_back(hash);
         }
         receiver.map->push_back({std::move(key), std::move(value)});
         return;
@@ -2604,6 +2721,14 @@ inline FastInterpreter::Value FastInterpreter::Value::queue_value() {
 inline FastInterpreter::Value FastInterpreter::Value::map_value() {
   Value result; result.kind = Kind::Map;
   result.map = std::make_shared<std::vector<std::pair<Value, Value>>>();
+  result.map_index = std::make_shared<HashIndex>();
+  result.map_hashes = std::make_shared<std::vector<std::int64_t>>();
+  return result;
+}
+inline FastInterpreter::Value FastInterpreter::Value::set_value() {
+  Value result; result.kind = Kind::Set;
+  result.set = std::make_shared<std::vector<Value>>();
+  result.set_index = std::make_shared<HashIndex>();
   return result;
 }
 inline bool FastInterpreter::Value::truthy() const {
@@ -2615,6 +2740,7 @@ inline bool FastInterpreter::Value::truthy() const {
   if (kind == Kind::Vector) return vector && !vector->empty();
   if (kind == Kind::Queue) return queue && !queue->empty();
   if (kind == Kind::Map) return map && !map->empty();
+  if (kind == Kind::Set) return set && !set->empty();
   return kind != Kind::Unit;
 }
 inline std::string moss_canonical_float_text(double value) {
@@ -2658,31 +2784,12 @@ inline std::string rust_f64_to_string(double value) {
   if (std::isnan(value)) return "NaN";
   if (std::isinf(value)) return std::signbit(value) ? "-inf" : "inf";
   if (value == 0.0) return std::signbit(value) ? "-0" : "0";
-
-  char buffer[128];
-  auto converted = std::to_chars(buffer, buffer + sizeof(buffer),
-                                 std::fabs(value), std::chars_format::scientific);
-  if (converted.ec != std::errc{})
-    throw std::runtime_error("failed to format Float");
-  std::string scientific(buffer, converted.ptr);
-  size_t exponent_at = scientific.find('e');
-  if (exponent_at == std::string::npos)
-    throw std::runtime_error("scientific Float format lacks exponent");
-  int exponent = std::stoi(scientific.substr(exponent_at + 1));
-  std::string digits;
-  for (size_t index = 0; index < exponent_at; ++index)
-    if (scientific[index] != '.') digits += scientific[index];
-
-  std::string result;
-  int decimal_at = exponent + 1;
-  if (decimal_at <= 0) {
-    result = "0." + std::string(static_cast<size_t>(-decimal_at), '0') + digits;
-  } else if (static_cast<size_t>(decimal_at) >= digits.size()) {
-    result = digits + std::string(static_cast<size_t>(decimal_at) - digits.size(), '0');
-  } else {
-    result = digits.substr(0, static_cast<size_t>(decimal_at)) + "." +
-        digits.substr(static_cast<size_t>(decimal_at));
-  }
+  double magnitude = std::fabs(value);
+  auto decimal = moss_float_display_detail::grisu_shortest(magnitude);
+  if (!decimal)
+    decimal = moss_float_display_detail::dragon_shortest(magnitude);
+  std::string result = moss_float_display_detail::fixed_decimal(
+      decimal->first, decimal->second);
   return std::signbit(value) ? "-" + result : result;
 }
 
@@ -2713,6 +2820,9 @@ inline std::string FastInterpreter::Value::display() const {
       return out.str();
     case Kind::Map:
       out << "Map(" << (map ? std::to_string(map->size()) : "0") << ")";
+      return out.str();
+    case Kind::Set:
+      out << "Set(" << (set ? std::to_string(set->size()) : "0") << ")";
       return out.str();
   }
   return "()";

@@ -18,7 +18,7 @@ fixtures/abi_v10/
 ├── scenario03_consumer_b/                 # Scenario 3: Consumer B specializes Box[String]
 ├── scenario04_joint_consumers/            # Scenario 4: Shared provider Rust type identity
 ├── scenario05_independent_freshen/        # Scenario 5: Multiple independent fresh() calls
-├── scenario06_source_removal/             # Scenario 6: Pure source-free .mossi + .rlib build
+├── scenario06_source_removal/             # Earlier single-consumer source-free smoke fixture
 ├── scenario07_missing_method/             # Scenario 7: Transitive missing-method error provenance
 ├── scenario08_effect_conflict/            # Scenario 8: Source-free ownership conflict rejected
 ├── scenario09_v9_rejection/               # Scenario 9: ABI-v9 artifacts rejected under v10
@@ -31,16 +31,16 @@ fixtures/abi_v10/
 | Scenario | Objective | Key Verification / Diagnostic |
 |---|---|---|
 | **Scenario 1** | Provider exports generic `Box` and open functions `fresh` and `relay` | Provider compiles, emits ABI-v10 `NominalTemplate` and `OpenCallableSummary` records. |
-| **Scenario 2** | Consumer A specializes `Box[Int]` | Consumer generates specialized free function over `provider::Box<i64>`. |
-| **Scenario 3** | Consumer B specializes `Box[String]` | Consumer generates specialized free function over `provider::Box<MossString>`. |
-| **Scenario 4** | Shared provider-owned Rust type identity | Consumers A and B interoperate without conflicting orphan impls or duplicate definitions. |
-| **Scenario 5** | Independent summary freshening | Multiple calls to `fresh()` generate distinct type variable mappings without cross-call contamination. |
-| **Scenario 6** | True source-free compilation | Provider `.moss` source files are removed; consumer compiles using only `.mossi` and `.rlib`. |
+| **Scenario 2** | Consumer A specializes `Box[Int]` | Source-free provider artifact; independent consumer builds and runs with exact `42` output. |
+| **Scenario 3** | Consumer B specializes `Box[String]` | Same source-free pattern with exact `hello v10` output. |
+| **Scenario 4** | Shared provider-owned Rust type identity | A and B compile separately; a joint native executable links both consumer artifacts and the one provider after all provider and intermediate consumer sources are removed. |
+| **Scenario 5** | Independent summary freshening | One source-free consumer calls `fresh()` at Int and String and executes with exact output. |
+| **Scenario 6** | True source-free checked private-chain specialization | The harness runs `check_phase25_h3_source_free_chain.py`: canonical checked IR/dependency records, poisoned legacy body, removed provider tree, independent Int/String native consumers, and unsupported/missing-body negatives in the selected profile. The older single-consumer fixture remains as a smoke example. |
 | **Scenario 7** | Transitive error provenance | Missing member call reports consumer callsite as primary and provider requirement span as related note. |
 | **Scenario 8** | Ownership/effect conflict rejected before rustc | Illegal read after consume or aliasing mutation is rejected during Moss semantic checking. |
-| **Scenario 9** | ABI-v9 rejection | Legacy v9 artifacts receive `SOURCE_FREE_ABI_REBUILD_REQUIRED` under v10 rules. |
-| **Scenario 10** | Metadata tampering fails closed | Malformed digests, bad schema versions, truncated records, identity mismatch, and forged Float proofs fail closed. |
-| **Scenario 11** | Semantic and layout cache invalidation | Changing provider layout invalidates consumer cache; unchanged provider hits warm cache. |
+| **Scenario 9** | ABI-v9 rejection | A real v9 `.mossi` and `.rlib` are built, selected only through `MOSS_MODULE_PATH`, and rejected under v10 with `SOURCE_FREE_ABI_REBUILD_REQUIRED`. |
+| **Scenario 10** | Metadata tampering fails closed | A clean source-free import passes; changed digest, schema, missing binary section, changed module ID, and trailing fake-proof text each fail with exact ABI diagnostics. The key-protocol `06j` fixture separately checks a forged proof-related method record. |
+| **Scenario 11** | Semantic and layout cache invalidation | A cold consumer build is followed by a warm cache hit; the provider contract digest then changes and the affected consumer is rejected with `FIELD_COUNT_MISMATCH` at its constructor. |
 
 ## Running the Harness
 
@@ -48,20 +48,20 @@ The fixtures are executed and validated via `tests/phase25/integration/cross_cra
 
 ```bash
 # Verify fixture integrity, mutation helpers, and environment:
-python3 tests/phase25/integration/cross_crate_harness.py --self-test
+MOSS_STAGED_ABI=v10 python3 tests/phase25/integration/cross_crate_harness.py --self-test
 
 # Run all scenarios:
-python3 tests/phase25/integration/cross_crate_harness.py --all
+MOSS_STAGED_ABI=v10 python3 tests/phase25/integration/cross_crate_harness.py --all
 
 # Run specific scenario:
-python3 tests/phase25/integration/cross_crate_harness.py --scenario 1
+MOSS_STAGED_ABI=v10 python3 tests/phase25/integration/cross_crate_harness.py --scenario 1
 
 # Select build profile:
-python3 tests/phase25/integration/cross_crate_harness.py --scenario 6 --profile release
+MOSS_STAGED_ABI=v10 python3 tests/phase25/integration/cross_crate_harness.py --scenario 6 --profile release
 
 # Test cache invalidation:
-python3 tests/phase25/integration/cross_crate_harness.py --scenario 11 --cache-test
+MOSS_STAGED_ABI=v10 python3 tests/phase25/integration/cross_crate_harness.py --scenario 11 --cache-test
 
 # Emit structured JSON results:
-python3 tests/phase25/integration/cross_crate_harness.py --all --json
+MOSS_STAGED_ABI=v10 python3 tests/phase25/integration/cross_crate_harness.py --all --json
 ```

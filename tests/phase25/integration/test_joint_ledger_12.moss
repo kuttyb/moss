@@ -1,0 +1,5 @@
+fn main():
+  var values = []
+  values.push(1)
+  values.push(2)
+  echo values[0] + values[1]

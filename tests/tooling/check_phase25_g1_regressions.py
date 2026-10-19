@@ -3,7 +3,9 @@
 import json
 import os
 from pathlib import Path
+import random
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -207,16 +209,17 @@ type Matrix:
   cols: Int
   data: Vector[Int]
 
+fn set_at(m: Matrix, r: Int, c: Int, value: Int):
+  m.data[r * m.cols + c] = value
+
 fn main():
   var m = Matrix(rows = 2, cols = 3, data = [0, 0, 0, 0, 0, 0])
-  let r = 1
-  let c = 2
-  m.data[r * m.cols + c] = 42
-  echo m.data[r * m.cols + c]
+  set_at(m, 1, 2, 42)
+  echo m.data[5]
 """
     out = run_code_in_all_modes(code_matrix_borrow, "Defect #4 Borrow Lowering")
     assert out.strip() == "42"
-    print("  PASS: Defect #4 (conflicting index expression borrow lowering)")
+    print("  PASS: Defect #4 (parameter-based index expression borrow lowering)")
 
     # Defect #5: Discard assignment `_ = f()`
     code_discard = """
@@ -295,6 +298,130 @@ fn main():
     print("  PASS: Defect #12 / #15 (dotted receiver statement member-call)")
 
 
+def test_float_display_corpus():
+    """Compare Float.to_string with Rust Display for exact f64 bit patterns."""
+    edge_bits = [
+        0, 1, 2, 0x000fffffffffffff, 0x0010000000000000,
+        0x3fd5555555555555, 0x3ff0000000000000, 0x7fefffffffffffff,
+        0x4306a67789fbfd12, 0x430757478acf83d2,
+        0x42d3b20baa8690d8, 0x4312460ce04c1faf,
+        0x000542f4a2543f6c, 0x00010b7404773810,
+    ]
+    bits = edge_bits + [value | (1 << 63) for value in edge_bits]
+    rng = random.Random(2507)
+    while len(bits) < 4096:
+        value = rng.getrandbits(64)
+        if value & 0x7ff0000000000000 != 0x7ff0000000000000:
+            bits.append(value)
+    values = [struct.unpack(">d", struct.pack(">Q", value))[0] for value in bits]
+    source = ("fn main():\n  let z = 0.0\n" +
+              "".join(f"  echo ({value!r}).to_string()\n" for value in values) +
+              "  echo (0.0 / z).to_string()\n"
+              "  echo (1.0 / z).to_string()\n"
+              "  echo (-1.0 / z).to_string()\n")
+    actual = run_code_in_all_modes(source, "Defect #7 Rust Display corpus")
+    with tempfile.TemporaryDirectory(prefix="phase25-g1-float-", dir=SCRATCH) as td:
+        rust = Path(td) / "oracle.rs"
+        binary = Path(td) / "oracle"
+        rust.write_text(
+            "fn main() {\n  for bits in [" +
+            ",".join(f"{value}u64" for value in bits) +
+            "] { println!(\"{}\", f64::from_bits(bits)); }\n" +
+            "  println!(\"{}\", f64::NAN);\n"
+            "  println!(\"{}\", f64::INFINITY);\n"
+            "  println!(\"{}\", f64::NEG_INFINITY);\n}\n")
+        compiled = run_cmd(["rustc", "--edition=2021", "-O", str(rust), "-o", str(binary)])
+        assert compiled.returncode == 0, compiled.stderr[-2000:]
+        oracle = run_cmd([str(binary)])
+        assert oracle.returncode == 0, oracle.stderr
+    expected = oracle.stdout.splitlines()
+    observed = actual.splitlines()
+    assert len(expected) == len(observed) == len(bits) + 3
+    for index, (left, right) in enumerate(zip(observed, expected)):
+        assert left == right, (index, hex(bits[index]) if index < len(bits) else "non-finite",
+                               values[index] if index < len(bits) else "non-finite",
+                               left, right)
+    print("  PASS: Defect #7 (4096 bit patterns plus non-finite match Rust Display)")
+
+
+def test_float_display_exact_bits():
+    """Compare the C++ digit algorithm directly with Rust across exponent ranges."""
+    edges = [
+        1, 2, 0x000fffffffffffff, 0x0010000000000000,
+        0x4306a67789fbfd12, 0x430757478acf83d2,
+        0x42d3b20baa8690d8, 0x4312460ce04c1faf,
+        0x000542f4a2543f6c, 0x00010b7404773810,
+        0x7fefffffffffffff,
+    ]
+    bits = edges + [value | (1 << 63) for value in edges]
+    rng = random.Random(2507)
+    for exponent in range(2047):
+        for fraction in (0, 1, 1 << 51, (1 << 52) - 1):
+            value = (exponent << 52) | fraction
+            if value:
+                bits.append(value)
+    for exponent in (0, 1, 2, 3, 1022, 1023, 1071, 1072,
+                     1073, 1074, 1075, 1076, 2045, 2046):
+        for _ in range(1000):
+            bits.append((rng.randrange(2) << 63) |
+                        (exponent << 52) | rng.getrandbits(52))
+    while len(bits) < 64000:
+        value = rng.getrandbits(64)
+        if value & 0x7ff0000000000000 != 0x7ff0000000000000 and value & 0x7fffffffffffffff:
+            bits.append(value)
+    data = "".join(f"{value}\n" for value in bits)
+
+    with tempfile.TemporaryDirectory(prefix="phase25-g1-display-bits-", dir=SCRATCH) as td:
+        work = Path(td)
+        cpp = work / "format.cpp"
+        rust = work / "oracle.rs"
+        cpp.write_text(r"""
+#include "rust_float_display.hpp"
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <iostream>
+int main() {
+  uint64_t bits;
+  while (std::cin >> bits) {
+    double value;
+    std::memcpy(&value, &bits, sizeof(value));
+    double magnitude = std::fabs(value);
+    auto decimal = moss_float_display_detail::grisu_shortest(magnitude);
+    if (!decimal) decimal = moss_float_display_detail::dragon_shortest(magnitude);
+    std::cout << (std::signbit(value) ? "-" : "")
+              << moss_float_display_detail::fixed_decimal(decimal->first, decimal->second)
+              << '\n';
+  }
+}
+""")
+        rust.write_text("""
+use std::io::{self, BufRead};
+fn main() {
+    for line in io::stdin().lock().lines() {
+        let bits: u64 = line.unwrap().parse().unwrap();
+        println!("{}", f64::from_bits(bits));
+    }
+}
+""")
+        cpp_binary = work / "format"
+        rust_binary = work / "oracle"
+        for command in (["c++", "-std=c++17", "-O2", "-Wall", "-Wextra",
+                         "-Werror", "-pedantic", "-I", str(ROOT / "src"),
+                         str(cpp), "-o", str(cpp_binary)],
+                        ["rustc", "-O", str(rust), "-o", str(rust_binary)]):
+            built = run_cmd(command)
+            assert built.returncode == 0, built.stderr[-2000:]
+        cpp_output = subprocess.run([str(cpp_binary)], input=data, text=True,
+                                    capture_output=True, check=True).stdout.splitlines()
+        rust_output = subprocess.run([str(rust_binary)], input=data, text=True,
+                                     capture_output=True, check=True).stdout.splitlines()
+    assert len(cpp_output) == len(rust_output) == len(bits)
+    for index, (actual, expected) in enumerate(zip(cpp_output, rust_output)):
+        assert actual == expected, (index, hex(bits[index]), actual, expected)
+    print("  PASS: Defect #7 (64,000 exact f64 bits match native Rust Display)")
+
+
 def test_benchmark_raising_case():
     """Verify Defect #14: Raising calls inside benchmarks."""
     print("Testing Defect #14 (Raising calls inside benchmarks)...")
@@ -338,6 +465,8 @@ def main():
     test_negative_checker_cases()
     test_semantic_resolution_cases()
     test_execution_parity_cases()
+    test_float_display_exact_bits()
+    test_float_display_corpus()
     test_benchmark_raising_case()
     print("=== All Phase 25 G1 Regressions Passed Cleanly! ===")
 

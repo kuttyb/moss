@@ -66,12 +66,21 @@ impl MossString {
             .unwrap_or_else(|_| panic!("String exceeds the 4 GiB indexed offset limit"))
     }
 
+    #[inline]
+    fn checked_length(base: usize, additional: usize) -> usize {
+        let length = base.checked_add(additional)
+            .unwrap_or_else(|| panic!("String exceeds the 4 GiB indexed offset limit"));
+        Self::offset(length);
+        length
+    }
+
     // Appends `part`, scanning only `part`; amortized O(part.len()).
     pub fn push_str(&mut self, part: &str) {
         if part.is_empty() {
             return;
         }
         let base = self.bytes.len();
+        Self::checked_length(base, part.len());
         let was_ascii = self.is_ascii_text();
         self.bytes.push_str(part);
         if was_ascii && part.is_ascii() {
@@ -152,6 +161,7 @@ impl From<&str> for MossString {
 
 impl From<String> for MossString {
     fn from(text: String) -> Self {
+        MossString::checked_length(0, text.len());
         if text.is_ascii() {
             let codepoints = text.len();
             return MossString {

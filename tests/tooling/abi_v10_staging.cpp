@@ -57,6 +57,19 @@ int main() {
   assert(decoded.value.semantic_contract[0].payload == "bound-var 0\n");
   assert(decoded.binary_hash != decoded.semantic_hash);
   assert(moss::abi_v10::encode(decoded.value) == sealed);
+  // Versioned record payloads are byte-framed binary. A 200-byte string
+  // yields a non-UTF-8 length byte (0xc8) while its logical text stays UTF-8.
+  moss::abi_v10::WireWriter binary_writer;
+  binary_writer.byte(1);
+  binary_writer.string(std::string(200, 'x'));
+  Interface binary_payload_iface = value;
+  binary_payload_iface.private_semantic_dependencies.insert(
+      binary_payload_iface.private_semantic_dependencies.begin(),
+      {"binary:long", binary_writer.finish()});
+  const auto sealed_binary_payload =
+      moss::abi_v10::decode(moss::abi_v10::encode(binary_payload_iface));
+  assert(sealed_binary_payload.value.private_semantic_dependencies.front().payload ==
+         binary_payload_iface.private_semantic_dependencies.front().payload);
 
   auto changed = sealed;
   replace_once(changed, "bound-var 0", "bound-var 1");
@@ -81,10 +94,17 @@ int main() {
     assert(error.code == "SOURCE_FREE_CONTRACT_INVALID");
   }
   value.binary_contract.pop_back();
-  value.semantic_contract[0].payload = std::string("\xc0\xaf", 2);
+  value.semantic_contract[0].id = std::string("\xc0\xaf", 2);
   try {
     (void)moss::abi_v10::encode(value);
-    assert(false && "invalid UTF-8 accepted");
+    assert(false && "invalid UTF-8 record ID accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_CONTRACT_INVALID");
+  }
+  try {
+    moss::abi_v10::WireWriter writer;
+    writer.string(std::string("\xc0\xaf", 2));
+    assert(false && "invalid UTF-8 logical string accepted");
   } catch (const Error& error) {
     assert(error.code == "SOURCE_FREE_CONTRACT_INVALID");
   }
@@ -111,7 +131,8 @@ int main() {
   const WireType int_type{WireTypeKind::Primitive, "int", {}, 0};
   const WireType var_type{WireTypeKind::BoundVar, "", {}, 0};
   const WireType box_of_var{WireTypeKind::Nominal,
-                            "sha256:" + std::string(64, 'c'), {var_type}, 0};
+                            "nominal-template-v1:" + value.module_id +
+                                ":type:Box", {var_type}, 0};
   const auto nested = type_bytes(
       {WireTypeKind::Builtin, "Vector", {box_of_var}, 0}, 1);
   WireReader type_reader(nested);
@@ -125,7 +146,7 @@ int main() {
   }
 
   NominalTemplate nominal;
-  nominal.template_id = "sha256:" + std::string(64, 'c');
+  nominal.template_id = box_of_var.identity;
   nominal.module_id = value.module_id;
   nominal.declaration_name = "Box";
   nominal.variable_count = 1;
@@ -135,6 +156,25 @@ int main() {
   const auto nominal_record = template_record(nominal);
   validate_template(nominal_record);
   assert(read_template(nominal_record.payload).fields[0].name == "value");
+  assert(read_template(nominal_record.payload).template_id ==
+         box_of_var.identity);
+  auto forged_nominal = nominal;
+  forged_nominal.template_id = "sha256:" + std::string(64, 'c');
+  try {
+    (void)template_payload(forged_nominal);
+    assert(false && "hashed substitute for nominal identity accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+  }
+  forged_nominal = nominal;
+  forged_nominal.template_id = "nominal-template-v1:" + value.module_id +
+                               ":type:Other";
+  try {
+    (void)template_payload(forged_nominal);
+    assert(false && "mismatched nominal declaration identity accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+  }
   nominal.fields.push_back(nominal.fields[0]);
   try {
     (void)template_payload(nominal);
@@ -173,7 +213,8 @@ int main() {
   summary.callable_id = "module-v1:boxes@1.0.0::Boxes::fresh";
   summary.variable_count = 1;
   summary.result = box_of_var;
-  summary.body_semantic_hash = "sha256:" + std::string(64, 'e');
+  summary.body_semantic_hash =
+      "body-semantic-v1:sha256:" + std::string(64, 'e');
   summary.provenance_id = "boxes:fn:2";
   summary.requirements.push_back({var_type, "to_string", Access::Read, 0,
                                    "boxes:fn:3"});
@@ -188,6 +229,26 @@ int main() {
   } catch (const Error& error) {
     assert(error.code == "SOURCE_FREE_SUMMARY_INVALID");
   }
+  // Declaring an unused trailing variable or an interior ordinal hole is
+  // noncanonical even when every mentioned ordinal is within range.
+  summary.variable_count = 2;
+  try {
+    (void)summary_record(summary);
+    assert(false && "trailing summary ordinal accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_SUMMARY_INVALID");
+  }
+  summary.variable_count = 3;
+  summary.requirements.push_back({WireType{WireTypeKind::BoundVar, "", {}, 2},
+                                   "describe", Access::Read, 0, "boxes:fn:4"});
+  try {
+    (void)summary_record(summary);
+    assert(false && "interior summary ordinal hole accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_SUMMARY_INVALID");
+  }
+  summary.requirements.pop_back();
+  summary.variable_count = 1;
   summary.requirements[0].parent = 1;
   try {
     (void)summary_payload(summary);
@@ -405,6 +466,56 @@ int main() {
 
   const auto sealed_full = decode(encode(full_iface));
   validate_complete_interface(sealed_full, instance.provider_binary_id);
+  // A method dependency on an ordinary callable binds the exact checked
+  // callable summary hash, just like an open function summary dependency.
+  MethodTemplate method_with_dependency = method;
+  method_with_dependency.dependencies.push_back({
+      summary.callable_id, summary.body_semantic_hash});
+  Interface iface_method_dependency = full_iface;
+  for (auto& record : iface_method_dependency.semantic_contract)
+    if (record.id == method_rec.id)
+      record = method_template_record(method_with_dependency);
+  const auto matched_method_record =
+      method_template_record(method_with_dependency);
+  sort_records(iface_method_dependency.semantic_contract);
+  validate_complete_interface(decode(encode(iface_method_dependency)),
+                              instance.provider_binary_id);
+  method_with_dependency.dependencies[0].second =
+      "body-semantic-v1:sha256:" + std::string(64, 'f');
+  for (auto& record : iface_method_dependency.semantic_contract)
+    if (record.id == matched_method_record.id)
+      record = method_template_record(method_with_dependency);
+  sort_records(iface_method_dependency.semantic_contract);
+  try {
+    validate_complete_interface(decode(encode(iface_method_dependency)),
+                                instance.provider_binary_id);
+    assert(false && "mismatched method dependency hash accepted");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_CONTRACT_INVALID");
+  }
+  Interface forged_instance_iface = full_iface;
+  for (auto& record : forged_instance_iface.binary_contract)
+    if (record.id == instance_wire.id)
+      record = instance_record(wrong_instance);
+  const auto sealed_forged_instance = decode(encode(forged_instance_iface));
+  try {
+    validate_complete_interface(sealed_forged_instance,
+                                instance.provider_binary_id);
+    assert(false && "tampered concrete instance escaped complete validation");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+  }
+  Interface unknown_binary_iface = full_iface;
+  unknown_binary_iface.binary_contract.push_back({"unknown:binary", "\1bad"});
+  sort_records(unknown_binary_iface.binary_contract);
+  const auto sealed_unknown_binary = decode(encode(unknown_binary_iface));
+  try {
+    validate_complete_interface(sealed_unknown_binary,
+                                instance.provider_binary_id);
+    assert(false && "unknown versioned binary record escaped validation");
+  } catch (const Error& error) {
+    assert(error.code == "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+  }
 
   // Linkage tests (Workstream B5)
   using moss::abi_v10::RuntimeCrateIdentity;

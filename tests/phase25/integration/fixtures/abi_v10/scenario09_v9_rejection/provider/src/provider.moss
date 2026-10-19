@@ -1,0 +1,4 @@
+module Legacy
+
+export type Box:
+  value: Int

@@ -45,8 +45,11 @@ class HarnessContext:
     def __init__(self, profile: str = "debug", work_dir: Optional[Path] = None):
         self.repo_root = REPO_ROOT
         self.fixtures_dir = FIXTURES_DIR
-        self.compiler = find_tool("moss", self.repo_root / "moss")
-        self.project_driver = find_tool("margo", self.repo_root / "margo")
+        # E3 evidence must come from the compiler in this exact checkout.
+        self.compiler = self.repo_root / "moss"
+        self.project_driver = self.repo_root / "margo"
+        if not self.compiler.is_file() or not self.project_driver.is_file():
+            raise FileNotFoundError("Build this checkout's ./moss and ./margo first")
         self.rustc = find_tool("rustc")
         self.profile = profile
         self.work_dir = work_dir or (self.repo_root / "tmp")
@@ -234,355 +237,290 @@ def run_scenario_1(ctx: HarnessContext) -> ScenarioResult:
     return res
 
 
-def run_scenario_2(ctx: HarnessContext) -> ScenarioResult:
-    """Scenario 2: Consumer A specializes a provider nominal with Int."""
-    res = ScenarioResult(2, "Consumer A specializes a provider nominal with Int")
-    t0 = time.time()
-    with tempfile.TemporaryDirectory(prefix="moss-sc2-", dir=ctx.work_dir) as tmp:
-        root = Path(tmp)
-        shutil.copytree(ctx.fixtures_dir / "scenario01_provider", root / "scenario01_provider")
-        shutil.copytree(ctx.fixtures_dir / "scenario02_consumer_a", root / "scenario02_consumer_a")
-        cmd = [ctx.project_driver, "build", "--json"]
-        if ctx.profile == "release":
-            cmd.append("--release")
-        res.command = [str(c) for c in cmd]
-        proc = ctx.run_cmd(cmd, cwd=root / "scenario02_consumer_a")
-        res.returncode = proc.returncode
-        res.stdout = proc.stdout
-        res.stderr = proc.stderr
-        res.duration_ms = (time.time() - t0) * 1000
+def staged_provider_artifacts(ctx: HarnessContext, root: Path,
+                              fixture: Path, module: str) -> Path:
+    """Build one ABI-v10 provider, then make only its sealed artifacts reachable."""
+    provider = root / "provider"
+    shutil.copytree(fixture, provider)
+    cmd = [ctx.project_driver, "build", "--json"]
+    if ctx.profile == "release":
+        cmd.append("--release")
+    built = ctx.run_cmd(cmd, cwd=provider)
+    if built.returncode != 0:
+        raise AssertionError(f"provider build failed: {built.stdout} {built.stderr}")
+    data = json.loads(built.stdout)
+    if not data.get("ok"):
+        raise AssertionError(f"provider build not OK: {data}")
+    artifacts = root / "artifacts"
+    artifacts.mkdir()
+    interface = provider / "build" / ctx.profile / f"{module}.mossi"
+    archive = provider / "build" / ctx.profile / f"lib{module}.rlib"
+    if not interface.is_file() or not archive.is_file():
+        raise AssertionError("provider omitted sealed interface or selected rlib")
+    if ("schema_version 10" not in interface.read_text() or
+            "native_abi 10" not in interface.read_text()):
+        raise AssertionError("provider did not emit ABI-v10 artifacts")
+    for source in (interface, archive):
+        shutil.copy2(source, artifacts / source.name)
+    shutil.rmtree(provider / "src")
+    if (provider / "src").exists() or list(artifacts.rglob("*.moss")):
+        raise AssertionError("provider source remains reachable")
+    return artifacts
 
-        blocker = check_for_team_g_blocker(proc)
-        if blocker:
-            res.status = "BLOCKED"
-            res.blocker_reason = blocker
-        elif proc.returncode == 0:
-            run_cmd = [ctx.project_driver, "run"]
-            run_proc = ctx.run_cmd(run_cmd, cwd=root / "scenario02_consumer_a")
-            if run_proc.returncode == 0 and "42" in run_proc.stdout:
-                res.status = "PASS"
-            else:
-                res.status = "FAIL"
-                res.details["run_error"] = run_proc.stderr
-        else:
+
+def source_free_box_consumer(ctx: HarnessContext, root: Path, fixture: str,
+                             name: str, artifacts: Path, expected: str,
+                             publish: bool = False) -> str:
+    consumer = root / name
+    shutil.copytree(ctx.fixtures_dir / fixture, consumer)
+    env = {"MOSS_MODULE_PATH": str(artifacts)}
+    cmd = [ctx.project_driver, "build", "--json"]
+    if ctx.profile == "release":
+        cmd.append("--release")
+    built = ctx.run_cmd(cmd, cwd=consumer, env=env)
+    if built.returncode != 0:
+        raise AssertionError(f"{name} source-free build failed: {built.stdout} {built.stderr}")
+    data = json.loads(built.stdout)
+    if not data.get("ok"):
+        raise AssertionError(f"{name} source-free build not OK: {data}")
+    executable = Path(data["artifacts"]["artifacts"]["executable"])
+    executed = ctx.run_cmd([executable], cwd=consumer, env=env)
+    if executed.returncode != 0 or executed.stdout != expected:
+        raise AssertionError(
+            f"{name} native output {executed.returncode}, {executed.stdout!r}; "
+            f"expected {expected!r}; stderr={executed.stderr}")
+    if publish:
+        for extension in ("*.mossi", "*.rlib"):
+            for source in (consumer / "build" / ctx.profile).glob(extension):
+                shutil.copy2(source, artifacts / source.name)
+        shutil.rmtree(consumer / "src")
+        if (consumer / "src").exists():
+            raise AssertionError(f"{name} source remains reachable")
+    return executed.stdout
+
+
+def run_staged_box_scenario(ctx: HarnessContext, number: int, title: str,
+                            consumers: List[Tuple[str, str, str]],
+                            joint: bool = False) -> ScenarioResult:
+    res = ScenarioResult(number, title)
+    t0 = time.time()
+    res.command = [str(ctx.project_driver), "build", "--json"]
+    with tempfile.TemporaryDirectory(prefix=f"moss-sc{number}-", dir=ctx.work_dir) as tmp:
+        root = Path(tmp)
+        try:
+            artifacts = staged_provider_artifacts(
+                ctx, root, ctx.fixtures_dir / "scenario01_provider", "BoxProvider")
+            native_outputs = {}
+            for fixture, name, expected in consumers:
+                native_outputs[name] = source_free_box_consumer(
+                    ctx, root, fixture, name, artifacts, expected, publish=joint)
+            if joint:
+                native_outputs["joint"] = source_free_box_consumer(
+                    ctx, root, "scenario04_joint_consumers", "joint", artifacts,
+                    "100\nshared\n")
+            res.status = "PASS"
+            res.returncode = 0
+            res.details["evidence"] = (
+                "Provider source removed; each isolated consumer compiled and "
+                "executed from one sealed provider .mossi/.rlib" +
+                ("; joint native executable linked source-free consumer A/B artifacts"
+                 if joint else ""))
+            res.details["native_outputs"] = native_outputs
+        except (AssertionError, KeyError, ValueError, OSError) as error:
             res.status = "FAIL"
+            res.returncode = 1
+            res.details["error"] = str(error)
+    res.duration_ms = (time.time() - t0) * 1000
     return res
+
+
+def run_scenario_2(ctx: HarnessContext) -> ScenarioResult:
+    return run_staged_box_scenario(
+        ctx, 2, "Consumer A specializes a provider nominal with Int",
+        [("scenario02_consumer_a", "consumer_a", "42\n")])
 
 
 def run_scenario_3(ctx: HarnessContext) -> ScenarioResult:
-    """Scenario 3: Consumer B specializes the same provider nominal with String."""
-    res = ScenarioResult(3, "Consumer B specializes the same provider nominal with String")
-    t0 = time.time()
-    with tempfile.TemporaryDirectory(prefix="moss-sc3-", dir=ctx.work_dir) as tmp:
-        root = Path(tmp)
-        shutil.copytree(ctx.fixtures_dir / "scenario01_provider", root / "scenario01_provider")
-        shutil.copytree(ctx.fixtures_dir / "scenario03_consumer_b", root / "scenario03_consumer_b")
-        cmd = [ctx.project_driver, "build", "--json"]
-        if ctx.profile == "release":
-            cmd.append("--release")
-        res.command = [str(c) for c in cmd]
-        proc = ctx.run_cmd(cmd, cwd=root / "scenario03_consumer_b")
-        res.returncode = proc.returncode
-        res.stdout = proc.stdout
-        res.stderr = proc.stderr
-        res.duration_ms = (time.time() - t0) * 1000
-
-        blocker = check_for_team_g_blocker(proc)
-        if blocker:
-            res.status = "BLOCKED"
-            res.blocker_reason = blocker
-        elif proc.returncode == 0:
-            run_cmd = [ctx.project_driver, "run"]
-            run_proc = ctx.run_cmd(run_cmd, cwd=root / "scenario03_consumer_b")
-            if run_proc.returncode == 0 and "hello v10" in run_proc.stdout:
-                res.status = "PASS"
-            else:
-                res.status = "FAIL"
-                res.details["run_error"] = run_proc.stderr
-        else:
-            res.status = "FAIL"
-    return res
+    return run_staged_box_scenario(
+        ctx, 3, "Consumer B specializes the same provider nominal with String",
+        [("scenario03_consumer_b", "consumer_b", "hello v10\n")])
 
 
 def run_scenario_4(ctx: HarnessContext) -> ScenarioResult:
-    """Scenario 4: Both consumers use the same provider-owned Rust type identity."""
-    res = ScenarioResult(4, "Both consumers use the same provider-owned Rust type identity")
-    t0 = time.time()
-    with tempfile.TemporaryDirectory(prefix="moss-sc4-", dir=ctx.work_dir) as tmp:
-        root = Path(tmp)
-        shutil.copytree(ctx.fixtures_dir / "scenario01_provider", root / "scenario01_provider")
-        shutil.copytree(ctx.fixtures_dir / "scenario02_consumer_a", root / "scenario02_consumer_a")
-        shutil.copytree(ctx.fixtures_dir / "scenario03_consumer_b", root / "scenario03_consumer_b")
-        shutil.copytree(ctx.fixtures_dir / "scenario04_joint_consumers", root / "scenario04_joint_consumers")
-        cmd = [ctx.project_driver, "build", "--json"]
-        if ctx.profile == "release":
-            cmd.append("--release")
-        res.command = [str(c) for c in cmd]
-        proc = ctx.run_cmd(cmd, cwd=root / "scenario04_joint_consumers")
-        res.returncode = proc.returncode
-        res.stdout = proc.stdout
-        res.stderr = proc.stderr
-        res.duration_ms = (time.time() - t0) * 1000
-
-        blocker = check_for_team_g_blocker(proc)
-        if blocker:
-            res.status = "BLOCKED"
-            res.blocker_reason = blocker
-        elif proc.returncode == 0:
-            # Execute binary to verify joint linking and execution of both consumers
-            run_cmd = [ctx.project_driver, "run"]
-            if ctx.profile == "release":
-                run_cmd.append("--release")
-            run_proc = ctx.run_cmd(run_cmd, cwd=root / "scenario04_joint_consumers")
-            if run_proc.returncode != 0:
-                res.status = "FAIL"
-                res.details["error"] = f"JointConsumer binary execution failed: {run_proc.stderr or run_proc.stdout}"
-            else:
-                out = run_proc.stdout
-                main_src = (root / "scenario04_joint_consumers" / "src" / "main.moss").read_text(encoding="utf-8")
-                has_consumer_a = "ConsumerA" in main_src and "100" in out
-                has_consumer_b = "ConsumerB" in main_src and "shared" in out
-                if has_consumer_a and has_consumer_b:
-                    res.status = "PASS"
-                    res.details["linking_verified"] = True
-                else:
-                    res.status = "FAIL"
-                    res.details["error"] = (
-                        f"Incomplete cross-consumer linking detected: ConsumerA_ok={has_consumer_a}, "
-                        f"ConsumerB_ok={has_consumer_b}, output={out.strip()}"
-                    )
-        else:
-            res.status = "FAIL"
-    return res
+    return run_staged_box_scenario(
+        ctx, 4, "Both consumers use the same provider-owned Rust type identity",
+        [("scenario02_consumer_a", "consumer_a", "42\n"),
+         ("scenario03_consumer_b", "consumer_b", "hello v10\n")], joint=True)
 
 
 def run_scenario_5(ctx: HarnessContext) -> ScenarioResult:
-    """Scenario 5: Open-result summaries freshen independently through multiple calls."""
-    res = ScenarioResult(5, "Open-result summaries freshen independently through multiple calls")
-    t0 = time.time()
-    with tempfile.TemporaryDirectory(prefix="moss-sc5-", dir=ctx.work_dir) as tmp:
-        root = Path(tmp)
-        shutil.copytree(ctx.fixtures_dir / "scenario01_provider", root / "scenario01_provider")
-        shutil.copytree(ctx.fixtures_dir / "scenario05_independent_freshen", root / "scenario05_independent_freshen")
-        cmd = [ctx.project_driver, "build", "--json"]
-        if ctx.profile == "release":
-            cmd.append("--release")
-        res.command = [str(c) for c in cmd]
-        proc = ctx.run_cmd(cmd, cwd=root / "scenario05_independent_freshen")
-        res.returncode = proc.returncode
-        res.stdout = proc.stdout
-        res.stderr = proc.stderr
-        res.duration_ms = (time.time() - t0) * 1000
-
-        blocker = check_for_team_g_blocker(proc)
-        if blocker:
-            res.status = "BLOCKED"
-            res.blocker_reason = blocker
-        elif proc.returncode == 0:
-            res.status = "PASS"
-        else:
-            res.status = "FAIL"
-    return res
+    return run_staged_box_scenario(
+        ctx, 5, "Open-result summaries freshen independently through multiple calls",
+        [("scenario05_independent_freshen", "fresh_tester",
+          "100\nindependent\n")])
 
 
 def run_scenario_6(ctx: HarnessContext) -> ScenarioResult:
-    """Scenario 6: Consumer successfully builds after provider source removal."""
-    res = ScenarioResult(6, "Consumer successfully builds after provider source removal")
+    """Scenario 6: two typed consumers execute checked private-chain IR source-free."""
+    res = ScenarioResult(6, "Two typed consumers execute checked private-chain IR after source removal")
     t0 = time.time()
-    with tempfile.TemporaryDirectory(prefix="moss-sc6-", dir=ctx.work_dir) as tmp:
-        root = Path(tmp)
-        provider_dir = root / "provider"
-        consumer_dir = root / "consumer"
-        shutil.copytree(ctx.fixtures_dir / "scenario06_source_removal" / "provider", provider_dir)
-        shutil.copytree(ctx.fixtures_dir / "scenario06_source_removal" / "consumer", consumer_dir)
-
-        # 1. Build provider
-        cmd1 = [ctx.project_driver, "build", "--json"]
-        if ctx.profile == "release":
-            cmd1.append("--release")
-        res.command = [str(c) for c in cmd1]
-        proc1 = ctx.run_cmd(cmd1, cwd=provider_dir)
-        blocker = check_for_team_g_blocker(proc1)
-        if blocker:
-            res.status = "BLOCKED"
-            res.blocker_reason = blocker
-            res.returncode = proc1.returncode
-            res.stdout = proc1.stdout
-            res.stderr = proc1.stderr
-            res.duration_ms = (time.time() - t0) * 1000
-            return res
-
-        if proc1.returncode != 0:
-            res.status = "FAIL"
-            res.returncode = proc1.returncode
-            res.stdout = proc1.stdout
-            res.stderr = proc1.stderr
-            res.duration_ms = (time.time() - t0) * 1000
-            return res
-
-        # 2. Stage artifacts and remove provider source
-        artifact_dir = root / "provider-artifacts"
-        artifact_dir.mkdir(parents=True)
-        build_out = provider_dir / "build" / ctx.profile
-        for f in build_out.glob("*.mossi"):
-            shutil.copy2(f, artifact_dir / f.name)
-        for f in build_out.glob("*.rlib"):
-            shutil.copy2(f, artifact_dir / f.name)
-
-        shutil.rmtree(provider_dir / "src")  # Truly remove source!
-
-        # 3. Build consumer with MOSS_MODULE_PATH
-        env = {"MOSS_MODULE_PATH": str(artifact_dir)}
-        cmd2 = [ctx.compiler, "build", "--json"]
-        if ctx.profile == "release":
-            cmd2.append("--release")
-        res.command = [str(c) for c in cmd2]
-        proc2 = ctx.run_cmd(cmd2, cwd=consumer_dir, env=env)
-        res.returncode = proc2.returncode
-        res.stdout = proc2.stdout
-        res.stderr = proc2.stderr
-        res.duration_ms = (time.time() - t0) * 1000
-
-        blocker2 = check_for_team_g_blocker(proc2)
-        if blocker2:
-            res.status = "BLOCKED"
-            res.blocker_reason = blocker2
-        elif proc2.returncode == 0:
-            res.status = "PASS"
-        else:
-            res.status = "FAIL"
+    cmd = [sys.executable, ctx.repo_root / "tests/tooling/check_phase25_h3_source_free_chain.py",
+           ctx.compiler, "--profile", ctx.profile]
+    res.command = [str(c) for c in cmd]
+    proc = ctx.run_cmd(cmd)
+    res.returncode = proc.returncode
+    res.stdout = proc.stdout
+    res.stderr = proc.stderr
+    res.duration_ms = (time.time() - t0) * 1000
+    expected = "H3 checked private chain, two source-free consumers, unrecorded-chain and missing-body rejection: PASS"
+    res.status = "PASS" if proc.returncode == 0 and expected in proc.stdout else "FAIL"
+    if res.status == "PASS":
+        res.details["evidence"] = "Canonical checked IR/dependency hashes verified; legacy body poisoned; provider tree removed; Int and String native outputs and unsupported/missing-body negatives checked."
     return res
 
 
 def run_scenario_7(ctx: HarnessContext) -> ScenarioResult:
-    """Scenario 7: A transitive missing-method error retains provider and consumer provenance."""
+    """Source-free missing-member diagnostics retain both exact origin spans."""
     res = ScenarioResult(7, "A transitive missing-method error retains provider and consumer provenance")
     t0 = time.time()
     with tempfile.TemporaryDirectory(prefix="moss-sc7-", dir=ctx.work_dir) as tmp:
         root = Path(tmp)
-        shutil.copytree(ctx.fixtures_dir / "scenario07_missing_method" / "provider", root / "provider")
-        shutil.copytree(ctx.fixtures_dir / "scenario07_missing_method" / "consumer", root / "consumer")
-
-        cmd = [ctx.compiler, "check", "src/main.moss", "--json"]
-        res.command = [str(c) for c in cmd]
-        proc = ctx.run_cmd(cmd, cwd=root / "consumer")
-        res.returncode = proc.returncode
-        res.stdout = proc.stdout
-        res.stderr = proc.stderr
-        res.duration_ms = (time.time() - t0) * 1000
-
-        blocker = check_for_team_g_blocker(proc)
-        if blocker:
-            res.status = "BLOCKED"
-            res.blocker_reason = blocker
-        else:
-            try:
-                diag = json.loads(proc.stdout)
-                # Check that missing method is reported and has consumer + provider spans
-                if not diag.get("ok", True) and "custom_action" in proc.stdout:
-                    res.status = "PASS"
-                else:
-                    res.status = "BLOCKED"
-                    res.blocker_reason = "BLOCKED: Team G G2 ABI-v10 source-free compiler support (missing-method requirement origin chaining)"
-            except Exception:
-                res.status = "BLOCKED"
-                res.blocker_reason = "BLOCKED: Team G G2 ABI-v10 source-free compiler support (structured provenance in diagnostic)"
+        try:
+            artifacts = staged_provider_artifacts(
+                ctx, root, ctx.fixtures_dir / "scenario07_missing_method" / "provider",
+                "MethodProvider")
+            consumer = root / "consumer"
+            shutil.copytree(ctx.fixtures_dir / "scenario07_missing_method" / "consumer",
+                            consumer)
+            cmd = [ctx.compiler, "check", "src/main.moss", "--json"]
+            res.command = [str(c) for c in cmd]
+            proc = ctx.run_cmd(cmd, cwd=consumer,
+                               env={"MOSS_MODULE_PATH": str(artifacts)})
+            res.returncode, res.stdout, res.stderr = proc.returncode, proc.stdout, proc.stderr
+            data = json.loads(proc.stdout)
+            error = data["error"]
+            related = error.get("related", [])
+            valid = (proc.returncode != 0 and data.get("ok") is False and
+                     error.get("code") == "METHOD_NOT_FOUND" and
+                     error.get("source", {}).get("file") == str(consumer / "src/main.moss") and
+                     error.get("line") == 9 and
+                     any(note.get("source", {}).get("file") == "provider.moss" and
+                         note.get("source", {}).get("line") == 4 and
+                         "custom_action" in note.get("message", "") for note in related))
+            res.status = "PASS" if valid else "FAIL"
+            res.details["diagnostic"] = {
+                "code": error.get("code"), "consumer_line": error.get("line"),
+                "provider_related": related}
+        except (AssertionError, KeyError, ValueError, OSError) as error:
+            res.status = "FAIL"
+            res.returncode = 1
+            res.details["error"] = str(error)
+    res.duration_ms = (time.time() - t0) * 1000
     return res
 
 
 def run_scenario_8(ctx: HarnessContext) -> ScenarioResult:
-    """Scenario 8: Source-free ownership/effect conflicts are rejected before Rust compilation."""
+    """A sealed CONSUME effect rejects source-free reuse during Moss checking."""
     res = ScenarioResult(8, "Source-free ownership/effect conflicts are rejected before Rust compilation")
     t0 = time.time()
     with tempfile.TemporaryDirectory(prefix="moss-sc8-", dir=ctx.work_dir) as tmp:
         root = Path(tmp)
-        provider_dir = root / "provider"
-        consumer_dir = root / "consumer"
-        shutil.copytree(ctx.fixtures_dir / "scenario08_effect_conflict" / "provider", provider_dir)
-        shutil.copytree(ctx.fixtures_dir / "scenario08_effect_conflict" / "consumer", consumer_dir)
-
-        # 1. Build provider to produce .mossi interface
-        build_prov = ctx.run_cmd([ctx.project_driver, "build"], cwd=provider_dir)
-        if build_prov.returncode != 0:
-            blocker = check_for_team_g_blocker(build_prov)
-            res.status = "BLOCKED"
-            res.blocker_reason = blocker or "BLOCKED: Team G G2 ABI-v10 source-free compiler support (EffectProvider build)"
-            res.duration_ms = (time.time() - t0) * 1000
-            return res
-
-        # 2. Stage artifacts and remove provider source
-        artifact_dir = root / "provider-artifacts"
-        artifact_dir.mkdir(parents=True)
-        build_out = provider_dir / "build" / ctx.profile
-        for f in build_out.glob("*.mossi"):
-            shutil.copy2(f, artifact_dir / f.name)
-        for f in build_out.glob("*.rlib"):
-            shutil.copy2(f, artifact_dir / f.name)
-        shutil.rmtree(provider_dir / "src")
-
-        # 3. Check consumer against source-free provider
-        env = {"MOSS_MODULE_PATH": str(artifact_dir)}
-        cmd = [ctx.compiler, "check", "src/main.moss", "--json"]
-        res.command = [str(c) for c in cmd]
-        proc = ctx.run_cmd(cmd, cwd=consumer_dir, env=env)
-        res.returncode = proc.returncode
-        res.stdout = proc.stdout
-        res.stderr = proc.stderr
-        res.duration_ms = (time.time() - t0) * 1000
-
-        blocker = check_for_team_g_blocker(proc)
-        if blocker:
-            res.status = "BLOCKED"
-            res.blocker_reason = blocker
-        elif proc.returncode != 0:
-            combined = proc.stdout + proc.stderr
-            # Unrelated errors MUST disqualify the test:
-            unrelated_error = any(unrel in combined for unrel in (
-                "PARSE_ERROR", "SYNTAX_ERROR", "MODULE_NOT_FOUND", "INTERNAL_COMPILER_ERROR", "panic", "error: syntax error"
-            ))
-            is_valid_ownership_error = (
-                "USE_AFTER_CONSUME" in combined or "OWNERSHIP_CONFLICTING_ACCESS" in combined
-            )
-            if not unrelated_error and is_valid_ownership_error:
-                res.status = "PASS"
-                res.details["rejected_before_rust"] = True
-            else:
-                res.status = "FAIL"
-                res.details["error"] = f"Expected ownership rejection code, got unrelated error or diagnostic: {combined[:200]}"
-        else:
+        try:
+            artifacts = staged_provider_artifacts(
+                ctx, root, ctx.fixtures_dir / "scenario08_effect_conflict" / "provider",
+                "EffectProvider")
+            consumer = root / "consumer"
+            shutil.copytree(ctx.fixtures_dir / "scenario08_effect_conflict" / "consumer",
+                            consumer)
+            cmd = [ctx.compiler, "check", "src/main.moss", "--json"]
+            res.command = [str(c) for c in cmd]
+            proc = ctx.run_cmd(cmd, cwd=consumer,
+                               env={"MOSS_MODULE_PATH": str(artifacts)})
+            res.returncode, res.stdout, res.stderr = proc.returncode, proc.stdout, proc.stderr
+            data = json.loads(proc.stdout)
+            error = data["error"]
+            facts = error.get("details", {})
+            valid = (proc.returncode != 0 and data.get("ok") is False and
+                     error.get("code") == "OWNERSHIP_USE_AFTER_CONSUME" and
+                     error.get("source", {}).get("file") == str(consumer / "src/main.moss") and
+                     error.get("line") == 7 and facts.get("consume_line") == 6 and
+                     facts.get("ownership_actual") == "CONSUMED")
+            res.status = "PASS" if valid else "FAIL"
+            res.details["diagnostic"] = {
+                "code": error.get("code"), "line": error.get("line"),
+                "consume_line": facts.get("consume_line"),
+                "ownership_actual": facts.get("ownership_actual")}
+        except (AssertionError, KeyError, ValueError, OSError) as error:
             res.status = "FAIL"
-            res.details["error"] = "Ownership conflict was not rejected at checking phase!"
+            res.returncode = 1
+            res.details["error"] = str(error)
+    res.duration_ms = (time.time() - t0) * 1000
     return res
 
 
 def run_scenario_9(ctx: HarnessContext) -> ScenarioResult:
-    """Scenario 9: ABI-v9 artifacts are rejected under v10 with rebuild guidance."""
+    """A real ABI-v9 provider artifact is selected and rejected under v10."""
     res = ScenarioResult(9, "ABI-v9 artifacts are rejected under v10 with rebuild guidance")
     t0 = time.time()
     with tempfile.TemporaryDirectory(prefix="moss-sc9-", dir=ctx.work_dir) as tmp:
         root = Path(tmp)
-        shutil.copytree(ctx.fixtures_dir / "scenario09_v9_rejection" / "consumer", root / "consumer")
-        artifact_dir = root / "v9-artifacts"
-        artifact_dir.mkdir(parents=True)
-        shutil.copy2(ctx.fixtures_dir / "scenario09_v9_rejection" / "v9_legacy.mossi",
-                     artifact_dir / "Legacy.mossi")
-
-        env = {"MOSS_MODULE_PATH": str(artifact_dir)}
+        provider = root / "provider"
+        consumer = root / "consumer"
+        shutil.copytree(ctx.fixtures_dir / "scenario09_v9_rejection" / "provider", provider)
+        shutil.copytree(ctx.fixtures_dir / "scenario09_v9_rejection" / "consumer", consumer)
+        built = ctx.run_cmd([ctx.project_driver, "build", "--json"], cwd=provider,
+                            env={"MOSS_STAGED_ABI": "v9"})
+        if built.returncode != 0 or not json.loads(built.stdout).get("ok"):
+            res.status = "FAIL"
+            res.returncode, res.stdout, res.stderr = built.returncode, built.stdout, built.stderr
+            res.details["error"] = "could not build a real production ABI-v9 provider"
+            res.duration_ms = (time.time() - t0) * 1000
+            return res
+        interface = provider / "build/debug/Legacy.mossi"
+        archive = provider / "build/debug/libLegacy.rlib"
+        if (not interface.is_file() or not archive.is_file() or
+                not interface.read_bytes().startswith(b"moss-module-interface-v2\n") or
+                b"\nnative_abi 9\n" not in interface.read_bytes()):
+            res.status = "FAIL"
+            res.details["error"] = "provider did not produce a genuine ABI-v9 interface and rlib"
+            res.duration_ms = (time.time() - t0) * 1000
+            return res
+        artifacts = root / "v9-artifacts"
+        artifacts.mkdir()
+        shutil.copy2(interface, artifacts / interface.name)
+        shutil.copy2(archive, artifacts / archive.name)
+        shutil.rmtree(provider / "src")
+        missing = root / "no-artifacts"
+        missing.mkdir()
         cmd = [ctx.compiler, "check", "src/main.moss", "--json"]
         res.command = [str(c) for c in cmd]
-        proc = ctx.run_cmd(cmd, cwd=root / "consumer", env=env)
-        res.returncode = proc.returncode
-        res.stdout = proc.stdout
-        res.stderr = proc.stderr
-        res.duration_ms = (time.time() - t0) * 1000
-
-        combined = proc.stdout + proc.stderr
-        if "SOURCE_FREE_ABI_REBUILD_REQUIRED" in combined:
-            res.status = "PASS"
-        else:
-            # Current compiler still runs ABI-v9!
-            res.status = "BLOCKED"
-            res.blocker_reason = "BLOCKED: Team G G2 ABI-v10 source-free compiler support (compiler still produces and accepts ABI-v9 artifacts; ABI-v10 rebuild requirement pending)"
+        unselected = ctx.run_cmd(cmd, cwd=consumer,
+                                 env={"MOSS_MODULE_PATH": str(missing)})
+        selected = ctx.run_cmd(cmd, cwd=consumer,
+                               env={"MOSS_MODULE_PATH": str(artifacts)})
+        res.returncode, res.stdout, res.stderr = selected.returncode, selected.stdout, selected.stderr
+        try:
+            no_artifact = json.loads(unselected.stdout)["error"]
+            data = json.loads(selected.stdout)
+            error = data["error"]
+            valid = (unselected.returncode != 0 and
+                     no_artifact.get("code") == "MOSS_COMPILE_ERROR" and
+                     "was not found" in no_artifact.get("message", "") and
+                     selected.returncode != 0 and data.get("ok") is False and
+                     error.get("code") == "SOURCE_FREE_ABI_REBUILD_REQUIRED" and
+                     "rebuild" in error.get("message", "") and
+                     error.get("source", {}).get("file") ==
+                         str(consumer / "src/main.moss"))
+            res.status = "PASS" if valid else "FAIL"
+            res.details["diagnostic"] = {
+                "unselected_code": no_artifact.get("code"),
+                "selected_code": error.get("code"),
+                "selected_message": error.get("message"),
+                "artifact_header": "moss-module-interface-v2; native_abi 9"}
+        except (KeyError, ValueError) as error:
+            res.status = "FAIL"
+            res.details["error"] = str(error)
+    res.duration_ms = (time.time() - t0) * 1000
     return res
 
 
@@ -599,6 +537,8 @@ def run_scenario_10(ctx: HarnessContext) -> ScenarioResult:
 
         # Build clean provider first
         cmd = [ctx.project_driver, "build", "--json"]
+        if ctx.profile == "release":
+            cmd.append("--release")
         res.command = [str(c) for c in cmd]
         proc = ctx.run_cmd(cmd, cwd=provider_dir)
         if proc.returncode != 0:
@@ -609,51 +549,64 @@ def run_scenario_10(ctx: HarnessContext) -> ScenarioResult:
             res.duration_ms = (time.time() - t0) * 1000
             return res
 
-        mossi_file = next((provider_dir / "build" / "debug").glob("*.mossi"))
+        mossi_file = next((provider_dir / "build" / ctx.profile).glob("*.mossi"))
         original_text = mossi_file.read_text(encoding="utf-8")
 
-        # Test corruptions and specific expected rejection codes
+        # The clean source-free import must work before testing corrupted bytes.
+        pristine = root / "artifact_pristine"
+        pristine.mkdir()
+        for source in (provider_dir / "build" / ctx.profile).glob("*.mossi"):
+            shutil.copy2(source, pristine / source.name)
+        for source in (provider_dir / "build" / ctx.profile).glob("*.rlib"):
+            shutil.copy2(source, pristine / source.name)
+        shutil.rmtree(provider_dir / "src")
+        clean = ctx.run_cmd([ctx.compiler, "check", "src/main.moss", "--json"],
+                            cwd=consumer_dir, env={"MOSS_MODULE_PATH": str(pristine)})
+        if clean.returncode != 0 or not json.loads(clean.stdout).get("ok"):
+            res.status = "FAIL"
+            res.details["error"] = f"clean source-free provider failed: {clean.stdout} {clean.stderr}"
+            res.duration_ms = (time.time() - t0) * 1000
+            return res
+
         mutations = [
-            ("tampered_digest", tamper_digest(original_text),
-             ["SOURCE_FREE_CONTRACT_INVALID", "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH", "DIGEST_MISMATCH", "provider_contract_digest mismatch"]),
+            ("tampered_digest", tamper_digest(original_text), "SOURCE_FREE_CONTRACT_INVALID"),
             ("corrupt_schema", corrupt_schema_version(original_text, "99"),
-             ["SOURCE_FREE_SCHEMA_UNSUPPORTED", "SCHEMA_VERSION_MISMATCH", "SOURCE_FREE_ABI_REBUILD_REQUIRED", "schema_version mismatch", "unsupported schema"]),
-            ("missing_records", remove_required_records(original_text, "contract"),
-             ["SOURCE_FREE_CONTRACT_INVALID", "MISSING_RECORD", "malformed .mossi", "missing required section"]),
-            ("altered_identity", alter_provider_identity(original_text)),
-            ("corrupt_float_proof", corrupt_float_key_proof(original_text)),
+             "SOURCE_FREE_ABI_REBUILD_REQUIRED"),
+            ("missing_binary_contract", remove_required_records(original_text, "binary_contract"),
+             "SOURCE_FREE_CONTRACT_INVALID"),
+            ("altered_identity", alter_provider_identity(
+                original_text, "module-v1:forged@1.0.0::MetadataProvider"),
+             "SOURCE_FREE_CONTRACT_INVALID"),
+            ("trailing_fake_proof", corrupt_float_key_proof(original_text),
+             "SOURCE_FREE_CONTRACT_INVALID"),
         ]
 
         mutation_results = []
         all_failed_closed_with_expected_code = True
 
-        for name, mutated_text, *expected_toks in mutations:
-            expected_tokens = expected_toks[0] if expected_toks else [
-                "SOURCE_FREE_TYPE_IDENTITY_MISMATCH", "MODULE_IDENTITY_MISMATCH", "module_id mismatch",
-                "KEY_PROOF_COHERENCE_MISMATCH", "MALFORMED_PROOF", "invalid MapKeyProof",
-            ]
+        for name, mutated_text, expected_code in mutations:
+            assert mutated_text != original_text, f"{name} mutation changed no bytes"
             m_dir = root / f"artifact_{name}"
             m_dir.mkdir(parents=True)
             (m_dir / mossi_file.name).write_text(mutated_text, encoding="utf-8")
             # copy rlib
-            for rlib in (provider_dir / "build" / "debug").glob("*.rlib"):
+            for rlib in (provider_dir / "build" / ctx.profile).glob("*.rlib"):
                 shutil.copy2(rlib, m_dir / rlib.name)
 
             m_env = {"MOSS_MODULE_PATH": str(m_dir)}
             check_proc = ctx.run_cmd([ctx.compiler, "check", "src/main.moss", "--json"],
                                      cwd=consumer_dir, env=m_env)
-            output = check_proc.stdout + check_proc.stderr
-            failed_closed = (check_proc.returncode != 0)
-            has_expected_token = any(tok in output for tok in expected_tokens)
-            has_unrelated_crash = any(crash in output for crash in ("panic", "SIGSEGV", "INTERNAL_COMPILER_ERROR"))
-
-            valid_fail_closed = failed_closed and has_expected_token and not has_unrelated_crash
+            diagnostic = json.loads(check_proc.stdout)
+            error = diagnostic.get("error", {})
+            valid_fail_closed = (check_proc.returncode != 0 and
+                                 diagnostic.get("ok") is False and
+                                 error.get("code") == expected_code)
             mutation_results.append({
                 "mutation": name,
-                "failed_closed": failed_closed,
-                "has_expected_token": has_expected_token,
+                "expected_code": expected_code,
+                "actual_code": error.get("code"),
                 "valid_fail_closed": valid_fail_closed,
-                "output": output[:200],
+                "message": error.get("message"),
             })
             if not valid_fail_closed:
                 all_failed_closed_with_expected_code = False
@@ -661,83 +614,80 @@ def run_scenario_10(ctx: HarnessContext) -> ScenarioResult:
         res.duration_ms = (time.time() - t0) * 1000
         res.details["mutations"] = mutation_results
 
-        if all_failed_closed_with_expected_code:
-            res.status = "PASS"
-        else:
-            res.status = "BLOCKED"
-            res.blocker_reason = "BLOCKED: Team G G2 ABI-v10 source-free compiler support (all mutations must fail closed with specific ABI-v10 diagnostic codes)"
+        res.status = "PASS" if all_failed_closed_with_expected_code else "FAIL"
     return res
 
 
 def run_scenario_11(ctx: HarnessContext) -> ScenarioResult:
-    """Scenario 11: Changing provider semantics/layout invalidates appropriate consumers."""
+    """A changed provider contract invalidates a warm consumer and rejects it."""
     res = ScenarioResult(11, "Changing provider semantics/layout invalidates appropriate consumers")
     t0 = time.time()
     with tempfile.TemporaryDirectory(prefix="moss-sc11-", dir=ctx.work_dir) as tmp:
         root = Path(tmp)
-        provider_dir = root / "provider_v1"
-        consumer_dir = root / "consumer"
-        shutil.copytree(ctx.fixtures_dir / "scenario11_cache_invalidation" / "provider_v1", provider_dir)
-        shutil.copytree(ctx.fixtures_dir / "scenario11_cache_invalidation" / "consumer", consumer_dir)
-
-        # 1. Build initial version (cold run)
+        provider = root / "provider_v1"
+        consumer = root / "consumer"
+        fixture = ctx.fixtures_dir / "scenario11_cache_invalidation"
+        shutil.copytree(fixture / "provider_v1", provider)
+        shutil.copytree(fixture / "consumer", consumer)
         cmd = [ctx.project_driver, "build", "--json"]
         if ctx.profile == "release":
             cmd.append("--release")
         res.command = [str(c) for c in cmd]
-        cold_proc = ctx.run_cmd(cmd, cwd=consumer_dir)
-        if cold_proc.returncode != 0:
+        try:
+            cold = ctx.run_cmd(cmd, cwd=consumer)
+            cold_data = json.loads(cold.stdout)
+            if (cold.returncode != 0 or not cold_data.get("ok") or
+                    cold_data.get("artifacts", {}).get("reused") is not False):
+                raise AssertionError(f"cold consumer build failed or reused cache: {cold.stdout}")
+            interface = provider / "build" / ctx.profile / "LayoutProvider.mossi"
+            if not interface.is_file():
+                raise AssertionError("cold provider interface is missing")
+            before = re.search(r"(?m)^provider_contract_digest (sha256:[0-9a-f]{64})$",
+                               interface.read_text())
+            if not before:
+                raise AssertionError("cold provider contract digest is missing")
+            warm = ctx.run_cmd(cmd, cwd=consumer)
+            warm_data = json.loads(warm.stdout)
+            if (warm.returncode != 0 or not warm_data.get("ok") or
+                    warm_data.get("artifacts", {}).get("reused") is not True):
+                raise AssertionError(f"unchanged consumer did not reuse warm cache: {warm.stdout}")
+            shutil.rmtree(provider)
+            shutil.copytree(fixture / "provider_v2", provider)
+            changed = ctx.run_cmd(cmd, cwd=consumer)
+            res.returncode, res.stdout, res.stderr = changed.returncode, changed.stdout, changed.stderr
+            rebuilt_interface = provider / "build" / ctx.profile / "LayoutProvider.mossi"
+            if not rebuilt_interface.is_file():
+                raise AssertionError("changed provider was not rebuilt")
+            after = re.search(r"(?m)^provider_contract_digest (sha256:[0-9a-f]{64})$",
+                              rebuilt_interface.read_text())
+            if not after or after.group(1) == before.group(1):
+                raise AssertionError("provider layout changed without changing its contract digest")
+            outer = json.loads(changed.stdout)
+            nested = outer.get("error", "")
+            start = nested.find("{")
+            if start < 0:
+                raise AssertionError(f"changed consumer did not return Moss diagnostic: {nested}")
+            inner = json.loads(nested[start:])
+            error = inner["error"]
+            valid = (changed.returncode != 0 and outer.get("ok") is False and
+                     inner.get("ok") is False and
+                     error.get("code") == "FIELD_COUNT_MISMATCH" and
+                     error.get("source", {}).get("file") == str(consumer / "src/main.moss") and
+                     error.get("line") == 5 and
+                     "LayoutProvider__Box.extra" in error.get("message", ""))
+            res.status = "PASS" if valid else "FAIL"
+            res.details["cache"] = {
+                "cold_reused": cold_data["artifacts"]["reused"],
+                "warm_reused": warm_data["artifacts"]["reused"],
+                "old_provider_digest": before.group(1),
+                "new_provider_digest": after.group(1),
+                "changed_consumer_code": error.get("code"),
+                "changed_consumer_line": error.get("line")}
+        except (AssertionError, KeyError, ValueError, OSError) as error:
             res.status = "FAIL"
-            res.returncode = cold_proc.returncode
-            res.stdout = cold_proc.stdout
-            res.stderr = cold_proc.stderr
-            res.duration_ms = (time.time() - t0) * 1000
-            return res
-
-        # 2. Warm run without changes
-        warm_proc = ctx.run_cmd(cmd, cwd=consumer_dir)
-        if warm_proc.returncode != 0:
-            res.status = "FAIL"
-            res.returncode = warm_proc.returncode
-            res.stdout = warm_proc.stdout
-            res.stderr = warm_proc.stderr
-            res.duration_ms = (time.time() - t0) * 1000
-            return res
-
-        # 3. Mutate provider layout (provider_v2 has extra field)
-        shutil.rmtree(provider_dir)
-        shutil.copytree(ctx.fixtures_dir / "scenario11_cache_invalidation" / "provider_v2", provider_dir)
-
-        # 4. Rebuild consumer -> cache invalidation MUST occur
-        rebuild_proc = ctx.run_cmd(cmd, cwd=consumer_dir)
-        res.duration_ms = (time.time() - t0) * 1000
-
-        # When provider layout changes, the compiler should recompile and reject consumer's
-        # Box(value: 10) constructor because provider_v2 requires value & extra.
-        combined = rebuild_proc.stdout + rebuild_proc.stderr
-        is_layout_rejection = (
-            "missing object constructor field" in combined
-            or "LayoutProvider__Box.extra" in combined
-            or "LAYOUT_MISMATCH" in combined
-            or "FIELD_COUNT_MISMATCH" in combined
-        )
-        is_clean_rebuild_with_cache_miss = (
-            rebuild_proc.returncode == 0 and '"reused": false' in rebuild_proc.stdout
-        )
-        unrelated_error = any(unrel in combined for unrel in (
-            "PARSE_ERROR", "SYNTAX_ERROR", "panic", "SIGSEGV", "command not found"
-        ))
-
-        if not unrelated_error and (is_layout_rejection or is_clean_rebuild_with_cache_miss):
-            res.status = "PASS"
-            res.details["invalidation_proven"] = True
-            res.details["evidence"] = "Provider layout change caused consumer recompilation and detected missing field 'extra'"
-        elif rebuild_proc.returncode != 0:
-            res.status = "FAIL"
-            res.details["error"] = f"Consumer rebuild failed with unrelated error instead of layout mismatch: {combined[:200]}"
-        else:
-            res.status = "FAIL"
-            res.details["error"] = "Cache invalidation failed: consumer was not recompiled after provider layout change (stale cache reused)"
+            res.returncode = 1
+            res.details["error"] = str(error)
+    res.duration_ms = (time.time() - t0) * 1000
     return res
 
 

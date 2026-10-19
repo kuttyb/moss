@@ -670,6 +670,39 @@ fn main():
   sort(v, by: outer)
 """, "transitively printing key", "SORT_KEY_IMPURE")
     rejected("""
+fn key(x: Int) -> Int:
+  var file = FileIO.open("missing", ro)
+  file.close()
+  return x
+
+fn main():
+  var v = [2, 1]
+  sort(v, by: key)
+""", "key opening FileIO", "SORT_KEY_IMPURE")
+    # A handler can send a domain message, but it is not a named sort key
+    # function. Keep this distinction visible; it does not prove the frozen
+    # SORT_KEY_IMPURE diagnostic for a message-sending selector.
+    rejected("""
+domain Worker:
+  fn Get() -> Int:
+    reply 1
+
+domain Runner:
+  domainroutes(worker: Worker)
+
+  fn Key(x: Int) -> Int:
+    reply message worker.Get()
+
+  fn Run():
+    var v = [2, 1]
+    sort(v, by: Key)
+
+fn main():
+  let w = Worker()
+  let r = Runner(worker: w)
+  message r.Run()
+""", "message-sending handler is not a sort selector", "SORT_KEY_CALLABLE")
+    rejected("""
 enum Bad:
   Oops
 

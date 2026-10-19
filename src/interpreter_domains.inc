@@ -21,6 +21,17 @@
       result.map = std::make_shared<std::vector<std::pair<Value, Value>>>();
       for (const auto& entry : *source.map)
         result.map->push_back({independent(entry.first), independent(entry.second)});
+      if (source.map_index)
+        result.map_index = std::make_shared<Value::HashIndex>(*source.map_index);
+      if (source.map_hashes)
+        result.map_hashes = std::make_shared<std::vector<std::int64_t>>(*source.map_hashes);
+    }
+    if (source.set) {
+      result.set = std::make_shared<std::vector<Value>>();
+      for (const auto& key : *source.set)
+        result.set->push_back(independent(key));
+      if (source.set_index)
+        result.set_index = std::make_shared<Value::HashIndex>(*source.set_index);
     }
     return result;
   }
@@ -33,6 +44,8 @@
       return "Queue(size=" + std::to_string(value.queue ? value.queue->size() : 0) + ")";
     if (value.kind == Value::Kind::Map)
       return "Map(size=" + std::to_string(value.map ? value.map->size() : 0) + ")";
+    if (value.kind == Value::Kind::Set)
+      return "Set(size=" + std::to_string(value.set ? value.set->size() : 0) + ")";
     return value.display().substr(0, 256);
   }
 
@@ -85,7 +98,11 @@
         if (place.value->map) {
           bool found = false;
           for (auto& entry : *place.value->map) {
-            if (key_equal(entry.first, index)) { place.value = &entry.second; found = true; break; }
+            if (protocol_key_equal(entry.first, index, frame, line, output)) {
+              place.value = &entry.second;
+              found = true;
+              break;
+            }
           }
           if (!found) throw RuntimeError(line, "missing map key");
         } else {

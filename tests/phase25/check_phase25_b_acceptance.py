@@ -274,18 +274,41 @@ def test_behavior_10(scratch, staging_out, adv_out):
     assert "ABI-v10 staged summary adversarial tests passed" in adv_out
     res.add_check("Codec", "PASS",
                   "abi_v10_staging & adversarial: detect_contract_change and content-addressed cache invalidation verified.")
-    # 2. Integration check
+    # 2. The provider owns one sealed nominal proof, reused by both consumers.
     ws = scratch / "b10"
     ws.mkdir(parents=True, exist_ok=True)
-    # Executable assertion of interim fail-closed contract for Gate 10
-    provider = ws / "sf10" / "provider"
-    conf.write_package(provider, "g2provider", conf.PROVIDER_KEY)
-    built = conf.run(conf.MARGO, "build", "--json", cwd=provider)
-    assert built.returncode != 0 and "RECORD_MAP_KEY_UNSUPPORTED" in built.stdout, \
-        f"Unexpected output in gate 10 interim check: {built.stdout}"
-    assert "BUILD_BACKEND_ERROR" not in built.stdout, built.stdout
-    res.add_check("Integration", "PENDING",
-                  "G2 Gate 10: custom nominal Map keys require Team S admit_member and Team A structured requirements (interim RECORD_MAP_KEY_UNSUPPORTED contract verified).")
+    env, artifacts = conf.source_free(ws / "sf10", conf.PROVIDER_KEY)
+    interfaces = list(artifacts.glob("*.mossi"))
+    assert len(interfaces) == 1, interfaces
+    inspector = TMP / "phase25_b_nominal_proof"
+    run_command([os.environ.get("CXX", "c++"), "-std=c++17", "-Wall", "-Wextra",
+                 "-Werror", "-pedantic", "-Isrc",
+                 "tests/tooling/check_phase25_b_nominal_proof.cpp", "-o", str(inspector)],
+                "Build live nominal proof inspector")
+    provider_proof = run_command([str(inspector), str(interfaces[0])],
+                                 "Validate live provider nominal proof").strip()
+    key_id, proof_id = provider_proof.split("\t")
+    assert key_id == "nominal-template-v1:module-v1:g2provider@0.1.0::Provider:type:UserKey", key_id
+    assert proof_id.startswith("sha256:") and len(proof_id) == 71, proof_id
+    assert not (ws / "sf10" / "provider" / "src").exists()
+    for name in ("g2keyconsumera", "g2keyconsumerb"):
+        root, _ = conf.consumer(ws / "sf10", name, '''module Consumer
+import Provider
+fn main():
+  table = Provider.seed()
+  echo Provider.lookup(table, Provider.UserKey(id: 1))
+''')
+        conf.source_free_run(root, env, "7\n")
+        consumer_interface = root / "build" / "debug" / "Consumer.mossi"
+        assert consumer_interface.exists(), consumer_interface
+        consumer_proof = run_command([str(inspector), str(consumer_interface)],
+                                     f"Validate {name} imported nominal proof").strip()
+        assert consumer_proof == provider_proof, (name, provider_proof, consumer_proof)
+    conflict = conf.check_negative_at(
+        conf.G2 / "key_proof_identity_conflict.moss", {"TYPE_MISMATCH"}, 22)
+    assert "Map key conflicts" in conflict["message"], conflict
+    res.add_check("Moss", "PASS",
+                  f"G2 Gate 10: one sealed nominal proof {proof_id}; two independent source-free native consumers output '7\\n'; same-layout key conflict rejected at line 22 with TYPE_MISMATCH.")
     return res
 
 
@@ -381,9 +404,9 @@ def main():
     print("----------------------------------------------------------------")
     print(f"Total Verification Checks: {total_pass} PASS, {total_pending} PENDING, {total_fail} FAIL")
     assert total_fail == 0, f"{total_fail} checks failed!"
-    assert total_pending == 1, f"Expected exactly 1 pending check (Gate 10), got {total_pending}"
+    assert total_pending == 0, f"Expected no pending checks, got {total_pending}"
     print("All independent Team B deliverables VERIFIED.")
-    print("Joint integration gates explicitly identified as PENDING per charter.")
+    print("Joint Gate 10 integration verified with live source-free Moss artifacts.")
 
 
 if __name__ == "__main__":

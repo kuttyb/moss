@@ -383,7 +383,8 @@ public:
 
   // Type-argument count of a built-in collection, or nullopt for other names.
   static std::optional<size_t> collection_arity(std::string_view builtin_name) {
-    if (builtin_name == "vector" || builtin_name == "queue") return 1;
+    if (builtin_name == "vector" || builtin_name == "queue" ||
+        builtin_name == "set") return 1;
     if (builtin_name == "map") return 2;
     return std::nullopt;
   }
@@ -590,6 +591,7 @@ public:
           if (head == "Vector") head = "vector";
           else if (head == "Map") head = "map";
           else if (head == "Queue") head = "queue";
+          else if (head == "Set") head = "set";
           // A parameterized collection names every type argument; only the
           // bare spelling denotes an open, not-yet-inferred collection.
           if (auto arity = collection_arity(head); arity && args.size() != *arity)
@@ -609,7 +611,9 @@ public:
         if (head == "Vector") head = "vector";
         else if (head == "Map") head = "map";
         else if (head == "Queue") head = "queue";
-        if (head == "vector" || head == "map" || head == "queue")
+        else if (head == "Set") head = "set";
+        if (head == "vector" || head == "map" || head == "queue" ||
+            head == "set")
           return Type::builtin(head, {});
         if (const TypeContext* context = TypeContext::current()) {
           if (auto declared = context->find(head)) {
@@ -693,6 +697,7 @@ public:
           if (norm == "Vector") norm = "vector";
           else if (norm == "Map") norm = "map";
           else if (norm == "Queue") norm = "queue";
+          else if (norm == "Set") norm = "set";
           if (auto arity = collection_arity(norm); arity && count != *arity)
             return false;
           return true;
@@ -992,6 +997,9 @@ struct SpecializationKey {
   std::vector<TypeRef> arguments;
   std::vector<std::string> callable_arguments;
   std::vector<std::pair<uint32_t, TypeRef>> open_result_bindings;
+  // Staged Map/Set key operations use the provider's canonical KeyProofId.
+  // An absent value preserves every existing v9/function specialization key.
+  std::optional<std::string> key_proof_id;
 
   std::optional<std::string> stable_key() const {
     if (callable_id.empty()) return std::nullopt;
@@ -1023,6 +1031,11 @@ struct SpecializationKey {
       if (!binding.second || !binding.second->is_closed()) return std::nullopt;
       Type::append_part(material, std::to_string(binding.first));
       Type::append_part(material, binding.second->stable_type_key());
+    }
+    if (key_proof_id) {
+      if (key_proof_id->rfind("sha256:", 0) != 0) return std::nullopt;
+      Type::append_part(material, "key-proof-v1");
+      Type::append_part(material, *key_proof_id);
     }
     return "specialization-v2:sha256:" + source_free_contract_sha256(material);
   }

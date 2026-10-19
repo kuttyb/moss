@@ -47,6 +47,7 @@
 #include "synchronization_lowering.hpp"
 #include "source_free_abi_v9.hpp"
 #include "source_free_abi_v10.hpp"
+#include "abi_v10_records.hpp"
 #include "moss_runtime_linkage.hpp"
 #include "char_string_ordering_runtime.hpp"
 
@@ -345,6 +346,7 @@ static string canonical_type_name(string type) {
   if (type == "Vector") return "vector";
   if (type == "Map") return "map";
   if (type == "Queue") return "queue";
+  if (type == "Set") return "set";
   auto bracket = type.find('[');
   if (bracket != string::npos && ends_with(type, "]")) {
     string head = canonical_type_name(type.substr(0, bracket));
@@ -616,7 +618,7 @@ static std::optional<std::pair<string, string>> map_key_value_types(
                         term->type_args[1]->to_canonical_string());
 }
 
-enum class BuiltinReceiverFamily { Vector, Map, Queue, String, Char, Int, Float, Bool };
+enum class BuiltinReceiverFamily { Vector, Map, Queue, Set, String, Char, Int, Float, Bool };
 
 
 struct BuiltinOperationDescriptor {
@@ -642,6 +644,9 @@ static const vector<BuiltinOperationDescriptor>& builtin_operations() {
       {BuiltinReceiverFamily::Map, "delete", "delete(key, fallback, found)", "$value", Effect::Write, {Effect::Read, Effect::Consume, Effect::Write}, {"$key", "$value", "bool"}},
       {BuiltinReceiverFamily::Queue, "push", "push(item)", "unit", Effect::Write, {Effect::Consume}, {"$element"}},
       {BuiltinReceiverFamily::Queue, "pop", "pop()", "$element", Effect::Write, {}, {}, true},
+      {BuiltinReceiverFamily::Set, "insert", "insert(key)", "unit", Effect::Write, {Effect::Consume}, {"$element"}},
+      {BuiltinReceiverFamily::Set, "contains", "contains(key)", "bool", Effect::Read, {Effect::Read}, {"$element"}},
+      {BuiltinReceiverFamily::Set, "values", "values()", "$setvalues", Effect::Read, {}, {}},
       {BuiltinReceiverFamily::String, "length", "length()", "int", Effect::Read, {}, {}},
       {BuiltinReceiverFamily::String, "char_at", "char_at(index)", "char", Effect::Read, {Effect::Read}, {"int"}, true},
       {BuiltinReceiverFamily::String, "chars", "chars()", "vector[char]", Effect::Read, {}, {}},
@@ -684,6 +689,7 @@ static std::optional<BuiltinReceiverFamily> builtin_receiver_family(
   if (collection_named(term, {"vector"})) return BuiltinReceiverFamily::Vector;
   if (collection_named(term, {"map"})) return BuiltinReceiverFamily::Map;
   if (collection_named(term, {"queue"})) return BuiltinReceiverFamily::Queue;
+  if (staged_abi_v10() && collection_named(term, {"set"})) return BuiltinReceiverFamily::Set;
   if (primitive_term(term, "string")) return BuiltinReceiverFamily::String;
   if (primitive_term(term, "char")) return BuiltinReceiverFamily::Char;
   if (primitive_term(term, "int")) return BuiltinReceiverFamily::Int;
@@ -713,6 +719,12 @@ static std::optional<string> builtin_operation_type(
     if (open == string::npos || !ends_with(concrete, "]")) return std::nullopt;
     return concrete.substr(open + 1, concrete.size() - open - 2);
   }
+  if (pattern == "$setvalues") {
+    auto term = parsed_type(receiver_type);
+    if (!applied_builtin(term, {"set"}) || term->type_args.size() != 1)
+      return std::nullopt;
+    return "vector[" + term->type_args[0]->to_canonical_string() + "]";
+  }
   if (!pattern.empty() && pattern.front() == '$') {
     auto types = map_key_value_types(receiver_type);
     if (!types) return std::nullopt;
@@ -736,8 +748,75 @@ static std::optional<BuiltinReceiverFamily> builtin_receiver_family(
   if (collection_named(type, {"vector"})) return BuiltinReceiverFamily::Vector;
   if (collection_named(type, {"map"})) return BuiltinReceiverFamily::Map;
   if (collection_named(type, {"queue"})) return BuiltinReceiverFamily::Queue;
+  if (staged_abi_v10() && collection_named(type, {"set"})) return BuiltinReceiverFamily::Set;
   if (primitive_term(type, "string")) return BuiltinReceiverFamily::String;
   return std::nullopt;
+}
+
+static bool nominal_key_method_pure_read(const Method& method) {
+  return method.receiver_effect == Effect::Read &&
+      std::all_of(method.parameter_effects.begin(),
+                  method.parameter_effects.end(),
+                  [](Effect effect) { return effect == Effect::Read; }) &&
+      !method.observable_effects.local_capture_read &&
+      method.observable_effects.fusion_safe() &&
+      !method.observable_effects.fileio_unknown &&
+      !method.observable_effects.may_diverge;
+}
+
+static std::optional<std::pair<const Method*, const Method*>>
+nominal_key_methods(const ObjectType& object, const string& key_type) {
+  const Method* equality = nullptr;
+  const Method* hash = nullptr;
+  for (const auto& method : object.methods) {
+    if (method.name == "isequal") {
+      if (equality) return std::nullopt;
+      equality = &method;
+    } else if (method.name == "hash") {
+      if (hash) return std::nullopt;
+      hash = &method;
+    }
+  }
+  if (!equality || !hash || equality->params.size() != 1 ||
+      canonical_type_name(equality->params[0].type) != key_type ||
+      !equality->return_type ||
+      canonical_type_name(*equality->return_type) != "bool" ||
+      equality->parameter_effects.size() != 1 ||
+      !nominal_key_method_pure_read(*equality) ||
+      !hash->params.empty() || !hash->return_type ||
+      canonical_type_name(*hash->return_type) != "int" ||
+      !hash->parameter_effects.empty() ||
+      !nominal_key_method_pure_read(*hash)) return std::nullopt;
+  return std::make_pair(equality, hash);
+}
+
+static bool nominal_key_free_target(const Function& function,
+                                    const string& key_type) {
+  const size_t separator = function.name.rfind("__");
+  const string name = separator == string::npos
+      ? function.name : function.name.substr(separator + 2);
+  if (name == "hash" && function.params.size() == 1)
+    return canonical_type_name(function.params[0].type) == key_type;
+  if (name == "isequal" && function.params.size() == 2)
+    return canonical_type_name(function.params[0].type) == key_type &&
+        canonical_type_name(function.params[1].type) == key_type;
+  return false;
+}
+
+static abi_v10::Record nominal_key_proof_record(
+    const ObjectType& object, const string& declaration_id);
+
+static string keyed_operation_specialization_id(
+    const string& key_type, const string& proof_id,
+    const string& family, const string& operation) {
+  moss::SpecializationKey key;
+  key.callable_id = "builtin:key-protocol-v1:" + family + "." + operation;
+  key.receiver = parsed_type(key_type);
+  key.key_proof_id = proof_id;
+  const auto identity = key.stable_key();
+  synchronization_require(identity.has_value(),
+                          "key operation requires a closed proven key type");
+  return *identity;
 }
 
 static const BuiltinOperationDescriptor* builtin_operation(
@@ -2695,6 +2774,423 @@ class SourceFileScope {
   string previous_;
 };
 
+struct CheckedPrivateChainBody {
+  vector<checked_ir::Stmt> statements;
+  vector<SemanticDependency> dependencies;
+  string semantic_hash;
+};
+
+// Bridge the checked straight-line local-result form into the versioned rich
+// body IR. Each parameter, nominal field slot, and callee comes from the
+// retained typed summary and exact checker edge; source spelling is used only
+// to select the already checked occurrence.
+static std::optional<CheckedPrivateChainBody> checked_private_chain_body(
+    const Program& program, const Function& function) {
+  if (!function.open_summary || !function.open_summary->complete ||
+      function.body.size() != 2 ||
+      function.body.back().kind != Stmt::Kind::Return ||
+      !plain_identifier(trim(function.body.back().a)) ||
+      (function.body.front().kind != Stmt::Kind::Let &&
+       function.body.front().kind != Stmt::Kind::Var &&
+       function.body.front().kind != Stmt::Kind::Assign) ||
+      trim(function.body.front().a) != trim(function.body.back().a) ||
+      function.body.front().indent != function.body.back().indent)
+    return std::nullopt;
+  const auto& summary = *function.open_summary;
+  if (!summary.result_type ||
+      summary.parameter_types.size() != function.params.size())
+    return std::nullopt;
+  string target;
+  vector<string> arguments;
+  if (!parse_simple_call(trim(function.body.front().b), target, arguments))
+    return std::nullopt;
+  string qualified = target;
+  auto function_by_name = [&](const string& name) -> const Function* {
+    auto found = std::find_if(program.functions.begin(), program.functions.end(),
+        [&](const Function& candidate) { return candidate.name == name; });
+    return found == program.functions.end() ? nullptr : &*found;
+  };
+  auto object_by_name = [&](const string& name) -> const ObjectType* {
+    auto found = std::find_if(program.objects.begin(), program.objects.end(),
+        [&](const ObjectType& candidate) { return candidate.name == name; });
+    return found == program.objects.end() ? nullptr : &*found;
+  };
+  if (!function_by_name(qualified) && !object_by_name(qualified) &&
+      !function.defining_module.empty())
+    qualified = function.defining_module + "__" + target;
+  auto parameter_expr = [&](const string& name)
+      -> std::optional<checked_ir::Expr> {
+    for (size_t index = 0; index < function.params.size(); ++index)
+      if (function.params[index].name == trim(name) &&
+          summary.parameter_types[index]) {
+        checked_ir::Expr expression;
+        expression.kind = checked_ir::ExprKind::Parameter;
+        expression.type = summary.parameter_types[index];
+        expression.ordinal = static_cast<std::uint32_t>(index);
+        return expression;
+      }
+    return std::nullopt;
+  };
+  checked_ir::Expr value;
+  value.type = summary.result_type;
+  if (const ObjectType* object = object_by_name(qualified)) {
+    if (summary.result_type->kind != TypeKind::NominalInstance ||
+        !summary.result_type->declaration ||
+        summary.result_type->name != object->name ||
+        arguments.size() != object->fields.size())
+      return std::nullopt;
+    value.kind = checked_ir::ExprKind::NominalConstruct;
+    value.semantic_target_id = summary.result_type->declaration->id;
+    for (const auto& field : object->fields) {
+      std::optional<checked_ir::Expr> operand;
+      for (const auto& argument : arguments) {
+        string name, expression;
+        if (parse_named_argument(argument, name, expression) &&
+            name == field.name) {
+          if (operand) return std::nullopt;
+          operand = parameter_expr(expression);
+        }
+      }
+      if (!operand) return std::nullopt;
+      value.operands.push_back(*operand);
+    }
+  } else if (const Function* callee = function_by_name(qualified)) {
+    if (!callee->open_summary || !callee->open_summary->complete ||
+        callee->semantic_callable_id.empty() ||
+        arguments.size() != callee->params.size())
+      return std::nullopt;
+    const bool exact_edge = std::any_of(
+        program.semantic_call_edges.begin(), program.semantic_call_edges.end(),
+        [&](const SemanticCallEdge& edge) {
+      return edge.source == "fn:" + function.name &&
+          edge.target == "fn:" + callee->name &&
+          edge.line == function.body.front().line &&
+          edge.invocation_kind == "ordinary_call" &&
+          edge.occurrence == 0 && edge.source_specialization_key.empty();
+    });
+    if (!exact_edge) return std::nullopt;
+    value.kind = checked_ir::ExprKind::Call;
+    value.semantic_target_id = callee->semantic_callable_id;
+    for (const auto& argument : arguments) {
+      auto operand = parameter_expr(argument);
+      if (!operand) return std::nullopt;
+      value.operands.push_back(*operand);
+    }
+  } else {
+    return std::nullopt;
+  }
+  checked_ir::Stmt bind;
+  bind.kind = checked_ir::StmtKind::Let;
+  bind.type = summary.result_type;
+  bind.local_ordinal = 0;
+  bind.expr = value;
+  checked_ir::Expr local;
+  local.kind = checked_ir::ExprKind::LocalRead;
+  local.type = summary.result_type;
+  local.ordinal = 0;
+  checked_ir::Stmt returned;
+  returned.kind = checked_ir::StmtKind::Return;
+  returned.type = summary.result_type;
+  returned.expr = local;
+  CheckedPrivateChainBody body;
+  body.statements = {std::move(bind), std::move(returned)};
+  try {
+    body.semantic_hash = checked_ir::compute_checked_body_hash_v1(
+        body.statements);
+    body.dependencies = extract_semantic_dependencies(body.statements);
+  } catch (const std::invalid_argument&) {
+    return std::nullopt;
+  }
+  return body;
+}
+
+static moss::TypeRef imported_abi_v10_type(
+    const abi_v10::WireType& wire, const moss::TypeContext& context,
+    std::uint32_t variable_count, unsigned depth = 0) {
+  if (depth >= 64) return nullptr;
+  switch (wire.kind) {
+    case abi_v10::WireTypeKind::Primitive:
+      return moss::Type::primitive(wire.identity);
+    case abi_v10::WireTypeKind::Builtin: {
+      vector<moss::TypeRef> arguments;
+      for (const auto& argument : wire.arguments) {
+        auto term = imported_abi_v10_type(argument, context, variable_count,
+                                          depth + 1);
+        if (!term) return nullptr;
+        arguments.push_back(term);
+      }
+      return moss::Type::builtin(wire.identity, std::move(arguments));
+    }
+    case abi_v10::WireTypeKind::Nominal: {
+      auto declaration = context.find_id(wire.identity);
+      if (!declaration || declaration->kind != moss::DeclarationKind::Record ||
+          declaration->inferred_slot_count() != wire.arguments.size())
+        return nullptr;
+      vector<std::pair<string, moss::TypeRef>> substitutions;
+      std::size_t index = 0;
+      for (const auto& field : declaration->fields) {
+        if (!field.inferred) continue;
+        auto term = imported_abi_v10_type(wire.arguments[index++], context,
+                                          variable_count, depth + 1);
+        if (!term) return nullptr;
+        substitutions.emplace_back(field.name, term);
+      }
+      return moss::Type::nominal_bound(
+          declaration, declaration->program_name, std::move(substitutions));
+    }
+    case abi_v10::WireTypeKind::BoundVar:
+      return wire.ordinal < variable_count
+          ? moss::Type::var(moss::TypeVarId{0, 0, wire.ordinal}) : nullptr;
+    case abi_v10::WireTypeKind::Unit:
+      return moss::Type::unit();
+    case abi_v10::WireTypeKind::Enum:
+    case abi_v10::WireTypeKind::Domain:
+      return nullptr;
+  }
+  return nullptr;
+}
+
+static bool abi_v10_effects_pure(const ObservableEffects& effects);
+
+static abi_v10::Access imported_abi_v10_access(Effect effect) {
+  return effect == Effect::Consume ? abi_v10::Access::Consume :
+      effect == Effect::Write ? abi_v10::Access::Write :
+                                abi_v10::Access::Read;
+}
+
+static Effect imported_abi_v10_effect(abi_v10::Access access) {
+  return access == abi_v10::Access::Consume ? Effect::Consume :
+      access == abi_v10::Access::Write ? Effect::Write : Effect::Read;
+}
+
+// Stage-v10 H3 import projection. It derives an AST lowering view solely from
+// sealed checked IR; legacy generic_stmt lines are discarded for these bodies.
+// Every target is selected by exact provider identity before inference starts.
+static void project_imported_h3_checked_bodies(Program& program) {
+  if (!staged_abi_v10() || !program.type_context) return;
+  // Private generic_dependency declarations do not have the public v9 param
+  // mode lines. Seed their declared access from the sealed v10 summary before
+  // resolving a caller; the checker compares its derived access after closure.
+  for (auto& function : program.functions)
+    if (!function.imported_checked_summary_payload.empty() &&
+        !function.exported && function.parameter_effects.empty()) {
+      auto summary = abi_v10::read_summary(
+          function.imported_checked_summary_payload);
+      if (summary.parameters.size() != function.params.size())
+        throw CompileError(0, "private checked ABI-v10 parameter count is mismatched",
+                           "SOURCE_FREE_CHECKED_BODY_INVALID");
+      for (const auto access : summary.parameter_access)
+        function.parameter_effects.push_back(
+            imported_abi_v10_effect(access));
+    }
+  for (auto& function : program.functions) {
+    if (function.imported_checked_body_payload.empty()) continue;
+    auto invalid = [&](const string& reason) {
+      CompileError error(std::max(function.line, 1), reason,
+                         "SOURCE_FREE_CHECKED_BODY_INVALID");
+      error.source_file = function.source_file;
+      error.teaching.related.push_back({
+          function.provider_origin_file.empty() ? function.source_file :
+              function.provider_origin_file,
+          std::max(function.line, 1), 1,
+          "sealed provider callable '" + function.name + "'"});
+      throw error;
+    };
+    if (std::filesystem::path(function.source_file).extension() != ".mossi" ||
+        function.imported_checked_summary_payload.empty())
+      invalid("checked ABI-v10 body is detached from its provider summary");
+    const abi_v10::Summary summary = abi_v10::read_summary(
+        function.imported_checked_summary_payload);
+    const abi_v10::CheckedBodyRecord body = abi_v10::read_checked_body_record(
+        function.imported_checked_body_payload);
+    if (summary.callable_id != function.semantic_callable_id ||
+        body.callable_id != summary.callable_id ||
+        body.semantic_hash != summary.body_semantic_hash ||
+        summary.parameters.size() != function.params.size() ||
+        summary.parameter_access.size() != function.parameter_effects.size() ||
+        summary.observable_effect_bits || !summary.observable_effect_tags.empty() ||
+        !abi_v10_effects_pure(function.observable_effects))
+      invalid("checked ABI-v10 body disagrees with its callable summary");
+    for (std::size_t index = 0; index < summary.parameter_access.size(); ++index)
+      if (summary.parameter_access[index] !=
+          imported_abi_v10_access(function.parameter_effects[index]))
+        invalid("checked ABI-v10 parameter access is mismatched");
+    vector<moss::TypeRef> parameters;
+    for (const auto& wire : summary.parameters) {
+      auto term = imported_abi_v10_type(
+          wire, *program.type_context, summary.variable_count);
+      if (!term) invalid("checked ABI-v10 parameter TypeRef is unresolved");
+      parameters.push_back(term);
+    }
+    auto result = imported_abi_v10_type(
+        summary.result, *program.type_context, summary.variable_count);
+    if (!result) invalid("checked ABI-v10 result TypeRef is unresolved");
+    vector<checked_ir::Stmt> statements;
+    try {
+      statements = checked_ir::decode_h3_checked_body_v1(
+          body.checked_ir_bytes, *program.type_context, parameters, result,
+          body.semantic_hash);
+    } catch (const std::invalid_argument& error) {
+      invalid(string("checked ABI-v10 body cannot be decoded: ") + error.what());
+    }
+    const auto dependencies = extract_semantic_dependencies(statements);
+    if (dependencies.size() != body.dependencies.size())
+      invalid("checked ABI-v10 body dependency set is incomplete");
+    for (std::size_t index = 0; index < dependencies.size(); ++index) {
+      const auto& found = dependencies[index];
+      const auto& declared = body.dependencies[index];
+      if (found.target_id != declared.target_id ||
+          (found.kind == SemanticDependency::Kind::Callable) !=
+              (declared.kind ==
+               abi_v10::CheckedBodyRecord::Dependency::Kind::Callable))
+        invalid("checked ABI-v10 body dependency identity is mismatched");
+    }
+    const auto& expression = *statements.front().expr;
+    string lowered;
+    if (expression.kind == checked_ir::ExprKind::NominalConstruct) {
+      auto declaration = program.type_context->find_id(
+          expression.semantic_target_id);
+      if (!declaration || declaration->kind != moss::DeclarationKind::Record ||
+          expression.operands.size() != declaration->fields.size())
+        invalid("checked ABI-v10 constructor target is unresolved");
+      lowered = declaration->program_name + "(";
+      for (std::size_t index = 0; index < expression.operands.size(); ++index) {
+        const auto& operand = expression.operands[index];
+        if (operand.kind != checked_ir::ExprKind::Parameter ||
+            operand.ordinal >= function.params.size())
+          invalid("checked ABI-v10 constructor operand is unsupported");
+        if (index) lowered += ", ";
+        lowered += declaration->fields[index].name + ": " +
+            function.params[operand.ordinal].name;
+      }
+      lowered += ")";
+    } else if (expression.kind == checked_ir::ExprKind::Call) {
+      auto callee = std::find_if(program.functions.begin(),
+                                 program.functions.end(),
+          [&](const Function& candidate) {
+        return candidate.semantic_callable_id == expression.semantic_target_id;
+      });
+      if (callee == program.functions.end() ||
+          callee->imported_checked_summary_payload.empty() ||
+          callee->imported_checked_body_payload.empty())
+        invalid("checked ABI-v10 call target has no sealed summary and body");
+      auto target = abi_v10::read_summary(
+          callee->imported_checked_summary_payload);
+      if (target.observable_effect_bits ||
+          !target.observable_effect_tags.empty() ||
+          !abi_v10_effects_pure(callee->observable_effects) ||
+          target.parameters.size() != expression.operands.size() ||
+          target.parameter_access.size() != callee->parameter_effects.size())
+        invalid("checked ABI-v10 call target effects or arity are mismatched");
+      for (std::size_t index = 0; index < target.parameter_access.size(); ++index)
+        if (target.parameter_access[index] !=
+            imported_abi_v10_access(callee->parameter_effects[index]))
+          invalid("checked ABI-v10 callee parameter access is mismatched");
+      for (std::size_t index = 0; index < expression.operands.size(); ++index) {
+        auto expected = imported_abi_v10_type(
+            target.parameters[index], *program.type_context,
+            target.variable_count);
+        const auto& operand = expression.operands[index];
+        if (!expected || operand.kind != checked_ir::ExprKind::Parameter ||
+            operand.ordinal >= function.params.size() ||
+            !operand.type->structurally_equal(*expected))
+          invalid("checked ABI-v10 call parameter relation is mismatched");
+      }
+      auto target_result = imported_abi_v10_type(
+          target.result, *program.type_context, target.variable_count);
+      if (!target_result ||
+          !expression.type->structurally_equal(*target_result))
+        invalid("checked ABI-v10 call result relation is mismatched");
+      lowered = callee->name + "(";
+      for (std::size_t index = 0; index < expression.operands.size(); ++index) {
+        if (index) lowered += ", ";
+        lowered += function.params[expression.operands[index].ordinal].name;
+      }
+      lowered += ")";
+    } else {
+      invalid("checked ABI-v10 expression is outside the H3 subset");
+    }
+    const string local = "__moss_h3_result";
+    if (std::any_of(function.params.begin(), function.params.end(),
+                    [&](const Param& param) { return param.name == local; }))
+      invalid("checked ABI-v10 internal local collides with a parameter");
+    Stmt bind;
+    bind.kind = Stmt::Kind::Let;
+    bind.line = std::max(function.line, 1);
+    bind.indent = 0;
+    bind.a = local;
+    bind.b = lowered;
+    bind.text = "let " + local + " = " + lowered;
+    Stmt returned;
+    returned.kind = Stmt::Kind::Return;
+    returned.line = bind.line + 1;
+    returned.indent = 0;
+    returned.a = local;
+    returned.text = "return " + local;
+    function.body = {std::move(bind), std::move(returned)};
+    function.result_expression.reset();
+  }
+}
+
+static void validate_imported_h3_summary_closure(const Program& program) {
+  if (!staged_abi_v10() || !program.type_context) return;
+  for (const auto& function : program.functions) {
+    if (function.imported_checked_body_payload.empty()) continue;
+    auto mismatch = [&](const string& reason) {
+      CompileError error(std::max(function.line, 1), reason,
+                         "SOURCE_FREE_CHECKED_BODY_INVALID");
+      error.source_file = function.source_file;
+      error.teaching.related.push_back({
+          function.provider_origin_file.empty() ? function.source_file :
+              function.provider_origin_file,
+          std::max(function.line, 1), 1,
+          "sealed provider callable '" + function.name + "'"});
+      throw error;
+    };
+    const auto summary = abi_v10::read_summary(
+        function.imported_checked_summary_payload);
+    if (!function.open_summary || !function.open_summary->complete ||
+        function.open_summary->bound_variable_count != summary.variable_count ||
+        function.open_summary->parameter_types.size() != summary.parameters.size() ||
+        function.parameter_effects.size() != summary.parameter_access.size() ||
+        !abi_v10_effects_pure(function.observable_effects))
+      mismatch("checked ABI-v10 imported summary did not close in the checker " +
+          string("(complete=") +
+          (function.open_summary && function.open_summary->complete ? "1" : "0") +
+          ", variables=" +
+          std::to_string(function.open_summary
+              ? function.open_summary->bound_variable_count : 0) +
+          ", expected=" + std::to_string(summary.variable_count) +
+          ", parameters=" + std::to_string(function.open_summary
+              ? function.open_summary->parameter_types.size() : 0) +
+          ", access=" + std::to_string(function.parameter_effects.size()) +
+          ")");
+    for (std::size_t index = 0; index < summary.parameters.size(); ++index) {
+      auto term = imported_abi_v10_type(
+          summary.parameters[index], *program.type_context,
+          summary.variable_count);
+      if (!term || !function.open_summary->parameter_types[index] ||
+          !term->structurally_equal(
+              *function.open_summary->parameter_types[index]) ||
+          summary.parameter_access[index] !=
+              imported_abi_v10_access(function.parameter_effects[index]))
+        mismatch("checked ABI-v10 parameter type or access weakened");
+    }
+    auto result = imported_abi_v10_type(
+        summary.result, *program.type_context, summary.variable_count);
+    if (!result || !function.open_summary->result_type ||
+        !result->structurally_equal(*function.open_summary->result_type))
+      mismatch("checked ABI-v10 result relation changed after inference");
+    std::set<string> declared, inferred(
+        function.open_summary->semantic_dependencies.begin(),
+        function.open_summary->semantic_dependencies.end());
+    for (const auto& dependency : summary.dependencies)
+      declared.insert(dependency.first);
+    if (declared != inferred)
+      mismatch("checked ABI-v10 callable dependency changed after inference");
+  }
+}
+
 class Checker {
  public:
   explicit Checker(Program& p) : p_(p) {
@@ -2777,6 +3273,7 @@ class Checker {
     // and stays bound to its identity for the rest of this session.
     build_type_context(p_);
     type_scope_ = std::make_unique<moss::TypeContext::Scope>(p_.type_context.get());
+    project_imported_h3_checked_bodies(p_);
     for (auto& f : p_.functions) {
       for (auto& param : f.params) {
         if (!param.type_ref && !param.type.empty() && !open_generic(param.type)) {
@@ -2900,6 +3397,10 @@ class Checker {
     check_objects();
     check_declared_map_key_types();
     check_local_call_cycles();
+    // The first summary pass seeds result relations for call-cycle analysis.
+    // A second pass can bind straight-line private-call results to the exact
+    // call edges retained by that analysis, without guessing from spelling.
+    build_open_callable_summaries();
     for (auto& function : p_.functions) {
       if (!function.open_summary) continue;
       for (const auto& edge : p_.semantic_call_edges) {
@@ -2918,6 +3419,25 @@ class Checker {
       }
     }
     { CompilerStageTimer timer("effects"); infer_effects(); infer_observable_effects(); }
+    validate_imported_h3_summary_closure(p_);
+    // ABI-v10 has no effect-polymorphic callable summary. A concrete static
+    // specialization can resolve the selected callback's effects, but an
+    // exported open callback cannot promise checked effects to a source-free
+    // consumer. Keep the incomplete summary inspectable and reject export.
+    if (staged_abi_v10() && p_.explicit_module)
+      for (const auto& function : p_.functions) {
+        if (!function.exported || compiled_interface_file(function.source_file) ||
+            !std::any_of(function.constraints.begin(), function.constraints.end(),
+                         [](const Constraint& constraint) {
+              return constraint.kind == ConstraintKind::Callable;
+            })) continue;
+        if (!function.open_summary || !function.open_summary->complete ||
+            function.observable_effects.unresolved)
+          err(function.source_file, function.line,
+              "exported callable '" + function.name +
+                  "' has unresolved callback effects in its open ABI-v10 summary",
+              "SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED");
+      }
     for (auto& function : p_.functions)
       if (function.open_summary) {
         function.open_summary->observable_effects = function.observable_effects;
@@ -2945,6 +3465,7 @@ class Checker {
     for (const auto& d : p_.domains) check_domain(d);
     if (p_.main) check_main(*p_.main);
     check_test_and_benchmark_declarations();
+    validate_staged_nominal_map_key_proofs();
     p_.concrete_domain_graph.closed = true;
     std::ostringstream graph_material;
     for (const auto& instance : p_.concrete_domain_graph.instances)
@@ -2971,6 +3492,48 @@ class Checker {
               "SOURCE_FREE_SPECIALIZATION_MISMATCH");
       }
     retain_checked_body_ir();
+    // The staged ABI cannot publish a multi-statement generic/private-helper
+    // chain through the legacy generic_stmt fallback. Until every reachable
+    // body has checked typed facts and versioned body IR, reject the provider
+    // before it can emit an interface that a source-free consumer may trust.
+    if (staged_abi_v10() && p_.explicit_module)
+      for (const auto& exported : p_.functions) {
+        if (!exported.exported || !exported.static_dispatch ||
+            compiled_interface_file(exported.source_file)) continue;
+        std::set<string> visited;
+        std::vector<const Function*> pending{&exported};
+        bool reaches_private = false;
+        bool unsupported_multi_statement = false;
+        bool rich_body_ready = true;
+        while (!pending.empty()) {
+          const Function* current = pending.back();
+          pending.pop_back();
+          if (!visited.insert(current->name).second) continue;
+          if (!current->exported) reaches_private = true;
+          if (current->body.size() > 1) {
+            if (!checked_private_chain_body(p_, *current))
+              rich_body_ready = false;
+            if (!current->open_summary || !current->open_summary->complete ||
+                !current->checked_body_v1)
+              unsupported_multi_statement = true;
+          }
+          for (const auto& edge : p_.semantic_call_edges) {
+            if (edge.source != "fn:" + current->name ||
+                !starts_with(edge.target, "fn:")) continue;
+            auto dependency = functions_.find(edge.target.substr(3));
+            if (dependency != functions_.end() &&
+                dependency->second->defining_module == exported.defining_module)
+              pending.push_back(dependency->second);
+          }
+        }
+        if (reaches_private && unsupported_multi_statement &&
+            !rich_body_ready)
+          err(exported.source_file, exported.line,
+              "exported callable '" + exported.name +
+                  "' reaches a private multi-statement body without "
+                  "checked ABI-v10 type facts and body IR",
+              "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE");
+      }
     { CompilerStageTimer timer("synchronization_plan"); build_synchronization_plan(p_.concrete_domain_graph); }
     warn_fileio_blocking_with_shared_write();
     retain_checked_type_uses();
@@ -3044,6 +3607,9 @@ class Checker {
   }
   std::unordered_map<string, Domain*> domains_;
   std::unordered_map<string, ObjectType*> objects_;
+  mutable std::set<string> staged_nominal_map_keys_;
+  mutable std::set<string> staged_scalar_map_keys_;
+  mutable std::set<string> staged_set_keys_;
   std::unordered_map<string, EnumType*> enums_;
   std::unordered_map<string, Trait*> traits_;
   Trait iterator_trait_;
@@ -3317,7 +3883,42 @@ class Checker {
   }
 
   void build_open_callable_summaries() {
-    for (auto& function : p_.functions) {
+    vector<Function*> summary_order;
+    std::map<string, int> imported_state;
+    for (auto& function : p_.functions)
+      if (function.imported_checked_summary_payload.empty())
+        summary_order.push_back(&function);
+    std::function<void(Function&)> visit_imported = [&](Function& function) {
+      const string& id = function.semantic_callable_id;
+      if (imported_state[id] == 2) return;
+      if (imported_state[id] == 1)
+        err(function.source_file, function.line,
+            "checked ABI-v10 callable dependency graph is cyclic",
+            "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING");
+      imported_state[id] = 1;
+      auto sealed = abi_v10::read_summary(
+          function.imported_checked_summary_payload);
+      for (const auto& dependency : sealed.dependencies) {
+        auto callee = std::find_if(p_.functions.begin(), p_.functions.end(),
+            [&](const Function& candidate) {
+          return candidate.semantic_callable_id == dependency.first;
+        });
+        if (callee == p_.functions.end() ||
+            callee->imported_checked_summary_payload.empty() ||
+            callee->imported_checked_body_payload.empty())
+          err(function.source_file, function.line,
+              "checked ABI-v10 callable dependency has no sealed body",
+              "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING");
+        visit_imported(*callee);
+      }
+      imported_state[id] = 2;
+      summary_order.push_back(&function);
+    };
+    for (auto& function : p_.functions)
+      if (!function.imported_checked_summary_payload.empty())
+        visit_imported(function);
+    for (Function* selected : summary_order) {
+      auto& function = *selected;
       OpenCallableSummaryFacts summary;
       summary.callable_id = function.semantic_callable_id;
       summary.origin.module_id =
@@ -3398,8 +3999,150 @@ class Checker {
       };
       const string result = function.return_type
           ? canonical_type_name(*function.return_type) : "unit";
+      // A straight-line local can carry the returned open value. Resolve only
+      // the exact assignment/return pair; branches and reassignment retain the
+      // existing incomplete-summary behavior.
+      std::optional<std::pair<string, int>> local_result;
+      if (function.body.size() == 2 &&
+          function.body.back().kind == Stmt::Kind::Return &&
+          plain_identifier(trim(function.body.back().a)) &&
+          (function.body.front().kind == Stmt::Kind::Let ||
+           function.body.front().kind == Stmt::Kind::Var ||
+           function.body.front().kind == Stmt::Kind::Assign) &&
+          trim(function.body.front().a) == trim(function.body.back().a) &&
+          function.body.front().indent == function.body.back().indent)
+        local_result = std::make_pair(trim(function.body.front().b),
+                                      function.body.front().line);
+      moss::TypeRef local_result_type;
+      if (local_result) {
+        string target;
+        vector<string> arguments;
+        if (parse_simple_call(local_result->first, target, arguments)) {
+          string qualified = target;
+          if (!functions_.count(qualified) && !objects_.count(qualified) &&
+              !function.defining_module.empty())
+            qualified = function.defining_module + "__" + target;
+          auto nominal = objects_.find(qualified);
+          if (nominal != objects_.end()) {
+            auto declaration = type_term(qualified);
+            if (declaration &&
+                declaration->kind == moss::TypeKind::NominalInstance &&
+                declaration->declaration &&
+                arguments.size() == nominal->second->fields.size()) {
+              vector<std::pair<string, moss::TypeRef>> substitutions;
+              bool valid = true;
+              for (const auto& field : nominal->second->fields) {
+                auto found = std::find_if(arguments.begin(), arguments.end(),
+                    [&](const string& argument) {
+                  string name, value;
+                  return parse_named_argument(argument, name, value) &&
+                      name == field.name;
+                });
+                if (found == arguments.end()) { valid = false; break; }
+                string name, value;
+                (void)parse_named_argument(*found, name, value);
+                auto parameter = parameter_variables.find(trim(value));
+                moss::TypeRef term = parameter != parameter_variables.end()
+                    ? parameter->second : type_term(
+                        constraint_expression_type(function, value).value_or(""));
+                if (!term) { valid = false; break; }
+                if (field.type.empty())
+                  substitutions.emplace_back(name, term);
+                else if (auto declared = type_term(field.type);
+                         !declared || !declared->structurally_equal(*term)) {
+                  valid = false;
+                  break;
+                }
+              }
+              if (valid)
+                local_result_type = moss::Type::nominal_bound(
+                    declaration->declaration, declaration->name,
+                    std::move(substitutions));
+            }
+          } else {
+            auto callee = functions_.find(qualified);
+            if (callee != functions_.end() && callee->second->open_summary &&
+                callee->second->open_summary->complete &&
+                arguments.size() == callee->second->params.size()) {
+              const auto& source = *callee->second->open_summary;
+              const bool exact_edge = std::any_of(
+                  p_.semantic_call_edges.begin(), p_.semantic_call_edges.end(),
+                  [&](const moss::SemanticCallEdge& edge) {
+                return edge.source == "fn:" + function.name &&
+                    edge.target == "fn:" + qualified &&
+                    edge.line == local_result->second &&
+                    edge.invocation_kind == "ordinary_call";
+              });
+              std::map<std::uint32_t, moss::TypeRef> replacements;
+              bool valid = exact_edge;
+              for (size_t index = 0; valid && index < arguments.size(); ++index) {
+                auto argument = parameter_variables.find(trim(arguments[index]));
+                const auto& formal = source.parameter_types[index];
+                if (argument == parameter_variables.end() || !formal ||
+                    formal->kind != moss::TypeKind::InferenceVar ||
+                    formal->var_id.session_id || formal->var_id.owner_id)
+                  valid = false;
+                else
+                  replacements.emplace(formal->var_id.ordinal,
+                                       argument->second);
+              }
+              std::function<moss::TypeRef(const moss::TypeRef&)> substitute =
+                  [&](const moss::TypeRef& type) -> moss::TypeRef {
+                if (!type) return nullptr;
+                if (type->kind == moss::TypeKind::InferenceVar) {
+                  auto replacement = replacements.find(type->var_id.ordinal);
+                  return replacement == replacements.end() ? nullptr
+                      : replacement->second;
+                }
+                if (type->kind == moss::TypeKind::NominalInstance) {
+                  vector<std::pair<string, moss::TypeRef>> fields;
+                  for (const auto& field : type->field_substitutions) {
+                    auto term = substitute(field.second);
+                    if (!term) return nullptr;
+                    fields.emplace_back(field.first, term);
+                  }
+                  return moss::Type::nominal_bound(type->declaration,
+                                                   type->name,
+                                                   std::move(fields));
+                }
+                if (type->kind == moss::TypeKind::Builtin) {
+                  vector<moss::TypeRef> args;
+                  for (const auto& arg : type->type_args) {
+                    auto term = substitute(arg);
+                    if (!term) return nullptr;
+                    args.push_back(term);
+                  }
+                  return moss::Type::builtin(type->name, std::move(args));
+                }
+                return type;
+              };
+              if (valid) local_result_type = substitute(source.result_type);
+            }
+          }
+        }
+      }
       std::optional<std::pair<string, string>> returned_member;
-      if (open_generic(result)) {
+      std::optional<std::pair<string, vector<string>>> returned_callable;
+      {
+        const string* returned = function.result_expression
+            ? &*function.result_expression
+            : !function.body.empty() &&
+                  function.body.back().kind == Stmt::Kind::Return
+                ? &function.body.back().a : nullptr;
+        string callee;
+        vector<string> arguments;
+        if (returned && parse_simple_call(trim(*returned), callee, arguments) &&
+            std::any_of(function.constraints.begin(), function.constraints.end(),
+                        [&](const Constraint& constraint) {
+              return constraint.kind == ConstraintKind::Callable &&
+                  constraint.subject == callee &&
+                  constraint.arguments == arguments;
+            }))
+          returned_callable = std::make_pair(callee, arguments);
+      }
+      if (local_result_type)
+        summary.result_type = local_result_type;
+      else if (open_generic(result)) {
         auto source = parameter_variables.find(result.substr(9));
         if (source == parameter_variables.end()) {
           complete = false;
@@ -3451,6 +4194,9 @@ class Checker {
       } else if (starts_with(result, "_element:")) {
         summary.result_type = element_relation(result.substr(9));
         if (!summary.result_type) complete = false;
+      } else if (starts_with(result, "_specialized_result:")) {
+        if (returned_callable)
+          summary.result_type = bound();
       } else if (!contains_internal_placeholder(result)) {
         summary.result_type = type_term(result);
       }
@@ -3603,6 +4349,12 @@ class Checker {
             else if (starts_with(constraint.result, "element:")) {
               requirement.result = element_relation(constraint.result);
               if (!requirement.result) complete = false;
+            } else if (constraint.kind == ConstraintKind::Callable &&
+                       constraint.result == "callable-result") {
+              requirement.result = returned_callable &&
+                  returned_callable->first == constraint.subject &&
+                  returned_callable->second == constraint.arguments
+                  ? summary.result_type : bound();
             } else if (!contains_internal_placeholder(constraint.result)) {
               requirement.result = type_term(constraint.result);
             }
@@ -3651,7 +4403,8 @@ class Checker {
           member.result = summary.result_type;
         summary.member_requirements.push_back(std::move(member));
       }
-      summary.complete = complete && summary.result_type &&
+      const bool dense_ordinals = moss::close_open_summary_ordinals(summary);
+      summary.complete = complete && dense_ordinals && summary.result_type &&
           std::all_of(summary.parameter_types.begin(),
                       summary.parameter_types.end(),
                       [](const moss::TypeRef& type) { return type != nullptr; });
@@ -3772,17 +4525,53 @@ class Checker {
   void check_map_key_type(int line, const string& key) const {
     string type = canonical_type_name(key);
     if (contains_internal_placeholder(type)) return;
+    if (type == "float" && staged_abi_v10()) {
+      staged_scalar_map_keys_.insert(type);
+      return;
+    }
     if (contains_float_type(type))
       err(line, "Float Map keys require the canonical MossMap<K,V> under key-protocol-v1, which is not yet available; Float isequal/hash/less are available as functions", "FLOAT_MAP_KEY_UNSUPPORTED");
-    if (contains_record_type(type))
+    if (contains_record_type(type)) {
+      if (staged_abi_v10()) {
+        // A Vector or other composite containing a nominal has no provider-
+        // owned proof for the composite itself. Reject at this key use while
+        // its source line is still available, before the deferred proof pass.
+        if (!objects_.count(type))
+          err(line, "Map key '" + type + "' has no concrete nominal key proof",
+              "KEY_PROOF_INVALID");
+        staged_nominal_map_keys_.insert(type);
+        return;
+      }
       err(line, "record Map keys ('" + type + "') require the canonical MossMap<K,V> and a key-protocol-v1 key proof (isequal/hash), which are not yet available",
           "RECORD_MAP_KEY_UNSUPPORTED");
+    }
     if (contains_enum_type(type))
       err(line, "enum values cannot be Map keys; enum equality and hashing are unsupported",
           "ENUM_MAP_KEY_UNSUPPORTED");
+    if (staged_abi_v10() &&
+        (type == "int" || type == "bool" || type == "char" || type == "string"))
+      staged_scalar_map_keys_.insert(type);
     if (builtin_equality_type(type) && !hashable_map_key_type(type))
       err(line, "'" + type + "' cannot be a Map key; keys are Int, Bool, Char, String, or a Vector/Queue of those until MossMap<K,V> lands",
           "MAP_KEY_TYPE_UNSUPPORTED");
+  }
+
+  void check_set_key_type(int line, const string& key) const {
+    const string type = canonical_type_name(key);
+    if (contains_internal_placeholder(type)) return;
+    if (type == "float") {
+      staged_set_keys_.insert(type);
+      return;  // Float's total key protocol is staged in v10.
+    }
+    if (contains_record_type(type)) {
+      staged_set_keys_.insert(type);
+      check_map_key_type(line, type);  // The same nominal proof is used by Map.
+      return;
+    }
+    if (type != "int" && type != "bool" && type != "char" && type != "string")
+      err(line, "'" + type + "' cannot be a Set key; use a scalar or proven nominal key",
+          "SET_KEY_TYPE_UNSUPPORTED");
+    staged_set_keys_.insert(type);
   }
 
 
@@ -3796,6 +4585,9 @@ class Checker {
     for_each_subterm(term, [&](const moss::TypeRef& nested) {
       if (applied_builtin(nested, {"map"}) && nested->type_args.size() == 2)
         check_map_key_type(line, nested->type_args[0]->to_canonical_string());
+      if (staged_abi_v10() && applied_builtin(nested, {"set"}) &&
+          nested->type_args.size() == 1)
+        check_set_key_type(line, nested->type_args[0]->to_canonical_string());
     });
   }
 
@@ -3822,6 +4614,72 @@ class Checker {
       for (const auto& handler : domain.handlers)
         for (const auto& parameter : handler.params)
           check_declared_map_keys(handler.source_file, handler.line, parameter.type);
+    }
+  }
+
+  // Admission happens during type checking, before the effect fixed point.
+  // Resolve exact nominal methods only after their inferred effects settle;
+  // a malformed or impure proof never reaches the Rust backend.
+  void validate_staged_nominal_map_key_proofs() const {
+    auto bind_operation = [&](const string& family, const string& operation,
+                              const string& key, const string& proof_id) {
+      p_.key_operation_specialization_ids[
+          family + "." + operation + "|" + key] =
+          keyed_operation_specialization_id(key, proof_id, family, operation);
+    };
+    for (const auto& key : staged_nominal_map_keys_) {
+      auto owner = objects_.find(key);
+      if (owner == objects_.end())
+        err(0, "Map key '" + key + "' has no concrete nominal key proof",
+            "KEY_PROOF_INVALID");
+      const ObjectType& object = *owner->second;
+      if (!nominal_key_methods(object, key))
+        err(object.source_file, object.line,
+            "Map key '" + key + "' requires pure READ isequal(" + key +
+            ") -> Bool and hash() -> Int methods",
+            "KEY_PROOF_INVALID");
+      for (const auto& function : p_.functions)
+        if (nominal_key_free_target(function, key))
+          err(function.source_file, function.line,
+              "free key callable '" + function.name +
+              "' conflicts with the provider-owned canonical proof for '" +
+              key + "'", "KEY_PROOF_COHERENCE_MISMATCH");
+      const auto declared = p_.type_context->find(key);
+      if (!declared)
+        err(object.source_file, object.line,
+            "Map/Set key '" + key + "' has no canonical type identity",
+            "KEY_PROOF_INVALID");
+      string proof_id;
+      if (p_.external_modules.count(module_name_from_symbol(key))) {
+        auto imported = p_.imported_key_proof_ids.find(declared->id);
+        if (imported == p_.imported_key_proof_ids.end())
+          err(object.source_file, object.line,
+              "Map/Set key '" + key + "' has no sealed ABI-v10 key proof",
+              "KEY_PROOF_INVALID");
+        proof_id = imported->second;
+      } else {
+        proof_id = nominal_key_proof_record(object, declared->id).id;
+      }
+      p_.key_proof_ids_by_type[key] = proof_id;
+      for (const char* operation : {"insert", "get", "delete", "keys", "values"})
+        bind_operation("map", operation, key, proof_id);
+    }
+    for (const auto& key : staged_scalar_map_keys_) {
+      const string proof_id = abi_v10::key_proof_record(
+          abi_v10::make_builtin_key_proof(key)).id;
+      p_.key_proof_ids_by_type[key] = proof_id;
+      for (const char* operation : {"insert", "get", "delete", "keys", "values"})
+        bind_operation("map", operation, key, proof_id);
+    }
+    for (const auto& key : staged_set_keys_) {
+      auto proof = p_.key_proof_ids_by_type.find(key);
+      if (proof == p_.key_proof_ids_by_type.end()) {
+        const string id = abi_v10::key_proof_record(
+            abi_v10::make_builtin_key_proof(key)).id;
+        proof = p_.key_proof_ids_by_type.emplace(key, id).first;
+      }
+      for (const char* operation : {"insert", "contains", "values"})
+        bind_operation("set", operation, key, proof->second);
     }
   }
 
@@ -4002,6 +4860,7 @@ class Checker {
     if (domains_.count(type) || objects_.count(type) || enums_.count(type)) return true;
     if (traits_.count(type)) return true;
     if ((*parsed)->kind == moss::TypeKind::Builtin) {
+      if ((*parsed)->name == "set" && !staged_abi_v10()) return false;
       const auto arity = moss::Type::collection_arity((*parsed)->name);
       if (arity) {
         const auto& args = (*parsed)->type_args;
@@ -4014,9 +4873,16 @@ class Checker {
         if ((*parsed)->name == "map") {
           const string key = args.front()->to_canonical_string();
           if (contains_enum_type(key) || contains_float_type(key) ||
-              contains_record_type(key) ||
+              (contains_record_type(key) && !staged_abi_v10()) ||
               (builtin_equality_type(key) && !hashable_map_key_type(key)))
             return false;
+        }
+        if ((*parsed)->name == "set") {
+          const string key = args.front()->to_canonical_string();
+          if (contains_enum_type(key)) return false;
+          if (key != "int" && key != "float" && key != "bool" &&
+              key != "char" && key != "string" &&
+              !contains_record_type(key)) return false;
         }
         return true;
       }
@@ -4255,8 +5121,18 @@ class Checker {
     string ib, ii;
     if (parse_index(e, ib, ii)) {
       for (const auto& p : function.params) if (trim(ib) == p.name && p.type.empty()) {
-        if (!has_structural_requirement(function, p.name, ConstraintKind::Indexable, "index"))
-          function.constraints.push_back({ConstraintKind::Indexable, p.name, "index", ""});
+        auto existing = std::find_if(function.constraints.begin(),
+            function.constraints.end(), [&](const Constraint& requirement) {
+              return requirement.kind == ConstraintKind::Indexable &&
+                  requirement.subject == p.name && requirement.detail == "index" &&
+                  requirement.arguments == vector<string>{trim(ii)};
+            });
+        if (existing == function.constraints.end()) {
+          Constraint requirement{ConstraintKind::Indexable, p.name, "index", ""};
+          requirement.arguments = {trim(ii)};
+          requirement.arity = 1;
+          function.constraints.push_back(std::move(requirement));
+        }
         function.generic = true;
         function.static_dispatch = true;
       }
@@ -4289,11 +5165,20 @@ class Checker {
     if (parse_simple_call(e, callee, call_args) && !member_call) {
       for (const auto& parameter : function.params)
         if (callee == parameter.name && parameter.type.empty()) {
-          if (!has_structural_requirement(function, parameter.name,
-                                          ConstraintKind::Callable,
-                                          "static callable"))
-            function.constraints.push_back({ConstraintKind::Callable,
-                                            parameter.name, "static callable", ""});
+          auto existing = std::find_if(function.constraints.begin(),
+              function.constraints.end(), [&](const Constraint& requirement) {
+                return requirement.kind == ConstraintKind::Callable &&
+                    requirement.subject == parameter.name &&
+                    requirement.detail == "static callable" &&
+                    requirement.arguments == call_args;
+              });
+          if (existing == function.constraints.end()) {
+            Constraint requirement{ConstraintKind::Callable, parameter.name,
+                                   "static callable", "callable-result"};
+            requirement.arguments = call_args;
+            requirement.arity = call_args.size();
+            function.constraints.push_back(std::move(requirement));
+          }
           function.generic = true;
           function.static_dispatch = true;
         }
@@ -6221,6 +7106,8 @@ class Checker {
     }
     if (callee == "Map" && args.empty())
       return BuiltinCallSemantics{"map", false};
+    if (staged_abi_v10() && callee == "Set" && args.empty())
+      return BuiltinCallSemantics{"set", false};
     if (callee == "Queue" && args.empty())
       return BuiltinCallSemantics{"queue", false};
     if (callee == "range" && (args.size() == 2 || args.size() == 3))
@@ -6688,6 +7575,18 @@ class Checker {
     if (object_call) return object_call;
     string method_receiver, method_name; vector<string> method_args;
     if (parse_member_call(e, method_receiver, method_name, method_args)) {
+      if (staged_abi_v10() && trim(method_receiver) == "Map()" &&
+          method_name == "get" && method_args.size() == 2) {
+        auto key = inferred_expr_type(method_args[0], env);
+        auto value = inferred_expr_type(method_args[1], env);
+        if (key && value) {
+          auto key_term = parsed_type(*key);
+          auto value_term = parsed_type(*value);
+          if (key_term && value_term && key_term->is_closed() &&
+              value_term->is_closed())
+            return inferred_leaf(*value);
+        }
+      }
       string canon_recv = canonical_type_name(method_receiver);
       if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" ||
           canon_recv == "string" || canon_recv == "bool") {
@@ -7378,7 +8277,9 @@ class Checker {
     }
 
     if (statement.kind == Stmt::Kind::Call && !statement.b.empty() &&
-        statement.b == "push" && statement.args.size() == 1) {
+        (statement.b == "push" ||
+         (staged_abi_v10() && statement.b == "insert")) &&
+        statement.args.size() == 1) {
       auto container = env.find(statement.a);
       auto retained = current_body_types_
           ? current_body_types_->resolved_local(statement.a) : nullptr;
@@ -7389,9 +8290,11 @@ class Checker {
           for (auto& prior : const_cast<vector<Stmt>&>(statements))
             if (prior.a == statement.a &&
                 (prior.b == "[]" || prior.b == "Queue()" ||
+                 (staged_abi_v10() && prior.b == "Set()") ||
                  parse_vector_literal(prior.b).has_value() ||
                  starts_with(prior.semantic_type, "vector") ||
-                 starts_with(prior.semantic_type, "queue"))) {
+                 starts_with(prior.semantic_type, "queue") ||
+                 (staged_abi_v10() && starts_with(prior.semantic_type, "set")))) {
               prior.semantic_type = canonical_type_name(retained);
               if (!join_context.empty())
                 prior.semantic_types_by_context[join_context] = canonical_type_name(retained);
@@ -7407,9 +8310,11 @@ class Checker {
             for (auto& prior : const_cast<vector<Stmt>&>(statements)) {
               if (prior.a == statement.a &&
                   (prior.b == "[]" || prior.b == "Queue()" ||
+                   (staged_abi_v10() && prior.b == "Set()") ||
                    parse_vector_literal(prior.b).has_value() ||
                    starts_with(prior.semantic_type, "vector") ||
-                   starts_with(prior.semantic_type, "queue"))) {
+                   starts_with(prior.semantic_type, "queue") ||
+                   (staged_abi_v10() && starts_with(prior.semantic_type, "set")))) {
                 prior.semantic_type = *refined;
                 if (!join_context.empty())
                   prior.semantic_types_by_context[join_context] = *refined;
@@ -7808,6 +8713,26 @@ class Checker {
       auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
       return parsed ? freshen_open_type(*parsed) : nullptr;
     };
+    auto constrain_map_lookup = [&](int line, const string& expression) {
+      if (!staged_abi_v10()) return;
+      string receiver, method;
+      vector<string> arguments;
+      if (!parse_member_call(trim(expression), receiver, method, arguments) ||
+          (method != "get" && method != "delete") ||
+          arguments.size() != (method == "get" ? 2u : 3u)) return;
+      auto map = body_types.known_expression(receiver);
+      if (!map || map->kind != moss::TypeKind::Builtin ||
+          map->name != "map" || map->type_args.size() != 2) return;
+      auto key = term_for(arguments[0]);
+      auto value = term_for(arguments[1]);
+      if (key && !solver.unify(map->type_args[0], key))
+        err(line, "Map key conflicts with the binding's key type", "TYPE_MISMATCH");
+      if (value && !solver.unify(map->type_args[1], value))
+        err(line, "Map fallback conflicts with the binding's value type", "TYPE_MISMATCH");
+      auto resolved = solver.resolve(map);
+      if (resolved && resolved->is_closed() && simple_identifier(receiver))
+        scan[receiver] = resolved->to_canonical_string();
+    };
     auto require_type = [&](int line, const string& expression,
                             const string& expected, const string& context) {
       string callee;
@@ -8202,6 +9127,17 @@ class Checker {
         }
       }
       body_types.locals_at_statement.emplace(&statement, locals);
+      if (statement.kind == Stmt::Kind::Echo) {
+        for (const auto& argument : statement.args)
+          constrain_map_lookup(statement.line, argument);
+      } else if (statement.kind == Stmt::Kind::Let ||
+                 statement.kind == Stmt::Kind::Var ||
+                 statement.kind == Stmt::Kind::Assign) {
+        constrain_map_lookup(statement.line, statement.b);
+      } else if (statement.kind == Stmt::Kind::Reply ||
+                 statement.kind == Stmt::Kind::Return) {
+        constrain_map_lookup(statement.line, statement.a);
+      }
       if (statement.kind == Stmt::Kind::For) {
         moss::TypeRef loop_term;
         string callee;
@@ -8333,7 +9269,9 @@ class Checker {
         scan[statement.a] = prior_open || !term->is_closed()
             ? solver.resolve(locals.at(statement.a))->to_canonical_string()
             : inferred.value_or(term->to_canonical_string());
-      } else if (statement.kind == Stmt::Kind::Call && statement.b == "push" &&
+      } else if (statement.kind == Stmt::Kind::Call &&
+                 (statement.b == "push" ||
+                  (staged_abi_v10() && statement.b == "insert")) &&
                  statement.args.size() == 1) {
         auto local = locals.find(statement.a);
         if (local == locals.end()) continue;
@@ -8341,7 +9279,8 @@ class Checker {
         if (!argument) continue;
         auto current = solver.resolve(local->second);
         if (current->kind != moss::TypeKind::Builtin ||
-            (current->name != "vector" && current->name != "queue") ||
+            (current->name != "vector" && current->name != "queue" &&
+             !(staged_abi_v10() && current->name == "set")) ||
             current->type_args.size() != 1) continue;
         // Report a conflict only for a resolved value. A domain handle cannot
         // enter a collection at all and the closed-handle rule says so
@@ -8352,7 +9291,7 @@ class Checker {
             !contains_internal_placeholder(argument->to_canonical_string());
         if (resolved_argument &&
             !solver.unify(current->type_args.front(), argument))
-          err(statement.line, "push argument conflicts with the element type of '" +
+          err(statement.line, statement.b + " argument conflicts with the element type of '" +
               statement.a + "'", "TYPE_MISMATCH");
         scan[statement.a] = solver.resolve(local->second)->to_canonical_string();
       } else if (statement.kind == Stmt::Kind::Assign &&
@@ -8379,9 +9318,19 @@ class Checker {
           compatible = solver.unify(container->type_args[0], value);
         } else if (container->name == "map" &&
                  container->type_args.size() == 2) {
-          expected_element = describe(container->type_args[1]);
-          compatible = (!key || solver.unify(container->type_args[0], key)) &&
-              solver.unify(container->type_args[1], value);
+          if (staged_abi_v10()) {
+            const string expected_key = describe(container->type_args[0]);
+            const string actual_key = key ? describe(key) : string();
+            if (key && !solver.unify(container->type_args[0], key))
+              err(statement.line, "indexed assignment requires key of type '" +
+                  expected_key + "', found '" + actual_key + "'", "TYPE_MISMATCH");
+            expected_element = describe(container->type_args[1]);
+            compatible = solver.unify(container->type_args[1], value);
+          } else {
+            expected_element = describe(container->type_args[1]);
+            compatible = (!key || solver.unify(container->type_args[0], key)) &&
+                solver.unify(container->type_args[1], value);
+          }
         }
         if (!compatible && !expected_element.empty() && !actual_value.empty())
           err(statement.line, "indexed assignment requires value of type '" +
@@ -9064,6 +10013,14 @@ class Checker {
               field.type = incoming;
               field.inferred = true;
             } else if (!field.inferred) {
+              // A bare Map() initializer supplies the collection head, while
+              // handler use may still close its key and value slots.
+              if (staged_abi_v10() && field.init == "Map()" &&
+                  canonical_type_name(field.type) == "map" &&
+                  starts_with(incoming, "map[") && ends_with(incoming, "]")) {
+                field.type = incoming;
+                continue;
+              }
               auto expected = moss::Type::parse_canonical(
                   canonical_type_name(field.type));
               const bool compatible = retained && expected && (*expected)->is_closed()
@@ -9330,7 +10287,22 @@ class Checker {
             for (const auto& p : function.params) if (trim(base) == p.name) {
               function.generic = true;
               function.static_dispatch = true;
-              function.constraints.push_back({ConstraintKind::Indexable, p.name, "index", "element:" + p.name});
+              auto existing = std::find_if(function.constraints.begin(),
+                  function.constraints.end(), [&](const Constraint& requirement) {
+                    return requirement.kind == ConstraintKind::Indexable &&
+                        requirement.subject == p.name && requirement.detail == "index" &&
+                        requirement.arguments == vector<string>{trim(idx)};
+                  });
+              if (existing == function.constraints.end()) {
+                Constraint requirement{ConstraintKind::Indexable, p.name,
+                                       "index", "element:" + p.name};
+                requirement.arguments = {trim(idx)};
+                requirement.arity = 1;
+                function.constraints.push_back(std::move(requirement));
+              } else {
+                existing->result = "element:" + p.name;
+                existing->arity = 1;
+              }
               function.generic_results["element:" + p.name] = p.name;
             }
           }
@@ -13766,10 +14738,15 @@ class Checker {
                     }))
       return summary;
 
+    // Legacy specialization parameter spellings may still be `callable:name`.
+    // Resolve them through the same exact callable IDs used by the key before
+    // checking the concrete callback's effects.
+    const auto resolved_arguments = semantic_specialization_arguments(
+        function.line, argument_types);
     TypeEnv env;
     std::set<string> parameters;
     for (size_t i = 0; i < argument_types.size(); ++i) {
-      env[function.params[i].name] = canonical_type_name(argument_types[i]);
+      env[function.params[i].name] = canonical_type_name(resolved_arguments[i]);
       parameters.insert(function.params[i].name);
     }
     ObservableEffects concrete = observable_body_effects(
@@ -14279,16 +15256,30 @@ class Checker {
             env, domain_fields, implicit_object, parameters,
             proven_indices, root_ingress));
       }
-      auto function = functions_.find(callee);
-      if (function != functions_.end()) {
+      const Function* selected = nullptr;
+      auto bound = env.find(callee);
+      if (bound != env.end() && callable_identity(bound->second)) {
+        string identity = canonical_type_name(bound->second);
+        if (starts_with(identity, "callable:")) identity = identity.substr(9);
+        if (starts_with(identity, "callable-v1:"))
+          selected = find_function_by_callable_id(identity);
+      } else if (bound != env.end() && open_generic(bound->second)) {
+        effects.unresolved = true;
+        return effects;
+      }
+      if (!selected) {
+        auto function = functions_.find(callee);
+        if (function != functions_.end()) selected = function->second;
+      }
+      if (selected) {
         vector<string> argument_types;
         for (const auto& argument : arguments_call)
           argument_types.push_back(
               inferred_expr_type(argument, env).value_or(""));
         effects.merge(concrete_function_observable_effects(
-            *function->second, argument_types));
+            *selected, argument_types));
         auto parameter_effects = concrete_function_effects(
-            *function->second, argument_types);
+            *selected, argument_types);
         for (size_t index = 0;
              index < arguments_call.size() && index < parameter_effects.size();
              ++index)
@@ -16859,7 +17850,7 @@ class Checker {
               " with ambiguous required method '" + requirement.detail + "'");
         requirement_err(line, function, requirement, prefix +
             " missing required method '" + requirement.detail + "'",
-            compiled_interface_file(function.source_file) ? "METHOD_NOT_FOUND" : "");
+            "METHOD_NOT_FOUND");
       }
       string result = builtin.value_or(fileio_builtin.value_or(
           method ? method->return_type.value_or("unit") : "unit"));
@@ -17587,6 +18578,32 @@ class Checker {
       const FnWrapper* operator->() const { return this; }
       FnWrapper* operator->() { return this; }
     } function{function_target};
+    // Legacy generic IR in a sealed provider may describe a callable
+    // parameter without a complete effect-polymorphic open summary. Never
+    // let that fallback turn an absent ABI-v10 contract into an importable
+    // source-free call, even if the provider binary predates the export guard.
+    if (staged_abi_v10() && compiled_interface_file(function->second->source_file) &&
+        std::any_of(function->second->constraints.begin(),
+                    function->second->constraints.end(),
+                    [](const Constraint& constraint) {
+          return constraint.kind == ConstraintKind::Callable;
+        }) &&
+        (!function->second->open_summary ||
+         !function->second->open_summary->complete ||
+         function->second->observable_effects.unresolved)) {
+      CompileError error(line,
+          "source-free callable '" + name +
+              "' has no checked callback effects in its ABI-v10 open summary",
+          "SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED");
+      error.source_file = current_source_file_;
+      error.teaching.related.push_back({
+          function->second->provider_origin_file.empty()
+              ? function->second->source_file
+              : function->second->provider_origin_file,
+          function->second->line, 1,
+          "provider callable requires an effect-polymorphic summary"});
+      throw error;
+    }
     // Ordinary function arguments are positional in Moss v0.1; labels are
     // only part of constructor, enum-case, route, and builtin (e.g. 'by:')
     // surfaces, which are handled before this point.
@@ -18909,13 +19926,34 @@ class Checker {
       }
       if (check_fileio_operation(line, receiver, handler, args, env)) return;
       if (auto receiver_type = inferred_expr_type(receiver, env)) {
+        if (staged_abi_v10() && *receiver_type == "map" &&
+            trim(receiver) == "Map()" && handler == "get" &&
+            args.size() == 2) {
+          auto key = inferred_expr_type(args[0], env);
+          auto value = inferred_expr_type(args[1], env);
+          if (key && value) {
+            auto key_term = parsed_type(*key);
+            auto value_term = parsed_type(*value);
+            if (key_term && value_term && key_term->is_closed() &&
+                value_term->is_closed())
+              *receiver_type = "map[" + canonical_type_name(*key) + "," +
+                  canonical_type_name(*value) + "]";
+          }
+        }
         // A bare Map has no key or value type. In particular, a default passed
         // to get cannot silently turn an untyped temporary into a Rust
         // HashMap::get call with the wrong arity.
         if (*receiver_type == "map" && handler == "get")
           err(line, "Map.get requires a concrete key and value type before use",
               "TYPE_AMBIGUOUS_OPEN_RESULT");
+        if (staged_abi_v10() && *receiver_type == "set" &&
+            (handler == "contains" || handler == "values"))
+          err(line, "Set operation requires a concrete key type before use",
+              "TYPE_AMBIGUOUS_OPEN_RESULT");
         if (builtin_receiver_family(*receiver_type)) {
+          if (staged_abi_v10() && trim(receiver) == "Map()" &&
+              starts_with(*receiver_type, "map["))
+            check_map_key_type(line, map_key_value_types(*receiver_type)->first);
           check_expression(line, receiver, env);
           for (const auto& arg : args) check_expression(line, arg, env);
           vector<string> argument_types;
@@ -18923,6 +19961,10 @@ class Checker {
             argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
           const auto* operation = validate_builtin_argument_types(
               line, *receiver_type, handler, argument_types);
+          auto set_type = parsed_type(*receiver_type);
+          if (staged_abi_v10() && applied_builtin(set_type, {"set"}) &&
+              set_type->type_args.size() == 1)
+            check_set_key_type(line, set_type->type_args[0]->to_canonical_string());
           for (size_t index = 0; index < args.size(); ++index)
             if (operation->argument_effects[index] == Effect::Write &&
                 !storage_location(args[index], env))
@@ -19192,7 +20234,8 @@ class Checker {
               "INVALID_TYPED_VECTOR_CONSTRUCTOR");
         return;
       }
-      if (callee == "Map" || callee == "Queue") {
+      if (callee == "Map" || callee == "Queue" ||
+          (staged_abi_v10() && callee == "Set")) {
         if (!args.empty())
           err(line, "built-in " + callee + " constructor takes no arguments; use " +
               callee + "()", "BUILTIN_COLLECTION_CONSTRUCTOR_ARGUMENTS");
@@ -21457,6 +22500,17 @@ class Generator {
     o << "// Generated by Moss v0.1. Do not edit by hand.\n";
     o << "// Synchronous domain calls enter compiler-planned handler-level 2PL.\n";
     for (const auto& domain : p_.domains) o << "// Moss backend plan: " << domain.name << " = Handler2PL.\n";
+    if (staged_abi_v10())
+      for (const auto& operation : p_.key_operation_specialization_ids) {
+        const auto separator = operation.first.rfind('|');
+        synchronization_require(separator != string::npos &&
+            p_.key_proof_ids_by_type.count(operation.first.substr(separator + 1)),
+            "key operation specialization is missing its proof");
+        o << "// Moss key operation specialization: " << operation.first
+          << " proof="
+          << p_.key_proof_ids_by_type.at(operation.first.substr(separator + 1))
+          << " id=" << operation.second << "\n";
+      }
     o << "#![allow(non_snake_case)]\n#![allow(non_camel_case_types)]\n#![allow(dead_code)]\n";
     o << "#![allow(unused_imports)]\n#![allow(unused_mut)]\n#![allow(unused_variables)]\n#![allow(unused_assignments)]\n\n";
     for (const auto& dependency : rust_dependencies_) {
@@ -22168,6 +23222,28 @@ class Generator {
     return std::nullopt;
   }
 
+  bool shared_nominal_map_key(const string& key) const {
+    const string concrete = canonical_type_name(key);
+    return staged_abi_v10() &&
+        p_.key_proof_ids_by_type.count(concrete) &&
+        (objects_.count(concrete) || is_nominal_instance_type(concrete));
+  }
+
+  bool shared_protocol_map_key(const string& key) const {
+    const string concrete = canonical_type_name(key);
+    return shared_nominal_map_key(concrete) ||
+        (staged_abi_v10() && concrete == "float" &&
+         p_.key_proof_ids_by_type.count(concrete));
+  }
+
+  std::optional<string> shared_protocol_map_key_from_type(
+      const string& type) const {
+    auto elements = map_key_value_types(canonical_type_name(type));
+    if (elements && shared_protocol_map_key(elements->first))
+      return elements->first;
+    return std::nullopt;
+  }
+
   string rust_type(const string& t) const {
     string x = canonical_type_name(t);
     if (x == "int") return "i64";
@@ -22203,8 +23279,13 @@ class Generator {
       return "std::vec::Vec<" + rust_type(x.substr(4, x.size()-5)) + ">";
     if (starts_with(x, "vector[") && ends_with(x, "]")) return "std::vec::Vec<" + rust_type(x.substr(7, x.size()-8)) + ">";
     if (starts_with(x, "queue[") && ends_with(x, "]")) return "std::collections::VecDeque<" + rust_type(x.substr(6, x.size()-7)) + ">";
+    if (staged_abi_v10() && starts_with(x, "set[") && ends_with(x, "]"))
+      return "moss_runtime::MossSet<" + rust_type(x.substr(4, x.size()-5)) + ">";
     if (starts_with(x, "map[") && ends_with(x, "]")) {
       auto ps = split_top_level(x.substr(4, x.size()-5), ',');
+      if (shared_protocol_map_key(ps[0]))
+        return "moss_runtime::MossMap<" + rust_type(ps[0]) + ", " +
+               rust_type(ps[1]) + ">";
       return "std::collections::HashMap<" + rust_type(ps[0]) + ", " + rust_type(ps[1]) + ">";
     }
     if (starts_with(x, "option[") && ends_with(x, "]"))
@@ -22409,6 +23490,17 @@ class Generator {
     return "moss_string_hash(&(" + a + "))";
   }
 
+  string shared_map_hash(const string& key_type, const string& key) const {
+    return shared_nominal_map_key(key_type) ? "(" + key + ").hash()"
+        : scalar_protocol_rust("hash", key_type, key);
+  }
+
+  string shared_map_equal(const string& key_type, const string& a,
+                          const string& b) const {
+    return shared_nominal_map_key(key_type) ? "(" + a + ").isequal(" + b + ")"
+        : scalar_protocol_rust("isequal", key_type, "*" + a, "*" + b);
+  }
+
   // Rust comparator for a key-protocol-v1 total-order scalar. Float uses
   // the Julia-like total order; the other scalars' Rust Ord already matches
   // Moss `less` (Bool false < true, String by UTF-8 bytes = code points).
@@ -22493,6 +23585,13 @@ class Generator {
     string storage = write_call_place(base, d, locals, types);
     string key = expr(index, d, locals, types);
     auto type = generated_expr_type(base, types);
+    if (type && shared_protocol_map_key_from_type(*type)) {
+      const string key_type = *shared_protocol_map_key_from_type(*type);
+      return "*({ let __moss_key = " + key + "; (" + storage +
+          ").get_mut_with(" + shared_map_hash(key_type, "__moss_key") +
+          ", &__moss_key, |a, b| " + shared_map_equal(key_type, "a", "b") +
+          ").expect(\"Moss missing map key\") })";
+    }
     if (type && (starts_with(canonical_type_name(*type), "map[") || canonical_type_name(*type) == "map"))
       return "*(" + storage + ").get_mut(&(" + key + ")).expect(\"Moss missing map key\")";
     if (type && (canonical_type_name(*type) == "RangeBatch" || canonical_type_name(*type) == "Range"))
@@ -22508,6 +23607,13 @@ class Generator {
     string storage = read_call_place(base, d, locals, types);
     string key = expr(index, d, locals, types);
     auto type = generated_expr_type(base, types);
+    if (type && shared_protocol_map_key_from_type(*type)) {
+      const string key_type = *shared_protocol_map_key_from_type(*type);
+      return "*({ let __moss_key = " + key + "; (" + storage +
+          ").get_with(" + shared_map_hash(key_type, "__moss_key") +
+          ", &__moss_key, |a, b| " + shared_map_equal(key_type, "a", "b") +
+          ").expect(\"Moss missing map key\") })";
+    }
     if (type && (starts_with(canonical_type_name(*type), "map[") || canonical_type_name(*type) == "map"))
       return "*(" + storage + ").get(&(" + key + ")).expect(\"Moss missing map key\")";
     if (type && (canonical_type_name(*type) == "RangeBatch" || canonical_type_name(*type) == "Range"))
@@ -22897,6 +24003,9 @@ class Generator {
     string receiver, method_name;
     vector<string> method_args;
     if (parse_member_call(value, receiver, method_name, method_args)) {
+      if (staged_abi_v10() && trim(receiver) == "Map()" &&
+          method_name == "get" && method_args.size() == 2)
+        return generated_expr_type(method_args[1], types);
       string canon_recv = canonical_type_name(receiver);
       if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" ||
           canon_recv == "string" || canon_recv == "bool") {
@@ -24259,7 +25368,11 @@ class Generator {
       string element = trim(typed_vector->substr(7, typed_vector->size() - 8));
       return "std::vec::Vec::<" + rust_type(element) + ">::new()";
     }
-    if (e == "Map()") return "std::collections::HashMap::new()";
+    if (e == "Map()") return staged_abi_v10()
+        ? "std::default::Default::default()"
+        : "std::collections::HashMap::new()";
+    if (staged_abi_v10() && e == "Set()")
+      return "moss_runtime::MossSet::new()";
     if (e == "Queue()") return "std::collections::VecDeque::new()";
     {
       string callee;
@@ -24502,6 +25615,18 @@ class Generator {
     string ib, ii;
     if (parse_index(e, ib, ii)) {
       auto base_type = generated_expr_type(ib, types);
+      if (base_type && shared_protocol_map_key_from_type(*base_type)) {
+        const string key_type = *shared_protocol_map_key_from_type(*base_type);
+        const string key = expr(ii, d, locals, types);
+        const string borrowed = borrowed_function_parameters_.count(trim(ii))
+            ? "__moss_key" : "&__moss_key";
+        return "{ let __moss_key = " + key + "; (" +
+            expr(ib, d, locals, types) +
+            ").get_with(" + shared_map_hash(key_type, "__moss_key") +
+            ", " + borrowed + ", |a, b| " +
+            shared_map_equal(key_type, "a", "b") +
+            ").expect(\"Moss missing map key\").clone() }";
+      }
       if (base_type && canonical_type_name(*base_type) == "RangeBatch")
         return "(" + expr(ib, d, locals, types) + ").get(" +
             expr(ii, d, locals, types) + ")";
@@ -24574,6 +25699,17 @@ class Generator {
       string receiver_expression = method_receiver_place(member_receiver, member_name, member_arguments, d, locals, types);
       if (starts_with(receiver_expression, "*")) receiver_expression = "(" + receiver_expression + ")";
       auto receiver_type = generated_expr_type(member_receiver, types);
+      if (staged_abi_v10() && trim(member_receiver) == "Map()" &&
+          member_name == "get" &&
+          member_arguments.size() == 2) {
+        auto key = generated_expr_type(member_arguments[0], types);
+        auto value = generated_expr_type(member_arguments[1], types);
+        if (key && value) {
+          receiver_type = "map[" + canonical_type_name(*key) + "," +
+              canonical_type_name(*value) + "]";
+          receiver_expression = "<" + rust_type(*receiver_type) + ">::new()";
+        }
+      }
       if (receiver_type) {
         string concrete = canonical_type_name(*receiver_type);
         if (concrete == "FileIO" && member_name == "read" &&
@@ -24854,11 +25990,55 @@ class Generator {
           if (member_name == "hash" && member_arguments.empty())
             return scalar_protocol_rust("hash", concrete, source);
         }
+        if (staged_abi_v10() && starts_with(concrete, "set[") &&
+            ends_with(concrete, "]")) {
+          const string key_type = concrete.substr(4, concrete.size() - 5);
+          const bool nominal = shared_nominal_map_key(key_type);
+          const string equal = nominal ? "a.isequal(b)"
+              : strip_redundant_outer_parentheses(
+                    scalar_protocol_rust("isequal", key_type, "*a", "*b"));
+          if (member_name == "values" && member_arguments.empty())
+            return "(" + receiver_expression + ").keys()";
+          if ((member_name == "insert" || member_name == "contains") &&
+              member_arguments.size() == 1) {
+            string key = expr(member_arguments[0], d, locals, types);
+            if (nominal && is_object_view(member_arguments[0], d, locals, types))
+              key = "(" + key + ").__moss_value()";
+            const string borrowed = borrowed_function_parameters_.count(
+                trim(member_arguments[0])) ? "__moss_key" : "&__moss_key";
+            const string hash = nominal ? "__moss_key.hash()"
+                : strip_redundant_outer_parentheses(
+                      scalar_protocol_rust("hash", key_type, "__moss_key"));
+            if (member_name == "insert")
+              return "{ let __moss_key = " + key + "; let __moss_hash = " +
+                  hash + "; (" + write_call_place(member_receiver, d, locals, types) +
+                  ").insert_with(__moss_hash, __moss_key, |a, b| " + equal + "); }";
+            return "{ let __moss_key = " + key + "; (" + receiver_expression +
+                ").contains_with(" + hash + ", " + borrowed +
+                ", |a, b| " + equal + ") }";
+          }
+        }
         if (auto map_types = map_key_value_types(concrete)) {
+          const bool shared_key = shared_protocol_map_key(map_types->first);
           if (member_name == "delete" && member_arguments.size() == 3) {
             string key = expr(member_arguments[0], d, locals, types);
             string fallback = expr(member_arguments[1], d, locals, types);
             string flag = write_call_place(member_arguments[2], d, locals, types);
+            if (shared_key) {
+              const bool view_key = is_object_view(member_arguments[0], d, locals, types);
+              if (view_key) key = "(" + key + ").__moss_value()";
+              const string borrowed = !view_key && borrowed_function_parameters_.count(
+                  trim(member_arguments[0])) ? "__moss_key" : "&__moss_key";
+              return "{ let __moss_key = " + key +
+                  "; let __moss_fallback = " + fallback +
+                  "; let __moss_removed = (" + receiver_expression +
+                  ").remove_with(" + shared_map_hash(map_types->first, "__moss_key") +
+                  ", " + borrowed + ", |a, b| " +
+                  shared_map_equal(map_types->first, "a", "b") +
+                  "); let _ = &( " + flag +
+                  " ); " + flag + " = __moss_removed.is_some(); " +
+                  "__moss_removed.unwrap_or(__moss_fallback) }";
+            }
             string lookup = map_types->first == "string" ? "__moss_key.as_str()" : "&__moss_key";
             return "{ let __moss_key = " + key + "; let __moss_fallback = " + fallback +
                 "; let __moss_removed = (" + receiver_expression + ").remove(" + lookup +
@@ -24867,6 +26047,20 @@ class Generator {
           }
           if (member_name == "get" && member_arguments.size() == 2) {
             string key = expr(member_arguments[0], d, locals, types);
+            if (shared_key) {
+              string fallback = expr(member_arguments[1], d, locals, types);
+              const bool view_key = is_object_view(member_arguments[0], d, locals, types);
+              if (view_key) key = "(" + key + ").__moss_value()";
+              const string borrowed = !view_key && borrowed_function_parameters_.count(
+                  trim(member_arguments[0])) ? "__moss_key" : "&__moss_key";
+              return "{ let __moss_key = " + key +
+                  "; (" + receiver_expression +
+                  ").get_with(" + shared_map_hash(map_types->first, "__moss_key") +
+                  ", " + borrowed + ", |a, b| " +
+                  shared_map_equal(map_types->first, "a", "b") +
+                  ").cloned().unwrap_or(" +
+                  fallback + ") }";
+            }
             if (map_types->first == "string")
               key = "(" + key + ").as_str()";
             else
@@ -24877,12 +26071,16 @@ class Generator {
             return "(" + receiver_expression + ").get(" + key + ").cloned().unwrap_or(" + fallback + ")";
           }
           if (member_name == "keys" && member_arguments.empty()) {
+            if (shared_key)
+              return "(" + receiver_expression + ").keys()";
             if (map_types->first == "float")
               return "(" + receiver_expression + ").keys().map(|k| k.0).collect::<std::vec::Vec<_>>()";
             return "(" + receiver_expression + ").keys().cloned().collect::<std::vec::Vec<_>>()";
           }
           if (member_name == "values" && member_arguments.empty())
-            return "(" + receiver_expression + ").values().cloned().collect::<std::vec::Vec<_>>()";
+            return shared_key
+                ? "(" + receiver_expression + ").values()"
+                : "(" + receiver_expression + ").values().cloned().collect::<std::vec::Vec<_>>()";
         }
         if (collection_named(parsed_type(concrete), {"queue"}))
           member_name = member_name == "push" ? "push_back" : member_name == "pop" ? "pop_front" : member_name;
@@ -27275,7 +28473,29 @@ class Generator {
             backend_comment(o, (base + level) * 4,
                             "LOCAL assignment: introduce an inferred Moss binding");
             string annotation;
-            if (starts_with(statement_type, "map[") && ends_with(statement_type, "]")) annotation = rust_type(statement_type);
+            string inferred_map_type;
+            if (staged_abi_v10() && s.b == "Map()" &&
+                !starts_with(statement_type, "map[")) {
+              // A bare Map constructor has no intrinsic element types. The
+              // checked body may close it at a later indexed assignment;
+              // preserve that evidence before emitting its Rust declaration.
+              for (size_t next = i + 1; next < ss.size(); ++next) {
+                string map_base, index_expression;
+                if (ss[next].kind != Stmt::Kind::Assign ||
+                    !parse_index(ss[next].a, map_base, index_expression) ||
+                    map_base != s.a) continue;
+                auto key_type = generated_expr_type(index_expression, &types);
+                auto value_type = generated_expr_type(ss[next].b, &types);
+                if (key_type && value_type && shared_protocol_map_key(*key_type)) {
+                  inferred_map_type = "map[" + canonical_type_name(*key_type) +
+                      "," + canonical_type_name(*value_type) + "]";
+                  break;
+                }
+              }
+            }
+            if (starts_with(statement_type, "map[") && ends_with(statement_type, "]"))
+              annotation = rust_type(statement_type);
+            else if (!inferred_map_type.empty()) annotation = rust_type(inferred_map_type);
             else if (canonical_type_name(statement_type) == "float" ||
                      canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float")
               annotation = "f64";
@@ -27288,10 +28508,14 @@ class Generator {
               << ";\n";
             locals.insert(s.a);
             auto generated_type = generated_expr_type(s.b, &types);
-            types[s.a] = generated_type ? *generated_type
+            types[s.a] = !inferred_map_type.empty() ? inferred_map_type
+                : (staged_abi_v10() && generated_type && *generated_type == "set" &&
+                   starts_with(statement_type, "set[")) ? statement_type
+                : generated_type ? *generated_type
                 : !statement_type.empty() ? statement_type
                 : s.b == "Map()" ? "map"
                 : s.b == "Queue()" ? "queue"
+                : staged_abi_v10() && s.b == "Set()" ? "set"
                 : (s.b.size() && s.b.front() == '[' ? "vector" : "_value");
             auto source_binding = domain_instance_bindings_.find(trim(s.b));
             if (source_binding != domain_instance_bindings_.end())
@@ -27311,17 +28535,29 @@ class Generator {
               string key = mi.size() >= 2 && mi.front() == '"' && mi.back() == '"'
                   ? "MossStr::from(" + mi + ")" : expr(mi, d, locals, &types);
               auto key_type = generated_expr_type(mi, &types);
-              if (key_type && !copy_type(*key_type) &&
+              if (key_type && shared_nominal_map_key(*key_type) &&
+                  is_object_view(mi, d, locals, &types))
+                key = "(" + key + ").__moss_value()";
+              else if (key_type && !copy_type(*key_type) &&
                   !(mi.size() >= 2 && mi.front() == '"' && mi.back() == '"'))
                 key = "(" + key + ").clone()";
               string inserted = expr(s.b, d, locals, &types,
                   statement_functional_pipeline_id(s, functional_context, 0));
               if (borrowed_function_parameters_.count(trim(s.b)))
                 inserted = "(" + inserted + ").clone()";
-              o << indent(level) << "(" << write_call_place(mb, d, locals, &types)
-                << ").insert(" << key << ", "
-                << inserted
-                << ");\n";
+              if (auto shared_key =
+                      shared_protocol_map_key_from_type(*map_assignment_type)) {
+                o << indent(level) << "{ let __moss_key = " << key
+                  << "; (" << write_call_place(mb, d, locals, &types)
+                  << ").insert_with(" << shared_map_hash(*shared_key, "__moss_key")
+                  << ", __moss_key, " << inserted << ", |a, b| "
+                  << shared_map_equal(*shared_key, "a", "b") << "); }\n";
+              } else {
+                o << indent(level) << "(" << write_call_place(mb, d, locals, &types)
+                  << ").insert(" << key << ", "
+                  << inserted
+                  << ");\n";
+              }
             }
             else if (is_object_view(s.a, d, locals, &types))
               o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
@@ -27416,6 +28652,9 @@ class Generator {
                starts_with(statement_receiver_type, "vector[") ||
                statement_receiver_type == "queue" ||
                starts_with(statement_receiver_type, "queue[") ||
+               (staged_abi_v10() &&
+                (statement_receiver_type == "set" ||
+                 starts_with(statement_receiver_type, "set["))) ||
                (s.b == "delete" && (statement_receiver_type == "map" ||
                                     starts_with(statement_receiver_type, "map["))))) {
             string call = s.a + "." + s.b + "(";
@@ -27698,6 +28937,23 @@ class Generator {
           } else {
             auto source = types.find(trim(s.b));
             bool domain_capability = source != types.end() && domains_.count(source->second);
+            string inferred_map_type;
+            if (staged_abi_v10() && s.b == "Map()" &&
+                !starts_with(statement_type, "map[")) {
+              for (size_t next = i + 1; next < ss.size(); ++next) {
+                string map_base, index_expression;
+                if (ss[next].kind != Stmt::Kind::Assign ||
+                    !parse_index(ss[next].a, map_base, index_expression) ||
+                    map_base != s.a) continue;
+                auto key_type = generated_expr_type(index_expression, &types);
+                auto value_type = generated_expr_type(ss[next].b, &types);
+                if (key_type && value_type && shared_protocol_map_key(*key_type)) {
+                  inferred_map_type = "map[" + canonical_type_name(*key_type) +
+                      "," + canonical_type_name(*value_type) + "]";
+                  break;
+                }
+              }
+            }
             o << indent(level);
             if (!joined_assignment)
               o << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "");
@@ -27706,6 +28962,10 @@ class Generator {
                 (canonical_type_name(statement_type) == "float" ||
                  canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float"))
               o << ": f64";
+            else if (!joined_assignment && !domain_capability &&
+                     (starts_with(statement_type, "map[") || !inferred_map_type.empty()))
+              o << ": " << rust_type(!inferred_map_type.empty()
+                  ? inferred_map_type : statement_type);
             o << " = "
               << expr(s.b, d, locals, &types,
                       statement_functional_pipeline_id(
@@ -27714,8 +28974,11 @@ class Generator {
             o << ";\n";
             auto generated_type = generated_expr_type(s.b, &types);
             bool unspecialized_collection = generated_type &&
-                (*generated_type == "vector" || *generated_type == "queue" || *generated_type == "map");
+                (*generated_type == "vector" || *generated_type == "queue" ||
+                 *generated_type == "map" ||
+                 (staged_abi_v10() && *generated_type == "set"));
             types[s.a] = domain_capability ? source->second
+                : !inferred_map_type.empty() ? inferred_map_type
                 : (unspecialized_collection && !statement_type.empty() && statement_type != *generated_type)
                     ? statement_type
                 : generated_type ? *generated_type
@@ -31471,6 +32734,60 @@ static void write_typed_semantic_projection_json(std::ostream& out,
     }
     out << "]";
   };
+  auto write_requirements = [&](const auto& requirements) {
+    out << "[";
+    for (size_t index = 0; index < requirements.size(); ++index) {
+      if (index) out << ",";
+      const auto& requirement = requirements[index];
+      const char* kind = requirement.kind == moss::RequirementKind::SameType ? "same_type" :
+          requirement.kind == moss::RequirementKind::Field ? "field" :
+          requirement.kind == moss::RequirementKind::Method ? "method" :
+          requirement.kind == moss::RequirementKind::Operator ? "operator" :
+          requirement.kind == moss::RequirementKind::Index ? "index" :
+          requirement.kind == moss::RequirementKind::Iterate ? "iterate" :
+          requirement.kind == moss::RequirementKind::Callable ? "callable" : "map_key";
+      out << "{\"requirement_id\": ";
+      write_debug_json_string(out, requirement.id);
+      out << ", \"kind\": ";
+      write_debug_json_string(out, kind);
+      out << ", \"target_id\": ";
+      write_debug_json_string(out, requirement.target_id);
+      out << ", \"subject\": ";
+      write_typed_open_type_json(out, requirement.subject);
+      out << ", \"argument_types\": [";
+      for (size_t argument = 0; argument < requirement.arguments.size(); ++argument) {
+        if (argument) out << ",";
+        write_typed_open_type_json(out, requirement.arguments[argument]);
+      }
+      out << "], \"result\": ";
+      if (requirement.result)
+        write_typed_open_type_json(out, *requirement.result);
+      else out << "null";
+      out << ", \"subject_access\": ";
+      write_access(requirement.access);
+      out << ", \"argument_access\": [";
+      for (size_t argument = 0; argument < requirement.argument_access.size(); ++argument) {
+        if (argument) out << ",";
+        write_access(requirement.argument_access[argument]);
+      }
+      out << "], \"parent_requirement_id\": ";
+      if (requirement.parent_requirement_id)
+        write_debug_json_string(out, *requirement.parent_requirement_id);
+      else out << "null";
+      out << ", \"origin\": {\"module_id\": ";
+      write_debug_json_string(out, requirement.origin.module_id);
+      out << ", \"source_file\": ";
+      write_debug_json_string(out, requirement.origin.source_file);
+      out << ", \"line\": " << requirement.origin.line;
+      out << ", \"column\": " << requirement.origin.column;
+      out << ", \"enclosing_callable\": ";
+      write_debug_json_string(out, requirement.origin.enclosing_callable);
+      out << ", \"call_expression_id\": ";
+      write_debug_json_string(out, requirement.origin.call_expression_id);
+      out << "}}";
+    }
+    out << "]";
+  };
   auto write_parameter_leaf_effects = [&](const auto& effects) {
     if (!effects) { out << "null"; return; }
     out << "{";
@@ -31524,6 +32841,8 @@ static void write_typed_semantic_projection_json(std::ostream& out,
     out << "], \"result_type\": ";
     write_typed_open_type_json(out, summary.result_type);
     out << ", \"requirement_count\": " << summary.requirements.size();
+    out << ", \"requirements\": ";
+    write_requirements(summary.requirements);
     out << ", \"member_requirement_count\": "
         << summary.member_requirements.size();
     out << ", \"member_requirements\": ";
@@ -31541,6 +32860,13 @@ static void write_typed_semantic_projection_json(std::ostream& out,
     out << "}";
   }
   out << "]";
+  out << ", \"source_requirements\": ";
+  {
+    vector<moss::Requirement> source_requirements;
+    for (const auto& entry : projection.source_requirements)
+      source_requirements.push_back(entry.second);
+    write_requirements(source_requirements);
+  }
   out << ", \"source_member_requirements\": ";
   {
     vector<moss::MemberDispatchRequirement> source_requirements;
@@ -31606,6 +32932,8 @@ static void write_typed_semantic_projection_json(std::ostream& out,
     out << ", \"exported\": " << (specialization.exported ? "true" : "false");
     out << ", \"parameter_leaf_effects\": ";
     write_parameter_leaf_effects(specialization.parameter_leaf_effects);
+    out << ", \"observable_effects\": ";
+    write_observable_effects_json(out, specialization.observable_effects);
     out << ", \"parameter_type_keys\": [";
     for (size_t index = 0; index < specialization.parameter_types.size(); ++index) {
       if (index) out << ",";
@@ -33411,10 +34739,17 @@ struct ParsedModuleUnit {
   string binary_contract_hash;
   string semantic_contract_hash;
   vector<abi_v10::Import> required_imports;
+  vector<abi_v10::Record> key_proof_records;
+  std::map<string, string> key_method_hashes;
   bool explicit_module = false;
   vector<std::pair<Program,string>> files;
   vector<ModuleImport> imports;
 };
+
+static void validate_imported_nominal_key_proofs(
+    const std::map<string, ParsedModuleUnit>& modules,
+    const std::set<string>& loaded_external_modules,
+    std::map<string, string>& proof_ids);
 
 // True when expression[begin, end) is the label of a named argument such as
 // `Table(row_count: n)`: preceded by `(` or `,` and followed by `:` or a
@@ -34309,6 +35644,20 @@ static void parse_generic_ir_line(const string& line, Function& function) {
       if (function.params.size() <= index) function.params.resize(index + 1);
       function.params[index] = {std::move(name), std::move(type)};
     }
+  } else if (record == "generic_entity_id") {
+    string identity;
+    if (input >> std::quoted(identity)) {
+      const size_t separator = identity.rfind('@');
+      if (separator != string::npos) {
+        int source_line = 0;
+        const char* first = identity.data() + separator + 1;
+        const char* last = identity.data() + identity.size();
+        auto parsed = std::from_chars(first, last, source_line);
+        if (parsed.ec == std::errc{} && parsed.ptr == last &&
+            source_line > 0 && function.line == 0)
+          function.line = source_line;
+      }
+    }
   } else if (record == "generic_constraint") {
     int kind = 0;
     string subject, detail, result;
@@ -34633,6 +35982,7 @@ static string verified_abi_v10_interface_records(
         read_text_file(rlib, "SOURCE_FREE_PROVIDER_ARTIFACT_MISSING"),
         tooling_name(file.stem().string()), parsed.digest);
     abi_v10::verify_canonical(text, parsed);
+    abi_v10::validate_complete_interface(parsed);
   } catch (const abi_v10::Error& error) {
     throw CompileError(0, error.what(), error.code);
   }
@@ -34647,9 +35997,14 @@ static string verified_abi_v10_interface_records(
   for (const auto& import : parsed.value.imports)
     records += "  " + import.module_id.substr(import.module_id.rfind("::") + 2) + "\n";
   records += "contract\n";
-  for (const auto& record : parsed.value.binary_contract) records += record.payload;
+  for (const auto& record : parsed.value.binary_contract)
+    if (record.payload.empty() || record.payload.front() != 1)
+      records += record.payload;
   records += "semantic_exports\n";
-  for (const auto& record : parsed.value.semantic_contract) records += record.payload;
+  for (const auto& record : parsed.value.semantic_contract) {
+    if (!record.payload.empty() && record.payload.front() == 1) continue;
+    records += record.payload;
+  }
   if (sealed) *sealed = parsed;
   return records;
 }
@@ -34741,6 +36096,9 @@ static ParsedModuleUnit load_module_interface(
     unit.binary_contract_hash = sealed.binary_hash;
     unit.semantic_contract_hash = sealed.semantic_hash;
     unit.required_imports = sealed.value.imports;
+    for (const auto& record : sealed.value.semantic_contract)
+      if (abi_v10::is_key_proof_payload(record.payload))
+        unit.key_proof_records.push_back(record);
   }
   unit.explicit_module = true;
   Program provider;
@@ -35635,6 +36993,16 @@ static ParsedModuleUnit load_module_interface(
                            "SOURCE_FREE_METHOD_CONTRACT_INVALID");
       method.receiver_effect = *receiver_effect;
       method.observable_effects = interface_effects(rest);
+      const string key_semantic_hash = interface_field(rest, "key_semantic_hash");
+      if (!key_semantic_hash.empty()) {
+        if (!abi_v10::hex_hash(key_semantic_hash) ||
+            (method.name != "isequal" && method.name != "hash") ||
+            !unit.key_method_hashes.emplace(
+                current_object->name + "." + method.name,
+                key_semantic_hash).second)
+          throw CompileError(0, "invalid ABI-v10 key method semantic hash",
+                             "KEY_PROOF_INVALID");
+      }
       if (method.observable_effects.unresolved)
         throw CompileError(0, "unresolved effects in ABI-v9 object method",
                            "SOURCE_FREE_METHOD_CONTRACT_INVALID");
@@ -35890,6 +37258,45 @@ static ParsedModuleUnit load_module_interface(
       function.generic_results[function.return_type->substr(9)] =
           function.return_type->substr(9);
   }
+  if (v10_interface) {
+    std::map<string, string> summaries;
+    std::map<string, string> bodies;
+    for (const auto& record : sealed.value.semantic_contract) {
+      if (!abi_v10::hex_hash(record.id) ||
+          abi_v10::is_key_proof_payload(record.payload)) continue;
+      auto summary = abi_v10::read_summary(record.payload);
+      summaries.emplace(summary.callable_id, record.payload);
+    }
+    for (const auto& record : sealed.value.private_semantic_dependencies)
+      if (abi_v10::hex_hash(record.id) &&
+          !record.payload.empty() && record.payload.front() == 1) {
+        auto summary = abi_v10::read_summary(record.payload);
+        if (!summaries.emplace(summary.callable_id, record.payload).second)
+          throw CompileError(0, "duplicate checked ABI-v10 callable summary",
+                             "SOURCE_FREE_SUMMARY_INVALID");
+      }
+    for (const auto& record : sealed.value.private_semantic_dependencies)
+      if (starts_with(record.id, "checked-body-v1:")) {
+        auto body = abi_v10::read_checked_body_record(record.payload);
+        bodies.emplace(body.callable_id, record.payload);
+      }
+    for (auto& function : provider.functions) {
+      const string id = "callable-v1:" + unit.module_identity +
+          ":fn:" + function.name;
+      auto body = bodies.find(id);
+      if (body == bodies.end()) continue;
+      auto summary = summaries.find(id);
+      if (summary == summaries.end())
+        throw CompileError(0, "checked ABI-v10 body has no callable summary",
+                           "SOURCE_FREE_SUMMARY_INVALID");
+      function.imported_checked_summary_payload = summary->second;
+      function.imported_checked_body_payload = body->second;
+      bodies.erase(body);
+    }
+    if (!bodies.empty())
+      throw CompileError(0, "checked ABI-v10 body has no imported callable",
+                         "SOURCE_FREE_SUMMARY_INVALID");
+  }
   unit.files.push_back({std::move(provider), file.string()});
   return unit;
 }
@@ -36141,6 +37548,9 @@ static CheckedProjectUnit check_project_sources(
         program.module_identities[entry.first] =
             source_module_identity(entry.second.files.front().second, entry.first);
     }
+    if (staged_abi_v10())
+      validate_imported_nominal_key_proofs(
+          modules, loaded_external_modules, program.imported_key_proof_ids);
     program.package_identities = true;
     if (!has_explicit_modules)
       program.module_identities[""] = moss::module_identity(manifest.name,
@@ -36682,6 +38092,10 @@ static Program module_program(const Program& whole, const string& module,
   result.module_name = module;
   result.explicit_module = true;
   result.module_identities = whole.module_identities;
+  result.imported_key_proof_ids = whole.imported_key_proof_ids;
+  result.key_proof_ids_by_type = whole.key_proof_ids_by_type;
+  result.key_operation_specialization_ids =
+      whole.key_operation_specialization_ids;
   result.type_context = whole.type_context;
   result.imports = whole.imports;
   string target_module = !root_module.empty() ? root_module : whole.main_module;
@@ -37332,6 +38746,474 @@ static vector<abi_v10::Record> abi_v10_declaration_records(const string& section
   return records;
 }
 
+static std::optional<abi_v10::WireType> abi_v10_checked_type(
+    const moss::TypeRef& type, std::uint32_t variable_count,
+    unsigned depth = 0) {
+  if (!type || depth >= 64) return std::nullopt;
+  abi_v10::WireType wire;
+  switch (type->kind) {
+    case moss::TypeKind::Primitive:
+      wire.kind = abi_v10::WireTypeKind::Primitive;
+      wire.identity = type->name;
+      break;
+    case moss::TypeKind::Builtin:
+      wire.kind = abi_v10::WireTypeKind::Builtin;
+      wire.identity = type->name;
+      for (const auto& argument : type->type_args) {
+        auto nested = abi_v10_checked_type(argument, variable_count, depth + 1);
+        if (!nested) return std::nullopt;
+        wire.arguments.push_back(*nested);
+      }
+      break;
+    case moss::TypeKind::NominalInstance:
+      if (!type->declaration ||
+          type->declaration->kind != moss::DeclarationKind::Record)
+        return std::nullopt;
+      wire.kind = abi_v10::WireTypeKind::Nominal;
+      wire.identity = type->declaration->id;
+      for (const auto& slot : type->declaration->fields) {
+        if (!slot.inferred) continue;
+        auto binding = std::find_if(type->field_substitutions.begin(),
+                                    type->field_substitutions.end(),
+            [&](const auto& field) { return field.first == slot.name; });
+        if (binding == type->field_substitutions.end()) return std::nullopt;
+        auto nested = abi_v10_checked_type(binding->second, variable_count,
+                                           depth + 1);
+        if (!nested) return std::nullopt;
+        wire.arguments.push_back(*nested);
+      }
+      if (wire.arguments.size() != type->field_substitutions.size())
+        return std::nullopt;
+      break;
+    case moss::TypeKind::Enum:
+    case moss::TypeKind::Domain:
+      if (!type->declaration) return std::nullopt;
+      wire.kind = type->kind == moss::TypeKind::Enum
+          ? abi_v10::WireTypeKind::Enum : abi_v10::WireTypeKind::Domain;
+      wire.identity = type->declaration->id;
+      break;
+    case moss::TypeKind::InferenceVar:
+      if (type->var_id.session_id || type->var_id.owner_id ||
+          type->var_id.ordinal >= variable_count) return std::nullopt;
+      wire.kind = abi_v10::WireTypeKind::BoundVar;
+      wire.ordinal = type->var_id.ordinal;
+      break;
+    case moss::TypeKind::Unit:
+      wire.kind = abi_v10::WireTypeKind::Unit;
+      break;
+    case moss::TypeKind::TraitConstraint:
+      return std::nullopt;
+  }
+  try {
+    (void)abi_v10::type_bytes(wire, variable_count);
+  } catch (const abi_v10::Error&) {
+    return std::nullopt;
+  }
+  return wire;
+}
+
+static abi_v10::Access abi_v10_checked_access(moss::AccessMode access) {
+  switch (access) {
+    case moss::AccessMode::Read: return abi_v10::Access::Read;
+    case moss::AccessMode::Write: return abi_v10::Access::Write;
+    case moss::AccessMode::Consume: return abi_v10::Access::Consume;
+  }
+  throw abi_v10::Error("SOURCE_FREE_SUMMARY_INVALID",
+                      "ABI-v10 checked parameter access is unknown");
+}
+
+static bool abi_v10_effects_pure(const ObservableEffects& effects) {
+  return !effects.local_capture_read && !effects.local_mutation &&
+      !effects.domain_read && !effects.domain_write && !effects.message &&
+      !effects.external_io && !effects.fileio && !effects.fileio_unknown &&
+      !effects.may_panic && effects.raise_set.empty() &&
+      !effects.may_diverge && !effects.unresolved;
+}
+
+static abi_v10::SourceProvenance abi_v10_checked_provenance(
+    const string& module_id, const string& declaration_id,
+    const string& source_file, int line) {
+  const string display = std::filesystem::path(source_file).filename().string();
+  abi_v10::SourceProvenance provenance;
+  provenance.module_id = module_id;
+  provenance.declaration_id = declaration_id;
+  provenance.source_file_display = display;
+  provenance.logical_source_id = abi_v10::hash(
+      "moss-abi-v10-logical-source", module_id + "\n" + display);
+  provenance.start_line = static_cast<std::uint32_t>(std::max(line, 1));
+  provenance.end_line = provenance.start_line;
+  provenance.start_column = 1;
+  provenance.end_column = 1;
+  provenance.provenance_id = abi_v10::hash(
+      "moss-abi-v10-provenance",
+      declaration_id + "\n" + provenance.logical_source_id + "\n" +
+          std::to_string(provenance.start_line));
+  return provenance;
+}
+
+// First live producer of the rich ABI-v10 subset: a checked two-statement
+// exported constructor with no callable dependency. The private-chain form
+// remains guarded until source-free import can decode its body records.
+static void append_abi_v10_direct_checked_records(
+    abi_v10::Interface& value, const Program& program,
+    const string& module) {
+  std::set<string> emitted_templates;
+  for (const auto& function : program.functions) {
+    if (!function.exported || !function.static_dispatch ||
+        !belongs_to_module(function.name, module) ||
+        std::filesystem::path(function.source_file).extension() == ".mossi" ||
+        !function.open_summary || !function.open_summary->complete ||
+        !function.open_summary->requirements.empty() ||
+        !function.open_summary->member_requirements.empty() ||
+        !abi_v10_effects_pure(function.open_summary->observable_effects))
+      continue;
+    auto checked = checked_private_chain_body(program, function);
+    if (!checked || checked->dependencies.size() != 1 ||
+        checked->dependencies.front().kind !=
+            SemanticDependency::Kind::NominalType)
+      continue;
+    const auto& summary_facts = *function.open_summary;
+    const string& template_id = checked->dependencies.front().target_id;
+    auto object = std::find_if(program.objects.begin(), program.objects.end(),
+        [&](const ObjectType& candidate) {
+      if (!candidate.exported ||
+          !belongs_to_module(candidate.name, module) ||
+          !program.type_context) return false;
+      auto candidate_declaration = program.type_context->find(candidate.name);
+      return candidate_declaration &&
+          candidate_declaration->id == template_id;
+    });
+    if (object == program.objects.end() || !object->methods.empty() ||
+        !program.type_context) continue;
+    auto declaration = program.type_context->find(object->name);
+    if (!declaration || declaration->id != template_id ||
+        declaration->fields.size() != object->fields.size()) continue;
+    const auto object_provenance = abi_v10_checked_provenance(
+        value.module_id, template_id, object->source_file, object->line);
+    abi_v10::NominalTemplate tmpl;
+    tmpl.template_id = template_id;
+    tmpl.module_id = value.module_id;
+    tmpl.declaration_name = declaration->declaration_name;
+    tmpl.provenance_id = object_provenance.provenance_id;
+    for (std::size_t index = 0; index < declaration->fields.size(); ++index) {
+      const auto& slot = declaration->fields[index];
+      if (!slot.inferred || slot.name != object->fields[index].name) {
+        tmpl.fields.clear();
+        break;
+      }
+      abi_v10::WireType bound;
+      bound.kind = abi_v10::WireTypeKind::BoundVar;
+      bound.ordinal = tmpl.variable_count++;
+      tmpl.fields.push_back({slot.name, bound, true,
+                             object_provenance.provenance_id});
+    }
+    if (tmpl.fields.size() != declaration->fields.size()) continue;
+    abi_v10::WireWriter representation;
+    representation.string(tmpl.template_id);
+    representation.number(tmpl.variable_count);
+    for (const auto& field : tmpl.fields) {
+      representation.string(field.name);
+      representation.byte(field.exported ? 1 : 0);
+      representation.string(abi_v10::type_bytes(field.type,
+                                                 tmpl.variable_count));
+    }
+    tmpl.representation_hash = abi_v10::hash(
+        "moss-abi-v10-nominal-representation", representation.finish());
+
+    abi_v10::Summary summary;
+    summary.callable_id = function.semantic_callable_id;
+    summary.variable_count = summary_facts.bound_variable_count;
+    if (summary_facts.parameter_types.size() != function.params.size() ||
+        summary_facts.parameter_access.size() != function.params.size())
+      continue;
+    bool valid_types = true;
+    for (std::size_t index = 0; index < function.params.size(); ++index) {
+      auto parameter = abi_v10_checked_type(
+          summary_facts.parameter_types[index], summary.variable_count);
+      if (!parameter) { valid_types = false; break; }
+      summary.parameters.push_back(*parameter);
+      summary.parameter_access.push_back(abi_v10_checked_access(
+          summary_facts.parameter_access[index]));
+    }
+    auto result = abi_v10_checked_type(summary_facts.result_type,
+                                       summary.variable_count);
+    if (!valid_types || !result) continue;
+    summary.result = *result;
+    summary.body_semantic_hash = checked->semantic_hash;
+    const auto function_provenance = abi_v10_checked_provenance(
+        value.module_id, summary.callable_id,
+        function.source_file, function.line);
+    summary.provenance_id = function_provenance.provenance_id;
+
+    abi_v10::CheckedBodyRecord body;
+    body.callable_id = summary.callable_id;
+    body.semantic_hash = checked->semantic_hash;
+    body.checked_ir_bytes = checked_ir::encode_checked_body_v1(
+        checked->statements);
+    body.dependencies.push_back({
+        abi_v10::CheckedBodyRecord::Dependency::Kind::NominalType,
+        template_id, tmpl.representation_hash});
+    if (emitted_templates.insert(template_id).second) {
+      value.binary_contract.push_back(abi_v10::template_record(tmpl));
+      value.provenance.push_back(
+          abi_v10::provenance_record(object_provenance));
+    }
+    value.semantic_contract.push_back(abi_v10::summary_record(summary));
+    value.private_semantic_dependencies.push_back(
+        abi_v10::checked_body_record(body));
+    value.provenance.push_back(
+        abi_v10::provenance_record(function_provenance));
+  }
+}
+
+// Close the checked H3 private-helper graph into one provider interface.
+// Public and private summaries occupy their distinct ABI-v10 sections; every
+// callable and nominal edge carries the callee body/representation hash.
+static void append_abi_v10_private_chain_records(
+    abi_v10::Interface& value, const Program& program, const string& module) {
+  std::map<string, const Function*> selected;
+  std::map<string, CheckedPrivateChainBody> checked_bodies;
+  auto find_callable = [&](const string& id) -> const Function* {
+    auto found = std::find_if(program.functions.begin(), program.functions.end(),
+        [&](const Function& candidate) {
+      return candidate.semantic_callable_id == id &&
+          belongs_to_module(candidate.name, module) &&
+          std::filesystem::path(candidate.source_file).extension() != ".mossi";
+    });
+    return found == program.functions.end() ? nullptr : &*found;
+  };
+  std::set<string> visiting;
+  std::function<void(const Function&)> visit = [&](const Function& function) {
+    const string& id = function.semantic_callable_id;
+    if (selected.count(id)) return;
+    if (!visiting.insert(id).second)
+      throw ProjectError("SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+                         "checked ABI-v10 callable dependency is cyclic");
+    if (!function.static_dispatch || !function.open_summary ||
+        !function.open_summary->complete ||
+        !function.open_summary->requirements.empty() ||
+        !function.open_summary->member_requirements.empty() ||
+        !abi_v10_effects_pure(function.open_summary->observable_effects))
+      throw ProjectError("SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+                         "private checked ABI-v10 callable has incomplete type or effect facts");
+    auto body = checked_private_chain_body(program, function);
+    if (!body)
+      throw ProjectError("SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+                         "private checked ABI-v10 callable has no canonical body IR");
+    std::set<string> callable_edges;
+    for (const auto& dependency : body->dependencies)
+      if (dependency.kind == SemanticDependency::Kind::Callable) {
+        callable_edges.insert(dependency.target_id);
+        const Function* callee = find_callable(dependency.target_id);
+        if (!callee)
+          throw ProjectError("SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
+                             "checked ABI-v10 body names an unresolved private callable");
+        visit(*callee);
+      }
+    const std::set<string> summary_edges(
+        function.open_summary->semantic_dependencies.begin(),
+        function.open_summary->semantic_dependencies.end());
+    std::set<string> checked_call_edges;
+    for (const auto& edge : program.semantic_call_edges) {
+      if (edge.source != "fn:" + function.name ||
+          !starts_with(edge.target, "fn:")) continue;
+      const string callee_name = edge.target.substr(3);
+      auto callee = std::find_if(program.functions.begin(),
+          program.functions.end(), [&](const Function& candidate) {
+        return candidate.name == callee_name &&
+            belongs_to_module(candidate.name, module);
+      });
+      if (callee != program.functions.end())
+        checked_call_edges.insert(callee->semantic_callable_id);
+    }
+    if (callable_edges != summary_edges ||
+        callable_edges != checked_call_edges)
+      throw ProjectError("SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
+                         "checked ABI-v10 body, summary, and checked call edges disagree");
+    checked_bodies.emplace(id, std::move(*body));
+    selected.emplace(id, &function);
+    visiting.erase(id);
+  };
+  for (const auto& function : program.functions) {
+    if (!function.exported || !function.static_dispatch ||
+        !belongs_to_module(function.name, module) ||
+        std::filesystem::path(function.source_file).extension() == ".mossi")
+      continue;
+    auto body = checked_private_chain_body(program, function);
+    if (!body || !std::any_of(body->dependencies.begin(),
+                             body->dependencies.end(),
+        [](const SemanticDependency& dep) {
+      return dep.kind == SemanticDependency::Kind::Callable;
+    })) continue;
+    visit(function);
+  }
+  // The checker may lift its provisional private-chain guard only for a
+  // chain that this producer actually emitted. In particular, an omitted
+  // call dependency must not leave a legacy generic_stmt-only fallback.
+  for (const auto& exported : program.functions) {
+    if (!exported.exported || !exported.static_dispatch ||
+        !belongs_to_module(exported.name, module) ||
+        std::filesystem::path(exported.source_file).extension() == ".mossi")
+      continue;
+    std::set<string> reached;
+    std::vector<const Function*> pending{&exported};
+    bool reaches_private = false;
+    bool multi_statement = false;
+    while (!pending.empty()) {
+      const Function* current = pending.back();
+      pending.pop_back();
+      if (!reached.insert(current->semantic_callable_id).second) continue;
+      reaches_private |= !current->exported;
+      multi_statement |= current->body.size() > 1;
+      for (const auto& edge : program.semantic_call_edges) {
+        if (edge.source != "fn:" + current->name ||
+            !starts_with(edge.target, "fn:")) continue;
+        const string name = edge.target.substr(3);
+        auto callee = std::find_if(program.functions.begin(),
+            program.functions.end(), [&](const Function& candidate) {
+          return candidate.name == name &&
+              belongs_to_module(candidate.name, module);
+        });
+        if (callee != program.functions.end()) pending.push_back(&*callee);
+      }
+    }
+    if (reaches_private && multi_statement &&
+        !selected.count(exported.semantic_callable_id))
+      throw ProjectError("SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+                         "private multi-statement chain has no emitted checked ABI-v10 closure");
+  }
+  if (selected.empty()) return;
+
+  std::map<string, string> representation_hashes;
+  for (const auto& record : value.binary_contract)
+    if (abi_v10::nominal_template_id_valid(record.id) &&
+        !record.payload.empty() && record.payload.front() == 1) {
+      auto tmpl = abi_v10::read_template(record.payload);
+      representation_hashes.emplace(tmpl.template_id,
+                                    tmpl.representation_hash);
+    }
+  auto ensure_template = [&](const string& template_id) -> string {
+    auto existing = representation_hashes.find(template_id);
+    if (existing != representation_hashes.end()) return existing->second;
+    if (!program.type_context)
+      throw ProjectError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                         "checked ABI-v10 nominal has no TypeContext");
+    auto object = std::find_if(program.objects.begin(), program.objects.end(),
+        [&](const ObjectType& candidate) {
+      auto declaration = program.type_context->find(candidate.name);
+      return candidate.exported && belongs_to_module(candidate.name, module) &&
+          declaration && declaration->id == template_id;
+    });
+    if (object == program.objects.end() || !object->methods.empty())
+      throw ProjectError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                         "checked ABI-v10 nominal template is not exported");
+    auto declaration = program.type_context->find(object->name);
+    if (!declaration || declaration->fields.size() != object->fields.size())
+      throw ProjectError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                         "checked ABI-v10 nominal fields are incomplete");
+    auto provenance = abi_v10_checked_provenance(
+        value.module_id, template_id, object->source_file, object->line);
+    abi_v10::NominalTemplate tmpl;
+    tmpl.template_id = template_id;
+    tmpl.module_id = value.module_id;
+    tmpl.declaration_name = declaration->declaration_name;
+    tmpl.provenance_id = provenance.provenance_id;
+    for (std::size_t index = 0; index < declaration->fields.size(); ++index) {
+      const auto& slot = declaration->fields[index];
+      if (!slot.inferred || slot.name != object->fields[index].name)
+        throw ProjectError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                           "checked ABI-v10 nominal field slot is unsupported");
+      abi_v10::WireType variable;
+      variable.kind = abi_v10::WireTypeKind::BoundVar;
+      variable.ordinal = tmpl.variable_count++;
+      tmpl.fields.push_back({slot.name, variable, true,
+                             provenance.provenance_id});
+    }
+    abi_v10::WireWriter representation;
+    representation.string(tmpl.template_id);
+    representation.number(tmpl.variable_count);
+    for (const auto& field : tmpl.fields) {
+      representation.string(field.name);
+      representation.byte(field.exported ? 1 : 0);
+      representation.string(abi_v10::type_bytes(field.type,
+                                                 tmpl.variable_count));
+    }
+    tmpl.representation_hash = abi_v10::hash(
+        "moss-abi-v10-nominal-representation", representation.finish());
+    representation_hashes.emplace(template_id, tmpl.representation_hash);
+    value.binary_contract.push_back(abi_v10::template_record(tmpl));
+    value.provenance.push_back(abi_v10::provenance_record(provenance));
+    return tmpl.representation_hash;
+  };
+
+  for (const auto& entry : selected) {
+    const string& id = entry.first;
+    const Function& function = *entry.second;
+    const auto& facts = *function.open_summary;
+    const auto& checked = checked_bodies.at(id);
+    if (facts.parameter_types.size() != function.params.size() ||
+        facts.parameter_access.size() != function.params.size())
+      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+                         "checked ABI-v10 callable parameter facts are incomplete");
+    abi_v10::Summary summary;
+    summary.callable_id = id;
+    summary.variable_count = facts.bound_variable_count;
+    for (std::size_t index = 0; index < facts.parameter_types.size(); ++index) {
+      auto parameter = abi_v10_checked_type(
+          facts.parameter_types[index], summary.variable_count);
+      if (!parameter)
+        throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+                           "checked ABI-v10 parameter TypeRef is unresolved");
+      summary.parameters.push_back(*parameter);
+      summary.parameter_access.push_back(
+          abi_v10_checked_access(facts.parameter_access[index]));
+    }
+    auto result = abi_v10_checked_type(facts.result_type,
+                                       summary.variable_count);
+    if (!result)
+      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+                         "checked ABI-v10 result TypeRef is unresolved");
+    summary.result = *result;
+    summary.body_semantic_hash = checked.semantic_hash;
+    auto provenance = abi_v10_checked_provenance(
+        value.module_id, id, function.source_file, function.line);
+    summary.provenance_id = provenance.provenance_id;
+    abi_v10::CheckedBodyRecord body;
+    body.callable_id = id;
+    body.semantic_hash = checked.semantic_hash;
+    body.checked_ir_bytes = checked_ir::encode_checked_body_v1(
+        checked.statements);
+    for (const auto& dependency : checked.dependencies) {
+      if (dependency.kind == SemanticDependency::Kind::Callable) {
+        const auto callee = checked_bodies.find(dependency.target_id);
+        if (callee == checked_bodies.end())
+          throw ProjectError("SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
+                             "checked ABI-v10 callable dependency has no body hash");
+        const string& hash = callee->second.semantic_hash;
+        summary.dependencies.push_back({dependency.target_id, hash});
+        body.dependencies.push_back({
+            abi_v10::CheckedBodyRecord::Dependency::Kind::Callable,
+            dependency.target_id, hash});
+      } else if (dependency.kind == SemanticDependency::Kind::NominalType) {
+        body.dependencies.push_back({
+            abi_v10::CheckedBodyRecord::Dependency::Kind::NominalType,
+            dependency.target_id, ensure_template(dependency.target_id)});
+      } else {
+        throw ProjectError("SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
+                           "checked ABI-v10 body has unsupported dependency kind");
+      }
+    }
+    if (function.exported)
+      value.semantic_contract.push_back(abi_v10::summary_record(summary));
+    else
+      value.private_semantic_dependencies.push_back(
+          abi_v10::summary_record(summary));
+    value.private_semantic_dependencies.push_back(
+        abi_v10::checked_body_record(body));
+    value.provenance.push_back(abi_v10::provenance_record(provenance));
+  }
+}
+
 static string abi_v10_module_id(const ProjectManifest& manifest,
                                 const string& module) {
   return "module-v1:" + manifest.name + "@" + manifest.version + "::" + module;
@@ -37351,6 +39233,120 @@ static string exported_declaration_identity(const Program& program,
                          "' has no interned declaration identity");
 }
 
+static string nominal_key_method_semantic_hash(const Method& method) {
+  std::ostringstream body;
+  body << std::quoted(method.name) << " "
+       << std::quoted(method.return_type.value_or("unit")) << " "
+       << ownership_effect_name(method.receiver_effect) << " "
+       << interface_effects_text(method.observable_effects);
+  for (size_t index = 0; index < method.params.size(); ++index)
+    body << " " << std::quoted(method.params[index].type) << " "
+         << ownership_effect_name(method.parameter_effects.at(index));
+  for (const auto& statement : method.body)
+    body << "\n" << static_cast<int>(statement.kind) << " "
+         << std::quoted(statement.text) << " " << std::quoted(statement.a)
+         << " " << std::quoted(statement.b);
+  if (method.result_expression)
+    body << "\nresult " << std::quoted(*method.result_expression);
+  return abi_v10::hash("moss-abi-v10-key-method", body.str());
+}
+
+static string nominal_key_callable_id(const string& declaration_id,
+                                      const string& method) {
+  return declaration_id + ":method:" + method;
+}
+
+static string nominal_key_specialization_key(const string& callable_id) {
+  return abi_v10::hash("moss-abi-v10-specialization", callable_id);
+}
+
+static abi_v10::Record nominal_key_proof_record(
+    const ObjectType& object, const string& declaration_id) {
+  const auto methods = nominal_key_methods(object, object.name);
+  synchronization_require(methods.has_value(),
+                          "nominal key proof requires checked pure READ methods");
+  abi_v10::KeyProof proof;
+  proof.key_type = {abi_v10::WireTypeKind::Nominal, declaration_id, {}, 0};
+  proof.equality_callable_id = nominal_key_callable_id(declaration_id, "isequal");
+  proof.equality_specialization_key =
+      nominal_key_specialization_key(proof.equality_callable_id);
+  proof.equality_semantic_hash =
+      nominal_key_method_semantic_hash(*methods->first);
+  proof.hash_callable_id = nominal_key_callable_id(declaration_id, "hash");
+  proof.hash_specialization_key =
+      nominal_key_specialization_key(proof.hash_callable_id);
+  proof.hash_semantic_hash = nominal_key_method_semantic_hash(*methods->second);
+  proof.law_contract_version = "key-laws-v1";
+  proof.provenance_id = declaration_id;
+  return abi_v10::key_proof_record(proof);
+}
+
+static void validate_imported_nominal_key_proofs(
+    const std::map<string, ParsedModuleUnit>& modules,
+    const std::set<string>& loaded_external_modules,
+    std::map<string, string>& proof_ids) {
+  vector<abi_v10::Record> all;
+  for (const auto& name : loaded_external_modules) {
+    const auto& records = modules.at(name).key_proof_records;
+    all.insert(all.end(), records.begin(), records.end());
+  }
+  try {
+    abi_v10::validate_key_proof_coherence(all);
+    for (const auto& record : all) {
+      const auto proof = abi_v10::read_key_proof(record);
+      if (proof.key_type.kind != abi_v10::WireTypeKind::Nominal ||
+          !proof.key_type.arguments.empty() || proof.key_type.ordinal != 0 ||
+          proof.law_contract_version != "key-laws-v1" ||
+          proof.provenance_id != proof.key_type.identity)
+        throw abi_v10::Error("KEY_PROOF_INVALID",
+                            "ABI-v10 nominal key proof has invalid type or provenance");
+      const string& declaration_id = proof.key_type.identity;
+      const ObjectType* owner = nullptr;
+      const ParsedModuleUnit* owner_unit = nullptr;
+      for (const auto& name : loaded_external_modules) {
+        const auto& unit = modules.at(name);
+        if (declaration_id.rfind("nominal-template-v1:" + unit.module_identity +
+                                 ":type:", 0) != 0) continue;
+        const string declared_name = declaration_id.substr(
+            ("nominal-template-v1:" + unit.module_identity + ":type:").size());
+        for (const auto& file : unit.files)
+          for (const auto& object : file.first.objects)
+            if (object.name == declared_name) {
+              owner = &object;
+              owner_unit = &unit;
+            }
+      }
+      if (!owner || !owner_unit)
+        throw abi_v10::Error("KEY_PROOF_INVALID",
+                            "ABI-v10 nominal key proof has no selected owner declaration");
+      const auto methods = nominal_key_methods(
+          *owner, owner_unit->name + "__" + owner->name);
+      if (!methods ||
+          proof.equality_callable_id !=
+              nominal_key_callable_id(declaration_id, "isequal") ||
+          proof.hash_callable_id !=
+              nominal_key_callable_id(declaration_id, "hash") ||
+          proof.equality_specialization_key !=
+              nominal_key_specialization_key(proof.equality_callable_id) ||
+          proof.hash_specialization_key !=
+              nominal_key_specialization_key(proof.hash_callable_id) ||
+          owner_unit->key_method_hashes.find(owner->name + ".isequal") ==
+              owner_unit->key_method_hashes.end() ||
+          owner_unit->key_method_hashes.find(owner->name + ".hash") ==
+              owner_unit->key_method_hashes.end() ||
+          proof.equality_semantic_hash !=
+              owner_unit->key_method_hashes.at(owner->name + ".isequal") ||
+          proof.hash_semantic_hash !=
+              owner_unit->key_method_hashes.at(owner->name + ".hash"))
+        throw abi_v10::Error("KEY_PROOF_INVALID",
+                            "ABI-v10 nominal key proof disagrees with its exact method contract");
+      proof_ids[declaration_id] = record.id;
+    }
+  } catch (const abi_v10::Error& error) {
+    throw CompileError(0, error.what(), error.code);
+  }
+}
+
 static vector<std::filesystem::path> write_module_interfaces(
     const ProjectManifest& manifest, const Program& program,
     const std::filesystem::path& directory,
@@ -37360,6 +39356,7 @@ static vector<std::filesystem::path> write_module_interfaces(
   program.assert_declaration_type_consistency();
   std::map<string,std::ostringstream> contents;
   std::map<string,std::ostringstream> interface_contents;
+  std::map<string, vector<abi_v10::Record>> local_key_proofs;
   std::set<string> module_names;
   for (const auto& function : program.functions)
     if (!module_name_from_symbol(function.name).empty() &&
@@ -37570,14 +39567,23 @@ static vector<std::filesystem::path> write_module_interfaces(
     out << "export type " << object.name.substr(module.size() + 2) << " nominal\n";
     out << "  declaration_id " << exported_declaration_identity(
         program, moss::DeclarationKind::Record, object.name) << "\n";
+    if (staged_abi_v10() && nominal_key_methods(object, object.name))
+      local_key_proofs[module].push_back(nominal_key_proof_record(
+          object, exported_declaration_identity(
+              program, moss::DeclarationKind::Record, object.name)));
     for (const auto& field : object.fields)
       out << "  public_representation field " << field.name << " " << field.type << "\n";
     for (const auto& method : object.methods) {
       out << "  object_method " << method.name << " return="
           << method.return_type.value_or("unit") << " receiver="
           << ownership_effect_name(method.receiver_effect) << " effects="
-          << interface_effects_text(method.observable_effects) << " params="
-          << method.params.size();
+          << interface_effects_text(method.observable_effects);
+      if (staged_abi_v10() &&
+          (method.name == "isequal" || method.name == "hash") &&
+          nominal_key_methods(object, object.name))
+        out << " key_semantic_hash="
+            << nominal_key_method_semantic_hash(method);
+      out << " params=" << method.params.size();
       for (size_t index = 0; index < method.params.size(); ++index) {
         Effect effect = index < method.parameter_effects.size()
             ? method.parameter_effects[index] : Effect::Read;
@@ -37695,6 +39701,7 @@ static vector<std::filesystem::path> write_module_interfaces(
   }
   vector<std::filesystem::path> result;
   std::map<string, abi_v10::Import> sealed_v10;
+  std::map<string, vector<abi_v10::Record>> proofs_by_module;
   std::function<string(const string&)> encode_v10 = [&](const string& module) {
     abi_v10::Interface value;
     value.module_id = abi_v10_module_id(manifest, module);
@@ -37702,11 +39709,14 @@ static vector<std::filesystem::path> write_module_interfaces(
     value.backend_fingerprint = backend.fingerprint;
     value.backend_rustc = backend.version_verbose.substr(
         0, backend.version_verbose.find('\n'));
+    vector<abi_v10::Record> proofs = local_key_proofs[module];
     for (const auto& import : program.imports) {
       if (import.owner_module != module) continue;
       if (contents.count(import.name)) {
         if (!sealed_v10.count(import.name)) encode_v10(import.name);
         value.imports.push_back(sealed_v10.at(import.name));
+        const auto& imported = proofs_by_module.at(import.name);
+        proofs.insert(proofs.end(), imported.begin(), imported.end());
         continue;
       }
       auto selected = external_interfaces.find(import.name);
@@ -37718,6 +39728,9 @@ static vector<std::filesystem::path> write_module_interfaces(
           selected->second, "MOSS_INTERFACE_ERROR"));
       value.imports.push_back({provider.value.module_id, provider.binary_hash,
                                provider.semantic_hash});
+      for (const auto& record : provider.value.semantic_contract)
+        if (abi_v10::is_key_proof_payload(record.payload))
+          proofs.push_back(record);
     }
     std::sort(value.imports.begin(), value.imports.end(),
               [](const abi_v10::Import& left, const abi_v10::Import& right) {
@@ -37734,12 +39747,34 @@ static vector<std::filesystem::path> write_module_interfaces(
     value.binary_contract =
         abi_v10_declaration_records(binary_contract.str());
     value.semantic_contract = abi_v10_declaration_records(contents[module].str());
+    append_abi_v10_direct_checked_records(value, program, module);
+    append_abi_v10_private_chain_records(value, program, module);
+    std::map<string, abi_v10::Record> unique_proofs;
+    for (const auto& proof : proofs) unique_proofs.emplace(proof.id, proof);
+    proofs.clear();
+    for (const auto& proof : unique_proofs) proofs.push_back(proof.second);
     string text;
     try {
+      abi_v10::validate_key_proof_coherence(proofs);
+      value.semantic_contract.insert(value.semantic_contract.end(),
+                                     proofs.begin(), proofs.end());
+      const auto sort_records = [](vector<abi_v10::Record>& records) {
+        std::sort(records.begin(), records.end(),
+                  [](const auto& left, const auto& right) {
+                    return left.id < right.id;
+                  });
+      };
+      sort_records(value.binary_contract);
+      sort_records(value.semantic_contract);
+      sort_records(value.private_semantic_dependencies);
+      sort_records(value.provenance);
       text = abi_v10::encode(value);
       auto sealed = abi_v10::decode(text);
+      if (!value.private_semantic_dependencies.empty())
+        abi_v10::validate_complete_interface(sealed);
       sealed_v10[module] = {value.module_id, sealed.binary_hash,
                             sealed.semantic_hash};
+      proofs_by_module[module] = std::move(proofs);
     } catch (const abi_v10::Error& error) {
       throw ProjectError(error.code, error.what(), directory.string());
     }
@@ -37874,7 +39909,7 @@ static NativeArtifact compile_native_artifact(
   source_key << "sources\n";
   vector<string> shared_runtime_flags;
   std::optional<abi_v10::RuntimeCrateIdentity> shared_runtime_identity;
-  if (staged_abi_v10() && indexed_strings_staged()) {
+  if (staged_abi_v10()) {
     std::filesystem::path runtime_dir;
     if (const char* configured = std::getenv("MOSS_RUNTIME_SOURCE_DIR")) {
       runtime_dir = configured;
@@ -38005,6 +40040,10 @@ static NativeArtifact compile_native_artifact(
   CompiledProjectUnit unit = analyze_project_sources(
       manifest, sources, optimized, debug_build, mode, declaration_filter,
       declaration_ids);
+  if (staged_abi_v10())
+    for (const auto& operation : unit.program.key_operation_specialization_ids)
+      source_key << "key-operation " << operation.first << " "
+                 << operation.second << "\n";
   if (shared_runtime_identity) {
     const string expected = "runtime moss_runtime " +
         shared_runtime_identity->version + " " +
