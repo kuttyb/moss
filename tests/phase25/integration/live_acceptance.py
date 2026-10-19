@@ -17,6 +17,8 @@ import subprocess
 import sys
 from typing import Any
 
+from test_sdk_matrix import PRIMARY_PACKAGES as SDK_PRIMARY_PACKAGES
+
 
 ROOT = Path(__file__).resolve().parents[3]
 G2_PATH = "tests/tooling/check_phase25_conformance.py"
@@ -31,6 +33,12 @@ L7_PATH = "tests/tooling/check_phase25_l7_repairs.py"
 G4_CHAR_PATH = "tests/tooling/check_phase25_s2_char_string.py"
 G4_INDEXED_PATH = "tests/tooling/check_phase25_indexed_string.py"
 G4_LINKAGE_PATH = "tests/phase25/runtime/check_shared_string_linkage.py"
+G5_RUNTIME_PATH = "tests/phase25/runtime/check_runtime.py"
+G5_JOINT_PATH = "tests/phase25/integration/test_joint_ledger_12.py"
+G5_SDK_PATH = "tests/phase25/integration/test_sdk_matrix.py"
+G3_SNAPSHOT_PATH = "tests/phase25/integration/test_map_snapshot_complexity.py"
+SA_PATH = "tests/tooling/check_phase25_sa_numeric_literals.py"
+SC_PATH = "tests/tooling/check_phase25_sc_safe_arithmetic.py"
 
 G1_LEDGER_ROWS = {
     "1": "#1 Int ordering above 2^53",
@@ -85,7 +93,24 @@ PROOFS: dict[str, tuple[tuple[str, str], ...]] = {
                    ("key", "03-imported-nominal-keys-source-free")),
     "GATE-G3-07": (("b", "gate10"),
                    ("key", "05-coherence-mismatch-method-override")),
+    "GATE-G3-08": (("g3-snapshot", "all"),
+                   ("key", "07-keys-snapshot-control"),
+                   ("key", "07-keys-snapshot-float"),
+                   ("key", "07-keys-snapshot-nominal")),
     "GATE-G5-04": (("key", "all30"),),
+    "GATE-G5-01": (("g5-runtime", "all"), ("b", "gate10"),
+                    ("g4-linkage", "source-free")),
+    "GATE-G5-02": (("g5-joint", "all"), ("g1-ledger", "12")),
+    "GATE-G5-03": (("g5-sdk", "all"),),
+    "GATE-G1-07": (("g1-ledger", "7"), ("g1-regression", "7")),
+    "GATE-G6-03": (("sa", "numeric"), ("sc", "arithmetic"),
+                    ("g3-ordering", "float"), ("l7", "float-payload"),
+                    ("g1-regression", "1"), ("g1-regression", "7")),
+    "GATE-G6-02": (("b", "integrity"),
+                    ("key", "06e-proof-impure-hash"),
+                    ("key", "06f-proof-raising-hash"),
+                    ("key", "06g-proof-divergent-isequal"),
+                    ("key", "06j-proof-forged-interface")),
     "GATE-G1-01": (("g1-ledger", "1"), ("g1-regression", "1")),
     "GATE-G1-02": (("g1-ledger", "2"), ("g1-regression", "2-3")),
     "GATE-G1-03": (("g1-ledger", "3"), ("g1-regression", "2-3")),
@@ -128,7 +153,12 @@ SUITE_PATHS = {"g2": G2_PATH, "e3-debug": E3_PATH,
                "s3": S3_PATH, "g3-ordering": G3_ORDERING_PATH,
                "l7": L7_PATH, "g4-char": G4_CHAR_PATH,
                "g4-indexed": G4_INDEXED_PATH,
-               "g4-linkage": G4_LINKAGE_PATH}
+               "g4-linkage": G4_LINKAGE_PATH,
+               "g5-runtime": G5_RUNTIME_PATH,
+               "g5-joint": G5_JOINT_PATH,
+               "g5-sdk": G5_SDK_PATH,
+               "g3-snapshot": G3_SNAPSHOT_PATH,
+               "sa": SA_PATH, "sc": SC_PATH}
 KEY_EXACT_STATUS = {
     "01-float-keys-map": "passes",
     "02-float-keys-set": "passes",
@@ -182,6 +212,18 @@ def parse_suite(suite: str, stdout: str, returncode: int) -> dict[str, bool]:
         cases["gate10"] = complete and bool(re.search(
             r"G2 Gate 10: one sealed nominal proof sha256:[0-9a-f]{64}; "
             r"two independent source-free native consumers", stdout))
+        integrity = (
+            "abi_v10_staging & adversarial: RequirementRecord parent chains, effect bits, and dangling provenance rejection.",
+            "abi_v10_staging: moss-module-interface-v2, schema_version 9, native_abi 9 rejected with SOURCE_FREE_ABI_REBUILD_REQUIRED.",
+            "G2 Gate 9: v9 container header in .mossi rejected with SOURCE_FREE_ABI_REBUILD_REQUIRED.",
+            "abi_v10_staging & adversarial: verify_runtime_compatibility rejects name, version, hash, and build key mismatches.",
+            "abi_v10_adversarial: payload bit flips, forged digests, duplicate/conflicting KeyProof records rejected.",
+            "G2 Gate 9: bit-flipped provider .mossi rejected with SOURCE_FREE_CONTRACT_INVALID, forged digest rejected.",
+        )
+        cases["integrity"] = complete and all(
+            stdout.count("  [PASS — Codec] " + marker) == 1 or
+            stdout.count("  [PASS — Moss] " + marker) == 1
+            for marker in integrity)
     elif suite == "g1-ledger":
         rows = re.findall(r"(?m)^\| (#[^|]+) \| ([^|]+) \|$", stdout)
         observed = {name: result.strip() for name, result in rows}
@@ -274,6 +316,59 @@ def parse_suite(suite: str, stdout: str, returncode: int) -> dict[str, bool]:
                     all(lines.count(marker) == 1 for marker in (*source_free, mismatch)))
         cases["source-free"] = complete and all(marker in lines for marker in source_free)
         cases["mismatch"] = complete and mismatch in lines
+    elif suite == "g5-runtime":
+        lines = stdout.splitlines()
+        identities = re.findall(
+            r"^moss_runtime (debug|release) \(-[gO]\) passed; "
+            r"artifact SHA-256: ([0-9a-f]{64})$", stdout, re.M)
+        complete = (returncode == 0 and len(lines) == 3 and
+                    len(identities) == 2 and
+                    {profile for profile, _ in identities} == {"debug", "release"} and
+                    lines[-1] == "moss_runtime all unit, profile, source-removal, "
+                    "and identity-mismatch proofs passed;")
+        cases["all"] = complete
+    elif suite == "g5-joint":
+        expected = (
+            "G5-02 Fast Debug open Vector member admission PASS",
+            "G5-02 Native debug open Vector member admission PASS",
+            "G5-02 Native release open Vector member admission PASS",
+            "G5-02 three-engine joint ledger #12 PASS",
+        )
+        cases["all"] = returncode == 0 and tuple(stdout.splitlines()) == expected
+    elif suite == "g5-sdk":
+        matches = re.findall(
+            r"^G5 SDK (debug|release) (sdk/[\w/-]+) PASS sha256:([0-9a-f]{64})$",
+            stdout, re.M)
+        expected = {(profile, package)
+                    for profile in ("debug", "release")
+                    for package in SDK_PRIMARY_PACKAGES}
+        summary = (f"G5 SDK ABI-v10 matrix: {len(expected)}/{len(expected)} builds, "
+                   f"{len(SDK_PRIMARY_PACKAGES)} packages, 2 profiles")
+        cases["all"] = (returncode == 0 and len(matches) == len(expected) and
+                        {(profile, package) for profile, package, _ in matches} == expected and
+                        len(stdout.splitlines()) == len(expected) + 1 and
+                        stdout.splitlines()[-1] == summary)
+    elif suite == "g3-snapshot":
+        cases["all"] = (returncode == 0 and stdout.splitlines() == [
+            "G3-08 sparse Map snapshot live-storage bound and detached clone PASS"])
+    elif suite == "sa":
+        lines = stdout.splitlines()
+        passed = [line for line in lines if line.startswith("  PASS:")]
+        cases["numeric"] = (returncode == 0 and len(passed) == 66 and
+            len(set(passed)) == 66 and
+            "  PASS: Int literals (3 engines)" in passed and
+            "  PASS: Float literals (3 engines)" in passed and
+            "  PASS: literal contexts (3 engines)" in passed and
+            lines[-1] == "phase25 S-A numeric literal checks passed: "
+            "68 accepted literals (3 engines), 63 rejected cases, 3 engine programs")
+    elif suite == "sc":
+        lines = stdout.splitlines()
+        passed = [line for line in lines if line.startswith("  PASS:")]
+        cases["arithmetic"] = (returncode == 0 and len(passed) == 23 and
+            len(set(passed)) == 23 and
+            "  PASS: Int.MIN / -1 wraps to Int.MIN and Int.MIN % -1 is 0 in every engine" in passed and
+            "  PASS: fused and unfused pipelines agree in all engines" in passed and
+            lines[-1] == "=== All Phase 25 S-C safe-arithmetic cases passed (23 cases) ===")
     return cases
 
 
@@ -303,6 +398,18 @@ def suite_command(suite: str, compiler: Path) -> list[str]:
         return [sys.executable, str(ROOT / G4_INDEXED_PATH), str(compiler)]
     if suite == "g4-linkage":
         return [sys.executable, str(ROOT / G4_LINKAGE_PATH)]
+    if suite == "g5-runtime":
+        return [sys.executable, str(ROOT / G5_RUNTIME_PATH)]
+    if suite == "g5-joint":
+        return [sys.executable, str(ROOT / G5_JOINT_PATH)]
+    if suite == "g5-sdk":
+        return [sys.executable, str(ROOT / G5_SDK_PATH)]
+    if suite == "g3-snapshot":
+        return [sys.executable, str(ROOT / G3_SNAPSHOT_PATH)]
+    if suite == "sa":
+        return [sys.executable, str(ROOT / SA_PATH), str(compiler)]
+    if suite == "sc":
+        return [sys.executable, str(ROOT / SC_PATH), str(compiler)]
     raise ValueError(f"Unknown live suite {suite}")
 
 

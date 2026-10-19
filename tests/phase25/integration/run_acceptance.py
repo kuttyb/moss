@@ -326,6 +326,39 @@ def run_self_test(matrix_path: Path) -> int:
         "shared indexed String runtime mismatch rejected before native linking\n")
     if parse_suite("g4-linkage", partial_linkage, 0).get("source-free"):
         errors.append("One source-free consumer profile was accepted as complete")
+    partial_runtime = (
+        "moss_runtime debug (-g) passed; artifact SHA-256: " + "a" * 64 + "\n"
+        "moss_runtime all unit, profile, source-removal, and identity-mismatch proofs passed;\n")
+    if parse_suite("g5-runtime", partial_runtime, 0).get("all"):
+        errors.append("One-profile shared runtime result was accepted as complete")
+    partial_joint = (
+        "G5-02 Fast Debug open Vector member admission PASS\n"
+        "G5-02 three-engine joint ledger #12 PASS\n")
+    if parse_suite("g5-joint", partial_joint, 0).get("all"):
+        errors.append("One-engine joint member result was accepted as complete")
+    partial_sdk = (
+        "G5 SDK debug sdk/path PASS sha256:" + "a" * 64 + "\n"
+        "G5 SDK ABI-v10 matrix: 34/34 builds, 17 packages, 2 profiles\n")
+    if parse_suite("g5-sdk", partial_sdk, 0).get("all"):
+        errors.append("Partial SDK matrix was accepted as complete")
+    partial_numeric = (
+        "  PASS: Float literals (3 engines)\n"
+        "phase25 S-A numeric literal checks passed: 68 accepted literals "
+        "(3 engines), 63 rejected cases, 3 engine programs\n")
+    if parse_suite("sa", partial_numeric, 0).get("numeric"):
+        errors.append("Partial numeric literal audit was accepted as complete")
+    partial_arithmetic = (
+        "  PASS: Int.MIN / -1 wraps to Int.MIN and Int.MIN % -1 is 0 in every engine\n"
+        "=== All Phase 25 S-C safe-arithmetic cases passed (23 cases) ===\n")
+    if parse_suite("sc", partial_arithmetic, 0).get("arithmetic"):
+        errors.append("Partial safe arithmetic audit was accepted as complete")
+    partial_integrity = (
+        "  [PASS — Codec] abi_v10_adversarial: payload bit flips, forged digests, "
+        "duplicate/conflicting KeyProof records rejected.\n"
+        "Joint Gate 10 integration verified with live source-free Moss artifacts.\n"
+        "Total Verification Checks: 23 PASS, 0 PENDING, 0 FAIL\n")
+    if parse_suite("b", partial_integrity, 0).get("integrity"):
+        errors.append("Partial ABI integrity result was accepted as complete")
     fake_suites = {"g2": {"cases": {"1": True}, "stdout_sha256": "a" * 64}}
     forged_gate = {"id": "GATE-TYPEIR-01", "current_status": "PASS",
                    "blocking_dependency": None}
