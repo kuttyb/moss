@@ -193,7 +193,8 @@ int main() {
   summary.callable_id = "module-v1:boxes@1.0.0::Boxes::fresh";
   summary.variable_count = 1;
   summary.result = box_of_var;
-  summary.body_semantic_hash = "sha256:" + std::string(64, 'e');
+  summary.body_semantic_hash =
+      "body-semantic-v1:sha256:" + std::string(64, 'e');
   summary.provenance_id = "boxes:fn:2";
   summary.requirements.push_back({var_type, "to_string", Access::Read, 0,
                                    "boxes:fn:3"});

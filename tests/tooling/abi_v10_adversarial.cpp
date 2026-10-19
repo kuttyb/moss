@@ -24,6 +24,7 @@ void expect_error(Action&& action, const std::string& code) {
 
 int main() {
   const auto digest = "sha256:" + std::string(64, 'a');
+  const auto body_digest = "body-semantic-v1:" + digest;
   const WireType variable{WireTypeKind::BoundVar, "", {}, 0};
   Summary valid;
   valid.callable_id = "module-v1:provider@1.0.0::Provider::outer";
@@ -35,10 +36,10 @@ int main() {
       {variable, "relay", Access::Write, 0, "provider:outer:1"},
       {variable, "required", Access::Read, 1, "provider:inner:2"},
   };
-  valid.dependencies = {{"helper:inner", digest}};
+  valid.dependencies = {{"helper:inner", body_digest}};
   valid.observable_effect_bits = 1;
   valid.observable_effect_tags = {"raise:ProviderError"};
-  valid.body_semantic_hash = digest;
+  valid.body_semantic_hash = body_digest;
   valid.provenance_id = "provider:outer:1";
 
   const auto record = summary_record(valid);
@@ -247,7 +248,7 @@ int main() {
   summary_with_dep.provenance_id = prov.provenance_id;
   summary_with_dep.requirements[0].provenance_id = prov.provenance_id;
   summary_with_dep.requirements[1].provenance_id = prov.provenance_id;
-  summary_with_dep.dependencies = {{"missing:private_helper", digest}};
+  summary_with_dep.dependencies = {{"missing:private_helper", body_digest}};
   iface.semantic_contract.push_back(summary_record(summary_with_dep));
 
   const auto sealed_bad_dep = decode(encode(iface));
@@ -273,6 +274,55 @@ int main() {
   const auto sealed_bad_prov2 = decode(encode(iface_bad_prov));
   expect_error([&] { validate_complete_interface(sealed_bad_prov2); },
                "SOURCE_FREE_CONTRACT_INVALID");
+
+  // A sealed container must bind an expected callable dependency hash to
+  // the actual private summary, not merely prove that its ID exists.
+  Summary private_helper = valid_summary;
+  private_helper.callable_id = "helper:inner";
+  private_helper.body_semantic_hash = body_digest;
+  Summary public_with_helper = valid_summary;
+  public_with_helper.dependencies = {
+      {private_helper.callable_id, private_helper.body_semantic_hash}};
+  Interface iface_with_helper = iface;
+  iface_with_helper.semantic_contract = {summary_record(public_with_helper)};
+  iface_with_helper.private_semantic_dependencies = {
+      summary_record(private_helper)};
+  validate_complete_interface(decode(encode(iface_with_helper)));
+
+  Summary mismatched_helper = private_helper;
+  mismatched_helper.body_semantic_hash =
+      "body-semantic-v1:sha256:" + std::string(64, 'b');
+  Interface iface_bad_hash = iface_with_helper;
+  iface_bad_hash.private_semantic_dependencies = {
+      summary_record(mismatched_helper)};
+  expect_error([&] {
+    validate_complete_interface(decode(encode(iface_bad_hash)));
+  }, "SOURCE_FREE_CONTRACT_INVALID");
+
+  Interface iface_unresolved_import = iface_with_helper;
+  iface_unresolved_import.imports.push_back({
+      "module-v1:other@1.0.0::Other", digest, digest});
+  Summary external_dependency = public_with_helper;
+  external_dependency.dependencies = {{
+      "callable-v1:module-v1:other@1.0.0::Other:fn:helper", body_digest}};
+  iface_unresolved_import.semantic_contract = {
+      summary_record(external_dependency)};
+  expect_error([&] {
+    validate_complete_interface(decode(encode(iface_unresolved_import)));
+  }, "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING");
+
+  Summary foreign_hash_kind = public_with_helper;
+  foreign_hash_kind.dependencies[0].second = digest;
+  expect_error([&] { (void)summary_record(foreign_hash_kind); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  foreign_hash_kind.dependencies[0].second =
+      "nominal-instance-v1:" + digest;
+  expect_error([&] { (void)summary_record(foreign_hash_kind); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  foreign_hash_kind = public_with_helper;
+  foreign_hash_kind.body_semantic_hash = digest;
+  expect_error([&] { (void)summary_record(foreign_hash_kind); },
+               "SOURCE_FREE_SUMMARY_INVALID");
 
   // A syntactically canonical nominal ID cannot invent a local declaration.
   Summary forged_nominal_summary = valid_summary;

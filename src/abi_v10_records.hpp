@@ -88,6 +88,12 @@ inline bool nominal_template_id_valid(std::string_view identity) {
   });
 }
 
+inline bool checked_body_hash_valid(std::string_view identity) {
+  constexpr std::string_view prefix = "body-semantic-v1:";
+  return identity.substr(0, prefix.size()) == prefix &&
+      hex_hash(identity.substr(prefix.size()));
+}
+
 struct WireType {
   WireTypeKind kind = WireTypeKind::Unit;
   std::string identity;
@@ -231,7 +237,7 @@ inline std::string summary_payload(const Summary& summary) {
               summary.parameters.size() == summary.parameter_access.size() &&
               summary.requirements.size() <= 4096 &&
               summary.dependencies.size() <= 4096 &&
-              hex_hash(summary.body_semantic_hash) &&
+              checked_body_hash_valid(summary.body_semantic_hash) &&
               !summary.provenance_id.empty(),
           "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 summary shape is invalid");
   WireWriter writer;
@@ -266,7 +272,8 @@ inline std::string summary_payload(const Summary& summary) {
   std::string previous;
   for (const auto& dependency : summary.dependencies) {
     require(!dependency.first.empty() && previous < dependency.first &&
-                hex_hash(dependency.second), "SOURCE_FREE_SUMMARY_INVALID",
+                checked_body_hash_valid(dependency.second),
+            "SOURCE_FREE_SUMMARY_INVALID",
             "ABI-v10 semantic dependencies are not canonical");
     previous = dependency.first;
     writer.string(dependency.first);
@@ -624,7 +631,7 @@ inline std::string method_template_payload(const MethodTemplate& value) {
   std::string previous;
   for (const auto& dep : value.dependencies) {
     require(!dep.first.empty() && (previous.empty() || previous < dep.first) &&
-                hex_hash(dep.second),
+                checked_body_hash_valid(dep.second),
             "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 dependencies are not canonical");
     previous = dep.first;
     writer.string(dep.first);
@@ -1151,9 +1158,7 @@ inline void validate_complete_interface(
 
   std::map<std::string, Summary> private_summaries;
   std::map<std::string, MethodTemplate> private_methods;
-  std::set<std::string> known_private_dep_ids;
   for (const auto& rec : sealed.value.private_semantic_dependencies) {
-    known_private_dep_ids.insert(rec.id);
     if (!rec.payload.empty() && rec.payload[0] == 1) {
       try {
         const auto sum = read_summary(rec.payload);
@@ -1241,6 +1246,18 @@ inline void validate_complete_interface(
     validate_instance(instance_record(inst), it->second, inst.provider_binary_id);
   }
 
+  std::map<std::string, std::string> callable_body_hashes;
+  for (const auto& sum : public_summaries)
+    require(callable_body_hashes.emplace(sum.callable_id,
+                                         sum.body_semantic_hash).second,
+            "SOURCE_FREE_CONTRACT_INVALID",
+            "Duplicate public callable summary ID");
+  for (const auto& pair : private_summaries)
+    require(callable_body_hashes.emplace(pair.first,
+                                         pair.second.body_semantic_hash).second,
+            "SOURCE_FREE_CONTRACT_INVALID",
+            "Callable summary appears in both public and private sections");
+
   std::set<std::string> required_deps;
   for (const auto& sum : public_summaries) {
     for (const auto& dep : sum.dependencies) {
@@ -1266,18 +1283,29 @@ inline void validate_complete_interface(
       }
     }
   }
-  for (const auto& dep : visited_deps) {
-    bool found = known_private_dep_ids.count(dep) > 0 ||
-                 private_summaries.count(dep) > 0 ||
-                 private_methods.count(dep) > 0;
-    if (!found) {
-      for (const auto& sum : public_summaries) {
-        if (sum.callable_id == dep) { found = true; break; }
-      }
+  for (const auto& dep : visited_deps)
+    require(callable_body_hashes.count(dep) > 0,
+            "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
+            "Missing callable semantic dependency: " + dep);
+  const auto validate_dependency_hashes = [&](const auto& dependencies) {
+    for (const auto& dep : dependencies) {
+      const auto found = callable_body_hashes.find(dep.first);
+      require(found != callable_body_hashes.end(),
+              "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
+              "Missing callable semantic dependency: " + dep.first);
+      require(dep.second == found->second,
+              "SOURCE_FREE_CONTRACT_INVALID",
+              "Callable semantic dependency hash mismatch: " + dep.first);
     }
-    require(found, "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
-            "Missing private semantic dependency: " + dep);
-  }
+  };
+  for (const auto& sum : public_summaries)
+    validate_dependency_hashes(sum.dependencies);
+  for (const auto& pair : private_summaries)
+    validate_dependency_hashes(pair.second.dependencies);
+  for (const auto& method : public_methods)
+    validate_dependency_hashes(method.dependencies);
+  for (const auto& pair : private_methods)
+    validate_dependency_hashes(pair.second.dependencies);
 
   if (!key_proof_records.empty()) {
     validate_key_proof_coherence(key_proof_records);
