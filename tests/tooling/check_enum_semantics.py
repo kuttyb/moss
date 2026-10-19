@@ -119,7 +119,7 @@ fn main():
   let holder = Holder()
   echo holder
 """,
-        "ENUM_FIELD_INITIALIZER_REQUIRED",
+        "FIELD_COUNT_MISMATCH",
     ),
     "read_payload_consume": (
         """fn main():
