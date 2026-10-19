@@ -1,5 +1,20 @@
 # Moss current status
 
+## Phase 25 S PR core CI repair checkpoint — 2026-10-19
+
+Draft S PR #11 exact head `99aebff` has examples and harness green but core
+workflow `39194794707` failed early in
+`tests/tooling/check_phase21_float_ieee.py`. That test uses direct Moss
+generated Rust for an explicit module and plain `rustc -D warnings`; S's
+source-free rlib repair emits `#[cfg(moss_process_root)]`, which triggers
+unexpected-cfg warnings and hides `main`, producing E0601. This is a real
+standalone/native compatibility regression, not a flaky CI result. The
+sole L4 is taking the S compiler lease to preserve both direct rustc use and
+source-free rlib gating, with a focused regression; the PR stays draft and
+unmerged until a revised exact head passes all four jobs. Post-G target
+workflow `39193878297` is 3/4 green with core still running. The G1-08
+contract question remains with L7; other staged gates continue afterward.
+
 ## Phase 25 G1-08 frozen Queue contract question — 2026-10-19
 
 The sole L4 reduced G1-08 to `for x in q` on a Queue; the staged checker

@@ -1,5 +1,16 @@
 # Team I live integration record
 
+## S draft core CI regression — 2026-10-19
+
+Exact S PR #11 workflow `39194794707` has examples and harness green, but
+core failed early in `check_phase21_float_ieee.py`: the direct explicit-module
+Rust output is compiled by plain `rustc -D warnings`, where S's
+`#[cfg(moss_process_root)]` causes unexpected-cfg errors and suppresses main
+(E0601). This is a real regression at PR head `99aebff`, so the PR remains
+draft/unmerged. The sole L4 is repairing generation context and adding
+coverage for both direct Rust and source-free rlib paths. Post-G target CI
+is 3/4 green with core in progress; G1-08 awaits L7 contract direction.
+
 ## G1-08 Queue source-surface conflict — 2026-10-19
 
 L4's minimal direct `for` over Queue fails at Moss checking with
