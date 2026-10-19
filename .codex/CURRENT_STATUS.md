@@ -1,5 +1,29 @@
 # Moss current status
 
+## Phase 25 staged E3 cross-crate execution checkpoint — 2026-10-19
+
+Sole L4 pushed clean `phase25-i-map-staging` at
+`d5cb5e370f09dc99efb3791ad72432653b9ef7d4`. The exact-checkout
+`MOSS_STAGED_ABI=v10` cross-crate harness reports **11 PASS / 0 BLOCKED /
+0 FAIL in both Debug and Release**. It pins repository `./moss`/`./margo`;
+Scenarios 2–5 build and execute against source-removed sealed provider
+artifacts, with Scenario 4 jointly linking two independently compiled
+consumers (A `42`, B `hello v10`, joint `100`/`shared`). Scenario 6 executes
+the canonical H3 private checked-IR chain with six legacy body lines removed,
+provider source removed, Int/String native outputs and missing/unsupported
+body negatives. Scenario 7 reports `METHOD_NOT_FOUND` at consumer line 9
+with provider.moss line 4; 8 reports `OWNERSHIP_USE_AFTER_CONSUME` line 7
+with consume line 6. Scenario 9 builds a real v9 provider artifact and
+requires `SOURCE_FREE_ABI_REBUILD_REQUIRED` when selected under v10, with an
+unselected control. Scenario 10 exercises five real tampered metadata
+mutations with exact ABI diagnostics. Scenario 11 verifies cold cache miss,
+warm reuse, changed provider digest and `FIELD_COUNT_MISMATCH` line 5.
+Harness self-test/fault injection, feedback, Python syntax and diff checks
+pass. **This is staged E3 evidence, not integrated E3 acceptance:** target-
+based intake, exact-head CI/L6 review, production cutover and strict 62/62
+remain open. Post-H2 target workflow `39186996122` and G draft #10 workflow
+`39187310886` continue running their core jobs.
+
 ## Phase 25 staged Team B Gate 10 acceptance checkpoint — 2026-10-19
 
 Sole L4 pushed `phase25-i-map-staging` at

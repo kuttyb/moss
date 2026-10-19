@@ -1,5 +1,19 @@
 # Team I live integration record
 
+## Staged E3 debug/release cross-crate checkpoint — 2026-10-19
+
+L4 pushed `d5cb5e3`. The real ABI-v10 cross-crate harness now runs all 11
+scenarios in both Debug and Release with 0 blocked/failed. It uses checkout-
+local Moss/Margo, removes provider source for the source-free consumer cases,
+executes exact native outputs, validates H3 checked private-chain IR with
+legacy statements stripped, and asserts structured provenance/effect errors.
+Migration builds/selects a real v9 artifact; metadata tampering exercises
+five non-no-op mutations; cache testing proves cold miss/warm reuse and a
+changed provider digest with exact layout rejection. Self-test/fault
+injection, feedback, syntax and diff checks pass. This is staged evidence;
+integrated exact-head CI/L6 review and strict 62/62 remain open. G PR #10
+and post-H2 target core CI are still running.
+
 ## Team B staged Gate 10 executable checkpoint — 2026-10-19
 
 L4 pushed `9f600fa`. The Team B acceptance runner now proves provider-owned
