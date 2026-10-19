@@ -6,6 +6,7 @@ CXXFLAGS_OPT ?= $(CXXFLAGS_BASE) -O2
 COMPILER_DIR = build/compiler
 MOSS_DEV = $(COMPILER_DIR)/moss-dev
 MOSS_OPT = $(COMPILER_DIR)/moss-opt
+MOSS_RELEASE = $(COMPILER_DIR)/moss-release
 
 MOSS ?= ./moss
 RUSTC ?= rustc
@@ -28,7 +29,10 @@ $(MOSS_DEV): src/moss.cpp $(wildcard src/*.hpp src/*.inc)
 
 moss-opt: $(MOSS_OPT)
 
-moss-release: moss-opt
+moss-release: $(MOSS_RELEASE)
+
+$(MOSS_RELEASE): $(MOSS_OPT)
+	@cp -f $(MOSS_OPT) $@
 
 $(MOSS_OPT): src/moss.cpp $(wildcard src/*.hpp src/*.inc)
 	@mkdir -p $(COMPILER_DIR)
@@ -36,7 +40,7 @@ $(MOSS_OPT): src/moss.cpp $(wildcard src/*.hpp src/*.inc)
 
 check: check-parallel
 
-check-parallel: moss-dev
+check-parallel: moss-dev moss-opt
 	python3 tests/run_parallel.py --jobs $(TEST_JOBS) --compiler-dev $(MOSS_DEV) --compiler-opt $(MOSS_OPT)
 
 check-serial: moss

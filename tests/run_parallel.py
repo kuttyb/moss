@@ -13,6 +13,7 @@ import fnmatch
 import os
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 import sys
 import threading
@@ -185,24 +186,35 @@ SHELL_SHARDS: list[tuple] = [
 
 def build_manifest() -> list[Job]:
     jobs: list[Job] = []
+    lightweight = {
+        "check_retired_syntax",
+        "check_agent_skills",
+        "check_agent_feedback",
+        "check_phase21_unary_not_effects",
+        "check_phase21_field_projection_effects",
+        "check_phase21_raising_iterators",
+        "check_phase21_method_noop_warning",
+        "check_phase25_recursive_layout",
+        "check_phase25_type_ir",
+        "check_phase25_typed_semantic_api",
+        "check_phase25_nominal_identity",
+        "check_phase25_field_visibility",
+        "check_phase25_s1_checker_authority",
+        "check_teaching_diagnostics",
+        "check_semantic_queries",
+        "check_phase225_semantic_ide",
+    }
     for item in TOOLING_TESTS:
         name, cmd = item[0], item[1]
-        use_opt = name.startswith("sdk_")
-        isolate = name in (
-            "sdk_foundations",
-            "sdk_text_encoding",
-            "sdk_adv_data_oracle_debug",
-            "sdk_adv_data_oracle_release",
-            "sdk_adv_data_margo_run",
-            "sdk_adv_data_margo_release",
-            "sdk_adv_data_source_free",
-        )
-        jobs.append(Job(name=name, cmd_template=cmd, use_opt_compiler=use_opt, isolate_worktree=isolate))
+        jobs.append(Job(name=name, cmd_template=cmd,
+                        use_opt_compiler=name not in lightweight,
+                        isolate_worktree=True))
 
     for item in SHELL_SHARDS:
         name, cmd = item[0], item[1]
         deps = item[2] if len(item) > 2 else []
-        jobs.append(Job(name=name, cmd_template=cmd, dependencies=deps))
+        jobs.append(Job(name=name, cmd_template=cmd, dependencies=deps,
+                        use_opt_compiler=True, isolate_worktree=True))
 
     return jobs
 
@@ -254,19 +266,29 @@ def run_single_job(
                 if src_file.is_file():
                     dst_file.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(src_file, dst_file)
+            # Nested Margo and SDK runners often resolve ROOT/moss and expect
+            # margo beside the compiler. A local launcher preserves both paths
+            # while every job executes the same selected compiler read-only.
+            (worktree_dir / "moss").write_text(
+                f"#!/bin/sh\nexec {shlex.quote(str(compiler))} \"$@\"\n",
+                encoding="utf-8",
+            )
+            (worktree_dir / "moss").chmod(0o755)
+            (worktree_dir / "tmp").mkdir(exist_ok=True)
         if job.cwd == REPO:
             cwd = worktree_dir
         elif job.cwd.is_relative_to(REPO):
             cwd = worktree_dir / job.cwd.relative_to(REPO)
 
+    job_compiler = (worktree_dir / "moss") if worktree_dir else compiler
     cmd = [
-        arg.format(compiler=str(compiler), out=str(job_out))
+        arg.format(compiler=str(job_compiler), out=str(job_out))
         for arg in job.cmd_template
     ]
 
     env = os.environ.copy()
     env.update(
-        MOSS=str(compiler),
+        MOSS=str(job_compiler),
         MARGO_HOME=str(margo_home),
         TMPDIR=str(job_tmp),
         PYTHONDONTWRITEBYTECODE="1",
@@ -360,8 +382,20 @@ def main() -> int:
         help="List all jobs in the suite and exit",
     )
     args = parser.parse_args()
+    args.output_base = args.output_base.resolve()
+    if not args.output_base.is_relative_to(REPO):
+        print("Error: --output-base must stay within this checkout.", file=sys.stderr)
+        return 1
 
     manifest = build_manifest()
+    jobs_by_name = {job.name: job for job in manifest}
+    if args.jobs < 1 or len(jobs_by_name) != len(manifest):
+        print("Error: --jobs must be positive and job names must be unique.", file=sys.stderr)
+        return 1
+    for job in manifest:
+        if any(dep not in jobs_by_name for dep in job.dependencies):
+            print(f"Error: {job.name} has a missing dependency.", file=sys.stderr)
+            return 1
 
     if args.list:
         print(f"Total jobs in manifest: {len(manifest)}")
@@ -370,27 +404,30 @@ def main() -> int:
             print(f"  {job.name}{deps}")
         return 0
 
-    # Fall back if specified compiler binaries do not exist
     compiler_dev = args.compiler_dev.resolve()
-    if not compiler_dev.exists():
-        fallback = REPO / "moss"
-        if fallback.exists():
-            compiler_dev = fallback.resolve()
-        else:
-            print(f"Error: compiler {compiler_dev} not found. Run make first.", file=sys.stderr)
-            return 1
-
     compiler_opt = args.compiler_opt.resolve()
-    if not compiler_opt.exists():
-        compiler_opt = compiler_dev
+    for variant, compiler in (("development", compiler_dev),
+                              ("optimized", compiler_opt)):
+        if not compiler.is_file() or not os.access(compiler, os.X_OK):
+            print(f"Error: required {variant} compiler {compiler} is unavailable.",
+                  file=sys.stderr)
+            return 1
 
     # Filter jobs if requested
     selected_jobs = manifest
     if args.filter:
-        selected_jobs = [j for j in manifest if fnmatch.fnmatch(j.name, args.filter)]
-        if not selected_jobs:
+        selected_names = {j.name for j in manifest if fnmatch.fnmatch(j.name, args.filter)}
+        if not selected_names:
             print(f"No jobs matched filter: {args.filter}", file=sys.stderr)
             return 1
+        # A filtered DAG run still executes every prerequisite it needs.
+        frontier = list(selected_names)
+        while frontier:
+            for dependency in jobs_by_name[frontier.pop()].dependencies:
+                if dependency not in selected_names:
+                    selected_names.add(dependency)
+                    frontier.append(dependency)
+        selected_jobs = [job for job in manifest if job.name in selected_names]
 
     args.output_base.mkdir(parents=True, exist_ok=True)
     (REPO / "tmp").mkdir(parents=True, exist_ok=True)
@@ -484,7 +521,7 @@ def main() -> int:
         status = "PASS" if res.returncode == 0 else f"FAIL (exit {res.returncode})"
         print(f"  {i:2d}. {res.job.name:<44} {res.duration:6.2f}s  [{status}]")
 
-    if failed:
+    if failed or skipped:
         print("\n" + "=" * 72)
         print("FAILED JOBS DETAIL:")
         for name, res in failed.items():
@@ -495,6 +532,8 @@ def main() -> int:
                 print("Last log lines:")
                 for line in tail:
                     print(f"  {line}")
+        for name, reason in skipped.items():
+            print(f"\n--- [SKIP] {name}: {reason} ---")
         print("=" * 72)
         return 1
 

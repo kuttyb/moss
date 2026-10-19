@@ -15,8 +15,8 @@ concurrency:
   group: phase25-team-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# Jobs run concurrently on isolated checkouts. tests/run.sh still serializes
-# its shared-output tests; don't run two copies in one checkout.
+# Jobs run concurrently on isolated checkouts. The core `make check` job also
+# isolates its parallel test worktrees; `make check-serial` retains run.sh.
 jobs:
   core-regressions:
     name: Core regressions
