@@ -1,5 +1,17 @@
 # Team I live integration record
 
+## H3 bounded direct transport checkpoint — 2026-10-19
+
+L4 pushed staging `c5446b5`. Live compiler emission now includes versioned
+nominal, summary, checked-body and provenance records for a direct
+two-statement constructor; two independent consumers execute after provider
+source removal. Compiler, focused ABI/typed suites, H3 default-v9 baseline,
+both 30/30 key fixture modes and feedback pass. Whole-payload UTF-8 checking
+was removed for byte-framed binary records, and open summary ordinals are
+validated for density. Consumers still execute legacy generic statements, so
+H3 remains open; the nested private-helper chain still fails closed in
+staged-v10 until checked-body import/execution and dependency closure work.
+
 ## H3 versioned record substrate — 2026-10-19
 
 L4 pushed `50bf7ba` and `ffa945d`: recognized ABI-v10 v1 records fail closed

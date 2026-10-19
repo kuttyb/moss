@@ -1,5 +1,21 @@
 # Moss current status
 
+## Phase 25 H3 direct live transport checkpoint — 2026-10-19
+
+Sole L4 pushed `phase25-i-map-staging` at `c5446b5123708b4ef7784a4c3e8afb620b71568c`.
+A bounded direct two-statement constructor now emits canonical ABI-v10
+NominalTemplate, open Summary, CheckedBodyRecord and provenance from the live
+compiler. The container accepts byte-framed binary payloads while retaining
+UTF-8 validation for record IDs and logical text; summary variable ordinals
+are dense, rejecting trailing/interior holes. A direct provider and two
+independent physically source-removed consumers pass, as do forced compiler
+build, ABI staging/adversarial, typed API, default-v9 H3 baseline, activated
+and default key fixtures 30/30, feedback and diff check. **This is transport
+evidence, not H3 acceptance:** execution still uses legacy `generic_stmt`,
+and the nested private-helper staged-v10 export guard remains active. Next:
+structural checked-IR import/execution and full private-chain closure. H/T
+target and H2 PR core CI are still pending; no new target merge.
+
 ## Phase 25 H3 fail-closed record and rich-body substrate — 2026-10-19
 
 Sole L4 pushed staged `50bf7ba` and `ffa945d`. Versioned semantic/private
