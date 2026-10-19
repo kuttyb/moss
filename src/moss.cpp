@@ -19701,6 +19701,10 @@ class Checker {
     }
     if (check_functional_pipeline(line, original, env)) return;
     string value = normalize_pipeline(std::move(original));
+    if (!value.empty() && value.front() == '!' &&
+        (value.size() == 1 || value[1] != '='))
+      err(line, "unary '!' is not supported; use 'not' for Boolean negation",
+          "UNSUPPORTED_EXPRESSION_OPERATOR");
     if (auto binary = split_binary(value, {" in "})) {
       err(line, "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
           "UNSUPPORTED_EXPRESSION_OPERATOR");
