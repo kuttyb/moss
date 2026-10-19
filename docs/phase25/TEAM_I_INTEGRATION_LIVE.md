@@ -1,5 +1,14 @@
 # Team I live integration record
 
+## Preliminary B intake conflict inventory — 2026-10-19
+
+Read-only merge-tree analysis of S PR head `e5d111a` and pinned Team B
+`755f131` shows textual conflicts in current status, Team A's typed semantic
+API document, and `tests/run.sh`. B's old conditional unresolved-echo test
+must be reconciled to L7's approved S-B `ECHO_DISPLAY_UNSUPPORTED` assertion.
+No B merge or compiler edit was made. This inventory will be rechecked
+against the reviewed post-S target before a draft B intake PR.
+
 ## S PR source-generation repair checkpoint — 2026-10-19
 
 The sole L4 pushed clean S PR #11 head `e5d111a6ccded842399d9930a1d8dbf849e9d00b`.

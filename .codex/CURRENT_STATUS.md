@@ -1,5 +1,16 @@
 # Moss current status
 
+## Phase 25 provisional Team B merge analysis — 2026-10-19
+
+A read-only `git merge-tree` of exact S PR head `e5d111a` with pinned Team B
+`755f131` reports three textual conflict paths: `.codex/CURRENT_STATUS.md`,
+`docs/phase25/TEAM_A_TYPED_SEMANTIC_API.md`, and `tests/run.sh`. The B
+`tests/run.sh` alternative conditionally accepts an older unresolved echo
+diagnostic; the approved S-B `ECHO_DISPLAY_UNSUPPORTED` assertion must remain
+when the future target-based B intake is reconciled. This is preliminary
+conflict analysis, not a merged branch, test result or B review. S exact-head
+and post-G target core CI are still running; B intake waits for S integration.
+
 ## Phase 25 S exact-head CI repair pushed — 2026-10-19
 
 The sole L4 pushed clean S PR #11 repair `e5d111a6ccded842399d9930a1d8dbf849e9d00b`.
