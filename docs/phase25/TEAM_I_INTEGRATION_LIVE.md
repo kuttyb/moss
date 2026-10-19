@@ -1,5 +1,13 @@
 # Team I live integration record
 
+## G1-07 Float Display counterexample — 2026-10-19
+
+L4 pushed clean staging `f9e4f16` before taking the sole compiler lease on
+S PR repair. A 4,096-value differential found f64 bits
+`0x4306a67789fbfd12` rendered as `796935229243298.2` in Fast Debug and
+`796935229243298.3` in native. G1-07 remains red; feedback records the
+finding and a tracked minimal regression is required after the S repair.
+
 ## S draft core CI regression — 2026-10-19
 
 Exact S PR #11 workflow `39194794707` has examples and harness green, but

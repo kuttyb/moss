@@ -1,5 +1,15 @@
 # Moss current status
 
+## Phase 25 G1-07 Float Display counterexample — 2026-10-19
+
+Before switching to the S PR repair, L4 pushed clean staging `f9e4f1685d9effbc8dc2ccd2d28388d346ac9f9e`.
+A 4,096-value Float display differential found a concrete Fast Debug/native
+mismatch at f64 bits `0x4306a67789fbfd12`: Fast Debug prints
+`796935229243298.2`, native prints `796935229243298.3`. G1-07 remains red;
+the worker recorded feedback and will preserve a tracked minimal regression
+on returning to staging. The current sole compiler lease is on the S PR
+direct-rustc repair; no concurrent compiler edit.
+
 ## Phase 25 S PR core CI repair checkpoint — 2026-10-19
 
 Draft S PR #11 exact head `99aebff` has examples and harness green but core
