@@ -1,5 +1,17 @@
 # Team I live integration record
 
+## G3/G4 bounded same-HEAD proof checkpoint — 2026-10-19
+
+L4 pushed staged `66a57c5`; strict v10 rebuilt that clean HEAD and ran
+11 complete suites. It reports 42 PASS, 0 FAIL, 17 BLOCKED, 3 NOT
+IMPLEMENTED, with strict exit 1. G3-01–04 now have exact scalar hash,
+Float Map/Set, five-type three-engine law and NaN-payload evidence; G4-01–03
+have focused Char/constructor/escape evidence. G3-05/08, G4-04–06 and
+G1-07/08 remain open on their frozen breadth. Staged full S1+S2 still finds
+the Vector[Tag] Map-key line-0 diagnostic; default-v9 full S1+S2 passes.
+The worker is fixing the span and proving the actual shared String runtime.
+No target/main merge or release claim; G draft and prior target core CI run.
+
 ## G1 same-HEAD live acceptance checkpoint — 2026-10-19
 
 L4 pushed staging `7dfe201`: strict v10 acceptance rebuilt the checkout and

@@ -1,5 +1,20 @@
 # Moss current status
 
+## Phase 25 G3/G4 live-proof checkpoint — 2026-10-19
+
+Sole L4 pushed clean staging head `66a57c58db9195774df5755b1877baebe0cb1276`.
+Strict v10 same-HEAD acceptance rebuilt Moss, ran 11 complete suites, and
+reports **42 PASS / 0 FAIL / 17 BLOCKED / 3 NOT IMPLEMENTED**, exit 1.
+G3-01–04 now require pinned scalar hashes, staged Float Map/Set signed-zero
+and NaN behavior, a five-scalar three-engine law corpus, and native NaN
+payload laws. G4-01–03 require focused three-engine Char constructor and
+escape suites. The strict parser rejects partial markers. G3-05/08 and
+G4-04–06 remain open for untested contract breadth, as do G1-07/08. Full
+staged S1+S2 still exposes the invalid Vector[Tag] Map-key line-0 diagnostic;
+default-v9 full S1+S2 passes. The worker is repairing that span and adding
+shared-runtime String proof. G PR #10 and post-H2 target core CI remain
+in progress; no target/main merge or release claim.
+
 ## Phase 25 G1 live-proof checkpoint — 2026-10-19
 
 The sole L4 pushed clean staging head `7dfe201eacb7ecdf9f67cc293c4e8695bfc8ee47`.
