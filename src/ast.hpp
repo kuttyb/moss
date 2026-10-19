@@ -93,7 +93,7 @@ struct Param {
     }
   }
   void assert_consistent() const {
-    if (type_ref && !type.empty() && type != type_ref->to_canonical_string()) {
+    if (type_ref && type != type_ref->to_canonical_string()) {
       throw std::logic_error("Param '" + name + "' type string projection '" +
                              type + "' contradicts bound TypeRef '" +
                              type_ref->to_canonical_string() + "'");
@@ -287,10 +287,10 @@ struct Method {
     }
   }
   void assert_consistent() const {
-    if (return_type_ref && return_type && !return_type->empty() &&
-        *return_type != return_type_ref->to_canonical_string()) {
+    if (return_type_ref &&
+        (!return_type || *return_type != return_type_ref->to_canonical_string())) {
       throw std::logic_error("Method '" + owner + "." + name +
-                             "' return type string projection '" + *return_type +
+                             "' return type string projection '" + return_type.value_or("<missing>") +
                              "' contradicts bound TypeRef '" +
                              return_type_ref->to_canonical_string() + "'");
     }
@@ -340,10 +340,10 @@ struct TraitMethod {
     }
   }
   void assert_consistent() const {
-    if (return_type_ref && return_type && !return_type->empty() &&
-        *return_type != return_type_ref->to_canonical_string()) {
+    if (return_type_ref &&
+        (!return_type || *return_type != return_type_ref->to_canonical_string())) {
       throw std::logic_error("TraitMethod '" + name +
-                             "' return type string projection '" + *return_type +
+                             "' return type string projection '" + return_type.value_or("<missing>") +
                              "' contradicts bound TypeRef '" +
                              return_type_ref->to_canonical_string() + "'");
     }
@@ -382,10 +382,10 @@ struct Handler {
     }
   }
   void assert_consistent() const {
-    if (reply_type_ref && reply_type && !reply_type->empty() &&
-        *reply_type != reply_type_ref->to_canonical_string()) {
+    if (reply_type_ref &&
+        (!reply_type || *reply_type != reply_type_ref->to_canonical_string())) {
       throw std::logic_error("Handler '" + name +
-                             "' reply type string projection '" + *reply_type +
+                             "' reply type string projection '" + reply_type.value_or("<missing>") +
                              "' contradicts bound TypeRef '" +
                              reply_type_ref->to_canonical_string() + "'");
     }
@@ -503,10 +503,10 @@ struct Function {
     }
   }
   void assert_consistent() const {
-    if (return_type_ref && return_type && !return_type->empty() &&
-        *return_type != return_type_ref->to_canonical_string()) {
+    if (return_type_ref &&
+        (!return_type || *return_type != return_type_ref->to_canonical_string())) {
       throw std::logic_error("Function '" + name +
-                             "' return type string projection '" + *return_type +
+                             "' return type string projection '" + return_type.value_or("<missing>") +
                              "' contradicts bound TypeRef '" +
                              return_type_ref->to_canonical_string() + "'");
     }

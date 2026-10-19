@@ -35798,6 +35798,7 @@ static vector<std::filesystem::path> write_module_interfaces(
     const std::filesystem::path& directory,
     const BackendToolchainIdentity& backend,
     const std::map<string, std::filesystem::path>& external_interfaces) {
+  program.assert_declaration_type_consistency();
   std::map<string,std::ostringstream> contents;
   std::map<string,std::ostringstream> interface_contents;
   std::set<string> module_names;
