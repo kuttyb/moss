@@ -1,0 +1,8 @@
+# Malformed key proof: no isequal/hash at all (structural record key).
+type Tag:
+  label: String
+
+fn main():
+  var m = Map()
+  m[Tag(label: "a")] = 1
+  echo m.get(Tag(label: "a"), 0)

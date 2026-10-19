@@ -203,8 +203,8 @@ if project_surface != {
 }:
     fail("bootstrap project surface drifted")
 debug_features = {item["name"]: item for item in bootstrap["result"]["debugging_features"]}
-if "for traversal is not currently supported" not in debug_features["fast_debug"].get("limitations", []):
-    fail("Fast Debug discovery omitted its verified for traversal limitation")
+if "for traversal is not currently supported" in debug_features["fast_debug"].get("limitations", []):
+    fail("Fast Debug discovery retained a repaired for traversal limitation")
 if "container methods reached through object fields are not currently supported" in debug_features["fast_debug"].get("limitations", []):
     fail("Fast Debug discovery retained a repaired container-field limitation")
 debug_query = debug_features.get("structured_debug_query", {})

@@ -37,14 +37,17 @@
 #include "debug_map.hpp"
 #include "diagnostics.hpp"
 #include "type_placeholders.hpp"
+#include "numeric_literal.hpp"
 #include "interpreter.hpp"
 #include "handler_runtime.hpp"
 #include "fileio_runtime.hpp"
 #include "float_format_runtime.hpp"
+#include "display_runtime.hpp"
 #include "executor_runtime.hpp"
 #include "synchronization_lowering.hpp"
 #include "source_free_abi_v9.hpp"
 #include "source_free_abi_v10.hpp"
+#include "char_string_ordering_runtime.hpp"
 
 using std::string;
 using std::vector;
@@ -70,6 +73,8 @@ class CompilerStageTimer {
 static constexpr const char* kCompilerVersion = "0.1.0";
 // ABI v8's raised-value layout is retained, while v9 adds an artifact-bound
 // source-free contract. A v8 interface must be rebuilt before source-free use.
+// ABI v10 is a single coordinated Phase 25 transition (Team G container plus
+// Team S String/Char records); it is not delivered by changing this number.
 static constexpr int kNativeAbiVersion = 9;
 // Staged ABI v10 (docs/phase25/TEAM_G_ABI_V10_STAGING.md). Production stays
 // on v9 until the joint Team S/Team G cutover; MOSS_STAGED_ABI=v10 opts a
@@ -79,6 +84,19 @@ static bool staged_abi_v10() {
   return value && string(value) == "v10";
 }
 static constexpr const char* kMossLanguageVersion = "moss-0.1";
+
+// Team S indexed String record staged for the joint ABI-v10 transition. Off by
+// default (MossStr = String, ABI v9); MOSS_STAGED_STRING_REPR=indexed-v1 builds
+// with MossStr = MossString. The choice is part of the backend fingerprint and
+// of every .mossi header, so the two representations never link together.
+static bool indexed_strings_staged() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("MOSS_STAGED_STRING_REPR");
+    return value && string(value) == "indexed-v1";
+  }();
+  return enabled;
+}
+static constexpr const char* kIndexedStringRecord = "string_representation indexed-v1";
 static constexpr int kAgentProtocolVersion = 1;
 static constexpr const char* kAgentSchemaVersion = "moss-agent-1";
 
@@ -321,6 +339,7 @@ static string canonical_type_name(string type) {
   if (type == "Int") return "int";
   if (type == "Float") return "float";
   if (type == "Bool") return "bool";
+  if (type == "Char") return "char";
   if (type == "String") return "string";
   if (type == "Vector") return "vector";
   if (type == "Map") return "map";
@@ -596,7 +615,7 @@ static std::optional<std::pair<string, string>> map_key_value_types(
                         term->type_args[1]->to_canonical_string());
 }
 
-enum class BuiltinReceiverFamily { Vector, Map, Queue, String };
+enum class BuiltinReceiverFamily { Vector, Map, Queue, String, Char, Int, Float, Bool };
 
 
 struct BuiltinOperationDescriptor {
@@ -623,8 +642,8 @@ static const vector<BuiltinOperationDescriptor>& builtin_operations() {
       {BuiltinReceiverFamily::Queue, "push", "push(item)", "unit", Effect::Write, {Effect::Consume}, {"$element"}},
       {BuiltinReceiverFamily::Queue, "pop", "pop()", "$element", Effect::Write, {}, {}, true},
       {BuiltinReceiverFamily::String, "length", "length()", "int", Effect::Read, {}, {}},
-      {BuiltinReceiverFamily::String, "char_at", "char_at(index)", "string", Effect::Read, {Effect::Read}, {"int"}, true},
-      {BuiltinReceiverFamily::String, "chars", "chars()", "vector[string]", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::String, "char_at", "char_at(index)", "char", Effect::Read, {Effect::Read}, {"int"}, true},
+      {BuiltinReceiverFamily::String, "chars", "chars()", "vector[char]", Effect::Read, {}, {}},
       {BuiltinReceiverFamily::String, "find", "find(pattern)", "int", Effect::Read, {Effect::Read}, {"string"}},
       {BuiltinReceiverFamily::String, "slice", "slice(start, length)", "string", Effect::Read, {Effect::Read, Effect::Read}, {"int", "int"}},
       {BuiltinReceiverFamily::String, "ascii_lower", "ascii_lower()", "string", Effect::Read, {}, {}},
@@ -633,6 +652,26 @@ static const vector<BuiltinOperationDescriptor>& builtin_operations() {
       {BuiltinReceiverFamily::String, "append", "append(part)", "unit", Effect::Write, {Effect::Read}, {"string"}},
       {BuiltinReceiverFamily::String, "split", "split(separator)", "vector[string]", Effect::Read, {Effect::Read}, {"string"}, true},
       {BuiltinReceiverFamily::String, "join", "join(parts)", "string", Effect::Read, {Effect::Read}, {"vector[string]"}},
+      {BuiltinReceiverFamily::String, "less", "less(other)", "bool", Effect::Read, {Effect::Read}, {"string"}},
+      {BuiltinReceiverFamily::String, "isequal", "isequal(other)", "bool", Effect::Read, {Effect::Read}, {"string"}},
+      {BuiltinReceiverFamily::String, "hash", "hash()", "int", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::Char, "to_string", "to_string()", "string", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::Char, "codepoint", "codepoint()", "int", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::Char, "less", "less(other)", "bool", Effect::Read, {Effect::Read}, {"char"}},
+      {BuiltinReceiverFamily::Char, "isequal", "isequal(other)", "bool", Effect::Read, {Effect::Read}, {"char"}},
+      {BuiltinReceiverFamily::Char, "hash", "hash()", "int", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::Int, "to_string", "to_string()", "string", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::Int, "less", "less(other)", "bool", Effect::Read, {Effect::Read}, {"int"}},
+      {BuiltinReceiverFamily::Int, "isequal", "isequal(other)", "bool", Effect::Read, {Effect::Read}, {"int"}},
+      {BuiltinReceiverFamily::Int, "hash", "hash()", "int", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::Float, "to_string", "to_string()", "string", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::Float, "less", "less(other)", "bool", Effect::Read, {Effect::Read}, {"float"}},
+      {BuiltinReceiverFamily::Float, "isequal", "isequal(other)", "bool", Effect::Read, {Effect::Read}, {"float"}},
+      {BuiltinReceiverFamily::Float, "hash", "hash()", "int", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::Bool, "to_string", "to_string()", "string", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::Bool, "less", "less(other)", "bool", Effect::Read, {Effect::Read}, {"bool"}},
+      {BuiltinReceiverFamily::Bool, "isequal", "isequal(other)", "bool", Effect::Read, {Effect::Read}, {"bool"}},
+      {BuiltinReceiverFamily::Bool, "hash", "hash()", "int", Effect::Read, {}, {}},
   };
   return operations;
 }
@@ -645,6 +684,10 @@ static std::optional<BuiltinReceiverFamily> builtin_receiver_family(
   if (collection_named(term, {"map"})) return BuiltinReceiverFamily::Map;
   if (collection_named(term, {"queue"})) return BuiltinReceiverFamily::Queue;
   if (primitive_term(term, "string")) return BuiltinReceiverFamily::String;
+  if (primitive_term(term, "char")) return BuiltinReceiverFamily::Char;
+  if (primitive_term(term, "int")) return BuiltinReceiverFamily::Int;
+  if (primitive_term(term, "float")) return BuiltinReceiverFamily::Float;
+  if (primitive_term(term, "bool")) return BuiltinReceiverFamily::Bool;
   return std::nullopt;
 }
 
@@ -824,6 +867,15 @@ static const FunctionSpecialization* functional_specialization(
   return selected == function.specializations.end() ? nullptr : &*selected;
 }
 
+// Effect a sort key applies to its element: the concrete specialization's
+// for untyped keys, otherwise the declared function's.
+static Effect sort_key_effect(const Function& function, const string& element) {
+  if (const auto* special = concrete_specialization(function, {element}))
+    if (!special->parameter_effects.empty()) return special->parameter_effects.front();
+  return function.parameter_effects.empty() ? Effect::Read
+                                            : function.parameter_effects.front();
+}
+
 static bool parse_index(const string& text, string& base, string& index) {
   string value = trim(text);
   if (value.empty() || value.back() != ']') return false;
@@ -846,6 +898,19 @@ static bool parse_simple_call(const string& text, string& callee, vector<string>
   auto lp = value.find('(');
   auto rp = value.rfind(')');
   if (lp == string::npos || rp != value.size() - 1 || lp == 0) return false;
+  // The callee's '(' must close at the final ')': `Char(65).to_string()` is a
+  // member call on a call result, not a call of `Char`.
+  int depth = 0;
+  for (size_t i = lp; i < value.size(); ++i) {
+    char c = value[i];
+    if (c == '"' || c == '\'') {
+      for (++i; i < value.size() && value[i] != c; ++i)
+        if (value[i] == '\\') ++i;
+      continue;
+    }
+    if (c == '(' || c == '[' || c == '{') ++depth;
+    else if ((c == ')' || c == ']' || c == '}') && --depth == 0 && i != rp) return false;
+  }
   callee = trim(value.substr(0, lp));
   if (callee.empty()) return false;
   string inside = value.substr(lp + 1, rp - lp - 1);
@@ -875,6 +940,30 @@ static bool plain_identifier(const string& value) {
   return std::all_of(s.begin() + 1, s.end(), [](char c) {
     return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
   });
+}
+
+static bool is_single_string_literal(const string& value) {
+  string s = trim(value);
+  if (s.size() < 2 || s.front() != '"' || s.back() != '"') return false;
+  bool escaped = false;
+  for (size_t i = 1; i < s.size() - 1; ++i) {
+    if (escaped) escaped = false;
+    else if (s[i] == '\\') escaped = true;
+    else if (s[i] == '"') return false;
+  }
+  return !escaped;
+}
+
+static bool is_single_char_literal(const string& value) {
+  string s = trim(value);
+  if (s.size() < 3 || s.front() != '\'' || s.back() != '\'') return false;
+  bool escaped = false;
+  for (size_t i = 1; i < s.size() - 1; ++i) {
+    if (escaped) escaped = false;
+    else if (s[i] == '\\') escaped = true;
+    else if (s[i] == '\'') return false;
+  }
+  return !escaped;
 }
 
 static bool parse_member_call(const string& text, string& receiver, string& handler,
@@ -2317,7 +2406,7 @@ class Parser {
 
     // A naked dotted call is kept distinct so the checker can reject it for a domain
     // receiver while allowing future local member-call syntax.
-    if (parse_message_call(L.text, s.a, s.b, s.args)) {
+    if (parse_member_call(L.text, s.a, s.b, s.args) && identifier(s.b)) {
       s.kind = Stmt::Kind::Call;
       return s;
     }
@@ -2341,6 +2430,156 @@ class Parser {
   }
 };
 
+// Moss expressions are scanned textually, so a Char literal holding a
+// delimiter ('"', ',', '(', '#', '+', ...) would be read as syntax. Rewrite
+// every Char literal other than an ASCII letter/digit/underscore to the
+// equivalent '\u{HEX}' spelling before any other scanning. Malformed literals
+// are left untouched for the checker to diagnose.
+// Parses one Rust escape starting at line[at] == '\\'. Native lowering hands
+// String and Char literals to Rust unchanged, so the accepted set is Rust's:
+// \n \r \t \0 \\ \' \" \xHH (at most 0x7F) and \u{1-6 hex} naming a Unicode
+// scalar. Returns the index just past the escape, or npos when invalid.
+static size_t parse_rust_escape(const string& line, size_t at, uint32_t& codepoint) {
+  if (at + 1 >= line.size()) return string::npos;
+  const char e = line[at + 1];
+  const string simple = "nrt0'\\\"";
+  const uint32_t values[] = {'\n', '\r', '\t', 0, '\'', '\\', '"'};
+  if (size_t which = simple.find(e); which != string::npos) {
+    codepoint = values[which];
+    return at + 2;
+  }
+  if (e == 'x') {
+    if (at + 3 >= line.size() || !std::isxdigit(static_cast<unsigned char>(line[at + 2])) ||
+        !std::isxdigit(static_cast<unsigned char>(line[at + 3])))
+      return string::npos;
+    codepoint = static_cast<uint32_t>(std::stoul(line.substr(at + 2, 2), nullptr, 16));
+    return codepoint <= 0x7F ? at + 4 : string::npos;
+  }
+  if (e == 'u' && at + 2 < line.size() && line[at + 2] == '{') {
+    size_t close = line.find('}', at + 3);
+    if (close == string::npos || close == at + 3 || close - (at + 3) > 6) return string::npos;
+    for (size_t k = at + 3; k < close; ++k)
+      if (!std::isxdigit(static_cast<unsigned char>(line[k]))) return string::npos;
+    codepoint = static_cast<uint32_t>(std::stoul(line.substr(at + 3, close - (at + 3)), nullptr, 16));
+    if (codepoint > 0x10FFFF || (codepoint >= 0xD800 && codepoint <= 0xDFFF)) return string::npos;
+    return close + 1;
+  }
+  return string::npos;
+}
+
+static string canonicalize_char_literals(const string& line, int line_no,
+                                         const string& source_file) {
+  const auto invalid = [&](size_t at) {
+    size_t end = std::min(line.size(), at + 10);
+    CompileError error(line_no, "invalid escape '" + line.substr(at, end - at) +
+                       "'; use \\n \\r \\t \\0 \\\\ \\' \\\" \\xHH (ASCII) or \\u{HEX} (a Unicode scalar)",
+                       "INVALID_ESCAPE");
+    error.source_file = source_file;
+    throw error;
+  };
+  string out;
+  out.reserve(line.size());
+  bool in_string = false;
+  for (size_t i = 0; i < line.size(); ++i) {
+    const char c = line[i];
+    if (in_string) {
+      if (c == '\\') {
+        uint32_t ignored = 0;
+        size_t next = parse_rust_escape(line, i, ignored);
+        if (next == string::npos) invalid(i);
+        out += line.substr(i, next - i);
+        i = next - 1;
+        continue;
+      }
+      out.push_back(c);
+      if (c == '"') in_string = false;
+      continue;
+    }
+    if (c == '"') { in_string = true; out.push_back(c); continue; }
+    if (c == '#') {  // a trailing comment is not code; lex_lines strips it
+      out += line.substr(i);
+      break;
+    }
+    if (numeric_literal_starts_at(line, i)) {
+      // Every numeric literal is validated and decoded by the shared
+      // specification in numeric_literal.hpp and rewritten to its canonical
+      // decimal spelling, so the checker, Fast Debug, and native lowering all
+      // see one decoded value. Only the negated magnitude 2^63 (Int minimum)
+      // may exceed Int maximum.
+      NumericLiteral literal = scan_numeric_literal(line, i);
+      if (!literal.ok) {
+        CompileError error(line_no, literal.message, literal.code);
+        error.source_file = source_file;
+        throw error;
+      }
+      const size_t end = literal.end;
+      if (!int_literal_in_range(literal, false)) {
+        bool negated = false;
+        if (!literal.magnitude_overflow && literal.magnitude == kNumericIntMinMagnitude) {
+          size_t k = i;
+          while (k > 0 && line[k - 1] == ' ') --k;
+          if (k > 0 && line[k - 1] == '-') {
+            size_t before = k - 1;
+            while (before > 0 && line[before - 1] == ' ') --before;
+            if (before == 0 ||
+                string("([{,=:+-*/%<>!&|^~").find(line[before - 1]) != string::npos) {
+              negated = true;
+            } else if (std::isalpha(static_cast<unsigned char>(line[before - 1]))) {
+              size_t word = before;
+              while (word > 0 && (std::isalnum(static_cast<unsigned char>(line[word - 1])) ||
+                                  line[word - 1] == '_'))
+                --word;
+              static const std::set<string> keywords = {
+                  "echo", "return", "reply", "and", "or", "xor", "not", "in",
+                  "if", "while", "raise"};
+              negated = keywords.count(line.substr(word, before - word)) != 0;
+            }
+          }
+        }
+        if (!negated) {
+          CompileError error(line_no, "integer literal '" + line.substr(i, end - i) +
+                             "' does not fit in Int (-9223372036854775808 through "
+                             "9223372036854775807)", "INT_LITERAL_OUT_OF_RANGE");
+          error.source_file = source_file;
+          throw error;
+        }
+      }
+      out += literal.canonical;
+      i = end - 1;
+      continue;
+    }
+    if (c != '\'') { out.push_back(c); continue; }
+    uint32_t codepoint = 0;
+    size_t end = string::npos;  // index of the closing quote
+    if (i + 1 < line.size() && line[i + 1] == '\\') {
+      size_t next = parse_rust_escape(line, i + 1, codepoint);
+      if (next == string::npos) invalid(i + 1);
+      if (next < line.size() && line[next] == '\'') end = next;
+    } else if (i + 1 < line.size()) {
+      const unsigned char b0 = static_cast<unsigned char>(line[i + 1]);
+      size_t width = b0 < 0x80 ? 1 : (b0 & 0xE0) == 0xC0 ? 2 : (b0 & 0xF0) == 0xE0 ? 3
+                   : (b0 & 0xF8) == 0xF0 ? 4 : 0;
+      if (width && b0 != '\'' && i + 1 + width < line.size() && line[i + 1 + width] == '\'') {
+        codepoint = width == 1 ? b0 : b0 & (0x7F >> width);
+        for (size_t k = 1; k < width; ++k)
+          codepoint = (codepoint << 6) | (static_cast<unsigned char>(line[i + 1 + k]) & 0x3F);
+        end = i + 1 + width;
+      }
+    }
+    if (end == string::npos) { out.push_back(c); continue; }
+    if (line[i + 1] != '\\' && codepoint < 0x80 &&
+        (std::isalnum(static_cast<int>(codepoint)) || codepoint == '_')) {
+      out += line.substr(i, end - i + 1);
+    } else {
+      char buffer[16];
+      std::snprintf(buffer, sizeof buffer, "'\\u{%X}'", codepoint);
+      out += buffer;
+    }
+    i = end;
+  }
+  return out;
+}
+
 static vector<Line> lex_lines(std::istream& in, const string& source_file = {}) {
   vector<Line> out;
   string raw;
@@ -2357,6 +2596,7 @@ static vector<Line> lex_lines(std::istream& in, const string& source_file = {}) 
       throw error;
     }
 
+    raw = canonicalize_char_literals(raw, no, source_file);
     // Strip comments outside strings.
     bool in_str = false, esc = false;
     size_t cut = raw.size();
@@ -2755,6 +2995,7 @@ class Checker {
                           left.call_site_identity == right.call_site_identity;
                     }),
         p_.semantic_uses.end());
+    if (deferred_echo_display_error_) throw *deferred_echo_display_error_;
     // Retain the typed compiler-facing handoff from the facts just checked.
     // This pass neither infers types nor parses diagnostic/display strings.
     p_.typed_semantics = std::make_shared<moss::TypedSemanticModuleV1>(
@@ -3530,10 +3771,19 @@ class Checker {
   void check_map_key_type(int line, const string& key) const {
     string type = canonical_type_name(key);
     if (contains_internal_placeholder(type)) return;
+    if (contains_float_type(type))
+      err(line, "Float Map keys require the canonical MossMap<K,V> under key-protocol-v1, which is not yet available; Float isequal/hash/less are available as functions", "FLOAT_MAP_KEY_UNSUPPORTED");
     if (contains_record_type(type))
       err(line, "record Map keys ('" + type + "') require the canonical MossMap<K,V> and a key-protocol-v1 key proof (isequal/hash), which are not yet available",
           "RECORD_MAP_KEY_UNSUPPORTED");
+    if (contains_enum_type(type))
+      err(line, "enum values cannot be Map keys; enum equality and hashing are unsupported",
+          "ENUM_MAP_KEY_UNSUPPORTED");
+    if (builtin_equality_type(type) && !hashable_map_key_type(type))
+      err(line, "'" + type + "' cannot be a Map key; keys are Int, Bool, Char, String, or a Vector/Queue of those until MossMap<K,V> lands",
+          "MAP_KEY_TYPE_UNSUPPORTED");
   }
+
 
   // Apply check_map_key_type to every Map nested in a declared type.
   void check_declared_map_keys(const string& source_file, int line,
@@ -3574,6 +3824,155 @@ class Checker {
     }
   }
 
+
+  // True when `type` is built only from compiler-defined value types whose
+  // operator equality every engine implements.
+  static bool builtin_equality_type(const string& type) {
+    if (type == "int" || type == "float" || type == "bool" || type == "char" ||
+        type == "string" || type == "Range")
+      return true;
+    auto bracket = type.find('[');
+    if (bracket == string::npos || !ends_with(type, "]")) return false;
+    string head = type.substr(0, bracket);
+    auto arguments = split_top_level(
+        type.substr(bracket + 1, type.size() - bracket - 2), ',');
+    if (!((head == "vector" || head == "queue") && arguments.size() == 1) &&
+        !(head == "map" && arguments.size() == 2))
+      return false;
+    for (const auto& argument : arguments)
+      if (!builtin_equality_type(trim(argument))) return false;
+    return true;
+  }
+
+  // Phase 25 S-B: the echo display contract (docs/FAST_DEBUG.md, "echo
+  // display contract"). Int, Float, Bool, Char, and String display as their
+  // scalar text; Vector[T] displays as "[" + elements joined by ", " + "]"
+  // when T is itself displayable. Every other type has no agreed text form in
+  // all engines and is rejected here, so check, Fast Debug, and native share
+  // one verdict and one code. An unresolved generic/trait/placeholder type is
+  // decided at its concrete specialization instead.
+  enum class EchoDisplay { Displayable, Unresolved, Unsupported };
+
+  EchoDisplay echo_display_class(const string& t, bool in_vector = false) const {
+    string type = canonical_type_name(t);
+    if (type == "int" || type == "float" || type == "bool" || type == "char" ||
+        type == "string")
+      return EchoDisplay::Displayable;
+    // A FileIO byte Range keeps its Phase 20 binary-safe display (b"..." with
+    // ASCII escapes, fileio_runtime.hpp). It is native-only because Fast
+    // Debug rejects FileIO programs, and it is not a Vector element form.
+    if (type == "Range" && !in_vector) return EchoDisplay::Displayable;
+    // An empty literal whose element type nothing pins (`echo []`) has no
+    // native type to format; reject it rather than let rustc fail
+    // (P25-S-ARCH-025). A typed `Vector[T]()` prints `[]`.
+    if (type == "vector") return EchoDisplay::Unsupported;
+    if (type.empty() || internal_semantic_placeholder(type) || traits_.count(type))
+      return EchoDisplay::Unresolved;
+    if (starts_with(type, "vector[") && ends_with(type, "]"))
+      return echo_display_class(trim(type.substr(7, type.size() - 8)), true);
+    return EchoDisplay::Unsupported;
+  }
+
+  // The display rule is reported after every other checker pass of the same
+  // program (see run()), so an earlier-pinned diagnostic for the expression
+  // being echoed, such as a functional ownership error, keeps precedence.
+  // The verdict is unchanged: a deferred display error still rejects.
+  mutable std::optional<CompileError> deferred_echo_display_error_;
+
+  void check_echo_display(int line, const string& t,
+                          bool require_concrete = false) const {
+    EchoDisplay display = echo_display_class(t);
+    // L7 option 1: an unresolved collection actually reaching a concrete echo
+    // operand reports the operation-specific diagnostic before body closure.
+    // Other unresolved locals still fail check_closed_body_types; no type is
+    // defaulted and generic placeholders are not treated as collections.
+    const auto term = parsed_type(t);
+    if (require_concrete && term &&
+        term->kind == moss::TypeKind::Builtin &&
+        moss::Type::collection_arity(term->name) && !term->is_closed())
+      report_echo_display(line, t);
+    if (display == EchoDisplay::Displayable ||
+        (display == EchoDisplay::Unresolved && !require_concrete)) return;
+    if (deferred_echo_display_error_) return;
+    try {
+      report_echo_display(line, t);
+    } catch (const CompileError& error) {
+      deferred_echo_display_error_ = error;
+    }
+  }
+
+  [[noreturn]] void report_echo_display(int line, const string& t) const {
+    string type = canonical_type_name(t);
+    string what;
+    if (enums_.count(type)) what = "an enum value ('" + type + "'); match its cases";
+    else if (objects_.count(type)) what = "a record value ('" + type + "'); echo its fields";
+    else if (type == "map" || starts_with(type, "map["))
+      what = "a Map ('" + type + "'), which has no deterministic display order; "
+             "echo its values by key";
+    else if (type == "queue" || starts_with(type, "queue["))
+      what = "a Queue ('" + type + "'); echo its elements";
+    else if (internal_semantic_placeholder(type))
+      what = "a value whose type is unresolved ('" + type +
+             "'); give it a concrete type before echo";
+    else if (type == "vector" || type.find("vector[vector]") != string::npos ||
+             (starts_with(type, "vector[") && type.find("[vector]") != string::npos))
+      what = "a Vector whose element type is unknown ('" + type + "'); give it elements or "
+             "use a typed constructor such as Vector[Int]()";
+    else if (starts_with(type, "vector["))
+      what = "'" + type + "' because its element type has no display form; echo its "
+             "elements' fields";
+    else what = "a value of type '" + type + "'";
+    err(line, "echo cannot display " + what + " (echo supports Int, Float, Bool, Char, "
+        "String, and Vector of those)", "ECHO_DISPLAY_UNSUPPORTED");
+  }
+
+  // Phase 25: `==`/`!=` is compiler-defined. Records have no equality (no
+  // synthesized field-wise equality), Char and String are distinct types, and
+  // mixed operands are accepted only for Int/Float numeric comparison.
+  void check_equality_operands(int line, const string& lt, const string& rt) const {
+    if (contains_record_type(lt) || contains_record_type(rt)) {
+      string record = contains_record_type(lt) ? lt : rt;
+      err(line, "record equality is not supported: '==' and '!=' are not defined for '" +
+          record + "'; compare the fields explicitly", "RECORD_EQUALITY_UNSUPPORTED");
+      return;
+    }
+    if (lt == rt) return;
+    bool numeric = (lt == "int" || lt == "float") && (rt == "int" || rt == "float");
+    if (numeric) return;
+    if ((lt == "char" && rt == "string") || (lt == "string" && rt == "char")) {
+      err(line, "Char and String are distinct types and cannot be compared with '==' or '!='; "
+          "use a Char literal such as 'x', or c.to_string() where a String is needed",
+          "TYPE_MISMATCH");
+      return;
+    }
+    if (builtin_equality_type(lt) && builtin_equality_type(rt))
+      err(line, "equality operands must have the same type, found '" + lt +
+          "' and '" + rt + "'", "TYPE_MISMATCH");
+  }
+
+  static bool contains_float_type(const string& type) {
+    if (type == "float") return true;
+    auto bracket = type.find('[');
+    if (bracket != string::npos && ends_with(type, "]"))
+      for (const auto& argument : split_top_level(
+               type.substr(bracket + 1, type.size() - bracket - 2), ','))
+        if (contains_float_type(canonical_type_name(argument))) return true;
+    return false;
+  }
+
+  // Map keys other than the built-in hashable scalars (and collections of
+  // them) need the canonical MossMap<K,V> and a key-protocol-v1 KeyProof
+  // (Team G G2/G3). Until then they fail closed here instead of in rustc.
+
+  // Key types every engine hashes today (P25-S-ARCH-014).
+  static bool hashable_map_key_type(const string& type) {
+    if (type == "int" || type == "bool" || type == "char" || type == "string") return true;
+    for (const string head : {"vector[", "queue["})
+      if (starts_with(type, head) && ends_with(type, "]"))
+        return hashable_map_key_type(trim(type.substr(head.size(), type.size() - head.size() - 1)));
+    return false;
+  }
+
   bool valid_type(const string& t) const {
     string type = canonical_type_name(t);
     auto parsed = moss::Type::parse_canonical(type);
@@ -3597,7 +3996,7 @@ class Checker {
     }
     if (fileio_forbidden_collection_type(type)) return false;
     if (type == "FileIO" || type == "Range" || type == "RangeBatch") return true;
-    if (type == "int" || type == "float" || type == "bool" || type == "string" ||
+    if (type == "int" || type == "float" || type == "bool" || type == "string" || type == "char" ||
         type == "unit") return true;
     if (domains_.count(type) || objects_.count(type) || enums_.count(type)) return true;
     if (traits_.count(type)) return true;
@@ -3611,8 +4010,13 @@ class Checker {
           const string nested = arg->to_canonical_string();
           if (contains_trait_type(nested) || !valid_type(nested)) return false;
         }
-        if ((*parsed)->name == "map" &&
-            contains_enum_type(args.front()->to_canonical_string())) return false;
+        if ((*parsed)->name == "map") {
+          const string key = args.front()->to_canonical_string();
+          if (contains_enum_type(key) || contains_float_type(key) ||
+              contains_record_type(key) ||
+              (builtin_equality_type(key) && !hashable_map_key_type(key)))
+            return false;
+        }
         return true;
       }
     }
@@ -4767,6 +5171,16 @@ class Checker {
 
   void check_closed_body_types(const vector<Stmt>& body, const TypeEnv& env, int fallback_line) const {
     for (const auto& [name, type] : env) {
+      // Static callable values carry a resolved function identity rather than
+      // a value TypeRef. Validate that identity before applying the concrete
+      // value rule below to ordinary locals and collections.
+      if (callable_identity(type)) {
+        string identity = canonical_type_name(type);
+        if (starts_with(identity, "callable:")) identity = identity.substr(9);
+        if ((starts_with(identity, "callable-v1:") &&
+             find_function_by_callable_id(identity)) || functions_.count(identity))
+          continue;
+      }
       const auto parsed = moss::Type::parse_canonical(canonical_type_name(type));
       // Internal summary placeholders are open even when legacy ingress
       // printed them as primitive names. Concrete roots cannot retain them.
@@ -5183,6 +5597,18 @@ class Checker {
       err(line, "'" + receiver + "' is not a domain reference; use a local function call or a domain reference");
     const Handler* h = find_handler(*dit->second, message);
     if (!h) err(line, "domain " + dit->second->name + " has no message handler '" + message + "'");
+    // Moss v0.1 message arguments are positional. A 'label: value' (or
+    // 'label = value') argument is not part of the message contract, so it is
+    // rejected here instead of reaching an engine that cannot lower it.
+    for (const auto& argument : args) {
+      string label, value;
+      if (parse_named_argument(argument, label, value))
+        err(line, "message " + dit->second->name + "." + message +
+            " does not accept named argument '" + trim(argument) +
+            "'; message arguments are positional in Moss v0.1, so remove the "
+            "label '" + label + ":' and pass the value in parameter order",
+            "MESSAGE_NAMED_ARGUMENT_UNSUPPORTED");
+    }
     if (h->params.size() != args.size())
       err(line, "message " + dit->second->name + "." + message + " expects " +
           std::to_string(h->params.size()) + " arguments, got " + std::to_string(args.size()));
@@ -5206,7 +5632,8 @@ class Checker {
     string e = trim(expression);
     if (e == "None") return "_none";
     if (e == "true" || e == "false") return "bool";
-    if (e.size() >= 2 && e.front() == '"' && e.back() == '"') return "string";
+    if (is_single_string_literal(e)) return "string";
+    if (is_single_char_literal(e)) return "char";
     auto local = env.find(e);
     if (local != env.end() && local->second && local->second->name != "_value") return local->second->to_canonical_string();
     size_t start = (!e.empty() && (e.front() == '+' || e.front() == '-')) ? 1 : 0;
@@ -5694,6 +6121,59 @@ class Checker {
     return std::nullopt;
   }
 
+  // The operator of `operators` at which split_binary split `expression`.
+  static string split_operator_at(const string& expression,
+                                  const std::pair<string, string>& split,
+                                  const vector<string>& operators) {
+    for (const auto& op : operators)
+      if (auto candidate = split_binary(expression, {op}); candidate && *candidate == split)
+        return op;
+    return "";
+  }
+
+  // Phase 25 S-C proven-safe divisor: an Int literal, optionally
+  // parenthesized and signed, whose value is neither 0 nor -1. Int `/` and
+  // `%` by such a divisor cannot fail in any engine. `-1` stays conservative
+  // (Int.MIN / -1 overflows; every engine currently wraps it), and every other
+  // divisor (names, calls, arithmetic, 0) stays a possible panic.
+  static bool proven_safe_integer_divisor(const string& divisor) {
+    string value = trim(divisor);
+    bool negative = false;
+    for (;;) {
+      if (value.size() >= 2 && value.front() == '(' && value.back() == ')') {
+        int depth = 0;
+        bool encloses = true;
+        for (size_t index = 0; index < value.size(); ++index) {
+          if (value[index] == '(') ++depth;
+          else if (value[index] == ')' && --depth == 0 && index + 1 != value.size()) {
+            encloses = false;
+            break;
+          }
+        }
+        if (!encloses) return false;
+        value = trim(value.substr(1, value.size() - 2));
+        continue;
+      }
+      if (!value.empty() && (value.front() == '-' || value.front() == '+')) {
+        if (value.front() == '-') negative = !negative;
+        value = trim(value.substr(1));
+        continue;
+      }
+      break;
+    }
+    if (value.empty() ||
+        !std::all_of(value.begin(), value.end(), [](char ch) {
+          return std::isdigit(static_cast<unsigned char>(ch));
+        }))
+      return false;
+    // Compare digit strings: no numeric conversion, so no overflow. A literal
+    // outside Int range is rejected separately (INT_LITERAL_OUT_OF_RANGE).
+    const size_t significant = value.find_first_not_of('0');
+    if (significant == string::npos) return false;            // 0
+    if (negative && value.substr(significant) == "1") return false;  // -1
+    return true;
+  }
+
   struct BuiltinCallSemantics {
     string result_type;
     ObservableEffects observable_effects;
@@ -5783,6 +6263,21 @@ class Checker {
       return BuiltinCallSemantics{"unit", true};
     if (callee == "assertEqual" && args.size() == 2)
       return BuiltinCallSemantics{"unit", true};
+    // Scalar-protocol and sort builtins yield to a user function of the
+    // same name in every engine.
+    if (functions_.count(callee)) return std::nullopt;
+    if (callee == "Char" && args.size() == 1)
+      return BuiltinCallSemantics{"char", true};
+    if (callee == "less" && args.size() == 2)
+      return BuiltinCallSemantics{"bool", false};
+    if (callee == "isequal" && args.size() == 2)
+      return BuiltinCallSemantics{"bool", false};
+    if (callee == "hash" && args.size() == 1)
+      return BuiltinCallSemantics{"int", false};
+    if (callee == "sort" && (args.size() == 1 || args.size() == 2))
+      return BuiltinCallSemantics{"unit", false};
+    if (callee == "Reverse" && args.size() == 1)
+      return BuiltinCallSemantics{"callable", false};
     return std::nullopt;
   }
 
@@ -5962,7 +6457,16 @@ class Checker {
     if (auto parts = parse_vector_literal(e)) {
       if (parts->empty()) return InferredExpr{nullptr, "vector"};
       vector<InferredExpr> elements;
+      // Preserve S's contextual empty-vector siblings using checked terms.
+      const bool has_typed_vector_sibling = std::any_of(
+          parts->begin(), parts->end(), [&](const string& part) {
+            if (trim(part) == "[]") return false;
+            auto item = inferred_expr(part, env);
+            return item && item->term &&
+                applied_builtin(item->term, {"vector"});
+          });
       for (const auto& part : *parts) {
+        if (has_typed_vector_sibling && trim(part) == "[]") continue;
         auto element = inferred_expr(part, env);
         if (!element) return std::nullopt;
         elements.push_back(std::move(*element));
@@ -6024,6 +6528,13 @@ class Checker {
       auto operand = operand_term(trim(e.substr(1)));
       if (primitive_term(operand, "int") || primitive_term(operand, "float"))
         return InferredExpr{operand, {}};
+    }
+    // Unary minus keeps its numeric operand's type (`return -x`).
+    if (e.size() > 1 && e.front() == '-') {
+      auto operand = inferred_expr_type(trim(e.substr(1)), env);
+      if (operand && (canonical_type_name(*operand) == "int" ||
+                      canonical_type_name(*operand) == "float"))
+        return inferred_leaf(canonical_type_name(*operand));
     }
     string index_base, index_expr;
     if (parse_index(e, index_base, index_expr)) {
@@ -6176,6 +6687,18 @@ class Checker {
     if (object_call) return object_call;
     string method_receiver, method_name; vector<string> method_args;
     if (parse_member_call(e, method_receiver, method_name, method_args)) {
+      string canon_recv = canonical_type_name(method_receiver);
+      if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" ||
+          canon_recv == "string" || canon_recv == "bool") {
+        if ((method_name == "less" || method_name == "isequal") && method_args.size() == 2)
+          return primitive("bool");
+        if (method_name == "hash" && method_args.size() == 1)
+          return primitive("int");
+        if (method_name == "to_string" && method_args.size() == 1)
+          return primitive("string");
+        if (canon_recv == "char" && method_name == "codepoint" && method_args.size() == 1)
+          return primitive("int");
+      }
       auto base = inferred_expr(method_receiver, env);
       if (base) {
         auto receiver_ir = current_body_types_
@@ -6213,10 +6736,7 @@ class Checker {
           return primitive("int");
         if (primitive_term(receiver_ir, "Range") && method_name == "slice" && method_args.size() == 2)
           return primitive("Range");
-        if (receiver_ir &&
-            ((receiver_ir->kind == moss::TypeKind::Builtin &&
-              moss::Type::collection_arity(receiver_ir->name)) ||
-             primitive_term(receiver_ir, "string")))
+        if (receiver_ir && builtin_receiver_family(concrete_base))
           if (auto result = builtin_operation_result(concrete_base, method_name,
                                                       method_args.size()))
             return inferred_leaf(*result);
@@ -6536,6 +7056,10 @@ class Checker {
         err(line, "field '" + constructor + "." + field->name + "' has conflicting inferred types '" +
             field->type + "' and '" + inferred + "'", "TYPE_MISMATCH");
     }
+    for (const auto& field : object->second->fields)
+      if (!supplied.count(field.name) && field.init.empty())
+        err(line, "missing object constructor field: " + constructor + "." + field.name,
+            "FIELD_COUNT_MISMATCH");
   }
 
   static bool concrete_environment_type(const string& type) {
@@ -6751,7 +7275,10 @@ class Checker {
         statement.kind == Stmt::Kind::Assign) {
       if (statement.kind != Stmt::Kind::Assign || simple_identifier(statement.a)) {
         auto existing = env.find(statement.a);
-        if (auto constructed = domain_constructor(statement.b)) {
+        if (statement.kind == Stmt::Kind::Assign && existing != env.end() &&
+            existing->second && existing->second->is_closed()) {
+          // Keep existing concrete type for straight-line reassignment.
+        } else if (auto constructed = domain_constructor(statement.b)) {
           env[statement.a] = *constructed;
         } else if (auto inferred = inferred_expr_type(statement.b, env)) {
           string cinf = canonical_type_name(*inferred);
@@ -9678,6 +10205,58 @@ class Checker {
       while (else_end < source.body.size() && source.body[else_end].indent > branch.indent) ++else_end;
     }
     const size_t suffix_begin = else_begin == then_end ? then_end : else_end;
+    // A Then/Else continuation splices the branch's statements in front of
+    // the suffix at one Rust block level. A branch-local binding would then
+    // stay visible in the suffix: it would shadow a state field, parameter,
+    // or route there, or capture a later same-named binding. Keep the
+    // conservative entry placement whenever the suffix names such a binding
+    // and it is not a fresh name bound on both paths (a checked join).
+    {
+      std::set<string> outer;
+      for (const auto& field : domain.state) outer.insert(field.name);
+      for (const auto& parameter : source.params) outer.insert(parameter.name);
+      for (const auto& route : domain.routes) outer.insert(route.name);
+      auto branch_binders = [&](size_t begin, size_t end) {
+        std::set<string> names;
+        for (size_t k = begin; k < end; ++k) {
+          const Stmt& statement = source.body[k];
+          if (statement.indent != branch.indent + 1) continue;
+          if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var)
+            names.insert(statement.a);
+          else if (statement.kind == Stmt::Kind::Assign && !outer.count(statement.a))
+            names.insert(statement.a);
+          else if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::Match ||
+                   statement.kind == Stmt::Kind::Try)
+            for (const auto& joined : statement.joined_types)
+              if (!outer.count(joined.first)) names.insert(joined.first);
+        }
+        return names;
+      };
+      const auto then_names = branch_binders(then_begin, then_end);
+      const auto else_names = branch_binders(else_begin, else_end);
+      auto suffix_mentions = [&](const string& name) {
+        for (size_t k = suffix_begin; k < source.body.size(); ++k) {
+          const Stmt& statement = source.body[k];
+          if (expression_uses(statement.a, name) ||
+              expression_uses(statement.b, name) ||
+              expression_uses(statement.message_result, name))
+            return true;
+          for (const auto& argument : statement.args)
+            if (expression_uses(argument, name)) return true;
+        }
+        return false;
+      };
+      for (const auto* names : {&then_names, &else_names})
+        for (const auto& name : *names) {
+          const bool joined = !outer.count(name) && then_names.count(name) &&
+              else_names.count(name);
+          if (!joined && suffix_mentions(name)) {
+            whole.path_placement.reason =
+                "conservative entry placement: leading branch binding is visible in the continuation";
+            return;
+          }
+        }
+    }
     auto then_body = normalized_statement_slice(source.body, then_begin, then_end, branch.indent + 1);
     auto else_body = normalized_statement_slice(source.body, else_begin, else_end, branch.indent + 1);
     auto suffix = normalized_statement_slice(source.body, suffix_begin, source.body.size(), 0);
@@ -11165,6 +11744,18 @@ class Checker {
       const vector<Param>& params, vector<Effect>& parameter_effects,
       Effect& receiver_effect, const std::set<string>& receiver_fields,
       Effect requested = Effect::Read) const {
+    {
+      // Prefix '-' reads its whole postfix operand (P25-S-ARCH-023): walk
+      // `s.length()` for `-s.length()` rather than a method on `-s`.
+      string trimmed = trim(expression);
+      if (trimmed.size() > 1 && trimmed.front() == '-' && trimmed[1] != '-' &&
+          !split_binary(trimmed, {"+", "-", "*", "/", "%", "==", "!=", "<", ">",
+                                  "<=", ">=", " and ", " or ", " xor "})) {
+        analyze_effect_expression(trim(trimmed.substr(1)), env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Read);
+        return;
+      }
+    }
     if (leaf_effect_capture_) {
       if (auto pipeline = parse_functional_pipeline(expression)) {
         auto source_type = inferred_expr_type(pipeline->source, env);
@@ -11274,6 +11865,14 @@ class Checker {
     {
       string callee;
       vector<string> arguments;
+      if (parse_simple_call(value, callee, arguments) && callee == "sort" &&
+          !functions_.count(callee) &&
+          (arguments.size() == 1 || arguments.size() == 2)) {
+        // sort writes its Vector place; the key is a pure named callable.
+        analyze_effect_expression(arguments[0], env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Write);
+        return;
+      }
       if (parse_simple_call(value, callee, arguments) && callee == "replace" &&
           arguments.size() == 2) {
         analyze_effect_expression(arguments[0], env, params, parameter_effects,
@@ -11816,6 +12415,12 @@ class Checker {
           for (const auto& argument : statement.args)
             analyze_effect_expression(argument, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, Effect::Read);
+          // `name = message ...` assigns an existing binding, including a
+          // domain state field, exactly like an ordinary assignment.
+          if (simple_effect_identifier(statement.message_result) &&
+              env.count(statement.message_result))
+            mark_effect_name(statement.message_result, Effect::Write, params, env,
+                             parameter_effects, receiver_effect, receiver_fields);
           if (leaf_effect_capture_ && !statement.message_result.empty()) {
             auto receiver = env.find(statement.a);
             synchronization_require(receiver != env.end() && domains_.count(canonical_type_name(receiver->second)), "unresolved message receiver");
@@ -12080,6 +12685,27 @@ class Checker {
       vector<string> argument_types;
       for (const auto& argument : call_arguments)
         argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
+      // `sort(v, by: key)` / `by: Reverse(key)` calls the named key at the
+      // element type.  Record that edge like a pipeline stage so module
+      // projection emits an imported untyped key's specialization into the
+      // consumer crate.
+      if (callee == "sort" && !functions_.count(callee) &&
+          call_arguments.size() == 2) {
+        string label, key, reverse_callee;
+        vector<string> reverse_args;
+        if (parse_named_argument(call_arguments[1], label, key) && label == "by") {
+          key = trim(key);
+          if (parse_simple_call(key, reverse_callee, reverse_args) &&
+              reverse_callee == "Reverse" && reverse_args.size() == 1)
+            key = trim(reverse_args.front());
+          string vector_type = canonical_type_name(argument_types.front());
+          if (functions_.count(key) && starts_with(vector_type, "vector[") &&
+              ends_with(vector_type, "]"))
+            calls.push_back(LocalCallSite{
+                "fn:" + key, {},
+                {canonical_type_name(vector_type.substr(7, vector_type.size() - 8))}});
+        }
+      }
       auto function = functions_.find(callee);
       if (function != functions_.end()) {
         calls.push_back(LocalCallSite{"fn:" + callee, call_arguments,
@@ -13465,10 +14091,18 @@ class Checker {
             binary->second, env, domain_fields, implicit_object, parameters,
             proven_indices, root_ingress));
         if (operators.front() == "*") {
-          if (split_binary(value, {"%"})) effects.may_panic = true;
-          if (split_binary(value, {"/"})) {
+          // Phase 25 S-C: classify only the operator at this split; nested
+          // operands were classified by the recursive calls above.
+          const string op = split_operator_at(value, *binary, {"*", "/", "%"});
+          if (op == "/" || op == "%") {
             auto result_type = inferred_expr_type(value, env);
-            if (!result_type || canonical_type_name(*result_type) != "float")
+            const string result = result_type ? canonical_type_name(*result_type) : "";
+            const bool float_division = op == "/" && result == "float";
+            auto dividend_type = inferred_expr_type(binary->first, env);
+            const bool int_dividend = dividend_type &&
+                canonical_type_name(*dividend_type) == "int" && result == "int";
+            if (!float_division &&
+                !(int_dividend && proven_safe_integer_divisor(binary->second)))
               effects.may_panic = true;
           }
         }
@@ -13620,6 +14254,14 @@ class Checker {
     string callee;
     vector<string> arguments_call;
     if (parse_simple_call(value, callee, arguments_call)) {
+      if (callee == "sort" && !functions_.count(callee) &&
+          (arguments_call.size() == 1 || arguments_call.size() == 2)) {
+        auto place = storage_location(arguments_call[0], env);
+        if (place && domain_fields.count(place->root)) effects.domain_write = true;
+        else effects.local_mutation = true;
+        // check_sort_call rejects any key with observable effects.
+        return effects;
+      }
       if (callee == "replace" && arguments_call.size() == 2) {
         auto place = storage_location(arguments_call[0], env);
         if (place && domain_fields.count(place->root)) effects.domain_write = true;
@@ -15260,6 +15902,11 @@ class Checker {
       auto resolved_callee = env.binding_identities.find(callee);
       if (resolved_callee != env.binding_identities.end())
         retain_semantic_use(resolved_callee->second, "binding_use", line);
+      if (callee == "sort" && !functions_.count(callee) &&
+          (call_arguments.size() == 1 || call_arguments.size() == 2)) {
+        check_ownership_expression(line, call_arguments[0], env, Effect::Write);
+        return;
+      }
       if (callee == "replace" && call_arguments.size() == 2) {
         auto replacement_type = inferred_expr_type(call_arguments[1], env.types);
         Effect replacement_effect = replacement_type && transfer_type(*replacement_type)
@@ -15279,7 +15926,15 @@ class Checker {
         std::unordered_map<string,string> supplied;
         for (const auto& argument : call_arguments) {
           string field, field_value;
-          if (parse_named_argument(argument, field, field_value)) supplied[field] = field_value;
+          if (parse_named_argument(argument, field, field_value)) {
+            supplied[field] = field_value;
+            auto f_it = std::find_if(declaration.fields.begin(), declaration.fields.end(),
+                                     [&](const Field& f) { return f.name == field; });
+            if (f_it != declaration.fields.end()) {
+              retain_semantic_use("field:" + declaration.name + "." + field + "@" +
+                                  std::to_string(f_it->line), "field_label", line);
+            }
+          }
         }
         vector<string> access_expressions;
         vector<Effect> access_effects;
@@ -15386,6 +16041,14 @@ class Checker {
         if (identity && *identity != found->second) different = true;
         identity = found->second;
       }
+      // A join binding declared with `let` on every path stays immutable.
+      // (A domain state field shadowed on every path is not a join binding.)
+      if (all_present && !destination.state_fields.count(entry.first) &&
+          std::all_of(paths.begin(), paths.end(),
+              [&](const OwnershipEnv& path) {
+                return path.immutable_locals.count(entry.first) != 0;
+              }))
+        destination.immutable_locals.insert(entry.first);
       if (!all_present) {
         destination.binding_identities.erase(entry.first);
       } else if (different) {
@@ -15634,7 +16297,10 @@ class Checker {
                   (before_id != incoming.binding_identities.end() &&
                    raised_id != raised.ownership.binding_identities.end() &&
                    before_id->second == raised_id->second);
-              if (!same_binding) {
+              // A try-local shadow hides the outer binding's ownership state
+              // at the edge. The outer binding is visible again in the arm;
+              // only a non-Copy one may have been consumed before the shadow.
+              if (!same_binding && !copy_type(binding.second)) {
                 recovered.moved.emplace(
                     binding.first, MoveInfo{arm.line, "shadowed before raise"});
               } else if (auto moved = raised.ownership.moved.find(binding.first);
@@ -15904,7 +16570,9 @@ class Checker {
                   ? checked_type : *source_type;
             }
             else if (!env.types.count(s.a)) env.types[s.a] = "_value";
-            if (!env.binding_identities.count(s.a))
+            // Domain state is not a lexical binding; writing it must not make
+            // a later raise edge look as if the field had been shadowed.
+            if (!env.binding_identities.count(s.a) && !env.state_fields.count(s.a))
               env.binding_identities[s.a] = statement_binding_identity(
                   current_semantic_context_, s.line);
             // Assignment creates or reinitializes the target, including a
@@ -15934,10 +16602,16 @@ class Checker {
             }
           }
           record_direct_raise();
+          if (!s.message_result.empty() && env.types.count(s.message_result) &&
+              simple_identifier(s.message_result))
+            // Assigning an existing binding or state field is a WRITE.
+            check_ownership_expression(s.line, s.message_result, env, Effect::Write);
           if (!s.message_result.empty()) {
             if (handler->reply_type) env.types[s.message_result] = *handler->reply_type;
-            env.binding_identities[s.message_result] = statement_binding_identity(
-                current_semantic_context_, s.line);
+            if (!env.binding_identities.count(s.message_result) &&
+                !env.state_fields.count(s.message_result))
+              env.binding_identities[s.message_result] = statement_binding_identity(
+                  current_semantic_context_, s.line);
             env.moved.erase(s.message_result);
           }
           ++index;
@@ -16090,8 +16764,9 @@ class Checker {
   // requirement names the provider statement that introduced it.
   [[noreturn]] void requirement_err(int line, const Function& function,
                                     const Constraint& requirement,
-                                    const string& message) const {
-    CompileError error(line, message);
+                                    const string& message,
+                                    const string& code = {}) const {
+    CompileError error(line, message, code);
     if (!current_source_file_.empty()) error.source_file = current_source_file_;
     if (compiled_interface_file(function.source_file)) {
       const string use = requirement.subject + "." + requirement.detail + "(";
@@ -16102,7 +16777,9 @@ class Checker {
           break;
         }
       error.teaching.related.push_back(
-          {function.source_file, origin, 1,
+          {function.provider_origin_file.empty()
+               ? function.source_file : function.provider_origin_file,
+           origin, 1,
            "provider function '" + provider_callable_display(function.name) +
                "' requires method '" + requirement.detail + "' on '" +
                requirement.subject + "'"});
@@ -16120,7 +16797,9 @@ class Checker {
     if (!compiled_interface_file(error.source_file)) return;
     error.teaching.related.insert(
         error.teaching.related.begin(),
-        {error.source_file, error.line, 1,
+        {function.provider_origin_file.empty()
+             ? error.source_file : function.provider_origin_file,
+         error.line, 1,
          "inside provider function '" +
              provider_callable_display(function.name) + "'"});
     if (compiled_interface_file(call_source) || call_source.empty()) return;
@@ -16178,7 +16857,8 @@ class Checker {
           requirement_err(line, function, requirement, prefix +
               " with ambiguous required method '" + requirement.detail + "'");
         requirement_err(line, function, requirement, prefix +
-            " missing required method '" + requirement.detail + "'");
+            " missing required method '" + requirement.detail + "'",
+            compiled_interface_file(function.source_file) ? "METHOD_NOT_FOUND" : "");
       }
       string result = builtin.value_or(fileio_builtin.value_or(
           method ? method->return_type.value_or("unit") : "unit"));
@@ -16743,6 +17423,10 @@ class Checker {
                            const moss::TypeRef& expected_open_result = nullptr,
                            std::optional<std::pair<uint32_t, uint32_t>>
                                nested_occurrences = std::nullopt) {
+    if (name == "sort" && !functions_.count(name)) {
+      check_sort_call(line, args, env);
+      return;
+    }
     if (name == "range") {
       if (args.size() != 2 && args.size() != 3)
         err(line, "range expects range(start, end) or range(start, end, step)");
@@ -16842,11 +17526,18 @@ class Checker {
       if (!same_type(*actual, *expected))
         err(line, "assertEqual operands have types '" + *actual +
             "' and '" + *expected + "'");
+      if (contains_record_type(*actual))
+        err(line, "assertEqual compares with '==', which is not defined for records ('" +
+            *actual + "'); assert on the fields", "RECORD_EQUALITY_UNSUPPORTED");
+      if (contains_enum_type(*actual))
+        err(line, "automatic enum equality is not supported; match the cases explicitly",
+            "ENUM_OPERATOR_UNSUPPORTED");
       string type = canonical_type_name(*actual);
       const auto printable_term = parsed_type(type);
       bool printable = primitive_term(printable_term, "int") ||
           primitive_term(printable_term, "float") ||
           primitive_term(printable_term, "bool") ||
+          primitive_term(printable_term, "char") ||
           primitive_term(printable_term, "string") ||
           applied_builtin(printable_term, {"vector"});
       if (!printable)
@@ -16871,7 +17562,17 @@ class Checker {
       if (it != functions_.end()) function_target = it->second;
     }
     if (!function_target) {
-      if (builtin_call_semantics(name, args, env)) return;
+      if (builtin_call_semantics(name, args, env)) {
+        // Builtin calls are positional too (P25-S-ARCH-016): 'Char(codepoint: 65)'.
+        for (const auto& argument : args) {
+          string label, value;
+          if (parse_named_argument(argument, label, value))
+            err(line, "builtin " + name + " does not accept named argument '" +
+                trim(argument) + "'; pass the value positionally",
+                "CALL_NAMED_ARGUMENT_UNSUPPORTED");
+        }
+        return;
+      }
       if (current_object_) {
         vector<string> argument_types;
         for (const auto& arg : args) argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
@@ -16885,6 +17586,17 @@ class Checker {
       const FnWrapper* operator->() const { return this; }
       FnWrapper* operator->() { return this; }
     } function{function_target};
+    // Ordinary function arguments are positional in Moss v0.1; labels are
+    // only part of constructor, enum-case, route, and builtin (e.g. 'by:')
+    // surfaces, which are handled before this point.
+    for (const auto& argument : args) {
+      string label, value;
+      if (parse_named_argument(argument, label, value))
+        err(line, "function " + name + " does not accept named argument '" +
+            trim(argument) + "'; function arguments are positional in Moss "
+            "v0.1, so remove the label '" + label + ":' and pass the value in "
+            "parameter order", "CALL_NAMED_ARGUMENT_UNSUPPORTED");
+    }
     if (function->second->params.size() != args.size())
       err(line, "function " + name + " expects " +
           std::to_string(function->second->params.size()) + " arguments, got " +
@@ -17054,6 +17766,30 @@ class Checker {
                                        return concrete_specialization_type(type) &&
                                               !traits_.count(canonical_type_name(type));
                                      });
+    bool in_unspecialized_static_function = false;
+    if (!checking_specialization_ && starts_with(current_semantic_context_, "fn:")) {
+      auto enclosing = functions_.find(current_semantic_context_.substr(3));
+      in_unspecialized_static_function = enclosing != functions_.end() &&
+          enclosing->second->static_dispatch;
+    }
+    // A named local with an open TypeRef is diagnosed at body closure, at its
+    // binding. An open temporary argument has no such binding and needs the
+    // call-site inference diagnostic (for example, show([])).
+    bool open_local_argument = std::any_of(args.begin(), args.end(),
+        [&](const string& argument) {
+          const string name = trim(argument);
+          if (!plain_identifier(name)) return false;
+          auto binding = env.find(name);
+          if (binding == env.end()) return false;
+          auto term = moss::Type::parse_canonical(
+              canonical_type_name(binding->second));
+          return term && !(*term)->is_closed();
+        });
+    if (function->second->static_dispatch && !concrete_call &&
+        !in_unspecialized_static_function && !open_local_argument)
+      err(line, "cannot infer concrete argument types for static specialization of function '" +
+          name + "'; give empty collections a typed constructor such as Vector[Int]()",
+          "TYPE_INFERENCE_FAILED");
     if (concrete_call) {
       auto requirements = validate_method_requirements(
           line, *function->second, actual_types);
@@ -17545,6 +18281,96 @@ class Checker {
     return result;
   }
 
+  static bool scalar_type_name(const string& name) {
+    return name == "Int" || name == "Float" || name == "Char" ||
+           name == "String" || name == "Bool";
+  }
+
+  // Built-in key-protocol-v1 operations on scalars: less/isequal take two
+  // operands of one total-order scalar type, hash takes one.
+  void check_scalar_protocol_call(int line, const string& op, const string& declared,
+                                  const vector<string>& args, const TypeEnv& env) {
+    const size_t arity = op == "hash" ? 1 : 2;
+    if (args.size() != arity)
+      err(line, op + " expects " + std::to_string(arity) + " argument" +
+          (arity == 1 ? "" : "s"), "KEY_PROTOCOL_SIGNATURE");
+    string type = declared;
+    for (const auto& argument : args) {
+      check_expression(line, argument, env);
+      auto actual = inferred_expr_type(argument, env);
+      string concrete = actual ? canonical_type_name(*actual) : "";
+      if (!total_order_scalar(concrete))
+        err(line, op + " requires Int, Float, Char, String, or Bool operands, found '" +
+            (actual ? *actual : string("unknown")) + "'", "KEY_PROTOCOL_TYPE");
+      if (type.empty()) type = concrete;
+      else if (concrete != type)
+        err(line, op + " operands must have one type; found '" + type + "' and '" +
+            concrete + "'", "KEY_PROTOCOL_TYPE");
+    }
+  }
+
+  static bool total_order_scalar(const string& type) {
+    return type == "int" || type == "float" || type == "char" ||
+           type == "string" || type == "bool";
+  }
+
+  // sort(v), sort(v, by: key), sort(v, by: Reverse(key)): stable in-place
+  // sort of a Vector place under the key type's total `less`. The key is a
+  // named function whose specialization has no observable effect, so the
+  // number and order of key evaluations is unobservable in every engine.
+  void check_sort_call(int line, const vector<string>& args, const TypeEnv& env) {
+    if (args.empty() || args.size() > 2)
+      err(line, "sort expects sort(v), sort(v, by: key), or sort(v, by: Reverse(key))",
+          "SORT_SIGNATURE");
+    if (!storage_location(args[0], env))
+      err(line, "sort requires an assignable Vector place, found '" + args[0] + "'",
+          "SORT_REQUIRES_PLACE");
+    check_expression(line, args[0], env);
+    auto vector_type = inferred_expr_type(args[0], env);
+    string canonical = vector_type ? canonical_type_name(*vector_type) : "";
+    if (!starts_with(canonical, "vector[") || !ends_with(canonical, "]"))
+      err(line, "sort requires a Vector place, found '" +
+          (vector_type ? *vector_type : string("unknown")) + "'",
+          "SORT_REQUIRES_VECTOR");
+    string element = canonical_type_name(canonical.substr(7, canonical.size() - 8));
+    if (args.size() == 1) {
+      if (!total_order_scalar(element))
+        err(line, "sort(v) requires Int, Float, Char, String, or Bool elements, found '" +
+            element + "'; supply sort(v, by: key)", "SORT_KEY_UNORDERED");
+      return;
+    }
+    string label, key;
+    if (!parse_named_argument(args[1], label, key) || label != "by" ||
+        top_level_colon(args[1]) == string::npos)
+      err(line, "sort's second argument must be 'by: key'", "SORT_SIGNATURE");
+    string reverse_callee;
+    vector<string> reverse_args;
+    if (parse_simple_call(key, reverse_callee, reverse_args) &&
+        reverse_callee == "Reverse") {
+      if (reverse_args.size() != 1)
+        err(line, "Reverse expects one key function", "SORT_SIGNATURE");
+      key = trim(reverse_args.front());
+    }
+    auto function = functions_.find(key);
+    if (!plain_identifier(key) || function == functions_.end())
+      err(line, "sort key must be a named function, found '" + key + "'",
+          "SORT_KEY_CALLABLE");
+    auto result = check_functional_callable(line, key, {element}, env, "sort");
+    string key_type = result ? canonical_type_name(*result) : "";
+    if (!total_order_scalar(key_type))
+      err(line, "sort key '" + key + "' must return Int, Float, Char, String, or Bool, found '" +
+          (result ? *result : string("unknown")) + "'", "SORT_KEY_UNORDERED");
+    if (sort_key_effect(*function->second, element) == Effect::Write)
+      err(line, "sort key '" + key + "' must not write its argument", "SORT_KEY_IMPURE");
+    ObservableEffects effects =
+        concrete_function_observable_effects(*function->second, {element});
+    string barrier = observable_barrier(effects);
+    if (barrier == "none" && effects.may_diverge) barrier = "possible divergence";
+    if (barrier != "none")
+      err(line, "sort key '" + key + "' must be pure; it has " + barrier,
+          "SORT_KEY_IMPURE");
+  }
+
   bool check_functional_pipeline(int line, const string& expression,
                                  const TypeEnv& env) {
     auto parsed = parse_functional_pipeline(expression);
@@ -17681,12 +18507,76 @@ class Checker {
     return true;
   }
 
+  // Finds two operands separated only by whitespace at the top level of an
+  // expression (`foo bar`, `1 2`, `if c`), which no Moss expression form
+  // allows. Word operators and the `message` prefix are not operands.
+  static std::optional<std::pair<string, string>> juxtaposed_operands(const string& expression) {
+    // `in` keeps its dedicated UNSUPPORTED_EXPRESSION_OPERATOR diagnostic.
+    static const std::set<string> word_operators{"and", "or", "xor", "not", "message", "in"};
+    auto is_word = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; };
+    string previous;          // last top-level token when it ends an operand
+    bool previous_operand = false;
+    bool space = false;
+    int depth = 0;
+    for (size_t i = 0; i < expression.size();) {
+      char c = expression[i];
+      if (c == '"' || (c == '\'' && depth == 0)) {
+        size_t start = i;
+        char quote = c;
+        for (++i; i < expression.size() && expression[i] != quote; ++i)
+          if (expression[i] == '\\') ++i;
+        ++i;
+        if (depth == 0) {
+          if (previous_operand && space) return std::make_pair(previous, expression.substr(start, i - start));
+          previous = expression.substr(start, std::min(i, expression.size()) - start);
+          previous_operand = true;
+          space = false;
+        }
+        continue;
+      }
+      if (c == '(' || c == '[' || c == '{') {
+        // `data [0]` and `f (x)` are postfix index/call forms.
+        ++depth; ++i; continue;
+      }
+      if (c == ')' || c == ']' || c == '}') {
+        if (depth > 0) --depth;
+        ++i;
+        if (depth == 0) { previous = string(1, c); previous_operand = true; space = false; }
+        continue;
+      }
+      if (depth > 0) { ++i; continue; }
+      if (std::isspace(static_cast<unsigned char>(c))) { space = true; ++i; continue; }
+      if (is_word(c)) {
+        size_t start = i;
+        while (i < expression.size() && (is_word(expression[i]) || expression[i] == '.' ||
+               ((expression[i] == '+' || expression[i] == '-') &&
+                std::isdigit(static_cast<unsigned char>(expression[start])) &&
+                (expression[i - 1] == 'e' || expression[i - 1] == 'E'))))
+          ++i;
+        string word = expression.substr(start, i - start);
+        if (word_operators.count(word)) { previous_operand = false; space = false; continue; }
+        if (previous_operand && space) return std::make_pair(previous, word);
+        previous = word; previous_operand = true; space = false;
+        continue;
+      }
+      previous_operand = c == '.' && previous_operand;
+      space = false;
+      ++i;
+    }
+    return std::nullopt;
+  }
+
   void check_expression(int line, const string& expression,
                         const std::unordered_map<string,string>& env) {
     string original = trim(expression);
     if (starts_with(original, "match "))
       err(line, "match is a statement, not an expression",
           "MATCH_EXPRESSION_UNSUPPORTED");
+    if (auto juxtaposed = juxtaposed_operands(original))
+      err(line, "invalid expression '" + original + "': '" + juxtaposed->first +
+          "' is followed by '" + juxtaposed->second +
+          "' with no operator between them (if, while, and for are statements, not expressions)",
+          "INVALID_EXPRESSION");
     {
       string enum_name, case_name;
       vector<string> arguments;
@@ -17844,6 +18734,18 @@ class Checker {
         err(line, "Range ordering operators are unsupported", "TYPE_MISMATCH");
         return;
       }
+      if (left && right && !unresolved_semantic_type(*left) && !unresolved_semantic_type(*right) &&
+          !contains_internal_placeholder(*left) && !contains_internal_placeholder(*right)) {
+        string lt = canonical_type_name(*left);
+        string rt = canonical_type_name(*right);
+        bool left_num = (lt == "int" || lt == "float");
+        bool right_num = (rt == "int" || rt == "float");
+        bool valid = (left_num && right_num) || (lt == "char" && rt == "char");
+        if (!valid) {
+          err(line, "ordering operator requires Int, Float, or Char operands, found '" + *left + "' and '" + *right + "'", "TYPE_MISMATCH");
+          return;
+        }
+      }
     }
     if (auto binary = split_binary(value, {"==", "!=", "<=", ">=", "<", ">"})) {
       check_expression(line, binary->first, env);
@@ -17865,6 +18767,9 @@ class Checker {
           err(line, "Range equality requires two Range operands",
               "TYPE_MISMATCH");
         }
+        auto equality = split_binary(value, {"==", "!="});
+        if (equality && equality->first == binary->first)
+          check_equality_operands(line, lt, rt);
       }
       return;
     }
@@ -17897,6 +18802,25 @@ class Checker {
         err(line, "shift operator '" + op + "' requires Int operands", "TYPE_MISMATCH");
       return;
     }
+    if (!value.empty() && value.front() == '-' &&
+        !split_binary(value, {"+", "-", "*", "/", "%"})) {
+      // Prefix '-' applies to its whole postfix operand: `-s.length()` negates
+      // the call result, so the operand is checked as one expression
+      // (P25-S-ARCH-021) rather than letting member-call parsing see `-s`.
+      string operand = trim(value.substr(1));
+      if (!operand.empty() && operand.front() != '-') {
+        check_expression(line, operand, env);
+        auto operand_type = inferred_expr_type(operand, env);
+        if (operand_type) {
+          string type = canonical_type_name(*operand_type);
+          if ((builtin_equality_type(type) || contains_record_type(type)) &&
+              type != "int" && type != "float")
+            err(line, "unary '-' requires an Int or Float operand, found '" + type + "'",
+                "TYPE_MISMATCH");
+        }
+        return;
+      }
+    }
     for (const auto& operators : vector<vector<string>>{{"+", "-", "*", "/", "%"}}) {
         if (auto binary = split_binary(value, operators)) {
           check_expression(line, binary->first, env);
@@ -17916,6 +18840,29 @@ class Checker {
           if ((left_type && canonical_type_name(*left_type) == "Range") ||
               (right_type && canonical_type_name(*right_type) == "Range")) {
             err(line, "Range arithmetic is unsupported", "TYPE_MISMATCH");
+          }
+          if (left_type && right_type) {
+            // Arithmetic is compiler-defined: Int/Float operands, plus
+            // String + String concatenation (P25-S-ARCH-013).
+            string lt = canonical_type_name(*left_type);
+            string rt = canonical_type_name(*right_type);
+            string op;
+            for (const string candidate : {"+", "-", "*", "/", "%"}) {
+              auto split = split_binary(value, {candidate});
+              if (split && split->first == binary->first) op = candidate;
+            }
+            bool numeric = (lt == "int" || lt == "float") && (rt == "int" || rt == "float");
+            bool concat = op == "+" && lt == "string" && rt == "string";
+            // '%' keeps its dedicated Int-only diagnostic below.
+            if (op != "%" && !numeric && !concat && builtin_equality_type(lt) &&
+                builtin_equality_type(rt))
+              err(line, "operator '" + op + "' is not defined for '" + lt + "' and '" + rt +
+                  "'" + (lt == "char" || rt == "char"
+                             ? "; use c.to_string() to build a String from a Char" : ""),
+                  "TYPE_MISMATCH");
+            if (op != "%" && !numeric && !concat &&
+                (contains_record_type(lt) || contains_record_type(rt)))
+              err(line, "operator '" + op + "' is not defined for records", "TYPE_MISMATCH");
           }
           if (split_binary(value, {"%"})) {
             auto left = inferred_expr_type(binary->first, env);
@@ -17953,6 +18900,12 @@ class Checker {
     string receiver, handler;
     vector<string> args;
     if (parse_member_call(value, receiver, handler, args)) {
+      if (scalar_type_name(receiver) &&
+          (handler == "less" || handler == "isequal" || handler == "hash")) {
+        check_scalar_protocol_call(line, handler, canonical_type_name(receiver),
+                                   args, env);
+        return;
+      }
       if (check_fileio_operation(line, receiver, handler, args, env)) return;
       if (auto receiver_type = inferred_expr_type(receiver, env)) {
         // A bare Map has no key or value type. In particular, a default passed
@@ -18033,6 +18986,12 @@ class Checker {
           err(line, "no matching method '" + canonical_type_name(it->second) + "." +
               handler + "' for supplied arguments");
       }
+      string canon_recv = canonical_type_name(receiver);
+      if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" ||
+          canon_recv == "string" || canon_recv == "bool") {
+        for (const auto& arg : args) check_expression(line, arg, env);
+        return;
+      }
       check_expression(line, receiver, env);
       for (const auto& arg : args) check_expression(line, arg, env);
       return;
@@ -18107,6 +19066,54 @@ class Checker {
         if (receiver_type && enums_.count(canonical_type_name(*receiver_type)))
           err(line, "enum payload fields require match; field projection is unsupported",
               "ENUM_FIELD_PROJECTION_UNSUPPORTED");
+        string field = trim(value.substr(dot + 1));
+        string base = trim(value.substr(0, dot));
+        string digits = !base.empty() && (base.front() == '-' || base.front() == '+')
+            ? trim(base.substr(1)) : base;
+        auto all_digits = [](const string& text) {
+          return !text.empty() && std::all_of(text.begin(), text.end(), [](char c) {
+            return std::isdigit(static_cast<unsigned char>(c)) || c == '_';
+          });
+        };
+        // An exponent field is only `e`/`E`, an optional sign, then digits
+        // (`1.e5`, `2.5E-3`); `1.exp` is Int `1` plus a member (P25-S-ARCH-027).
+        auto exponent = [&](const string& text) {
+          if (text.size() < 2 || (text[0] != 'e' && text[0] != 'E')) return false;
+          size_t at = (text[1] == '+' || text[1] == '-') ? 2 : 1;
+          return at < text.size() && all_digits(text.substr(at));
+        };
+        auto fraction_exponent = [&](const string& text) {
+          size_t e = text.find_first_of("eE");
+          return e != string::npos && e > 0 && all_digits(text.substr(0, e)) &&
+              exponent(text.substr(e));
+        };
+        bool float_literal = all_digits(digits) && (field.empty() || all_digits(field) ||
+            exponent(field) || fraction_exponent(field));
+        if (receiver_type && !float_literal && (plain_identifier(field) || all_digits(field))) {
+          // P25-S-ARCH-024: a projection must name a declared record field;
+          // compiler-defined values have no fields.
+          string type = canonical_type_name(*receiver_type);
+          if (objects_.count(type)) {
+            const auto& fields = objects_.at(type)->fields;
+            bool known = std::any_of(fields.begin(), fields.end(),
+                [&](const Field& candidate) { return candidate.name == field; });
+            if (!known)
+              err(line, "record '" + type + "' has no field '" + field + "'",
+                  "UNKNOWN_FIELD");
+          } else if (builtin_equality_type(type) || type == "map" || type == "queue" ||
+                     type == "vector" || starts_with(type, "map[") ||
+                     starts_with(type, "queue[")) {
+            err(line, "'" + type + "' has no field '" + field + "'" +
+                (type == "string"
+                     ? "; call String methods with parentheses, e.g. '" + base + ".length()'"
+                     : starts_with(type, "vector") || starts_with(type, "queue") ||
+                       starts_with(type, "map")
+                         ? "; collections have no fields (use '" + base + " |> count' for a "
+                           "Vector's size)"
+                         : ""),
+                "UNKNOWN_FIELD");
+          }
+        }
         if (receiver_type && objects_.count(canonical_type_name(*receiver_type))) {
           check_expression(line, value.substr(0, dot), env);
           string field_name = trim(value.substr(dot + 1));
@@ -18143,6 +19150,21 @@ class Checker {
     }
     string callee;
     if (parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
+      if (callee == "sort" && !functions_.count(callee)) {
+        check_sort_call(line, args, env);
+        return;
+      }
+      if ((callee == "less" || callee == "isequal" || callee == "hash") &&
+          !functions_.count(callee)) {
+        check_scalar_protocol_call(line, callee, "", args, env);
+        return;
+      }
+      if (callee == "Reverse" && !functions_.count(callee))
+        err(line, "Reverse(key) is only valid as the key of sort(v, by: Reverse(key))",
+            "SORT_REVERSE_POSITION");
+      if (callee == "range" && !functions_.count(callee))
+        err(line, "range(start, end[, step]) is only valid as a for-loop source, not a value (P25-S-ARCH-017)",
+            "RANGE_OUTSIDE_FOR");
       if (callee == "replace" && args.size() == 2) {
         auto place = storage_location(args[0], env);
         if (!place)
@@ -18192,7 +19214,13 @@ class Checker {
                 "' requires an explicit constructor value", "ENUM_FIELD_INITIALIZER_REQUIRED");
       } else {
         check_function_call(line, callee, args, env);
-        for (const auto& arg : args) check_expression(line, arg, env);
+        for (const auto& arg : args) {
+          string name, val;
+          if (parse_named_argument(arg, name, val))
+            check_expression(line, val, env);
+          else
+            check_expression(line, arg, env);
+        }
       }
       return;
     }
@@ -18432,6 +19460,27 @@ class Checker {
                 "' cannot be used as ordinary writable storage");
         FileIOOwnerScope fileio_owner(fileio_owner_initializer_, statement.b);
         check_expression(statement.line, statement.b, current_env);
+        if (statement.kind == Stmt::Kind::Assign &&
+            simple_identifier(statement.a) && !current_env.count(statement.a)) {
+          auto inferred = inferred_expr_type(statement.b, current_env);
+          if (!inferred && starts_with(trim(statement.b), "["))
+            err(statement.line, "heterogeneous or unresolved collection element type");
+        }
+        if (statement.kind == Stmt::Kind::Assign &&
+            simple_identifier(statement.a) && current_env.count(statement.a)) {
+          const auto prior_type = current_env.at(statement.a);
+          auto new_type = inferred_expr_type(statement.b, current_env);
+          if (new_type && !contains_internal_placeholder(prior_type) &&
+              !contains_internal_placeholder(*new_type) &&
+              prior_type && prior_type->is_closed() &&
+              !unresolved_semantic_type(*new_type) &&
+              !same_type(prior_type, *new_type)) {
+            err(statement.line,
+                "assignment to binding '" + statement.a + "' of type '" +
+                    canonical_type_name(prior_type) + "' with incompatible type '" + *new_type + "'",
+                "TYPE_MISMATCH");
+          }
+        }
         if (statement.kind == Stmt::Kind::Assign) {
           if (simple_identifier(statement.a)) {
             if (!current_env.count(statement.a)) {
@@ -18652,9 +19701,12 @@ class Checker {
         bool fileio_builtin = false;
         if (!statement.b.empty()) {
           auto receiver = current_env.find(statement.a);
-          if (receiver != current_env.end() &&
-              domains_.count(canonical_type_name(receiver->second))) {
-            const string domain = canonical_type_name(receiver->second);
+          auto receiver_type = receiver != current_env.end()
+              ? std::optional<string>(canonical_type_name(receiver->second))
+              : inferred_expr_type(statement.a, current_env);
+          if (receiver_type &&
+              domains_.count(canonical_type_name(*receiver_type))) {
+            const string domain = canonical_type_name(*receiver_type);
             const Handler* target = check_call(
                 statement.line, statement.a, statement.b, statement.args,
                 current_env);
@@ -18675,26 +19727,26 @@ class Checker {
                 "write 'message " + statement.a + "." + statement.b +
                     "(...)' for this synchronous cross-domain call");
           }
-          bool receiver_builtin = receiver != current_env.end() &&
-              builtin_receiver_family(receiver->second).has_value();
-          fileio_builtin = receiver != current_env.end() &&
-              (canonical_type_name(receiver->second) == "FileIO" ||
-               canonical_type_name(receiver->second) == "Range" ||
-               canonical_type_name(receiver->second) == "RangeBatch");
+          bool receiver_builtin = receiver_type &&
+              builtin_receiver_family(*receiver_type).has_value();
+          fileio_builtin = receiver_type &&
+              (canonical_type_name(*receiver_type) == "FileIO" ||
+               canonical_type_name(*receiver_type) == "Range" ||
+               canonical_type_name(*receiver_type) == "RangeBatch");
           if (!receiver_builtin && !fileio_builtin) {
-            if (receiver != current_env.end() &&
-                objects_.count(canonical_type_name(receiver->second))) {
+            if (receiver_type &&
+                objects_.count(canonical_type_name(*receiver_type))) {
               vector<string> argument_types;
               for (const auto& argument : statement.args)
                 argument_types.push_back(
                     inferred_expr_type(argument, current_env).value_or(""));
-              if (!resolve_method(canonical_type_name(receiver->second), statement.b,
+              if (!resolve_method(canonical_type_name(*receiver_type), statement.b,
                                   argument_types))
-                err(statement.line, "no matching method '" + canonical_type_name(receiver->second) + "." +
+                err(statement.line, "no matching method '" + *receiver_type + "." +
                     statement.b + "' for supplied arguments");
-            } else if (receiver != current_env.end() && current_function &&
-                       (open_generic(receiver->second) ||
-                        traits_.count(canonical_type_name(receiver->second)))) {
+            } else if (receiver_type && current_function &&
+                       (open_generic(*receiver_type) ||
+                        traits_.count(*receiver_type))) {
               bool constrained = std::any_of(
                   current_function->constraints.begin(),
                   current_function->constraints.end(), [&](const Constraint& constraint) {
@@ -18717,11 +19769,18 @@ class Checker {
         }
         if (!statement.b.empty())
           check_expression(statement.line, statement.text, current_env);
+        const bool sort_builtin = statement.b.empty() && statement.a == "sort" &&
+            !functions_.count(statement.a);
         for (const auto& argument : statement.args)
-          if (!(fileio_builtin && (trim(argument) == "ro" ||
+          if (!sort_builtin && !(fileio_builtin && (trim(argument) == "ro" ||
                 trim(argument) == "rw" || trim(argument) == "create" ||
-                trim(argument) == "dataonly")))
-            check_expression(statement.line, argument, current_env);
+                trim(argument) == "dataonly"))) {
+            string name, val;
+            if (parse_named_argument(argument, name, val))
+              check_expression(statement.line, val, current_env);
+            else
+              check_expression(statement.line, argument, current_env);
+          }
         if (!statement.message_result.empty()) {
           const Domain* target = nullptr;
           auto receiver = current_env.find(statement.a);
@@ -18753,17 +19812,33 @@ class Checker {
       }
 
       if (statement.kind == Stmt::Kind::Echo) {
+        vector<string> echo_types;
         for (const auto& argument : statement.args) {
           check_expression(statement.line, argument, current_env);
           auto type = inferred_expr_type(argument, current_env);
-          if (type && unresolved_semantic_type(*type) &&
-              (!current_function || checking_specialization_))
-            err(statement.line, "echo requires a concrete result type for '" +
-                argument + "'", "TYPE_AMBIGUOUS_OPEN_RESULT");
-          if (type && enums_.count(canonical_type_name(*type)))
-            err(statement.line, "echo cannot display an enum directly; match its cases",
-                "ENUM_DISPLAY_UNSUPPORTED");
+          if (type) check_echo_display(
+              statement.line, *type,
+              !current_function || !current_function->static_dispatch ||
+                  checking_specialization_);
+          else if (parse_vector_literal(trim(argument)))
+            check_echo_display(statement.line, "vector");  // `echo []`, `echo [[]]`
+          else if (plain_identifier(trim(argument))) {
+            auto binding = current_env.find(trim(argument));
+            if (binding != current_env.end() &&
+                (canonical_type_name(binding->second) == "vector" ||
+                 contains_internal_placeholder(binding->second)))
+              check_echo_display(
+                  statement.line, canonical_type_name(binding->second),
+                  !current_function || !current_function->static_dispatch ||
+                      checking_specialization_);
+          }
+          echo_types.push_back(type ? canonical_type_name(*type) : string());
         }
+        const string echo_context = current_function && checking_specialization_
+            ? functional_function_context(*current_function, checking_specialization_)
+            : string();
+        const_cast<Stmt&>(statement).echo_types_by_context[echo_context] =
+            std::move(echo_types);
         return;
       }
 
@@ -20286,6 +21361,7 @@ class Generator {
             ProgramGenerationMode mode = ProgramGenerationMode::Application,
             vector<string> rust_dependencies = {},
             const Program* resolution_program = nullptr,
+            bool project_module_artifact = false,
             bool emit_static_specializations = true,
             bool public_specializations = false)
       : p_(p),
@@ -20293,7 +21369,8 @@ class Generator {
         debug_build_(debug_build), mode_(mode),
         rust_dependencies_(std::move(rust_dependencies)),
         emit_static_specializations_(emit_static_specializations),
-        public_specializations_(public_specializations) {
+        public_specializations_(public_specializations),
+        project_module_artifact_(project_module_artifact) {
     for (const auto& d : p.domains) domains_[d.name] = &d;
     const Program& semantic_program = resolution_program ? *resolution_program : p;
     semantic_program_ = &semantic_program;
@@ -20403,20 +21480,33 @@ class Generator {
 
     o << handler_runtime_rust();
     o << float_format_runtime_rust();
+    o << char_string_ordering_runtime_rust(indexed_strings_staged());
+    o << display_runtime_rust();
     if (program_uses_numeric_builtins()) o << numeric_runtime_rust();
     if (program_uses_fileio(p_)) {
       o << fileio_runtime_rust();
     }
-    if (!p_.explicit_module || p_.main) {
+    if (!project_module_artifact_) {
       o << fileio_root_runtime_rust();
+    } else if (p_.main) {
+      // A module with main may also be exported as an rlib. Only its executable
+      // build owns process-wide FileIO symbols; linked library builds borrow
+      // the selected executable's root runtime.
+      o << "#[cfg(moss_process_root)]\nmod __moss_fileio_root_runtime {\nuse super::*;\n";
+      o << fileio_root_runtime_rust();
+      o << "}\n#[cfg(moss_process_root)]\npub use __moss_fileio_root_runtime::*;\n";
     }
     // Executor runtime ownership follows C's executable/provider role. The
     // Agent B FileIO root runtime remains emitted only in the process root.
     const ExecutorRuntimeRole executor_role =
-        !p_.explicit_module || p_.main.has_value()
-            ? ExecutorRuntimeRole::ProcessRoot
+        !project_module_artifact_
+            ? (p_.explicit_module && !p_.main.has_value()
+                ? ExecutorRuntimeRole::SelectedByExecutableBuild
+                : ExecutorRuntimeRole::ProcessRoot)
             : semantic_program_->main.has_value()
-                ? ExecutorRuntimeRole::Provider
+                ? (p_.main.has_value()
+                    ? ExecutorRuntimeRole::SelectedByExecutableBuild
+                    : ExecutorRuntimeRole::Provider)
                 : ExecutorRuntimeRole::SelectedByExecutableBuild;
     o << executor_runtime_rust(executor_role);
     for (const auto& e : p_.enums) gen_enum(o, e);
@@ -20548,6 +21638,9 @@ class Generator {
   vector<string> rust_dependencies_;
   bool emit_static_specializations_ = true;
   bool public_specializations_ = false;
+  // Only Margo's per-module projection is reused as both an rlib and the
+  // selected executable. Direct `moss -o` Rust is a standalone process root.
+  bool project_module_artifact_ = false;
   bool benchmark_body_ = false;
   bool exported_domain_bridge_body_ = false;
   std::unordered_map<string, const Domain*> domains_;
@@ -20743,8 +21836,8 @@ class Generator {
     const RaiseSet raised = phase21_program_raise_set();
     if (raised.empty()) return;
     o << "#[derive(Clone, Debug)]\n";
-    if (p_.explicit_module) o << "pub ";
-    o << "enum __MossRaised {\n";
+    o << "#[allow(private_interfaces)]\n";
+    o << "pub enum __MossRaised {\n";
     for (const auto& identity : raised) {
       o << "    " << phase21_rust_variant(identity) << "(";
       o << phase21_rust_error_type(identity);
@@ -21034,12 +22127,43 @@ class Generator {
         std::to_string(handler.line);
   }
 
+  // Mirrors Checker::echo_display_class for an already-checked Vector type.
+  static bool native_echo_vector_displayable(const string& t) {
+    string x = canonical_type_name(t);
+    if (x == "int" || x == "float" || x == "bool" || x == "char" || x == "string" ||
+        x == "vector" || internal_semantic_placeholder(x))
+      return true;
+    if (starts_with(x, "vector[") && ends_with(x, "]"))
+      return native_echo_vector_displayable(trim(x.substr(7, x.size() - 8)));
+    return false;
+  }
+
+  // The statically selected display-runtime formatter for one Vector element
+  // type: a helper function for a scalar, or a closure that formats a nested
+  // Vector with its own element formatter. nullopt when the type is open.
+  static std::optional<string> native_echo_element(const string& t) {
+    string x = canonical_type_name(t);
+    if (x == "int") return string("__moss_display_int");
+    if (x == "float") return string("__moss_display_float");
+    if (x == "bool") return string("__moss_display_bool");
+    if (x == "char") return string("__moss_display_char");
+    if (x == "string") return string("__moss_display_string");
+    if (starts_with(x, "vector[") && ends_with(x, "]")) {
+      auto inner = native_echo_element(trim(x.substr(7, x.size() - 8)));
+      if (!inner) return std::nullopt;
+      return "|o: &mut String, v: &std::vec::Vec<_>| __moss_display_vector_into(o, v, &" +
+             *inner + ")";
+    }
+    return std::nullopt;
+  }
+
   string rust_type(const string& t) const {
     string x = canonical_type_name(t);
     if (x == "int") return "i64";
     if (x == "float") return "f64";
     if (x == "bool") return "bool";
-    if (x == "string") return "String";
+    if (x == "char") return "char";
+    if (x == "string") return "MossStr";
     // Phase 20: runtime-facing semantic names reserved in
     // docs/ROOT_RUNTIME_ABI.md ("Runtime-facing semantic types"). Agent
     // D does not define these Rust types; Agent B's crate does.
@@ -21095,7 +22219,7 @@ class Generator {
     if (t == "int") return "0";
     if (t == "float") return "0.0";
     if (t == "bool") return "false";
-    if (t == "string") return "String::new()";
+    if (t == "string") return "MossStr::new()";
     if (starts_with(t, "seq[")) return "std::vec::Vec::new()";
     if (starts_with(t, "table[")) return "std::collections::HashMap::new()";
     if (starts_with(t, "option[")) return "None";
@@ -21254,6 +22378,88 @@ class Generator {
     return rendered;
   }
 
+  // key-protocol-v1 scalar operations lowered to the exact Moss operation
+  // for the statically known type; no Rust trait or adapter is involved.
+  static string scalar_protocol_rust(const string& op, const string& type,
+                                     const string& a, const string& b = "") {
+    const string t = canonical_type_name(type);
+    if (op == "less") {
+      if (t == "float") return "moss_float_less(" + a + ", " + b + ")";
+      return "(&(" + a + ") < &(" + b + "))";
+    }
+    if (op == "isequal") {
+      if (t == "float") return "moss_float_isequal(" + a + ", " + b + ")";
+      return "(&(" + a + ") == &(" + b + "))";
+    }
+    if (t == "float") return "moss_float_hash(" + a + ")";
+    if (t == "int") return "(" + a + ")";
+    if (t == "bool") return "(if " + a + " { 1i64 } else { 0i64 })";
+    if (t == "char") return "((" + a + ") as u32 as i64)";
+    return "moss_string_hash(&(" + a + "))";
+  }
+
+  // Rust comparator for a key-protocol-v1 total-order scalar. Float uses
+  // the Julia-like total order; the other scalars' Rust Ord already matches
+  // Moss `less` (Bool false < true, String by UTF-8 bytes = code points).
+  static string total_order_compare_rust(const string& key_type,
+                                         const string& left, const string& right) {
+    if (canonical_type_name(key_type) == "float")
+      return "moss_float_total_cmp(" + left + ", " + right + ")";
+    return "(" + left + ").cmp(&(" + right + "))";
+  }
+
+  // Lowers sort(v), sort(v, by: key), and sort(v, by: Reverse(key)) to a
+  // stable in-place Rust sort. The checker has proven the key pure, so each
+  // key is lowered as an ordinary specialized Moss call.
+  string sort_call_rust(const vector<string>& args, const Domain* d,
+                        const std::set<string>& locals,
+                        const std::unordered_map<string,string>* types) const {
+    string target = write_call_place(args[0], d, locals, types);
+    auto vector_type = generated_expr_type(args[0], types);
+    string canonical = vector_type ? canonical_type_name(*vector_type) : "";
+    string element = starts_with(canonical, "vector[")
+        ? canonical_type_name(canonical.substr(7, canonical.size() - 8)) : "";
+    if (args.size() == 1)
+      return "(" + target + ").sort_by(|__moss_a, __moss_b| " +
+             total_order_compare_rust(element, "*__moss_a", "*__moss_b") + ")";
+    string label, key;
+    parse_named_argument(args[1], label, key);
+    bool reverse = false;
+    string reverse_callee;
+    vector<string> reverse_args;
+    if (parse_simple_call(key, reverse_callee, reverse_args) &&
+        reverse_callee == "Reverse" && reverse_args.size() == 1) {
+      reverse = true;
+      key = trim(reverse_args.front());
+    }
+    const bool copy = copy_type(element);
+    auto key_locals = locals;
+    key_locals.insert("__moss_sort_a");
+    key_locals.insert("__moss_sort_b");
+    std::unordered_map<string,string> key_types = types ? *types
+        : std::unordered_map<string,string>{};
+    key_types["__moss_sort_a"] = element;
+    key_types["__moss_sort_b"] = element;
+    string key_a = expr(key + "(__moss_sort_a)", d, key_locals, &key_types);
+    string key_b = expr(key + "(__moss_sort_b)", d, key_locals, &key_types);
+    string key_type = generated_expr_type(key + "(__moss_sort_a)", &key_types)
+        .value_or("");
+    string compare = reverse
+        ? total_order_compare_rust(key_type, "__moss_kb", "__moss_ka")
+        : total_order_compare_rust(key_type, "__moss_ka", "__moss_kb");
+    // A key that consumes its argument receives an owned copy; the vector
+    // element itself is never moved out during the sort.
+    auto key_function = functions_.find(key);
+    const bool consumes = !copy && key_function != functions_.end() &&
+        sort_key_effect(*key_function->second, element) == Effect::Consume;
+    string bind = copy ? "*__moss_a" : consumes ? "(*__moss_a).clone()" : "__moss_a";
+    string bind_b = copy ? "*__moss_b" : consumes ? "(*__moss_b).clone()" : "__moss_b";
+    return "(" + target + ").sort_by(|__moss_a, __moss_b| { "
+           "let __moss_sort_a = " + bind + "; let __moss_sort_b = " + bind_b + "; "
+           "let __moss_ka = " + key_a + "; let __moss_kb = " + key_b + "; " +
+           compare + " })";
+  }
+
   string write_call_place(const string& argument, const Domain* d,
                           const std::set<string>& locals,
                           const std::unordered_map<string,string>* types) const {
@@ -21372,9 +22578,15 @@ class Generator {
   }
 
   static string generated_integer_literal_as_float(string expression) {
-    expression = trim(std::move(expression));
-    if (!expression.empty() && expression.front() == '+') expression.erase(expression.begin());
-    return expression + ".0";
+    // An Int literal in a Float context converts exactly as `as f64` does.
+    auto decoded = decode_numeric_literal_expression(expression);
+    if (!decoded || decoded->kind != NumericLiteral::Kind::Int)
+      throw std::runtime_error("internal error: numeric literal '" + expression +
+                               "' was not validated by the lexer");
+    DecodedNumber as_float;
+    as_float.kind = NumericLiteral::Kind::Float;
+    as_float.floating = static_cast<double>(decoded->integer);
+    return rust_numeric_literal(as_float);
   }
 
   static std::optional<GeneratedBinaryExpression> generated_split_binary(
@@ -21604,6 +22816,12 @@ class Generator {
       if (parse_simple_call(original, callee, arguments) && callee == "replace" &&
           arguments.size() == 2)
         return generated_expr_type(arguments[0], types);
+      if (parse_simple_call(original, callee, arguments) && !functions_.count(callee)) {
+        if (callee == "Char" && arguments.size() == 1) return string("char");
+        if ((callee == "less" || callee == "isequal") && arguments.size() == 2)
+          return string("bool");
+        if (callee == "hash" && arguments.size() == 1) return string("int");
+      }
     }
     if (types && starts_with(original, "message ")) {
       string receiver, handler;
@@ -21631,8 +22849,9 @@ class Generator {
         return enum_name;
     }
     if (value == "true" || value == "false") return string("bool");
+    if (is_single_char_literal(value)) return string("char");
     if (value == "None") return string("_none");
-    if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
+    if (is_single_string_literal(value))
       return string("string");
     if (types) {
       auto local = types->find(value);
@@ -21667,6 +22886,18 @@ class Generator {
     string receiver, method_name;
     vector<string> method_args;
     if (parse_member_call(value, receiver, method_name, method_args)) {
+      string canon_recv = canonical_type_name(receiver);
+      if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" ||
+          canon_recv == "string" || canon_recv == "bool") {
+        if ((method_name == "less" || method_name == "isequal") && method_args.size() == 2)
+          return string("bool");
+        if (method_name == "hash" && method_args.size() == 1)
+          return string("int");
+        if (method_name == "to_string" && method_args.size() == 1)
+          return string("string");
+        if (canon_recv == "char" && method_name == "codepoint" && method_args.size() == 1)
+          return string("int");
+      }
       auto receiver_type = generated_expr_type(receiver, types);
       if (receiver_type) {
         string concrete_receiver = canonical_type_name(*receiver_type);
@@ -23005,9 +24236,13 @@ class Generator {
     // Minimal surface rewrites.
     if (e == "true" || e == "false") return e;
     if (e == "None") return "None";
-    if (generated_integer_literal(e)) {
-      if (e.front() == '+') e.erase(e.begin());
-      return e + "_i64";
+    // Numeric literals are emitted from the shared decoder's value as a
+    // canonical suffixed Rust literal (`16_i64`, `2.5_f64`), never from Moss
+    // spelling.
+    if (generated_integer_literal(e) || decimal_float_literal(e)) {
+      if (auto rust = rust_numeric_literal(e)) return *rust;
+      throw std::runtime_error("internal error: numeric literal '" + e +
+                               "' was not validated by the lexer");
     }
     if (auto typed_vector = typed_empty_vector_constructor(e)) {
       string element = trim(typed_vector->substr(7, typed_vector->size() - 8));
@@ -23166,7 +24401,7 @@ class Generator {
             joined << "&(" << expr(operands[index], d, locals, types)
                    << "); ";
         }
-        joined << "let mut __moss_concat_result = String::with_capacity(";
+        joined << "let mut __moss_concat_result = MossStr::with_capacity(";
         for (size_t index = 0; index < operands.size(); ++index) {
           if (index) joined << ".saturating_add(";
           joined << "__moss_concat_" << index << ".len()";
@@ -23207,6 +24442,28 @@ class Generator {
       }
       return "(" + left + ") " + binary->op + " (" + right + ")";
     }
+    // Moss Int arithmetic wraps; Rust's `-x` panics on Int min in debug.
+    if (e.size() > 1 && e.front() == '-') {
+      const string inner = trim(e.substr(1));
+      if (!inner.empty() && std::isdigit(static_cast<unsigned char>(inner.front())) &&
+          generated_integer_literal(inner))
+        if (auto rust = rust_numeric_literal("-" + inner)) return *rust;
+      auto operand_type = generated_expr_type(inner, types);
+      if (operand_type && canonical_type_name(*operand_type) == "int") {
+        string operand = expr(inner, d, locals, types);
+        operand = value_from_borrowed_message_parameter(inner, operand, types);
+        return "(" + operand + ").wrapping_neg()";
+      }
+      // Float: negate the whole postfix operand (P25-S-ARCH-022), so `-v[0]`
+      // is `-(v[0])`, never `(-v)[0]`.
+      if (operand_type && canonical_type_name(*operand_type) == "float" &&
+          !std::isdigit(static_cast<unsigned char>(inner.front())) && inner.front() != '.' &&
+          inner.front() != '(') {
+        string operand = expr(inner, d, locals, types);
+        operand = value_from_borrowed_message_parameter(inner, operand, types);
+        return "-(" + operand + ")";
+      }
+    }
     if (!e.empty() && e.front() == '~') {
       string operand = expr(trim(e.substr(1)), d, locals, types);
       operand = value_from_borrowed_message_parameter(trim(e.substr(1)), operand, types);
@@ -23215,8 +24472,10 @@ class Generator {
     // Only classify a quoted source form as a single literal after top-level
     // operators have had a chance to split it. Expressions such as
     // "a" + "b" and "a" == "b" also begin and end with quote characters.
-    if (e.size() >= 2 && e.front() == '"' && e.back() == '"')
-      return e + ".to_string()";
+    if (is_single_string_literal(e))
+      return "MossStr::from(" + e + ")";
+    if (is_single_char_literal(e))
+      return e;
     if (auto parts = parse_vector_literal(e)) {
       std::ostringstream r; r << "vec![";
       for (size_t i=0;i<parts->size();++i) {
@@ -23284,6 +24543,23 @@ class Generator {
     string member_receiver, member_name;
     vector<string> member_arguments;
     if (parse_member_call(e, member_receiver, member_name, member_arguments)) {
+      string canon_recv = canonical_type_name(member_receiver);
+      if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" || canon_recv == "string" || canon_recv == "bool") {
+        if ((member_name == "less" || member_name == "isequal") &&
+            member_arguments.size() == 2)
+          return scalar_protocol_rust(member_name, canon_recv,
+                                      expr(member_arguments[0], d, locals, types),
+                                      expr(member_arguments[1], d, locals, types));
+        if (member_name == "hash" && member_arguments.size() == 1)
+          return scalar_protocol_rust("hash", canon_recv,
+                                      expr(member_arguments[0], d, locals, types));
+        if (member_name == "to_string" && member_arguments.size() == 1) {
+          return "MossStr::from((" + expr(member_arguments[0], d, locals, types) + ").to_string())";
+        }
+        if (canon_recv == "char" && member_name == "codepoint" && member_arguments.size() == 1) {
+          return "((" + expr(member_arguments[0], d, locals, types) + ") as u32 as i64)";
+        }
+      }
       string receiver_expression = method_receiver_place(member_receiver, member_name, member_arguments, d, locals, types);
       if (starts_with(receiver_expression, "*")) receiver_expression = "(" + receiver_expression + ")";
       auto receiver_type = generated_expr_type(member_receiver, types);
@@ -23472,40 +24748,28 @@ class Generator {
         if (concrete == "string") {
           string source = "(" + receiver_expression + ")";
           if (member_name == "length" && member_arguments.empty())
-            return source + ".chars().count() as i64";
+            return "__moss_string_length(&" + source + ")";
           if (member_name == "chars" && member_arguments.empty())
-            return source + ".chars().map(|c| c.to_string()).collect::<std::vec::Vec<_>>()";
+            return source + ".chars().collect::<std::vec::Vec<char>>()";
           if (member_name == "char_at" && member_arguments.size() == 1)
-            return "{ let __moss_index = " + expr(member_arguments[0], d, locals, types) +
-                "; if __moss_index < 0 { std::process::abort(); } " + source +
-                ".chars().nth(__moss_index as usize).unwrap_or_else(|| std::process::abort()).to_string() }";
+            return "__moss_string_char_at(&(" + source + "), " + expr(member_arguments[0], d, locals, types) + ")";
+          if ((member_name == "less" || member_name == "isequal") &&
+              member_arguments.size() == 1)
+            return scalar_protocol_rust(member_name, concrete, source,
+                                        expr(member_arguments[0], d, locals, types));
+          if (member_name == "hash" && member_arguments.empty())
+            return scalar_protocol_rust("hash", concrete, source);
           if (member_name == "find" && member_arguments.size() == 1)
-            return "{ let __moss_source = &" + source + "; let __moss_pattern = " +
-                expr(member_arguments[0], d, locals, types) +
-                "; match __moss_source.find(__moss_pattern.as_str()) { "
-                "Some(__moss_byte) => __moss_source[..__moss_byte].chars().count() as i64, "
-                "None => -1_i64 } }";
+            return "{ let __moss_pattern = " + expr(member_arguments[0], d, locals, types) +
+                "; __moss_string_find(&" + source + ", __moss_pattern.as_str()) }";
           if (member_name == "slice" && member_arguments.size() == 2)
-            return "{ let __moss_source = &" + source +
-                "; let __moss_start = " + expr(member_arguments[0], d, locals, types) +
-                "; let __moss_length = " + expr(member_arguments[1], d, locals, types) +
-                "; if __moss_start < 0 || __moss_length < 0 { String::new() } else if let Some(__moss_end) = __moss_start.checked_add(__moss_length) { "
-                "if __moss_source.is_ascii() { "
-                "if __moss_end <= __moss_source.len() as i64 { __moss_source[__moss_start as usize..__moss_end as usize].to_string() } else { String::new() } "
-                "} else { "
-                "let mut __moss_start_byte = None; let mut __moss_end_byte = None; let mut __moss_index = 0_i64; "
-                "for (__moss_byte, _) in __moss_source.char_indices() { "
-                "if __moss_index == __moss_start { __moss_start_byte = Some(__moss_byte); } "
-                "if __moss_index == __moss_end { __moss_end_byte = Some(__moss_byte); break; } "
-                "__moss_index += 1; } "
-                "if __moss_index == __moss_start && __moss_start_byte.is_none() { __moss_start_byte = Some(__moss_source.len()); } "
-                "if __moss_index == __moss_end && __moss_end_byte.is_none() { __moss_end_byte = Some(__moss_source.len()); } "
-                "match (__moss_start_byte, __moss_end_byte) { (Some(__moss_from), Some(__moss_to)) => __moss_source[__moss_from..__moss_to].to_string(), _ => String::new() } "
-                "} } else { String::new() } }";
+            return "__moss_string_slice(&" + source + ", " +
+                expr(member_arguments[0], d, locals, types) + ", " +
+                expr(member_arguments[1], d, locals, types) + ")";
           if (member_name == "ascii_lower" && member_arguments.empty())
-            return source + ".to_ascii_lowercase()";
+            return "MossStr::from(" + source + ".to_ascii_lowercase())";
           if (member_name == "ascii_upper" && member_arguments.empty())
-            return source + ".to_ascii_uppercase()";
+            return "MossStr::from(" + source + ".to_ascii_uppercase())";
           if (member_name == "reserve" && member_arguments.size() == 1)
             return "{ let __moss_string = &mut (" +
                 write_call_place(member_receiver, d, locals, types) +
@@ -23529,9 +24793,55 @@ class Generator {
           if (member_name == "split" && member_arguments.size() == 1)
             return "{ let __moss_separator = " + expr(member_arguments[0], d, locals, types) +
                 "; if __moss_separator.is_empty() { std::process::abort(); } " + source +
-                ".split(__moss_separator.as_str()).map(|s| s.to_string()).collect::<std::vec::Vec<_>>() }";
+                ".split(__moss_separator.as_str()).map(MossStr::from).collect::<std::vec::Vec<MossStr>>() }";
           if (member_name == "join" && member_arguments.size() == 1)
-            return "(" + expr(member_arguments[0], d, locals, types) + ").join(&" + source + ")";
+            return "MossStr::from((" + expr(member_arguments[0], d, locals, types) + ").join(" + source + ".as_str()))";
+        }
+        if (concrete == "char") {
+          string source = "(" + receiver_expression + ")";
+          if (member_name == "to_string" && member_arguments.empty())
+            return "MossStr::from(" + source + ".to_string())";
+          if (member_name == "codepoint" && member_arguments.empty())
+            return "((" + source + ") as u32 as i64)";
+          if ((member_name == "less" || member_name == "isequal") &&
+              member_arguments.size() == 1)
+            return scalar_protocol_rust(member_name, concrete, source,
+                                        expr(member_arguments[0], d, locals, types));
+          if (member_name == "hash" && member_arguments.empty())
+            return scalar_protocol_rust("hash", concrete, source);
+        }
+        if (concrete == "int") {
+          string source = "(" + receiver_expression + ")";
+          if (member_name == "to_string" && member_arguments.empty())
+            return "MossStr::from(" + source + ".to_string())";
+          if ((member_name == "less" || member_name == "isequal") &&
+              member_arguments.size() == 1)
+            return scalar_protocol_rust(member_name, concrete, source,
+                                        expr(member_arguments[0], d, locals, types));
+          if (member_name == "hash" && member_arguments.empty())
+            return scalar_protocol_rust("hash", concrete, source);
+        }
+        if (concrete == "float") {
+          string source = "(" + receiver_expression + ")";
+          if (member_name == "to_string" && member_arguments.empty())
+            return "MossStr::from(" + source + ".to_string())";
+          if ((member_name == "less" || member_name == "isequal") &&
+              member_arguments.size() == 1)
+            return scalar_protocol_rust(member_name, concrete, source,
+                                        expr(member_arguments[0], d, locals, types));
+          if (member_name == "hash" && member_arguments.empty())
+            return scalar_protocol_rust("hash", concrete, source);
+        }
+        if (concrete == "bool") {
+          string source = "(" + receiver_expression + ")";
+          if (member_name == "to_string" && member_arguments.empty())
+            return "MossStr::from(" + source + ".to_string())";
+          if ((member_name == "less" || member_name == "isequal") &&
+              member_arguments.size() == 1)
+            return scalar_protocol_rust(member_name, concrete, source,
+                                        expr(member_arguments[0], d, locals, types));
+          if (member_name == "hash" && member_arguments.empty())
+            return scalar_protocol_rust("hash", concrete, source);
         }
         if (auto map_types = map_key_value_types(concrete)) {
           if (member_name == "delete" && member_arguments.size() == 3) {
@@ -23555,8 +24865,11 @@ class Generator {
               fallback = "(" + fallback + ").clone()";
             return "(" + receiver_expression + ").get(" + key + ").cloned().unwrap_or(" + fallback + ")";
           }
-          if (member_name == "keys" && member_arguments.empty())
+          if (member_name == "keys" && member_arguments.empty()) {
+            if (map_types->first == "float")
+              return "(" + receiver_expression + ").keys().map(|k| k.0).collect::<std::vec::Vec<_>>()";
             return "(" + receiver_expression + ").keys().cloned().collect::<std::vec::Vec<_>>()";
+          }
           if (member_name == "values" && member_arguments.empty())
             return "(" + receiver_expression + ").values().cloned().collect::<std::vec::Vec<_>>()";
         }
@@ -23769,6 +25082,22 @@ class Generator {
           return result + ".sum::<" + rust_type(element_type) + ">()";
         return result + ".sum()";
       }
+      if (builtin == "Char" && builtin_args.size() == 1 && !functions_.count(builtin)) {
+        return "__moss_char_from_codepoint(" + expr(builtin_args.front(), d, locals, types) + ")";
+      }
+      if ((builtin == "less" || builtin == "isequal") && builtin_args.size() == 2 &&
+          !functions_.count(builtin))
+        return scalar_protocol_rust(
+            builtin, generated_expr_type(builtin_args[0], types).value_or(""),
+            expr(builtin_args[0], d, locals, types),
+            expr(builtin_args[1], d, locals, types));
+      if (builtin == "hash" && builtin_args.size() == 1 && !functions_.count(builtin))
+        return scalar_protocol_rust(
+            "hash", generated_expr_type(builtin_args[0], types).value_or(""),
+            expr(builtin_args.front(), d, locals, types));
+      if (builtin == "sort" && !functions_.count(builtin) &&
+          (builtin_args.size() == 1 || builtin_args.size() == 2))
+        return sort_call_rust(builtin_args, d, locals, types);
     }
 
     // Named value-object construction. Moss prefers `=` here; `:` remains a
@@ -24889,22 +26218,28 @@ class Generator {
 
   void gen_benchmark_harness(std::ostringstream& o) {
     gen_protocol_hex_helper(o);
+    const RaiseSet raised = phase21_program_raise_set();
+    const bool typed_outcomes = !raised.empty();
     for (const auto& benchmark : p_.benchmarks) {
       string function_name = test_or_benchmark_function_name(
           "bench", benchmark.semantic_identity);
       tooling_begin(o, 0, "benchmark", benchmark.semantic_identity,
                     function_name);
       source_comment(o, 0, benchmark.line, benchmark.header);
-      o << "#[inline(never)]\nfn " << function_name
-        << "() {\n";
+      o << "#[inline(never)]\n#[allow(unreachable_code)]\nfn " << function_name << "()";
+      if (typed_outcomes) o << " -> Result<(), __MossRaised>";
+      o << " {\n";
       std::set<string> locals;
       std::unordered_map<string,string> types;
       bool previous_benchmark_body = benchmark_body_;
+      const bool saved_result_context = phase21_result_context_;
       benchmark_body_ = true;
+      phase21_result_context_ = typed_outcomes;
       gen_stmts(o, benchmark.body, nullptr, nullptr, "", locals, types, 1,
                 false, false,
                 "bench:" + benchmark.name);
       benchmark_body_ = previous_benchmark_body;
+      phase21_result_context_ = saved_result_context;
       std::set<string> consumed_locals;
       for (const auto& statement : benchmark.body)
         consumed_locals.insert(statement.ownership_consumed_bindings.begin(),
@@ -24912,6 +26247,7 @@ class Generator {
       for (const auto& local : locals)
         if (!consumed_locals.count(local))
           o << "    std::hint::black_box(&" << local << ");\n";
+      if (typed_outcomes) o << "    Ok(())\n";
       o << "}\n";
       tooling_end(o, 0, benchmark.semantic_identity);
       o << "\n";
@@ -24926,12 +26262,12 @@ class Generator {
     for (const auto& benchmark : p_.benchmarks) {
       string function_name = test_or_benchmark_function_name(
           "bench", benchmark.semantic_identity);
-      o << "    for _ in 0..WARMUP { for _ in 0..ITERATIONS { std::hint::black_box("
+      o << "    for _ in 0..WARMUP { for _ in 0..ITERATIONS { let _ = std::hint::black_box("
         << function_name << "()); } }\n";
       o << "    let mut samples: std::vec::Vec<u128> = std::vec::Vec::with_capacity(SAMPLES);\n";
       o << "    for _ in 0..SAMPLES {\n";
       o << "        let started = std::time::Instant::now();\n";
-      o << "        for _ in 0..ITERATIONS { std::hint::black_box("
+      o << "        for _ in 0..ITERATIONS { let _ = std::hint::black_box("
         << function_name << "()); }\n";
       o << "        let elapsed = started.elapsed().as_nanos();\n";
       o << "        samples.push((elapsed + ITERATIONS as u128 - 1) / ITERATIONS as u128);\n";
@@ -24956,7 +26292,16 @@ class Generator {
                   "moss__main");
     source_comment(o, 0, m.line, m.header.empty() ? "proc main()" : m.header);
     backend_comment(o, 0, "main entry point; domain calls below retain their statically selected lowering");
-    debug_symbol_attributes(o, 0, "moss__main");
+    // An explicit module may also be compiled as a provider rlib. Its main
+    // belongs to the executable build only: even a local rlib main body may
+    // reference process-root FileIO and executor items absent from the rlib.
+    if (project_module_artifact_) {
+      o << "#[cfg(moss_process_root)]\n";
+      if (debug_build_) o << "#[inline(never)]\n";
+      o << "#[cfg_attr(moss_process_root, export_name = \"moss__main\")]\n";
+    } else {
+      debug_symbol_attributes(o, 0, "moss__main");
+    }
     o << "fn main() {\n";
     if (program_uses_fileio(p_))
       o << "    moss_set_solo_hooks(executor_fileio_solo_enter_callback(), "
@@ -25217,6 +26562,12 @@ class Generator {
 
           const string outcome = "__moss_try_outcome_" +
               std::to_string(phase21_try_temp_++);
+          // The attempt's normal completion leaves this outer block
+          // directly, so rustc sees every join binding initialized on the
+          // normal path even when a raise precedes its first assignment.
+          const string done_label = "__moss_try_done_" +
+              std::to_string(phase21_try_temp_++);
+          o << indent(level) << "'" << done_label << ": {\n";
           o << indent(level) << "#[allow(unreachable_code)]\n";
           const string try_label = "__moss_try_" +
               std::to_string(phase21_try_temp_++);
@@ -25245,11 +26596,11 @@ class Generator {
                     functional_context);
           phase21_result_context_ = saved_result_context;
           phase21_try_label_ = saved_try_label;
-          o << indent(level + 1) << "Ok(())\n";
+          o << indent(level + 1) << "break '" << done_label << ";\n";
           o << indent(level) << "};\n";
           o << indent(level) << "#[allow(unreachable_patterns)]\n";
           o << indent(level) << "match " << outcome << " {\n";
-          o << indent(level + 1) << "Ok(()) => {},\n";
+          o << indent(level + 1) << "Ok(()) => std::process::abort(),\n";
 
           RaiseSet handled;
           while (i < ss.size() && ss[i].indent == level &&
@@ -25374,6 +26725,7 @@ class Generator {
               << "Err(_) => std::process::abort(),\n";
           }
           o << indent(level) << "}\n";
+          o << indent(level) << "}\n";
           phase21_return_result_context_ = saved_return_result_context;
           break;
         }
@@ -25473,7 +26825,8 @@ class Generator {
           string match_callee;
           vector<string> match_arguments;
           bool struct_literal = false;
-          if (s.b == "consume" && parse_simple_call(s.a, match_callee, match_arguments)) {
+          // A Rust struct literal is not allowed as a bare scrutinee.
+          if (parse_simple_call(s.a, match_callee, match_arguments)) {
             for (const auto& candidate : declaration.cases) {
               const string suffix = declaration.name + "." + candidate.name;
               if (!candidate.fields.empty() &&
@@ -25777,8 +27130,57 @@ class Generator {
                   statement_functional_pipeline_id(s, functional_context,
                                                    argument));
               auto type = generated_expr_type(s.args[argument], &types);
-              if (type && canonical_type_name(*type) == "float")
+              auto resolved = [](const std::optional<string>& t) {
+                if (!t) return false;
+                const string c = canonical_type_name(*t);
+                return !c.empty() && c != "vector" && !internal_semantic_placeholder(c);
+              };
+              if (!resolved(type)) {
+                // e.g. `[[], [1]]`: the backend's local typing cannot see the
+                // element type; use the type the checker accepted instead.
+                auto checked = s.echo_types_by_context.find(functional_context);
+                if (checked == s.echo_types_by_context.end())
+                  checked = s.echo_types_by_context.find(string());
+                if (checked != s.echo_types_by_context.end() &&
+                    argument < checked->second.size() &&
+                    resolved(checked->second[argument]))
+                  type = checked->second[argument];
+              }
+              // The checker owns the echo display contract (S-B); a Vector
+              // formats through the Moss display runtime, never Rust Debug.
+              // Anything else without a contract is an internal error here,
+              // reported with the checker's code rather than as rustc E0277.
+              const string shown = type ? canonical_type_name(*type) : string();
+              if (shown == "map" || shown == "queue" || starts_with(shown, "map[") ||
+                  starts_with(shown, "queue[") || objects_.count(shown) ||
+                  enums_.count(shown) ||
+                  (starts_with(shown, "vector[") &&
+                   !native_echo_vector_displayable(shown)))
+                throw CompileError(s.line, "echo cannot display a value of type '" +
+                    shown + "'", "ECHO_DISPLAY_UNSUPPORTED");
+              if (shown == "float") {
                 rendered = "__moss_ryu::canonical_float_text(" + rendered + ")";
+              } else if (starts_with(shown, "vector[")) {
+                auto element = native_echo_element(shown.substr(7, shown.size() - 8));
+                if (!element) {
+                  // The backend saw a partially open element type; use the
+                  // complete type the checker accepted for this context.
+                  auto checked = s.echo_types_by_context.find(functional_context);
+                  if (checked == s.echo_types_by_context.end())
+                    checked = s.echo_types_by_context.find(string());
+                  if (checked != s.echo_types_by_context.end() &&
+                      argument < checked->second.size() &&
+                      starts_with(checked->second[argument], "vector[")) {
+                    const string& full = checked->second[argument];
+                    element = native_echo_element(full.substr(7, full.size() - 8));
+                  }
+                }
+                if (!element)
+                  throw CompileError(s.line, "internal error: echo of '" + shown +
+                      "' has no resolved element type for native display",
+                      "ECHO_DISPLAY_UNSUPPORTED");
+                rendered = "__moss_display_vector(&(" + rendered + "), &" + *element + ")";
+              }
               o << ", " << rendered;
             }
             o << ");\n";
@@ -25787,6 +27189,15 @@ class Generator {
           break;
         }
         case Stmt::Kind::Assign: {
+          if (s.a == "_") {
+            o << indent(level) << "let _ = "
+              << expr(s.b, d, locals, &types,
+                      statement_functional_pipeline_id(
+                          s, functional_context, 0))
+              << ";\n";
+            ++i;
+            break;
+          }
           if (phase21_option_slots_.count(s.a)) {
             o << indent(level) << "__moss_recovery_slot_" << s.a
               << " = Some(" << expr(s.b, d, locals, &types,
@@ -25812,18 +27223,22 @@ class Generator {
           string lhs;
           string lhs_base, lhs_index;
           string index_temporary;
-          if (parse_index(s.a, lhs_base, lhs_index) && view_method_ && d &&
-              is_pure_state_read_expression(lhs_index)) {
-            auto index_type = generated_expr_type(lhs_index, &types);
+          if (parse_index(s.a, lhs_base, lhs_index)) {
+            string root_id = lhs_base;
+            auto dot_pos = root_id.find('.');
+            if (dot_pos != string::npos) root_id = root_id.substr(0, dot_pos);
+            bool conflicts_with_base = !root_id.empty() && expression_mentions_identifier(lhs_index, root_id);
             bool reads_sibling = false;
-            for (const auto& field : d->state) {
-              if (field.name != lhs_base &&
-                  expression_mentions_identifier(lhs_index, field.name)) {
-                reads_sibling = true;
-                break;
+            if (view_method_ && d && is_pure_state_read_expression(lhs_index)) {
+              for (const auto& field : d->state) {
+                if (field.name != lhs_base &&
+                    expression_mentions_identifier(lhs_index, field.name)) {
+                  reads_sibling = true;
+                  break;
+                }
               }
             }
-            if (index_type && copy_type(*index_type) && reads_sibling) {
+            if (conflicts_with_base || reads_sibling) {
               index_temporary = "__moss_index_" +
                   std::to_string(call_argument_temp_++);
               o << indent(level) << "let " << index_temporary << " = "
@@ -25883,7 +27298,7 @@ class Generator {
                 (canonical_type_name(*map_assignment_type) == "map" ||
                  starts_with(canonical_type_name(*map_assignment_type), "map["))) {
               string key = mi.size() >= 2 && mi.front() == '"' && mi.back() == '"'
-                  ? mi + ".to_string()" : expr(mi, d, locals, &types);
+                  ? "MossStr::from(" + mi + ")" : expr(mi, d, locals, &types);
               auto key_type = generated_expr_type(mi, &types);
               if (key_type && !copy_type(*key_type) &&
                   !(mi.size() >= 2 && mi.front() == '"' && mi.back() == '"'))
@@ -25986,6 +27401,10 @@ class Generator {
               ? canonical_type_name(generated_expr_type(s.a, &types).value_or("")) : "";
           if (!s.b.empty() &&
               (statement_receiver_type == "string" ||
+               statement_receiver_type == "vector" ||
+               starts_with(statement_receiver_type, "vector[") ||
+               statement_receiver_type == "queue" ||
+               starts_with(statement_receiver_type, "queue[") ||
                (s.b == "delete" && (statement_receiver_type == "map" ||
                                     starts_with(statement_receiver_type, "map["))))) {
             string call = s.a + "." + s.b + "(";
@@ -26003,7 +27422,7 @@ class Generator {
               << expr(s.args.front(), d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 0))
-              << ") { panic!("
+              << ") { panic!(\"{}\", "
               << rust_string_literal(
                      "Moss assertion failed at line " +
                      std::to_string(s.line) + ": " + s.text)
@@ -26025,12 +27444,25 @@ class Generator {
                       statement_functional_pipeline_id(
                           s, functional_context, 1))
               << ");\n";
+            string escaped_text;
+            for (char ch : s.text) {
+              if (ch == '{') escaped_text += "{{";
+              else if (ch == '}') escaped_text += "}}";
+              else escaped_text += ch;
+            }
             string message = "Moss assertion failed at line " +
-                std::to_string(s.line) + ": " + s.text +
+                std::to_string(s.line) + ": " + escaped_text +
                 "; actual={:?}, expected={:?}";
-            o << indent(level) << "if " << actual << " != " << expected
+            string cond = actual + " != " + expected;
+            o << indent(level) << "if " << cond
               << " { panic!(" << rust_string_literal(message) << ", "
               << actual << ", " << expected << "); }\n";
+            ++i;
+            break;
+          }
+          if (s.b.empty() && s.a == "sort" && !functions_.count(s.a) &&
+              (s.args.size() == 1 || s.args.size() == 2)) {
+            o << indent(level) << sort_call_rust(s.args, d, locals, &types) << ";\n";
             ++i;
             break;
           }
@@ -26301,15 +27733,30 @@ class Generator {
           }
           call += ")";
           o << indent(level);
-          if (!s.message_result.empty()) {
+          // `field = message ...` in a handler writes the domain state field
+          // unless a local binding of that name is in scope.
+          const bool state_result = d && !s.message_result.empty() &&
+              !locals.count(s.message_result) &&
+              std::any_of(d->state.begin(), d->state.end(), [&](const Field& field) {
+                return field.name == s.message_result;
+              });
+          const bool state_view = state_result &&
+              is_object_view(s.message_result, d, locals, &types);
+          if (state_view) {
+            o << "(" << write_call_place(s.message_result, d, locals, &types)
+              << ").__moss_replace(";
+          } else if (state_result) {
+            o << write_call_place(s.message_result, d, locals, &types) << " = ";
+          } else if (!s.message_result.empty()) {
             if (!locals.count(s.message_result)) o << "let mut ";
             o << s.message_result << " = ";
           }
           vector<size_t> argument_plans;
           for (size_t argument = 0; argument < s.args.size(); ++argument)
             argument_plans.push_back(statement_functional_pipeline_id(s, functional_context, argument));
-          o << expr(call, d, locals, &types, 0, &argument_plans) << ";\n";
-          if (!s.message_result.empty()) {
+          o << expr(call, d, locals, &types, 0, &argument_plans)
+            << (state_view ? ")" : "") << ";\n";
+          if (!s.message_result.empty() && !state_result) {
             const Domain& target = *domains_.at(canonical_type_name(types.at(s.a)));
             locals.insert(s.message_result);
             types[s.message_result] = find_handler(target, s.b)->reply_type.value_or("unit");
@@ -27998,8 +29445,12 @@ static SemanticQueryResolution resolve_semantic_target(
         }
       }
       if (exact.candidates.size() > 1 && kind_filter.empty()) {
+        bool has_field = std::any_of(exact.candidates.begin(), exact.candidates.end(),
+                                     [](const auto* c) { return c->kind == "field"; });
         vector<const SemanticTargetFact*> filtered;
         for (const auto* candidate : exact.candidates) {
+          if (has_field && (candidate->kind == "function" || candidate->kind == "fn"))
+            continue;
           if (candidate->kind != "specialization" &&
               candidate->kind != "domain_specialization")
             filtered.push_back(candidate);
@@ -28804,8 +30255,19 @@ static void write_bootstrap_json(std::ostream& out,
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"pass\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"],\"exhaustive_enum_match\":\"match expression: / match consume <owned enum expression>:\"},"
          "\"enums\":{\"declaration\":\"enum Name: with closed named-field cases\",\"construction\":\"Name.Case(field: value)\",\"read_match\":\"match expression:\",\"consume_match\":\"match consume <owned enum expression>:\",\"pattern_ownership_modifiers\":false,\"replace\":\"replace(place, replacement)\"},"
-         "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"bitwise\":[\"&\",\"|\",\"^\",\"~\",\"<<\",\">>\"],\"bitwise_precedence_high_to_low\":[\"~\",\"<<, >>\",\"&\",\"^\",\"|\"],\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"find(pattern)\",\"slice(start, length)\",\"ascii_lower()\",\"ascii_upper()\",\"reserve(additional_bytes)\",\"append(part)\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"}},"
-         "\"numeric\":{\"float_predicates\":[\"is_nan(Float) -> Bool\",\"is_finite(Float) -> Bool\"],"
+         "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"bitwise\":[\"&\",\"|\",\"^\",\"~\",\"<<\",\">>\"],\"bitwise_precedence_high_to_low\":[\"~\",\"<<, >>\",\"&\",\"^\",\"|\"],\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"find(pattern)\",\"slice(start, length)\",\"ascii_lower()\",\"ascii_upper()\",\"reserve(additional_bytes)\",\"append(part)\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"},\"char_builtin\":{\"literal\":\"'x' or '\\\\u{HEX}'\",\"constructor\":\"Char(Int) (positional) fails for surrogates and values above 0x10FFFF\",\"equality\":[\"==\",\"!=\"],\"ordering\":[\"<\",\"<=\",\">\",\">=\"],\"methods\":[\"codepoint()\",\"to_string()\",\"less(other)\",\"isequal(other)\",\"hash()\"],\"string_conversion\":\"explicit c.to_string(); Char and String never compare with ==\"},\"equality_operands\":{\"same_type\":true,\"numeric_mixing\":\"Int and Float only\",\"records\":\"unsupported (RECORD_EQUALITY_UNSUPPORTED); compare fields\",\"enums\":\"unsupported (ENUM_OPERATOR_UNSUPPORTED); use match\",\"collections\":\"Vector, Queue, and Map of equality-comparable element types\"}},"
+         "\"numeric\":{\"literals\":{"
+         "\"int_decimal\":\"digits with optional _ between digits: 1_000\","
+         "\"int_hex\":\"lowercase 0x prefix, hex digits of either case, optional _ between digits: 0xff_FF; 0X is rejected\","
+         "\"float_decimal\":[\"2.5\",\"1_0.5\",\".5\",\"1.\",\"1.e5\",\"1e5\",\"1E-3\",\"1.5e+10\"],"
+         "\"digit_separator\":\"_ only between two digits of one group (integer, fraction, exponent, hex body)\","
+         "\"int_range\":\"-9223372036854775808 through 9223372036854775807; magnitude 9223372036854775808 or 0x8000000000000000 only directly after unary minus\","
+         "\"int_min_name\":null,"
+         "\"float_range\":\"literals that round to infinity are rejected; underflow rounds (1e-400 is 0.0)\","
+         "\"unsupported\":[\"0b binary\",\"0o octal\",\"hexadecimal fractions\",\"type suffixes such as 3i64 or 1.5f32\"],"
+         "\"diagnostics\":[\"INVALID_NUMERIC_LITERAL\",\"INVALID_DIGIT_SEPARATOR\",\"UNSUPPORTED_NUMERIC_LITERAL\",\"INT_LITERAL_OUT_OF_RANGE\",\"FLOAT_LITERAL_OUT_OF_RANGE\"],"
+         "\"engines\":\"one shared literal specification for checker, Fast Debug, and native lowering\"},"
+         "\"float_predicates\":[\"is_nan(Float) -> Bool\",\"is_finite(Float) -> Bool\"],"
          "\"parsing\":[\"parse_int(String) -> Int raises ParseError.Invalid|Overflow\","
          "\"parse_float(String) -> Float raises ParseError.Invalid\"],"
          "\"conversion\":[\"to_int(Float) -> Int raises ConversionError.NonFinite|Overflow\"]},"
@@ -28877,7 +30339,7 @@ static void write_bootstrap_json(std::ostream& out,
          "{\"name\":\"package_fast_debug\",\"command\":\"margo debug [--trace]\",\"purpose\":\"resolve package sources then interpret the reachable Moss closure without rustc\"},"
          "{\"name\":\"agent_benchmark\",\"command\":\"moss agent benchmark list|show|validate|run [--json]\",\"purpose\":\"operate the fixed isolated fresh-agent benchmark corpus\"}]";
   out << ",\n    \"debugging_features\": ["
-         "{\"name\":\"fast_debug\",\"command\":\"moss run --interp <source> | moss debug <project-or-source>\",\"purpose\":\"execute checked reachable Moss source without rustc\",\"limitations\":[\"no mixed interpreted/native Moss closure\",\"source-free providers require source\",\"for traversal is not currently supported\"]},"
+         "{\"name\":\"fast_debug\",\"command\":\"moss run --interp <source> | moss debug <project-or-source>\",\"purpose\":\"execute checked reachable Moss source without rustc\",\"limitations\":[\"no mixed interpreted/native Moss closure\",\"source-free providers require source\"]},"
          "{\"name\":\"structured_execution_trace\",\"command\":\"moss run --interp --trace <source> | moss debug <target> --trace\",\"format\":\"newline-delimited JSON on stderr\",\"events\":[\"function/handler entry and exit\",\"local/state access\",\"branch\",\"return/reply\",\"message\",\"assertion\"],\"relationships\":[\"event_id\",\"parent_event_id\",\"call_event_id\",\"message_event_id\",\"handler_event_id\",\"control_event_id\"],\"limitations\":[\"no physical lock or schedule simulation\"]},"
          "{\"name\":\"structured_debug_query\",\"command\":\"moss debug-query <operation> [selector] --source <source> --json\",\"operations\":[\"event\",\"semantic\",\"subtree\",\"message-subtree\",\"control-flow\",\"writes\",\"failure-slice\"],\"bounds\":[\"--max-events\",\"--max-depth\",\"--before\",\"--after\",\"--before-event\"],\"limitations\":[\"last-write history, not full dynamic taint provenance\",\"ambiguous local or state write selectors are rejected\",\"one deterministic Fast Debug execution per query\",\"same-project or standalone source closure only; use margo debug for package-resolved unsliced traces\",\"no interactive stepping\"]}]";
   out << ",\n    \"discovery\": {\"capabilities_command\": \"./moss agent capabilities --json\", \"schema_command\": \"./moss agent schema --json\", \"protocol_vendor\": \"Moss\"}";
@@ -31429,6 +32891,9 @@ static BackendToolchainIdentity inspect_backend_toolchain(
   else
     identity.profile = debug_build ? "debug" : "reference";
   identity.compile_flags = {"--edition=2021", "-D", "warnings"};
+  if (indexed_strings_staged())
+    identity.compile_flags.insert(identity.compile_flags.end(),
+                                  {"--cfg", "moss_string_indexed_v1"});
   if (optimized) {
     identity.compile_flags.insert(
         identity.compile_flags.end(), {"-O", "-C", "debuginfo=1"});
@@ -31940,6 +33405,22 @@ struct ParsedModuleUnit {
   vector<ModuleImport> imports;
 };
 
+// True when expression[begin, end) is the label of a named argument such as
+// `Table(row_count: n)`: preceded by `(` or `,` and followed by `:` or a
+// lone `=`.
+static bool named_argument_label(const string& expression, size_t begin, size_t end) {
+  size_t before = begin;
+  while (before > 0 && std::isspace(static_cast<unsigned char>(expression[before - 1]))) --before;
+  // before == 0: a statement-call argument rewritten on its own (`by: key`).
+  if (before > 0 && expression[before - 1] != '(' && expression[before - 1] != ',') return false;
+  size_t after = end;
+  while (after < expression.size() && std::isspace(static_cast<unsigned char>(expression[after]))) ++after;
+  if (after >= expression.size()) return false;
+  if (expression[after] == ':') return after + 1 >= expression.size() || expression[after + 1] != ':';
+  if (expression[after] == '=') return after + 1 >= expression.size() || expression[after + 1] != '=';
+  return false;
+}
+
 static string module_symbol(const string& module, const string& name) {
   return module + "__" + name;
 }
@@ -32081,6 +33562,13 @@ static string rewrite_module_expression(
       continue;
     }
     if (starts_with(token, module + "__")) {
+      result += token;
+      i = end;
+      continue;
+    }
+    if (named_argument_label(expression, i, end)) {
+      // Constructor/enum-payload field labels name fields, never module
+      // functions or types (Phase 25 ledger #10).
       result += token;
       i = end;
       continue;
@@ -32833,6 +34321,8 @@ static void parse_generic_ir_line(const string& line, Function& function) {
       statement.args.push_back(std::move(argument));
     }
     function.body.push_back(std::move(statement));
+  } else if (record == "generic_source") {
+    input >> std::quoted(function.provider_origin_file);
   } else if (record == "generic_result") {
     if (input >> function.result_line) {
       string expression;
@@ -33205,6 +34695,15 @@ static ParsedModuleUnit load_module_interface(
       declared_hashes["generic_semantic_hash"] != generic_hash)
     throw CompileError(0, "compiled provider module interface hash mismatch; rebuild its .mossi provider");
   }
+  const bool provider_indexed =
+      text.find("\n" + string(kIndexedStringRecord) + "\n") != string::npos;
+  if (provider_indexed != indexed_strings_staged())
+    throw CompileError(0, string("compiled provider uses the ") +
+                       (provider_indexed ? "staged indexed-v1" : "plain") +
+                       " String representation but this build uses the " +
+                       (indexed_strings_staged() ? "staged indexed-v1" : "plain") +
+                       " representation; rebuild the provider with the same MOSS_STAGED_STRING_REPR",
+                       "STRING_REPRESENTATION_MISMATCH");
   std::istringstream lines(text);
   ParsedModuleUnit unit;
   unit.name = interface_module_name(text, file);
@@ -34211,6 +35710,7 @@ static ParsedModuleUnit load_module_interface(
         starts_with(line, "generic_param") ||
         starts_with(line, "generic_constraint") ||
         starts_with(line, "generic_stmt") ||
+        starts_with(line, "generic_source") ||
         starts_with(line, "generic_result")) {
       if (current) parse_generic_ir_line(line, *current);
       continue;
@@ -34730,6 +36230,35 @@ static CompiledProjectUnit analyze_project_sources(
     string rust = Generator(checked.program, plan, debug_build, mode).generate();
     return {std::move(checked.program), std::move(plan), std::move(checked.warnings),
             std::move(rust), std::move(checked.external_module_interfaces)};
+  } catch (const CompileError& error) {
+    throw ProjectError(
+        error.code.empty() ? diagnostic_code_for_message(error.what())
+                           : error.code,
+        error.what(), error.source_file.empty()
+            ? (sources.empty() ? string() : sources.front().string())
+            : error.source_file,
+        error.line, error.teaching);
+  }
+}
+
+// `moss check` and semantic queries on a project source: the same semantic
+// pipeline as standalone check (parse, Checker, FunctionalOptimizer) over the
+// project's module closure, but without native lowering. Lowering-only
+// diagnostics therefore cannot give a project file a different verdict from
+// the identical standalone file (P25-S-ARCH-019); `margo build` and native
+// compilation still lower and report them.
+static CompiledProjectUnit check_project_semantics(
+    const ProjectManifest& manifest,
+    const vector<std::filesystem::path>& sources, bool optimized,
+    ProgramGenerationMode mode,
+    const std::map<std::filesystem::path, string>* source_overrides = nullptr) {
+  CheckedProjectUnit checked = check_project_sources(
+      manifest, sources, mode, {}, nullptr, source_overrides);
+  try {
+    FunctionalOptimizer(checked.program).run(optimized);
+    OptimizationPlan plan = OptimizationPlan{optimized};
+    return {std::move(checked.program), std::move(plan), std::move(checked.warnings),
+            string(), std::move(checked.external_module_interfaces)};
   } catch (const CompileError& error) {
     throw ProjectError(
         error.code.empty() ? diagnostic_code_for_message(error.what())
@@ -35926,6 +37455,8 @@ static vector<std::filesystem::path> write_module_interfaces(
       out << "  generic_ir_version 1\n";
       out << "  generic_entity_id " << std::quoted("fn:" + function.name +
                                                     "@" + std::to_string(function.line)) << "\n";
+      out << "  generic_source " << std::quoted(
+          std::filesystem::path(function.source_file).filename().string()) << "\n";
       for (size_t index = 0; index < function.params.size(); ++index)
         out << "  generic_param " << index << " "
             << std::quoted(function.params[index].name) << " "
@@ -35973,6 +37504,8 @@ static vector<std::filesystem::path> write_module_interfaces(
         << " return=" << function.return_type.value_or("unit")
         << " effects=" << interface_effects_text(function.observable_effects)
         << "\n";
+    out << "  generic_source " << std::quoted(
+        std::filesystem::path(function.source_file).filename().string()) << "\n";
     for (size_t index = 0; index < function.params.size(); ++index)
       out << "  generic_param " << index << " "
           << std::quoted(function.params[index].name) << " "
@@ -36200,6 +37733,7 @@ static vector<std::filesystem::path> write_module_interfaces(
            << (manifest.version.empty() ? "unversioned" : manifest.version) << "\n"
            << "compiler " << kCompilerVersion << "\n"
            << "native_abi " << kNativeAbiVersion << "\n"
+           << (indexed_strings_staged() ? string(kIndexedStringRecord) + "\n" : string())
            << "backend_fingerprint " << backend.fingerprint << "\n"
            << "backend_rustc " << backend.version_verbose << "\n"
            << "concrete_interface_hash "
@@ -36409,6 +37943,21 @@ static NativeArtifact compile_native_artifact(
   source_fingerprint = stable_hash(source_key.str());
   cache_text = backend_cache_metadata(
       artifact.backend_toolchain, source_fingerprint);
+  // Each module crate embeds its own runtime, so a staged MossString would be
+  // a distinct Rust type per crate. Cross-crate indexed Strings need the
+  // compiler-owned shared runtime crate of the joint ABI-v10 design. Reject
+  // before any interface or crate is written.
+  if (indexed_strings_staged() && unit.program.explicit_module) {
+    const auto modules = module_topological_order(unit.program);
+    if (modules.size() > 1 ||
+        std::any_of(modules.begin(), modules.end(), [&](const string& module) {
+          return !module_dependencies(unit.program, module).empty();
+        }))
+      throw ProjectError(
+          "STRING_REPRESENTATION_STAGED_SINGLE_CRATE",
+          "MOSS_STAGED_STRING_REPR=indexed-v1 supports single-module builds only; "
+          "multi-module builds need the shared ABI-v10 runtime crate");
+  }
   vector<std::filesystem::path> preexisting_interfaces = artifact.module_interfaces;
   vector<string> local_module_names = module_names_for_program(unit.program);
   const auto emitted_interfaces = write_module_interfaces(
@@ -36470,7 +38019,8 @@ static NativeArtifact compile_native_artifact(
       OptimizationPlan projected_plan = module_plan(unit.plan, projected);
       vector<string> dependencies = module_dependencies(unit.program, module);
       string generated = Generator(projected, projected_plan, debug_build,
-                                   mode, dependencies, &unit.program).generate();
+                                   mode, dependencies, &unit.program,
+                                   true).generate();
       const auto provider_interface = directory /
           (tooling_name(module) + ".mossi");
       if (std::find(emitted_interfaces.begin(), emitted_interfaces.end(),
@@ -39228,7 +40778,388 @@ static std::filesystem::path resolve_fast_debug_test_entry(const string& target)
   return std::filesystem::path();
 }
 
-static moss::Program load_checked_interpreter_program(const std::filesystem::path& input, bool test_mode = false) {
+// Fast Debug target-capability preflight (Phase 25 G0 proof 3, S1.3).
+//
+// A Fast Debug entry point (main, or one test block) whose reachable closure
+// can reach FileIO is rejected before any of its statements execute.  The
+// closure is an over-approximation built from identifier references in each
+// reachable body, refined only where a reference provably cannot execute
+// code outside the body:
+//
+//   * a token inside a String or Char literal names nothing;
+//   * a label written as 'name:' (constructor/enum field, builtin 'by:',
+//     named argument) and a case/recover pattern execute nothing;
+//   * a value-position token that is a parameter, a domain/object field or
+//     route, or a local already bound in an enclosing lexical scope, refers
+//     to that binding, not to a same-named function or domain;
+//   * a member token ('x.name') can only name a method or handler (or a
+//     module-qualified function when 'x' is an imported module); a member of
+//     an enum type is a case and executes nothing.
+//
+// Every other token is resolved against every function, method, handler,
+// and domain of that name.  The checker's transitive observable effects
+// (FileIO directly or through a helper, or an unknown provider FileIO fact)
+// mark direct FileIO; domains with FileIO-typed state mark their constructor
+// and all of their handlers.  Unrecognized binding forms are never treated
+// as bindings, so the refinements only remove references that cannot run.
+class FastDebugFileIOPreflight {
+ public:
+  explicit FastDebugFileIOPreflight(const moss::Program& program) {
+    for (const auto& import : program.imports) modules_.insert(import.name);
+    for (const auto& module : program.external_modules) modules_.insert(module);
+    for (const auto& enumeration : program.enums) {
+      enums_.insert(enumeration.name);
+      const size_t separator = enumeration.name.rfind("__");
+      if (separator != std::string::npos)
+        enums_.insert(enumeration.name.substr(separator + 2));
+    }
+    for (const auto& edge : program.semantic_call_edges)
+      if (edge.invocation_kind == "synchronous_message")
+        message_edges_[edge.source + "@" + std::to_string(edge.line)].insert(edge.target);
+    for (const auto& function : program.functions) {
+      Body body{&function.body, {}, function.result_expression, "fn:" + function.name};
+      for (const auto& parameter : function.params) body.scope.insert(parameter.name);
+      free_[function.name].push_back(body);
+      bool fileio = function.observable_effects.fileio ||
+                    function.observable_effects.fileio_unknown;
+      for (const auto& specialization : function.specializations)
+        fileio = fileio || specialization.observable_effects.fileio ||
+                 specialization.observable_effects.fileio_unknown;
+      if (fileio) direct_free_.insert(function.name);
+    }
+    for (const auto& object : program.objects)
+      for (const auto& method : object.methods) {
+        Body body{&method.body, {"self"}, method.result_expression,
+                  "method:" + object.name + "." + method.name};
+        for (const auto& field : object.fields) body.scope.insert(field.name);
+        for (const auto& parameter : method.params) body.scope.insert(parameter.name);
+        methods_[method.name].push_back(body);
+        if (method.observable_effects.fileio || method.observable_effects.fileio_unknown)
+          direct_methods_.insert(method.name);
+      }
+    for (const auto& domain : program.domains) {
+      bool fileio_state = false;
+      for (const auto& field : domain.state)
+        if (field.type.find("FileIO") != std::string::npos) fileio_state = true;
+      if (fileio_state) direct_free_.insert(domain.name);
+      std::set<std::string> scope{"self"};
+      for (const auto& field : domain.state) scope.insert(field.name);
+      for (const auto& route : domain.routes) scope.insert(route.name);
+      for (const auto& handler : domain.handlers) {
+        const std::string identity = "handler:" + domain.name + "." + handler.name;
+        std::set<std::string> handler_scope = scope;
+        for (const auto& parameter : handler.params) handler_scope.insert(parameter.name);
+        handlers_by_name_[handler.name].insert(identity);
+        handler_names_[identity] = handler.name;
+        handler_bodies_[identity].push_back(
+            Body{&handler.body, handler_scope, std::nullopt, identity});
+        for (const auto& arm : handler.failure_arms)
+          handler_bodies_[identity].push_back(
+              Body{&arm.body, handler_scope, std::nullopt, identity});
+        if (fileio_state || handler.observable_effects.fileio ||
+            handler.observable_effects.fileio_unknown)
+          direct_handlers_.insert(identity);
+      }
+    }
+  }
+
+  // True when the entry body can reach FileIO.
+  // `context` is the checker's callable identity ("main", "test:<name>"),
+  // used to look up checked message targets.
+  bool reaches(const std::vector<moss::Stmt>& entry, const std::string& context) {
+    visited_free_.clear();
+    visited_methods_.clear();
+    visited_handlers_.clear();
+    pending_.clear();
+    pending_.push_back(Body{&entry, {}, std::nullopt, context});
+    while (!pending_.empty()) {
+      Body body = pending_.back();
+      pending_.pop_back();
+      if (scan_body(body)) return true;
+    }
+    return false;
+  }
+
+ private:
+  struct Body {
+    const std::vector<moss::Stmt>* statements = nullptr;
+    std::set<std::string> scope;
+    std::optional<std::string> result_expression;
+    std::string context;  // checker callable identity of this body
+  };
+  // A local is visible to following statements at indent >= `indent`.
+  // for/case bindings use the block's indent, so they end with the block;
+  // a binding joined after its block is conservatively forgotten.
+  struct Local {
+    std::string name;
+    int indent = 0;
+  };
+
+  std::set<std::string> modules_, enums_, direct_free_, direct_methods_,
+      direct_handlers_;
+  std::unordered_map<std::string, std::vector<Body>> free_, methods_,
+      handler_bodies_;
+  std::unordered_map<std::string, std::set<std::string>> handlers_by_name_;
+  std::unordered_map<std::string, std::string> handler_names_;
+  // "<context>@<line>" -> checked synchronous message targets on that line.
+  std::unordered_map<std::string, std::set<std::string>> message_edges_;
+  std::set<std::string> visited_free_, visited_methods_, visited_handlers_;
+  std::vector<Body> pending_;
+  // Checked message targets of the statement being scanned.
+  const std::set<std::string>* line_targets_ = nullptr;
+
+  static bool ident_start(char c) {
+    return std::isalpha(static_cast<unsigned char>(c)) || c == '_';
+  }
+  static bool ident_char(char c) {
+    return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+  }
+
+  // Number of 'message' keywords outside String/Char literals.
+  static size_t message_keywords(const std::string& text) {
+    size_t count = 0;
+    for (size_t i = 0; i < text.size();) {
+      const char c = text[i];
+      if (c == '"' || c == '\'') {
+        for (++i; i < text.size() && text[i] != c; ++i)
+          if (text[i] == '\\') ++i;
+        ++i;
+        continue;
+      }
+      if (!ident_start(c)) { ++i; continue; }
+      size_t end = i + 1;
+      while (end < text.size() && ident_char(text[end])) ++end;
+      if (text.compare(i, end - i, "message") == 0) ++count;
+      i = end;
+    }
+    return count;
+  }
+
+  bool follow_free(const std::string& name) {
+    if (direct_free_.count(name)) return true;
+    if (visited_free_.insert(name).second) {
+      auto found = free_.find(name);
+      if (found != free_.end())
+        for (const auto& next : found->second) pending_.push_back(next);
+    }
+    return false;
+  }
+  bool follow_handler(const std::string& identity) {
+    if (direct_handlers_.count(identity)) return true;
+    if (visited_handlers_.insert(identity).second) {
+      auto found = handler_bodies_.find(identity);
+      if (found != handler_bodies_.end())
+        for (const auto& next : found->second) pending_.push_back(next);
+    }
+    return false;
+  }
+  // A member name is any method of that name, plus the handler(s) of that
+  // name.  When the checker resolved a message on this statement to a
+  // handler of that name, only the resolved handler(s) are followed;
+  // otherwise every handler of that name is.
+  bool follow_member(const std::string& name) {
+    if (direct_methods_.count(name)) return true;
+    if (visited_methods_.insert(name).second) {
+      auto found = methods_.find(name);
+      if (found != methods_.end())
+        for (const auto& next : found->second) pending_.push_back(next);
+    }
+    std::vector<std::string> resolved;
+    if (line_targets_)
+      for (const auto& target : *line_targets_) {
+        auto handler = handler_names_.find(target);
+        if (handler != handler_names_.end() && handler->second == name)
+          resolved.push_back(target);
+      }
+    if (!resolved.empty()) {
+      for (const auto& identity : resolved)
+        if (follow_handler(identity)) return true;
+      return false;
+    }
+    auto handlers = handlers_by_name_.find(name);
+    if (handlers != handlers_by_name_.end())
+      for (const auto& identity : handlers->second)
+        if (follow_handler(identity)) return true;
+    return false;
+  }
+
+  // Scans one expression slot.  Returns true when it can reach FileIO.
+  bool scan(const std::string& text, const std::set<std::string>& bound) {
+    std::string previous_token;  // identifier immediately before a '.'
+    for (size_t i = 0; i < text.size();) {
+      const char c = text[i];
+      if (c == '"' || c == '\'') {  // literal contents name nothing
+        for (++i; i < text.size() && text[i] != c; ++i)
+          if (text[i] == '\\') ++i;
+        ++i;
+        previous_token.clear();
+        continue;
+      }
+      if (!ident_start(c)) {
+        if (!std::isspace(static_cast<unsigned char>(c)) && c != '.')
+          previous_token.clear();
+        ++i;
+        continue;
+      }
+      size_t end = i + 1;
+      while (end < text.size() && ident_char(text[end])) ++end;
+      const std::string token = text.substr(i, end - i);
+      size_t before = i;
+      while (before > 0 && std::isspace(static_cast<unsigned char>(text[before - 1]))) --before;
+      const bool member = before > 0 && text[before - 1] == '.';
+      size_t after = end;
+      while (after < text.size() && std::isspace(static_cast<unsigned char>(text[after]))) ++after;
+      const bool label = after < text.size() && text[after] == ':' &&
+          !(after + 1 < text.size() && text[after + 1] == ':');
+      const std::string receiver = member ? previous_token : std::string();
+      i = end;
+      previous_token = token;
+      if (member) {
+        if (!receiver.empty() && !bound.count(receiver) && enums_.count(receiver))
+          continue;  // enum case
+        if (!receiver.empty() && !bound.count(receiver) && modules_.count(receiver)) {
+          if (token == "FileIO" || follow_free(receiver + "__" + token) ||
+              follow_free(token) || follow_member(token))
+            return true;
+          continue;
+        }
+        if (token == "FileIO" || follow_member(token)) return true;
+        continue;
+      }
+      if (token == "FileIO") return true;
+      if (label) continue;
+      const bool call = after < text.size() && text[after] == '(';
+      if (!call && bound.count(token)) continue;
+      if (follow_free(token) || follow_member(token)) return true;
+    }
+    return false;
+  }
+
+  bool scan_body(const Body& body) {
+    using Kind = moss::Stmt::Kind;
+    std::vector<Local> locals;
+    const auto bound_now = [&] {
+      std::set<std::string> bound = body.scope;
+      for (const auto& local : locals) bound.insert(local.name);
+      return bound;
+    };
+    for (const auto& statement : *body.statements) {
+      locals.erase(std::remove_if(locals.begin(), locals.end(),
+          [&](const Local& local) {
+            return statement.indent < local.indent;
+          }), locals.end());
+      const std::set<std::string> bound = bound_now();
+      auto targets = message_edges_.find(body.context + "@" + std::to_string(statement.line));
+      // Checked targets narrow handler resolution only when every message on
+      // the line has its own recorded target; a message the checker did not
+      // record (or two messages to one target) falls back to name lookup.
+      line_targets_ = targets != message_edges_.end() &&
+              targets->second.size() == message_keywords(statement.text)
+          ? &targets->second : nullptr;
+      std::vector<std::string> slots;
+      std::vector<Local> introduced;
+      // The source line without its binding target, so the parsed slots
+      // and the original text are both scanned for binding statements.
+      const auto source_after = [&](const std::string& separator) {
+        const size_t at = separator == "="
+            ? moss::top_level_assignment(statement.text)
+            : statement.text.find(separator);
+        if (at == std::string::npos) return statement.text;
+        return statement.text.substr(at + separator.size());
+      };
+      switch (statement.kind) {
+        case Kind::Case:
+          for (const auto& binding : statement.args)
+            introduced.push_back(Local{binding, statement.indent + 1});
+          break;
+        case Kind::Recover:
+        case Kind::Pass:
+        case Kind::Else:
+        case Kind::Try:
+          break;
+        case Kind::Let:
+        case Kind::Var:
+        case Kind::Assign:
+          slots.push_back(statement.b);
+          if (moss::plain_identifier(statement.a)) {
+            slots.push_back(source_after("="));
+            introduced.push_back(Local{statement.a, statement.indent});
+          } else {
+            slots.push_back(statement.a);
+            slots.push_back(statement.text);
+          }
+          break;
+        case Kind::For:
+          slots.push_back(statement.b);
+          slots.push_back(source_after(" in "));
+          if (moss::plain_identifier(statement.a))
+            introduced.push_back(Local{statement.a, statement.indent + 1});
+          else slots.push_back(statement.a);
+          break;
+        case Kind::Message: {
+          std::string call = statement.a + "." + statement.b + "(";
+          for (size_t index = 0; index < statement.args.size(); ++index)
+            call += (index ? ", " : "") + statement.args[index];
+          slots.push_back(call + ")");
+          if (moss::plain_identifier(statement.message_result)) {
+            slots.push_back(source_after("="));
+            introduced.push_back(Local{statement.message_result, statement.indent});
+          } else {
+            slots.push_back(statement.text);
+          }
+          break;
+        }
+        default:
+          // The full source line, plus every parsed slot, so a checker
+          // rewrite of a slot can never hide a reference.
+          slots.push_back(statement.text);
+          slots.push_back(statement.a);
+          slots.push_back(statement.b);
+          for (const auto& argument : statement.args) slots.push_back(argument);
+          break;
+      }
+      for (const auto& slot : slots)
+        if (scan(slot, bound)) return true;
+      locals.insert(locals.end(), introduced.begin(), introduced.end());
+    }
+    line_targets_ = nullptr;
+    if (body.result_expression && scan(*body.result_expression, bound_now()))
+      return true;
+    return false;
+  }
+};
+
+static const char* const kFastDebugFileIOMessage =
+    "Fast Debug FileIO execution is intentionally unsupported in Phase 20; "
+    "run this program with the native backend";
+
+static void reject_fast_debug_fileio(const moss::Program& program) {
+  if (!program.main) return;
+  FastDebugFileIOPreflight preflight(program);
+  if (preflight.reaches(program.main->body, "main"))
+    throw moss::CompileError(program.main->line, kFastDebugFileIOMessage,
+                             "FAST_DEBUG_FILEIO");
+}
+
+// Test mode: each test block is its own entry point.  A test whose reachable
+// closure can reach FileIO is reported as FAIL with FAST_DEBUG_FILEIO and is
+// not executed; other tests run normally.
+static std::map<std::string, std::string> fast_debug_fileio_tests(
+    const moss::Program& program) {
+  std::map<std::string, std::string> rejected;
+  FastDebugFileIOPreflight preflight(program);
+  for (const auto& test : program.tests)
+    if (preflight.reaches(test.body, "test:" + test.name))
+      rejected[test.semantic_identity] =
+          "[FAST_DEBUG_FILEIO] Fast Debug FileIO execution is intentionally "
+          "unsupported; this test reaches FileIO and was not executed. Run it "
+          "with the native test runner ('margo test' or 'moss test')";
+  return rejected;
+}
+
+static moss::Program load_checked_interpreter_program(
+    const std::filesystem::path& input, bool test_mode = false,
+    std::map<std::string, std::string>* fileio_tests = nullptr) {
   try {
     auto context = moss::analyze_source_context(input);
     if (test_mode && context.project) {
@@ -39253,6 +41184,8 @@ static moss::Program load_checked_interpreter_program(const std::filesystem::pat
             "dependency source, or use native execution.",
             context.requested_source.string());
       }
+      if (!test_mode) reject_fast_debug_fileio(checked.program);
+      else if (fileio_tests) *fileio_tests = fast_debug_fileio_tests(checked.program);
       moss::FunctionalOptimizer(checked.program).run(false);
       return std::move(checked.program);
     }
@@ -39268,6 +41201,8 @@ static moss::Program load_checked_interpreter_program(const std::filesystem::pat
     moss::Program program = parser.parse();
     moss::Checker checker(program);
     checker.run();
+    if (!test_mode) reject_fast_debug_fileio(program);
+    else if (fileio_tests) *fileio_tests = fast_debug_fileio_tests(program);
     moss::FunctionalOptimizer(program).run(false);
     return program;
   } catch (const moss::ProjectError& error) {
@@ -39298,9 +41233,11 @@ static int run_fast_interpreter_source(const std::filesystem::path& input,
 
 static int run_fast_interpreter_tests(const std::filesystem::path& input,
                                       const string& filter, bool trace) {
-  moss::Program program = load_checked_interpreter_program(input, true);
+  std::map<std::string, std::string> fileio_tests;
+  moss::Program program = load_checked_interpreter_program(input, true, &fileio_tests);
   moss::FastInterpreter::Options options;
   options.trace = trace;
+  options.unsupported_tests = std::move(fileio_tests);
   options.source_file = std::filesystem::absolute(input).lexically_normal().string();
   moss::FastInterpreter interpreter(program, options);
   int status = 0;
@@ -40276,10 +42213,16 @@ int main(int argc, char** argv) {
             overrides[std::filesystem::absolute(input).lexically_normal()] =
                 *query_overlay;
           auto sources = moss::fast_debug_source_closure(context);
-          auto unit = moss::analyze_project_sources(
-              context.manifest, sources, optimize_shared_memory,
-              debug_build, context.mode, {}, nullptr,
-              overrides.empty() ? nullptr : &overrides);
+          // Check and semantic queries stop at semantics, exactly like the
+          // standalone path below; only compilation lowers to Rust.
+          auto unit = check_only
+              ? moss::check_project_semantics(
+                    context.manifest, sources, optimize_shared_memory,
+                    context.mode, overrides.empty() ? nullptr : &overrides)
+              : moss::analyze_project_sources(
+                    context.manifest, sources, optimize_shared_memory,
+                    debug_build, context.mode, {}, nullptr,
+                    overrides.empty() ? nullptr : &overrides);
           active_program = std::move(unit.program);
           plan = std::move(unit.plan);
           warnings = std::move(unit.warnings);

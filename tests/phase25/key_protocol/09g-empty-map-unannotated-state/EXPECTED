@@ -1,0 +1,8 @@
+title: Unpinned empty Map: unannotated domain state Map() pinned by handler use
+covers: S1.5 (Team G Option B handoff)
+layout: standalone
+expect: stdout
+current: fail-closed MOSS_COMPILE_ERROR
+owner: Team G Option B
+---
+1

@@ -1,0 +1,10 @@
+title: Unpinned empty Map: an exported open-result fresh() specialized twice by one consumer
+covers: S1.5 (Team G Option B handoff)
+layout: packages
+entry: app
+expect: stdout
+current: passes
+owner: Team G Option B
+---
+x
+7

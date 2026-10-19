@@ -1,0 +1,14 @@
+# Malformed key proof: isequal method takes two parameters.
+type Tag:
+  label: String
+
+  fn isequal(left: Tag, right: Tag) -> Bool:
+    return left.label == right.label
+
+  fn hash() -> Int:
+    return label.hash()
+
+fn main():
+  var m = Map()
+  m[Tag(label: "a")] = 1
+  echo m.get(Tag(label: "a"), 0)

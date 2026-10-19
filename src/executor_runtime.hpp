@@ -38,15 +38,14 @@
 namespace moss {
 
 enum class ExecutorRuntimeRole {
-  // The crate is always its program's executable: an implicit-module
-  // program, or the explicit module that declares `main`.
+  // The crate is always its program's executable: an implicit-module program.
   ProcessRoot,
   // The crate is only ever a library of an executable whose `main` lives in
   // another crate.
   Provider,
-  // A unit with no `main`: the same crate source is built as a provider
-  // .rlib and as the unit's (stub or test) executable, so the role is chosen
-  // by `--cfg moss_process_root`, which only the executable build passes.
+  // An explicit module can be built both as a provider .rlib and as the
+  // program's executable (including a unit with no `main`). The role is
+  // chosen by `--cfg moss_process_root`, which only the executable passes.
   SelectedByExecutableBuild,
 };
 
@@ -1462,6 +1461,18 @@ pub unsafe extern "C" fn __moss_branch_join(scope: *const ()) {
     branch_join(unsafe { MossBranchScope::from_raw_owned(scope) });
 }
 
+#[no_mangle]
+pub extern "C" fn __moss_current_root_id(out_id: *mut u64) -> bool {
+    if let Some(id) = current_root_id() {
+        if !out_id.is_null() {
+            unsafe { *out_id = id; }
+        }
+        true
+    } else {
+        false
+    }
+}
+
 // ─── Solo compensation (§15 / R1 / R2 / E7 / E8) ─────────────────────────
 fn current_worker_exec() -> std::option::Option<(usize, std::sync::Arc<MossGlobalExec>)> {
     let worker_id = current_worker_id()?;
@@ -1649,6 +1660,7 @@ pub fn moss_executor_ready_scopes() -> usize {
 // define the FileIO Solo symbols.
 inline const char* executor_runtime_provider_items() {
   return R"EXECUTOR_RUST(extern "C" {
+    fn __moss_current_root_id(out_id: *mut u64) -> bool;
     fn __moss_branch_scope_new_current() -> *const ();
     fn __moss_branch_scope_clone(scope: *const ()) -> *const ();
     fn __moss_branch_scope_drop(scope: *const ());
@@ -1659,6 +1671,15 @@ inline const char* executor_runtime_provider_items() {
         discard: unsafe extern "C" fn(*mut ()),
     );
     fn __moss_branch_join(scope: *const ());
+}
+
+pub fn current_root_id() -> std::option::Option<u64> {
+    let mut id = 0u64;
+    if unsafe { __moss_current_root_id(&mut id) } {
+        Some(id)
+    } else {
+        None
+    }
 }
 
 /// Opaque handle owning exactly one reference count of a process-root
@@ -1766,7 +1787,8 @@ inline std::string executor_runtime_rust(ExecutorRuntimeRole role) {
       s += executor_runtime_root_items();
       s += "}\n#[cfg(not(moss_process_root))]\nmod __moss_executor_runtime {\nuse super::*;\n";
       s += executor_runtime_provider_items();
-      s += "}\npub use __moss_executor_runtime::*;\n";
+      s += "}\npub use __moss_executor_runtime::*;\n"
+           "pub use __moss_executor_runtime::{branch_scope_new_current, branch_publish, branch_join, current_root_id, MossBranchScope};\n";
       break;
   }
   s += fair_leaf_runtime_items();

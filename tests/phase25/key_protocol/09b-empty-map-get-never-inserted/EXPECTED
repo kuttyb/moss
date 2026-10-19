@@ -1,0 +1,9 @@
+title: Unpinned empty Map: never-inserted Map: get(key, default) is the only use (K=String, V=Int)
+covers: S1.5 (Team G Option B handoff)
+layout: standalone
+expect: stdout
+current: fail-closed TYPE_AMBIGUOUS_OPEN_RESULT
+defect: P25-S3-D3: an empty Map whose K/V are not fixed at its construction passes moss check and fails in rustc (Team G Option B handoff)
+owner: Team G Option B
+---
+0

@@ -77,6 +77,12 @@ def main():
     environment["MOSS_MODULE_PATH"] = str(range_provider / "build/debug")
     rebuilt = json.loads(invoke([moss, "build", "--json"], range_consumer, environment))
     assert rebuilt["ok"]
+    # Margo reuses the explicit-module Rust unit as an rlib and as the
+    # executable. Its process-root selector must remain present here, while
+    # the source-removed provider's rlib links through the shared runtime.
+    range_rust = Path(rebuilt["result"]["artifacts"]["generated_rust"])
+    assert "#[cfg(moss_process_root)]" in range_rust.read_text()
+    assert (range_consumer / "build/debug/libapp.rlib").exists()
     range_executable = rebuilt["result"]["artifacts"]["executable"]
     range_output = invoke([range_executable], range_consumer, environment)
     assert range_output == "329\n", range_output

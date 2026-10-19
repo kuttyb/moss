@@ -1,0 +1,9 @@
+title: Unpinned empty Map: control: a later insert pins K and V today
+covers: S1.5 (Team G Option B handoff)
+layout: standalone
+expect: stdout
+current: passes
+owner: none (control)
+---
+1
+0

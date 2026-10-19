@@ -156,7 +156,7 @@ method = instrumented.index('fn score(&self) -> i64 {', start) + len('fn score(&
 instrumented = instrumented[:method] + '\ncheck_read_pointers(self.__moss_field_profile().__moss_field_name(), self.__moss_field_profile().__moss_field_values());' + instrumented[method:]
 constructors = '\n'.join(line for line in text[text.index('fn main() {'):].splitlines() if ' = construct_' in line)
 # Inflate actual domain state, without a benchmark or new Moss syntax.
-constructors = constructors.replace('"large".to_string()', '"x".repeat(100_000)').replace('vec![1_i64, 2_i64, 3_i64]', 'vec![1_i64; 100_000]')
+constructors = constructors.replace('MossStr::from("large")', 'MossStr::from("x".repeat(100_000))').replace('vec![1_i64, 2_i64, 3_i64]', 'vec![1_i64; 100_000]')
 # Resolve physical fields from the authoritative plan in the test generator.
 def stored(path):
     cls = next(c['class_rank'] for c in store_plan['sync_classes'] if path in c['member_leaves'])

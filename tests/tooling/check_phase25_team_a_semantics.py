@@ -1061,6 +1061,26 @@ fn main():
         print("PASS source-free provider callable IDs distinguish identical names",
               flush=True)
 
+        # An existing method with incompatible arguments is a type mismatch;
+        # a method absent from a concrete receiver is a missing-method error.
+        mismatch_source = scratch / "member_argument_mismatch.moss"
+        mismatch_source.write_text('''type Box:
+  value: Int
+  fn pick(value: Int) -> Int:
+    return value
+
+fn use(item):
+  return item.pick("wrong")
+
+fn main():
+  echo use(Box(value: 1))
+''')
+        mismatch = checked(mismatch_source, code="TYPE_MISMATCH")
+        assert "whose method 'pick' is incompatible with argument types" in (
+            mismatch["error"]["message"]), mismatch
+        print("PASS existing method with incompatible argument is TYPE_MISMATCH",
+              flush=True)
+
         package(scratch / "bad_consumer", "team_a_bad_consumer", "0.1.0", {
             "main": '''module Main
 import Provider
@@ -1069,12 +1089,12 @@ fn main():
 ''',
         })
         rejected = project_check(scratch / "bad_consumer",
-                                 code="TYPE_MISMATCH", env=env)
+                                 code="METHOD_NOT_FOUND", env=env)
         related = rejected["error"].get("related", [])
-        assert any(note["source"]["file"].endswith("Provider.mossi") and
+        assert any(note["source"]["file"].endswith("provider.moss") and
                    "requires method 'length'" in note["message"]
                    for note in related), related
-        print("PASS source-free member failure retains provider provenance",
+        print("PASS source-free missing member retains original provider provenance",
               flush=True)
 
         # The imported generic body returns an owned Vector[Int] after

@@ -1,0 +1,15 @@
+# PROVISIONAL Set API (pending Team G G2 Set API): Set(), insert, contains, values().
+fn main():
+  let zero = 0.0
+  let nan_a = zero / zero
+  var s = Set()
+  s.insert(0.0)
+  s.insert(-0.0)
+  s.insert(nan_a)
+  s.insert(0.0 - nan_a)
+  s.insert(0.0)
+  let vs = s.values()
+  echo vs |> count
+  echo s.contains(-0.0)
+  echo s.contains((1.0 / zero) - (1.0 / zero))
+  echo s.contains(1.0)

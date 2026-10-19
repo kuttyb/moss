@@ -1,0 +1,12 @@
+module alpha
+
+import keyprov
+
+fn hash(k: keyprov.Name) -> Int:
+  return 0
+
+fn isequal(a: keyprov.Name, b: keyprov.Name) -> Bool:
+  return true
+
+export fn record(m: Map[keyprov.Name, Int], text: String):
+  m[keyprov.name(text)] = 1

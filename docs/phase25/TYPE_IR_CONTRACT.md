@@ -250,8 +250,12 @@ occurrence in `(parameters, result, requirements)` traversal.
 At the closure of `main`, a test, handler, concrete function specialization, or other
 reachable execution body, every value type and call target must be concrete. An
 unbound reachable variable produces `TYPE_AMBIGUOUS_OPEN_RESULT` at its binding/use,
-with the creating call and provider summary as related provenance. There is no
-default element/key/value type and no implicit `Any`.
+with the creating call and provider summary as related provenance. As selected by
+L7 for Team I integration on 2026-10-18, an unresolved collection directly
+presented as an `echo` operand instead produces `ECHO_DISPLAY_UNSUPPORTED` at
+that display boundary. This includes empty literals and unresolved local
+collection bindings passed to `echo`; it does not apply to other unresolved
+values or uses. There is no default element/key/value type and no implicit `Any`.
 
 ### 4.3 Requirements and complete reason chains
 

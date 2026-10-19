@@ -4,8 +4,8 @@
 **L7-reviewed starting checkpoint:** `c2e106c0da3debde6b0334c23d45635f2b498cd6`
 **Team G checkpoint reviewed:** `a50fa30c8420538534471c4404afb0c645ae9b0c`
 **Architect-reviewed consolidated SHA:** `906b99d4068d1c2bbc92548249d8abb24eaea11f` (CONDITIONAL GO)
-**Architect GO SHA:** `8d62f0a43915ef0e616b449270c227b0e3162c26` (**GO for the L7 checkpoint**, Addendum 4)
-**Delivered implementation SHA:** `dea9a4e21f9925e6d69943960eee0239460f2a3b` (post-GO fix of ARCH-027/028; not Architect-reviewed)
+**Architect GO SHA:** `8d62f0a43915ef0e616b449270c227b0e3162c26` (Addendum 4); **Final UNCONDITIONAL GO:** `58d33d9ab00a666e8d9b60450c7c6aeb2b55b657` (Addendum 5)
+**Delivered implementation SHA:** `58d33d9ab00a666e8d9b60450c7c6aeb2b55b657` (carrying ARCH-027/028 and S-B audit fixes; Architect UNCONDITIONAL GO)
 
 Nothing was merged into `main` or `phase25-integration`, and there was no
 ABI-v10 switch.
@@ -15,10 +15,10 @@ ABI-v10 switch.
 | Item | Result |
 |---|---|
 | S-A numeric literals | `1_000`, `0x10` and the existing Float forms go through **one shared parser** (`src/numeric_literal.hpp`), canonicalized in the lexer and emitted as `16_i64` / `2.5_f64`. Int bounds are signed 64-bit; only a directly negated 2^63 (decimal or hex) is accepted. `1e400` gives `FLOAT_LITERAL_OUT_OF_RANGE`. `0b`, `0o` and type suffixes are rejected. 68 accepted literals agree with a Python oracle in three engines; 63 rejection cases. |
-| S-B check and display | Standalone and project `moss check` share one semantic pipeline (`check_project_semantics`; project check no longer lowers). `echo` of a Vector follows a deterministic contract (Int, canonical Float, Bool, raw Char/String, nested Vectors, typed `[]`) through a Moss runtime helper and never Rust `{:?}`. Map, Queue, records, enums, callables, Unit and untyped `[]` give `ECHO_DISPLAY_UNSUPPORTED` in every engine and both check modes. |
+| S-B check and display | Standalone and project `moss check` share one semantic pipeline (`check_project_semantics`; project check no longer lowers). `echo` of a Vector follows a deterministic contract (Int, canonical Float, Bool, raw Char/String, nested Vectors, typed `[]`) through a Moss runtime helper and never Rust `{:?}`. Map, Queue, records, enums, callables, Unit and untyped `[]` give `ECHO_DISPLAY_UNSUPPORTED` in every engine and both check modes. Audit fixes at `58d33d9` reject unresolved local Vector echo (`ECHO_DISPLAY_UNSUPPORTED`) and underdetermined generic calls (`TYPE_INFERENCE_FAILED`). |
 | S-C safe arithmetic | Int `/` and `%` by an Int literal other than 0 and -1 is proven non-panicking in the one observable-effect analysis. That analysis feeds `SORT_KEY_IMPURE`, initializer purity, fusion and speculation, and `.mossi` `may_panic`. Unknown, zero and `-1` divisors stay conservative. `Int.MIN / -1` and `% -1` already wrap identically in all engines (no runtime change). Lawful nominal `isequal`/`hash` methods using `% 10` and `/ 10` are pure. |
-| S-D Architect | `3577dbc`: ARCH-020/021 closed, net-new 022/023. Consolidated `906b99d`: 018/019/022/023 closed; S-A and S-C meet all L7 requirements; net-new 024/025/026. Closure `8d62f0a`: **GO**; 024/025 closed, no false positives; net-new 027 (fix required before recording S1 acceptance) and 028. 027/028 fixed at `dea9a4e`; 026 tracked. |
-| Runtime agreement | L7 decision recorded in `TEAM_S_TEAM_G_INTERFACE_AGREEMENT.md`, with a Team S review of Team G `a50fa30` and a concurrence checklist. **Team G Coordinator concurrence: pending** (no Team G session was reachable; the request is in the pushed document). |
+| S-D Architect | `3577dbc`: ARCH-020/021 closed, net-new 022/023. Consolidated `906b99d`: 018/019/022/023 closed; S-A and S-C meet all L7 requirements; net-new 024/025/026. Closure `8d62f0a`: **GO**; 024/025 closed, no false positives; net-new 027 (fix required before recording S1 acceptance) and 028. 027/028 fixed at `dea9a4e`. Final closure `58d33d9`: **UNCONDITIONAL GO** (Addendum 5); 027/028 and S-B audit cases verified closed; S1 acceptance criterion met. 026 tracked. |
+| Runtime agreement | L7 decision recorded in `TEAM_S_TEAM_G_INTERFACE_AGREEMENT.md`. **Team G Coordinator concurrence: recorded** (concurs with item 4 amendment; pending completion SHA for joint integration trigger). |
 | Item 6 (deferred) | Reproducer retained (S3 L1); the required effect information is documented; no workaround. |
 
 ## Defects
@@ -95,11 +95,11 @@ Before every commit, the Coordinator also:
 ## Outstanding
 
 - **Team G:**
-  - concurrence on the five interface items;
-  - `moss_runtime`;
-  - `MapKeyProof`;
-  - per-argument access in `Requirement`;
-  - fixture `09c` (`Map().get(1, 2)` still reaches rustc on `a50fa30`).
+  - concurrence on the five interface items recorded;
+  - joint integration triggers pending from Team G per agreement §5: G2
+    foundations (Type IR records, Option B open-result summaries,
+    `MemberDispatchRequirement` hook point), `moss_runtime`, `MapKeyProof`,
+    and full `make check` at an exact published SHA.
 - **Item 6:** pending L7 reopening after G2 review.
 - **Tracked:**
   - ARCH-026 (diagnostic columns);

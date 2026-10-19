@@ -324,8 +324,11 @@ if not functional_operations <= pipeline_labels:
 
 
 def pipeline_completion_labels(expression: str, binding: str = "values") -> set[str]:
+    # Line 17 echoes `items |> count`: a Vector of records has no echo
+    # display form (ECHO_DISPLAY_UNSUPPORTED, Phase 25 S-B).
+    original = binding if binding == "values" else f"{binding} |> count"
     contents = pipeline_completion.read_text(encoding="utf-8").replace(
-        f"  echo {binding}\n", f"  echo {expression} |> \n", 1
+        f"  echo {original}\n", f"  echo {expression} |> \n", 1
     )
     line = 16 if binding == "values" else 17
     candidates = invoke_overlay(

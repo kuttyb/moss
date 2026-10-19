@@ -279,7 +279,7 @@ fn ascii_code_to_string(code: Int) -> String:
     return table[code]
   printable = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
   if code >= 32 and code <= 126:
-    return printable.char_at(code - 32)
+    return printable.char_at(code - 32).to_string()
   if code == 127:
     return "\x7f"
   return ""

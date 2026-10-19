@@ -1,8 +1,8 @@
 fn main():
   text = "aé🙂b"
   assertEqual(text.length(), 4)
-  assertEqual(text.char_at(1), "é")
-  assertEqual(text.char_at(2), "🙂")
+  assertEqual(text.char_at(1), 'é')
+  assertEqual(text.char_at(2), '🙂')
   assertEqual(text.chars() |> count, 4)
   assertEqual(text.find("é🙂"), 1)
   assertEqual(text.find(""), 0)

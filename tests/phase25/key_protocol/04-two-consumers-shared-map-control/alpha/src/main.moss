@@ -1,0 +1,11 @@
+module alpha
+
+import registry
+
+export domain Alpha:
+  domainroutes(store: registry.Registry)
+
+  fn Run() -> Int:
+    message store.Put("Ada", 1)
+    let seen = message store.Get("Ada")
+    reply seen

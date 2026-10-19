@@ -601,6 +601,7 @@ public:
         if (head == "Float" || head == "float") return Type::primitive("float");
         if (head == "Bool" || head == "bool") return Type::primitive("bool");
         if (head == "String" || head == "string") return Type::primitive("string");
+        if (head == "Char" || head == "char") return Type::primitive("char");
         if (head == "Range") return Type::primitive("Range");
         if (head == "RangeBatch") return Type::primitive("RangeBatch");
         if (head == "FileIO") return Type::primitive("FileIO");

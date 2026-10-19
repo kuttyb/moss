@@ -1,0 +1,11 @@
+# Malformed key proof: isequal without hash.
+type Tag:
+  label: String
+
+  fn isequal(other: Tag) -> Bool:
+    return label == other.label
+
+fn main():
+  var m = Map()
+  m[Tag(label: "a")] = 1
+  echo m.get(Tag(label: "a"), 0)
