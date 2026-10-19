@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run two typed consumers from one checked private-chain ABI-v10 provider."""
 
+import argparse
 import json
 import os
 from pathlib import Path
@@ -11,7 +12,11 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
-MOSS = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "moss"
+parser = argparse.ArgumentParser()
+parser.add_argument("moss", nargs="?", default=str(ROOT / "moss"))
+parser.add_argument("--profile", choices=("debug", "release"), default="debug")
+args = parser.parse_args()
+MOSS = Path(args.moss).resolve()
 MARGO = ROOT / "margo"
 TMP = ROOT / "tmp"
 TMP.mkdir(exist_ok=True)
@@ -66,9 +71,10 @@ export fn relay(b: Box):
   return b.value
 """
     package(provider, "h3_provider", provider_source)
-    command([str(MARGO), "build"], cwd=provider, env=env)
+    profile_flag = ["--release"] if args.profile == "release" else []
+    command([str(MARGO), "build", *profile_flag], cwd=provider, env=env)
     artifacts = scratch / "artifacts"
-    shutil.copytree(provider / "build" / "debug", artifacts)
+    shutil.copytree(provider / "build" / args.profile, artifacts)
     interface = artifacts / "Service.mossi"
     archive = artifacts / "libService.rlib"
     assert interface.is_file() and archive.is_file()
@@ -88,8 +94,8 @@ export fn relay(b: Box):
                 "module Main\nimport Service\n\nfn main():\n"
                 f"  item = Service.fresh({argument})\n"
                 "  echo Service.relay(item)\n")
-        command([str(MARGO), "build"], cwd=consumer, env=env)
-        assert command([str(MARGO), "run"], cwd=consumer, env=env) == expected
+        command([str(MARGO), "build", *profile_flag], cwd=consumer, env=env)
+        assert command([str(MARGO), "run", *profile_flag], cwd=consumer, env=env) == expected
 
     # A checked private helper reached through an exported body outside the
     # supported two-statement producer must not ship a generic_stmt fallback.
