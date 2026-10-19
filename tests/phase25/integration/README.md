@@ -75,8 +75,9 @@ MOSS_STAGED_ABI=v10 python3 tests/phase25/integration/run_acceptance.py --live -
 ```
 
 `--strict` implies `--live`. The live runner first builds this checkout's
-`./moss` and verifies its local `./margo`, then runs the G2, E3 (debug and release), activated
-key-protocol, and Team B suites serially. It promotes only gates with an exact
+`./moss` and verifies its local `./margo`, then runs the G2, G1 ledger and
+three-engine regressions, E3 (debug and release), activated key-protocol, and
+Team B suites serially. It promotes only gates with an exact
 case mapping in `live_acceptance.py` and requires a clean, unchanged Git HEAD.
 The JSON report records the HEAD, executed commands, individual case results,
 and output hashes. Unmapped requirements retain their ledger status even when

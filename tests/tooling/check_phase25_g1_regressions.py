@@ -207,16 +207,17 @@ type Matrix:
   cols: Int
   data: Vector[Int]
 
+fn set_at(m: Matrix, r: Int, c: Int, value: Int):
+  m.data[r * m.cols + c] = value
+
 fn main():
   var m = Matrix(rows = 2, cols = 3, data = [0, 0, 0, 0, 0, 0])
-  let r = 1
-  let c = 2
-  m.data[r * m.cols + c] = 42
-  echo m.data[r * m.cols + c]
+  set_at(m, 1, 2, 42)
+  echo m.data[5]
 """
     out = run_code_in_all_modes(code_matrix_borrow, "Defect #4 Borrow Lowering")
     assert out.strip() == "42"
-    print("  PASS: Defect #4 (conflicting index expression borrow lowering)")
+    print("  PASS: Defect #4 (parameter-based index expression borrow lowering)")
 
     # Defect #5: Discard assignment `_ = f()`
     code_discard = """

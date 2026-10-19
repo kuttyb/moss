@@ -302,6 +302,13 @@ def run_self_test(matrix_path: Path) -> int:
                             "summary": {"total": 11, "passed": 11, "blocked": 0, "failed": 0}})
     if parse_suite("e3-debug", forged_e3, 0).get("1"):
         errors.append("Partial E3 JSON was accepted as complete")
+    partial_ledger = "| reproducer | STAGED |\n|---|---|\n| #1 Int ordering above 2^53 | pass |\n"
+    if parse_suite("g1-ledger", partial_ledger, 0).get("1"):
+        errors.append("Partial G1 ledger table was accepted as complete")
+    partial_g1 = ("  PASS: Defect #1 (64-bit Int precision beyond 2^53)\n"
+                  "=== All Phase 25 G1 Regressions Passed Cleanly! ===\n")
+    if parse_suite("g1-regression", partial_g1, 0).get("1"):
+        errors.append("Partial G1 regression output was accepted as complete")
     fake_suites = {"g2": {"cases": {"1": True}, "stdout_sha256": "a" * 64}}
     forged_gate = {"id": "GATE-TYPEIR-01", "current_status": "PASS",
                    "blocking_dependency": None}

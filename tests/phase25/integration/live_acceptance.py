@@ -23,6 +23,37 @@ G2_PATH = "tests/tooling/check_phase25_conformance.py"
 E3_PATH = "tests/phase25/integration/cross_crate_harness.py"
 KEY_PATH = "tests/phase25/key_protocol/run_fixtures.py"
 B_PATH = "tests/phase25/check_phase25_b_acceptance.py"
+G1_LEDGER_PATH = "tests/phase25/ledger/run_ledger.py"
+G1_REGRESSION_PATH = "tests/tooling/check_phase25_g1_regressions.py"
+
+G1_LEDGER_ROWS = {
+    "1": "#1 Int ordering above 2^53",
+    "2": "#2 ordering on user types rejected",
+    "3": "#3 one type per binding",
+    "4": "#4 parameter-based indexed assignment",
+    "5": "#5 repeated discard",
+    "6": "#6 assert text with braces",
+    "7": "#7 Float.to_string",
+    "8": "#8 for traversal",
+    "12d": "#12d local collection member call",
+    "12": "#12 open receiver (joint Team G G2)",
+    "15": "#15 local field member call",
+    "10": "#10 cross-package constructor label",
+    "14": "#14 raising call in bench",
+}
+
+G1_REGRESSION_MARKERS = {
+    "2-3": "  PASS: Negative checker cases verified.",
+    "10": "  PASS: Semantic resolution verified.",
+    "1": "  PASS: Defect #1 (64-bit Int precision beyond 2^53)",
+    "4": "  PASS: Defect #4 (parameter-based index expression borrow lowering)",
+    "5": "  PASS: Defect #5 (_ = f() discard)",
+    "6": "  PASS: Defect #6 (assert formatting escaping)",
+    "7": "  PASS: Defect #7 (Float.to_string agreement)",
+    "8": "  PASS: Defect #8 (Fast Debug for loop parity)",
+    "12-15": "  PASS: Defect #12 / #15 (dotted receiver statement member-call)",
+    "14": "  PASS: Defect #14 (raising calls inside benchmarks compile and run)",
+}
 
 
 # Every mapped case is an exact assertion in the named executable suite.
@@ -49,6 +80,19 @@ PROOFS: dict[str, tuple[tuple[str, str], ...]] = {
     "GATE-G3-07": (("b", "gate10"),
                    ("key", "05-coherence-mismatch-method-override")),
     "GATE-G5-04": (("key", "all30"),),
+    "GATE-G1-01": (("g1-ledger", "1"), ("g1-regression", "1")),
+    "GATE-G1-02": (("g1-ledger", "2"), ("g1-regression", "2-3")),
+    "GATE-G1-03": (("g1-ledger", "3"), ("g1-regression", "2-3")),
+    "GATE-G1-04": (("g1-ledger", "4"), ("g1-regression", "4")),
+    "GATE-G1-05": (("g1-ledger", "5"), ("g1-regression", "5")),
+    "GATE-G1-06": (("g1-ledger", "6"), ("g1-regression", "6")),
+    "GATE-G1-09": (("g2", "5"),),
+    "GATE-G1-10": (("g1-ledger", "10"), ("g1-regression", "10")),
+    "GATE-G1-11": (("g2", "2"),),
+    "GATE-G1-12": (("g1-ledger", "12"),),
+    "GATE-G1-13": (("g1-ledger", "12d"), ("g1-regression", "12-15")),
+    "GATE-G1-14": (("g1-ledger", "14"), ("g1-regression", "14")),
+    "GATE-G1-15": (("g1-ledger", "15"), ("g1-regression", "12-15")),
 }
 
 # Gate 10's exact sealed proof identity is asserted by Team B, beyond G2's
@@ -56,7 +100,9 @@ PROOFS: dict[str, tuple[tuple[str, str], ...]] = {
 PROOFS["GATE-TYPEIR-10"] += (("b", "gate10"),)
 
 SUITE_PATHS = {"g2": G2_PATH, "e3-debug": E3_PATH,
-               "e3-release": E3_PATH, "key": KEY_PATH, "b": B_PATH}
+               "e3-release": E3_PATH, "key": KEY_PATH, "b": B_PATH,
+               "g1-ledger": G1_LEDGER_PATH,
+               "g1-regression": G1_REGRESSION_PATH}
 KEY_EXACT_STATUS = {
     "03-imported-nominal-keys-source-free": "passes",
     "04-two-consumers-shared-map": "passes",
@@ -108,6 +154,21 @@ def parse_suite(suite: str, stdout: str, returncode: int) -> dict[str, bool]:
         cases["gate10"] = complete and bool(re.search(
             r"G2 Gate 10: one sealed nominal proof sha256:[0-9a-f]{64}; "
             r"two independent source-free native consumers", stdout))
+    elif suite == "g1-ledger":
+        rows = re.findall(r"(?m)^\| (#[^|]+) \| ([^|]+) \|$", stdout)
+        observed = {name: result.strip() for name, result in rows}
+        complete = (returncode == 0 and "| reproducer | STAGED |" in stdout and
+                    len(rows) == len(G1_LEDGER_ROWS) and
+                    set(observed) == set(G1_LEDGER_ROWS.values()))
+        cases = {number: complete and observed.get(name) == "pass"
+                 for number, name in G1_LEDGER_ROWS.items()}
+    elif suite == "g1-regression":
+        lines = stdout.splitlines()
+        complete = (returncode == 0 and
+                    "=== All Phase 25 G1 Regressions Passed Cleanly! ===" in lines and
+                    all(lines.count(marker) == 1 for marker in G1_REGRESSION_MARKERS.values()))
+        cases = {number: complete and marker in lines
+                 for number, marker in G1_REGRESSION_MARKERS.items()}
     return cases
 
 
@@ -121,6 +182,10 @@ def suite_command(suite: str, compiler: Path) -> list[str]:
         return [sys.executable, str(ROOT / KEY_PATH), "--activate", "--moss", str(compiler)]
     if suite == "b":
         return [sys.executable, str(ROOT / B_PATH)]
+    if suite == "g1-ledger":
+        return [sys.executable, str(ROOT / G1_LEDGER_PATH), f"STAGED={compiler}"]
+    if suite == "g1-regression":
+        return [sys.executable, str(ROOT / G1_REGRESSION_PATH), str(compiler)]
     raise ValueError(f"Unknown live suite {suite}")
 
 
