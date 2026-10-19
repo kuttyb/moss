@@ -37,6 +37,8 @@ G5_RUNTIME_PATH = "tests/phase25/runtime/check_runtime.py"
 G5_JOINT_PATH = "tests/phase25/integration/test_joint_ledger_12.py"
 G5_SDK_PATH = "tests/phase25/integration/test_sdk_matrix.py"
 G3_SNAPSHOT_PATH = "tests/phase25/integration/test_map_snapshot_complexity.py"
+SA_PATH = "tests/tooling/check_phase25_sa_numeric_literals.py"
+SC_PATH = "tests/tooling/check_phase25_sc_safe_arithmetic.py"
 
 G1_LEDGER_ROWS = {
     "1": "#1 Int ordering above 2^53",
@@ -101,6 +103,9 @@ PROOFS: dict[str, tuple[tuple[str, str], ...]] = {
     "GATE-G5-02": (("g5-joint", "all"), ("g1-ledger", "12")),
     "GATE-G5-03": (("g5-sdk", "all"),),
     "GATE-G1-07": (("g1-ledger", "7"), ("g1-regression", "7")),
+    "GATE-G6-03": (("sa", "numeric"), ("sc", "arithmetic"),
+                    ("g3-ordering", "float"), ("l7", "float-payload"),
+                    ("g1-regression", "1"), ("g1-regression", "7")),
     "GATE-G1-01": (("g1-ledger", "1"), ("g1-regression", "1")),
     "GATE-G1-02": (("g1-ledger", "2"), ("g1-regression", "2-3")),
     "GATE-G1-03": (("g1-ledger", "3"), ("g1-regression", "2-3")),
@@ -147,7 +152,8 @@ SUITE_PATHS = {"g2": G2_PATH, "e3-debug": E3_PATH,
                "g5-runtime": G5_RUNTIME_PATH,
                "g5-joint": G5_JOINT_PATH,
                "g5-sdk": G5_SDK_PATH,
-               "g3-snapshot": G3_SNAPSHOT_PATH}
+               "g3-snapshot": G3_SNAPSHOT_PATH,
+               "sa": SA_PATH, "sc": SC_PATH}
 KEY_EXACT_STATUS = {
     "01-float-keys-map": "passes",
     "02-float-keys-set": "passes",
@@ -328,6 +334,24 @@ def parse_suite(suite: str, stdout: str, returncode: int) -> dict[str, bool]:
     elif suite == "g3-snapshot":
         cases["all"] = (returncode == 0 and stdout.splitlines() == [
             "G3-08 sparse Map snapshot live-storage bound and detached clone PASS"])
+    elif suite == "sa":
+        lines = stdout.splitlines()
+        passed = [line for line in lines if line.startswith("  PASS:")]
+        cases["numeric"] = (returncode == 0 and len(passed) == 66 and
+            len(set(passed)) == 66 and
+            "  PASS: Int literals (3 engines)" in passed and
+            "  PASS: Float literals (3 engines)" in passed and
+            "  PASS: literal contexts (3 engines)" in passed and
+            lines[-1] == "phase25 S-A numeric literal checks passed: "
+            "68 accepted literals (3 engines), 63 rejected cases, 3 engine programs")
+    elif suite == "sc":
+        lines = stdout.splitlines()
+        passed = [line for line in lines if line.startswith("  PASS:")]
+        cases["arithmetic"] = (returncode == 0 and len(passed) == 23 and
+            len(set(passed)) == 23 and
+            "  PASS: Int.MIN / -1 wraps to Int.MIN and Int.MIN % -1 is 0 in every engine" in passed and
+            "  PASS: fused and unfused pipelines agree in all engines" in passed and
+            lines[-1] == "=== All Phase 25 S-C safe-arithmetic cases passed (23 cases) ===")
     return cases
 
 
@@ -365,6 +389,10 @@ def suite_command(suite: str, compiler: Path) -> list[str]:
         return [sys.executable, str(ROOT / G5_SDK_PATH)]
     if suite == "g3-snapshot":
         return [sys.executable, str(ROOT / G3_SNAPSHOT_PATH)]
+    if suite == "sa":
+        return [sys.executable, str(ROOT / SA_PATH), str(compiler)]
+    if suite == "sc":
+        return [sys.executable, str(ROOT / SC_PATH), str(compiler)]
     raise ValueError(f"Unknown live suite {suite}")
 
 
