@@ -98,7 +98,8 @@ int main(int argc, char** argv) {
         replaced_body = true;
       }
     assert(replaced_summary && replaced_body);
-  } else if (mode == "drop-body-alternative-legacy") {
+  } else if (mode == "drop-body-alternative-legacy" ||
+             mode == "drop-body-no-legacy") {
     auto& records = sealed.value.private_semantic_dependencies;
     const auto before = records.size();
     records.erase(std::remove_if(records.begin(), records.end(),
@@ -106,30 +107,48 @@ int main(int argc, char** argv) {
       return record.id == "checked-body-v1:" + callable_id;
     }), records.end());
     assert(before == records.size() + 1);
-    const std::string alternative =
-        "  generic_stmt 15 2 0 \"return x * 2 + 21\" "
-        "\"x * 2 + 21\" \"\" \"\" 0";
-    bool injected = false;
-    for (auto& record : sealed.value.semantic_contract) {
-      if (record.payload.rfind("export fn compute ", 0) != 0) continue;
-      std::istringstream lines(record.payload);
-      std::string line, replacement;
-      while (std::getline(lines, line)) {
-        if (line == "  generic_ir_end") {
-          replacement += alternative + "\n";
-          injected = true;
+    if (mode == "drop-body-alternative-legacy") {
+      const std::string alternative =
+          "  generic_stmt 15 2 0 \"return x * 2 + 21\" "
+          "\"x * 2 + 21\" \"\" \"\" 0";
+      bool injected = false;
+      for (auto& record : sealed.value.semantic_contract) {
+        if (record.payload.rfind("export fn compute ", 0) != 0) continue;
+        std::istringstream lines(record.payload);
+        std::string line, replacement;
+        while (std::getline(lines, line)) {
+          if (line == "  generic_ir_end") {
+            replacement += alternative + "\n";
+            injected = true;
+          }
+          replacement += line + "\n";
         }
-        replacement += line + "\n";
+        record.payload = std::move(replacement);
       }
-      record.payload = std::move(replacement);
+      assert(injected);
     }
-    assert(injected);
+  } else if (mode == "mismatch-body-hash") {
+    bool replaced = false;
+    for (auto& record : sealed.value.semantic_contract) {
+      if (!moss::abi_v10::hex_hash(record.id) || record.payload.empty() ||
+          static_cast<unsigned char>(record.payload.front()) != 2)
+        continue;
+      auto summary = moss::abi_v10::read_summary(record.payload);
+      if (summary.callable_id != callable_id) continue;
+      summary.body_semantic_hash =
+          "body-semantic-v1:sha256:" + std::string(64, '8');
+      record = moss::abi_v10::summary_record(summary);
+      replaced = true;
+    }
+    assert(replaced);
   } else {
     assert(false && "unknown mutation mode");
   }
 
   const auto rewritten = moss::abi_v10::encode(sealed.value);
-  moss::abi_v10::validate_complete_interface(moss::abi_v10::decode(rewritten));
+  const auto decoded = moss::abi_v10::decode(rewritten);
+  if (mode != "mismatch-body-hash")
+    moss::abi_v10::validate_complete_interface(decoded);
   const auto new_digest = moss::abi_v10::parse(rewritten).digest;
   auto archive = read_file(archive_path);
   const auto old_marker =

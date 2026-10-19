@@ -8646,3 +8646,37 @@ Focused results:
 - `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` passed.
   Broad regression suites were not run. C2d was not started.
 
+
+## Phase 25-C2c-R1 — Fail closed on missing checked arithmetic body
+
+Starting from `59bb2e7d0a9c1e5dd9f7dc9aab5601917600ce48` on
+`phase25-integration`. `load_module_interface()` now identifies the narrow
+typed-v2 arithmetic summary by its single parameter and operator requirement
+facts, validates the complete ordered `operator:*` then `operator:+` shape,
+and requires exactly one checked body with the same callable identity and
+semantic hash before attaching import records. Other summary-only ABI-v10
+forms remain unaffected. The focused C2c test now requires consumer
+compilation failure for missing-body artifacts both with and without legacy
+statements, and checks a summary/body hash mismatch.
+
+Focused validation passed:
+- `make moss-dev` passed (existing TypeSolver missing-field-initializer
+  warnings only).
+- `python3 tests/tooling/check_phase25_c2b6c_source_free_arithmetic.py
+  build/compiler/moss-dev` passed: normal source-free Int/Float outputs were
+  `30` and `25.0`; String/Bool were `TYPE_MISMATCH`; missing body with and
+  without alternate legacy statements failed compilation with
+  `SOURCE_FREE_CHECKED_BODY_INVALID`; a summary/body hash mismatch failed
+  with `SOURCE_FREE_SUMMARY_INVALID`; unsupported legacy arithmetic and
+  default ABI-v9 behavior passed.
+- `python3 tests/tooling/check_phase25_generic_arithmetic_requirements.py
+  build/compiler/moss-dev` and
+  `python3 tests/tooling/check_phase25_c2b6b_arithmetic_records.py
+  build/compiler/moss-dev` passed. ABI-v10 staging/adversarial and known-open
+  nominal tests passed using `CXX='g++ -Wno-missing-field-initializers'`
+  because the shard's initial strict compile promoted existing aggregate
+  initializer warnings to errors.
+- `python3 tests/phase25/integration/cross_crate_harness.py --scenario 6
+  --staged-v10 --json` passed with source-removed output `99`.
+- `python3 tests/tooling/check_agent_feedback.py` and `git diff --check`
+  passed. Broad regression suites were not run. C2d was not started.

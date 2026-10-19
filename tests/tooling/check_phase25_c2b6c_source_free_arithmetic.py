@@ -36,7 +36,6 @@ def package(path, name, source):
 with tempfile.TemporaryDirectory(prefix="phase25-c2b6c-arithmetic-",
                                  dir=TMP) as temp:
     scratch = Path(temp)
-    missing_body_fallback = False
     mutator = scratch / "mutate_arithmetic_artifact"
     verifier = scratch / "verify_emitted_arithmetic"
     run(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
@@ -84,6 +83,17 @@ export fn unsupported_reverse(x):
     run([str(mutator), str(missing_body / "Service.mossi"),
          str(missing_body / "libService.rlib"), "Service",
          "drop-body-alternative-legacy"])
+    missing_body_no_legacy = scratch / "artifacts-missing-body-no-legacy"
+    shutil.copytree(provider / "build" / "debug", missing_body_no_legacy)
+    run([str(mutator), str(missing_body_no_legacy / "Service.mossi"),
+         str(missing_body_no_legacy / "libService.rlib"), "Service",
+         "drop-body-no-legacy"])
+
+    mismatched_hash = scratch / "artifacts-mismatched-body-hash"
+    shutil.copytree(provider / "build" / "debug", mismatched_hash)
+    run([str(mutator), str(mismatched_hash / "Service.mossi"),
+         str(mismatched_hash / "libService.rlib"), "Service",
+         "mismatch-body-hash"])
     shutil.rmtree(provider)
     assert not list(scratch.rglob("provider-v10/**/*.moss"))
 
@@ -127,32 +137,48 @@ fn main():
     assert "SOURCE_FREE_CHECKED_BODY_INVALID" in rejected, rejected
     print("PASS unsupported sealed arithmetic body rejected fail-closed")
 
-    missing_env = staged_env.copy()
-    missing_env["MOSS_MODULE_PATH"] = str(missing_body)
-    missing = scratch / "consumer-missing-body"
-    package(missing, "c2b6c_consumer_missing_body", """module Main
+    for case, artifacts in (
+            ("missing-body-alternate-legacy", missing_body),
+            ("missing-body-no-legacy", missing_body_no_legacy)):
+        missing_env = staged_env.copy()
+        missing_env["MOSS_MODULE_PATH"] = str(artifacts)
+        missing = scratch / f"consumer-{case}"
+        package(missing, f"c2b6c_consumer_{case.replace('-', '_')}", """module Main
 import Service
 
 fn main():
   echo Service.compute(5)
 """)
-    missing_build = subprocess.run([str(MARGO), "build"], cwd=missing,
-                                   env=missing_env, capture_output=True,
-                                   text=True)
-    if missing_build.returncode != 0:
-        print("PASS missing checked-body artifact rejected: " +
-              (missing_build.stdout + missing_build.stderr).strip())
-    else:
-        missing_run = subprocess.run([str(MARGO), "run"], cwd=missing,
-                                     env=missing_env, capture_output=True,
-                                     text=True)
-        if missing_run.returncode == 0 and missing_run.stdout != "30\n":
-            print("BLOCKER missing checked body silently executed alternate "
-                  f"legacy body: {missing_run.stdout!r}")
-            missing_body_fallback = True
-        else:
-            print("PASS missing checked-body artifact did not execute an "
-                  "alternate body")
+        missing_build = subprocess.run([str(MARGO), "build"], cwd=missing,
+                                       env=missing_env, capture_output=True,
+                                       text=True)
+        rejected = missing_build.stdout + missing_build.stderr
+        assert missing_build.returncode != 0, (
+            f"{case}: consumer compilation succeeded unexpectedly")
+        assert "SOURCE_FREE_CHECKED_BODY_INVALID" in rejected, rejected
+        print(f"PASS {case} failed closed with "
+              "SOURCE_FREE_CHECKED_BODY_INVALID")
+
+    mismatch_env = staged_env.copy()
+    mismatch_env["MOSS_MODULE_PATH"] = str(mismatched_hash)
+    mismatch = scratch / "consumer-mismatched-body-hash"
+    package(mismatch, "c2b6c_consumer_mismatched_body_hash", """module Main
+import Service
+
+fn main():
+  echo Service.compute(5)
+""")
+    mismatch_build = subprocess.run([str(MARGO), "build"], cwd=mismatch,
+                                    env=mismatch_env, capture_output=True,
+                                    text=True)
+    mismatch_diagnostic = mismatch_build.stdout + mismatch_build.stderr
+    assert mismatch_build.returncode != 0, (
+        "consumer compilation accepted mismatched summary/body hashes")
+    mismatch_code = next((code for code in (
+        "SOURCE_FREE_CHECKED_BODY_INVALID", "SOURCE_FREE_SUMMARY_INVALID")
+        if code in mismatch_diagnostic), None)
+    assert mismatch_code, mismatch_diagnostic
+    print(f"PASS mismatched summary/body hash rejected with {mismatch_code}")
 
     v9_env = os.environ.copy()
     v9_env.pop("MOSS_STAGED_ABI", None)
@@ -186,6 +212,3 @@ fn main():
 print("PASS source-free checked arithmetic: Int=30, Float=25.0; normal staged "
       "artifact omits compute generic_stmt; unsupported legacy forms and "
       "default ABI-v9 remain executable")
-if missing_body_fallback:
-    raise SystemExit("FAIL separate fail-closed blocker: a missing checked "
-                     "body allowed execution of a different legacy body")

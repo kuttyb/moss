@@ -3268,6 +3268,63 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
   return converted;
 }
 
+// Only this typed v2 summary shape selects the checked arithmetic lowering.
+// Other ABI-v10 summaries may intentionally use a summary-only lowering path.
+static bool abi_v10_checked_arithmetic_summary_candidate(
+    const abi_v10::Summary& summary) {
+  return summary.parameters.size() == 1 &&
+      std::any_of(summary.requirements.begin(), summary.requirements.end(),
+          [](const abi_v10::Requirement& requirement) {
+        return requirement.operation == "operator:*" ||
+            requirement.operation == "operator:+";
+      });
+}
+
+static void validate_abi_v10_checked_arithmetic_summary(
+    const abi_v10::Summary& summary, const Function& function) {
+  auto invalid = [&](const string& reason) -> void {
+    CompileError error(std::max(function.line, 1), reason,
+                       "SOURCE_FREE_SUMMARY_INVALID");
+    error.source_file = function.source_file;
+    throw error;
+  };
+  const auto bound_var_zero = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::BoundVar &&
+        type.ordinal == 0 && type.arguments.empty();
+  };
+  const auto primitive_int = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::Primitive &&
+        type.identity == "int" && type.arguments.empty();
+  };
+  if (summary.requirements.size() != 2)
+    invalid("checked ABI-v10 arithmetic summary requirement chain is incomplete");
+  const auto& multiply = summary.requirements[0];
+  const auto& add = summary.requirements[1];
+  if (summary.variable_count != 1 ||
+      !bound_var_zero(summary.parameters[0]) ||
+      !bound_var_zero(summary.result) ||
+      summary.parameter_access.size() != 1 ||
+      summary.parameter_access[0] != abi_v10::Access::Read ||
+      summary.observable_effect_bits != 0 ||
+      !summary.observable_effect_tags.empty() ||
+      !summary.dependencies.empty() ||
+      !abi_v10::checked_body_hash_valid(summary.body_semantic_hash) ||
+      multiply.operation != "operator:*" || add.operation != "operator:+" ||
+      multiply.parent != 0 || add.parent != 1 ||
+      multiply.access != abi_v10::Access::Read ||
+      add.access != abi_v10::Access::Read ||
+      !bound_var_zero(multiply.receiver) || !bound_var_zero(add.receiver) ||
+      multiply.arguments.size() != 1 || add.arguments.size() != 1 ||
+      multiply.argument_access.size() != 1 ||
+      add.argument_access.size() != 1 ||
+      multiply.argument_access[0] != abi_v10::Access::Read ||
+      add.argument_access[0] != abi_v10::Access::Read ||
+      !primitive_int(multiply.arguments[0]) ||
+      !primitive_int(add.arguments[0]) || !multiply.result || !add.result ||
+      !bound_var_zero(*multiply.result) || !bound_var_zero(*add.result))
+    invalid("checked ABI-v10 arithmetic summary has an inconsistent typed shape");
+}
+
 // Stage-v10 H3 import projection. It derives an AST lowering view solely from
 // sealed checked IR; legacy generic_stmt lines are discarded for these bodies.
 // Every target is selected by exact provider identity before inference starts.
@@ -37885,13 +37942,19 @@ static ParsedModuleUnit load_module_interface(
           function.return_type->substr(9);
   }
   if (v10_interface) {
-    std::map<string, string> summaries;
-    std::map<string, string> bodies;
+    struct ImportedSummaryRecord {
+      string payload;
+      bool typed_v2 = false;
+    };
+    std::map<string, vector<ImportedSummaryRecord>> summaries;
+    std::map<string, vector<std::pair<abi_v10::CheckedBodyRecord, string>>> bodies;
     for (const auto& record : sealed.value.semantic_contract) {
       if (!abi_v10::hex_hash(record.id) ||
           abi_v10::is_key_proof_payload(record.payload)) continue;
       auto summary = abi_v10::read_summary(record.payload);
-      summaries.emplace(summary.callable_id, record.payload);
+      summaries[summary.callable_id].push_back({record.payload,
+          !record.payload.empty() &&
+              static_cast<unsigned char>(record.payload.front()) == 2});
     }
     for (const auto& record : sealed.value.private_semantic_dependencies)
       if (abi_v10::hex_hash(record.id) && !record.payload.empty() &&
@@ -37899,27 +37962,74 @@ static ParsedModuleUnit load_module_interface(
            static_cast<unsigned char>(record.payload.front()) == 2)) {
         auto summary = abi_v10::read_summary(record.payload);
         abi_v10::validate_summary(record);
-        if (!summaries.emplace(summary.callable_id, record.payload).second)
-          throw CompileError(0, "duplicate checked ABI-v10 callable summary",
-                             "SOURCE_FREE_SUMMARY_INVALID");
+        summaries[summary.callable_id].push_back({record.payload,
+            static_cast<unsigned char>(record.payload.front()) == 2});
       }
     for (const auto& record : sealed.value.private_semantic_dependencies)
       if (starts_with(record.id, "checked-body-v1:")) {
         auto body = abi_v10::read_checked_body_record(record.payload);
-        bodies.emplace(body.callable_id, record.payload);
+        if (record.id != "checked-body-v1:" + body.callable_id)
+          throw CompileError(0, "checked ABI-v10 body identity is inconsistent",
+                             "SOURCE_FREE_CHECKED_BODY_INVALID");
+        bodies[body.callable_id].emplace_back(std::move(body), record.payload);
       }
     for (auto& function : provider.functions) {
       const string id = "callable-v1:" + unit.module_identity +
           ":fn:" + function.name;
-      auto body = bodies.find(id);
-      if (body == bodies.end()) continue;
-      auto summary = summaries.find(id);
-      if (summary == summaries.end())
-        throw CompileError(0, "checked ABI-v10 body has no callable summary",
+      auto summary_records = summaries.find(id);
+      auto body_records = bodies.find(id);
+      const ImportedSummaryRecord* arithmetic_summary_record = nullptr;
+      abi_v10::Summary arithmetic_summary;
+      if (summary_records != summaries.end()) {
+        for (const auto& candidate : summary_records->second) {
+          if (!candidate.typed_v2) continue;
+          const auto decoded = abi_v10::read_summary(candidate.payload);
+          if (!abi_v10_checked_arithmetic_summary_candidate(decoded)) continue;
+          if (arithmetic_summary_record)
+            throw CompileError(0, "duplicate checked ABI-v10 arithmetic summary",
+                               "SOURCE_FREE_SUMMARY_INVALID");
+          arithmetic_summary_record = &candidate;
+          arithmetic_summary = decoded;
+        }
+      }
+      const bool has_body = body_records != bodies.end();
+      if (arithmetic_summary_record) {
+        validate_abi_v10_checked_arithmetic_summary(arithmetic_summary,
+                                                    function);
+        if (summary_records->second.size() != 1)
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 arithmetic callable has duplicate summaries",
+              "SOURCE_FREE_SUMMARY_INVALID");
+        if (!has_body || body_records->second.size() != 1)
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 arithmetic summary requires exactly one checked body",
+              "SOURCE_FREE_CHECKED_BODY_INVALID");
+        const auto& checked_body = body_records->second.front().first;
+        if (checked_body.callable_id != id ||
+            checked_body.semantic_hash != arithmetic_summary.body_semantic_hash)
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 arithmetic body identity or semantic hash does not match its summary",
+              "SOURCE_FREE_CHECKED_BODY_INVALID");
+      }
+      if (!has_body) continue;
+      if (body_records->second.size() != 1)
+        throw CompileError(0, "duplicate checked ABI-v10 callable body",
+                           "SOURCE_FREE_CHECKED_BODY_INVALID");
+      if (summary_records == summaries.end() ||
+          summary_records->second.size() != 1)
+        throw CompileError(0, "checked ABI-v10 body has no unique callable summary",
                            "SOURCE_FREE_SUMMARY_INVALID");
-      function.imported_checked_summary_payload = summary->second;
-      function.imported_checked_body_payload = body->second;
-      const auto decoded_summary = abi_v10::read_summary(summary->second);
+      const auto& summary_payload = summary_records->second.front().payload;
+      const auto& body_entry = body_records->second.front();
+      const auto& body_payload = body_entry.second;
+      const auto decoded_summary = abi_v10::read_summary(summary_payload);
+      if (decoded_summary.callable_id != id ||
+          decoded_summary.body_semantic_hash != body_entry.first.semantic_hash)
+        throw CompileError(std::max(function.line, 1),
+            "checked ABI-v10 body identity or semantic hash does not match its summary",
+            "SOURCE_FREE_CHECKED_BODY_INVALID");
+      function.imported_checked_summary_payload = summary_payload;
+      function.imported_checked_body_payload = body_payload;
       for (const auto& requirement : decoded_summary.requirements) {
         auto provenance = std::find_if(sealed.value.provenance.begin(),
             sealed.value.provenance.end(), [&](const abi_v10::Record& record) {
@@ -37933,7 +38043,7 @@ static ParsedModuleUnit load_module_interface(
         function.imported_checked_provenance_records.emplace_back(
             provenance->id, provenance->payload);
       }
-      bodies.erase(body);
+      bodies.erase(id);
     }
     if (!bodies.empty())
       throw CompileError(0, "checked ABI-v10 body has no imported callable",
