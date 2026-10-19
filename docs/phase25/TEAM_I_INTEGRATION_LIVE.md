@@ -1,5 +1,15 @@
 # Team I live integration record
 
+## H2 draft intake — 2026-10-19
+
+L4 pushed target-based H2 branch `phase25-i-h2-intake` at `9d7d354`, direct
+parent target `f63e03b`. Its patch matches staged H2 `0574de4` exactly by
+stable patch ID. Local boundary, typed API, Team A, feedback and diff checks
+pass. Draft [PR #9](https://github.com/kuttyb/moss/pull/9) has been opened;
+automated exact-head CI and combined L6 review remain pending. The worker is
+back on H3. H/T target push CI `39180139206` has harness and examples green,
+with semantic/core still running. No further target/main merge.
+
 ## H1 callable/effects checkpoint — 2026-10-19
 
 L4 pushed `phase25-i-map-staging` at `c4b0729`. Inspect exposes a typed

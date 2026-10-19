@@ -1,5 +1,21 @@
 # Moss current status
 
+## Phase 25 H2 draft intake — 2026-10-19
+
+Sole L4 prepared fresh target-based `phase25-i-h2-intake` at
+`9d7d354dc9abdfaaaaeb917f4a8f401f28b6d01a`, direct parent H/T target
+`f63e03b`. It reapplies the exact H2 patch from staging `0574de4` (matching
+stable patch ID `c32981aa...`) without Map/Set staging changes. Local
+optimized build, live `moss-0.1` bootstrap, G2 declaration authority with 36
+boundary checks, typed semantic API, Team A semantics, feedback and diff
+checks pass. Draft PR [#9](https://github.com/kuttyb/moss/pull/9) targets
+`phase25-integration`; its exact-head CI and combined L6 review are pending.
+The worker has returned to H3 under the exclusive compiler lease.
+
+Post-H/T target workflow `39180139206` is running at `f63e03b`; harness
+integrity and optimized examples are green, semantic/core jobs still running.
+No H2 target merge or main merge.
+
 ## Phase 25 H1 callable/effects checkpoint — 2026-10-19
 
 Sole L4 pushed `phase25-i-map-staging` at `c4b07293e489de3201b3cf57a25f8e8989d0349e`.
