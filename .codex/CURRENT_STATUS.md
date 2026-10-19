@@ -1,5 +1,26 @@
 # Moss current status
 
+## Phase 25 S pre-intake reconciliation checkpoint — 2026-10-19
+
+Sole L4 pushed `phase25-i-s-reviewed-intake` at
+`c5640fdeb4936163158470057cdb708b8d67a22f`, a normal merge of H2
+target `56d68ce` and S rehearsal `012f81d`; pinned S `53d04fb` and H2
+`9d7d354` remain ancestors. The merge was textually clean but exposed two
+semantic overlaps. Team A's source-free absent-method assertion now expects
+`METHOD_NOT_FOUND` with original `provider.moss` provenance, with a separate
+existing-method incompatible-argument `TYPE_MISMATCH` negative. Explicit-
+module `main` is compiled only for `moss_process_root`, avoiding rlib Rust
+E0425 missing FileIO/executor hooks; source-removed native Range/FileIO
+validation runs `source-free generic ok` and `329`. Nine key-fixture `current:`
+observations were corrected from clean-target/S evidence; Moss source and
+`expect:` remain fixed. Optimized compiler, S1–S4/S-A–C, Team A, Type IR,
+H2/G2 authority (36 checks), source-free native validator, default key
+fixtures 30/30, feedback and diff checks pass. G2 Gate 10 remains PENDING on
+this baseline. See `docs/phase25/S_INTAKE_RECONCILIATION.md` on S branch.
+S **must be refreshed onto reviewed post-G target** before a draft PR/CI; no
+S target/main push has occurred. Sole L4 has returned to staged Team B Gate
+10 acceptance-harness repair. G PR #10 exact-head and post-H2 target CI run.
+
 ## Phase 25 G draft intake checkpoint — 2026-10-19
 
 Sole L4 pushed `phase25-i-g-reviewed-intake` at

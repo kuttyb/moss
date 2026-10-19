@@ -1,5 +1,19 @@
 # Team I live integration record
 
+## S pre-intake checkpoint — 2026-10-19
+
+L4 pushed fresh H2-target-based S reconciliation `c5640fd`, retaining pinned
+S ancestry. Team A's missing-member/provenance assertion now reflects the
+specific S/G2 diagnostic and original provider source, with a separate
+incompatible-method-argument negative. A source-removed Range/FileIO backend
+failure was fixed by gating explicit-module `main` to process-root builds;
+native validation runs the generic and Range/FileIO consumers. Nine stale key
+fixture `current:` lines were corrected without changing source or `expect:`.
+Optimized S/Team A/H2/Type IR, default key 30/30, feedback and diff checks
+pass. S awaits a refresh onto the post-G reviewed target before its draft PR.
+G PR #10 and post-H2 target CI remain in progress. L4 returned serially to
+staged B Gate 10 acceptance-harness work.
+
 ## G draft intake and S preparation — 2026-10-19
 
 The sole L4 pushed target-based G head `6859041` with pinned G ancestry and
