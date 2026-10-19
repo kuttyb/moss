@@ -219,6 +219,67 @@ fn main():
     assert push["admitted_template_or_builtin_family"] == (
         "builtin:vector[int]"), push
 
+    index_source = Path(scratch_path) / "generic_index.moss"
+    index_source.write_text("""fn first(values):
+  return values[0]
+
+fn main():
+  echo first([2, 3])
+""")
+    index_checked = subprocess.run([str(MOSS), "inspect", "main", "--source",
+        str(index_source), "--json"], text=True, capture_output=True)
+    assert index_checked.returncode == 0, (
+        index_checked.stdout, index_checked.stderr)
+    index_typed = json.loads(index_checked.stdout)["result"]["typed_semantic_v1"]
+    first_summary = [entry for entry in index_typed["open_summaries"]
+                     if entry["callable_id"].endswith(":fn:first")]
+    assert len(first_summary) == 1, first_summary
+    assert first_summary[0]["requirement_count"] == 1, first_summary
+    index = first_summary[0]["requirements"][0]
+    assert index["kind"] == "index" and index["target_id"] == "builtin:index", index
+    assert index["subject"] == {"kind": "bound_var", "ordinal": 0}, index
+    assert index["argument_types"] == [{"kind": "primitive", "id": "int",
+        "arguments": [], "fields": []}], index
+    assert index["result"] == {"kind": "bound_var", "ordinal": 1}, index
+    assert index["subject_access"] == "READ" and index["argument_access"] == ["READ"], index
+    assert index["origin"]["enclosing_callable"] == first_summary[0]["callable_id"], index
+    assert index["origin"]["module_id"].startswith("module-v1:"), index
+
+    two_index_source = Path(scratch_path) / "generic_two_indices.moss"
+    two_index_source.write_text("""fn both(values):
+  first = values[0]
+  return values[1]
+
+fn main():
+  echo both([1, 2])
+""")
+    two_index_checked = subprocess.run([str(MOSS), "inspect", "both", "--source",
+        str(two_index_source), "--json"], text=True, capture_output=True)
+    assert two_index_checked.returncode == 0, (
+        two_index_checked.stdout, two_index_checked.stderr)
+    two_index_typed = json.loads(two_index_checked.stdout)["result"][
+        "typed_semantic_v1"]
+    both_summary = [entry for entry in two_index_typed["open_summaries"]
+                    if entry["callable_id"].endswith(":fn:both")]
+    assert len(both_summary) == 1, both_summary
+    both_requirements = both_summary[0]["requirements"]
+    assert len(both_requirements) == 2, both_requirements
+    assert all(entry["kind"] == "index" and len(entry["argument_types"]) == 1
+               for entry in both_requirements), both_requirements
+    assert len({entry["requirement_id"] for entry in both_requirements}) == 2, (
+        both_requirements)
+
+    two_index_source.write_text(two_index_source.read_text().replace(
+        "values[1]", 'values["bad"]'))
+    invalid_index = subprocess.run([str(MOSS), "check", str(two_index_source),
+        "--json"], text=True, capture_output=True)
+    assert invalid_index.returncode != 0, (
+        invalid_index.stdout, invalid_index.stderr)
+    invalid_index_error = json.loads(invalid_index.stdout)["error"]
+    assert invalid_index_error["code"] == "TYPE_MISMATCH" and (
+        "indices must be Int" in invalid_index_error["message"]), (
+        invalid_index_error)
+
     provider = Path(scratch_path) / "provider"
     consumer = Path(scratch_path) / "consumer"
     for package_name, path in (("typed_provider", provider),

@@ -4445,8 +4445,18 @@ class Checker {
     string ib, ii;
     if (parse_index(e, ib, ii)) {
       for (const auto& p : function.params) if (trim(ib) == p.name && p.type.empty()) {
-        if (!has_structural_requirement(function, p.name, ConstraintKind::Indexable, "index"))
-          function.constraints.push_back({ConstraintKind::Indexable, p.name, "index", ""});
+        auto existing = std::find_if(function.constraints.begin(),
+            function.constraints.end(), [&](const Constraint& requirement) {
+              return requirement.kind == ConstraintKind::Indexable &&
+                  requirement.subject == p.name && requirement.detail == "index" &&
+                  requirement.arguments == vector<string>{trim(ii)};
+            });
+        if (existing == function.constraints.end()) {
+          Constraint requirement{ConstraintKind::Indexable, p.name, "index", ""};
+          requirement.arguments = {trim(ii)};
+          requirement.arity = 1;
+          function.constraints.push_back(std::move(requirement));
+        }
         function.generic = true;
         function.static_dispatch = true;
       }
@@ -9592,7 +9602,22 @@ class Checker {
             for (const auto& p : function.params) if (trim(base) == p.name) {
               function.generic = true;
               function.static_dispatch = true;
-              function.constraints.push_back({ConstraintKind::Indexable, p.name, "index", "element:" + p.name});
+              auto existing = std::find_if(function.constraints.begin(),
+                  function.constraints.end(), [&](const Constraint& requirement) {
+                    return requirement.kind == ConstraintKind::Indexable &&
+                        requirement.subject == p.name && requirement.detail == "index" &&
+                        requirement.arguments == vector<string>{trim(idx)};
+                  });
+              if (existing == function.constraints.end()) {
+                Constraint requirement{ConstraintKind::Indexable, p.name,
+                                       "index", "element:" + p.name};
+                requirement.arguments = {trim(idx)};
+                requirement.arity = 1;
+                function.constraints.push_back(std::move(requirement));
+              } else {
+                existing->result = "element:" + p.name;
+                existing->arity = 1;
+              }
               function.generic_results["element:" + p.name] = p.name;
             }
           }
@@ -17121,7 +17146,7 @@ class Checker {
               " with ambiguous required method '" + requirement.detail + "'");
         requirement_err(line, function, requirement, prefix +
             " missing required method '" + requirement.detail + "'",
-            compiled_interface_file(function.source_file) ? "METHOD_NOT_FOUND" : "");
+            "METHOD_NOT_FOUND");
       }
       string result = builtin.value_or(fileio_builtin.value_or(
           method ? method->return_type.value_or("unit") : "unit"));
@@ -31970,6 +31995,60 @@ static void write_typed_semantic_projection_json(std::ostream& out,
     }
     out << "]";
   };
+  auto write_requirements = [&](const auto& requirements) {
+    out << "[";
+    for (size_t index = 0; index < requirements.size(); ++index) {
+      if (index) out << ",";
+      const auto& requirement = requirements[index];
+      const char* kind = requirement.kind == moss::RequirementKind::SameType ? "same_type" :
+          requirement.kind == moss::RequirementKind::Field ? "field" :
+          requirement.kind == moss::RequirementKind::Method ? "method" :
+          requirement.kind == moss::RequirementKind::Operator ? "operator" :
+          requirement.kind == moss::RequirementKind::Index ? "index" :
+          requirement.kind == moss::RequirementKind::Iterate ? "iterate" :
+          requirement.kind == moss::RequirementKind::Callable ? "callable" : "map_key";
+      out << "{\"requirement_id\": ";
+      write_debug_json_string(out, requirement.id);
+      out << ", \"kind\": ";
+      write_debug_json_string(out, kind);
+      out << ", \"target_id\": ";
+      write_debug_json_string(out, requirement.target_id);
+      out << ", \"subject\": ";
+      write_typed_open_type_json(out, requirement.subject);
+      out << ", \"argument_types\": [";
+      for (size_t argument = 0; argument < requirement.arguments.size(); ++argument) {
+        if (argument) out << ",";
+        write_typed_open_type_json(out, requirement.arguments[argument]);
+      }
+      out << "], \"result\": ";
+      if (requirement.result)
+        write_typed_open_type_json(out, *requirement.result);
+      else out << "null";
+      out << ", \"subject_access\": ";
+      write_access(requirement.access);
+      out << ", \"argument_access\": [";
+      for (size_t argument = 0; argument < requirement.argument_access.size(); ++argument) {
+        if (argument) out << ",";
+        write_access(requirement.argument_access[argument]);
+      }
+      out << "], \"parent_requirement_id\": ";
+      if (requirement.parent_requirement_id)
+        write_debug_json_string(out, *requirement.parent_requirement_id);
+      else out << "null";
+      out << ", \"origin\": {\"module_id\": ";
+      write_debug_json_string(out, requirement.origin.module_id);
+      out << ", \"source_file\": ";
+      write_debug_json_string(out, requirement.origin.source_file);
+      out << ", \"line\": " << requirement.origin.line;
+      out << ", \"column\": " << requirement.origin.column;
+      out << ", \"enclosing_callable\": ";
+      write_debug_json_string(out, requirement.origin.enclosing_callable);
+      out << ", \"call_expression_id\": ";
+      write_debug_json_string(out, requirement.origin.call_expression_id);
+      out << "}}";
+    }
+    out << "]";
+  };
   auto write_parameter_leaf_effects = [&](const auto& effects) {
     if (!effects) { out << "null"; return; }
     out << "{";
@@ -32023,6 +32102,8 @@ static void write_typed_semantic_projection_json(std::ostream& out,
     out << "], \"result_type\": ";
     write_typed_open_type_json(out, summary.result_type);
     out << ", \"requirement_count\": " << summary.requirements.size();
+    out << ", \"requirements\": ";
+    write_requirements(summary.requirements);
     out << ", \"member_requirement_count\": "
         << summary.member_requirements.size();
     out << ", \"member_requirements\": ";

@@ -325,6 +325,9 @@ import Provider
 fn main():
   echo Provider.outer(1)
 ''')
+    # A truly absent member is METHOD_NOT_FOUND with or without provider
+    # source; argument incompatibility is TYPE_MISMATCH. This chain proves
+    # which method is absent and where it was required.
     error = check_negative(source, {"METHOD_NOT_FOUND"},
                            ("outer", "middle", "required", "Provider"), env)
     assert error["source_file"] == str(source), error
