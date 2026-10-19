@@ -8352,3 +8352,11 @@ still prints `30` through that fallback. An exploratory producer projection
 was removed rather than bypassing the incomplete checked-summary contract.
 Focused decoder, H3 Scenario 6, source-backed ABI-v9 checks, and
 `git diff --check` pass. No production source change remains.
+
+## Phase 25-C2b.1 — Checker facts audit — 2026-10-19
+
+- Investigated baseline `1e9a61bace88806480482a1dee6c3f92e8dac825` on `phase25-integration`; no compiler/runtime/source behavior was changed.
+- Added `docs/phase25/C2B1_CHECKER_FACTS.md` documenting the unresolved `x * 2` TypeRef, `missing_typed_facts` projection status, missing `*`/`+` requirements, concrete specialization recheck, and the C2a.1 decoder's structural-only matching.
+- Focused evidence: `./moss inspect fn:compute --source tmp/c2b1_compute.moss --json` reports `missing_typed_facts`; source-backed `./moss run --interp tmp/c2b1_compute.moss` prints `30`; specialization effects are resolved.
+- Existing in-memory `moss::Requirement` is sufficient; current ABI-v10 wire requirements omit explicit argument/result terms. No implementation was undertaken, per task scope.
+- Feedback validation (`python3 tests/tooling/check_agent_feedback.py`) and `git diff --check` pass. The focused audit/status/feedback documentation is ready for commit and push to `phase25-integration`.
