@@ -1,5 +1,24 @@
 # Moss current status
 
+## Phase 25 same-HEAD live acceptance checkpoint — 2026-10-19
+
+Sole L4 pushed clean staged `phase25-i-map-staging` at
+`a766dfaacb48a1e0baaac1761eabb31dcdfe8b70` (after `4f27f4e`).
+`MOSS_STAGED_ABI=v10 PYTHONDONTWRITEBYTECODE=1 python3
+tests/phase25/integration/run_acceptance.py --strict --json` now forces a
+checkout-local `make -B moss`, runs named G2, E3 Debug/Release, key and Team B
+suites serially, checks complete per-case output, and requires an unchanged,
+clean HEAD. At this exact SHA the suites pass G2 11/11, E3 11/11 in each
+profile, key 30/30 and B 23/23. The live report promotes only mapped proof
+cases and reads **22 PASS / 1 historical-unmapped FAIL / 36 BLOCKED / 3 NOT
+IMPLEMENTED**; strict exits 1 because 40 gates remain unmet. PASS includes
+TYPEIR 01–11; ABIV10 01,02,03,06,07,08,10,11; G3 06,07; G5 04. ABIV10
+04/05/09 lack their broader distinct proof and remain non-PASS. No static
+matrix statuses were flipped. Self-test, deliberate partial-output and
+dirty-head false-green injections, feedback and diff checks pass. This is
+staged, not target-integrated or final release acceptance. H2 target and G
+PR #10 core CI continue; S awaits post-G refresh.
+
 ## Phase 25 strict 62-gate ledger audit — 2026-10-19
 
 On clean staged head `d5cb5e3`, `MOSS_STAGED_ABI=v10 python3

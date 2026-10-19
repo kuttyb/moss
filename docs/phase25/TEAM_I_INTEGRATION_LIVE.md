@@ -1,5 +1,15 @@
 # Team I live integration record
 
+## Same-HEAD live acceptance checkpoint — 2026-10-19
+
+L4 pushed `a766dfa`. Strict mode now rebuilds this checkout's compiler and
+executes named gate cases against one clean, unchanged HEAD. G2 11/11, E3
+Debug/Release 11/11, key 30/30 and Team B 23/23 yield 22 genuinely mapped
+PASS gates; 40 remain unmet and strict exits 1. The static matrix was not
+flipped. Self-test rejects partial suite output, dirty HEAD and unmapped
+sign-off claims. This is a staged evidence mechanism and partial result,
+awaiting further gate proofs and target integration.
+
 ## Strict acceptance ledger audit — 2026-10-19
 
 Strict runner on staged `d5cb5e3` remains red at 0 PASS/1 FAIL/51 BLOCKED/
