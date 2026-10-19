@@ -85,6 +85,14 @@ static bool staged_abi_v10() {
   const char* value = std::getenv("MOSS_STAGED_ABI");
   return value && string(value) == "v10";
 }
+// Temporary provider-only experiment for empty open vectors. Keep disabled
+// until the source-free checked-body decoder and lowering support VectorLiteral.
+// This switch intentionally has no effect unless ABI v10 is also staged.
+static bool phase25_empty_vector_emit_enabled() {
+  if (!staged_abi_v10()) return false;
+  const char* value = std::getenv("MOSS_PHASE25_EMPTY_VECTOR_EMIT");
+  return value && string(value) == "1";
+}
 static constexpr const char* kMossLanguageVersion = "moss-0.1";
 
 // Team S indexed String record staged for the joint ABI-v10 transition. Off by
@@ -39936,6 +39944,148 @@ static void append_abi_v10_arithmetic_records(
   }
 }
 
+// Experimental provider-only bridge for the empty open-vector constructor.
+// The summary TypeRef and its origin are retained checker facts; source text
+// selects only the single supported `return []` body form. Remove the gating
+// switch after checked-body decoding and consumer lowering support vectors.
+static void append_abi_v10_empty_vector_records(
+    abi_v10::Interface& value, const Program& program,
+    const string& module) {
+  if (!phase25_empty_vector_emit_enabled()) return;
+  for (const auto& function : program.functions) {
+    if (!function.exported || !function.static_dispatch ||
+        !belongs_to_module(function.name, module) ||
+        std::filesystem::path(function.source_file).extension() == ".mossi" ||
+        !function.open_summary || !function.open_summary->complete ||
+        function.params.size() != 0 || function.body.size() != 1 ||
+        function.result_expression ||
+        function.body.front().kind != Stmt::Kind::Return ||
+        trim(function.body.front().a) != "[]")
+      continue;
+
+    const auto& facts = *function.open_summary;
+    if (function.semantic_callable_id.empty() ||
+        facts.callable_id != function.semantic_callable_id ||
+        facts.bound_variable_count != 1 ||
+        !facts.parameter_types.empty() || !facts.parameter_access.empty() ||
+        !facts.requirements.empty() || !facts.member_requirements.empty() ||
+        !facts.semantic_dependencies.empty() ||
+        !abi_v10_effects_pure(facts.observable_effects) ||
+        !facts.result_type ||
+        facts.result_type->kind != moss::TypeKind::Builtin ||
+        facts.result_type->name != "vector" ||
+        facts.result_type->type_args.size() != 1)
+      continue;
+
+    const auto& element_type = facts.result_type->type_args.front();
+    if (!element_type ||
+        element_type->kind != moss::TypeKind::InferenceVar ||
+        element_type->var_id.session_id != 0 ||
+        element_type->var_id.owner_id != 0 ||
+        element_type->var_id.ordinal != 0)
+      continue;
+
+    auto callable = moss::CallableId::parse(function.semantic_callable_id);
+    const string declaration_name = function.declaration_name.empty()
+        ? function.name : function.declaration_name;
+    if (!callable || callable->kind != "fn" ||
+        callable->module_id != value.module_id ||
+        callable->declaration_name != declaration_name ||
+        facts.origin.module_id != value.module_id ||
+        facts.origin.enclosing_callable != function.semantic_callable_id ||
+        facts.origin.source_file.empty() ||
+        facts.origin.source_file != function.source_file ||
+        facts.origin.line < 1 || facts.origin.line != function.line)
+      continue;
+
+    const auto provenance = abi_v10_checked_provenance(
+        value.module_id, function.semantic_callable_id,
+        function.source_file, function.line);
+
+    auto result_type = abi_v10_checked_type(
+        facts.result_type, facts.bound_variable_count);
+    if (!result_type)
+      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+                         "checked ABI-v10 empty-vector result TypeRef is unresolved");
+
+    checked_ir::Expr vector_literal;
+    vector_literal.kind = checked_ir::ExprKind::VectorLiteral;
+    vector_literal.type = facts.result_type;
+    checked_ir::Stmt returned;
+    returned.kind = checked_ir::StmtKind::Return;
+    returned.type = facts.result_type;
+    returned.expr = std::move(vector_literal);
+    vector<checked_ir::Stmt> statements{std::move(returned)};
+    const string semantic_hash =
+        checked_ir::compute_checked_body_hash_v1(statements);
+    const string encoded_body =
+        checked_ir::encode_checked_body_v1(statements);
+    if (checked_ir::encode_checked_body_v1(statements) != encoded_body ||
+        checked_ir::compute_checked_body_hash_v1(statements) != semantic_hash)
+      throw ProjectError("SOURCE_FREE_CHECKED_BODY_INVALID",
+                         "checked ABI-v10 empty-vector body is not canonical");
+
+    for (const auto* records : {&value.semantic_contract,
+                                &value.private_semantic_dependencies}) {
+      for (const auto& record : *records) {
+        if (record.id == "checked-body-v1:" + function.semantic_callable_id)
+          throw ProjectError("SOURCE_FREE_CHECKED_BODY_INVALID",
+                             "checked ABI-v10 empty-vector body is duplicated");
+        if (!record.payload.empty() &&
+            (static_cast<unsigned char>(record.payload.front()) == 1 ||
+             static_cast<unsigned char>(record.payload.front()) == 2) &&
+            abi_v10::hex_hash(record.id)) {
+          const auto prior = abi_v10::read_summary(record.payload);
+          if (prior.callable_id == function.semantic_callable_id)
+            throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+                               "checked ABI-v10 empty-vector summary is duplicated");
+        }
+      }
+    }
+    for (const auto& record : value.provenance)
+      if (record.id == provenance.provenance_id)
+        throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+                           "checked ABI-v10 empty-vector provenance is duplicated");
+
+    abi_v10::Summary summary;
+    summary.callable_id = function.semantic_callable_id;
+    summary.variable_count = facts.bound_variable_count;
+    summary.result = *result_type;
+    summary.body_semantic_hash = semantic_hash;
+    summary.provenance_id = provenance.provenance_id;
+
+    abi_v10::CheckedBodyRecord body;
+    body.callable_id = summary.callable_id;
+    body.semantic_hash = semantic_hash;
+    body.checked_ir_bytes = encoded_body;
+    if (body.callable_id != summary.callable_id ||
+        body.semantic_hash != summary.body_semantic_hash ||
+        abi_v10::checked_body_record(body).id !=
+            "checked-body-v1:" + summary.callable_id)
+      throw ProjectError("SOURCE_FREE_CHECKED_BODY_INVALID",
+                         "checked ABI-v10 empty-vector summary and body disagree");
+
+    const auto summary_record = abi_v10::summary_record(summary);
+    const auto body_record = abi_v10::checked_body_record(body);
+    abi_v10::validate_summary(summary_record);
+    abi_v10::validate_checked_body_record(body_record);
+    const auto decoded_summary = abi_v10::read_summary(summary_record.payload);
+    const auto decoded_body =
+        abi_v10::read_checked_body_record(body_record.payload);
+    if (abi_v10::summary_payload(decoded_summary) != summary_record.payload ||
+        abi_v10::checked_body_record_payload(decoded_body) !=
+            body_record.payload ||
+        decoded_summary.body_semantic_hash != decoded_body.semantic_hash ||
+        decoded_body.checked_ir_bytes != encoded_body)
+      throw ProjectError("SOURCE_FREE_CHECKED_BODY_INVALID",
+                         "checked ABI-v10 empty-vector records are not canonical");
+
+    value.semantic_contract.push_back(summary_record);
+    value.private_semantic_dependencies.push_back(body_record);
+    value.provenance.push_back(abi_v10::provenance_record(provenance));
+  }
+}
+
 // Close the checked H3 private-helper graph into one provider interface.
 // Public and private summaries occupy their distinct ABI-v10 sections; every
 // callable and nominal edge carries the callee body/representation hash.
@@ -40729,6 +40879,7 @@ static vector<std::filesystem::path> write_module_interfaces(
     value.semantic_contract = abi_v10_declaration_records(contents[module].str());
     append_abi_v10_direct_checked_records(value, program, module);
     append_abi_v10_arithmetic_records(value, program, module);
+    append_abi_v10_empty_vector_records(value, program, module);
     append_abi_v10_private_chain_records(value, program, module);
     // Drop legacy executable statements only when this interface contains a
     // matching emitted v2 arithmetic summary and checked-body record. This
