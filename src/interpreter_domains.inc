@@ -21,11 +21,17 @@
       result.map = std::make_shared<std::vector<std::pair<Value, Value>>>();
       for (const auto& entry : *source.map)
         result.map->push_back({independent(entry.first), independent(entry.second)});
+      if (source.map_index)
+        result.map_index = std::make_shared<Value::HashIndex>(*source.map_index);
+      if (source.map_hashes)
+        result.map_hashes = std::make_shared<std::vector<std::int64_t>>(*source.map_hashes);
     }
     if (source.set) {
       result.set = std::make_shared<std::vector<Value>>();
       for (const auto& key : *source.set)
         result.set->push_back(independent(key));
+      if (source.set_index)
+        result.set_index = std::make_shared<Value::HashIndex>(*source.set_index);
     }
     return result;
   }

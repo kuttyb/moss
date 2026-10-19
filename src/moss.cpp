@@ -25988,7 +25988,8 @@ class Generator {
           const string key_type = concrete.substr(4, concrete.size() - 5);
           const bool nominal = shared_nominal_map_key(key_type);
           const string equal = nominal ? "a.isequal(b)"
-              : scalar_protocol_rust("isequal", key_type, "*a", "*b");
+              : strip_redundant_outer_parentheses(
+                    scalar_protocol_rust("isequal", key_type, "*a", "*b"));
           if (member_name == "values" && member_arguments.empty())
             return "(" + receiver_expression + ").keys()";
           if ((member_name == "insert" || member_name == "contains") &&
@@ -25999,7 +26000,8 @@ class Generator {
             const string borrowed = borrowed_function_parameters_.count(
                 trim(member_arguments[0])) ? "__moss_key" : "&__moss_key";
             const string hash = nominal ? "__moss_key.hash()"
-                : scalar_protocol_rust("hash", key_type, "__moss_key");
+                : strip_redundant_outer_parentheses(
+                      scalar_protocol_rust("hash", key_type, "__moss_key"));
             if (member_name == "insert")
               return "{ let __moss_key = " + key + "; let __moss_hash = " +
                   hash + "; (" + write_call_place(member_receiver, d, locals, types) +

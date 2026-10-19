@@ -226,6 +226,7 @@ class FastInterpreter {
   struct DomainValue;
 
   struct Value {
+    using HashIndex = std::unordered_map<std::int64_t, std::vector<size_t>>;
     enum class Kind { Unit, Bool, Int, Float, String, Callable, Struct, Vector, Queue, Map, Set, DomainHandle, Char } kind = Kind::Unit;
     bool boolean = false;
     std::int64_t integer = 0;
@@ -238,6 +239,12 @@ class FastInterpreter {
     std::shared_ptr<std::vector<Value>> queue;
     std::shared_ptr<std::vector<std::pair<Value, Value>>> map;
     std::shared_ptr<std::vector<Value>> set;
+    // Staged key-protocol lookup indexes. The vectors above retain snapshot
+    // order; aliases share both the values and their index. Independent Moss
+    // copies clone all three pieces in independent().
+    std::shared_ptr<HashIndex> map_index;
+    std::shared_ptr<std::vector<std::int64_t>> map_hashes;
+    std::shared_ptr<HashIndex> set_index;
     std::string element_type;
 
     static Value unit();
@@ -1122,9 +1129,8 @@ class FastInterpreter {
             Value index = eval(e.substr(open + 1, i - open - 1), frame,
                                line, output);
             if (base.kind == Value::Kind::Map && base.map) {
-              for (const auto& entry : *base.map)
-                if (protocol_key_equal(entry.first, index, frame, line, output))
-                  return entry.second;
+              if (auto position = map_position(base, index, frame, line, output))
+                return base.map->at(*position).second;
               throw RuntimeError(line, "missing map key");
             }
             auto values = base.kind == Value::Kind::Vector ? base.vector :
@@ -1567,10 +1573,13 @@ class FastInterpreter {
             if (method_name == "delete" && method_args.size() == 3) {
               Value key = eval(method_args[0], frame, line, output);
               Value fallback = eval(method_args[1], frame, line, output);
-              for (auto it = receiver.map->begin(); it != receiver.map->end(); ++it) {
-                if (!protocol_key_equal(it->first, key, frame, line, output)) continue;
-                Value removed = independent(it->second);
-                receiver.map->erase(it);
+              if (auto position = map_position(receiver, key, frame, line, output)) {
+                Value removed = independent(receiver.map->at(*position).second);
+                receiver.map->erase(receiver.map->begin() + *position);
+                if (staged_abi_v10()) {
+                  receiver.map_hashes->erase(receiver.map_hashes->begin() + *position);
+                  rebuild_map_index(receiver);
+                }
                 assign(method_args[2], Value::boolean_value(true), frame, line, output);
                 return removed;
               }
@@ -1580,9 +1589,8 @@ class FastInterpreter {
             if (method_name == "get" && method_args.size() == 2) {
               Value key = eval(method_args[0], frame, line, output);
               Value fallback = eval(method_args[1], frame, line, output);
-              for (const auto& entry : *receiver.map)
-                if (protocol_key_equal(entry.first, key, frame, line, output))
-                  return independent(entry.second);
+              if (auto position = map_position(receiver, key, frame, line, output))
+                return independent(receiver.map->at(*position).second);
               return independent(fallback);
             }
             if ((method_name == "keys" || method_name == "values") && method_args.empty()) {
@@ -1602,11 +1610,12 @@ class FastInterpreter {
             if ((method_name == "insert" || method_name == "contains") &&
                 method_args.size() == 1) {
               Value key = eval(method_args[0], frame, line, output);
-              for (const auto& stored : *receiver.set)
-                if (protocol_key_equal(stored, key, frame, line, output))
-                  return method_name == "contains" ? Value::boolean_value(true)
-                                                   : Value::unit();
+              std::int64_t hash = 0;
+              if (set_position(receiver, key, frame, line, output, &hash))
+                return method_name == "contains" ? Value::boolean_value(true)
+                                                 : Value::unit();
               if (method_name == "contains") return Value::boolean_value(false);
+              (*receiver.set_index)[hash].push_back(receiver.set->size());
               receiver.set->push_back(independent(key));
               return Value::unit();
             }
@@ -1829,6 +1838,44 @@ class FastInterpreter {
     return equal(left, right);
   }
 
+  std::optional<size_t> map_position(const Value& receiver, const Value& key,
+                                     Frame& frame, int line, std::ostream& output,
+                                     std::int64_t* key_hash = nullptr) {
+    if (staged_abi_v10() && receiver.map_index) {
+      const std::int64_t hash = protocol_key_hash(key, frame, line, output);
+      if (key_hash) *key_hash = hash;
+      auto bucket = receiver.map_index->find(hash);
+      if (bucket == receiver.map_index->end()) return std::nullopt;
+      for (size_t position : bucket->second)
+        if (protocol_key_equal(receiver.map->at(position).first, key,
+                               frame, line, output)) return position;
+      return std::nullopt;
+    }
+    for (size_t position = 0; position < receiver.map->size(); ++position)
+      if (protocol_key_equal(receiver.map->at(position).first, key,
+                             frame, line, output)) return position;
+    return std::nullopt;
+  }
+
+  std::optional<size_t> set_position(const Value& receiver, const Value& key,
+                                     Frame& frame, int line, std::ostream& output,
+                                     std::int64_t* key_hash = nullptr) {
+    const std::int64_t hash = protocol_key_hash(key, frame, line, output);
+    if (key_hash) *key_hash = hash;
+    auto bucket = receiver.set_index->find(hash);
+    if (bucket == receiver.set_index->end()) return std::nullopt;
+    for (size_t position : bucket->second)
+      if (protocol_key_equal(receiver.set->at(position), key,
+                             frame, line, output)) return position;
+    return std::nullopt;
+  }
+
+  static void rebuild_map_index(Value& receiver) {
+    receiver.map_index->clear();
+    for (size_t position = 0; position < receiver.map_hashes->size(); ++position)
+      (*receiver.map_index)[receiver.map_hashes->at(position)].push_back(position);
+  }
+
   int64_t protocol_key_hash(const Value& key, Frame& frame, int line,
                             std::ostream& output) {
     if (staged_abi_v10() && key.kind == Value::Kind::Struct && key.object) {
@@ -2032,10 +2079,14 @@ class FastInterpreter {
       Value receiver = eval(name.substr(0, bracket), frame, line, output);
       if (receiver.kind == Value::Kind::Map && receiver.map) {
         Value key = eval(name.substr(bracket + 1, name.size() - bracket - 2), frame, line, output);
-        for (auto& entry : *receiver.map) {
-          if (protocol_key_equal(entry.first, key, frame, line, output)) {
-            entry.second = std::move(value); return;
-          }
+        std::int64_t hash = 0;
+        if (auto position = map_position(receiver, key, frame, line, output, &hash)) {
+          receiver.map->at(*position).second = std::move(value);
+          return;
+        }
+        if (staged_abi_v10()) {
+          (*receiver.map_index)[hash].push_back(receiver.map->size());
+          receiver.map_hashes->push_back(hash);
         }
         receiver.map->push_back({std::move(key), std::move(value)});
         return;
@@ -2670,11 +2721,14 @@ inline FastInterpreter::Value FastInterpreter::Value::queue_value() {
 inline FastInterpreter::Value FastInterpreter::Value::map_value() {
   Value result; result.kind = Kind::Map;
   result.map = std::make_shared<std::vector<std::pair<Value, Value>>>();
+  result.map_index = std::make_shared<HashIndex>();
+  result.map_hashes = std::make_shared<std::vector<std::int64_t>>();
   return result;
 }
 inline FastInterpreter::Value FastInterpreter::Value::set_value() {
   Value result; result.kind = Kind::Set;
   result.set = std::make_shared<std::vector<Value>>();
+  result.set_index = std::make_shared<HashIndex>();
   return result;
 }
 inline bool FastInterpreter::Value::truthy() const {
