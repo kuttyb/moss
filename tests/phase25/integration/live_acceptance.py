@@ -36,6 +36,7 @@ G4_LINKAGE_PATH = "tests/phase25/runtime/check_shared_string_linkage.py"
 G5_RUNTIME_PATH = "tests/phase25/runtime/check_runtime.py"
 G5_JOINT_PATH = "tests/phase25/integration/test_joint_ledger_12.py"
 G5_SDK_PATH = "tests/phase25/integration/test_sdk_matrix.py"
+G3_SNAPSHOT_PATH = "tests/phase25/integration/test_map_snapshot_complexity.py"
 
 G1_LEDGER_ROWS = {
     "1": "#1 Int ordering above 2^53",
@@ -90,6 +91,10 @@ PROOFS: dict[str, tuple[tuple[str, str], ...]] = {
                    ("key", "03-imported-nominal-keys-source-free")),
     "GATE-G3-07": (("b", "gate10"),
                    ("key", "05-coherence-mismatch-method-override")),
+    "GATE-G3-08": (("g3-snapshot", "all"),
+                   ("key", "07-keys-snapshot-control"),
+                   ("key", "07-keys-snapshot-float"),
+                   ("key", "07-keys-snapshot-nominal")),
     "GATE-G5-04": (("key", "all30"),),
     "GATE-G5-01": (("g5-runtime", "all"), ("b", "gate10"),
                     ("g4-linkage", "source-free")),
@@ -141,7 +146,8 @@ SUITE_PATHS = {"g2": G2_PATH, "e3-debug": E3_PATH,
                "g4-linkage": G4_LINKAGE_PATH,
                "g5-runtime": G5_RUNTIME_PATH,
                "g5-joint": G5_JOINT_PATH,
-               "g5-sdk": G5_SDK_PATH}
+               "g5-sdk": G5_SDK_PATH,
+               "g3-snapshot": G3_SNAPSHOT_PATH}
 KEY_EXACT_STATUS = {
     "01-float-keys-map": "passes",
     "02-float-keys-set": "passes",
@@ -319,6 +325,9 @@ def parse_suite(suite: str, stdout: str, returncode: int) -> dict[str, bool]:
                         {(profile, package) for profile, package, _ in matches} == expected and
                         len(stdout.splitlines()) == len(expected) + 1 and
                         stdout.splitlines()[-1] == summary)
+    elif suite == "g3-snapshot":
+        cases["all"] = (returncode == 0 and stdout.splitlines() == [
+            "G3-08 sparse Map snapshot live-storage bound and detached clone PASS"])
     return cases
 
 
@@ -354,6 +363,8 @@ def suite_command(suite: str, compiler: Path) -> list[str]:
         return [sys.executable, str(ROOT / G5_JOINT_PATH)]
     if suite == "g5-sdk":
         return [sys.executable, str(ROOT / G5_SDK_PATH)]
+    if suite == "g3-snapshot":
+        return [sys.executable, str(ROOT / G3_SNAPSHOT_PATH)]
     raise ValueError(f"Unknown live suite {suite}")
 
 
