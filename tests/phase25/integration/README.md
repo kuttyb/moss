@@ -68,8 +68,21 @@ python3 tests/phase25/integration/run_acceptance.py --json
 python3 tests/phase25/integration/run_acceptance.py --gate GATE-G1-01
 
 # Strict release gating (exits 1 if any gate is not PASS):
-python3 tests/phase25/integration/run_acceptance.py --strict
+MOSS_STAGED_ABI=v10 python3 tests/phase25/integration/run_acceptance.py --strict --json
+
+# Inspect provisional live results while editing (never promotes a dirty tree):
+MOSS_STAGED_ABI=v10 python3 tests/phase25/integration/run_acceptance.py --live --json
 ```
+
+`--strict` implies `--live`. The live runner first builds this checkout's
+`./moss` and verifies its local `./margo`, then runs the G2, E3 (debug and release), activated
+key-protocol, and Team B suites serially. It promotes only gates with an exact
+case mapping in `live_acceptance.py` and requires a clean, unchanged Git HEAD.
+The JSON report records the HEAD, executed commands, individual case results,
+and output hashes. Unmapped requirements retain their ledger status even when
+another suite passes. A passing suite never substitutes for a distinct test of
+a broader frozen requirement. The static `--summary` and `--json` views remain
+historical ledger views; use `--live` for current executable evidence.
 
 ## Gate Areas Overview
 

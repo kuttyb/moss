@@ -30,6 +30,8 @@ import subprocess
 import sys
 from typing import Any
 
+from live_acceptance import PROOFS, apply_proofs, parse_suite, run_live
+
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_MATRIX_PATH = Path(__file__).resolve().parent / "acceptance_matrix.json"
 DEFAULT_COMPILER = ROOT / "moss"
@@ -287,6 +289,28 @@ def run_self_test(matrix_path: Path) -> int:
     if fi_rc != 0:
         errors.append("Fault injection tests failed")
 
+    # A suite exit alone cannot close a gate: every numbered/counted case must
+    # be present, and a partial or forged PASS report must fail closed.
+    known_ids = {gate.get("id") for gate in gates}
+    if set(PROOFS) - known_ids:
+        errors.append("Live proof mapping names unknown gate IDs")
+    if parse_suite("g2", "G2 gate 10: PASS\nG2 conformance: 11/11 actual Moss gates passed", 0).get("10"):
+        errors.append("Partial G2 output was accepted as complete")
+    if parse_suite("key", "  PASS: 04-two-consumers-shared-map -> passes\n=== all fixtures activated ===", 0).get("all30"):
+        errors.append("Partial key fixture output was accepted as complete")
+    forged_e3 = json.dumps({"profile": "debug", "results": [{"scenario": 1, "status": "PASS"}],
+                            "summary": {"total": 11, "passed": 11, "blocked": 0, "failed": 0}})
+    if parse_suite("e3-debug", forged_e3, 0).get("1"):
+        errors.append("Partial E3 JSON was accepted as complete")
+    fake_suites = {"g2": {"cases": {"1": True}, "stdout_sha256": "a" * 64}}
+    forged_gate = {"id": "GATE-TYPEIR-01", "current_status": "PASS",
+                   "blocking_dependency": None}
+    if apply_proofs([forged_gate], fake_suites, "a" * 40, False)[0]["current_status"] == "PASS":
+        errors.append("Dirty or changed HEAD retained a forged PASS")
+    forged_gate["id"] = "GATE-G6-05"
+    if apply_proofs([forged_gate], fake_suites, "a" * 40, True)[0]["current_status"] == "PASS":
+        errors.append("Unmapped final sign-off gate retained a forged PASS")
+
     if errors:
         print(f"[FAIL] Self-test found {len(errors)} issues:")
         for err in errors:
@@ -473,6 +497,7 @@ def main() -> int:
     parser.add_argument("--summary", action="store_true", help="Print formatted markdown summary")
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON acceptance report")
     parser.add_argument("--strict", action="store_true", help="Exit with non-zero code if any gate is not PASS")
+    parser.add_argument("--live", action="store_true", help="Execute mapped same-SHA gate proofs (implied by --strict)")
     parser.add_argument("--gate", type=str, default=None, help="Inspect / check specific gate by ID")
 
     args = parser.parse_args()
@@ -488,6 +513,14 @@ def main() -> int:
     except Exception as exc:
         print(f"Error loading acceptance matrix: {exc}", file=sys.stderr)
         return 1
+
+    live_report = None
+    if args.live or args.strict:
+        try:
+            gates, live_report = run_live(gates, args.compiler)
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            print(f"Live acceptance cannot run: {exc}", file=sys.stderr)
+            return 1
 
     git_info = get_git_info()
     summary = compute_summary(gates)
@@ -513,12 +546,20 @@ def main() -> int:
             "summary": summary,
             "gates": gates,
         }
+        if live_report is not None:
+            report["live"] = live_report
         print(json.dumps(report, indent=2))
     else:
         # Default or --summary
         print(format_markdown_summary(summary, git_info))
 
     if args.strict:
+        evidence_errors = [error for gate in gates for error in validate_gate_evidence(gate, ROOT)]
+        if evidence_errors:
+            print("STRICT MODE EVIDENCE FAILURE:", file=sys.stderr)
+            for error in evidence_errors:
+                print(f"  {error}", file=sys.stderr)
+            return 1
         not_pass = [g for g in gates if g.get("current_status") != "PASS"]
         if not_pass:
             print(f"STRICT MODE FAILURE: {len(not_pass)} gates are not PASS:", file=sys.stderr)
