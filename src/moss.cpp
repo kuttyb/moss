@@ -2835,7 +2835,7 @@ checked_arithmetic_split_binary(const string& expression, const string& op) {
 // checked body bridge. Source text selects the expression shape and literal
 // values; every type and operator identity comes from the complete retained
 // checker summary and its ordered requirement chain.
-[[maybe_unused]] static std::optional<CheckedArithmeticBody> checked_arithmetic_body(
+static std::optional<CheckedArithmeticBody> checked_arithmetic_body(
     const Function& function) {
   if (!function.open_summary || !function.open_summary->complete ||
       function.body.size() != 1 ||
@@ -4331,6 +4331,8 @@ class Checker {
         return parsed ? openize(*parsed) : nullptr;
       };
       bool complete = true;
+      bool unresolved_open_generic_return = false;
+      bool complete_open_arithmetic_return = false;
       for (const auto& parameter : function.params) {
         moss::TypeRef term = parameter.type.empty() ? bound() :
             type_term(parameter.type);
@@ -4538,7 +4540,7 @@ class Checker {
                   summary.result_type = bound();
                   returned_member = std::make_pair(trim(receiver), member);
                 } else {
-                  complete = false;
+                  unresolved_open_generic_return = true;
                 }
               }
             }
@@ -4775,6 +4777,7 @@ class Checker {
           if (requirements_complete)
             summary.result_type =
                 *captured_arithmetic_requirements.back().result;
+          complete_open_arithmetic_return = requirements_complete;
           summary.requirements.insert(summary.requirements.end(),
               std::make_move_iterator(captured_arithmetic_requirements.begin()),
               std::make_move_iterator(captured_arithmetic_requirements.end()));
@@ -4907,7 +4910,10 @@ class Checker {
         summary.member_requirements.push_back(std::move(member));
       }
       const bool dense_ordinals = moss::close_open_summary_ordinals(summary);
-      summary.complete = complete && dense_ordinals && summary.result_type &&
+      summary.complete = complete &&
+          (!unresolved_open_generic_return ||
+           complete_open_arithmetic_return) &&
+          dense_ordinals && summary.result_type &&
           std::all_of(summary.parameter_types.begin(),
                       summary.parameter_types.end(),
                       [](const moss::TypeRef& type) { return type != nullptr; });
@@ -39605,6 +39611,131 @@ static void append_abi_v10_direct_checked_records(
   }
 }
 
+// Emit the checked single-return arithmetic subset independently from the
+// constructor and private-call-chain producers. The body producer and the
+// complete retained summary jointly establish the expression and its types.
+static void append_abi_v10_arithmetic_records(
+    abi_v10::Interface& value, const Program& program,
+    const string& module) {
+  for (const auto& function : program.functions) {
+    if (!function.exported || !function.static_dispatch ||
+        !belongs_to_module(function.name, module) ||
+        std::filesystem::path(function.source_file).extension() == ".mossi" ||
+        !function.open_summary || !function.open_summary->complete ||
+        !function.open_summary->member_requirements.empty() ||
+        !abi_v10_effects_pure(function.open_summary->observable_effects))
+      continue;
+    auto checked = checked_arithmetic_body(function);
+    if (!checked) continue;
+
+    const auto& facts = *function.open_summary;
+    if (function.semantic_callable_id.empty() ||
+        facts.callable_id != function.semantic_callable_id ||
+        !facts.semantic_dependencies.empty() ||
+        facts.parameter_types.size() != function.params.size() ||
+        facts.parameter_access.size() != function.params.size() ||
+        facts.parameter_access.size() != 1 ||
+        facts.parameter_access.front() != AccessMode::Read ||
+        facts.requirements.size() != 2)
+      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+                         "checked ABI-v10 arithmetic summary is inconsistent");
+
+    vector<abi_v10::Summary> decoded_existing_summaries;
+    auto decode_existing_summaries = [&](const vector<abi_v10::Record>& records) {
+      for (const auto& record : records) {
+        if (record.payload.empty() || record.payload.front() != 2 ||
+            !abi_v10::hex_hash(record.id)) continue;
+        auto summary = abi_v10::read_summary(record.payload);
+        if (summary.callable_id == function.semantic_callable_id)
+          decoded_existing_summaries.push_back(std::move(summary));
+      }
+    };
+    // Keep both ABI sections in view so a previous producer cannot create a
+    // duplicate public/private callable summary or checked body.
+    decode_existing_summaries(value.semantic_contract);
+    decode_existing_summaries(value.private_semantic_dependencies);
+    vector<abi_v10::CheckedBodyRecord> existing_bodies;
+    for (const auto& record : value.private_semantic_dependencies)
+      if (record.id == "checked-body-v1:" + function.semantic_callable_id)
+        existing_bodies.push_back(
+            abi_v10::read_checked_body_record(record.payload));
+    abi_v10::Summary summary;
+    summary.callable_id = function.semantic_callable_id;
+    summary.variable_count = facts.bound_variable_count;
+    for (std::size_t index = 0; index < facts.parameter_types.size(); ++index) {
+      auto parameter = abi_v10_checked_type(
+          facts.parameter_types[index], summary.variable_count);
+      if (!parameter)
+        throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+                           "checked ABI-v10 arithmetic parameter TypeRef is unresolved");
+      summary.parameters.push_back(*parameter);
+      summary.parameter_access.push_back(
+          abi_v10_checked_access(facts.parameter_access[index]));
+    }
+    auto result = abi_v10_checked_type(facts.result_type,
+                                       summary.variable_count);
+    if (!result)
+      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+                         "checked ABI-v10 arithmetic result TypeRef is unresolved");
+    summary.result = *result;
+
+    vector<abi_v10::SourceProvenance> requirement_provenance;
+    auto requirements = abi_v10_checked_requirements(
+        facts.requirements, summary.variable_count, requirement_provenance);
+    if (!requirements || requirements->size() != 2 ||
+        requirement_provenance.size() != 2 ||
+        (*requirements)[0].operation != "operator:*" ||
+        (*requirements)[0].parent != 0 ||
+        (*requirements)[1].operation != "operator:+" ||
+        (*requirements)[1].parent != 1)
+      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+                         "checked ABI-v10 arithmetic requirement chain is inconsistent");
+    summary.requirements = std::move(*requirements);
+    summary.body_semantic_hash = checked->semantic_hash;
+
+    const auto callable_provenance = abi_v10_checked_provenance(
+        value.module_id, summary.callable_id,
+        function.source_file, function.line);
+    summary.provenance_id = callable_provenance.provenance_id;
+
+    abi_v10::CheckedBodyRecord body;
+    body.callable_id = summary.callable_id;
+    body.semantic_hash = checked->semantic_hash;
+    body.checked_ir_bytes = checked_ir::encode_checked_body_v1(
+        checked->statements);
+    if (!decoded_existing_summaries.empty() || !existing_bodies.empty()) {
+      const string expected_summary = abi_v10::summary_payload(summary);
+      const string expected_body = abi_v10::checked_body_record_payload(body);
+      if (decoded_existing_summaries.size() != 1 ||
+          existing_bodies.size() != 1 ||
+          abi_v10::summary_payload(decoded_existing_summaries.front()) !=
+              expected_summary ||
+          existing_bodies.front().callable_id != function.semantic_callable_id ||
+          abi_v10::checked_body_record_payload(existing_bodies.front()) !=
+              expected_body)
+        throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+                           "checked ABI-v10 arithmetic records conflict with an existing producer");
+      continue;
+    }
+    if (checked_ir::compute_checked_body_hash_v1(checked->statements) !=
+            summary.body_semantic_hash ||
+        abi_v10::checked_body_record(body).id !=
+            "checked-body-v1:" + summary.callable_id ||
+        abi_v10::read_summary(abi_v10::summary_payload(summary)).body_semantic_hash !=
+            body.semantic_hash)
+      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+                         "checked ABI-v10 arithmetic summary and body hashes disagree");
+
+    value.semantic_contract.push_back(abi_v10::summary_record(summary));
+    value.private_semantic_dependencies.push_back(
+        abi_v10::checked_body_record(body));
+    value.provenance.push_back(
+        abi_v10::provenance_record(callable_provenance));
+    for (const auto& provenance : requirement_provenance)
+      value.provenance.push_back(abi_v10::provenance_record(provenance));
+  }
+}
+
 // Close the checked H3 private-helper graph into one provider interface.
 // Public and private summaries occupy their distinct ABI-v10 sections; every
 // callable and nominal edge carries the callee body/representation hash.
@@ -40397,6 +40528,7 @@ static vector<std::filesystem::path> write_module_interfaces(
         abi_v10_declaration_records(binary_contract.str());
     value.semantic_contract = abi_v10_declaration_records(contents[module].str());
     append_abi_v10_direct_checked_records(value, program, module);
+    append_abi_v10_arithmetic_records(value, program, module);
     append_abi_v10_private_chain_records(value, program, module);
     std::map<string, abi_v10::Record> unique_proofs;
     for (const auto& proof : proofs) unique_proofs.emplace(proof.id, proof);

@@ -8555,3 +8555,33 @@ Focused validation passed:
 - `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` passed.
 - Broad regression suites were not run. C2b.6b was not started.
 
+## Phase 25-C2b.6b — Emit checked arithmetic records into ABI-v10
+
+Starting at `41430e60da9878526894fb0d7622085e872b0d57` on
+`phase25-integration`. Added a narrowly scoped staged ABI-v10 provider path
+that emits one typed v2 `OpenCallableSummary`, one matching checked-body
+record, and callable plus requirement provenance for the supported single-
+return `T * Int + Int` shape. It requires complete pure checker facts and
+validates the retained ordered `operator:*` then `operator:+` chain, links,
+types, body bytes, and semantic hash. The checked open summary is completed
+only after the retained arithmetic requirement chain validates. Existing
+direct/private-chain producers and H3 eligibility remain intact.
+
+Focused validation passed:
+- `make moss-dev` passed (pre-existing TypeSolver missing-field-initializer
+  warnings only).
+- `python3 tests/tooling/check_phase25_c2b6b_arithmetic_records.py ./moss`
+  built a real staged ABI-v10 provider and inspected its emitted `.mossi`:
+  `compute` has exactly one typed summary and one checked-body record;
+  callable and both requirement provenance records validate; body tree and
+  semantic hash roundtrip matched
+  `body-semantic-v1:sha256:13de51438fae61d2dcf409d3b32d2e95f97a48496ac3f3e32b5da470be07f465`;
+  unsupported arithmetic forms had zero checked-body records.
+- `python3 tests/tooling/check_phase25_generic_arithmetic_requirements.py
+  ./moss` passed missing, reordered, inconsistent, and unsupported-body
+  rejection tests and the checked codec roundtrip.
+- `python3 tests/phase25/integration/cross_crate_harness.py --scenario 6
+  --staged-v10 --json` passed; provider source was removed and output was `99`.
+- `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` passed.
+- Broad regression suites were not run. C2b.6c was not started.
+
