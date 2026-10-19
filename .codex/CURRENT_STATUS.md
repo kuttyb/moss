@@ -1,5 +1,31 @@
 # Moss current status
 
+## Phase 25 S PR #11 exact-head namespace and root-ID repair pushed — 2026-10-19
+
+The replacement Team I sole worker diagnosed and repaired the PR #11 CI failure
+at commit `7b08599693965b87618ee650854fe784fdc106b1` on `phase25-i-s-reviewed-intake`
+and pushed to origin.
+1. Root cause 1: `src/file_chunk_codegen.inc` lowered chunk pipelines with
+   unqualified calls to `branch_scope_new_current`, `branch_publish`, and `branch_join`.
+   When consumer modules imported provider dependencies via `use moss_<dep>::*;`,
+   both provider and local `pub use __moss_executor_runtime::*;` brought those
+   names into module scope via glob imports, causing Rust `E0659` ambiguity.
+   Resolved by explicitly importing `{branch_scope_new_current, branch_publish,
+   branch_join, current_root_id, MossBranchScope}` in `SelectedByExecutableBuild`.
+2. Root cause 2: `executor_runtime_provider_items()` did not declare or define
+   `current_root_id()`. Resolved by exporting `__moss_current_root_id` C-ABI from
+   root runtime and wrapping it as `current_root_id() -> Option<u64>` in provider items.
+3. Root cause 3: Test 37 `37-symbol-ownership` required `SelectedByExecutableBuild`
+   for explicit modules without main. `executor_role` was refined to select
+   `SelectedByExecutableBuild` for standalone explicit modules without main.
+Local validation: `check_phase20_executor_fileio.py` passed,
+`check_phase20c_executor.py` passed (54/54), `check_phase21_float_ieee.py` passed,
+full Team S suites (S1–S4, SA–SC, Team A) passed, feedback validation passed.
+CI workflow `39204684467` is currently running all four parallel jobs.
+Next steps: monitor workflow `39204684467` to completion, record L6 review,
+merge PR #11 into `phase25-integration`, then integrate staged G5-05 Map/Set O(1)
+index and Team B runtime.
+
 ## Phase 25 G5 benchmark and G6 proof checkpoint — 2026-10-19
 
 Root pushed noncompiler harness `a7d5fab` and proved its strict ABI-v10 SDK
