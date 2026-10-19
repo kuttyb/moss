@@ -1,5 +1,16 @@
 # Team I live integration record
 
+## H3 versioned record substrate — 2026-10-19
+
+L4 pushed `50bf7ba` and `ffa945d`: recognized ABI-v10 v1 records fail closed
+on malformed decoding, and a private checked-body record binds exact rich-IR
+bytes, body hash and callable/nominal dependency hashes to local summaries and
+templates. Focused adversarial, checked-body IR, compiler and feedback checks
+pass; default-v9 H3 baseline still executes two consumers. The staged-v10
+guard remains active until structural IR decoding and live emission/import
+produce real source-removed two-consumer execution. No H3 or target acceptance
+is claimed.
+
 ## H3 callable hash-contract checkpoint — 2026-10-19
 
 L4 pushed staging `b4bf765`. The ABI-v10 record validator now requires

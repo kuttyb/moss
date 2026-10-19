@@ -1,5 +1,20 @@
 # Moss current status
 
+## Phase 25 H3 fail-closed record and rich-body substrate — 2026-10-19
+
+Sole L4 pushed staged `50bf7ba` and `ffa945d`. Versioned semantic/private
+records now dispatch by identity without swallowing malformed decodes;
+duplicate private IDs and unknown versions reject. A new private
+`CheckedBodyRecord` binds canonical rich checked-IR bytes to a callable,
+`body-semantic-v1:sha256` hash, and kinded callable/nominal dependencies;
+whole-interface validation compares actual local summary/template hashes.
+ABI staging/adversarial, checked-body IR, compiler build, default-v9 H3
+two-consumer baseline and feedback pass across these commits, with staged
+30/30 key fixtures at `50bf7ba`. This is substrate only. Structural rich-IR
+decode, live H3 emission/import, and source-removed staged-v10 two-consumer
+execution remain open; the export guard is still active. H/T target and H2 PR
+have three green CI jobs each, core regression jobs still in progress.
+
 ## Phase 25 H3 callable hash-contract checkpoint — 2026-10-19
 
 Sole L4 pushed staged branch `b4bf765` with canonical
