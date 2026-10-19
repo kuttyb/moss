@@ -1,5 +1,21 @@
 # Moss current status
 
+## Phase 25 H3 checked rich-IR checkpoint — 2026-10-19
+
+Sole L4 pushed `phase25-i-map-staging` at
+`d269319b22ef3ca4755ec0d7cec2a74eb9a90641`. The checked rich IR now
+has a `NominalConstruct` node with exact template/field-slot identity and
+inferred-field TypeRef validation; a C++ test proves canonical hash and
+dependency extraction plus forged-target rejection. The H3 fixture's
+two-statement local binding and return bridge to rich `Let`/`Return` IR using
+exact private call edges. The staged guard deliberately remains active with
+`SOURCE_FREE_CHECKED_BODY_UNAVAILABLE` because canonical ABI-v10
+dependency/body records and source-free import validation are unfinished.
+Compiler build, checked-body IR suite, default-v9 two-consumer H3 baseline,
+typed API, staged G2 11/11, feedback and diff checks pass. H3 is not accepted.
+L4 is resolving the frozen TypeRef template ID versus wire codec key mapping
+without changing nominal identity, then implementing actual records.
+
 ## Phase 25 H3 typed-summary checkpoint — 2026-10-19
 
 Sole L4 pushed `phase25-i-map-staging` at `71991a0c6fdf50aafe7f3cc57996f8414142b6ae`.

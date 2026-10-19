@@ -1,5 +1,15 @@
 # Team I live integration record
 
+## H3 checked rich-IR checkpoint — 2026-10-19
+
+L4 pushed staged branch `d269319`. H3's two-statement local-result chain now
+has checked rich `Let`/`Return` IR, an exact private call edge, and a canonical
+nominal-constructor node with field/type validation. Focused hash, dependency
+and forged-target tests pass, along with compiler build, typed API, staged G2
+11/11, default-v9 two-consumer H3 baseline, feedback and diff checks. The
+guard still rejects staged-v10 source-free export until canonical ABI-v10
+dependency/body records and importer validation exist. H3 remains open.
+
 ## H3 typed-summary checkpoint — 2026-10-19
 
 L4 pushed staged branch `71991a0`. Straight-line local-result flow now
