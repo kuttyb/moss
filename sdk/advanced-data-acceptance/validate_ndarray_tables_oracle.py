@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run deterministic independent ndarray and table semantic oracles."""
 
+import argparse
 import os
 from pathlib import Path
 import random
@@ -303,16 +304,28 @@ def run(command: list[str], cwd: Path, env: dict[str, str]) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Run deterministic independent ndarray and table semantic oracles."
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["debug", "release", "fast-debug", "all"],
+        default="all",
+        help="Execution mode (default: all)",
+    )
+    args = parser.parse_args()
+
+    mode_tag = f"-{args.mode}" if args.mode != "all" else ""
     SCRATCH.mkdir(exist_ok=True)
     env = os.environ.copy()
     env.update(
-        MOSS=str(REPO / "moss"),
-        MARGO_HOME=str(SCRATCH / "margo-advanced-data-semantic-oracle"),
+        MOSS=os.environ.get("MOSS", str(REPO / "moss")),
+        MARGO_HOME=str(SCRATCH / f"margo-advanced-data-semantic-oracle{mode_tag}"),
         TMPDIR=str(SCRATCH),
         PYTHONDONTWRITEBYTECODE="1",
     )
     with tempfile.TemporaryDirectory(
-        prefix="advanced-data-semantic-oracle-", dir=SCRATCH
+        prefix=f"advanced-data-semantic-oracle{mode_tag}-", dir=SCRATCH
     ) as temporary:
         oracle = Path(temporary)
         (oracle / "src").mkdir()
@@ -327,12 +340,20 @@ def main() -> None:
         (oracle / "src" / "main.moss").write_text(
             generated_source(), encoding="utf-8"
         )
-        run([str(MARGO), "run"], oracle, env)
-        run([str(MARGO), "--release", "run"], oracle, env)
-        run([str(MARGO), "debug"], oracle, env)
-    print(
-        f"Independent ndarray/table semantic oracle passed in three modes: seed {SEED}"
-    )
+        if args.mode in ("debug", "all"):
+            run([str(MARGO), "run"], oracle, env)
+        if args.mode in ("release", "all"):
+            run([str(MARGO), "--release", "run"], oracle, env)
+        if args.mode in ("fast-debug", "all"):
+            run([str(MARGO), "debug"], oracle, env)
+    if args.mode == "all":
+        print(
+            f"Independent ndarray/table semantic oracle passed in three modes: seed {SEED}"
+        )
+    else:
+        print(
+            f"Independent ndarray/table semantic oracle passed in {args.mode} mode: seed {SEED}"
+        )
 
 
 if __name__ == "__main__":

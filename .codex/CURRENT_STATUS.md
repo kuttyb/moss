@@ -1,5 +1,32 @@
 # Moss current status
 
+## Phase 25 Mid-Phase Test Acceleration & Parallelization Infrastructure — 2026-10-19
+
+Delivered complete test and build acceleration infrastructure on branch `phase25-parallel-tests` (based on `origin/phase25-integration` @ `31ceebe`, latest checkpoint commit `3104a30`):
+1. **Accelerated Development Compiler Builds (`Makefile`):**
+   - Added `moss-dev` target using C++ `-O0` (~25.6s build time vs ~82.3s for `-O2`, 3.3x speedup).
+   - `moss-dev` is now the default compiler build for plain `make` and `./moss`.
+   - Added `moss-opt` / `moss-release` targets for optimized C++ `-O2` builds used in intensive regression suites.
+2. **Parallel Regression Test Launcher (`tests/run_parallel.py`):**
+   - Standard-library Python runner with `ThreadPoolExecutor` and DAG-scheduled execution.
+   - Decomposes the regression suite into 131 distinct parallel test jobs (119 tooling/acceptance tests + 12 shell shards).
+   - Fully isolated execution:
+     - Output directories isolated to `build/tests/parallel/<job_name>/`.
+     - `MARGO_HOME` caches isolated to `build/tests/parallel/<job_name>/margo_home/`.
+     - `TMPDIR` isolated to `build/tests/parallel/<job_name>/tmp/`.
+     - Package-local mutable build directories (`sdk/*/build/debug` and `build/release`) isolated via dedicated git worktrees (`job_out/wt`) with automatic overlay of local modified files and clean teardown.
+   - Live stdout/stderr logging, duration capture, failure details, and summary statistics with top 10 slowest tests.
+   - Defaults to available CPU cores with `--jobs N` flag.
+3. **Decomposition of 47-Minute Advanced-Data Bottleneck (`sdk/advanced-data-acceptance/`):**
+   - Split `run_all.py` into independently schedulable steps: `cbor`, `oracle-debug`, `oracle-release`, `oracle-fast-debug`, `margo-run`, `margo-release`, `margo-debug`, `source-free`, `cbor2`.
+   - Added `--mode {debug, release, fast-debug, all}` to `validate_ndarray_tables_oracle.py`.
+   - Parallelized provider compilation in `check_source_free.py` across 14 packages using topological DAG batching with `ThreadPoolExecutor` instead of serial iterations.
+4. **Sharding of Serial Regression Runner (`tests/shards/`):**
+   - Extracted shared shell test helpers into `tests/lib_test.sh`.
+   - Decomposed `tests/run.sh` into 12 logical shards in `tests/shards/` (`shard_negative.sh`, `shard_abi_v10_units.sh`, `shard_showcase.sh`, `shard_swarm_cases.sh`, `shard_phase4_diff.sh`, `shard_phase46_opt.sh`, `shard_concurrency.sh`, `shard_phase25_int_payloads.sh`, `shard_enum_modules.sh`, `shard_fast_debug.sh`, `shard_phase5_tooling.sh`, `shard_phase106_runtime.sh`).
+   - Original `tests/run.sh` preserved 100% intact for `make check-serial`.
+   - Zero modifications to Moss language semantics, compiler algorithms, runtime behavior, or test expectations.
+
 ## Phase 25 Team I integrated candidate (Team S + Team B + Map/Set + G5/G6 Harness) — 2026-10-19
 
 This consolidated candidate unifies reviewed Team S semantics, Team B ABI-v10

@@ -12,7 +12,7 @@ import tempfile
 
 PROJECT = Path(__file__).resolve().parent
 REPO = PROJECT.parents[1]
-MOSS = REPO / "moss"
+MOSS = Path(os.environ.get("MOSS", REPO / "moss")).resolve()
 MARGO = REPO / "margo"
 SCRATCH = REPO / "tmp"
 CONSUMER = PROJECT / "fixtures" / "source_free_consumer.moss"
@@ -56,12 +56,53 @@ def main() -> None:
         TMPDIR=str(SCRATCH),
     )
 
-    # Serial builds avoid package-local/shared Margo artifact races.
+    # Parallel builds scheduled by Moss.toml dependency DAG
+    from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+    import tomllib
+
+    dep_graph: dict[str, set[str]] = {}
+    pkg_by_name: dict[str, Path] = {}
     for module, package in PROVIDERS:
-        run([str(MARGO), "build", "--json"], package, env)
-        artifact_dir = package / "build" / "debug"
-        assert (artifact_dir / f"{module}.mossi").is_file(), module
-        assert (artifact_dir / f"lib{module}.rlib").is_file(), module
+        pkg_by_name[module] = package
+        manifest = package / "Moss.toml" if (package / "Moss.toml").exists() else package / "moss.toml"
+        data = tomllib.loads(manifest.read_text(encoding="utf-8"))
+        raw_deps = data.get("dependencies", {})
+        dep_graph[module] = {
+            dep.removeprefix("moss.")
+            for dep in raw_deps
+            if dep.removeprefix("moss.") in dict(PROVIDERS)
+        }
+
+    completed: set[str] = set()
+    pending = dict(dep_graph)
+
+    def build_provider(mod: str, pkg: Path) -> None:
+        run([str(MARGO), "build", "--json"], pkg, env)
+        artifact_dir = pkg / "build" / "debug"
+        assert (artifact_dir / f"{mod}.mossi").is_file(), mod
+        assert (artifact_dir / f"lib{mod}.rlib").is_file(), mod
+
+    max_workers = min(len(PROVIDERS), os.cpu_count() or 8)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        running: dict = {}
+        while pending or running:
+            ready = [mod for mod, deps in pending.items() if deps <= completed]
+            for mod in ready:
+                del pending[mod]
+                pkg = pkg_by_name[mod]
+                fut = executor.submit(build_provider, mod, pkg)
+                running[fut] = mod
+
+            if not running:
+                if pending:
+                    raise RuntimeError(f"Cyclic or unresolved provider dependencies: {pending}")
+                break
+
+            done, _ = wait(running.keys(), return_when=FIRST_COMPLETED)
+            for fut in done:
+                mod = running.pop(fut)
+                fut.result()
+                completed.add(mod)
 
     with tempfile.TemporaryDirectory(
         prefix="advanced-data-source-free-", dir=SCRATCH

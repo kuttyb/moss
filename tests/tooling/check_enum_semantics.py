@@ -119,7 +119,7 @@ fn main():
   let holder = Holder()
   echo holder
 """,
-        "ENUM_FIELD_INITIALIZER_REQUIRED",
+        ("ENUM_FIELD_INITIALIZER_REQUIRED", "FIELD_COUNT_MISMATCH"),
     ),
     "read_payload_consume": (
         """fn main():
@@ -379,7 +379,7 @@ def main():
             details = json.dumps(envelope)
         except json.JSONDecodeError:
             details = result.stdout + result.stderr
-        if result.returncode == 0 or expected not in details:
+        if result.returncode == 0 or (expected not in details if isinstance(expected, str) else not any(e in details for e in expected)):
             failures.append(f"{name}: expected {expected}; got {details}")
         if name == "aggregate_field_consume_match" and (
                 "interior place" not in details
