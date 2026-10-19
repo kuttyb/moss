@@ -1,5 +1,17 @@
 # Team I live integration record
 
+## H1 structured index checkpoint — 2026-10-19
+
+L4 pushed `phase25-i-map-staging` at `e395a10`. Live generic indexing now
+exports structured receiver/index/result/access/origin relations, with a
+two-index guard against collapsing distinct requirements. Missing generic
+members report `METHOD_NOT_FOUND` in source-backed and source-free cases;
+present members with incompatible arguments retain `TYPE_MISMATCH`. Typed
+semantic API, Team A, staged G2 11/11, default and activated key fixtures
+30/30, feedback and diff checks pass. Callable argument/result relations and
+H3 remain open. H/T draft #5 still awaits its final exact-head core CI job;
+no target/main integration or L6 verdict is claimed.
+
 ## Activated key-surface checkpoint — 2026-10-18
 
 L4 pushed `phase25-i-map-staging` at `9e7c729`. Opt-in ABI-v10 Map/Set

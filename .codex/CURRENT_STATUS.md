@@ -1,5 +1,21 @@
 # Moss current status
 
+## Phase 25 H1 structured index checkpoint — 2026-10-19
+
+The sole L4 compiler worker pushed `phase25-i-map-staging` at `e395a10`.
+Live generic indexing now exposes complete structured index requirements in
+`moss inspect` with receiver, argument/result terms, READ access and origin.
+Two distinct index expressions retain separate stable requirement IDs; an
+invalid String index rejects `TYPE_MISMATCH`. Source-backed and source-free
+calls now agree that a truly absent generic member is `METHOD_NOT_FOUND` with
+the provider chain retained, while a present method with incompatible
+arguments remains `TYPE_MISMATCH`. Typed semantic API and Team A suites pass;
+staged G2 is 11/11; default and activated key fixtures remain 30/30; feedback
+and diff checks pass. H1 callable argument/result summary is still open,
+followed by H3 source-free multi-statement specialization. L4 retains the
+exclusive compiler lease. H/T PR #5 still awaits exact-head core CI before
+combined L6 review or target merge; no main merge.
+
 ## Phase 25 staged key-surface checkpoint — 2026-10-18
 
 Sole L4 pushed `phase25-i-map-staging` at `9e7c729`, closing the three
