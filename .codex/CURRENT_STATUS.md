@@ -1,5 +1,16 @@
 # Moss current status
 
+## Phase 25 H/T intake L6 review — 2026-10-19
+
+Combined Coordinator/L6 review approved **baseline intake only** for draft
+PR #5 exact head `9ddf9a4c27cefcfe19284b4b9f87cbdadf2fa97c` against
+target `fbd2f72`. Workflow `39174097677` has all four required jobs green;
+the final 62-gate release job is intentionally skipped. Original pinned H/T
+ancestry, conflict resolutions, push policy and target-range whitespace were
+checked. Review record: `docs/phase25/TEAM_I_L6_REVIEW_H_T.md`. H1–H3 and
+full Phase 25 acceptance remain open. At this checkpoint, PR has not yet been
+merged; target and main remain unchanged.
+
 ## Phase 25 H1 structured index checkpoint — 2026-10-19
 
 The sole L4 compiler worker pushed `phase25-i-map-staging` at `e395a10`.

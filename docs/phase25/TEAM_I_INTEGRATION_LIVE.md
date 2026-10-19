@@ -1,5 +1,14 @@
 # Team I live integration record
 
+## H/T exact-head review checkpoint — 2026-10-19
+
+Draft PR #5 at `9ddf9a4` passed all four required jobs in workflow
+`39174097677`. The combined Coordinator/L6 reviewer approved **H/T baseline
+intake only** after checking pinned ancestry, merge-specific resolutions and
+target-range whitespace. The exact review and open H1–H3 scope are in
+`TEAM_I_L6_REVIEW_H_T.md`. The final release job was skipped as designed for
+this PR. The target has not yet been merged at this checkpoint; no main merge.
+
 ## H1 structured index checkpoint — 2026-10-19
 
 L4 pushed `phase25-i-map-staging` at `e395a10`. Live generic indexing now
