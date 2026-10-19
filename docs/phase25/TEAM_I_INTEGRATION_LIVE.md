@@ -1,5 +1,17 @@
 # Team I live integration record
 
+## H3 callable hash-contract checkpoint — 2026-10-19
+
+L4 pushed staging `b4bf765`. The ABI-v10 record validator now requires
+versioned checked-body hashes and matches local callable dependency hashes
+across public and private summaries. Focused positive and tampering tests,
+ABI suites, compiler build, H3 default-v9 baseline, both key ledgers 30/30
+and feedback pass. L6 is checking method-template coverage and duplicate
+private-record handling. This is record-validation groundwork: real H3
+versioned emission/import and source-removed two-consumer execution remain
+unfinished, and the staged guard stays active. Target H/T and H2 PR CI each
+have three green jobs with core regression still in progress.
+
 ## Canonical nominal ABI codec checkpoint — 2026-10-19
 
 L4 pushed `029eef9` and L6-review correction `e5db01c` on the staging

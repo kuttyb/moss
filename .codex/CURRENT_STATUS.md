@@ -1,5 +1,19 @@
 # Moss current status
 
+## Phase 25 H3 callable hash-contract checkpoint — 2026-10-19
+
+Sole L4 pushed staged branch `b4bf765` with canonical
+`body-semantic-v1:sha256:<64>` summary/dependency hashes and whole-interface
+local callable dependency matching. Focused ABI-v10 tests accept a valid
+public-to-private chain and reject tampered helper hashes, bare/foreign hash
+kinds, and an unresolved imported callable. ABI staging/adversarial suites,
+forced compiler build, default-v9 H3 two-consumer baseline, both key ledgers
+30/30 and feedback pass. Combined L6 read-only review is checking the
+MethodTemplate/summary relationship and duplicate private records. The live
+H3 emitter/importer and actual staged-v10 two-consumer execution remain open;
+the export guard remains active. H/T target and H2 exact-head CI each have
+three green jobs with core regressions still running. No further target merge.
+
 ## Phase 25 canonical nominal ABI codec checkpoint — 2026-10-19
 
 Sole L4 pushed `phase25-i-map-staging` at `029eef9` and corrective
