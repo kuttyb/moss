@@ -1,5 +1,15 @@
 # Team I live integration record
 
+## H3 typed-summary checkpoint — 2026-10-19
+
+L4 pushed staged branch `71991a0`. Straight-line local-result flow now
+produces complete open summaries for `fresh` and its two private helpers,
+carrying `Box[value: bound var 0]` and exact transitive call edges. Typed API,
+Team A, staged G2 11/11, default-v9 H3 two-consumer guard, feedback and diff
+checks pass. The staged-v10 guard still rejects Scenario 6 because rich checked
+body IR and canonical private dependency/provenance records are unfinished.
+No H3 acceptance or target/main release claim.
+
 ## H3 fail-closed checkpoint — 2026-10-19
 
 L4 pushed staged branch `466eb7a`. A one-provider, source-removed Int/String

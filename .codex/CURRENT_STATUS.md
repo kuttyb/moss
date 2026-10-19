@@ -1,5 +1,20 @@
 # Moss current status
 
+## Phase 25 H3 typed-summary checkpoint — 2026-10-19
+
+Sole L4 pushed `phase25-i-map-staging` at `71991a0c6fdf50aafe7f3cc57996f8414142b6ae`.
+For the exact straight-line `result = expr; return result` case, the checker
+now binds a nominal constructor's inferred `value` field to the open
+parameter and substitutes private-call result relations after exact semantic
+call edges exist. Live inspect publishes complete open summaries for
+`Service.fresh`, `nested_private_box`, and `private_box`, all with
+`Box[value: bound var 0]`, and retains fresh→nested→private dependencies.
+Typed API, Team A, staged G2 11/11, default-v9 two-consumer H3 guard,
+feedback and diff checks pass. Versioned multi-statement checked body IR and
+canonical private dependency/provenance records are **still absent**; the
+staged-v10 export guard remains active and H3 is not accepted. L4 continues
+the rich IR and record bridge with exclusive compiler ownership.
+
 ## Phase 25 H3 fail-closed checkpoint — 2026-10-19
 
 Sole L4 pushed `phase25-i-map-staging` at `466eb7a64d3e750dcc906e2a53e371aa99cec04a`.
