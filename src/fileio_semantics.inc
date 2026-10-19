@@ -39,12 +39,20 @@
     return fileio_contains_scoped_type(type, visited);
   }
 
+  bool fileio_contains_scoped_type(const moss::TypeRef& type) const {
+    return fileio_contains_scoped_type(canonical_type_name(type));
+  }
+
   // The checked boundary fact for message/executor.invoke arguments: the
   // Executor handle, or any type that structurally reaches a scoped FileIO
   // capability (through collections or object fields).
   bool phase20_capability_type(const string& type) const {
     return phase20_is_nontransferable_capability(type) ||
         fileio_contains_scoped_type(type);
+  }
+
+  bool phase20_capability_type(const moss::TypeRef& type) const {
+    return phase20_capability_type(canonical_type_name(type));
   }
 
   bool fileio_forbidden_collection_type(const string& type) const {
@@ -128,6 +136,11 @@
     if (method == "sync" && arity <= 1) return string("unit");
     if (method == "close" && arity == 0) return string("unit");
     return std::nullopt;
+  }
+
+  static std::optional<string> fileio_method_requirement_result(
+      const moss::TypeRef& type, const string& method, size_t arity) {
+    return fileio_method_requirement_result(canonical_type_name(type), method, arity);
   }
 
   std::optional<string> fileio_result_type(const string& expression,

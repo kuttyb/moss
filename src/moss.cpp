@@ -31,6 +31,9 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include "ast.hpp"
+#include "type_ir.hpp"
+#include "typed_semantic_api.hpp"
+#include "checked_body_ir.hpp"
 #include "debug_map.hpp"
 #include "diagnostics.hpp"
 #include "type_placeholders.hpp"
@@ -41,6 +44,7 @@
 #include "executor_runtime.hpp"
 #include "synchronization_lowering.hpp"
 #include "source_free_abi_v9.hpp"
+#include "source_free_abi_v10.hpp"
 
 using std::string;
 using std::vector;
@@ -67,6 +71,13 @@ static constexpr const char* kCompilerVersion = "0.1.0";
 // ABI v8's raised-value layout is retained, while v9 adds an artifact-bound
 // source-free contract. A v8 interface must be rebuilt before source-free use.
 static constexpr int kNativeAbiVersion = 9;
+// Staged ABI v10 (docs/phase25/TEAM_G_ABI_V10_STAGING.md). Production stays
+// on v9 until the joint Team S/Team G cutover; MOSS_STAGED_ABI=v10 opts a
+// build into emitting and loading only v10 source-free interfaces.
+static bool staged_abi_v10() {
+  const char* value = std::getenv("MOSS_STAGED_ABI");
+  return value && string(value) == "v10";
+}
 static constexpr const char* kMossLanguageVersion = "moss-0.1";
 static constexpr int kAgentProtocolVersion = 1;
 static constexpr const char* kAgentSchemaVersion = "moss-agent-1";
@@ -202,8 +213,111 @@ static vector<string> split_top_level(const string& s, char delim) {
   return out;
 }
 
+static string module_name_from_symbol(const string& symbol) {
+  auto separator = symbol.find("__");
+  return separator == string::npos ? string() : symbol.substr(0, separator);
+}
+
+// Identity of a module spelling in `program`. Standalone sources have no
+// package manifest, so they share one compiler-defined local package; the
+// compiler's own `std` module has a compiler-defined identity.
+static string program_module_identity(const Program& program, const string& module) {
+  auto found = program.module_identities.find(module);
+  if (found != program.module_identities.end()) return found->second;
+  if (module == "std") return moss::module_identity("moss-std", "0.1.0", "std");
+  if (program.package_identities)
+    throw CompileError(0, "module '" + module + "' has no package identity",
+                       "MODULE_IDENTITY_UNRESOLVED");
+  return moss::module_identity("__standalone__", "0.0.0",
+                               module.empty() ? "main" : module);
+}
+
+// Interns every nominal declaration of `program` exactly once (§3.1): its
+// identity is the defining module identity plus the source declaration name.
+static void build_type_context(Program& program) {
+  auto context = std::make_shared<moss::TypeContext>();
+  for (auto& function : program.functions) {
+    const string& declaration = function.declaration_name.empty()
+        ? function.name : function.declaration_name;
+    function.semantic_callable_id = "callable-v1:" +
+        program_module_identity(program, function.defining_module) +
+        ":fn:" + declaration;
+  }
+  auto declare = [&](moss::DeclarationKind kind, const string& program_name,
+                     const string& defining_module, const string& declaration_name,
+                     vector<moss::NominalFieldSlot> fields) {
+    moss::NominalDeclaration declaration;
+    declaration.kind = kind;
+    declaration.program_name = program_name;
+    declaration.module_id = program_module_identity(program, defining_module);
+    declaration.declaration_name =
+        declaration_name.empty() ? program_name : declaration_name;
+    declaration.fields = std::move(fields);
+    context->declare(std::move(declaration));
+  };
+  for (const auto& object : program.objects) {
+    vector<moss::NominalFieldSlot> fields;
+    for (const auto& field : object.fields) {
+      const bool inferred = field.inferred || field.type.empty();
+      fields.push_back({field.name, inferred ? string() : trim(field.type), inferred});
+    }
+    declare(moss::DeclarationKind::Record, object.name, object.defining_module,
+            object.declaration_name, std::move(fields));
+  }
+  for (const auto& enumeration : program.enums)
+    declare(moss::DeclarationKind::Enum, enumeration.name,
+            enumeration.defining_module, enumeration.declaration_name, {});
+  for (const auto& domain : program.domains)
+    declare(moss::DeclarationKind::Domain, domain.name, domain.defining_module,
+            domain.declaration_name, {});
+  context->register_trait("Iterator");
+  for (const auto& trait : program.traits)
+    context->register_trait(trait.name);
+  try {
+    context->bind_field_annotations();
+  } catch (const moss::InvalidFieldAnnotation& invalid) {
+    for (const auto& object : program.objects) {
+      auto declaration = context->find(object.name);
+      if (!declaration || declaration->id != invalid.declaration_id) continue;
+      for (const auto& field : object.fields) {
+        if (field.name != invalid.field_name) continue;
+        CompileError error(field.line, invalid.what(), "MALFORMED_TYPE_EXPRESSION");
+        error.source_file = field.source_file;
+        throw error;
+      }
+    }
+    throw;
+  }
+  program.type_context = std::move(context);
+}
+
+static bool belongs_to_module(const string& qualified, const string& module) {
+  return qualified == module || starts_with(qualified, module + "__");
+}
+
+static string specialization_calling_module(const Program& program,
+                                            const string& context,
+                                            const string& root_module) {
+  if (starts_with(context, "fn:"))
+    return module_name_from_symbol(context.substr(3));
+  if (starts_with(context, "method:")) {
+    string owner = context.substr(7);
+    size_t dot = owner.find('.');
+    return module_name_from_symbol(dot == string::npos ? owner : owner.substr(0, dot));
+  }
+  if (starts_with(context, "handler:")) {
+    string owner = context.substr(8);
+    size_t dot = owner.find('.');
+    return module_name_from_symbol(dot == string::npos ? owner : owner.substr(0, dot));
+  }
+  // main, test, and benchmark bodies are projected into the root module.
+  return !root_module.empty() ? root_module : program.main_module;
+}
+
 static string canonical_type_name(string type) {
   type = trim(std::move(type));
+  if (auto parsed = moss::Type::parse_canonical(type))
+    return (*parsed)->to_canonical_string();
   if (type == "Int") return "int";
   if (type == "Float") return "float";
   if (type == "Bool") return "bool";
@@ -216,7 +330,16 @@ static string canonical_type_name(string type) {
     string head = canonical_type_name(type.substr(0, bracket));
     auto arguments = split_top_level(type.substr(bracket + 1,
                                                   type.size() - bracket - 2), ',');
-    for (auto& argument : arguments) argument = canonical_type_name(argument);
+    for (auto& argument : arguments) {
+      auto eq = argument.find('=');
+      if (eq != string::npos) {
+        string k = trim(argument.substr(0, eq));
+        string v = canonical_type_name(argument.substr(eq + 1));
+        argument = k + "=" + v;
+      } else {
+        argument = canonical_type_name(argument);
+      }
+    }
     std::ostringstream normalized;
     normalized << head << "[";
     for (size_t index = 0; index < arguments.size(); ++index) {
@@ -227,6 +350,40 @@ static string canonical_type_name(string type) {
     return normalized.str();
   }
   return type;
+}
+
+static string canonical_type_name(const moss::TypeRef& type) {
+  return type ? type->to_canonical_string() : string();
+}
+
+// A record instance with at least one substituted slot (`Box[value=int]`);
+// a bare record spelling is its template or a fully declared record.
+static bool is_nominal_instance_type(const string& type) {
+  auto parsed = moss::Type::parse_canonical(type);
+  return parsed && (*parsed)->kind == moss::TypeKind::NominalInstance &&
+         !(*parsed)->field_substitutions.empty();
+}
+
+static string nominal_template_name(const string& type) {
+  auto parsed = moss::Type::parse_canonical(type);
+  return parsed && (*parsed)->kind == moss::TypeKind::NominalInstance
+      ? (*parsed)->name : canonical_type_name(type);
+}
+
+static std::vector<std::pair<string, string>> nominal_field_substitutions(const string& type) {
+  std::vector<std::pair<string, string>> result;
+  auto parsed = moss::Type::parse_canonical(type);
+  if (!parsed || (*parsed)->kind != moss::TypeKind::NominalInstance) return result;
+  for (const auto& field : (*parsed)->field_substitutions)
+    result.emplace_back(field.first, field.second->to_canonical_string());
+  return result;
+}
+
+static std::optional<string> nominal_field_type(const string& type, const string& field_name) {
+  for (const auto& sub : nominal_field_substitutions(type)) {
+    if (sub.first == field_name) return sub.second;
+  }
+  return std::nullopt;
 }
 
 static bool standard_error_short_name(const string& name) {
@@ -340,20 +497,107 @@ static Effect specialized_iterator_parameter_effect(
   return effect;
 }
 
+// The structural term of a declared or projected type spelling, whether or
+// not it is closed: `map` and `vector[_generic:x]` parse here.
+static moss::TypeRef parsed_type(const string& spelling) {
+  auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
+  return parsed ? *parsed : nullptr;
+}
+
+static moss::TypeRef parsed_type(const moss::TypeRef& type) {
+  return type;
+}
+
+static bool primitive_term(const moss::TypeRef& type, std::string_view name) {
+  return type && type->kind == moss::TypeKind::Primitive && type->name == name;
+}
+
+// A parameterized built-in application named one of `names`.
+static bool applied_builtin(const moss::TypeRef& type,
+                            std::initializer_list<std::string_view> names) {
+  if (!type || type->kind != moss::TypeKind::Builtin || type->type_args.empty())
+    return false;
+  return std::find(names.begin(), names.end(), type->name) != names.end();
+}
+
+// A built-in collection, bare or applied, named one of `names`.
+static bool collection_named(const moss::TypeRef& type,
+                             std::initializer_list<std::string_view> names) {
+  if (!type || type->kind != moss::TypeKind::Builtin) return false;
+  return std::find(names.begin(), names.end(), type->name) != names.end();
+}
+
+// The type an index expression yields: a vector's or queue's element, or a
+// map's value. `seq` is not indexable and is deliberately absent.
+static std::optional<string> indexed_element(const moss::TypeRef& type) {
+  if (applied_builtin(type, {"vector", "queue"}) && type->type_args.size() == 1)
+    return type->type_args[0]->to_canonical_string();
+  if (applied_builtin(type, {"map"}) && type->type_args.size() == 2)
+    return type->type_args[1]->to_canonical_string();
+  return std::nullopt;
+}
+
+// The open generic placeholder `_generic:<name>`, which stands for a type the
+// checker has not bound yet. Centralized so the A2 conversion to a real
+// inference variable with requirements (TYPE_IR_CONTRACT §§2, 4) has one
+// place to change, rather than two dozen prefix tests.
+static bool open_generic(const string& type) {
+  return starts_with(type, "_generic:") || starts_with(type, "_typevar:");
+}
+
+static bool open_generic(const moss::TypeRef& type) {
+  if (!type) return false;
+  if (type->kind == moss::TypeKind::InferenceVar) return true;
+  return open_generic(type->to_canonical_string());
+}
+
+// Statically bounded callable identity. Canonical identities use `callable-v1:`;
+// legacy strings may carry `callable:`.
+[[maybe_unused]] static bool is_canonical_callable_id(const string& type) {
+  return starts_with(type, "callable-v1:");
+}
+
+static bool callable_identity(const string& type) {
+  return starts_with(type, "callable:") || starts_with(type, "callable-v1:");
+}
+
+static bool callable_identity(const moss::TypeRef& type) {
+  if (!type) return false;
+  return callable_identity(type->to_canonical_string());
+}
+
+// An open built-in collection: named, with no type arguments yet.
+static bool bare_collection(const moss::TypeRef& type,
+                            std::initializer_list<std::string_view> names) {
+  if (!type || type->kind != moss::TypeKind::Builtin || !type->type_args.empty())
+    return false;
+  return std::find(names.begin(), names.end(), type->name) != names.end();
+}
+
+// A bare collection spelling (`vector`) against an application of that same
+// collection (`vector[int]`): the open literal takes the declared type.
+static bool bare_matches_applied(const string& bare, const string& applied) {
+  const auto open = parsed_type(bare);
+  const auto declared = parsed_type(applied);
+  return open && declared && open->kind == moss::TypeKind::Builtin &&
+         open->type_args.empty() && declared->kind == moss::TypeKind::Builtin &&
+         !declared->type_args.empty() && declared->name == open->name;
+}
+
 // Map built-ins need the concrete key/value types in the checker and native
 // backend. Keep that decoding in one place so their type and lowering rules
 // cannot drift apart.
 static std::optional<std::pair<string, string>> map_key_value_types(
     const string& type) {
-  string concrete = canonical_type_name(type);
-  if (!starts_with(concrete, "map[") || !ends_with(concrete, "]"))
+  const auto term = parsed_type(type);
+  if (!applied_builtin(term, {"map"}) || term->type_args.size() != 2)
     return std::nullopt;
-  auto parts = split_top_level(concrete.substr(4, concrete.size() - 5), ',');
-  if (parts.size() != 2) return std::nullopt;
-  return std::make_pair(trim(parts[0]), trim(parts[1]));
+  return std::make_pair(term->type_args[0]->to_canonical_string(),
+                        term->type_args[1]->to_canonical_string());
 }
 
 enum class BuiltinReceiverFamily { Vector, Map, Queue, String };
+
 
 struct BuiltinOperationDescriptor {
   BuiltinReceiverFamily receiver;
@@ -396,13 +640,11 @@ static const vector<BuiltinOperationDescriptor>& builtin_operations() {
 static std::optional<BuiltinReceiverFamily> builtin_receiver_family(
     const string& type) {
   string concrete = canonical_type_name(type);
-  if (concrete == "vector" || starts_with(concrete, "vector["))
-    return BuiltinReceiverFamily::Vector;
-  if (concrete == "map" || starts_with(concrete, "map["))
-    return BuiltinReceiverFamily::Map;
-  if (concrete == "queue" || starts_with(concrete, "queue["))
-    return BuiltinReceiverFamily::Queue;
-  if (concrete == "string") return BuiltinReceiverFamily::String;
+  const auto term = parsed_type(concrete);
+  if (collection_named(term, {"vector"})) return BuiltinReceiverFamily::Vector;
+  if (collection_named(term, {"map"})) return BuiltinReceiverFamily::Map;
+  if (collection_named(term, {"queue"})) return BuiltinReceiverFamily::Queue;
+  if (primitive_term(term, "string")) return BuiltinReceiverFamily::String;
   return std::nullopt;
 }
 
@@ -444,15 +686,54 @@ static std::optional<string> builtin_operation_result(
   return builtin_operation_type(receiver_type, operation->result);
 }
 
+static std::optional<BuiltinReceiverFamily> builtin_receiver_family(
+    const moss::TypeRef& type) {
+  if (!type) return std::nullopt;
+  if (collection_named(type, {"vector"})) return BuiltinReceiverFamily::Vector;
+  if (collection_named(type, {"map"})) return BuiltinReceiverFamily::Map;
+  if (collection_named(type, {"queue"})) return BuiltinReceiverFamily::Queue;
+  if (primitive_term(type, "string")) return BuiltinReceiverFamily::String;
+  return std::nullopt;
+}
+
+static const BuiltinOperationDescriptor* builtin_operation(
+    const moss::TypeRef& receiver_type, const string& name) {
+  auto family = builtin_receiver_family(receiver_type);
+  if (!family) return nullptr;
+  auto operation = std::find_if(
+      builtin_operations().begin(), builtin_operations().end(),
+      [&](const BuiltinOperationDescriptor& candidate) {
+        return candidate.receiver == *family && candidate.name == name;
+      });
+  return operation == builtin_operations().end() ? nullptr : &*operation;
+}
+
+static std::optional<string> builtin_operation_result(
+    const moss::TypeRef& receiver_type, const string& name, size_t arity) {
+  return builtin_operation_result(canonical_type_name(receiver_type), name, arity);
+}
+
 static bool contains_internal_placeholder(const string& type) {
   string value = trim(type);
   if (internal_semantic_placeholder(value)) return true;
   auto open = value.find('[');
   if (open == string::npos || !ends_with(value, "]")) return false;
-  for (const auto& part : split_top_level(value.substr(open + 1, value.size() - open - 2), ','))
+  for (auto part : split_top_level(value.substr(open + 1, value.size() - open - 2), ',')) {
+    // A nominal instance substitutes named fields: `Box[s=_generic:x]`.
+    const auto equals = part.find('=');
+    if (equals != string::npos && equals < part.find('['))
+      part = part.substr(equals + 1);
     if (contains_internal_placeholder(part)) return true;
+  }
   return false;
 }
+
+static bool contains_internal_placeholder(const moss::TypeRef& type) {
+  if (!type) return false;
+  if (type->kind == moss::TypeKind::InferenceVar) return true;
+  return contains_internal_placeholder(type->to_canonical_string());
+}
+
 
 // The concrete effect is semantic metadata; both native sides derive their
 // passing mode from this one decision. Primitive WRITE retains Moss's existing
@@ -468,13 +749,79 @@ static ConcreteParameterABI concrete_parameter_abi(Effect effect,
       effect == Effect::Consume || copy_type_name(canonical_type_name(type))
           ? ParameterPassingMode::Value : ParameterPassingMode::SharedBorrow};
 }
+// The one specialization identity (TYPE_IR_CONTRACT §3.3). Legacy typed
+// strings enter at this boundary only; all key material is checked Type IR.
+static std::optional<moss::SpecializationKey> specialization_key_inputs(
+    const string& callable_id, const vector<string>& types,
+    const std::optional<moss::TypeRef>& receiver = std::nullopt,
+    const vector<std::pair<uint32_t, moss::TypeRef>>& open_result_bindings = {}) {
+  moss::SpecializationKey key;
+  key.callable_id = callable_id;
+  key.receiver = receiver;
+  key.open_result_bindings = open_result_bindings;
+  for (size_t index = 0; index < types.size(); ++index) {
+    const auto& type = types[index];
+    // A static higher-order argument is a resolved callable identity, not a
+    // type or the lookup spelling used by its caller.
+    if (starts_with(type, "callable-v1:")) {
+      key.arguments.push_back(moss::Type::unit());
+      key.callable_arguments.push_back(type);
+      continue;
+    }
+    if (callable_identity(type)) {
+      const string cid = starts_with(type, "callable:") ? type.substr(9) : type;
+      if (!starts_with(cid, "callable-v1:")) return std::nullopt;
+      key.arguments.push_back(moss::Type::unit());
+      key.callable_arguments.push_back(cid);
+      continue;
+    }
+    auto parsed = moss::Type::parse_canonical(canonical_type_name(type));
+    if (!parsed || !(*parsed)->is_closed()) return std::nullopt;
+    key.arguments.push_back(*parsed);
+  }
+  if (!key.stable_key()) return std::nullopt;
+  return key;
+}
+
+static string semantic_call_site_identity(const SemanticCallEdge& edge) {
+  string identity = edge.source +
+      (edge.source_specialization_key.empty()
+          ? string() : "#" + edge.source_specialization_key) +
+      "@" + std::to_string(edge.line) + ":call:" + edge.target;
+  if (edge.occurrence != 0)
+    identity += ":occurrence:" + std::to_string(edge.occurrence + 1);
+  return identity;
+}
+
 static const FunctionSpecialization* concrete_specialization(
     const Function& function, const vector<string>& types) {
-  auto found = std::find_if(function.specializations.begin(),
-      function.specializations.end(), [&](const FunctionSpecialization& candidate) {
-        return candidate.parameter_types == types;
-      });
-  return found == function.specializations.end() ? nullptr : &*found;
+  const FunctionSpecialization* selected = nullptr;
+  vector<string> canonical_types;
+  for (const auto& type : types) canonical_types.push_back(canonical_type_name(type));
+  for (const auto& candidate : function.specializations) {
+    if (candidate.parameter_types != canonical_types) continue;
+    if (candidate.semantic_key.stable_key() !=
+        std::optional<string>(candidate.stable_type_key)) return nullptr;
+    // A parameter-only lookup is valid only when it names one checked
+    // instance. Result-bound calls supply the exact key at their call site.
+    if (selected) return nullptr;
+    selected = &candidate;
+  }
+  return selected;
+}
+
+static const FunctionSpecialization* functional_specialization(
+    const Function& function, const vector<string>& types) {
+  // Functional registration uses this exact no-receiver, no-result-binding
+  // key. Ordinary calls of the same parameter types may have other keys.
+  auto key = specialization_key_inputs(function.semantic_callable_id, types);
+  if (!key || !key->stable_key()) return nullptr;
+  auto selected = std::find_if(function.specializations.begin(),
+                               function.specializations.end(),
+                               [&](const FunctionSpecialization& candidate) {
+    return candidate.stable_type_key == *key->stable_key();
+  });
+  return selected == function.specializations.end() ? nullptr : &*selected;
 }
 
 static bool parse_index(const string& text, string& base, string& index) {
@@ -515,6 +862,8 @@ static std::optional<string> typed_empty_vector_constructor(const string& text) 
   vector<string> args;
   if (!parse_simple_call(text, callee, args) || !args.empty()) return std::nullopt;
   string type = canonical_type_name(callee);
+  // Recognize the constructor spelling only; INVALID_TYPED_VECTOR_CONSTRUCTOR
+  // reports a wrong arity later, so this must not reject it here.
   if (!starts_with(type, "vector[") || !ends_with(type, "]"))
     return std::nullopt;
   return type;
@@ -603,13 +952,208 @@ static bool parse_fileio_open(const string& text, vector<string>& args) {
   return receiver == "FileIO" && method == "open" && args.size() == 2;
 }
 
-static bool executor_typed(const std::unordered_map<string,string>& env,
-                           const string& name) {
-  auto it = env.find(trim(name));
-  return it != env.end() && it->second == "executor";
+struct TypeEnv {
+  std::unordered_map<string, moss::TypeRef> bindings;
+  std::unordered_map<string, moss::TypeRef> terms;
+
+  struct EntryRef {
+    moss::TypeRef& ref;
+    explicit EntryRef(moss::TypeRef& r) : ref(r) {}
+
+    EntryRef& operator=(const moss::TypeRef& t) {
+      ref = t;
+      return *this;
+    }
+    EntryRef& operator=(moss::TypeRef&& t) {
+      ref = std::move(t);
+      return *this;
+    }
+    EntryRef& operator=(const string& s) {
+      if (s.empty()) {
+        ref = nullptr;
+      } else if (auto parsed = moss::Type::parse_canonical(s)) {
+        ref = *parsed;
+      } else {
+        ref = moss::Type::primitive(s);
+      }
+      return *this;
+    }
+    EntryRef& operator=(const char* s) {
+      return *this = string(s ? s : "");
+    }
+    EntryRef& operator=(const std::optional<string>& s) {
+      if (!s) {
+        ref = nullptr;
+      } else {
+        *this = *s;
+      }
+      return *this;
+    }
+    operator moss::TypeRef() const { return ref; }
+    operator string() const { return ref ? ref->to_canonical_string() : string(); }
+    explicit operator bool() const { return ref != nullptr; }
+    bool empty() const { return ref == nullptr; }
+    string to_canonical_string() const { return ref ? ref->to_canonical_string() : string(); }
+    const moss::Type* operator->() const { return ref.get(); }
+
+    bool operator==(const string& s) const {
+      return (ref ? ref->to_canonical_string() : string()) == s;
+    }
+    bool operator!=(const string& s) const {
+      return !(*this == s);
+    }
+    bool operator==(const char* s) const {
+      return *this == string(s ? s : "");
+    }
+    bool operator!=(const char* s) const {
+      return !(*this == s);
+    }
+    bool operator==(const moss::TypeRef& other) const {
+      return ref == other || (ref && other && ref->structurally_equal(*other));
+    }
+    bool operator!=(const moss::TypeRef& other) const {
+      return !(*this == other);
+    }
+  };
+
+  EntryRef operator[](const string& key) {
+    return EntryRef(bindings[key]);
+  }
+
+  auto begin() { return bindings.begin(); }
+  auto end() { return bindings.end(); }
+  auto begin() const { return bindings.begin(); }
+  auto end() const { return bindings.end(); }
+  auto cbegin() const { return bindings.cbegin(); }
+  auto cend() const { return bindings.cend(); }
+
+  auto find(const string& key) { return bindings.find(key); }
+  auto find(const string& key) const { return bindings.find(key); }
+  size_t count(const string& key) const { return bindings.count(key); }
+  auto erase(const string& key) {
+    terms.erase(key);
+    return bindings.erase(key);
+  }
+  void clear() {
+    bindings.clear();
+    terms.clear();
+  }
+  bool empty() const { return bindings.empty(); }
+  size_t size() const { return bindings.size(); }
+
+  moss::TypeRef& at(const string& key) { return bindings.at(key); }
+  const moss::TypeRef& at(const string& key) const { return bindings.at(key); }
+
+  template <typename KeyT, typename ValT>
+  auto emplace(KeyT&& key, ValT&& val) {
+    if constexpr (std::is_convertible_v<std::decay_t<ValT>, moss::TypeRef>) {
+      return bindings.emplace(std::forward<KeyT>(key), std::forward<ValT>(val));
+    } else {
+      string s = std::forward<ValT>(val);
+      if (s.empty()) {
+        return bindings.emplace(std::forward<KeyT>(key), nullptr);
+      } else if (auto parsed = moss::Type::parse_canonical(s)) {
+        return bindings.emplace(std::forward<KeyT>(key), *parsed);
+      } else {
+        return bindings.emplace(std::forward<KeyT>(key), moss::Type::primitive(s));
+      }
+    }
+  }
+  template <typename... Args>
+  auto emplace(Args&&... args) {
+    return bindings.emplace(std::forward<Args>(args)...);
+  }
+
+  auto insert(const std::pair<const string, moss::TypeRef>& p) {
+    return bindings.insert(p);
+  }
+  auto insert(std::pair<string, moss::TypeRef>&& p) {
+    return bindings.insert(std::move(p));
+  }
+  template <typename P>
+  auto insert(P&& p) {
+    if constexpr (std::is_constructible_v<std::pair<const string, moss::TypeRef>, P>) {
+      return bindings.insert(std::forward<P>(p));
+    } else {
+      return emplace(p.first, p.second);
+    }
+  }
+
+  TypeEnv() = default;
+  TypeEnv(const TypeEnv&) = default;
+  TypeEnv(TypeEnv&&) = default;
+  TypeEnv& operator=(const TypeEnv&) = default;
+  TypeEnv& operator=(TypeEnv&&) = default;
+
+  TypeEnv(const std::unordered_map<string, string>& str_map) {
+    for (const auto& [k, v] : str_map) {
+      if (v.empty()) {
+        bindings[k] = nullptr;
+      } else if (auto parsed = moss::Type::parse_canonical(v)) {
+        bindings[k] = *parsed;
+      } else {
+        bindings[k] = moss::Type::primitive(v);
+      }
+    }
+  }
+
+  TypeEnv(std::initializer_list<std::pair<string, moss::TypeRef>> init) {
+    for (const auto& [k, v] : init) bindings[k] = v;
+  }
+  TypeEnv(std::initializer_list<std::pair<string, string>> init) {
+    for (const auto& [k, v] : init) {
+      if (v.empty()) {
+        bindings[k] = nullptr;
+      } else if (auto parsed = moss::Type::parse_canonical(v)) {
+        bindings[k] = *parsed;
+      } else {
+        bindings[k] = moss::Type::primitive(v);
+      }
+    }
+  }
+  TypeEnv(std::initializer_list<std::pair<const char*, const char*>> init) {
+    for (const auto& [k, v] : init) {
+      string val(v ? v : "");
+      if (val.empty()) {
+        bindings[k] = nullptr;
+      } else if (auto parsed = moss::Type::parse_canonical(val)) {
+        bindings[k] = *parsed;
+      } else {
+        bindings[k] = moss::Type::primitive(val);
+      }
+    }
+  }
+
+  operator std::unordered_map<string, string>() const {
+    std::unordered_map<string, string> result;
+    result.reserve(bindings.size());
+    for (const auto& [k, v] : bindings) {
+      auto term_it = terms.find(k);
+      if (term_it != terms.end() && term_it->second) {
+        result[k] = term_it->second->to_canonical_string();
+      } else {
+        result[k] = v ? v->to_canonical_string() : string();
+      }
+    }
+    return result;
+  }
+
+  std::unordered_map<string, string> to_string_map() const {
+    return static_cast<std::unordered_map<string, string>>(*this);
+  }
+};
+
+static inline string canonical_type_name(const TypeEnv::EntryRef& e) {
+  return canonical_type_name(e.ref);
 }
 
-static bool fileio_typed(const std::unordered_map<string,string>& env,
+static bool executor_typed(const TypeEnv& env,
+                           const string& name) {
+  auto it = env.find(trim(name));
+  return it != env.end() && primitive_term(it->second, "executor");
+}
+
+static bool fileio_typed(const TypeEnv& env,
                          const string& name) {
   auto it = env.find(trim(name));
   return it != env.end() && canonical_type_name(it->second) == "FileIO";
@@ -1016,6 +1560,10 @@ class Parser {
           exported = true;
           declaration = trim(declaration.substr(7));
           if (declaration.empty()) fail(L, "export requires a declaration");
+        } else if (starts_with(declaration, "pub ")) {
+          exported = true;
+          declaration = trim(declaration.substr(4));
+          if (declaration.empty()) fail(L, "pub requires a declaration");
         }
         if (starts_with(declaration, "domain ")) p.domains.push_back(parse_domain(exported));
         else if (starts_with(declaration, "type ")) p.objects.push_back(parse_object(exported));
@@ -1127,7 +1675,7 @@ class Parser {
         p.name = trim(part);
       } else {
         p.name = trim(part.substr(0, c));
-        p.type = canonical_type_name(trim(part.substr(c + 1)));
+        p.set_type(canonical_type_name(trim(part.substr(c + 1))));
       }
       if (p.name.empty() || !identifier(p.name)) throw CompileError(L.no, "invalid parameter: " + part);
       ps.push_back(std::move(p));
@@ -1138,15 +1686,17 @@ class Parser {
   ObjectType parse_object(bool exported = false) {
     Line head = lines_[i_++];
     if (starts_with(head.text, "export ")) head.text = trim(head.text.substr(7));
-    // Legacy: type User = object. Preferred: type User:
-    string rest = trim(head.text.substr(5));
+    if (starts_with(head.text, "pub ")) head.text = trim(head.text.substr(4));
+    string rest;
+    if (starts_with(head.text, "type ")) rest = trim(head.text.substr(5));
+    else rest = trim(head.text);
     auto eq = rest.find('=');
     bool legacy = eq != string::npos;
     if (legacy) {
       if (trim(rest.substr(eq + 1)) != "object")
         fail(head, "object declaration must be 'type Name:' or 'type Name = object'");
     } else if (!ends_with(rest, ":")) {
-      fail(head, "object declaration must be 'type Name:' or 'type Name = object'");
+      fail(head, "object declaration must be 'type Name:'");
     }
     ObjectType o;
     o.header = head.text;
@@ -1164,7 +1714,9 @@ class Parser {
         Method m; m.name = trim(sig.substr(0, lp)); m.params = parse_params(L, sig.substr(lp + 1, rp - lp - 1)); m.line = L.no;
         m.owner = o.name;
         string suffix = trim(sig.substr(rp + 1)); if (ends_with(suffix, ":")) suffix.pop_back(); suffix = trim(suffix);
-        if (!suffix.empty() && starts_with(suffix, "->")) m.return_type = canonical_type_name(trim(suffix.substr(2)));
+        if (!suffix.empty() && starts_with(suffix, "->")) {
+          m.set_return_type(canonical_type_name(trim(suffix.substr(2))));
+        }
         m.body = parse_stmt_block(L.indent + indent_unit_);
         if (!m.body.empty() && (m.body.back().kind == Stmt::Kind::Raw || m.body.back().kind == Stmt::Kind::Call)) {
           m.result_expression = m.body.back().text;
@@ -1175,14 +1727,26 @@ class Parser {
         o.methods.push_back(std::move(m));
         continue;
       }
-      auto c = L.text.find(':');
+      bool field_exported = exported;
+      string line_text = L.text;
+      if (starts_with(line_text, "pub ")) {
+        field_exported = true;
+        line_text = trim(line_text.substr(4));
+      } else if (starts_with(line_text, "export ")) {
+        field_exported = true;
+        line_text = trim(line_text.substr(7));
+      }
+      auto c = line_text.find(':');
       Field f;
       f.header = L.text;
+      f.exported = field_exported;
+      f.source_file = L.source_file;
       if (c == string::npos) {
-        f.name = trim(L.text);
+        f.name = trim(line_text);
+        f.inferred = true;
       } else {
-        f.name = trim(L.text.substr(0, c));
-        f.type = canonical_type_name(trim(L.text.substr(c + 1)));
+        f.name = trim(line_text.substr(0, c));
+        f.type = canonical_type_name(trim(line_text.substr(c + 1)));
       }
       if (!identifier(f.name)) fail(L, "object field must be 'name' or 'name: type'");
       f.line = L.no;
@@ -1194,6 +1758,7 @@ class Parser {
   EnumType parse_enum(bool exported = false) {
     Line head = lines_[i_++];
     if (starts_with(head.text, "export ")) head.text = trim(head.text.substr(7));
+    if (starts_with(head.text, "pub ")) head.text = trim(head.text.substr(4));
     if (!ends_with(head.text, ":")) fail(head, "enum declaration must end with ':'");
     EnumType result;
     result.name = trim(head.text.substr(5, head.text.size() - 6));
@@ -1244,6 +1809,7 @@ class Parser {
   Trait parse_trait(bool exported = false) {
     Line head = lines_[i_++];
     if (starts_with(head.text, "export ")) head.text = trim(head.text.substr(7));
+    if (starts_with(head.text, "pub ")) head.text = trim(head.text.substr(4));
     string rest = trim(head.text.substr(6));
     if (ends_with(rest, ":")) rest.pop_back();
     Trait t; t.name = trim(rest); t.header = head.text; t.line = head.no; t.exported = exported;
@@ -1263,7 +1829,7 @@ class Parser {
       suffix = trim(suffix);
       if (!suffix.empty()) {
         if (!starts_with(suffix, "->")) fail(L, "trait method return type must follow '->'");
-        m.return_type = canonical_type_name(trim(suffix.substr(2)));
+        m.set_return_type(canonical_type_name(trim(suffix.substr(2))));
       }
       t.methods.push_back(std::move(m));
     }
@@ -1274,6 +1840,7 @@ class Parser {
   Domain parse_domain(bool exported = false) {
     Line head = lines_[i_++];
     if (starts_with(head.text, "export ")) head.text = trim(head.text.substr(7));
+    if (starts_with(head.text, "pub ")) head.text = trim(head.text.substr(4));
     Domain d;
     d.header = head.text;
     d.name = trim(head.text.substr(7));
@@ -1401,7 +1968,7 @@ class Parser {
         fail(head, "handler must be 'on Name(args...)' or 'fn Name(args...) -> Type'");
       string type = trim(suffix.substr(2));
       if (type.empty()) fail(head, "reply type is required after '->'");
-      h.reply_type = canonical_type_name(std::move(type));
+      h.set_reply_type(canonical_type_name(std::move(type)));
     }
     h.line = head.no;
     h.body = parse_stmt_block(member_indent + indent_unit_);
@@ -1442,6 +2009,7 @@ class Parser {
   Function parse_function(bool exported = false) {
     Line head = lines_[i_++];
     if (starts_with(head.text, "export ")) head.text = trim(head.text.substr(7));
+    if (starts_with(head.text, "pub ")) head.text = trim(head.text.substr(4));
     string sig = trim(head.text.substr(3));
     auto lp = sig.find('('), rp = matching_paren(sig, lp);
     if (lp == string::npos || rp == string::npos || rp < lp)
@@ -1460,7 +2028,7 @@ class Parser {
                             equal == string::npos ? suffix.size() : equal);
       string type = trim(suffix.substr(0, end));
       if (type.empty()) fail(head, "function return type is required after '->'");
-      f.return_type = canonical_type_name(type);
+      f.set_return_type(canonical_type_name(type));
       suffix = trim(suffix.substr(end));
     }
     f.line = head.no;
@@ -1832,8 +2400,8 @@ static const Method* resolve_object_method(
     const ObjectMap& objects, const string& type, const string& name,
     const vector<string>& argument_types, bool unknown_argument_is_wildcard,
     MethodResolutionFailure* failure) {
-  if (failure) *failure = MethodResolutionFailure::None;
-  auto object = objects.find(canonical_type_name(type));
+  string tname = nominal_template_name(type);
+  auto object = objects.find(tname);
   if (object == objects.end()) {
     if (failure) *failure = MethodResolutionFailure::UnknownReceiver;
     return nullptr;
@@ -1849,9 +2417,12 @@ static const Method* resolve_object_method(
     bool compatible = true;
     for (size_t index = 0; index < argument_types.size(); ++index) {
       if (argument_types[index].empty() && unknown_argument_is_wildcard) continue;
-      if (argument_types[index].empty() || method.params[index].type.empty() ||
-          canonical_type_name(method.params[index].type) !=
-              canonical_type_name(argument_types[index])) {
+      string param_type = canonical_type_name(method.params[index].type);
+      if (param_type == tname && is_nominal_instance_type(type)) {
+        param_type = canonical_type_name(type);
+      }
+      if (argument_types[index].empty() || param_type.empty() ||
+          param_type != canonical_type_name(argument_types[index])) {
         compatible = false;
         break;
       }
@@ -1891,6 +2462,16 @@ class Checker {
                        "InUse", "Full", "IO"}},
         {"ParseError", {"Invalid", "Overflow"}},
         {"ConversionError", {"NonFinite", "Overflow"}}};
+    // A legacy source declaration of a standard error (`enum ParseError:`)
+    // is rewritten to the std spelling at parse time. It is the compiler's
+    // own standard error, so it keeps the std declaration identity.
+    for (auto& declaration : p_.enums)
+      for (const auto& [short_name, cases] : standard_errors)
+        if (declaration.name == standard_error_identity(short_name) &&
+            declaration.defining_module.empty()) {
+          declaration.defining_module = "std";
+          declaration.declaration_name = short_name;
+        }
     for (const auto& [short_name, cases] : standard_errors) {
       const string identity = standard_error_identity(short_name);
       const bool present = std::any_of(p_.enums.begin(), p_.enums.end(),
@@ -1900,6 +2481,8 @@ class Checker {
       if (present) continue;
       EnumType declaration;
       declaration.name = identity;
+      declaration.defining_module = "std";
+      declaration.declaration_name = short_name;
       declaration.header = "compiler standard error " + string(short_name);
       declaration.source_file = "<moss-std>";
       for (const auto& name : cases)
@@ -1912,6 +2495,8 @@ class Checker {
                         "' is reserved by Moss test assertions");
       if (!functions_.emplace(f.name, &f).second)
         err(f.source_file, f.line, "duplicate function: " + f.name);
+      if (!f.semantic_callable_id.empty())
+        callable_id_to_function_[f.semantic_callable_id] = &f;
     }
     for (auto& d : p_.domains) {
       if (!domains_.emplace(d.name, &d).second)
@@ -1920,21 +2505,126 @@ class Checker {
     for (auto& o : p_.objects) {
       if (!objects_.emplace(o.name, &o).second)
         err(o.source_file, o.line, "duplicate object type: " + o.name);
+      if (domains_.count(o.name))
+        err(o.source_file, o.line, "type '" + o.name +
+            "' has the same name as a domain; one name names one declaration",
+            "DUPLICATE_SYMBOL");
     }
     for (auto& e : p_.enums) {
-      if (!enums_.emplace(e.name, &e).second || objects_.count(e.name) ||
-          domains_.count(e.name))
-        err(e.source_file, e.line, "duplicate enum type: " + e.name);
+      const bool clash = !enums_.emplace(e.name, &e).second ||
+          objects_.count(e.name) || domains_.count(e.name);
+      if (!clash) continue;
+      // Report a collision with a compiler standard error at the user's
+      // declaration, naming the standard type it would redeclare.
+      if (e.source_file == "<moss-std>") {
+        string source = e.source_file;
+        int line = e.line;
+        if (auto object = objects_.find(e.name); object != objects_.end()) {
+          source = object->second->source_file;
+          line = object->second->line;
+        } else if (auto domain = domains_.find(e.name); domain != domains_.end()) {
+          source = domain->second->source_file;
+          line = domain->second->line;
+        }
+        err(source, line, "'" + e.declaration_name +
+            "' names the compiler standard error std." + e.declaration_name +
+            "; choose another name", "DUPLICATE_SYMBOL");
+      }
+      err(e.source_file, e.line, "duplicate enum type: " + e.name, "DUPLICATE_SYMBOL");
     }
+    // Semantic name resolution: every nominal declaration is interned once
+    // and stays bound to its identity for the rest of this session.
+    build_type_context(p_);
+    type_scope_ = std::make_unique<moss::TypeContext::Scope>(p_.type_context.get());
+    for (auto& f : p_.functions) {
+      for (auto& param : f.params) {
+        if (!param.type_ref && !param.type.empty() && !open_generic(param.type)) {
+          auto parsed = moss::Type::parse_canonical(param.type);
+          if (parsed && (*parsed)->is_closed()) param.bind_type(*parsed);
+        }
+      }
+      if (!f.return_type_ref && f.return_type && !f.return_type->empty() &&
+          !open_generic(*f.return_type) && !contains_internal_placeholder(*f.return_type)) {
+        auto parsed = moss::Type::parse_canonical(*f.return_type);
+        if (parsed && (*parsed)->is_closed()) f.bind_return_type(*parsed);
+      }
+    }
+    for (auto& obj : p_.objects) {
+      for (auto& m : obj.methods) {
+        for (auto& param : m.params) {
+          if (!param.type_ref && !param.type.empty() && !open_generic(param.type)) {
+            auto parsed = moss::Type::parse_canonical(param.type);
+            if (parsed && (*parsed)->is_closed()) param.bind_type(*parsed);
+          }
+        }
+        if (!m.return_type_ref && m.return_type && !m.return_type->empty() &&
+            !open_generic(*m.return_type) && !contains_internal_placeholder(*m.return_type)) {
+          auto parsed = moss::Type::parse_canonical(*m.return_type);
+          if (parsed && (*parsed)->is_closed()) m.bind_return_type(*parsed);
+        }
+      }
+    }
+    for (auto& d : p_.domains) {
+      for (auto& h : d.handlers) {
+        for (auto& param : h.params) {
+          if (!param.type_ref && !param.type.empty() && !open_generic(param.type)) {
+            auto parsed = moss::Type::parse_canonical(param.type);
+            if (parsed && (*parsed)->is_closed()) param.bind_type(*parsed);
+          }
+        }
+        if (!h.reply_type_ref && h.reply_type && !h.reply_type->empty() &&
+            !open_generic(*h.reply_type) && !contains_internal_placeholder(*h.reply_type)) {
+          auto parsed = moss::Type::parse_canonical(*h.reply_type);
+          if (parsed && (*parsed)->is_closed()) h.bind_reply_type(*parsed);
+        }
+      }
+    }
+    for (auto& t : p_.traits) {
+      for (auto& m : t.methods) {
+        for (auto& param : m.params) {
+          if (!param.type_ref && !param.type.empty() && !open_generic(param.type)) {
+            auto parsed = moss::Type::parse_canonical(param.type);
+            if (parsed && (*parsed)->is_closed()) param.bind_type(*parsed);
+          }
+        }
+        if (!m.return_type_ref && m.return_type && !m.return_type->empty() &&
+            !open_generic(*m.return_type) && !contains_internal_placeholder(*m.return_type)) {
+          auto parsed = moss::Type::parse_canonical(*m.return_type);
+          if (parsed && (*parsed)->is_closed()) m.bind_return_type(*parsed);
+        }
+      }
+    }
+    p_.assert_declaration_type_consistency();
     for (auto& t : p_.traits) {
       if (!traits_.emplace(t.name, &t).second)
         err(t.source_file, t.line, "duplicate trait: " + t.name);
+      if (auto standard = enums_.find(t.name);
+          standard != enums_.end() && standard->second->source_file == "<moss-std>")
+        err(t.source_file, t.line, "'" + standard->second->declaration_name +
+            "' names the compiler standard error std." +
+            standard->second->declaration_name + "; choose another name",
+            "DUPLICATE_SYMBOL");
+      if (objects_.count(t.name) || enums_.count(t.name) || domains_.count(t.name))
+        err(t.source_file, t.line, "trait '" + t.name +
+            "' has the same name as a type, enum, or domain; one name names one declaration",
+            "DUPLICATE_SYMBOL");
     }
+    // `Iterator` names the standard iteration trait.
+    const string reserved = "Iterator";
+    if (auto object = objects_.find(reserved); object != objects_.end())
+      err(object->second->source_file, object->second->line,
+          "'Iterator' is reserved by the standard iteration trait", "DUPLICATE_SYMBOL");
+    if (auto enumeration = enums_.find(reserved); enumeration != enums_.end())
+      err(enumeration->second->source_file, enumeration->second->line,
+          "'Iterator' is reserved by the standard iteration trait", "DUPLICATE_SYMBOL");
+    if (auto domain = domains_.find(reserved); domain != domains_.end())
+      err(domain->second->source_file, domain->second->line,
+          "'Iterator' is reserved by the standard iteration trait", "DUPLICATE_SYMBOL");
     iterator_trait_.name = "Iterator";
     iterator_trait_.header = "trait Iterator";
     TraitMethod next;
     next.name = "next";
-    next.return_type = "option[_]";
+    next.set_return_type("option[_]");
     iterator_trait_.methods.push_back(std::move(next));
     if (!traits_.emplace(iterator_trait_.name, &iterator_trait_).second)
       err(p_.traits.front().source_file, p_.traits.front().line,
@@ -1948,6 +2638,7 @@ class Checker {
     // Seed internal structural/generic parameter relations before cross-reference inference.
     infer_function_signatures(false);
     infer_object_fields();
+    check_object_layout_cycles();
     check_enums();
     check_traits();
     check_objects();
@@ -1963,10 +2654,38 @@ class Checker {
     infer_domain_state_fields(true);
     infer_handler_reply_types(true);
     infer_function_signatures(true);
+    build_open_callable_summaries();
     check_domain_handle_declarations();
     check_objects();
+    check_declared_map_key_types();
     check_local_call_cycles();
+    for (auto& function : p_.functions) {
+      if (!function.open_summary) continue;
+      for (const auto& edge : p_.semantic_call_edges) {
+        if (edge.source != "fn:" + function.name ||
+            !starts_with(edge.target, "fn:")) continue;
+        auto dependency = functions_.find(edge.target.substr(3));
+        if (dependency == functions_.end() ||
+            dependency->second->semantic_callable_id.empty())
+          throw std::invalid_argument(
+              "checked open summary has unresolved callable dependency");
+        const string& identity = dependency->second->semantic_callable_id;
+        auto& dependencies = function.open_summary->semantic_dependencies;
+        if (std::find(dependencies.begin(), dependencies.end(), identity) ==
+            dependencies.end())
+          dependencies.push_back(identity);
+      }
+    }
     { CompilerStageTimer timer("effects"); infer_effects(); infer_observable_effects(); }
+    for (auto& function : p_.functions)
+      if (function.open_summary) {
+        function.open_summary->observable_effects = function.observable_effects;
+        for (const auto effect : function.parameter_effects)
+          function.open_summary->parameter_access.push_back(
+              effect == Effect::Consume ? moss::AccessMode::Consume :
+              effect == Effect::Write ? moss::AccessMode::Write :
+                                        moss::AccessMode::Read);
+      }
     // Discard early summaries together so dependencies cannot reuse another
     // instance's pre-fixed-point effects while these are rebuilt.
     for (auto& function : p_.functions)
@@ -1977,6 +2696,7 @@ class Checker {
         specialization.parameter_effects = concrete_function_effects(
             function, specialization.parameter_types, &specialization.parameter_mutations);
       }
+    final_parameter_effects_ready_ = true;
     validate_borrowed_view_write_effects();
     { CompilerStageTimer timer("concrete_graph"); build_concrete_domain_graph(); }
     check_method_ownership();
@@ -1999,6 +2719,17 @@ class Checker {
         specialization.observable_effects =
             concrete_function_observable_effects(
                 function, specialization.parameter_types);
+    for (const auto& function : p_.functions)
+      for (const auto& specialization : function.specializations) {
+        const auto rechecked = concrete_function_observable_effects(
+            function, specialization.parameter_types);
+        if (!same_observable_effects(specialization.observable_effects,
+                                     rechecked))
+          err(function.line,
+              "static specialization has inconsistent observable effects for one key",
+              "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+      }
+    retain_checked_body_ir();
     { CompilerStageTimer timer("synchronization_plan"); build_synchronization_plan(p_.concrete_domain_graph); }
     warn_fileio_blocking_with_shared_write();
     retain_checked_type_uses();
@@ -2024,13 +2755,18 @@ class Checker {
                           left.call_site_identity == right.call_site_identity;
                     }),
         p_.semantic_uses.end());
+    // Retain the typed compiler-facing handoff from the facts just checked.
+    // This pass neither infers types nor parses diagnostic/display strings.
+    p_.typed_semantics = std::make_shared<moss::TypedSemanticModuleV1>(
+        moss::project_typed_semantics_v1(p_));
+    p_.assert_declaration_type_consistency();
   }
 
   const vector<Warning>& warnings() const { return warnings_; }
 
   vector<FunctionalOperationDescriptor> legal_functional_operations(
       const string& expression,
-      const std::unordered_map<string,string>& env) const {
+      const TypeEnv& env) const {
     auto state = inferred_functional_pipeline_state(expression, env, true);
     vector<FunctionalOperationDescriptor> legal;
     if (!state) return legal;
@@ -2043,6 +2779,27 @@ class Checker {
  private:
   Program& p_;
   std::unordered_map<string, Function*> functions_;
+  std::unordered_map<string, Function*> callable_id_to_function_;
+
+  Function* find_function_by_callable_id(const string& id) {
+    if (id.empty()) return nullptr;
+    auto it = callable_id_to_function_.find(id);
+    if (it != callable_id_to_function_.end()) return it->second;
+    for (auto& [name, fn] : functions_) {
+      if (fn && fn->semantic_callable_id == id) return fn;
+    }
+    return nullptr;
+  }
+
+  const Function* find_function_by_callable_id(const string& id) const {
+    if (id.empty()) return nullptr;
+    auto it = callable_id_to_function_.find(id);
+    if (it != callable_id_to_function_.end()) return it->second;
+    for (const auto& [name, fn] : functions_) {
+      if (fn && fn->semantic_callable_id == id) return fn;
+    }
+    return nullptr;
+  }
   std::unordered_map<string, Domain*> domains_;
   std::unordered_map<string, ObjectType*> objects_;
   std::unordered_map<string, EnumType*> enums_;
@@ -2053,15 +2810,613 @@ class Checker {
   // encountered through this path have concrete types, unlike the generic
   // call edges retained for recursion/effect analysis.
   FunctionSpecialization* checking_specialization_ = nullptr;
+  // Rechecks during the final body pass compare against effects computed after
+  // inference reaches its fixed point, never against early registration facts.
+  bool final_parameter_effects_ready_ = false;
+  std::unique_ptr<moss::TypeContext::Scope> type_scope_;
   mutable vector<bool>* parameter_mutation_capture_ = nullptr;
   mutable string current_source_file_;
   string current_semantic_context_;
+  const Stmt* current_check_statement_ = nullptr;
+  string current_check_body_context_;
+  const Function* current_check_result_function_ = nullptr;
   mutable const Stmt* ownership_current_stmt_ = nullptr;
   vector<Warning> warnings_;
   bool phase21_warnings_enabled_ = true;
 
-  using TypeEnv = std::unordered_map<string,string>;
+  using TypeEnv = moss::TypeEnv;
   using TypeEnvVisitor = std::function<void(const Stmt&, const TypeEnv&)>;
+  struct BodyTypeState;
+  mutable BodyTypeState* current_body_types_ = nullptr;
+
+  // One solver owns the terms inferred for a checked body. The string
+  // environment remains a projection for older walkers and lowering; it is
+  // never used to recreate the term of a local already present here.
+  struct BodyTypeState {
+    moss::TypeSolver solver{1};
+    std::unordered_map<string, moss::TypeRef> locals;
+    std::unordered_map<const Stmt*,
+        std::unordered_map<string, moss::TypeRef>> locals_at_statement;
+    // A for binding is lexical, even when it uses the name of an outer open
+    // local. Keep its term at the statement and activate it only in the body.
+    std::unordered_map<const Stmt*, moss::TypeRef> for_bindings;
+    std::unordered_map<string, moss::TypeRef> scoped_locals;
+    bool scoped_locals_active = false;
+    std::unordered_map<const Stmt*, moss::TypeRef> assignment_values;
+    TypeEnv closed_projection;
+
+    moss::TypeRef assignment_value(const Stmt& statement) {
+      auto found = assignment_values.find(&statement);
+      return found == assignment_values.end()
+          ? nullptr : solver.resolve(found->second);
+    }
+
+    moss::TypeRef resolved_local(const string& name) {
+      auto scoped = scoped_locals.find(name);
+      if (scoped != scoped_locals.end())
+        return scoped->second ? solver.resolve(scoped->second) : nullptr;
+      if (scoped_locals_active) return nullptr;
+      auto found = locals.find(name);
+      return found == locals.end() ? nullptr : solver.resolve(found->second);
+    }
+
+    static moss::TypeRef nominal_field(const moss::TypeRef& receiver,
+                                       const string& field) {
+      if (!receiver || receiver->kind != moss::TypeKind::NominalInstance ||
+          !receiver->declaration) return nullptr;
+      for (size_t index = 0; index < receiver->declaration->fields.size(); ++index) {
+        const auto& slot = receiver->declaration->fields[index];
+        if (slot.name != field) continue;
+        if (slot.inferred) {
+          auto bound = std::find_if(receiver->field_substitutions.begin(),
+              receiver->field_substitutions.end(),
+              [&](const auto& item) { return item.first == field; });
+          return bound == receiver->field_substitutions.end()
+              ? nullptr : bound->second;
+        }
+        auto owner = receiver->declaration->owner.lock();
+        if (!owner) return nullptr;
+        const auto& annotations = owner->field_annotations(receiver->declaration->id);
+        return index < annotations.size() ? annotations[index] : nullptr;
+      }
+      return nullptr;
+    }
+
+    moss::TypeRef known_expression(const string& expression) {
+      const string value = trim(expression);
+      if (auto local = resolved_local(value)) return local;
+      string base, index;
+      if (parse_index(value, base, index)) {
+        auto container = known_expression(base);
+        if (container && container->kind == moss::TypeKind::Builtin) {
+          if ((container->name == "vector" || container->name == "queue") &&
+              container->type_args.size() == 1)
+            return solver.resolve(container->type_args[0]);
+          if (container->name == "map" && container->type_args.size() == 2)
+            return solver.resolve(container->type_args[1]);
+        }
+      }
+      const size_t dot = value.rfind('.');
+      if (dot != string::npos) {
+        auto receiver = known_expression(value.substr(0, dot));
+        if (auto field = nominal_field(receiver, value.substr(dot + 1)))
+          return solver.resolve(field);
+      }
+      return nullptr;
+    }
+  };
+  std::unordered_map<const vector<Stmt>*, std::shared_ptr<BodyTypeState>>
+      checked_body_states_;
+
+  struct BodyTypeScope {
+    BodyTypeState*& slot;
+    BodyTypeState* previous;
+    BodyTypeScope(BodyTypeState*& target, BodyTypeState* current)
+        : slot(target), previous(target) {
+      slot = current;
+      if (slot) {
+        slot->scoped_locals_active = false;
+        slot->scoped_locals.clear();
+      }
+    }
+    ~BodyTypeScope() {
+      if (slot) {
+        slot->scoped_locals_active = false;
+        slot->scoped_locals.clear();
+      }
+      slot = previous;
+    }
+  };
+
+  // Materialize only body forms whose operands can be tied to checked summary
+  // slots. No source spelling or physical path participates in the hash.
+  void retain_checked_body_ir() {
+    for (auto& function : p_.functions) {
+      function.checked_body_v1.reset();
+      if (compiled_interface_file(function.source_file)) continue;
+      if (!function.open_summary || !function.open_summary->complete) continue;
+      const auto& summary = *function.open_summary;
+      string expression;
+      if (function.body.empty() && function.result_expression)
+        expression = *function.result_expression;
+      else if (function.body.size() == 1 &&
+               function.body[0].kind == Stmt::Kind::Return)
+        expression = function.body[0].a;
+      else continue;
+      std::function<std::optional<moss::CheckedBodyExprV1>(
+          const string&, const moss::TypeRef&, unsigned)> emit =
+          [&](const string& source, const moss::TypeRef& expected,
+              unsigned depth) -> std::optional<moss::CheckedBodyExprV1> {
+        if (depth > 8) return std::nullopt;
+        string value = trim(source);
+        for (size_t index = 0; index < function.params.size(); ++index)
+          if (value == function.params[index].name &&
+              index < summary.parameter_types.size() &&
+              summary.parameter_types[index] &&
+              (!expected || summary.parameter_types[index]->structurally_equal(*expected)))
+            return moss::CheckedBodyExprV1{
+                moss::CheckedBodyExprV1::Kind::Parameter,
+                summary.parameter_types[index],
+                static_cast<std::uint32_t>(index), {}, {}, {}, 0};
+        if (!value.empty() && std::all_of(value.begin(), value.end(),
+              [](unsigned char c) { return std::isdigit(c); })) {
+          try {
+            size_t consumed = 0;
+            const auto number = std::stoll(value, &consumed, 10);
+            if (consumed == value.size()) {
+              auto integer = moss::Type::primitive("int");
+              if (!expected || integer->structurally_equal(*expected))
+                return moss::CheckedBodyExprV1{
+                    moss::CheckedBodyExprV1::Kind::Integer,
+                    integer, 0, std::to_string(number), {}, {}, 0};
+            }
+          } catch (const std::exception&) {}
+        }
+        auto binary = split_binary(value, {"+"});
+        if (binary) {
+          auto left = emit(binary->first, nullptr, depth + 1);
+          auto right = emit(binary->second, nullptr, depth + 1);
+          if (left && right && expected)
+            return moss::CheckedBodyExprV1{
+                moss::CheckedBodyExprV1::Kind::Add,
+                expected, 0, {}, {*left, *right}, {}, 0};
+        }
+        const size_t dot = value.find('.');
+        if (dot != string::npos && value.find('.', dot + 1) == string::npos) {
+          auto receiver = emit(value.substr(0, dot), nullptr, depth + 1);
+          if (receiver && receiver->type &&
+              receiver->type->kind == moss::TypeKind::NominalInstance &&
+              receiver->type->declaration) {
+            auto field = BodyTypeState::nominal_field(
+                receiver->type, value.substr(dot + 1));
+            if (field && (!expected || field->structurally_equal(*expected))) {
+              const auto& slots = receiver->type->declaration->fields;
+              for (size_t index = 0; index < slots.size(); ++index)
+                if (slots[index].name == value.substr(dot + 1))
+                  return moss::CheckedBodyExprV1{
+                      moss::CheckedBodyExprV1::Kind::Field,
+                      field, 0, {}, {*receiver},
+                      receiver->type->declaration->id,
+                      static_cast<std::uint32_t>(index)};
+            }
+          }
+        }
+        if (auto elements = parse_vector_literal(value);
+            elements && expected && expected->kind == moss::TypeKind::Builtin &&
+            expected->name == "vector" && expected->type_args.size() == 1) {
+          vector<moss::CheckedBodyExprV1> children;
+          for (const auto& element : *elements) {
+            auto child = emit(element, expected->type_args[0], depth + 1);
+            if (!child) return std::nullopt;
+            children.push_back(*child);
+          }
+          return moss::CheckedBodyExprV1{
+              moss::CheckedBodyExprV1::Kind::VectorLiteral,
+              expected, 0, {}, std::move(children), {}, 0};
+        }
+        string callee;
+        vector<string> arguments;
+        if (parse_simple_call(value, callee, arguments) && expected) {
+          // A source spelling and a dependency-set membership do not identify
+          // this call occurrence. Require one exact checker call edge at the
+          // return site before retaining a callable target in the body IR.
+          const int return_line = function.result_expression
+              ? function.result_line : function.body.front().line;
+          const moss::SemanticCallEdge* selected_edge = nullptr;
+          for (const auto& edge : p_.semantic_call_edges) {
+            if (edge.source != "fn:" + function.name ||
+                edge.line != return_line ||
+                edge.invocation_kind != "ordinary_call" ||
+                edge.source_specialization_key.size()) continue;
+            if (selected_edge) return std::nullopt;
+            selected_edge = &edge;
+          }
+          if (!selected_edge || selected_edge->occurrence != 0) return std::nullopt;
+          const Function* selected = nullptr;
+          for (const auto& candidate : p_.functions)
+            if (candidate.name == callee &&
+                selected_edge->target == "fn:" + candidate.name &&
+                candidate.params.size() == arguments.size() &&
+                std::find(summary.semantic_dependencies.begin(),
+                          summary.semantic_dependencies.end(),
+                          candidate.semantic_callable_id) !=
+                    summary.semantic_dependencies.end()) {
+              if (selected) return std::nullopt;
+              selected = &candidate;
+            }
+          if (selected) {
+            vector<moss::CheckedBodyExprV1> children;
+            for (const auto& argument : arguments) {
+              auto child = emit(argument, nullptr, depth + 1);
+              if (!child) return std::nullopt;
+              children.push_back(*child);
+            }
+            return moss::CheckedBodyExprV1{
+                moss::CheckedBodyExprV1::Kind::Call,
+                expected, 0, {}, std::move(children),
+                selected->semantic_callable_id, 0};
+          }
+        }
+        return std::nullopt;
+      };
+      std::optional<moss::CheckedBodyExprV1> result =
+          emit(expression, summary.result_type, 0);
+      if (!result || !summary.result_type) continue;
+      if (result->kind != moss::CheckedBodyExprV1::Kind::Add &&
+          result->kind != moss::CheckedBodyExprV1::Kind::Field &&
+          result->kind != moss::CheckedBodyExprV1::Kind::VectorLiteral &&
+          result->kind != moss::CheckedBodyExprV1::Kind::Call &&
+          !result->type->structurally_equal(*summary.result_type)) continue;
+      vector<moss::CheckedBodyStmtV1> statements{{
+          moss::CheckedBodyStmtV1::Kind::Return, *result}};
+      function.checked_body_v1 = moss::CheckedBodyV1{
+          statements, moss::checked_body_semantic_hash_v1(statements)};
+    }
+  }
+
+  void build_open_callable_summaries() {
+    for (auto& function : p_.functions) {
+      OpenCallableSummaryFacts summary;
+      summary.callable_id = function.semantic_callable_id;
+      summary.origin.module_id =
+          program_module_identity(p_, function.defining_module);
+      summary.origin.source_file = function.source_file;
+      summary.origin.line = function.line;
+      summary.origin.enclosing_callable = function.semantic_callable_id;
+      std::unordered_map<string, moss::TypeRef> parameter_variables;
+      auto bound = [&]() {
+        return moss::Type::var(moss::TypeVarId{
+            0, 0, summary.bound_variable_count++});
+      };
+      std::function<moss::TypeRef(const moss::TypeRef&)> openize =
+          [&](const moss::TypeRef& type) -> moss::TypeRef {
+        if (!type) return nullptr;
+        if (type->kind == moss::TypeKind::Builtin) {
+          vector<moss::TypeRef> args;
+          auto arity = moss::Type::collection_arity(type->name);
+          if (arity && type->type_args.empty()) {
+            for (size_t index = 0; index < *arity; ++index) args.push_back(bound());
+          } else {
+            if (arity && type->type_args.size() != *arity) return nullptr;
+            for (const auto& arg : type->type_args) {
+              auto opened = openize(arg);
+              if (!opened) return nullptr;
+              args.push_back(opened);
+            }
+          }
+          return moss::Type::builtin(type->name, std::move(args));
+        }
+        if (type->is_bare_template()) {
+          vector<std::pair<string, moss::TypeRef>> substitutions;
+          for (const auto& slot : type->declaration->fields)
+            if (slot.inferred) substitutions.emplace_back(slot.name, bound());
+          return moss::Type::nominal_bound(type->declaration, type->name,
+                                           std::move(substitutions));
+        }
+        if (type->kind == moss::TypeKind::NominalInstance) {
+          vector<std::pair<string, moss::TypeRef>> substitutions;
+          for (const auto& slot : type->field_substitutions) {
+            auto opened = openize(slot.second);
+            if (!opened) return nullptr;
+            substitutions.emplace_back(slot.first, opened);
+          }
+          return moss::Type::nominal_bound(type->declaration, type->name,
+                                           std::move(substitutions));
+        }
+        return type->is_closed() ? type : nullptr;
+      };
+      auto type_term = [&](const string& spelling) -> moss::TypeRef {
+        if (contains_internal_placeholder(spelling)) return nullptr;
+        auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
+        return parsed ? openize(*parsed) : nullptr;
+      };
+      bool complete = true;
+      for (const auto& parameter : function.params) {
+        moss::TypeRef term = parameter.type.empty() ? bound() :
+            type_term(parameter.type);
+        if (!term) complete = false;
+        summary.parameter_types.push_back(term);
+        parameter_variables.emplace(parameter.name, term);
+      }
+      std::unordered_map<string, moss::TypeRef> element_relations;
+      auto element_relation = [&](const string& key) -> moss::TypeRef {
+        auto known = element_relations.find(key);
+        if (known != element_relations.end()) return known->second;
+        if (!starts_with(key, "element:")) return nullptr;
+        auto source = parameter_variables.find(key.substr(8));
+        if (source == parameter_variables.end() || !source->second) return nullptr;
+        moss::TypeRef element;
+        if (source->second->kind == moss::TypeKind::Builtin &&
+            !source->second->type_args.empty())
+          element = source->second->type_args.back();
+        else
+          element = bound();
+        element_relations.emplace(key, element);
+        return element;
+      };
+      const string result = function.return_type
+          ? canonical_type_name(*function.return_type) : "unit";
+      std::optional<std::pair<string, string>> returned_member;
+      if (open_generic(result)) {
+        auto source = parameter_variables.find(result.substr(9));
+        if (source == parameter_variables.end()) {
+          complete = false;
+        } else {
+          summary.result_type = source->second;
+          const string* returned = function.result_expression
+              ? &*function.result_expression :
+              !function.body.empty() &&
+                  function.body.back().kind == Stmt::Kind::Return
+                  ? &function.body.back().a : nullptr;
+          if (returned) {
+            if (trim(*returned) != result.substr(9)) {
+              TypeEnv parameter_entry;
+              for (const auto& parameter : function.params)
+                parameter_entry[parameter.name] = parameter.type.empty()
+                    ? "_generic:" + parameter.name : parameter.type;
+              auto body_types = solve_local_collection_types(
+                  function.body, parameter_entry,
+                  "fn:" + function.name, false, true);
+              auto actual = body_types.known_expression(*returned);
+              if (actual && actual->is_closed())
+                summary.result_type = actual;
+              else {
+                string receiver, member;
+                vector<string> arguments;
+                if (parse_member_call(trim(*returned), receiver, member,
+                                      arguments) &&
+                    std::any_of(function.constraints.begin(),
+                                function.constraints.end(),
+                                [&](const Constraint& constraint) {
+                      return constraint.kind == ConstraintKind::Method &&
+                             constraint.subject == trim(receiver) &&
+                             constraint.detail == member &&
+                             constraint.arguments == arguments;
+                    })) {
+                  summary.result_type = bound();
+                  returned_member = std::make_pair(trim(receiver), member);
+                } else {
+                  complete = false;
+                }
+              }
+            }
+          } else {
+            complete = false;
+          }
+        }
+      } else if (starts_with(result, "_method_result:")) {
+        summary.result_type = bound();
+      } else if (starts_with(result, "_element:")) {
+        summary.result_type = element_relation(result.substr(9));
+        if (!summary.result_type) complete = false;
+      } else if (!contains_internal_placeholder(result)) {
+        summary.result_type = type_term(result);
+      }
+      // A specialized result can still have a precise relation to an open
+      // parameter. Retain the relation on TypeRefs while the defining nominal
+      // declaration is in scope, before a consumer freshens this summary.
+      const string* single_result_expression = function.result_expression
+          ? &*function.result_expression :
+          function.body.size() == 1 &&
+              function.body.front().kind == Stmt::Kind::Return
+              ? &function.body.front().a : nullptr;
+      const int single_result_line = function.result_expression
+          ? function.result_line : function.body.size() == 1
+              ? function.body.front().line : function.line;
+      if (!summary.result_type && single_result_expression &&
+          (function.body.empty() ||
+           (function.body.size() == 1 &&
+            function.body.front().kind == Stmt::Kind::Return))) {
+        const string expression = trim(*single_result_expression);
+        const size_t dot = expression.find('.');
+        if (dot != string::npos &&
+            expression.find('.', dot + 1) == string::npos) {
+          auto receiver = parameter_variables.find(trim(expression.substr(0, dot)));
+          const string field = trim(expression.substr(dot + 1));
+          if (receiver != parameter_variables.end() && plain_identifier(field)) {
+            const auto& type = receiver->second;
+            if (type && type->kind == moss::TypeKind::NominalInstance &&
+                type->declaration) {
+              const auto& slots = type->declaration->fields;
+              for (size_t index = 0; index < slots.size(); ++index) {
+                if (slots[index].name != field) continue;
+                if (slots[index].inferred) {
+                  for (const auto& substitution : type->field_substitutions)
+                    if (substitution.first == field)
+                      summary.result_type = substitution.second;
+                } else if (auto owner = type->declaration->owner.lock()) {
+                  const auto& annotations = owner->field_annotations(
+                      type->declaration->id);
+                  if (index < annotations.size())
+                    summary.result_type = openize(annotations[index]);
+                }
+                break;
+              }
+            }
+          }
+        }
+        if (!summary.result_type) {
+          if (auto binary = split_binary(expression, {"+"})) {
+            for (const auto& parameter : function.params) {
+              const string left = trim(binary->first);
+              const string right = trim(binary->second);
+              const bool parameter_left = left == parameter.name;
+              const bool parameter_right = right == parameter.name;
+              if (parameter_left == parameter_right) continue;
+              const string& operand = parameter_left ? right : left;
+              if (constraint_expression_type(function, operand) !=
+                  std::optional<string>("int")) continue;
+              auto subject = parameter_variables.find(parameter.name);
+              if (subject == parameter_variables.end() || !subject->second)
+                continue;
+              summary.result_type = subject->second;
+              moss::Requirement requirement;
+              requirement.id = function.semantic_callable_id +
+                  ":requirement:return-operator";
+              requirement.kind = moss::RequirementKind::Operator;
+              requirement.target_id = "operator:+";
+              requirement.subject = subject->second;
+              requirement.arguments.push_back(moss::Type::primitive("int"));
+              requirement.argument_access.push_back(moss::AccessMode::Read);
+              requirement.result = subject->second;
+              requirement.origin = {summary.origin.module_id,
+                                    function.source_file, single_result_line,
+                                    1, function.semantic_callable_id,
+                                    requirement.id};
+              summary.requirements.push_back(std::move(requirement));
+              break;
+            }
+          }
+        }
+      }
+      for (size_t ordinal = 0; ordinal < function.constraints.size(); ++ordinal) {
+        const auto& constraint = function.constraints[ordinal];
+        if (constraint.kind != ConstraintKind::Method) {
+          auto subject = parameter_variables.find(constraint.subject);
+          if (subject == parameter_variables.end() || !subject->second) {
+            complete = false;
+            continue;
+          }
+          moss::Requirement requirement;
+          requirement.id = function.semantic_callable_id + ":requirement:" +
+              std::to_string(ordinal);
+          requirement.subject = subject->second;
+          requirement.origin = {summary.origin.module_id, function.source_file,
+                                function.line, 1, function.semantic_callable_id,
+                                requirement.id};
+          switch (constraint.kind) {
+            case ConstraintKind::Operator:
+              requirement.kind = moss::RequirementKind::Operator;
+              requirement.target_id = "operator:" + constraint.detail;
+              break;
+            case ConstraintKind::Field:
+              requirement.kind = moss::RequirementKind::Field;
+              if (subject->second->kind != moss::TypeKind::NominalInstance ||
+                  !subject->second->declaration ||
+                  std::none_of(subject->second->declaration->fields.begin(),
+                               subject->second->declaration->fields.end(),
+                               [&](const moss::NominalFieldSlot& slot) {
+                    return slot.name == constraint.detail;
+                  })) {
+                complete = false;
+              } else {
+                requirement.target_id = subject->second->declaration->id +
+                    ":field:" + constraint.detail;
+              }
+              break;
+            case ConstraintKind::Indexable:
+              requirement.kind = moss::RequirementKind::Index;
+              requirement.target_id = "builtin:index";
+              break;
+            case ConstraintKind::Iterable:
+              requirement.kind = moss::RequirementKind::Iterate;
+              requirement.target_id = constraint.detail;
+              break;
+            case ConstraintKind::Callable:
+              requirement.kind = moss::RequirementKind::Callable;
+              requirement.target_id = constraint.detail;
+              break;
+            case ConstraintKind::SameType:
+              requirement.kind = moss::RequirementKind::SameType;
+              break;
+            case ConstraintKind::ResultType:
+              requirement.kind = moss::RequirementKind::SameType;
+              break;
+            case ConstraintKind::Method:
+              break;
+          }
+          for (const auto& argument : constraint.arguments) {
+            auto parameter = parameter_variables.find(trim(argument));
+            moss::TypeRef term = parameter != parameter_variables.end()
+                ? parameter->second : type_term(
+                      constraint_expression_type(function, argument).value_or(""));
+            if (!term) complete = false;
+            requirement.arguments.push_back(term);
+            requirement.argument_access.push_back(moss::AccessMode::Read);
+          }
+          if (!constraint.result.empty()) {
+            auto parameter = parameter_variables.find(constraint.result);
+            if (parameter != parameter_variables.end())
+              requirement.result = parameter->second;
+            else if (starts_with(constraint.result, "element:")) {
+              requirement.result = element_relation(constraint.result);
+              if (!requirement.result) complete = false;
+            } else if (!contains_internal_placeholder(constraint.result)) {
+              requirement.result = type_term(constraint.result);
+            }
+          }
+          summary.requirements.push_back(std::move(requirement));
+          continue;
+        }
+        auto receiver = parameter_variables.find(constraint.subject);
+        if (receiver == parameter_variables.end() || !receiver->second) {
+          complete = false;
+          continue;
+        }
+        moss::MemberDispatchRequirement member;
+        member.requirement_id = function.semantic_callable_id + ":member:" +
+            std::to_string(ordinal);
+        member.receiver = receiver->second;
+        member.member_name = constraint.detail;
+        member.origin = {summary.origin.module_id, function.source_file,
+                         function.line, 1, function.semantic_callable_id,
+                         member.requirement_id};
+        for (const auto& argument : constraint.arguments) {
+          auto parameter = parameter_variables.find(trim(argument));
+          moss::TypeRef term = parameter != parameter_variables.end()
+              ? parameter->second : type_term(
+                    constraint_expression_type(function, argument).value_or(""));
+          if (!term) complete = false;
+          member.argument_types.push_back(term);
+          member.argument_access.push_back(moss::AccessMode::Read);
+        }
+        if (!constraint.result.empty() &&
+            starts_with(constraint.result, "_method_result:")) {
+          // An imported generic may project its overall result through a
+          // parameter while still retaining a separate method-result marker.
+          // Only the matching callable result marker relates those terms.
+          member.result = starts_with(result, "_method_result:")
+              ? summary.result_type : bound();
+        } else if (!constraint.result_expectations.empty()) {
+          member.result = type_term(constraint.result_expectations.front());
+          if (!member.result) complete = false;
+        } else {
+          member.result = bound();
+        }
+        if (returned_member &&
+            returned_member->first == constraint.subject &&
+            returned_member->second == constraint.detail)
+          member.result = summary.result_type;
+        summary.member_requirements.push_back(std::move(member));
+      }
+      summary.complete = complete && summary.result_type &&
+          std::all_of(summary.parameter_types.begin(),
+                      summary.parameter_types.end(),
+                      [](const moss::TypeRef& type) { return type != nullptr; });
+      if (summary.bound_variable_count || function.generic)
+        function.open_summary = std::move(summary);
+    }
+  }
 
 #include "static_bounds.inc"
 #include "fileio_semantics.inc"
@@ -2095,6 +3450,16 @@ class Checker {
     throw error;
   }
 
+  // An annotation that does not parse as a structured type is malformed;
+  // one that parses but names nothing known keeps its specific message.
+  [[noreturn]] void invalid_type_err(const string& source_file, int line,
+                                     const string& type, const string& message) const {
+    if (!moss::Type::is_well_formed_syntax(canonical_type_name(type)))
+      err(source_file, line, "malformed type expression '" + type + "'",
+          "MALFORMED_TYPE_EXPRESSION");
+    err(source_file, line, message);
+  }
+
   [[noreturn]] void teaching_err(
       int line, const string& code, const string& message,
       const string& rule_id, const string& rule_summary,
@@ -2116,20 +3481,12 @@ class Checker {
   bool contains_trait_type(const string& t) const {
     string type = canonical_type_name(t);
     if (traits_.count(type)) return true;
-    if ((starts_with(type, "vector[") || starts_with(type, "queue[") ||
-         starts_with(type, "seq[") || starts_with(type, "option[")) &&
-        ends_with(type, "]")) {
-      size_t open = type.find('[');
-      return contains_trait_type(
-          trim(type.substr(open + 1, type.size() - open - 2)));
-    }
-    if ((starts_with(type, "map[") || starts_with(type, "table[")) &&
-        ends_with(type, "]")) {
-      size_t open = type.find('[');
-      auto parts =
-          split_top_level(type.substr(open + 1, type.size() - open - 2), ',');
-      return parts.size() == 2 &&
-          (contains_trait_type(parts[0]) || contains_trait_type(parts[1]));
+    // A trait constraint anywhere inside a built-in application.
+    if (const auto term = parsed_type(type);
+        term && term->kind == moss::TypeKind::Builtin && !term->type_args.empty()) {
+      for (const auto& argument : term->type_args)
+        if (contains_trait_type(argument->to_canonical_string())) return true;
+      return false;
     }
     return false;
   }
@@ -2137,44 +3494,138 @@ class Checker {
   bool contains_enum_type(const string& t) const {
     string type = canonical_type_name(t);
     if (enums_.count(type)) return true;
-    auto bracket = type.find('[');
-    if (bracket != string::npos && ends_with(type, "]"))
-      for (const auto& argument : split_top_level(
-               type.substr(bracket + 1, type.size() - bracket - 2), ','))
-        if (contains_enum_type(argument)) return true;
-    return false;
+    bool enumeration = false;
+    for_each_subterm(parsed_type(type), [&](const moss::TypeRef& nested) {
+      if (nested->kind == moss::TypeKind::Enum) enumeration = true;
+    });
+    return enumeration;
+  }
+
+  // Visit a term and every type nested in it: built-in arguments and a
+  // nominal instance's field substitutions.
+  static void for_each_subterm(const moss::TypeRef& type,
+                               const std::function<void(const moss::TypeRef&)>& visit) {
+    if (!type) return;
+    visit(type);
+    for (const auto& argument : type->type_args) for_each_subterm(argument, visit);
+    for (const auto& field : type->field_substitutions)
+      for_each_subterm(field.second, visit);
+  }
+
+  bool contains_record_type(const string& t) const {
+    string type = canonical_type_name(t);
+    if (objects_.count(type)) return true;
+    bool record = false;
+    for_each_subterm(parsed_type(type), [&](const moss::TypeRef& nested) {
+      if (nested->kind == moss::TypeKind::NominalInstance) record = true;
+    });
+    return record;
+  }
+
+  // Record (nominal) Map keys need the shared MossMap<K,V> and a
+  // key-protocol-v1 KeyProof for their isequal/hash, which arrive at the joint
+  // Team S/Team G integration (TEAM_S_TEAM_G_INTERFACE_AGREEMENT.md §2, §5).
+  // Until then they fail closed here rather than in rustc. The code and message
+  // match Team S's P25-S3-D2 rule (dee3f62) so the joint merge is semantic-neutral.
+  void check_map_key_type(int line, const string& key) const {
+    string type = canonical_type_name(key);
+    if (contains_internal_placeholder(type)) return;
+    if (contains_record_type(type))
+      err(line, "record Map keys ('" + type + "') require the canonical MossMap<K,V> and a key-protocol-v1 key proof (isequal/hash), which are not yet available",
+          "RECORD_MAP_KEY_UNSUPPORTED");
+  }
+
+  // Apply check_map_key_type to every Map nested in a declared type.
+  void check_declared_map_keys(const string& source_file, int line,
+                               const string& declared) {
+    if (declared.empty()) return;
+    auto term = parsed_type(declared);
+    if (!term) return;
+    SourceFileScope scope(current_source_file_, source_file);
+    for_each_subterm(term, [&](const moss::TypeRef& nested) {
+      if (applied_builtin(nested, {"map"}) && nested->type_args.size() == 2)
+        check_map_key_type(line, nested->type_args[0]->to_canonical_string());
+    });
+  }
+
+  void check_declared_map_key_types() {
+    for (const auto& function : p_.functions) {
+      for (const auto& parameter : function.params)
+        check_declared_map_keys(function.source_file, function.line, parameter.type);
+      if (function.return_type)
+        check_declared_map_keys(function.source_file, function.line, *function.return_type);
+    }
+    for (const auto& object : p_.objects) {
+      for (const auto& field : object.fields)
+        check_declared_map_keys(object.source_file, field.line, field.type);
+      for (const auto& method : object.methods) {
+        for (const auto& parameter : method.params)
+          check_declared_map_keys(method.source_file, method.line, parameter.type);
+        if (method.return_type)
+          check_declared_map_keys(method.source_file, method.line, *method.return_type);
+      }
+    }
+    for (const auto& domain : p_.domains) {
+      for (const auto& field : domain.state)
+        check_declared_map_keys(domain.source_file, field.line, field.type);
+      for (const auto& handler : domain.handlers)
+        for (const auto& parameter : handler.params)
+          check_declared_map_keys(handler.source_file, handler.line, parameter.type);
+    }
   }
 
   bool valid_type(const string& t) const {
     string type = canonical_type_name(t);
+    auto parsed = moss::Type::parse_canonical(type);
+    if (!parsed) return false;
+    if ((*parsed)->kind == moss::TypeKind::NominalInstance) {
+      // Resolved at name resolution to an interned declaration. The bare
+      // template is valid; an instance substitutes every inferred slot.
+      const auto& declaration = (*parsed)->declaration;
+      if (!declaration) return false;
+      if ((*parsed)->field_substitutions.empty()) return true;
+      if ((*parsed)->field_substitutions.size() != declaration->inferred_slot_count())
+        return false;
+      size_t index = 0;
+      for (const auto& slot : declaration->fields) {
+        if (!slot.inferred) continue;
+        const auto& actual = (*parsed)->field_substitutions[index++];
+        if (actual.first != slot.name ||
+            !valid_type(actual.second->to_canonical_string())) return false;
+      }
+      return true;
+    }
     if (fileio_forbidden_collection_type(type)) return false;
     if (type == "FileIO" || type == "Range" || type == "RangeBatch") return true;
     if (type == "int" || type == "float" || type == "bool" || type == "string" ||
         type == "unit") return true;
     if (domains_.count(type) || objects_.count(type) || enums_.count(type)) return true;
-    if (traits_.count(type) || type == "vector" || type == "map" || type == "queue") return true;
-    if (starts_with(type, "vector[") && ends_with(type, "]")) {
-      string element = trim(type.substr(7, type.size() - 8));
-      return !contains_trait_type(element) && valid_type(element);
+    if (traits_.count(type)) return true;
+    if ((*parsed)->kind == moss::TypeKind::Builtin) {
+      const auto arity = moss::Type::collection_arity((*parsed)->name);
+      if (arity) {
+        const auto& args = (*parsed)->type_args;
+        if (args.empty()) return true;  // known open built-in constructor
+        if (args.size() != *arity) return false;
+        for (const auto& arg : args) {
+          const string nested = arg->to_canonical_string();
+          if (contains_trait_type(nested) || !valid_type(nested)) return false;
+        }
+        if ((*parsed)->name == "map" &&
+            contains_enum_type(args.front()->to_canonical_string())) return false;
+        return true;
+      }
     }
-    if (starts_with(type, "queue[") && ends_with(type, "]")) {
-      string element = trim(type.substr(6, type.size() - 7));
-      return !contains_trait_type(element) && valid_type(element);
-    }
-    if (starts_with(type, "map[") && ends_with(type, "]")) {
-      auto ps = split_top_level(type.substr(4, type.size()-5), ',');
-      return ps.size() == 2 &&
-          !contains_trait_type(ps[0]) && !contains_trait_type(ps[1]) &&
-          !contains_enum_type(ps[0]) &&
-          valid_type(ps[0]) && valid_type(ps[1]);
-    }
-    if ((starts_with(type, "seq[") || starts_with(type, "option[")) && ends_with(type, "]"))
-      return valid_type(trim(type.substr(type.find('[')+1, type.size()-type.find('[')-2)));
-    if (starts_with(type, "table[") && ends_with(type, "]")) {
-      auto inside = type.substr(6, type.size()-7);
-      auto ps = split_top_level(inside, ',');
-      return ps.size() == 2 && !contains_enum_type(ps[0]) &&
-          valid_type(ps[0]) && valid_type(ps[1]);
+    // seq and option carry one element; table is keyed like a map.
+    if (applied_builtin(*parsed, {"seq", "option"}) &&
+        (*parsed)->type_args.size() == 1)
+      return valid_type((*parsed)->type_args[0]->to_canonical_string());
+    if (applied_builtin(*parsed, {"table"})) {
+      const auto& args = (*parsed)->type_args;
+      return args.size() == 2 &&
+          !contains_enum_type(args[0]->to_canonical_string()) &&
+          valid_type(args[0]->to_canonical_string()) &&
+          valid_type(args[1]->to_canonical_string());
     }
     return false;
   }
@@ -2222,7 +3673,7 @@ class Checker {
 
   std::optional<string> constraint_expression_type(const Function& function,
                                                    const string& expression) const {
-    std::unordered_map<string,string> env;
+    TypeEnv env;
     for (const auto& parameter : function.params)
       if (!parameter.type.empty() && !traits_.count(parameter.type))
         env[parameter.name] = parameter.type;
@@ -2253,7 +3704,7 @@ class Checker {
     if (expected_result == "$function_result") {
       requirement.result = method_result_marker(index);
       if (!function.return_type || starts_with(*function.return_type, "_method_result:"))
-        function.return_type = requirement.result;
+        function.set_return_type(requirement.result);
     } else if (!expected_result.empty() && !contains_internal_placeholder(expected_result)) {
       string expected = canonical_type_name(expected_result);
       if (!requirement.result_expectations.empty() &&
@@ -2330,7 +3781,7 @@ class Checker {
       // typed inference pass below to derive their terminal type.
       if (function.generic && expected_result == "$function_result" &&
           (!function.return_type || contains_internal_placeholder(*function.return_type)))
-        function.return_type = "_functional_result:" + function.name;
+        function.set_return_type("_functional_result:" + function.name);
       return;
     }
     string e = normalize_pipeline(std::move(original));
@@ -2339,7 +3790,7 @@ class Checker {
       string candidate = strip_redundant_outer_parentheses(trim(operand));
       for (auto& parameter : function.params)
         if (parameter.type.empty() && candidate == parameter.name)
-          parameter.type = "bool";
+          parameter.bind_type(moss::Type::primitive("bool"));
       derive_expression_constraints(function, operand, "bool");
     };
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
@@ -2348,7 +3799,7 @@ class Checker {
         constrain_boolean_operand(binary->second);
         if (expected_result == "$function_result" &&
             (!function.return_type || contains_internal_placeholder(*function.return_type)))
-          function.return_type = "bool";
+          function.bind_return_type(moss::Type::primitive("bool"));
         return;
       }
     }
@@ -2356,7 +3807,7 @@ class Checker {
       constrain_boolean_operand(trim(e.substr(4)));
       if (expected_result == "$function_result" &&
           (!function.return_type || contains_internal_placeholder(*function.return_type)))
-        function.return_type = "bool";
+        function.bind_return_type(moss::Type::primitive("bool"));
       return;
     }
     string receiver, method;
@@ -2457,6 +3908,72 @@ class Checker {
   static bool option_none_compatible(const string& actual, const string& expected) {
     return canonical_type_name(actual) == "_none" &&
         starts_with(canonical_type_name(expected), "option[");
+  }
+  static bool is_type_compatible(const moss::TypeRef& bound, const moss::TypeRef& target) {
+    if (!bound || !target) return false;
+    // None is the one language-defined value admitted by an Option without
+    // sharing its type constructor. All other compatibility is unification.
+    if (target->name == "_none" && bound->kind == moss::TypeKind::Builtin &&
+        bound->name == "option" && bound->type_args.size() == 1)
+      return true;
+    moss::TypeSolver solver(1);
+    std::map<string, moss::TypeRef> placeholders;
+    std::function<moss::TypeRef(const moss::TypeRef&)> instantiate =
+        [&](const moss::TypeRef& type) -> moss::TypeRef {
+      if (type->kind == moss::TypeKind::Primitive &&
+          (type->name == "_value" || open_generic(type->name))) {
+        auto [it, inserted] = placeholders.emplace(type->name, nullptr);
+        if (inserted) it->second = solver.fresh(0);
+        return it->second;
+      }
+      if (type->kind == moss::TypeKind::Builtin) {
+        auto args = type->type_args;
+        if (auto arity = moss::Type::collection_arity(type->name)) {
+          if (args.empty())
+            for (size_t index = 0; index < *arity; ++index) args.push_back(solver.fresh(0));
+          else if (args.size() != *arity) return nullptr;
+        }
+        for (auto& arg : args) {
+          arg = instantiate(arg);
+          if (!arg) return nullptr;
+        }
+        return moss::Type::builtin(type->name, std::move(args));
+      }
+      if (type->is_bare_template()) {
+        vector<std::pair<string, moss::TypeRef>> substitutions;
+        for (const auto& slot : type->declaration->fields)
+          if (slot.inferred) substitutions.emplace_back(slot.name, solver.fresh(0));
+        return moss::Type::nominal_bound(type->declaration, type->name,
+                                        std::move(substitutions));
+      }
+      if (type->kind == moss::TypeKind::NominalInstance) {
+        vector<std::pair<string, moss::TypeRef>> substitutions;
+        for (const auto& slot : type->field_substitutions) {
+          auto value = instantiate(slot.second);
+          if (!value) return nullptr;
+          substitutions.emplace_back(slot.first, value);
+        }
+        return moss::Type::nominal_bound(type->declaration, type->name,
+                                        std::move(substitutions));
+      }
+      return type;
+    };
+    auto expected = instantiate(bound);
+    auto actual = instantiate(target);
+    return expected && actual && solver.unify(expected, actual);
+  }
+  static bool is_type_compatible(const moss::TypeRef& bound, const string& new_type_raw) {
+    const auto target = moss::Type::parse_canonical(canonical_type_name(new_type_raw));
+    return bound && target && is_type_compatible(bound, *target);
+  }
+  static bool is_type_compatible(const string& bound_type_raw, const moss::TypeRef& target) {
+    const auto bound = moss::Type::parse_canonical(canonical_type_name(bound_type_raw));
+    return bound && target && is_type_compatible(*bound, target);
+  }
+  static bool is_type_compatible(const string& bound_type_raw, const string& new_type_raw) {
+    const auto bound = moss::Type::parse_canonical(canonical_type_name(bound_type_raw));
+    const auto target = moss::Type::parse_canonical(canonical_type_name(new_type_raw));
+    return bound && target && is_type_compatible(*bound, *target);
   }
   bool trait_conforms(const string& type, const string& trait,
                       string* reason = nullptr) const {
@@ -2607,7 +4124,8 @@ class Checker {
         string signature = method.name + "/" + std::to_string(method.params.size());
         for (const auto& parameter : method.params) {
           if (!parameter.type.empty() && !valid_type(parameter.type))
-            err(method_source, method.line, "unknown parameter type '" + parameter.type +
+            invalid_type_err(method_source, method.line, parameter.type,
+                "unknown parameter type '" + parameter.type +
                 "' in trait method '" + trait.name + "." + method.name + "'");
           signature += ":" + canonical_type_name(parameter.type);
         }
@@ -2632,7 +4150,13 @@ class Checker {
           err(field.line,
               "FileIO and scoped ranges cannot be stored in ordinary objects",
               "FILEIO_COLLECTION_ESCAPE");
-        if (!valid_type(field.type)) err(field_source, field.line, "unknown field type '" + field.type + "'");
+        if (!field.inferred && !field.type.empty() && !valid_type(field.type)) {
+          if (!moss::Type::parse_canonical(field.type))
+            err(field_source, field.line,
+                "malformed type expression '" + field.type + "'",
+                "MALFORMED_TYPE_EXPRESSION");
+          err(field_source, field.line, "unknown field type '" + field.type + "'");
+        }
         if (!field_names.insert(field.name).second)
           err(field_source, field.line, "duplicate object field '" + field.name + "' in " + object.name);
       }
@@ -2641,15 +4165,17 @@ class Checker {
         string method_source = method.source_file.empty() ? object.source_file : method.source_file;
         current_source_file_ = method_source;
         string signature = method.name + "/" + std::to_string(method.params.size());
-        std::unordered_map<string,string> env;
+        TypeEnv env;
         env["self"] = object.name;
-        for (const auto& field : object.fields) env[field.name] = field.type;
+        for (const auto& field : object.fields)
+          env[field.name] = (field.inferred || field.type.empty()) ? "_generic:" + field.name : field.type;
         for (const auto& param : method.params) {
           if (param.type.empty())
             err(method_source, method.line, "cannot infer type for parameter '" + param.name +
                 "' in method '" + object.name + "." + method.name + "'");
           if (!valid_type(param.type))
-            err(method_source, method.line, "unknown parameter type '" + param.type +
+            invalid_type_err(method_source, method.line, param.type,
+                "unknown parameter type '" + param.type +
                 "' in method '" + object.name + "." + method.name + "'");
           signature += ":" + canonical_type_name(param.type);
           env[param.name] = param.type;
@@ -2666,8 +4192,8 @@ class Checker {
         for (const auto& s : method.body) {
           if (s.kind == Stmt::Kind::Return && !s.a.empty()) {
             auto result = inferred_expr_type(s.a, inferred_env);
-            if (result) {
-              if (!method.return_type) method.return_type = *result;
+            if (result && !contains_internal_placeholder(*result)) {
+              if (!method.return_type) method.set_return_type(*result);
               else if (!option_none_compatible(*result, *method.return_type) &&
                        !same_type(*method.return_type, *result)) {
                 string stmt_source = s.source_file.empty() ? method_source : s.source_file;
@@ -2679,8 +4205,8 @@ class Checker {
         }
         if (method.result_expression) {
           auto result = inferred_expr_type(*method.result_expression, inferred_env);
-          if (result) {
-            if (!method.return_type) method.return_type = *result;
+          if (result && !contains_internal_placeholder(*result)) {
+            if (!method.return_type) method.set_return_type(*result);
             else if (!option_none_compatible(*result, *method.return_type) &&
                      !same_type(*method.return_type, *result))
               err(method_source, method.result_line ? method.result_line : method.line,
@@ -2692,8 +4218,8 @@ class Checker {
             std::any_of(method.body.begin(), method.body.end(), [](const Stmt& statement) {
               return statement.kind == Stmt::Kind::Return && !statement.a.empty();
             });
-        if (!method.return_type && !has_value_return) method.return_type = "unit";
-        Function method_function; method_function.name = object.name + "." + method.name; method_function.params = method.params; method_function.return_type = method.return_type;
+        if (!method.return_type && !has_value_return) method.set_return_type("unit");
+        Function method_function; method_function.name = object.name + "." + method.name; method_function.params = method.params; method_function.set_return_type(method.return_type);
         method_function.source_file = method_source;
         TypeEnv final_env = check_stmts(method.body, std::move(entry_env), nullptr,
                                         nullptr, &method_function);
@@ -2797,6 +4323,11 @@ class Checker {
                value.substr(bracket + 1, value.size() - bracket - 2), ','))
         if (contains_domain_handle(trim(argument))) return true;
     return false;
+  }
+
+  bool contains_domain_handle(const moss::TypeRef& type) const {
+    if (!type) return false;
+    return contains_domain_handle(type->to_canonical_string());
   }
 
   void check_enums() const {
@@ -2982,8 +4513,8 @@ class Checker {
                                      const Handler& resolved_handler,
                                      const TypeEnv& env) const {
     auto self = env.find("self");
-    if (self != env.end() && domains_.count(self->second)) {
-      const Domain& domain = *domains_.at(self->second);
+    if (self != env.end() && domains_.count(canonical_type_name(self->second))) {
+      const Domain& domain = *domains_.at(canonical_type_name(self->second));
       if (receiver == "self") {
         teaching_err(
             line, "DOMAIN_SELF_MESSAGE",
@@ -3026,9 +4557,9 @@ class Checker {
         if (instance.domain == domain.name &&
             std::none_of(p_.concrete_domain_graph.edges.begin(),
                          p_.concrete_domain_graph.edges.end(),
-                [&](const ConcreteRouteEdge& edge) {
-                  return edge.source_instance == instance.identity && edge.route == receiver;
-                }))
+                 [&](const ConcreteRouteEdge& edge) {
+                   return edge.source_instance == instance.identity && edge.route == receiver;
+                 }))
           teaching_err(
               line, "DOMAIN_ROUTE_NOT_BOUND",
               "route '" + receiver + "' of domain instance '" +
@@ -3110,13 +4641,15 @@ class Checker {
           err(h_source, h.line, "reply handler '" + d.name + "." + h.name +
               "' must reply on every normal control-flow path");
       }
-      std::unordered_map<string,string> env;
+      TypeEnv env;
       env["self"] = d.name;
       for (const auto& p : h.params) {
         if (p.type.empty())
           err(h_source, h.line, "cannot infer type for parameter '" + p.name +
               "' in handler '" + d.name + "." + h.name + "'");
-        if (!valid_type(p.type)) err(h_source, h.line, "unknown parameter type '" + p.type + "'");
+        if (!valid_type(p.type))
+          invalid_type_err(h_source, h.line, p.type,
+                           "unknown parameter type '" + p.type + "'");
         if (fileio_contains_scoped_type(p.type))
           err(h.line,
               "handler parameters cannot contain FileIO, Range, or RangeBatch capabilities",
@@ -3160,7 +4693,8 @@ class Checker {
         arm.captures.clear();
         for (const auto& name :
              phase21_failure_capture_reads(arm, arm_env, local_candidates)) {
-          const string& candidate_type = local_candidates.at(name);
+          const moss::TypeRef& candidate_term = local_candidates.at(name);
+          const string candidate_type = canonical_type_name(candidate_term);
           if (candidate_type == "_ambiguous_capture_type")
             err(arm.line, "on_fail capture '" + name +
                 "' has incompatible handler-local types",
@@ -3168,7 +4702,7 @@ class Checker {
           if (arm.exceptional_alternatives.empty()) {
             // The checked warning-only arm can never be selected. Its body
             // remains typechecked, but no value crosses a Root boundary.
-            arm_env[name] = candidate_type;
+            arm_env[name] = candidate_term;
             continue;
           }
           std::optional<string> binding_identity;
@@ -3185,7 +4719,7 @@ class Checker {
               err(arm.line, "on_fail capture '" + name +
                   "' is not initialized on every selected raise path",
                   "ON_FAIL_CAPTURE_NOT_INITIALIZED");
-            if (!same_type(type->second, candidate_type))
+            if (!same_type(canonical_type_name(type->second), candidate_type))
               err(arm.line, "on_fail capture '" + name +
                   "' has different types on selected raise paths",
                   "ON_FAIL_CAPTURE_TYPE_MISMATCH");
@@ -3231,12 +4765,32 @@ class Checker {
     }
   }
 
+  void check_closed_body_types(const vector<Stmt>& body, const TypeEnv& env, int fallback_line) const {
+    for (const auto& [name, type] : env) {
+      const auto parsed = moss::Type::parse_canonical(canonical_type_name(type));
+      // Internal summary placeholders are open even when legacy ingress
+      // printed them as primitive names. Concrete roots cannot retain them.
+      if (!parsed || !(*parsed)->is_closed() || contains_internal_placeholder(type)) {
+        int err_line = fallback_line;
+        for (const auto& stmt : body) {
+          if (stmt.a == name) {
+            err_line = stmt.line;
+            break;
+          }
+        }
+        err(err_line, "unbound open result type for variable '" + name + "'; heterogeneous or unresolved collection element type",
+            "TYPE_AMBIGUOUS_OPEN_RESULT");
+      }
+    }
+  }
+
   void check_main(const MainProc& m) {
     current_source_file_ = m.source_file;
     SourceFileScope semantic_context(current_semantic_context_, "main");
-    std::unordered_map<string,string> env;
+    TypeEnv env;
     env = check_stmts(m.body, std::move(env), nullptr, nullptr,
                       nullptr, true);
+    check_closed_body_types(m.body, env, m.line);
     phase21_validate_root_ingress_totality(env);
     OwnershipEnv ownership;
     ownership.types = std::move(env);
@@ -3399,8 +4953,7 @@ class Checker {
                       "domain state initializers must be side-effect-free and cannot perform message, domain, I/O, failing, or divergent work");
             auto actual = inferred_expr_type(pair.second, binding_types);
             bool contextual_empty_collection = actual &&
-                ((*actual == "map" && starts_with(field->type, "map[")) ||
-                 (*actual == "queue" && starts_with(field->type, "queue[")));
+                bare_matches_applied(*actual, field->type);
             if (actual && !field->type.empty() && !contextual_empty_collection &&
                 !same_type(field->type, *actual))
               fail_at(statement, "state member '" + pair.first + "' has type '" + field->type +
@@ -3513,6 +5066,7 @@ class Checker {
             "duplicate test name '" + test.name + "'");
       TypeEnv env;
       env = check_stmts(test.body, std::move(env), nullptr, nullptr);
+      check_closed_body_types(test.body, env, test.line);
       OwnershipEnv ownership;
       ownership.types = std::move(env);
       SourceFileScope source_scope(current_source_file_, test.source_file);
@@ -3527,6 +5081,7 @@ class Checker {
             "duplicate benchmark name '" + benchmark.name + "'");
       TypeEnv env;
       env = check_stmts(benchmark.body, std::move(env), nullptr, nullptr);
+      check_closed_body_types(benchmark.body, env, benchmark.line);
       OwnershipEnv ownership;
       ownership.types = std::move(env);
       SourceFileScope source_scope(current_source_file_, benchmark.source_file);
@@ -3540,19 +5095,25 @@ class Checker {
     current_source_file_ = f.source_file;
     SourceFileScope semantic_context(
         current_semantic_context_, "fn:" + f.name);
-    std::unordered_map<string,string> env;
+    TypeEnv env;
     std::set<string> names;
     if (f.return_type && *f.return_type != "unit" && !valid_type(*f.return_type) && !contains_internal_placeholder(*f.return_type))
-      err(f.source_file, f.line, "unknown return type '" + *f.return_type + "' in function '" + f.name + "'");
+      invalid_type_err(f.source_file, f.line, *f.return_type,
+                       "unknown return type '" + *f.return_type + "' in function '" + f.name + "'");
     for (const auto& param : f.params) {
       if (param.type.empty() && !f.generic && !has_constraint(f, param.name))
         err(f.source_file, f.line, "cannot infer type for parameter '" + param.name +
             "' in function '" + f.name + "'");
       if (!param.type.empty() && !valid_type(param.type) && !contains_internal_placeholder(param.type) &&
           !phase20_allowed_as_ordinary_parameter(param.type))
-        err(f.source_file, f.line, "unknown parameter type '" + param.type + "'");
+        invalid_type_err(f.source_file, f.line, param.type,
+                         "unknown parameter type '" + param.type + "'");
       if (!names.insert(param.name).second) err(f.source_file, f.line, "duplicate parameter: " + param.name);
       env[param.name] = param.type.empty() ? "_generic:" + param.name : param.type;
+      if (!param.type.empty()) {
+        if (auto parsed = moss::Type::parse_canonical(canonical_type_name(param.type)))
+          env.terms[param.name] = *parsed;
+      }
     }
     TypeEnv entry_env = env;
     TypeEnv inferred_env = env;
@@ -3585,8 +5146,10 @@ class Checker {
       if (!f.return_type && actual) {
         // The signature pass normally fills this in. Keep this assignment as a
         // defensive fallback for a function whose result was inferred late.
-        const_cast<Function&>(f).return_type = *actual;
+        if (!contains_internal_placeholder(*actual))
+          const_cast<Function&>(f).set_return_type(*actual);
       } else if (f.return_type && actual && !contains_internal_placeholder(*f.return_type) &&
+                 !contains_internal_placeholder(*actual) &&
                  !(*actual == "_method_value" || starts_with(*actual, "_method_result:")) &&
                   !starts_with(*actual, "_functional_callable_result:") &&
                  !option_none_compatible(*actual, *f.return_type) &&
@@ -3597,7 +5160,7 @@ class Checker {
       }
     } else if (!f.return_type) {
       if (!f.generic && !f.static_dispatch)
-        const_cast<Function&>(f).return_type = "unit";
+        const_cast<Function&>(f).set_return_type("unit");
     }
   }
 
@@ -3612,10 +5175,10 @@ class Checker {
 
   const Handler* check_call(int line, const string& receiver, const string& message,
                             const vector<string>& args,
-                            const std::unordered_map<string,string>& env) const {
+                            const TypeEnv& env) const {
     auto it = env.find(receiver);
     if (it == env.end()) err(line, "unknown message receiver '" + receiver + "'");
-    auto dit = domains_.find(it->second);
+    auto dit = domains_.find(canonical_type_name(it->second));
     if (dit == domains_.end())
       err(line, "'" + receiver + "' is not a domain reference; use a local function call or a domain reference");
     const Handler* h = find_handler(*dit->second, message);
@@ -3639,13 +5202,13 @@ class Checker {
   }
 
   static std::optional<string> obvious_expr_type(const string& expression,
-                                                  const std::unordered_map<string,string>& env) {
+                                                  const TypeEnv& env) {
     string e = trim(expression);
     if (e == "None") return "_none";
     if (e == "true" || e == "false") return "bool";
     if (e.size() >= 2 && e.front() == '"' && e.back() == '"') return "string";
     auto local = env.find(e);
-    if (local != env.end() && !local->second.empty() && local->second != "_value") return local->second;
+    if (local != env.end() && local->second && local->second->name != "_value") return local->second->to_canonical_string();
     size_t start = (!e.empty() && (e.front() == '+' || e.front() == '-')) ? 1 : 0;
     if (start < e.size() && std::all_of(e.begin() + static_cast<std::ptrdiff_t>(start), e.end(), [](char c) {
           return std::isdigit(static_cast<unsigned char>(c));
@@ -3655,18 +5218,21 @@ class Checker {
   }
 
   static bool unresolved_semantic_type(const string& type) {
-    return type.empty() || contains_internal_placeholder(type) || type == "vector" ||
-        type == "queue" || type == "map";
+    if (type.empty() || contains_internal_placeholder(type)) return true;
+    if (callable_identity(type)) return type.size() == 9;
+    auto parsed = moss::Type::parse_canonical(canonical_type_name(type));
+    return !parsed || !(*parsed)->is_closed();
   }
 
   static std::optional<string> functional_element_type(const string& type,
                                                         const string& source) {
-    string value = canonical_type_name(type);
-    if (starts_with(value, "vector[") && ends_with(value, "]"))
-      return trim(value.substr(7, value.size() - 8));
-    if (starts_with(value, "seq[") && ends_with(value, "]"))
-      return trim(value.substr(4, value.size() - 5));
-    if (value == "vector" || starts_with(value, "_generic:"))
+    const auto term = parsed_type(type);
+    if (applied_builtin(term, {"vector", "seq"}) && term->type_args.size() == 1)
+      return term->type_args[0]->to_canonical_string();
+    // A bare collection or an open parameter carries the element relation.
+    const bool open_source = term && term->kind == moss::TypeKind::Builtin &&
+        term->name == "vector" && term->type_args.empty();
+    if (open_source || starts_with(canonical_type_name(type), "_generic:"))
       return "_functional_element:" + trim(source);
     return std::nullopt;
   }
@@ -3699,25 +5265,32 @@ class Checker {
     }
 
     auto local = env.find(value);
-    if (local != env.end() && starts_with(local->second, "callable:"))
-      value = local->second.substr(9);
-    else if (local != env.end() && starts_with(local->second, "_generic:"))
+    if (local != env.end() && callable_identity(local->second)) {
+      value = canonical_type_name(local->second);
+      if (starts_with(value, "callable:")) value = value.substr(9);
+    } else if (local != env.end() && open_generic(local->second)) {
       return "_functional_callable_result:" + value;
-    auto function = functions_.find(value);
-    if (function == functions_.end() ||
-        function->second->params.size() != input_types.size())
+    }
+    const Function* function_ptr = nullptr;
+    if (starts_with(value, "callable-v1:"))
+      function_ptr = find_function_by_callable_id(value);
+    if (!function_ptr) {
+      auto it = functions_.find(value);
+      if (it != functions_.end()) function_ptr = it->second;
+    }
+    if (!function_ptr || function_ptr->params.size() != input_types.size())
       return std::nullopt;
     for (size_t index = 0; index < input_types.size(); ++index) {
-      const string& expected = function->second->params[index].type;
+      const string& expected = function_ptr->params[index].type;
       if (!expected.empty() && !traits_.count(expected) &&
           !unresolved_semantic_type(input_types[index]) &&
           !same_type(expected, input_types[index]))
         return std::nullopt;
     }
-    string result = function->second->return_type
-        ? canonical_type_name(*function->second->return_type) : "";
+    string result = function_ptr->return_type
+        ? canonical_type_name(*function_ptr->return_type) : "";
     if (result.empty() || contains_internal_placeholder(result) || traits_.count(result))
-      return specialized_function_return_type(*function->second, input_types);
+      return specialized_function_return_type(*function_ptr, input_types);
     return result;
   }
 
@@ -3748,7 +5321,7 @@ class Checker {
 
     FunctionalPipelineState state;
     state.element_type = *element;
-    state.output_type = starts_with(*source_type, "vector[")
+    state.output_type = applied_builtin(parsed_type(*source_type), {"vector"})
         ? *source_type : "_functional_collection:" + state.element_type;
     if (!parsed) return state;
     for (const auto& stage : parsed->stages) {
@@ -3780,7 +5353,7 @@ class Checker {
         case FunctionalNodeKind::Reduce: {
           if (stage.arguments.size() != 2) return std::nullopt;
           auto accumulator = inferred_expr_type(stage.arguments.front(), env);
-          if (!accumulator) return std::nullopt;
+          if (!accumulator || *accumulator == "vector" || *accumulator == "queue" || *accumulator == "map") return std::nullopt;
           auto result = functional_callable_result(stage.arguments[1],
                                                    {*accumulator, state.element_type}, env);
           if (!result || (!unresolved_semantic_type(*result) &&
@@ -3838,7 +5411,7 @@ class Checker {
   };
 
   struct OwnershipEnv {
-    std::unordered_map<string,string> types;
+    TypeEnv types;
     // Exact declarations selected for local names by the ordinary ownership
     // walk. Branch copies naturally preserve lexical shadowing.
     std::unordered_map<string,string> binding_identities;
@@ -4036,7 +5609,15 @@ class Checker {
     return copy_type_name(canonical_type_name(type));
   }
 
+  bool copy_type(const moss::TypeRef& type) const {
+    return copy_type_name(canonical_type_name(type));
+  }
+
   bool transfer_type(const string& type) const {
+    return !copy_type(type) && !domains_.count(canonical_type_name(type));
+  }
+
+  bool transfer_type(const moss::TypeRef& type) const {
     return !copy_type(type) && !domains_.count(canonical_type_name(type));
   }
 
@@ -4131,7 +5712,32 @@ class Checker {
   std::optional<BuiltinCallSemantics> builtin_call_semantics(
       const string& callee, const vector<string>& args,
       const TypeEnv& env) const {
-    if (objects_.count(callee)) return BuiltinCallSemantics{callee, false};
+    if (objects_.count(callee)) {
+      const ObjectType* obj = objects_.at(callee);
+      bool has_generic_field = std::any_of(obj->fields.begin(), obj->fields.end(),
+          [](const Field& f) { return f.inferred || f.type.empty(); });
+      if (!has_generic_field) return BuiltinCallSemantics{callee, false};
+      std::map<string, string> supplied_types;
+      for (const auto& arg : args) {
+        string fn, fv;
+        if (parse_named_argument(arg, fn, fv)) {
+          auto ft = inferred_expr_type(fv, env);
+          if (ft) supplied_types[fn] = canonical_type_name(*ft);
+        }
+      }
+      string instance_type = callee + "[";
+      bool first = true;
+      for (const auto& f : obj->fields) {
+        if (!f.inferred && !f.type.empty()) continue;
+        if (!first) instance_type += ",";
+        first = false;
+        auto it = supplied_types.find(f.name);
+        string ft = (it != supplied_types.end()) ? it->second : (f.type.empty() ? "_" : canonical_type_name(f.type));
+        instance_type += f.name + "=" + ft;
+      }
+      instance_type += "]";
+      return BuiltinCallSemantics{instance_type, false};
+    }
     if (callee == "Map" && args.empty())
       return BuiltinCallSemantics{"map", false};
     if (callee == "Queue" && args.empty())
@@ -4166,16 +5772,12 @@ class Checker {
           "option[" + element.value_or("_") + "]", false};
     }
     if (callee == "sum" && args.size() == 1) {
-      auto argument = inferred_expr_type(args.front(), env);
+      auto argument = inferred_expr(args.front(), env);
       if (!argument) return std::nullopt;
-      if ((starts_with(*argument, "seq[") ||
-           starts_with(*argument, "vector[")) && ends_with(*argument, "]")) {
-        size_t opening = argument->find('[');
-        return BuiltinCallSemantics{
-            trim(argument->substr(opening + 1,
-                                  argument->size() - opening - 2)), false};
-      }
-      return BuiltinCallSemantics{*argument, false};
+      const auto collection = inferred_shape(*argument);
+      if (applied_builtin(collection, {"seq", "vector"}) && collection->type_args.size() == 1)
+        return BuiltinCallSemantics{collection->type_args[0]->to_canonical_string(), false};
+      return BuiltinCallSemantics{argument->projection(), false};
     }
     if (callee == "assert" && args.size() == 1)
       return BuiltinCallSemantics{"unit", true};
@@ -4184,16 +5786,123 @@ class Checker {
     return std::nullopt;
   }
 
+  // One expression inference result. A closed type is always carried as a
+  // TypeRef and composes structurally; `legacy` carries only an open
+  // pseudo-type spelling (`_generic:x`, `_element:...`, `callable:f`, a bare
+  // collection) that later A2 slices replace with inference variables and
+  // requirements. Exactly one of the two is set.
+  struct InferredExpr {
+    moss::TypeRef term = nullptr;
+    string legacy = "";
+    string callable_id = "";
+
+    InferredExpr() = default;
+    InferredExpr(moss::TypeRef t, string l = "", string c = "")
+        : term(std::move(t)), legacy(std::move(l)), callable_id(std::move(c)) {}
+    InferredExpr(std::nullptr_t, string l, string c = "")
+        : term(nullptr), legacy(std::move(l)), callable_id(std::move(c)) {}
+
+    bool is_callable() const { return !callable_id.empty(); }
+    string projection() const {
+      if (term && term->is_closed() && !contains_internal_placeholder(term))
+        return term->to_canonical_string();
+      return legacy;
+    }
+  };
+
+  // A declared or helper-produced spelling enters the term algebra once,
+  // here. Spellings that name compiler-internal open placeholders stay legacy.
+  static InferredExpr inferred_leaf(const string& spelling) {
+    if (!spelling.empty() && !contains_internal_placeholder(spelling) &&
+        !callable_identity(spelling)) {
+      auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
+      if (parsed && (*parsed)->is_closed()) return {*parsed, {}, {}};
+    }
+    if (starts_with(spelling, "callable-v1:"))
+      return {nullptr, spelling, spelling};
+    return {nullptr, spelling, {}};
+  }
+
+  static InferredExpr inferred_leaf(const moss::TypeRef& type) {
+    if (type && type->is_closed()) return {type, {}, {}};
+    return inferred_leaf(canonical_type_name(type));
+  }
+
+
+  // A bare collection annotation (`vector`, `map`, `queue`) accepts any
+  // application of the same collection.
+  static bool bare_collection_accepts(const string& formal, const InferredExpr& actual) {
+    const auto shape = inferred_shape(actual);
+    return shape && bare_matches_applied(formal, shape->to_canonical_string());
+  }
+
+
+  // The structural shape of a result, including an open legacy spelling such
+  // as `vector[_generic:x]` whose element relation is still a placeholder.
+  static moss::TypeRef inferred_shape(const InferredExpr& inferred) {
+    if (inferred.term) return inferred.term;
+    auto parsed = moss::Type::parse_canonical(canonical_type_name(inferred.legacy));
+    return parsed ? *parsed : nullptr;
+  }
+
   std::optional<string> inferred_expr_type(const string& expression,
-                                           const std::unordered_map<string,string>& env) const {
+                                           const TypeEnv& env) const {
+    auto inferred = inferred_expr(expression, env);
+    if (!inferred) return std::nullopt;
+    auto proj = inferred->projection();
+    if (proj.empty() || starts_with(proj, "_typevar:")) return std::nullopt;
+    return proj;
+  }
+
+  // The closed term of an expression, or null when it is open or unknown.
+  moss::TypeRef inferred_expr_term(const string& expression, const TypeEnv& env) const {
+    auto inferred = inferred_expr(expression, env);
+    return inferred ? inferred->term : nullptr;
+  }
+
+  // A placeholder primitive (`_generic:x`) counts as closed in the algebra
+  // but is still open here; it stays legacy until variables replace it.
+  std::optional<InferredExpr> inferred_expr(const string& expression,
+                                            const TypeEnv& env) const {
+    auto inferred = inferred_expr_core(expression, env);
+    if (inferred && inferred->term &&
+        contains_internal_placeholder(inferred->term)) {
+      if (inferred->term->is_closed())
+        inferred = InferredExpr{nullptr, inferred->term->to_canonical_string()};
+    }
+    return inferred;
+  }
+
+  std::optional<InferredExpr> inferred_expr_core(const string& expression,
+                                                 const TypeEnv& env) const {
+    using R = std::optional<InferredExpr>;
+    auto primitive = [](const char* name) -> R {
+      return InferredExpr{moss::Type::primitive(name), {}};
+    };
     string original = strip_redundant_outer_parentheses(expression);
-    if (auto builtin = fileio_result_type(original, env)) return builtin;
+    auto operand_term = [&](const string& operand) -> moss::TypeRef {
+      if (current_body_types_) {
+        auto retained = current_body_types_->known_expression(operand);
+        if (retained) return current_body_types_->solver.resolve(retained);
+      }
+      return inferred_expr_term(operand, env);
+    };
+    // Checked bodies retain one solver-owned term per local. A field or index
+    // read composes from that term instead of re-inferring from display text.
+    if (current_body_types_) {
+      auto retained = current_body_types_->known_expression(original);
+      if (retained) {
+        auto resolved = current_body_types_->solver.resolve(retained);
+        if (resolved && resolved->is_closed()) return InferredExpr{resolved, {}};
+      }
+    }
+    if (auto builtin = fileio_result_type(original, env)) return inferred_leaf(*builtin);
     {
       string callee;
       vector<string> arguments;
       if (parse_simple_call(original, callee, arguments) && callee == "replace" &&
           arguments.size() == 2)
-        return inferred_expr_type(arguments[0], env);
+        return inferred_expr(arguments[0], env);
     }
     {
       string enum_name, case_name;
@@ -4201,7 +5910,7 @@ class Checker {
       bool called = false;
       if (parse_enum_case_expression(original, enum_name, case_name, fields, called) &&
           enums_.count(enum_name))
-        return enum_name;
+        return inferred_leaf(enum_name);
     }
     if (starts_with(original, "message ")) {
       string receiver, handler;
@@ -4215,238 +5924,349 @@ class Checker {
       if (domain == domains_.end()) return std::nullopt;
       const Handler* target = find_handler(*domain->second, handler);
       if (!target) return std::nullopt;
-      return target->reply_type ? *target->reply_type : string("unit");
+      return inferred_leaf(target->reply_type ? *target->reply_type : string("unit"));
     }
     if (auto functional = inferred_functional_pipeline_type(original, env))
-      return functional;
+      return inferred_leaf(*functional);
     string e = strip_redundant_outer_parentheses(normalize_pipeline(std::move(original)));
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
       if (auto binary = split_binary(e, {op})) {
-        auto left = inferred_expr_type(binary->first, env);
-        auto right = inferred_expr_type(binary->second, env);
-        return left && right &&
-                canonical_type_name(*left) == "bool" &&
-                canonical_type_name(*right) == "bool"
-            ? std::optional<string>("bool") : std::nullopt;
+        return primitive_term(operand_term(binary->first), "bool") &&
+                primitive_term(operand_term(binary->second), "bool")
+            ? primitive("bool") : std::nullopt;
       }
     }
-    if (starts_with(e, "not ")) {
-      auto operand = inferred_expr_type(trim(e.substr(4)), env);
-      return operand && canonical_type_name(*operand) == "bool"
-          ? std::optional<string>("bool") : std::nullopt;
+    if (starts_with(e, "not "))
+      return primitive_term(operand_term(trim(e.substr(4))), "bool")
+          ? primitive("bool") : std::nullopt;
+    if (auto type = obvious_expr_type(e, env))
+      return inferred_leaf(canonical_type_name(*type));
+    if (plain_identifier(e)) {
+      auto fn_it = functions_.find(e);
+      if (fn_it != functions_.end() && fn_it->second) {
+        const string& cid = !fn_it->second->semantic_callable_id.empty()
+            ? fn_it->second->semantic_callable_id
+            : "callable-v1:" + program_module_identity(p_, fn_it->second->defining_module) + ":fn:" + fn_it->second->name;
+        return InferredExpr{nullptr, "callable:" + e, cid};
+      }
     }
-    if (auto type = obvious_expr_type(e, env)) return canonical_type_name(*type);
-    if (plain_identifier(e) && functions_.count(e))
-      return "callable:" + e;
-    if (auto typed_vector = typed_empty_vector_constructor(e)) return *typed_vector;
+    if (auto typed_vector = typed_empty_vector_constructor(e))
+      return inferred_leaf(*typed_vector);
     // Phase 20: `Executor()` begins a compiler-recognized configuration chain
     // (see parse_executor_chain); it is not a general object construction.
-    if (e == "Executor()") return string("executor");
+    if (e == "Executor()") return primitive("executor");
     {
       vector<string> open_arguments;
-      if (parse_fileio_open(e, open_arguments)) return string("FileIO");
+      if (parse_fileio_open(e, open_arguments)) return primitive("FileIO");
     }
     if (auto parts = parse_vector_literal(e)) {
-      if (parts->empty()) return std::nullopt;
-      string element;
+      if (parts->empty()) return InferredExpr{nullptr, "vector"};
+      vector<InferredExpr> elements;
       for (const auto& part : *parts) {
-        auto t = inferred_expr_type(part, env);
-        if (!t) return std::nullopt;
-        if (element.empty()) element = *t;
-        else if (canonical_type_name(element) != canonical_type_name(*t)) return std::nullopt;
+        auto element = inferred_expr(part, env);
+        if (!element) return std::nullopt;
+        elements.push_back(std::move(*element));
       }
-      return "vector[" + element + "]";
+      const bool closed = std::all_of(elements.begin(), elements.end(),
+          [](const InferredExpr& element) { return element.term != nullptr; });
+      if (closed) {
+        for (const auto& element : elements)
+          if (!element.term->structurally_equal(*elements.front().term))
+            return std::nullopt;
+        return InferredExpr{moss::Type::builtin("vector", {elements.front().term}), {}};
+      }
+      // An open element keeps the legacy spelling until element variables
+      // replace it; mixed open/closed elements never agree.
+      for (const auto& element : elements)
+        if (!same_type(element.projection(), elements.front().projection()))
+          return std::nullopt;
+      return InferredExpr{nullptr, "vector[" + elements.front().projection() + "]"};
     }
     if (auto comparison = split_binary(e, {"==", "!=", "<=", ">=", "<", ">"}))
-      return string("bool");
+      return primitive("bool");
     for (const auto& ops : vector<vector<string>>{{"|"}, {"^"}, {"&"}, {"<<", ">>"}}) {
       if (auto binary = split_binary(e, ops)) {
-        auto left = inferred_expr_type(binary->first, env);
-        auto right = inferred_expr_type(binary->second, env);
-        return left && right &&
-                canonical_type_name(*left) == "int" &&
-                canonical_type_name(*right) == "int"
-            ? std::optional<string>("int") : std::nullopt;
+        return primitive_term(operand_term(binary->first), "int") &&
+                primitive_term(operand_term(binary->second), "int")
+            ? primitive("int") : std::nullopt;
       }
     }
     if (auto arithmetic = split_binary(e, {"+", "-", "*", "/", "%"})) {
-      auto left = inferred_expr_type(arithmetic->first, env);
-      auto right = inferred_expr_type(arithmetic->second, env);
-      if (left && right) {
-        if (*left == *right && starts_with(*left, "_generic:")) return *left;
-        if (*left == "string" && *right == "string" && e.find('+') != string::npos)
-          return string("string");
+      auto left = operand_term(arithmetic->first);
+      auto right = operand_term(arithmetic->second);
+      if (left && right && left->kind == moss::TypeKind::Primitive &&
+          right->kind == moss::TypeKind::Primitive) {
+        if (left->name == "string" && right->name == "string" &&
+            e.find('+') != string::npos)
+          return primitive("string");
         if (arithmetic->first.empty() || arithmetic->second.empty()) return std::nullopt;
-        if (split_binary(e, {"%"}) && (*left != "int" || *right != "int"))
+        if (split_binary(e, {"%"}) &&
+            (left->name != "int" || right->name != "int"))
           return std::nullopt;
-        if ((*left == "int" || *left == "float") &&
-            (*right == "int" || *right == "float"))
-          return (*left == "float" || *right == "float") ? "float" : "int";
+        if ((left->name == "int" || left->name == "float") &&
+            (right->name == "int" || right->name == "float"))
+          return primitive(left->name == "float" || right->name == "float"
+              ? "float" : "int");
       }
+      // An open source declaration keeps an operator requirement. Concrete
+      // specializations re-enter this branch with bound TypeRefs.
+      auto left_open = inferred_expr(arithmetic->first, env);
+      auto right_open = inferred_expr(arithmetic->second, env);
+      if (left_open && right_open && !left_open->term && !right_open->term &&
+          left_open->legacy == right_open->legacy &&
+          open_generic(left_open->legacy))
+        return left_open;
     }
-    if (!e.empty() && e.front() == '~') {
-      auto operand = inferred_expr_type(trim(e.substr(1)), env);
-      return operand && canonical_type_name(*operand) == "int"
-          ? std::optional<string>("int") : std::nullopt;
+    if (!e.empty() && e.front() == '~')
+      return primitive_term(operand_term(trim(e.substr(1))), "int")
+          ? primitive("int") : std::nullopt;
+    if (!e.empty() && e.front() == '-' && e.size() > 1 && !std::isdigit(static_cast<unsigned char>(e[1]))) {
+      auto operand = operand_term(trim(e.substr(1)));
+      if (primitive_term(operand, "int") || primitive_term(operand, "float"))
+        return InferredExpr{operand, {}};
     }
     string index_base, index_expr;
     if (parse_index(e, index_base, index_expr)) {
-      auto bt = inferred_expr_type(index_base, env);
-      if (!bt) return std::nullopt;
-      if (canonical_type_name(*bt) == "RangeBatch") return string("Range");
-      if (canonical_type_name(*bt) == "Range") return string("int");
-      if (starts_with(*bt, "_generic:")) return string("_element:element:" + bt->substr(9));
-      if (*bt == "vector" || *bt == "queue") return string("_element:element:" + index_base);
-      if (starts_with(*bt, "vector[") && ends_with(*bt, "]")) return trim(bt->substr(7, bt->size()-8));
-      if (starts_with(*bt, "queue[") && ends_with(*bt, "]")) return trim(bt->substr(6, bt->size()-7));
-      if (starts_with(*bt, "map[") && ends_with(*bt, "]")) {
-        auto ps = split_top_level(bt->substr(4, bt->size()-5), ',');
-        if (ps.size() == 2) return trim(ps[1]);
+      auto base = inferred_expr(index_base, env);
+      if (!base) return std::nullopt;
+      if (primitive_term(base->term, "RangeBatch")) return primitive("Range");
+      if (primitive_term(base->term, "Range")) return primitive("int");
+      if (current_body_types_) {
+        auto base_term = operand_term(index_base);
+        if (base_term && base_term->kind == moss::TypeKind::InferenceVar) {
+          auto elem = current_body_types_->solver.fresh(0);
+          current_body_types_->solver.unify(
+              base_term, moss::Type::builtin("vector", {elem}));
+          return InferredExpr{elem, {}};
+        }
+      }
+      if (!base->term && open_generic(base->legacy)) {
+        if (current_body_types_)
+          return InferredExpr{current_body_types_->solver.fresh(0), {}};
+        return InferredExpr{nullptr, "_element:element:" + base->legacy.substr(9)};
+      }
+      // A bare collection is open: legacy spelling, not a term.
+      if (!base->term && (base->legacy == "vector" || base->legacy == "queue")) {
+        if (current_body_types_)
+          return InferredExpr{current_body_types_->solver.fresh(0), {}};
+        return InferredExpr{nullptr, "_element:element:" + index_base};
+      }
+      const auto container = inferred_shape(*base);
+      if (container && container->kind == moss::TypeKind::Builtin) {
+        if ((container->name == "vector" || container->name == "queue") &&
+            container->type_args.size() == 1)
+          return base->term ? InferredExpr{container->type_args[0], {}}
+                            : inferred_leaf(container->type_args[0]->to_canonical_string());
+        if (container->name == "map" && container->type_args.size() == 2)
+          return base->term ? InferredExpr{container->type_args[1], {}}
+                            : inferred_leaf(container->type_args[1]->to_canonical_string());
       }
       return std::nullopt;
     }
-    auto object_call = [&]() -> std::optional<string> {
+    auto object_call = [&]() -> R {
       string callee;
       vector<string> args;
       if (!parse_simple_call(e, callee, args)) return std::nullopt;
       if (auto builtin = builtin_call_semantics(callee, args, env))
-        return builtin->result_type;
+        return inferred_leaf(builtin->result_type);
       string target = callee;
       auto binding = env.find(callee);
       if (binding != env.end()) {
-        if (starts_with(binding->second, "callable:"))
-          target = binding->second.substr(9);
-        else if (starts_with(binding->second, "_generic:"))
-          return "_functional_callable_result:" + callee;
+        if (callable_identity(binding->second)) {
+          target = canonical_type_name(binding->second);
+          if (starts_with(target, "callable:")) target = target.substr(9);
+        } else if (open_generic(binding->second)) {
+          return InferredExpr{nullptr, "_functional_callable_result:" + callee};
+        }
       }
-      auto function = functions_.find(target);
-      if (function == functions_.end() && current_object_) {
+      const Function* function_target = nullptr;
+      if (starts_with(target, "callable-v1:"))
+        function_target = find_function_by_callable_id(target);
+      if (!function_target) {
+        auto it = functions_.find(target);
+        if (it != functions_.end()) function_target = it->second;
+      }
+      if (!function_target && current_object_) {
         vector<string> argument_types;
         for (const auto& argument : args)
           argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
         auto method = resolve_method(current_object_->name, callee, argument_types);
-        if (method && method->return_type) return *method->return_type;
+        if (method && method->return_type) return inferred_leaf(*method->return_type);
       }
-      if (function != functions_.end() && function->second->return_type) {
-        string r = canonical_type_name(*function->second->return_type);
-        if (function->second->static_dispatch) {
+      if (function_target && function_target->return_type) {
+        string r = canonical_type_name(*function_target->return_type);
+        if (function_target->static_dispatch) {
           vector<string> actual_types;
           for (const auto& arg : args)
             actual_types.push_back(inferred_expr_type(arg, env).value_or(""));
-          bool concrete = actual_types.size() == function->second->params.size() &&
+          bool concrete = actual_types.size() == function_target->params.size() &&
               std::all_of(actual_types.begin(), actual_types.end(),
                           [](const string& type) {
-                            return !type.empty() && !contains_internal_placeholder(type);
+                            return !type.empty() && concrete_specialization_type(type);
                           });
           if (concrete) {
             auto specialized = specialized_function_return_type(
-                *function->second, actual_types);
-            if (specialized) return specialized;
+                *function_target, actual_types);
+            if (specialized) return inferred_leaf(*specialized);
           }
         }
         if (starts_with(r, "_method_result:")) {
           vector<string> actual_types;
           for (const auto& arg : args)
             actual_types.push_back(inferred_expr_type(arg, env).value_or(""));
-          return specialized_function_return_type(*function->second, actual_types);
+          auto specialized = specialized_function_return_type(*function_target, actual_types);
+          if (!specialized) return std::nullopt;
+          return inferred_leaf(*specialized);
         }
-        if (starts_with(r, "_generic:")) {
-          auto relation = function->second->generic_results.find(r.substr(9));
-          if (relation == function->second->generic_results.end()) return std::nullopt;
-          auto it = env.find(relation->second);
-          if (it != env.end()) return it->second;
+        if (open_generic(r)) {
+          auto relation = function_target->generic_results.find(r.substr(9));
+          if (relation != function_target->generic_results.end()) {
+            auto it = env.find(relation->second);
+            if (it != env.end()) return inferred_leaf(it->second);
+          }
+          if (current_body_types_)
+            return InferredExpr{current_body_types_->solver.fresh(0), {}};
         }
         if (starts_with(r, "_element:")) {
-          auto relation = function->second->generic_results.find(r.substr(9));
-          if (relation == function->second->generic_results.end()) return std::nullopt;
-          auto it = env.find(relation->second);
-          if (it != env.end() && starts_with(it->second, "vector[") && ends_with(it->second, "]"))
-            return trim(it->second.substr(7, it->second.size()-8));
+          auto relation = function_target->generic_results.find(r.substr(9));
+          if (relation != function_target->generic_results.end()) {
+            auto it = env.find(relation->second);
+            if (it != env.end()) {
+              auto container = inferred_leaf(it->second).term;
+              if (container && container->kind == moss::TypeKind::Builtin &&
+                  container->name == "vector" && container->type_args.size() == 1)
+                return InferredExpr{container->type_args[0], {}};
+              if (const auto bound = parsed_type(it->second);
+                  applied_builtin(bound, {"vector"}) && bound->type_args.size() == 1)
+                return inferred_leaf(bound->type_args[0]->to_canonical_string());
+            }
+          }
+          if (current_body_types_)
+            return InferredExpr{current_body_types_->solver.fresh(0), {}};
         }
         if (starts_with(r, "_field:")) {
           auto key = r.substr(7); auto pos = key.find(':');
           if (pos != string::npos) pos = key.find(':', pos + 1);
           string source = pos == string::npos ? key : key.substr(0, pos);
-          for (size_t ai = 0; ai < args.size() && ai < function->second->params.size(); ++ai)
-            if (function->second->params[ai].name == source) {
+          for (size_t ai = 0; ai < args.size() && ai < function_target->params.size(); ++ai)
+            if (function_target->params[ai].name == source) {
               auto at = inferred_expr_type(args[ai], env);
               if (at) {
                 auto object = objects_.find(*at);
                 if (object != objects_.end() && pos != string::npos) for (const auto& f : object->second->fields)
-                  if (f.name == key.substr(pos + 1)) return f.type;
+                  if (f.name == key.substr(pos + 1)) return inferred_leaf(f.type);
               }
             }
-          auto relation = function->second->generic_results.find(key);
-          if (relation != function->second->generic_results.end()) {
+          auto relation = function_target->generic_results.find(key);
+          if (relation != function_target->generic_results.end()) {
             auto base = env.find(relation->second);
             if (base != env.end()) {
-              auto object = objects_.find(base->second);
+              auto object = objects_.find(canonical_type_name(base->second));
               if (object != objects_.end() && pos != string::npos) for (const auto& f : object->second->fields)
-                if (f.name == key.substr(pos + 1)) return f.type;
+                if (f.name == key.substr(pos + 1)) return inferred_leaf(f.type);
             }
           }
+          if (current_body_types_)
+            return InferredExpr{current_body_types_->solver.fresh(0), {}};
         }
-        return r;
+        return inferred_leaf(r);
       }
       return std::nullopt;
     }();
     if (object_call) return object_call;
     string method_receiver, method_name; vector<string> method_args;
     if (parse_member_call(e, method_receiver, method_name, method_args)) {
-      auto base = inferred_expr_type(method_receiver, env);
+      auto base = inferred_expr(method_receiver, env);
       if (base) {
-        string concrete_base = canonical_type_name(*base);
+        auto receiver_ir = current_body_types_
+            ? current_body_types_->known_expression(method_receiver) : nullptr;
+        if (!receiver_ir) {
+          if (base->term) receiver_ir = base->term;
+          else if (auto parsed = moss::Type::parse_canonical(canonical_type_name(base->legacy)))
+            receiver_ir = *parsed;
+        }
+        const string concrete_base = receiver_ir && receiver_ir->is_closed()
+            ? receiver_ir->to_canonical_string()
+            : canonical_type_name(base->projection());
+        const string method_owner = receiver_ir &&
+            receiver_ir->kind == moss::TypeKind::NominalInstance &&
+            receiver_ir->declaration
+            ? receiver_ir->declaration->program_name : concrete_base;
         // Phase 20: Executor configuration/start chain and FileIO operations.
         // See parse_executor_chain and docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md.
-        if (concrete_base == "executor" &&
+        if (primitive_term(receiver_ir, "executor") &&
             (executor_config_methods().count(method_name) || method_name == "start"))
-          return string("executor");
-        if (concrete_base == "FileIO") {
-          if (method_name == "read" && method_args.size() == 2) return string("Range");
-          if (method_name == "chunks" && method_args.size() == 1) return string("seq[Range]");
+          return primitive("executor");
+        if (primitive_term(receiver_ir, "FileIO")) {
+          if (method_name == "read" && method_args.size() == 2) return primitive("Range");
+          if (method_name == "chunks" && method_args.size() == 1)
+            return InferredExpr{moss::Type::builtin("seq", {moss::Type::primitive("Range")}), {}};
           if ((method_name == "write" && method_args.size() == 2) ||
               (method_name == "sync" && method_args.size() <= 1) ||
               (method_name == "close" && method_args.empty()))
-            return string("unit");
+            return InferredExpr{moss::Type::unit(), {}};
         }
         // Provisional: Agent A/B own Range's final semantic surface. `.length()`
         // is the one accessor Agent D's own tests need to verify chunk-pipeline
         // ordering/termination without a materialized byte API.
-        if (concrete_base == "Range" && method_name == "length" && method_args.empty())
-          return string("int");
-        if (concrete_base == "Range" && method_name == "slice" && method_args.size() == 2)
-          return string("Range");
-        if (auto result = builtin_operation_result(concrete_base, method_name,
-                                                    method_args.size()))
-          return result;
+        if (primitive_term(receiver_ir, "Range") && method_name == "length" && method_args.empty())
+          return primitive("int");
+        if (primitive_term(receiver_ir, "Range") && method_name == "slice" && method_args.size() == 2)
+          return primitive("Range");
+        if (receiver_ir &&
+            ((receiver_ir->kind == moss::TypeKind::Builtin &&
+              moss::Type::collection_arity(receiver_ir->name)) ||
+             primitive_term(receiver_ir, "string")))
+          if (auto result = builtin_operation_result(concrete_base, method_name,
+                                                      method_args.size()))
+            return inferred_leaf(*result);
         vector<string> argument_types;
         for (const auto& arg : method_args) argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
-        if (auto method = resolve_method(canonical_type_name(*base), method_name, argument_types))
-          if (method->return_type) return *method->return_type;
-        if (starts_with(*base, "_generic:")) return string("_method_value");
-        auto trait = traits_.find(canonical_type_name(*base));
+        if (auto method = resolve_method(method_owner, method_name, argument_types))
+          if (method->return_type) return inferred_leaf(*method->return_type);
+        if (current_body_types_) {
+          if ((receiver_ir && receiver_ir->kind == moss::TypeKind::InferenceVar) ||
+              (!base->term && open_generic(base->legacy))) {
+            return InferredExpr{current_body_types_->solver.fresh(0), {}};
+          }
+        }
+        if (!base->term && open_generic(base->legacy)) {
+          if (current_body_types_)
+            return InferredExpr{current_body_types_->solver.fresh(0), {}};
+          return InferredExpr{nullptr, "_method_value"};
+        }
+        auto trait = traits_.find(canonical_type_name(base->projection()));
         if (trait != traits_.end()) {
           auto declared = std::find_if(trait->second->methods.begin(), trait->second->methods.end(),
                                        [&](const TraitMethod& candidate) {
                                          return candidate.name == method_name &&
                                                 candidate.params.size() == method_args.size();
                                        });
-          if (declared != trait->second->methods.end())
-            return declared->return_type.value_or("_method_value");
+          if (declared != trait->second->methods.end()) {
+            if (declared->return_type && !declared->return_type->empty())
+              return inferred_leaf(*declared->return_type);
+            if (current_body_types_)
+              return InferredExpr{current_body_types_->solver.fresh(0), {}};
+            return inferred_leaf("_method_value");
+          }
         }
       }
     }
 
     auto dot = e.rfind('.');
     if (dot != string::npos) {
-      auto base_type = inferred_expr_type(e.substr(0, dot), env);
+      auto base = inferred_expr(e.substr(0, dot), env);
       string field = trim(e.substr(dot + 1));
-      if (base_type) {
-        auto object = objects_.find(canonical_type_name(*base_type));
-        if (object != objects_.end()) {
-          for (const auto& candidate : object->second->fields)
-            if (candidate.name == field && !candidate.type.empty())
-              return canonical_type_name(candidate.type);
+      const auto receiver = base ? inferred_shape(*base) : nullptr;
+      if (receiver && receiver->kind == moss::TypeKind::NominalInstance &&
+          receiver->declaration)
+        if (auto field_type = BodyTypeState::nominal_field(receiver, field))
+          return base->term ? InferredExpr{field_type, {}}
+                            : inferred_leaf(field_type->to_canonical_string());
+      if (current_body_types_) {
+        if ((receiver && receiver->kind == moss::TypeKind::InferenceVar) ||
+            (base && !base->term && open_generic(base->legacy))) {
+          return InferredExpr{current_body_types_->solver.fresh(0), {}};
         }
       }
     }
@@ -4455,11 +6275,12 @@ class Checker {
     if (parse_member_call(e, mr, mh, ma)) {
       auto bt = env.find(mr);
       if (bt != env.end()) {
-        string t = bt->second;
-        if (mh == "pop" && ma.empty() && starts_with(t, "queue[") && ends_with(t, "]"))
-          return trim(t.substr(6, t.size()-7));
-        if (mh == "pop" && ma.empty() && starts_with(t, "vector[") && ends_with(t, "]"))
-          return trim(t.substr(7, t.size()-8));
+        auto receiver = inferred_shape(inferred_leaf(bt->second));
+        if (receiver && mh == "pop" && ma.empty() &&
+            receiver->kind == moss::TypeKind::Builtin &&
+            (receiver->name == "queue" || receiver->name == "vector") &&
+            receiver->type_args.size() == 1)
+          return inferred_leaf(receiver->type_args[0]->to_canonical_string());
       }
     }
 
@@ -4467,15 +6288,94 @@ class Checker {
   }
 
   static bool same_type(const string& left, const string& right) {
-    return canonical_type_name(left) == canonical_type_name(right);
+    if (left == right) return true;
+    auto c_left = canonical_type_name(left);
+    auto c_right = canonical_type_name(right);
+    if (c_left == c_right) return true;
+    auto left_ir = moss::Type::parse_canonical(c_left);
+    auto right_ir = moss::Type::parse_canonical(c_right);
+    return left_ir && right_ir && (*left_ir)->structurally_equal(**right_ir);
   }
 
-  std::unordered_map<string,string> instantiated_function_env(
+  static bool same_type(const moss::TypeRef& left, const moss::TypeRef& right) {
+    if (left == right) return true;
+    if (!left || !right) return false;
+    return left->structurally_equal(*right);
+  }
+
+  static bool same_type(const moss::TypeRef& left, const string& right) {
+    if (!left) return right.empty();
+    if (left->to_canonical_string() == right || left->to_canonical_string() == canonical_type_name(right)) return true;
+    auto right_ir = moss::Type::parse_canonical(canonical_type_name(right));
+    return right_ir && left->structurally_equal(**right_ir);
+  }
+
+  static bool same_type(const string& left, const moss::TypeRef& right) {
+    return same_type(right, left);
+  }
+
+  moss::TypeRef checked_expression_term(const string& expression,
+                                        const TypeEnv& env) const {
+    if (current_body_types_)
+      if (auto retained = current_body_types_->known_expression(expression))
+        return retained;
+    auto it = env.terms.find(trim(expression));
+    if (it != env.terms.end() && it->second) return it->second;
+    auto expr = inferred_expr(expression, env);
+    if (expr && expr->term) return expr->term;
+    if (!expr || contains_internal_placeholder(expr->legacy)) {
+      if (current_body_types_ && expr) {
+        if (starts_with(expr->legacy, "_iterator_element:") ||
+            open_generic(expr->legacy) ||
+            starts_with(expr->legacy, "_element:") ||
+            starts_with(expr->legacy, "_field:") ||
+            expr->legacy == "_method_value")
+          return current_body_types_->solver.fresh(0);
+      }
+      return nullptr;
+    }
+    auto parsed = moss::Type::parse_canonical(canonical_type_name(expr->legacy));
+    return parsed && (*parsed)->is_closed() ? *parsed : nullptr;
+  }
+
+  bool checked_same_expressions(const string& left, const string& right,
+                                const TypeEnv& env) const {
+    auto left_term = checked_expression_term(left, env);
+    auto right_term = checked_expression_term(right, env);
+    if (current_body_types_ && left_term && right_term)
+      return current_body_types_->solver.unify(left_term, right_term);
+    auto left_type = inferred_expr_type(left, env);
+    auto right_type = inferred_expr_type(right, env);
+    return left_type && right_type && same_type(*left_type, *right_type);
+  }
+
+  bool checked_matches_declared(const string& expression,
+                                const string& declared,
+                                const TypeEnv& env) const {
+    auto actual = checked_expression_term(expression, env);
+    auto expected = moss::Type::parse_canonical(canonical_type_name(declared));
+    if (current_body_types_ && actual && expected && (*expected)->is_closed())
+      return current_body_types_->solver.unify(actual, *expected);
+    auto inferred = inferred_expr_type(expression, env);
+    return inferred && same_type(*inferred, declared);
+  }
+
+  bool unresolved_expression(const string& expression, const TypeEnv& env) const {
+    auto term = checked_expression_term(expression, env);
+    if (term) return !term->is_closed();
+    auto type = inferred_expr_type(expression, env);
+    return !type || unresolved_semantic_type(*type);
+  }
+
+  TypeEnv instantiated_function_env(
       const Function& function, const vector<string>& parameter_types) const {
-    std::unordered_map<string,string> env;
+    TypeEnv env;
     for (size_t index = 0;
-         index < function.params.size() && index < parameter_types.size(); ++index)
+         index < function.params.size() && index < parameter_types.size(); ++index) {
       env[function.params[index].name] = canonical_type_name(parameter_types[index]);
+      if (auto parsed = moss::Type::parse_canonical(canonical_type_name(parameter_types[index])))
+        env.terms[function.params[index].name] = *parsed;
+    }
     env = walk_type_environment(function.body, std::move(env),
         [](const Stmt&, const TypeEnv&) {}, false);
     return env;
@@ -4501,16 +6401,21 @@ class Checker {
   std::optional<string> specialized_function_return_type(
       const Function& function, const vector<string>& parameter_types) const {
     string result = function.return_type ? canonical_type_name(*function.return_type) : "";
-    bool requires_concrete_result = result.empty() || contains_internal_placeholder(result) || traits_.count(result);
+    auto parsed_result = result.empty() ? std::nullopt : moss::Type::parse_canonical(result);
+    bool requires_concrete_result = result.empty() || contains_internal_placeholder(result) ||
+        traits_.count(result) || (parsed_result && !(*parsed_result)->is_closed());
     if (requires_concrete_result) {
       auto env = instantiated_function_env(function, parameter_types);
-      std::optional<string> inferred_result;
+      BodyTypeState body_types = solve_local_collection_types(
+          function.body, env, function.semantic_callable_id, false, true);
+      BodyTypeScope body_scope(current_body_types_, &body_types);
+      moss::TypeRef inferred_result;
       auto include_result = [&](const string& expression) {
-        auto actual = inferred_expr_type(expression, env);
-        if (!actual || contains_internal_placeholder(*actual)) return true;
-        string concrete = canonical_type_name(*actual);
-        if (inferred_result && !same_type(*inferred_result, concrete)) return false;
-        inferred_result = concrete;
+        auto actual = checked_expression_term(expression, env);
+        if (!actual) return true;
+        if (inferred_result && !body_types.solver.unify(inferred_result, actual))
+          return false;
+        if (!inferred_result) inferred_result = actual;
         return true;
       };
       if (function.result_expression && !include_result(*function.result_expression))
@@ -4519,9 +6424,14 @@ class Checker {
         if (statement.kind == Stmt::Kind::Return && !statement.a.empty() &&
             !include_result(statement.a))
           return std::nullopt;
-      if (inferred_result) return inferred_result;
+      if (inferred_result) {
+        auto closed = body_types.solver.resolve(inferred_result);
+        if (closed->is_closed() &&
+            !contains_internal_placeholder(closed->to_canonical_string()))
+          return closed->to_canonical_string();
+      }
     }
-    if (starts_with(result, "_generic:")) {
+    if (open_generic(result)) {
       string parameter = result.substr(9);
       for (size_t index = 0;
            index < function.params.size() && index < parameter_types.size(); ++index)
@@ -4551,7 +6461,7 @@ class Checker {
   }
 
   void constrain_constructor_fields(int line, const string& expression,
-                                    const std::unordered_map<string,string>& env) {
+                                    const TypeEnv& env) {
     string normalized = normalize_pipeline(trim(expression));
     string constructor;
     vector<string> args;
@@ -4576,11 +6486,11 @@ class Checker {
             auto& parameter = function->second->params[index];
             if (parameter.type.empty() && !function->second->generic &&
                 !function->second->static_dispatch)
-              parameter.type = *actual;
+              parameter.set_type(*actual);
             else if (!function->second->generic && !function->second->static_dispatch &&
                      !traits_.count(parameter.type) &&
                      !contains_internal_placeholder(*actual) &&
-                     !same_type(parameter.type, *actual))
+                     !is_type_compatible(parameter.type, *actual))
               err(line, "argument " + std::to_string(index + 1) + " to function '" +
                   constructor + "' has type '" + *actual + "', expected '" +
                   parameter.type + "'");
@@ -4609,10 +6519,16 @@ class Checker {
       // revisits this constructor once the specialization TypeEnv is available.
       if (!actual || contains_internal_placeholder(*actual)) continue;
       string inferred = canonical_type_name(*actual);
+      if (field->inferred) {
+        // Generic field: each constructor call produces its own nominal instance.
+        // Do not mutate template field->type!
+        continue;
+      }
       if (field->type.empty()) field->type = inferred;
-      else if ((inferred == "map" && starts_with(canonical_type_name(field->type), "map[")) ||
+      else if ((inferred == "vector" && starts_with(canonical_type_name(field->type), "vector[")) ||
+               (inferred == "map" && starts_with(canonical_type_name(field->type), "map[")) ||
                (inferred == "queue" && starts_with(canonical_type_name(field->type), "queue["))) {
-        // Empty Map()/Queue() have no intrinsic element evidence. A concrete
+        // Empty Vector/Map()/Queue() have no intrinsic element evidence. A concrete
         // object field is the narrow contextual type that supplies it.
         continue;
       }
@@ -4626,17 +6542,60 @@ class Checker {
     return !type.empty() && !contains_internal_placeholder(type);
   }
 
+  static bool concrete_environment_type(const moss::TypeRef& type) {
+    return type && !contains_internal_placeholder(type);
+  }
+
+  static std::optional<string> refine_bare_collection(
+      const string& current, const vector<string>& argument_names) {
+    auto parsed = moss::Type::parse_canonical(canonical_type_name(current));
+    if (!parsed || (*parsed)->kind != moss::TypeKind::Builtin ||
+        !(*parsed)->type_args.empty()) return std::nullopt;
+    auto arity = moss::Type::collection_arity((*parsed)->name);
+    if (!arity || *arity != argument_names.size()) return std::nullopt;
+    moss::TypeSolver solver(1);
+    vector<moss::TypeRef> open_arguments;
+    vector<moss::TypeRef> concrete_arguments;
+    for (const auto& name : argument_names) {
+      auto argument = moss::Type::parse_canonical(canonical_type_name(name));
+      if (!argument) return std::nullopt;
+      if (!(*argument)->is_closed() && !contains_internal_placeholder(name) && !open_generic(name))
+        return std::nullopt;
+      open_arguments.push_back(solver.fresh(0));
+      concrete_arguments.push_back(*argument);
+    }
+    auto open = moss::Type::builtin((*parsed)->name, std::move(open_arguments));
+    auto concrete = moss::Type::builtin((*parsed)->name,
+                                        std::move(concrete_arguments));
+    if (!solver.unify(open, concrete)) return std::nullopt;
+    return solver.resolve(open)->to_canonical_string();
+  }
+
+  static std::optional<string> refine_bare_collection(
+      const moss::TypeRef& current, const vector<string>& argument_names) {
+    return refine_bare_collection(canonical_type_name(current), argument_names);
+  }
+
   void refine_map_index_assignment_type(const string& target,
                                         const string& value,
                                         TypeEnv& env) const {
     string base, index;
     if (!parse_index(target, base, index)) return;
     auto container = env.find(base);
-    if (container == env.end() || container->second != "map") return;
+    if (container == env.end()) return;
+    auto retained = current_body_types_
+        ? current_body_types_->resolved_local(base) : nullptr;
+    if (retained && retained->is_closed() &&
+        !contains_internal_placeholder(retained->to_canonical_string())) {
+      env[base] = retained;
+      return;
+    }
     auto key_type = inferred_expr_type(index, env);
     auto value_type = inferred_expr_type(value, env);
     if (key_type && value_type)
-      container->second = "map[" + *key_type + "," + *value_type + "]";
+      if (auto refined = refine_bare_collection(container->second,
+                                                 {*key_type, *value_type}))
+        env[base] = *refined;
   }
 
   // This is the common control-flow join for inference, ordinary checking,
@@ -4648,33 +6607,117 @@ class Checker {
     TypeEnv merged;
     for (const auto& entry : paths.front()) {
       const string& binding = entry.first;
-      string agreed = entry.second;
       bool present_everywhere = true;
-      bool disagrees = false;
-      for (size_t index = 1; index < paths.size(); ++index) {
-        auto found = paths[index].find(binding);
-        if (found == paths[index].end()) {
-          present_everywhere = false;
-          break;
-        }
-        if (!same_type(agreed, found->second)) {
-          if (reject_conflicts && concrete_environment_type(agreed) &&
-              concrete_environment_type(found->second)) {
-            string left = canonical_type_name(agreed);
-            string right = canonical_type_name(found->second);
-            if (domains_.count(left) && domains_.count(right))
-              err(line, "binding '" + binding +
-                  "' has conflicting domain types across control-flow paths: " +
-                  left + " and " + right);
-            err(line, "binding '" + binding +
-                "' has conflicting concrete types across control-flow paths: " +
-                left + " and " + right);
+      for (size_t index = 1; index < paths.size(); ++index)
+        if (!paths[index].count(binding)) present_everywhere = false;
+      if (!present_everywhere) continue;
+
+      if (current_body_types_) {
+        moss::TypeRef joined;
+        bool fully_typed = true;
+        for (const auto& path : paths) {
+          auto found = path.terms.find(binding);
+          if (found == path.terms.end() || !found->second) {
+            fully_typed = false;
+            break;
           }
-          disagrees = true;
+          if (!joined) joined = found->second;
+          else if (!current_body_types_->solver.unify(joined, found->second)) {
+            if (reject_conflicts)
+              err(line, "binding '" + binding +
+                  "' has conflicting types across control-flow paths",
+                  "TYPE_MISMATCH");
+            fully_typed = false;
+            break;
+          }
+        }
+        if (fully_typed) {
+          auto resolved = current_body_types_->solver.resolve(joined);
+          merged.terms[binding] = (resolved && resolved->is_closed()) ? resolved : joined;
+          merged[binding] = (resolved && resolved->is_closed())
+              ? resolved
+              : (entry.second ? entry.second : (resolved ? resolved : joined));
+          continue;
         }
       }
-      if (present_everywhere)
-        merged[binding] = disagrees ? "_value" : canonical_type_name(agreed);
+
+      // The body's prepass has already unified every assignment to this
+      // binding, including assignments under zero-iteration loops and both
+      // sides of a branch. A join only projects that representative; it must
+      // not infer another type from the paths' display spellings.
+      if (current_body_types_) {
+        auto retained = current_body_types_->resolved_local(binding);
+        if (retained && !contains_internal_placeholder(
+                            retained->to_canonical_string())) {
+          if (retained->is_closed()) {
+            merged.terms[binding] = retained;
+            merged[binding] = entry.second && entry.second->structurally_equal(*retained)
+                ? entry.second : retained;
+          } else {
+            merged[binding] = entry.second;
+          }
+          continue;
+        }
+      }
+
+      // A binding has one type across the control-flow join. Fresh variables
+      // represent only genuinely open collection slots, including nested ones;
+      // a use on another path constrains that same binding's term.
+      moss::TypeSolver solver(1);
+      std::function<moss::TypeRef(const moss::TypeRef&)> open_slots =
+          [&](const moss::TypeRef& type) -> moss::TypeRef {
+        if (!type || type->kind != moss::TypeKind::Builtin) return type;
+        vector<moss::TypeRef> args;
+        if (auto arity = moss::Type::collection_arity(type->name);
+            arity && type->type_args.empty()) {
+          for (size_t i = 0; i < *arity; ++i)
+            args.push_back(solver.fresh(0));
+        } else {
+          for (const auto& arg : type->type_args)
+            args.push_back(open_slots(arg));
+        }
+        return moss::Type::builtin(type->name, std::move(args));
+      };
+      moss::TypeRef agreed;
+      bool disagrees = false;
+      string conflicting;
+      for (const auto& path : paths) {
+        auto it = path.find(binding);
+        if (it == path.end() || !it->second) {
+          disagrees = true;
+          continue;
+        }
+        auto candidate = open_slots(it->second);
+        if (!agreed) agreed = candidate;
+        else if (!solver.unify(agreed, candidate)) {
+          disagrees = true;
+          conflicting = canonical_type_name(it->second);
+          break;
+        }
+      }
+      if (disagrees) {
+        if (reject_conflicts && !conflicting.empty() &&
+            concrete_environment_type(entry.second) &&
+            concrete_environment_type(conflicting)) {
+          string left = canonical_type_name(entry.second);
+          string right = canonical_type_name(conflicting);
+          if (domains_.count(left) && domains_.count(right))
+            err(line, "binding '" + binding +
+                "' has conflicting domain types across control-flow paths: " +
+                left + " and " + right);
+          err(line, "binding '" + binding +
+              "' has conflicting concrete types across control-flow paths: " +
+              left + " and " + right);
+        }
+        merged[binding] = "_value";
+        continue;
+      }
+      if (agreed) {
+        auto resolved = solver.resolve(agreed);
+        merged[binding] = resolved;
+      } else {
+        merged[binding] = entry.second;
+      }
     }
     return merged;
   }
@@ -4702,7 +6745,8 @@ class Checker {
   void advance_type_environment(const Stmt& statement, TypeEnv& env,
                                 const vector<Stmt>& statements,
                                 bool record_semantic_types,
-                                const string& join_context = {}) const {
+                                const string& join_context = {},
+                                const TypeEnv& solved_collections = {}) const {
     if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
         statement.kind == Stmt::Kind::Assign) {
       if (statement.kind != Stmt::Kind::Assign || simple_identifier(statement.a)) {
@@ -4710,33 +6754,79 @@ class Checker {
         if (auto constructed = domain_constructor(statement.b)) {
           env[statement.a] = *constructed;
         } else if (auto inferred = inferred_expr_type(statement.b, env)) {
-          env[statement.a] = canonical_type_name(*inferred);
+          string cinf = canonical_type_name(*inferred);
+          auto retained = current_body_types_
+              ? current_body_types_->assignment_value(statement) : nullptr;
+          auto local = retained && current_body_types_
+              ? current_body_types_->resolved_local(statement.a) : nullptr;
+          auto binding = local ? local : retained;
+          if (binding && binding->is_closed() &&
+              !contains_internal_placeholder(binding->to_canonical_string())) {
+            // The body solver already related this RHS to the binding.
+            env[statement.a] = binding;
+          } else {
+            // A local's open collection is one inference term for the whole
+            // body. The solver may close it from a use after a loop; retain
+            // that result when this constructor is visited in source order.
+            auto inferred_term = moss::Type::parse_canonical(cinf);
+            if (inferred_term && !(*inferred_term)->is_closed()) {
+              auto solved = solved_collections.find(statement.a);
+              if (solved != solved_collections.end()) cinf = canonical_type_name(solved->second);
+            }
+            auto candidate = moss::Type::parse_canonical(cinf);
+            if (statement.kind == Stmt::Kind::Assign && existing != env.end() &&
+                candidate && (*candidate)->kind == moss::TypeKind::Builtin &&
+                !(*candidate)->is_closed() &&
+                is_type_compatible(existing->second, cinf)) {
+              // Keep specialized container type
+            } else {
+              env[statement.a] = cinf;
+            }
+          }
         } else if (statement.kind != Stmt::Kind::Assign || existing == env.end()) {
           env[statement.a] = "_value";
         }
         if (record_semantic_types)
-          const_cast<Stmt&>(statement).semantic_type = env[statement.a];
+          const_cast<Stmt&>(statement).semantic_type = canonical_type_name(env[statement.a]);
       } else {
         string base, index_expression;
         if (parse_index(statement.a, base, index_expression)) {
           auto container = env.find(base);
+          auto retained = current_body_types_
+              ? current_body_types_->resolved_local(base) : nullptr;
+          if (container != env.end() && retained && retained->is_closed() &&
+              !contains_internal_placeholder(retained->to_canonical_string())) {
+            container->second = retained;
+            if (record_semantic_types)
+              for (auto& prior : const_cast<vector<Stmt>&>(statements))
+                if (prior.a == base && prior.b == "Map()") {
+                  prior.semantic_type = canonical_type_name(retained);
+                  if (!join_context.empty())
+                    prior.semantic_types_by_context[join_context] = canonical_type_name(retained);
+                }
+            return;
+          }
           auto value_type = inferred_expr_type(statement.b, env);
-          if (container != env.end() && value_type && container->second == "map") {
+          if (container != env.end() && value_type) {
             auto key_type = inferred_expr_type(index_expression, env);
             if (key_type) {
-              container->second = "map[" + *key_type + "," + *value_type + "]";
-              if (record_semantic_types) {
-                for (auto& prior : const_cast<vector<Stmt>&>(statements))
-                  if (prior.a == base && prior.b == "Map()") {
-                    prior.semantic_type = container->second;
-                    if (!join_context.empty())
-                      prior.semantic_types_by_context[join_context] = container->second;
-                  }
+              auto refined = refine_bare_collection(container->second,
+                                                     {*key_type, *value_type});
+              if (refined) {
+                container->second = moss::Type::parse_canonical(*refined).value_or(nullptr);
+                if (record_semantic_types) {
+                  for (auto& prior : const_cast<vector<Stmt>&>(statements))
+                    if (prior.a == base && prior.b == "Map()") {
+                      prior.semantic_type = *refined;
+                      if (!join_context.empty())
+                        prior.semantic_types_by_context[join_context] = *refined;
+                    }
+                }
               }
             }
-          } else if (container != env.end() && value_type &&
-                     (container->second == "queue" || container->second == "vector")) {
-            container->second += "[" + *value_type + "]";
+            if (auto refined = refine_bare_collection(container->second,
+                                                       {*value_type}))
+              container->second = moss::Type::parse_canonical(*refined).value_or(nullptr);
           }
         }
       }
@@ -4762,10 +6852,44 @@ class Checker {
     if (statement.kind == Stmt::Kind::Call && !statement.b.empty() &&
         statement.b == "push" && statement.args.size() == 1) {
       auto container = env.find(statement.a);
+      auto retained = current_body_types_
+          ? current_body_types_->resolved_local(statement.a) : nullptr;
+      if (container != env.end() && retained && retained->is_closed() &&
+          !contains_internal_placeholder(retained->to_canonical_string())) {
+        container->second = retained;
+        if (record_semantic_types)
+          for (auto& prior : const_cast<vector<Stmt>&>(statements))
+            if (prior.a == statement.a &&
+                (prior.b == "[]" || prior.b == "Queue()" ||
+                 parse_vector_literal(prior.b).has_value() ||
+                 starts_with(prior.semantic_type, "vector") ||
+                 starts_with(prior.semantic_type, "queue"))) {
+              prior.semantic_type = canonical_type_name(retained);
+              if (!join_context.empty())
+                prior.semantic_types_by_context[join_context] = canonical_type_name(retained);
+            }
+        return;
+      }
       auto argument = inferred_expr_type(statement.args.front(), env);
-      if (container != env.end() && argument &&
-          (container->second == "vector" || container->second == "queue"))
-        container->second += "[" + *argument + "]";
+      if (container != env.end() && argument) {
+        if (auto refined = refine_bare_collection(container->second,
+                                                   {*argument})) {
+          container->second = moss::Type::parse_canonical(*refined).value_or(nullptr);
+          if (record_semantic_types) {
+            for (auto& prior : const_cast<vector<Stmt>&>(statements)) {
+              if (prior.a == statement.a &&
+                  (prior.b == "[]" || prior.b == "Queue()" ||
+                   parse_vector_literal(prior.b).has_value() ||
+                   starts_with(prior.semantic_type, "vector") ||
+                   starts_with(prior.semantic_type, "queue"))) {
+                prior.semantic_type = *refined;
+                if (!join_context.empty())
+                  prior.semantic_types_by_context[join_context] = *refined;
+              }
+            }
+          }
+        }
+      }
     }
   }
 
@@ -4775,7 +6899,8 @@ class Checker {
                                    bool reject_conflicts,
                                    bool record_join_types,
                                    bool record_semantic_types,
-                                   const string& join_context) const {
+                                   const string& join_context,
+                                   const TypeEnv& solved_collections) const {
     while (index < statements.size()) {
       const Stmt& statement = statements[index];
       if (statement.indent < level) return;
@@ -4783,13 +6908,22 @@ class Checker {
         err(statement.line, "indentation jumps more than one block level");
       if (statement.kind == Stmt::Kind::Else) return;
 
+      if (current_body_types_) {
+        auto found = current_body_types_->locals_at_statement.find(&statement);
+        if (found != current_body_types_->locals_at_statement.end()) {
+          current_body_types_->scoped_locals = found->second;
+          current_body_types_->scoped_locals_active = true;
+          env.terms = found->second;
+        }
+      }
+
       if (statement.kind == Stmt::Kind::Match) {
         visitor(statement, env);
         auto scrutinee_type = inferred_expr_type(statement.a, env);
         bool deferred = (scrutinee_type &&
-            (starts_with(*scrutinee_type, "_generic:") ||
+            (open_generic(*scrutinee_type) ||
              *scrutinee_type == "_selected_error")) ||
-            (!scrutinee_type && env.count(statement.a) && env.at(statement.a).empty());
+            (!scrutinee_type && env.count(statement.a) && !env.at(statement.a));
         if (!deferred && (!scrutinee_type ||
             !enums_.count(canonical_type_name(*scrutinee_type))))
           err(statement.line, scrutinee_type && !contains_internal_placeholder(*scrutinee_type)
@@ -4837,19 +6971,30 @@ class Checker {
             if (!pattern_names.insert(arm.args[field_index]).second)
               err(arm.line, "duplicate enum pattern binding: " +
                   arm.args[field_index], "DUPLICATE_PATTERN_BINDING");
-            branch[arm.args[field_index]] = declaration
+            string field_type = declaration
                 ? item->fields[field_index].type : "_generic:" + arm.args[field_index];
+            branch[arm.args[field_index]] = field_type;
+            if (declaration) {
+              if (auto parsed = moss::Type::parse_canonical(canonical_type_name(field_type)))
+                branch.terms[arm.args[field_index]] = *parsed;
+              else
+                branch.terms[arm.args[field_index]] = moss::Type::primitive(field_type);
+            }
           }
           ++index;
           if (index >= statements.size() || statements[index].indent != level + 2)
             err(arm.line, "enum case requires a statement body", "EMPTY_MATCH_CASE");
           walk_type_environment_block(statements, index, level + 2, branch,
                                       visitor, reject_conflicts, record_join_types,
-                                      record_semantic_types, join_context);
+                                      record_semantic_types, join_context, solved_collections);
           for (const auto& name : arm.args) {
             auto prior = env.find(name);
             if (prior == env.end()) branch.erase(name);
             else branch[name] = prior->second;
+            if (auto prior_term = env.terms.find(name); prior_term != env.terms.end())
+              branch.terms[name] = prior_term->second;
+            else
+              branch.terms.erase(name);
           }
           paths.push_back(std::move(branch));
         }
@@ -4884,7 +7029,7 @@ class Checker {
         walk_type_environment_block(statements, index, level + 1, normal,
                                     visitor, reject_conflicts,
                                     record_join_types, record_semantic_types,
-                                    join_context);
+                                    join_context, solved_collections);
         vector<TypeEnv> paths{std::move(normal)};
         bool saw_recover = false;
         while (index < statements.size() &&
@@ -4916,7 +7061,7 @@ class Checker {
           walk_type_environment_block(statements, index, level + 1, recovered,
                                       visitor, reject_conflicts,
                                       record_join_types, record_semantic_types,
-                                      join_context);
+                                      join_context, solved_collections);
           paths.push_back(std::move(recovered));
         }
         if (!saw_recover)
@@ -4942,7 +7087,7 @@ class Checker {
         TypeEnv then_env = incoming;
         walk_type_environment_block(statements, index, level + 1, then_env,
                                     visitor, reject_conflicts, record_join_types,
-                                    record_semantic_types, join_context);
+                                    record_semantic_types, join_context, solved_collections);
 
         vector<TypeEnv> paths;
         paths.push_back(std::move(then_env));
@@ -4952,7 +7097,7 @@ class Checker {
           TypeEnv else_env = incoming;
           walk_type_environment_block(statements, index, level + 1, else_env,
                                       visitor, reject_conflicts, record_join_types,
-                                      record_semantic_types, join_context);
+                                      record_semantic_types, join_context, solved_collections);
           paths.push_back(std::move(else_env));
         } else {
           paths.push_back(std::move(incoming));
@@ -4973,7 +7118,7 @@ class Checker {
         TypeEnv body_env = incoming;
         walk_type_environment_block(statements, index, level + 1, body_env,
                                     visitor, reject_conflicts, record_join_types,
-                                    record_semantic_types, join_context);
+                                    record_semantic_types, join_context, solved_collections);
         env = merge_type_environments({incoming, body_env}, statement.line,
                                       reject_conflicts);
         if (record_join_types) {
@@ -4992,22 +7137,47 @@ class Checker {
         string element_type = iterator_element_type(
             statement.line, statement.b, incoming).value_or("_value");
         body_env[statement.a] = element_type;
+        BodyTypeState* scoped_types = current_body_types_;
+        if (scoped_types) {
+          auto binding = scoped_types->for_bindings.find(&statement);
+          if (binding != scoped_types->for_bindings.end() && binding->second)
+            body_env.terms[statement.a] = binding->second;
+        }
         if (record_semantic_types)
           const_cast<Stmt&>(statement).semantic_type = element_type;
-        walk_type_environment_block(statements, index, level + 1, body_env,
-                                    visitor, reject_conflicts, record_join_types,
-                                    record_semantic_types, join_context);
-        body_env.erase(statement.a);
-        TypeEnv joined;
-        for (const auto& entry : incoming) {
-          auto found = body_env.find(entry.first);
-          if (found != body_env.end()) {
-            joined[entry.first] = found->second;
-          } else {
-            joined[entry.first] = entry.second;
+        bool has_loop_term = false;
+        std::optional<moss::TypeRef> previous_term;
+        if (scoped_types) {
+          auto binding = scoped_types->for_bindings.find(&statement);
+          if (binding != scoped_types->for_bindings.end()) {
+            has_loop_term = true;
+            auto previous = scoped_types->scoped_locals.find(statement.a);
+            if (previous != scoped_types->scoped_locals.end())
+              previous_term = previous->second;
+            scoped_types->scoped_locals[statement.a] = binding->second;
           }
         }
-        env = std::move(joined);
+        walk_type_environment_block(statements, index, level + 1, body_env,
+                                    visitor, reject_conflicts, record_join_types,
+                                    record_semantic_types, join_context, solved_collections);
+        if (has_loop_term) {
+          if (previous_term) scoped_types->scoped_locals[statement.a] = *previous_term;
+          else scoped_types->scoped_locals.erase(statement.a);
+        }
+        // The loop variable is scoped to the body. On exit a binding it
+        // shadowed is restored, as a match arm's pattern bindings are;
+        // erasing it would drop the outer binding at the join.
+        if (auto shadowed = incoming.find(statement.a); shadowed != incoming.end())
+          body_env[statement.a] = shadowed->second;
+        else
+          body_env.erase(statement.a);
+        if (auto shadowed = incoming.terms.find(statement.a);
+            shadowed != incoming.terms.end())
+          body_env.terms[statement.a] = shadowed->second;
+        else
+          body_env.terms.erase(statement.a);
+        env = merge_type_environments({incoming, body_env}, statement.line,
+                                      reject_conflicts);
         if (record_join_types) {
           const_cast<Stmt&>(statement).joined_types = env;
           if (!join_context.empty())
@@ -5017,7 +7187,16 @@ class Checker {
       }
 
       visitor(statement, env);
-      advance_type_environment(statement, env, statements, record_semantic_types, join_context);
+      advance_type_environment(statement, env, statements, record_semantic_types,
+                               join_context, solved_collections);
+      if (current_body_types_ &&
+          (statement.kind == Stmt::Kind::Let ||
+           statement.kind == Stmt::Kind::Var ||
+           statement.kind == Stmt::Kind::Assign) &&
+          simple_identifier(statement.a)) {
+        if (auto term = current_body_types_->assignment_value(statement))
+          env.terms[statement.a] = term;
+      }
       if (record_semantic_types && statement.kind == Stmt::Kind::Call &&
           !statement.b.empty()) {
         if (auto receiver = inferred_expr_type(statement.a, env))
@@ -5031,23 +7210,767 @@ class Checker {
     }
   }
 
+  // Solve open collection locals once per body before source-order checking.
+  // In particular, a for source may precede the operation that determines its
+  // element type.  Each local gets its own variable, including two assignments
+  // from separate calls to the same open-result function.
+  BodyTypeState solve_local_collection_types(const vector<Stmt>& statements,
+                                             const TypeEnv& entry,
+                                             const string& semantic_context,
+                                             bool record_call_facts,
+                                             bool retain_all_types = false) const {
+    BodyTypeState body_types;
+    // Expression inference in this prepass must read the terms being built
+    // here, even when an outer checker/effects walk retains another body.
+    BodyTypeScope body_scope(current_body_types_, &body_types);
+    auto& solver = body_types.solver;
+    auto& locals = body_types.locals;
+    struct PendingOpenCall {
+      const Stmt* statement;
+      moss::TypeRef result;
+      vector<std::pair<uint32_t, moss::TypeRef>> bindings;
+    };
+    vector<PendingOpenCall> open_calls;
+    struct PendingMemberCall {
+      const Stmt* statement;
+      vector<moss::MemberDispatchRequirement> requirements;
+    };
+    vector<PendingMemberCall> member_calls;
+    TypeEnv scan = entry;
+    std::function<moss::TypeRef(const moss::TypeRef&)> freshen_open_type =
+        [&](const moss::TypeRef& type) -> moss::TypeRef {
+      if (!type) return nullptr;
+      if (type->kind == moss::TypeKind::Builtin) {
+        vector<moss::TypeRef> args;
+        auto arity = moss::Type::collection_arity(type->name);
+        if (arity && type->type_args.empty()) {
+          for (size_t index = 0; index < *arity; ++index)
+            args.push_back(solver.fresh(static_cast<uint32_t>(locals.size() + 1)));
+        } else {
+          for (const auto& arg : type->type_args)
+            args.push_back(freshen_open_type(arg));
+        }
+        return moss::Type::builtin(type->name, std::move(args));
+      }
+      if (type->is_bare_template()) {
+        vector<std::pair<string, moss::TypeRef>> substitutions;
+        for (const auto& slot : type->declaration->fields)
+          if (slot.inferred)
+            substitutions.emplace_back(slot.name,
+                solver.fresh(static_cast<uint32_t>(locals.size() + 1)));
+        return moss::Type::nominal_bound(type->declaration, type->name,
+                                         std::move(substitutions));
+      }
+      if (type->kind == moss::TypeKind::NominalInstance) {
+        vector<std::pair<string, moss::TypeRef>> substitutions;
+        for (const auto& field : type->field_substitutions)
+          substitutions.emplace_back(field.first,
+                                     freshen_open_type(field.second));
+        return moss::Type::nominal_bound(type->declaration, type->name,
+                                         std::move(substitutions));
+      }
+      return type;
+    };
+    auto term_for = [&](const string& expression) -> moss::TypeRef {
+      string value = trim(expression);
+      if (auto retained = body_types.known_expression(value)) return retained;
+      if (auto term = inferred_expr_term(value, scan)) return term;
+      auto inferred = inferred_expr_type(value, scan);
+      if (!inferred) return nullptr;
+      auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
+      return parsed ? freshen_open_type(*parsed) : nullptr;
+    };
+    auto require_type = [&](int line, const string& expression,
+                            const string& expected, const string& context) {
+      string callee;
+      vector<string> arguments;
+      if (parse_simple_call(trim(expression), callee, arguments)) {
+        auto function = functions_.find(callee);
+        if (function != functions_.end()) {
+          const auto* summary = function->second->open_summary
+              ? &*function->second->open_summary : nullptr;
+          auto inferred_result = function->second->return_type
+              ? moss::Type::parse_canonical(
+                    canonical_type_name(*function->second->return_type))
+              : std::nullopt;
+          if ((summary && summary->complete && summary->result_type &&
+               !summary->result_type->is_closed()) ||
+              (inferred_result && !(*inferred_result)->is_closed()))
+            return;  // The checked call closes against the expected parameter.
+        }
+      }
+      auto actual = term_for(expression);
+      auto parsed = moss::Type::parse_canonical(canonical_type_name(expected));
+      if (!actual || !parsed) return;
+      // A call supplies a concrete constraint to the existing local variable.
+      // The solver owns this binding for the whole body, including earlier
+      // reads and later assignments. The call never creates a fresh local.
+      if (!solver.unify(actual, freshen_open_type(*parsed)))
+        err(line, context + " requires '" + canonical_type_name(expected) +
+            "' for '" + trim(expression) + "'", "TYPE_MISMATCH");
+    };
+    if (record_call_facts || retain_all_types)
+      for (const auto& [name, binding_term] : entry) {
+        auto term_it = entry.terms.find(name);
+        if (term_it != entry.terms.end() && term_it->second) {
+          locals.emplace(name, freshen_open_type(term_it->second));
+          continue;
+        }
+        string spelling = binding_term ? binding_term->to_canonical_string() : "";
+        if (contains_internal_placeholder(spelling)) {
+          if (open_generic(spelling) || starts_with(spelling, "_generic:")) {
+            auto fresh_var = solver.fresh(0);
+            locals.emplace(name, fresh_var);
+            scan.terms[name] = fresh_var;
+          }
+          continue;
+        }
+        auto parsed = moss::Type::parse_canonical(canonical_type_name(spelling));
+        if (parsed) locals.emplace(name, freshen_open_type(*parsed));
+      }
+    auto constrain_call = [&](int line, const string& expression) {
+      string callee;
+      vector<string> arguments;
+      if (!parse_simple_call(trim(expression), callee, arguments)) return;
+      auto function = functions_.find(callee);
+      if (function == functions_.end()) return;
+      for (size_t index = 0;
+           index < arguments.size() && index < function->second->params.size(); ++index) {
+        const auto& parameter = function->second->params[index];
+        if (parameter.type.empty() || traits_.count(parameter.type) ||
+            contains_internal_placeholder(parameter.type)) continue;
+        require_type(line, arguments[index], parameter.type,
+                     "argument " + std::to_string(index + 1) +
+                     " to function '" + callee + "'");
+      }
+    };
+    vector<std::pair<int, moss::Requirement>> structural_requirements;
+    auto instantiate_summary = [&](int line, const string& expression,
+                                   const Stmt* statement) -> moss::TypeRef {
+      string callee;
+      vector<string> arguments;
+      if (!parse_simple_call(trim(expression), callee, arguments)) return nullptr;
+      auto function = functions_.find(callee);
+      if (function == functions_.end() || !function->second->open_summary ||
+          !function->second->open_summary->complete) return nullptr;
+      const auto& summary = *function->second->open_summary;
+      if (arguments.size() != summary.parameter_types.size()) return nullptr;
+      vector<moss::TypeRef> fresh;
+      for (uint32_t ordinal = 0; ordinal < summary.bound_variable_count; ++ordinal)
+        fresh.push_back(solver.fresh(static_cast<uint32_t>(open_calls.size() + 1)));
+      std::function<moss::TypeRef(const moss::TypeRef&)> instantiate =
+          [&](const moss::TypeRef& source) -> moss::TypeRef {
+        if (!source) return nullptr;
+        if (source->kind == moss::TypeKind::InferenceVar) {
+          if (source->var_id.session_id != 0 ||
+              source->var_id.ordinal >= fresh.size()) return nullptr;
+          return fresh[source->var_id.ordinal];
+        }
+        if (source->kind == moss::TypeKind::Builtin) {
+          vector<moss::TypeRef> args;
+          for (const auto& arg : source->type_args)
+            args.push_back(instantiate(arg));
+          return moss::Type::builtin(source->name, std::move(args));
+        }
+        if (source->kind == moss::TypeKind::NominalInstance) {
+          vector<std::pair<string, moss::TypeRef>> substitutions;
+          for (const auto& field : source->field_substitutions)
+            substitutions.emplace_back(field.first, instantiate(field.second));
+          return moss::Type::nominal_bound(source->declaration, source->name,
+                                           std::move(substitutions));
+        }
+        return source;
+      };
+      for (size_t index = 0; index < arguments.size(); ++index) {
+        if (index < function->second->params.size() &&
+            traits_.count(function->second->params[index].type))
+          continue;
+        auto actual = term_for(arguments[index]);
+        auto expected = instantiate(summary.parameter_types[index]);
+        if (expected && (expected->kind == moss::TypeKind::TraitConstraint ||
+            (expected->kind == moss::TypeKind::Primitive && traits_.count(expected->name))))
+          continue;
+        if (actual && expected && !solver.unify(actual, expected))
+          err(line, "argument " + std::to_string(index + 1) +
+              " to function '" + callee + "' has incompatible type", "TYPE_MISMATCH");
+      }
+      // An open structural requirement follows its instantiated type variable
+      // through subsequent unification. The existing checker admission path
+      // closes concrete requirements; the solver retains the open relationship
+      // until that point instead of deriving it again from a display type.
+      for (const auto& source : summary.requirements) {
+        moss::Requirement requirement = source;
+        requirement.subject = instantiate(source.subject);
+        for (auto& argument : requirement.arguments)
+          argument = instantiate(argument);
+        if (source.result) requirement.result = instantiate(*source.result);
+        structural_requirements.emplace_back(line, requirement);
+        auto subject = requirement.subject
+            ? solver.resolve(requirement.subject) : nullptr;
+        if (subject && subject->kind == moss::TypeKind::InferenceVar)
+          solver.require(subject->var_id, std::move(requirement));
+        else if (subject && requirement.kind == moss::RequirementKind::Index &&
+                 requirement.result &&
+                 subject->kind == moss::TypeKind::Builtin &&
+                 (subject->name == "vector" || subject->name == "queue" ||
+                  subject->name == "map") &&
+                 !subject->type_args.empty() &&
+                 !solver.unify(*requirement.result, subject->type_args.back()))
+          err(line, "indexed result conflicts with collection element type",
+              "TYPE_MISMATCH");
+      }
+      if (!summary.member_requirements.empty()) {
+        vector<moss::MemberDispatchRequirement> instantiated_requirements;
+        for (const auto& source : summary.member_requirements) {
+          moss::MemberDispatchRequirement requirement = source;
+          requirement.parent_requirement_id = source.requirement_id;
+          requirement.requirement_id = source.requirement_id + ":call:" +
+              (statement ? statement->source_file : current_source_file_) + ":" +
+              std::to_string(line);
+          requirement.receiver = instantiate(source.receiver);
+          for (auto& argument : requirement.argument_types)
+            argument = instantiate(argument);
+          if (source.result) requirement.result = instantiate(*source.result);
+          instantiated_requirements.push_back(std::move(requirement));
+        }
+        vector<string> concrete_parameters;
+        bool concrete = true;
+        for (const auto& parameter : summary.parameter_types) {
+          auto resolved = solver.resolve(instantiate(parameter));
+          concrete &= resolved && resolved->is_closed();
+          concrete_parameters.push_back(resolved
+              ? resolved->to_canonical_string() : "");
+        }
+        if (concrete) {
+          // Adapt the existing checker admission/visibility decision to the
+          // solver worklist. Team S will supply this callback at integration.
+          const auto selected = validate_method_requirements(
+              line, *function->second, concrete_parameters);
+          auto admit = [&](const moss::MemberDispatchRequirement& open)
+              -> moss::MemberAdmission {
+            moss::MemberAdmission decision;
+            const string source_id = open.parent_requirement_id.value_or("");
+            auto found = std::find_if(selected.begin(), selected.end(),
+                [&](const moss::MemberDispatchRequirement& item) {
+                  return item.requirement_id == source_id;
+                });
+            if (found == selected.end()) return decision;
+            decision.status = moss::MemberAdmission::Status::Admitted;
+            decision.admitted_template_or_builtin_family =
+                found->admitted_template_or_builtin_family;
+            decision.selected_callable_id = found->selected_callable_id;
+            decision.receiver_access = found->receiver_access;
+            decision.argument_access = found->argument_access;
+            decision.result = found->result;
+            return decision;
+          };
+          auto closure = moss::close_member_requirements(
+              solver, std::move(instantiated_requirements), admit);
+          if (closure.status ==
+              moss::MemberClosureResult::Status::UnificationFailed)
+            err(line, "required member result conflicts with call result",
+                "TYPE_MISMATCH");
+          if (closure.status ==
+              moss::MemberClosureResult::Status::Rejected)
+            err(line, closure.diagnostic, "TYPE_MISMATCH");
+          if (statement && closure.status ==
+              moss::MemberClosureResult::Status::Closed)
+            member_calls.push_back({statement, std::move(closure.requirements)});
+        } else {
+          // The existing builtin descriptor is the current admission policy
+          // for a known collection head. It contributes equations to the
+          // TypeSolver even while an element/key/value slot remains open.
+          auto admit_builtin = [&](const moss::MemberDispatchRequirement& open)
+              -> moss::MemberAdmission {
+            moss::MemberAdmission decision;
+            if (!open.receiver ||
+                open.receiver->kind != moss::TypeKind::Builtin)
+              return decision;
+            const auto* operation = builtin_operation(
+                open.receiver->name, open.member_name);
+            if (!operation ||
+                operation->argument_types.size() != open.argument_types.size())
+              return decision;
+            auto pattern_type = [&](const string& pattern) -> moss::TypeRef {
+              const auto& args = open.receiver->type_args;
+              if (pattern == "$element" && args.size() == 1)
+                return args[0];
+              if (pattern == "$key" && args.size() == 2)
+                return args[0];
+              if (pattern == "$value" && args.size() == 2)
+                return args[1];
+              if (pattern == "$keys" && args.size() == 2)
+                return moss::Type::builtin("vector", {args[0]});
+              if (pattern == "$values" && args.size() == 2)
+                return moss::Type::builtin("vector", {args[1]});
+              auto parsed = moss::Type::parse_canonical(pattern);
+              return parsed ? *parsed : nullptr;
+            };
+            for (size_t index = 0; index < open.argument_types.size(); ++index) {
+              auto expected = pattern_type(operation->argument_types[index]);
+              if (!expected) return decision;
+              decision.contributes.emplace_back(
+                  open.argument_types[index], expected);
+            }
+            decision.result = pattern_type(operation->result);
+            if (!decision.result) return decision;
+            decision.status = moss::MemberAdmission::Status::Admitted;
+            decision.admitted_template_or_builtin_family =
+                "builtin:" + open.receiver->name;
+            decision.selected_callable_id =
+                "builtin:" + open.receiver->name + "." + open.member_name;
+            decision.receiver_access =
+                requirement_access(operation->receiver_effect);
+            for (auto effect : operation->argument_effects)
+              decision.argument_access.push_back(requirement_access(effect));
+            return decision;
+          };
+          auto closure = moss::close_member_requirements(
+              solver, std::move(instantiated_requirements), admit_builtin);
+          if (closure.status ==
+              moss::MemberClosureResult::Status::UnificationFailed)
+            err(line, "required member has incompatible argument or result types",
+                "TYPE_MISMATCH");
+          if (closure.status ==
+              moss::MemberClosureResult::Status::Rejected)
+            err(line, closure.diagnostic, "TYPE_MISMATCH");
+          if (statement && closure.status ==
+              moss::MemberClosureResult::Status::Closed)
+            member_calls.push_back({statement, std::move(closure.requirements)});
+        }
+      }
+      moss::TypeRef result = instantiate(summary.result_type);
+      if (statement && result) {
+        std::set<uint32_t> result_ordinals;
+        std::function<void(const moss::TypeRef&)> collect =
+            [&](const moss::TypeRef& type) {
+          if (!type) return;
+          if (type->kind == moss::TypeKind::InferenceVar) {
+            result_ordinals.insert(type->var_id.ordinal);
+            return;
+          }
+          for (const auto& arg : type->type_args) collect(arg);
+          for (const auto& field : type->field_substitutions)
+            collect(field.second);
+        };
+        collect(summary.result_type);
+        // D5: only a result variable that is still open here is chosen by
+        // the caller. One already resolved -- by the arguments or by the
+        // member requirements they close -- carries no identity, and
+        // recording it would give one generic two specializations for the
+        // same concrete call.
+        PendingOpenCall pending{statement, result, {}};
+        for (uint32_t ordinal : result_ordinals)
+          if (auto bound = solver.resolve(fresh[ordinal]);
+              !bound || !bound->is_closed())
+            pending.bindings.emplace_back(ordinal, fresh[ordinal]);
+        if (!pending.bindings.empty()) open_calls.push_back(std::move(pending));
+      }
+      return result;
+    };
+    // The statement vector is flat, but local identities obey lexical block
+    // joins. Save the environment at each control-flow boundary so a binding
+    // first made in one path cannot constrain a later binding of the same
+    // spelling. Existing terms remain shared and keep their monotype.
+    struct BlockScope {
+      int indent;
+      int line;
+      Stmt::Kind kind;
+      std::unordered_map<string, moss::TypeRef> incoming_locals;
+      TypeEnv incoming_scan;
+      std::unordered_map<string, moss::TypeRef> then_locals;
+      bool in_else = false;
+    };
+    vector<BlockScope> block_scopes;
+    std::unordered_map<int, const EnumType*> match_enums;
+    auto leave_blocks = [&](const Stmt* next) {
+      while (!block_scopes.empty() &&
+             (!next || next->indent <= block_scopes.back().indent)) {
+        auto& scope = block_scopes.back();
+        if (next && next->indent == scope.indent &&
+            next->kind == Stmt::Kind::Else &&
+            scope.kind == Stmt::Kind::If && !scope.in_else) {
+          scope.then_locals = locals;
+          locals = scope.incoming_locals;
+          scan = scope.incoming_scan;
+          scope.in_else = true;
+          return;
+        }
+        if (scope.kind == Stmt::Kind::If && scope.in_else) {
+          for (const auto& [name, then_term] : scope.then_locals) {
+            if (scope.incoming_locals.count(name)) continue;
+            auto other = locals.find(name);
+            if (other == locals.end()) continue;
+            if (contains_domain_handle(then_term) ||
+                contains_domain_handle(other->second))
+              continue;
+            if (!solver.unify(then_term, other->second))
+              err(scope.line,
+                  "branch types conflict for binding '" + name + "'",
+                  "TYPE_MISMATCH");
+            scope.incoming_locals.emplace(name, then_term);
+          }
+        }
+        // Preserve existing identities and the newly joined identities only.
+        // Their solver terms carry refinements made inside the block.
+        locals = std::move(scope.incoming_locals);
+        scan = std::move(scope.incoming_scan);
+        for (const auto& [name, term] : locals) {
+          auto resolved = solver.resolve(term);
+          if (resolved && resolved->is_closed())
+            scan[name] = resolved->to_canonical_string();
+        }
+        block_scopes.pop_back();
+      }
+      for (auto it = match_enums.begin(); it != match_enums.end(); ) {
+        if (!next || it->first >= next->indent)
+          it = match_enums.erase(it);
+        else
+          ++it;
+      }
+    };
+    for (const Stmt& statement : statements) {
+      leave_blocks(&statement);
+      if (statement.kind == Stmt::Kind::If ||
+          statement.kind == Stmt::Kind::While ||
+          statement.kind == Stmt::Kind::For)
+        block_scopes.push_back({statement.indent, statement.line,
+                                statement.kind, locals, scan,
+                                {}, false});
+      if (statement.kind == Stmt::Kind::Match) {
+        auto scrutinee_type = inferred_expr_type(statement.a, scan);
+        if (scrutinee_type && enums_.count(canonical_type_name(*scrutinee_type))) {
+          match_enums[statement.indent] = enums_.at(canonical_type_name(*scrutinee_type));
+        }
+      } else if (statement.kind == Stmt::Kind::Case) {
+        const EnumType* declaration = nullptr;
+        for (int i = statement.indent - 1; i >= 0; --i) {
+          auto found = match_enums.find(i);
+          if (found != match_enums.end()) {
+            declaration = found->second;
+            break;
+          }
+        }
+        block_scopes.push_back({statement.indent, statement.line,
+                                statement.kind, locals, scan,
+                                {}, false});
+        if (declaration) {
+          auto case_it = std::find_if(
+              declaration->cases.begin(), declaration->cases.end(),
+              [&](const EnumCase& c) { return c.name == statement.a; });
+          if (case_it != declaration->cases.end()) {
+            for (size_t i = 0; i < statement.args.size() && i < case_it->fields.size(); ++i) {
+              const string& field_name = statement.args[i];
+              const string& field_type = case_it->fields[i].type;
+              moss::TypeRef field_term;
+              if (auto parsed = moss::Type::parse_canonical(canonical_type_name(field_type)))
+                field_term = *parsed;
+              else
+                field_term = moss::Type::primitive(field_type);
+              locals[field_name] = field_term;
+              scan[field_name] = field_type;
+            }
+          }
+        }
+      }
+      body_types.locals_at_statement.emplace(&statement, locals);
+      if (statement.kind == Stmt::Kind::For) {
+        moss::TypeRef loop_term;
+        string callee;
+        vector<string> arguments;
+        if (parse_simple_call(trim(statement.b), callee, arguments) &&
+            callee == "range") {
+          loop_term = moss::Type::primitive("int");
+        } else if (auto source = term_for(statement.b)) {
+          auto resolved = solver.resolve(source);
+          if (resolved->kind == moss::TypeKind::Builtin &&
+              (resolved->name == "vector" || resolved->name == "seq") &&
+              resolved->type_args.size() == 1)
+            loop_term = resolved->type_args[0];
+          else if (resolved->kind == moss::TypeKind::Primitive &&
+                   resolved->name == "RangeBatch")
+            loop_term = moss::Type::primitive("Range");
+          else if (resolved->kind == moss::TypeKind::Primitive &&
+                   resolved->name == "Range")
+            loop_term = moss::Type::primitive("int");
+        }
+        if (!loop_term) {
+          const string element = iterator_element_type(
+              statement.line, statement.b, scan).value_or("_value");
+          auto parsed = moss::Type::parse_canonical(canonical_type_name(element));
+          if (parsed && !contains_internal_placeholder(element))
+            loop_term = freshen_open_type(*parsed);
+          else if (starts_with(element, "_iterator_element:") || open_generic(element) || element == "_value")
+            loop_term = solver.fresh(0);
+        }
+        body_types.for_bindings[&statement] = loop_term;
+        if (loop_term) {
+          locals[statement.a] = loop_term;
+          auto resolved = solver.resolve(loop_term);
+          scan[statement.a] = resolved->is_closed()
+              ? resolved->to_canonical_string()
+              : "_iterator_element:" + statement.a;
+        } else {
+          locals.erase(statement.a);
+          scan[statement.a] = "_value";
+        }
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
+        string invocation = statement.a + "(" + join_arguments(statement.args) + ")";
+        constrain_call(statement.line, invocation);
+        instantiate_summary(statement.line, invocation, &statement);
+      }
+      if (statement.kind == Stmt::Kind::Message &&
+          !statement.message_result.empty()) {
+        auto receiver = scan.find(statement.a);
+        auto domain = receiver == scan.end() ? domains_.end()
+            : domains_.find(canonical_type_name(receiver->second));
+        const Handler* handler = domain == domains_.end() ? nullptr
+            : find_handler(*domain->second, statement.b);
+        if (handler && handler->reply_type) {
+          auto reply = moss::Type::parse_canonical(
+              canonical_type_name(*handler->reply_type));
+          if (reply && (*reply)->is_closed()) {
+            auto prior = locals.find(statement.message_result);
+            moss::TypeRef destination = prior == locals.end()
+                ? nullptr : prior->second;
+            if (!destination) {
+              auto projected = scan.find(statement.message_result);
+              if (projected != scan.end()) {
+                auto parsed = moss::Type::parse_canonical(
+                    canonical_type_name(projected->second));
+                if (parsed) destination = freshen_open_type(*parsed);
+              }
+            }
+            // A domain handle binding is governed by the closed-handle rule,
+            // which reports its own immutability diagnostic; a type conflict
+            // raised here would mask it.
+            if (destination && destination->kind != moss::TypeKind::Domain &&
+                !solver.unify(destination, *reply))
+              err(statement.line, "message assignment to '" +
+                  statement.message_result + "' conflicts with its binding type",
+                  "TYPE_MISMATCH");
+            if (prior == locals.end())
+              locals.emplace(statement.message_result,
+                             destination ? destination : *reply);
+            scan[statement.message_result] =
+                solver.resolve(locals.at(statement.message_result))
+                    ->to_canonical_string();
+          }
+        }
+      }
+      if ((statement.kind == Stmt::Kind::Let ||
+           statement.kind == Stmt::Kind::Var ||
+           statement.kind == Stmt::Kind::Assign) &&
+          simple_identifier(statement.a)) {
+        if (auto constructed = domain_constructor(statement.b)) {
+          scan[statement.a] = *constructed;
+          continue;
+        }
+        auto inferred = inferred_expr_type(statement.b, scan);
+        constrain_call(statement.line, statement.b);
+        auto instantiated = instantiate_summary(statement.line, statement.b,
+                                                &statement);
+        auto retained_source = body_types.known_expression(statement.b);
+        if (!instantiated && !retained_source && !inferred) continue;
+        auto parsed = inferred ? moss::Type::parse_canonical(
+            canonical_type_name(*inferred)) : std::nullopt;
+        if (!instantiated && !retained_source && !parsed) {
+          scan[statement.a] = *inferred;
+          continue;
+        }
+        auto prior = locals.find(statement.a);
+        if (!instantiated && !retained_source && !record_call_facts && !retain_all_types &&
+            prior == locals.end() &&
+            ((*parsed)->kind != moss::TypeKind::Builtin ||
+             !moss::Type::collection_arity((*parsed)->name))) {
+          scan[statement.a] = *inferred;
+          continue;
+        }
+        // Reading a local, field, or index shares its retained type variable.
+        // Only constructors and callable results create a fresh instance.
+        moss::TypeRef term = instantiated ? instantiated : retained_source
+            ? retained_source : freshen_open_type(*parsed);
+        body_types.assignment_values.emplace(&statement, term);
+        const bool prior_open = prior != locals.end() &&
+            !solver.resolve(prior->second)->is_closed();
+        if (prior != locals.end() && !solver.unify(prior->second, term))
+          err(statement.line, "assignment type mismatch for binding '" +
+              statement.a + "'", "TYPE_MISMATCH");
+        else if (prior == locals.end())
+          locals.emplace(statement.a, term);
+        // Preserve the checked source spelling for an already concrete value;
+        // module lowering still uses it to select the defining provider.
+        scan[statement.a] = prior_open || !term->is_closed()
+            ? solver.resolve(locals.at(statement.a))->to_canonical_string()
+            : inferred.value_or(term->to_canonical_string());
+      } else if (statement.kind == Stmt::Kind::Call && statement.b == "push" &&
+                 statement.args.size() == 1) {
+        auto local = locals.find(statement.a);
+        if (local == locals.end()) continue;
+        auto argument = term_for(statement.args.front());
+        if (!argument) continue;
+        auto current = solver.resolve(local->second);
+        if (current->kind != moss::TypeKind::Builtin ||
+            (current->name != "vector" && current->name != "queue") ||
+            current->type_args.size() != 1) continue;
+        // Report a conflict only for a resolved value. A domain handle cannot
+        // enter a collection at all and the closed-handle rule says so
+        // precisely, while an unresolved open result -- the value of calling
+        // an open callable parameter -- is checked in each concrete
+        // specialization. Reporting either here states the wrong thing.
+        const bool resolved_argument = argument->kind != moss::TypeKind::Domain &&
+            !contains_internal_placeholder(argument->to_canonical_string());
+        if (resolved_argument &&
+            !solver.unify(current->type_args.front(), argument))
+          err(statement.line, "push argument conflicts with the element type of '" +
+              statement.a + "'", "TYPE_MISMATCH");
+        scan[statement.a] = solver.resolve(local->second)->to_canonical_string();
+      } else if (statement.kind == Stmt::Kind::Assign &&
+                 statement.a.find('[') != string::npos) {
+        string base, index;
+        if (!parse_index(statement.a, base, index)) continue;
+        auto container = body_types.known_expression(base);
+        auto key = term_for(index);
+        auto value = term_for(statement.b);
+        if (!value) continue;
+        body_types.assignment_values.emplace(&statement, value);
+        if (!container || container->kind != moss::TypeKind::Builtin) continue;
+        bool compatible = true;
+        // Name both types: unification binds variables, so the expected
+        // element and the actual value are read before it runs.
+        auto describe = [&](const moss::TypeRef& type) {
+          auto resolved = solver.resolve(type);
+          return resolved ? resolved->to_canonical_string() : string();
+        };
+        string expected_element, actual_value = describe(value);
+        if ((container->name == "vector" || container->name == "queue") &&
+            container->type_args.size() == 1) {
+          expected_element = describe(container->type_args[0]);
+          compatible = solver.unify(container->type_args[0], value);
+        } else if (container->name == "map" &&
+                 container->type_args.size() == 2) {
+          expected_element = describe(container->type_args[1]);
+          compatible = (!key || solver.unify(container->type_args[0], key)) &&
+              solver.unify(container->type_args[1], value);
+        }
+        if (!compatible && !expected_element.empty() && !actual_value.empty())
+          err(statement.line, "indexed assignment requires value of type '" +
+              expected_element + "', found '" + actual_value + "'",
+              "TYPE_MISMATCH");
+        if (!compatible)
+          err(statement.line, "indexed assignment conflicts with the binding's type",
+              "TYPE_MISMATCH");
+      } else if (statement.kind == Stmt::Kind::Assign &&
+                 statement.a.find('.') != string::npos) {
+        auto field = body_types.known_expression(statement.a);
+        auto rhs = term_for(statement.b);
+        if (!field || !rhs) continue;
+        body_types.assignment_values.emplace(&statement, rhs);
+        if (!solver.unify(field, rhs))
+          err(statement.line, "assignment type mismatch for field '" +
+              statement.a + "'", "TYPE_MISMATCH");
+      }
+    }
+    leave_blocks(nullptr);
+    for (const auto& [line, requirement] : structural_requirements) {
+      // The closed built-in '+' family admits Int and Float when the other
+      // operand is Int. Keep this check on the instantiated TypeRefs so a
+      // concrete invalid call fails before open-result closure/codegen.
+      if (requirement.kind != moss::RequirementKind::Operator ||
+          requirement.target_id != "operator:+" ||
+          requirement.arguments.size() != 1) continue;
+      auto subject = solver.resolve(requirement.subject);
+      auto argument = solver.resolve(requirement.arguments.front());
+      if (subject->kind == moss::TypeKind::InferenceVar ||
+          argument->kind == moss::TypeKind::InferenceVar) continue;
+      if (subject->kind != moss::TypeKind::Primitive ||
+          (subject->name != "int" && subject->name != "float") ||
+          argument->kind != moss::TypeKind::Primitive ||
+          argument->name != "int")
+        err(line, "required '+' operator has incompatible operand type",
+            "TYPE_MISMATCH");
+      if (requirement.result &&
+          !solver.unify(*requirement.result, subject))
+        err(line, "required '+' operator has incompatible result type",
+            "TYPE_MISMATCH");
+    }
+    for (const auto& [name, term] : locals) {
+      auto resolved = solver.resolve(term);
+      if (resolved->is_closed())
+        body_types.closed_projection.emplace(name, resolved->to_canonical_string());
+    }
+    if (record_call_facts)
+      for (auto& pending : member_calls) {
+        vector<moss::MemberDispatchRequirement> closed;
+        for (const auto& requirement : pending.requirements) {
+          auto resolved = moss::resolve_member_requirement(solver, requirement);
+          if (!moss::member_requirement_is_closed(resolved)) {
+            closed.clear();
+            break;
+          }
+          closed.push_back(std::move(resolved));
+        }
+        if (!closed.empty())
+          const_cast<Stmt*>(pending.statement)->member_requirements_by_context[
+              semantic_context] = std::move(closed);
+      }
+    for (const auto& pending : open_calls) {
+      const Stmt* statement = pending.statement;
+      auto result = solver.resolve(pending.result);
+      if (!result->is_closed()) continue;
+      string callee;
+      vector<string> arguments;
+      if (!parse_simple_call(trim(statement->b), callee, arguments)) continue;
+      auto function = functions_.find(callee);
+      if (function == functions_.end()) continue;
+      OpenCallResultFacts facts;
+      facts.expression_id = "call-expression-v1:" + statement->source_file +
+          ":" + std::to_string(statement->line) + ":" + callee;
+      facts.callable_id = function->second->semantic_callable_id;
+      facts.result = result;
+      for (const auto& binding : pending.bindings)
+        facts.ordered_bindings.emplace_back(binding.first,
+                                            solver.resolve(binding.second));
+      if (record_call_facts)
+        const_cast<Stmt*>(statement)->open_call_results_by_context[semantic_context] =
+            std::move(facts);
+    }
+    return body_types;
+  }
+
   TypeEnv walk_type_environment(const vector<Stmt>& statements, TypeEnv env,
                                 const TypeEnvVisitor& visitor,
                                 bool reject_conflicts,
                                 bool record_join_types = false,
                                 bool record_semantic_types = false,
-                                const string& join_context = {}) const {
+                                const string& join_context = {},
+                                BodyTypeState* retained_types = nullptr) const {
+    BodyTypeState body_types =
+        solve_local_collection_types(statements, env, join_context,
+                                     record_semantic_types, true);
+    if (retained_types) *retained_types = std::move(body_types);
+    // The prepass has already assigned one solver term to each local and
+    // assignment. Keep that exact state active while the source-order checker
+    // visits statements; otherwise it silently falls back to projected
+    // strings and re-instantiates an open type at each comparison.
+    BodyTypeScope body_scope(current_body_types_, retained_types
+        ? retained_types : current_body_types_);
+    const TypeEnv& solved_collections = retained_types
+        ? retained_types->closed_projection : body_types.closed_projection;
     size_t index = 0;
     walk_type_environment_block(statements, index, 0, env, visitor,
                                 reject_conflicts, record_join_types,
-                                record_semantic_types, join_context);
+                                record_semantic_types, join_context,
+                                solved_collections);
     if (index != statements.size())
       err(statements[index].line, "unexpected 'else' without matching 'if'");
     return env;
   }
 
   void infer_statement_expressions(const vector<Stmt>& statements,
-                                   std::unordered_map<string,string>& env) {
+                                   TypeEnv& env) {
     TypeEnvVisitor infer_statement = [&](const Stmt& statement, const TypeEnv& current_env) {
       switch (statement.kind) {
         case Stmt::Kind::If:
@@ -5073,8 +7996,8 @@ class Checker {
             const string& receiver_name = statement.a;
             const string& handler_name = statement.b;
             auto receiver = current_env.find(receiver_name);
-            if (receiver != current_env.end() && domains_.count(receiver->second)) {
-              auto* handler = find_handler(*domains_.at(receiver->second), handler_name);
+            if (receiver != current_env.end() && domains_.count(canonical_type_name(receiver->second))) {
+              auto* handler = find_handler(*domains_.at(canonical_type_name(receiver->second)), handler_name);
               if (handler) {
                 for (size_t index = 0;
                      index < statement.args.size() && index < handler->params.size(); ++index) {
@@ -5085,20 +8008,18 @@ class Checker {
                     err(statement.line,
                         "functional pipeline must be materialized in a local binding "
                         "before crossing a domain boundary");
-                  auto actual = inferred_expr_type(statement.args[index], current_env);
-                  if (!actual) continue;
+                  auto inferred = inferred_expr(statement.args[index], current_env);
+                  if (!inferred) continue;
+                  const auto actual = std::optional<string>(inferred->projection());
                   auto& parameter = handler->params[index];
-                  bool inferred_container =
-                      (parameter.type == "vector" && starts_with(*actual, "vector[")) ||
-                      (parameter.type == "queue" && starts_with(*actual, "queue[")) ||
-                      (parameter.type == "map" && starts_with(*actual, "map["));
+                  bool inferred_container = bare_collection_accepts(parameter.type, *inferred);
                   bool untyped_parameter = parameter.type.empty();
                   if (untyped_parameter || inferred_container) {
-                    parameter.type = *actual;
+                    parameter.set_type(*actual);
                     parameter.inferred = parameter.inferred || untyped_parameter;
                   } else if (!parameter.inferred && !same_type(parameter.type, *actual))
                     err(statement.line, "argument " + std::to_string(index + 1) +
-                        " to message " + receiver->second + "." + handler_name +
+                        " to message " + canonical_type_name(receiver->second) + "." + handler_name +
                         " has type '" + *actual + "', expected '" + parameter.type + "'");
                 }
               }
@@ -5117,20 +8038,18 @@ class Checker {
             vector<string> handler_args;
             auto receiver = parse_member_call(statement.args.front(), target, handler_name, handler_args)
                 ? current_env.find(target) : current_env.end();
-            if (receiver != current_env.end() && domains_.count(receiver->second)) {
-              if (auto* handler = find_handler(*domains_.at(receiver->second), handler_name)) {
+            if (receiver != current_env.end() && domains_.count(canonical_type_name(receiver->second))) {
+              if (auto* handler = find_handler(*domains_.at(canonical_type_name(receiver->second)), handler_name)) {
                 for (size_t index = 0;
                      index < handler_args.size() && index < handler->params.size(); ++index) {
-                  auto actual = inferred_expr_type(handler_args[index], current_env);
-                  if (!actual) continue;
+                  auto inferred = inferred_expr(handler_args[index], current_env);
+                  if (!inferred) continue;
+                  const auto actual = std::optional<string>(inferred->projection());
                   auto& parameter = handler->params[index];
-                  bool inferred_container =
-                      (parameter.type == "vector" && starts_with(*actual, "vector[")) ||
-                      (parameter.type == "queue" && starts_with(*actual, "queue[")) ||
-                      (parameter.type == "map" && starts_with(*actual, "map["));
+                  bool inferred_container = bare_collection_accepts(parameter.type, *inferred);
                   bool untyped_parameter = parameter.type.empty();
                   if (untyped_parameter || inferred_container) {
-                    parameter.type = *actual;
+                    parameter.set_type(*actual);
                     parameter.inferred = parameter.inferred || untyped_parameter;
                   }
                 }
@@ -5146,12 +8065,12 @@ class Checker {
                 auto& parameter = function->second->params[i];
                 if (parameter.type.empty() && !function->second->generic &&
                     !function->second->static_dispatch)
-                  parameter.type = *actual;
+                  parameter.set_type(*actual);
                 else if (!function->second->generic &&
                          !function->second->static_dispatch &&
                          !traits_.count(parameter.type) &&
                          !contains_internal_placeholder(*actual) &&
-                         !same_type(parameter.type, *actual))
+                         !is_type_compatible(parameter.type, *actual))
                   err(statement.line, "argument " + std::to_string(i + 1) + " to function '" +
                       function->second->name + "' has type '" + *actual +
                       "', expected '" + parameter.type + "'");
@@ -5187,7 +8106,7 @@ class Checker {
          round <= p_.objects.size() + p_.functions.size() + p_.domains.size() + 2; ++round) {
       for (const auto& function : p_.functions) {
         SourceFileScope function_source(current_source_file_, function.source_file);
-        std::unordered_map<string,string> env;
+        TypeEnv env;
         for (const auto& parameter : function.params)
           env[parameter.name] = parameter.type.empty()
               ? "_generic:" + parameter.name : parameter.type;
@@ -5208,7 +8127,7 @@ class Checker {
           string handler_source = handler.source_file.empty()
               ? domain.source_file : handler.source_file;
           SourceFileScope handler_scope(current_source_file_, handler_source);
-          std::unordered_map<string,string> env;
+          TypeEnv env;
           env["self"] = domain.name;
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
           // This pass precedes finalized domain-state inference. Seed each
@@ -5223,21 +8142,24 @@ class Checker {
       }
       if (p_.main) {
         SourceFileScope main_source(current_source_file_, p_.main->source_file);
-        std::unordered_map<string,string> env;
+        TypeEnv env;
         infer_statement_expressions(p_.main->body, env);
       }
       for (const auto& test : p_.tests) {
         SourceFileScope test_source(current_source_file_, test.source_file);
-        std::unordered_map<string,string> env;
+        TypeEnv env;
         infer_statement_expressions(test.body, env);
       }
       for (const auto& benchmark : p_.benchmarks) {
         SourceFileScope benchmark_source(current_source_file_, benchmark.source_file);
-        std::unordered_map<string,string> env;
+        TypeEnv env;
         infer_statement_expressions(benchmark.body, env);
       }
     }
     for (const auto& object : p_.objects) {
+      bool is_generic = std::any_of(object.fields.begin(), object.fields.end(),
+          [](const Field& f) { return f.inferred; });
+      if (is_generic) continue;
       for (const auto& field : object.fields) {
         if (field.type.empty()) {
           string field_source = field.source_file.empty() ? object.source_file : field.source_file;
@@ -5246,6 +8168,49 @@ class Checker {
         }
       }
     }
+  }
+
+  // Direct nominal fields have inline storage. A cycle among those fields has
+  // no finite native layout, even when no constructor is reachable from main.
+  // Collection fields are deliberately excluded: their runtime storage is
+  // indirect and does not put an instance inline in its own representation.
+  void check_object_layout_cycles() const {
+    std::unordered_map<string, int> state;
+    vector<const ObjectType*> path;
+    vector<const Field*> edges;
+    std::function<void(const ObjectType&)> visit = [&](const ObjectType& object) {
+      state[object.name] = 1;
+      path.push_back(&object);
+      for (const auto& field : object.fields) {
+        auto target = objects_.find(canonical_type_name(field.type));
+        if (target == objects_.end()) continue;
+        const ObjectType& next = *target->second;
+        if (state[next.name] == 1) {
+          auto start = std::find_if(path.begin(), path.end(), [&](const ObjectType* item) {
+            return item->name == next.name;
+          });
+          std::ostringstream cycle;
+          cycle << "recursive value layout: ";
+          for (auto item = start; item + 1 != path.end(); ++item) {
+            const Field& step = *edges[static_cast<size_t>(item - path.begin())];
+            cycle << (*item)->name << "." << step.name << " -> ";
+          }
+          cycle << object.name << "." << field.name << " -> " << next.name;
+          CompileError error(field.line, cycle.str(), "TYPE_RECURSIVE_LAYOUT");
+          error.source_file = field.source_file.empty() ? object.source_file : field.source_file;
+          throw error;
+        }
+        if (state[next.name] == 0) {
+          edges.push_back(&field);
+          visit(next);
+          edges.pop_back();
+        }
+      }
+      path.pop_back();
+      state[object.name] = 2;
+    };
+    for (const auto& object : p_.objects)
+      if (state[object.name] == 0) visit(object);
   }
 
   void infer_domain_specializations() {
@@ -5491,7 +8456,7 @@ class Checker {
          round <= p_.domains.size() * 3 + p_.objects.size() + 3; ++round) {
       for (auto& domain : p_.domains) {
         SourceFileScope domain_source(current_source_file_, domain.source_file);
-        std::unordered_map<string,string> initializer_env;
+        TypeEnv initializer_env;
         initializer_env["self"] = domain.name;
         for (const auto& field : domain.state) {
           if (!field.type.empty()) initializer_env[field.name] = field.type;
@@ -5510,10 +8475,33 @@ class Checker {
                 // eligible for per-instance specialization.
                 field.inferred = field.init.empty();
               }
-              else if (!same_type(field.type, *actual))
-                err(field_source, field.line, "state field '" + domain.name + "." + field.name +
-                    "' is annotated '" + field.type + "' but its initializer has type '" +
-                    *actual + "'");
+              else {
+                moss::TypeSolver initializer_solver(1);
+                std::function<moss::TypeRef(const moss::TypeRef&)> open_collections =
+                    [&](const moss::TypeRef& type) -> moss::TypeRef {
+                  if (type->kind != moss::TypeKind::Builtin) return type;
+                  vector<moss::TypeRef> arguments;
+                  if (auto arity = moss::Type::collection_arity(type->name);
+                      arity && type->type_args.empty()) {
+                    for (size_t index = 0; index < *arity; ++index)
+                      arguments.push_back(initializer_solver.fresh(0));
+                  } else {
+                    for (const auto& argument : type->type_args)
+                      arguments.push_back(open_collections(argument));
+                  }
+                  return moss::Type::builtin(type->name, std::move(arguments));
+                };
+                auto declared = moss::Type::parse_canonical(
+                    canonical_type_name(field.type));
+                auto inferred = moss::Type::parse_canonical(
+                    canonical_type_name(*actual));
+                if (!declared || !inferred ||
+                    !initializer_solver.unify(*declared,
+                                              open_collections(*inferred)))
+                  err(field_source, field.line, "state field '" + domain.name + "." + field.name +
+                      "' is annotated '" + field.type + "' but its initializer has type '" +
+                      *actual + "'");
+              }
             }
           }
           if (!field.type.empty()) initializer_env[field.name] = field.type;
@@ -5523,24 +8511,48 @@ class Checker {
           string handler_source = handler.source_file.empty()
               ? domain.source_file : handler.source_file;
           SourceFileScope handler_scope(current_source_file_, handler_source);
-          std::unordered_map<string,string> env;
+          TypeEnv env;
           env["self"] = domain.name;
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
           for (const auto& field : domain.state) env[field.name] = field.type;
           for (const auto& route : domain.routes) env[route.name] = route.type;
+          const TypeEnv entry = env;
           infer_statement_expressions(handler.body, env);
+          auto body_types = solve_local_collection_types(
+              handler.body, entry, "handler:" + domain.name + "." + handler.name,
+              false, true);
           for (auto& field : domain.state) {
             auto inferred = env.find(field.name);
-            if (inferred == env.end() || inferred->second.empty() || inferred->second == "_value") continue;
+            if (inferred == env.end() || !inferred->second || canonical_type_name(inferred->second) == "_value") continue;
+            auto retained = body_types.resolved_local(field.name);
+            string incoming = canonical_type_name(inferred->second);
+            if (retained && retained->is_closed()) {
+              auto displayed = moss::Type::parse_canonical(
+                  canonical_type_name(incoming));
+              if (!displayed || !(*displayed)->structurally_equal(*retained))
+                incoming = retained->to_canonical_string();
+            }
             if (field.type.empty()) {
-              field.type = inferred->second;
+              field.type = incoming;
               field.inferred = true;
-            } else if (!field.inferred && !same_type(field.type, inferred->second)) {
+            } else if (!field.inferred) {
+              auto expected = moss::Type::parse_canonical(
+                  canonical_type_name(field.type));
+              const bool compatible = retained && expected && (*expected)->is_closed()
+                  ? body_types.solver.unify(retained, *expected)
+                  : same_type(field.type, incoming);
+              if (compatible) continue;
+              if (!retained &&
+                  ((incoming == "vector" && starts_with(canonical_type_name(field.type), "vector[")) ||
+                   (incoming == "map" && starts_with(canonical_type_name(field.type), "map[")) ||
+                   (incoming == "queue" && starts_with(canonical_type_name(field.type), "queue[")))) {
+                continue;
+              }
               string field_source = field.source_file.empty()
                   ? domain.source_file : field.source_file;
               err(field_source, field.line, "state field '" + domain.name + "." + field.name +
                   "' has conflicting inferred types '" + field.type + "' and '" +
-                  inferred->second + "'");
+                  incoming + "'");
             }
           }
         }
@@ -5567,21 +8579,53 @@ class Checker {
           string handler_source = handler.source_file.empty()
               ? domain.source_file : handler.source_file;
           SourceFileScope handler_scope(current_source_file_, handler_source);
-          std::unordered_map<string,string> env;
+          TypeEnv env;
           env["self"] = domain.name;
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
           for (const auto& field : domain.state)
             env[field.name] = field.type.empty() && !field.init.empty()
                 ? inferred_expr_type(field.init, env).value_or("") : field.type;
           for (const auto& route : domain.routes) env[route.name] = route.type;
+          const TypeEnv entry = env;
           infer_statement_expressions(handler.body, env);
+          auto body_types = solve_local_collection_types(
+              handler.body, entry, "handler:" + domain.name + "." + handler.name,
+              false, true);
+          BodyTypeScope body_scope(current_body_types_, &body_types);
           for (const auto& statement : handler.body) {
             if (statement.kind != Stmt::Kind::Reply) continue;
             auto actual = inferred_expr_type(statement.a, env);
             if (!actual) continue;
+            string actual_type = *actual;
+            if (auto retained = body_types.known_expression(statement.a)) {
+              auto expected = handler.reply_type
+                  ? moss::Type::parse_canonical(
+                        canonical_type_name(*handler.reply_type))
+                  : std::nullopt;
+              if (expected && (*expected)->is_closed() &&
+                  !body_types.solver.unify(retained, *expected)) {
+                string statement_source = statement.source_file.empty()
+                    ? handler_source : statement.source_file;
+                err(statement_source, statement.line,
+                    "conflicting reply types in handler '" + domain.name +
+                    "." + handler.name + "': expected '" + *handler.reply_type +
+                    "' but this reply has type '" + *actual + "'");
+              }
+              auto resolved = body_types.solver.resolve(retained);
+              if (resolved->is_closed()) actual_type = resolved->to_canonical_string();
+            }
+            if (actual_type == "vector" || actual_type == "queue" || actual_type == "map") {
+              if (handler.reply_type &&
+                  (canonical_type_name(*handler.reply_type) == actual_type ||
+                   starts_with(canonical_type_name(*handler.reply_type), actual_type + "["))) {
+                actual_type = *handler.reply_type;
+              } else if (handler.reply_type) {
+                continue;
+              }
+            }
             if (!handler.reply_type) {
-              handler.reply_type = *actual;
-            } else if (!same_type(*handler.reply_type, *actual)) {
+              handler.set_reply_type(actual_type);
+            } else if (!same_type(*handler.reply_type, actual_type)) {
               string statement_source = statement.source_file.empty()
                   ? handler_source : statement.source_file;
               err(statement_source, statement.line, "conflicting reply types in handler '" + domain.name +
@@ -5615,6 +8659,18 @@ class Checker {
                       [](const Param& parameter) { return parameter.type.empty(); })) {
         function.generic = true;
         function.static_dispatch = true;
+      }
+      // A declared nominal with inferred fields is a known template, not a
+      // closed parameter layout. Each call supplies its field substitution.
+      for (const auto& parameter : function.params) {
+        auto declaration = objects_.find(parameter.type);
+        if (declaration != objects_.end() &&
+            std::any_of(declaration->second->fields.begin(),
+                        declaration->second->fields.end(),
+                        [](const Field& field) { return field.inferred; })) {
+          function.generic = true;
+          function.static_dispatch = true;
+        }
       }
       for (const auto& statement : function.body)
         if (statement.kind == Stmt::Kind::Match)
@@ -5667,7 +8723,7 @@ class Checker {
           size_t next = end;
           while (next < expression.size() && std::isspace(static_cast<unsigned char>(expression[next]))) ++next;
           auto binding = env.find(receiver);
-          if (binding != env.end() && starts_with(binding->second, "_generic:") &&
+          if (binding != env.end() && open_generic(binding->second) &&
               (next >= expression.size() || expression[next] != '('))
             err(line, "field access '" + receiver + "." +
                 expression.substr(member, end - member) +
@@ -5707,7 +8763,7 @@ class Checker {
           function.generic = true;
           function.static_dispatch = true;
           function.generic_results[parameter.name] = parameter.name;
-          function.return_type = "_generic:" + parameter.name;
+          function.set_return_type("_generic:" + parameter.name);
           break;
         }
       }
@@ -5807,37 +8863,141 @@ class Checker {
       }
       if (!function.return_type || contains_internal_placeholder(*function.return_type))
         for (const auto& kv : function.generic_results)
-          function.return_type = kv.first.rfind("element:", 0) == 0 ? "_element:" + kv.first : kv.first.rfind("field:", 0) == 0 ? "_field:" + kv.first : "_generic:" + kv.first;
+          function.set_return_type(kv.first.rfind("element:", 0) == 0 ? "_element:" + kv.first : kv.first.rfind("field:", 0) == 0 ? "_field:" + kv.first : "_generic:" + kv.first);
     }
     for (size_t round = 0; round <= p_.functions.size() * 3 + 3; ++round) {
       for (auto& function : p_.functions) {
         SourceFileScope function_source(current_source_file_, function.source_file);
-        std::unordered_map<string,string> env;
-        for (const auto& parameter : function.params)
-          env[parameter.name] = parameter.type.empty()
-              ? "_generic:" + parameter.name : parameter.type;
+        TypeEnv env;
+        for (const auto& parameter : function.params) {
+          if (parameter.type_ref) {
+            env[parameter.name] = parameter.type_ref->to_canonical_string();
+            env.terms[parameter.name] = parameter.type_ref;
+          } else {
+            env[parameter.name] = parameter.type.empty()
+                ? "_generic:" + parameter.name : parameter.type;
+          }
+        }
         infer_statement_expressions(function.body, env);
-        if (function.return_type && starts_with(*function.return_type, "_field:") && function.result_expression) {
-          if (auto resolved = inferred_expr_type(*function.result_expression, env)) function.return_type = *resolved;
+        BodyTypeState body_types = solve_local_collection_types(
+            function.body, env, function.semantic_callable_id, false, true);
+        BodyTypeScope body_scope(current_body_types_, &body_types);
+        moss::TypeRef joined_result;
+        bool all_results_typed = true;
+        auto result_term = [&](const string& expression, const TypeEnv& eval_env) -> moss::TypeRef {
+          if (auto retained = body_types.known_expression(expression)) {
+            auto resolved = body_types.solver.resolve(retained);
+            if (!contains_internal_placeholder(resolved->to_canonical_string()))
+              return retained;
+          }
+          auto inferred = inferred_expr_type(expression, eval_env);
+          if (!inferred || contains_internal_placeholder(*inferred)) return nullptr;
+          auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
+          if (!parsed) return nullptr;
+          std::function<moss::TypeRef(const moss::TypeRef&)> open_collections =
+              [&](const moss::TypeRef& type) -> moss::TypeRef {
+            if (type->kind != moss::TypeKind::Builtin) return type;
+            vector<moss::TypeRef> arguments;
+            if (auto arity = moss::Type::collection_arity(type->name);
+                arity && type->type_args.empty()) {
+              for (size_t index = 0; index < *arity; ++index)
+                arguments.push_back(body_types.solver.fresh(0));
+            } else {
+              for (const auto& argument : type->type_args)
+                arguments.push_back(open_collections(argument));
+            }
+            return moss::Type::builtin(type->name, std::move(arguments));
+          };
+          return open_collections(*parsed);
+        };
+        auto include_typed_result = [&](int line, const string& expression,
+                                        const TypeEnv& eval_env) {
+          auto term = result_term(expression, eval_env);
+          if (!term) {
+            all_results_typed = false;
+            return;
+          }
+          if (function.return_type &&
+              !contains_internal_placeholder(*function.return_type)) {
+            auto declared = moss::Type::parse_canonical(
+                canonical_type_name(*function.return_type));
+            // A result that still holds inference variables is not a
+            // mismatch to report here: it is an unresolved return, and the
+            // checker raises the TYPE_INFERENCE_FAILED teaching diagnostic
+            // for it. Reporting it here would also print a `_typevar:`
+            // spelling, which is compiler-internal.
+            const auto resolved = body_types.solver.resolve(term);
+            if (declared && (*declared)->is_closed() && resolved->is_closed() &&
+                !body_types.solver.unify(term, *declared))
+              err(line, "function '" + function.name + "' returns '" +
+                  resolved->to_canonical_string() +
+                  "' but is annotated '" + *function.return_type + "'");
+          }
+          if (joined_result && !body_types.solver.unify(joined_result, term))
+            err(line, "function '" + function.name +
+                "' has conflicting return types", "TYPE_MISMATCH");
+          if (!joined_result) joined_result = term;
+        };
+        if (function.result_expression)
+          include_typed_result(function.result_line, *function.result_expression, env);
+        for (const auto& statement : function.body) {
+          if (statement.kind == Stmt::Kind::Return && !statement.a.empty()) {
+            TypeEnv eval_env = env;
+            auto found = body_types.locals_at_statement.find(&statement);
+            if (found != body_types.locals_at_statement.end()) {
+              body_types.scoped_locals = found->second;
+              body_types.scoped_locals_active = true;
+              for (const auto& [name, term] : found->second) {
+                eval_env[name] = term;
+                eval_env.terms[name] = term;
+              }
+            }
+            include_typed_result(statement.line, statement.a, eval_env);
+            body_types.scoped_locals_active = false;
+          }
+        }
+        bool typed_result_closed = false;
+        if (joined_result) {
+          auto closed = body_types.solver.resolve(joined_result);
+          typed_result_closed = all_results_typed && closed->is_closed() &&
+              !contains_internal_placeholder(closed->to_canonical_string());
+          if (typed_result_closed &&
+              (!function.return_type ||
+               contains_internal_placeholder(*function.return_type))) {
+            function.bind_return_type(closed);
+          }
+        }
+        if (function.return_type && contains_internal_placeholder(*function.return_type) && function.result_expression) {
+          if (auto resolved = inferred_expr_type(*function.result_expression, env)) {
+            if (!contains_internal_placeholder(*resolved))
+              function.set_return_type(*resolved);
+          }
         }
         if (function.result_expression) {
           constrain_constructor_fields(function.result_line, *function.result_expression, env);
-          if (auto result = inferred_expr_type(*function.result_expression, env)) {
-            if (!function.return_type) function.return_type = *result;
-            else if (!contains_internal_placeholder(*function.return_type) &&
-                     !(*result == "_method_value" || starts_with(*result, "_method_result:")) &&
-                      !starts_with(*result, "_functional_callable_result:") &&
-                     !same_type(*function.return_type, *result))
-              err(function.result_line, "function '" + function.name + "' returns '" + *result +
-                  "' but is annotated '" + *function.return_type + "'");
+          if (!typed_result_closed) {
+            if (auto result = inferred_expr_type(*function.result_expression, env)) {
+              if (!function.return_type) {
+                if (!contains_internal_placeholder(*result)) {
+                  function.set_return_type(*result);
+                }
+              } else if (!contains_internal_placeholder(*function.return_type) &&
+                         !contains_internal_placeholder(*result) &&
+                         !(*result == "_method_value" || starts_with(*result, "_method_result:")) &&
+                          !starts_with(*result, "_functional_callable_result:") &&
+                         !same_type(*function.return_type, *result))
+                err(function.result_line, "function '" + function.name + "' returns '" + *result +
+                    "' but is annotated '" + *function.return_type + "'");
+            }
           }
-        } else if (!function.return_type) {
+        } else if (!function.return_type && !typed_result_closed) {
           for (const auto& statement : function.body) {
             if (statement.kind != Stmt::Kind::Return || statement.a.empty()) continue;
             auto result = inferred_expr_type(statement.a, env);
-            if (!result) continue;
-            if (!function.return_type) function.return_type = *result;
-            else if (!starts_with(*function.return_type, "_method_result:") &&
+            if (!result || contains_internal_placeholder(*result)) continue;
+            if (!function.return_type) {
+              function.set_return_type(*result);
+            } else if (!starts_with(*function.return_type, "_method_result:") &&
                      !(*result == "_method_value" || starts_with(*result, "_method_result:")) &&
                      !same_type(*function.return_type, *result))
               err(statement.line, "function '" + function.name + "' returns '" + *result +
@@ -5850,7 +9010,7 @@ class Checker {
           string handler_source = handler.source_file.empty()
               ? domain.source_file : handler.source_file;
           SourceFileScope handler_scope(current_source_file_, handler_source);
-          std::unordered_map<string,string> env;
+          TypeEnv env;
           env["self"] = domain.name;
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
           for (const auto& field : domain.state)
@@ -5862,24 +9022,26 @@ class Checker {
       }
       if (p_.main) {
         SourceFileScope main_source(current_source_file_, p_.main->source_file);
-        std::unordered_map<string,string> env;
+        TypeEnv env;
         infer_statement_expressions(p_.main->body, env);
       }
       for (const auto& test : p_.tests) {
         SourceFileScope test_source(current_source_file_, test.source_file);
-        std::unordered_map<string,string> env;
+        TypeEnv env;
         infer_statement_expressions(test.body, env);
       }
       for (const auto& benchmark : p_.benchmarks) {
         SourceFileScope benchmark_source(current_source_file_, benchmark.source_file);
-        std::unordered_map<string,string> env;
+        TypeEnv env;
         infer_statement_expressions(benchmark.body, env);
       }
     }
     if (!finalize) return;
     for (auto& function : p_.functions) {
       SourceFileScope function_source(current_source_file_, function.source_file);
-      if (function.generic && std::all_of(function.params.begin(), function.params.end(), [](const Param& p) { return !p.type.empty(); }))
+      if (function.generic && !function.static_dispatch &&
+          std::all_of(function.params.begin(), function.params.end(),
+                      [](const Param& p) { return !p.type.empty(); }))
         function.generic = false;
       if (!function.generic && function.result_expression) {
         auto binary = split_binary(trim(*function.result_expression), {"+", "-", "*", "/", "%"});
@@ -5902,7 +9064,7 @@ class Checker {
                 function.generic_results[p.name] = p.name;
               }
             }
-            function.return_type = "_generic:" + trim(binary->first);
+            function.set_return_type("_generic:" + trim(binary->first));
           }
         }
       }
@@ -5922,7 +9084,7 @@ class Checker {
             function.generic = true;
             function.static_dispatch = true;
             function.generic_results[parameter.name] = parameter.name;
-            function.return_type = "_generic:" + parameter.name;
+            function.set_return_type("_generic:" + parameter.name);
             break;
           }
         }
@@ -5946,12 +9108,25 @@ class Checker {
               return statement.kind == Stmt::Kind::Return && !statement.a.empty();
             });
         if ((has_value_return || function.result_expression) && function.static_dispatch) {
-          function.return_type = "_specialized_result:" + function.name;
+          function.set_return_type("_specialized_result:" + function.name);
           continue;
         }
         if (has_value_return)
           err(function.line, "cannot infer return type for function '" + function.name + "'");
-        function.return_type = "unit";
+        function.set_return_type("unit");
+      }
+      // A compiled interface already records whether this declaration is
+      // concrete or generic. Reclassifying its return from display text can
+      // turn a concrete provider call into a consumer-side specialization.
+      if (function.return_type && !compiled_interface_file(function.source_file)) {
+        auto result = moss::Type::parse_canonical(
+            canonical_type_name(*function.return_type));
+        if (result && !(*result)->is_closed() &&
+            ((*result)->kind == moss::TypeKind::Builtin ||
+             (*result)->kind == moss::TypeKind::NominalInstance)) {
+          function.generic = true;
+          function.static_dispatch = true;
+        }
       }
     }
   }
@@ -5971,9 +9146,10 @@ class Checker {
 
   vector<Effect> concrete_function_effects(const Function& function,
                                            const vector<string>& types,
-                                           vector<bool>* mutations = nullptr) const {
+                                           vector<bool>* mutations = nullptr,
+                                           bool recheck = false) const {
     if (const auto* specialization = concrete_specialization(function, types);
-        specialization && !specialization->parameter_effects.empty()) {
+        !recheck && specialization && !specialization->parameter_effects.empty()) {
       if (mutations) *mutations = specialization->parameter_mutations;
       return specialization->parameter_effects;
     }
@@ -5983,7 +9159,7 @@ class Checker {
     vector<Param> concrete_params = function.params;
     for (size_t index = 0; index < types.size(); ++index) {
       env[concrete_params[index].name] = types[index];
-      concrete_params[index].type = types[index];
+      concrete_params[index].set_type(types[index]);
     }
     vector<Effect> effects(types.size(), Effect::Read);
     vector<bool> writes(types.size(), false);
@@ -5992,6 +9168,7 @@ class Checker {
     // This analysis derives parameter effects, independent of any surrounding
     // synchronization leaf capture. The latter separately expands this body.
     LeafCaptureScope no_leaves(leaf_effect_capture_, nullptr);
+    BodyTypeScope no_body_types(current_body_types_, nullptr);
     Effect receiver = Effect::Read;
     size_t index = 0;
     analyze_effect_block(function.body, index, 0, env, concrete_params,
@@ -6028,10 +9205,23 @@ class Checker {
     return simple_identifier(trim(value));
   }
 
+  // An inferred nominal field takes the type of the value each constructor
+  // call supplies, so its ownership follows that value, not the template slot.
+  Effect constructor_field_effect(const Field& field, const string& value,
+                                  const std::unordered_map<string,string>& env) const {
+    const string type = field.inferred || field.type.empty()
+        ? inferred_expr_type(value, env).value_or("") : field.type;
+    return effect_requires_borrow(type) ? Effect::Consume : Effect::Read;
+  }
+
   bool effect_requires_borrow(const string& type) const {
     string t = canonical_type_name(type);
     if (t.empty() || contains_internal_placeholder(t) || copy_type(t) || domains_.count(t)) return false;
     return true;
+  }
+
+  bool effect_requires_borrow(const moss::TypeRef& type) const {
+    return type ? effect_requires_borrow(type->to_canonical_string()) : false;
   }
 
   Effect vector_element_effect(const string& expression,
@@ -6054,9 +9244,10 @@ class Checker {
     return value;
   }
 
+  template <typename EnvT>
   std::optional<StorageLocation> storage_location(
       const string& expression,
-      const std::unordered_map<string,string>& env,
+      const EnvT& env,
       bool require_known_root = true) const {
     string value = strip_expression_parens(normalize_pipeline(trim(expression)));
     if (simple_identifier(value)) {
@@ -6082,6 +9273,19 @@ class Checker {
       return location;
     }
     return std::nullopt;
+  }
+
+  std::optional<StorageLocation> storage_location(
+      const string& expression,
+      const TypeEnv& env,
+      bool require_known_root = true) const {
+    return storage_location<TypeEnv>(expression, env, require_known_root);
+  }
+
+  std::optional<StorageLocation> storage_location(
+      const string& expression,
+      bool require_known_root = true) const {
+    return storage_location<TypeEnv>(expression, TypeEnv{}, require_known_root);
   }
 
   // Optional observation sink on the existing semantic effect traversal.
@@ -6178,7 +9382,7 @@ class Checker {
   void capture_callable_effects(
       const vector<Stmt>& body, const std::optional<string>& result,
       const vector<Param>& formals, const vector<string>& arguments,
-      const std::unordered_map<string,string>& caller_env,
+      const TypeEnv& caller_env,
       const vector<Param>& caller_params, vector<Effect>& caller_effects,
       Effect& caller_receiver, const std::set<string>& caller_fields,
       const ObjectType* object = nullptr, const string& receiver = "",
@@ -6186,7 +9390,7 @@ class Checker {
     LeafEffectCapture capture;
     capture.ignore_recovery = leaf_effect_capture_ &&
                               leaf_effect_capture_->ignore_recovery;
-    std::unordered_map<string,string> env;
+    TypeEnv env;
     std::map<string,string> substitutions;
     std::set<string> fields;
     for (size_t i = 0; i < formals.size(); ++i) {
@@ -6209,6 +9413,9 @@ class Checker {
     }
     if (recorded) capture.effects = *recorded;
     else {
+      BodyTypeState callee_types = solve_local_collection_types(
+          body, env, "", false, true);
+      BodyTypeScope callee_scope(current_body_types_, &callee_types);
       LeafCaptureScope scope(leaf_effect_capture_, &capture);
       vector<Effect> unused(formals.size(), Effect::Read);
       Effect unused_receiver = Effect::Read;
@@ -6259,7 +9466,7 @@ class Checker {
       }
     LeafEffectCapture capture;
     capture.ignore_recovery = ignore_recovery;
-    std::unordered_map<string,string> env;
+    TypeEnv env;
     std::set<string> fields;
     for (const auto& field : domain.state) {
       string type = specialization ? specialization->state_types.at(field.name) : field.type;
@@ -6336,7 +9543,7 @@ class Checker {
       const DomainSpecialization* specialization,
       const TypeEnv* local_types = nullptr) const {
     LeafEffectCapture capture;
-    std::unordered_map<string,string> env;
+    TypeEnv env;
     std::set<string> fields;
     for (const auto& field : domain.state) {
       string type = specialization ? specialization->state_types.at(field.name) : field.type;
@@ -7669,12 +10876,16 @@ class Checker {
     for (auto& function : p_.functions) {
       if (!function.exported || function.generic ||
           (function.body.empty() && !function.result_expression)) continue;
+      SourceFileScope function_source(current_source_file_, function.source_file);
       LeafEffectCapture capture;
-      std::unordered_map<string,string> env;
+      TypeEnv env;
       for (const auto& parameter : function.params) {
         capture.roots[parameter.name] = parameter.type;
         env[parameter.name] = parameter.type;
       }
+      BodyTypeState body_types = solve_local_collection_types(
+          function.body, env, "fn:" + function.name, false, true);
+      BodyTypeScope body_scope(current_body_types_, &body_types);
       LeafCaptureScope scope(leaf_effect_capture_, &capture);
       vector<Effect> unused(function.params.size(), Effect::Read);
       Effect receiver = Effect::Read;
@@ -7759,9 +10970,11 @@ class Checker {
     // synchronization-summary invariant used by the normal effect pipeline.
     capture.allow_unresolved_methods = true;
     for (const auto& binding : env.types)
-      if (!binding.second.empty() &&
-          !contains_internal_placeholder(binding.second))
-        capture.roots[binding.first] = binding.second;
+      if (binding.second) {
+        string tname = canonical_type_name(binding.second);
+        if (!contains_internal_placeholder(tname))
+          capture.roots[binding.first] = tname;
+      }
     vector<Effect> unused_effects;
     Effect unused_receiver = Effect::Read;
     {
@@ -7880,7 +11093,7 @@ class Checker {
   }
 
   Effect projection_effect(const string& expression, Effect requested,
-                           const std::unordered_map<string,string>& env) const {
+                           const TypeEnv& env) const {
     if (requested != Effect::Consume) return requested;
     // Indexed reads materialize their checked result; they do not transfer the
     // collection. Match the ownership walker when deriving concrete effects.
@@ -7919,7 +11132,7 @@ class Checker {
 
   void mark_effect_name(const string& name, Effect effect,
                         const vector<Param>& params,
-                        const std::unordered_map<string,string>& env,
+                        const TypeEnv& env,
                         vector<Effect>& parameter_effects,
                         Effect& receiver_effect,
                         const std::set<string>& receiver_fields) const {
@@ -7948,7 +11161,7 @@ class Checker {
   }
 
   void analyze_effect_expression(
-      const string& expression, const std::unordered_map<string,string>& env,
+      const string& expression, const TypeEnv& env,
       const vector<Param>& params, vector<Effect>& parameter_effects,
       Effect& receiver_effect, const std::set<string>& receiver_fields,
       Effect requested = Effect::Read) const {
@@ -8257,19 +11470,24 @@ class Checker {
           if (value_it != supplied.end()) {
             analyze_effect_expression(value_it->second, env, params, parameter_effects,
                                       receiver_effect, receiver_fields,
-                                      effect_requires_borrow(field.type)
-                                          ? Effect::Consume : Effect::Read);
+                                      constructor_field_effect(
+                                          field, value_it->second, env));
           }
         }
         return;
       }
       if (auto callable = env.find(callee);
-          callable != env.end() && starts_with(callable->second, "callable:"))
-        callee = callable->second.substr(9);
-      auto function = functions_.find(callee);
-      if (function != functions_.end()) {
+          callable != env.end() && callable_identity(callable->second)) {
+        string cid = canonical_type_name(callable->second);
+        if (starts_with(cid, "callable:")) cid = cid.substr(9);
+        callee = cid;
+      }
+      const Function* function = starts_with(callee, "callable-v1:")
+          ? find_function_by_callable_id(callee)
+          : (functions_.count(callee) ? functions_.at(callee) : nullptr);
+      if (function) {
         if (leaf_effect_capture_) {
-          const auto& target = *function->second;
+          const auto& target = *function;
           const StateLeafEffects* recorded = nullptr;
           if (target.body.empty() && !target.result_expression) {
             if (!target.parameter_leaf_effects)
@@ -8283,7 +11501,7 @@ class Checker {
         }
         for (size_t index = 0; index < call_arguments.size(); ++index) {
           Effect argument_effect = concrete_function_parameter_effect(
-              *function->second, index,
+              *function, index,
               concrete_argument_types(call_arguments, env));
           analyze_effect_expression(call_arguments[index], env, params,
                                     parameter_effects, receiver_effect,
@@ -8394,7 +11612,7 @@ class Checker {
   }
 
   void analyze_effect_block(const vector<Stmt>& statements, size_t& index, int level,
-                            std::unordered_map<string,string>& env,
+                            TypeEnv& env,
                             const vector<Param>& params,
                             vector<Effect>& parameter_effects,
                             Effect& receiver_effect,
@@ -8600,8 +11818,8 @@ class Checker {
                                       receiver_effect, receiver_fields, Effect::Read);
           if (leaf_effect_capture_ && !statement.message_result.empty()) {
             auto receiver = env.find(statement.a);
-            synchronization_require(receiver != env.end() && domains_.count(receiver->second), "unresolved message receiver");
-            auto target = find_handler(*domains_.at(receiver->second), statement.b);
+            synchronization_require(receiver != env.end() && domains_.count(canonical_type_name(receiver->second)), "unresolved message receiver");
+            auto target = find_handler(*domains_.at(canonical_type_name(receiver->second)), statement.b);
             synchronization_require(target && target->reply_type.has_value(), "unresolved message reply");
             env[statement.message_result] = *target->reply_type;
           }
@@ -8687,7 +11905,7 @@ class Checker {
 
   void collect_local_call_sites(
       int line, const string& expression,
-      const std::unordered_map<string,string>& env,
+      const TypeEnv& env,
       const ObjectType* implicit_owner,
       vector<LocalCallSite>& calls) const {
     (void)line;
@@ -8741,10 +11959,16 @@ class Checker {
             }
           } else {
             auto local = env.find(identity);
-            if (local != env.end() && starts_with(local->second, "callable:"))
-              identity = local->second.substr(9);
-            if (functions_.count(identity))
-              calls.push_back(LocalCallSite{"fn:" + identity, {}, argument_types});
+            if (local != env.end() && callable_identity(local->second)) {
+              string cid = canonical_type_name(local->second);
+              if (starts_with(cid, "callable:")) cid = cid.substr(9);
+              identity = cid;
+            }
+            const Function* fn = starts_with(identity, "callable-v1:")
+                ? find_function_by_callable_id(identity)
+                : (functions_.count(identity) ? functions_.at(identity) : nullptr);
+            if (fn)
+              calls.push_back(LocalCallSite{"fn:" + fn->name, {}, argument_types});
           }
         }
         if (stage.kind == FunctionalNodeKind::Map) {
@@ -9004,6 +12228,7 @@ class Checker {
       int result_line, TypeEnv env, const ObjectType* implicit_owner,
       const string& source, std::map<string,std::set<string>>& graph,
       std::map<string,int>& edge_lines, const string& physical_source) {
+    std::map<std::tuple<string,int,string>, uint32_t> call_occurrences;
     auto retain_message_edge = [&](int line, const string& expression,
                                    const TypeEnv& current_env,
                                    const string& expression_source) {
@@ -9032,7 +12257,7 @@ class Checker {
           source, "handler:" + domain + "." + handler_name, line,
           argument_types, expression_source.empty() ? physical_source
                                                      : expression_source,
-          "synchronous_message", receiver_name};
+          "synchronous_message", receiver_name, {}, {}};
       if (std::find_if(
               p_.semantic_call_edges.begin(), p_.semantic_call_edges.end(),
               [&](const SemanticCallEdge& existing) {
@@ -9058,18 +12283,10 @@ class Checker {
                                 statement.source_file.empty()
                                     ? physical_source
                                     : statement.source_file,
-                                "ordinary_call", {}};
-          if (std::find_if(
-                  p_.semantic_call_edges.begin(),
-                  p_.semantic_call_edges.end(),
-                  [&](const SemanticCallEdge& existing) {
-                    return existing.source == edge.source &&
-                        existing.target == edge.target &&
-                        existing.line == edge.line &&
-                        existing.argument_types == edge.argument_types &&
-                        existing.source_file == edge.source_file;
-                  }) == p_.semantic_call_edges.end())
-            p_.semantic_call_edges.push_back(std::move(edge));
+                                "ordinary_call", {}, {}, {}};
+          edge.occurrence = call_occurrences[std::make_tuple(
+              edge.source_file, edge.line, edge.target)]++;
+          p_.semantic_call_edges.push_back(std::move(edge));
         }
         retain_message_edge(statement.line, expression, current_env,
                             statement.source_file);
@@ -9091,7 +12308,7 @@ class Checker {
                 statement.line, argument_types,
                 statement.source_file.empty() ? physical_source
                                               : statement.source_file,
-                "synchronous_message", statement.a};
+                "synchronous_message", statement.a, {}, {}};
             if (std::find_if(
                     p_.semantic_call_edges.begin(),
                     p_.semantic_call_edges.end(),
@@ -9120,22 +12337,83 @@ class Checker {
         edge_lines.emplace(source + "\n" + call.target, result_line);
         SemanticCallEdge edge{source, call.target, result_line,
                               call.argument_types, physical_source,
-                              "ordinary_call", {}};
-        if (std::find_if(
-                p_.semantic_call_edges.begin(),
-                p_.semantic_call_edges.end(),
-                [&](const SemanticCallEdge& existing) {
-                  return existing.source == edge.source &&
-                      existing.target == edge.target &&
-                      existing.line == edge.line &&
-                        existing.argument_types == edge.argument_types &&
-                        existing.source_file == edge.source_file;
-                }) == p_.semantic_call_edges.end())
-          p_.semantic_call_edges.push_back(std::move(edge));
+                              "ordinary_call", {}, {}, {}};
+        edge.occurrence = call_occurrences[std::make_tuple(
+            edge.source_file, edge.line, edge.target)]++;
+        p_.semantic_call_edges.push_back(std::move(edge));
       }
       retain_message_edge(result_line, *result_expression, env,
                           physical_source);
     }
+  }
+
+  struct ChangingSpecializationEdge {
+    int line = 0;
+    string source_file;
+    string callee;
+    string difference;
+  };
+
+  // Generic placeholders print as the parameter they stand for, e.g. the
+  // incoming type of `value` is `<value>`.
+  static string recursion_type_text(const string& type) {
+    static const string marker = "_generic:";
+    string text;
+    for (size_t at = 0; at < type.size();) {
+      if (type.compare(at, marker.size(), marker) != 0) {
+        text += type[at++];
+        continue;
+      }
+      size_t end = at + marker.size();
+      while (end < type.size() &&
+             (std::isalnum(static_cast<unsigned char>(type[end])) ||
+              type[end] == '_'))
+        ++end;
+      text += "<" + type.substr(at + marker.size(), end - at - marker.size()) + ">";
+      at = end;
+    }
+    return text;
+  }
+
+  // A recursive cycle whose call passes an argument type different from the
+  // callee's own parameter type cannot reach an IN_PROGRESS specialization
+  // key: every iteration would request a new instance (TYPE_IR_CONTRACT §5).
+  std::optional<ChangingSpecializationEdge> changing_specialization_edge(
+      const vector<string>& cycle) const {
+    for (size_t index = 0; index + 1 < cycle.size(); ++index) {
+      const string& caller = cycle[index];
+      const string& callee = cycle[index + 1];
+      if (!starts_with(callee, "fn:")) continue;
+      auto function = std::find_if(
+          p_.functions.begin(), p_.functions.end(),
+          [&](const Function& candidate) {
+            return candidate.name == callee.substr(3);
+          });
+      if (function == p_.functions.end()) continue;
+      for (const auto& edge : p_.semantic_call_edges) {
+        if (edge.source != caller || edge.target != callee ||
+            edge.invocation_kind != "ordinary_call")
+          continue;
+        for (size_t argument = 0; argument < edge.argument_types.size() &&
+                                  argument < function->params.size();
+             ++argument) {
+          const auto& parameter = function->params[argument];
+          string formal = parameter.type.empty()
+              ? "_generic:" + parameter.name : parameter.type;
+          const string& actual = edge.argument_types[argument];
+          if (actual.empty() ||
+              canonical_type_name(actual) == canonical_type_name(formal) ||
+              same_type(actual, formal))
+            continue;
+          return ChangingSpecializationEdge{
+              edge.line, edge.source_file, callable_label(callee),
+              "parameter '" + parameter.name + "' from '" +
+                  recursion_type_text(formal) + "' to '" +
+                  recursion_type_text(actual) + "'"};
+        }
+      }
+    }
+    return std::nullopt;
   }
 
   void check_local_call_cycles() {
@@ -9207,6 +12485,8 @@ class Checker {
                 if (left.line != right.line) return left.line < right.line;
                 if (left.target != right.target)
                   return left.target < right.target;
+                if (left.occurrence != right.occurrence)
+                  return left.occurrence < right.occurrence;
                 if (left.argument_types != right.argument_types)
                   return left.argument_types < right.argument_types;
                 return left.source_file < right.source_file;
@@ -9231,6 +12511,19 @@ class Checker {
             cycle << " -> " << callable_label(next);
             int line = edge_lines.count(node + "\n" + next)
                 ? edge_lines.at(node + "\n" + next) : 1;
+            vector<string> members(begin, stack.end());
+            members.push_back(next);
+            if (auto changed = changing_specialization_edge(members)) {
+              CompileError error(
+                  changed->line,
+                  "uncontrolled recursive specialization: " + cycle.str() +
+                      "; the call to " + changed->callee + " changes " +
+                      changed->difference +
+                      ", so each recursive call would require a new specialization",
+                  "TYPE_RECURSIVE_SPECIALIZATION");
+              error.source_file = changed->source_file;
+              throw error;
+            }
             err(line, "recursive local call cycle: " + cycle.str() +
                 "; recursion is not supported in Phase 2");
           }
@@ -9264,10 +12557,14 @@ class Checker {
       for (auto& function : p_.functions) {
         if (std::filesystem::path(function.source_file).extension() == ".mossi")
           continue;
-        std::unordered_map<string,string> env;
+        SourceFileScope function_source(current_source_file_, function.source_file);
+        TypeEnv env;
         for (const auto& parameter : function.params)
           env[parameter.name] = parameter.type.empty() ? "_generic:" + parameter.name : parameter.type;
         const TypeEnv entry_env = env;
+        BodyTypeState body_types = solve_local_collection_types(
+            function.body, entry_env, "", false, true);
+        BodyTypeScope body_scope(current_body_types_, &body_types);
         auto inferred = function.parameter_effects;
         vector<bool> mutations(function.params.size(), false);
         auto* previous_mutation_capture = parameter_mutation_capture_;
@@ -9301,7 +12598,8 @@ class Checker {
         for (auto& method : object.methods) {
           if (std::filesystem::path(method.source_file).extension() == ".mossi")
             continue;
-          std::unordered_map<string,string> env;
+          SourceFileScope method_source(current_source_file_, method.source_file);
+          TypeEnv env;
           std::set<string> fields;
           for (const auto& field : object.fields) {
             env[field.name] = field.type;
@@ -9310,6 +12608,9 @@ class Checker {
           env["self"] = object.name;
           for (const auto& parameter : method.params) env[parameter.name] = parameter.type;
           const TypeEnv entry_env = env;
+          BodyTypeState body_types = solve_local_collection_types(
+              method.body, entry_env, "", false, true);
+          BodyTypeScope body_scope(current_body_types_, &body_types);
           auto inferred = method.parameter_effects;
           Effect receiver = Effect::Read;
           size_t index = 0;
@@ -9676,9 +12977,10 @@ class Checker {
       RaiseSet direct;
       if (statement.kind == Stmt::Kind::Message) {
         auto receiver = env.find(statement.a);
-        if (receiver != env.end() && domains_.count(receiver->second))
+        string receiver_type = receiver != env.end() ? canonical_type_name(receiver->second) : string();
+        if (!receiver_type.empty() && domains_.count(receiver_type))
           if (const Handler* target =
-                  find_handler(*domains_.at(receiver->second), statement.b)) {
+                  find_handler(*domains_.at(receiver_type), statement.b)) {
             // A message evaluated by main is a Root ingress. An exhaustive,
             // checked on_fail trailer consumes that Root's raised outcome;
             // nested messages never do.
@@ -9802,7 +13104,7 @@ class Checker {
       if (!type || contains_internal_placeholder(*type)) return;
       auto [item, inserted] = candidates.emplace(statement.a, *type);
       if (!inserted && !same_type(item->second, *type))
-        item->second = "_ambiguous_capture_type";
+        item->second = moss::Type::primitive("_ambiguous_capture_type");
     };
     (void)walk_type_environment(handler.body, entry, visit, false);
     return candidates;
@@ -10116,17 +13418,22 @@ class Checker {
             }
           } else {
             auto local = env.find(identity);
-            if (local != env.end() && starts_with(local->second, "callable:"))
-              identity = local->second.substr(9);
-            auto function = functions_.find(identity);
-            if (function != functions_.end()) {
+            if (local != env.end() && callable_identity(local->second)) {
+              string cid = canonical_type_name(local->second);
+              if (starts_with(cid, "callable:")) cid = cid.substr(9);
+              identity = cid;
+            }
+            const Function* function = starts_with(identity, "callable-v1:")
+                ? find_function_by_callable_id(identity)
+                : (functions_.count(identity) ? functions_.at(identity) : nullptr);
+            if (function) {
               vector<string> input_types{element};
               if (stage.kind == FunctionalNodeKind::Reduce &&
                   stage.arguments.size() == 2)
                 input_types.insert(input_types.begin(),
                     inferred_expr_type(stage.arguments.front(), env).value_or(""));
               effects.merge(concrete_function_observable_effects(
-                  *function->second, input_types));
+                  *function, input_types));
             } else
               effects.unresolved = true;
           }
@@ -10962,11 +14269,24 @@ class Checker {
     }
     auto local = env.find(identity);
     const bool deferred_generic_callable =
-        local != env.end() && starts_with(local->second, "_generic:");
-    if (local != env.end() && starts_with(local->second, "callable:"))
-      identity = local->second.substr(9);
-    auto function = functions_.find(identity);
-    if (function == functions_.end()) {
+        local != env.end() && open_generic(local->second);
+    const Function* function = nullptr;
+    if (local != env.end() && callable_identity(local->second)) {
+      string cid = canonical_type_name(local->second);
+      if (starts_with(cid, "callable:")) cid = cid.substr(9);
+      if (starts_with(cid, "callable-v1:")) {
+        function = find_function_by_callable_id(cid);
+        identity = cid;
+      } else {
+        auto it = functions_.find(cid);
+        if (it != functions_.end()) function = it->second;
+        identity = cid;
+      }
+    } else {
+      auto it = functions_.find(identity);
+      if (it != functions_.end()) function = it->second;
+    }
+    if (!function) {
       // Callable inference can be incomplete while a higher-order function is
       // awaiting its concrete input specialization. Preserve that fact for
       // conservative planning; checked source must never reach an internal
@@ -10976,7 +14296,7 @@ class Checker {
       return effects;
     }
     effects = concrete_function_observable_effects(
-        *function->second, input_types);
+        *function, input_types);
     return effects;
   }
 
@@ -11065,8 +14385,11 @@ class Checker {
                                                !traits_.count(canonical_type_name(type));
                                          });
           if (concrete_cb && (fn_it->second->generic || fn_it->second->static_dispatch)) {
-            validate_method_requirements(line, *fn_it->second, callback_input_types);
-            register_static_specialization(line, *fn_it->second, callback_input_types);
+            auto requirements = validate_method_requirements(
+                line, *fn_it->second, callback_input_types);
+            register_static_specialization(line, *fn_it->second,
+                                           callback_input_types,
+                                           std::move(requirements));
           }
         }
         node.effects = functional_stage_effects(
@@ -11080,7 +14403,7 @@ class Checker {
         auto callable_binding = env.find(trim(callable));
         const bool deferred_generic_callable =
             callable_binding != env.end() &&
-            starts_with(callable_binding->second, "_generic:");
+            open_generic(callable_binding->second);
         if (!deferred_generic_callable) {
           if (node.effects.unresolved || node.callable_identity.empty()) {
             err(stage_line, "cannot resolve observable effects for callable '" + callable + "' in functional pipeline", "FUNCTIONAL_CALLABLE_UNRESOLVED");
@@ -11094,10 +14417,12 @@ class Checker {
                       node.callable_identity) ==
                 owning_function->callable_dependencies.end())
           owning_function->callable_dependencies.push_back(node.callable_identity);
-        auto function = functions_.find(node.callable_identity);
-        if (function != functions_.end() && !callback_input_types.empty())
+        const Function* function = starts_with(node.callable_identity, "callable-v1:")
+            ? find_function_by_callable_id(node.callable_identity)
+            : (functions_.count(node.callable_identity) ? functions_.at(node.callable_identity) : nullptr);
+        if (function && !callback_input_types.empty())
           node.ownership = concrete_function_parameter_effect(
-              *function->second, 0, callback_input_types);
+              *function, 0, callback_input_types);
         string bound_receiver, bound_method;
         if (parse_bound_method_callable(node.callable_identity, bound_receiver,
                                         bound_method)) {
@@ -11479,7 +14804,7 @@ class Checker {
         vector<Effect> capture_effects(captures.size(), Effect::Read);
         for (const auto& capture : captures)
           capture_parameters.push_back(
-              Param{capture, env.types.at(capture)});
+              Param{capture, canonical_type_name(env.types.at(capture))});
         Effect unused_receiver_effect = Effect::Read;
         analyze_effect_expression(
             callable, placeholder_env.types, capture_parameters,
@@ -11556,8 +14881,8 @@ class Checker {
           }
         } else {
           auto local = env.types.find(identity);
-          if (local != env.types.end() && starts_with(local->second, "callable:"))
-            identity = local->second.substr(9);
+          if (local != env.types.end() && callable_identity(local->second))
+            identity = canonical_type_name(local->second).substr(9);
           auto function = functions_.find(identity);
           if (function != functions_.end()) {
             callback_raises = concrete_function_observable_effects(
@@ -11848,9 +15173,10 @@ class Checker {
                                        builtin->argument_effects[index]);
           return;
         }
-        bool collection = concrete == "vector" || concrete == "queue" || concrete == "map" ||
-            starts_with(concrete, "vector[") || starts_with(concrete, "queue[") ||
-            starts_with(concrete, "map[");
+        const auto receiver_shape = parsed_type(concrete);
+        bool collection = receiver_shape &&
+            receiver_shape->kind == moss::TypeKind::Builtin &&
+            moss::Type::collection_arity(receiver_shape->name).has_value();
         if (collection && builtin && builtin->argument_effects.size() == arguments.size()) {
           if (method == "push" && !arguments.empty()) {
             auto item = inferred_expr_type(arguments.front(), env.types);
@@ -11961,8 +15287,8 @@ class Checker {
           auto supplied_value = supplied.find(field.name);
           if (supplied_value != supplied.end()) {
             access_expressions.push_back(supplied_value->second);
-            access_effects.push_back(effect_requires_borrow(field.type)
-                ? Effect::Consume : Effect::Read);
+            access_effects.push_back(constructor_field_effect(
+                field, supplied_value->second, env.types));
           }
         }
         check_conflicting_call_accesses(line, callee, access_expressions,
@@ -11971,7 +15297,7 @@ class Checker {
           auto supplied_value = supplied.find(field.name);
           if (supplied_value != supplied.end())
             check_ownership_expression(line, supplied_value->second, env,
-                effect_requires_borrow(field.type) ? Effect::Consume : Effect::Read);
+                constructor_field_effect(field, supplied_value->second, env.types));
         }
         return;
       }
@@ -12095,6 +15421,9 @@ class Checker {
                                const Domain* current_domain,
                                const Handler* current_handler,
                                vector<ExceptionalOwnershipExit>* exceptional = nullptr) {
+    auto retained = checked_body_states_.find(&statements);
+    BodyTypeScope body_scope(current_body_types_,
+        retained == checked_body_states_.end() ? nullptr : retained->second.get());
     size_t index = 0;
     check_ownership_block(statements, index, 0, env, current_domain,
                           current_handler, exceptional);
@@ -12136,6 +15465,14 @@ class Checker {
       if (s.kind == Stmt::Kind::Else) return;
       if (!env.can_continue) { ++index; continue; }
       if (s.indent > level) return;
+      if (current_body_types_) {
+        auto found = current_body_types_->locals_at_statement.find(&s);
+        if (found != current_body_types_->locals_at_statement.end()) {
+          current_body_types_->scoped_locals = found->second;
+          current_body_types_->scoped_locals_active = true;
+          env.types.terms = found->second;
+        }
+      }
       struct OwnershipStatementScope {
         const Stmt*& slot;
         const Stmt* prior;
@@ -12495,6 +15832,15 @@ class Checker {
           if (auto constructed = domain_constructor(s.b)) type = *constructed;
           else type = inferred_expr_type(s.b, env.types);
 
+          // The checker has already solved this binding's open collection.
+          // Ownership consumes that semantic fact instead of re-inferring an
+          // earlier constructor without its later constraints.
+          auto checked = s.semantic_types_by_context.find(current_semantic_context_);
+          const string& checked_type = checked == s.semantic_types_by_context.end()
+              ? s.semantic_type : checked->second;
+          if (type && (*type == "vector" || *type == "queue" || *type == "map") &&
+              !checked_type.empty())
+            type = checked_type;
           env.types[s.a] = type.value_or("_value");
           env.binding_identities[s.a] = statement_binding_identity(
               current_semantic_context_, s.line);
@@ -12549,7 +15895,14 @@ class Checker {
             break;
           }
           if (simple_identifier(s.a)) {
-            if (source_type) env.types[s.a] = *source_type;
+            if (source_type) {
+              auto checked = s.semantic_types_by_context.find(current_semantic_context_);
+              const string& checked_type = checked == s.semantic_types_by_context.end()
+                  ? s.semantic_type : checked->second;
+              env.types[s.a] = (*source_type == "vector" || *source_type == "queue" ||
+                                *source_type == "map") && !checked_type.empty()
+                  ? checked_type : *source_type;
+            }
             else if (!env.types.count(s.a)) env.types[s.a] = "_value";
             if (!env.binding_identities.count(s.a))
               env.binding_identities[s.a] = statement_binding_identity(
@@ -12607,10 +15960,18 @@ class Checker {
           // a subsequent pop can be checked as the concrete enum value.
           if (s.b == "push" && s.args.size() == 1) {
             auto container = env.types.find(s.a);
-            auto element = inferred_expr_type(s.args.front(), env.types);
-            if (container != env.types.end() && element &&
-                (container->second == "queue" || container->second == "vector"))
-              container->second += "[" + *element + "]";
+            auto retained = current_body_types_
+                ? current_body_types_->resolved_local(s.a) : nullptr;
+            if (container != env.types.end() && retained &&
+                retained->is_closed() &&
+                !contains_internal_placeholder(retained->to_canonical_string()))
+              container->second = retained;
+            else {
+              auto element = inferred_expr_type(s.args.front(), env.types);
+              if (container != env.types.end() && element &&
+                  bare_collection(parsed_type(container->second), {"queue", "vector"}))
+                container->second = parsed_type(canonical_type_name(container->second) + "[" + *element + "]");
+            }
           }
           ++index;
           break;
@@ -12665,7 +16026,14 @@ class Checker {
   }
 
   static bool concrete_specialization_type(const string& type) {
-    return !type.empty() && !contains_internal_placeholder(type);
+    // A callable argument contributes its exact callable identity to the key.
+    // Ordinary arguments must be recursively closed Type IR values: a nested
+    // `vector[vector]` still has an unbound element, despite having no textual
+    // placeholder marker.
+    if (callable_identity(type)) return type.size() > 9;
+    if (contains_internal_placeholder(type)) return false;
+    auto parsed = moss::Type::parse_canonical(canonical_type_name(type));
+    return parsed && (*parsed)->is_closed();
   }
 
   static string type_list(const vector<string>& types) {
@@ -12709,22 +16077,83 @@ class Checker {
     return operation;
   }
 
-  void validate_method_requirements(int line, const Function& function,
-                                    const vector<string>& parameter_types) const {
+  static bool compiled_interface_file(const string& file) {
+    return std::filesystem::path(file).extension() == ".mossi";
+  }
+
+  static string provider_callable_display(const string& name) {
+    const string module = module_name_from_symbol(name);
+    return module.empty() ? name : module + "." + name.substr(module.size() + 2);
+  }
+
+  // Source-free provider bodies have no consumer-visible source, so a failed
+  // requirement names the provider statement that introduced it.
+  [[noreturn]] void requirement_err(int line, const Function& function,
+                                    const Constraint& requirement,
+                                    const string& message) const {
+    CompileError error(line, message);
+    if (!current_source_file_.empty()) error.source_file = current_source_file_;
+    if (compiled_interface_file(function.source_file)) {
+      const string use = requirement.subject + "." + requirement.detail + "(";
+      int origin = function.line;
+      for (const auto& statement : function.body)
+        if (statement.text.find(use) != string::npos) {
+          origin = statement.line;
+          break;
+        }
+      error.teaching.related.push_back(
+          {function.source_file, origin, 1,
+           "provider function '" + provider_callable_display(function.name) +
+               "' requires method '" + requirement.detail + "' on '" +
+               requirement.subject + "'"});
+    }
+    throw error;
+  }
+
+  // Unwinding through a specialization records each provider frame. At the
+  // boundary between consumer source and a compiled provider, the consumer's
+  // outer call becomes the primary location (ABI_V10_DESIGN.md §3.6).
+  static void annotate_specialization_failure(CompileError& error,
+                                              const Function& function,
+                                              int call_line,
+                                              const string& call_source) {
+    if (!compiled_interface_file(error.source_file)) return;
+    error.teaching.related.insert(
+        error.teaching.related.begin(),
+        {error.source_file, error.line, 1,
+         "inside provider function '" +
+             provider_callable_display(function.name) + "'"});
+    if (compiled_interface_file(call_source) || call_source.empty()) return;
+    error.line = call_line;
+    error.source_file = call_source;
+  }
+
+  static moss::AccessMode requirement_access(Effect effect) {
+    if (effect == Effect::Write) return moss::AccessMode::Write;
+    if (effect == Effect::Consume) return moss::AccessMode::Consume;
+    return moss::AccessMode::Read;
+  }
+
+  vector<moss::MemberDispatchRequirement> validate_method_requirements(
+      int line, const Function& function,
+      const vector<string>& parameter_types) const {
     auto instantiated = instantiated_function_env(function, parameter_types);
     std::optional<string> related_function_result;
-    for (const auto& requirement : function.constraints) {
+    vector<moss::MemberDispatchRequirement> resolved_requirements;
+    for (size_t ordinal = 0; ordinal < function.constraints.size(); ++ordinal) {
+      const auto& requirement = function.constraints[ordinal];
       if (requirement.kind != ConstraintKind::Method) continue;
       auto receiver = instantiated.find(requirement.subject);
+      string receiver_type = receiver != instantiated.end() ? canonical_type_name(receiver->second) : string();
       if (receiver == instantiated.end() ||
-          !concrete_specialization_type(receiver->second) ||
-          traits_.count(receiver->second))
+          !concrete_specialization_type(receiver_type) ||
+          traits_.count(receiver_type))
         continue;
       vector<string> argument_types;
       for (const auto& argument : requirement.arguments)
         argument_types.push_back(inferred_expr_type(argument, instantiated).value_or(""));
       MethodResolutionFailure failure = MethodResolutionFailure::None;
-      const Method* method = resolve_method(canonical_type_name(receiver->second),
+      const Method* method = resolve_method(receiver_type,
                                             requirement.detail, argument_types,
                                             false, &failure);
       auto fileio_builtin = fileio_method_requirement_result(
@@ -12732,25 +16161,75 @@ class Checker {
       auto builtin = builtin_operation_result(receiver->second, requirement.detail,
                                                argument_types.size());
       if (builtin_receiver_family(receiver->second))
-        validate_builtin_argument_types(line, receiver->second, requirement.detail,
+        validate_builtin_argument_types(line, receiver_type, requirement.detail,
                                         argument_types);
       if (!method && !fileio_builtin && !builtin) {
         string prefix = "argument to function '" + function.name + "' has type '" +
             canonical_type_name(receiver->second) + "'";
         if (failure == MethodResolutionFailure::WrongArity)
-          err(line, prefix + " with wrong arity for required method '" +
-              requirement.detail + "' (requires " +
-              std::to_string(requirement.arity) + ")");
+          requirement_err(line, function, requirement, prefix +
+              " with wrong arity for required method '" + requirement.detail +
+              "' (requires " + std::to_string(requirement.arity) + ")");
         if (failure == MethodResolutionFailure::IncompatibleArguments)
-          err(line, prefix + " whose method '" + requirement.detail +
-              "' is incompatible with argument types (" + type_list(argument_types) + ")");
+          requirement_err(line, function, requirement, prefix + " whose method '" +
+              requirement.detail + "' is incompatible with argument types (" +
+              type_list(argument_types) + ")");
         if (failure == MethodResolutionFailure::Ambiguous)
-          err(line, prefix + " with ambiguous required method '" +
-              requirement.detail + "'");
-        err(line, prefix + " missing required method '" + requirement.detail + "'");
+          requirement_err(line, function, requirement, prefix +
+              " with ambiguous required method '" + requirement.detail + "'");
+        requirement_err(line, function, requirement, prefix +
+            " missing required method '" + requirement.detail + "'");
       }
       string result = builtin.value_or(fileio_builtin.value_or(
           method ? method->return_type.value_or("unit") : "unit"));
+      moss::MemberDispatchRequirement closed;
+      closed.requirement_id = function.semantic_callable_id + ":member:" +
+          std::to_string(ordinal);
+      closed.member_name = requirement.detail;
+      closed.receiver = moss::Type::parse_canonical(
+          canonical_type_name(receiver->second)).value_or(nullptr);
+      for (const auto& argument : argument_types)
+        closed.argument_types.push_back(moss::Type::parse_canonical(
+            canonical_type_name(argument)).value_or(nullptr));
+      closed.result = moss::Type::parse_canonical(canonical_type_name(result));
+      closed.origin = {program_module_identity(p_, function.defining_module),
+                       function.source_file, function.line, 1,
+                       function.semantic_callable_id,
+                       function.semantic_callable_id + ":member:" +
+                           std::to_string(ordinal)};
+      if (const auto* operation = builtin_operation(receiver->second,
+                                                    requirement.detail)) {
+        closed.admitted_template_or_builtin_family =
+            "builtin:" + canonical_type_name(receiver->second);
+        closed.selected_callable_id =
+            "builtin:" + canonical_type_name(receiver->second) + "." +
+            requirement.detail;
+        closed.receiver_access = requirement_access(operation->receiver_effect);
+        for (auto effect : operation->argument_effects)
+          closed.argument_access.push_back(requirement_access(effect));
+      } else if (method) {
+        auto owner_declaration = p_.type_context
+            ? p_.type_context->find(method->owner) : nullptr;
+        if (!owner_declaration)
+          err(line, "selected method has no nominal declaration identity",
+              "MODULE_IDENTITY_UNRESOLVED");
+        closed.admitted_template_or_builtin_family = owner_declaration->id;
+        closed.selected_callable_id = "callable-v1:" + owner_declaration->id +
+            ":method:" + method->name;
+        closed.receiver_access = requirement_access(method->receiver_effect);
+        for (size_t index = 0; index < argument_types.size(); ++index)
+          closed.argument_access.push_back(
+              requirement_access(method_parameter_effect(*method, index)));
+      } else {
+        closed.admitted_template_or_builtin_family = "FileIO";
+        closed.selected_callable_id = "builtin:FileIO." + requirement.detail;
+        closed.argument_access.assign(argument_types.size(), moss::AccessMode::Read);
+      }
+      if (!moss::member_requirement_is_closed(closed))
+        err(line, "required member '" + requirement.detail +
+            "' has an unresolved type or access contract",
+            "TYPE_AMBIGUOUS_OPEN_RESULT");
+      resolved_requirements.push_back(std::move(closed));
       if (!requirement.result.empty()) {
         if (related_function_result && !same_type(*related_function_result, result))
           err(line, "conflicting method result expectations in function '" +
@@ -12765,10 +16244,160 @@ class Checker {
               "', conflicting with expected result type '" + expected + "'");
       }
     }
+    return resolved_requirements;
+  }
+
+  vector<string> semantic_specialization_arguments(
+      int line, const vector<string>& parameter_types) const {
+    vector<string> resolved = parameter_types;
+    for (auto& type : resolved) {
+      if (!callable_identity(type)) continue;
+      if (starts_with(type, "callable-v1:")) continue;
+      if (starts_with(type, "callable:callable-v1:")) {
+        type = type.substr(9);
+        continue;
+      }
+      const string lookup_name = starts_with(type, "callable:") ? type.substr(9) : type;
+      const Function* target_fn = nullptr;
+      if (starts_with(lookup_name, "callable-v1:")) {
+        target_fn = find_function_by_callable_id(lookup_name);
+      } else {
+        auto callable = functions_.find(lookup_name);
+        if (callable != functions_.end()) target_fn = callable->second;
+      }
+      if (!target_fn || target_fn->semantic_callable_id.empty())
+        err(line, "static callable argument has no resolved semantic identity",
+            "TYPE_AMBIGUOUS_OPEN_RESULT");
+      type = target_fn->semantic_callable_id;
+    }
+    return resolved;
+  }
+
+  vector<moss::MemberDispatchRequirement> close_specialization_members(
+      int line, const Function& function, const vector<string>& parameter_types,
+      const vector<std::pair<uint32_t, moss::TypeRef>>& open_result_bindings,
+      const vector<moss::MemberDispatchRequirement>& selected) const {
+    if (!function.open_summary ||
+        function.open_summary->member_requirements.empty()) return selected;
+    const auto& summary = *function.open_summary;
+    moss::TypeSolver solver(1);
+    vector<moss::TypeRef> variables;
+    for (uint32_t ordinal = 0; ordinal < summary.bound_variable_count; ++ordinal)
+      variables.push_back(solver.fresh(1));
+    // A named trait parameter is a predicate on each concrete argument, not
+    // a nominal type to unify with it. The summary reuses this exact TypeRef
+    // for member requirements, so bind by term identity per parameter.
+    std::unordered_map<const moss::Type*, moss::TypeRef> trait_bindings;
+    std::function<moss::TypeRef(const moss::TypeRef&)> instantiate =
+        [&](const moss::TypeRef& source) -> moss::TypeRef {
+      if (!source) return nullptr;
+      auto trait_binding = trait_bindings.find(source.get());
+      if (trait_binding != trait_bindings.end()) return trait_binding->second;
+      if (source->kind == moss::TypeKind::InferenceVar)
+        return source->var_id.session_id == 0 &&
+               source->var_id.ordinal < variables.size()
+            ? variables[source->var_id.ordinal] : nullptr;
+      if (source->kind == moss::TypeKind::Builtin) {
+        vector<moss::TypeRef> arguments;
+        for (const auto& argument : source->type_args)
+          arguments.push_back(instantiate(argument));
+        return moss::Type::builtin(source->name, std::move(arguments));
+      }
+      if (source->kind == moss::TypeKind::NominalInstance) {
+        vector<std::pair<string, moss::TypeRef>> fields;
+        for (const auto& field : source->field_substitutions)
+          fields.emplace_back(field.first, instantiate(field.second));
+        return moss::Type::nominal_bound(source->declaration, source->name,
+                                        std::move(fields));
+      }
+      return source;
+    };
+    if (summary.parameter_types.size() != parameter_types.size())
+      err(line, "member summary parameter arity changed at specialization",
+          "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+    for (size_t index = 0; index < parameter_types.size(); ++index) {
+      auto concrete = moss::Type::parse_canonical(parameter_types[index]);
+      if (!concrete)
+        err(line, "member summary has an invalid concrete argument type",
+            "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+      if (traits_.count(function.params[index].type)) {
+        string reason;
+        if (!trait_conforms(parameter_types[index],
+                            function.params[index].type, &reason))
+          err(line, "concrete argument does not satisfy member summary trait '" +
+              function.params[index].type + "': " + reason,
+              "TYPE_MISMATCH");
+        trait_bindings.emplace(summary.parameter_types[index].get(), *concrete);
+        continue;
+      }
+      auto formal = instantiate(summary.parameter_types[index]);
+      if (!formal || !solver.unify(*concrete, formal))
+        err(line, "member summary parameter type changed at specialization",
+            "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+    }
+    for (const auto& [ordinal, type] : open_result_bindings) {
+      if (ordinal >= variables.size() || !type ||
+          !solver.unify(variables[ordinal], type))
+        err(line, "member summary result binding changed at specialization",
+            "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+    }
+    vector<moss::MemberDispatchRequirement> requirements;
+    for (const auto& source : summary.member_requirements) {
+      auto instantiated = source;
+      instantiated.receiver = instantiate(source.receiver);
+      for (auto& argument : instantiated.argument_types)
+        argument = instantiate(argument);
+      if (source.result) instantiated.result = instantiate(*source.result);
+      requirements.push_back(std::move(instantiated));
+    }
+    auto admit = [&](const moss::MemberDispatchRequirement& open)
+        -> moss::MemberAdmission {
+      moss::MemberAdmission decision;
+      auto policy = std::find_if(selected.begin(), selected.end(),
+          [&](const moss::MemberDispatchRequirement& item) {
+            return item.requirement_id == open.requirement_id;
+          });
+      if (policy == selected.end()) return decision;
+      decision.status = moss::MemberAdmission::Status::Admitted;
+      decision.admitted_template_or_builtin_family =
+          policy->admitted_template_or_builtin_family;
+      decision.selected_callable_id = policy->selected_callable_id;
+      decision.receiver_access = policy->receiver_access;
+      decision.argument_access = policy->argument_access;
+      decision.result = policy->result;
+      if (open.receiver && policy->receiver)
+        decision.contributes.emplace_back(open.receiver, policy->receiver);
+      for (size_t index = 0;
+           index < open.argument_types.size() &&
+           index < policy->argument_types.size(); ++index)
+        decision.contributes.emplace_back(open.argument_types[index],
+                                          policy->argument_types[index]);
+      return decision;
+    };
+    auto closure = moss::close_member_requirements(
+        solver, std::move(requirements), admit);
+    if (closure.status != moss::MemberClosureResult::Status::Closed)
+      err(line, "member summary did not close at concrete specialization",
+          "TYPE_AMBIGUOUS_OPEN_RESULT");
+    for (auto& requirement : closure.requirements) {
+      requirement = moss::resolve_member_requirement(solver, requirement);
+      if (!moss::member_requirement_is_closed(requirement))
+        err(line, "member summary has an unresolved concrete requirement",
+            "TYPE_AMBIGUOUS_OPEN_RESULT");
+    }
+    return closure.requirements;
   }
 
   void register_static_specialization(int line, Function& function,
-                                      const vector<string>& parameter_types) {
+                                      const vector<string>& parameter_types,
+                                      vector<moss::MemberDispatchRequirement>
+                                          member_requirements = {},
+                                      const std::optional<moss::TypeRef>& receiver =
+                                          std::nullopt,
+                                      const vector<std::pair<uint32_t,
+                                          moss::TypeRef>>& open_result_bindings = {},
+                                      const std::optional<moss::TypeRef>&
+                                          closed_result_type = std::nullopt) {
     if (!function.static_dispatch) return;
     if (parameter_types.size() != function.params.size() ||
         !std::all_of(parameter_types.begin(), parameter_types.end(),
@@ -12780,15 +16409,74 @@ class Checker {
     vector<string> canonical_types;
     for (const auto& type : parameter_types)
       canonical_types.push_back(canonical_type_name(type));
+    if (closed_result_type && *closed_result_type &&
+        contains_internal_placeholder(
+            (*closed_result_type)->to_canonical_string())) {
+      if (!checking_specialization_ &&
+          starts_with(current_semantic_context_, "fn:"))
+        return;  // An open source scheme closes in each concrete caller.
+      err(line, "static specialization of function '" + function.name +
+          "' has an unresolved result type",
+          "TYPE_AMBIGUOUS_OPEN_RESULT");
+    }
+    auto semantic_key = specialization_key_inputs(
+        function.semantic_callable_id,
+        semantic_specialization_arguments(line, canonical_types), receiver,
+        open_result_bindings);
+    if (!semantic_key)
+      err(line, "static specialization has an unresolved argument type",
+          "TYPE_AMBIGUOUS_OPEN_RESULT");
+    const string stable_key = *semantic_key->stable_key();
+    if (function.open_summary &&
+        !function.open_summary->member_requirements.empty() &&
+        !member_requirements.empty() &&
+        std::none_of(member_requirements.begin(), member_requirements.end(),
+                     [](const moss::MemberDispatchRequirement& requirement) {
+                       return requirement.parent_requirement_id.has_value();
+                     }))
+      member_requirements = close_specialization_members(
+          line, function, canonical_types, open_result_bindings,
+          member_requirements);
+    if (function.open_summary && !member_requirements.empty() &&
+        !current_source_file_.empty() && !current_semantic_context_.empty()) {
+      string caller_module = p_.main_module.empty()
+          ? p_.module_name : p_.main_module;
+      string caller_id = current_semantic_context_;
+      if (starts_with(current_semantic_context_, "fn:")) {
+        const string caller_name = current_semantic_context_.substr(3);
+        auto caller = functions_.find(caller_name);
+        if (caller != functions_.end()) {
+          caller_module = caller->second->defining_module;
+          caller_id = caller->second->semantic_callable_id;
+        }
+      }
+      const string call_id = "call-v1:" + stable_key + ":" + caller_id +
+          ":" + current_source_file_ + ":" + std::to_string(line);
+      for (auto& requirement : member_requirements) {
+        auto parent = std::find_if(
+            function.open_summary->member_requirements.begin(),
+            function.open_summary->member_requirements.end(),
+            [&](const moss::MemberDispatchRequirement& source) {
+              return source.requirement_id ==
+                  requirement.parent_requirement_id.value_or(
+                      requirement.requirement_id);
+            });
+        if (parent == function.open_summary->member_requirements.end()) continue;
+        requirement.parent_requirement_id = parent->requirement_id;
+        requirement.requirement_id = parent->requirement_id + ":" + call_id;
+        requirement.origin = {program_module_identity(p_, caller_module),
+                              current_source_file_, line, 1, caller_id, call_id};
+      }
+    }
     auto record_dependency = [&] {
       if (!checking_specialization_) return;
-      StaticSpecializationDependency dependency{function.name, canonical_types};
+      StaticSpecializationDependency dependency{function.name, canonical_types,
+                                                stable_key};
       auto existing_dependency = std::find_if(
           checking_specialization_->dependencies.begin(),
           checking_specialization_->dependencies.end(),
           [&](const StaticSpecializationDependency& existing) {
-            return existing.function_name == dependency.function_name &&
-                existing.parameter_types == dependency.parameter_types;
+            return existing.specialization_key == dependency.specialization_key;
           });
       if (existing_dependency == checking_specialization_->dependencies.end())
         checking_specialization_->dependencies.push_back(std::move(dependency));
@@ -12796,45 +16484,103 @@ class Checker {
     auto existing = std::find_if(function.specializations.begin(),
                                  function.specializations.end(),
                                  [&](const FunctionSpecialization& specialization) {
-                                   return specialization.parameter_types == canonical_types;
+                                   return specialization.stable_type_key == stable_key;
                                  });
     if (existing != function.specializations.end()) {
+      if (existing->semantic_key.stable_key() != semantic_key->stable_key())
+        err(line, "inconsistent static specialization identity",
+            "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+      if (closed_result_type &&
+          (!existing->return_type_ref ||
+           !existing->return_type_ref->structurally_equal(**closed_result_type)))
+        err(line, "static specialization has inconsistent result types for one key",
+            "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+      if (final_parameter_effects_ready_) {
+        vector<bool> fresh_mutations;
+        auto fresh_effects = concrete_function_effects(
+            function, canonical_types, &fresh_mutations, true);
+        if (existing->parameter_effects != fresh_effects ||
+            existing->parameter_mutations != fresh_mutations)
+          err(line, "static specialization has inconsistent ownership effects for one key",
+              "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+      }
+      if (existing->member_requirements.empty() && !member_requirements.empty())
+        existing->member_requirements = std::move(member_requirements);
       record_dependency();
       return;
     }
     auto result = specialized_function_return_type(function, canonical_types);
+    if (closed_result_type) {
+      if (!*closed_result_type || !(*closed_result_type)->is_closed())
+        err(line, "static specialization has an unresolved result type",
+            "TYPE_AMBIGUOUS_OPEN_RESULT");
+      result = (*closed_result_type)->to_canonical_string();
+    }
     if (!result)
       err(line, "cannot determine the concrete result type for static specialization of function '" +
           function.name + "'");
+    auto projected_result_ref = moss::Type::parse_canonical(
+        canonical_type_name(*result));
+    if (contains_internal_placeholder(*result) || !projected_result_ref ||
+        !(*projected_result_ref)->is_closed()) {
+      if (!checking_specialization_ &&
+          starts_with(current_semantic_context_, "fn:"))
+        return;
+      err(line, "static specialization of function '" + function.name +
+          "' has an unresolved result type",
+          "TYPE_AMBIGUOUS_OPEN_RESULT");
+    }
     FunctionSpecialization specialization;
     specialization.generated_name = "__moss_specialize_" + function.name + "_" +
         std::to_string(function.specializations.size());
+    specialization.semantic_key = *semantic_key;
     specialization.parameter_types = canonical_types;
     specialization.return_type = canonical_type_name(*result);
+    for (const auto& type : canonical_types) {
+      if (starts_with(type, "callable-v1:") || starts_with(type, "callable:")) {
+        specialization.parameter_type_refs.push_back(moss::Type::unit());
+        continue;
+      }
+      auto parsed = moss::Type::parse_canonical(type);
+      if (!parsed || !(*parsed)->is_closed())
+        err(line, "static specialization has an unresolved argument type",
+            "TYPE_AMBIGUOUS_OPEN_RESULT");
+      specialization.parameter_type_refs.push_back(*parsed);
+    }
+    specialization.return_type_ref = moss::Type::parse_canonical(
+        specialization.return_type).value_or(nullptr);
+    if (closed_result_type)
+      specialization.return_type_ref = *closed_result_type;
+    specialization.stable_type_key = stable_key;
+    specialization.member_requirements = std::move(member_requirements);
     specialization.parameter_effects = concrete_function_effects(
         function, canonical_types, &specialization.parameter_mutations);
     function.specializations.push_back(specialization);
     record_dependency();
 
-    std::unordered_map<string,string> specialized_env;
+    TypeEnv specialized_env;
     for (size_t index = 0; index < function.params.size(); ++index)
       specialized_env[function.params[index].name] = canonical_types[index];
     FunctionSpecialization* previous = checking_specialization_;
+    const string call_source = current_source_file_;
+    try {
     checking_specialization_ = &function.specializations.back();
+    SourceFileScope function_source(current_source_file_, function.source_file);
+    SourceFileScope checked_callee_context(current_semantic_context_,
+                                           "fn:" + function.name);
     StaticBindingScope specialization_bounds(static_bound_bindings_);
     static_bound_bindings_.clear();
     infer_statement_expressions(function.body, specialized_env);
     static_bindings_for_body(function.body, specialized_env);
     Function concrete_function = function;
-    concrete_function.return_type = specialization.return_type;
+    concrete_function.set_return_type(specialization.return_type);
     for (size_t index = 0; index < concrete_function.params.size(); ++index)
-      concrete_function.params[index].type = canonical_types[index];
+      concrete_function.params[index].set_type(canonical_types[index]);
     check_stmts(function.body, specialized_env, nullptr, nullptr, &concrete_function);
     OwnershipEnv specialized_ownership;
     for (size_t index = 0; index < function.params.size(); ++index)
       specialized_ownership.types[function.params[index].name] = canonical_types[index];
     {
-      SourceFileScope source_scope(current_source_file_, function.source_file);
       SourceFileScope semantic_context(
           current_semantic_context_, "fn:" + function.name);
       auto final_ownership = check_ownership(
@@ -12843,14 +16589,160 @@ class Checker {
         check_ownership_expression(function.result_line ? function.result_line : function.line,
                                    *function.result_expression, final_ownership, Effect::Consume);
     }
-    if (function.result_expression)
+    if (function.result_expression) {
+      struct ResultExpressionScope {
+        const Function*& slot;
+        const Function* prior;
+        ResultExpressionScope(const Function*& target, const Function& current)
+            : slot(target), prior(target) { slot = &current; }
+        ~ResultExpressionScope() { slot = prior; }
+      } result_scope(current_check_result_function_, function);
       check_expression(function.result_line ? function.result_line : function.line,
                        *function.result_expression, specialized_env);
+    }
+    } catch (CompileError& error) {
+      checking_specialization_ = previous;
+      annotate_specialization_failure(error, function, line, call_source);
+      throw;
+    }
     checking_specialization_ = previous;
   }
 
+  OpenCallResultFacts close_open_result_summary(
+      int line, const Function& function, const vector<string>& actual_types,
+      const moss::TypeRef& expected) const {
+    if (!function.open_summary || !function.open_summary->complete || !expected)
+      err(line, "open-result call has no complete checked summary",
+          "TYPE_AMBIGUOUS_OPEN_RESULT");
+    const auto& summary = *function.open_summary;
+    if (summary.parameter_types.size() != actual_types.size())
+      err(line, "open-result call has incompatible argument count", "TYPE_MISMATCH");
+    moss::TypeSolver solver(1);
+    vector<moss::TypeRef> fresh;
+    for (uint32_t ordinal = 0; ordinal < summary.bound_variable_count; ++ordinal)
+      fresh.push_back(solver.fresh(1));
+    std::function<moss::TypeRef(const moss::TypeRef&)> instantiate =
+        [&](const moss::TypeRef& type) -> moss::TypeRef {
+      if (!type) return nullptr;
+      if (type->kind == moss::TypeKind::InferenceVar)
+        return type->var_id.session_id == 0 &&
+               type->var_id.ordinal < fresh.size()
+            ? fresh[type->var_id.ordinal] : nullptr;
+      if (type->kind == moss::TypeKind::Builtin) {
+        vector<moss::TypeRef> children;
+        for (const auto& child : type->type_args)
+          children.push_back(instantiate(child));
+        return moss::Type::builtin(type->name, std::move(children));
+      }
+      if (type->kind == moss::TypeKind::NominalInstance) {
+        vector<std::pair<string, moss::TypeRef>> fields;
+        for (const auto& field : type->field_substitutions)
+          fields.emplace_back(field.first, instantiate(field.second));
+        return moss::Type::nominal_bound(type->declaration, type->name,
+                                        std::move(fields));
+      }
+      return type;
+    };
+    for (size_t index = 0; index < actual_types.size(); ++index) {
+      auto actual = moss::Type::parse_canonical(
+          canonical_type_name(actual_types[index]));
+      auto formal = instantiate(summary.parameter_types[index]);
+      if (!actual || !open_argument_matches(*actual, formal,
+                                            actual_types[index], solver))
+        err(line, "open-result call argument conflicts with its summary",
+            "TYPE_MISMATCH");
+    }
+    // D5: a result variable the arguments already determine carries no
+    // identity of its own. Only a variable the caller's expectation binds --
+    // `fresh() -> []` taking its element type from the call site --
+    // distinguishes one specialization from another, so the ordinals that are
+    // already closed here are excluded from the key below. Without this, one
+    // generic called with identical argument types registers two
+    // specializations whenever one call site binds its result and another
+    // does not, and the parameter-only lookup in native lowering can no
+    // longer choose between them.
+    std::set<uint32_t> determined_by_arguments;
+    for (uint32_t ordinal = 0; ordinal < fresh.size(); ++ordinal)
+      if (auto bound = solver.resolve(fresh[ordinal]); bound && bound->is_closed())
+        determined_by_arguments.insert(ordinal);
+    auto result = instantiate(summary.result_type);
+    if (!result || !solver.unify(result, expected))
+      err(line, "open-result call conflicts with its required result type",
+          "TYPE_MISMATCH");
+    OpenCallResultFacts facts;
+    facts.callable_id = function.semantic_callable_id;
+    facts.result = solver.resolve(result);
+    std::set<uint32_t> ordinals;
+    std::function<void(const moss::TypeRef&)> collect =
+        [&](const moss::TypeRef& type) {
+      if (!type) return;
+      if (type->kind == moss::TypeKind::InferenceVar) {
+        ordinals.insert(type->var_id.ordinal);
+        return;
+      }
+      for (const auto& child : type->type_args) collect(child);
+      for (const auto& field : type->field_substitutions)
+        collect(field.second);
+    };
+    collect(summary.result_type);
+    for (uint32_t ordinal : ordinals)
+      if (!determined_by_arguments.count(ordinal))
+        facts.ordered_bindings.emplace_back(ordinal, solver.resolve(fresh[ordinal]));
+    return facts;
+  }
+
+  string module_identity_of(const string& module) const {
+    auto bound = p_.module_identities.find(module);
+    return bound == p_.module_identities.end() ? string() : bound->second;
+  }
+
+  // The module-v1 identity of the callable being checked, resolved through
+  // its declaration (function, handler domain, or method record), never by
+  // splitting a mangled symbol.
+  string current_callable_module_id() const {
+    const string& context = current_semantic_context_;
+    auto owner = [&](size_t prefix) {
+      const string rest = context.substr(prefix);
+      return rest.substr(0, rest.rfind('.'));
+    };
+    if (starts_with(context, "fn:")) {
+      if (auto function = functions_.find(context.substr(3)); function != functions_.end())
+        return module_identity_of(function->second->defining_module);
+    } else if (starts_with(context, "handler:")) {
+      if (auto domain = domains_.find(owner(8)); domain != domains_.end())
+        return module_identity_of(domain->second->defining_module);
+    } else if (starts_with(context, "method:")) {
+      const string type = owner(7);
+      if (auto object = objects_.find(type); object != objects_.end())
+        return module_identity_of(object->second->defining_module);
+      if (auto parsed = moss::Type::parse_canonical(canonical_type_name(type));
+          parsed && (*parsed)->declaration)
+        return (*parsed)->declaration->module_id;
+    }
+    return module_identity_of(p_.main_module);
+  }
+
+  // A trait formal is a constraint, never a value layout
+  // (TYPE_IR_CONTRACT §2), so an argument satisfies it by structural
+  // conformance, not unification: unifying a concrete value type against a
+  // trait always fails. A trait is not an interned declaration, so a summary
+  // carries it as a plain named type; both spellings are checked here.
+  bool open_argument_matches(const moss::TypeRef& actual,
+                             const moss::TypeRef& formal,
+                             const string& actual_spelling,
+                             moss::TypeSolver& solver) const {
+    if (!actual || !formal) return false;
+    if (formal->kind == moss::TypeKind::TraitConstraint ||
+        (formal->kind == moss::TypeKind::Primitive && traits_.count(formal->name)))
+      return trait_conforms(actual_spelling, formal->name);
+    return solver.unify(actual, formal);
+  }
+
   void check_function_call(int line, const string& name, const vector<string>& args,
-                           const std::unordered_map<string,string>& env) {
+                           const std::unordered_map<string,string>& env,
+                           const moss::TypeRef& expected_open_result = nullptr,
+                           std::optional<std::pair<uint32_t, uint32_t>>
+                               nested_occurrences = std::nullopt) {
     if (name == "range") {
       if (args.size() != 2 && args.size() != 3)
         err(line, "range expects range(start, end) or range(start, end, step)");
@@ -12879,6 +16771,12 @@ class Checker {
     if (name == "is_nan" || name == "is_finite") {
       if (args.size() != 1)
         err(line, name + " expects one Float argument", "INVALID_ARITY");
+      auto actual_term = checked_expression_term(args.front(), env);
+      if (current_body_types_ && actual_term) {
+        if (!current_body_types_->solver.unify(actual_term, moss::Type::primitive("float")))
+          err(line, name + " argument must have type 'Float'", "TYPE_MISMATCH");
+        return;
+      }
       auto actual = inferred_expr_type(args.front(), env);
       if (!actual || (!unresolved_semantic_type(*actual) &&
                       canonical_type_name(*actual) != "float"))
@@ -12890,12 +16788,20 @@ class Checker {
       if (args.size() != 1)
         err(line, name + " expects one argument", "INVALID_ARITY");
       const string expected = numeric_name == "to_int" ? "float" : "string";
-      auto actual = inferred_expr_type(args.front(), env);
-      if (!actual || (!unresolved_semantic_type(*actual) &&
-                      canonical_type_name(*actual) != expected))
-        err(line, name + " argument must have type '" +
-                  (expected == "float" ? "Float" : "String") + "'",
-            "TYPE_MISMATCH");
+      auto actual_term = checked_expression_term(args.front(), env);
+      if (current_body_types_ && actual_term) {
+        if (!current_body_types_->solver.unify(actual_term, moss::Type::primitive(expected)))
+          err(line, name + " argument must have type '" +
+                    (expected == "float" ? "Float" : "String") + "'",
+              "TYPE_MISMATCH");
+      } else {
+        auto actual = inferred_expr_type(args.front(), env);
+        if (!actual || (!unresolved_semantic_type(*actual) &&
+                        canonical_type_name(*actual) != expected))
+          err(line, name + " argument must have type '" +
+                    (expected == "float" ? "Float" : "String") + "'",
+              "TYPE_MISMATCH");
+      }
       const string error_type = numeric_builtin_error_type(name);
       auto declaration = enums_.find(error_type);
       if (declaration == enums_.end())
@@ -12937,8 +16843,12 @@ class Checker {
         err(line, "assertEqual operands have types '" + *actual +
             "' and '" + *expected + "'");
       string type = canonical_type_name(*actual);
-      bool printable = type == "int" || type == "float" || type == "bool" ||
-          type == "string" || starts_with(type, "vector[");
+      const auto printable_term = parsed_type(type);
+      bool printable = primitive_term(printable_term, "int") ||
+          primitive_term(printable_term, "float") ||
+          primitive_term(printable_term, "bool") ||
+          primitive_term(printable_term, "string") ||
+          applied_builtin(printable_term, {"vector"});
       if (!printable)
         err(line, "assertEqual currently supports scalar, string, and Vector values; compare a field for other values");
       return;
@@ -12946,12 +16856,21 @@ class Checker {
     string target = name;
     auto binding = env.find(name);
     if (binding != env.end()) {
-      if (starts_with(binding->second, "_generic:")) return;
-      if (starts_with(binding->second, "callable:"))
-        target = binding->second.substr(9);
+      if (open_generic(binding->second)) return;
+      if (callable_identity(binding->second)) {
+        string cid = canonical_type_name(binding->second);
+        if (starts_with(cid, "callable:")) cid = cid.substr(9);
+        target = cid;
+      }
     }
-    auto function = functions_.find(target);
-    if (function == functions_.end()) {
+    Function* function_target = nullptr;
+    if (starts_with(target, "callable-v1:"))
+      function_target = find_function_by_callable_id(target);
+    if (!function_target) {
+      auto it = functions_.find(target);
+      if (it != functions_.end()) function_target = it->second;
+    }
+    if (!function_target) {
       if (builtin_call_semantics(name, args, env)) return;
       if (current_object_) {
         vector<string> argument_types;
@@ -12961,46 +16880,103 @@ class Checker {
       }
       err(line, "unknown local function '" + name + "'");
     }
+    struct FnWrapper {
+      Function* second;
+      const FnWrapper* operator->() const { return this; }
+      FnWrapper* operator->() { return this; }
+    } function{function_target};
     if (function->second->params.size() != args.size())
       err(line, "function " + name + " expects " +
           std::to_string(function->second->params.size()) + " arguments, got " +
           std::to_string(args.size()));
     vector<string> actual_types;
-    for (const auto& argument : args)
-      actual_types.push_back(inferred_expr_type(argument, env).value_or(""));
+    // Each argument's structured result; local decisions test these terms.
+    vector<InferredExpr> actual_results;
+    for (size_t index = 0; index < args.size(); ++index) {
+      const auto& argument = args[index];
+      const auto& parameter = function->second->params[index];
+      string nested_name;
+      vector<string> nested_arguments;
+      auto required = parameter.type.empty() ? std::nullopt :
+          moss::Type::parse_canonical(canonical_type_name(parameter.type));
+      if (required && (*required)->is_closed() &&
+          parse_simple_call(trim(argument), nested_name, nested_arguments)) {
+        auto nested = functions_.find(nested_name);
+        if (nested != functions_.end() && nested->second->open_summary &&
+            nested->second->open_summary->complete &&
+            nested->second->open_summary->result_type &&
+            !nested->second->open_summary->result_type->is_closed()) {
+          uint32_t target_occurrence = 0;
+          uint32_t expression_occurrence = 0;
+          for (size_t prior = 0; prior < index; ++prior) {
+            string prior_name;
+            vector<string> prior_arguments;
+            if (!parse_simple_call(trim(args[prior]), prior_name,
+                                   prior_arguments) ||
+                prior_name != nested_name) continue;
+            ++target_occurrence;
+            if (trim(args[prior]) == trim(argument))
+              ++expression_occurrence;
+          }
+          check_function_call(line, nested_name, nested_arguments, env,
+                              *required,
+                              std::make_pair(target_occurrence,
+                                             expression_occurrence));
+          actual_types.push_back((*required)->to_canonical_string());
+          actual_results.push_back({*required, {}});
+          continue;
+        }
+      }
+      auto inferred = inferred_expr(argument, env);
+      actual_results.push_back(inferred ? *inferred : InferredExpr{});
+      actual_types.push_back(actual_results.back().projection());
+    }
+    if (function->second->open_summary &&
+        function->second->open_summary->complete) {
+      const auto& summary = *function->second->open_summary;
+      for (const auto& requirement : summary.requirements) {
+        if (requirement.kind != moss::RequirementKind::Operator ||
+            requirement.target_id != "operator:+" ||
+            requirement.arguments.size() != 1 ||
+            requirement.arguments.front()->kind != moss::TypeKind::Primitive ||
+            requirement.arguments.front()->name != "int") continue;
+        for (size_t index = 0; index < summary.parameter_types.size() &&
+                               index < actual_types.size(); ++index) {
+          if (!summary.parameter_types[index]->structurally_equal(
+                  *requirement.subject)) continue;
+          const auto& actual = actual_results[index].term;
+          if (!actual) continue;
+          if (!primitive_term(actual, "int") && !primitive_term(actual, "float"))
+            err(line, "argument " + std::to_string(index + 1) +
+                " to function '" + name +
+                "' has no compatible '+' operation with Int", "TYPE_MISMATCH");
+        }
+      }
+    }
     // Each explicit module currently emits its own nominal FileIO runtime.
     // A concrete provider-owned call cannot take another crate's Range.
     // Static/generic calls specialize in the consumer crate and use its Range;
     // they remain valid even when their Moss body came from a .mossi file.
     if (p_.explicit_module && !function->second->static_dispatch) {
-      auto module_of = [](const string& symbol) {
-        const size_t separator = symbol.find("__");
-        return separator == string::npos ? string() : symbol.substr(0, separator);
-      };
-      string owner = current_semantic_context_;
-      if (starts_with(owner, "fn:")) owner = owner.substr(3);
-      else if (starts_with(owner, "handler:")) owner = owner.substr(8);
-      else if (starts_with(owner, "method:")) owner = owner.substr(7);
-      else owner = p_.main_module;
-      const string caller_module = module_of(owner).empty()
-          ? owner : module_of(owner);
-      const string callee_module = module_of(function->second->name);
-      if (!callee_module.empty() && callee_module != caller_module)
+      const string callee_module =
+          module_identity_of(function->second->defining_module);
+      if (!callee_module.empty() && callee_module != current_callable_module_id())
         for (size_t index = 0; index < actual_types.size(); ++index) {
-          const string actual = canonical_type_name(actual_types[index]);
-          const string expected = canonical_type_name(
-              function->second->params[index].type);
-          if (actual == "Range" || actual == "RangeBatch" ||
-              expected == "Range" || expected == "RangeBatch")
+          const auto& actual = actual_results[index].term;
+          const auto expected = inferred_leaf(function->second->params[index].type).term;
+          const bool batch = primitive_term(actual, "RangeBatch") ||
+              primitive_term(expected, "RangeBatch");
+          if (batch || primitive_term(actual, "Range") || primitive_term(expected, "Range"))
             err(line, "call to imported function '" + name +
-                "' cannot pass " + (actual == "RangeBatch" || expected == "RangeBatch"
-                    ? "RangeBatch" : "Range") +
+                "' cannot pass " + (batch ? "RangeBatch" : "Range") +
                 " across native module crates until the Phase 20 FileIO ABI is shared",
                 "FILEIO_CROSS_CRATE_ABI");
         }
     }
     for (size_t index = 0; index < args.size(); ++index) {
       const auto& actual_type = actual_types[index];
+      const auto& actual_result = actual_results[index];
+      const auto actual_shape = inferred_shape(actual_result);
       const auto& param = function->second->params[index];
       bool concrete_actual = concrete_specialization_type(actual_type) &&
           !traits_.count(canonical_type_name(actual_type));
@@ -13011,35 +16987,62 @@ class Checker {
               "' has type '" + actual_type + "' which does not satisfy trait '" +
               param.type + "': " + reason);
       }
-      bool container_match = !actual_type.empty() &&
-          ((param.type == "vector" && starts_with(actual_type, "vector[")) ||
-           (param.type == "map" && starts_with(actual_type, "map[")) ||
-           (param.type == "queue" && starts_with(actual_type, "queue[")));
-      if (!actual_type.empty() && !contains_internal_placeholder(actual_type) &&
-          !function->second->generic && !param.type.empty() &&
-          !contains_internal_placeholder(param.type) && !traits_.count(param.type) &&
-          !container_match && !same_type(param.type, actual_type))
+      moss::TypeRef formal_term = param.type_ref;
+      if (!formal_term && !param.type.empty()) {
+        auto parsed = moss::Type::parse_canonical(canonical_type_name(param.type));
+        if (parsed) formal_term = *parsed;
+      }
+      bool container_match = bare_collection_accepts(param.type, actual_result);
+      auto actual_term = checked_expression_term(args[index], env);
+      if (!actual_term && current_body_types_ &&
+          (starts_with(actual_type, "_iterator_element:") ||
+           open_generic(actual_type) ||
+           starts_with(actual_type, "_element:") ||
+           starts_with(actual_type, "_field:") ||
+           actual_type == "_method_value"))
+        actual_term = current_body_types_->solver.fresh(0);
+      moss::TypeRef check_term = formal_term;
+      if (check_term && check_term->is_bare_template() && current_body_types_) {
+        std::vector<std::pair<string, moss::TypeRef>> substitutions;
+        for (const auto& slot : check_term->declaration->fields)
+          if (slot.inferred) substitutions.emplace_back(slot.name, current_body_types_->solver.fresh(0));
+        check_term = moss::Type::nominal_bound(check_term->declaration, check_term->name,
+                                               std::move(substitutions));
+      }
+      const bool typed_check = current_body_types_ &&
+          !param.type.empty() && !traits_.count(param.type) &&
+          check_term && check_term->is_closed() && actual_term;
+      bool argument_compatible = typed_check
+          ? current_body_types_->solver.unify(check_term, actual_term)
+          : param.type.empty() ||
+                traits_.count(param.type) || container_match ||
+                (!actual_type.empty() && is_type_compatible(param.type, actual_type));
+      if (!argument_compatible)
         err(line, "argument " + std::to_string(index + 1) + " to function '" + name +
             "' has type '" + actual_type + "', expected '" +
             param.type + "'");
       if (concrete_actual && has_constraint(*function->second, param.name)) {
         for (const auto& op : constraint_details(*function->second, param.name)) {
-          if ((op == "+" || op == "-" || op == "*" || op == "/" || op == "%") && !numeric_type(actual_type) && !(op == "+" && actual_type == "string"))
+          const bool numeric = primitive_term(actual_result.term, "int") ||
+              primitive_term(actual_result.term, "float");
+          if ((op == "+" || op == "-" || op == "*" || op == "/" || op == "%") && !numeric &&
+              !(op == "+" && primitive_term(actual_result.term, "string")))
             err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' does not support inferred operation '" + op + "'");
-          if (op == "[]" && !(starts_with(actual_type, "vector[") || starts_with(actual_type, "map[") || starts_with(actual_type, "queue[")))
+          if (op == "[]" && !applied_builtin(actual_shape, {"vector", "map", "queue"}))
             err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' is not an indexable container");
         }
         for (const auto& c : function->second->constraints) if (c.subject == param.name) {
           if (c.kind == ConstraintKind::Field && !type_has_field(actual_type, c.detail))
             err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' has type '" + actual_type + "' missing required field '" + c.detail + "'");
           if (c.kind == ConstraintKind::Iterable && c.detail != "static iterator" &&
-              !starts_with(actual_type, "vector[") &&
-              !starts_with(actual_type, "seq["))
+              !applied_builtin(actual_shape, {"vector", "seq"}))
             err(line, "argument " + std::to_string(index + 1) +
                 " to function '" + name +
                 "' is not a statically typed functional collection");
+          // Callable identities are statically bounded callable capabilities.
           if (c.kind == ConstraintKind::Callable &&
-              !starts_with(actual_type, "callable:"))
+              !actual_result.is_callable() &&
+              !callable_identity(actual_result.legacy))
             err(line, "argument " + std::to_string(index + 1) +
                 " to function '" + name +
                 "' is not a statically bounded callable identity");
@@ -13052,8 +17055,259 @@ class Checker {
                                               !traits_.count(canonical_type_name(type));
                                      });
     if (concrete_call) {
-      validate_method_requirements(line, *function->second, actual_types);
-      register_static_specialization(line, *function->second, actual_types);
+      auto requirements = validate_method_requirements(
+          line, *function->second, actual_types);
+      if (current_check_statement_ &&
+          current_check_statement_->line == line) {
+        const auto& statement = *current_check_statement_;
+        bool direct_call = statement.kind == Stmt::Kind::Call &&
+            statement.b.empty() && statement.a == name &&
+            statement.args == args;
+        if (!direct_call && (statement.kind == Stmt::Kind::Assign ||
+                             statement.kind == Stmt::Kind::Let ||
+                             statement.kind == Stmt::Kind::Var)) {
+          string direct_callee;
+          vector<string> direct_arguments;
+          direct_call = parse_simple_call(trim(statement.b), direct_callee,
+                                          direct_arguments) &&
+              direct_callee == name && direct_arguments == args;
+        }
+        auto retained = statement.member_requirements_by_context.find(
+            current_check_body_context_);
+        if (direct_call &&
+            retained != statement.member_requirements_by_context.end()) {
+          if (retained->second.size() != requirements.size())
+            err(line, "checked member requirement count changed at specialization",
+                "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+          for (size_t index = 0; index < requirements.size(); ++index) {
+            const auto& selected = requirements[index];
+            auto closed = retained->second[index];
+            bool same_terms = closed.receiver && selected.receiver &&
+                closed.receiver->structurally_equal(*selected.receiver) &&
+                closed.argument_types.size() == selected.argument_types.size() &&
+                closed.result && selected.result && *closed.result &&
+                *selected.result &&
+                (*closed.result)->structurally_equal(**selected.result);
+            for (size_t argument = 0;
+                 same_terms && argument < closed.argument_types.size();
+                 ++argument)
+              same_terms = closed.argument_types[argument] &&
+                  selected.argument_types[argument] &&
+                  closed.argument_types[argument]->structurally_equal(
+                      *selected.argument_types[argument]);
+            if (!same_terms || closed.receiver_access != selected.receiver_access ||
+                closed.argument_access != selected.argument_access)
+              err(line, "solver and member admission selected inconsistent types or access",
+                  "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+            // The existing admission policy resolves the final concrete target.
+            // The solver remains the authority for the checked type terms.
+            closed.admitted_template_or_builtin_family =
+                selected.admitted_template_or_builtin_family;
+            closed.selected_callable_id = selected.selected_callable_id;
+            requirements[index] = std::move(closed);
+          }
+        }
+      }
+      const OpenCallResultFacts* open_result = nullptr;
+      std::optional<OpenCallResultFacts> nested_result;
+      std::optional<OpenCallResultFacts> returned_result;
+      if (expected_open_result && function->second->open_summary &&
+          function->second->open_summary->complete) {
+        nested_result = close_open_result_summary(
+            line, *function->second, actual_types, expected_open_result);
+        open_result = &*nested_result;
+      }
+      if (!open_result && current_check_statement_) {
+        auto context = current_check_statement_->nested_open_call_keys_by_context.find(
+            current_check_body_context_);
+        if (context != current_check_statement_
+                           ->nested_open_call_keys_by_context.end()) {
+          auto nested_key = context->second.find(
+              function->second->name + "(" + join_arguments(args) + ")");
+          if (nested_key != context->second.end() &&
+              !nested_key->second.empty())
+            return;  // This nested expression was checked at its typed argument.
+        }
+      }
+      if (current_check_statement_ &&
+          current_check_statement_->line == line) {
+        const auto& statement = *current_check_statement_;
+        auto retained = statement.open_call_results_by_context.find(
+            current_check_body_context_);
+        string direct_callee;
+        vector<string> direct_arguments;
+        if (retained != statement.open_call_results_by_context.end() &&
+            (statement.kind == Stmt::Kind::Assign ||
+             statement.kind == Stmt::Kind::Let ||
+             statement.kind == Stmt::Kind::Var) &&
+            parse_simple_call(trim(statement.b), direct_callee,
+                              direct_arguments) &&
+            direct_callee == name && direct_arguments == args &&
+            retained->second.callable_id ==
+                function->second->semantic_callable_id)
+          open_result = &retained->second;
+      }
+      if (!open_result && current_check_result_function_ &&
+          checking_specialization_ &&
+          function->second->open_summary &&
+          function->second->open_summary->complete) {
+        const string* result_expression = current_check_statement_ &&
+            current_check_statement_->kind == Stmt::Kind::Return
+            ? &current_check_statement_->a
+            : current_check_result_function_->result_expression
+                ? &*current_check_result_function_->result_expression
+                : nullptr;
+        string direct_callee;
+        vector<string> direct_arguments;
+        if (result_expression &&
+            parse_simple_call(trim(*result_expression), direct_callee,
+                              direct_arguments) &&
+            direct_callee == name && direct_arguments == args &&
+            checking_specialization_->return_type_ref) {
+          const auto& summary = *function->second->open_summary;
+          moss::TypeSolver solver(1);
+          vector<moss::TypeRef> fresh;
+          for (uint32_t ordinal = 0; ordinal < summary.bound_variable_count;
+               ++ordinal)
+            fresh.push_back(solver.fresh(1));
+          std::function<moss::TypeRef(const moss::TypeRef&)> instantiate =
+              [&](const moss::TypeRef& type) -> moss::TypeRef {
+            if (!type) return nullptr;
+            if (type->kind == moss::TypeKind::InferenceVar)
+              return type->var_id.session_id == 0 &&
+                     type->var_id.ordinal < fresh.size()
+                  ? fresh[type->var_id.ordinal] : nullptr;
+            if (type->kind == moss::TypeKind::Builtin) {
+              vector<moss::TypeRef> children;
+              for (const auto& child : type->type_args)
+                children.push_back(instantiate(child));
+              return moss::Type::builtin(type->name, std::move(children));
+            }
+            if (type->kind == moss::TypeKind::NominalInstance) {
+              vector<std::pair<string, moss::TypeRef>> fields;
+              for (const auto& field : type->field_substitutions)
+                fields.emplace_back(field.first, instantiate(field.second));
+              return moss::Type::nominal_bound(type->declaration, type->name,
+                                               std::move(fields));
+            }
+            return type;
+          };
+          if (summary.parameter_types.size() == actual_types.size()) {
+            for (size_t index = 0; index < actual_types.size(); ++index) {
+              auto actual = moss::Type::parse_canonical(
+                  canonical_type_name(actual_types[index]));
+              auto formal = instantiate(summary.parameter_types[index]);
+              if (!actual || !open_argument_matches(*actual, formal,
+                                                    actual_types[index], solver))
+                err(line, "open-result call argument conflicts with its summary",
+                    "TYPE_MISMATCH");
+            }
+            // D5, as in close_open_result_summary: a result variable the
+            // arguments already determine carries no identity of its own.
+            std::set<uint32_t> determined_by_arguments;
+            for (uint32_t ordinal = 0; ordinal < fresh.size(); ++ordinal)
+              if (auto bound = solver.resolve(fresh[ordinal]);
+                  bound && bound->is_closed())
+                determined_by_arguments.insert(ordinal);
+            auto result = instantiate(summary.result_type);
+            if (!result || !solver.unify(result,
+                                        checking_specialization_->return_type_ref))
+              err(line, "returned open call conflicts with the closed result type",
+                  "TYPE_MISMATCH");
+            returned_result.emplace();
+            returned_result->callable_id =
+                function->second->semantic_callable_id;
+            returned_result->result = solver.resolve(result);
+            std::set<uint32_t> ordinals;
+            std::function<void(const moss::TypeRef&)> collect =
+                [&](const moss::TypeRef& type) {
+              if (!type) return;
+              if (type->kind == moss::TypeKind::InferenceVar) {
+                ordinals.insert(type->var_id.ordinal);
+                return;
+              }
+              for (const auto& child : type->type_args) collect(child);
+              for (const auto& field : type->field_substitutions)
+                collect(field.second);
+            };
+            collect(summary.result_type);
+            for (uint32_t ordinal : ordinals)
+              if (!determined_by_arguments.count(ordinal))
+                returned_result->ordered_bindings.emplace_back(
+                    ordinal, solver.resolve(fresh[ordinal]));
+            open_result = &*returned_result;
+          }
+        }
+      }
+      register_static_specialization(line, *function->second, actual_types,
+                                     std::move(requirements), std::nullopt,
+                                     open_result ? open_result->ordered_bindings
+                                                 : vector<std::pair<uint32_t,
+                                                       moss::TypeRef>>{},
+                                     open_result ? std::optional<moss::TypeRef>(
+                                                       open_result->result)
+                                                 : std::nullopt);
+      if (open_result && function->second->static_dispatch) {
+        auto key = specialization_key_inputs(
+            function->second->semantic_callable_id,
+            semantic_specialization_arguments(line, actual_types),
+            std::nullopt, open_result->ordered_bindings);
+        if (!key || !key->stable_key())
+          err(line, "open-result specialization has unresolved type bindings",
+              "TYPE_AMBIGUOUS_OPEN_RESULT");
+        const string exact_key = *key->stable_key();
+        if (nested_result && current_check_statement_) {
+          auto& keys = const_cast<Stmt*>(current_check_statement_)
+              ->nested_open_call_keys_by_context[current_check_body_context_]
+                  [function->second->name + "(" + join_arguments(args) + ")"];
+          const uint32_t occurrence = nested_occurrences
+              ? nested_occurrences->second : 0;
+          if (keys.size() <= occurrence) keys.resize(occurrence + 1);
+          if (!keys[occurrence].empty() && keys[occurrence] != exact_key)
+            err(line, "one nested call occurrence acquired two specialization keys",
+                "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+          keys[occurrence] = exact_key;
+        }
+        if (current_check_statement_ && !returned_result && !nested_result)
+          const_cast<Stmt*>(current_check_statement_)->open_call_keys_by_context[
+              current_check_body_context_] = exact_key;
+        if (returned_result && current_check_statement_ &&
+            checking_specialization_)
+          const_cast<Stmt*>(current_check_statement_)->open_call_keys_by_context[
+              checking_specialization_->stable_type_key] = exact_key;
+        if (returned_result && checking_specialization_)
+          checking_specialization_->result_call_key = exact_key;
+        const string caller_key = checking_specialization_
+            ? checking_specialization_->stable_type_key : string();
+        std::optional<SemanticCallEdge> source_edge;
+        bool attached = false;
+        for (auto& edge : p_.semantic_call_edges) {
+          if (edge.source != current_semantic_context_ ||
+              edge.line != line ||
+              (nested_occurrences &&
+               edge.occurrence != nested_occurrences->first) ||
+              (edge.target != function->second->name &&
+               edge.target != "fn:" + function->second->name) ||
+              (!returned_result && !edge.source_file.empty() &&
+               edge.source_file != current_check_statement_->source_file))
+            continue;
+          if (edge.source_specialization_key.empty() && !source_edge)
+            source_edge = edge;
+          if (edge.source_specialization_key != caller_key) continue;
+          if (!edge.specialization_key.empty() &&
+              edge.specialization_key != exact_key)
+            err(line, "one checked call context acquired two specialization identities",
+                "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+          edge.specialization_key = exact_key;
+          attached = true;
+        }
+        if (!attached && !caller_key.empty() && source_edge) {
+          SemanticCallEdge concrete_edge = *source_edge;
+          concrete_edge.source_specialization_key = caller_key;
+          concrete_edge.specialization_key = exact_key;
+          p_.semantic_call_edges.push_back(std::move(concrete_edge));
+        }
+      }
     }
   }
 
@@ -13175,17 +17429,25 @@ class Checker {
 
     auto local = env.find(identity);
     if (local != env.end()) {
-      if (starts_with(local->second, "callable:")) {
-        identity = local->second.substr(9);
-      } else if (starts_with(local->second, "_generic:")) {
+      if (callable_identity(local->second)) {
+        string cid = canonical_type_name(local->second);
+        if (starts_with(cid, "callable:")) cid = cid.substr(9);
+        identity = cid;
+      } else if (open_generic(local->second)) {
         return "_functional_callable_result:" + identity;
       } else {
         err(line, "callable identity '" + identity +
             "' is not statically bounded to one function");
       }
     }
-    auto function = functions_.find(identity);
-    if (function == functions_.end()) {
+    Function* function_ptr = nullptr;
+    if (starts_with(identity, "callable-v1:"))
+      function_ptr = find_function_by_callable_id(identity);
+    if (!function_ptr) {
+      auto it = functions_.find(identity);
+      if (it != functions_.end()) function_ptr = it->second;
+    }
+    if (!function_ptr) {
       string invoked;
       vector<string> invoked_arguments;
       if (parse_simple_call(identity, invoked, invoked_arguments) &&
@@ -13227,6 +17489,11 @@ class Checker {
       }
       err(line, "unresolved functional callable '" + identity + "'");
     }
+    struct FnWrapper {
+      Function* second;
+      const FnWrapper* operator->() const { return this; }
+      FnWrapper* operator->() { return this; }
+    } function{function_ptr};
     if (function->second->params.size() != input_types.size())
       err(line, "functional callable '" + identity + "' expects " +
           std::to_string(function->second->params.size()) + " arguments, got " +
@@ -13243,7 +17510,7 @@ class Checker {
               actual + "': " + reason);
       } else if (!parameter.type.empty() &&
                  !unresolved_semantic_type(actual) &&
-                 !same_type(parameter.type, actual)) {
+                 !is_type_compatible(parameter.type, actual)) {
         err(line, "functional callable '" + identity + "' argument " +
             std::to_string(index + 1) + " has type '" + actual +
             "', expected '" + parameter.type + "'");
@@ -13256,8 +17523,10 @@ class Checker {
                                       !traits_.count(canonical_type_name(type));
                                 });
     if (concrete) {
-      validate_method_requirements(line, *function->second, input_types);
-      register_static_specialization(line, *function->second, input_types);
+      auto requirements = validate_method_requirements(
+          line, *function->second, input_types);
+      register_static_specialization(line, *function->second, input_types,
+                                     std::move(requirements));
     }
     auto result = functional_callable_result(identity, input_types, env);
     if (!result && concrete)
@@ -13280,8 +17549,26 @@ class Checker {
                                  const TypeEnv& env) {
     auto parsed = parse_functional_pipeline(expression);
     if (!parsed) return false;
+    auto source_expr = inferred_expr(parsed->source, env);
+    if (source_expr) {
+      if ((source_expr->term && !source_expr->term->is_closed()) ||
+          open_generic(source_expr->legacy) ||
+          (source_expr->term && contains_internal_placeholder(source_expr->term))) {
+        check_expression(line, parsed->source, env);
+        return true;  // Rechecked with the specialization's concrete TypeEnv.
+      }
+    }
     auto source_type = inferred_expr_type(parsed->source, env);
-    if (!source_type) return false;
+    if (!source_type) {
+      if (auto local = env.find(trim(parsed->source));
+          local != env.end() && (!local->second || canonical_type_name(local->second).empty() ||
+                                 canonical_type_name(local->second) == "_value" ||
+                                 contains_internal_placeholder(canonical_type_name(local->second)))) {
+        check_expression(line, parsed->source, env);
+        return true;  // Rechecked with the specialization's concrete TypeEnv.
+      }
+      return false;
+    }
     if (unresolved_semantic_type(*source_type)) {
       check_expression(line, parsed->source, env);
       return true;  // Rechecked with the specialization's concrete TypeEnv.
@@ -13335,7 +17622,7 @@ class Checker {
           require_arity(2);
           check_expression(line, stage.arguments.front(), env);
           auto accumulator = inferred_expr_type(stage.arguments.front(), env);
-          if (!accumulator)
+          if (!accumulator || *accumulator == "vector" || *accumulator == "queue" || *accumulator == "map")
             teaching_err(
                 line, "TYPE_INFERENCE_FAILED",
                 "cannot infer the type of reduce seed '" +
@@ -13435,8 +17722,7 @@ class Checker {
           if (field == item->fields.end())
             err(line, "unknown enum field '" + name + "'", "UNKNOWN_ENUM_FIELD");
           check_expression(line, value, env);
-          auto actual = inferred_expr_type(value, env);
-          if (!actual || !same_type(*actual, field->type))
+          if (!checked_matches_declared(value, field->type, env))
             err(line, "enum field '" + name + "' expects '" + field->type + "'",
                 "ENUM_FIELD_TYPE_MISMATCH");
         }
@@ -13570,8 +17856,8 @@ class Checker {
             "ENUM_OPERATOR_UNSUPPORTED");
       if (binary->first.empty() || binary->second.empty())
         err(line, "invalid comparison expression");
-      if ((left_type && unresolved_semantic_type(*left_type)) ||
-          (right_type && unresolved_semantic_type(*right_type))) return;
+      if (unresolved_expression(binary->first, env) ||
+          unresolved_expression(binary->second, env)) return;
       if (left_type && right_type) {
         string lt = canonical_type_name(*left_type);
         string rt = canonical_type_name(*right_type);
@@ -13588,8 +17874,8 @@ class Checker {
         check_expression(line, binary->second, env);
         auto left_type = inferred_expr_type(binary->first, env);
         auto right_type = inferred_expr_type(binary->second, env);
-        if ((left_type && unresolved_semantic_type(*left_type)) ||
-            (right_type && unresolved_semantic_type(*right_type))) return;
+        if (unresolved_expression(binary->first, env) ||
+            unresolved_expression(binary->second, env)) return;
         if (!left_type || !right_type ||
             canonical_type_name(*left_type) != "int" ||
             canonical_type_name(*right_type) != "int")
@@ -13603,8 +17889,8 @@ class Checker {
       check_expression(line, binary->second, env);
       auto left_type = inferred_expr_type(binary->first, env);
       auto right_type = inferred_expr_type(binary->second, env);
-      if ((left_type && unresolved_semantic_type(*left_type)) ||
-          (right_type && unresolved_semantic_type(*right_type))) return;
+      if (unresolved_expression(binary->first, env) ||
+          unresolved_expression(binary->second, env)) return;
       if (!left_type || !right_type ||
           canonical_type_name(*left_type) != "int" ||
           canonical_type_name(*right_type) != "int")
@@ -13625,8 +17911,8 @@ class Checker {
             err(line, "invalid arithmetic expression");
           // A template records operator requirements; operand legality is
           // decided when this expression is checked in a concrete TypeEnv.
-          if ((left_type && unresolved_semantic_type(*left_type)) ||
-              (right_type && unresolved_semantic_type(*right_type))) return;
+          if (unresolved_expression(binary->first, env) ||
+              unresolved_expression(binary->second, env)) return;
           if ((left_type && canonical_type_name(*left_type) == "Range") ||
               (right_type && canonical_type_name(*right_type) == "Range")) {
             err(line, "Range arithmetic is unsupported", "TYPE_MISMATCH");
@@ -13646,7 +17932,7 @@ class Checker {
       string operand = trim(value.substr(1));
       check_expression(line, operand, env);
       auto operand_type = inferred_expr_type(operand, env);
-      if (operand_type && unresolved_semantic_type(*operand_type)) return;
+      if (unresolved_expression(operand, env)) return;
       if (!operand_type || canonical_type_name(*operand_type) != "int")
         err(line, "bitwise operator '~' requires an Int operand", "TYPE_MISMATCH");
       return;
@@ -13669,6 +17955,12 @@ class Checker {
     if (parse_member_call(value, receiver, handler, args)) {
       if (check_fileio_operation(line, receiver, handler, args, env)) return;
       if (auto receiver_type = inferred_expr_type(receiver, env)) {
+        // A bare Map has no key or value type. In particular, a default passed
+        // to get cannot silently turn an untyped temporary into a Rust
+        // HashMap::get call with the wrong arity.
+        if (*receiver_type == "map" && handler == "get")
+          err(line, "Map.get requires a concrete key and value type before use",
+              "TYPE_AMBIGUOUS_OPEN_RESULT");
         if (builtin_receiver_family(*receiver_type)) {
           check_expression(line, receiver, env);
           for (const auto& arg : args) check_expression(line, arg, env);
@@ -13724,7 +18016,8 @@ class Checker {
           auto actual = inferred_expr_type(args[index], env);
           if (actual && !contains_internal_placeholder(*actual) &&
               !method->params[index].type.empty() &&
-              !same_type(*actual, method->params[index].type))
+              !checked_matches_declared(args[index], method->params[index].type,
+                                        env))
             err(line, "argument " + std::to_string(index + 1) +
                 " to trait method '" + handler + "' has type '" + *actual +
                 "', expected '" + method->params[index].type + "'");
@@ -13748,28 +18041,62 @@ class Checker {
     if (parse_index(value, ib, ii)) {
       check_expression(line, ib, env);
       check_expression(line, ii, env);
-      auto bt = inferred_expr_type(ib, env);
+      const auto base = inferred_expr(ib, env);
+      const auto bt = base ? std::optional<string>(base->projection()) : std::nullopt;
+      const auto index_term = inferred_expr_term(ii, env);
+      if (current_body_types_) {
+        auto container = current_body_types_->known_expression(ib);
+        auto key = current_body_types_->known_expression(ii);
+        if (!key) key = index_term;
+        if (container && key && container->kind == moss::TypeKind::Builtin) {
+          if (container->name == "vector" || container->name == "queue") {
+            if (container->type_args.size() != 1 ||
+                !current_body_types_->solver.unify(key, moss::Type::primitive("int")))
+              err(line, "vector and queue indices must be Int", "TYPE_MISMATCH");
+            return;
+          }
+          if (container->name == "map") {
+            if (container->type_args.size() != 2 ||
+                !current_body_types_->solver.unify(
+                    container->type_args[0], key))
+              err(line, "map key type mismatch", "TYPE_MISMATCH");
+            auto key_type = current_body_types_->solver.resolve(
+                container->type_args[0]);
+            if (key_type && key_type->is_closed()) {
+              if (key_type->kind == moss::TypeKind::Enum)
+                err(line, "enum values cannot be Map keys; enum equality and hashing are unsupported",
+                    "ENUM_MAP_KEY_UNSUPPORTED");
+              check_map_key_type(line, key_type->to_canonical_string());
+            }
+            return;
+          }
+        }
+      }
       if (!bt) err(line, "cannot infer indexed container type");
-      if (canonical_type_name(*bt) == "RangeBatch" ||
-          canonical_type_name(*bt) == "Range") {
-        auto index_type = inferred_expr_type(ii, env);
-        if (!index_type || canonical_type_name(*index_type) != "int")
+      if (primitive_term(base->term, "RangeBatch") || primitive_term(base->term, "Range")) {
+        if (!primitive_term(index_term, "int"))
           err(line, "Range and RangeBatch indexes must be Int", "TYPE_MISMATCH");
         return;
       }
       // An untyped parameter carries an indexing requirement. Its key and
       // element types are checked again in each concrete specialization.
-      if (starts_with(*bt, "_generic:")) return;
-      if (starts_with(*bt, "vector[") || starts_with(*bt, "queue[") || *bt == "vector" || *bt == "queue") {
-        auto it = inferred_expr_type(ii, env);
-        if (!it || *it != "int") err(line, "vector and queue indices must be Int");
-      } else if (starts_with(*bt, "map[")) {
-        auto ps = split_top_level(bt->substr(4, bt->size()-5), ',');
-        if (ps.size() == 2 && enums_.count(canonical_type_name(ps[0])))
+      if (!base->term && open_generic(base->legacy)) return;
+      const auto container = inferred_shape(*base);
+      const bool builtin = container && container->kind == moss::TypeKind::Builtin;
+      if (builtin && (container->name == "vector" || container->name == "queue")) {
+        if (!primitive_term(index_term, "int")) err(line, "vector and queue indices must be Int");
+      } else if (applied_builtin(container, {"map"})) {
+        const bool keyed = container->type_args.size() == 2;
+        const auto key = keyed ? container->type_args[0] : nullptr;
+        if (keyed && key->kind == moss::TypeKind::Enum)
           err(line, "enum values cannot be Map keys; enum equality and hashing are unsupported",
               "ENUM_MAP_KEY_UNSUPPORTED");
-        auto it = inferred_expr_type(ii, env);
-        if (ps.size() != 2 || !it || !same_type(ps[0], *it)) err(line, "map key type mismatch");
+        if (keyed) check_map_key_type(line, key->to_canonical_string());
+        auto index = inferred_expr(ii, env);
+        const bool same_key = keyed && index &&
+            (index->term && base->term ? key->structurally_equal(*index->term)
+                                       : same_type(key->to_canonical_string(), index->projection()));
+        if (!same_key) err(line, "map key type mismatch");
       } else err(line, "value is not an indexable container");
       return;
     }
@@ -13780,8 +18107,38 @@ class Checker {
         if (receiver_type && enums_.count(canonical_type_name(*receiver_type)))
           err(line, "enum payload fields require match; field projection is unsupported",
               "ENUM_FIELD_PROJECTION_UNSUPPORTED");
-        if (receiver_type && objects_.count(canonical_type_name(*receiver_type)))
+        if (receiver_type && objects_.count(canonical_type_name(*receiver_type))) {
           check_expression(line, value.substr(0, dot), env);
+          string field_name = trim(value.substr(dot + 1));
+          const ObjectType* obj = objects_.at(canonical_type_name(*receiver_type));
+          auto it = std::find_if(obj->fields.begin(), obj->fields.end(),
+              [&](const Field& f) { return f.name == field_name; });
+          if (it == obj->fields.end()) {
+            err(line, "type '" + obj->name + "' has no field '" + field_name + "'", "UNKNOWN_FIELD");
+          } else if (!it->exported) {
+            // The declaration's own module, not a split of its spelling: a
+            // root-level `Foo__Bar` belongs to the root module.
+            string defining_mod = obj->defining_module;
+            if (defining_mod.empty() && p_.explicit_module && !p_.module_name.empty()) {
+              defining_mod = p_.module_name;
+            }
+            string caller_mod = specialization_calling_module(p_, current_semantic_context_, p_.module_name);
+            bool cross_module = false;
+            // An unmodular program is one module: none of its fields is
+            // foreign to it, whichever file declares the record.
+            if (p_.explicit_module) {
+              if (!defining_mod.empty() || !caller_mod.empty())
+                cross_module = (defining_mod != caller_mod);
+              else if (!obj->source_file.empty() && !current_source_file_.empty())
+                cross_module = (obj->source_file != current_source_file_);
+            }
+            if (cross_module) {
+              err(line, "field '" + field_name + "' of type '" + obj->name +
+                  "' is private to its defining module",
+                  "FIELD_VISIBILITY_ERROR");
+            }
+          }
+        }
       }
     }
     string callee;
@@ -13796,7 +18153,7 @@ class Checker {
         auto place_type = inferred_expr_type(args[0], env);
         auto replacement_type = inferred_expr_type(args[1], env);
         if (!place_type || !replacement_type ||
-            !same_type(*place_type, *replacement_type))
+            !checked_same_expressions(args[0], args[1], env))
           err(line, "replace requires the replacement to have the same static type as the place",
               "REPLACE_TYPE_MISMATCH");
         return;
@@ -13859,22 +18216,35 @@ class Checker {
         err(line, "range expects range(start, end) or range(start, end, step)");
       return "int";
     }
+    if (current_body_types_) {
+      auto retained = current_body_types_->known_expression(source);
+      if (retained && retained->kind == moss::TypeKind::Builtin &&
+          (retained->name == "vector" || retained->name == "seq") &&
+          retained->type_args.size() == 1) {
+        auto element = current_body_types_->solver.resolve(
+            retained->type_args[0]);
+        if (element && element->is_closed())
+          return element->to_canonical_string();
+        err(line, "for loop source has an open element type",
+            "TYPE_AMBIGUOUS_OPEN_RESULT");
+      }
+    }
     auto source_type = inferred_expr_type(source, env);
     if (!source_type) {
       auto local = env.find(trim(source));
-      if (local != env.end() && local->second.empty())
+      if (local != env.end() && (!local->second || canonical_type_name(local->second).empty()))
         return "_iterator_element:" + trim(source);
       err(line, "cannot infer the static iterator source type");
     }
     string type = canonical_type_name(*source_type);
-    if (type == "RangeBatch") return string("Range");
-    if (type == "Range") return string("int");
-    if (starts_with(type, "_generic:"))
-      return "_iterator_element:" + type.substr(9);
-    if (starts_with(type, "vector[") && ends_with(type, "]"))
-      return trim(type.substr(7, type.size() - 8));
-    if (starts_with(type, "seq[") && ends_with(type, "]"))
-      return trim(type.substr(4, type.size() - 5));
+    const auto source_result = inferred_leaf(type);
+    if (primitive_term(source_result.term, "RangeBatch")) return string("Range");
+    if (primitive_term(source_result.term, "Range")) return string("int");
+    if (!source_result.term && open_generic(source_result.legacy))
+      return "_iterator_element:" + source_result.legacy.substr(9);
+    if (const auto collection = inferred_shape(source_result);
+        applied_builtin(collection, {"vector", "seq"}) && collection->type_args.size() == 1)
+      return collection->type_args[0]->to_canonical_string();
 
     auto next_element = [&](const string& iterator_type) -> std::optional<string> {
       MethodResolutionFailure failure = MethodResolutionFailure::None;
@@ -13949,8 +18319,78 @@ class Checker {
                       bool main_body = false) {
     StaticBindingScope bound_scope(static_bound_bindings_);
     auto bound_snapshots = static_bindings_for_body(statements, env);
+    BodyTypeState checked_types;
+    BodyTypeScope checked_body_scope(current_body_types_, &checked_types);
+    string join_context = current_function && checking_specialization_
+        ? functional_function_context(*current_function, checking_specialization_)
+        : "";
+    auto checked_term = [&](const string& expression,
+                            const std::optional<string>& inferred) -> moss::TypeRef {
+      if (auto retained = checked_types.known_expression(expression))
+        return retained;
+      if (!inferred) return nullptr;
+      auto parsed = moss::Type::parse_canonical(canonical_type_name(*inferred));
+      // An open value needs its own instantiation site; reparsing a projected
+      // spelling here would manufacture a second type variable for a local.
+      return parsed && (*parsed)->is_closed() ? *parsed : nullptr;
+    };
+    auto checked_result_type = [&](std::optional<string> actual,
+                                   const std::optional<string>& declared)
+        -> std::optional<string> {
+      if (!actual || !declared) return actual;
+      auto inferred = moss::Type::parse_canonical(canonical_type_name(*actual));
+      auto expected = moss::Type::parse_canonical(canonical_type_name(*declared));
+      if (!inferred || !expected ||
+          (*inferred)->kind != moss::TypeKind::Builtin ||
+          !(*inferred)->type_args.empty()) return actual;
+      auto arity = moss::Type::collection_arity((*inferred)->name);
+      if (!arity || (*expected)->kind != moss::TypeKind::Builtin ||
+          (*expected)->name != (*inferred)->name ||
+          (*expected)->type_args.size() != *arity) return std::nullopt;
+      // A bare collection literal is instantiated at this result boundary.
+      return (*expected)->to_canonical_string();
+    };
+    auto checked_result_matches = [&](const string& expression,
+                                      const string& actual,
+                                      const string& declared) {
+      auto expected = moss::Type::parse_canonical(canonical_type_name(declared));
+      auto term = checked_term(expression, actual);
+      if (expected && term) {
+        if ((*expected)->is_closed())
+          return checked_types.solver.unify(term, *expected);
+        if ((*expected)->kind == moss::TypeKind::Builtin &&
+            (*expected)->type_args.empty() &&
+            term->kind == moss::TypeKind::Builtin &&
+            term->name == (*expected)->name)
+          return true;
+      }
+      if (option_none_compatible(actual, declared)) return true;
+      if (bare_matches_applied(canonical_type_name(declared), canonical_type_name(actual)))
+        return true;
+      return same_type(actual, declared);
+    };
     TypeEnvVisitor check_statement = [&](const Stmt& statement,
                                          const TypeEnv& current_env) {
+      struct CheckedStatementScope {
+        const Stmt*& statement_slot;
+        string& context_slot;
+        const Stmt* previous_statement;
+        string previous_context;
+        CheckedStatementScope(const Stmt*& statement_target,
+                              string& context_target, const Stmt& current,
+                              const string& context)
+            : statement_slot(statement_target), context_slot(context_target),
+              previous_statement(statement_target), previous_context(context_target) {
+          statement_slot = &current;
+          context_slot = context;
+        }
+        ~CheckedStatementScope() {
+          statement_slot = previous_statement;
+          context_slot = std::move(previous_context);
+        }
+      } checked_statement_scope(current_check_statement_,
+                                current_check_body_context_, statement,
+                                join_context);
       if (auto snapshot = bound_snapshots.find(&statement);
           snapshot != bound_snapshots.end())
         static_bound_bindings_ = snapshot->second;
@@ -13992,51 +18432,137 @@ class Checker {
                 "' cannot be used as ordinary writable storage");
         FileIOOwnerScope fileio_owner(fileio_owner_initializer_, statement.b);
         check_expression(statement.line, statement.b, current_env);
-        if (statement.kind == Stmt::Kind::Assign &&
-            simple_identifier(statement.a) && !current_env.count(statement.a)) {
-          auto inferred = inferred_expr_type(statement.b, current_env);
-          if (!inferred && starts_with(trim(statement.b), "["))
-            err(statement.line, "heterogeneous or unresolved collection element type");
-        }
         if (statement.kind == Stmt::Kind::Assign) {
-          string base, index_expression;
-          if (parse_index(statement.a, base, index_expression)) {
-            string inner_base, inner_index;
-            if (parse_index(base, inner_base, inner_index)) {
-              err(statement.line,
-                  "nested indexed mutation is not supported; extract the inner collection to a local variable, update it, and write it back",
-                  "UNSUPPORTED_NESTED_INDEX_ASSIGNMENT");
-              return;
-            }
-            auto container = current_env.find(base);
-            auto value_type = inferred_expr_type(statement.b, current_env);
-            if (container != current_env.end() &&
-                (starts_with(container->second, "_generic:") ||
-                 container->second == "map")) {
-              // A generic is checked at its concrete call. A fresh Map()
-              // learns its key/value types from this first assignment.
+          if (simple_identifier(statement.a)) {
+            if (!current_env.count(statement.a)) {
+              auto inferred = inferred_expr_type(statement.b, current_env);
+              if (!inferred && starts_with(trim(statement.b), "["))
+                err(statement.line, "heterogeneous or unresolved collection element type");
             } else {
-              check_expression(statement.line, statement.a, current_env);
-              auto element_type = inferred_expr_type(statement.a, current_env);
-              if (element_type && value_type &&
-                  !contains_internal_placeholder(*element_type) &&
-                  !contains_internal_placeholder(*value_type) &&
-                  !same_type(*element_type, *value_type))
-                err(statement.line, "indexed assignment requires value of type '" +
-                    canonical_type_name(*element_type) + "', found '" +
-                    canonical_type_name(*value_type) + "'");
+              auto bound_type = current_env.at(statement.a);
+              auto rhs_type = inferred_expr_type(statement.b, current_env);
+              auto bound_term = checked_types.resolved_local(statement.a);
+              moss::TypeRef rhs_term = checked_types.assignment_value(statement);
+              if (!rhs_term)
+                rhs_term = checked_types.known_expression(statement.b);
+              if (!rhs_term && rhs_type) {
+                auto parsed = moss::Type::parse_canonical(
+                    canonical_type_name(*rhs_type));
+                if (parsed && (*parsed)->is_closed()) rhs_term = *parsed;
+              }
+              bool compatible = bound_term && rhs_term
+                  ? checked_types.solver.unify(bound_term, rhs_term)
+                  : !rhs_type || is_type_compatible(bound_type, *rhs_type);
+              if (!compatible) {
+                err(statement.line, "assignment type mismatch: cannot assign value of type '" +
+                    canonical_type_name(rhs_type.value_or("_value")) + "' to binding '" + statement.a +
+                    "' of type '" + canonical_type_name(bound_type) + "'", "TYPE_MISMATCH");
+              }
             }
-            if (container != current_env.end() && value_type &&
-                container->second == "map" &&
-                !inferred_expr_type(index_expression, current_env))
-              err(statement.line, "cannot infer map key type");
-            if (container != current_env.end() &&
-                (container->second == "map" || starts_with(container->second, "map["))) {
-              auto key_type = inferred_expr_type(index_expression, current_env);
-              if (key_type && enums_.count(canonical_type_name(*key_type)))
+          } else {
+            string base, index_expression;
+            if (parse_index(statement.a, base, index_expression)) {
+              string inner_base, inner_index;
+              if (parse_index(base, inner_base, inner_index)) {
                 err(statement.line,
-                    "enum values cannot be Map keys; enum equality and hashing are unsupported",
-                    "ENUM_MAP_KEY_UNSUPPORTED");
+                    "nested indexed mutation is not supported; extract the inner collection to a local variable, update it, and write it back",
+                    "UNSUPPORTED_NESTED_INDEX_ASSIGNMENT");
+                return;
+              }
+              auto container = current_env.find(base);
+              auto value_type = inferred_expr_type(statement.b, current_env);
+              auto container_term = checked_types.resolved_local(base);
+              if (container_term && value_type &&
+                  container_term->kind == moss::TypeKind::Builtin) {
+                auto value_term = checked_types.assignment_value(statement);
+                if (!value_term)
+                  value_term = checked_types.known_expression(statement.b);
+                if (!value_term) {
+                  auto parsed = moss::Type::parse_canonical(
+                      canonical_type_name(*value_type));
+                  if (parsed) value_term = *parsed;
+                }
+                auto key_type = inferred_expr_type(index_expression, current_env);
+                auto key_term = key_type ? moss::Type::parse_canonical(
+                    canonical_type_name(*key_type)) : std::nullopt;
+                bool valid = true;
+                if (value_term && value_term->is_closed()) {
+                  if ((container_term->name == "vector" ||
+                       container_term->name == "queue") &&
+                      container_term->type_args.size() == 1)
+                    valid = checked_types.solver.unify(
+                        container_term->type_args[0], value_term);
+                  else if (container_term->name == "map" &&
+                           container_term->type_args.size() == 2 &&
+                           key_term && (*key_term)->is_closed())
+                    valid = checked_types.solver.unify(
+                        container_term->type_args[0], *key_term) &&
+                        checked_types.solver.unify(
+                            container_term->type_args[1], value_term);
+                }
+                if (!valid)
+                  err(statement.line,
+                      "indexed assignment conflicts with the binding's type",
+                      "TYPE_MISMATCH");
+              }
+              if (container != current_env.end() &&
+                  (open_generic(container->second) ||
+                   bare_collection(parsed_type(container->second), {"map"}))) {
+                // A generic is checked at its concrete call. A fresh Map()
+                // learns its key/value types from this first assignment.
+              } else {
+                check_expression(statement.line, statement.a, current_env);
+                // The retained solver already related this place and RHS.
+                // A legacy place without a retained term still compares the
+                // parsed TypeRefs, never their display spelling.
+                if (!container_term || !checked_types.assignment_value(statement)) {
+                  auto element_type = inferred_expr_type(statement.a, current_env);
+                  auto element_term = checked_term(statement.a, element_type);
+                  auto value_term = checked_term(statement.b, value_type);
+                  if (element_term && value_term &&
+                      !checked_types.solver.unify(element_term, value_term))
+                    err(statement.line, "indexed assignment requires value of type '" +
+                        (element_type ? canonical_type_name(*element_type)
+                            : element_term->to_canonical_string()) + "', found '" +
+                        (value_type ? canonical_type_name(*value_type)
+                            : value_term->to_canonical_string()) + "'");
+                }
+              }
+              if (container != current_env.end() && value_type &&
+                  canonical_type_name(container->second) == "map" &&
+                  !inferred_expr_type(index_expression, current_env))
+                err(statement.line, "cannot infer map key type");
+              const auto container_shape = container != current_env.end()
+                  ? parsed_type(container->second) : nullptr;
+              if (container_shape && container_shape->kind == moss::TypeKind::Builtin &&
+                  container_shape->name == "map") {
+                auto key_type = inferred_expr_type(index_expression, current_env);
+                const auto key_term = key_type ? parsed_type(*key_type) : nullptr;
+                if (key_term && key_term->kind == moss::TypeKind::Enum)
+                  err(statement.line,
+                      "enum values cannot be Map keys; enum equality and hashing are unsupported",
+                      "ENUM_MAP_KEY_UNSUPPORTED");
+                if (key_type) check_map_key_type(statement.line, *key_type);
+              }
+            } else {
+              size_t dot = statement.a.rfind('.');
+              if (dot != string::npos && statement.a.find('(', dot) == string::npos) {
+                auto field_type = inferred_expr_type(statement.a, current_env);
+                auto rhs_type = inferred_expr_type(statement.b, current_env);
+                auto field_term = checked_term(statement.a, field_type);
+                auto rhs_term = checked_types.assignment_value(statement);
+                if (!rhs_term) rhs_term = checked_term(statement.b, rhs_type);
+                bool compatible = field_term && rhs_term
+                    ? checked_types.solver.unify(field_term, rhs_term)
+                    : !field_type || !rhs_type ||
+                          is_type_compatible(*field_type, *rhs_type);
+                if (!compatible) {
+                  err(statement.line, "assignment type mismatch: cannot assign value of type '" +
+                      canonical_type_name(rhs_type.value_or("_value")) + "' to field '" +
+                      statement.a + "' of type '" +
+                      canonical_type_name(field_type.value_or("_value")) + "'", "TYPE_MISMATCH");
+                }
+              }
             }
           }
         }
@@ -14164,11 +18690,11 @@ class Checker {
                     inferred_expr_type(argument, current_env).value_or(""));
               if (!resolve_method(canonical_type_name(receiver->second), statement.b,
                                   argument_types))
-                err(statement.line, "no matching method '" + receiver->second + "." +
+                err(statement.line, "no matching method '" + canonical_type_name(receiver->second) + "." +
                     statement.b + "' for supplied arguments");
             } else if (receiver != current_env.end() && current_function &&
-                       (starts_with(receiver->second, "_generic:") ||
-                        traits_.count(receiver->second))) {
+                       (open_generic(receiver->second) ||
+                        traits_.count(canonical_type_name(receiver->second)))) {
               bool constrained = std::any_of(
                   current_function->constraints.begin(),
                   current_function->constraints.end(), [&](const Constraint& constraint) {
@@ -14206,11 +18732,22 @@ class Checker {
           const Handler* handler = target ? find_handler(*target, statement.b) : nullptr;
           if (!handler || !handler->reply_type)
             err(statement.line, "message assignment requires a value-returning handler");
-          if (current_env.count(statement.message_result) &&
-              !same_type(current_env.at(statement.message_result), *handler->reply_type))
-            err(statement.line, "message assignment to '" + statement.message_result +
-                "' has type '" + current_env.at(statement.message_result) +
-                "', expected '" + *handler->reply_type + "'");
+          if (current_env.count(statement.message_result)) {
+            auto destination = checked_types.resolved_local(statement.message_result);
+            auto reply = moss::Type::parse_canonical(
+                canonical_type_name(*handler->reply_type));
+            if (!destination) {
+              auto projected = moss::Type::parse_canonical(
+                  canonical_type_name(current_env.at(statement.message_result)));
+              if (projected && (*projected)->is_closed()) destination = *projected;
+            }
+            bool compatible = destination && reply && (*reply)->is_closed() &&
+                checked_types.solver.unify(destination, *reply);
+            if (!compatible)
+              err(statement.line, "message assignment to '" + statement.message_result +
+                  "' has type '" + canonical_type_name(current_env.at(statement.message_result)) +
+                  "', expected '" + *handler->reply_type + "'");
+          }
         }
         return;
       }
@@ -14219,6 +18756,10 @@ class Checker {
         for (const auto& argument : statement.args) {
           check_expression(statement.line, argument, current_env);
           auto type = inferred_expr_type(argument, current_env);
+          if (type && unresolved_semantic_type(*type) &&
+              (!current_function || checking_specialization_))
+            err(statement.line, "echo requires a concrete result type for '" +
+                argument + "'", "TYPE_AMBIGUOUS_OPEN_RESULT");
           if (type && enums_.count(canonical_type_name(*type)))
             err(statement.line, "echo cannot display an enum directly; match its cases",
                 "ENUM_DISPLAY_UNSUPPORTED");
@@ -14249,6 +18790,7 @@ class Checker {
                 "functional pipeline must be materialized in a local binding "
                 "before crossing a domain boundary");
         }
+        actual = checked_result_type(actual, current_handler->reply_type);
         if (!actual) {
           teaching_err(
               statement.line, "TYPE_INFERENCE_FAILED",
@@ -14264,7 +18806,9 @@ class Checker {
               "use-statically-typed-expression",
               "rewrite the reply using an expression whose type Moss can determine from checked declarations and uses");
         }
-        if (!same_type(*actual, *current_handler->reply_type))
+        bool reply_compatible = checked_result_matches(
+            statement.a, *actual, *current_handler->reply_type);
+        if (!reply_compatible)
           err(statement.line, "reply type mismatch: handler expects '" +
               *current_handler->reply_type + "', expression has type '" + *actual +
               "'");
@@ -14281,8 +18825,16 @@ class Checker {
           !statement.a.empty()) {
         // As with replies, syntax/call legality is authoritative and must be
         // checked before suggesting a statically typed expression.
+        struct ReturnCallScope {
+          const Function*& slot;
+          const Function* prior;
+          ReturnCallScope(const Function*& target, const Function& current)
+              : slot(target), prior(target) { slot = &current; }
+          ~ReturnCallScope() { slot = prior; }
+        } return_call_scope(current_check_result_function_, *current_function);
         check_expression(statement.line, statement.a, current_env);
         auto actual = inferred_expr_type(statement.a, current_env);
+        actual = checked_result_type(actual, current_function->return_type);
         if (!actual && current_function->static_dispatch && !checking_specialization_)
           return;  // The source has requirements; each concrete instance checks its return.
         if (!actual) {
@@ -14307,24 +18859,33 @@ class Checker {
             traits_.count(canonical_type_name(*current_function->return_type)) &&
             concrete_specialization_type(*actual) &&
             trait_conforms(*actual, *current_function->return_type);
+        auto actual_result_ref = moss::Type::parse_canonical(
+            canonical_type_name(*actual));
+        bool open_result_shape = actual_result_ref &&
+            !(*actual_result_ref)->is_closed();
         if (current_function->return_type &&
             !contains_internal_placeholder(*current_function->return_type) &&
-            !starts_with(*actual, "_generic:") &&
+            !open_generic(*actual) &&
             !(*actual == "_method_value" || starts_with(*actual, "_method_result:")) &&
             !starts_with(*actual, "_functional_callable_result:") &&
             !trait_result_match &&
             !option_none_compatible(*actual, *current_function->return_type) &&
-            !same_type(*actual, *current_function->return_type))
+            !(checking_specialization_ && open_result_shape &&
+              !checked_types.known_expression(statement.a) &&
+              is_type_compatible(*current_function->return_type, *actual)) &&
+            !checked_result_matches(statement.a, *actual,
+                                    *current_function->return_type))
           err(statement.line, "function '" + current_function->name + "' returns '" +
               *actual + "' but is annotated '" + *current_function->return_type + "'");
       }
     };
 
-    string join_context = current_function && checking_specialization_
-        ? functional_function_context(*current_function, checking_specialization_)
-        : "";
-    return walk_type_environment(statements, std::move(env), check_statement,
-                                 true, true, true, join_context);
+    TypeEnv checked_env = walk_type_environment(
+        statements, std::move(env), check_statement,
+        true, true, true, join_context, &checked_types);
+    checked_body_states_[&statements] =
+        std::make_shared<BodyTypeState>(std::move(checked_types));
+    return checked_env;
   }
 
 #include "executor_invoke_lowering.inc"
@@ -14515,13 +19076,12 @@ class FunctionalOptimizer {
   }
 
   static bool trivial_pipeline_element_type(const string& collection_type) {
-    string type = canonical_type_name(collection_type);
-    string element;
-    if (starts_with(type, "vector[") && ends_with(type, "]"))
-      element = trim(type.substr(7, type.size() - 8));
-    else if (starts_with(type, "seq[") && ends_with(type, "]"))
-      element = trim(type.substr(4, type.size() - 5));
-    return element == "int" || element == "float" || element == "bool";
+    const auto term = parsed_type(collection_type);
+    if (!applied_builtin(term, {"vector", "seq"}) || term->type_args.size() != 1)
+      return false;
+    const auto& element = term->type_args[0];
+    return primitive_term(element, "int") || primitive_term(element, "float") ||
+           primitive_term(element, "bool");
   }
 
   static bool identity_map_step(const FunctionalPipeline& pipeline,
@@ -15729,6 +20289,7 @@ class Generator {
             bool emit_static_specializations = true,
             bool public_specializations = false)
       : p_(p),
+        type_scope_(p.type_context.get()),
         debug_build_(debug_build), mode_(mode),
         rust_dependencies_(std::move(rust_dependencies)),
         emit_static_specializations_(emit_static_specializations),
@@ -15772,11 +20333,11 @@ class Generator {
                index < handler.params.size() && index < parameters->second.size();
                ++index)
             if (!parameters->second[index].empty())
-              handler.params[index].type = parameters->second[index];
+              handler.params[index].set_type(parameters->second[index]);
         }
         auto reply = specialization.handler_reply_types.find(handler.name);
         if (reply != specialization.handler_reply_types.end())
-          handler.reply_type = reply->second;
+          handler.set_reply_type(reply->second);
       }
       specialized_domains_.push_back(std::move(specialized));
       specialization_sources_[specialized_domains_.back().name] = specialization.source_domain;
@@ -15789,7 +20350,11 @@ class Generator {
     }
     for (const auto& o : p.objects) objects_[o.name] = &o;
     for (const auto& e : p.enums) enums_[e.name] = &e;
-    for (const auto& f : p.functions) functions_[f.name] = &f;
+    for (const auto& f : p.functions) {
+      functions_[f.name] = &f;
+      if (!f.semantic_callable_id.empty())
+        callable_id_to_function_[f.semantic_callable_id] = &f;
+    }
     if (resolution_program) {
       for (const auto& d : resolution_program->domains)
         domains_.emplace(d.name, &d);
@@ -15797,8 +20362,11 @@ class Generator {
         objects_.emplace(o.name, &o);
       for (const auto& e : resolution_program->enums)
         enums_.emplace(e.name, &e);
-      for (const auto& f : resolution_program->functions)
+      for (const auto& f : resolution_program->functions) {
         functions_.emplace(f.name, &f);
+        if (!f.semantic_callable_id.empty())
+          callable_id_to_function_.emplace(f.semantic_callable_id, &f);
+      }
     }
   }
 
@@ -15871,7 +20439,9 @@ class Generator {
           continue;
         }
       }
-      gen_object_access(o, *entry.second, owns);
+      bool is_generic = std::any_of(entry.second->fields.begin(), entry.second->fields.end(),
+          [](const Field& f) { return f.inferred || f.type.empty(); });
+      if (!is_generic) gen_object_access(o, *entry.second, owns);
     }
     for (const auto& f : p_.functions) gen_function(o, f);
     auto body_owner = [&](const Domain& d) {
@@ -15912,6 +20482,8 @@ class Generator {
 
  private:
   const Program& p_;
+  // Keeps this program's interned declarations bound while lowering.
+  moss::TypeContext::Binding type_scope_;
   bool program_uses_numeric_builtins() const {
     const auto contains = [](const string& value) {
       for (const char* name : {"parse_int", "parse_float", "to_int"}) {
@@ -15985,6 +20557,21 @@ class Generator {
   std::unordered_map<string, const ObjectType*> objects_;
   std::unordered_map<string, const EnumType*> enums_;
   std::unordered_map<string, const Function*> functions_;
+  std::unordered_map<string, const Function*> callable_id_to_function_;
+
+  const Function* find_function_by_callable_id(const string& id) const {
+    if (id.empty()) return nullptr;
+    auto it = callable_id_to_function_.find(id);
+    if (it != callable_id_to_function_.end()) return it->second;
+    for (const auto& [name, fn] : functions_) {
+      if (fn && fn->semantic_callable_id == id) return fn;
+    }
+    return nullptr;
+  }
+
+  static bool is_compile_time_callable(const string& type) {
+    return callable_identity(type);
+  }
   struct DomainInstanceBinding {
     // This is the semantic specialization key carried by a source binding;
     // it is intentionally independent of the generated Rust type name.
@@ -15995,6 +20582,7 @@ class Generator {
   std::set<string> ambiguous_domain_instance_bindings_;
   size_t assertion_temp_ = 0;
   mutable size_t call_argument_temp_ = 0;
+  mutable std::optional<uint32_t> codegen_nested_argument_occurrence_;
   mutable size_t executor_invoke_temp_ = 0;
   mutable bool root_ingress_statement_ = false;
   mutable size_t fileio_chunk_temp_ = 0;
@@ -16009,6 +20597,10 @@ class Generator {
   const RaiseSet* phase21_capture_alternatives_ = nullptr;
   std::set<string> phase21_option_slots_;
   const Stmt* phase21_codegen_statement_ = nullptr;
+  string codegen_body_context_;
+  string codegen_active_specialization_key_;
+  const FunctionSpecialization* codegen_result_specialization_ = nullptr;
+  string codegen_result_expression_;
 
   static bool handler_has_failure_captures(const Handler& handler) {
     if (handler.provider_abi)
@@ -16423,8 +21015,11 @@ class Generator {
   static string function_semantic_identity(
       const Function& function,
       const FunctionSpecialization* specialization = nullptr) {
-    return functional_function_context(function, specialization) + "@" +
-        std::to_string(function.line);
+    string identity = functional_function_context(function, specialization) +
+        "@" + std::to_string(function.line);
+    if (specialization)
+      identity += "#" + specialization->stable_type_key;
+    return identity;
   }
 
   static string method_semantic_identity(const ObjectType& object,
@@ -16457,6 +21052,17 @@ class Generator {
     if (x == "unit") return "()";
     if (domains_.count(x))
       return has_domain_specializations(x) ? x + "Handle" : x + "Ref";
+    if (is_nominal_instance_type(x)) {
+      string tname = nominal_template_name(x);
+      auto subs = nominal_field_substitutions(x);
+      string res = tname + "<";
+      for (size_t i = 0; i < subs.size(); ++i) {
+        if (i > 0) res += ", ";
+        res += rust_type(subs[i].second);
+      }
+      res += ">";
+      return res;
+    }
     if (objects_.count(x) || enums_.count(x)) return x;
     if (starts_with(x, "seq[") && ends_with(x, "]"))
       return "std::vec::Vec<" + rust_type(x.substr(4, x.size()-5)) + ">";
@@ -16545,6 +21151,85 @@ class Generator {
   const FunctionSpecialization* call_specialization(
       const Function& function, const vector<string>& arguments,
       const std::unordered_map<string,string>* types) const {
+    if (codegen_result_specialization_ &&
+        !codegen_result_specialization_->result_call_key.empty()) {
+      string direct_callee;
+      vector<string> direct_arguments;
+      if (parse_simple_call(trim(codegen_result_expression_), direct_callee,
+                            direct_arguments) &&
+          direct_callee == function.name && direct_arguments == arguments) {
+        auto exact = std::find_if(function.specializations.begin(),
+                                  function.specializations.end(),
+                                  [&](const FunctionSpecialization& candidate) {
+          return candidate.stable_type_key ==
+              codegen_result_specialization_->result_call_key;
+        });
+        if (exact == function.specializations.end())
+          throw std::runtime_error(
+              "checked returned-call key is absent from native projection");
+        return &*exact;
+      }
+    }
+    if (phase21_codegen_statement_) {
+      const Stmt& statement = *phase21_codegen_statement_;
+      string nested_expression = function.name + "(";
+      for (size_t index = 0; index < arguments.size(); ++index) {
+        if (index) nested_expression += ", ";
+        nested_expression += arguments[index];
+      }
+      nested_expression += ")";
+      auto nested_context = statement.nested_open_call_keys_by_context.find(
+          codegen_active_specialization_key_);
+      if (nested_context == statement.nested_open_call_keys_by_context.end())
+        nested_context = statement.nested_open_call_keys_by_context.find(
+            codegen_body_context_);
+      if (nested_context != statement.nested_open_call_keys_by_context.end()) {
+        auto nested_key = nested_context->second.find(nested_expression);
+        if (nested_key != nested_context->second.end()) {
+          const auto& keys = nested_key->second;
+          const uint32_t occurrence =
+              codegen_nested_argument_occurrence_.value_or(0);
+          if (occurrence >= keys.size() || keys[occurrence].empty())
+            throw std::runtime_error(
+                "checked nested open-result occurrence has no exact key");
+          auto exact = std::find_if(function.specializations.begin(),
+                                    function.specializations.end(),
+                                    [&](const FunctionSpecialization& candidate) {
+            return candidate.stable_type_key == keys[occurrence];
+          });
+          if (exact == function.specializations.end())
+            throw std::runtime_error(
+                "checked nested open-result key is absent from native projection");
+          return &*exact;
+        }
+      }
+      auto selected = statement.open_call_keys_by_context.find(
+          codegen_active_specialization_key_);
+      if (selected == statement.open_call_keys_by_context.end())
+        selected = statement.open_call_keys_by_context.find(
+            codegen_body_context_);
+      if (selected == statement.open_call_keys_by_context.end())
+        selected = statement.open_call_keys_by_context.find("");
+      string direct_callee;
+      vector<string> direct_arguments;
+      const string& call_expression = statement.kind == Stmt::Kind::Return
+          ? statement.a : statement.b;
+      if (selected != statement.open_call_keys_by_context.end() &&
+          parse_simple_call(trim(call_expression), direct_callee,
+                            direct_arguments) &&
+          direct_callee == function.name &&
+          direct_arguments == arguments) {
+        auto exact = std::find_if(function.specializations.begin(),
+                                  function.specializations.end(),
+                                  [&](const FunctionSpecialization& candidate) {
+          return candidate.stable_type_key == selected->second;
+        });
+        if (exact == function.specializations.end())
+          throw std::runtime_error(
+              "checked open-result specialization key is absent from native projection");
+        return &*exact;
+      }
+    }
     vector<string> concrete_types;
     for (const auto& argument : arguments)
       concrete_types.push_back(generated_expr_type(argument, types).value_or(""));
@@ -16773,11 +21458,9 @@ class Generator {
 
   static std::optional<string> generated_functional_element_type(
       const string& type) {
-    string value = canonical_type_name(type);
-    if (starts_with(value, "vector[") && ends_with(value, "]"))
-      return trim(value.substr(7, value.size() - 8));
-    if (starts_with(value, "seq[") && ends_with(value, "]"))
-      return trim(value.substr(4, value.size() - 5));
+    const auto term = parsed_type(type);
+    if (applied_builtin(term, {"vector", "seq"}) && term->type_args.size() == 1)
+      return term->type_args[0]->to_canonical_string();
     return std::nullopt;
   }
 
@@ -16786,8 +21469,11 @@ class Generator {
     callable = trim(std::move(callable));
     if (types) {
       auto local = types->find(callable);
-      if (local != types->end() && starts_with(local->second, "callable:"))
+      if (local != types->end() && callable_identity(local->second)) {
+        if (starts_with(local->second, "callable-v1:"))
+          return local->second;
         return local->second.substr(9);
+      }
     }
     return callable;
   }
@@ -16842,22 +21528,23 @@ class Generator {
       return std::nullopt;
     }
     string identity = resolved_callable_identity(callable, types);
-    auto function = functions_.find(identity);
-    if (function == functions_.end()) return std::nullopt;
-    if (function->second->static_dispatch) {
-      auto specialization = std::find_if(
-          function->second->specializations.begin(),
-          function->second->specializations.end(),
-          [&](const FunctionSpecialization& candidate) {
-            return candidate.parameter_types == input_types;
-          });
-      if (specialization != function->second->specializations.end())
+    const Function* fn = nullptr;
+    if (starts_with(identity, "callable-v1:")) {
+      fn = find_function_by_callable_id(identity);
+    } else {
+      auto function = functions_.find(identity);
+      if (function != functions_.end()) fn = function->second;
+    }
+    if (!fn) return std::nullopt;
+    if (fn->static_dispatch) {
+      if (const auto* specialization =
+              functional_specialization(*fn, input_types))
         return specialization->return_type;
       return std::nullopt;
     }
-    if (function->second->return_type &&
-        !contains_internal_placeholder(*function->second->return_type))
-      return canonical_type_name(*function->second->return_type);
+    if (fn->return_type &&
+        !contains_internal_placeholder(*fn->return_type))
+      return canonical_type_name(*fn->return_type);
     return std::nullopt;
   }
 
@@ -16965,7 +21652,7 @@ class Generator {
       return string("int");
     if (decimal_float_literal(value)) return string("float");
     if (auto elements = parse_vector_literal(value)) {
-      if (elements->empty()) return std::nullopt;
+      if (elements->empty()) return string("vector");
       string element_type;
       for (const auto& element : *elements) {
         auto current = generated_expr_type(element, types);
@@ -17018,7 +21705,32 @@ class Generator {
     string callee;
     vector<string> call_args;
     if (parse_simple_call(value, callee, call_args)) {
-      if (objects_.count(callee)) return callee;
+      if (objects_.count(callee)) {
+        const ObjectType* obj = objects_.at(callee);
+        bool has_generic_field = std::any_of(obj->fields.begin(), obj->fields.end(),
+            [](const Field& f) { return f.inferred || f.type.empty(); });
+        if (!has_generic_field) return callee;
+        std::map<string, string> supplied_types;
+        for (const auto& arg : call_args) {
+          string fn, fv;
+          if (parse_named_argument(arg, fn, fv)) {
+            auto ft = generated_expr_type(fv, types);
+            if (ft) supplied_types[fn] = canonical_type_name(*ft);
+          }
+        }
+        string instance_type = callee + "[";
+        bool first = true;
+        for (const auto& f : obj->fields) {
+          if (!f.inferred && !f.type.empty()) continue;
+          if (!first) instance_type += ",";
+          first = false;
+          auto it = supplied_types.find(f.name);
+          string ft = (it != supplied_types.end()) ? it->second : (f.type.empty() ? "_" : canonical_type_name(f.type));
+          instance_type += f.name + "=" + ft;
+        }
+        instance_type += "]";
+        return instance_type;
+      }
       if (callee == "sqrt" && call_args.size() == 1) {
         auto argument = generated_expr_type(call_args.front(), types);
         return argument && canonical_type_name(*argument) == "float"
@@ -17030,27 +21742,30 @@ class Generator {
       }
       if (callee == "range" && (call_args.size() == 2 || call_args.size() == 3))
         return "range[int]";
-      auto function = functions_.find(resolved_callable_identity(callee, types));
-      if (function != functions_.end() && function->second->return_type) {
+      string callee_id = resolved_callable_identity(callee, types);
+      const Function* function_target = nullptr;
+      if (starts_with(callee_id, "callable-v1:")) {
+        function_target = find_function_by_callable_id(callee_id);
+      } else {
+        auto function = functions_.find(callee_id);
+        if (function != functions_.end()) function_target = function->second;
+      }
+      if (function_target && function_target->return_type) {
         vector<string> argument_types;
         for (const auto& argument : call_args)
           argument_types.push_back(generated_expr_type(argument, types).value_or(""));
-        if (function->second->static_dispatch) {
-          auto specialization = std::find_if(
-              function->second->specializations.begin(),
-              function->second->specializations.end(),
-              [&](const FunctionSpecialization& candidate) {
-                return candidate.parameter_types == argument_types;
-              });
-          if (specialization != function->second->specializations.end())
+        if (function_target->static_dispatch) {
+          const auto* specialization = call_specialization(
+              *function_target, call_args, types);
+          if (specialization)
             return specialization->return_type;
           return std::nullopt;
         }
-        string result = canonical_type_name(*function->second->return_type);
-        if (starts_with(result, "_generic:")) {
+        string result = canonical_type_name(*function_target->return_type);
+        if (open_generic(result)) {
           string parameter = result.substr(9);
-          for (size_t index = 0; index < function->second->params.size(); ++index)
-            if (function->second->params[index].name == parameter &&
+          for (size_t index = 0; index < function_target->params.size(); ++index)
+            if (function_target->params[index].name == parameter &&
                 index < argument_types.size() && !argument_types[index].empty())
               return argument_types[index];
           return std::nullopt;
@@ -17063,11 +21778,17 @@ class Generator {
     if (member != string::npos && value.find('(', member) == string::npos) {
       auto base = generated_expr_type(value.substr(0, member), types);
       if (base) {
-        auto object = objects_.find(canonical_type_name(*base));
-        if (object != objects_.end())
+        string tname = nominal_template_name(*base);
+        auto object = objects_.find(tname);
+        if (object != objects_.end()) {
+          string field_name = trim(value.substr(member + 1));
+          if (auto sub_type = nominal_field_type(*base, field_name)) {
+            return canonical_type_name(*sub_type);
+          }
           for (const auto& field : object->second->fields)
-            if (field.name == trim(value.substr(member + 1)))
+            if (field.name == field_name)
               return canonical_type_name(field.type);
+        }
       }
     }
     string index_base, index_expr;
@@ -17076,14 +21797,8 @@ class Generator {
       if (base_type) {
         string concrete = canonical_type_name(*base_type);
         if (concrete == "RangeBatch") return string("Range");
-        if (starts_with(concrete, "vector[") && ends_with(concrete, "]"))
-          return trim(concrete.substr(7, concrete.size() - 8));
-        if (starts_with(concrete, "queue[") && ends_with(concrete, "]"))
-          return trim(concrete.substr(6, concrete.size() - 7));
-        if (starts_with(concrete, "map[") && ends_with(concrete, "]")) {
-          auto ps = split_top_level(concrete.substr(4, concrete.size() - 5), ',');
-          if (ps.size() == 2) return trim(ps[1]);
-        }
+        if (auto element = indexed_element(parsed_type(concrete)))
+          return element;
       }
     }
     if (generated_split_binary(value, {" or "}) ||
@@ -17232,10 +21947,25 @@ class Generator {
 
     std::ostringstream call;
     call << viewed_function_name(name, arguments, domain, locals, types) << "(";
+    auto nested_occurrence = [&](size_t index) {
+      uint32_t occurrence = 0;
+      for (size_t prior = 0; prior < index; ++prior)
+        if (trim(arguments[prior]) == trim(arguments[index])) ++occurrence;
+      return occurrence;
+    };
+    struct NestedArgumentScope {
+      std::optional<uint32_t>& slot;
+      std::optional<uint32_t> previous;
+      NestedArgumentScope(std::optional<uint32_t>& target, uint32_t occurrence)
+          : slot(target), previous(target) { slot = occurrence; }
+      ~NestedArgumentScope() { slot = previous; }
+    };
     size_t emitted_arguments = 0;
     for (size_t index = 0; index < arguments.size(); ++index) {
-      bool compile_time_callable = generated_expr_type(arguments[index], types)
-          .value_or("").rfind("callable:", 0) == 0;
+      NestedArgumentScope nested_scope(codegen_nested_argument_occurrence_,
+                                       nested_occurrence(index));
+      bool compile_time_callable = is_compile_time_callable(
+          generated_expr_type(arguments[index], types).value_or(""));
       if (compile_time_callable) continue;
       if (emitted_arguments++) call << ", ";
       {
@@ -17324,9 +22054,12 @@ class Generator {
     std::ostringstream lowered;
     lowered << "{ ";
     for (size_t index = 0; index < arguments.size(); ++index)
-      if (!temporaries[index].empty())
+      if (!temporaries[index].empty()) {
+        NestedArgumentScope nested_scope(codegen_nested_argument_occurrence_,
+                                         nested_occurrence(index));
         lowered << "let " << temporaries[index] << " = "
                 << expr(arguments[index], domain, locals, types) << "; ";
+      }
     lowered << call.str() << " }";
     return lowered.str();
   }
@@ -17334,22 +22067,19 @@ class Generator {
   string emitted_function_name(
       const string& name, const vector<string>& arguments,
       const std::unordered_map<string,string>* types) const {
-    auto function = functions_.find(name);
-    if (function == functions_.end() || !function->second->static_dispatch)
-      return name;
-    vector<string> argument_types;
-    for (const auto& argument : arguments)
-      argument_types.push_back(generated_expr_type(argument, types).value_or(""));
-    auto specialization = std::find_if(
-        function->second->specializations.begin(),
-        function->second->specializations.end(),
-        [&](const FunctionSpecialization& candidate) {
-          return candidate.parameter_types == argument_types;
-        });
-    if (specialization == function->second->specializations.end())
-      throw std::runtime_error("missing static specialization for function '" + name +
-                               "' with argument types (" + generated_type_list(argument_types) +
-                               ") from " + (arguments.empty() ? string() : arguments.front()));
+    const Function* fn = nullptr;
+    if (starts_with(name, "callable-v1:")) {
+      fn = find_function_by_callable_id(name);
+    } else {
+      auto function = functions_.find(name);
+      if (function != functions_.end()) fn = function->second;
+    }
+    if (!fn || !fn->static_dispatch)
+      return fn ? fn->name : name;
+    const auto* specialization = call_specialization(*fn, arguments, types);
+    if (!specialization)
+      throw std::runtime_error("missing static specialization for function '" + (fn ? fn->name : name) +
+                               "' at its checked call site");
     return specialization->generated_name;
   }
 
@@ -17507,32 +22237,36 @@ class Generator {
     }
 
     string identity = resolved_callable_identity(callable, types);
-    auto function = functions_.find(identity);
-    if (function == functions_.end())
+    const Function* function_target = nullptr;
+    if (starts_with(identity, "callable-v1:")) {
+      function_target = find_function_by_callable_id(identity);
+    } else {
+      auto function = functions_.find(identity);
+      if (function != functions_.end()) function_target = function->second;
+    }
+    if (!function_target)
       throw std::runtime_error("missing statically resolved functional callable '" +
                                identity + "'");
-    string emitted = identity;
+    string emitted = function_target->name;
     vector<string> argument_types;
     for (const auto& argument : arguments) argument_types.push_back(argument.type);
-    const auto* concrete = concrete_specialization(*function->second, argument_types);
-    if (function->second->static_dispatch) {
-      auto specialization = std::find_if(
-          function->second->specializations.begin(),
-          function->second->specializations.end(),
-          [&](const FunctionSpecialization& candidate) {
-            return candidate.parameter_types == argument_types;
-          });
-      if (specialization == function->second->specializations.end())
+    const FunctionSpecialization* concrete = nullptr;
+    if (function_target->static_dispatch) {
+      // Functional callbacks register the key with no receiver or open-result
+      // binding. Select that exact checked key even when a separate ordinary
+      // call of the same callable and arguments has a bound result key.
+      concrete = functional_specialization(*function_target, argument_types);
+      if (!concrete)
         throw std::runtime_error("missing functional specialization for '" +
                                  identity + "'");
-      emitted = specialization->generated_name;
-    }
+      emitted = concrete->generated_name;
+    } else concrete = concrete_specialization(*function_target, argument_types);
     std::ostringstream rendered;
     rendered << emitted << "(";
     for (size_t index = 0; index < arguments.size(); ++index) {
       if (index) rendered << ", ";
       const auto& argument = arguments[index];
-      auto abi = function_parameter_abi(*function->second, index, argument.type, concrete);
+      auto abi = function_parameter_abi(*function_target, index, argument.type, concrete);
       Effect effect = abi.effect;
       bool borrow = abi.passing != ParameterPassingMode::Value;
       if (domains_.count(canonical_type_name(argument.type))) {
@@ -17548,7 +22282,7 @@ class Generator {
     }
     rendered << ")";
     const bool raises = !(concrete ? concrete->observable_effects
-                                  : function->second->observable_effects)
+                                  : function_target->observable_effects)
                              .raise_set.empty();
     if (raises) {
       if (!phase21_result_context_)
@@ -18532,7 +23266,7 @@ class Generator {
       if (plain_identifier(projection_field)) {
         auto projection_type = generated_expr_type(projection_base, types);
         if (projection_type) {
-          auto object = objects_.find(canonical_type_name(*projection_type));
+          auto object = objects_.find(nominal_template_name(*projection_type));
           if (object != objects_.end()) {
             auto field = std::find_if(object->second->fields.begin(),
                 object->second->fields.end(), [&](const Field& candidate) {
@@ -18826,7 +23560,7 @@ class Generator {
           if (member_name == "values" && member_arguments.empty())
             return "(" + receiver_expression + ").values().cloned().collect::<std::vec::Vec<_>>()";
         }
-        if (concrete == "queue" || starts_with(concrete, "queue["))
+        if (collection_named(parsed_type(concrete), {"queue"}))
           member_name = member_name == "push" ? "push_back" : member_name == "pop" ? "pop_front" : member_name;
         if (auto method = resolve_object_method(objects_, concrete, member_name == "push_back" ? "push" : member_name == "pop_front" ? "pop" : member_name,
                                                 [&]() {
@@ -18951,14 +23685,12 @@ class Generator {
             sequenced << result << " }";
             result = sequenced.str();
           }
-          if ((concrete == "vector" || starts_with(concrete, "vector[") ||
-               concrete == "queue" || starts_with(concrete, "queue[")) &&
+          if (collection_named(parsed_type(concrete), {"vector", "queue"}) &&
               (member_name == "pop" || member_name == "pop_front"))
             result += ".unwrap_or_else(|| std::process::abort())";
           return result;
         }
-        if ((concrete == "vector" || starts_with(concrete, "vector[") ||
-             concrete == "queue" || starts_with(concrete, "queue[")) &&
+        if (collection_named(parsed_type(concrete), {"vector", "queue"}) &&
             (member_name == "pop" || member_name == "pop_front") &&
             member_arguments.empty())
           return receiver_expression + "." +
@@ -19072,9 +23804,16 @@ class Generator {
       vector<string> call_args;
       if (parse_simple_call(e, head, call_args)) {
         head = resolved_callable_identity(head, types);
-        bool known_function = functions_.count(head);
+        const Function* function_target = nullptr;
+        if (starts_with(head, "callable-v1:")) {
+          function_target = find_function_by_callable_id(head);
+        } else {
+          auto it = functions_.find(head);
+          if (it != functions_.end()) function_target = it->second;
+        }
+        bool known_function = (function_target != nullptr);
         if (known_function)
-          return render_known_function_call(*functions_.at(head), head, call_args,
+          return render_known_function_call(*function_target, function_target->name, call_args,
                                             d, locals, types);
         const Method* sibling_method = nullptr;
         if (d && objects_.count(d->name) && !known_function) {
@@ -19106,8 +23845,7 @@ class Generator {
         size_t emitted_arguments = 0;
         for (size_t i = 0; i < call_args.size(); ++i) {
           bool compile_time_callable = known_function &&
-              generated_expr_type(call_args[i], types).value_or("").rfind(
-                  "callable:", 0) == 0;
+              is_compile_time_callable(generated_expr_type(call_args[i], types).value_or(""));
           if (compile_time_callable) continue;
           if (emitted_arguments++) r << ", ";
           if (sibling_method)
@@ -19460,26 +24198,63 @@ class Generator {
   }
 
   void gen_object(std::ostringstream& o, const ObjectType& t) {
+    bool is_generic = std::any_of(t.fields.begin(), t.fields.end(),
+        [](const Field& f) { return f.inferred || f.type.empty(); });
     string type_identity = "type:" + t.name + "@" + std::to_string(t.line);
     tooling_begin(o, 0, "type", type_identity, t.name);
     source_comment(o, 0, t.line, t.header.empty() ? "type " + t.name : t.header);
     backend_comment(o, 0, "value representation for the Moss object; object ownership stays in Moss");
+
+    string type_params;
+    if (is_generic) {
+      type_params += "<";
+      size_t gi = 0;
+      for (const auto& f : t.fields) {
+        if (f.inferred || f.type.empty()) {
+          if (gi > 0) type_params += ", ";
+          type_params += "F" + std::to_string(gi);
+          gi++;
+        }
+      }
+      type_params += ">";
+    }
+
     o << "#[derive(Clone, Debug)]\n"
-      << ((t.exported || p_.explicit_module) ? "pub " : "") << "struct " << t.name << " {\n";
+      << ((t.exported || p_.explicit_module) ? "pub " : "") << "struct " << t.name << type_params << " {\n";
+    size_t gi = 0;
     for (const auto& f : t.fields) {
       source_comment(o, 4, f.line, f.header.empty() ? f.name + ": " + f.type : f.header);
+      string ftype;
+      if (f.inferred || f.type.empty()) {
+        ftype = "F" + std::to_string(gi++);
+      } else {
+        ftype = rust_type(f.type);
+      }
       o << "    " << ((t.exported || p_.explicit_module) ? "pub " : "")
-        << rust_identifier(f.name) << ": " << rust_type(f.type) << ",\n";
+        << rust_identifier(f.name) << ": " << ftype << ",\n";
     }
     o << "}\n\n";
     tooling_end(o, 0, type_identity);
     // Native provider storage decomposition moves fields without exposing Moss
     // field access or requiring the consumer to read Rust-private fields.
-    o << "impl " << t.name << " {\n    " << ((t.exported || p_.explicit_module) ? "pub " : "") << "fn __moss_into_parts(self) -> (";
-    for (const auto& field : t.fields) o << rust_type(field.type) << ",";
-    o << ") { (";
-    for (const auto& field : t.fields) o << "self." << rust_identifier(field.name) << ",";
-    o << ") }\n}\n";
+    if (is_generic) {
+      o << "impl" << type_params << " " << t.name << type_params << " {\n    "
+        << ((t.exported || p_.explicit_module) ? "pub " : "") << "fn __moss_into_parts(self) -> (";
+      gi = 0;
+      for (const auto& field : t.fields) {
+        if (field.inferred || field.type.empty()) o << "F" << std::to_string(gi++) << ",";
+        else o << rust_type(field.type) << ",";
+      }
+      o << ") { (";
+      for (const auto& field : t.fields) o << "self." << rust_identifier(field.name) << ",";
+      o << ") }\n}\n";
+    } else {
+      o << "impl " << t.name << " {\n    " << ((t.exported || p_.explicit_module) ? "pub " : "") << "fn __moss_into_parts(self) -> (";
+      for (const auto& field : t.fields) o << rust_type(field.type) << ",";
+      o << ") { (";
+      for (const auto& field : t.fields) o << "self." << rust_identifier(field.name) << ",";
+      o << ") }\n}\n";
+    }
     for (const auto& method : t.methods) for (bool view : {false, true}) {
       bool needs_view = false;
       for (size_t i = 0; i < method.params.size(); ++i)
@@ -19492,7 +24267,7 @@ class Generator {
           "method", t.name + "__" + method.name, semantic_identity);
       tooling_begin(o, 0, "method", semantic_identity, generated_symbol,
                     view ? "" : native_symbol);
-      o << "impl " << t.name << " {\n";
+      o << "impl" << (is_generic ? type_params : "") << " " << t.name << (is_generic ? type_params : "") << " {\n";
       source_comment(o, 4, method.line,
                      "fn " + method.name);
       debug_symbol_attributes(o, 4, native_symbol, !view);
@@ -19509,6 +24284,9 @@ class Generator {
         Effect effect = method_effect(method, parameter_index);
         string parameter_type = view && effect != Effect::Consume && view_object_type(p.type)
             ? "impl " + access_trait(p.type) : rust_type(p.type);
+        if (is_generic && p.type == t.name) {
+          parameter_type = t.name + type_params;
+        }
         if (effect != Effect::Consume && (effect == Effect::Write || borrowable_type(p.type))) {
           o << ", " << (effect == Effect::Write ? "" : "") << p.name << ": "
             << (effect == Effect::Write ? "&mut " : "&") << parameter_type;
@@ -19519,7 +24297,11 @@ class Generator {
       if (method.return_type) {
         o << ") -> ";
         if (raises) o << "Result<";
-        o << rust_type(*method.return_type);
+        string ret_type = rust_type(*method.return_type);
+        if (is_generic && *method.return_type == t.name) {
+          ret_type = t.name + type_params;
+        }
+        o << ret_type;
         if (raises) o << ", __MossRaised>";
         o << " {\n";
       } else {
@@ -19577,6 +24359,17 @@ class Generator {
 
   void gen_function_instance(std::ostringstream& o, const Function& f,
                              const FunctionSpecialization* specialization, bool view = false) {
+    struct ActiveSpecializationScope {
+      string& slot;
+      string prior;
+      ActiveSpecializationScope(string& target,
+                                const FunctionSpecialization* current)
+          : slot(target), prior(target) {
+        slot = current ? current->stable_type_key : string();
+      }
+      ~ActiveSpecializationScope() { slot = std::move(prior); }
+    } active_specialization_scope(codegen_active_specialization_key_,
+                                  specialization);
     borrowed_function_parameters_.clear();
     bool container_generic = !specialization &&
         std::any_of(f.params.begin(), f.params.end(), [](const Param& p) {
@@ -19588,8 +24381,15 @@ class Generator {
     // A specialization can be projected into distinct provider/consumer rlibs.
     // Preserve native debug-map symbols, but scope them to the emitting module
     // artifact so those otherwise-identical semantic projections cannot collide
-    // at final linkage.
-    bool can_export = !view && (specialization || (!f.generic && !container_generic));
+    // An open result stays a Rust type parameter even in a static
+    // specialization (e.g. a consumer's `Provider.fresh()`): each Moss call
+    // site binds it independently, exactly as for a source-backed `fresh()`.
+    const string open_result_type = specialization
+        ? specialization->return_type : f.return_type.value_or("unit");
+    bool open_return = open_result_type == "vector" ||
+        open_result_type == "queue" || open_result_type == "map";
+    bool can_export = !view && !open_return &&
+        (specialization || (!f.generic && !container_generic));
     string native_identity = semantic_identity;
     if (specialization && p_.explicit_module && !p_.module_name.empty())
       native_identity += "@artifact:" + p_.module_name;
@@ -19607,12 +24407,23 @@ class Generator {
     if (raises)
       o << "#[allow(unreachable_code)]\n";
     bool materialized_export = f.exported && !specialization &&
-        !f.generic && !container_generic;
+        !f.generic && !container_generic && !open_return;
     o << ((materialized_export || (specialization && public_specializations_)) ? "pub " : "")
       << "fn " << generated_symbol;
-    if (!specialization && (f.generic || container_generic)) {
+    if (open_return || (!specialization && (f.generic || container_generic))) {
       o << "<";
-      size_t gi = 0; for (const auto& p : f.params) if (constraint_ops(f, p.name).size() || p.type == "vector" || p.type == "queue") { if (gi++) o << ", "; o << "T_" << p.name; }
+      size_t gi = 0;
+      for (const auto& p : f.params)
+        if (!specialization &&
+            (constraint_ops(f, p.name).size() || p.type == "vector" || p.type == "queue")) {
+          if (gi++) o << ", ";
+          o << "T_" << p.name;
+        }
+      if (open_return) {
+        if (gi++) o << ", ";
+        if (*f.return_type == "map") o << "K, V";
+        else o << "T";
+      }
       o << ">";
     }
     o << "(";
@@ -19622,7 +24433,7 @@ class Generator {
                                  : f.params[index].type;
       // A callable parameter in a static higher-order specialization is a
       // compile-time identity, not a Rust function value.
-      if (specialization && starts_with(pt, "callable:")) continue;
+      if (specialization && callable_identity(pt)) continue;
       if (emitted_parameters++) o << ", ";
       auto ops = constraint_ops(f, f.params[index].name);
       string parameter_rust_type;
@@ -19660,23 +24471,29 @@ class Generator {
                                         : f.return_type.value_or("unit");
     if (return_type != "unit") {
       string rr = return_type;
-      if (!specialization && starts_with(rr, "_generic:")) rr = "T_" + rr.substr(9);
+      if (!specialization && open_generic(rr)) rr = "T_" + rr.substr(9);
       else if (!specialization && starts_with(rr, "_element:_element:")) rr = "T_" + rr.substr(17);
       else if (!specialization && starts_with(rr, "_element:element:")) rr = "T_" + rr.substr(17);
       o << ") -> ";
       if (raises) o << "Result<";
       o << (rr == return_type ? rust_type(rr) : rr);
       if (raises) o << ", __MossRaised>";
-      if (!specialization && (f.generic || container_generic)) {
-        o << " where "; size_t bi=0;
-        for (const auto& p : f.params) { auto ops = constraint_ops(f, p.name); if (ops.empty() && p.type != "vector" && p.type != "queue") continue; if (bi++) o << ", "; o << "T_" << p.name << ": ";
+      if (!specialization && (f.generic || container_generic || open_return)) {
+        std::ostringstream where_clause;
+        size_t bi = 0;
+        for (const auto& p : f.params) {
+          auto ops = constraint_ops(f, p.name);
+          if (ops.empty() && p.type != "vector" && p.type != "queue") continue;
+          if (bi++) where_clause << ", ";
+          where_clause << "T_" << p.name << ": ";
           bool idx = ops.count("[]");
-          if (idx) o << "Clone";
+          if (idx) where_clause << "Clone";
           else {
             string op = ops.count("+") ? "Add" : ops.count("*") ? "Mul" : ops.count("-") ? "Sub" : "Div";
-            o << "std::ops::" << op << "<Output = T_" << p.name << "> + Copy";
+            where_clause << "std::ops::" << op << "<Output = T_" << p.name << "> + Copy";
           }
         }
+        if (bi > 0) o << " where " << where_clause.str();
       }
       o << " {\n";
     }
@@ -19704,6 +24521,26 @@ class Generator {
     phase21_result_context_ = raises;
     gen_stmts(o, f.body, nullptr, nullptr, "", locals, types, 1, false, true, functional_context);
     if (f.result_expression) {
+      struct ResultCodegenScope {
+        const FunctionSpecialization*& specialization_slot;
+        string& expression_slot;
+        const FunctionSpecialization* prior_specialization;
+        string prior_expression;
+        ResultCodegenScope(const FunctionSpecialization*& selected,
+                           string& source, const FunctionSpecialization* current,
+                           const string& expression)
+            : specialization_slot(selected), expression_slot(source),
+              prior_specialization(selected), prior_expression(source) {
+          specialization_slot = current;
+          expression_slot = expression;
+        }
+        ~ResultCodegenScope() {
+          specialization_slot = prior_specialization;
+          expression_slot = std::move(prior_expression);
+        }
+      } result_scope(codegen_result_specialization_,
+                     codegen_result_expression_, specialization,
+                     *f.result_expression);
       source_comment(o, 4, f.result_line, *f.result_expression);
       auto plan = f.result_functional_pipeline_ids.find(functional_context);
       string rendered = expr(*f.result_expression, nullptr, locals, &types,
@@ -20219,6 +25056,13 @@ class Generator {
             : slot(target), prior(target) { slot = current; }
         ~CodegenStatementScope() { slot = prior; }
       } codegen_statement_scope(phase21_codegen_statement_, &s);
+      struct CodegenContextScope {
+        string& slot;
+        string prior;
+        CodegenContextScope(string& target, const string& current)
+            : slot(target), prior(target) { slot = current; }
+        ~CodegenContextScope() { slot = std::move(prior); }
+      } codegen_context_scope(codegen_body_context_, functional_context);
 
       source_comment(o, (base + level) * 4, s.line, s.text);
 
@@ -21191,10 +26035,17 @@ class Generator {
             break;
           }
           string function_name = resolved_callable_identity(s.a, &types);
-          bool known_function = functions_.count(function_name);
+          const Function* function_target = nullptr;
+          if (starts_with(function_name, "callable-v1:")) {
+            function_target = find_function_by_callable_id(function_name);
+          } else {
+            auto it = functions_.find(function_name);
+            if (it != functions_.end()) function_target = it->second;
+          }
+          bool known_function = (function_target != nullptr);
           if (s.b.empty() && known_function && !benchmark_body_) {
             o << indent(level)
-              << render_known_function_call(*functions_.at(function_name), function_name, s.args,
+              << render_known_function_call(*function_target, function_target->name, s.args,
                                            d, locals, &types)
               << ";\n";
             ++i;
@@ -21270,7 +26121,7 @@ class Generator {
           }
           string method_receiver_expression = (implicit_method ? "self." : "") +
             (s.b.empty() && known_function
-                    ? viewed_function_name(function_name, s.args, d, locals, &types)
+                    ? viewed_function_name(function_target->name, s.args, d, locals, &types)
                     : !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
                     : expr(s.a, d, locals, &types));
           std::ostringstream bridge_before, bridge_after, call_output;
@@ -21279,26 +26130,26 @@ class Generator {
           if (!s.b.empty()) {
             string method = s.b;
             auto it = types.find(s.a);
-            if (it != types.end() && (it->second == "queue" || starts_with(it->second, "queue["))) method = method == "push" ? "push_back" : method == "pop" ? "pop_front" : method;
+            if (it != types.end() && collection_named(parsed_type(it->second), {"queue"}))
+              method = method == "push" ? "push_back" : method == "pop" ? "pop_front" : method;
             call_output << "." << viewed_method_name(s.a, method, s.args, d, locals, &types);
           }
           call_output << "(";
           size_t emitted_arguments = 0;
           for (size_t k = 0; k < s.args.size(); ++k) {
             bool compile_time_callable = known_function &&
-                starts_with(generated_expr_type(s.args[k], &types).value_or(""),
-                            "callable:");
+                is_compile_time_callable(generated_expr_type(s.args[k], &types).value_or(""));
             if (compile_time_callable) continue;
             if (emitted_arguments++) call_output << ", ";
             if (benchmark_body_) call_output << "std::hint::black_box(";
             string argument_expression = argument_temporaries[k].empty()
                 ? s.args[k] : argument_temporaries[k];
             if (known_function) {
-              call_output << function_call_argument(*functions_.at(function_name), k, argument_expression, d,
+              call_output << function_call_argument(*function_target, k, argument_expression, d,
                                           locals, &types,
                                           statement_functional_pipeline_id(
                                               s, functional_context, k),
-                                          call_specialization(*functions_.at(function_name),
+                                          call_specialization(*function_target,
                                                               s.args, &types));
             } else if (!s.b.empty() || implicit_method) {
               if (call_method) {
@@ -21419,7 +26270,11 @@ class Generator {
             if (domain_capability) o << ".clone()";
             o << ";\n";
             auto generated_type = generated_expr_type(s.b, &types);
+            bool unspecialized_collection = generated_type &&
+                (*generated_type == "vector" || *generated_type == "queue" || *generated_type == "map");
             types[s.a] = domain_capability ? source->second
+                : (unspecialized_collection && !statement_type.empty() && statement_type != *generated_type)
+                    ? statement_type
                 : generated_type ? *generated_type
                 : !statement_type.empty() ? statement_type : "_value";
             if (domain_capability) {
@@ -22696,8 +27551,7 @@ static vector<SemanticTargetFact> semantic_target_facts(
 
   for (const auto& call : program.semantic_call_edges) {
     SemanticTargetFact fact;
-    fact.semantic_identity = call.source + "@" + std::to_string(call.line) +
-        ":call:" + call.target;
+    fact.semantic_identity = semantic_call_site_identity(call);
     fact.context = call.source;
     fact.kind = "call";
     fact.name = call.target;
@@ -23108,8 +27962,7 @@ static SemanticQueryResolution resolve_semantic_target(
             (!source_file.empty() && edge.source_file != source_file))
           continue;
         if (kind_filter == "call") {
-          const string call_identity = edge.source + "@" +
-              std::to_string(edge.line) + ":call:" + edge.target;
+          const string call_identity = semantic_call_site_identity(edge);
           append(by_semantic_identity(call_identity));
         } else {
           const SemanticTargetFact* callee = by_context(edge.target);
@@ -23481,17 +28334,30 @@ static void write_type_facts_json(std::ostream& out,
     category = "specialized";
   else if (target.kind == "domain")
     category = "domain";
-  else if (starts_with(target.type, "vector[") ||
-           starts_with(target.type, "map[") ||
-           starts_with(target.type, "queue[") ||
-           target.type == "vector" || target.type == "map" ||
-           target.type == "queue")
+  else if (collection_named(parsed_type(target.type), {"vector", "map", "queue"}))
     category = "collection";
   write_debug_json_string(out, category);
   out << ", \"origin\": ";
   const bool inferred = target.kind == "binding" ||
       target.kind == "functional_node" || target.kind == "functional_pipeline";
   write_debug_json_string(out, inferred ? "inferred" : "checked_declaration");
+  // The interned nominal identity bound at name resolution (§3.1), never a
+  // name reconstructed from the display spelling.
+  auto parsed = moss::Type::parse_canonical(target.type);
+  if (parsed && (*parsed)->declaration) {
+    const auto& declaration = *(*parsed)->declaration;
+    out << ", \"nominal\": {\"declaration_id\": ";
+    write_debug_json_string(out, declaration.id);
+    out << ", \"module_identity\": ";
+    write_debug_json_string(out, declaration.module_id);
+    out << ", \"declaration_name\": ";
+    write_debug_json_string(out, declaration.declaration_name);
+    out << ", \"instance_key\": ";
+    if ((*parsed)->kind == moss::TypeKind::NominalInstance && (*parsed)->is_closed())
+      write_debug_json_string(out, (*parsed)->nominal_instance_key());
+    else out << "null";
+    out << "}";
+  }
   out << "}";
 }
 
@@ -23517,8 +28383,8 @@ static vector<const SemanticCallEdge*> calls_for_target(
     const Program& program, const SemanticTargetFact& target) {
   vector<const SemanticCallEdge*> result;
   for (const auto& edge : program.semantic_call_edges)
-    if ((target.kind == "call" && edge.source == target.context &&
-         edge.target == target.name && edge.line == target.line) ||
+    if ((target.kind == "call" &&
+         semantic_call_site_identity(edge) == target.semantic_identity) ||
         (target.kind != "call" && edge.source == target.context))
       result.push_back(&edge);
   return result;
@@ -23539,24 +28405,32 @@ static string semantic_call_target_kind(const string& target) {
   return "resolved_callable";
 }
 
-static std::optional<string> specialization_identity_for_call(
+static std::optional<std::pair<string,string>> specialization_identity_for_call(
     const Program& program, const SemanticCallEdge& edge) {
-  if (!starts_with(edge.target, "fn:") || edge.argument_types.empty())
+  if (!starts_with(edge.target, "fn:"))
     return std::nullopt;
   string name = edge.target.substr(3);
   auto function = std::find_if(
       program.functions.begin(), program.functions.end(),
       [&](const Function& candidate) { return candidate.name == name; });
   if (function == program.functions.end()) return std::nullopt;
+  const FunctionSpecialization* selected = nullptr;
   for (const auto& specialization : function->specializations) {
-    if (specialization.parameter_types != edge.argument_types) continue;
-    string identity = "specialization:" + name + "<";
-    for (size_t index = 0; index < specialization.parameter_types.size(); ++index) {
-      if (index) identity += ",";
-      identity += specialization.parameter_types[index];
+    bool matches = !edge.specialization_key.empty()
+        ? specialization.stable_type_key == edge.specialization_key
+        : specialization.parameter_types == edge.argument_types;
+    if (!matches) continue;
+    if (selected) return std::nullopt;
+    selected = &specialization;
+  }
+  if (selected) {
+    string display = "specialization:" + name + "<";
+    for (size_t index = 0; index < selected->parameter_types.size(); ++index) {
+      if (index) display += ",";
+      display += selected->parameter_types[index];
     }
-    identity += ">";
-    return identity;
+    display += ">";
+    return std::make_pair(display, selected->stable_type_key);
   }
   return std::nullopt;
 }
@@ -23772,7 +28646,8 @@ static void write_structured_error(
     out << "null";
   }
   out << ", \"recursion_witness\": ";
-  if (code == "RECURSION_CYCLE") write_debug_json_string(out, message);
+  if (code == "RECURSION_CYCLE" || code == "TYPE_RECURSIVE_SPECIALIZATION")
+    write_debug_json_string(out, message);
   else out << "null";
   out << ", \"resolution\": ";
   if (query_status.empty()) out << "null";
@@ -24290,11 +29165,6 @@ static const SemanticTargetFact* semantic_target_for_context(
   return nullptr;
 }
 
-static string semantic_call_site_identity(const SemanticCallEdge& edge) {
-  return edge.source + "@" + std::to_string(edge.line) +
-      ":call:" + edge.target;
-}
-
 static void write_calls_result(std::ostream& out, const Program& program,
                                const vector<SemanticTargetFact>& targets,
                                const SemanticTargetFact& target) {
@@ -24342,8 +29212,15 @@ static void write_calls_result(std::ostream& out, const Program& program,
     write_agent_string_array(out, calls[index]->argument_types);
     out << ", \"specialization_identity\": ";
     auto specialization = specialization_identity_for_call(program, *calls[index]);
-    if (specialization) write_debug_json_string(out, *specialization);
+    if (specialization) write_debug_json_string(out, specialization->first);
     else out << "null";
+    out << ", \"specialization_key\": ";
+    if (specialization) write_debug_json_string(out, specialization->second);
+    else out << "null";
+    out << ", \"caller_specialization_key\": ";
+    if (calls[index]->source_specialization_key.empty()) out << "null";
+    else write_debug_json_string(out,
+                                 calls[index]->source_specialization_key);
     out << ", \"boundary\": ";
     write_debug_json_string(out,
         calls[index]->invocation_kind == "synchronous_message"
@@ -25019,11 +29896,297 @@ static void write_reason_evidence_json(std::ostream& out,
   out << "]}";
 }
 
+static void write_typed_open_type_json(std::ostream& out,
+                                       const moss::TypeRef& type) {
+  if (!type) { out << "null"; return; }
+  if (type->kind == moss::TypeKind::InferenceVar) {
+    out << "{\"kind\": \"bound_var\", \"ordinal\": "
+        << type->var_id.ordinal << "}";
+    return;
+  }
+  out << "{\"kind\": ";
+  const char* kind = type->kind == moss::TypeKind::Builtin ? "builtin" :
+      type->kind == moss::TypeKind::NominalInstance ? "nominal" :
+      type->kind == moss::TypeKind::Primitive ? "primitive" :
+      type->kind == moss::TypeKind::Enum ? "enum" :
+      type->kind == moss::TypeKind::Domain ? "domain" :
+      type->kind == moss::TypeKind::TraitConstraint ? "trait_constraint" : "unit";
+  write_debug_json_string(out, kind);
+  out << ", \"id\": ";
+  write_debug_json_string(out,
+      type->declaration ? type->declaration->id : type->name);
+  out << ", \"arguments\": [";
+  for (size_t index = 0; index < type->type_args.size(); ++index) {
+    if (index) out << ",";
+    write_typed_open_type_json(out, type->type_args[index]);
+  }
+  out << "], \"fields\": [";
+  for (size_t index = 0; index < type->field_substitutions.size(); ++index) {
+    if (index) out << ",";
+    out << "{\"name\": ";
+    write_debug_json_string(out, type->field_substitutions[index].first);
+    out << ", \"type\": ";
+    write_typed_open_type_json(out, type->field_substitutions[index].second);
+    out << "}";
+  }
+  out << "]}";
+}
+
+static void write_typed_semantic_projection_json(std::ostream& out,
+                                                 const Program& program) {
+  if (!program.typed_semantics)
+    throw std::invalid_argument("checked program has no typed semantic projection");
+  const auto& projection = *program.typed_semantics;
+  auto write_access = [&](moss::AccessMode access) {
+    write_debug_json_string(out,
+        access == moss::AccessMode::Consume ? "CONSUME" :
+        access == moss::AccessMode::Write ? "WRITE" : "READ");
+  };
+  auto write_member_requirements = [&](const auto& requirements) {
+    out << "[";
+    for (size_t index = 0; index < requirements.size(); ++index) {
+      if (index) out << ",";
+      const auto& requirement = requirements[index];
+      out << "{\"requirement_id\": ";
+      write_debug_json_string(out, requirement.requirement_id);
+      out << ", \"parent_requirement_id\": ";
+      if (requirement.parent_requirement_id)
+        write_debug_json_string(out, *requirement.parent_requirement_id);
+      else out << "null";
+      out << ", \"member_name\": ";
+      write_debug_json_string(out, requirement.member_name);
+      out << ", \"receiver\": ";
+      write_typed_open_type_json(out, requirement.receiver);
+      out << ", \"argument_types\": [";
+      for (size_t argument = 0; argument < requirement.argument_types.size();
+           ++argument) {
+        if (argument) out << ",";
+        write_typed_open_type_json(out, requirement.argument_types[argument]);
+      }
+      out << "], \"result\": ";
+      if (requirement.result)
+        write_typed_open_type_json(out, *requirement.result);
+      else out << "null";
+      out << ", \"receiver_access\": ";
+      write_access(requirement.receiver_access);
+      out << ", \"argument_access\": [";
+      for (size_t argument = 0; argument < requirement.argument_access.size();
+           ++argument) {
+        if (argument) out << ",";
+        write_access(requirement.argument_access[argument]);
+      }
+      out << "], \"admitted_template_or_builtin_family\": ";
+      if (requirement.admitted_template_or_builtin_family)
+        write_debug_json_string(out,
+            *requirement.admitted_template_or_builtin_family);
+      else out << "null";
+      out << ", \"selected_callable_id\": ";
+      if (requirement.selected_callable_id)
+        write_debug_json_string(out, *requirement.selected_callable_id);
+      else out << "null";
+      out << ", \"origin\": {\"module_id\": ";
+      write_debug_json_string(out, requirement.origin.module_id);
+      out << ", \"source_file\": ";
+      write_debug_json_string(out, requirement.origin.source_file);
+      out << ", \"line\": " << requirement.origin.line;
+      out << ", \"column\": " << requirement.origin.column;
+      out << ", \"enclosing_callable\": ";
+      write_debug_json_string(out, requirement.origin.enclosing_callable);
+      out << ", \"call_expression_id\": ";
+      write_debug_json_string(out, requirement.origin.call_expression_id);
+      out << "}}";
+    }
+    out << "]";
+  };
+  auto write_parameter_leaf_effects = [&](const auto& effects) {
+    if (!effects) { out << "null"; return; }
+    out << "{";
+    bool first_kind = true;
+    for (const auto& [name, leaves] :
+         vector<std::pair<string, const moss::StateLeafSet*>>{
+             {"reads", &effects->reads}, {"writes", &effects->writes},
+             {"consumes", &effects->consumes}}) {
+      if (!first_kind) out << ",";
+      first_kind = false;
+      write_debug_json_string(out, name);
+      out << ":[";
+      bool first_leaf = true;
+      for (const auto& leaf : *leaves) {
+        if (!first_leaf) out << ",";
+        first_leaf = false;
+        write_debug_json_string(out, leaf);
+      }
+      out << "]";
+    }
+    out << "}";
+  };
+  out << "{\"version\": ";
+  write_debug_json_string(out, moss::TypedSemanticModuleV1::version);
+  out << ", \"open_summaries_complete\": "
+      << (projection.open_summaries_complete ? "true" : "false");
+  out << ", \"open_summaries\": [";
+  bool first = true;
+  for (const auto& entry : projection.open_summaries) {
+    if (!first) out << ",";
+    first = false;
+    const auto& summary = entry.second;
+    out << "{\"callable_id\": ";
+    write_debug_json_string(out, summary.callable_id);
+    out << ", \"exported\": " << (summary.exported ? "true" : "false");
+    out << ", \"checked_body_ir_available\": "
+        << (summary.checked_body_ir_available ? "true" : "false");
+    out << ", \"body_semantic_hash\": ";
+    if (summary.checked_body_v1)
+      write_debug_json_string(out, summary.checked_body_v1->semantic_hash);
+    else out << "null";
+    out << ", \"body_semantic_status\": ";
+    write_debug_json_string(out, summary.checked_body_v1
+        ? "available_checked_body_v1" : "unsupported_checked_body_form");
+    out << ", \"bound_variable_count\": " << summary.bound_variable_count;
+    out << ", \"parameter_types\": [";
+    for (size_t index = 0; index < summary.parameter_types.size(); ++index) {
+      if (index) out << ",";
+      write_typed_open_type_json(out, summary.parameter_types[index]);
+    }
+    out << "], \"result_type\": ";
+    write_typed_open_type_json(out, summary.result_type);
+    out << ", \"requirement_count\": " << summary.requirements.size();
+    out << ", \"member_requirement_count\": "
+        << summary.member_requirements.size();
+    out << ", \"member_requirements\": ";
+    write_member_requirements(summary.member_requirements);
+    out << ", \"semantic_dependencies\": [";
+    for (size_t index = 0; index < summary.semantic_dependencies.size(); ++index) {
+      if (index) out << ",";
+      write_debug_json_string(out, summary.semantic_dependencies[index]);
+    }
+    out << "]";
+    out << ", \"module_id\": ";
+    write_debug_json_string(out, summary.provenance.defining_module_id);
+    out << ", \"parameter_leaf_effects\": ";
+    write_parameter_leaf_effects(summary.parameter_leaf_effects);
+    out << "}";
+  }
+  out << "]";
+  out << ", \"source_member_requirements\": ";
+  {
+    vector<moss::MemberDispatchRequirement> source_requirements;
+    for (const auto& entry : projection.source_member_requirements)
+      source_requirements.push_back(entry.second);
+    write_member_requirements(source_requirements);
+  }
+  out << ", \"unavailable_open_summaries\": [";
+  first = true;
+  for (const auto& entry : projection.unavailable_open_summaries) {
+    if (!first) out << ",";
+    first = false;
+    out << "{\"callable_id\": ";
+    write_debug_json_string(out, entry.first);
+    out << ", \"gap\": ";
+    write_debug_json_string(out, moss::typed_open_summary_gap_name(entry.second));
+    out << ", \"reason\": ";
+    write_debug_json_string(out, moss::typed_open_summary_gap_message(entry.second));
+    out << "}";
+  }
+  out << "]";
+  out << ", \"modules\": [";
+  first = true;
+  for (const auto& entry : projection.modules) {
+    if (!first) out << ",";
+    first = false;
+    write_debug_json_string(out, entry.first);
+  }
+  out << "], \"nominal_templates\": [";
+  first = true;
+  for (const auto& entry : projection.nominal_templates) {
+    if (!first) out << ",";
+    first = false;
+    out << "{\"id\": "; write_debug_json_string(out, entry.first);
+    out << ", \"module_id\": ";
+    write_debug_json_string(out, entry.second.declaration->module_id);
+    out << ", \"fields\": [";
+    for (size_t index = 0; index < entry.second.fields.size(); ++index) {
+      if (index) out << ",";
+      const auto& field = entry.second.fields[index];
+      out << "{\"name\": "; write_debug_json_string(out, field.name);
+      out << ", \"declared_type_key\": ";
+      if (field.declared_type)
+        write_debug_json_string(out, field.declared_type->stable_type_key());
+      else out << "null";
+      out << ", \"variable_ordinal\": ";
+      if (field.variable_ordinal) out << *field.variable_ordinal;
+      else out << "null";
+      out << "}";
+    }
+    out << "]";
+    out << "}";
+  }
+  out << "], \"specializations\": [";
+  first = true;
+  for (const auto& entry : projection.specializations) {
+    if (!first) out << ",";
+    first = false;
+    const auto& specialization = entry.second;
+    out << "{\"key\": "; write_debug_json_string(out, entry.first);
+    out << ", \"callable_id\": ";
+    write_debug_json_string(out, specialization.callable_id);
+    out << ", \"exported\": " << (specialization.exported ? "true" : "false");
+    out << ", \"parameter_leaf_effects\": ";
+    write_parameter_leaf_effects(specialization.parameter_leaf_effects);
+    out << ", \"parameter_type_keys\": [";
+    for (size_t index = 0; index < specialization.parameter_types.size(); ++index) {
+      if (index) out << ",";
+      write_debug_json_string(out,
+          specialization.parameter_types[index]->stable_type_key());
+    }
+    out << "], \"result_type_key\": ";
+    write_debug_json_string(out, specialization.result_type->stable_type_key());
+    out << ", \"receiver_type_key\": ";
+    if (specialization.identity.receiver)
+      write_debug_json_string(out,
+          (*specialization.identity.receiver)->stable_type_key());
+    else out << "null";
+    out << ", \"callable_arguments\": [";
+    for (size_t index = 0;
+         index < specialization.identity.callable_arguments.size(); ++index) {
+      if (index) out << ",";
+      write_debug_json_string(out,
+          specialization.identity.callable_arguments[index]);
+    }
+    out << "], \"open_result_bindings\": [";
+    for (size_t index = 0;
+         index < specialization.identity.open_result_bindings.size(); ++index) {
+      if (index) out << ",";
+      const auto& binding =
+          specialization.identity.open_result_bindings[index];
+      out << "{\"ordinal\": " << binding.first << ", \"type_key\": ";
+      write_debug_json_string(out, binding.second->stable_type_key());
+      out << "}";
+    }
+    out << "]";
+    out << ", \"member_requirement_count\": "
+        << specialization.member_requirements.size();
+    out << ", \"member_requirements\": ";
+    write_member_requirements(specialization.member_requirements);
+    out << ", \"dependency_count\": "
+        << specialization.dependencies.size() << "}";
+  }
+  out << "], \"unavailable_specializations\": [";
+  first = true;
+  for (const auto& entry : projection.unavailable_specializations) {
+    if (!first) out << ",";
+    first = false;
+    write_debug_json_string(out, entry.first);
+  }
+  out << "]}";
+}
+
 static bool write_semantic_query_json(
     std::ostream& out, const string& command, const string& selector,
     const string& source_file, const Program& program,
     const OptimizationPlan& plan, const vector<Warning>& warnings,
     const string& kind_filter = {}, const string& enclosing_filter = {}) {
+  moss::TypeContext::Scope type_scope(program.type_context.get());
   vector<SemanticTargetFact> targets = semantic_target_facts(program, plan);
   SemanticQueryResolution resolution = resolve_semantic_target(
       targets, selector, source_file, kind_filter, enclosing_filter, &program);
@@ -25138,6 +30301,8 @@ static bool write_semantic_query_json(
     write_domain_semantics_json(out, program, *target);
   }
   if (command == "inspect") {
+    out << ", \"typed_semantic_v1\": ";
+    write_typed_semantic_projection_json(out, program);
     out << ", \"concrete_domain_graph\": {\"graph_identity\":";
     write_debug_json_string(out, program.concrete_domain_graph.identity);
     out << ",\"closed\":"
@@ -25227,6 +30392,7 @@ static bool write_references_query_json(
     std::ostream& out, const string& selector, const string& source_file,
     const Program& program, const OptimizationPlan& plan,
     const string& kind_filter = {}, const string& enclosing_filter = {}) {
+  moss::TypeContext::Scope type_scope(program.type_context.get());
   vector<SemanticTargetFact> targets = semantic_target_facts(program, plan);
   SemanticQueryResolution resolution = resolve_semantic_target(
       targets, selector, source_file, kind_filter, enclosing_filter, &program);
@@ -26762,6 +31928,13 @@ struct CompiledProjectUnit {
 // identities during project composition.
 struct ParsedModuleUnit {
   string name;
+  // Set for a loaded compiled provider: its interface's ABI module identity.
+  string module_identity;
+  // ABI v10 only: the provider's sealed contract hashes, and the exact
+  // provider identities and hashes its own imports were built against.
+  string binary_contract_hash;
+  string semantic_contract_hash;
+  vector<abi_v10::Import> required_imports;
   bool explicit_module = false;
   vector<std::pair<Program,string>> files;
   vector<ModuleImport> imports;
@@ -26987,7 +32160,7 @@ static void rewrite_module_program(
     return rewrite_module_expression(std::move(value), module, modules, public_exports, nullptr, locals);
   };
   auto params = [&](vector<Param>& values) {
-    for (auto& param : values) param.type = type(param.type);
+    for (auto& param : values) param.set_type(type(param.type));
   };
   auto body = [&](vector<Stmt>& statements,
                   const std::set<string>& initial_locals = {},
@@ -27192,9 +32365,11 @@ static void rewrite_module_program(
   };
   for (auto& function : program.functions) {
     string old = function.name;
+    function.defining_module = module;
+    function.declaration_name = old;
     function.name = module_symbol(module, old);
     params(function.params);
-    if (function.return_type) *function.return_type = type(*function.return_type);
+    if (function.return_type) function.set_return_type(type(*function.return_type));
     std::set<string> initial_locals;
     for (const auto& p : function.params) initial_locals.insert(p.name);
     auto body_locals = body(function.body, initial_locals);
@@ -27206,6 +32381,8 @@ static void rewrite_module_program(
     string old = object.name;
     std::set<string> sibling_methods;
     for (const auto& method : object.methods) sibling_methods.insert(method.name);
+    object.defining_module = module;
+    object.declaration_name = old;
     object.name = module_symbol(module, old);
     for (auto& field : object.fields) {
       field.type = type(field.type);
@@ -27214,7 +32391,7 @@ static void rewrite_module_program(
     for (auto& method : object.methods) {
       method.owner = object.name;
       params(method.params);
-      if (method.return_type) *method.return_type = type(*method.return_type);
+      if (method.return_type) method.set_return_type(type(*method.return_type));
       std::set<string> initial_locals{"self"};
       for (const auto& p : method.params) initial_locals.insert(p.name);
       auto body_locals = body(method.body, initial_locals, &sibling_methods);
@@ -27225,6 +32402,8 @@ static void rewrite_module_program(
     }
   }
   for (auto& enumeration : program.enums) {
+    enumeration.defining_module = module;
+    enumeration.declaration_name = enumeration.name;
     enumeration.name = module_symbol(module, enumeration.name);
     for (auto& item : enumeration.cases)
       for (auto& field : item.fields)
@@ -27234,10 +32413,12 @@ static void rewrite_module_program(
     trait.name = module_symbol(module, trait.name);
     for (auto& method : trait.methods) {
       params(method.params);
-      if (method.return_type) *method.return_type = type(*method.return_type);
+      if (method.return_type) method.set_return_type(type(*method.return_type));
     }
   }
   for (auto& domain : program.domains) {
+    domain.defining_module = module;
+    domain.declaration_name = domain.name;
     domain.name = module_symbol(module, domain.name);
     for (auto& field : domain.state) {
       field.type = type(field.type);
@@ -27246,7 +32427,7 @@ static void rewrite_module_program(
     for (auto& route : domain.routes) route.type = type(route.type);
     for (auto& handler : domain.handlers) {
       params(handler.params);
-      if (handler.reply_type) *handler.reply_type = type(*handler.reply_type);
+      if (handler.reply_type) handler.set_reply_type(type(*handler.reply_type));
       std::set<string> initial_locals{"self"};
       for (const auto& p : handler.params) initial_locals.insert(p.name);
       body(handler.body, initial_locals);
@@ -27376,7 +32557,22 @@ static void prepare_and_validate_module_exports(Program& program,
   for (const auto& domain : program.domains) domains.insert(domain.name);
   for (auto& function : program.functions) {
     if (!function.exported) continue;
-    bool open = function.generic || std::any_of(
+    // The provider interface already fixed this callable's concrete/generic
+    // ABI. Consumer-side export preparation must not infer a new dispatch
+    // class by reparsing its return display spelling.
+    if (std::filesystem::path(function.source_file).extension() == ".mossi")
+      continue;
+    // An open result (`fresh() -> []`) is an Option B summary: each consumer
+    // call instantiates fresh variables, so it is exported like a generic.
+    bool open_result = false;
+    if (function.return_type) {
+      auto result = moss::Type::parse_canonical(
+          canonical_type_name(*function.return_type));
+      open_result = result && !(*result)->is_closed() &&
+          ((*result)->kind == moss::TypeKind::Builtin ||
+           (*result)->kind == moss::TypeKind::NominalInstance);
+    }
+    bool open = function.generic || open_result || std::any_of(
         function.params.begin(), function.params.end(),
         [](const Param& parameter) { return parameter.type.empty(); });
     // An explicitly untyped exported parameter is a Moss generic even when
@@ -27396,7 +32592,7 @@ static void prepare_and_validate_module_exports(Program& program,
                         });
         if (has_value_result && !source_parameter.empty()) {
           function.generic_results[source_parameter] = source_parameter;
-          function.return_type = "_generic:" + source_parameter;
+          function.set_return_type("_generic:" + source_parameter);
         }
       }
       for (const auto& parameter : function.params)
@@ -27420,9 +32616,10 @@ static void prepare_and_validate_module_exports(Program& program,
         throw error;
       }
     }
-    if (!function.return_type || contains_internal_placeholder(*function.return_type) ||
-        *function.return_type == "vector" || *function.return_type == "map" ||
-        *function.return_type == "queue") {
+    auto result = function.return_type ? moss::Type::parse_canonical(
+        canonical_type_name(*function.return_type)) : std::nullopt;
+    if (!result || !(*result)->is_closed() ||
+        contains_internal_placeholder(*function.return_type)) {
       CompileError error(function.line,
           "typed export '" + function.name + "' must have a closed concrete return type");
       error.source_file = function.source_file;
@@ -27583,6 +32780,23 @@ static string interface_module_name(const string& text,
     return separator == string::npos ? value : value.substr(separator + 2);
   }
   return file.stem().string();
+}
+
+// ABI module identity of a loaded provider. ABI v10 records it directly; a v9
+// interface records `<package>::<module>` plus its package version (absent
+// from legacy v9 artifacts, which are therefore `unversioned`).
+static string interface_module_identity(const string& text, const string& module) {
+  std::istringstream input(text);
+  string line, declared, version = "unversioned";
+  while (std::getline(input, line)) {
+    if (starts_with(line, "module_id ")) declared = trim(line.substr(10));
+    else if (starts_with(line, "package_version ")) version = trim(line.substr(16));
+    else if (line == "imports" || line == "contract") break;
+  }
+  if (starts_with(declared, "module-v1:")) return declared;
+  const size_t separator = declared.find("::");
+  const string package = separator == string::npos ? declared : declared.substr(0, separator);
+  return moss::module_identity(package.empty() ? "unknown" : package, version, module);
 }
 
 static void parse_generic_ir_line(const string& line, Function& function) {
@@ -27900,36 +33114,85 @@ static void verify_source_free_provider_binding(
         "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
 }
 
+// Staged ABI v10 carries the declaration records in canonical, sealed
+// sections. Validation follows ABI_V10_DESIGN.md §5: framing, then the exact
+// provider digest and selected rlib marker, then every section hash. Only then
+// are records projected into the declaration lines read below.
+static string verified_abi_v10_interface_records(
+    const std::filesystem::path& file, const string& text,
+    abi_v10::SealedInterface* sealed = nullptr) {
+  abi_v10::SealedInterface parsed;
+  try {
+    parsed = abi_v10::parse(text);
+    if (!abi_v10::digest_matches(text, parsed))
+      throw abi_v10::Error("SOURCE_FREE_CONTRACT_INVALID",
+                           "ABI-v10 provider metadata does not match its declared contract digest");
+    const auto rlib = selected_provider_rlib(file);
+    abi_v10::validate_selected_rlib(
+        read_text_file(rlib, "SOURCE_FREE_PROVIDER_ARTIFACT_MISSING"),
+        tooling_name(file.stem().string()), parsed.digest);
+    abi_v10::verify_canonical(text, parsed);
+  } catch (const abi_v10::Error& error) {
+    throw CompileError(0, error.what(), error.code);
+  }
+  const string& id = parsed.value.module_id;
+  const size_t module_at = id.rfind("::");
+  if (module_at == string::npos ||
+      tooling_name(id.substr(module_at + 2)) != tooling_name(file.stem().string()))
+    throw CompileError(0, "ABI-v10 module identity '" + id +
+        "' does not name its selected provider artifact",
+        "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
+  string records = "moss-module-interface-v3\nmodule_id " + id + "\nimports\n";
+  for (const auto& import : parsed.value.imports)
+    records += "  " + import.module_id.substr(import.module_id.rfind("::") + 2) + "\n";
+  records += "contract\n";
+  for (const auto& record : parsed.value.binary_contract) records += record.payload;
+  records += "semantic_exports\n";
+  for (const auto& record : parsed.value.semantic_contract) records += record.payload;
+  if (sealed) *sealed = parsed;
+  return records;
+}
+
 static ParsedModuleUnit load_module_interface(
     const std::filesystem::path& file) {
   std::ifstream input(file, std::ios::binary);
   std::ostringstream content;
   content << input.rdbuf();
   string text = content.str();
-  verify_source_free_provider_binding(file, text);
-  if (text.find("\nnative_abi " + std::to_string(kNativeAbiVersion) + "\n") == string::npos)
-    throw CompileError(0, "compiled provider uses an incompatible native calling convention; rebuild its .mossi provider");
-  // The producer already records separate hashes for the native contract and
-  // semantic exports.  Validate them before trusting source-free metadata;
-  // otherwise a changed failure-arm symbol can link and abort at runtime.
-  const string contract_marker = "\ncontract\n";
-  const string semantic_marker = "\nsemantic_exports\n";
-  const size_t contract_at = text.find(contract_marker);
-  const size_t semantic_at = text.find(semantic_marker,
-      contract_at == string::npos ? 0 : contract_at + contract_marker.size());
-  if (contract_at == string::npos || semantic_at == string::npos)
-    throw CompileError(0, "compiled provider has incomplete module interface sections; rebuild its .mossi provider");
-  std::map<string, string> declared_hashes;
-  std::istringstream header(text.substr(0, contract_at));
-  string header_line;
-  while (std::getline(header, header_line)) {
-    for (const char* key : {"concrete_interface_hash", "generic_semantic_hash",
-                            "interface_hash"}) {
-      const string prefix = string(key) + " ";
-      if (starts_with(header_line, prefix) &&
-          !declared_hashes.emplace(key, header_line.substr(prefix.size())).second)
-        throw CompileError(0, "compiled provider has duplicate module interface hash; rebuild its .mossi provider");
-    }
+  const bool v10_interface = starts_with(text, "moss-module-interface-v3\n");
+  if (v10_interface != staged_abi_v10())
+    throw CompileError(0, v10_interface
+        ? "source-free provider uses staged ABI v10; rebuild it for ABI v9 or set MOSS_STAGED_ABI=v10"
+        : "source-free provider uses an older module interface; rebuild it for ABI v10",
+        "SOURCE_FREE_ABI_REBUILD_REQUIRED");
+  abi_v10::SealedInterface sealed;
+  if (v10_interface) {
+    text = verified_abi_v10_interface_records(file, text, &sealed);
+  } else {
+    verify_source_free_provider_binding(file, text);
+    if (text.find("\nnative_abi " + std::to_string(kNativeAbiVersion) + "\n") == string::npos)
+      throw CompileError(0, "compiled provider uses an incompatible native calling convention; rebuild its .mossi provider");
+    // The producer already records separate hashes for the native contract and
+    // semantic exports.  Validate them before trusting source-free metadata;
+    // otherwise a changed failure-arm symbol can link and abort at runtime.
+    const string contract_marker = "\ncontract\n";
+    const string semantic_marker = "\nsemantic_exports\n";
+    const size_t contract_at = text.find(contract_marker);
+    const size_t semantic_at = text.find(semantic_marker,
+        contract_at == string::npos ? 0 : contract_at + contract_marker.size());
+    if (contract_at == string::npos || semantic_at == string::npos)
+      throw CompileError(0, "compiled provider has incomplete module interface sections; rebuild its .mossi provider");
+    std::map<string, string> declared_hashes;
+    std::istringstream header(text.substr(0, contract_at));
+    string header_line;
+    while (std::getline(header, header_line)) {
+      for (const char* key : {"concrete_interface_hash", "generic_semantic_hash",
+                              "interface_hash"}) {
+        const string prefix = string(key) + " ";
+        if (starts_with(header_line, prefix) &&
+            !declared_hashes.emplace(key, header_line.substr(prefix.size())).second)
+          throw CompileError(0, "compiled provider has duplicate module interface hash; rebuild its .mossi provider");
+      }
   }
   const string concrete_hash = stable_hash(text.substr(
       contract_at + contract_marker.size(),
@@ -27941,9 +33204,16 @@ static ParsedModuleUnit load_module_interface(
       declared_hashes["interface_hash"] != concrete_hash ||
       declared_hashes["generic_semantic_hash"] != generic_hash)
     throw CompileError(0, "compiled provider module interface hash mismatch; rebuild its .mossi provider");
+  }
   std::istringstream lines(text);
   ParsedModuleUnit unit;
   unit.name = interface_module_name(text, file);
+  unit.module_identity = interface_module_identity(text, unit.name);
+  if (v10_interface) {
+    unit.binary_contract_hash = sealed.binary_hash;
+    unit.semantic_contract_hash = sealed.semantic_hash;
+    unit.required_imports = sealed.value.imports;
+  }
   unit.explicit_module = true;
   Program provider;
   provider.explicit_module = true;
@@ -27975,8 +33245,15 @@ static ParsedModuleUnit load_module_interface(
   std::set<string> exceptional_consumer_contracts;
   bool in_semantic_exports = false;
   bool in_imports = false;
+  std::set<string> identified_declarations;
+  std::set<string> exported_declarations;
+  // The nominal declaration whose record lines are being read, if any.
+  std::optional<std::pair<moss::DeclarationKind, string>> open_declaration;
   while (std::getline(lines, line)) {
     line = trim(std::move(line));
+    if (starts_with(line, "export ") || starts_with(line, "generic_dependency_begin ") ||
+        line == "semantic_exports" || line == "contract")
+      open_declaration.reset();
     if (line == "semantic_exports") {
       in_semantic_exports = true;
       in_imports = false;
@@ -28006,7 +33283,7 @@ static ParsedModuleUnit load_module_interface(
       function.generic = kind == "generic";
       function.static_dispatch = function.generic || kind == "static";
       string return_type = interface_field(rest, "return");
-      if (!return_type.empty()) function.return_type = std::move(return_type);
+      if (!return_type.empty()) function.set_return_type(std::move(return_type));
       function.observable_effects = interface_effects(rest);
       provider.functions.push_back(std::move(function));
       current = &provider.functions.back();
@@ -28095,13 +33372,27 @@ static ParsedModuleUnit load_module_interface(
       function.generic = kind == "generic";
       function.static_dispatch = function.generic || kind == "static";
       string return_type = interface_field(rest, "return");
-      if (!return_type.empty()) function.return_type = std::move(return_type);
+      if (!return_type.empty()) function.set_return_type(std::move(return_type));
       function.observable_effects = interface_effects(rest);
       provider.functions.push_back(std::move(function));
       current = &provider.functions.back();
       current_object = nullptr;
       current_domain = nullptr;
       current_trait = nullptr;
+      continue;
+    }
+    if (starts_with(line, "declaration_id ")) {
+      const string declared = trim(line.substr(15));
+      if (!open_declaration)
+        throw CompileError(0, "orphan declaration identity in module interface",
+                           "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+      const auto [kind, name] = *open_declaration;
+      const string expected = moss::declaration_identity(kind, unit.module_identity, name);
+      if (declared != expected)
+        throw CompileError(0, "provider declaration identity '" + declared +
+            "' does not match its module identity (expected '" + expected + "')",
+            "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+      identified_declarations.insert(name);
       continue;
     }
     if (starts_with(line, "export type ")) {
@@ -28111,6 +33402,8 @@ static ParsedModuleUnit load_module_interface(
       ObjectType object;
       object.name = name;
       object.exported = true;
+      open_declaration.emplace(moss::DeclarationKind::Record, name);
+      exported_declarations.insert(name);
       provider.objects.push_back(std::move(object));
       current_object = &provider.objects.back();
       current = nullptr;
@@ -28126,6 +33419,8 @@ static ParsedModuleUnit load_module_interface(
       enumeration.name = name;
       enumeration.exported = true;
       enumeration.source_file = file.string();
+      open_declaration.emplace(moss::DeclarationKind::Enum, name);
+      exported_declarations.insert(name);
       provider.enums.push_back(std::move(enumeration));
       current_enum = &provider.enums.back();
       current = nullptr;
@@ -28160,6 +33455,8 @@ static ParsedModuleUnit load_module_interface(
       Domain domain;
       domain.name = name;
       domain.exported = true;
+      open_declaration.emplace(moss::DeclarationKind::Domain, name);
+      exported_declarations.insert(name);
       provider.domains.push_back(std::move(domain));
       current_domain = &provider.domains.back();
       current = nullptr;
@@ -28217,6 +33514,7 @@ static ParsedModuleUnit load_module_interface(
       Param parameter;
       fields >> std::quoted(handler_name) >> std::quoted(parameter.name)
              >> std::quoted(parameter.type);
+      parameter.sync();
       auto handler = std::find_if(current_domain->handlers.begin(),
           current_domain->handlers.end(), [&](const Handler& candidate) {
             return candidate.name == handler_name;
@@ -28770,7 +34068,7 @@ static ParsedModuleUnit load_module_interface(
       std::getline(method_line, rest);
       string return_type = interface_field(rest, "return");
       if (!return_type.empty() && return_type != "unit")
-        method.return_type = std::move(return_type);
+        method.set_return_type(std::move(return_type));
       string count_text = interface_field(rest, "params");
       size_t count = count_text.empty() ? 0 : static_cast<size_t>(std::stoul(count_text));
       size_t parameters = rest.find("params=");
@@ -28783,6 +34081,7 @@ static ParsedModuleUnit load_module_interface(
           Param parameter;
           if (!(types >> std::quoted(parameter.type)))
             throw CompileError(0, "incomplete trait method parameters in module interface");
+          parameter.sync();
           method.params.push_back(std::move(parameter));
         }
       }
@@ -28800,7 +34099,7 @@ static ParsedModuleUnit load_module_interface(
       method.source_file = file.string();
       string return_type = interface_field(rest, "return");
       if (!return_type.empty() && return_type != "unit")
-        method.return_type = std::move(return_type);
+        method.set_return_type(std::move(return_type));
       string receiver = interface_field(rest, "receiver");
       auto receiver_effect = interface_effect(receiver);
       if (!receiver_effect)
@@ -28823,6 +34122,7 @@ static ParsedModuleUnit load_module_interface(
         if (!(values >> std::quoted(parameter.name) >> std::quoted(parameter.type)
                     >> effect_name))
           throw CompileError(0, "incomplete object method in module interface");
+        parameter.sync();
         method.params.push_back(std::move(parameter));
         auto parameter_effect = interface_effect(effect_name);
         if (!parameter_effect)
@@ -28838,7 +34138,11 @@ static ParsedModuleUnit load_module_interface(
     if (starts_with(line, "public_representation field ") && current_object) {
       std::istringstream field(line.substr(string("public_representation field ").size()));
       Field value;
+      value.exported = true;
       field >> value.name >> value.type;
+      // An untyped provider field is a template slot, exactly as in source:
+      // each consumer constructor call supplies its own substitution.
+      value.inferred = value.type.empty();
       current_object->fields.push_back(std::move(value));
       continue;
     }
@@ -28850,7 +34154,7 @@ static ParsedModuleUnit load_module_interface(
       handler.name = name;
       handler.source_file = file.string();
       string reply = interface_field(line, "reply");
-      if (!reply.empty() && reply != "unit") handler.reply_type = std::move(reply);
+      if (!reply.empty() && reply != "unit") handler.set_reply_type(std::move(reply));
       handler.observable_effects = interface_effects(line);
       current_domain->handlers.push_back(std::move(handler));
       continue;
@@ -28881,7 +34185,7 @@ static ParsedModuleUnit load_module_interface(
         type.clear();
       }
       if (current->params.size() <= index) current->params.resize(index + 1);
-      current->params[index].type = type;
+      current->params[index].set_type(type);
       current->params[index].name = name_token;
       if (starts_with(current->params[index].name, "name=\"")) {
         current->params[index].name = current->params[index].name.substr(6);
@@ -28912,6 +34216,12 @@ static ParsedModuleUnit load_module_interface(
       continue;
     }
   }
+  // ABI v10 binds every exported nominal to its declaration identity.
+  if (starts_with(text, "moss-module-interface-v3\n"))
+    for (const auto& name : exported_declarations)
+      if (!identified_declarations.count(name))
+        throw CompileError(0, "provider nominal '" + name +
+            "' has no declaration identity", "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
   for (auto& domain : provider.domains) {
     for (auto& handler : domain.handlers) {
       string record_key = domain.name + "::" + handler.name;
@@ -29047,7 +34357,7 @@ static ParsedModuleUnit load_module_interface(
     // A generic interface records open parameters separately from its body;
     // preserve the semantic marker used by normal Moss specialization.
     if (function.generic && function.return_type &&
-        starts_with(*function.return_type, "_generic:"))
+        open_generic(*function.return_type))
       function.generic_results[function.return_type->substr(9)] =
           function.return_type->substr(9);
   }
@@ -29092,6 +34402,9 @@ static vector<std::filesystem::path> compiled_interface_candidates(
 struct CompiledModuleProvider {
   string module;
   std::filesystem::path interface_file;
+  // Staged ABI v10: the claimed module identity and the provider seal.
+  string module_identity;
+  string contract_digest;
 };
 
 // Module names in source are semantic identities. A filename is merely an
@@ -29102,7 +34415,9 @@ static vector<CompiledModuleProvider> compiled_module_providers(
   vector<CompiledModuleProvider> providers;
   for (const auto& file : compiled_interface_candidates(manifest)) {
     string text = read_text_file(file, "MOSS_INTERFACE_ERROR");
-    providers.push_back({interface_module_name(text, file), file});
+    const string module = interface_module_name(text, file);
+    providers.push_back({module, file, interface_module_identity(text, module),
+                         source_free_declared_digest(text)});
   }
   std::sort(providers.begin(), providers.end(),
             [](const CompiledModuleProvider& left,
@@ -29131,6 +34446,26 @@ static const CompiledModuleProvider* unique_compiled_module_provider(
   while (end != providers.end() && end->module == import.name) ++end;
   if (begin == end) return nullptr;
   if (std::next(begin) == end) return &*begin;
+  // ABI v10 (TYPE_IR_CONTRACT §3.1): providers claiming one module identity
+  // must be the same bound provider; a second, differently sealed provider is
+  // an impersonation, not an alternative.
+  if (staged_abi_v10() &&
+      std::all_of(begin, end, [&](const CompiledModuleProvider& provider) {
+        return provider.module_identity == begin->module_identity;
+      })) {
+    if (std::all_of(begin, end, [&](const CompiledModuleProvider& provider) {
+          return provider.contract_digest == begin->contract_digest;
+        }))
+      return &*begin;
+    std::ostringstream conflict;
+    conflict << "module identity '" << begin->module_identity
+             << "' is claimed by providers with different bound contracts:";
+    for (auto provider = begin; provider != end; ++provider)
+      conflict << "\n  " << provider->interface_file.string();
+    CompileError error(import.line, conflict.str(), "SOURCE_FREE_MODULE_ID_CONFLICT");
+    error.source_file = import.source_file;
+    throw error;
+  }
   std::ostringstream message;
   message << "ambiguous imported module '" << import.name << "'\nprovided by:";
   for (auto provider = begin; provider != end; ++provider)
@@ -29254,6 +34589,55 @@ static CheckedProjectUnit check_project_sources(
           throw CompileError(name.second.line, "imported module '" + name.first +
                              "' was not found in source or compiled interfaces");
     }
+    // Module identities (TYPE_IR_CONTRACT §3.1). A source module belongs to
+    // the package whose Moss.toml contains it (dependency sources reach here
+    // through Fast Debug); a compiled provider keeps its interface identity.
+    std::map<std::filesystem::path, ProjectManifest> owning_manifests;
+    auto source_module_identity = [&](const string& source, const string& module) {
+      const ProjectManifest* owner = &manifest;
+      if (auto root = find_project_root(std::filesystem::path(source));
+          root && root->lexically_normal() != manifest.root.lexically_normal()) {
+        auto cached = owning_manifests.find(*root);
+        if (cached == owning_manifests.end())
+          cached = owning_manifests.emplace(*root, load_project_manifest(*root)).first;
+        owner = &cached->second;
+      }
+      return moss::module_identity(owner->name,
+          owner->version.empty() ? "unversioned" : owner->version, module);
+    };
+    for (const auto& entry : modules) {
+      if (loaded_external_modules.count(entry.first))
+        program.module_identities[entry.first] = entry.second.module_identity;
+      else if (has_explicit_modules && !entry.second.files.empty())
+        program.module_identities[entry.first] =
+            source_module_identity(entry.second.files.front().second, entry.first);
+    }
+    program.package_identities = true;
+    if (!has_explicit_modules)
+      program.module_identities[""] = moss::module_identity(manifest.name,
+          manifest.version.empty() ? "unversioned" : manifest.version, manifest.name);
+    // A compiled provider was checked against exact provider identities and
+    // sealed hashes (ABI_V10_DESIGN §3.1). The provider selected here for each
+    // of its imports must be that same bound provider.
+    for (const auto& external : loaded_external_modules) {
+      for (const auto& required : modules.at(external).required_imports) {
+        const string imported = required.module_id.substr(required.module_id.rfind("::") + 2);
+        auto selected = modules.find(imported);
+        if (selected == modules.end()) continue;
+        const bool compiled = loaded_external_modules.count(imported) != 0;
+        if (program.module_identities[imported] != required.module_id ||
+            (compiled && (selected->second.binary_contract_hash != required.binary_hash ||
+                          selected->second.semantic_contract_hash != required.semantic_hash))) {
+          CompileError error(0, "provider '" + external + "' was built against " +
+              required.module_id + ", but the selected '" + imported +
+              "' provider has a different identity or bound contract",
+              "SOURCE_FREE_MODULE_ID_CONFLICT");
+          error.source_file = external_module_interfaces.count(external)
+              ? external_module_interfaces.at(external).string() : string();
+          throw error;
+        }
+      }
+    }
     if (has_explicit_modules) {
       program.explicit_module = true;
       std::map<string,std::set<string>> public_exports;
@@ -29326,7 +34710,7 @@ static CheckedProjectUnit check_project_sources(
         error.what(), error.source_file.empty()
             ? (sources.empty() ? string() : sources.front().string())
             : error.source_file,
-        error.line);
+        error.line, error.teaching);
   }
 }
 
@@ -29690,45 +35074,16 @@ static int run_project_impact(const ProjectManifest& manifest,
   return 0;
 }
 
-static string module_name_from_symbol(const string& symbol) {
-  auto separator = symbol.find("__");
-  return separator == string::npos ? string() : symbol.substr(0, separator);
-}
-
-static bool belongs_to_module(const string& qualified, const string& module) {
-  return qualified == module || starts_with(qualified, module + "__");
-}
-
-static string specialization_calling_module(const Program& program,
-                                            const string& context,
-                                            const string& root_module) {
-  if (starts_with(context, "fn:"))
-    return module_name_from_symbol(context.substr(3));
-  if (starts_with(context, "method:")) {
-    string owner = context.substr(7);
-    size_t dot = owner.find('.');
-    return module_name_from_symbol(dot == string::npos ? owner : owner.substr(0, dot));
-  }
-  if (starts_with(context, "handler:")) {
-    string owner = context.substr(8);
-    size_t dot = owner.find('.');
-    return module_name_from_symbol(dot == string::npos ? owner : owner.substr(0, dot));
-  }
-  // main, test, and benchmark bodies are projected into the root module.
-  return !root_module.empty() ? root_module : program.main_module;
-}
-
 static bool edge_requires_specialization(const SemanticCallEdge& edge,
                                          const Function& function,
                                          const FunctionSpecialization& specialization) {
   if ((edge.target != function.name && edge.target != "fn:" + function.name) ||
       edge.argument_types.size() != specialization.parameter_types.size())
     return false;
-  for (size_t index = 0; index < edge.argument_types.size(); ++index)
-    if (canonical_type_name(edge.argument_types[index]) !=
-        canonical_type_name(specialization.parameter_types[index]))
-      return false;
-  return true;
+  if (!edge.specialization_key.empty())
+    return edge.specialization_key == specialization.stable_type_key;
+  const auto* unique = concrete_specialization(function, edge.argument_types);
+  return unique && unique->stable_type_key == specialization.stable_type_key;
 }
 
 // A specialization remains one canonical checked fact on Function.  Native
@@ -29751,20 +35106,10 @@ static bool module_requires_specialization(const Program& program,
                      });
 }
 
-static string specialization_projection_key(const string& function_name,
-                                            const vector<string>& parameter_types) {
-  std::ostringstream key;
-  key << function_name;
-  for (const auto& type : parameter_types)
-    key << "\n" << canonical_type_name(type);
-  return key.str();
-}
-
 static bool specialization_is_projected(
-    const std::set<string>& required, const Function& function,
+    const std::set<string>& required,
     const FunctionSpecialization& specialization) {
-  return required.count(specialization_projection_key(
-      function.name, specialization.parameter_types));
+  return required.count(specialization.stable_type_key);
 }
 
 // The semantic checker still sees the composed project.  Once that single
@@ -29775,8 +35120,11 @@ static bool specialization_is_projected(
 static Program module_program(const Program& whole, const string& module,
                               const string& root_module = "") {
   Program result;
+  moss::TypeContext::Scope type_scope(whole.type_context.get());
   result.module_name = module;
   result.explicit_module = true;
+  result.module_identities = whole.module_identities;
+  result.type_context = whole.type_context;
   result.imports = whole.imports;
   string target_module = !root_module.empty() ? root_module : whole.main_module;
   std::set<string> projected_static_functions;
@@ -29790,19 +35138,17 @@ static Program module_program(const Program& whole, const string& module,
       for (const auto& specialization : function.specializations)
         if (module_requires_specialization(whole, module, target_module,
                                            function, specialization))
-          required_specializations.insert(specialization_projection_key(
-              function.name, specialization.parameter_types));
+          required_specializations.insert(specialization.stable_type_key);
   bool specialization_changed = true;
   while (specialization_changed) {
     specialization_changed = false;
     for (const auto& function : whole.functions) {
       for (const auto& specialization : function.specializations) {
-        if (!specialization_is_projected(required_specializations, function,
+        if (!specialization_is_projected(required_specializations,
                                          specialization))
           continue;
         for (const auto& dependency : specialization.dependencies) {
-          string key = specialization_projection_key(
-              dependency.function_name, dependency.parameter_types);
+          string key = dependency.specialization_key;
           if (required_specializations.insert(std::move(key)).second)
             specialization_changed = true;
         }
@@ -29818,7 +35164,7 @@ static Program module_program(const Program& whole, const string& module,
                          projected.specializations.end(),
                          [&](const FunctionSpecialization& specialization) {
                            return !specialization_is_projected(
-                               required_specializations, function,
+                               required_specializations,
                                specialization);
                          }),
           projected.specializations.end());
@@ -30406,10 +35752,52 @@ static void write_provider_handler_abi(std::ostream& out,
       << " " << kAllExceptionalCfgConsumers << "\n";
 }
 
+// Split one v9 declaration section into ordered ABI-v10 records. A record is
+// a top-level declaration line plus its indented detail lines; the ordinal
+// prefix keeps canonical record order equal to declaration order.
+static vector<abi_v10::Record> abi_v10_declaration_records(const string& section) {
+  vector<abi_v10::Record> records;
+  std::istringstream lines(section);
+  string line;
+  while (std::getline(lines, line)) {
+    if (records.empty() || (!line.empty() && line[0] != ' ')) {
+      std::istringstream words(line);
+      string kind, name;
+      words >> kind >> name;
+      if (kind == "export") words >> name;
+      char ordinal[16];
+      std::snprintf(ordinal, sizeof ordinal, "%08zu", records.size());
+      records.push_back({string(ordinal) + " " + kind + " " + name, {}});
+    }
+    records.back().payload += line + "\n";
+  }
+  return records;
+}
+
+static string abi_v10_module_id(const ProjectManifest& manifest,
+                                const string& module) {
+  return "module-v1:" + manifest.name + "@" + manifest.version + "::" + module;
+}
+
+// The interned declaration identity recorded with an exported nominal
+// (TYPE_IR_CONTRACT §3.1, ABI_V10_DESIGN §3.2).
+static string exported_declaration_identity(const Program& program,
+                                            moss::DeclarationKind kind,
+                                            const string& program_name) {
+  if (program.type_context)
+    if (auto declared = program.type_context->find(program_name);
+        declared && declared->kind == kind)
+      return declared->id;
+  throw ProjectError("MOSS_INTERFACE_ERROR",
+                     "exported nominal '" + program_name +
+                         "' has no interned declaration identity");
+}
+
 static vector<std::filesystem::path> write_module_interfaces(
     const ProjectManifest& manifest, const Program& program,
     const std::filesystem::path& directory,
-    const BackendToolchainIdentity& backend) {
+    const BackendToolchainIdentity& backend,
+    const std::map<string, std::filesystem::path>& external_interfaces) {
   std::map<string,std::ostringstream> contents;
   std::map<string,std::ostringstream> interface_contents;
   std::set<string> module_names;
@@ -30616,6 +36004,8 @@ static vector<std::filesystem::path> write_module_interfaces(
     interface_contents[module] << "type " << object.name.substr(module.size() + 2)
                                << " nominal\n";
     out << "export type " << object.name.substr(module.size() + 2) << " nominal\n";
+    out << "  declaration_id " << exported_declaration_identity(
+        program, moss::DeclarationKind::Record, object.name) << "\n";
     for (const auto& field : object.fields)
       out << "  public_representation field " << field.name << " " << field.type << "\n";
     for (const auto& method : object.methods) {
@@ -30646,6 +36036,8 @@ static vector<std::filesystem::path> write_module_interfaces(
     string name = enumeration.name.substr(module.size() + 2);
     auto& out = contents[module];
     out << "export enum " << name << "\n";
+    out << "  declaration_id " << exported_declaration_identity(
+        program, moss::DeclarationKind::Enum, enumeration.name) << "\n";
     interface_contents[module] << "enum " << name << "\n";
     for (const auto& item : enumeration.cases) {
       out << "  enum_case " << std::quoted(item.name) << " "
@@ -30683,6 +36075,8 @@ static vector<std::filesystem::path> write_module_interfaces(
     interface_contents[module] << "domain " << domain.name.substr(module.size() + 2)
                                << " opaque\n";
     out << "export domain " << domain.name.substr(module.size() + 2) << " opaque\n";
+    out << "  declaration_id " << exported_declaration_identity(
+        program, moss::DeclarationKind::Domain, domain.name) << "\n";
     for (const auto& field : domain.state) {
       std::ostringstream member;
       member << "  construction_state " << std::quoted(field.name) << " "
@@ -30736,10 +36130,73 @@ static vector<std::filesystem::path> write_module_interfaces(
     }
   }
   vector<std::filesystem::path> result;
+  std::map<string, abi_v10::Import> sealed_v10;
+  std::function<string(const string&)> encode_v10 = [&](const string& module) {
+    abi_v10::Interface value;
+    value.module_id = abi_v10_module_id(manifest, module);
+    value.compiler = kCompilerVersion;
+    value.backend_fingerprint = backend.fingerprint;
+    value.backend_rustc = backend.version_verbose.substr(
+        0, backend.version_verbose.find('\n'));
+    for (const auto& import : program.imports) {
+      if (import.owner_module != module) continue;
+      if (contents.count(import.name)) {
+        if (!sealed_v10.count(import.name)) encode_v10(import.name);
+        value.imports.push_back(sealed_v10.at(import.name));
+        continue;
+      }
+      auto selected = external_interfaces.find(import.name);
+      if (selected == external_interfaces.end())
+        throw ProjectError("MOSS_INTERFACE_ERROR",
+            "staged ABI-v10 import '" + import.name + "' of module '" + module +
+                "' has no selected provider interface", directory.string());
+      auto provider = abi_v10::parse(read_text_file(
+          selected->second, "MOSS_INTERFACE_ERROR"));
+      value.imports.push_back({provider.value.module_id, provider.binary_hash,
+                               provider.semantic_hash});
+    }
+    std::sort(value.imports.begin(), value.imports.end(),
+              [](const abi_v10::Import& left, const abi_v10::Import& right) {
+                return left.module_id < right.module_id;
+              });
+    value.binary_contract =
+        abi_v10_declaration_records(interface_contents[module].str());
+    value.semantic_contract = abi_v10_declaration_records(contents[module].str());
+    string text;
+    try {
+      text = abi_v10::encode(value);
+      auto sealed = abi_v10::decode(text);
+      sealed_v10[module] = {value.module_id, sealed.binary_hash,
+                            sealed.semantic_hash};
+    } catch (const abi_v10::Error& error) {
+      throw ProjectError(error.code, error.what(), directory.string());
+    }
+    return text;
+  };
   for (auto& entry : contents) {
+    if (staged_abi_v10()) {
+      const string text = encode_v10(entry.first);
+      std::filesystem::path file =
+          directory / (tooling_name(entry.first) + ".mossi");
+      std::ifstream prior(file, std::ios::binary);
+      std::ostringstream prior_text;
+      if (prior) prior_text << prior.rdbuf();
+      if (!prior || prior_text.str() != text) {
+        std::ofstream output(file, std::ios::binary);
+        if (!output)
+          throw ProjectError("MOSS_INTERFACE_ERROR",
+                             "cannot write Moss module interface '" + file.string() + "'",
+                             file.string());
+        output << text;
+      }
+      result.push_back(file);
+      continue;
+    }
     std::ostringstream header;
     header << "moss-module-interface-v2\n"
            << "module_id " << manifest.name << "::" << entry.first << "\n"
+           << "package_version "
+           << (manifest.version.empty() ? "unversioned" : manifest.version) << "\n"
            << "compiler " << kCompilerVersion << "\n"
            << "native_abi " << kNativeAbiVersion << "\n"
            << "backend_fingerprint " << backend.fingerprint << "\n"
@@ -30904,7 +36361,8 @@ static NativeArtifact compile_native_artifact(
     }
   }
   source_key << "compiler\n" << kCompilerVersion << "\nnative_abi\n"
-             << kNativeAbiVersion << "\nmode\n"
+             << kNativeAbiVersion << (staged_abi_v10() ? "-staged-v10" : "")
+             << "\nmode\n"
              << static_cast<int>(mode) << "\nfilter\n" << declaration_filter
              << "\n";
   if (declaration_ids)
@@ -30953,7 +36411,8 @@ static NativeArtifact compile_native_artifact(
   vector<std::filesystem::path> preexisting_interfaces = artifact.module_interfaces;
   vector<string> local_module_names = module_names_for_program(unit.program);
   const auto emitted_interfaces = write_module_interfaces(
-      manifest, unit.program, directory, artifact.backend_toolchain);
+      manifest, unit.program, directory, artifact.backend_toolchain,
+      unit.external_module_interfaces);
   artifact.module_interfaces = emitted_interfaces;
   for (const auto& interface_file : preexisting_interfaces) {
     string module = interface_file.stem().string();
@@ -31018,14 +36477,26 @@ static NativeArtifact compile_native_artifact(
         const string interface_text = read_text_file(
             provider_interface, "MOSS_INTERFACE_ERROR");
         const string digest = source_free_declared_digest(interface_text);
-        if (digest.size() != 64 ||
+        const bool v10 = staged_abi_v10();
+        if (v10) {
+          try {
+            abi_v10::decode(interface_text);
+          } catch (const abi_v10::Error& error) {
+            throw ProjectError("MOSS_INTERFACE_ERROR",
+                string("generated ABI-v10 provider interface is invalid: ") +
+                    error.what(), provider_interface.string());
+          }
+        } else if (digest.size() != 64 ||
             source_free_contract_sha256(
                 source_free_contract_material(interface_text)) != digest)
           throw ProjectError("MOSS_INTERFACE_ERROR",
               "generated ABI-v9 provider interface has an invalid digest",
               provider_interface.string());
-        const string marker = source_free_contract_marker(module, digest);
-        generated += "\n#[used]\n#[no_mangle]\npub static __moss_abi_v9_contract_" +
+        const string marker = v10
+            ? abi_v10::provider_marker(tooling_name(module), digest)
+            : source_free_contract_marker(module, digest);
+        generated += string("\n#[used]\n#[no_mangle]\npub static __moss_abi_") +
+            (v10 ? "v10" : "v9") + "_contract_" +
             tooling_name(module) + ": [u8; " +
             std::to_string(marker.size()) + "] = *b\"" + marker + "\";\n";
       }
@@ -31230,6 +36701,42 @@ static SourceCompilationContext analyze_source_context(
                                  .lexically_normal();
   auto root = find_project_root(context.requested_source);
   if (!root) {
+    std::ifstream input_file(context.requested_source);
+    if (input_file) {
+      try {
+        Program parsed = Parser(lex_lines(input_file, context.requested_source.string())).parse();
+        bool found_local_import = false;
+        std::vector<std::filesystem::path> local_sources = {context.requested_source};
+        std::set<string> seen_modules;
+        vector<string> pending_imports;
+        for (const auto& imp : parsed.imports) pending_imports.push_back(imp.name);
+        while (!pending_imports.empty()) {
+          string mod_name = pending_imports.back();
+          pending_imports.pop_back();
+          if (!seen_modules.insert(mod_name).second) continue;
+          auto local_mod = (context.requested_source.parent_path() / (mod_name + ".moss")).lexically_normal();
+          std::error_code ec;
+          if (std::filesystem::is_regular_file(local_mod, ec)) {
+            found_local_import = true;
+            local_sources.push_back(local_mod);
+            std::ifstream mod_file(local_mod);
+            if (mod_file) {
+              Program mod_parsed = Parser(lex_lines(mod_file, local_mod.string())).parse();
+              for (const auto& imp : mod_parsed.imports) pending_imports.push_back(imp.name);
+            }
+          }
+        }
+        if (found_local_import) {
+          context.project = true;
+          context.manifest.root = context.requested_source.parent_path();
+          context.manifest.name = context.requested_source.stem().string();
+          context.manifest.source = ".";
+          context.sources = std::move(local_sources);
+          context.mode = ProgramGenerationMode::Application;
+          return context;
+        }
+      } catch (...) {}
+    }
     context.sources = {context.requested_source};
     return context;
   }

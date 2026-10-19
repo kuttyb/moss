@@ -1,0 +1,22 @@
+type KeyA:
+  id: Int
+
+  fn isequal(other: KeyA) -> Bool:
+    return id == other.id
+
+  fn hash() -> Int:
+    return id
+
+type KeyB:
+  id: Int
+
+  fn isequal(other: KeyB) -> Bool:
+    return id == other.id
+
+  fn hash() -> Int:
+    return id
+
+fn main():
+  var entries = Map()
+  entries[KeyA(id: 1)] = 7
+  echo entries.get(KeyB(id: 1), 0)

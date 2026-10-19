@@ -1,0 +1,5 @@
+type Bag:
+  values: Vector[Map[String, Vector[Int]]]
+
+fn main():
+  pass

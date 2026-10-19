@@ -1,0 +1,17 @@
+# Forward negative test for Moss-level private field visibility (Phase 25 G1/G2 milestone).
+#
+# Context: Under the selected Phase 25 A1 design, lowered Rust records use mechanical
+# `pub field_0: T` fields so consumer crates can generate direct free functions.
+# However, source-level access control is enforced by the Moss compiler frontend:
+# accessing an unexported or private field from outside its defining module must be
+# rejected with a compile-time diagnostic (e.g. `FIELD_VISIBILITY_ERROR`).
+#
+# Note: Full physical opacity / encapsulation across package boundaries belongs to
+# Phase 25.5 (D1/D2). In Phase 25, Moss-level symbol visibility provides module boundary safety.
+
+import provider_module
+
+fn main():
+  var record = provider_module.make_record(42)
+  # Unexported or private field access must be rejected by `moss check` before native emission:
+  echo record.secret_field

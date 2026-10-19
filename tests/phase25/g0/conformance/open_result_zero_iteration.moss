@@ -1,0 +1,12 @@
+fn fresh():
+  return []
+
+fn make(flag: Bool):
+  values = fresh()
+  if flag:
+    values.push(1)
+  return values
+
+fn main():
+  result = make(false)
+  echo result |> count

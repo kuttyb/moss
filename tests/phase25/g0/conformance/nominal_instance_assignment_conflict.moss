@@ -1,0 +1,7 @@
+type Box:
+  value
+
+fn main():
+  var b1 = Box(value: 1)
+  var b2 = Box(value: "hello")
+  b1 = b2

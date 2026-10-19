@@ -1721,6 +1721,79 @@ class FastInterpreter {
         continue;
       }
       if (statement.kind == Stmt::Kind::Else) { ++index; continue; }
+      if (statement.kind == Stmt::Kind::For) {
+        size_t body_end = index + 1;
+        while (body_end < end && statements[body_end].indent > statement.indent)
+          ++body_end;
+        const auto old_local = frame.locals.find(statement.a);
+        const std::optional<Value> prior_value = old_local == frame.locals.end()
+            ? std::nullopt : std::optional<Value>(old_local->second);
+        const auto old_type = frame.local_types.find(statement.a);
+        const std::optional<std::string> prior_type = old_type == frame.local_types.end()
+            ? std::nullopt : std::optional<std::string>(old_type->second);
+        const auto old_alias = frame.aliases.find(statement.a);
+        const std::optional<Place> prior_alias = old_alias == frame.aliases.end()
+            ? std::nullopt : std::optional<Place>(old_alias->second);
+        const auto restore = [&] {
+          if (prior_value) frame.locals[statement.a] = *prior_value;
+          else frame.locals.erase(statement.a);
+          if (prior_type) frame.local_types[statement.a] = *prior_type;
+          else frame.local_types.erase(statement.a);
+          if (prior_alias) frame.aliases[statement.a] = *prior_alias;
+          else frame.aliases.erase(statement.a);
+        };
+        size_t iterations = 0;
+        const auto iteration = [&](Value value, const std::string& type) -> Flow {
+          if (++iterations > 10000000)
+            throw RuntimeError(statement.line, "interpreter loop exceeded safety limit");
+          frame.aliases.erase(statement.a);
+          frame.locals[statement.a] = std::move(value);
+          frame.local_types[statement.a] = type;
+          int loop_id = emit("LoopIteration", frame, statement.line,
+                             std::to_string(iterations));
+          EventScope loop_scope(*this, loop_id, false, false, true);
+          return execute(statements, frame, output, index + 1, body_end);
+        };
+        try {
+          std::string callee;
+          std::vector<std::string> arguments;
+          if (parse_call(trim_copy(statement.b), callee, arguments) &&
+              callee == "range") {
+            if (arguments.size() != 2 && arguments.size() != 3)
+              throw RuntimeError(statement.line, "range requires two or three arguments");
+            const Value start = eval(arguments[0], frame, statement.line, output);
+            const Value finish = eval(arguments[1], frame, statement.line, output);
+            const Value stride = arguments.size() == 3
+                ? eval(arguments[2], frame, statement.line, output)
+                : Value::int_value(1);
+            if (start.kind != Value::Kind::Int || finish.kind != Value::Kind::Int ||
+                stride.kind != Value::Kind::Int || stride.integer <= 0)
+              throw RuntimeError(statement.line, "range bounds and positive step must be Int");
+            std::int64_t current = start.integer;
+            while (current < finish.integer) {
+              Flow flow = iteration(Value::int_value(current), "int");
+              if (flow.returned) { restore(); return flow; }
+              if (current > std::numeric_limits<std::int64_t>::max() - stride.integer)
+                break;
+              current += stride.integer;
+            }
+          } else {
+            Value source = eval(statement.b, frame, statement.line, output);
+            if (source.kind != Value::Kind::Vector || !source.vector)
+              throw RuntimeError(statement.line,
+                                 "Fast Debug cannot iterate this checked source");
+            const std::string element_type = !statement.semantic_type.empty()
+                ? statement.semantic_type : source.element_type;
+            for (size_t item = 0; item < source.vector->size(); ++item) {
+              Flow flow = iteration(independent((*source.vector)[item]), element_type);
+              if (flow.returned) { restore(); return flow; }
+            }
+          }
+        } catch (...) { restore(); throw; }
+        restore();
+        index = body_end;
+        continue;
+      }
       if (statement.kind == Stmt::Kind::While) {
         size_t body_end = index + 1;
         while (body_end < end && statements[body_end].indent > statement.indent) ++body_end;
@@ -1831,7 +1904,6 @@ class FastInterpreter {
           throw raised;
         }
         case Stmt::Kind::For:
-          throw RuntimeError(statement.line, "Fast Debug does not support for iteration yet");
         case Stmt::Kind::Try:
         case Stmt::Kind::Recover:
         case Stmt::Kind::If:

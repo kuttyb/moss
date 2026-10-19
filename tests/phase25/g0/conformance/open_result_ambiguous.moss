@@ -1,0 +1,6 @@
+fn fresh():
+  return []
+
+fn main():
+  unused = fresh()
+  echo "unreachable acceptance marker"

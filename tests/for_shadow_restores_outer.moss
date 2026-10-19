@@ -1,0 +1,13 @@
+# A for variable is scoped to its body. On exit, a binding it shadowed keeps
+# its own type and value; the loop must not erase it at the join.
+fn shadow_parameter(n: Int) -> Int:
+  for n in [7, 8, 9]:
+    echo n
+  return n
+
+fn main():
+  label = "text"
+  for label in [1, 2]:
+    echo label
+  echo label
+  echo shadow_parameter(5)
