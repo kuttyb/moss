@@ -1,0 +1,128 @@
+{
+  "schema": "phase25-source-free-generic-corpus-v1",
+  "abi_mode": "staged-v10",
+  "cases": [
+    {
+      "id": "parameter-return",
+      "priority": "P1-essential",
+      "category": "parameter return",
+      "provider": "module Service\n\nexport fn fresh(value):\n  return value\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(17)\n  echo Service.fresh(\"moss\")\n",
+      "expected_output": "17\nmoss\n",
+      "checked_body_status": "unsupported; ABI-v10 legacy reconstruction required",
+      "evidence": "No general parameter-return projection test; H3 decoder recognizes parameter nodes but importer has no parameter-return lowering case."
+    },
+    {
+      "id": "scalar-literal",
+      "priority": "P1-essential",
+      "category": "scalar expression",
+      "provider": "module Service\n\nexport fn fresh(value):\n  return true\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(17)\n",
+      "expected_output": "true\n",
+      "checked_body_status": "unsupported; ABI-v10 legacy reconstruction required",
+      "evidence": "Checked H3 decoder has no Bool literal node coverage."
+    },
+    {
+      "id": "field-read",
+      "priority": "P1-essential",
+      "category": "generic field access",
+      "provider": "module Service\n\nexport type Box:\n  value\n\nexport fn fresh(item: Box):\n  return item.value\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  item = Service.Box(value: 23)\n  echo Service.fresh(item)\n",
+      "expected_output": "23\n",
+      "checked_body_status": "unsupported; ABI-v10 legacy reconstruction required",
+      "evidence": "H3 Scenario 6 exercises relay field access through retained generic_stmt; no checked-body field-read projection test exists."
+    },
+    {
+      "id": "single-call",
+      "priority": "P1-essential",
+      "category": "generic call",
+      "provider": "module Service\n\nfn helper(value):\n  return value\n\nexport fn fresh(value):\n  return helper(value)\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(31)\n",
+      "expected_output": "31\n",
+      "checked_body_status": "unsupported; ABI-v10 legacy reconstruction required",
+      "evidence": "H3 covers a two-statement private helper chain; a direct return-call body has no checked-body acceptance case."
+    },
+    {
+      "id": "collection-loop-equality-index",
+      "priority": "P1-sdk-essential",
+      "category": "collection method and operations",
+      "provider": "module Service\n\nexport fn fresh(items, target) -> Int:\n  var index = 0\n  count = items |> count\n  while index < count:\n    if items[index] == target:\n      return index\n    index = index + 1\n  return 0 - 1\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh([8, 3, 8], 3)\n  echo Service.fresh([8, 3, 8], 9)\n",
+      "expected_output": "1\n-1\n",
+      "checked_body_status": "unsupported; ABI-v10 legacy reconstruction required",
+      "evidence": "sdk/foundations/collections exports generic index_of/contains/count_equal with loops, indexing and equality; its current compiled-only smoke test is ABI-v9 and does not prove ABI-v10 checked-body execution."
+    },
+    {
+      "id": "generic-range-iteration",
+      "priority": "P1-sdk-essential",
+      "category": "other: generic iterator body",
+      "provider": "module Service\n\nfn is_value(value: Int) -> Bool:\n  return true\n\nexport fn fresh(data):\n  var result = Vector[Int]()\n  for value in data:\n    assert(is_value(value))\n    result.push(value)\n  return result\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(range(1, 4))\n",
+      "expected_output": "[1, 2, 3]\n",
+      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "checked_body_status": "provider rejects this multi-statement generic body in staged ABI-v10 before an artifact is emitted",
+      "evidence": "sdk/foundations/bytes/src/bytes.moss exports generic from_range(data), with a for loop and vector mutation, and its range_copy example calls it with a borrowed Range. No ABI-v10 checked-body acceptance test covers this shape."
+    }
+  ],
+  "already-covered": [
+    {
+      "id": "arithmetic-T-times-int-plus-int",
+      "category": "scalar arithmetic",
+      "test": "tests/tooling/check_phase25_c2b6c_source_free_arithmetic.py",
+      "coverage": "checked-body source-free Int/Float execution; legacy body absent for compute; missing/mismatched body negatives"
+    },
+    {
+      "id": "direct-record-constructor",
+      "category": "constructor",
+      "test": "tests/tooling/check_phase25_h3_direct_records.py",
+      "coverage": "poisons/removes legacy generic_stmt and executes Int/String consumers"
+    },
+    {
+      "id": "private-helper-constructor-chain",
+      "category": "generic call and constructor",
+      "test": "tests/tooling/check_phase25_h3_source_free_chain.py",
+      "coverage": "poisons checked helper-chain legacy bodies, source-free Int/String execution, missing dependency/body negative"
+    },
+    {
+      "id": "empty-vector",
+      "category": "collection literal",
+      "test": "tests/tooling/check_phase25_r2c_empty_vector_consumer.py",
+      "coverage": "Vector[Int]/Vector[Bool] source-free execution with projection trace; malformed/missing/mismatched record negatives"
+    },
+    {
+      "id": "sdk-generic-collections-v9",
+      "category": "collection methods",
+      "test": "sdk/foundations/collections/tests/check_source_free.py",
+      "abi_mode": "v9",
+      "coverage": "ABI-v9 compiled-only source-free execution of generic index_of, count_equal and contains; useful compatibility baseline, not ABI-v10 checked-body evidence"
+    }
+  ],
+  "sdk-generic-exports": [
+    {
+      "package": "sdk/foundations/collections",
+      "source": "src/collections.moss",
+      "callables": ["index_of", "contains", "count_equal"],
+      "current_test": "tests/check_source_free.py",
+      "abi_v10_checked_body_status": "uncovered; each uses a multi-statement generic loop with indexing and equality",
+      "cutover_priority": "P1-sdk-essential"
+    },
+    {
+      "package": "sdk/foundations/bytes",
+      "source": "src/bytes.moss",
+      "callables": ["from_range"],
+      "current_test": "examples/range_copy/src/main.moss",
+      "abi_v10_checked_body_status": "staged provider build rejected with SOURCE_FREE_CHECKED_BODY_UNAVAILABLE; generic iteration and vector mutation",
+      "cutover_priority": "P1-sdk-essential"
+    }
+  ],
+  "deferred": [
+    {
+      "category": "general control flow, mutation, message/effectful bodies",
+      "reason": "No current Phase 25 acceptance evidence requires complete AST serialization; add only as a selected generic workload needs it."
+    },
+    {
+      "category": "arbitrary collection/map/queue operations and iterator protocols",
+      "reason": "Coverage is broad and includes ordinary concrete SDK functions; the initial cutover should start with the exported generic SDK helpers listed above, then expand from source-free tests."
+    }
+  ]
+}

@@ -45,6 +45,7 @@ with tempfile.TemporaryDirectory(prefix="phase25-h3-chain-", dir=TMP) as td:
             ("tests/tooling/check_phase25_h3_chain_records.cpp", verifier),
             ("tests/tooling/check_phase25_h3_poison_legacy.cpp", poison)):
         command(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
+                 "-Wno-missing-field-initializers",
                  "-pedantic", "-Isrc", source, "-o", str(output)])
 
     env = os.environ.copy()
