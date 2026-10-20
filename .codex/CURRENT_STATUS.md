@@ -1,5 +1,26 @@
 # Moss current status
 
+## Phase 25-M2b.3c integration — 2026-10-19
+
+`phase25-integration` was confirmed at expected baseline
+`d9eb3668f8deefa9f6f0061307ac423ad061f8af` and fast-forwarded to reviewed
+M2b.3c HEAD `323f625d78cb1552b4c2a51712e0743539e7c7a0`. The reviewed HEAD
+includes M2b.3c compiler implementation and the scoped test-poisoner
+correction; integration added no compiler changes. The `single-call` corpus
+removed exactly one legacy body each from `fresh` and `helper`, retained both
+checked-body projection traces, and executed Int/String consumers with output
+`31` and `moss`. ABI-v9 compatibility passed; SDK collections remain on their
+existing ABI-v9 path, and uncovered loop/range rows remain legacy-dependent or
+unsupported.
+
+Focused integration validation passed: source-free corpus; H3 direct records,
+private chain, and checked-body importer; R2b emission; R2c consumer; M2b.1
+provenance; G2 conformance (11/11); checked-arithmetic source-free acceptance;
+and H3 Scenario 6 (1/1). The checked-body IR suite passed with
+`-Wno-missing-field-initializers`; its unmodified runner still fails because
+existing `TypeSolver::Undo::binding` aggregate warnings are promoted by
+`-Werror`. No full repository suite was run.
+
 ## M2b.3c scoped legacy-body poisoner correction — 2026-10-19
 
 On `phase25-m2b3c-direct-call`, the source-free corpus poisoner now follows
