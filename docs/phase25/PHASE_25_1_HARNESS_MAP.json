@@ -1133,8 +1133,8 @@
       "discovery_reasons": [
         "ABI artifact assertion"
       ],
-      "disposition": "sdk-source-free-candidate",
-      "rationale": "SDK source-free marker candidate; generic export selection is explicitly listed in source_free_sdk_harnesses where selected."
+      "disposition": "source-backed-native-sdk-acceptance",
+      "rationale": "Builds a native consumer with a path dependency on sdk/fs; provider source remains available and is not an ABI-v9 source-free test. It exercises concrete FileIO APIs and does not select any of the four inventoried open generic exports."
     },
     {
       "path": "sdk/fs/tests/check_source_free.py",

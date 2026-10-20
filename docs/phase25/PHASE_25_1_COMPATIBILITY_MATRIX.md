@@ -2,8 +2,10 @@
 
 Updated 2026-10-20. R0 checkpoint `19ffd638` received NO-GO; the revision
 `ad935043` closed its surface and stage findings, but re-review found an omitted
-source-free generic harness map entry. This revision maps that and related
-controls and corrects the oracle count; fresh independent review is pending. The expanded oracle
+source-free generic harness map entry. Mapping closure at `ecd4d99` also
+required closing P251-GEN-006 separately from the P2 `packages/time` issue and
+reclassifying `sdk/fs/tests/check_native.py` as source-backed native acceptance.
+This revision records those corrections and awaits fresh independent review. The expanded oracle
 uses compiler SHA `19ffd63822f08c255cde231b590828a986e9a00b`; package inventory
 artifacts were built at `43973e1adfdf015d5588e85f41d986925a85a565`, with no
 compiler source changes between those commits. This is not a v10 readiness
@@ -85,6 +87,7 @@ The full commands, build logs, outputs, hashes and stage diagnostics are in
 | Queue `.push` on an open generic receiver | Source-backed probe rejects with `MOSS_COMPILE_ERROR` / `unresolved statically dispatched method 'values.push'`; concrete Queue calls remain valid. | Not run as v10 because this exact generic form is invalid. | `invalid-by-language`; P251-GEN-010. |
 | Exhaustive enum `match` on an untyped open parameter | Source-backed specialization fails with `TYPE_INFERENCE_FAILED`; the generic parameter remains unclosed. | Not run as v10 because this exact generic form is invalid. | `invalid-by-language`; P251-GEN-011. |
 | Production package exports and existing source-free consumers | 26 roots inventoried; 25 build, one source failure; four open generic callables identified. The selected callable mappings are explicit; 71 marker/name candidates are catalogued. | Three collection helpers have v10 proof; bytes has explicit red result. R2c and mixed-admission tests are included despite lacking `source_free` in their names. | Inventory gap `packages/time` remains P2; no discovered generic export silently omitted. |
+| Filesystem native SDK acceptance | `sdk/fs/tests/check_native.py` builds a native consumer with the path dependency and provider source available; it exercises concrete FileIO calls and selects no inventoried open generic export. | Not a source-free or generic checked-body parity claim. | Source-backed native control only. |
 | Phase 24 imported generic expressions (`probe.make`, `contains`, `index_of`) | ABI-v9 source-backed and source-free checks pass after provider source removal; compiled-only consumer executes nominal construction/field access, Vector count/index loops, assertions, and nested generic calls in Debug/Release. | No v10 claim in this legacy harness; D3/D4 provide the actual SDK v10 collection exports. | Existing ABI-v9 source-free generic coverage, mapped from `tests/tooling/check_phase24_imported_generic_expressions.py`. |
 | Existing cross-crate generic, Range, and effects controls | Phase 15.9 proves v9 wrapper/helper/structural trait specialization with provider source hidden; Phase 20 separately proves generic Range member use source-free; Phase 21 preserves generic raise-set and enum identity in v9 artifacts. | These legacy fixtures do not establish the staged-v10 checked-body contract; the three-mode R0 oracle and later R gates do. | Mapped in `PHASE_25_1_HARNESS_MAP.json`. |
 | Team A and typed semantic API generic source-free controls | Team A v9 proves fresh/relay/member calls after provider source deletion; typed API captures imported open summaries and dependencies. | Team A and typed API include v10 fresh positive behind `MOSS_PHASE25_EMPTY_VECTOR_EMIT=1` plus relay/member and unsupported body rejection; not default unflagged readiness evidence. | Existing specialized controls, mapped in `PHASE_25_1_HARNESS_MAP.json`. |

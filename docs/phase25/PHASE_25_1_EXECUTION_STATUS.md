@@ -65,7 +65,11 @@ was NO-GO and the surface/stage findings were remediated at
 NO-GO on a P1: `check_phase24_imported_generic_expressions.py` and the Team A /
 typed-semantic generic source-free controls were not mapped. It also identified
 a P2 stale 17-case sentence. The working revision maps those harnesses and every
-one of the 71 catalog paths, corrects the count to 19, and awaits a fresh review.
+one of the 71 catalog paths and corrects the count to 19. Re-review confirms
+the mapping closure but requires P251-GEN-006 to be closed/split from the P2
+`packages/time` issue and `sdk/fs/tests/check_native.py` to be reclassified as
+source-backed native acceptance. Those metadata fixes are in the current
+revision; fresh review remains pending.
 The revision expands marker-based source-free harness discovery
 (71 paths), maps selected SDK and advanced-data calls, and makes the
 generic-Vector-iteration corpus assert v10 provider artifact emission before

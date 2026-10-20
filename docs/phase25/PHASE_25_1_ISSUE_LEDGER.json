@@ -85,18 +85,18 @@
     {
       "id": "P251-GEN-006",
       "severity": "P1",
-      "status": "baseline-inventory-gap",
-      "workload": "All production SDK/package generic exports, source-free harnesses and the 14-provider advanced-data closure",
-      "symptom": "Inventory has 26 package roots, 4 open generic exports, and 71 discovered source-free/ABI harness candidates. The 14-provider v9 gate passes, but its concrete API fixture selects no open generic export. `packages/time` remains a P2 build failure and cannot be counted as zero generic exports.",
+      "status": "closed-inventory-and-harness-map",
+      "workload": "Production package generic-export inventory and source-free harness discovery/map",
+      "symptom": "Resolved: 25 successfully built roots expose four open generic exports, and every one has explicit callable evidence; all 71 marker candidates have an explicit catalog disposition. The advanced-data v9 consumer is mapped as concrete API coverage and selects no open generic export. The independent packages/time source-build failure remains separately tracked as P251-GEN-008 P2.",
       "source_evidence": [
         "tests/phase25/compatibility/inventory.py",
         "docs/phase25/PHASE_25_1_GENERIC_INVENTORY.json",
         "docs/phase25/PHASE_25_1_HARNESS_MAP.json",
         "sdk/advanced-data-acceptance/check_source_free.py"
       ],
-      "r0_action": "Marker-based discovery now includes the previously missed R2c and mixed-admission harnesses. The explicit harness map distinguishes selected open generic callables from concrete API coverage. Keep packages/time red until independently classified.",
+      "r0_action": "Closed at the mapped inventory checkpoint. No further R0 gate impact; packages/time remains an R4 inventory risk until its build issue is resolved or its generic surface is independently established.",
       "owner": "Coordinator",
-      "critical_path": "R0/R4"
+      "critical_path": "none"
     },
     {
       "id": "P251-GEN-007",
@@ -128,7 +128,7 @@
       "existing_v9_harness": null,
       "r0_action": "Retain the exact baseline failure; no source-free generic consumer is currently indexed for this package. Reassess after remaining production consumer mapping, and do not silently count the package as having no generic exports.",
       "owner": "Coordinator",
-      "critical_path": "R0/R4"
+      "critical_path": "R4"
     },
     {
       "id": "P251-GEN-009",

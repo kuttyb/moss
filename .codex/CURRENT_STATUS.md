@@ -16,8 +16,11 @@ Those first P1 findings were addressed at `ad935043dd1661d7a77acc90e2ab43b84625b
 its re-review closed the surface and stage assertions but found the explicit map
 omitted source-free generic harnesses, including Phase 24, Team A, and typed
 semantic API controls. Matrix wording also still said 17 cases. The current
-revision maps the omitted harnesses and all 71 catalog paths; it is pending a
-fresh review. The working revision adds a 71-path marker inventory and explicit harness map;
+revision maps the omitted harnesses and all 71 catalog paths. Re-review found
+P251-GEN-006 still incorrectly open and `sdk/fs/tests/check_native.py`
+misclassified as source-free; this revision closes GEN-006 while retaining the
+`packages/time` issue as P2 and corrects the native-test label. A fresh review
+is pending. The working revision adds a 71-path marker inventory and explicit harness map;
 its hostile corpus now requires a v10 provider artifact before source-free
 consumer rejection. Expanded three-mode evidence covers 19 cases (38 profiles
 per mode): source-backed 38/38, ABI-v9 36/38, and ABI-v10 12/38. The two ABI-v9
