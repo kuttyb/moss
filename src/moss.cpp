@@ -4874,6 +4874,51 @@ class Checker {
   // environment remains a projection for older walkers and lowering; it is
   // never used to recreate the term of a local already present here.
   struct BodyTypeState {
+    struct ExpressionOccurrence {
+      std::uint32_t id = 0;
+      std::uint32_t statement_id = 0;
+      std::uint32_t parent_id = UINT32_MAX;
+      std::uint32_t child_ordinal = 0;
+      std::uint32_t child_count = 0;
+      int line = 0;
+      string root_slot;
+      bool completed = false;
+    };
+    std::unordered_map<const Stmt*, std::uint32_t> statement_occurrence_ids;
+    std::map<std::pair<std::uint32_t, string>, std::uint32_t>
+        expression_root_slots;
+    vector<ExpressionOccurrence> expression_occurrences;
+    vector<std::uint32_t> active_expression_occurrences;
+    std::unordered_map<std::uint32_t, std::uint32_t>
+        operation_counts_by_occurrence;
+    bool expression_occurrence_ledger_complete = true;
+
+    std::uint32_t statement_occurrence_id(const Stmt& statement) {
+      auto found = statement_occurrence_ids.find(&statement);
+      if (found != statement_occurrence_ids.end()) return found->second;
+      const auto id = static_cast<std::uint32_t>(statement_occurrence_ids.size());
+      statement_occurrence_ids.emplace(&statement, id);
+      return id;
+    }
+
+    bool has_expression_root(const Stmt& statement, const string& slot) const {
+      auto statement_id = statement_occurrence_ids.find(&statement);
+      if (statement_id == statement_occurrence_ids.end()) return false;
+      return expression_root_slots.count({statement_id->second, slot}) != 0;
+    }
+
+    void attach_open_operation(
+        moss::OpenCallableSummaryFacts::OperationFact operation) {
+      if (active_expression_occurrences.empty()) {
+        expression_occurrence_ledger_complete = false;
+      } else {
+        const auto occurrence = active_expression_occurrences.back();
+        operation.expression_occurrence_id = occurrence;
+        operation.occurrence_ordinal = operation_counts_by_occurrence[occurrence]++;
+      }
+      open_operations.push_back(std::move(operation));
+    }
+
     struct BindingFact {
       bool introduced = false;
       bool mutable_binding = false;
@@ -7659,8 +7704,9 @@ class Checker {
         TypeEnv final_env = check_stmts(method.body, std::move(entry_env), nullptr,
                                         nullptr, &method_function);
         if (method.result_expression)
-          check_expression(method.result_line ? method.result_line : method.line,
-                           *method.result_expression, final_env);
+          check_expression_root_in_body(method.body,
+              method.result_line ? method.result_line : method.line,
+              *method.result_expression, final_env, "return-value");
         if (!method.return_type && has_value_return)
           err(method_source, method.line, "cannot infer return type for method '" + object.name + "." + method.name + "'");
       }
@@ -8583,7 +8629,9 @@ class Checker {
       check_ownership_expression(f.result_line ? f.result_line : f.line,
                                  *f.result_expression, final_ownership,
                                  Effect::Consume);
-      check_expression(f.result_line ? f.result_line : f.line, *f.result_expression, env);
+      check_expression_root_in_body(f.body,
+          f.result_line ? f.result_line : f.line,
+          *f.result_expression, env, "return-value");
       auto actual = inferred_expr_type(*f.result_expression, env);
       if (!actual && !f.generic && !f.static_dispatch)
         err(f.result_line ? f.result_line : f.line,
@@ -21747,11 +21795,11 @@ class Checker {
       if (!receiver) receiver = inferred_expr_term(parsed->source, env);
       if (receiver) for (const auto& stage : parsed->stages) {
         if (stage.kind == FunctionalNodeKind::Count) {
-          current_body_types_->open_operations.push_back({
+          current_body_types_->attach_open_operation({
               "builtin:collection-count-v1", receiver, {},
               moss::Type::primitive("int"), line});
         } else {
-          current_body_types_->open_operations.push_back({
+          current_body_types_->attach_open_operation({
               string("functional:") + functional_node_name(stage.kind), receiver, {},
               nullptr, line});
         }
@@ -21962,7 +22010,7 @@ class Checker {
     auto resolved_right = current_body_types_->solver.resolve(right);
     if (!resolved_left || !resolved_right ||
         (resolved_left->is_closed() && resolved_right->is_closed())) return;
-    current_body_types_->open_operations.push_back({
+    current_body_types_->attach_open_operation({
         "operator:" + operation_id, left, {right}, nullptr, line});
   }
 
@@ -21974,13 +22022,61 @@ class Checker {
     if (!term) term = inferred_expr_term(operand, env);
     auto resolved = term ? current_body_types_->solver.resolve(term) : nullptr;
     if (resolved && !resolved->is_closed())
-      current_body_types_->open_operations.push_back({
+      current_body_types_->attach_open_operation({
           "operator:" + operation_id, term, {}, nullptr, line});
   }
 
   void check_expression(int line, const string& expression,
-                        const std::unordered_map<string,string>& env) {
+                        const std::unordered_map<string,string>& env,
+                        std::string_view root_slot = {}) {
     string original = trim(expression);
+    BodyTypeState* occurrence_state = current_body_types_;
+    bool capture_occurrence = occurrence_state && current_check_statement_ &&
+        !checking_specialization_ &&
+        (!occurrence_state->active_expression_occurrences.empty() ||
+         !root_slot.empty());
+    if (capture_occurrence) {
+      BodyTypeState::ExpressionOccurrence occurrence;
+      occurrence.id = static_cast<std::uint32_t>(
+          occurrence_state->expression_occurrences.size());
+      occurrence.statement_id =
+          occurrence_state->statement_occurrence_id(*current_check_statement_);
+      occurrence.line = line;
+      if (occurrence_state->active_expression_occurrences.empty()) {
+        occurrence.root_slot = string(root_slot);
+        const auto key = std::make_pair(occurrence.statement_id,
+                                        occurrence.root_slot);
+        if (!occurrence_state->expression_root_slots.emplace(
+                key, occurrence.id).second)
+          occurrence_state->expression_occurrence_ledger_complete = false;
+      } else {
+        occurrence.parent_id =
+            occurrence_state->active_expression_occurrences.back();
+        auto& parent = occurrence_state->expression_occurrences.at(
+            occurrence.parent_id);
+        occurrence.child_ordinal = parent.child_count++;
+      }
+      occurrence_state->expression_occurrences.push_back(std::move(occurrence));
+      occurrence_state->active_expression_occurrences.push_back(
+          static_cast<std::uint32_t>(
+              occurrence_state->expression_occurrences.size() - 1));
+    }
+    struct ExpressionOccurrenceScope {
+      BodyTypeState* state;
+      bool active;
+      ExpressionOccurrenceScope(BodyTypeState* value, bool enabled)
+          : state(value), active(enabled) {}
+      ~ExpressionOccurrenceScope() {
+        if (!active || !state) return;
+        if (state->active_expression_occurrences.empty()) {
+          state->expression_occurrence_ledger_complete = false;
+          return;
+        }
+        const auto id = state->active_expression_occurrences.back();
+        state->active_expression_occurrences.pop_back();
+        state->expression_occurrences.at(id).completed = true;
+      }
+    } occurrence_scope(occurrence_state, capture_occurrence);
     if (starts_with(original, "match "))
       err(line, "match is a statement, not an expression",
           "MATCH_EXPRESSION_UNSUPPORTED");
@@ -22110,7 +22206,7 @@ class Checker {
           operation.line = line;
           for (auto term = element_terms.begin(); term != element_terms.end(); ++term)
             if (term != open) operation.arguments.push_back(*term);
-          current_body_types_->open_operations.push_back(std::move(operation));
+          current_body_types_->attach_open_operation(std::move(operation));
         }
       }
       return;
@@ -22236,6 +22332,12 @@ class Checker {
             requirement.argument_access.push_back(moss::AccessMode::Read);
             requirement.result = moss::Type::primitive("bool");
             requirement.origin.line = line;
+            if (current_body_types_->active_expression_occurrences.empty()) {
+              current_body_types_->expression_occurrence_ledger_complete = false;
+            } else {
+              requirement.expression_occurrence_id =
+                  current_body_types_->active_expression_occurrences.back();
+            }
             current_body_types_->open_operator_requirements.push_back(
                 std::move(requirement));
           }
@@ -22406,7 +22508,7 @@ class Checker {
         auto resolved_receiver = receiver_term
             ? current_body_types_->solver.resolve(receiver_term) : nullptr;
         if (resolved_receiver && !resolved_receiver->is_closed())
-          current_body_types_->open_operations.push_back({
+          current_body_types_->attach_open_operation({
               "method:" + handler, receiver_term, {}, nullptr, line});
       }
       if (scalar_type_name(receiver) &&
@@ -22554,7 +22656,7 @@ class Checker {
           if (resolved_receiver &&
               resolved_receiver->kind == moss::TypeKind::Builtin &&
               resolved_receiver->name == "vector")
-            current_body_types_->open_operations.push_back({
+            current_body_types_->attach_open_operation({
                 "builtin:index", receiver, {key}, element, line});
         }
       }
@@ -22731,7 +22833,7 @@ class Checker {
           for (auto term = argument_terms.begin(); term != argument_terms.end();
                ++term)
             if (term != open) operation.arguments.push_back(*term);
-          current_body_types_->open_operations.push_back(std::move(operation));
+          current_body_types_->attach_open_operation(std::move(operation));
         }
       }
       if (callee == "sort" && !functions_.count(callee)) {
@@ -22818,6 +22920,50 @@ class Checker {
         !traits_.count(value) && !env.count(value)) {
       err(line, "unknown identifier '" + value + "'");
     }
+  }
+
+  void check_expression_root_in_body(const vector<Stmt>& body, int line,
+                                     const string& expression,
+                                     const TypeEnv& env,
+                                     const string& root_slot) {
+    auto retained = checked_body_states_.find(&body);
+    if (retained == checked_body_states_.end() || !retained->second) {
+      check_expression(line, expression, env);
+      return;
+    }
+    Stmt synthetic_return;
+    synthetic_return.kind = Stmt::Kind::Return;
+    synthetic_return.line = line;
+    synthetic_return.a = expression;
+    synthetic_return.text = "return " + expression;
+    BodyTypeScope body_scope(current_body_types_, retained->second.get());
+    struct StatementScope {
+      const Stmt*& slot;
+      string& context;
+      const Stmt* prior_statement;
+      string prior_context;
+      StatementScope(const Stmt*& target, string& target_context,
+                     const Stmt& statement)
+          : slot(target), context(target_context), prior_statement(target),
+            prior_context(target_context) {
+        slot = &statement;
+        context.clear();
+      }
+      ~StatementScope() {
+        slot = prior_statement;
+        context = std::move(prior_context);
+      }
+    } statement_scope(current_check_statement_, current_check_body_context_,
+                      synthetic_return);
+    retained->second->statement_occurrence_id(synthetic_return);
+    struct SyntheticStatementRegistration {
+      BodyTypeState& state;
+      const Stmt& statement;
+      ~SyntheticStatementRegistration() {
+        state.statement_occurrence_ids.erase(&statement);
+      }
+    } registration{*retained->second, synthetic_return};
+    check_expression(line, expression, env, root_slot);
   }
 
   std::optional<string> iterator_element_type(int line, const string& source,
@@ -22909,14 +23055,19 @@ class Checker {
                 : vector<const Method*>{factory};
   }
 
-  void check_for_source(int line, const string& source, const TypeEnv& env) {
+  void check_for_source(int line, const string& source, const TypeEnv& env,
+                        std::string_view root_slot = {}) {
     string callee;
     vector<string> arguments;
     if (parse_simple_call(trim(source), callee, arguments) && callee == "range") {
       check_function_call(line, callee, arguments, env);
-      for (const auto& argument : arguments) check_expression(line, argument, env);
+      for (size_t index = 0; index < arguments.size(); ++index) {
+        const string slot = "for-range-argument:" + std::to_string(index);
+        check_expression(line, arguments[index], env,
+            root_slot.empty() ? std::string_view{} : std::string_view(slot));
+      }
     } else {
-      check_expression(line, source, env);
+      check_expression(line, source, env, root_slot);
     }
     (void)iterator_element_type(line, source, env);
     for (const Method* method : implicit_iterator_methods(source, env))
@@ -23004,6 +23155,7 @@ class Checker {
       } checked_statement_scope(current_check_statement_,
                                 current_check_body_context_, statement,
                                 join_context);
+      checked_types.statement_occurrence_id(statement);
       if (auto snapshot = bound_snapshots.find(&statement);
           snapshot != bound_snapshots.end())
         static_bound_bindings_ = snapshot->second;
@@ -23044,7 +23196,8 @@ class Checker {
             err(statement.line, "domain handle '" + binding +
                 "' cannot be used as ordinary writable storage");
         FileIOOwnerScope fileio_owner(fileio_owner_initializer_, statement.b);
-        check_expression(statement.line, statement.b, current_env);
+        check_expression(statement.line, statement.b, current_env,
+                         "initializer");
         if (statement.kind == Stmt::Kind::Assign &&
             simple_identifier(statement.a) && !current_env.count(statement.a)) {
           auto inferred = inferred_expr_type(statement.b, current_env);
@@ -23145,7 +23298,8 @@ class Checker {
                 // A generic is checked at its concrete call. A fresh Map()
                 // learns its key/value types from this first assignment.
               } else {
-                check_expression(statement.line, statement.a, current_env);
+                check_expression(statement.line, statement.a, current_env,
+                                 "assignment-place");
                 // The retained solver already related this place and RHS.
                 // A legacy place without a retained term still compares the
                 // parsed TypeRefs, never their display spelling.
@@ -23205,7 +23359,8 @@ class Checker {
 
       if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While ||
           statement.kind == Stmt::Kind::Match) {
-        check_expression(statement.line, statement.a, current_env);
+        check_expression(statement.line, statement.a, current_env,
+            statement.kind == Stmt::Kind::Match ? "match-subject" : "condition");
         return;
       }
 
@@ -23213,7 +23368,8 @@ class Checker {
         auto prior = current_env.find(statement.a);
         if (prior != current_env.end() && contains_domain_handle(prior->second))
           err(statement.line, "domain handle binding '" + statement.a + "' is immutable");
-        check_for_source(statement.line, statement.b, current_env);
+        check_for_source(statement.line, statement.b, current_env,
+                         "for-iterable");
         return;
       }
 
@@ -23276,8 +23432,10 @@ class Checker {
                   "before crossing a domain boundary");
           }
         }
-        for (const auto& argument : statement.args) {
-          check_expression(statement.line, argument, current_env);
+        for (size_t index = 0; index < statement.args.size(); ++index) {
+          const string slot = "message-argument:" + std::to_string(index);
+          check_expression(statement.line, statement.args[index], current_env,
+                           slot);
         }
         return;
       }
@@ -23353,19 +23511,26 @@ class Checker {
                               current_env);
         }
         if (!statement.b.empty())
-          check_expression(statement.line, statement.text, current_env);
+          check_expression(statement.line, statement.text, current_env,
+                           "call-expression");
         const bool sort_builtin = statement.b.empty() && statement.a == "sort" &&
             !functions_.count(statement.a);
-        for (const auto& argument : statement.args)
+        for (size_t index = 0; index < statement.args.size(); ++index) {
+          const auto& argument = statement.args[index];
           if (!sort_builtin && !(fileio_builtin && (trim(argument) == "ro" ||
                 trim(argument) == "rw" || trim(argument) == "create" ||
                 trim(argument) == "dataonly"))) {
             string name, val;
+            const string slot = "call-argument:" + std::to_string(index);
+            const auto occurrence_slot = statement.b.empty()
+                ? std::string_view(slot) : std::string_view{};
             if (parse_named_argument(argument, name, val))
-              check_expression(statement.line, val, current_env);
+              check_expression(statement.line, val, current_env, occurrence_slot);
             else
-              check_expression(statement.line, argument, current_env);
+              check_expression(statement.line, argument, current_env,
+                               occurrence_slot);
           }
+        }
         if (!statement.message_result.empty()) {
           const Domain* target = nullptr;
           auto receiver = current_env.find(statement.a);
@@ -23398,8 +23563,10 @@ class Checker {
 
       if (statement.kind == Stmt::Kind::Echo) {
         vector<string> echo_types;
-        for (const auto& argument : statement.args) {
-          check_expression(statement.line, argument, current_env);
+        for (size_t index = 0; index < statement.args.size(); ++index) {
+          const string slot = "echo-argument:" + std::to_string(index);
+          const auto& argument = statement.args[index];
+          check_expression(statement.line, argument, current_env, slot);
           auto type = inferred_expr_type(argument, current_env);
           if (type) check_echo_display(
               statement.line, *type,
@@ -23439,7 +23606,8 @@ class Checker {
         // Validate expression legality before attaching inference guidance.
         // This keeps unsupported operators and invalid calls from being
         // mislabeled as expressions that merely need stronger type evidence.
-        check_expression(statement.line, statement.a, current_env);
+        check_expression(statement.line, statement.a, current_env,
+                         "reply-value");
         auto actual = inferred_expr_type(statement.a, current_env);
         if (auto pipeline = parse_functional_pipeline(statement.a)) {
           auto source_type = inferred_expr_type(pipeline->source, current_env);
@@ -23492,7 +23660,8 @@ class Checker {
               : slot(target), prior(target) { slot = &current; }
           ~ReturnCallScope() { slot = prior; }
         } return_call_scope(current_check_result_function_, *current_function);
-        check_expression(statement.line, statement.a, current_env);
+        check_expression(statement.line, statement.a, current_env,
+                         "return-value");
         auto actual = inferred_expr_type(statement.a, current_env);
         actual = checked_result_type(actual, current_function->return_type);
         if (!actual && current_function->static_dispatch && !checking_specialization_)
@@ -23543,8 +23712,101 @@ class Checker {
     TypeEnv checked_env = walk_type_environment(
         statements, std::move(env), check_statement,
         true, true, true, join_context, &checked_types);
-    checked_body_states_[&statements] =
-        std::make_shared<BodyTypeState>(std::move(checked_types));
+    for (const auto& occurrence : checked_types.expression_occurrences)
+      if (!occurrence.completed)
+        checked_types.expression_occurrence_ledger_complete = false;
+    if (!checked_types.active_expression_occurrences.empty())
+      checked_types.expression_occurrence_ledger_complete = false;
+    std::map<std::uint32_t, std::set<std::uint32_t>> linked_operations;
+    for (const auto& operation : checked_types.open_operations) {
+      if (operation.expression_occurrence_id >=
+          checked_types.expression_occurrences.size()) {
+        checked_types.expression_occurrence_ledger_complete = false;
+        continue;
+      }
+      const auto occurrence = operation.expression_occurrence_id;
+      const auto& linked = checked_types.expression_occurrences[occurrence];
+      if (!linked.completed || !linked_operations[occurrence].insert(
+              operation.occurrence_ordinal).second)
+        checked_types.expression_occurrence_ledger_complete = false;
+    }
+    for (const auto& requirement : checked_types.open_operator_requirements) {
+      if (requirement.expression_occurrence_id >=
+          checked_types.expression_occurrences.size() ||
+          !checked_types.expression_occurrences[
+              requirement.expression_occurrence_id].completed)
+        checked_types.expression_occurrence_ledger_complete = false;
+    }
+    for (const auto& linked : linked_operations)
+      if (linked.second.empty() ||
+          *linked.second.rbegin() + 1 != linked.second.size())
+        checked_types.expression_occurrence_ledger_complete = false;
+    auto require_root = [&](const Stmt& statement, const string& slot) {
+      if (!checked_types.has_expression_root(statement, slot))
+        checked_types.expression_occurrence_ledger_complete = false;
+    };
+    for (const auto& statement : statements) {
+      switch (statement.kind) {
+        case Stmt::Kind::Let:
+        case Stmt::Kind::Var:
+          require_root(statement, "initializer");
+          break;
+        case Stmt::Kind::Assign:
+          require_root(statement, "initializer");
+          if (!simple_identifier(statement.a))
+            require_root(statement, "assignment-place");
+          break;
+        case Stmt::Kind::If:
+        case Stmt::Kind::While:
+          require_root(statement, "condition");
+          break;
+        case Stmt::Kind::Match:
+          require_root(statement, "match-subject");
+          break;
+        case Stmt::Kind::For:
+          require_root(statement, "for-iterable");
+          break;
+        case Stmt::Kind::Message:
+          for (size_t index = 0; index < statement.args.size(); ++index)
+            require_root(statement,
+                "message-argument:" + std::to_string(index));
+          break;
+        case Stmt::Kind::Call:
+          if (!statement.b.empty()) {
+            require_root(statement, "call-expression");
+          } else {
+            const bool sort_builtin = statement.a == "sort" &&
+                !functions_.count(statement.a);
+            for (size_t index = 0; index < statement.args.size(); ++index)
+              if (!sort_builtin)
+                require_root(statement,
+                    "call-argument:" + std::to_string(index));
+          }
+          break;
+        case Stmt::Kind::Echo:
+          for (size_t index = 0; index < statement.args.size(); ++index)
+            require_root(statement,
+                "echo-argument:" + std::to_string(index));
+          break;
+        case Stmt::Kind::Reply:
+          if (!statement.a.empty()) require_root(statement, "reply-value");
+          break;
+        case Stmt::Kind::Return:
+          if (!statement.a.empty()) require_root(statement, "return-value");
+          break;
+        case Stmt::Kind::Raw:
+        case Stmt::Kind::Try:
+        case Stmt::Kind::Recover:
+        case Stmt::Kind::Raise:
+          checked_types.expression_occurrence_ledger_complete = false;
+          break;
+        default:
+          break;
+      }
+    }
+    if (!checking_specialization_)
+      checked_body_states_[&statements] =
+          std::make_shared<BodyTypeState>(std::move(checked_types));
     return checked_env;
   }
 

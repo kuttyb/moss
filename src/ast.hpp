@@ -126,6 +126,11 @@ struct OpenCallableSummaryFacts {
     vector<TypeRef> arguments;
     TypeRef result;
     int line = 0;
+    // Checker-local links into BodyTypeState's occurrence graph. These values
+    // are not part of ABI identity; the checked-body encoder assigns canonical
+    // dense ordinals after it has a complete tree.
+    std::uint32_t expression_occurrence_id = UINT32_MAX;
+    std::uint32_t occurrence_ordinal = 0;
   };
   // Checker-retained builtin operations used to close an otherwise open
   // generic contract. These are semantic facts, not serialized body IR.

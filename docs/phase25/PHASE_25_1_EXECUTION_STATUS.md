@@ -163,3 +163,33 @@ R1 remains IN PROGRESS: checker-owned occurrence facts, one structural body
 lowerer and removal of shape-specific body projection/admission are not yet
 implemented. No R1 acceptance review has been requested at this partial
 checkpoint.
+
+### R1 checker occurrence ledger — partial implementation checkpoint
+
+This checkpoint adds statement-local expression
+occurrence identities, parent/child ordering and explicit root slots in the
+ordinary checker pass. It links the existing open aggregate-operation facts
+and equality-operator requirements to the active occurrence, and handles
+function/object-method result expressions with a synthetic return root after
+`check_stmts`. IDs are checker-local and must not enter wire identity. This is
+metadata scaffolding, not the required typed IR or a completeness proof; node
+types, resolved target identities, binding/control-flow facts, and a unified
+tree-to-record lowerer remain missing.
+
+Validation after the latest source edits:
+
+- `make --jobs="$(nproc)" moss-dev` passed; only the existing
+  `TypeSolver::Undo::binding` initializer warnings were emitted.
+- `python3 tests/tooling/check_phase25_m2b2_source_free_corpus.py` passed all
+  admitted source-free positives, malformed-artifact negatives, dependency
+  closure, and ABI-v9 controls.
+- `python3 tests/tooling/check_phase25_h3_direct_records.py` passed.
+- `python3 tests/tooling/check_phase25_d3d_collection_source_free.py` passed
+  actual SDK `index_of` Int/String execution with legacy-body poison.
+- `python3 tests/tooling/check_phase25_d4_collection_source_free.py` passed
+  actual SDK collection source-free execution and bad-requirement/effect
+  rejection.
+
+R1 remains IN PROGRESS. Next extend checker-owned facts to typed nodes, call
+targets, members, bindings and control flow; implement one generic structural
+lowerer/record path; preserve fail-closed admission and ABI-v9 behavior.

@@ -908,6 +908,10 @@ struct Requirement {
   std::vector<AccessMode> argument_access;
   std::optional<std::string> parent_requirement_id;
   RequirementOrigin origin;
+  // Checker-local provenance used while assembling an open callable summary.
+  // Canonical checked-body encoding assigns stable ordinals from the
+  // structural expression tree; this ID is not serialized as ABI identity.
+  std::uint32_t expression_occurrence_id{UINT32_MAX};
 };
 
 // The solver-owned record passed to Team S's member admission policy. It
