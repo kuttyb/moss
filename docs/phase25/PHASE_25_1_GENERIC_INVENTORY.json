@@ -1,0 +1,950 @@
+{
+  "build_failure_count": 1,
+  "compiler_commit": "43973e1adfdf015d5588e85f41d986925a85a565",
+  "existing_source_free_harnesses": [
+    {
+      "path": "tests/phase25/integration/fixtures/adversarial/family10_cross_package_monomorph/02_source_free_monomorph_blocked/app/src/main.moss",
+      "sha256": "4a99e9e79b00f47fbd9834d586e22f03c6b0605a8c9f2dec8ed21f295e3cf098"
+    },
+    {
+      "path": "tests/phase25/integration/fixtures/adversarial/family10_cross_package_monomorph/02_source_free_monomorph_blocked/provider/src/main.moss",
+      "sha256": "f225821c633db06c68af95f247fef7b3d894e4d4b263f9e62d78751cd5db2acd"
+    },
+    {
+      "path": "tests/phase25/key_protocol/03-imported-nominal-keys-source-free/app/src/main.moss",
+      "sha256": "8ba90016cd6dde7bd30c2e304b8e7415a34201bade32f5cb132391b79918d7aa"
+    },
+    {
+      "path": "tests/phase25/key_protocol/03-imported-nominal-keys-source-free/keyprov/src/main.moss",
+      "sha256": "6f73b017bbf99a389ad41bdc0262e780eb961312c6c9c713180913ce7acfb680"
+    },
+    {
+      "path": "tests/tooling/check_enum_source_free.py",
+      "sha256": "c63b3cf256b22c9dbe2c936eef53a1ae011780f76ee44e06d4280ec2497b625a"
+    },
+    {
+      "path": "tests/tooling/check_phase21_source_free_abi.py",
+      "sha256": "104badc44b9a5f6088b97b3a5b218ab13b2aee1f535a40b1dcba1b34af5f38b6"
+    },
+    {
+      "path": "tests/tooling/check_phase21_source_free_cache_binding.py",
+      "sha256": "2d4cd8af006659dc849a1915b8647cd9a0e07f79a8fedaefee6d1f154c19b12e"
+    },
+    {
+      "path": "tests/tooling/check_phase21_source_free_proof_edges.py",
+      "sha256": "a21291b35b3b5f75069a13cf2cc82b295b1c13392b9421d81061656b4f392253"
+    },
+    {
+      "path": "tests/tooling/check_phase21_source_free_standard_write_recovery.py",
+      "sha256": "3e457dd5c52f98a843584bfdeffa07fc267648211d47f619d0a88702fc0c9eee"
+    },
+    {
+      "path": "tests/tooling/check_phase25_c2b6c_source_free_arithmetic.py",
+      "sha256": "22b188300d3facda64308a14be16ed69b7aaaf8368c27390c136c19b78728a98"
+    },
+    {
+      "path": "tests/tooling/check_phase25_d3d_collection_source_free.py",
+      "sha256": "89d6dcceceaabc766ecda5af04f82298a4c2a377a15c4f95b69750928eacb1cd"
+    },
+    {
+      "path": "tests/tooling/check_phase25_d4_collection_source_free.py",
+      "sha256": "541b99d83d07c600572f50fbeb6c56ccd91f6dfc697674434c5b812581a8d262"
+    },
+    {
+      "path": "tests/tooling/check_phase25_g3_source_free_parity.py",
+      "sha256": "1450d28c8b9eac893eaf48529c1cdf59ef08dd70c50e642efc2eeca239fdf554"
+    },
+    {
+      "path": "tests/tooling/check_phase25_h3_source_free_chain.py",
+      "sha256": "43a7214032002d3fac531be2d2d20d529ff0a707918b58d77a0c2f057c1445bd"
+    },
+    {
+      "path": "tests/tooling/check_phase25_h3_source_free_guard.py",
+      "sha256": "e91cfef4c11da770da1d1c48db1b2f9907dbb85b3e7cf4add4f6d6cfae53a1ad"
+    },
+    {
+      "path": "tests/tooling/check_phase25_m2b2_source_free_corpus.py",
+      "sha256": "7470f4a509b29f21e85602893bb9d2e700a0421cf289769e2fb31a2246e8a2e2"
+    },
+    {
+      "path": "sdk/advanced-data-acceptance/check_source_free.py",
+      "sha256": "35ba1c9fbccca2e24872685d6654d1369a4cb0e2ad7cac4395e966474a71c710"
+    },
+    {
+      "path": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+      "sha256": "1f0a4ac7350362af735cc18568156687158f5c2df2b3429d48611b5c340a2251"
+    },
+    {
+      "path": "sdk/data-acceptance/tests/check_source_free.py",
+      "sha256": "1b9a5e1999e153c7633aa7df60c1b6a1d95f9245b06b8697e71ee2d517f6af26"
+    },
+    {
+      "path": "sdk/encoding/tests/check_source_free.py",
+      "sha256": "2b31fa6995cab7630827a30a461a7b19f29f126aaa6d910cf9a76245f3db1ad7"
+    },
+    {
+      "path": "sdk/foundations/acceptance/repros/source_free_generics/src/main.moss",
+      "sha256": "a5318d7322eaf5e1ae5fe76ccc27ecf206e2420432c91a9d043927bde275119f"
+    },
+    {
+      "path": "sdk/foundations/acceptance/repros/source_free_range/src/main.moss",
+      "sha256": "95c14f907519fc4f026f7e0aa9dbe8692d99ac6b494e3f8a99ebe78022e69554"
+    },
+    {
+      "path": "sdk/foundations/acceptance/validate_source_free.py",
+      "sha256": "1b066051cc8926508cbd22a7a80f825f8849a198d72c063a4a7d374adc914782"
+    },
+    {
+      "path": "sdk/foundations/algorithms/tests/check_source_free.py",
+      "sha256": "43c61ae4493fea9941a4bae6066939e6d15897c9ac4972092eb3e187a398aad3"
+    },
+    {
+      "path": "sdk/foundations/collections/tests/check_source_free.py",
+      "sha256": "588f794bae347560f000a9f0b17c47608c0c876f5ecb5d08b64fa14747c5a561"
+    },
+    {
+      "path": "sdk/fs/tests/check_source_free.py",
+      "sha256": "f77cb13c10653c1bd695581b90ae524dcd2130e3cb9207e3ea6cc89c41c119c2"
+    },
+    {
+      "path": "sdk/path/tests/check_source_free.py",
+      "sha256": "1ddcf22c277fe0652579ae712017c11190361852b0535418a7f0a6cbde1a1a26"
+    },
+    {
+      "path": "sdk/text/tests/check_source_free.py",
+      "sha256": "fe1abec902fd2b2cdf601e385f0d826f355e33f52a8346f10d4974eb2982aa34"
+    }
+  ],
+  "generic_callable_count": 4,
+  "inventory_method": "Margo debug package build; generic exports parsed from compiler-emitted semantic_exports in .mossi",
+  "language_version": "moss-0.1",
+  "package_count": 26,
+  "packages": [
+    {
+      "build_order": [
+        "moss.bytes",
+        "moss.binary"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/sdk/binary/build/debug/binary.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "sdk/binary/build/debug/binary.mossi",
+          "sha256": "39a5fa63785bbc8faf7fea30d8d96aadad34bc7f95d1cb7497a6b863198d3618"
+        }
+      ],
+      "package_name": null,
+      "package_path": "sdk/binary",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.bytes",
+        "moss.binary",
+        "moss.encoding",
+        "moss.cbor"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/sdk/cbor/build/debug/cbor.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "sdk/cbor/build/debug/cbor.mossi",
+          "sha256": "4b0736900c2c4d33f8203a8764ce5e0e9028f0277356336284ea4cbe760f6269"
+        }
+      ],
+      "package_name": null,
+      "package_path": "sdk/cbor",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.core",
+        "moss.text",
+        "moss.fmt",
+        "moss.parse",
+        "moss.csv"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/sdk/csv/build/debug/csv.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "sdk/csv/build/debug/csv.mossi",
+          "sha256": "0cc22778e31a774351d4eff3ffa7a12854c0d0fd172d0ed9227b0e728f5918c7"
+        }
+      ],
+      "package_name": null,
+      "package_path": "sdk/csv",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.datastructures"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/sdk/datastructures/build/debug/datastructures.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "sdk/datastructures/build/debug/datastructures.mossi",
+          "sha256": "5c7d12c3c330078ecb93837522a723fe770321f04b7bf381e9ca8ed0ff63c8fe"
+        }
+      ],
+      "package_name": null,
+      "package_path": "sdk/datastructures",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.encoding"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/sdk/encoding/build/debug/encoding.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "sdk/encoding/build/debug/encoding.mossi",
+          "sha256": "0d872423d28dbf29086702498d8708645f674ce5be0da622f3b3f6fc3a43857e"
+        }
+      ],
+      "package_name": null,
+      "package_path": "sdk/encoding",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.core",
+        "moss.text",
+        "moss.fmt"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/sdk/fmt/build/debug/fmt.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "sdk/fmt/build/debug/fmt.mossi",
+          "sha256": "dec2a1194775129aad21c888e3446453b442a0a8112ca24ca26b99a4429fb549"
+        }
+      ],
+      "package_name": null,
+      "package_path": "sdk/fmt",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.algorithms"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/sdk/foundations/algorithms/build/debug/algorithms.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "sdk/foundations/algorithms/build/debug/algorithms.mossi",
+          "sha256": "6df32bbaee906f88f8d8cb0f5d4957676265438c503e46bd501c4d681a5d22ab"
+        }
+      ],
+      "package_name": null,
+      "package_path": "sdk/foundations/algorithms",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.bytes"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/sdk/foundations/bytes/build/debug/bytes.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [
+        {
+          "callable": "from_range",
+          "effects": "local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=1;raise_set=-;may_diverge=1;unresolved=0",
+          "generic_body_hash": "17af1f502a27ff41",
+          "generic_entity_id": "\"fn:bytes__from_range@65\"",
+          "generic_statement_count": 5,
+          "generic_statement_kinds": [
+            "var",
+            "for",
+            "call",
+            "call",
+            "return"
+          ],
+          "generic_statement_tags": [
+            13,
+            9,
+            3,
+            3,
+            15
+          ],
+          "module_id": "moss.bytes::bytes",
+          "open_parameters": [
+            "open_parameters 0"
+          ],
+          "parameters": [
+            "param 0  mode=READ name=\"data\""
+          ],
+          "private_dependencies": [],
+          "private_dependency_statement_counts": {},
+          "requirements": [
+            "requirements",
+            "4 data static iterator"
+          ],
+          "return_type": "vector[int]",
+          "semantic_hash": "17af1f502a27ff41",
+          "source_free_harness_candidates": [
+            {
+              "match": "module-name-and-callable-token",
+              "path": "sdk/foundations/acceptance/repros/source_free_range/src/main.moss"
+            }
+          ],
+          "specialization_dependencies": [
+            "specialization_dependencies",
+            "fn:bytes__is_byte"
+          ]
+        }
+      ],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "sdk/foundations/bytes/build/debug/bytes.mossi",
+          "sha256": "ede88e743055f95754b52e8a21e05d9d038d321ff3c3eed1ec8118d7ebde1264"
+        }
+      ],
+      "package_name": null,
+      "package_path": "sdk/foundations/bytes",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.collections"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/sdk/foundations/collections/build/debug/collections.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [
+        {
+          "callable": "index_of",
+          "effects": "local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=1;raise_set=-;may_diverge=0;unresolved=0",
+          "generic_body_hash": "36de9f2bc757ba9d",
+          "generic_entity_id": "\"fn:collections__index_of@5\"",
+          "generic_statement_count": 7,
+          "generic_statement_kinds": [
+            "var",
+            "assign",
+            "while",
+            "if",
+            "return",
+            "assign",
+            "return"
+          ],
+          "generic_statement_tags": [
+            13,
+            2,
+            8,
+            6,
+            15,
+            2,
+            15
+          ],
+          "module_id": "moss.collections::collections",
+          "open_parameters": [
+            "open_parameters 0 1"
+          ],
+          "parameters": [
+            "param 0  mode=READ name=\"items\"",
+            "param 1  mode=READ name=\"target\""
+          ],
+          "private_dependencies": [],
+          "private_dependency_statement_counts": {},
+          "requirements": [
+            "requirements",
+            "4 items functional source",
+            "3 items index"
+          ],
+          "return_type": "int",
+          "semantic_hash": "36de9f2bc757ba9d",
+          "source_free_harness_candidates": [
+            {
+              "match": "module-name-and-callable-token",
+              "path": "tests/tooling/check_phase25_d3d_collection_source_free.py"
+            },
+            {
+              "match": "module-name-and-callable-token",
+              "path": "tests/tooling/check_phase25_d4_collection_source_free.py"
+            },
+            {
+              "match": "module-name-and-callable-token",
+              "path": "sdk/foundations/acceptance/repros/source_free_generics/src/main.moss"
+            },
+            {
+              "match": "module-name-and-callable-token",
+              "path": "sdk/foundations/collections/tests/check_source_free.py"
+            }
+          ],
+          "specialization_dependencies": [
+            "specialization_dependencies"
+          ]
+        },
+        {
+          "callable": "contains",
+          "effects": "local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=1;raise_set=-;may_diverge=0;unresolved=0",
+          "generic_body_hash": "bf15b771977d072f",
+          "generic_entity_id": "\"fn:collections__contains@14\"",
+          "generic_statement_count": 7,
+          "generic_statement_kinds": [
+            "var",
+            "assign",
+            "while",
+            "if",
+            "return",
+            "assign",
+            "return"
+          ],
+          "generic_statement_tags": [
+            13,
+            2,
+            8,
+            6,
+            15,
+            2,
+            15
+          ],
+          "module_id": "moss.collections::collections",
+          "open_parameters": [
+            "open_parameters 0 1"
+          ],
+          "parameters": [
+            "param 0  mode=READ name=\"items\"",
+            "param 1  mode=READ name=\"target\""
+          ],
+          "private_dependencies": [],
+          "private_dependency_statement_counts": {},
+          "requirements": [
+            "requirements",
+            "4 items functional source",
+            "3 items index"
+          ],
+          "return_type": "bool",
+          "semantic_hash": "bf15b771977d072f",
+          "source_free_harness_candidates": [
+            {
+              "match": "module-name-and-callable-token",
+              "path": "tests/tooling/check_phase25_d4_collection_source_free.py"
+            },
+            {
+              "match": "module-name-and-callable-token",
+              "path": "sdk/foundations/acceptance/repros/source_free_generics/src/main.moss"
+            },
+            {
+              "match": "module-name-and-callable-token",
+              "path": "sdk/foundations/collections/tests/check_source_free.py"
+            }
+          ],
+          "specialization_dependencies": [
+            "specialization_dependencies"
+          ]
+        },
+        {
+          "callable": "count_equal",
+          "effects": "local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=1;raise_set=-;may_diverge=0;unresolved=0",
+          "generic_body_hash": "233488c422dbb5b1",
+          "generic_entity_id": "\"fn:collections__count_equal@23\"",
+          "generic_statement_count": 8,
+          "generic_statement_kinds": [
+            "var",
+            "var",
+            "assign",
+            "while",
+            "if",
+            "assign",
+            "assign",
+            "return"
+          ],
+          "generic_statement_tags": [
+            13,
+            13,
+            2,
+            8,
+            6,
+            2,
+            2,
+            15
+          ],
+          "module_id": "moss.collections::collections",
+          "open_parameters": [
+            "open_parameters 0 1"
+          ],
+          "parameters": [
+            "param 0  mode=READ name=\"items\"",
+            "param 1  mode=READ name=\"target\""
+          ],
+          "private_dependencies": [],
+          "private_dependency_statement_counts": {},
+          "requirements": [
+            "requirements",
+            "4 items functional source",
+            "3 items index"
+          ],
+          "return_type": "int",
+          "semantic_hash": "233488c422dbb5b1",
+          "source_free_harness_candidates": [
+            {
+              "match": "module-name-and-callable-token",
+              "path": "tests/tooling/check_phase25_d4_collection_source_free.py"
+            },
+            {
+              "match": "module-name-and-callable-token",
+              "path": "sdk/foundations/acceptance/repros/source_free_generics/src/main.moss"
+            },
+            {
+              "match": "module-name-and-callable-token",
+              "path": "sdk/foundations/collections/tests/check_source_free.py"
+            }
+          ],
+          "specialization_dependencies": [
+            "specialization_dependencies"
+          ]
+        }
+      ],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "sdk/foundations/collections/build/debug/collections.mossi",
+          "sha256": "d0b1d1798257de4936dbd25dd96c762a4e696545802d861e9f3836b4aefb43c0"
+        }
+      ],
+      "package_name": null,
+      "package_path": "sdk/foundations/collections",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.core"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/sdk/foundations/core/build/debug/core.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "sdk/foundations/core/build/debug/core.mossi",
+          "sha256": "a4e8a44a3109d0842233b78c6fc90beefc1d1c7220c295cc4ad25eca7e946c33"
+        }
+      ],
+      "package_name": null,
+      "package_path": "sdk/foundations/core",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.fs"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/sdk/fs/build/debug/fs.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "sdk/fs/build/debug/fs.mossi",
+          "sha256": "839a23915dd9b2cdcd65654b1d48f0edc4cc64cc377d91b0314d9d93d36854fc"
+        }
+      ],
+      "package_name": null,
+      "package_path": "sdk/fs",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.core",
+        "moss.encoding",
+        "moss.text",
+        "moss.fmt",
+        "moss.parse",
+        "moss.json"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/sdk/json/build/debug/json.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "sdk/json/build/debug/json.mossi",
+          "sha256": "6e78cc4606fee31c41f0241efd70abd462ac647f370c629bc9069fa78b7f37eb"
+        }
+      ],
+      "package_name": null,
+      "package_path": "sdk/json",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.math",
+        "moss.linalg",
+        "moss.ndarray"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/sdk/ndarray/build/debug/ndarray.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "sdk/ndarray/build/debug/ndarray.mossi",
+          "sha256": "fddb0d8d831bfb05bfb52867accfda19ac9068a03dfa71c405a4fcfd6741572d"
+        }
+      ],
+      "package_name": null,
+      "package_path": "sdk/ndarray",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.core",
+        "moss.text",
+        "moss.parse"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/sdk/parse/build/debug/parse.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "sdk/parse/build/debug/parse.mossi",
+          "sha256": "0c76662e23615fbc29e03efd5a18c0b581286f6dd11a116b18b20bbb2ab95459"
+        }
+      ],
+      "package_name": null,
+      "package_path": "sdk/parse",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.path"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/sdk/path/build/debug/path.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "sdk/path/build/debug/path.mossi",
+          "sha256": "7df63f3c2b1578a0132f6067c0e7ec1d01b1de958bf1edf2b406fa6ca76dfb0d"
+        }
+      ],
+      "package_name": null,
+      "package_path": "sdk/path",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.core",
+        "moss.text",
+        "moss.fmt",
+        "moss.parse",
+        "moss.csv",
+        "moss.tables"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/sdk/tables/build/debug/tables.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "sdk/tables/build/debug/tables.mossi",
+          "sha256": "f78d4adfcbde2617d84a3c861864b6f4cd5d3a21aafd81cca7cb124fe80bcd92"
+        }
+      ],
+      "package_name": null,
+      "package_path": "sdk/tables",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.core",
+        "moss.text"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/sdk/text/build/debug/text.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "sdk/text/build/debug/text.mossi",
+          "sha256": "f29b8503c726567a3e9cf1e30e5d69ddd4e404ea4c694597f4d1242132fc8981"
+        }
+      ],
+      "package_name": null,
+      "package_path": "sdk/text",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.bytes",
+        "moss.compress"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/packages/compress/build/debug/compress.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "packages/compress/build/debug/compress.mossi",
+          "sha256": "e8934137877f42f8c27691dc48218915b64c0e3201f74d2106be14f4f1242151"
+        }
+      ],
+      "package_name": null,
+      "package_path": "packages/compress",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.bytes",
+        "moss.hash"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/packages/hash/build/debug/hash.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "packages/hash/build/debug/hash.mossi",
+          "sha256": "f3aa381fb9d5c3b75ffeea6d918557d79d31cf5fd8209014f0aac2a0ffa51cb0"
+        }
+      ],
+      "package_name": null,
+      "package_path": "packages/hash",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.math",
+        "moss.linalg"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/packages/linalg/build/debug/linalg.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "packages/linalg/build/debug/linalg.mossi",
+          "sha256": "a1dcf1e4269205c14d8e57c7a8fc003eac00ec1ae760c3ad3ecf7c12ef3fe612"
+        }
+      ],
+      "package_name": null,
+      "package_path": "packages/linalg",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.math"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/packages/math/build/debug/math.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "packages/math/build/debug/math.mossi",
+          "sha256": "f6f820786d470a96fff0ee8b57de080ff62ed5c54d2c01ed409af1c3edbb2588"
+        }
+      ],
+      "package_name": null,
+      "package_path": "packages/math",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.random"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/packages/random/build/debug/random.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "packages/random/build/debug/random.mossi",
+          "sha256": "2ae81813e7971e58d919f3a5f9554a65a721865865e8b1112cdb429e68bc642b"
+        }
+      ],
+      "package_name": null,
+      "package_path": "packages/random",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.regex"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/packages/regex/build/debug/regex.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "packages/regex/build/debug/regex.mossi",
+          "sha256": "b702c55da2dbdea3ab3c8a66f5e224a05b1ceeeae0fdca297d1c010d31d503fd"
+        }
+      ],
+      "package_name": null,
+      "package_path": "packages/regex",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.math",
+        "moss.linalg",
+        "moss.sparse"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/packages/sparse/build/debug/sparse.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "packages/sparse/build/debug/sparse.mossi",
+          "sha256": "2ac8ea56cf7fc8dad134ad01a7b432a47c67ca5cb0b31bd20e19174926308d8a"
+        }
+      ],
+      "package_name": null,
+      "package_path": "packages/sparse",
+      "profile": null
+    },
+    {
+      "build_order": [
+        "moss.math",
+        "moss.statistics"
+      ],
+      "build_status": "pass",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [
+        "/home/owner/daji/code/moss3/packages/statistics/build/debug/statistics.mossi"
+      ],
+      "exit_code": 0,
+      "exported_generic_callables": [],
+      "failure_output_tail": null,
+      "interfaces": [
+        {
+          "path": "packages/statistics/build/debug/statistics.mossi",
+          "sha256": "a56ae9fa65b70a625da792909f8cd3d18a06787dbfa9a83e214ff44cabfbac3f"
+        }
+      ],
+      "package_name": null,
+      "package_path": "packages/statistics",
+      "profile": null
+    },
+    {
+      "build_order": [],
+      "build_status": "environmental-or-source-failure",
+      "command": "MARGO_HOME=<isolated> TMPDIR=tmp ./margo build --json",
+      "compiler_artifact_paths": [],
+      "exit_code": 1,
+      "exported_generic_callables": [],
+      "failure_output_tail": "{\"schema_version\": \"margo-1\", \"ok\": false, \"error\": \"command failed (/home/owner/daji/code/moss3/moss build --json): {\\n  \\\"protocol_version\\\": 1,\\n  \\\"schema_version\\\": \\\"moss-agent-1\\\",\\n  \\\"compiler_version\\\": \\\"0.1.0\\\",\\n  \\\"command\\\": \\\"build\\\",\\n  \\\"ok\\\": false,\\n  \\\"error\\\": {\\\"code\\\": \\\"MOSS_COMPILE_ERROR\\\", \\\"severity\\\": \\\"error\\\", \\\"message\\\": \\\"function 'time__pad_digit' returns 'char' but is annotated 'string'\\\", \\\"source_file\\\": \\\"/home/owner/daji/code/moss3/packages/time/src/main.moss\\\", \\\"line\\\": 379, \\\"column\\\": 1, \\\"span\\\": {\\\"start_line\\\": 379, \\\"start_column\\\": 1, \\\"end_line\\\": 379, \\\"end_column\\\": 1}, \\\"source\\\": {\\\"file\\\": \\\"/home/owner/daji/code/moss3/packages/time/src/main.moss\\\", \\\"line\\\": 379, \\\"column\\\": 1, \\\"span\\\": {\\\"start_line\\\": 379, \\\"start_column\\\": 1, \\\"end_line\\\": 379, \\\"end_column\\\": 1}}, \\\"semantic_identity\\\": null, \\\"symbol\\\": null, \\\"rule\\\": null, \\\"cause\\\": null, \\\"related\\\": [], \\\"guidance\\\": null, \\\"details\\\": {\\\"ownership_expected\\\": null, \\\"ownership_actual\\\": null, \\\"consume_line\\\": null, \\\"recursion_witness\\\": null, \\\"resolution\\\": null}, \\\"fixes\\\": [], \\\"legal_alternatives\\\": []}\\n}\"}\n",
+      "interfaces": [],
+      "package_name": null,
+      "package_path": "packages/time",
+      "profile": null
+    }
+  ],
+  "schema": "phase25-1-generic-inventory-v1"
+}

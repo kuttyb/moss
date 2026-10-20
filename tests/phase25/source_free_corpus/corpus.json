@@ -56,12 +56,12 @@
       "id": "generic-range-iteration",
       "priority": "P1-sdk-essential",
       "category": "other: generic iterator body",
-      "provider": "module Service\n\nfn is_value(value: Int) -> Bool:\n  return true\n\nexport fn fresh(data):\n  var result = Vector[Int]()\n  for value in data:\n    assert(is_value(value))\n    result.push(value)\n  return result\n",
-      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(range(1, 4))\n",
-      "expected_output": "[1, 2, 3]\n",
+      "provider": "module Service\n\nexport fn fresh(data):\n  var result = 0\n  for value in data:\n    result = result + 1\n  return result\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh([1, 2, 3])\n",
+      "expected_output": "3\n",
       "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "checked_body_status": "provider rejects this multi-statement generic body in staged ABI-v10 before an artifact is emitted",
-      "evidence": "sdk/foundations/bytes/src/bytes.moss exports generic from_range(data), with a for loop and vector mutation, and its range_copy example calls it with a borrowed Range. No ABI-v10 checked-body acceptance test covers this shape."
+      "checked_body_status": "provider emits an ABI-v10 interface, but source-free consumer selection rejects this valid generic iterator body",
+      "evidence": "A generic static-iterator body over Vector is a valid source-backed form. The actual SDK borrowed-Range callable is tracked separately using bytes.from_range and the real FileIO consumer."
     }
   ],
   "already-covered": [
@@ -108,7 +108,11 @@
     {
       "package": "sdk/foundations/collections",
       "source": "src/collections.moss",
-      "callables": ["index_of", "contains", "count_equal"],
+      "callables": [
+        "index_of",
+        "contains",
+        "count_equal"
+      ],
       "current_test": "tests/check_source_free.py",
       "abi_v10_checked_body_status": "checked-body proven for index_of, contains, and count_equal with source-free Int/String native execution and legacy-body poisoning",
       "cutover_priority": "P1-sdk-essential"
@@ -116,7 +120,9 @@
     {
       "package": "sdk/foundations/bytes",
       "source": "src/bytes.moss",
-      "callables": ["from_range"],
+      "callables": [
+        "from_range"
+      ],
       "current_test": "examples/range_copy/src/main.moss",
       "abi_v10_checked_body_status": "staged provider build rejected with SOURCE_FREE_CHECKED_BODY_UNAVAILABLE; generic iteration and vector mutation",
       "cutover_priority": "P1-sdk-essential"
@@ -130,6 +136,17 @@
     {
       "category": "arbitrary collection/map/queue operations and iterator protocols",
       "reason": "Coverage is broad and includes ordinary concrete SDK functions; the initial cutover should start with the exported generic SDK helpers listed above, then expand from source-free tests."
+    }
+  ],
+  "source_backed_invalid": [
+    {
+      "id": "range-value-as-generic-iterator-argument",
+      "category": "generic iterator source type",
+      "provider": "module Service\n\nexport fn fresh(data):\n  var result = Vector[Int]()\n  for value in data:\n    result.push(value)\n  return result\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(range(1, 4))\n",
+      "expected_diagnostic": "MOSS_COMPILE_ERROR",
+      "expected_message": "type 'range[int]' is not statically iterable",
+      "classification": "invalid-by-language: the `range(...)` expression is accepted as a direct loop source, but the current checker does not accept its value as an argument satisfying an open static-iterator parameter."
     }
   ]
 }

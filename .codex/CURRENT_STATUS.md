@@ -9476,4 +9476,42 @@ by remote peeled SHA: `phase25-pre-main` ->
 `dd45e30722bcc2d62d4bb46ba184d426cbaea066`. Lineage refs matched and
 `origin/main` remained `dd45e30722bcc2d62d4bb46ba184d426cbaea066`. Exact
 transcript is in `docs/phase25/PHASE_25_1_EXECUTION_STATUS.md`. T0 passed.
-R0 has not yet started; no compiler edits were made.
+
+## Phase 25.1 R0 inventory and oracle — 2026-10-20
+
+R0 evidence is being frozen at compiler SHA
+`43973e1adfdf015d5588e85f41d986925a85a565`; independent architecture review
+and checkpoint push remain unfinished. The inventory built 26 production
+package roots: 25 passed and `packages/time` failed at
+`time__pad_digit` (`char` return vs `string` annotation). Four open generic
+exports were found in `sdk/foundations/bytes` and
+`sdk/foundations/collections`; exact records and the explicit failed-package
+row are in `docs/phase25/PHASE_25_1_GENERIC_INVENTORY.json` and
+`docs/phase25/PHASE_25_1_ISSUE_LEDGER.json`.
+
+Three-mode oracle: six corpus workloads plus actual `bytes.from_range` and
+Range-copy consumer, Debug and Release. Source-backed and ABI-v9 controls
+passed 14/14 profile rows. ABI-v10 passed 10/14 rows for existing supported
+shapes; generic Vector iteration and actual bytes correctly failed closed at
+source-free consumer selection with `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE`
+(four red profile rows retained). Passing v10 rows physically deleted
+provider source, poisoned legacy records and emitted checked-projection
+traces. `range(1,4)` as a generic iterator argument is separately classified
+`invalid-by-language` with `MOSS_COMPILE_ERROR`.
+
+Other completed R0 evidence: the complete M2b2 source-free corpus and hostile
+artifact mutations passed; the 14-provider advanced-data ABI-v9 source-free
+gate passed with no provider source; foundations Range-copy passed with
+provider source removed and output `329`; collections ABI-v9 smoke passed;
+D4 actual SDK checked-body source-free tests passed for `index_of`, `contains`
+and `count_equal` with 7/7/8 legacy records removed. `check_agent_feedback.py`,
+JSON validation and `git diff --check` passed. Full `make check` has not yet
+been run on this branch. R0 test reports are preserved in
+`docs/phase25/PHASE_25_1_R0_ORACLE.json` and
+`docs/phase25/PHASE_25_1_R0_INVALID_PROBES.json`.
+
+The R0 architecture proposal has no compiler implementation changes. Current
+unfinished work: commit and push the R0 evidence checkpoint, obtain independent
+review from the single adversarial architect at that exact SHA, resolve any
+P0/P1 findings, and then proceed to R1. No R1 compiler work has started. Scratch
+artifacts remain under `tmp/`.

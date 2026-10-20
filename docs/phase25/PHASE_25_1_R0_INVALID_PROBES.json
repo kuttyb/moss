@@ -1,0 +1,14 @@
+{
+  "cases": [
+    {
+      "diagnostic": "MOSS_COMPILE_ERROR",
+      "exit_code": 1,
+      "expected_message": "type 'range[int]' is not statically iterable",
+      "id": "range-value-as-generic-iterator-argument",
+      "output": "{\"schema_version\": \"margo-1\", \"ok\": false, \"error\": \"command failed ($REPO/moss build --json): {\\n  \\\"protocol_version\\\": 1,\\n  \\\"schema_version\\\": \\\"moss-agent-1\\\",\\n  \\\"compiler_version\\\": \\\"0.1.0\\\",\\n  \\\"command\\\": \\\"build\\\",\\n  \\\"ok\\\": false,\\n  \\\"error\\\": {\\\"code\\\": \\\"MOSS_COMPILE_ERROR\\\", \\\"severity\\\": \\\"error\\\", \\\"message\\\": \\\"type 'range[int]' is not statically iterable; expected Vector, range, or Iterator\\\", \\\"source_file\\\": \\\"$REPO/tmp/range-value-as-generic-iterator-argument-85xyv699/src/main.moss\\\", \\\"line\\\": 5, \\\"column\\\": 1, \\\"span\\\": {\\\"start_line\\\": 5, \\\"start_column\\\": 1, \\\"end_line\\\": 5, \\\"end_column\\\": 1}, \\\"source\\\": {\\\"file\\\": \\\"$REPO/tmp/range-value-as-generic-iterator-argument-85xyv699/src/main.moss\\\", \\\"line\\\": 5, \\\"column\\\": 1, \\\"span\\\": {\\\"start_line\\\": 5, \\\"start_column\\\": 1, \\\"end_line\\\": 5, \\\"end_column\\\": 1}}, \\\"semantic_identity\\\": null, \\\"symbol\\\": null, \\\"rule\\\": null, \\\"cause\\\": null, \\\"related\\\": [], \\\"guidance\\\": null, \\\"details\\\": {\\\"ownership_expected\\\": null, \\\"ownership_actual\\\": null, \\\"consume_line\\\": null, \\\"recursion_witness\\\": null, \\\"resolution\\\": null}, \\\"fixes\\\": [], \\\"legal_alternatives\\\": []}\\n}\"}\n",
+      "status": "invalid-by-language"
+    }
+  ],
+  "compiler_commit": "43973e1adfdf015d5588e85f41d986925a85a565",
+  "schema": "phase25-1-invalid-probes-v1"
+}

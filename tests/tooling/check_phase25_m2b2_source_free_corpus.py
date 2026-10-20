@@ -83,12 +83,36 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
             capture_output=True, text=True, timeout=240)
         provider_output = provider_build.stdout + provider_build.stderr
         if case.get("provider_expected_error"):
-            assert provider_build.returncode != 0 and (
-                case["provider_expected_error"] in provider_output), (
+            if provider_build.returncode != 0:
+                assert case["provider_expected_error"] in provider_output, (
                     case["id"], case["provider_expected_error"], provider_output)
-            assert not list((provider / "build").rglob("Service.mossi")), (
-                case["id"], "provider left a usable ABI-v10 interface behind")
-            print(f"PASS {case['id']}: staged provider rejects unsupported body")
+                assert not list((provider / "build").rglob("Service.mossi")), (
+                    case["id"], "provider left a usable ABI-v10 interface behind")
+                print(f"PASS {case['id']}: staged provider rejects unsupported body")
+                continue
+
+            # A provider may emit ABI-v10 but have no checked body for the
+            # callable. Keep the source-free consumer selection as the gate;
+            # provider emission alone is not evidence of callability.
+            artifacts = case_root / "artifacts"
+            shutil.copytree(provider / "build/debug", artifacts)
+            shutil.rmtree(provider / "src")
+            consumer = case_root / "consumer"
+            package(consumer,
+                    f"m2b2_{case['id'].replace('-', '_')}_consumer",
+                    case["consumer"])
+            env = base_env | {
+                "MOSS_MODULE_PATH": str(artifacts),
+                "MARGO_HOME": str(case_root / "margo-consumer"),
+            }
+            rejected = subprocess.run(
+                [str(MARGO), "build"], cwd=consumer, env=env,
+                capture_output=True, text=True, timeout=240)
+            reject_output = rejected.stdout + rejected.stderr
+            assert (rejected.returncode != 0 and
+                    case["provider_expected_error"] in reject_output), (
+                        case["id"], case["provider_expected_error"], reject_output)
+            print(f"PASS {case['id']}: source-free consumer rejects unsupported body")
             continue
         assert provider_build.returncode == 0, (
             case["id"], provider_build.returncode, provider_output)
