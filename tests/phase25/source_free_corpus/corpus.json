@@ -9,8 +9,8 @@
       "provider": "module Service\n\nexport fn fresh(value):\n  return value\n",
       "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(17)\n  echo Service.fresh(\"moss\")\n",
       "expected_output": "17\nmoss\n",
-      "checked_body_status": "unsupported; ABI-v10 legacy reconstruction required",
-      "evidence": "No general parameter-return projection test; H3 decoder recognizes parameter nodes but importer has no parameter-return lowering case."
+      "checked_body_status": "checked-body supported; generic parameter return is projected before specialization",
+      "evidence": "M2b.3a acceptance poisons generic_stmt, requires checked-body projection trace, and executes both Int and String specializations after provider source removal."
     },
     {
       "id": "scalar-literal",

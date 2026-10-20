@@ -2809,10 +2809,66 @@ struct CheckedPrivateChainBody {
   string semantic_hash;
 };
 
+static bool abi_v10_effects_pure(const ObservableEffects& effects);
+
 struct CheckedArithmeticBody {
   vector<checked_ir::Stmt> statements;
   string semantic_hash;
 };
+
+struct CheckedParameterReturnBody {
+  vector<checked_ir::Stmt> statements;
+  string semantic_hash;
+};
+
+// Build only the canonical generic identity body from checker-owned type
+// facts. The AST spelling selects the parameter occurrence; summary TypeRefs
+// remain authoritative for both the parameter and result.
+static std::optional<CheckedParameterReturnBody>
+checked_parameter_return_body(const Function& function) {
+  if (!function.open_summary || !function.open_summary->complete ||
+      function.body.size() != 1 ||
+      function.body.front().kind != Stmt::Kind::Return ||
+      function.params.size() != 1)
+    return std::nullopt;
+
+  const auto& facts = *function.open_summary;
+  if (!facts.result_type || facts.bound_variable_count != 1 ||
+      facts.parameter_types.size() != 1 ||
+      facts.parameter_access.size() != 1 ||
+      facts.parameter_access.front() != AccessMode::Read ||
+      !facts.requirements.empty() || !facts.member_requirements.empty() ||
+      !facts.semantic_dependencies.empty() ||
+      !abi_v10_effects_pure(facts.observable_effects) ||
+      !facts.parameter_types.front() ||
+      facts.parameter_types.front()->kind != TypeKind::InferenceVar ||
+      facts.parameter_types.front()->var_id.session_id != 0 ||
+      facts.parameter_types.front()->var_id.owner_id != 0 ||
+      facts.parameter_types.front()->var_id.ordinal != 0 ||
+      !facts.result_type->structurally_equal(*facts.parameter_types.front()) ||
+      !plain_identifier(function.params.front().name) ||
+      trim(function.body.front().a) != function.params.front().name)
+    return std::nullopt;
+
+  checked_ir::Expr parameter;
+  parameter.kind = checked_ir::ExprKind::Parameter;
+  parameter.type = facts.parameter_types.front();
+  parameter.ordinal = 0;
+  checked_ir::Stmt returned;
+  returned.kind = checked_ir::StmtKind::Return;
+  returned.type = facts.result_type;
+  returned.expr = std::move(parameter);
+
+  CheckedParameterReturnBody body;
+  body.statements.push_back(std::move(returned));
+  try {
+    body.semantic_hash = checked_ir::compute_checked_body_hash_v1(
+        body.statements);
+  } catch (const std::invalid_argument&) {
+    return std::nullopt;
+  }
+  return body;
+}
 
 static std::optional<std::pair<string, string>>
 checked_arithmetic_split_binary(const string& expression, const string& op) {
@@ -3128,8 +3184,6 @@ static moss::TypeRef imported_abi_v10_type(
   return nullptr;
 }
 
-static bool abi_v10_effects_pure(const ObservableEffects& effects);
-
 static abi_v10::Access imported_abi_v10_access(Effect effect) {
   return effect == Effect::Consume ? abi_v10::Access::Consume :
       effect == Effect::Write ? abi_v10::Access::Write :
@@ -3288,6 +3342,41 @@ static bool abi_v10_checked_arithmetic_summary_candidate(
       });
 }
 
+static bool abi_v10_parameter_return_summary_candidate(
+    const abi_v10::Summary& summary) {
+  const auto bound_zero = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::BoundVar &&
+        type.ordinal == 0 && type.arguments.empty();
+  };
+  return summary.variable_count == 1 && summary.parameters.size() == 1 &&
+      bound_zero(summary.parameters.front()) &&
+      summary.parameter_access.size() == 1 &&
+      summary.parameter_access.front() == abi_v10::Access::Read &&
+      bound_zero(summary.result) && summary.requirements.empty() &&
+      summary.dependencies.empty() &&
+      summary.observable_effect_bits == 0 &&
+      summary.observable_effect_tags.empty() &&
+      abi_v10::checked_body_hash_valid(summary.body_semantic_hash) &&
+      !summary.provenance_id.empty();
+}
+
+static bool abi_v10_parameter_return_body_candidate(
+    std::string_view bytes, const moss::TypeContext& context,
+    std::string_view expected_hash) {
+  const auto type = moss::Type::var(moss::TypeVarId{0, 0, 0});
+  try {
+    const auto statements = checked_ir::decode_h3_checked_body_v1(
+        bytes, context, {type}, type, expected_hash);
+    return statements.size() == 1 &&
+        statements.front().kind == checked_ir::StmtKind::Return &&
+        statements.front().expr &&
+        statements.front().expr->kind == checked_ir::ExprKind::Parameter &&
+        statements.front().expr->ordinal == 0;
+  } catch (const std::invalid_argument&) {
+    return false;
+  }
+}
+
 static bool abi_v10_empty_vector_summary_candidate(
     const abi_v10::Summary& summary) {
   const auto bound_zero = [](const abi_v10::WireType& type) {
@@ -3443,7 +3532,18 @@ static void project_imported_h3_checked_bodies(Program& program) {
     }
     const auto& expression = *statements.front().expr;
     string lowered;
-    if (abi_v10_empty_vector_summary_candidate(summary) &&
+    if (abi_v10_parameter_return_summary_candidate(summary)) {
+      if (parameters.size() != 1 || function.params.size() != 1 ||
+          !plain_identifier(function.params.front().name) ||
+          statements.size() != 1 ||
+          statements.front().kind != checked_ir::StmtKind::Return ||
+          expression.kind != checked_ir::ExprKind::Parameter ||
+          expression.ordinal != 0 ||
+          !expression.type->structurally_equal(*parameters.front()) ||
+          !expression.type->structurally_equal(*result))
+        invalid("checked ABI-v10 direct parameter-return body is unsupported");
+      lowered = function.params.front().name;
+    } else if (abi_v10_empty_vector_summary_candidate(summary) &&
         statements.size() == 1 &&
         statements.front().kind == checked_ir::StmtKind::Return &&
         expression.kind == checked_ir::ExprKind::VectorLiteral &&
@@ -38091,6 +38191,8 @@ static ParsedModuleUnit load_module_interface(
       auto body_records = bodies.find(id);
       const ImportedSummaryRecord* arithmetic_summary_record = nullptr;
       abi_v10::Summary arithmetic_summary;
+      const ImportedSummaryRecord* parameter_return_summary_record = nullptr;
+      abi_v10::Summary parameter_return_summary;
       const ImportedSummaryRecord* empty_vector_summary_record = nullptr;
       abi_v10::Summary empty_vector_summary;
       if (summary_records != summaries.end()) {
@@ -38104,6 +38206,14 @@ static ParsedModuleUnit load_module_interface(
                   "SOURCE_FREE_SUMMARY_INVALID");
             empty_vector_summary_record = &candidate;
             empty_vector_summary = decoded;
+          }
+          if (abi_v10_parameter_return_summary_candidate(decoded)) {
+            if (parameter_return_summary_record)
+              throw CompileError(0,
+                  "duplicate checked ABI-v10 parameter-return summary",
+                  "SOURCE_FREE_SUMMARY_INVALID");
+            parameter_return_summary_record = &candidate;
+            parameter_return_summary = decoded;
           }
           if (!abi_v10_checked_arithmetic_summary_candidate(decoded)) continue;
           if (arithmetic_summary_record)
@@ -38210,6 +38320,18 @@ static ParsedModuleUnit load_module_interface(
         throw CompileError(std::max(function.line, 1),
             "checked ABI-v10 empty-vector body is missing its typed v2 summary",
             "SOURCE_FREE_SUMMARY_INVALID");
+      const bool parameter_return_body_without_typed_summary =
+          has_body && !has_typed_summary &&
+          std::any_of(body_records->second.begin(), body_records->second.end(),
+              [&](const auto& body_record) {
+            return abi_v10_parameter_return_body_candidate(
+                body_record.first.checked_ir_bytes, checked_body_type_context,
+                body_record.first.semantic_hash);
+          });
+      if (parameter_return_body_without_typed_summary)
+        throw CompileError(std::max(function.line, 1),
+            "checked ABI-v10 parameter-return body is missing its typed v2 summary",
+            "SOURCE_FREE_SUMMARY_INVALID");
       if (arithmetic_summary_record) {
         validate_abi_v10_checked_arithmetic_summary(arithmetic_summary,
                                                     function);
@@ -38242,6 +38364,24 @@ static ParsedModuleUnit load_module_interface(
             checked_body.semantic_hash != empty_vector_summary.body_semantic_hash)
           throw CompileError(std::max(function.line, 1),
               "checked ABI-v10 empty-vector body identity or semantic hash does not match its summary",
+              "SOURCE_FREE_CHECKED_BODY_INVALID");
+      }
+      if (parameter_return_summary_record) {
+        if (summary_records->second.size() != 1)
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 parameter-return callable has duplicate summaries",
+              "SOURCE_FREE_SUMMARY_INVALID");
+        if (!has_body || body_records->second.size() != 1)
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 parameter-return summary requires exactly one checked body",
+              "SOURCE_FREE_CHECKED_BODY_INVALID");
+        const auto& checked_body = body_records->second.front().first;
+        if (checked_body.callable_id != id ||
+            checked_body.semantic_hash !=
+                parameter_return_summary.body_semantic_hash ||
+            !checked_body.dependencies.empty())
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 parameter-return body identity, hash, or dependencies do not match its summary",
               "SOURCE_FREE_CHECKED_BODY_INVALID");
       }
       if (!has_body) continue;
@@ -40032,6 +40172,117 @@ static void append_abi_v10_direct_checked_records(
   }
 }
 
+// Emit the single-parameter generic identity body using the complete checker
+// summary and canonical checked-body codec. Other one-return expressions are
+// left to their existing producer paths or legacy compatibility handling.
+static void append_abi_v10_parameter_return_records(
+    abi_v10::Interface& value, const Program& program,
+    const string& module) {
+  if (!program.type_context) return;
+  for (const auto& function : program.functions) {
+    if (!function.exported || !function.static_dispatch ||
+        !belongs_to_module(function.name, module) ||
+        std::filesystem::path(function.source_file).extension() == ".mossi")
+      continue;
+    const auto checked = checked_parameter_return_body(function);
+    if (!checked) continue;
+    const auto& facts = *function.open_summary;
+    if (function.semantic_callable_id.empty() ||
+        facts.callable_id != function.semantic_callable_id)
+      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+          "checked ABI-v10 parameter-return callable identity is inconsistent");
+    const auto callable = moss::CallableId::parse(function.semantic_callable_id);
+    const string declaration_name = function.declaration_name.empty()
+        ? function.name : function.declaration_name;
+    if (!callable || callable->kind != "fn" ||
+        callable->module_id != value.module_id ||
+        callable->declaration_name != declaration_name)
+      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+          "checked ABI-v10 parameter-return callable identity is invalid");
+
+    for (const auto* records : {&value.semantic_contract,
+                                &value.private_semantic_dependencies}) {
+      for (const auto& record : *records) {
+        if (record.id == "checked-body-v1:" + function.semantic_callable_id)
+          throw ProjectError("SOURCE_FREE_CHECKED_BODY_INVALID",
+              "checked ABI-v10 parameter-return body is duplicated");
+        if (record.payload.empty() ||
+            (static_cast<unsigned char>(record.payload.front()) != 1 &&
+             static_cast<unsigned char>(record.payload.front()) != 2) ||
+            !abi_v10::hex_hash(record.id))
+          continue;
+        const auto prior = abi_v10::read_summary(record.payload);
+        if (prior.callable_id == function.semantic_callable_id)
+          throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+              "checked ABI-v10 parameter-return summary is duplicated");
+      }
+    }
+
+    abi_v10::Summary summary;
+    summary.callable_id = function.semantic_callable_id;
+    summary.variable_count = facts.bound_variable_count;
+    if (facts.parameter_types.size() != 1 ||
+        facts.parameter_access.size() != 1)
+      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+          "checked ABI-v10 parameter-return summary is incomplete");
+    const auto parameter = abi_v10_checked_type(
+        facts.parameter_types.front(), summary.variable_count);
+    const auto result = abi_v10_checked_type(
+        facts.result_type, summary.variable_count);
+    if (!parameter || !result)
+      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+          "checked ABI-v10 parameter-return TypeRefs are inconsistent");
+    summary.parameters.push_back(*parameter);
+    summary.parameter_access.push_back(
+        abi_v10_checked_access(facts.parameter_access.front()));
+    summary.result = *result;
+    summary.body_semantic_hash = checked->semantic_hash;
+    const auto provenance = abi_v10_checked_provenance(
+        value.module_id, summary.callable_id,
+        function.source_file, function.line);
+    summary.provenance_id = provenance.provenance_id;
+
+    abi_v10::CheckedBodyRecord body;
+    body.callable_id = summary.callable_id;
+    body.semantic_hash = checked->semantic_hash;
+    body.checked_ir_bytes = checked_ir::encode_checked_body_v1(
+        checked->statements);
+    const auto summary_record = abi_v10::summary_record(summary);
+    const auto body_record = abi_v10::checked_body_record(body);
+    const auto provenance_record = abi_v10::provenance_record(provenance);
+    try {
+      abi_v10::validate_summary(summary_record);
+      abi_v10::validate_checked_body_record(body_record);
+      abi_v10::validate_provenance(provenance_record);
+      const auto decoded = checked_ir::decode_h3_checked_body_v1(
+          body.checked_ir_bytes, *program.type_context,
+          {facts.parameter_types.front()}, facts.result_type,
+          body.semantic_hash);
+      if (checked_ir::encode_checked_body_v1(decoded) !=
+              body.checked_ir_bytes ||
+          abi_v10::read_summary(summary_record.payload).body_semantic_hash !=
+              body.semantic_hash)
+        throw ProjectError("SOURCE_FREE_CHECKED_BODY_INVALID",
+            "checked ABI-v10 parameter-return records are not canonical");
+    } catch (const abi_v10::Error& error) {
+      throw ProjectError(error.code, error.what());
+    } catch (const std::invalid_argument& error) {
+      throw ProjectError("SOURCE_FREE_CHECKED_BODY_INVALID", error.what());
+    }
+    if (value.provenance.end() != std::find_if(
+            value.provenance.begin(), value.provenance.end(),
+            [&](const abi_v10::Record& record) {
+          return record.id == provenance_record.id;
+        }))
+      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+          "checked ABI-v10 parameter-return provenance is duplicated");
+
+    value.semantic_contract.push_back(summary_record);
+    value.private_semantic_dependencies.push_back(body_record);
+    value.provenance.push_back(provenance_record);
+  }
+}
+
 // Emit the checked single-return arithmetic subset independently from the
 // constructor and private-call-chain producers. The body producer and the
 // complete retained summary jointly establish the expression and its types.
@@ -41091,6 +41342,7 @@ static vector<std::filesystem::path> write_module_interfaces(
         abi_v10_declaration_records(binary_contract.str());
     value.semantic_contract = abi_v10_declaration_records(contents[module].str());
     append_abi_v10_direct_checked_records(value, program, module);
+    append_abi_v10_parameter_return_records(value, program, module);
     append_abi_v10_arithmetic_records(value, program, module);
     append_abi_v10_empty_vector_records(value, program, module);
     append_abi_v10_private_chain_records(value, program, module);

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Run the prioritized ABI-v10 source-free generic acceptance corpus.
 
-The uncovered rows first prove that the current ABI-v10 legacy fallback works,
-then remove the exported callable's generic_stmt and require consumer rejection.
-Existing checked-body suites provide the positive and record-corruption gates
-for shapes already supported by the consumer.
+Legacy-dependent rows prove their current source-free behavior and then poison
+generic_stmt. Checked-body-supported rows must keep their result after that
+poison and report checked-body projection. Existing suites provide additional
+positive and record-corruption gates.
 """
 
 import argparse
@@ -64,6 +64,11 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
              "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
              "tests/tooling/poison_phase25_generic_callable.cpp", "-o",
              str(poisoner)], cwd=ROOT, env=os.environ.copy())
+    parameter_mutator = scratch / "mutate_parameter_return_artifact"
+    command(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
+             "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
+             "tests/tooling/mutate_phase25_parameter_return_artifact.cpp", "-o",
+             str(parameter_mutator)], cwd=ROOT, env=os.environ.copy())
 
     base_env = os.environ.copy()
     base_env.update(MOSS_STAGED_ABI="v10", MOSS=str(MOSS), TMPDIR=str(TMP))
@@ -105,6 +110,101 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
         command([str(MARGO), "build"], cwd=consumer, env=env)
         output = command([str(MARGO), "run"], cwd=consumer, env=env)
         assert output == case["expected_output"], (case["id"], output)
+        if case["checked_body_status"].startswith("checked-body supported"):
+            trace_env = env | {"MOSS_PHASE25_CHECKED_BODY_TRACE": "1"}
+            trace = "MOSS_CHECKED_BODY_PROJECTED|callable-v1:"
+            check_output = command(
+                [str(MOSS), "check", str(consumer / "src/main.moss"), "--json"],
+                cwd=consumer, env=trace_env)
+            assert (trace in check_output and
+                    ":fn:fresh|checked-body-v1" in check_output), (
+                        case["id"], "checked-body projection trace missing",
+                        check_output)
+            print(f"PASS {case['id']}: source-free checked-body baseline executes")
+
+            poisoned = case_root / "poisoned-artifacts"
+            shutil.copytree(artifacts, poisoned)
+            poison_output = command(
+                [str(poisoner), str(poisoned / "Service.mossi"),
+                 str(poisoned / "libService.rlib"), "Service", "fresh"],
+                cwd=ROOT, env=base_env)
+            assert "removed 1 generic_stmt" in poison_output, poison_output
+            poisoned_env = trace_env | {
+                "MOSS_MODULE_PATH": str(poisoned),
+                "MARGO_HOME": str(case_root / "margo-poisoned"),
+            }
+            poisoned_build = command(
+                [str(MARGO), "build"], cwd=consumer, env=poisoned_env)
+            poisoned_check = command(
+                [str(MOSS), "check", str(consumer / "src/main.moss"), "--json"],
+                cwd=consumer, env=poisoned_env)
+            assert (trace in poisoned_build + poisoned_check and
+                    ":fn:fresh|checked-body-v1" in poisoned_build + poisoned_check), (
+                        case["id"], "poisoned import did not project checked body",
+                        poisoned_build + poisoned_check)
+            poisoned_output = command(
+                [str(MARGO), "run"], cwd=consumer, env=poisoned_env)
+            assert poisoned_output == case["expected_output"], (
+                case["id"], poisoned_output)
+            print(f"PASS {case['id']}: legacy generic_stmt removed; checked-body result unchanged")
+
+            negative_cases = {
+                "missing-summary": ("SOURCE_FREE_SUMMARY_INVALID",),
+                "missing-body": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
+                "corrupted-summary": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
+                "type-binding": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
+                "identity": ("SOURCE_FREE_",),
+                "mismatch-hash": ("SOURCE_FREE_CHECKED_BODY_INVALID",
+                                  "SOURCE_FREE_SUMMARY_INVALID"),
+                "missing-provenance": ("SOURCE_FREE_SUMMARY_INVALID",
+                                       "SOURCE_FREE_CONTRACT_INVALID"),
+            }
+            for mode, expected_codes in negative_cases.items():
+                mutated = case_root / f"parameter-{mode}"
+                shutil.copytree(poisoned, mutated)
+                command([str(parameter_mutator), str(mutated / "Service.mossi"),
+                         str(mutated / "libService.rlib"), mode],
+                        cwd=ROOT, env=base_env)
+                bad_consumer = case_root / f"consumer-{mode}"
+                package(bad_consumer,
+                        f"m2b3a_parameter_{mode.replace('-', '_')}_consumer",
+                        case["consumer"])
+                bad_env = poisoned_env | {
+                    "MOSS_MODULE_PATH": str(mutated),
+                    "MARGO_HOME": str(case_root / f"margo-{mode}"),
+                }
+                rejected = subprocess.run(
+                    [str(MARGO), "build"], cwd=bad_consumer, env=bad_env,
+                    capture_output=True, text=True, timeout=240)
+                reject_output = rejected.stdout + rejected.stderr
+                assert rejected.returncode != 0 and any(
+                    code in reject_output for code in expected_codes), (
+                        mode, expected_codes, reject_output)
+                print(f"PASS parameter-return {mode} rejects fail-closed")
+
+            v9_env = base_env.copy()
+            v9_env.pop("MOSS_STAGED_ABI", None)
+            v9_provider = case_root / "provider-v9"
+            package(v9_provider, "m2b3a_parameter_return_provider_v9",
+                    case["provider"])
+            v9_env["MARGO_HOME"] = str(case_root / "margo-provider-v9")
+            command([str(MARGO), "build"], cwd=v9_provider, env=v9_env)
+            v9_artifacts = case_root / "artifacts-v9"
+            shutil.copytree(v9_provider / "build/debug", v9_artifacts)
+            shutil.rmtree(v9_provider / "src")
+            v9_consumer = case_root / "consumer-v9"
+            package(v9_consumer,
+                    "m2b3a_parameter_return_consumer_v9", case["consumer"])
+            v9_env = v9_env | {
+                "MOSS_MODULE_PATH": str(v9_artifacts),
+                "MARGO_HOME": str(case_root / "margo-consumer-v9"),
+            }
+            command([str(MARGO), "build"], cwd=v9_consumer, env=v9_env)
+            v9_output = command([str(MARGO), "run"], cwd=v9_consumer, env=v9_env)
+            assert v9_output == case["expected_output"], v9_output
+            print(f"PASS {case['id']}: ABI-v9 source-free compatibility")
+            continue
+
         print(f"PASS {case['id']}: source-free baseline executes via legacy record")
 
         poisoned = case_root / "poisoned-artifacts"

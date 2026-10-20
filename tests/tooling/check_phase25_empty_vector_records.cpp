@@ -122,6 +122,8 @@ static void check_artifact(const std::string& bytes, bool experimental) {
   abi_v10::validate_complete_interface(sealed);
   const auto& iface = sealed.value;
   const string fresh_id = "callable-v1:" + iface.module_id + ":fn:fresh";
+  const string dependent_id =
+      "callable-v1:" + iface.module_id + ":fn:dependent";
   std::vector<abi_v10::Summary> summaries;
   for (const auto* records : {&iface.semantic_contract,
                                &iface.private_semantic_dependencies}) {
@@ -146,6 +148,50 @@ static void check_artifact(const std::string& bytes, bool experimental) {
     if (record.payload.find("export fn fresh") != string::npos)
       generic_statements = count_lines_containing(
           record.payload, "  generic_stmt ");
+
+  // Direct generic parameter returns are a separate always-on ABI-v10 body
+  // form. The empty-vector feature switch must not disable this record pair.
+  std::vector<abi_v10::Summary> parameter_summaries;
+  for (const auto* records : {&iface.semantic_contract,
+                               &iface.private_semantic_dependencies})
+    for (const auto& record : *records)
+      if (!record.payload.empty() && record.payload.front() == 2 &&
+          abi_v10::hex_hash(record.id) &&
+          abi_v10::read_summary(record.payload).callable_id == dependent_id)
+        parameter_summaries.push_back(abi_v10::read_summary(record.payload));
+  std::vector<abi_v10::CheckedBodyRecord> parameter_bodies;
+  for (const auto& record : iface.private_semantic_dependencies)
+    if (record.id == "checked-body-v1:" + dependent_id)
+      parameter_bodies.push_back(
+          abi_v10::read_checked_body_record(record.payload));
+  assert(parameter_summaries.size() == 1 && parameter_bodies.size() == 1);
+  const auto& parameter_summary = parameter_summaries.front();
+  const auto& parameter_body = parameter_bodies.front();
+  assert(parameter_summary.variable_count == 1 &&
+         parameter_summary.parameters.size() == 1 &&
+         parameter_summary.parameters.front().kind ==
+             abi_v10::WireTypeKind::BoundVar &&
+         parameter_summary.parameters.front().ordinal == 0 &&
+         parameter_summary.parameter_access ==
+             std::vector<abi_v10::Access>{abi_v10::Access::Read} &&
+         parameter_summary.result.kind == abi_v10::WireTypeKind::BoundVar &&
+         parameter_summary.result.ordinal == 0 &&
+         parameter_summary.requirements.empty() &&
+         parameter_summary.dependencies.empty() &&
+         parameter_body.semantic_hash ==
+             parameter_summary.body_semantic_hash &&
+         parameter_body.dependencies.empty());
+  TypeContext parameter_context;
+  const auto generic_type = Type::var(TypeVarId{0, 0, 0});
+  const auto parameter_statements = checked_ir::decode_h3_checked_body_v1(
+      parameter_body.checked_ir_bytes, parameter_context, {generic_type},
+      generic_type, parameter_body.semantic_hash);
+  assert(parameter_statements.size() == 1 &&
+         parameter_statements.front().kind == checked_ir::StmtKind::Return &&
+         parameter_statements.front().expr &&
+         parameter_statements.front().expr->kind ==
+             checked_ir::ExprKind::Parameter &&
+         parameter_statements.front().expr->ordinal == 0);
 
   if (!experimental) {
     assert(summaries.empty() && bodies.empty());
@@ -244,7 +290,7 @@ static void check_artifact(const std::string& bytes, bool experimental) {
   }
   assert(callable_provenance_count == 1);
 
-  for (const auto& name : {"nonempty", "dependent", "scalar", "multiple"}) {
+  for (const auto& name : {"nonempty", "scalar", "multiple"}) {
     const string id = "callable-v1:" + iface.module_id + ":fn:" + name;
     assert(std::none_of(bodies.begin(), bodies.end(), [&](const auto& item) {
       return item.callable_id == id;
@@ -257,7 +303,8 @@ static void check_artifact(const std::string& bytes, bool experimental) {
   std::cout << "PASS experimental empty-vector summary/body counts 1/1; hash="
             << body.semantic_hash
             << "; provenance=1; canonical bytes and tree verified; "
-               "legacy generic_stmt=1; unsupported bodies=0; interface valid\n";
+               "legacy generic_stmt=1; unsupported empty-vector bodies=0; "
+               "direct parameter-return summary/body=1/1; interface valid\n";
 }
 
 int main(int argc, char** argv) {

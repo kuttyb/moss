@@ -1,5 +1,25 @@
 # Moss current status
 
+## Phase 25-M2b.3a parameter-return implementation — 2026-10-19
+
+Implementation is complete on dedicated branch `phase25-m2b3a-parameter-return`,
+based on `c0ef11656d4718ebd694a6cd908c194ad8960523`. The change emits the
+checker-owned generic identity summary, checked body, and callable provenance;
+the ABI-v10 importer validates and projects `Return(Parameter(0))` into the
+existing AST before ordinary specialization. The source-free corpus now
+requires an observable projection trace and proves both integer and string
+specializations still execute after removing `generic_stmt`. The change has
+not been integrated; integration review remains pending.
+
+Validation on the implementation branch: `make --jobs="$(nproc)" moss-dev`,
+the source-free corpus (including missing/corrupt record negatives and ABI-v9
+compatibility), the R2b empty-vector record verifier, R2c consumer and
+execution, M2b.1 provenance, G2 conformance, checked-arithmetic acceptance,
+H3 Scenario 6, feedback validation, and `git diff --check` passed. No full
+repository suite was run. Existing `TypeSolver::Undo::binding` aggregate
+initialization warnings appeared during the compiler build. No implementation
+or milestone closure is claimed for broader checked-body coverage.
+
 ## Focused TypeSolver atomicity fix — 2026-10-19
 
 Integrated and pushed commit `3f2368bb4388812edec7efa03b3575c3766b0f84`
