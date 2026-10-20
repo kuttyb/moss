@@ -9461,4 +9461,5 @@ source-free corpus; G2 conformance (11/11); mixed-provider admission; and the
 ABI-v9 collections SDK source-free smoke. `make check` passed all 131/131 jobs
 (0 failed, 0 skipped; 16.4 minute suite wall time). `git diff --check` passed.
 No compiler source or ABI/default behavior changed. Pending delivery at status
-record time: commit and push the tests-only correction.
+record time: tests-only correction committed as `2adaa08b` and pushed to
+`origin/phase25-integration`; working tree was clean after delivery.
