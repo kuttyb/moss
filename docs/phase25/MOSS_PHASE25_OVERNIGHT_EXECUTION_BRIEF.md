@@ -9,6 +9,7 @@
 **D2 base:** `39e7d8ac810f579243400766f007e9e7550b209b`  
 **Expected after D2 fast-forward:** `phase25-integration` at `4ff42566ff66fa012cc9ac24c5440691e3b4cfd3`, followed *only if needed* by a status-only commit. Record that actual SHA before starting implementation.
 **Pre-created overnight branch:** `phase25-m2b3d-overnight`, branched from reviewed D2 commit `4ff42566ff66fa012cc9ac24c5440691e3b4cfd3`; this document is committed to that branch. Do not try to create the branch again.
+**Morning checkpoint:** Gate 0 passed and `phase25-integration` is at `4ff42566ff66fa012cc9ac24c5440691e3b4cfd3`. Overnight handoff `590f7e8005ab7a6c06d2fca38de3911646cf0856` stopped at D3a over implicit-local mutability. L7 resolved that conflict below. Resume directly from D3a on the existing overnight branch; do not repeat Gate 0 or modify integration again.
 
 ## Outcome and non-negotiable boundaries
 
@@ -55,6 +56,20 @@ inspection may proceed separately; it cannot hold up the index_of chain.
 
 **Gate 0 PASS:** D2 fast-forward only, clean remote, compatible fixtures green, exact integrated SHA recorded. A failure in any reviewed D2 core check stops the overnight compiler chain.
 
+### L7 semantic decision — D3a implicit mutable binding (2026-10-20 morning)
+
+**Binding contract correction, overriding any older contradictory language below:** Keep the actual SDK source unchanged. Moss accepts first `n = items |> count` as introducing an **implicitly mutable** local. A subsequent `n = 2` is legal; an explicit `let n = ...` would be immutable. The original D2 positive fixture's `Let(n)` was therefore an incorrect model of the SDK semantics. It is a fixture/plan defect, not a justification to change the language or SDK.
+
+**Mandatory D3a preflight, before retaining the typed statement tree:**
+
+1. Prove from checker-owned binding/local information that the *first* `n = ...` in this lexical scope introduces a new mutable `Int` binding at local ordinal 1, as distinct from assigning an already-bound local. Do not infer this solely from name spelling, line order, or a scan of `Stmt::text`; verify scope, definition, shadowing and all relevant control-flow paths. If the checker lacks the needed introduction/mutability fact, implement its smallest authoritative retention mechanism; otherwise stop with an exact missing invariant.
+2. In checked-body IR, normalize that checker-proven **implicit mutable introduction** to `StmtKind::Var(ordinal=1, type=Int, initializer=CollectionCount(items))`. `StmtKind::Var` here denotes the semantic mutable-binding introduction, not a claim that source contained the `var` keyword. Encode subsequent assignments to `n` as `StmtKind::Assign(ordinal=1, ...)`. Retain existing `Var(i)` at ordinal 0. Explicit `let` remains `StmtKind::Let` and rejects later assignments. No new tag or altered wire schema is needed for this accepted subset.
+3. On the overnight feature branch, correct `tests/tooling/check_phase25_d2_collection_loop_codec.cpp` to use `Var(n)` rather than `Let(n)`. Change the earlier "assign to immutable n rejects" assertion to **mutable n assignment accepts and round-trips**. Add a separate `Let(n)` negative showing explicit immutability is enforced. Preserve invalid read-before-declaration and incorrect n TypeRef negatives; preserve existing H3 golden hashes and pre-D2 reader compatibility. Do not rewrite the already-integrated D2 commit or retroactively modify `phase25-integration`.
+4. Prove semantic equivalence of actual implicit `n = 1; n = 2` and normalized `var n = 1; n = 2` in checker, Fast Debug and native where supported; prove the explicit `let n = 1; n = 2` case rejects with `IMMUTABLE_LOCAL_MUTATION`. Add a local-shadowing/branch-introduction negative so a first assignment in one scope cannot be silently treated as a safe outer declaration. Use the normal Moss checker as final authority after import projection.
+5. Record this as a separately identified D3a-preflight correction commit with focused tests and `git diff --check`. Resume the rest of D3a only after this is green. If source and checked IR semantics differ in ownership, scope or effect interpretation, fail closed and report rather than changing SDK behavior.
+
+The original plan's *general* statement-tree and provider/consumer acceptance gates still apply, with `n` now correctly treated as a mutable local. Local-only mutation does not turn parameter accesses from READ/READ into WRITE, nor justify changing the existing `may_panic` effect.
+
 ### Gate 1 — D3a: checker-owned typed statement-tree retention
 
 **Target:** actual `sdk/foundations/collections/src/collections.moss::index_of`, as well as the equivalent `Service.fresh` source-free corpus fixture. For reference, its exact source structure is:
@@ -76,7 +91,7 @@ Find the **actual checker semantic owner** of the statement/body TypeRefs: `Chec
 
 Preserve in retained IR:
 - parameter ordinals 0 (`Vector[T]`) and 1 (`T`);
-- local ordinal 0 for mutable `i: Int`, ordinal 1 for immutable `n: Int`;
+- local ordinal 0 for explicit mutable `i: Int`, ordinal 1 for **implicitly introduced mutable** `n: Int` (checker-certified semantic `Var` introduction, not an explicit `Let`);
 - the typed initializer expressions and actual `CollectionCount` operation identity;
 - `While(Less(LocalRead(i), LocalRead(n)))`, with Bool result and nested block;
 - nested `If(Equal(Index(items, i), target))` with exact Index and equality semantics, early `Return(i)`, and subsequent `Assign(i, Add(i, 1))`;
@@ -86,7 +101,7 @@ Preserve in retained IR:
 
 Use the D2 canonical body encoder **without changing its existing wire semantics**. Implement *small checker-lifecycle retention adapters* if needed; do not build an independent statement type inference engine. Prove the retained body and open summary share exactly one TypeRef binding for T; no requirement/operation omission, no source text payload. The summary must be derivable with **no concrete consumer calls**. Check that checker retention is not accidentally specific to the name `index_of` or number of textual lines; supported semantic shape + complete authority determine admissibility.
 
-**D3a focused tests:** provider-only check, checked IR exactly matching D2 fixture, canonical body hash reproducibility, Int/String bound variable contexts, invalid/incomplete summaries do not yield checked-body availability, extra `target + target`, duplicate Count/Index, extra equality and unsupported record equality remain fail-closed. One additional test for local shadowing/branch scope or immutable mutation. Ensure G2 and D1 facts still pass. A fully typed checked body must never be emitted for an incomplete summary.
+**D3a focused tests:** provider-only check, checked IR exactly matching the *corrected mutable-n D2 fixture*, canonical body hash reproducibility, Int/String bound variable contexts, invalid/incomplete summaries do not yield checked-body availability, extra `target + target`, duplicate Count/Index, extra equality and unsupported record equality remain fail-closed. Prove implicit mutable-n reassignment succeeds, explicit `let n` reassignment rejects, and branch-local/shadowed introduction does not escape scope. Ensure G2 and D1 facts still pass. A fully typed checked body must never be emitted for an incomplete summary.
 
 **D3a commit:** code + tests + status with body representation, exact entry points and evidence; push branch checkpoint. If the checker truly cannot recover identity or path/ownership facts from its existing semantic state, stop this milestone, document the first missing invariant with a minimal reproducer, and do not fabricate a checked summary.
 
