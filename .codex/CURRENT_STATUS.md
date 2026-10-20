@@ -8802,3 +8802,31 @@ with uncommitted R2b status, feedback, and M2b.1 test changes; those task-relate
 changes are included in implementation commit
 `3d0a5faae0711d16f5c8c4854c54eb865bcb5199`, pushed on
 `origin/phase25-m2b1-r2c`.
+
+## Phase 25-M2b.1 R2c integration closeout — 2026-10-19
+
+Fast-forwarded `phase25-integration` from R2b baseline `a92e510d` to the
+reviewed R2c source `f5e4badec7a2b0b93515ae53121886dc8ab78556`. The provider
+source-free consumer executed `Vector[i32]` and `Vector[bool]` through the
+checked-body projection; trace assertions confirmed the imported `fresh`
+callable was projected from `checked-body-v1`. The M2b.1 provenance suite
+confirmed provider-origin notes on imported conflicts and no provider
+provenance on an ordinary local conflict. ABI-v9 remains the default, with
+switch-off and ABI-v9 emission checks passing and legacy records retained.
+
+Integration validation on `f5e4bade`:
+- `make moss-dev` passed with pre-existing TypeSolver aggregate-initializer
+  warnings.
+- R2b empty-vector record emission and R2c source-free consumer suites passed;
+  all R2c artifact mutation, unsupported-shape, and ABI-mode rejection cases
+  failed closed as expected.
+- M2b.1 provenance passed: ambiguous relay and conflicting fresh use retained
+  provider provenance; ordinary local conflict had none.
+- G2 conformance passed 11/11; checked-arithmetic acceptance passed.
+- H3 Scenario 6 passed with provider source removed and output `99`.
+- Agent-feedback validation and `git diff --check` passed.
+
+M2b.1 is closed. No other blocker remains within this milestone. The full
+repository regression suite was not requested or run. This closeout records
+integration of the existing R2c work; no follow-on specialization workstream
+was started.
