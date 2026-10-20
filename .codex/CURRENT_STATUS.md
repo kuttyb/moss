@@ -9657,3 +9657,13 @@ Build output contains existing TypeSolver missing-initializer warnings.
 Current source needs an exact-SHA review. R1 remains incomplete; constructor,
 collection, pipeline and message lowering, statement/binding/scope accounting,
 source totality and a common lowerer remain open.
+
+The architect returned NO-GO on pushed `323105db332526d16b1bcf519672cbbaa8ac4863`
+because statement-call roots need `call-argument:<i>` and statement-form sort
+records explicit non-expression operands. The uncommitted correction switches
+the verifier contract by root slot. The compiler build, M2b2 corpus, concrete
+sort statement probe, `replace` statement probe, FileIO source check, feedback
+and diff checks were rerun. The untyped generic sort probe hit
+`SORT_REQUIRES_VECTOR` before a Vector TypeRef could be inferred; builtin
+replace as a statement currently diagnoses unknown local function. Both are
+unclassified valid-surface questions for later triage, not accepted exclusions.

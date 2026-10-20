@@ -24672,7 +24672,14 @@ class Checker {
         }
         case BodyTypeState::ExpressionOccurrence::Kind::Call: {
           vector<string> expected;
-          if (occurrence.operation_id == "call:replace") {
+          if (occurrence.root_slot == "call-invocation") {
+            for (std::size_t index = 0;
+                 index < occurrence.source_operands.size(); ++index)
+              if (std::find(occurrence.non_expression_operand_ordinals.begin(),
+                            occurrence.non_expression_operand_ordinals.end(), index) ==
+                  occurrence.non_expression_operand_ordinals.end())
+                expected.push_back("call-argument:" + std::to_string(index));
+          } else if (occurrence.operation_id == "call:replace") {
             expected = {"place", "replacement"};
           } else {
             for (std::size_t index = 0;

@@ -465,3 +465,23 @@ pipeline/message lowering, statements, binding identity, source-to-occurrence
 totality, the common structural lowerer, and most ABI-v10 paths remain open.
 The corrected checkpoint requires exact-SHA adversarial review; R1 remains
 incomplete.
+
+The architect reviewed exact pushed SHA
+`323105db332526d16b1bcf519672cbbaa8ac4863` and returned **NO-GO** with one
+P1: the per-kind Call verifier used expression roles for statement roots,
+while `Stmt::Call` stores `call-argument:<i>` children and statement-form sort
+marks its skipped operands explicitly. The correction applies the
+`call-argument:<i>` contract to `call-invocation` roots and derives expected
+children from the retained non-expression ordinals. Post-fix validation:
+`make --jobs="$(nproc)" moss-dev`; full M2b2 source-free/hostile/v9 corpus;
+`moss check --json tests/swarm_044_index_specialization.moss`; a concrete
+statement-form sort probe in `tmp/phase25_statement_sort_roles.moss`;
+FileIO source check; feedback checker; and `git diff --check` passed. The
+initial untyped generic sort probe failed with `SORT_REQUIRES_VECTOR` while
+the vector TypeRef was still unknown; this is an unresolved checker limitation
+to classify against the generic language contract, not a passing case. The
+updated checkpoint needs exact-SHA review. A separate attempt to use the
+language builtin `replace(place, replacement)` as a statement was rejected as
+an unknown local function by the current statement checker; this must be
+classified against the source-surface contract and is not treated as an
+invalid-language conclusion. R1 remains incomplete.
