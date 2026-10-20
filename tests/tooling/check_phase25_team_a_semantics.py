@@ -640,11 +640,16 @@ fn main():
         operator_result = source(scratch, "generic_operator_result", '''fn add_one(value):
   return value + 1
 
+fn add_chain(value):
+  return value + 1 + 2
+
 fn main():
   echo add_one(2)
   echo add_one(2.5)
+  echo add_chain(3)
+  echo add_chain(3.5)
 ''')
-        parity(operator_result, scratch, "3\n3.5\n")
+        parity(operator_result, scratch, "3\n3.5\n6\n6.5\n")
         operator_inspect = run(MOSS, "inspect", "main", "--source",
                                operator_result, "--json")
         assert operator_inspect.returncode == 0, (
@@ -657,6 +662,19 @@ fn main():
                               if item["callable_id"] == operator_id]
         assert len(operator_summaries) == 1 and (
             operator_summaries[0]["requirement_count"] == 1), operator_typed
+        chain_summaries = [item for item in
+                           operator_typed["open_summaries"]
+                           if item["callable_id"].endswith(":fn:add_chain")]
+        assert len(chain_summaries) == 1 and (
+            chain_summaries[0]["requirement_count"] == 2), operator_typed
+        chain_requirements = chain_summaries[0]["requirements"]
+        assert chain_requirements[0]["requirement_id"].endswith(
+            ":requirement:checked-arithmetic:0")
+        assert chain_requirements[0]["parent_requirement_id"] is None
+        assert chain_requirements[1]["requirement_id"].endswith(
+            ":requirement:checked-arithmetic:1")
+        assert chain_requirements[1]["parent_requirement_id"] == (
+            chain_requirements[0]["requirement_id"])
         print("PASS generic operator result closes from typed requirement", flush=True)
 
         bad_operator = source(scratch, "bad_generic_operator", '''fn add_one(value):

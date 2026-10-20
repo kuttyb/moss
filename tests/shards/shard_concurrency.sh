@@ -16,7 +16,7 @@ run_case phase106c_account tests/phase106c_account.moss "$(printf '7\n1')"
 python3 tests/tooling/check_synchronization_plan.py "$compiler"
 ${CXX:-c++} -std=c++17 -Wall -Wextra -pedantic -Werror -Isrc \
   tests/tooling/check_synchronization_plan.cpp -o "$test_build/check_synchronization_plan"
-${CXX:-c++} -std=c++17 -O2 -Wall -Wextra -pedantic -Werror -Isrc \
+${CXX:-c++} -std=c++17 -O2 -Wall -Wextra -pedantic -Wno-missing-field-initializers -Werror -Isrc \
   tests/tooling/check_synchronization_lowering.cpp -o "$test_build/check_synchronization_lowering"
 "$test_build/check_synchronization_lowering"
 "$test_build/check_synchronization_plan"

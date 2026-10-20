@@ -16,7 +16,8 @@ MOSS = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "moss"
 # deterministic encoding, exact identities, malformed IR rejection, and dependency closure validation.
 cpp_test = ROOT / "tests" / "tooling" / "check_phase25_checked_body_ir.cpp"
 cpp_bin = ROOT / "tmp" / "phase25-checked-body-ir-cpp-test"
-subprocess.run(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror", "-pedantic",
+subprocess.run(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra",
+                "-Wno-missing-field-initializers", "-Werror", "-pedantic",
                 str(cpp_test), "-o", str(cpp_bin)], check=True)
 subprocess.run([str(cpp_bin)], check=True)
 

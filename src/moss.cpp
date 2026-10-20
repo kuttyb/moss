@@ -5695,6 +5695,8 @@ class Checker {
       bool complete = true;
       bool unresolved_open_generic_return = false;
       bool complete_open_arithmetic_return = false;
+      std::optional<string> legacy_return_operator_id;
+      std::optional<string> legacy_return_operator_expression;
       for (const auto& parameter : function.params) {
         moss::TypeRef term = parameter.type.empty() ? bound() :
             type_term(parameter.type);
@@ -6009,6 +6011,9 @@ class Checker {
                                     function.source_file, single_result_line,
                                     1, function.semantic_callable_id,
                                     requirement.id};
+              legacy_return_operator_id = requirement.id;
+              legacy_return_operator_expression =
+                  strip_redundant_outer_parentheses(expression);
               summary.requirements.push_back(std::move(requirement));
               break;
             }
@@ -6040,6 +6045,7 @@ class Checker {
         };
         std::uint32_t arithmetic_requirement_ordinal = 0;
         vector<moss::Requirement> captured_arithmetic_requirements;
+        std::map<string, string> captured_arithmetic_expressions;
         std::function<std::optional<OpenArithmeticExpr>(const string&)> retain =
             [&](const string& source) -> std::optional<OpenArithmeticExpr> {
           const string expression = strip_redundant_outer_parentheses(
@@ -6106,6 +6112,8 @@ class Checker {
                                   requirement_id};
             requirement.parent_requirement_id = left->requirement_id
                 ? left->requirement_id : right->requirement_id;
+            captured_arithmetic_expressions.emplace(requirement_id,
+                                                     expression);
             captured_arithmetic_requirements.push_back(std::move(requirement));
             return OpenArithmeticExpr{subject, requirement_id};
           }
@@ -6157,6 +6165,51 @@ class Checker {
             summary.result_type =
                 *captured_arithmetic_requirements.back().result;
           complete_open_arithmetic_return = requirements_complete;
+          // The older return-expression inference can retain one broad `+`
+          // obligation before this checked walker runs. Replace that specific
+          // fallback only when the complete checked arithmetic chain contains
+          // the same typed operation. Other requirements, including distinct
+          // arithmetic nodes in a chain, remain untouched.
+          if (requirements_complete && legacy_return_operator_id &&
+              legacy_return_operator_expression) {
+            auto legacy = std::find_if(summary.requirements.begin(),
+                summary.requirements.end(), [&](const auto& requirement) {
+              return requirement.id == *legacy_return_operator_id;
+            });
+            auto same_typed_operation = [&](const auto& left,
+                                            const auto& right) {
+              if (left.kind != moss::RequirementKind::Operator ||
+                  right.kind != moss::RequirementKind::Operator ||
+                  left.target_id != right.target_id || !left.subject ||
+                  !right.subject ||
+                  !left.subject->structurally_equal(*right.subject) ||
+                  left.arguments.size() != right.arguments.size() ||
+                  left.access != right.access ||
+                  left.argument_access != right.argument_access ||
+                  static_cast<bool>(left.result) !=
+                      static_cast<bool>(right.result))
+                return false;
+              for (size_t index = 0; index < left.arguments.size(); ++index)
+                if (!left.arguments[index] || !right.arguments[index] ||
+                    !left.arguments[index]->structurally_equal(
+                        *right.arguments[index]))
+                  return false;
+              return !left.result ||
+                  (*left.result)->structurally_equal(**right.result);
+            };
+            if (legacy != summary.requirements.end() &&
+                std::any_of(captured_arithmetic_requirements.begin(),
+                            captured_arithmetic_requirements.end(),
+                            [&](const auto& checked) {
+                  auto expression = captured_arithmetic_expressions.find(
+                      checked.id);
+                  return expression != captured_arithmetic_expressions.end() &&
+                      expression->second ==
+                          *legacy_return_operator_expression &&
+                      same_typed_operation(*legacy, checked);
+                }))
+              summary.requirements.erase(legacy);
+          }
           summary.requirements.insert(summary.requirements.end(),
               std::make_move_iterator(captured_arithmetic_requirements.begin()),
               std::make_move_iterator(captured_arithmetic_requirements.end()));

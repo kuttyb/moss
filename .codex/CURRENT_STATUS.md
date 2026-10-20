@@ -9397,3 +9397,50 @@ the same count, requirement IDs, and body hash. The expectation was not changed.
 
 No full repository suite was run. No implementation changes were added during
 integration, ABI-v9 remains default, and `main` was not modified.
+
+## Full `make check` follow-up — 2026-10-20
+
+Ran `make check` on `phase25-integration` (`31a84ac2e511d6f2c108539bb006d50495905562`).
+The 131-job suite completed with 125 passing and six failing. Four failures
+were test compile commands promoting existing `-Wmissing-field-initializers`
+warnings to errors. Added the targeted `-Wno-missing-field-initializers`
+suppression to the affected focused C++ test invocations in Python and shell
+test runners. Type IR, checked-body IR, ABI-v10 units (including adversarial
+records), and concurrency shard then passed when rerun individually.
+
+Two failures remain pending L7 review: typed-semantic API and Team A semantics
+both reject `add_one` because their expectation is one requirement while the
+compiler reports the two existing `return-operator` and `checked-arithmetic:0`
+requirements. No semantic expectation was changed. The full suite was not
+rerun after the targeted warning suppressions; the remaining assertion failures
+need approval before changing their expected semantic contract.
+
+## Phase 25 arithmetic requirement correction — 2026-10-20
+
+`Checker::build_open_callable_summaries()` now removes the legacy
+`return-operator` fallback only when the checked arithmetic walker has
+validated the same normalized expression node and an equivalent typed
+operator requirement (operation ID, subject, argument/result TypeRefs, and
+access modes). The checker-owned `checked-arithmetic:N` requirements remain
+authoritative. Fallback requirements for uncovered shapes remain available to
+the checker, while the existing completeness gate keeps those summaries
+unavailable.
+
+Typed-semantic and Team A tests cover one operation and chained `value + 1 + 2`:
+the single operation retains one `checked-arithmetic:0`; the chain retains two
+linked checked requirements; Int and Float calls produce distinct
+specialization keys and parity output. An uncovered `value + 1 * 2` shape
+remains unavailable rather than receiving an authoritative open summary.
+Checked-arithmetic source-free acceptance, the ABI-v10 source-free corpus, G2
+(11/11), and H3 arithmetic decoding passed. `make check` completed with 129/131
+jobs passing. The two remaining failures are the typed-semantic API and Team A
+source-free fixtures selecting `Provider.relay`, which lacks a validated
+checked body and is rejected with `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE`.
+`check_phase21c_branch_errors` passed in this final full run; two earlier
+parallel failures of that job passed when rerun individually.
+
+The targeted `-Wno-missing-field-initializers` flags remain only on standalone
+C++ test compile commands that previously failed on the existing aggregate
+initializer warning. Their focused jobs pass; no warning suppressions were
+added to compiler builds. The full suite has not been made green by changing
+the two unsupported source-free fixtures or weakening per-callable admission.

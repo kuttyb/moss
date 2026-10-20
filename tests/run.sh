@@ -61,11 +61,11 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_a3_specialization.
 # ABI-v10 container unit validation is staged; compiled-only Moss proof is
 # tracked separately by the Phase 25 G2 conformance gates below.
 mkdir -p tmp
-${CXX:-c++} -std=c++17 -Wall -Wextra -Werror -pedantic \
+${CXX:-c++} -std=c++17 -Wall -Wextra -Wno-missing-field-initializers -Werror -pedantic \
   tests/tooling/abi_v10_staging.cpp -o tmp/abi_v10_staging
 tmp/abi_v10_staging
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_known_open_nominal.py "$compiler"
-${CXX:-c++} -std=c++17 -Wall -Wextra -Werror -pedantic -Isrc \
+${CXX:-c++} -std=c++17 -Wall -Wextra -Wno-missing-field-initializers -Werror -pedantic -Isrc \
   tests/tooling/abi_v10_adversarial.cpp -o tmp/abi_v10_adversarial
 tmp/abi_v10_adversarial
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_conformance.py "$compiler"
@@ -1213,7 +1213,7 @@ run_case phase106c_account tests/phase106c_account.moss "$(printf '7\n1')"
 python3 tests/tooling/check_synchronization_plan.py "$compiler"
 ${CXX:-c++} -std=c++17 -Wall -Wextra -pedantic -Werror -Isrc \
   tests/tooling/check_synchronization_plan.cpp -o "$test_build/check_synchronization_plan"
-${CXX:-c++} -std=c++17 -O2 -Wall -Wextra -pedantic -Werror -Isrc \
+${CXX:-c++} -std=c++17 -O2 -Wall -Wextra -pedantic -Wno-missing-field-initializers -Werror -Isrc \
   tests/tooling/check_synchronization_lowering.cpp -o "$test_build/check_synchronization_lowering"
 "$test_build/check_synchronization_lowering"
 "$test_build/check_synchronization_plan"

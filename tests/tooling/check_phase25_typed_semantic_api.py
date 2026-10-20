@@ -91,9 +91,14 @@ fn main():
     operator_source.write_text("""fn add_one(value):
   return value + 1
 
+fn add_chain(value):
+  return value + 1 + 2
+
 fn main():
   echo add_one(2)
   echo add_one(2.5)
+  echo add_chain(3)
+  echo add_chain(3.5)
 """)
     operator_checked = subprocess.run([str(MOSS), "inspect", "main",
         "--source", str(operator_source), "--json"], text=True,
@@ -103,7 +108,8 @@ fn main():
     operator_typed = json.loads(operator_checked.stdout)["result"][
         "typed_semantic_v1"]
     assert operator_typed["open_summaries_complete"], operator_typed
-    operator_summary = operator_typed["open_summaries"][0]
+    operator_summary = next(entry for entry in operator_typed["open_summaries"]
+                            if entry["callable_id"].endswith(":fn:add_one"))
     assert operator_summary["callable_id"] == (
         f"callable-v1:{module}:fn:add_one"), operator_summary
     assert operator_summary["parameter_types"] == [
@@ -111,10 +117,52 @@ fn main():
     assert operator_summary["result_type"] == (
         {"kind": "bound_var", "ordinal": 0}), operator_summary
     assert operator_summary["requirement_count"] == 1, operator_summary
+    assert [requirement["requirement_id"].rsplit(":", 1)[-1]
+            for requirement in operator_summary["requirements"]] == ["0"], (
+                operator_summary)
+    assert operator_summary["requirements"][0]["requirement_id"].endswith(
+        ":requirement:checked-arithmetic:0"), operator_summary
     operator_specs = [entry for entry in operator_typed["specializations"]
                       if entry["callable_id"] == operator_summary["callable_id"]]
     assert len(operator_specs) == 2, operator_specs
     assert len({entry["key"] for entry in operator_specs}) == 2, operator_specs
+    chain_summary = next(entry for entry in operator_typed["open_summaries"]
+                         if entry["callable_id"].endswith(":fn:add_chain"))
+    assert chain_summary["requirement_count"] == 2, chain_summary
+    chain_requirements = chain_summary["requirements"]
+    assert [entry["requirement_id"].rsplit(":", 1)[-1]
+            for entry in chain_requirements] == ["0", "1"], chain_summary
+    assert chain_requirements[0]["requirement_id"].endswith(
+        ":requirement:checked-arithmetic:0"), chain_summary
+    assert chain_requirements[0]["parent_requirement_id"] is None, chain_summary
+    assert chain_requirements[1]["requirement_id"].endswith(
+        ":requirement:checked-arithmetic:1"), chain_summary
+    assert chain_requirements[1]["parent_requirement_id"] == (
+        chain_requirements[0]["requirement_id"]), chain_summary
+    chain_specs = [entry for entry in operator_typed["specializations"]
+                   if entry["callable_id"] == chain_summary["callable_id"]]
+    assert len(chain_specs) == 2, chain_specs
+    assert len({entry["key"] for entry in chain_specs}) == 2, chain_specs
+
+    uncovered_arithmetic_source = Path(scratch_path) / "uncovered_arithmetic.moss"
+    uncovered_arithmetic_source.write_text("""fn calc(value):
+  return value + 1 * 2
+
+fn main():
+  echo calc(3)
+""")
+    uncovered = subprocess.run([str(MOSS), "inspect", "main", "--source",
+        str(uncovered_arithmetic_source), "--json"], text=True,
+        capture_output=True)
+    assert uncovered.returncode == 0, (uncovered.stdout, uncovered.stderr)
+    uncovered_typed = json.loads(uncovered.stdout)["result"]["typed_semantic_v1"]
+    calc_id = f"callable-v1:{module}:fn:calc"
+    assert all(entry["callable_id"] != calc_id
+               for entry in uncovered_typed["open_summaries"]), uncovered_typed
+    assert any(entry["callable_id"] == calc_id and
+               entry["gap"] == "missing_typed_facts"
+               for entry in uncovered_typed["unavailable_open_summaries"]), (
+                   uncovered_typed)
 
     open_source = Path(scratch_path) / "open.moss"
     open_source.write_text("""fn fresh():
