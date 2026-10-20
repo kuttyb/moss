@@ -614,6 +614,10 @@ struct Function {
   string imported_checked_summary_payload;
   string imported_checked_body_payload;
   vector<std::pair<string, string>> imported_checked_provenance_records;
+  // Callable provenance records retained for staged ABI-v10 admission when
+  // the callable has no typed checked summary yet. They are validated only
+  // if that callable is selected for execution.
+  vector<std::pair<string, string>> imported_callable_provenance_records;
   // True once a validated ABI-v10 checked body replaced the imported legacy
   // generic_stmt projection for this callable.
   bool imported_checked_body_projected = false;

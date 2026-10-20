@@ -9310,3 +9310,41 @@ D3a retention PASS (`204d898864fd12512fdd9d92448df6305908b411`); D3b PASS
 with the exact baseline/toolchain exceptions above. The Phase 25 ABI-v10
 cutover itself remains BLOCKED pending L7's decision on the P1 `from_range`
 coverage gap and the full repository regression suite.
+
+## Phase 25 final admission-scope correction — 2026-10-20
+
+On `phase25-m2b3d-overnight` at reviewed baseline
+`0aad8aa24c16aef00b40db6634e8104d199f949c`, staged ABI-v10 generic
+admission is checked when the imported callable is selected. ABI-v10 import
+skips parsing retained `generic_stmt` and `generic_source`; unsupported callable
+provenance is retained from the sealed records and validated at use. Valid
+checked-body projections pass the admission guard. Missing typed summary,
+checked body, or invalid callable provenance rejects without legacy fallback.
+The guard is restricted to imported generic static callables.
+
+The mixed-provider acceptance compiles/seals `supported(value): return value`
+and `unsupported(value)` with an unsupported multi-statement body, removes
+provider source, and proves `supported(17)` returns `17` with a checked-body
+projection trace. Calling `unsupported(17)` fails with
+`SOURCE_FREE_CHECKED_BODY_UNAVAILABLE`; removing the supported body fails with
+`SOURCE_FREE_CHECKED_BODY_INVALID` while `generic_stmt` remains; forged
+unsupported provenance fails; ABI-v9 source-free execution returns `17` and
+`34` through retained bodies. The case is registered in
+`tests/phase25/source_free_corpus/corpus.json`.
+
+Strict admission exposed that the existing checked-arithmetic projector lowered
+the decoded body but omitted `imported_checked_body_projected`; this state and
+its optional trace are now set at the existing projection site. The source-free
+corpus passes after that correction.
+
+Validation on the final source: `make --jobs="$(nproc)" moss-dev` passed (with
+the existing `TypeSolver::Undo::binding` aggregate warnings); focused source-free
+corpus passed including parameter, scalar, field, direct-call, loop, arithmetic,
+constructor, empty-vector, ABI-v9 SDK compatibility, and mixed-provider cases;
+actual SDK collections source-free tests passed for `index_of`, `contains`, and
+`count_equal` with legacy bodies removed; M2b.1 provenance passed all five cases;
+G2 passed 11/11; H3 Scenario 6 passed with output `99`; feedback validation and
+`git diff --check` passed. The first full-corpus attempt exposed the missing
+arithmetic projection flag and an attribution formatting mismatch; both were
+corrected and the complete focused corpus passed on final source. A post-commit H3 Scenario 6 rerun passed with `dirty: false` and output `99`. No full repository
+suite was run; ABI default and integration/main were not changed.

@@ -4242,6 +4242,11 @@ static void project_imported_h3_checked_bodies(Program& program) {
       returned.text = "return " + lowered;
       function.body = {std::move(returned)};
       function.result_expression.reset();
+      function.imported_checked_body_projected = true;
+      if (const char* trace = std::getenv("MOSS_PHASE25_CHECKED_BODY_TRACE");
+          trace && string(trace) == "1")
+        std::cerr << "MOSS_CHECKED_BODY_PROJECTED|"
+                  << function.semantic_callable_id << "|checked-body-v1\n";
       continue;
     } else if (expression.kind == checked_ir::ExprKind::NominalConstruct) {
       auto declaration = program.type_context->find_id(
@@ -20224,6 +20229,7 @@ class Checker {
                                       const std::optional<moss::TypeRef>&
                                           closed_result_type = std::nullopt) {
     if (!function.static_dispatch) return;
+    require_staged_v10_callable_body(line, function);
     if (parameter_types.size() != function.params.size() ||
         !std::all_of(parameter_types.begin(), parameter_types.end(),
                      [&](const string& type) {
@@ -20576,6 +20582,109 @@ class Checker {
     return solver.unify(actual, formal);
   }
 
+  void require_staged_v10_callable_body(int line, Function& function) {
+    if (!staged_abi_v10() || !compiled_interface_file(function.source_file) ||
+        (!function.generic || !function.static_dispatch))
+      return;
+    if (!function.imported_checked_summary_payload.empty() &&
+        !function.imported_checked_body_payload.empty() &&
+        function.imported_checked_body_projected)
+      return;
+
+    string rejection_code = function.imported_checked_summary_payload.empty()
+        ? "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE"
+        : "SOURCE_FREE_CHECKED_BODY_INVALID";
+    string provider_file = function.source_file;
+    int provider_line = std::max(function.line, 1);
+    int provider_column = function.provider_origin_column;
+    string provenance_error;
+    if (function.imported_checked_summary_payload.empty()) {
+      const string callable_id = function.semantic_callable_id;
+      const auto callable = moss::CallableId::parse(callable_id);
+      const abi_v10::SourceProvenance* selected = nullptr;
+      abi_v10::SourceProvenance selected_origin;
+      for (const auto& entry : function.imported_callable_provenance_records) {
+        abi_v10::Record record{entry.first, entry.second};
+        abi_v10::SourceProvenance candidate;
+        try {
+          candidate = abi_v10::read_provenance(record.payload);
+        } catch (const abi_v10::Error&) {
+          continue;
+        }
+        if (candidate.declaration_id != callable_id) continue;
+        if (selected) {
+          provenance_error = "duplicate callable provenance";
+          break;
+        }
+        try {
+          abi_v10::validate_provenance(record);
+        } catch (const abi_v10::Error& error) {
+          provenance_error = error.what();
+          break;
+        }
+        selected_origin = std::move(candidate);
+        selected = &selected_origin;
+      }
+      if (!callable || callable->kind != "fn" ||
+          callable->canonical_id != function.semantic_callable_id)
+        provenance_error = "callable identity mismatch";
+      if (!selected && provenance_error.empty())
+        provenance_error = "callable provenance record missing";
+      if (selected && provenance_error.empty()) {
+        const auto& origin = *selected;
+        const string expected_logical_source = abi_v10::hash(
+            "moss-abi-v10-logical-source",
+            origin.module_id + "\n" + origin.source_file_display);
+        const string expected_provenance = abi_v10::hash(
+            "moss-abi-v10-provenance",
+            origin.declaration_id + "\n" + origin.logical_source_id + "\n" +
+                std::to_string(origin.start_line));
+        if (origin.module_id != callable->module_id ||
+            origin.declaration_id != callable_id ||
+            origin.logical_source_id != expected_logical_source ||
+            origin.provenance_id != expected_provenance ||
+            origin.source_file_display.empty() ||
+            std::filesystem::path(origin.source_file_display).filename() !=
+                origin.source_file_display ||
+            origin.start_line == 0 || origin.start_column == 0 ||
+            origin.start_line > static_cast<std::uint32_t>(
+                std::numeric_limits<int>::max()) ||
+            origin.start_column > static_cast<std::uint32_t>(
+                std::numeric_limits<int>::max()))
+          provenance_error = "callable provenance identity or origin mismatch";
+        else {
+          provider_file = origin.source_file_display;
+          provider_line = static_cast<int>(origin.start_line);
+          provider_column = static_cast<int>(origin.start_column);
+          function.provider_origin_file = provider_file;
+          function.provider_origin_column = provider_column;
+          function.provider_origin_module_id = origin.module_id;
+          function.provider_origin_identity = origin.declaration_id;
+          function.line = provider_line;
+        }
+      }
+      if (!provenance_error.empty())
+        rejection_code = "SOURCE_FREE_SUMMARY_INVALID";
+    }
+    CompileError error(std::max(provider_line, 1),
+        "staged ABI-v10 callable '" + function.name +
+            "' has no validated typed summary and checked body" +
+            (rejection_code == "SOURCE_FREE_SUMMARY_INVALID"
+                 ? " (" + provenance_error + ")" : ""),
+        rejection_code);
+    error.source_file = function.source_file;
+    if (!current_source_file_.empty())
+      error.teaching.related.push_back({
+          current_source_file_, line, 1,
+          "consumer selected this callable here"});
+    error.teaching.related.push_back({
+        provider_file, provider_line, provider_column,
+        "sealed provider callable '" + provider_callable_display(function.name) +
+            "' (" +
+            function.semantic_callable_id + ")"});
+    throw error;
+  }
+
   void check_function_call(int line, const string& name, const vector<string>& args,
                            const std::unordered_map<string,string>& env,
                            const moss::TypeRef& expected_open_result = nullptr,
@@ -20739,6 +20848,7 @@ class Checker {
       }
       err(line, "unknown local function '" + name + "'");
     }
+    require_staged_v10_callable_body(line, *function_target);
     struct FnWrapper {
       Function* second;
       const FnWrapper* operator->() const { return this; }
@@ -39510,7 +39620,10 @@ static ParsedModuleUnit load_module_interface(
         starts_with(line, "generic_stmt") ||
         starts_with(line, "generic_source") ||
         starts_with(line, "generic_result")) {
-      if (current) parse_generic_ir_line(line, *current);
+      if (current && !(staged_abi_v10() &&
+          (starts_with(line, "generic_stmt") ||
+           starts_with(line, "generic_source"))))
+        parse_generic_ir_line(line, *current);
       continue;
     }
   }
@@ -39979,94 +40092,15 @@ static ParsedModuleUnit load_module_interface(
       }
       bodies.erase(id);
     }
-    // Staged ABI v10 never treats retained generic_stmt/source fields as
-    // executable authority. Compatibility rows may remain in the sealed
-    // interface, but every imported generic static callable must have passed
-    // typed-summary, body-hash, provenance and dependency validation above.
-    for (const auto& function : provider.functions) {
-      if (!function.generic || !function.static_dispatch) continue;
-      if (function.imported_checked_summary_payload.empty()) {
-        const string callable_id = "callable-v1:" + unit.module_identity +
-            ":fn:" + function.name;
-        const abi_v10::Record* callable_provenance = nullptr;
-        abi_v10::SourceProvenance origin;
-        for (const auto& record : sealed.value.provenance) {
-          abi_v10::SourceProvenance candidate;
-          try {
-            abi_v10::validate_provenance(record);
-            candidate = abi_v10::read_provenance(record.payload);
-          } catch (const abi_v10::Error& error) {
-            throw CompileError(std::max(function.line, 1), error.what(), error.code);
-          }
-          if (candidate.declaration_id != callable_id) continue;
-          if (callable_provenance)
-            throw CompileError(std::max(function.line, 1),
-                "staged ABI-v10 generic callable has duplicate callable provenance",
-                "SOURCE_FREE_SUMMARY_INVALID");
-          callable_provenance = &record;
-          origin = std::move(candidate);
-        }
-        const string expected_logical_source = abi_v10::hash(
-            "moss-abi-v10-logical-source",
-            origin.module_id + "\n" + origin.source_file_display);
-        const string expected_provenance = abi_v10::hash(
-            "moss-abi-v10-provenance",
-            origin.declaration_id + "\n" + origin.logical_source_id + "\n" +
-                std::to_string(origin.start_line));
-        const auto callable = moss::CallableId::parse(callable_id);
-        string provenance_mismatch;
-        if (!callable_provenance) provenance_mismatch = "record missing";
-        else if (!callable) provenance_mismatch = "callable id malformed";
-        else if (callable->module_id != unit.module_identity)
-          provenance_mismatch = "callable module mismatch";
-        else if (callable->declaration_name != function.name)
-          provenance_mismatch = "callable name mismatch";
-        else if (origin.module_id != unit.module_identity)
-          provenance_mismatch = "origin module mismatch";
-        else if (origin.declaration_id != callable_id)
-          provenance_mismatch = "declaration identity mismatch";
-        else if (origin.logical_source_id != expected_logical_source)
-          provenance_mismatch = "logical source hash mismatch";
-        else if (origin.provenance_id != expected_provenance)
-          provenance_mismatch = "provenance hash mismatch";
-        else if (origin.source_file_display.empty() ||
-                 std::filesystem::path(origin.source_file_display).filename() !=
-                     origin.source_file_display)
-          provenance_mismatch = "source display path invalid";
-        else if (origin.start_line == 0 || origin.start_column == 0)
-          provenance_mismatch = "source location invalid";
-        if (!provenance_mismatch.empty())
-          throw CompileError(
-              std::max(function.line, 1),
-              "staged ABI-v10 generic callable has no valid typed summary or callable provenance (" +
-                  provenance_mismatch + ")",
-              "SOURCE_FREE_SUMMARY_INVALID");
-        CompileError error(std::max(function.line, 1),
-            "staged ABI-v10 generic callable '" + function.name +
-                "' has no validated typed summary and checked body",
-            "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE");
-        error.source_file = file.string();
-        error.teaching.related.push_back({
-            origin.source_file_display, static_cast<int>(origin.start_line),
-            static_cast<int>(origin.start_column),
-            "sealed provider callable '" + unit.name + "." + function.name +
-                "' (" + callable_id + ")"});
-        throw error;
-      }
-      if (function.imported_checked_body_payload.empty()) {
-        CompileError error(std::max(function.line, 1),
-            "staged ABI-v10 generic callable '" + function.name +
-                "' has no validated checked body",
-            "SOURCE_FREE_CHECKED_BODY_INVALID");
-        error.source_file = file.string();
-        if (!function.provider_origin_file.empty())
-          error.teaching.related.push_back({
-              function.provider_origin_file, std::max(function.line, 1),
-              function.provider_origin_column,
-              "sealed provider callable '" + function.name + "' (" +
-                  function.semantic_callable_id + ")"});
-        throw error;
-      }
+    // Keep standalone callable provenance with its imported declaration. Its
+    // validity is checked only when that callable is selected, so one
+    // unsupported export does not block unrelated checked callables.
+    for (auto& function : provider.functions) {
+      if (!function.generic || !function.static_dispatch ||
+          !function.imported_checked_summary_payload.empty()) continue;
+      for (const auto& record : sealed.value.provenance)
+        function.imported_callable_provenance_records.emplace_back(
+            record.id, record.payload);
     }
     if (!bodies.empty())
       throw CompileError(0, "checked ABI-v10 body has no imported callable",

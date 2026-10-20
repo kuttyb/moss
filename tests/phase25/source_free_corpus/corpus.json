@@ -95,6 +95,13 @@
       "test": "sdk/foundations/collections/tests/check_source_free.py",
       "abi_mode": "v9",
       "coverage": "ABI-v9 compiled-only source-free execution of generic index_of, count_equal and contains; useful compatibility baseline, not ABI-v10 checked-body evidence"
+    },
+    {
+      "id": "mixed-provider-per-callable-admission",
+      "category": "per-callable ABI-v10 admission",
+      "test": "tests/tooling/check_phase25_mixed_provider_admission.py",
+      "abi_mode": "staged-v10 plus ABI-v9 control",
+      "coverage": "One provider exports a checked-body-supported callable and an unsupported generic callable. Provider source is removed; the supported export executes through checked-body projection, the unsupported export rejects on use, missing supported body and forged unsupported provenance reject, and ABI-v9 retains both legacy bodies."
     }
   ],
   "sdk-generic-exports": [
