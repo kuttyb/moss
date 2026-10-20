@@ -10,6 +10,8 @@ The 19-case three-mode oracle records 38 profiles per mode: source-backed 38/38,
 
 R1 is beginning. No compiler edits have started. Required invariants: one checker-owned exhaustive typed traversal for current valid Moss generic statement/expression forms, canonical bounded checked-body encoding/decoding, and projection through the normal checker/lowering path. No second specialization engine; ABI-v9 remains default. Next inspect all current shape-specific emitters/importers, establish a coherent consolidation design, then implement a minimal cross-crate round-trip slice while retaining all admitted fixtures.
 
+R1 architecture checkpoint is written in `docs/phase25/PHASE_25_1_R1_ARCHITECTURE.md` and is awaiting the designated independent review. It maps provider retention, ABI-v10 record emission, body import, validation/projection, and the legacy adapter; requires a single checker-owned structural lowering source, unified bounded codec/import, and fail-closed completeness checks. It preserves published checked-body-v1 tags and calls for append-only additions only, with escalation if a new incompatible body version or ABI-v10 contract change is necessary. No R1 compiler code has been changed or validated yet. Next: freeze and push this design checkpoint, obtain R1 architecture review, then implement the approved path.
+
 ---
 
 ## Phase 25-M2b.3d-D2 checked-body collection-loop codec — 2026-10-19
