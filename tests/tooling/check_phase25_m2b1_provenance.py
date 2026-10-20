@@ -3,6 +3,7 @@
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import sys
@@ -28,7 +29,8 @@ def load_g2_helpers():
 
 def check_case(g2, root, env, name, source_text, code, consumer_line,
                provider_symbol=None, provider_line=None, provider_identity=None,
-               require_provider=True, forbid_provider=False):
+               require_provider=True, forbid_provider=False,
+               strict_unavailable=False):
     _, source = g2.consumer(root, name, source_text)
     assert not (root / "provider" / "src").exists(), "provider source remained available"
     result = g2.run(g2.MOSS, "check", source, "--json", env=env)
@@ -44,13 +46,17 @@ def check_case(g2, root, env, name, source_text, code, consumer_line,
         failures.append(f"expected checker rejection, got returncode={result.returncode}")
     if error.get("code") != code:
         failures.append(f"expected code {code}, got {error.get('code')!r}")
-    if error.get("source_file") != str(source):
-        failures.append(f"primary source_file is not consumer source: {error.get('source_file')!r}")
-    if error.get("line") != consumer_line:
-        failures.append(f"primary line should be consumer line {consumer_line}: {error.get('line')!r}")
-    primary_source = error.get("source") or {}
-    if primary_source.get("file") != str(source) or primary_source.get("line") != consumer_line:
-        failures.append(f"structured primary source does not identify consumer call: {primary_source!r}")
+    if strict_unavailable:
+        if error.get("code") != "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE":
+            failures.append("unsupported generic callable did not fail closed")
+    else:
+        if error.get("source_file") != str(source):
+            failures.append(f"primary source_file is not consumer source: {error.get('source_file')!r}")
+        if error.get("line") != consumer_line:
+            failures.append(f"primary line should be consumer line {consumer_line}: {error.get('line')!r}")
+        primary_source = error.get("source") or {}
+        if primary_source.get("file") != str(source) or primary_source.get("line") != consumer_line:
+            failures.append(f"structured primary source does not identify consumer call: {primary_source!r}")
 
     related = error.get("related") or []
     provider_notes = []
@@ -99,6 +105,8 @@ def main():
     evidence = {"compiler": str(MOSS), "abi_mode": "staged-v10", "cases": []}
     with tempfile.TemporaryDirectory(prefix="phase25-m2b1-", dir=ROOT / "tmp") as temp:
         scratch = Path(temp)
+        os.environ["MOSS_STAGED_ABI"] = "v10"
+        os.environ["MOSS_PHASE25_EMPTY_VECTOR_EMIT"] = "1"
         mutator = scratch / "mutate_empty_vector_artifact"
         compiled_mutator = g2.run(
             "g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
@@ -118,10 +126,19 @@ import Provider
 fn main():
   echo Provider.relay()
 """,
-            "TYPE_AMBIGUOUS_OPEN_RESULT", 4, "Provider.relay", 5,
-            "callable-v1:module-v1:g2provider@0.1.0::Provider:fn:relay"))
+            "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE", 5, "Provider.relay", 5,
+            "callable-v1:module-v1:g2provider@0.1.0::Provider:fn:relay",
+            strict_unavailable=True))
+        fresh_only = """module Provider
+export fn fresh():
+  return []
+"""
+        fresh_env, fresh_artifacts = g2.source_free(
+            scratch / "fresh_provider_setup", fresh_only)
+        fresh_env["MOSS_PHASE25_CHECKED_BODY_TRACE"] = "1"
+        assert not (scratch / "fresh_provider_setup" / "provider" / "src").exists()
         evidence["cases"].append(check_case(
-            g2, scratch / "provider_setup", env, "conflicting_fresh_use",
+            g2, scratch / "fresh_provider_setup", fresh_env, "conflicting_fresh_use",
             """module Consumer
 import Provider
 fn main():
@@ -135,14 +152,14 @@ fn main():
                 ("missing_generic_source", "generic-source-missing"),
                 ("forged_generic_source", "generic-source-forged")):
             variant_artifacts = scratch / f"artifacts-{name}"
-            shutil.copytree(artifacts, variant_artifacts)
+            shutil.copytree(fresh_artifacts, variant_artifacts)
             mutated = g2.run(mutator, variant_artifacts / "Provider.mossi",
                              variant_artifacts / "libProvider.rlib", mode)
             assert mutated.returncode == 0, (name, mutated.stdout, mutated.stderr)
-            variant_env = env.copy()
+            variant_env = fresh_env.copy()
             variant_env["MOSS_MODULE_PATH"] = str(variant_artifacts)
             evidence["cases"].append(check_case(
-                g2, scratch / "provider_setup", variant_env, name,
+                g2, scratch / "fresh_provider_setup", variant_env, name,
                 """module Consumer
 import Provider
 fn main():

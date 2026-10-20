@@ -173,7 +173,8 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
 
             negative_cases = {
                 "missing-summary": ("SOURCE_FREE_SUMMARY_INVALID",),
-                "missing-body": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
+                "missing-body": ("SOURCE_FREE_CHECKED_BODY_INVALID",
+                                 "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE"),
                 "corrupted-summary": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
                 "identity": ("SOURCE_FREE_",),
                 "mismatch-hash": ("SOURCE_FREE_CHECKED_BODY_INVALID",

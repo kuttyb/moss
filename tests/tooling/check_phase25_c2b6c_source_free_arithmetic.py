@@ -58,12 +58,6 @@ with tempfile.TemporaryDirectory(prefix="phase25-c2b6c-arithmetic-",
 
 export fn compute(x):
   return x * 2 + 20
-
-export fn unsupported_sub(x):
-  return x * 2 - 20
-
-export fn unsupported_reverse(x):
-  return 20 + x * 2
 """)
     run([str(MARGO), "build"], cwd=provider, env=staged_env)
     interface = provider / "build" / "debug" / "Service.mossi"
@@ -89,6 +83,19 @@ export fn unsupported_reverse(x):
          str(missing_body_no_legacy / "libService.rlib"), "Service",
          "drop-body-no-legacy"])
 
+    unsupported_provider = scratch / "provider-unsupported"
+    package(unsupported_provider, "c2b6c_unsupported_provider", """module Legacy
+
+export fn unsupported_sub(x):
+  return x * 2 - 20
+
+export fn unsupported_reverse(x):
+  return 20 + x * 2
+""")
+    run([str(MARGO), "build"], cwd=unsupported_provider, env=staged_env)
+    unsupported_legacy = scratch / "artifacts-unsupported-legacy"
+    shutil.copytree(unsupported_provider / "build" / "debug", unsupported_legacy)
+
     mismatched_hash = scratch / "artifacts-mismatched-body-hash"
     shutil.copytree(provider / "build" / "debug", mismatched_hash)
     run([str(mutator), str(mismatched_hash / "Service.mossi"),
@@ -106,12 +113,10 @@ import Service
 fn main():
   echo Service.compute(5)
   echo Service.compute(2.5)
-  echo Service.unsupported_sub(5)
-  echo Service.unsupported_reverse(5)
 """)
     run([str(MARGO), "build"], cwd=positive, env=env)
     actual = run([str(MARGO), "run"], cwd=positive, env=env)
-    assert actual == "30\n25.0\n-10\n30\n", actual
+    assert actual == "30\n25.0\n", actual
 
     for case, argument in (("string", '"bad"'), ("bool", "true")):
         negative = scratch / f"consumer-{case}"
@@ -136,6 +141,20 @@ fn main():
                    expected=1)
     assert "SOURCE_FREE_CHECKED_BODY_INVALID" in rejected, rejected
     print("PASS unsupported sealed arithmetic body rejected fail-closed")
+
+    legacy_env = staged_env.copy()
+    legacy_env["MOSS_MODULE_PATH"] = str(unsupported_legacy)
+    unsupported_consumer = scratch / "consumer-unsupported-legacy"
+    package(unsupported_consumer, "c2b6c_consumer_unsupported_legacy", """module Main
+import Legacy
+
+fn main():
+  echo Legacy.unsupported_sub(5)
+""")
+    rejected = run([str(MARGO), "build"], cwd=unsupported_consumer,
+                   env=legacy_env, expected=1)
+    assert "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE" in rejected, rejected
+    print("PASS unsupported generic legacy-only callable rejected in staged ABI-v10")
 
     for case, artifacts in (
             ("missing-body-alternate-legacy", missing_body),

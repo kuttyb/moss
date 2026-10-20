@@ -55,8 +55,6 @@ int main(int argc, char** argv) {
         ++generic_statement_counts[name];
   }
   assert(generic_statement_counts["compute"] == 0);
-  assert(generic_statement_counts["unsupported_sub"] > 0);
-  assert(generic_statement_counts["unsupported_reverse"] > 0);
   std::cout << "PASS canonical staged ABI-v10 compute summary/body=1/1, "
-               "compute generic_stmt=0, unsupported generic_stmt retained\n";
+               "compute generic_stmt=0\n";
 }

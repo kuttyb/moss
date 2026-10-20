@@ -93,8 +93,11 @@ int main(int argc, char** argv) {
   } else if (mode == "missing-body") {
     sealed.value.private_semantic_dependencies.erase(body_at);
   } else if (mode == "corrupted-summary") {
+    const bool was_int = summary.result.kind ==
+            moss::abi_v10::WireTypeKind::Primitive &&
+        summary.result.identity == "int";
     summary.result.kind = moss::abi_v10::WireTypeKind::Primitive;
-    summary.result.identity = "int";
+    summary.result.identity = was_int ? "bool" : "int";
     summary.result.arguments.clear();
     summary.result.ordinal = 0;
     replace_summary();

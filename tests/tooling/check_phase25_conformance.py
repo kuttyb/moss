@@ -24,6 +24,7 @@ G2 = ROOT / "tests/phase25/g2/conformance"
 # Production stays on ABI v9 until the joint Team S/Team G cutover; the
 # source-free gates prove the staged ABI-v10 path (TEAM_G_ABI_V10_STAGING.md).
 os.environ["MOSS_STAGED_ABI"] = "v10"
+os.environ["MOSS_PHASE25_EMPTY_VECTOR_EMIT"] = "1"
 
 
 def run(*args, cwd=ROOT, env=None):
@@ -106,6 +107,11 @@ export fn relay():
   return fresh()
 '''
 
+PROVIDER_FRESH = '''module Provider
+export fn fresh():
+  return []
+'''
+
 PROVIDER_METHOD = '''module Provider
 export fn outer(x):
   return middle(x)
@@ -172,6 +178,8 @@ def source_free(scratch, provider_source):
     assert not (provider / "src").exists(), "provider source directory still reachable"
     env = os.environ.copy()
     env["MOSS_MODULE_PATH"] = str(artifacts)
+    env["MOSS_STAGED_ABI"] = "v10"
+    env["MOSS_PHASE25_EMPTY_VECTOR_EMIT"] = "1"
     return env, artifacts
 
 
@@ -283,24 +291,23 @@ def g4(s):
 
 
 def g4_source_free(s):
-    env, _ = source_free(s / "sf4", PROVIDER_OPEN)
+    env, _ = source_free(s / "sf4", PROVIDER_FRESH)
     root, _ = consumer(s / "sf4", "g2fresh", '''module Consumer
 import Provider
 fn main():
   ints = Provider.fresh()
-  names = Provider.relay()
   ints.push(1)
-  names.push("one")
   echo ints[0]
-  echo names[0]
 ''')
-    source_free_run(root, env, "1\none\n")
+    source_free_run(root, env, "1\n")
+    relay_env, _ = source_free(s / "sf4-relay", PROVIDER_OPEN)
     _, ambiguous = consumer(s / "sf4", "g2ambiguous", '''module Consumer
 import Provider
 fn main():
   echo Provider.relay()
 ''')
-    check_negative(ambiguous, {"TYPE_AMBIGUOUS_OPEN_RESULT"}, ("Provider",), env)
+    check_negative(ambiguous, {"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE"},
+                   ("Provider.relay",), relay_env)
 
 
 def g5(s):
@@ -310,14 +317,13 @@ import Provider
 fn main():
   echo Provider.outer(1)
 ''')
-    # A truly absent member is METHOD_NOT_FOUND with or without provider
-    # source; argument incompatibility is TYPE_MISMATCH. This chain proves
-    # which method is absent and where it was required.
-    error = check_negative(source, {"METHOD_NOT_FOUND"},
-                           ("outer", "middle", "required", "Provider"), env)
-    assert error["source_file"] == str(source), error
+    # ABI-v10 rejects this legacy-only generic call chain before method
+    # resolution; the typed checked-body path must not rebuild it from source.
+    error = check_negative(source, {"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE"},
+                           ("Provider.outer", "callable-v1:"), env)
+    assert error["source_file"].endswith("Provider.mossi"), error
     related = error.get("related") or []
-    assert len(related) >= 2, "missing imported outer-to-provider provenance chain"
+    assert len(related) >= 1, "missing checked provider provenance"
     assert any((note.get("source") or {}).get("file", "").endswith("provider.moss")
                for note in related), related
 
@@ -400,7 +406,7 @@ fn main():
 
 def g11(s):
     parity(FIX / "open_result_multihop.moss", s, "1\none\n")
-    env, _ = source_free(s / "sf11", PROVIDER_OPEN)
+    env, _ = source_free(s / "sf11", PROVIDER_FRESH)
     root, _ = consumer(s / "sf11", "g2debug", '''module Consumer
 import Provider
 fn main():

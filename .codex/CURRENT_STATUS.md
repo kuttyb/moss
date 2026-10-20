@@ -9224,9 +9224,7 @@ release, output `99`). The ABI-v9 SDK source-free smoke also passed.
 Known baseline exception remains: `check_phase25_typed_semantic_api.py` fails at
 `add_one` because it expects one requirement while checker output contains two
 (`return-operator`, `checked-arithmetic:0`); no expectation was changed. The
-full repository suite was not run. M2b.4 still needs the remaining focused ABI
-shard/cutover inventory, final source-free matrix review, feedback validation,
-commit, and push.
+full repository suite was not run.
 
 ## D4 validated checkpoint — 2026-10-20
 
@@ -9257,3 +9255,45 @@ was reproduced on a detached clean D1 baseline at
 `39e7d8ac810f579243400766f007e9e7550b209b`: the exact `add_one` requirement
 count assertion expects 1 but sees 2, with unchanged body hash
 `body-semantic-v1:sha256:455a8ef8fcedd018807822f5aed1b9add6bbb1d6a61ebb1650129ab46807d343`.
+
+## M2b.4 strict ABI-v10 admission and overnight readiness — 2026-10-20
+
+`load_module_interface()` now rejects imported generic static callables in
+staged ABI-v10 unless their typed-v2 summary and checked-body record passed the
+existing identity, hash, dependency, provenance, and shape validation. A
+missing body cannot fall through to retained `generic_stmt`. New
+`append_abi_v10_generic_callable_provenance()` records declaration origins for
+unsupported generic exports so the fail-closed diagnostic still cites the
+provider. `generic_source` remains compatibility metadata and does not change
+the tested provider attribution. ABI-v9 remains the default and its SDK
+compiled-only smoke passes.
+
+The source-free corpus now marks parameter return, scalar literal, field read,
+private call/chain, constructor, checked arithmetic, empty vector, and the
+three SDK collection loops as checked-body proven. `generic-range-iteration`
+and SDK `bytes.from_range` are explicitly staged-v10 rejected with
+`SOURCE_FREE_CHECKED_BODY_UNAVAILABLE`; `from_range` requires generic `For`,
+assertion, vector mutation, and borrowed-Range coverage not included in this
+bounded loop implementation. Since that corpus row is P1 SDK-essential, the
+overall Phase 25/cutover readiness remains BLOCKED pending L7's decision on
+whether to assign a bounded Range task. No borrowed-Range ABI or compiler-wide
+control-flow changes were made.
+
+Final focused readiness outcomes: `make --jobs="$(nproc)" moss-dev` PASS;
+D1-D4 collection checks PASS; complete staged-v10 source-free corpus PASS;
+actual SDK staged-v10 collection loops and ABI-v9 SDK smoke PASS; H3 direct,
+private chain, checked-body/dependency, and arithmetic decode PASS; R2b/R2c
+PASS; M2b.1 provenance PASS; G2 11/11 PASS; generic arithmetic and checked
+arithmetic PASS; H3 Scenario 6 PASS with provider source removed and output
+`99`; ABI-v10 unit shard PASS with only the targeted
+`-Wno-missing-field-initializers` suppression. The same shard unmodified stops
+at existing aggregate missing-initializer warnings promoted by `-Werror`.
+`check_phase25_typed_semantic_api.py` is FAIL_BASELINE at `add_one` (expects
+one requirement, sees the same two requirements and unchanged body hash on
+clean D1 baseline). Feedback validation and `git diff --check` PASS. The full
+repository suite was not run.
+
+The D4 checkpoint is pushed as `f1c10a54` (full SHA recorded in Git). The
+M2b.4 compiler/test changes and final gate-status update are staged for their
+own follow-up commit; the overnight branch is not merged to integration or
+main.
