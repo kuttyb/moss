@@ -8830,3 +8830,49 @@ M2b.1 is closed. No other blocker remains within this milestone. The full
 repository regression suite was not requested or run. This closeout records
 integration of the existing R2c work; no follow-on specialization workstream
 was started.
+
+## Phase 25-M2b.2 — Parallel Foundation Work — 2026-10-19
+
+Fast-forwarded audit commit `cf9a5c26382e3337a5bb69d3276e891bcdba224b` to
+`phase25-integration`, then reviewed and integrated the three independent team
+handoffs. Implementation integration commit `e35b5bd145040a18744c0eec40c1c2de77e80d79`
+was pushed to `origin/phase25-integration`; Teams P, D, and V remain available
+on their pushed feature branches at `e1527d0e0725f2c72f3b4202d27d8733ccdd55bf`,
+`097aa66282625c6ba8f08a56b980cf08937c8107`, and
+`9d70701542ef3bdf7978cb08675c4bbb5873fc56` respectively.
+
+Integrated scope:
+- ABI-v10 typed summaries now hydrate diagnostic provider source, line,
+  column, module, and callable identity from validated callable provenance;
+  ABI-v9 retains its legacy origin path. Tests reseal artifacts with missing or
+  forged `generic_source` and reject mismatched callable provenance.
+- Checked-body decoding now supports supported scalar literals and generic
+  field reads with exact declaration/field/type validation and focused
+  round-trip/malformed-input tests. Consumer projector integration remains
+  separate work.
+- Added source-free generic baseline/legacy-body poison corpus and inventory.
+  Parameter returns, scalar literals, field reads, direct generic calls, and
+  SDK-shaped collection loops still depend on `generic_stmt`; generic range
+  iteration fails at the ABI-v10 provider gate with
+  `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE`.
+
+Validation on the combined implementation:
+- `make --jobs="$(nproc)" moss-dev` passed with existing TypeSolver initializer
+  warnings.
+- Checked-body decoder, checked-body IR/dependency closure, and H3 direct-record
+  tests passed.
+- M2b.2 source-free corpus passed its baseline/poison cases, range-iteration
+  rejection, checked arithmetic, H3 direct/chain cases, R2c, and ABI-v9 SDK
+  collections smoke.
+- R2c passed `Vector[i32]` and `Vector[bool]` source-free execution, checked-body
+  branch trace, v9 compatibility, and malformed-record/mode negatives.
+- M2b.1 provenance passed with missing/forged `generic_source`, mismatched
+  callable provenance rejection, and ordinary local-conflict diagnostics.
+- G2 passed 11/11; checked arithmetic passed; R2b emission and switch-off
+  checks passed; H3 Scenario 6 passed source-free with output `99`.
+- Feedback validation and `git diff --check` passed.
+
+The full repository suite was not run. ABI-v9 remains the default and the
+temporary emitter switch and compatibility records are retained. The complete
+Team efficiency closeout is in
+`docs/phase25/agent-patterns/team-m2b2-parallel-foundation.md`.
