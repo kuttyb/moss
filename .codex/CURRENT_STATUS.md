@@ -9529,3 +9529,20 @@ unfinished work: commit and push the R0 evidence checkpoint, obtain independent
 review from the single adversarial architect at that exact SHA, resolve any
 P0/P1 findings, and then proceed to R1. No R1 compiler work has started. Scratch
 artifacts remain under `tmp/`.
+
+## Phase 25.1 continuation — R1 shared builder in progress
+
+The earlier R0-era status above is historical; R0 and its architecture review
+are complete, and R1 is active. The unified bounded checked-body reader is
+already on pushed checkpoint `f34706674ebf46bea29c435f5948a24667fa0124`.
+Current uncommitted work centralizes ABI-v10 checked callable record validation
+and insertion across the admitted constructor, scalar, arithmetic, empty-vector,
+collection-loop, and private-helper-chain producers. This is not R1 acceptance:
+per-shape lowerers/projection paths remain and checker-owned occurrence facts
+are still absent.
+
+The current source build and focused H3 direct-record, arithmetic, D2 codec,
+empty-vector record, and full M2b2 source-free/hostile-artifact/v9-control gates
+pass. `check_agent_feedback.py` and `git diff --check` pass. Next implement the
+checker occurrence ledger and common structural lowerer, then remove redundant
+producer/import branches only after the frozen parity corpus stays green.

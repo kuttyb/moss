@@ -41804,6 +41804,68 @@ static void append_abi_v10_generic_callable_provenance(
   }
 }
 
+// The callable body is a single semantic contract even though its ABI records
+// live in separate interface sections. Keep validation, duplicate detection,
+// and insertion here so individual lowerers cannot publish a partial or
+// internally inconsistent summary/body pair.
+static void append_abi_v10_checked_callable_records(
+    abi_v10::Interface& value, const abi_v10::Summary& summary,
+    const abi_v10::CheckedBodyRecord& body,
+    const vector<abi_v10::SourceProvenance>& provenance,
+    bool private_summary = false) {
+  if (summary.callable_id.empty() || body.callable_id != summary.callable_id ||
+      body.semantic_hash != summary.body_semantic_hash)
+    throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+        "checked ABI-v10 callable summary and body identities disagree");
+  const auto summary_record = abi_v10::summary_record(summary);
+  const auto body_record = abi_v10::checked_body_record(body);
+  abi_v10::validate_summary(summary_record);
+  abi_v10::validate_checked_body_record(body_record);
+
+  auto reject_duplicate_callable = [&](const vector<abi_v10::Record>& records) {
+    for (const auto& record : records) {
+      if (record.id == body_record.id)
+        throw ProjectError("SOURCE_FREE_CHECKED_BODY_INVALID",
+            "checked ABI-v10 callable body is duplicated");
+      if (record.payload.empty() ||
+          (static_cast<unsigned char>(record.payload.front()) != 1 &&
+           static_cast<unsigned char>(record.payload.front()) != 2) ||
+          !abi_v10::hex_hash(record.id))
+        continue;
+      const auto prior = abi_v10::read_summary(record.payload);
+      if (prior.callable_id == summary.callable_id)
+        throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+            "checked ABI-v10 callable summary is duplicated");
+    }
+  };
+  reject_duplicate_callable(value.semantic_contract);
+  reject_duplicate_callable(value.private_semantic_dependencies);
+
+  vector<abi_v10::Record> provenance_records;
+  provenance_records.reserve(provenance.size());
+  std::set<string> ids;
+  for (const auto& item : provenance) {
+    auto record = abi_v10::provenance_record(item);
+    abi_v10::validate_provenance(record);
+    if (!ids.insert(record.id).second ||
+        std::any_of(value.provenance.begin(), value.provenance.end(),
+            [&](const abi_v10::Record& existing) {
+          return existing.id == record.id;
+        }))
+      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+          "checked ABI-v10 callable provenance is duplicated");
+    provenance_records.push_back(std::move(record));
+  }
+  if (private_summary)
+    value.private_semantic_dependencies.push_back(summary_record);
+  else
+    value.semantic_contract.push_back(summary_record);
+  value.private_semantic_dependencies.push_back(body_record);
+  value.provenance.insert(value.provenance.end(),
+      std::make_move_iterator(provenance_records.begin()),
+      std::make_move_iterator(provenance_records.end()));
+}
+
 // First live producer of the rich ABI-v10 subset: a checked two-statement
 // exported constructor with no callable dependency. The private-chain form
 // remains guarded until source-free import can decode its body records.
@@ -41919,13 +41981,12 @@ static void append_abi_v10_direct_checked_records(
       value.provenance.push_back(
           abi_v10::provenance_record(object_provenance));
     }
-    value.semantic_contract.push_back(abi_v10::summary_record(summary));
-    value.private_semantic_dependencies.push_back(
-        abi_v10::checked_body_record(body));
-    value.provenance.push_back(
-        abi_v10::provenance_record(function_provenance));
-    for (const auto& provenance : requirement_provenance)
-      value.provenance.push_back(abi_v10::provenance_record(provenance));
+    vector<abi_v10::SourceProvenance> callable_provenance{
+        function_provenance};
+    callable_provenance.insert(callable_provenance.end(),
+        requirement_provenance.begin(), requirement_provenance.end());
+    append_abi_v10_checked_callable_records(
+        value, summary, body, callable_provenance);
   }
 }
 
@@ -41956,24 +42017,6 @@ static void append_abi_v10_direct_scalar_records(
         callable->declaration_name != declaration_name)
       throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
           "checked ABI-v10 parameter-return callable identity is invalid");
-
-    for (const auto* records : {&value.semantic_contract,
-                                &value.private_semantic_dependencies}) {
-      for (const auto& record : *records) {
-        if (record.id == "checked-body-v1:" + function.semantic_callable_id)
-          throw ProjectError("SOURCE_FREE_CHECKED_BODY_INVALID",
-              "checked ABI-v10 parameter-return body is duplicated");
-        if (record.payload.empty() ||
-            (static_cast<unsigned char>(record.payload.front()) != 1 &&
-             static_cast<unsigned char>(record.payload.front()) != 2) ||
-            !abi_v10::hex_hash(record.id))
-          continue;
-        const auto prior = abi_v10::read_summary(record.payload);
-        if (prior.callable_id == function.semantic_callable_id)
-          throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
-              "checked ABI-v10 parameter-return summary is duplicated");
-      }
-    }
 
     abi_v10::Summary summary;
     summary.callable_id = function.semantic_callable_id;
@@ -42006,11 +42049,9 @@ static void append_abi_v10_direct_scalar_records(
         checked->statements);
     const auto summary_record = abi_v10::summary_record(summary);
     const auto body_record = abi_v10::checked_body_record(body);
-    const auto provenance_record = abi_v10::provenance_record(provenance);
     try {
       abi_v10::validate_summary(summary_record);
       abi_v10::validate_checked_body_record(body_record);
-      abi_v10::validate_provenance(provenance_record);
       const auto decoded = checked_ir::decode_h3_checked_body_v1(
           body.checked_ir_bytes, *program.type_context,
           {facts.parameter_types.front()}, facts.result_type,
@@ -42026,17 +42067,8 @@ static void append_abi_v10_direct_scalar_records(
     } catch (const std::invalid_argument& error) {
       throw ProjectError("SOURCE_FREE_CHECKED_BODY_INVALID", error.what());
     }
-    if (value.provenance.end() != std::find_if(
-            value.provenance.begin(), value.provenance.end(),
-            [&](const abi_v10::Record& record) {
-          return record.id == provenance_record.id;
-        }))
-      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
-          "checked ABI-v10 parameter-return provenance is duplicated");
-
-    value.semantic_contract.push_back(summary_record);
-    value.private_semantic_dependencies.push_back(body_record);
-    value.provenance.push_back(provenance_record);
+    append_abi_v10_checked_callable_records(value, summary, body,
+                                             {provenance});
   }
 }
 
@@ -42155,13 +42187,12 @@ static void append_abi_v10_arithmetic_records(
       throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
                          "checked ABI-v10 arithmetic summary and body hashes disagree");
 
-    value.semantic_contract.push_back(abi_v10::summary_record(summary));
-    value.private_semantic_dependencies.push_back(
-        abi_v10::checked_body_record(body));
-    value.provenance.push_back(
-        abi_v10::provenance_record(callable_provenance));
-    for (const auto& provenance : requirement_provenance)
-      value.provenance.push_back(abi_v10::provenance_record(provenance));
+    vector<abi_v10::SourceProvenance> all_provenance{
+        callable_provenance};
+    all_provenance.insert(all_provenance.end(),
+        requirement_provenance.begin(), requirement_provenance.end());
+    append_abi_v10_checked_callable_records(
+        value, summary, body, all_provenance);
   }
 }
 
@@ -42299,37 +42330,17 @@ static void append_abi_v10_collection_loop_records(
         invalid("checked ABI-v10 collection body is not canonical");
       const auto summary_record = abi_v10::summary_record(summary);
       const auto body_record = abi_v10::checked_body_record(body);
-      const auto provenance_record = abi_v10::provenance_record(callable_provenance);
       abi_v10::validate_summary(summary_record);
       abi_v10::validate_checked_body_record(body_record);
-      abi_v10::validate_provenance(provenance_record);
       if (abi_v10::read_summary(summary_record.payload).body_semantic_hash != hash ||
           abi_v10::read_checked_body_record(body_record.payload).semantic_hash != hash)
         invalid("checked ABI-v10 collection summary and body hashes disagree");
-      for (const auto* records : {&value.semantic_contract,
-                                  &value.private_semantic_dependencies}) {
-        for (const auto& record : *records) {
-          if (record.id == body_record.id)
-            invalid("checked ABI-v10 collection body is duplicated");
-          if (!record.payload.empty() &&
-              (static_cast<unsigned char>(record.payload.front()) == 1 ||
-               static_cast<unsigned char>(record.payload.front()) == 2) &&
-              abi_v10::hex_hash(record.id) &&
-              abi_v10::read_summary(record.payload).callable_id ==
-                  function.semantic_callable_id)
-            invalid("checked ABI-v10 collection summary is duplicated");
-        }
-      }
-      if (std::any_of(value.provenance.begin(), value.provenance.end(),
-              [&](const abi_v10::Record& record) {
-        return record.id == provenance_record.id;
-      }))
-        invalid("checked ABI-v10 collection callable provenance is duplicated");
-      value.semantic_contract.push_back(summary_record);
-      value.private_semantic_dependencies.push_back(body_record);
-      value.provenance.push_back(provenance_record);
-      for (const auto& provenance : requirement_provenance)
-        value.provenance.push_back(abi_v10::provenance_record(provenance));
+      vector<abi_v10::SourceProvenance> all_provenance{
+          callable_provenance};
+      all_provenance.insert(all_provenance.end(), requirement_provenance.begin(),
+                            requirement_provenance.end());
+      append_abi_v10_checked_callable_records(
+          value, summary, body, all_provenance);
     } catch (const abi_v10::Error& error) {
       throw ProjectError(error.code, error.what());
     } catch (const std::invalid_argument& error) {
@@ -42419,28 +42430,6 @@ static void append_abi_v10_empty_vector_records(
       throw ProjectError("SOURCE_FREE_CHECKED_BODY_INVALID",
                          "checked ABI-v10 empty-vector body is not canonical");
 
-    for (const auto* records : {&value.semantic_contract,
-                                &value.private_semantic_dependencies}) {
-      for (const auto& record : *records) {
-        if (record.id == "checked-body-v1:" + function.semantic_callable_id)
-          throw ProjectError("SOURCE_FREE_CHECKED_BODY_INVALID",
-                             "checked ABI-v10 empty-vector body is duplicated");
-        if (!record.payload.empty() &&
-            (static_cast<unsigned char>(record.payload.front()) == 1 ||
-             static_cast<unsigned char>(record.payload.front()) == 2) &&
-            abi_v10::hex_hash(record.id)) {
-          const auto prior = abi_v10::read_summary(record.payload);
-          if (prior.callable_id == function.semantic_callable_id)
-            throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
-                               "checked ABI-v10 empty-vector summary is duplicated");
-        }
-      }
-    }
-    for (const auto& record : value.provenance)
-      if (record.id == provenance.provenance_id)
-        throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
-                           "checked ABI-v10 empty-vector provenance is duplicated");
-
     abi_v10::Summary summary;
     summary.callable_id = function.semantic_callable_id;
     summary.variable_count = facts.bound_variable_count;
@@ -42474,9 +42463,8 @@ static void append_abi_v10_empty_vector_records(
       throw ProjectError("SOURCE_FREE_CHECKED_BODY_INVALID",
                          "checked ABI-v10 empty-vector records are not canonical");
 
-    value.semantic_contract.push_back(summary_record);
-    value.private_semantic_dependencies.push_back(body_record);
-    value.provenance.push_back(abi_v10::provenance_record(provenance));
+    append_abi_v10_checked_callable_records(value, summary, body,
+                                             {provenance});
   }
 }
 
@@ -42761,17 +42749,11 @@ static void append_abi_v10_private_chain_records(
                            "checked ABI-v10 body has unsupported dependency kind");
       }
     }
-    if (function.exported)
-      value.semantic_contract.push_back(abi_v10::summary_record(summary));
-    else
-      value.private_semantic_dependencies.push_back(
-          abi_v10::summary_record(summary));
-    value.private_semantic_dependencies.push_back(
-        abi_v10::checked_body_record(body));
-    value.provenance.push_back(abi_v10::provenance_record(provenance));
-    for (const auto& requirement_origin : requirement_provenance)
-      value.provenance.push_back(
-          abi_v10::provenance_record(requirement_origin));
+    vector<abi_v10::SourceProvenance> all_provenance{provenance};
+    all_provenance.insert(all_provenance.end(), requirement_provenance.begin(),
+                          requirement_provenance.end());
+    append_abi_v10_checked_callable_records(
+        value, summary, body, all_provenance, !function.exported);
   }
 }
 

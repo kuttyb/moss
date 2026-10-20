@@ -129,3 +129,34 @@ Next: finish the full occurrence-linked checker facts, common body lowerer and
 record builder, then repeat these controls plus the focused source-free and
 hostile-artifact corpus at a frozen commit before the required independent
 foundational R1 implementation review.
+
+### R1 shared callable-record builder — implementation checkpoint
+
+One `append_abi_v10_checked_callable_records` path now validates a summary/body
+identity pair, validates both ABI records, rejects duplicate callable summaries,
+bodies and provenance IDs, and inserts the pair atomically into the public or
+private summary section. Existing checked constructor, scalar-return,
+arithmetic, empty-vector, collection-loop and private-helper-chain producers
+use this path. Their shape-specific body lowerers and the generic provenance
+inventory remain as they were; this is consolidation progress, not R1
+acceptance.
+
+Validation on the working revision before its checkpoint commit:
+
+- `make --jobs="$(nproc)" moss-dev` passed with only the existing
+  `TypeSolver::Undo::binding` initializer warnings.
+- `python3 tests/tooling/check_phase25_h3_direct_records.py` passed.
+- `python3 tests/tooling/check_phase25_h3_arithmetic_decode.py` passed.
+- `python3 tests/tooling/check_phase25_d2_collection_loop_codec.py` passed,
+  including old H3 rejection for the collection tags and pre-D2 no-fallback
+  rejection.
+- `python3 tests/tooling/check_phase25_empty_vector_records.py` passed.
+- `python3 tests/tooling/check_phase25_m2b2_source_free_corpus.py` passed all
+  admitted source-free positives, legacy-record removal, malformed artifact
+  negatives, dependency closure and ABI-v9 controls.
+- `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` passed.
+
+R1 remains IN PROGRESS: checker-owned occurrence facts, one structural body
+lowerer and removal of shape-specific body projection/admission are not yet
+implemented. No R1 acceptance review has been requested at this partial
+checkpoint.
