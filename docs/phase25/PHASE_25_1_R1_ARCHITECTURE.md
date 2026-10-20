@@ -47,11 +47,51 @@ unrepresented requirement, effect or dependency makes the callable
 unavailable rather than complete. Pipeline stages lower from their checked
 functional plan, not by independently re-inferring placeholder text.
 
-The supported node categories and evidence boundary come from the R0 surface
-matrix and oracle. ABI-v9 source-free exceptions for raise/recover remain
-visible as regressions to correct; they do not make the source form invalid.
-Genuine invalid forms remain negative tests. Missing facts remain fail-closed
-until their checker representation is added and tested.
+The R0 matrix is evidence, not the definition of the supported syntax universe:
+it has residual combinations and explicitly unprobed forms. The compiler's
+current ordinary-function AST variants and the generic semantic constructs in
+the Moss v0.1 contract define that universe. Maintain this totality ledger in
+the compatibility matrix and link every row to focused source-backed and
+source-free tests. A pending row is work, not an exclusion or a capability.
+
+| Source category | Checker-retained occurrence facts required | Checked-body mapping / evidence status |
+|---|---|---|
+| `Stmt::Raw`, implicit assignment, `Let`, `Var`, rebinding, `Pass`, `Echo`, expression `Call` | Statement occurrence and ordered expression roots; binding identity/introduction/mutability; selected callable and effects | `Let`, `Var`, `Assign`, `ExprStmt`, `Return` as applicable; `Pass` needs a no-op/flow representation or proven normalization. R1 common traversal; validate against ordinary functions. |
+| `Message`, `Reply`, `Return` | Handler/call identity, argument and result TypeRefs, access, terminal/continuation state | Existing `Message`, `Reply`, `Return`; preserve current domain restrictions and validate ordinary generic forms where legal. |
+| `If`/`Else`, `While`, `For` | Condition/iterator expression occurrences, ordered child scopes, branch joins, loop binding identity/type, return reachability and effects | Existing `If`, `While`, `For`; expand from current bounded loop grammar. |
+| `Match`/`Case` | Scrutinee occurrence, exact enum/variant identity, payload bindings/types, exhaustiveness and branch scopes | Existing `Match`/`CaseBranch`; typed match is R0-valid and pending v10. |
+| `Try`, `Recover`, `Raise`; `assert` | Error/value occurrence links, active error scope, selected raise/handler identity, effect bits and ordering, assert condition and failure effect | No current checked-body node mapping; add append-only checked-body-v1 tags if same-version fail-closed compatibility holds. R0 source-backed valid raise/recover remains a v9 regression to fix, not an exclusion. |
+| Literals, parameter/local reads, unary/binary, field/index, vector/map construction, named calls, nominal construction, Count/Index | One typed occurrence per evaluated expression with resolved TypeRef, exact ordered child IDs, binding/member/call/operation ID, access and effects | Existing tags cover many cases; complete operator, literal, collection, identity and scope validation in unified codec. |
+| Queue construction and operations; constrained member dispatch | Receiver/argument/result TypeRefs, exact selected member and nominal identity, operation/requirement/access/effect facts | Queue construction is unprobed. R1 must run source-backed and ABI-v9 probes; valid forms map through existing call/nominal nodes or append-only tags. Open Queue `.push` currently has an invalid R0 probe; do not generalize it to construction or concrete calls. |
+| Functional pipelines and supported collection methods | Checked functional plan with ordered stage identities, resolved operation/member IDs, input/output TypeRefs and effects; no stage inferred from placeholder spelling | Normalize the checked plan into canonical expression/operation nodes. Pipeline is source-backed/v9-valid in R0 and pending v10. |
+
+Every evaluated expression occurrence receives a unique checker-local ID while
+the ordinary checker resolves it, and stores an ordered child-ID list. Every
+statement occurrence receives an ID, parent/branch identity, scope entry and
+exit, and expression-root IDs. The existing checker routines are the
+authority that create these facts; the lowerer cannot rediscover tree shape
+from `Stmt::text`, `a`, `b`, `args`, provider source, generated Rust, or a
+second expression parser/type checker. Where current string-based checker
+helpers recurse, resolution must record child facts at the same decision
+point. If that cannot be done without duplicating semantics, consolidate that
+checker path instead of adding a parallel frontend.
+
+Before a generic summary may be marked complete, an exhaustive verifier walks
+the checked statement/control-flow tree and requires one-to-one accounting of
+all accepted source occurrences: each statement and expression ID appears
+exactly once as a tree node or an explicitly documented non-evaluating syntax
+marker; all child/root links resolve, are ordered, and are acyclic; every
+binding, operation, requirement, effect and dependency fact is consumed or
+explicitly attached to a node. Unknown kinds, missing/duplicate IDs,
+unattached aggregate facts, and unsupported valid constructs make the callable
+unavailable and keep the ledger row open. R2/R3 must close all valid rows
+before R4/R5 can claim readiness; per-callable fail-closed admission is not
+evidence of complete language coverage.
+
+R0 invalid probes remain negative controls; they do not imply adjacent valid
+forms are unsupported. The specific Queue construction probe is an R1
+prerequisite to classifying that row. Missing facts remain fail-closed only
+while their totality-ledger item is actively tracked to a later gate.
 
 ## Wire and importer invariants
 

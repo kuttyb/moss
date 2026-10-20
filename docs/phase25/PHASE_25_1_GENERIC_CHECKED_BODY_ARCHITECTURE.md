@@ -1,7 +1,10 @@
 # Phase 25.1 generic checked-body architecture (R0 proposal)
 
-Status: R0 proposal, awaiting independent adversarial review. No compiler
-implementation change is authorized by this design note alone.
+Status: historical R0 proposal. The R0 inventory/evidence received final
+independent GO at `9c90573bda8daec5bd4254cc5f6c64c5dd3239e4`; the R1 design is
+tracked in `PHASE_25_1_R1_ARCHITECTURE.md`, whose separate review gates R1
+compiler edits. This note remains source-path history, not current execution
+authority.
 
 ## Contract
 
@@ -90,12 +93,14 @@ wire-contract version change is not part of this proposal.
 3. Capture a typed construct/effect/access surface map and classify invalid,
    supported, valid-but-unavailable, unverified and environmental rows.
 4. Independent reviewer attacks inventory completeness and the proposed
-   single-traversal design at an exact pushed SHA.
-5. Resolve P0/P1 findings before any R1 compiler edit.
+   single-traversal design at an exact pushed SHA. This completed at R0
+   checkpoint `9c90573bda8daec5bd4254cc5f6c64c5dd3239e4`.
+5. Resolve P0/P1 findings before any R1 compiler edit. The follow-on R1
+   architecture review is recorded with the current R1 design checkpoint.
 
 ## R1 and later critical path
 
-R1 checker-retained facts and unified body walk -> canonical codec/decode and
+R1 totality ledger and checker-retained per-occurrence facts -> unified body walk -> canonical codec/decode and
 projection -> source-free positive and hostile-artifact tests -> R1 review.
 R2 open results, member/nominal operations and dependency closure -> R3
 control-flow, iteration, mutation and effects (including actual
