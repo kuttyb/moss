@@ -8924,3 +8924,34 @@ The full repository suite was not run. ABI-v9 remains the default and the
 temporary emitter switch and compatibility records are retained. The complete
 Team efficiency closeout is in
 `docs/phase25/agent-patterns/team-m2b2-parallel-foundation.md`.
+
+## Phase 25-M2b.3b integration closeout — 2026-10-19
+
+Confirmed `origin/phase25-integration` was exactly at expected baseline
+`b390acd16e8b5a7a60f8f076114850514efc4a08`, then fast-forwarded it to reviewed
+M2b.3b commit `dc3db8eee59703ba12d7aebd17a07833ffbebe46`. The reviewed commit
+includes the M2b.3b implementation and its corpus updates; no additional
+compiler changes were made during integration.
+
+Focused validation on `dc3db8ee`:
+- Source-free corpus passed. Parameter return, scalar literal, and field read
+  passed with `generic_stmt` removed; the scalar and field cases remain
+  checked-body supported. Single-call and collection-loop cases remain
+  explicitly legacy-dependent, and generic range iteration remains rejected.
+- Checked-body IR/dependency-closure tests passed after compiling with
+  `-Wno-missing-field-initializers`. The script's unmodified command fails
+  because pre-existing `TypeSolver::Undo::binding` aggregate warnings in
+  `src/type_ir.hpp` are promoted by `-Werror`.
+- Focused checked-body importer cases passed.
+- R2b record emission and switch-off tests passed. R2c source-free consumer
+  passed for `Vector[i32]` and `Vector[bool]`, checked-body trace, ABI-v9
+  behavior, and malformed-record/provenance/substitution negatives.
+- M2b.1 provenance passed, including provider attribution with missing/forged
+  `generic_source` and no false provider attribution for an ordinary local
+  conflict.
+- G2 conformance passed 11/11; checked arithmetic passed; H3 direct and chain
+  tests passed; H3 Scenario 6 passed with provider sources removed and output
+  `99`.
+
+No full repository suite was run. ABI-v9 remains the default; compatibility
+records and the temporary empty-vector emission switch remain present.
