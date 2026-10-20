@@ -4861,6 +4861,7 @@ class Checker {
   const Stmt* current_check_statement_ = nullptr;
   string current_check_body_context_;
   const Function* current_check_result_function_ = nullptr;
+  bool suppress_expression_occurrence_capture_ = false;
   mutable const Stmt* ownership_current_stmt_ = nullptr;
   vector<Warning> warnings_;
   bool phase21_warnings_enabled_ = true;
@@ -4878,7 +4879,7 @@ class Checker {
       enum class Kind : std::uint8_t {
         Unknown, Group, Literal, Identifier, Unary, Binary, Field, Index,
         VectorLiteral, CollectionLiteral, Call, MemberCall, Pipeline,
-        Constructor, Message
+        PipelineStage, Constructor, Message
       } kind = Kind::Unknown;
       std::uint32_t id = 0;
       std::uint32_t statement_id = 0;
@@ -4888,6 +4889,14 @@ class Checker {
       int line = 0;
       string root_slot;
       string child_role;
+      // Preserve the exact checked source fragment as payload for leaf and
+      // call nodes. The checker supplies the node kind, type and target; a
+      // later structural projection must never rediscover those facts by
+      // reparsing generated Rust or by selecting a source-shape-specific path.
+      string source_expression;
+      vector<string> source_operands;
+      string input_type;
+      string output_type;
       string operation_id;
       moss::TypeRef checked_type;
       string semantic_target_id;
@@ -4942,6 +4951,79 @@ class Checker {
         return;
       }
       expression_occurrences[occurrence].semantic_target_id = semantic_target_id;
+    }
+
+    std::uint32_t begin_statement_expression(
+        const Stmt& statement, const string& root_slot,
+        ExpressionOccurrence::Kind kind, const string& source_expression) {
+      const auto statement_id = statement_occurrence_id(statement);
+      ExpressionOccurrence occurrence;
+      occurrence.id = static_cast<std::uint32_t>(expression_occurrences.size());
+      occurrence.statement_id = statement_id;
+      occurrence.line = statement.line;
+      occurrence.root_slot = root_slot;
+      occurrence.kind = kind;
+      occurrence.source_expression = source_expression;
+      const auto id = occurrence.id;
+      if (!expression_root_slots.emplace(
+              std::make_pair(statement_id, root_slot), id).second)
+        expression_occurrence_ledger_complete = false;
+      expression_occurrences.push_back(std::move(occurrence));
+      active_expression_occurrences.push_back(id);
+      return id;
+    }
+
+    std::uint32_t begin_child_expression(
+        const string& role, ExpressionOccurrence::Kind kind,
+        const string& source_expression) {
+      if (active_expression_occurrences.empty()) return UINT32_MAX;
+      const auto parent_id = active_expression_occurrences.back();
+      if (parent_id >= expression_occurrences.size()) {
+        expression_occurrence_ledger_complete = false;
+        return UINT32_MAX;
+      }
+      auto& parent = expression_occurrences[parent_id];
+      ExpressionOccurrence occurrence;
+      occurrence.id = static_cast<std::uint32_t>(expression_occurrences.size());
+      occurrence.statement_id = parent.statement_id;
+      occurrence.parent_id = parent_id;
+      occurrence.child_ordinal = parent.child_count++;
+      occurrence.child_role = role.empty()
+          ? "child:" + std::to_string(occurrence.child_ordinal) : role;
+      occurrence.line = parent.line;
+      occurrence.kind = kind;
+      occurrence.source_expression = source_expression;
+      const auto id = occurrence.id;
+      expression_occurrences.push_back(std::move(occurrence));
+      active_expression_occurrences.push_back(id);
+      return id;
+    }
+
+    void finish_child_expression(std::uint32_t id) {
+      if (active_expression_occurrences.empty() ||
+          active_expression_occurrences.back() != id ||
+          id >= expression_occurrences.size()) {
+        expression_occurrence_ledger_complete = false;
+        return;
+      }
+      expression_occurrences[id].completed = true;
+      active_expression_occurrences.pop_back();
+    }
+
+    void finish_statement_expression(std::uint32_t id,
+                                     moss::TypeRef checked_type = nullptr) {
+      if (active_expression_occurrences.empty() ||
+          active_expression_occurrences.back() != id ||
+          id >= expression_occurrences.size()) {
+        expression_occurrence_ledger_complete = false;
+        return;
+      }
+      if (checked_type)
+        expression_occurrences[id].checked_type = solver.resolve(checked_type);
+      if (!expression_occurrences[id].checked_type)
+        expression_occurrence_ledger_complete = false;
+      expression_occurrences[id].completed = true;
+      active_expression_occurrences.pop_back();
     }
 
     bool has_expression_root(const Stmt& statement, const string& slot) const {
@@ -21523,7 +21605,8 @@ class Checker {
 
   std::optional<string> check_functional_callable(
       int line, const string& callable, const vector<string>& input_types,
-      const TypeEnv& env, const string& operation) {
+      const TypeEnv& env, const string& operation,
+      string* resolved_target_id = nullptr) {
     string operation_name = operation;
     std::transform(operation_name.begin(), operation_name.end(),
                    operation_name.begin(), [](unsigned char character) {
@@ -21532,6 +21615,7 @@ class Checker {
     string identity = trim(callable);
     if (identity.empty()) err(line, "functional stage requires a callable");
     if (expression_uses(identity, "_")) {
+      if (resolved_target_id) *resolved_target_id = "placeholder:" + identity;
       if (input_types.size() != 1)
         err(line, "placeholder '_' is only valid for a one-argument functional stage");
       TypeEnv placeholder_env = env;
@@ -21615,6 +21699,8 @@ class Checker {
       if (!method->return_type)
         err(line, "functional bound method '" + identity +
             "' does not return a value");
+      if (resolved_target_id)
+        *resolved_target_id = "method:" + concrete + "." + bound_method;
       check_expression(line, bound_receiver, env);
       return canonical_type_name(*method->return_type);
     }
@@ -21626,6 +21712,24 @@ class Checker {
         if (starts_with(cid, "callable:")) cid = cid.substr(9);
         identity = cid;
       } else if (open_generic(local->second)) {
+        if (resolved_target_id) {
+          string parameter_identity = "binding:" + identity;
+          const Function* enclosing_function = nullptr;
+          if (starts_with(current_semantic_context_, "fn:")) {
+            auto enclosing = functions_.find(current_semantic_context_.substr(3));
+            if (enclosing != functions_.end())
+              enclosing_function = enclosing->second;
+          }
+          if (enclosing_function) {
+            for (size_t index = 0; index < enclosing_function->params.size(); ++index) {
+              if (enclosing_function->params[index].name == identity) {
+                parameter_identity = "parameter:" + std::to_string(index);
+                break;
+              }
+            }
+          }
+          *resolved_target_id = parameter_identity;
+        }
         return "_functional_callable_result:" + identity;
       } else {
         err(line, "callable identity '" + identity +
@@ -21686,6 +21790,8 @@ class Checker {
       const FnWrapper* operator->() const { return this; }
       FnWrapper* operator->() { return this; }
     } function{function_ptr};
+    if (resolved_target_id)
+      *resolved_target_id = function->second->semantic_callable_id;
     if (function->second->params.size() != input_types.size())
       err(line, "functional callable '" + identity + "' expects " +
           std::to_string(function->second->params.size()) + " arguments, got " +
@@ -21882,6 +21988,44 @@ class Checker {
     FunctionalPipelineState state{*element, *source_type, false};
     for (size_t stage_index = 0; stage_index < parsed->stages.size(); ++stage_index) {
       const auto& stage = parsed->stages[stage_index];
+      std::uint32_t stage_occurrence_id = UINT32_MAX;
+      if (current_body_types_ && !checking_specialization_ &&
+          !current_body_types_->active_expression_occurrences.empty()) {
+        string stage_source = functional_node_name(stage.kind);
+        if (!stage.arguments.empty()) {
+          stage_source += "(";
+          for (size_t argument_index = 0;
+               argument_index < stage.arguments.size(); ++argument_index) {
+            if (argument_index) stage_source += ", ";
+            stage_source += stage.arguments[argument_index];
+          }
+          stage_source += ")";
+        }
+        stage_occurrence_id = current_body_types_->begin_child_expression(
+            "stage:" + std::to_string(stage_index),
+            BodyTypeState::ExpressionOccurrence::Kind::PipelineStage,
+            stage_source);
+        if (stage_occurrence_id != UINT32_MAX) {
+          auto& captured = current_body_types_->expression_occurrences.at(
+              stage_occurrence_id);
+          captured.operation_id = string("functional:") +
+              functional_node_name(stage.kind);
+          captured.source_operands = stage.arguments;
+          captured.input_type = canonical_type_name(state.element_type);
+        }
+      }
+      struct PipelineStageOccurrenceScope {
+        BodyTypeState* state;
+        std::uint32_t id;
+        ~PipelineStageOccurrenceScope() {
+          if (state && id != UINT32_MAX) state->finish_child_expression(id);
+        }
+      } stage_occurrence_scope{
+          stage_occurrence_id == UINT32_MAX ? nullptr : current_body_types_,
+          stage_occurrence_id};
+      string stage_target = string("builtin:functional:") +
+          functional_node_name(stage.kind);
+      string stage_output_type = canonical_type_name(state.element_type);
       if (!functional_operation_legal(state, stage.kind)) {
         if (state.terminal)
           err(line, "functional terminal must be the final pipeline stage");
@@ -21905,15 +22049,18 @@ class Checker {
           require_arity(1);
           auto result = check_functional_callable(
               line, stage.arguments.front(), {state.element_type}, env,
-              functional_node_name(stage.kind));
-          if (result) state.element_type = canonical_type_name(*result);
+              functional_node_name(stage.kind), &stage_target);
+          if (result) {
+            state.element_type = canonical_type_name(*result);
+            stage_output_type = state.element_type;
+          }
           break;
         }
         case FunctionalNodeKind::Filter: {
           require_arity(1);
           auto result = check_functional_callable(
               line, stage.arguments.front(), {state.element_type}, env,
-              functional_node_name(stage.kind));
+              functional_node_name(stage.kind), &stage_target);
           if (result && !unresolved_semantic_type(*result) &&
               canonical_type_name(*result) != "bool")
             err(line, "filter predicate returns '" + *result +
@@ -21940,22 +22087,25 @@ class Checker {
                 "use a concrete seed expression whose type matches the named reduce callable's accumulator");
           auto result = check_functional_callable(
               line, stage.arguments[1], {*accumulator, state.element_type}, env,
-              functional_node_name(stage.kind));
+              functional_node_name(stage.kind), &stage_target);
           if (result && !unresolved_semantic_type(*result) &&
               !unresolved_semantic_type(*accumulator) &&
               !same_type(*result, *accumulator))
             err(line, "reduce callable returns '" + *result +
                 "'; expected accumulator type '" + *accumulator + "'");
           state.terminal = true;
+          stage_output_type = canonical_type_name(*accumulator);
           break;
         }
         case FunctionalNodeKind::Sum:
           require_arity(0);
           state.terminal = true;
+          stage_output_type = canonical_type_name(state.element_type);
           break;
         case FunctionalNodeKind::Count:
           require_arity(0);
           state.terminal = true;
+          stage_output_type = "int";
           break;
         case FunctionalNodeKind::Any:
         case FunctionalNodeKind::All: {
@@ -21966,7 +22116,7 @@ class Checker {
           if (!stage.arguments.empty()) {
             auto result = check_functional_callable(
                 line, stage.arguments.front(), {state.element_type}, env,
-                functional_node_name(stage.kind));
+                functional_node_name(stage.kind), &stage_target);
             if (result) predicate_type = *result;
           }
           if (!unresolved_semantic_type(predicate_type) &&
@@ -21975,10 +22125,17 @@ class Checker {
                 " predicate returns '" + predicate_type +
                 "'; expected 'bool'");
           state.terminal = true;
+          stage_output_type = "bool";
           break;
         }
         case FunctionalNodeKind::Source:
           err(line, "invalid Source functional stage");
+      }
+      if (stage_occurrence_id != UINT32_MAX) {
+        auto& captured = current_body_types_->expression_occurrences.at(
+            stage_occurrence_id);
+        captured.semantic_target_id = stage_target;
+        captured.output_type = stage_output_type;
       }
     }
     return true;
@@ -22091,7 +22248,7 @@ class Checker {
     string original = trim(expression);
     BodyTypeState* occurrence_state = current_body_types_;
     bool capture_occurrence = occurrence_state && current_check_statement_ &&
-        !checking_specialization_ &&
+        !checking_specialization_ && !suppress_expression_occurrence_capture_ &&
         (!occurrence_state->active_expression_occurrences.empty() ||
          !root_slot.empty());
     if (capture_occurrence) {
@@ -22101,6 +22258,7 @@ class Checker {
       occurrence.statement_id =
           occurrence_state->statement_occurrence_id(*current_check_statement_);
       occurrence.line = line;
+      occurrence.source_expression = original;
       if (occurrence_state->active_expression_occurrences.empty()) {
         occurrence.root_slot = string(root_slot);
         const auto key = std::make_pair(occurrence.statement_id,
@@ -23600,6 +23758,28 @@ class Checker {
 
       if (statement.kind == Stmt::Kind::Call) {
         bool fileio_builtin = false;
+        BodyTypeState* call_occurrence_state = current_body_types_;
+        std::uint32_t call_occurrence_id = UINT32_MAX;
+        moss::TypeRef statement_call_type;
+        if (call_occurrence_state && !checking_specialization_) {
+          call_occurrence_id = call_occurrence_state->begin_statement_expression(
+              statement, "call-invocation",
+              statement.b.empty()
+                  ? BodyTypeState::ExpressionOccurrence::Kind::Call
+                  : BodyTypeState::ExpressionOccurrence::Kind::MemberCall,
+              statement.text.empty() ? statement.a : statement.text);
+        }
+        struct StatementCallOccurrenceScope {
+          BodyTypeState* state;
+          std::uint32_t id;
+          moss::TypeRef* checked_type;
+          ~StatementCallOccurrenceScope() {
+            if (state && id != UINT32_MAX)
+              state->finish_statement_expression(id, *checked_type);
+          }
+        } call_occurrence_scope{call_occurrence_state, call_occurrence_id,
+                                &statement_call_type};
+        Function* selected_function = nullptr;
         if (!statement.b.empty()) {
           auto receiver = current_env.find(statement.a);
           auto receiver_type = receiver != current_env.end()
@@ -23666,11 +23846,71 @@ class Checker {
           }
         } else {
           check_function_call(statement.line, statement.a, statement.args,
-                              current_env);
+                              current_env, nullptr, std::nullopt,
+                              call_occurrence_id == UINT32_MAX
+                                  ? nullptr : &selected_function);
+          if (call_occurrence_id != UINT32_MAX) {
+            if (selected_function) {
+              call_occurrence_state->retain_expression_target(
+                  call_occurrence_id, selected_function->semantic_callable_id);
+              if (selected_function->return_type)
+                statement_call_type = moss::Type::parse_canonical(
+                    canonical_type_name(*selected_function->return_type)).value_or(
+                        nullptr);
+            } else {
+              auto binding = current_env.find(statement.a);
+              if (binding != current_env.end() && open_generic(binding->second)) {
+                std::string identity = "binding:" + statement.a;
+                if (current_function) {
+                  for (std::size_t index = 0;
+                       index < current_function->params.size(); ++index) {
+                    if (current_function->params[index].name == statement.a) {
+                      identity = "parameter:" + std::to_string(index);
+                      break;
+                    }
+                  }
+                }
+                call_occurrence_state->retain_expression_target(
+                    call_occurrence_id, identity);
+              } else {
+                call_occurrence_state->retain_expression_target(
+                    call_occurrence_id, "builtin:" + statement.a);
+              }
+              statement_call_type = inferred_expr_term(
+                  statement.text.empty() ? statement.a : statement.text,
+                  current_env);
+            }
+          }
         }
         if (!statement.b.empty())
+        {
+          struct SuppressExpressionOccurrenceScope {
+            bool& slot;
+            bool previous;
+            explicit SuppressExpressionOccurrenceScope(bool& target)
+                : slot(target), previous(target) { slot = true; }
+            ~SuppressExpressionOccurrenceScope() { slot = previous; }
+          } suppress_scope(suppress_expression_occurrence_capture_);
           check_expression(statement.line, statement.text, current_env,
                            "call-expression");
+        }
+        if (call_occurrence_id != UINT32_MAX && !statement.b.empty()) {
+          auto receiver = current_env.find(statement.a);
+          auto receiver_type = receiver != current_env.end()
+              ? std::optional<string>(canonical_type_name(receiver->second))
+              : inferred_expr_type(statement.a, current_env);
+          const string target = receiver_type &&
+                  builtin_receiver_family(*receiver_type)
+              ? "builtin-method:" + canonical_type_name(*receiver_type) +
+                    "." + statement.b
+              : receiver_type
+                  ? "method:" + canonical_type_name(*receiver_type) +
+                        "." + statement.b
+                  : "member-binding:" + statement.a + "." + statement.b;
+          call_occurrence_state->retain_expression_target(
+              call_occurrence_id, target);
+          statement_call_type = inferred_expr_term(statement.text, current_env);
+        }
         const bool sort_builtin = statement.b.empty() && statement.a == "sort" &&
             !functions_.count(statement.a);
         for (size_t index = 0; index < statement.args.size(); ++index) {

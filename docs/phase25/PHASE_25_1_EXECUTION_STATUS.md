@@ -10,7 +10,7 @@ Pinned instruction commit: `3de64dc633312267c37c4e4990b28c2a73cab104`
 |---|---|---|
 | T0 | PASS | Annotated tags published and remote peeled commits verified below; `origin/main` unchanged. |
 | R0 | PASS | Final independent GO at frozen checkpoint `9c90573bda8daec5bd4254cc5f6c64c5dd3239e4`; 19-case oracle, complete 71-path harness map, strict corpus and P2 inventory exception recorded. |
-| R1 | IN PROGRESS | Independent GO at architecture SHA `ff4470ffdcc93cedb3d66b1e068b7f5ea8ca3f5f`. First code slice routes v10 import through one bounded checked-body decoder; focused R1 and H3/M2b.3 controls pass. Checker occurrence facts and unified provider lowering/record generation remain open. |
+| R1 | IN PROGRESS | Independent GO at architecture SHA `ff4470ffdcc93cedb3d66b1e068b7f5ea8ca3f5f`. Current pushed base `b2b12b94`; uncommitted continuation adds statement-call and pipeline-stage capture. Full source-free hostile/v9 corpus and generic collection facts pass. Exact-SHA review, total structural coverage and shared lowerer remain open. |
 | R2–R5 | NOT STARTED | ABI-v9 remains default; no `main` or `phase25-integration` changes. |
 
 ## T0 transcript and verification
@@ -225,3 +225,36 @@ pipeline seed/source). M2b2 passed after these changes and the compiler build
 is green. A fresh exact-SHA review remains pending; source occurrence coverage,
 member target/resolution facts, local binding identity lowering, and a common
 tree emitter are still open.
+
+### R1 statement invocation and pipeline-stage capture — working checkpoint
+
+The continuation now gives statement-form direct and member calls a single
+invocation occurrence with checked argument children. Direct functions retain
+the checker-selected callable ID; open generic callable parameters retain a
+parameter ordinal (or a local binding label); member calls retain a resolved
+method/builtin-method identity. Member expression validation still runs, with
+its duplicate internal occurrence walk suppressed. Functional pipeline stages
+are children of their checker-visited pipeline node and retain the stage kind,
+source operands, input/output types, and the selected named callable,
+bound method, placeholder, or generic parameter identity.
+
+Validation on the current uncommitted source revision:
+
+- `make --jobs="$(nproc)" moss-dev` passed; existing `TypeSolver::Undo::binding`
+  missing-initializer warnings remain.
+- `python3 tests/tooling/check_phase25_m2b2_source_free_corpus.py` passed the
+  ABI-v10 positives, legacy poisoning, hostile records, dependency closure,
+  ABI-v9 controls, and the generic-range fail-closed case.
+- `python3 tests/tooling/check_phase25_generic_collection_facts.py` passed.
+- `python3 tests/tooling/check_phase25_h3_direct_records.py`,
+  `check_phase25_d3d_collection_source_free.py`, and
+  `check_phase25_d4_collection_source_free.py` passed on the final source.
+- `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` passed
+  on the final source.
+
+This is capture progress only. The occurrence ledger still does not establish
+that every source expression has exactly one node, the checker has not
+deduplicated repeated semantic visits generally, and no common checked-body
+tree lowerer/record emitter exists. R1 remains open and the ledger must not be
+used for lowering yet. Freeze, rerun the listed gates, then obtain the
+independent exact-SHA review before proceeding.
