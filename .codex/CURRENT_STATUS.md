@@ -1,5 +1,19 @@
 # Moss current status
 
+## Phase 25-M2b.3d-D0 collection-loop design — 2026-10-19
+
+Investigation-only design report is being prepared on
+`phase25-m2b3d-d0-collection-loops`, based on `phase25-integration` at
+`32c06c8278a5648b6f78c87e8ecd91c6048c6cc9`. The report scopes the first
+checked generic loop to `collections.index_of`, reuses existing typed
+statement/specialization/native paths, and identifies checked-body v2 typed
+count/index nodes and multi-statement decode/projection as the minimum
+representation work. Generic equality admissibility and effect validation
+remain explicit design gates. No compiler implementation or integration was
+performed; no build or test suite was run for this investigation. The only
+validation planned is report/diff and feedback-record validation. L7 review is
+the next step.
+
 ## Phase 25-M2b.3c integration — 2026-10-19
 
 `phase25-integration` was confirmed at expected baseline
