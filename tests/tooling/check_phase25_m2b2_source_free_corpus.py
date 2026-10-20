@@ -128,7 +128,8 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                 [str(poisoner), str(poisoned / "Service.mossi"),
                  str(poisoned / "libService.rlib"), "Service", "fresh"],
                 cwd=ROOT, env=base_env)
-            assert "removed 1 generic_stmt" in poison_output, poison_output
+            expected_removed = "removed 2 generic_stmt" if case["id"] == "single-call" else "removed 1 generic_stmt"
+            assert expected_removed in poison_output, poison_output
             poisoned_env = trace_env | {
                 "MOSS_MODULE_PATH": str(poisoned),
                 "MARGO_HOME": str(case_root / "margo-poisoned"),
@@ -142,6 +143,10 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                     ":fn:fresh|checked-body-v1" in poisoned_build + poisoned_check), (
                         case["id"], "poisoned import did not project checked body",
                         poisoned_build + poisoned_check)
+            if case["id"] == "single-call":
+                assert ":fn:helper|checked-body-v1" in poisoned_build + poisoned_check, (
+                    case["id"], "private helper projection trace missing",
+                    poisoned_build + poisoned_check)
             poisoned_output = command(
                 [str(MARGO), "run"], cwd=consumer, env=poisoned_env)
             assert poisoned_output == case["expected_output"], (
@@ -159,6 +164,29 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                                        "SOURCE_FREE_CONTRACT_INVALID"),
                 "forged-provenance": ("SOURCE_FREE_SUMMARY_INVALID",),
             }
+            if case["id"] == "single-call":
+                negative_cases.update({
+                    "missing-callee-summary": ("SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
+                                               "SOURCE_FREE_SUMMARY_INVALID"),
+                    "missing-callee-body": ("SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
+                                            "SOURCE_FREE_CHECKED_BODY_INVALID"),
+                    "wrong-callable": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
+                    "missing-dependency": ("SOURCE_FREE_CHECKED_BODY_INVALID",
+                                           "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING"),
+                    "dependency-hash": ("SOURCE_FREE_CHECKED_BODY_INVALID",
+                                        "SOURCE_FREE_SUMMARY_INVALID",
+                                        "SOURCE_FREE_CONTRACT_INVALID"),
+                    "wrong-type": ("SOURCE_FREE_CHECKED_BODY_INVALID",
+                                   "SOURCE_FREE_SUMMARY_INVALID"),
+                    "wrong-argument-type": ("SOURCE_FREE_CHECKED_BODY_INVALID",
+                                             "SOURCE_FREE_SUMMARY_INVALID"),
+                    "unsupported-arity": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
+                    "unsupported-shape": ("SOURCE_FREE_CHECKED_BODY_INVALID",
+                                          "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING"),
+                    "duplicate-record": ("SOURCE_FREE_CHECKED_BODY_INVALID",
+                                         "SOURCE_FREE_SUMMARY_INVALID",
+                                         "SOURCE_FREE_CONTRACT_INVALID"),
+                })
             if case["id"] == "parameter-return":
                 negative_cases["type-binding"] = (
                     "SOURCE_FREE_CHECKED_BODY_INVALID",)
@@ -173,7 +201,8 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                 mutated = case_root / f"checked-{mode}"
                 shutil.copytree(poisoned, mutated)
                 command([str(parameter_mutator), str(mutated / "Service.mossi"),
-                         str(mutated / "libService.rlib"), mode],
+                         str(mutated / "libService.rlib"), mode,
+                         "fresh"],
                         cwd=ROOT, env=base_env)
                 bad_consumer = case_root / f"consumer-{mode}"
                 package(bad_consumer,

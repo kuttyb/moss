@@ -37,10 +37,10 @@
       "priority": "P1-essential",
       "category": "generic call",
       "provider": "module Service\n\nfn helper(value):\n  return value\n\nexport fn fresh(value):\n  return helper(value)\n",
-      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(31)\n",
-      "expected_output": "31\n",
-      "checked_body_status": "unsupported; ABI-v10 legacy reconstruction required",
-      "evidence": "H3 covers a two-statement private helper chain; a direct return-call body has no checked-body acceptance case."
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(31)\n  echo Service.fresh(\"moss\")\n",
+      "expected_output": "31\nmoss\n",
+      "checked_body_status": "checked-body supported; direct generic helper calls and their private dependency closure are projected before specialization",
+      "evidence": "M2b.3c acceptance removes provider source, poisons both fresh and helper generic_stmt bodies, requires checked-body projection traces for both callables, and executes Int and String specializations."
     },
     {
       "id": "collection-loop-equality-index",

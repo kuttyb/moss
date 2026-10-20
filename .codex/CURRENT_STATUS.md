@@ -8955,3 +8955,43 @@ Focused validation on `dc3db8ee`:
 
 No full repository suite was run. ABI-v9 remains the default; compatibility
 records and the temporary empty-vector emission switch remain present.
+
+## Phase 25-M2b.3c direct generic calls — implementation closeout — 2026-10-19
+
+Implementation is on dedicated branch `phase25-m2b3c-direct-call`, based on
+`phase25-integration` at `d9eb3668f8deefa9f6f0061307ac423ad061f8af`. The
+checker summary builder now resolves a direct returned call through its exact
+semantic call edge and the callee's open summary. The existing private-chain
+record producer closes the checked callable dependency and emits the caller
+and private helper typed summaries, checked bodies, body hashes, and
+provenance. The importer dispatches by validated decoded expression kind,
+checks callable dependency hashes and types, then projects the direct call into
+the existing AST/native specialization path.
+
+The corpus now executes `fresh(31)` and `fresh("moss")` after provider source
+removal and removal of both `fresh` and `helper` legacy `generic_stmt` bodies.
+Projection traces assert both checked bodies were selected. Missing caller or
+callee records, identity/hash/type/provenance tampering, missing dependencies,
+bad arity, unsupported shape, and duplicate summary records reject
+deterministically. ABI-v9 remains covered. Direct-call emission is limited to
+the requested private parameter-return leaf; existing multi-statement helper
+chains retain their prior behavior.
+
+Final implementation validation:
+- `make --jobs="$(nproc)" moss-dev` passed with pre-existing TypeSolver
+  aggregate-initializer warnings.
+- `check_phase25_m2b2_source_free_corpus.py` passed, including M2b.3a/M2b.3b,
+  direct-call source-free Int/String execution, legacy poisoning, dependency
+  negatives, H3/R2c, ABI-v9, and SDK v9 collection coverage.
+- Checked-body IR/dependency closure, H3 checked-body decoder, H3 arithmetic
+  decoder, H3 direct records, and H3 private chain passed. The checked-body IR
+  runner fails unmodified because its `-Werror` promotes existing
+  `TypeSolver::Undo::binding` warnings; it passed with
+  `-Wno-missing-field-initializers`.
+- R2b records and switch-off, R2c source-free consumers, M2b.1 provenance,
+  G2 (11/11), and checked arithmetic passed.
+- H3 Scenario 6 passed in staged ABI-v10 with provider sources removed and
+  output `99`.
+
+Agent-feedback validation and `git diff --check` passed. The full repository
+suite was not run. No debug instrumentation remains in compiler source.

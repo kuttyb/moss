@@ -54,6 +54,39 @@ int main(int argc, char** argv) {
   auto replace_body = [&](moss::abi_v10::CheckedBodyRecord body) {
     *body_at = moss::abi_v10::checked_body_record(body);
   };
+  const std::string helper_callable =
+      "callable-v1:" + sealed.value.module_id + ":fn:helper";
+  auto helper_summary_at = std::find_if(
+      sealed.value.private_semantic_dependencies.begin(),
+      sealed.value.private_semantic_dependencies.end(), [&](const auto& record) {
+    return moss::abi_v10::hex_hash(record.id) && !record.payload.empty() &&
+        static_cast<unsigned char>(record.payload.front()) == 2 &&
+        moss::abi_v10::read_summary(record.payload).callable_id ==
+            helper_callable;
+  });
+  auto helper_body_at = std::find_if(
+      sealed.value.private_semantic_dependencies.begin(),
+      sealed.value.private_semantic_dependencies.end(), [&](const auto& record) {
+    return record.id == "checked-body-v1:" + helper_callable;
+  });
+  auto rewrite_decoded_caller = [&](auto&& rewrite) {
+    auto body = moss::abi_v10::read_checked_body_record(body_at->payload);
+    moss::TypeContext context;
+    const auto variable = moss::Type::var(moss::TypeVarId{0, 0, 0});
+    auto statements = moss::checked_ir::decode_h3_checked_body_v1(
+        body.checked_ir_bytes, context, {variable}, variable,
+        body.semantic_hash);
+    assert(statements.size() == 1 && statements.front().expr &&
+           statements.front().expr->kind == moss::checked_ir::ExprKind::Call);
+    rewrite(statements.front().expr.value());
+    body.checked_ir_bytes =
+        moss::checked_ir::encode_checked_body_v1(statements);
+    body.semantic_hash =
+        moss::checked_ir::compute_checked_body_hash_v1(statements);
+    summary.body_semantic_hash = body.semantic_hash;
+    replace_summary();
+    replace_body(std::move(body));
+  };
 
   if (mode == "missing-summary") {
     sealed.value.semantic_contract.erase(summary_at);
@@ -150,7 +183,64 @@ int main(int argc, char** argv) {
   } else if (mode == "missing-dependency") {
     auto body = moss::abi_v10::read_checked_body_record(body_at->payload);
     body.dependencies.clear();
+    summary.dependencies.clear();
+    replace_summary();
     replace_body(std::move(body));
+  } else if (mode == "missing-callee-summary") {
+    assert(helper_summary_at != sealed.value.private_semantic_dependencies.end());
+    sealed.value.private_semantic_dependencies.erase(helper_summary_at);
+  } else if (mode == "missing-callee-body") {
+    assert(helper_body_at != sealed.value.private_semantic_dependencies.end());
+    sealed.value.private_semantic_dependencies.erase(helper_body_at);
+  } else if (mode == "wrong-callable") {
+    rewrite_decoded_caller([&](auto& expression) {
+      expression.semantic_target_id += ":forged";
+    });
+  } else if (mode == "dependency-hash") {
+    assert(summary.dependencies.size() == 1 &&
+           summary.dependencies.front().first == helper_callable);
+    summary.dependencies.front().second =
+        "body-semantic-v1:sha256:" + std::string(64, '7');
+    replace_summary();
+    auto body = moss::abi_v10::read_checked_body_record(body_at->payload);
+    assert(body.dependencies.size() == 1 &&
+           body.dependencies.front().target_id == helper_callable);
+    body.dependencies.front().expected_hash = summary.dependencies.front().second;
+    replace_body(std::move(body));
+  } else if (mode == "wrong-type") {
+    summary.result.kind = moss::abi_v10::WireTypeKind::Primitive;
+    summary.result.identity = "int";
+    summary.result.ordinal = 0;
+    summary.result.arguments.clear();
+    replace_summary();
+  } else if (mode == "wrong-argument-type") {
+    assert(!summary.parameters.empty());
+    summary.parameters.front().kind = moss::abi_v10::WireTypeKind::Primitive;
+    summary.parameters.front().identity = "int";
+    summary.parameters.front().ordinal = 0;
+    summary.parameters.front().arguments.clear();
+    replace_summary();
+  } else if (mode == "unsupported-arity") {
+    rewrite_decoded_caller([&](auto& expression) {
+      assert(expression.operands.size() == 1);
+      expression.operands.push_back(expression.operands.front());
+    });
+  } else if (mode == "unsupported-shape") {
+    rewrite_decoded_caller([&](auto& expression) {
+      expression.kind = moss::checked_ir::ExprKind::LocalRead;
+      expression.semantic_target_id.clear();
+      expression.operands.clear();
+      expression.ordinal = 0;
+    });
+  } else if (mode == "duplicate-record") {
+    auto duplicate = *summary_at;
+    duplicate.id = "sha256:" + std::string(64, 'f');
+    sealed.value.semantic_contract.push_back(std::move(duplicate));
+    std::sort(sealed.value.semantic_contract.begin(),
+              sealed.value.semantic_contract.end(), [](const auto& left,
+                                                        const auto& right) {
+      return left.id < right.id;
+    });
   } else {
     assert(false && "unknown parameter-return artifact mutation mode");
   }

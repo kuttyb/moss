@@ -3113,9 +3113,11 @@ static std::optional<CheckedPrivateChainBody> checked_private_chain_body(
       summary.parameter_types.size() != function.params.size())
     return std::nullopt;
 
-  // A direct field return already has checker-owned field identity, ordinal,
-  // and TypeRef in the retained body. Convert that node into the same checked
-  // IR and nominal dependency closure consumed by the constructor path below.
+  // Direct expression returns already have checker-owned identities, ordinals,
+  // and TypeRefs in the retained body. Convert the supported parameter, field,
+  // and call nodes into the same checked IR and dependency closure used by the
+  // private-chain producer. In particular, a direct call remains a Call node;
+  // it is not rewritten into a source-derived local-result body.
   if (function.body.size() == 1 &&
       function.body.front().kind == Stmt::Kind::Return &&
       function.checked_body_v1 &&
@@ -3124,12 +3126,71 @@ static std::optional<CheckedPrivateChainBody> checked_private_chain_body(
           CheckedBodyStmtV1::Kind::Return) {
     auto returned = from_legacy_stmt(
         function.checked_body_v1->statements.front());
-    if (returned.expr && returned.expr->kind == checked_ir::ExprKind::Field &&
-        returned.expr->operands.size() == 1 &&
-        returned.expr->operands.front().kind == checked_ir::ExprKind::Parameter &&
-        returned.expr->operands.front().ordinal < function.params.size() &&
-        returned.expr->type &&
-        returned.expr->type->structurally_equal(*summary.result_type)) {
+    const auto& expression = returned.expr;
+    const bool typed_return = expression && expression->type &&
+        expression->type->structurally_equal(*summary.result_type);
+    bool supported_return = false;
+    if (typed_return && expression->kind == checked_ir::ExprKind::Parameter) {
+      supported_return = expression->ordinal < function.params.size() &&
+          expression->ordinal < summary.parameter_types.size() &&
+          summary.parameter_types[expression->ordinal] &&
+          expression->type->structurally_equal(
+              *summary.parameter_types[expression->ordinal]) &&
+          summary.semantic_dependencies.empty();
+    } else if (typed_return &&
+               expression->kind == checked_ir::ExprKind::Field) {
+      supported_return = expression->operands.size() == 1 &&
+          expression->operands.front().kind ==
+              checked_ir::ExprKind::Parameter &&
+          expression->operands.front().ordinal < function.params.size() &&
+          expression->operands.front().type &&
+          expression->operands.front().type->declaration &&
+          expression->semantic_target_id ==
+              expression->operands.front().type->declaration->id;
+    } else if (typed_return && expression->kind == checked_ir::ExprKind::Call &&
+               !expression->semantic_target_id.empty()) {
+      auto callee = std::find_if(program.functions.begin(), program.functions.end(),
+          [&](const Function& candidate) {
+        return candidate.semantic_callable_id == expression->semantic_target_id;
+      });
+      const bool exact_edge = callee != program.functions.end() &&
+          std::any_of(program.semantic_call_edges.begin(),
+              program.semantic_call_edges.end(), [&](const SemanticCallEdge& edge) {
+        return edge.source == "fn:" + function.name &&
+            edge.target == "fn:" + callee->name &&
+            edge.line == function.body.front().line &&
+            edge.invocation_kind == "ordinary_call" && edge.occurrence == 0 &&
+            edge.source_specialization_key.empty();
+      });
+      supported_return = exact_edge && callee->open_summary &&
+          callee->open_summary->complete &&
+          callee->params.size() == expression->operands.size() &&
+          callee->open_summary->parameter_types.size() ==
+              expression->operands.size();
+      if (supported_return)
+        for (std::size_t index = 0; index < expression->operands.size(); ++index) {
+          const auto& operand = expression->operands[index];
+          if (operand.kind != checked_ir::ExprKind::Parameter ||
+              operand.ordinal >= summary.parameter_types.size() ||
+              !summary.parameter_types[operand.ordinal] || !operand.type ||
+              !operand.type->structurally_equal(
+                  *summary.parameter_types[operand.ordinal]) ||
+              !callee->open_summary->parameter_types[index] ||
+              !operand.type->structurally_equal(
+                  *callee->open_summary->parameter_types[index])) {
+            supported_return = false;
+            break;
+          }
+        }
+      if (supported_return && callee->open_summary->result_type)
+        supported_return = expression->type->structurally_equal(
+            *callee->open_summary->result_type);
+    }
+    if (supported_return) {
+      const bool direct_field = expression->kind == checked_ir::ExprKind::Field;
+      const bool direct_call = expression->kind == checked_ir::ExprKind::Call;
+      const bool direct_parameter =
+          expression->kind == checked_ir::ExprKind::Parameter;
       CheckedPrivateChainBody body;
       body.statements.push_back(std::move(returned));
       try {
@@ -3139,9 +3200,13 @@ static std::optional<CheckedPrivateChainBody> checked_private_chain_body(
       } catch (const std::invalid_argument&) {
         return std::nullopt;
       }
-      if (body.dependencies.size() == 1 &&
-          body.dependencies.front().kind ==
-              SemanticDependency::Kind::NominalType)
+      if ((direct_field && body.dependencies.size() == 1 &&
+           body.dependencies.front().kind ==
+               SemanticDependency::Kind::NominalType) ||
+          (direct_call && body.dependencies.size() == 1 &&
+           body.dependencies.front().kind ==
+               SemanticDependency::Kind::Callable) ||
+          (direct_parameter && body.dependencies.empty()))
         return body;
     }
     return std::nullopt;
@@ -3675,11 +3740,26 @@ static void project_imported_h3_checked_bodies(Program& program) {
                abi_v10::CheckedBodyRecord::Dependency::Kind::Callable))
         invalid("checked ABI-v10 body dependency identity is mismatched");
     }
+    if (statements.empty() || !statements.front().expr ||
+        (statements.size() == 1 &&
+         statements.front().kind != checked_ir::StmtKind::Return) ||
+        (statements.size() == 2 &&
+         (statements.front().kind != checked_ir::StmtKind::Let ||
+          statements.back().kind != checked_ir::StmtKind::Return)) ||
+        statements.size() > 2)
+      invalid("checked ABI-v10 body is outside the direct-return/local-result subset");
+    const bool direct_return_body = statements.size() == 1;
     const auto& expression = *statements.front().expr;
     string lowered;
     bool direct_return_projection = false;
-    if (abi_v10_parameter_return_summary_candidate(summary)) {
-      if (parameters.size() != 1 || function.params.size() != 1 ||
+    // The decoded checked node selects the lowering operation. Summary shape
+    // constrains the node's types, effects, and dependencies, but must not
+    // classify a direct Call as a parameter return just because both have an
+    // overlapping open parameter/result type relation.
+    if (expression.kind == checked_ir::ExprKind::Parameter) {
+      if (!abi_v10_parameter_return_summary_candidate(summary))
+        invalid("checked ABI-v10 parameter body has an incompatible summary");
+      if (!direct_return_body || parameters.size() != 1 || function.params.size() != 1 ||
           !plain_identifier(function.params.front().name) ||
           statements.size() != 1 ||
           statements.front().kind != checked_ir::StmtKind::Return ||
@@ -3689,17 +3769,22 @@ static void project_imported_h3_checked_bodies(Program& program) {
           !expression.type->structurally_equal(*result))
         invalid("checked ABI-v10 direct parameter-return body is unsupported");
       lowered = function.params.front().name;
-    } else if (abi_v10_empty_vector_summary_candidate(summary) &&
-        statements.size() == 1 &&
-        statements.front().kind == checked_ir::StmtKind::Return &&
-        expression.kind == checked_ir::ExprKind::VectorLiteral &&
-        expression.operands.empty()) {
+    } else if (expression.kind == checked_ir::ExprKind::VectorLiteral) {
+      if (!direct_return_body ||
+          !abi_v10_empty_vector_summary_candidate(summary) ||
+          !expression.operands.empty())
+        invalid("checked ABI-v10 vector body is outside the empty-vector subset");
       // The checked type is the typed summary's Vector[BoundVar(0)]. Keep the
       // ordinary Moss empty literal in the existing checker/native lowering
       // path, where its element variable closes at each imported call site.
       lowered = "[]";
-    } else if (abi_v10_scalar_return_summary_candidate(summary)) {
-      if (parameters.size() != 1 || function.params.size() != 1 ||
+    } else if (expression.kind == checked_ir::ExprKind::BoolLiteral ||
+               expression.kind == checked_ir::ExprKind::IntegerLiteral ||
+               expression.kind == checked_ir::ExprKind::FloatLiteral ||
+               expression.kind == checked_ir::ExprKind::StringLiteral) {
+      if (!abi_v10_scalar_return_summary_candidate(summary))
+        invalid("checked ABI-v10 scalar body has an incompatible summary");
+      if (!direct_return_body || parameters.size() != 1 || function.params.size() != 1 ||
           !plain_identifier(function.params.front().name) ||
           statements.size() != 1 ||
           statements.front().kind != checked_ir::StmtKind::Return ||
@@ -3719,8 +3804,10 @@ static void project_imported_h3_checked_bodies(Program& program) {
         invalid("checked ABI-v10 string literal has an invalid Moss spelling");
       lowered = expression.literal_value;
       direct_return_projection = true;
-    } else if (abi_v10_generic_field_summary_candidate(summary)) {
-      if (parameters.size() != 1 || function.params.size() != 1 ||
+    } else if (expression.kind == checked_ir::ExprKind::Field) {
+      if (!abi_v10_generic_field_summary_candidate(summary))
+        invalid("checked ABI-v10 field body has an incompatible summary");
+      if (!direct_return_body || parameters.size() != 1 || function.params.size() != 1 ||
           !plain_identifier(function.params.front().name) ||
           statements.size() != 1 ||
           statements.front().kind != checked_ir::StmtKind::Return ||
@@ -3743,7 +3830,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
           !abi_v10::hex_hash(body.dependencies.front().expected_hash))
         invalid("checked ABI-v10 generic field body identity or type is mismatched");
       lowered = function.params.front().name + "." + expression.member_name;
-      direct_return_projection = true;
+      direct_return_projection = direct_return_body;
     } else if (statements.size() == 1 &&
         statements.front().kind == checked_ir::StmtKind::Return &&
         expression.kind == checked_ir::ExprKind::Binary &&
@@ -3846,11 +3933,28 @@ static void project_imported_h3_checked_bodies(Program& program) {
         return candidate.semantic_callable_id == expression.semantic_target_id;
       });
       if (callee == program.functions.end() ||
+          callee->exported ||
           callee->imported_checked_summary_payload.empty() ||
           callee->imported_checked_body_payload.empty())
         invalid("checked ABI-v10 call target has no sealed summary and body");
       auto target = abi_v10::read_summary(
           callee->imported_checked_summary_payload);
+      const auto dependency = std::find_if(summary.dependencies.begin(),
+          summary.dependencies.end(), [&](const auto& candidate) {
+        return candidate.first == target.callable_id;
+      });
+      const auto body_dependency = std::find_if(body.dependencies.begin(),
+          body.dependencies.end(), [&](const auto& candidate) {
+        return candidate.kind ==
+                abi_v10::CheckedBodyRecord::Dependency::Kind::Callable &&
+            candidate.target_id == target.callable_id;
+      });
+      if (dependency == summary.dependencies.end() ||
+          body_dependency == body.dependencies.end() ||
+          dependency->second != body_dependency->expected_hash ||
+          dependency->second != target.body_semantic_hash ||
+          summary.dependencies.size() != 1 || body.dependencies.size() != 1)
+        invalid("checked ABI-v10 direct call dependency identity or hash is mismatched");
       if (target.observable_effect_bits ||
           !target.observable_effect_tags.empty() ||
           !abi_v10_effects_pure(callee->observable_effects) ||
@@ -3882,6 +3986,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
         lowered += function.params[expression.operands[index].ordinal].name;
       }
       lowered += ")";
+      direct_return_projection = direct_return_body;
     } else {
       invalid("checked ABI-v10 expression is outside the H3 subset");
     }
@@ -4862,9 +4967,10 @@ class Checker {
       };
       const string result = function.return_type
           ? canonical_type_name(*function.return_type) : "unit";
-      // A straight-line local can carry the returned open value. Resolve only
-      // the exact assignment/return pair; branches and reassignment retain the
-      // existing incomplete-summary behavior.
+      // Resolve the exact checked callable occurrence that supplies an open
+      // generic result. Both a direct return call and the established
+      // straight-line local/return pair use the callee's checker-owned summary;
+      // branches and reassignment retain the existing incomplete behavior.
       std::optional<std::pair<string, int>> local_result;
       if (function.body.size() == 2 &&
           function.body.back().kind == Stmt::Kind::Return &&
@@ -4876,6 +4982,20 @@ class Checker {
           function.body.front().indent == function.body.back().indent)
         local_result = std::make_pair(trim(function.body.front().b),
                                       function.body.front().line);
+      if (!local_result && function.body.size() == 1 &&
+          function.body.front().kind == Stmt::Kind::Return) {
+        string target;
+        vector<string> arguments;
+        if (parse_simple_call(trim(function.body.front().a), target, arguments)) {
+          string qualified = target;
+          if (!functions_.count(qualified) && !objects_.count(qualified) &&
+              !function.defining_module.empty())
+            qualified = function.defining_module + "__" + target;
+          if (functions_.count(qualified))
+            local_result = std::make_pair(trim(function.body.front().a),
+                                          function.body.front().line);
+        }
+      }
       moss::TypeRef local_result_type;
       if (local_result) {
         string target;
@@ -4934,7 +5054,9 @@ class Checker {
                 return edge.source == "fn:" + function.name &&
                     edge.target == "fn:" + qualified &&
                     edge.line == local_result->second &&
-                    edge.invocation_kind == "ordinary_call";
+                    edge.invocation_kind == "ordinary_call" &&
+                    edge.occurrence == 0 &&
+                    edge.source_specialization_key.empty();
               });
               std::map<std::uint32_t, moss::TypeRef> replacements;
               bool valid = exact_edge;
@@ -38458,10 +38580,23 @@ static ParsedModuleUnit load_module_interface(
                       [](const ImportedSummaryRecord& record) {
             return record.typed_v2;
           });
+      const bool has_typed_callable_dependencies =
+          summary_records != summaries.end() &&
+          std::any_of(summary_records->second.begin(),
+                      summary_records->second.end(),
+                      [](const ImportedSummaryRecord& record) {
+            if (!record.typed_v2) return false;
+            return !abi_v10::read_summary(record.payload).dependencies.empty();
+          });
       if (has_body && !has_typed_summary)
         throw CompileError(std::max(function.line, 1),
             "checked ABI-v10 body is missing its typed v2 callable summary",
             "SOURCE_FREE_SUMMARY_INVALID");
+      if (has_typed_callable_dependencies &&
+          (!has_body || body_records->second.size() != 1))
+        throw CompileError(std::max(function.line, 1),
+            "checked ABI-v10 callable dependency summary requires exactly one checked body",
+            "SOURCE_FREE_CHECKED_BODY_INVALID");
       if (has_typed_summary) {
         const ImportedSummaryRecord* callable_summary = nullptr;
         for (const auto& candidate : summary_records->second) {
@@ -40841,6 +40976,25 @@ static void append_abi_v10_private_chain_records(
         if (!callee)
           throw ProjectError("SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
                              "checked ABI-v10 body names an unresolved private callable");
+        const bool direct_return_call = body->statements.size() == 1 &&
+            body->statements.front().kind == checked_ir::StmtKind::Return &&
+            body->statements.front().expr &&
+            body->statements.front().expr->kind ==
+                checked_ir::ExprKind::Call;
+        if (direct_return_call) {
+          auto callee_body = checked_private_chain_body(program, *callee);
+          const bool direct_parameter_leaf = callee_body &&
+              callee_body->statements.size() == 1 &&
+              callee_body->statements.front().kind ==
+                  checked_ir::StmtKind::Return &&
+              callee_body->statements.front().expr &&
+              callee_body->statements.front().expr->kind ==
+                  checked_ir::ExprKind::Parameter &&
+              callee_body->dependencies.empty();
+          if (!direct_parameter_leaf)
+            throw ProjectError("SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+                "direct checked ABI-v10 helper calls require a checked parameter-return leaf");
+        }
         visit(*callee);
       }
     const std::set<string> summary_edges(
@@ -40878,6 +41032,24 @@ static void append_abi_v10_private_chain_records(
         [](const SemanticDependency& dep) {
       return dep.kind == SemanticDependency::Kind::Callable;
     })) continue;
+    const bool direct_return_call = body->statements.size() == 1 &&
+        body->statements.front().kind == checked_ir::StmtKind::Return &&
+        body->statements.front().expr &&
+        body->statements.front().expr->kind == checked_ir::ExprKind::Call;
+    if (direct_return_call) {
+      auto callee = find_callable(body->statements.front().expr->semantic_target_id);
+      auto callee_body = callee
+          ? checked_private_chain_body(program, *callee) : std::nullopt;
+      const bool direct_private_parameter_leaf = callee && !callee->exported &&
+          callee_body && callee_body->statements.size() == 1 &&
+          callee_body->statements.front().kind ==
+              checked_ir::StmtKind::Return &&
+          callee_body->statements.front().expr &&
+          callee_body->statements.front().expr->kind ==
+              checked_ir::ExprKind::Parameter &&
+          callee_body->dependencies.empty();
+      if (!direct_private_parameter_leaf) continue;
+    }
     visit(function);
   }
   // The checker may lift its provisional private-chain guard only for a
