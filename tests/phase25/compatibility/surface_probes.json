@@ -9,7 +9,7 @@
       "provider": "module Service\n\nexport fn fresh():\n  return []\n",
       "consumer": "module Main\nimport Service\n\nfn main():\n  numbers = Service.fresh()\n  numbers.push(7)\n  echo numbers\n  flags = Service.fresh()\n  flags.push(true)\n  echo flags\n",
       "expected_output": "[7]\n[true]\n",
-      "checked_body_status": "The direct-return provider emits under MOSS_STAGED_ABI=v10 alone; source-deleted Int/Bool projection and hostile controls pass in R2c. The generic R0 three-mode oracle is still to be rerun for this updated path.",
+      "checked_body_status": "The direct-return provider emits under MOSS_STAGED_ABI=v10 alone; the 19-case R0 recheck passes source-backed, ABI-v9, and ABI-v10 Debug/Release for this case. Source-deleted Int/Bool projection, hostile controls, and the ABI-v9 control also pass in R2c.",
       "evidence": "tests/tooling/check_phase25_r2c_empty_vector_consumer.py"
     },
     {

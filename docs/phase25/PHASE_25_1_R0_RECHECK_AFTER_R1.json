@@ -1,0 +1,3682 @@
+{
+  "cases": [
+    {
+      "category": "parameter return",
+      "id": "parameter-return",
+      "modes": {
+        "source_backed": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/parameter-return/source-backed/debug/build/debug/p251_parameter_return_source_debug"
+              ],
+              "exit_code": 0,
+              "output_sha256": "8c6773b928d427bfc6772c8cd551ce95b635b99f5299b0aed38b044cb5aeb1d3",
+              "stderr": "",
+              "stdout": "17\nmoss\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/parameter-return/source-backed/release/build/release/p251_parameter_return_source_release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "8c6773b928d427bfc6772c8cd551ce95b635b99f5299b0aed38b044cb5aeb1d3",
+              "stderr": "",
+              "stdout": "17\nmoss\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v10": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "check": {
+              "command": [
+                "$REPO/moss",
+                "check",
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/parameter-return/v10/debug/consumer/src/main.moss",
+                "--json"
+              ],
+              "exit_code": 0,
+              "output_sha256": "ee2343436ad9fc6c29e229fa18cf50f566d8c0a626249dadcd5fdcabd2766a77",
+              "stderr": "MOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_parameter_return_v10_debug_provider@0.1.0::Service:fn:fresh|checked-body-v1\nMOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_parameter_return_v10_debug_provider@0.1.0::Service:fn:fresh|checked-body-v1\n",
+              "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/parameter-return/v10/debug/consumer/src/main.moss\", \"diagnostics\": []}\n}\n"
+            },
+            "checked_projection_trace": true,
+            "legacy_poisoned": true,
+            "provider_interface_sha256": "6fec35f944cb9017fdc7e99c26f08a0ae147db521f36788064e94a0959973c17",
+            "provider_library_sha256": "9af275681681831808a84945e210a3356dc444336233bba934d15fb9a5e74be3",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/parameter-return/v10/debug/consumer/build/debug/p251_parameter_return_v10_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "8c6773b928d427bfc6772c8cd551ce95b635b99f5299b0aed38b044cb5aeb1d3",
+              "stderr": "",
+              "stdout": "17\nmoss\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "check": {
+              "command": [
+                "$REPO/moss",
+                "check",
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/parameter-return/v10/release/consumer/src/main.moss",
+                "--json"
+              ],
+              "exit_code": 0,
+              "output_sha256": "181c42c85e98fe0c2fdedb6d15e01525e14ea59f082ee0fa6c3af2a9d4ae95a2",
+              "stderr": "MOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_parameter_return_v10_release_provider@0.1.0::Service:fn:fresh|checked-body-v1\nMOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_parameter_return_v10_release_provider@0.1.0::Service:fn:fresh|checked-body-v1\n",
+              "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/parameter-return/v10/release/consumer/src/main.moss\", \"diagnostics\": []}\n}\n"
+            },
+            "checked_projection_trace": true,
+            "legacy_poisoned": true,
+            "provider_interface_sha256": "95c13e679dc6bd2b79e6e1dbd192370fe96e77d8183ff114d00947a95b64bcea",
+            "provider_library_sha256": "3001fcae227ab36bce2b2081c1c8a6dddb6271e7a48925437072043444cf291c",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/parameter-return/v10/release/consumer/build/release/p251_parameter_return_v10_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "8c6773b928d427bfc6772c8cd551ce95b635b99f5299b0aed38b044cb5aeb1d3",
+              "stderr": "",
+              "stdout": "17\nmoss\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v9": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "702054b1e7049759443cc9c57585cb34ab480373af5c2fa5c15b38d012f5119c",
+            "provider_library_sha256": "99d52127631cc7040641b85d10bfca04a85d5722f9981f906beee46624073f8e",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/parameter-return/v9/debug/consumer/build/debug/p251_parameter_return_v9_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "8c6773b928d427bfc6772c8cd551ce95b635b99f5299b0aed38b044cb5aeb1d3",
+              "stderr": "",
+              "stdout": "17\nmoss\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "1f6948772965f09258bfa620a4d3359e2eeaaa42c189b554c94749e0c6a22085",
+            "provider_library_sha256": "63ec4db2ba01e2d563bf7b820ed26e0c0d38e7d68fdcecd0c9cb55555e4a0081",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/parameter-return/v9/release/consumer/build/release/p251_parameter_return_v9_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "8c6773b928d427bfc6772c8cd551ce95b635b99f5299b0aed38b044cb5aeb1d3",
+              "stderr": "",
+              "stdout": "17\nmoss\n"
+            },
+            "status": "pass"
+          }
+        }
+      },
+      "poisoning": [
+        {
+          "callable": "fresh",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/parameter-return/v10/debug/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/parameter-return/v10/debug/artifacts/libService.rlib",
+              "Service",
+              "fresh"
+            ],
+            "exit_code": 0,
+            "output_sha256": "e29f9b8c9e973f337373d65facd6ddb8bb184d0a71d113d2b5f17fefc8c85666",
+            "stderr": "",
+            "stdout": "removed 1 generic_stmt records from fresh\n"
+          }
+        },
+        {
+          "callable": "fresh",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/parameter-return/v10/release/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/parameter-return/v10/release/artifacts/libService.rlib",
+              "Service",
+              "fresh"
+            ],
+            "exit_code": 0,
+            "output_sha256": "e29f9b8c9e973f337373d65facd6ddb8bb184d0a71d113d2b5f17fefc8c85666",
+            "stderr": "",
+            "stdout": "removed 1 generic_stmt records from fresh\n"
+          }
+        }
+      ],
+      "priority": "P1-essential"
+    },
+    {
+      "category": "scalar expression",
+      "id": "scalar-literal",
+      "modes": {
+        "source_backed": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/scalar-literal/source-backed/debug/build/debug/p251_scalar_literal_source_debug"
+              ],
+              "exit_code": 0,
+              "output_sha256": "21d91041c5d1a59661f8936571ee5c87e96f6f0c7a532b52ec17c5b9bea8220b",
+              "stderr": "",
+              "stdout": "true\ntrue\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/scalar-literal/source-backed/release/build/release/p251_scalar_literal_source_release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "21d91041c5d1a59661f8936571ee5c87e96f6f0c7a532b52ec17c5b9bea8220b",
+              "stderr": "",
+              "stdout": "true\ntrue\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v10": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "check": {
+              "command": [
+                "$REPO/moss",
+                "check",
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/scalar-literal/v10/debug/consumer/src/main.moss",
+                "--json"
+              ],
+              "exit_code": 0,
+              "output_sha256": "f6d467c27d99a983d5de2189111ac939294d0be3cad7031f7c35b8d313aae0b5",
+              "stderr": "MOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_scalar_literal_v10_debug_provider@0.1.0::Service:fn:fresh|checked-body-v1\nMOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_scalar_literal_v10_debug_provider@0.1.0::Service:fn:fresh|checked-body-v1\n",
+              "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/scalar-literal/v10/debug/consumer/src/main.moss\", \"diagnostics\": []}\n}\n"
+            },
+            "checked_projection_trace": true,
+            "legacy_poisoned": true,
+            "provider_interface_sha256": "3aa2c323c2c46871708123112e36ed7a60349d361b0317f1bd65b99ab8254e21",
+            "provider_library_sha256": "13d5515710b699ccf59377950074ebbaddb0e0ad693b379440e81d6924a53dc3",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/scalar-literal/v10/debug/consumer/build/debug/p251_scalar_literal_v10_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "21d91041c5d1a59661f8936571ee5c87e96f6f0c7a532b52ec17c5b9bea8220b",
+              "stderr": "",
+              "stdout": "true\ntrue\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "check": {
+              "command": [
+                "$REPO/moss",
+                "check",
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/scalar-literal/v10/release/consumer/src/main.moss",
+                "--json"
+              ],
+              "exit_code": 0,
+              "output_sha256": "374f456ad7d7da6dc5b51668da6dce0d0ccd161ecb7da4534795b1e9aa86d1e6",
+              "stderr": "MOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_scalar_literal_v10_release_provider@0.1.0::Service:fn:fresh|checked-body-v1\nMOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_scalar_literal_v10_release_provider@0.1.0::Service:fn:fresh|checked-body-v1\n",
+              "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/scalar-literal/v10/release/consumer/src/main.moss\", \"diagnostics\": []}\n}\n"
+            },
+            "checked_projection_trace": true,
+            "legacy_poisoned": true,
+            "provider_interface_sha256": "b58e073539b118815ab4fd7836cd78a673d8d26328e3cba5f9bdacda7803186e",
+            "provider_library_sha256": "46e050aea54d933ca98c6f6ed4b1bcdbd34cfaf5696512945da537b2b43d7d6c",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/scalar-literal/v10/release/consumer/build/release/p251_scalar_literal_v10_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "21d91041c5d1a59661f8936571ee5c87e96f6f0c7a532b52ec17c5b9bea8220b",
+              "stderr": "",
+              "stdout": "true\ntrue\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v9": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "55e7a66d43f65b22868c0c3b54a7766f9b615a851cfa6f8b6b9e4d48e072d50e",
+            "provider_library_sha256": "f249a41f02be7858e38b354f811b359db24fa62d3862a8455cd8965af867d486",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/scalar-literal/v9/debug/consumer/build/debug/p251_scalar_literal_v9_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "21d91041c5d1a59661f8936571ee5c87e96f6f0c7a532b52ec17c5b9bea8220b",
+              "stderr": "",
+              "stdout": "true\ntrue\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "b45864042885358db21aa68e7bc0267a5c1eae4da9d8d5f6f4ba27b0f67d984b",
+            "provider_library_sha256": "157d8ad0669aec54ef612c65cbfca0bf519878636d34cb99ddd4213de95c6158",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/scalar-literal/v9/release/consumer/build/release/p251_scalar_literal_v9_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "21d91041c5d1a59661f8936571ee5c87e96f6f0c7a532b52ec17c5b9bea8220b",
+              "stderr": "",
+              "stdout": "true\ntrue\n"
+            },
+            "status": "pass"
+          }
+        }
+      },
+      "poisoning": [
+        {
+          "callable": "fresh",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/scalar-literal/v10/debug/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/scalar-literal/v10/debug/artifacts/libService.rlib",
+              "Service",
+              "fresh"
+            ],
+            "exit_code": 0,
+            "output_sha256": "e29f9b8c9e973f337373d65facd6ddb8bb184d0a71d113d2b5f17fefc8c85666",
+            "stderr": "",
+            "stdout": "removed 1 generic_stmt records from fresh\n"
+          }
+        },
+        {
+          "callable": "fresh",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/scalar-literal/v10/release/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/scalar-literal/v10/release/artifacts/libService.rlib",
+              "Service",
+              "fresh"
+            ],
+            "exit_code": 0,
+            "output_sha256": "e29f9b8c9e973f337373d65facd6ddb8bb184d0a71d113d2b5f17fefc8c85666",
+            "stderr": "",
+            "stdout": "removed 1 generic_stmt records from fresh\n"
+          }
+        }
+      ],
+      "priority": "P1-essential"
+    },
+    {
+      "category": "generic field access",
+      "id": "field-read",
+      "modes": {
+        "source_backed": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/field-read/source-backed/debug/build/debug/p251_field_read_source_debug"
+              ],
+              "exit_code": 0,
+              "output_sha256": "6c455298979855e87f7329886287af7c6c28e6c40d0936619fc680f9cfc6a579",
+              "stderr": "",
+              "stdout": "23\nmoss\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/field-read/source-backed/release/build/release/p251_field_read_source_release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "6c455298979855e87f7329886287af7c6c28e6c40d0936619fc680f9cfc6a579",
+              "stderr": "",
+              "stdout": "23\nmoss\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v10": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "check": {
+              "command": [
+                "$REPO/moss",
+                "check",
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/field-read/v10/debug/consumer/src/main.moss",
+                "--json"
+              ],
+              "exit_code": 0,
+              "output_sha256": "abb18489383b99b9b47091dd734d8d0716870be7e4c30d2c4bb1132b9421786b",
+              "stderr": "MOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_field_read_v10_debug_provider@0.1.0::Service:fn:fresh|checked-body-v1\nMOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_field_read_v10_debug_provider@0.1.0::Service:fn:fresh|checked-body-v1\n",
+              "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/field-read/v10/debug/consumer/src/main.moss\", \"diagnostics\": []}\n}\n"
+            },
+            "checked_projection_trace": true,
+            "legacy_poisoned": true,
+            "provider_interface_sha256": "f21f16b14609c513b6470a95842d5c3d3032df8b3ac52e018cb83bd14f5972f4",
+            "provider_library_sha256": "1d1fafb35a7990a987b2e938234f4005f5b1b0c127c4762ad5354487a7a6e88e",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/field-read/v10/debug/consumer/build/debug/p251_field_read_v10_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "6c455298979855e87f7329886287af7c6c28e6c40d0936619fc680f9cfc6a579",
+              "stderr": "",
+              "stdout": "23\nmoss\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "check": {
+              "command": [
+                "$REPO/moss",
+                "check",
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/field-read/v10/release/consumer/src/main.moss",
+                "--json"
+              ],
+              "exit_code": 0,
+              "output_sha256": "7258c4aaf89c7cd5c0f9604919b5be6182b89c7df80ffbf653e93947cb593bfd",
+              "stderr": "MOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_field_read_v10_release_provider@0.1.0::Service:fn:fresh|checked-body-v1\nMOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_field_read_v10_release_provider@0.1.0::Service:fn:fresh|checked-body-v1\n",
+              "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/field-read/v10/release/consumer/src/main.moss\", \"diagnostics\": []}\n}\n"
+            },
+            "checked_projection_trace": true,
+            "legacy_poisoned": true,
+            "provider_interface_sha256": "b7865222381cae2cd5e5bfbacf361d0f8a60079495a5e6eca9e04827751c7fbe",
+            "provider_library_sha256": "39b227cf90625d836bd600ac794b64779076f4ff94f536d35f202782878dc40d",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/field-read/v10/release/consumer/build/release/p251_field_read_v10_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "6c455298979855e87f7329886287af7c6c28e6c40d0936619fc680f9cfc6a579",
+              "stderr": "",
+              "stdout": "23\nmoss\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v9": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "8360bd799cdaca7d88e8a6476a74623a94611332eb3170d01f335de9a6e2fb15",
+            "provider_library_sha256": "490f5c00b5f79a097e02799d1f3093dc17435d6db721b7945166df57d85f5a17",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/field-read/v9/debug/consumer/build/debug/p251_field_read_v9_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "6c455298979855e87f7329886287af7c6c28e6c40d0936619fc680f9cfc6a579",
+              "stderr": "",
+              "stdout": "23\nmoss\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "891c18cd968a736fa6b4d3a31909b2fb857c3dcfea591b59699186f24412d62f",
+            "provider_library_sha256": "52a7705b9c6ea7217014da6c98996ba618cf0f9dfa6eeff905bed5d8a370b51c",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/field-read/v9/release/consumer/build/release/p251_field_read_v9_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "6c455298979855e87f7329886287af7c6c28e6c40d0936619fc680f9cfc6a579",
+              "stderr": "",
+              "stdout": "23\nmoss\n"
+            },
+            "status": "pass"
+          }
+        }
+      },
+      "poisoning": [
+        {
+          "callable": "fresh",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/field-read/v10/debug/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/field-read/v10/debug/artifacts/libService.rlib",
+              "Service",
+              "fresh"
+            ],
+            "exit_code": 0,
+            "output_sha256": "e29f9b8c9e973f337373d65facd6ddb8bb184d0a71d113d2b5f17fefc8c85666",
+            "stderr": "",
+            "stdout": "removed 1 generic_stmt records from fresh\n"
+          }
+        },
+        {
+          "callable": "fresh",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/field-read/v10/release/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/field-read/v10/release/artifacts/libService.rlib",
+              "Service",
+              "fresh"
+            ],
+            "exit_code": 0,
+            "output_sha256": "e29f9b8c9e973f337373d65facd6ddb8bb184d0a71d113d2b5f17fefc8c85666",
+            "stderr": "",
+            "stdout": "removed 1 generic_stmt records from fresh\n"
+          }
+        }
+      ],
+      "priority": "P1-essential"
+    },
+    {
+      "category": "generic call",
+      "id": "single-call",
+      "modes": {
+        "source_backed": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/single-call/source-backed/debug/build/debug/p251_single_call_source_debug"
+              ],
+              "exit_code": 0,
+              "output_sha256": "452095983eeb6af8123acbe04a9a8dedd526e74a1a005c53f45f5303bd94c19c",
+              "stderr": "",
+              "stdout": "31\nmoss\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/single-call/source-backed/release/build/release/p251_single_call_source_release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "452095983eeb6af8123acbe04a9a8dedd526e74a1a005c53f45f5303bd94c19c",
+              "stderr": "",
+              "stdout": "31\nmoss\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v10": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "check": {
+              "command": [
+                "$REPO/moss",
+                "check",
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/single-call/v10/debug/consumer/src/main.moss",
+                "--json"
+              ],
+              "exit_code": 0,
+              "output_sha256": "c08dad22171d25870d938f6b6a7ce49d771686ac47a45f82610b098c357bd187",
+              "stderr": "MOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_single_call_v10_debug_provider@0.1.0::Service:fn:fresh|checked-body-v1\nMOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_single_call_v10_debug_provider@0.1.0::Service:fn:helper|checked-body-v1\nMOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_single_call_v10_debug_provider@0.1.0::Service:fn:fresh|checked-body-v1\nMOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_single_call_v10_debug_provider@0.1.0::Service:fn:helper|checked-body-v1\n",
+              "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/single-call/v10/debug/consumer/src/main.moss\", \"diagnostics\": []}\n}\n"
+            },
+            "checked_projection_trace": true,
+            "legacy_poisoned": true,
+            "provider_interface_sha256": "cf48b392247ffab31da3faf72e9e3e9fd1ba1e8ec266fa77a8b6d920f64f5403",
+            "provider_library_sha256": "f3295c5f25e064b8a6bf774ba73c88d696e1398f6038cde87e6ba1eda3bde193",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/single-call/v10/debug/consumer/build/debug/p251_single_call_v10_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "452095983eeb6af8123acbe04a9a8dedd526e74a1a005c53f45f5303bd94c19c",
+              "stderr": "",
+              "stdout": "31\nmoss\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "check": {
+              "command": [
+                "$REPO/moss",
+                "check",
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/single-call/v10/release/consumer/src/main.moss",
+                "--json"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e2e7daed953c0f0ce0108f69640aae7d6c4e8a0c1ae2276ceb5080610b5b75f0",
+              "stderr": "MOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_single_call_v10_release_provider@0.1.0::Service:fn:fresh|checked-body-v1\nMOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_single_call_v10_release_provider@0.1.0::Service:fn:helper|checked-body-v1\nMOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_single_call_v10_release_provider@0.1.0::Service:fn:fresh|checked-body-v1\nMOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_single_call_v10_release_provider@0.1.0::Service:fn:helper|checked-body-v1\n",
+              "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/single-call/v10/release/consumer/src/main.moss\", \"diagnostics\": []}\n}\n"
+            },
+            "checked_projection_trace": true,
+            "legacy_poisoned": true,
+            "provider_interface_sha256": "83ab43c6a38356d3925580434f3018c8900e56cf237aa297c6dc35f1643c30e2",
+            "provider_library_sha256": "d6caec813e2aadda59e2ce7040deab224a5cbfdb75ed5274b73390df2cb23894",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/single-call/v10/release/consumer/build/release/p251_single_call_v10_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "452095983eeb6af8123acbe04a9a8dedd526e74a1a005c53f45f5303bd94c19c",
+              "stderr": "",
+              "stdout": "31\nmoss\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v9": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "d5be6da29abb3bf0665947cb440a0d5e9d5335f25d7a36a4642a55f0310506ea",
+            "provider_library_sha256": "18300d81ccf96d4fdaf4cadee6d4d0bd0c4bee7c05daa0071187bfcb5032f3a3",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/single-call/v9/debug/consumer/build/debug/p251_single_call_v9_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "452095983eeb6af8123acbe04a9a8dedd526e74a1a005c53f45f5303bd94c19c",
+              "stderr": "",
+              "stdout": "31\nmoss\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "ea89535ecb782be4f16c659f773111d4fd0cb8b2f9bfbfce0b98f9c8f3ef6c29",
+            "provider_library_sha256": "6e40f62b0878ee5ef1b68b56d6bf524d1dcff88ecb97e3bdd24e124095bc897a",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/single-call/v9/release/consumer/build/release/p251_single_call_v9_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "452095983eeb6af8123acbe04a9a8dedd526e74a1a005c53f45f5303bd94c19c",
+              "stderr": "",
+              "stdout": "31\nmoss\n"
+            },
+            "status": "pass"
+          }
+        }
+      },
+      "poisoning": [
+        {
+          "callable": "fresh",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/single-call/v10/debug/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/single-call/v10/debug/artifacts/libService.rlib",
+              "Service",
+              "fresh"
+            ],
+            "exit_code": 0,
+            "output_sha256": "e29f9b8c9e973f337373d65facd6ddb8bb184d0a71d113d2b5f17fefc8c85666",
+            "stderr": "",
+            "stdout": "removed 1 generic_stmt records from fresh\n"
+          }
+        },
+        {
+          "callable": "fresh",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/single-call/v10/release/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/single-call/v10/release/artifacts/libService.rlib",
+              "Service",
+              "fresh"
+            ],
+            "exit_code": 0,
+            "output_sha256": "e29f9b8c9e973f337373d65facd6ddb8bb184d0a71d113d2b5f17fefc8c85666",
+            "stderr": "",
+            "stdout": "removed 1 generic_stmt records from fresh\n"
+          }
+        }
+      ],
+      "priority": "P1-essential"
+    },
+    {
+      "category": "collection method and operations",
+      "id": "collection-loop-equality-index",
+      "modes": {
+        "source_backed": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/collection-loop-equality-index/source-backed/debug/build/debug/p251_collection_loop_equality_index_source_debug"
+              ],
+              "exit_code": 0,
+              "output_sha256": "cf1f2f9e36e5c80e0d1b261dae4179a249ec8c1262224489288d266ea39aa6a4",
+              "stderr": "",
+              "stdout": "1\n-1\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/collection-loop-equality-index/source-backed/release/build/release/p251_collection_loop_equality_index_source_release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "cf1f2f9e36e5c80e0d1b261dae4179a249ec8c1262224489288d266ea39aa6a4",
+              "stderr": "",
+              "stdout": "1\n-1\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v10": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "check": {
+              "command": [
+                "$REPO/moss",
+                "check",
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/collection-loop-equality-index/v10/debug/consumer/src/main.moss",
+                "--json"
+              ],
+              "exit_code": 0,
+              "output_sha256": "fc05b8db73e3a5051e636c42b0b6b5b98068688da5023faa2d96cea43e788174",
+              "stderr": "MOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_collection_loop_equality_index_v10_debug_provider@0.1.0::Service:fn:fresh|checked-body-v1\nMOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_collection_loop_equality_index_v10_debug_provider@0.1.0::Service:fn:fresh|checked-body-v1\n",
+              "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/collection-loop-equality-index/v10/debug/consumer/src/main.moss\", \"diagnostics\": []}\n}\n"
+            },
+            "checked_projection_trace": true,
+            "legacy_poisoned": true,
+            "provider_interface_sha256": "449a218a5f4a281cd01851d07998049b3b65628edfbf56a3d9e2a301033c8308",
+            "provider_library_sha256": "796dc80b8511400fdb529d8a26b9f3aaf042c949cfc74e80f18065e59072d029",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/collection-loop-equality-index/v10/debug/consumer/build/debug/p251_collection_loop_equality_index_v10_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "cf1f2f9e36e5c80e0d1b261dae4179a249ec8c1262224489288d266ea39aa6a4",
+              "stderr": "",
+              "stdout": "1\n-1\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "check": {
+              "command": [
+                "$REPO/moss",
+                "check",
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/collection-loop-equality-index/v10/release/consumer/src/main.moss",
+                "--json"
+              ],
+              "exit_code": 0,
+              "output_sha256": "f8d4e62cf681b3ef61c4832ad0ef05c2314d174b23130655487b3bb922b6fa8b",
+              "stderr": "MOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_collection_loop_equality_index_v10_release_provider@0.1.0::Service:fn:fresh|checked-body-v1\nMOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_collection_loop_equality_index_v10_release_provider@0.1.0::Service:fn:fresh|checked-body-v1\n",
+              "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/collection-loop-equality-index/v10/release/consumer/src/main.moss\", \"diagnostics\": []}\n}\n"
+            },
+            "checked_projection_trace": true,
+            "legacy_poisoned": true,
+            "provider_interface_sha256": "7f5a4cff94b85d6197fbf3a720683a68e6a1c04d767c94323c1cd1d5494fccde",
+            "provider_library_sha256": "f68e0a5c97f91d651816e43ed46af71d8ac8295317b350b419118b46c73617e7",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/collection-loop-equality-index/v10/release/consumer/build/release/p251_collection_loop_equality_index_v10_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "cf1f2f9e36e5c80e0d1b261dae4179a249ec8c1262224489288d266ea39aa6a4",
+              "stderr": "",
+              "stdout": "1\n-1\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v9": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "6a97a6f8ed6955a10a26c328e69283447544777fd874822994fc9fbe04d6f99b",
+            "provider_library_sha256": "0ad45575c2425ad5073665e0e0d230102ca69990ae2c55446dfe5595a9a5557f",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/collection-loop-equality-index/v9/debug/consumer/build/debug/p251_collection_loop_equality_index_v9_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "cf1f2f9e36e5c80e0d1b261dae4179a249ec8c1262224489288d266ea39aa6a4",
+              "stderr": "",
+              "stdout": "1\n-1\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "17115b1d8cc7faad81baaae001bb5b568a08d7c3aae82243f7fdb4ad897f9735",
+            "provider_library_sha256": "61e6a209aadee91f34374d4e90b8fe01d242b79ec6c4217523f56e9e7469adc8",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/collection-loop-equality-index/v9/release/consumer/build/release/p251_collection_loop_equality_index_v9_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "cf1f2f9e36e5c80e0d1b261dae4179a249ec8c1262224489288d266ea39aa6a4",
+              "stderr": "",
+              "stdout": "1\n-1\n"
+            },
+            "status": "pass"
+          }
+        }
+      },
+      "poisoning": [
+        {
+          "callable": "fresh",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/collection-loop-equality-index/v10/debug/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/collection-loop-equality-index/v10/debug/artifacts/libService.rlib",
+              "Service",
+              "fresh"
+            ],
+            "exit_code": 0,
+            "output_sha256": "c0aa8b2c379ee751f32870ed798252112aea98a14343f0bd34bbd46e9d64b34b",
+            "stderr": "",
+            "stdout": "removed 7 generic_stmt records from fresh\n"
+          }
+        },
+        {
+          "callable": "fresh",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/collection-loop-equality-index/v10/release/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/collection-loop-equality-index/v10/release/artifacts/libService.rlib",
+              "Service",
+              "fresh"
+            ],
+            "exit_code": 0,
+            "output_sha256": "c0aa8b2c379ee751f32870ed798252112aea98a14343f0bd34bbd46e9d64b34b",
+            "stderr": "",
+            "stdout": "removed 7 generic_stmt records from fresh\n"
+          }
+        }
+      ],
+      "priority": "P1-sdk-essential"
+    },
+    {
+      "category": "other: generic iterator body",
+      "id": "generic-range-iteration",
+      "modes": {
+        "source_backed": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-range-iteration/source-backed/debug/build/debug/p251_generic_range_iteration_source_debug"
+              ],
+              "exit_code": 0,
+              "output_sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2",
+              "stderr": "",
+              "stdout": "3\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-range-iteration/source-backed/release/build/release/p251_generic_range_iteration_source_release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2",
+              "stderr": "",
+              "stdout": "3\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v10": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 1,
+              "output_sha256": "b5e3bc97fe50d3cf83a9b108f4d7389652457696141261f7d8ad9a7a5500387a",
+              "stderr": "margo: error: command failed ($REPO/moss build --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__fresh' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-range-iteration/v10/debug/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-range-iteration/v10/debug/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-range-iteration/v10/debug/consumer/src/main.moss\", \"line\": 5, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 3, \"column\": 1}, \"message\": \"sealed provider callable 'Service.fresh' (callable-v1:module-v1:p251_generic_range_iteration_v10_debug_provider@0.1.0::Service:fn:fresh)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 1,
+              "output_sha256": "27d6451b218f8ff7318424fabdc74567fcf29ca5f8b55982861ac1d3da60c031",
+              "stderr": "margo: error: command failed ($REPO/moss build --release --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__fresh' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-range-iteration/v10/release/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-range-iteration/v10/release/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-range-iteration/v10/release/consumer/src/main.moss\", \"line\": 5, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 3, \"column\": 1}, \"message\": \"sealed provider callable 'Service.fresh' (callable-v1:module-v1:p251_generic_range_iteration_v10_release_provider@0.1.0::Service:fn:fresh)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          }
+        },
+        "v9": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "d6c1c185b7b1f770c06893ac8a9fa0ddde19d446789d7c8a8f2950b584d73455",
+            "provider_library_sha256": "f981fdc9bcce546a70ef783ddd4776778e74e1a1e118e8be40556651dad72598",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-range-iteration/v9/debug/consumer/build/debug/p251_generic_range_iteration_v9_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2",
+              "stderr": "",
+              "stdout": "3\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "ae624b23266ca2201aeeb2698a86b7334067fea4b182078a8676729102a18900",
+            "provider_library_sha256": "65593d455386650dc36e7b56529d62acd8c6b1b62a050d85349c4bf05f92be52",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-range-iteration/v9/release/consumer/build/release/p251_generic_range_iteration_v9_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2",
+              "stderr": "",
+              "stdout": "3\n"
+            },
+            "status": "pass"
+          }
+        }
+      },
+      "poisoning": [
+        {
+          "callable": "fresh",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-range-iteration/v10/debug/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-range-iteration/v10/debug/artifacts/libService.rlib",
+              "Service",
+              "fresh"
+            ],
+            "exit_code": 0,
+            "output_sha256": "7b43da687de8da3992e6c2300924395e7245608b903211dad49ddfc204426b2e",
+            "stderr": "",
+            "stdout": "removed 4 generic_stmt records from fresh\n"
+          }
+        },
+        {
+          "callable": "fresh",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-range-iteration/v10/release/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-range-iteration/v10/release/artifacts/libService.rlib",
+              "Service",
+              "fresh"
+            ],
+            "exit_code": 0,
+            "output_sha256": "7b43da687de8da3992e6c2300924395e7245608b903211dad49ddfc204426b2e",
+            "stderr": "",
+            "stdout": "removed 4 generic_stmt records from fresh\n"
+          }
+        }
+      ],
+      "priority": "P1-sdk-essential"
+    },
+    {
+      "category": "zero-argument open Vector result and independent element specializations",
+      "id": "generic-empty-vector-result",
+      "modes": {
+        "source_backed": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-empty-vector-result/source-backed/debug/build/debug/p251_generic_empty_vector_result_source_debug"
+              ],
+              "exit_code": 0,
+              "output_sha256": "d527418e138b16395134a07ca24ae92cf64baf909bf2f45e1ac4ec66fa51fc86",
+              "stderr": "",
+              "stdout": "[7]\n[true]\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-empty-vector-result/source-backed/release/build/release/p251_generic_empty_vector_result_source_release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "d527418e138b16395134a07ca24ae92cf64baf909bf2f45e1ac4ec66fa51fc86",
+              "stderr": "",
+              "stdout": "[7]\n[true]\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v10": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "check": {
+              "command": [
+                "$REPO/moss",
+                "check",
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-empty-vector-result/v10/debug/consumer/src/main.moss",
+                "--json"
+              ],
+              "exit_code": 0,
+              "output_sha256": "92ed1f92bf607c9a4f4bb02d91e2b1d388c4df1f335af3dde67958ab7c795b7d",
+              "stderr": "MOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_generic_empty_vector_result_v10_debug_provider@0.1.0::Service:fn:fresh|checked-body-v1\nMOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_generic_empty_vector_result_v10_debug_provider@0.1.0::Service:fn:fresh|checked-body-v1\n",
+              "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-empty-vector-result/v10/debug/consumer/src/main.moss\", \"diagnostics\": []}\n}\n"
+            },
+            "checked_projection_trace": true,
+            "legacy_poisoned": true,
+            "provider_interface_sha256": "6db6e196a3f2d6cfe61221c3b908b5eb8a07c4a5b34704dbb7e04a549ce0ad06",
+            "provider_library_sha256": "c233282c70dae046ba031c079ad43a4f8becfd8e32e5064dd04bf7320c0b966d",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-empty-vector-result/v10/debug/consumer/build/debug/p251_generic_empty_vector_result_v10_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "d527418e138b16395134a07ca24ae92cf64baf909bf2f45e1ac4ec66fa51fc86",
+              "stderr": "",
+              "stdout": "[7]\n[true]\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "check": {
+              "command": [
+                "$REPO/moss",
+                "check",
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-empty-vector-result/v10/release/consumer/src/main.moss",
+                "--json"
+              ],
+              "exit_code": 0,
+              "output_sha256": "487adf76d29e38200edaa010bbbffca86ec8f75ad3a174379a94e6e9d9479efc",
+              "stderr": "MOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_generic_empty_vector_result_v10_release_provider@0.1.0::Service:fn:fresh|checked-body-v1\nMOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_generic_empty_vector_result_v10_release_provider@0.1.0::Service:fn:fresh|checked-body-v1\n",
+              "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-empty-vector-result/v10/release/consumer/src/main.moss\", \"diagnostics\": []}\n}\n"
+            },
+            "checked_projection_trace": true,
+            "legacy_poisoned": true,
+            "provider_interface_sha256": "ba6866bd8c6a8331dd22b51dd18c9158733fa032c798067e058dae5a00d56ef9",
+            "provider_library_sha256": "0168978cc293f02ac10eb1cfe6c29fb5a4dbf13b95852724024a31f1790dbb03",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-empty-vector-result/v10/release/consumer/build/release/p251_generic_empty_vector_result_v10_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "d527418e138b16395134a07ca24ae92cf64baf909bf2f45e1ac4ec66fa51fc86",
+              "stderr": "",
+              "stdout": "[7]\n[true]\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v9": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "0b011c16cde4fe6d7970ae9b4c76e3b44f518a4c75885333d459c68ac414ddc7",
+            "provider_library_sha256": "43f7e545e5256f13e8a9ec313500dfb575c17ec09744ee3d35c2ff7f0699e69b",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-empty-vector-result/v9/debug/consumer/build/debug/p251_generic_empty_vector_result_v9_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "d527418e138b16395134a07ca24ae92cf64baf909bf2f45e1ac4ec66fa51fc86",
+              "stderr": "",
+              "stdout": "[7]\n[true]\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "4af600d39174cb0c554eac46a52a078bb5b7b6ee0b877fb636fed819652c7b4e",
+            "provider_library_sha256": "3de24f5dd1ba24130911523d1b416e3442339183f0a94987f888aa745ecdbddb",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-empty-vector-result/v9/release/consumer/build/release/p251_generic_empty_vector_result_v9_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "d527418e138b16395134a07ca24ae92cf64baf909bf2f45e1ac4ec66fa51fc86",
+              "stderr": "",
+              "stdout": "[7]\n[true]\n"
+            },
+            "status": "pass"
+          }
+        }
+      },
+      "poisoning": [
+        {
+          "callable": "fresh",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-empty-vector-result/v10/debug/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-empty-vector-result/v10/debug/artifacts/libService.rlib",
+              "Service",
+              "fresh"
+            ],
+            "exit_code": 0,
+            "output_sha256": "e29f9b8c9e973f337373d65facd6ddb8bb184d0a71d113d2b5f17fefc8c85666",
+            "stderr": "",
+            "stdout": "removed 1 generic_stmt records from fresh\n"
+          }
+        },
+        {
+          "callable": "fresh",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-empty-vector-result/v10/release/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-empty-vector-result/v10/release/artifacts/libService.rlib",
+              "Service",
+              "fresh"
+            ],
+            "exit_code": 0,
+            "output_sha256": "e29f9b8c9e973f337373d65facd6ddb8bb184d0a71d113d2b5f17fefc8c85666",
+            "stderr": "",
+            "stdout": "removed 1 generic_stmt records from fresh\n"
+          }
+        }
+      ],
+      "priority": "P1-open-result"
+    },
+    {
+      "category": "zero-argument open result and private generic dependency closure",
+      "id": "generic-zero-argument-relay",
+      "modes": {
+        "source_backed": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-zero-argument-relay/source-backed/debug/build/debug/p251_generic_zero_argument_relay_source_debug"
+              ],
+              "exit_code": 0,
+              "output_sha256": "7356b4cd6704f73f1986078ebb8846558e10561ae455ab9adc656551134fd488",
+              "stderr": "",
+              "stdout": "[17]\n[true]\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-zero-argument-relay/source-backed/release/build/release/p251_generic_zero_argument_relay_source_release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "7356b4cd6704f73f1986078ebb8846558e10561ae455ab9adc656551134fd488",
+              "stderr": "",
+              "stdout": "[17]\n[true]\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v10": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 1,
+              "output_sha256": "4328dbdc52ea361544f14fdc3fe1fee1663b5ac5c5002fd85e618b793b866ca2",
+              "stderr": "margo: error: command failed ($REPO/moss build --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__relay' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-zero-argument-relay/v10/debug/artifacts/Service.mossi\", \"line\": 6, \"column\": 1, \"span\": {\"start_line\": 6, \"start_column\": 1, \"end_line\": 6, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-zero-argument-relay/v10/debug/artifacts/Service.mossi\", \"line\": 6, \"column\": 1, \"span\": {\"start_line\": 6, \"start_column\": 1, \"end_line\": 6, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-zero-argument-relay/v10/debug/consumer/src/main.moss\", \"line\": 5, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 6, \"column\": 1}, \"message\": \"sealed provider callable 'Service.relay' (callable-v1:module-v1:p251_generic_zero_argument_relay_v10_debug_provider@0.1.0::Service:fn:relay)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 1,
+              "output_sha256": "fb53393b6fa062770b9d23746c9a87c79207a04a1cb5e348fb8042fc1a53bfc7",
+              "stderr": "margo: error: command failed ($REPO/moss build --release --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__relay' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-zero-argument-relay/v10/release/artifacts/Service.mossi\", \"line\": 6, \"column\": 1, \"span\": {\"start_line\": 6, \"start_column\": 1, \"end_line\": 6, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-zero-argument-relay/v10/release/artifacts/Service.mossi\", \"line\": 6, \"column\": 1, \"span\": {\"start_line\": 6, \"start_column\": 1, \"end_line\": 6, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-zero-argument-relay/v10/release/consumer/src/main.moss\", \"line\": 5, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 6, \"column\": 1}, \"message\": \"sealed provider callable 'Service.relay' (callable-v1:module-v1:p251_generic_zero_argument_relay_v10_release_provider@0.1.0::Service:fn:relay)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          }
+        },
+        "v9": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "56de2c783a2f4b261421e6f5115a2123e7c700172193e3835fcafc55fa04bacb",
+            "provider_library_sha256": "1a027c0f662a8856838f2cc341d41425d001bba542c00ac0e327a3c3761b83e7",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-zero-argument-relay/v9/debug/consumer/build/debug/p251_generic_zero_argument_relay_v9_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "7356b4cd6704f73f1986078ebb8846558e10561ae455ab9adc656551134fd488",
+              "stderr": "",
+              "stdout": "[17]\n[true]\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "f0801a5d57294b44e098fa0444663d55bda881d0477cbc760327a7be21826601",
+            "provider_library_sha256": "f3c1bddf7a0dcd76bac9c1acbd868eb7d34bba8f6c86ea16f83b0f718071edf6",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-zero-argument-relay/v9/release/consumer/build/release/p251_generic_zero_argument_relay_v9_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "7356b4cd6704f73f1986078ebb8846558e10561ae455ab9adc656551134fd488",
+              "stderr": "",
+              "stdout": "[17]\n[true]\n"
+            },
+            "status": "pass"
+          }
+        }
+      },
+      "poisoning": [
+        {
+          "callable": "relay",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-zero-argument-relay/v10/debug/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-zero-argument-relay/v10/debug/artifacts/libService.rlib",
+              "Service",
+              "relay"
+            ],
+            "exit_code": 0,
+            "output_sha256": "0494d771a2aeb2e3c4801691d84ac90e2fc8cf30d2d452dccc1b63e3b88c072a",
+            "stderr": "",
+            "stdout": "removed 1 generic_stmt records from relay\n"
+          }
+        },
+        {
+          "callable": "fresh",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-zero-argument-relay/v10/debug/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-zero-argument-relay/v10/debug/artifacts/libService.rlib",
+              "Service",
+              "fresh"
+            ],
+            "exit_code": 0,
+            "output_sha256": "e29f9b8c9e973f337373d65facd6ddb8bb184d0a71d113d2b5f17fefc8c85666",
+            "stderr": "",
+            "stdout": "removed 1 generic_stmt records from fresh\n"
+          }
+        },
+        {
+          "callable": "relay",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-zero-argument-relay/v10/release/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-zero-argument-relay/v10/release/artifacts/libService.rlib",
+              "Service",
+              "relay"
+            ],
+            "exit_code": 0,
+            "output_sha256": "0494d771a2aeb2e3c4801691d84ac90e2fc8cf30d2d452dccc1b63e3b88c072a",
+            "stderr": "",
+            "stdout": "removed 1 generic_stmt records from relay\n"
+          }
+        },
+        {
+          "callable": "fresh",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-zero-argument-relay/v10/release/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-zero-argument-relay/v10/release/artifacts/libService.rlib",
+              "Service",
+              "fresh"
+            ],
+            "exit_code": 0,
+            "output_sha256": "e29f9b8c9e973f337373d65facd6ddb8bb184d0a71d113d2b5f17fefc8c85666",
+            "stderr": "",
+            "stdout": "removed 1 generic_stmt records from fresh\n"
+          }
+        }
+      ],
+      "priority": "P1-open-result"
+    },
+    {
+      "category": "structural member requirement and call-site specialization",
+      "id": "generic-member-length",
+      "modes": {
+        "source_backed": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-member-length/source-backed/debug/build/debug/p251_generic_member_length_source_debug"
+              ],
+              "exit_code": 0,
+              "output_sha256": "7de1555df0c2700329e815b93b32c571c3ea54dc967b89e81ab73b9972b72d1d",
+              "stderr": "",
+              "stdout": "4\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-member-length/source-backed/release/build/release/p251_generic_member_length_source_release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "7de1555df0c2700329e815b93b32c571c3ea54dc967b89e81ab73b9972b72d1d",
+              "stderr": "",
+              "stdout": "4\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v10": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 1,
+              "output_sha256": "e461c05974f5ee2412ef76e1a6ac23a079f89b1d85181bf35df441be2f490b40",
+              "stderr": "margo: error: command failed ($REPO/moss build --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__size' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-member-length/v10/debug/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-member-length/v10/debug/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-member-length/v10/debug/consumer/src/main.moss\", \"line\": 5, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 3, \"column\": 1}, \"message\": \"sealed provider callable 'Service.size' (callable-v1:module-v1:p251_generic_member_length_v10_debug_provider@0.1.0::Service:fn:size)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 1,
+              "output_sha256": "39953b1cd110c0576d72d7d7cd81120f60a13ab90548617a49d99278696e5a1e",
+              "stderr": "margo: error: command failed ($REPO/moss build --release --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__size' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-member-length/v10/release/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-member-length/v10/release/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-member-length/v10/release/consumer/src/main.moss\", \"line\": 5, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 3, \"column\": 1}, \"message\": \"sealed provider callable 'Service.size' (callable-v1:module-v1:p251_generic_member_length_v10_release_provider@0.1.0::Service:fn:size)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          }
+        },
+        "v9": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "29e21ab976162f0f89605af9121f18d6e3c73f1a33d6a7f1fe5dcc47ce0dbf68",
+            "provider_library_sha256": "9720139b65b6fe02aa536a8170f077b66029d0fedc23072c8fdf97a3aa189118",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-member-length/v9/debug/consumer/build/debug/p251_generic_member_length_v9_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "7de1555df0c2700329e815b93b32c571c3ea54dc967b89e81ab73b9972b72d1d",
+              "stderr": "",
+              "stdout": "4\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "997dbbca7333619ceb7d216714f78875ed079b9256d1c6b448a1c0942e59f0ab",
+            "provider_library_sha256": "6937dcb0add9f36d0154ee9bc39bc86fbeebb5b3e03e3f264c43301e40bf3813",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-member-length/v9/release/consumer/build/release/p251_generic_member_length_v9_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "7de1555df0c2700329e815b93b32c571c3ea54dc967b89e81ab73b9972b72d1d",
+              "stderr": "",
+              "stdout": "4\n"
+            },
+            "status": "pass"
+          }
+        }
+      },
+      "poisoning": [
+        {
+          "callable": "size",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-member-length/v10/debug/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-member-length/v10/debug/artifacts/libService.rlib",
+              "Service",
+              "size"
+            ],
+            "exit_code": 0,
+            "output_sha256": "c6212d4bcf5ff89e9d1ce04db8d5420c5a7ddabb6c692f970f2ef3a3ad8d1d19",
+            "stderr": "",
+            "stdout": "removed 1 generic_stmt records from size\n"
+          }
+        },
+        {
+          "callable": "size",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-member-length/v10/release/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-member-length/v10/release/artifacts/libService.rlib",
+              "Service",
+              "size"
+            ],
+            "exit_code": 0,
+            "output_sha256": "c6212d4bcf5ff89e9d1ce04db8d5420c5a7ddabb6c692f970f2ef3a3ad8d1d19",
+            "stderr": "",
+            "stdout": "removed 1 generic_stmt records from size\n"
+          }
+        }
+      ],
+      "priority": "P1-member-requirement"
+    },
+    {
+      "category": "open element type and nonempty Vector literal",
+      "id": "generic-nonempty-vector-literal",
+      "modes": {
+        "source_backed": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nonempty-vector-literal/source-backed/debug/build/debug/p251_generic_nonempty_vector_literal_source_debug"
+              ],
+              "exit_code": 0,
+              "output_sha256": "5501796eabc10e704476a10e5ee053a2fd4f9deda931767c33a306fdf6b4dab5",
+              "stderr": "",
+              "stdout": "[7]\n[moss]\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nonempty-vector-literal/source-backed/release/build/release/p251_generic_nonempty_vector_literal_source_release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "5501796eabc10e704476a10e5ee053a2fd4f9deda931767c33a306fdf6b4dab5",
+              "stderr": "",
+              "stdout": "[7]\n[moss]\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v10": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 1,
+              "output_sha256": "22f58f74372ccea9ae5b963c694514fc10c2e169a5603e3fc570bc95e753dfd8",
+              "stderr": "margo: error: command failed ($REPO/moss build --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__duplicate' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nonempty-vector-literal/v10/debug/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nonempty-vector-literal/v10/debug/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nonempty-vector-literal/v10/debug/consumer/src/main.moss\", \"line\": 5, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 3, \"column\": 1}, \"message\": \"sealed provider callable 'Service.duplicate' (callable-v1:module-v1:p251_generic_nonempty_vector_literal_v10_debug_provider@0.1.0::Service:fn:duplicate)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 1,
+              "output_sha256": "3741fc80c973fd1da9c9fcbe0f59d873dc295c56621a183287fa7f579e2b2f58",
+              "stderr": "margo: error: command failed ($REPO/moss build --release --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__duplicate' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nonempty-vector-literal/v10/release/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nonempty-vector-literal/v10/release/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nonempty-vector-literal/v10/release/consumer/src/main.moss\", \"line\": 5, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 3, \"column\": 1}, \"message\": \"sealed provider callable 'Service.duplicate' (callable-v1:module-v1:p251_generic_nonempty_vector_literal_v10_release_provider@0.1.0::Service:fn:duplicate)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          }
+        },
+        "v9": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "9bb791dff84f1cb66fd069298b785cb585f413343fa54d02cc81e55457c0d48e",
+            "provider_library_sha256": "11d7a832f9bfeec1f0eca373bfe2894b5f460f98fa17da9f1d9b852d1e45e453",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nonempty-vector-literal/v9/debug/consumer/build/debug/p251_generic_nonempty_vector_literal_v9_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "5501796eabc10e704476a10e5ee053a2fd4f9deda931767c33a306fdf6b4dab5",
+              "stderr": "",
+              "stdout": "[7]\n[moss]\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "f6820a0fe5bf7b8f90f226ae37f011ef19f4c863598cff860af5ec53d132c522",
+            "provider_library_sha256": "5cc5a2eaf833147c57a57faaf7563ebae9806062342d2d61fce3ab46842d5933",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nonempty-vector-literal/v9/release/consumer/build/release/p251_generic_nonempty_vector_literal_v9_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "5501796eabc10e704476a10e5ee053a2fd4f9deda931767c33a306fdf6b4dab5",
+              "stderr": "",
+              "stdout": "[7]\n[moss]\n"
+            },
+            "status": "pass"
+          }
+        }
+      },
+      "poisoning": [
+        {
+          "callable": "duplicate",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nonempty-vector-literal/v10/debug/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nonempty-vector-literal/v10/debug/artifacts/libService.rlib",
+              "Service",
+              "duplicate"
+            ],
+            "exit_code": 0,
+            "output_sha256": "274da7cfb0d0bce8e10794e61b9d7627e9aff3f3a1826c6aff7f59a1a2b9b6b9",
+            "stderr": "",
+            "stdout": "removed 1 generic_stmt records from duplicate\n"
+          }
+        },
+        {
+          "callable": "duplicate",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nonempty-vector-literal/v10/release/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nonempty-vector-literal/v10/release/artifacts/libService.rlib",
+              "Service",
+              "duplicate"
+            ],
+            "exit_code": 0,
+            "output_sha256": "274da7cfb0d0bce8e10794e61b9d7627e9aff3f3a1826c6aff7f59a1a2b9b6b9",
+            "stderr": "",
+            "stdout": "removed 1 generic_stmt records from duplicate\n"
+          }
+        }
+      ],
+      "priority": "P1-collection-literal"
+    },
+    {
+      "category": "provider-owned nominal construction and field identity",
+      "id": "generic-nominal-constructor",
+      "modes": {
+        "source_backed": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nominal-constructor/source-backed/debug/build/debug/p251_generic_nominal_constructor_source_debug"
+              ],
+              "exit_code": 0,
+              "output_sha256": "54867c48c1bb42b0d1e5279436ed4419ed06e77c5a6a6a40e303f71031ae8195",
+              "stderr": "",
+              "stdout": "7\nmoss\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nominal-constructor/source-backed/release/build/release/p251_generic_nominal_constructor_source_release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "54867c48c1bb42b0d1e5279436ed4419ed06e77c5a6a6a40e303f71031ae8195",
+              "stderr": "",
+              "stdout": "7\nmoss\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v10": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "check": {
+              "command": [
+                "$REPO/moss",
+                "check",
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nominal-constructor/v10/debug/consumer/src/main.moss",
+                "--json"
+              ],
+              "exit_code": 0,
+              "output_sha256": "daae52cac4b0b400afb5d306e46ed3ad2ef9f4db35f3ef72e37535a3686369b2",
+              "stderr": "MOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_generic_nominal_constructor_v10_debug_provider@0.1.0::Service:fn:wrap|checked-body-v1\nMOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_generic_nominal_constructor_v10_debug_provider@0.1.0::Service:fn:wrap|checked-body-v1\n",
+              "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nominal-constructor/v10/debug/consumer/src/main.moss\", \"diagnostics\": []}\n}\n"
+            },
+            "checked_projection_trace": true,
+            "legacy_poisoned": true,
+            "provider_interface_sha256": "1eb4e9fdf1da1d577dc2c13464133a7e70a34585a8406d2cc55b93f7905ab2e1",
+            "provider_library_sha256": "c7d45928a4fd3976d1d3f09d24dcd79e2786eade9e7921429480bf517ad3f852",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nominal-constructor/v10/debug/consumer/build/debug/p251_generic_nominal_constructor_v10_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "54867c48c1bb42b0d1e5279436ed4419ed06e77c5a6a6a40e303f71031ae8195",
+              "stderr": "",
+              "stdout": "7\nmoss\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "check": {
+              "command": [
+                "$REPO/moss",
+                "check",
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nominal-constructor/v10/release/consumer/src/main.moss",
+                "--json"
+              ],
+              "exit_code": 0,
+              "output_sha256": "c1aee82314a018ba6ac1394e7f96ce77a2bae06bfafce93918858e61b6465d6b",
+              "stderr": "MOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_generic_nominal_constructor_v10_release_provider@0.1.0::Service:fn:wrap|checked-body-v1\nMOSS_CHECKED_BODY_PROJECTED|callable-v1:module-v1:p251_generic_nominal_constructor_v10_release_provider@0.1.0::Service:fn:wrap|checked-body-v1\n",
+              "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nominal-constructor/v10/release/consumer/src/main.moss\", \"diagnostics\": []}\n}\n"
+            },
+            "checked_projection_trace": true,
+            "legacy_poisoned": true,
+            "provider_interface_sha256": "5a6b9712f3214a7df4d416b2912006d17562ec4eb77dede7ebc8fb77dedfaf04",
+            "provider_library_sha256": "4f494b557cd8aa4101c0a94fea8477f3b8272fe0bd2224baddaaf92336014549",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nominal-constructor/v10/release/consumer/build/release/p251_generic_nominal_constructor_v10_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "54867c48c1bb42b0d1e5279436ed4419ed06e77c5a6a6a40e303f71031ae8195",
+              "stderr": "",
+              "stdout": "7\nmoss\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v9": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "1aa659fcf95dd558fbc4e444ffc38e4e70b681ff5aa658923d793a242133957a",
+            "provider_library_sha256": "33e9764146c3202c6ed0a00e61bc5194424f5c697257014305468c2221a3e6a3",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nominal-constructor/v9/debug/consumer/build/debug/p251_generic_nominal_constructor_v9_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "54867c48c1bb42b0d1e5279436ed4419ed06e77c5a6a6a40e303f71031ae8195",
+              "stderr": "",
+              "stdout": "7\nmoss\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "2e768c25a33514a23c92c62708dcb80e1e8aa56455ac91dff7be5c93fb01d6f8",
+            "provider_library_sha256": "4bfab00629dfb90f509bc5cfa1470add89f4a2bb10564be0c422a52dc3fd853a",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nominal-constructor/v9/release/consumer/build/release/p251_generic_nominal_constructor_v9_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "54867c48c1bb42b0d1e5279436ed4419ed06e77c5a6a6a40e303f71031ae8195",
+              "stderr": "",
+              "stdout": "7\nmoss\n"
+            },
+            "status": "pass"
+          }
+        }
+      },
+      "poisoning": [
+        {
+          "callable": "wrap",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nominal-constructor/v10/debug/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nominal-constructor/v10/debug/artifacts/libService.rlib",
+              "Service",
+              "wrap"
+            ],
+            "exit_code": 0,
+            "output_sha256": "7f5a4b03cb0880755e5fc9e883512deb74c2bcf6e1b59af2575929f9bbfe9093",
+            "stderr": "",
+            "stdout": "removed 2 generic_stmt records from wrap\n"
+          }
+        },
+        {
+          "callable": "wrap",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nominal-constructor/v10/release/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-nominal-constructor/v10/release/artifacts/libService.rlib",
+              "Service",
+              "wrap"
+            ],
+            "exit_code": 0,
+            "output_sha256": "7f5a4b03cb0880755e5fc9e883512deb74c2bcf6e1b59af2575929f9bbfe9093",
+            "stderr": "",
+            "stdout": "removed 2 generic_stmt records from wrap\n"
+          }
+        }
+      ],
+      "priority": "P1-nominal-identity"
+    },
+    {
+      "category": "open Map key/value types, indexed mutation and indexed read",
+      "id": "generic-map-index-mutation",
+      "modes": {
+        "source_backed": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-map-index-mutation/source-backed/debug/build/debug/p251_generic_map_index_mutation_source_debug"
+              ],
+              "exit_code": 0,
+              "output_sha256": "b24392f6e09035e518c28daba897ce1fcf66aee18a364ef8d32092a6b0dd479d",
+              "stderr": "",
+              "stdout": "7\n9\n7\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-map-index-mutation/source-backed/release/build/release/p251_generic_map_index_mutation_source_release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "b24392f6e09035e518c28daba897ce1fcf66aee18a364ef8d32092a6b0dd479d",
+              "stderr": "",
+              "stdout": "7\n9\n7\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v10": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 1,
+              "output_sha256": "d809a0f96aebb5e6942fea92e573b6560bd02e01187c24cab5ea81df27278e8e",
+              "stderr": "margo: error: command failed ($REPO/moss build --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__insert_and_read' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-map-index-mutation/v10/debug/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-map-index-mutation/v10/debug/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-map-index-mutation/v10/debug/consumer/src/main.moss\", \"line\": 7, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 3, \"column\": 1}, \"message\": \"sealed provider callable 'Service.insert_and_read' (callable-v1:module-v1:p251_generic_map_index_mutation_v10_debug_provider@0.1.0::Service:fn:insert_and_read)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 1,
+              "output_sha256": "2dc9bcb643b19bb0b523c737a805b1273f801ede10a00a115009e3fec057a1cd",
+              "stderr": "margo: error: command failed ($REPO/moss build --release --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__insert_and_read' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-map-index-mutation/v10/release/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-map-index-mutation/v10/release/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-map-index-mutation/v10/release/consumer/src/main.moss\", \"line\": 7, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 3, \"column\": 1}, \"message\": \"sealed provider callable 'Service.insert_and_read' (callable-v1:module-v1:p251_generic_map_index_mutation_v10_release_provider@0.1.0::Service:fn:insert_and_read)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          }
+        },
+        "v9": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "13392499d22b044c2ecee77c89b1b388f998b50434fd1be9971fba3d6b849371",
+            "provider_library_sha256": "f7813c359145cdd4b5f3e632b20d833cffaa843b3797739e1767e0c24fe5ccb4",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-map-index-mutation/v9/debug/consumer/build/debug/p251_generic_map_index_mutation_v9_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "b24392f6e09035e518c28daba897ce1fcf66aee18a364ef8d32092a6b0dd479d",
+              "stderr": "",
+              "stdout": "7\n9\n7\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "f7b8375f9560eb649943f72eb9bb9e38c67412e453f8dc48668182de09621079",
+            "provider_library_sha256": "96ca1137c15b784473a58b9f2eb27d1b13a4f86b4e559215044b4bca282e0e41",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-map-index-mutation/v9/release/consumer/build/release/p251_generic_map_index_mutation_v9_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "b24392f6e09035e518c28daba897ce1fcf66aee18a364ef8d32092a6b0dd479d",
+              "stderr": "",
+              "stdout": "7\n9\n7\n"
+            },
+            "status": "pass"
+          }
+        }
+      },
+      "poisoning": [
+        {
+          "callable": "insert_and_read",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-map-index-mutation/v10/debug/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-map-index-mutation/v10/debug/artifacts/libService.rlib",
+              "Service",
+              "insert_and_read"
+            ],
+            "exit_code": 0,
+            "output_sha256": "974cacca3075c25191b16c9235164441a04782f8668bcf4259e27124acf649ad",
+            "stderr": "",
+            "stdout": "removed 2 generic_stmt records from insert_and_read\n"
+          }
+        },
+        {
+          "callable": "insert_and_read",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-map-index-mutation/v10/release/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-map-index-mutation/v10/release/artifacts/libService.rlib",
+              "Service",
+              "insert_and_read"
+            ],
+            "exit_code": 0,
+            "output_sha256": "974cacca3075c25191b16c9235164441a04782f8668bcf4259e27124acf649ad",
+            "stderr": "",
+            "stdout": "removed 2 generic_stmt records from insert_and_read\n"
+          }
+        }
+      ],
+      "priority": "P1-map-operation"
+    },
+    {
+      "category": "branch join and early return",
+      "id": "generic-if-early-return",
+      "modes": {
+        "source_backed": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-if-early-return/source-backed/debug/build/debug/p251_generic_if_early_return_source_debug"
+              ],
+              "exit_code": 0,
+              "output_sha256": "a306945b3426c6e39e12df5545b639fced2532630eab11987ae2cf3a2f0ff2c1",
+              "stderr": "",
+              "stdout": "7\n5\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-if-early-return/source-backed/release/build/release/p251_generic_if_early_return_source_release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "a306945b3426c6e39e12df5545b639fced2532630eab11987ae2cf3a2f0ff2c1",
+              "stderr": "",
+              "stdout": "7\n5\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v10": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 1,
+              "output_sha256": "fab012ca10ef1d2639ff22fc1b3ebe134749b9c42b437aca3cfc61422213b5e3",
+              "stderr": "margo: error: command failed ($REPO/moss build --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__magnitude' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-if-early-return/v10/debug/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-if-early-return/v10/debug/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-if-early-return/v10/debug/consumer/src/main.moss\", \"line\": 5, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 3, \"column\": 1}, \"message\": \"sealed provider callable 'Service.magnitude' (callable-v1:module-v1:p251_generic_if_early_return_v10_debug_provider@0.1.0::Service:fn:magnitude)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 1,
+              "output_sha256": "45dce721823dddb5cc45686105fa9a37c567a3cbbfddace4ec39318047b36186",
+              "stderr": "margo: error: command failed ($REPO/moss build --release --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__magnitude' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-if-early-return/v10/release/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-if-early-return/v10/release/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-if-early-return/v10/release/consumer/src/main.moss\", \"line\": 5, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 3, \"column\": 1}, \"message\": \"sealed provider callable 'Service.magnitude' (callable-v1:module-v1:p251_generic_if_early_return_v10_release_provider@0.1.0::Service:fn:magnitude)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          }
+        },
+        "v9": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "ecc3afc2cc40ec2eeeec38ea90dd08264f897a35af9854813efa7ae678449827",
+            "provider_library_sha256": "9c193c19b7c916152af03a15ee701c90f6f651bfbeab4be3016ddf0ae3cda8e4",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-if-early-return/v9/debug/consumer/build/debug/p251_generic_if_early_return_v9_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "a306945b3426c6e39e12df5545b639fced2532630eab11987ae2cf3a2f0ff2c1",
+              "stderr": "",
+              "stdout": "7\n5\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "39b02bd98773f853b5751f8c8ed4e0cde53a7e4cd4c5e84030d1a563a72c6d7b",
+            "provider_library_sha256": "1fa7fb966bfe383f4513fd3868bcd27897cbe5594161957d402a8f624c09b9e0",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-if-early-return/v9/release/consumer/build/release/p251_generic_if_early_return_v9_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "a306945b3426c6e39e12df5545b639fced2532630eab11987ae2cf3a2f0ff2c1",
+              "stderr": "",
+              "stdout": "7\n5\n"
+            },
+            "status": "pass"
+          }
+        }
+      },
+      "poisoning": [
+        {
+          "callable": "magnitude",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-if-early-return/v10/debug/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-if-early-return/v10/debug/artifacts/libService.rlib",
+              "Service",
+              "magnitude"
+            ],
+            "exit_code": 0,
+            "output_sha256": "921e1a72244a9d31ec55df5e1ca29bdf157c66810082632b21a675822412f4db",
+            "stderr": "",
+            "stdout": "removed 4 generic_stmt records from magnitude\n"
+          }
+        },
+        {
+          "callable": "magnitude",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-if-early-return/v10/release/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-if-early-return/v10/release/artifacts/libService.rlib",
+              "Service",
+              "magnitude"
+            ],
+            "exit_code": 0,
+            "output_sha256": "921e1a72244a9d31ec55df5e1ca29bdf157c66810082632b21a675822412f4db",
+            "stderr": "",
+            "stdout": "removed 4 generic_stmt records from magnitude\n"
+          }
+        }
+      ],
+      "priority": "P1-control-flow"
+    },
+    {
+      "category": "explicit let/var bindings, assignment and while loop",
+      "id": "generic-local-var-while",
+      "modes": {
+        "source_backed": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-local-var-while/source-backed/debug/build/debug/p251_generic_local_var_while_source_debug"
+              ],
+              "exit_code": 0,
+              "output_sha256": "452e39c241ac7c3d1fe29b5529a5e2ea849dff1f35727ab388946535f4f2f0f8",
+              "stderr": "",
+              "stdout": "0\n4\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-local-var-while/source-backed/release/build/release/p251_generic_local_var_while_source_release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "452e39c241ac7c3d1fe29b5529a5e2ea849dff1f35727ab388946535f4f2f0f8",
+              "stderr": "",
+              "stdout": "0\n4\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v10": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 1,
+              "output_sha256": "bc99a918643407f85fc5d537297a6b2ae5276a691e070a1ed1b9b732b4796ae5",
+              "stderr": "margo: error: command failed ($REPO/moss build --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__count_up' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-local-var-while/v10/debug/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-local-var-while/v10/debug/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-local-var-while/v10/debug/consumer/src/main.moss\", \"line\": 5, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 3, \"column\": 1}, \"message\": \"sealed provider callable 'Service.count_up' (callable-v1:module-v1:p251_generic_local_var_while_v10_debug_provider@0.1.0::Service:fn:count_up)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 1,
+              "output_sha256": "d3a64f41721b017cdd254dd2cc7988edf6324646416961a96a6822bc6308f477",
+              "stderr": "margo: error: command failed ($REPO/moss build --release --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__count_up' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-local-var-while/v10/release/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-local-var-while/v10/release/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-local-var-while/v10/release/consumer/src/main.moss\", \"line\": 5, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 3, \"column\": 1}, \"message\": \"sealed provider callable 'Service.count_up' (callable-v1:module-v1:p251_generic_local_var_while_v10_release_provider@0.1.0::Service:fn:count_up)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          }
+        },
+        "v9": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "520bd813af9ee4b13ed052725391ca01ea414f8398d2a1fb6016206533e1447a",
+            "provider_library_sha256": "88b9bc95846d404abd0b5604dfe64e30290db65c5518172dfed5c3cd7f9b7d8e",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-local-var-while/v9/debug/consumer/build/debug/p251_generic_local_var_while_v9_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "452e39c241ac7c3d1fe29b5529a5e2ea849dff1f35727ab388946535f4f2f0f8",
+              "stderr": "",
+              "stdout": "0\n4\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "69c06c0e565241a0df869ad7c7d7c39910d3da53ec2ae24c71bafd0f2c03989e",
+            "provider_library_sha256": "dc1cce22178c2089ff7d7776504b0d27ca5647e1ca754d8fbaa8552b79a59653",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-local-var-while/v9/release/consumer/build/release/p251_generic_local_var_while_v9_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "452e39c241ac7c3d1fe29b5529a5e2ea849dff1f35727ab388946535f4f2f0f8",
+              "stderr": "",
+              "stdout": "0\n4\n"
+            },
+            "status": "pass"
+          }
+        }
+      },
+      "poisoning": [
+        {
+          "callable": "count_up",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-local-var-while/v10/debug/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-local-var-while/v10/debug/artifacts/libService.rlib",
+              "Service",
+              "count_up"
+            ],
+            "exit_code": 0,
+            "output_sha256": "749ee7b994349ccd4d5394f04c072822528b8ef375d0e2076139d1bd1ac6faa1",
+            "stderr": "",
+            "stdout": "removed 5 generic_stmt records from count_up\n"
+          }
+        },
+        {
+          "callable": "count_up",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-local-var-while/v10/release/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-local-var-while/v10/release/artifacts/libService.rlib",
+              "Service",
+              "count_up"
+            ],
+            "exit_code": 0,
+            "output_sha256": "749ee7b994349ccd4d5394f04c072822528b8ef375d0e2076139d1bd1ac6faa1",
+            "stderr": "",
+            "stdout": "removed 5 generic_stmt records from count_up\n"
+          }
+        }
+      ],
+      "priority": "P1-control-flow"
+    },
+    {
+      "category": "match with a provider-owned enum and a separate open parameter",
+      "id": "generic-typed-enum-match",
+      "modes": {
+        "source_backed": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-typed-enum-match/source-backed/debug/build/debug/p251_generic_typed_enum_match_source_debug"
+              ],
+              "exit_code": 0,
+              "output_sha256": "ff585379194ceb1cc5fb6d7bd8c8d62a0ea9035393b49a7650fc0ba31cf57ad5",
+              "stderr": "",
+              "stdout": "12\n5\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-typed-enum-match/source-backed/release/build/release/p251_generic_typed_enum_match_source_release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "ff585379194ceb1cc5fb6d7bd8c8d62a0ea9035393b49a7650fc0ba31cf57ad5",
+              "stderr": "",
+              "stdout": "12\n5\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v10": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 1,
+              "output_sha256": "55d919f8d09118fc16e59d864279cf6c391373a77b91769e1334fb6f42f7c135",
+              "stderr": "margo: error: command failed ($REPO/moss build --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__unwrap' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-typed-enum-match/v10/debug/artifacts/Service.mossi\", \"line\": 7, \"column\": 1, \"span\": {\"start_line\": 7, \"start_column\": 1, \"end_line\": 7, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-typed-enum-match/v10/debug/artifacts/Service.mossi\", \"line\": 7, \"column\": 1, \"span\": {\"start_line\": 7, \"start_column\": 1, \"end_line\": 7, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-typed-enum-match/v10/debug/consumer/src/main.moss\", \"line\": 5, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 7, \"column\": 1}, \"message\": \"sealed provider callable 'Service.unwrap' (callable-v1:module-v1:p251_generic_typed_enum_match_v10_debug_provider@0.1.0::Service:fn:unwrap)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 1,
+              "output_sha256": "673eb6c3c2369b8eed9ea51e94ad9144fe75dea1a2003ddd01772e047664562e",
+              "stderr": "margo: error: command failed ($REPO/moss build --release --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__unwrap' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-typed-enum-match/v10/release/artifacts/Service.mossi\", \"line\": 7, \"column\": 1, \"span\": {\"start_line\": 7, \"start_column\": 1, \"end_line\": 7, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-typed-enum-match/v10/release/artifacts/Service.mossi\", \"line\": 7, \"column\": 1, \"span\": {\"start_line\": 7, \"start_column\": 1, \"end_line\": 7, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-typed-enum-match/v10/release/consumer/src/main.moss\", \"line\": 5, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 7, \"column\": 1}, \"message\": \"sealed provider callable 'Service.unwrap' (callable-v1:module-v1:p251_generic_typed_enum_match_v10_release_provider@0.1.0::Service:fn:unwrap)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          }
+        },
+        "v9": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "c6504d36102f477e05629f4ceac78b3bac558d9624dc7f0ddde9ce8e2770ab0e",
+            "provider_library_sha256": "b48f05544334a21005cc771a049bdd64ac31f1933d944bb12205343e8015336e",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-typed-enum-match/v9/debug/consumer/build/debug/p251_generic_typed_enum_match_v9_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "ff585379194ceb1cc5fb6d7bd8c8d62a0ea9035393b49a7650fc0ba31cf57ad5",
+              "stderr": "",
+              "stdout": "12\n5\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "8baf9667b55b56dc9c97e337d5465e1a2c299bb72b52fae12ff4880702338b88",
+            "provider_library_sha256": "219444eb6ea6cf06818ac6e7e5012119c06d0026a783e7c72cb3bc4f54b6163d",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-typed-enum-match/v9/release/consumer/build/release/p251_generic_typed_enum_match_v9_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "ff585379194ceb1cc5fb6d7bd8c8d62a0ea9035393b49a7650fc0ba31cf57ad5",
+              "stderr": "",
+              "stdout": "12\n5\n"
+            },
+            "status": "pass"
+          }
+        }
+      },
+      "poisoning": [
+        {
+          "callable": "unwrap",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-typed-enum-match/v10/debug/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-typed-enum-match/v10/debug/artifacts/libService.rlib",
+              "Service",
+              "unwrap"
+            ],
+            "exit_code": 0,
+            "output_sha256": "7b80def557e4fa4a257dce054e7e820bbd9badf8becade1252bba2ead0cdb627",
+            "stderr": "",
+            "stdout": "removed 5 generic_stmt records from unwrap\n"
+          }
+        },
+        {
+          "callable": "unwrap",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-typed-enum-match/v10/release/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-typed-enum-match/v10/release/artifacts/libService.rlib",
+              "Service",
+              "unwrap"
+            ],
+            "exit_code": 0,
+            "output_sha256": "7b80def557e4fa4a257dce054e7e820bbd9badf8becade1252bba2ead0cdb627",
+            "stderr": "",
+            "stdout": "removed 5 generic_stmt records from unwrap\n"
+          }
+        }
+      ],
+      "priority": "P1-match"
+    },
+    {
+      "category": "typed functional pipeline operation and placeholder expression",
+      "id": "generic-functional-pipeline",
+      "modes": {
+        "source_backed": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-functional-pipeline/source-backed/debug/build/debug/p251_generic_functional_pipeline_source_debug"
+              ],
+              "exit_code": 0,
+              "output_sha256": "b3274cea385bd43da4caf41abc7e4c0fdb76f9d1af2918293b8e340374eafe12",
+              "stderr": "",
+              "stdout": "[2, 4, 6]\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-functional-pipeline/source-backed/release/build/release/p251_generic_functional_pipeline_source_release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "b3274cea385bd43da4caf41abc7e4c0fdb76f9d1af2918293b8e340374eafe12",
+              "stderr": "",
+              "stdout": "[2, 4, 6]\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v10": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 1,
+              "output_sha256": "4eb58bd423155190d4c018a2f00e4dfadff691ea8663539978ecce9057892e1f",
+              "stderr": "margo: error: command failed ($REPO/moss build --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__double' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-functional-pipeline/v10/debug/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-functional-pipeline/v10/debug/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-functional-pipeline/v10/debug/consumer/src/main.moss\", \"line\": 5, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 3, \"column\": 1}, \"message\": \"sealed provider callable 'Service.double' (callable-v1:module-v1:p251_generic_functional_pipeline_v10_debug_provider@0.1.0::Service:fn:double)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 1,
+              "output_sha256": "ee47fe9f07b16bee489be81c4440aa1fb139cdb5cf35af8c53f04db2210ef50f",
+              "stderr": "margo: error: command failed ($REPO/moss build --release --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__double' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-functional-pipeline/v10/release/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-functional-pipeline/v10/release/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-functional-pipeline/v10/release/consumer/src/main.moss\", \"line\": 5, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 3, \"column\": 1}, \"message\": \"sealed provider callable 'Service.double' (callable-v1:module-v1:p251_generic_functional_pipeline_v10_release_provider@0.1.0::Service:fn:double)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          }
+        },
+        "v9": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "dcb8a571b35b68a52e0c2c1945bde30d76f7428a4093bdc367892f8950ddf443",
+            "provider_library_sha256": "a7b391b4a562a3aebd5627e9f61dffee6339bb9c7668c0a80f419bb906b3b113",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-functional-pipeline/v9/debug/consumer/build/debug/p251_generic_functional_pipeline_v9_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "b3274cea385bd43da4caf41abc7e4c0fdb76f9d1af2918293b8e340374eafe12",
+              "stderr": "",
+              "stdout": "[2, 4, 6]\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "48824b70d6632f504cad92e074fa275c70999479d04f9cdd1a7dca2deb701011",
+            "provider_library_sha256": "42e6038469defd75849c85a969b1125256d24a0deb769c634d57ec9283eb5bb5",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-functional-pipeline/v9/release/consumer/build/release/p251_generic_functional_pipeline_v9_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "b3274cea385bd43da4caf41abc7e4c0fdb76f9d1af2918293b8e340374eafe12",
+              "stderr": "",
+              "stdout": "[2, 4, 6]\n"
+            },
+            "status": "pass"
+          }
+        }
+      },
+      "poisoning": [
+        {
+          "callable": "double",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-functional-pipeline/v10/debug/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-functional-pipeline/v10/debug/artifacts/libService.rlib",
+              "Service",
+              "double"
+            ],
+            "exit_code": 0,
+            "output_sha256": "5bb6d5cde80746dbc93258ab12d4af38d01f327bdd5ede3bee6e1115399f7986",
+            "stderr": "",
+            "stdout": "removed 1 generic_stmt records from double\n"
+          }
+        },
+        {
+          "callable": "double",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-functional-pipeline/v10/release/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-functional-pipeline/v10/release/artifacts/libService.rlib",
+              "Service",
+              "double"
+            ],
+            "exit_code": 0,
+            "output_sha256": "5bb6d5cde80746dbc93258ab12d4af38d01f327bdd5ede3bee6e1115399f7986",
+            "stderr": "",
+            "stdout": "removed 1 generic_stmt records from double\n"
+          }
+        }
+      ],
+      "priority": "P1-pipeline"
+    },
+    {
+      "category": "assert and may-panic effect on a generic body",
+      "id": "generic-assert-effect",
+      "modes": {
+        "source_backed": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-assert-effect/source-backed/debug/build/debug/p251_generic_assert_effect_source_debug"
+              ],
+              "exit_code": 0,
+              "output_sha256": "10159baf262b43a92d95db59dae1f72c645127301661e0a3ce4e38b295a97c58",
+              "stderr": "",
+              "stdout": "7\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-assert-effect/source-backed/release/build/release/p251_generic_assert_effect_source_release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "10159baf262b43a92d95db59dae1f72c645127301661e0a3ce4e38b295a97c58",
+              "stderr": "",
+              "stdout": "7\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v10": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 1,
+              "output_sha256": "77450d553251ebf45219af764fdddc4994df618a11bb4361f6e22cdf29d90459",
+              "stderr": "margo: error: command failed ($REPO/moss build --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__positive' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-assert-effect/v10/debug/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-assert-effect/v10/debug/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-assert-effect/v10/debug/consumer/src/main.moss\", \"line\": 5, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 3, \"column\": 1}, \"message\": \"sealed provider callable 'Service.positive' (callable-v1:module-v1:p251_generic_assert_effect_v10_debug_provider@0.1.0::Service:fn:positive)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 1,
+              "output_sha256": "0df6fa05b3bae0bc375cd516e9ae862ae710d1fdb139b20f5f949d3e45ae85ff",
+              "stderr": "margo: error: command failed ($REPO/moss build --release --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__positive' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-assert-effect/v10/release/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-assert-effect/v10/release/artifacts/Service.mossi\", \"line\": 3, \"column\": 1, \"span\": {\"start_line\": 3, \"start_column\": 1, \"end_line\": 3, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-assert-effect/v10/release/consumer/src/main.moss\", \"line\": 5, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 3, \"column\": 1}, \"message\": \"sealed provider callable 'Service.positive' (callable-v1:module-v1:p251_generic_assert_effect_v10_release_provider@0.1.0::Service:fn:positive)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          }
+        },
+        "v9": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "f81139540930a6c5f015f2b7af0e515c89e3651027c5ab69f18154a62678e75b",
+            "provider_library_sha256": "bebe8242bcfeb4cef9388d812559952d1d3c2b5f02d41d15c79b7cc9d3c8c501",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-assert-effect/v9/debug/consumer/build/debug/p251_generic_assert_effect_v9_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "10159baf262b43a92d95db59dae1f72c645127301661e0a3ce4e38b295a97c58",
+              "stderr": "",
+              "stdout": "7\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "e73dd48fa787f31f5907ac24a5f389401e08d72788e0e296ce556c1b1ce1a867",
+            "provider_library_sha256": "f3ba996a550a2a5063c3e66c20b0a7525a995a54897ebdb23f59b13b4d6378ff",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-assert-effect/v9/release/consumer/build/release/p251_generic_assert_effect_v9_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "10159baf262b43a92d95db59dae1f72c645127301661e0a3ce4e38b295a97c58",
+              "stderr": "",
+              "stdout": "7\n"
+            },
+            "status": "pass"
+          }
+        }
+      },
+      "poisoning": [
+        {
+          "callable": "positive",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-assert-effect/v10/debug/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-assert-effect/v10/debug/artifacts/libService.rlib",
+              "Service",
+              "positive"
+            ],
+            "exit_code": 0,
+            "output_sha256": "657b6b01fdd8a5879c9a5ab0b0b9a570bd815b08e392d40546ceacc64586f18f",
+            "stderr": "",
+            "stdout": "removed 2 generic_stmt records from positive\n"
+          }
+        },
+        {
+          "callable": "positive",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-assert-effect/v10/release/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-assert-effect/v10/release/artifacts/libService.rlib",
+              "Service",
+              "positive"
+            ],
+            "exit_code": 0,
+            "output_sha256": "657b6b01fdd8a5879c9a5ab0b0b9a570bd815b08e392d40546ceacc64586f18f",
+            "stderr": "",
+            "stdout": "removed 2 generic_stmt records from positive\n"
+          }
+        }
+      ],
+      "priority": "P1-effect"
+    },
+    {
+      "category": "raise, try/recover and exceptional control flow",
+      "id": "generic-raise-recover",
+      "modes": {
+        "source_backed": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-raise-recover/source-backed/debug/build/debug/p251_generic_raise_recover_source_debug"
+              ],
+              "exit_code": 0,
+              "output_sha256": "56ca6d52749e18cad62c6959c6e3c30cd7f0747b0389c234176f87343441c93a",
+              "stderr": "",
+              "stdout": "7\n0\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-raise-recover/source-backed/release/build/release/p251_generic_raise_recover_source_release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "56ca6d52749e18cad62c6959c6e3c30cd7f0747b0389c234176f87343441c93a",
+              "stderr": "",
+              "stdout": "7\n0\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v10": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 1,
+              "output_sha256": "2f97fac612432f17c20f57c8cbf508b6ac2b940066378bd24728351b4491e3da",
+              "stderr": "margo: error: command failed ($REPO/moss build --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__nonnegative' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-raise-recover/v10/debug/artifacts/Service.mossi\", \"line\": 6, \"column\": 1, \"span\": {\"start_line\": 6, \"start_column\": 1, \"end_line\": 6, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-raise-recover/v10/debug/artifacts/Service.mossi\", \"line\": 6, \"column\": 1, \"span\": {\"start_line\": 6, \"start_column\": 1, \"end_line\": 6, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-raise-recover/v10/debug/consumer/src/main.moss\", \"line\": 5, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 6, \"column\": 1}, \"message\": \"sealed provider callable 'Service.nonnegative' (callable-v1:module-v1:p251_generic_raise_recover_v10_debug_provider@0.1.0::Service:fn:nonnegative)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 1,
+              "output_sha256": "82f7c2256a1559add3a1c5ba3aece758fa243dbee61a385f138ddfb67b8e1bbf",
+              "stderr": "margo: error: command failed ($REPO/moss build --release --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'Service__nonnegative' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-raise-recover/v10/release/artifacts/Service.mossi\", \"line\": 6, \"column\": 1, \"span\": {\"start_line\": 6, \"start_column\": 1, \"end_line\": 6, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-raise-recover/v10/release/artifacts/Service.mossi\", \"line\": 6, \"column\": 1, \"span\": {\"start_line\": 6, \"start_column\": 1, \"end_line\": 6, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-raise-recover/v10/release/consumer/src/main.moss\", \"line\": 5, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"service.moss\", \"line\": 6, \"column\": 1}, \"message\": \"sealed provider callable 'Service.nonnegative' (callable-v1:module-v1:p251_generic_raise_recover_v10_release_provider@0.1.0::Service:fn:nonnegative)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          }
+        },
+        "v9": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 1,
+              "output_sha256": "4bc3850e6c02bdb20a73d827110fb39539dd8c67cc004dcb74177a3bc955b13c",
+              "stderr": "margo: error: command failed ($REPO/moss build --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"RAISE_REQUIRES_TYPED_VALUE\", \"severity\": \"error\", \"message\": \"raise requires a statically typed error value\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-raise-recover/v9/debug/artifacts/Service.mossi\", \"line\": 9, \"column\": 1, \"span\": {\"start_line\": 9, \"start_column\": 1, \"end_line\": 9, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-raise-recover/v9/debug/artifacts/Service.mossi\", \"line\": 9, \"column\": 1, \"span\": {\"start_line\": 9, \"start_column\": 1, \"end_line\": 9, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "consumer-build-failed"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 1,
+              "output_sha256": "1b286f9a9846b250564c5bf3eca9f19d65af4e4c63a081eabfa83bdab730a520",
+              "stderr": "margo: error: command failed ($REPO/moss build --release --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"RAISE_REQUIRES_TYPED_VALUE\", \"severity\": \"error\", \"message\": \"raise requires a statically typed error value\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-raise-recover/v9/release/artifacts/Service.mossi\", \"line\": 9, \"column\": 1, \"span\": {\"start_line\": 9, \"start_column\": 1, \"end_line\": 9, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-raise-recover/v9/release/artifacts/Service.mossi\", \"line\": 9, \"column\": 1, \"span\": {\"start_line\": 9, \"start_column\": 1, \"end_line\": 9, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "consumer-build-failed"
+          }
+        }
+      },
+      "poisoning": [
+        {
+          "callable": "nonnegative",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-raise-recover/v10/debug/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-raise-recover/v10/debug/artifacts/libService.rlib",
+              "Service",
+              "nonnegative"
+            ],
+            "exit_code": 0,
+            "output_sha256": "37ee7b4ae4640d45269dcaaf38ebeaba9ab6b60b9cd5c4ba768211484e5f5b92",
+            "stderr": "",
+            "stdout": "removed 6 generic_stmt records from nonnegative\n"
+          }
+        },
+        {
+          "callable": "nonnegative",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-raise-recover/v10/release/artifacts/Service.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/generic-raise-recover/v10/release/artifacts/libService.rlib",
+              "Service",
+              "nonnegative"
+            ],
+            "exit_code": 0,
+            "output_sha256": "37ee7b4ae4640d45269dcaaf38ebeaba9ab6b60b9cd5c4ba768211484e5f5b92",
+            "stderr": "",
+            "stdout": "removed 6 generic_stmt records from nonnegative\n"
+          }
+        }
+      ],
+      "priority": "P1-exception-effect"
+    },
+    {
+      "category": "SDK generic iteration, assert effect, borrowed Range, owned Vector mutation",
+      "id": "actual-sdk-bytes-from-range",
+      "modes": {
+        "source_backed": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/actual-sdk-bytes-from-range/source-backed/debug/build/debug/p251_actual_sdk_bytes_from_range_source_debug"
+              ],
+              "exit_code": 0,
+              "output_sha256": "dfb87729901f500a0d1743879f963d47fa435dfba518dea1f19f8da04514725d",
+              "stderr": "",
+              "stdout": "329\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/actual-sdk-bytes-from-range/source-backed/release/build/release/p251_actual_sdk_bytes_from_range_source_release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "dfb87729901f500a0d1743879f963d47fa435dfba518dea1f19f8da04514725d",
+              "stderr": "",
+              "stdout": "329\n"
+            },
+            "status": "pass"
+          }
+        },
+        "v10": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 1,
+              "output_sha256": "f9c2226f762c98ad3bbdab359c76e10fbaf1d8f884c2cdd81d467e8da2e06a84",
+              "stderr": "margo: error: command failed ($REPO/moss build --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'bytes__from_range' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/actual-sdk-bytes-from-range/v10/debug/artifacts/bytes.mossi\", \"line\": 65, \"column\": 1, \"span\": {\"start_line\": 65, \"start_column\": 1, \"end_line\": 65, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/actual-sdk-bytes-from-range/v10/debug/artifacts/bytes.mossi\", \"line\": 65, \"column\": 1, \"span\": {\"start_line\": 65, \"start_column\": 1, \"end_line\": 65, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/actual-sdk-bytes-from-range/v10/debug/consumer/src/main.moss\", \"line\": 8, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"bytes.moss\", \"line\": 65, \"column\": 1}, \"message\": \"sealed provider callable 'bytes.from_range' (callable-v1:module-v1:p251_actual_sdk_bytes_from_range_v10_debug_provider@0.1.0::bytes:fn:from_range)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 1,
+              "output_sha256": "5af526b93ef520feaf184225cb8b7efdf009708227286381abce95c4b9558269",
+              "stderr": "margo: error: command failed ($REPO/moss build --release --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'bytes__from_range' has no validated typed summary and checked body\", \"source_file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/actual-sdk-bytes-from-range/v10/release/artifacts/bytes.mossi\", \"line\": 65, \"column\": 1, \"span\": {\"start_line\": 65, \"start_column\": 1, \"end_line\": 65, \"end_column\": 1}, \"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/actual-sdk-bytes-from-range/v10/release/artifacts/bytes.mossi\", \"line\": 65, \"column\": 1, \"span\": {\"start_line\": 65, \"start_column\": 1, \"end_line\": 65, \"end_column\": 1}}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [{\"source\": {\"file\": \"$REPO/tmp/phase25-1-r0-oracle-4fui13y6/actual-sdk-bytes-from-range/v10/release/consumer/src/main.moss\", \"line\": 8, \"column\": 1}, \"message\": \"consumer selected this callable here\"}, {\"source\": {\"file\": \"bytes.moss\", \"line\": 65, \"column\": 1}, \"message\": \"sealed provider callable 'bytes.from_range' (callable-v1:module-v1:p251_actual_sdk_bytes_from_range_v10_release_provider@0.1.0::bytes:fn:from_range)\"}], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+              "stdout": ""
+            },
+            "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "stage": "source-free-consumer-build",
+            "status": "valid-but-unavailable-v10"
+          }
+        },
+        "v9": {
+          "debug": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "a2a20e4bf9c9751e706077614c007855319e26ea5db9f4dc383c311f68332508",
+            "provider_library_sha256": "f2f5194e7da5dfe6963c5a0f0906b5c1c9d729be09d79f8c5599cf0d88ae98b1",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/actual-sdk-bytes-from-range/v9/debug/consumer/build/debug/p251_actual_sdk_bytes_from_range_v9_debug_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "dfb87729901f500a0d1743879f963d47fa435dfba518dea1f19f8da04514725d",
+              "stderr": "",
+              "stdout": "329\n"
+            },
+            "status": "pass"
+          },
+          "release": {
+            "build": {
+              "command": [
+                "$REPO/margo",
+                "build",
+                "--release"
+              ],
+              "exit_code": 0,
+              "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderr": "",
+              "stdout": ""
+            },
+            "provider_interface_sha256": "79255f014aabac05be62b438cc1da92490d24f100d894c56868dc47c0b864b91",
+            "provider_library_sha256": "13123617bd5e6d946944cb2252baee7179cec3817e82fd5ec217392bbded7258",
+            "provider_source_deleted": true,
+            "run": {
+              "command": [
+                "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/actual-sdk-bytes-from-range/v9/release/consumer/build/release/p251_actual_sdk_bytes_from_range_v9_release_consumer"
+              ],
+              "exit_code": 0,
+              "output_sha256": "dfb87729901f500a0d1743879f963d47fa435dfba518dea1f19f8da04514725d",
+              "stderr": "",
+              "stdout": "329\n"
+            },
+            "status": "pass"
+          }
+        }
+      },
+      "poisoning": [
+        {
+          "callable": "from_range",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/actual-sdk-bytes-from-range/v10/debug/artifacts/bytes.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/actual-sdk-bytes-from-range/v10/debug/artifacts/libbytes.rlib",
+              "bytes",
+              "from_range"
+            ],
+            "exit_code": 0,
+            "output_sha256": "fa92eb1ce68d0527381a908648c9cab44212f8b3695f633bc6070e58e6e31736",
+            "stderr": "",
+            "stdout": "removed 5 generic_stmt records from from_range\n"
+          }
+        },
+        {
+          "callable": "from_range",
+          "result": {
+            "command": [
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/actual-sdk-bytes-from-range/v10/release/artifacts/bytes.mossi",
+              "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/actual-sdk-bytes-from-range/v10/release/artifacts/libbytes.rlib",
+              "bytes",
+              "from_range"
+            ],
+            "exit_code": 0,
+            "output_sha256": "fa92eb1ce68d0527381a908648c9cab44212f8b3695f633bc6070e58e6e31736",
+            "stderr": "",
+            "stdout": "removed 5 generic_stmt records from from_range\n"
+          }
+        }
+      ],
+      "priority": "P1-sdk-essential"
+    }
+  ],
+  "compiler_commit": "aa542b7117de40ce71878335a968ffce68cd95ee",
+  "compiler_sha256": "8c2add1f2eded5ab723857b989cc12d61663702f5ccf044a3ebb1ad972f5e0ae",
+  "language_version": "moss-0.1",
+  "poisoner_build": {
+    "command": [
+      "g++",
+      "-std=c++17",
+      "-O0",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-Wno-missing-field-initializers",
+      "-pedantic",
+      "-Isrc",
+      "$REPO/tests/tooling/poison_phase25_generic_callable.cpp",
+      "-o",
+      "$REPO/tmp/phase25-1-r0-oracle-4fui13y6/poison_legacy"
+    ],
+    "exit_code": 0,
+    "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr": "",
+    "stdout": ""
+  },
+  "schema": "phase25-1-three-mode-oracle-v1"
+}

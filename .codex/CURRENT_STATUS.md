@@ -9752,3 +9752,13 @@ consolidation. The review found no P0/P1 in summary/Vector[BoundVar(0)] shape,
 origin and callable identity, canonical body round trip, duplicate handling,
 producer collisions, ABI-v9 control or v10 legacy nonselection. Nonempty
 vector result inference remains unresolved. This GO is not R1 acceptance.
+
+After the R1 change, the full 19-case three-mode compatibility oracle was
+rerun with every surface probe and the actual SDK `bytes.from_range` workload.
+Results: source-backed 38/38 pass; ABI-v9 36/38 pass with the two known
+generic raise/recover consumer failures; ABI-v10 14/38 pass and 24
+valid-but-unavailable. Fresh empty-vector result passes in both native profiles
+under v10 without a shape-specific flag. Zero-argument relay and actual SDK
+from_range remain unavailable. Raw evidence is
+`docs/phase25/PHASE_25_1_R0_RECHECK_AFTER_R1.json` (compiler commit field is
+docs-only `aa542b71`; implementation SHA is reviewed `561bdaa5`).

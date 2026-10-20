@@ -10,7 +10,7 @@ Pinned instruction commit: `3de64dc633312267c37c4e4990b28c2a73cab104`
 |---|---|---|
 | T0 | PASS | Annotated tags published and remote peeled commits verified below; `origin/main` unchanged. |
 | R0 | PASS | Final independent GO at frozen checkpoint `9c90573bda8daec5bd4254cc5f6c64c5dd3239e4`; 19-case oracle, complete 71-path harness map, strict corpus and P2 inventory exception recorded. |
-| R1 | IN PROGRESS | Independent GO at architecture SHA `ff4470ffdcc93cedb3d66b1e068b7f5ea8ca3f5f` and capture correction SHA `11fbf47e210af8dad158039dbf6a458709af4f64`. Pushes `783f47ea`, `246f51c6`, and `7a71f95c` received NO-GO; the exact `11fbf47e` review closed the member dispatch and role-verifier findings with no open P0/P1/P2. Total structural coverage and shared lowerer remain open. |
+| R1 | IN PROGRESS | Independent GO at architecture SHA `ff4470ffdcc93cedb3d66b1e068b7f5ea8ca3f5f`, capture correction `11fbf47e210af8dad158039dbf6a458709af4f64`, sort-fact slice `e81c1a2b411ad950872c83df9787dc1d738897b3`, empty-vector occurrence `d95f05951145cf2e0938e1d83280ed31b05877ac`, and direct-return consolidation `561bdaa58d7237c6db432f99c7a14ea748dc8de6`. Earlier listed pushes received NO-GO; total structural coverage and shared lowerer remain open. |
 | R2–R5 | NOT STARTED | ABI-v9 remains default; no `main` or `phase25-integration` changes. |
 
 ## T0 transcript and verification
@@ -618,3 +618,14 @@ origin, canonical decoder/encoder agreement, duplicate-record handling,
 producer collisions, ABI-v9 control, or v10 legacy nonselection. Nonempty
 vector result inference remains P2/unresolved. This GO accepts only the
 direct-return/empty-vector consolidation slice; R1 remains incomplete.
+
+The three-mode compatibility oracle was rerun after this R1 change with all
+surface probes and the actual SDK `bytes.from_range` case. The 19-case matrix
+has 38 source-backed passes, 36 ABI-v9 passes and the two preserved generic
+raise/recover consumer failures, and 14 ABI-v10 passes with 24
+valid-but-unavailable results. `fresh(): return []` passes source-backed, v9
+and v10 in Debug/Release; `relay()` and the actual `from_range` v10 consumers
+remain red. Full raw evidence is in
+`PHASE_25_1_R0_RECHECK_AFTER_R1.json`. Its recorded compiler commit is the
+docs-only delivery HEAD `aa542b7117de40ce71878335a968ffce68cd95ee`; the
+implementation under test is exact reviewed SHA `561bdaa58d7237c6db432f99c7a14ea748dc8de6`.
