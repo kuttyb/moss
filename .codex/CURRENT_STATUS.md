@@ -9463,3 +9463,17 @@ ABI-v9 collections SDK source-free smoke. `make check` passed all 131/131 jobs
 No compiler source or ABI/default behavior changed. Pending delivery at status
 record time: tests-only correction committed as `2adaa08b` and pushed to
 `origin/phase25-integration`; working tree was clean after delivery.
+
+## Phase 25.1 T0 prerequisite — 2026-10-20
+
+Started on `phase25-1-work`, pinned instruction commit
+`3de64dc633312267c37c4e4990b28c2a73cab104`. Clarified the explicitly authorized
+normal branch push rule in `AGENTS.md` (no no-push prohibition existed) and made
+local commit `fcd91dab`; this was not pushed before T0. Both required annotated
+tags were absent locally/remotely, created one at a time, pushed, and verified
+by remote peeled SHA: `phase25-pre-main` ->
+`fa3a340a0a6652568b97869489da1a84038b9857`; `phase25-delivered-v9` ->
+`dd45e30722bcc2d62d4bb46ba184d426cbaea066`. Lineage refs matched and
+`origin/main` remained `dd45e30722bcc2d62d4bb46ba184d426cbaea066`. Exact
+transcript is in `docs/phase25/PHASE_25_1_EXECUTION_STATUS.md`. T0 passed.
+R0 has not yet started; no compiler edits were made.
