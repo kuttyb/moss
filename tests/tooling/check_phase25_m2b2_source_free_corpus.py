@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""Run the prioritized ABI-v10 source-free generic acceptance corpus.
+
+The uncovered rows first prove that the current ABI-v10 legacy fallback works,
+then remove the exported callable's generic_stmt and require consumer rejection.
+Existing checked-body suites provide the positive and record-corruption gates
+for shapes already supported by the consumer.
+"""
+
+import argparse
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+
+
+ROOT = Path(__file__).resolve().parents[2]
+MANIFEST = ROOT / "tests/phase25/source_free_corpus/corpus.json"
+TMP = ROOT / "tmp"
+TMP.mkdir(exist_ok=True)
+parser = argparse.ArgumentParser()
+parser.add_argument("moss", nargs="?", default=str(ROOT / "moss"))
+parser.add_argument("--inventory-only", action="store_true",
+                    help="validate and print corpus inventory without builds")
+args = parser.parse_args()
+MOSS = Path(args.moss).resolve()
+MARGO = ROOT / "margo"
+corpus = json.loads(MANIFEST.read_text())
+
+
+def command(argv, *, cwd, env, expected=0):
+    result = subprocess.run(argv, cwd=cwd, env=env, capture_output=True,
+                            text=True, timeout=240)
+    output = result.stdout + result.stderr
+    assert result.returncode == expected, (
+        f"command {argv!r} returned {result.returncode}, expected {expected}:\n"
+        f"{output}")
+    return output
+
+
+def package(path, name, source):
+    (path / "src").mkdir(parents=True)
+    (path / "Moss.toml").write_text(
+        f'[package]\nname = "{name}"\nversion = "0.1.0"\n\n'
+        '[build]\nsource = "src"\n')
+    (path / "src/main.moss").write_text(source)
+
+
+if args.inventory_only:
+    for case in corpus["cases"]:
+        print(f"{case['priority']}: {case['id']} — {case['category']}")
+    for case in corpus["already-covered"]:
+        print(f"covered: {case['id']} — {case['test']}")
+    raise SystemExit(0)
+
+
+with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp:
+    scratch = Path(temp)
+    poisoner = scratch / "poison_legacy"
+    command(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
+             "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
+             "tests/tooling/poison_phase25_generic_callable.cpp", "-o",
+             str(poisoner)], cwd=ROOT, env=os.environ.copy())
+
+    base_env = os.environ.copy()
+    base_env.update(MOSS_STAGED_ABI="v10", MOSS=str(MOSS), TMPDIR=str(TMP))
+    for case in corpus["cases"]:
+        case_root = scratch / case["id"]
+        provider = case_root / "provider"
+        package(provider, f"m2b2_{case['id'].replace('-', '_')}_provider",
+                case["provider"])
+        provider_env = base_env | {"MARGO_HOME": str(case_root / "margo-provider")}
+        provider_build = subprocess.run(
+            [str(MARGO), "build"], cwd=provider, env=provider_env,
+            capture_output=True, text=True, timeout=240)
+        provider_output = provider_build.stdout + provider_build.stderr
+        if case.get("provider_expected_error"):
+            assert provider_build.returncode != 0 and (
+                case["provider_expected_error"] in provider_output), (
+                    case["id"], case["provider_expected_error"], provider_output)
+            assert not list((provider / "build").rglob("Service.mossi")), (
+                case["id"], "provider left a usable ABI-v10 interface behind")
+            print(f"PASS {case['id']}: staged provider rejects unsupported body")
+            continue
+        assert provider_build.returncode == 0, (
+            case["id"], provider_build.returncode, provider_output)
+        artifacts = case_root / "artifacts"
+        shutil.copytree(provider / "build/debug", artifacts)
+        interface = artifacts / "Service.mossi"
+        assert b"generic_stmt " in interface.read_bytes(), (
+            case["id"], "uncovered case stopped emitting its legacy body")
+        shutil.rmtree(provider / "src")
+        assert not (provider / "src").exists()
+
+        consumer = case_root / "consumer"
+        package(consumer, f"m2b2_{case['id'].replace('-', '_')}_consumer",
+                case["consumer"])
+        env = base_env | {
+            "MOSS_MODULE_PATH": str(artifacts),
+            "MARGO_HOME": str(case_root / "margo-consumer"),
+        }
+        command([str(MARGO), "build"], cwd=consumer, env=env)
+        output = command([str(MARGO), "run"], cwd=consumer, env=env)
+        assert output == case["expected_output"], (case["id"], output)
+        print(f"PASS {case['id']}: source-free baseline executes via legacy record")
+
+        poisoned = case_root / "poisoned-artifacts"
+        shutil.copytree(artifacts, poisoned)
+        command([str(poisoner), str(poisoned / "Service.mossi"),
+                 str(poisoned / "libService.rlib"), "Service", "fresh"],
+                cwd=ROOT, env=base_env)
+        poisoned_env = env | {
+            "MOSS_MODULE_PATH": str(poisoned),
+            "MARGO_HOME": str(case_root / "margo-poisoned"),
+        }
+        poisoned_build = subprocess.run(
+            [str(MARGO), "build"], cwd=consumer, env=poisoned_env,
+            capture_output=True, text=True, timeout=240)
+        if poisoned_build.returncode == 0:
+            poisoned_run = subprocess.run(
+                [str(MARGO), "run"], cwd=consumer, env=poisoned_env,
+                capture_output=True, text=True, timeout=240)
+            poisoned_output = poisoned_run.stdout + poisoned_run.stderr
+            assert (poisoned_run.returncode != 0 or
+                    poisoned_run.stdout != case["expected_output"]), (
+                case["id"], "poisoned body preserved semantics; classify and "
+                "prove its non-legacy execution path before accepting it",
+                poisoned_output)
+            print(f"PASS {case['id']}: poisoned legacy body changes execution")
+        else:
+            print(f"PASS {case['id']}: removing generic_stmt rejects consumer")
+
+    for case in corpus["already-covered"]:
+        suite_env = base_env.copy()
+        if case.get("abi_mode") == "v9":
+            suite_env.pop("MOSS_STAGED_ABI", None)
+        command([sys.executable, case["test"], str(MOSS)], cwd=ROOT,
+                env=suite_env)
+        print(f"PASS covered checked-body suite: {case['id']}")
+
+print("PASS prioritized ABI-v10 source-free generic corpus")

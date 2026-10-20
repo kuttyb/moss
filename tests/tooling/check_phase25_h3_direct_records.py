@@ -36,9 +36,11 @@ with tempfile.TemporaryDirectory(prefix="phase25-h3-direct-records-", dir=TMP) a
     verifier = scratch / "verify_records"
     poison = scratch / "poison_legacy"
     run(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
+         "-Wno-missing-field-initializers",
          "-pedantic", "-Isrc", "tests/tooling/check_phase25_h3_direct_records.cpp",
          "-o", str(verifier)])
     run(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
+         "-Wno-missing-field-initializers",
          "-pedantic", "-Isrc", "tests/tooling/check_phase25_h3_poison_legacy.cpp",
          "-o", str(poison)])
 
