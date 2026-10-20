@@ -360,6 +360,24 @@ occurrence totality/single-visit proof and consolidation/retirement of the
 remaining shape-specific producers/importers are still open. R1 remains open;
 R2 has not started.
 
+### R1 direct-scalar admission correction — working tree
+
+Independent review of `533215fb919997e908bdc17a3676015e90c2579f` returned
+NO-GO with one P1: the broadened lowerer could produce Binary/Field/Index
+bodies, while the direct-scalar record producer serialized only parameter and
+result types/access/hash and omitted requirements, dependencies and effects.
+For `return value * 2 + 1`, this producer also ran before the arithmetic
+producer and could publish a conflicting requirement-free summary.
+
+The direct-scalar producer now admits only the original safe record contract:
+one open variable and one READ parameter; no operator/member requirements,
+semantic dependencies or observable effects; and a Parameter or primitive
+literal return node. More general checked-body nodes remain retained for future
+unified producer work but cannot enter this incomplete summary route. After
+this guard, `make --jobs="$(nproc)" moss-dev`, the full M2b2 positive/hostile/v9
+corpus, generic arithmetic requirements, feedback validation and
+`git diff --check` passed. Follow-up exact-SHA adversarial review is pending.
+
 ### R1 member invocation role-verifier correction — working tree
 
 The architect reviewed exact pushed SHA

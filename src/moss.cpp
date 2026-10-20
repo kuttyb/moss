@@ -43225,10 +43225,29 @@ static void append_abi_v10_direct_scalar_records(
         checked_body.statements.front().kind != checked_ir::StmtKind::Return ||
         !checked_body.statements.front().expr)
       continue;
+    const auto& facts = *function.open_summary;
+    const auto& returned = *checked_body.statements.front().expr;
+    const bool legacy_safe_return_kind =
+        returned.kind == checked_ir::ExprKind::Parameter ||
+        returned.kind == checked_ir::ExprKind::IntegerLiteral ||
+        returned.kind == checked_ir::ExprKind::FloatLiteral ||
+        returned.kind == checked_ir::ExprKind::BoolLiteral ||
+        returned.kind == checked_ir::ExprKind::StringLiteral;
+    if (!legacy_safe_return_kind || facts.bound_variable_count != 1 ||
+        facts.parameter_types.size() != 1 || facts.parameter_access.size() != 1 ||
+        facts.parameter_access.front() != AccessMode::Read ||
+        !facts.requirements.empty() || !facts.member_requirements.empty() ||
+        !facts.semantic_dependencies.empty() ||
+        !abi_v10_effects_pure(facts.observable_effects) ||
+        !facts.parameter_types.front() ||
+        facts.parameter_types.front()->kind != TypeKind::InferenceVar ||
+        facts.parameter_types.front()->var_id.session_id != 0 ||
+        facts.parameter_types.front()->var_id.owner_id != 0 ||
+        facts.parameter_types.front()->var_id.ordinal != 0)
+      continue;
     checked_body.semantic_hash = *function.checked_body_ir_v1_hash;
     auto checked = std::optional<CheckedParameterReturnBody>(
         std::move(checked_body));
-    const auto& facts = *function.open_summary;
     if (function.semantic_callable_id.empty() ||
         facts.callable_id != function.semantic_callable_id)
       throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",

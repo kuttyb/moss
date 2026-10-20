@@ -9619,3 +9619,13 @@ TypeSolver missing-initializer warnings. Exact working diff is not yet
 committed/reviewed. Still open: complete expression and statement lowering,
 bindings/scopes, source-to-occurrence totality and single-visit proof, removal
 of duplicate shape-specific ABI-v10 routes, broader R0 matrix, and R2-R5.
+
+Architect review of pushed `533215fb919997e908bdc17a3676015e90c2579f`
+returned NO-GO with one P1: direct-scalar emission omitted requirements,
+dependencies and effects after the occurrence lowerer began producing
+operator/field/index nodes, and could collide with the arithmetic producer.
+The working correction restores the producer's safe admission contract (one
+open READ parameter, no requirements/dependencies/effects, and only a
+parameter or primitive literal return). Post-fix `moss-dev`, M2b2 corpus,
+generic arithmetic requirements, feedback validation and diff check pass.
+This correction needs an exact-SHA follow-up review and push.
