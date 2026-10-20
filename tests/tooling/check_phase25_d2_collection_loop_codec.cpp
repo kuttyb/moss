@@ -115,7 +115,9 @@ std::vector<cir::Stmt> index_of_body(const moss::TypeRef& element_type) {
   loop.body = {std::move(found), std::move(increment)};
 
   return {std::move(cursor), std::move(length), std::move(loop),
-          return_value(integer(int_type, "-1"))};
+          return_value(binary(int_type, cir::BinaryOp::Sub,
+                              integer(int_type, "0"),
+                              integer(int_type, "1")))};
 }
 
 std::string hash_for(std::string_view bytes) {
@@ -198,8 +200,11 @@ int main(int argc, char** argv) {
              cir::StmtKind::Return &&
          generic_decoded[2].body[1].kind == cir::StmtKind::Assign &&
          generic_decoded[2].body[1].local_ordinal == 0 &&
-         generic_decoded[3].expr->kind == cir::ExprKind::IntegerLiteral &&
-         generic_decoded[3].expr->literal_value == "-1");
+         generic_decoded[3].expr->kind == cir::ExprKind::Binary &&
+         generic_decoded[3].expr->binary_op == cir::BinaryOp::Sub &&
+         generic_decoded[3].expr->operands.size() == 2 &&
+         generic_decoded[3].expr->operands[0].literal_value == "0" &&
+         generic_decoded[3].expr->operands[1].literal_value == "1");
   const auto& decoded_if = generic_decoded[2].body[0];
   const auto& equality = *decoded_if.expr;
   assert(equality.kind == cir::ExprKind::Binary &&

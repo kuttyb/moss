@@ -582,6 +582,11 @@ struct Function {
   vector<FunctionSpecialization> specializations;
   std::optional<OpenCallableSummaryFacts> open_summary;
   std::optional<CheckedBodyV1> checked_body_v1;
+  // Canonical checker-retained checked-body-v1 bytes for statement bodies.
+  // This is distinct from CheckedBodyV1, the older expression-only semantic
+  // summary projection retained for existing API clients.
+  std::optional<std::string> checked_body_ir_v1_bytes;
+  std::optional<std::string> checked_body_ir_v1_hash;
   // Concrete callable specializations referenced by functional code.  This is
   // retained as semantic dependency information for later incremental work.
   vector<string> callable_dependencies;

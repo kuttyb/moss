@@ -25,6 +25,93 @@ static bool rejects_with(const string& source, const string& code) {
   return false;
 }
 
+static checked_ir::Expr param(TypeRef type, uint32_t ordinal) {
+  checked_ir::Expr value;
+  value.kind = checked_ir::ExprKind::Parameter;
+  value.type = std::move(type);
+  value.ordinal = ordinal;
+  return value;
+}
+
+static checked_ir::Expr local(TypeRef type, uint32_t ordinal) {
+  checked_ir::Expr value;
+  value.kind = checked_ir::ExprKind::LocalRead;
+  value.type = std::move(type);
+  value.ordinal = ordinal;
+  return value;
+}
+
+static checked_ir::Expr integer(TypeRef type, const char* literal) {
+  checked_ir::Expr value;
+  value.kind = checked_ir::ExprKind::IntegerLiteral;
+  value.type = std::move(type);
+  value.literal_value = literal;
+  return value;
+}
+
+static checked_ir::Expr binary(TypeRef type, checked_ir::BinaryOp op,
+                               checked_ir::Expr left,
+                               checked_ir::Expr right) {
+  checked_ir::Expr value;
+  value.kind = checked_ir::ExprKind::Binary;
+  value.type = std::move(type);
+  value.binary_op = op;
+  value.operands = {std::move(left), std::move(right)};
+  return value;
+}
+
+static vector<checked_ir::Stmt> expected_index_of_body(
+    const OpenCallableSummaryFacts& summary) {
+  const auto int_type = Type::primitive("int");
+  const auto bool_type = Type::primitive("bool");
+  const auto element = summary.parameter_types[1];
+  const auto vector_type = summary.parameter_types[0];
+  checked_ir::Expr count;
+  count.kind = checked_ir::ExprKind::CollectionCount;
+  count.type = int_type;
+  count.semantic_target_id = string(checked_ir::kCollectionCountOperationId);
+  count.operands.push_back(param(vector_type, 0));
+  checked_ir::Stmt local_i;
+  local_i.kind = checked_ir::StmtKind::Var;
+  local_i.local_ordinal = 0;
+  local_i.type = int_type;
+  local_i.expr = integer(int_type, "0");
+  checked_ir::Stmt local_n;
+  local_n.kind = checked_ir::StmtKind::Var;
+  local_n.local_ordinal = 1;
+  local_n.type = int_type;
+  local_n.expr = std::move(count);
+  checked_ir::Expr indexed;
+  indexed.kind = checked_ir::ExprKind::Index;
+  indexed.type = element;
+  indexed.semantic_target_id = string(checked_ir::kCollectionIndexOperationId);
+  indexed.operands = {param(vector_type, 0), local(int_type, 0)};
+  checked_ir::Stmt early_return;
+  early_return.kind = checked_ir::StmtKind::Return;
+  early_return.expr = local(int_type, 0);
+  checked_ir::Stmt found;
+  found.kind = checked_ir::StmtKind::If;
+  found.expr = binary(bool_type, checked_ir::BinaryOp::Equal,
+                      std::move(indexed), param(element, 1));
+  found.then_branch.push_back(std::move(early_return));
+  checked_ir::Stmt increment;
+  increment.kind = checked_ir::StmtKind::Assign;
+  increment.local_ordinal = 0;
+  increment.expr = binary(int_type, checked_ir::BinaryOp::Add,
+                          local(int_type, 0), integer(int_type, "1"));
+  checked_ir::Stmt loop;
+  loop.kind = checked_ir::StmtKind::While;
+  loop.expr = binary(bool_type, checked_ir::BinaryOp::Less,
+                     local(int_type, 0), local(int_type, 1));
+  loop.body = {std::move(found), std::move(increment)};
+  checked_ir::Stmt terminal;
+  terminal.kind = checked_ir::StmtKind::Return;
+  terminal.expr = binary(int_type, checked_ir::BinaryOp::Sub,
+                         integer(int_type, "0"), integer(int_type, "1"));
+  return {std::move(local_i), std::move(local_n), std::move(loop),
+          std::move(terminal)};
+}
+
 int main() {
   // The provider's open contract must close without any consumer call sites.
   const auto provider_only = check_source(R"moss(export fn index_of(items, target) -> Int:
@@ -42,6 +129,57 @@ int main() {
   assert(provider_function != provider_only.functions.end());
   assert(provider_function->open_summary &&
          provider_function->open_summary->complete);
+  assert(provider_function->checked_body_ir_v1_bytes &&
+         provider_function->checked_body_ir_v1_hash);
+  const auto expected_provider_body = expected_index_of_body(
+      *provider_function->open_summary);
+  assert(*provider_function->checked_body_ir_v1_bytes ==
+         checked_ir::encode_checked_body_v1(expected_provider_body));
+  assert(*provider_function->checked_body_ir_v1_hash ==
+         checked_ir::compute_checked_body_hash_v1(expected_provider_body));
+  const auto decoded_provider_body =
+      checked_ir::decode_collection_loop_checked_body_v1(
+          *provider_function->checked_body_ir_v1_bytes, *provider_only.type_context,
+          provider_function->open_summary->parameter_types,
+          provider_function->open_summary->result_type,
+          *provider_function->checked_body_ir_v1_hash);
+  assert(checked_ir::encode_checked_body_v1(decoded_provider_body) ==
+         *provider_function->checked_body_ir_v1_bytes);
+  assert(decoded_provider_body[0].kind == checked_ir::StmtKind::Var &&
+         decoded_provider_body[0].local_ordinal == 0 &&
+         decoded_provider_body[1].kind == checked_ir::StmtKind::Var &&
+         decoded_provider_body[1].local_ordinal == 1 &&
+         decoded_provider_body[2].kind == checked_ir::StmtKind::While &&
+         decoded_provider_body[2].body[0].kind == checked_ir::StmtKind::If &&
+         decoded_provider_body[2].body[0].then_branch[0].kind ==
+             checked_ir::StmtKind::Return &&
+         decoded_provider_body[2].body[1].kind == checked_ir::StmtKind::Assign &&
+         decoded_provider_body[3].kind == checked_ir::StmtKind::Return);
+  const auto provider_again = check_source(R"moss(export fn index_of(items, target) -> Int:
+  var i = 0
+  n = items |> count
+  while i < n:
+    if items[i] == target:
+      return i
+    i = i + 1
+  return 0 - 1
+)moss");
+  const auto provider_again_function = std::find_if(provider_again.functions.begin(),
+      provider_again.functions.end(), [](const Function& candidate) {
+    return candidate.name == "index_of";
+  });
+  assert(provider_again_function != provider_again.functions.end() &&
+         provider_again_function->checked_body_ir_v1_bytes ==
+             provider_function->checked_body_ir_v1_bytes &&
+         provider_again_function->checked_body_ir_v1_hash ==
+             provider_function->checked_body_ir_v1_hash);
+  const auto typed_projection = project_typed_semantics_v1(provider_only);
+  const auto projected_provider = typed_projection.open_summaries.find(
+      provider_function->semantic_callable_id);
+  assert(projected_provider != typed_projection.open_summaries.end());
+  assert(projected_provider->second.checked_body_ir_available &&
+         projected_provider->second.checked_body_ir_v1_hash ==
+             provider_function->checked_body_ir_v1_hash);
 
   const auto program = check_source(R"moss(export fn index_of(items, target) -> Int:
   var i = 0
@@ -178,6 +316,7 @@ fn main():
   assert(extra_operation_function != extra_generic_operation.functions.end());
   assert(!extra_operation_function->open_summary ||
          !extra_operation_function->open_summary->complete);
+  assert(!extra_operation_function->checked_body_ir_v1_bytes);
 
   const auto duplicate_count = check_source(R"moss(export fn index_of(items, target) -> Int:
   var i = 0
@@ -195,6 +334,7 @@ fn main():
   assert(duplicate_count_function != duplicate_count.functions.end());
   assert(!duplicate_count_function->open_summary ||
          !duplicate_count_function->open_summary->complete);
+  assert(!duplicate_count_function->checked_body_ir_v1_bytes);
 
   const auto duplicate_index = check_source(R"moss(export fn index_of(items, target) -> Int:
   var i = 0
@@ -213,6 +353,7 @@ fn main():
   assert(duplicate_index_function != duplicate_index.functions.end());
   assert(!duplicate_index_function->open_summary ||
          !duplicate_index_function->open_summary->complete);
+  assert(!duplicate_index_function->checked_body_ir_v1_bytes);
 
   const auto unrelated_equality = check_source(R"moss(export fn index_of(items, target) -> Int:
   var i = 0
@@ -231,6 +372,7 @@ fn main():
   assert(unrelated_equality_function != unrelated_equality.functions.end());
   assert(!unrelated_equality_function->open_summary ||
          !unrelated_equality_function->open_summary->complete);
+  assert(!unrelated_equality_function->checked_body_ir_v1_bytes);
 
   std::cout << "PASS index_of checker summary, Count/Index TypeRefs, equality "
                "admissibility, READ accesses, may_panic, provider-only summary, "

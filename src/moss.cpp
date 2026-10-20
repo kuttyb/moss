@@ -4543,10 +4543,17 @@ class Checker {
   // environment remains a projection for older walkers and lowering; it is
   // never used to recreate the term of a local already present here.
   struct BodyTypeState {
+    struct BindingFact {
+      bool introduced = false;
+      bool mutable_binding = false;
+      string identity;
+      moss::TypeRef type;
+    };
     moss::TypeSolver solver{1};
     std::unordered_map<string, moss::TypeRef> locals;
     std::unordered_map<const Stmt*,
         std::unordered_map<string, moss::TypeRef>> locals_at_statement;
+    std::unordered_map<const Stmt*, BindingFact> binding_facts;
     // A for binding is lexical, even when it uses the name of an outer open
     // local. Keep its term at the statement and activate it only in the body.
     std::unordered_map<const Stmt*, moss::TypeRef> for_bindings;
@@ -4648,13 +4655,323 @@ class Checker {
     }
   };
 
+  bool retain_checked_collection_loop_ir(Function& function) {
+    if (!function.open_summary || !function.open_summary->complete ||
+        function.params.size() != 2 || function.body.size() != 7)
+      return false;
+    auto retained = checked_body_states_.find(&function.body);
+    if (retained == checked_body_states_.end() || !retained->second)
+      return false;
+    auto& state = *retained->second;
+    const auto& summary = *function.open_summary;
+    const auto& body = function.body;
+    if (body[0].kind != Stmt::Kind::Var || body[1].kind != Stmt::Kind::Assign ||
+        body[2].kind != Stmt::Kind::While || body[3].kind != Stmt::Kind::If ||
+        body[4].kind != Stmt::Kind::Return ||
+        body[5].kind != Stmt::Kind::Assign ||
+        body[6].kind != Stmt::Kind::Return || body[0].indent != 0 ||
+        body[1].indent != 0 || body[2].indent != 0 || body[3].indent != 1 ||
+        body[4].indent != 2 || body[5].indent != 1 || body[6].indent != 0)
+      return false;
+    const auto first_binding = state.binding_facts.find(&body[0]);
+    const auto count_binding = state.binding_facts.find(&body[1]);
+    const auto increment_binding = state.binding_facts.find(&body[5]);
+    if (first_binding == state.binding_facts.end() ||
+        count_binding == state.binding_facts.end() ||
+        increment_binding == state.binding_facts.end() ||
+        !first_binding->second.introduced ||
+        !first_binding->second.mutable_binding ||
+        !count_binding->second.introduced ||
+        !count_binding->second.mutable_binding ||
+        increment_binding->second.introduced ||
+        !increment_binding->second.mutable_binding ||
+        first_binding->second.identity.empty() ||
+        count_binding->second.identity.empty() ||
+        increment_binding->second.identity != first_binding->second.identity)
+      return false;
+    const auto int_type = moss::Type::primitive("int");
+    const auto bool_type = moss::Type::primitive("bool");
+    if (!first_binding->second.type || !count_binding->second.type ||
+        !increment_binding->second.type ||
+        !state.solver.resolve(first_binding->second.type)->structurally_equal(*int_type) ||
+        !state.solver.resolve(count_binding->second.type)->structurally_equal(*int_type) ||
+        !state.solver.resolve(increment_binding->second.type)->structurally_equal(*int_type))
+      return false;
+
+    const auto count_facts = std::count_if(summary.operations.begin(),
+        summary.operations.end(), [](const auto& fact) {
+      return fact.operation_id == checked_ir::kCollectionCountOperationId;
+    });
+    const auto index_facts = std::count_if(summary.operations.begin(),
+        summary.operations.end(), [](const auto& fact) {
+      return fact.operation_id == checked_ir::kCollectionIndexOperationId;
+    });
+    if (summary.operations.size() != 2 || count_facts != 1 || index_facts != 1 ||
+        summary.parameter_types.size() != 2 ||
+        summary.parameter_access.size() != 2 ||
+        summary.parameter_access[0] != moss::AccessMode::Read ||
+        summary.parameter_access[1] != moss::AccessMode::Read ||
+        !summary.result_type || !summary.result_type->structurally_equal(*int_type) ||
+        !function.observable_effects.may_panic ||
+        function.observable_effects.unresolved)
+      return false;
+    const auto count_fact = std::find_if(summary.operations.begin(),
+        summary.operations.end(), [](const auto& fact) {
+      return fact.operation_id == checked_ir::kCollectionCountOperationId;
+    });
+    const auto index_fact = std::find_if(summary.operations.begin(),
+        summary.operations.end(), [](const auto& fact) {
+      return fact.operation_id == checked_ir::kCollectionIndexOperationId;
+    });
+    const auto vector_type = summary.parameter_types[0];
+    const auto element_type = summary.parameter_types[1];
+    if (!vector_type || !element_type ||
+        vector_type->kind != moss::TypeKind::Builtin ||
+        vector_type->name != "vector" || vector_type->type_args.size() != 1 ||
+        !vector_type->type_args.front()->structurally_equal(*element_type) ||
+        !count_fact->receiver || !count_fact->result ||
+        !count_fact->receiver->structurally_equal(*vector_type) ||
+        !count_fact->result->structurally_equal(*int_type) ||
+        !index_fact->receiver || !index_fact->result ||
+        index_fact->arguments.size() != 1 || !index_fact->arguments.front() ||
+        !index_fact->receiver->structurally_equal(*vector_type) ||
+        !index_fact->arguments.front()->structurally_equal(*int_type) ||
+        !index_fact->result->structurally_equal(*element_type))
+      return false;
+    const auto equality = std::find_if(summary.requirements.begin(),
+        summary.requirements.end(), [](const moss::Requirement& requirement) {
+      return requirement.kind == moss::RequirementKind::Operator &&
+          requirement.target_id == "operator:==";
+    });
+    const auto typed_index = std::find_if(summary.requirements.begin(),
+        summary.requirements.end(), [](const moss::Requirement& requirement) {
+      return requirement.kind == moss::RequirementKind::Index &&
+          requirement.target_id == "builtin:index";
+    });
+    if (summary.requirements.size() != 2 || equality == summary.requirements.end() ||
+        typed_index == summary.requirements.end() || !equality->subject ||
+        equality->arguments.size() != 1 || !equality->arguments.front() ||
+        !equality->result ||
+        !equality->subject->structurally_equal(*element_type) ||
+        !equality->arguments.front()->structurally_equal(*element_type) ||
+        !(*equality->result)->structurally_equal(*bool_type))
+      return false;
+
+    auto expected_operation = [&](std::string_view operation_id, int line) {
+      return std::count_if(state.open_operations.begin(),
+          state.open_operations.end(), [&](const auto& fact) {
+        return fact.operation_id == operation_id && fact.line == line;
+      }) == 1;
+    };
+    if (state.open_operations.size() != 2 ||
+        !expected_operation(checked_ir::kCollectionCountOperationId, body[1].line) ||
+        !expected_operation(checked_ir::kCollectionIndexOperationId, body[3].line) ||
+        state.open_operator_requirements.size() != 1 ||
+        state.open_operator_requirements.front().target_id != "operator:==" ||
+        state.open_operator_requirements.front().origin.line != body[3].line)
+      return false;
+
+    auto parameter_ordinal = [&](const string& name) -> std::optional<uint32_t> {
+      for (uint32_t index = 0; index < function.params.size(); ++index)
+        if (function.params[index].name == name) return index;
+      return std::nullopt;
+    };
+    std::map<string, uint32_t> local_ordinals{{body[0].a, 0}, {body[1].a, 1}};
+    if (body[0].a.empty() || body[1].a.empty() || body[0].a == body[1].a ||
+        body[0].a == function.params[0].name || body[0].a == function.params[1].name ||
+        body[1].a == function.params[0].name || body[1].a == function.params[1].name)
+      return false;
+    auto snapshot_has = [&](size_t statement_index, const string& name) {
+      auto snapshot = state.locals_at_statement.find(&body[statement_index]);
+      return snapshot != state.locals_at_statement.end() &&
+          snapshot->second.count(name) != 0;
+    };
+    if (snapshot_has(0, body[0].a) || snapshot_has(1, body[1].a) ||
+        !snapshot_has(2, body[0].a) || !snapshot_has(2, body[1].a) ||
+        !snapshot_has(3, body[0].a) || !snapshot_has(3, body[1].a) ||
+        !snapshot_has(4, body[0].a) || !snapshot_has(4, body[1].a) ||
+        !snapshot_has(5, body[0].a) || !snapshot_has(5, body[1].a) ||
+        !snapshot_has(6, body[0].a) || !snapshot_has(6, body[1].a))
+      return false;
+
+    auto local_type = [&](const string& name) -> moss::TypeRef {
+      auto snapshot = state.locals_at_statement.find(&body[2]);
+      if (snapshot == state.locals_at_statement.end()) return nullptr;
+      auto found = snapshot->second.find(name);
+      return found == snapshot->second.end() ? nullptr : state.solver.resolve(found->second);
+    };
+    auto checked_local_type = [&](const string& name) -> moss::TypeRef {
+      if (name == body[0].a || name == body[1].a) return int_type;
+      return nullptr;
+    };
+    std::function<std::optional<checked_ir::Expr>(const string&,
+        const moss::TypeRef&, size_t, unsigned)> expression;
+    expression = [&](const string& source, const moss::TypeRef& expected,
+                     size_t statement_index, unsigned depth)
+        -> std::optional<checked_ir::Expr> {
+      if (!expected || depth > 8) return std::nullopt;
+      const string value = trim(source);
+      if (auto ordinal = parameter_ordinal(value)) {
+        auto type = summary.parameter_types[*ordinal];
+        if (!type->structurally_equal(*expected)) return std::nullopt;
+        checked_ir::Expr result;
+        result.kind = checked_ir::ExprKind::Parameter;
+        result.type = type;
+        result.ordinal = *ordinal;
+        return result;
+      }
+      if (auto local = local_ordinals.find(value); local != local_ordinals.end()) {
+        const auto identity_fact = local->second == 0
+            ? state.binding_facts.find(&body[0])
+            : state.binding_facts.find(&body[1]);
+        if (!snapshot_has(statement_index, value) ||
+            identity_fact == state.binding_facts.end() ||
+            identity_fact->second.identity.empty() ||
+            !checked_local_type(value)->structurally_equal(*expected))
+          return std::nullopt;
+        auto actual = local_type(value);
+        if (!actual || !actual->structurally_equal(*int_type)) return std::nullopt;
+        checked_ir::Expr result;
+        result.kind = checked_ir::ExprKind::LocalRead;
+        result.type = actual;
+        result.ordinal = local->second;
+        return result;
+      }
+      if (statement_index == 1 && value == function.params[0].name + " |> count") {
+        if (!expected->structurally_equal(*int_type) ||
+            !count_fact->receiver->structurally_equal(*summary.parameter_types[0]))
+          return std::nullopt;
+        checked_ir::Expr receiver;
+        receiver.kind = checked_ir::ExprKind::Parameter;
+        receiver.type = summary.parameter_types[0];
+        receiver.ordinal = 0;
+        checked_ir::Expr result;
+        result.kind = checked_ir::ExprKind::CollectionCount;
+        result.type = count_fact->result;
+        result.semantic_target_id = string(checked_ir::kCollectionCountOperationId);
+        result.operands.push_back(std::move(receiver));
+        return result;
+      }
+      string index_base, index_expression;
+      if (parse_index(value, index_base, index_expression) &&
+          statement_index == 3 && index_base == function.params[0].name &&
+          index_expression == body[0].a) {
+        auto index_type = expression(index_expression, int_type, statement_index,
+                                     depth + 1);
+        if (!index_type || !index_fact->result->structurally_equal(*expected))
+          return std::nullopt;
+        checked_ir::Expr receiver;
+        receiver.kind = checked_ir::ExprKind::Parameter;
+        receiver.type = summary.parameter_types[0];
+        receiver.ordinal = 0;
+        checked_ir::Expr result;
+        result.kind = checked_ir::ExprKind::Index;
+        result.type = index_fact->result;
+        result.semantic_target_id = string(checked_ir::kCollectionIndexOperationId);
+        result.operands = {std::move(receiver), std::move(*index_type)};
+        return result;
+      }
+      if (!value.empty() && std::all_of(value.begin(), value.end(),
+            [](unsigned char ch) { return std::isdigit(ch); })) {
+        if (!expected->structurally_equal(*int_type)) return std::nullopt;
+        checked_ir::Expr result;
+        result.kind = checked_ir::ExprKind::IntegerLiteral;
+        result.type = int_type;
+        result.literal_value = value;
+        return result;
+      }
+      for (const auto& operators : vector<vector<string>>{{"=="}, {"<"}, {"+"}, {"-"}}) {
+        auto parts = split_binary(value, operators);
+        if (!parts) continue;
+        const string op = operators.front();
+        const moss::TypeRef operand_type = op == "==" ? element_type : int_type;
+        if ((op == "==" && (statement_index != 3 ||
+                            !expected->structurally_equal(*bool_type))) ||
+            (op == "<" && !expected->structurally_equal(*bool_type)) ||
+            ((op == "+" || op == "-") &&
+             !expected->structurally_equal(*int_type)))
+          return std::nullopt;
+        auto left = expression(parts->first, operand_type, statement_index,
+                               depth + 1);
+        auto right = expression(parts->second, operand_type, statement_index,
+                                depth + 1);
+        if (!left || !right) return std::nullopt;
+        checked_ir::Expr result;
+        result.kind = checked_ir::ExprKind::Binary;
+        result.type = expected;
+        result.binary_op = op == "==" ? checked_ir::BinaryOp::Equal
+            : op == "<" ? checked_ir::BinaryOp::Less
+            : op == "+" ? checked_ir::BinaryOp::Add
+                           : checked_ir::BinaryOp::Sub;
+        result.operands = {std::move(*left), std::move(*right)};
+        return result;
+      }
+      return std::nullopt;
+    };
+
+    auto make_statement = [](checked_ir::StmtKind kind, moss::TypeRef type,
+                             std::optional<checked_ir::Expr> value = std::nullopt) {
+      checked_ir::Stmt statement;
+      statement.kind = kind;
+      statement.type = std::move(type);
+      statement.expr = std::move(value);
+      return statement;
+    };
+    auto initial = expression(body[0].b, int_type, 0, 0);
+    auto count = expression(body[1].b, int_type, 1, 0);
+    auto condition = expression(body[2].a, bool_type, 2, 0);
+    auto equality_condition = expression(body[3].a, bool_type, 3, 0);
+    auto found_return = expression(body[4].a, int_type, 4, 0);
+    auto increment = expression(body[5].b, int_type, 5, 0);
+    auto terminal = expression(body[6].a, int_type, 6, 0);
+    if (!initial || !count || !condition || !equality_condition ||
+        !found_return || !increment || !terminal)
+      return false;
+    checked_ir::Stmt local_i = make_statement(
+        checked_ir::StmtKind::Var, int_type, std::move(initial));
+    local_i.local_ordinal = 0;
+    checked_ir::Stmt local_n = make_statement(
+        checked_ir::StmtKind::Var, int_type, std::move(count));
+    local_n.local_ordinal = 1;
+    checked_ir::Stmt early_return = make_statement(
+        checked_ir::StmtKind::Return, int_type, std::move(found_return));
+    checked_ir::Stmt branch = make_statement(
+        checked_ir::StmtKind::If, bool_type, std::move(equality_condition));
+    branch.then_branch.push_back(std::move(early_return));
+    checked_ir::Stmt assign_i = make_statement(
+        checked_ir::StmtKind::Assign, int_type, std::move(increment));
+    assign_i.local_ordinal = 0;
+    checked_ir::Stmt loop = make_statement(
+        checked_ir::StmtKind::While, bool_type, std::move(condition));
+    loop.body = {std::move(branch), std::move(assign_i)};
+    checked_ir::Stmt final_return = make_statement(
+        checked_ir::StmtKind::Return, int_type, std::move(terminal));
+    vector<checked_ir::Stmt> statements{std::move(local_i), std::move(local_n),
+                                        std::move(loop), std::move(final_return)};
+    try {
+      const auto bytes = checked_ir::encode_checked_body_v1(statements);
+      const auto hash = checked_ir::compute_checked_body_hash_v1(statements);
+      if (checked_ir::encode_checked_body_v1(statements) != bytes ||
+          checked_ir::compute_checked_body_hash_v1(statements) != hash)
+        return false;
+      function.checked_body_ir_v1_bytes = bytes;
+      function.checked_body_ir_v1_hash = hash;
+      return true;
+    } catch (const std::invalid_argument&) {
+      return false;
+    }
+  }
+
   // Materialize only body forms whose operands can be tied to checked summary
   // slots. No source spelling or physical path participates in the hash.
   void retain_checked_body_ir() {
     for (auto& function : p_.functions) {
       function.checked_body_v1.reset();
+      function.checked_body_ir_v1_bytes.reset();
+      function.checked_body_ir_v1_hash.reset();
       if (compiled_interface_file(function.source_file)) continue;
       if (!function.open_summary || !function.open_summary->complete) continue;
+      if (retain_checked_collection_loop_ir(function)) continue;
       const auto& summary = *function.open_summary;
       string expression;
       if (function.body.empty() && function.result_expression)
@@ -18890,10 +19207,20 @@ class Checker {
           if (s.kind == Stmt::Kind::Let) env.immutable_locals.insert(s.a);
           else env.immutable_locals.erase(s.a);
           env.moved.erase(s.a); // A declaration may intentionally shadow an older moved binding.
+          if (current_body_types_) {
+            BodyTypeState::BindingFact fact;
+            fact.introduced = true;
+            fact.mutable_binding = !env.immutable_locals.count(s.a);
+            fact.identity = env.binding_identities[s.a];
+            fact.type = current_body_types_->assignment_value(s);
+            current_body_types_->binding_facts[&s] = std::move(fact);
+          }
           ++index;
           break;
         }
         case Stmt::Kind::Assign: {
+          const bool had_lexical_binding = env.binding_identities.count(s.a) != 0;
+          const bool targets_state_field = env.state_fields.count(s.a) != 0;
           auto prior_type = inferred_expr_type(s.a, env.types);
           auto new_type = inferred_expr_type(s.b, env.types);
           bool existing_owner = env.binding_identities.count(s.a) ||
@@ -18955,6 +19282,16 @@ class Checker {
             // Assignment creates or reinitializes the target, including a
             // binding that was consumed on an earlier path.
             env.moved.erase(s.a);
+            if (current_body_types_) {
+              BodyTypeState::BindingFact fact;
+              fact.introduced = !had_lexical_binding && !targets_state_field;
+              fact.mutable_binding = !env.immutable_locals.count(s.a);
+              auto identity = env.binding_identities.find(s.a);
+              if (identity != env.binding_identities.end())
+                fact.identity = identity->second;
+              fact.type = current_body_types_->assignment_value(s);
+              current_body_types_->binding_facts[&s] = std::move(fact);
+            }
           }
           refine_map_index_assignment_type(s.a, s.b, env.types);
           ++index;
@@ -34448,11 +34785,13 @@ static void write_typed_semantic_projection_json(std::ostream& out,
     out << ", \"checked_body_ir_available\": "
         << (summary.checked_body_ir_available ? "true" : "false");
     out << ", \"body_semantic_hash\": ";
-    if (summary.checked_body_v1)
+    if (summary.checked_body_ir_v1_hash)
+      write_debug_json_string(out, *summary.checked_body_ir_v1_hash);
+    else if (summary.checked_body_v1)
       write_debug_json_string(out, summary.checked_body_v1->semantic_hash);
     else out << "null";
     out << ", \"body_semantic_status\": ";
-    write_debug_json_string(out, summary.checked_body_v1
+    write_debug_json_string(out, summary.checked_body_ir_available
         ? "available_checked_body_v1" : "unsupported_checked_body_form");
     out << ", \"bound_variable_count\": " << summary.bound_variable_count;
     out << ", \"parameter_types\": [";

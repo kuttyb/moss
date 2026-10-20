@@ -75,6 +75,7 @@ struct TypedOpenCallableSummaryV1 {
   // A hash is present only when the checker retained supported semantic nodes.
   bool checked_body_ir_available{false};
   std::optional<CheckedBodyV1> checked_body_v1;
+  std::optional<std::string> checked_body_ir_v1_hash;
   uint32_t bound_variable_count{0};
   std::vector<TypeRef> parameter_types;
   TypeRef result_type;
@@ -317,8 +318,10 @@ inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) 
       TypedOpenCallableSummaryV1 summary;
       summary.callable_id = checked.callable_id;
       summary.exported = function.exported;
-      summary.checked_body_ir_available = function.checked_body_v1.has_value();
+      summary.checked_body_ir_available = function.checked_body_v1.has_value() ||
+          function.checked_body_ir_v1_bytes.has_value();
       summary.checked_body_v1 = function.checked_body_v1;
+      summary.checked_body_ir_v1_hash = function.checked_body_ir_v1_hash;
       summary.bound_variable_count = checked.bound_variable_count;
       summary.parameter_types = checked.parameter_types;
       summary.result_type = checked.result_type;
