@@ -530,3 +530,15 @@ The architect returned **GO** on exact pushed SHA
 an explicit fact alongside the selected callable, and the focused regression
 checks ordinary and reverse keyed sort. This confirms checker fact capture,
 not source-free lowering of sort. R1 remains incomplete.
+
+R1 consolidation probe (uncommitted experiment reverted): the exact valid
+source `export fn fresh(): return []` retains a completed `VectorLiteral`
+return occurrence but no TypeRef (`kind=VectorLiteral`, `root_slot=return-value`,
+`completed=true`, `checked_type=null`), so the ledger is incomplete and the
+occurrence lowerer declines it. Switching the empty-vector producer to this
+route failed `python3 tests/tooling/check_phase25_empty_vector_records.py` at
+its expected 1-summary/1-body assertion. The experimental code was reverted;
+the same focused test then passed with the existing shape-specific producer.
+This remains an R1 checker-fact gap, not a language exclusion. The checker must
+attach the resolved return TypeRef to this literal before common lowering can
+consume it. The probe did not change tracked compiler code.

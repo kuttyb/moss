@@ -9699,3 +9699,11 @@ Architect returned **GO** at exact SHA
 `e81c1a2b411ad950872c83df9787dc1d738897b3`: reverse order is an explicit
 checker fact and the focused regression checks both keyed sort modes. This
 review covers fact capture, not source-free sort lowering. R1 remains open.
+
+R1 empty-vector common-lowering probe was not retained: the valid exact source
+`export fn fresh(): return []` has a completed `VectorLiteral` return
+occurrence but no TypeRef (`checked_type=null`), leaving the ledger incomplete.
+The attempted switch from the dedicated emitter to occurrence lowering failed
+the 1-summary/1-body assertion in `check_phase25_empty_vector_records.py`;
+that experiment was reverted and the existing producer regression passed
+again. This is an active R1 checker-fact gap, not an excluded source form.
