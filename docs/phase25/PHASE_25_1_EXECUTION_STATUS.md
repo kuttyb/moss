@@ -9,8 +9,9 @@ Pinned instruction commit: `3de64dc633312267c37c4e4990b28c2a73cab104`
 | Gate | Status | Evidence |
 |---|---|---|
 | T0 | PASS | Annotated tags published and remote peeled commits verified below; `origin/main` unchanged. |
-| R0 | REVIEW REMEDIATION | First pushed checkpoint `19ffd63822f08c255cde231b590828a986e9a00b` received NO-GO; its findings are addressed in the uncommitted R0 revision. Expanded 18-case oracle and strict corpus now pass their declared outcomes. Revised checkpoint and second review are pending. |
-| R1–R5 | NOT STARTED | ABI-v9 remains default; no `main` or `phase25-integration` changes. |
+| R0 | PASS | Final independent GO at frozen checkpoint `9c90573bda8daec5bd4254cc5f6c64c5dd3239e4`; 19-case oracle, complete 71-path harness map, strict corpus and P2 inventory exception recorded. |
+| R1 | IN PROGRESS | Inspecting the existing shape-specific checked-body paths and planning one authoritative typed traversal; no compiler edits yet. |
+| R2–R5 | NOT STARTED | ABI-v9 remains default; no `main` or `phase25-integration` changes. |
 
 ## T0 transcript and verification
 
@@ -57,32 +58,15 @@ Additional evidence passed: `check_phase25_m2b2_source_free_corpus.py` (includin
 The R0 architecture note proposes one checker-retained typed traversal/codec/projector and preserves ABI-v9 as default; it adds no compiler implementation. `adversarial_architect` is the only additional team member and is assigned to inspect the exact pushed R0 SHA before R1. Feedback validation passed. R0 review and checkpoint delivery remain unfinished. No R1 implementation has started. All scratch output is under `tmp/`.
 
 
-## R0 review remediation in progress
+## R0 final review and R1 entry
 
-The first independent review of `19ffd63822f08c255cde231b590828a986e9a00b`
-was NO-GO and the surface/stage findings were remediated at
-`ad935043dd1661d7a77acc90e2ab43b84625b06d`. Re-review of that frozen SHA was
-NO-GO on a P1: `check_phase24_imported_generic_expressions.py` and the Team A /
-typed-semantic generic source-free controls were not mapped. It also identified
-a P2 stale 17-case sentence. The working revision maps those harnesses and every
-one of the 71 catalog paths and corrects the count to 19. Re-review confirms
-the mapping closure but requires P251-GEN-006 to be closed/split from the P2
-`packages/time` issue and `sdk/fs/tests/check_native.py` to be reclassified as
-source-backed native acceptance. Those metadata fixes are in the current
-revision; fresh review remains pending.
-The revision expands marker-based source-free harness discovery
-(71 paths), maps selected SDK and advanced-data calls, and makes the
-generic-Vector-iteration corpus assert v10 provider artifact emission before
-removing source and requiring consumer-stage rejection.
+The final adversarial review at frozen commit
+`9c90573bda8daec5bd4254cc5f6c64c5dd3239e4` returned **GO**, with no open P0/P1.
+The reviewer verified the Phase 24 generic source-free callables, Team A and
+typed semantic API map entries, one-to-one disposition for all 71 discovered
+candidates, corrected 19-case wording, closed GEN-006, and the native-only fs
+classification. P251-GEN-008 (`packages/time`) remains P2 on the R4 path.
 
-`PHASE_25_1_R0_FULL_ORACLE.json` records 19 cases / 38 profiles per mode at
-compiler SHA `19ffd63822f08c255cde231b590828a986e9a00b`: source-backed 38/38,
-ABI-v9 36/38, ABI-v10 12/38. ABI-v9's two failures are the valid generic
-raise/recover consumer, with the exact diagnostic retained. ABI-v10's 26
-unsupported valid profiles fail closed at consumer selection. Three invalid
-source probes pass with structured diagnostics. `check_phase25_m2b2_source_free_corpus.py`,
-feedback validation, and `git diff --check` pass on the current revision.
-
-Still open: independent review of the frozen revised checkpoint; `packages/time`
-source-build gap (P2); the actual bytes `examples/range_copy` source-free run is
-reserved for R3. R1 has not started.
+R1 begins from this green checkpoint. No compiler implementation has started;
+next is architecture consolidation of existing shape-specific checked-body
+paths into one exhaustive checker-owned typed traversal and bounded codec.

@@ -1,44 +1,14 @@
 # Moss current status
 
-## Phase 25.1 R0 revision — 2026-10-20
+## Phase 25.1 R0 complete; R1 starting — 2026-10-20
 
-Branch `phase25-1-work`; task work is at R0 review remediation. T0 passed
-before implementation: the remote peeled targets for `phase25-pre-main` and
-`phase25-delivered-v9` are respectively
-`fa3a340a0a6652568b97869489da1a84038b9857` and
-`dd45e30722bcc2d62d4bb46ba184d426cbaea066`. `origin/main` and
-`origin/phase25-integration` remain at the delivered v9 baseline.
+Branch `phase25-1-work`; pinned instructions `3de64dc633312267c37c4e4990b28c2a73cab104`. T0 passed before implementation: the remote peeled targets for `phase25-pre-main` and `phase25-delivered-v9` are respectively `fa3a340a0a6652568b97869489da1a84038b9857` and `dd45e30722bcc2d62d4bb46ba184d426cbaea066`. `origin/main` and `origin/phase25-integration` remain at the delivered v9 baseline.
 
-The R0 checkpoint `19ffd63822f08c255cde231b590828a986e9a00b` received
-independent NO-GO findings on valid generic surface coverage, source-free
-harness discovery, and the Vector-iteration provider/consumer stage assertion.
-Those first P1 findings were addressed at `ad935043dd1661d7a77acc90e2ab43b84625b06d`;
-its re-review closed the surface and stage assertions but found the explicit map
-omitted source-free generic harnesses, including Phase 24, Team A, and typed
-semantic API controls. Matrix wording also still said 17 cases. The current
-revision maps the omitted harnesses and all 71 catalog paths. Re-review found
-P251-GEN-006 still incorrectly open and `sdk/fs/tests/check_native.py`
-misclassified as source-free; this revision closes GEN-006 while retaining the
-`packages/time` issue as P2 and corrects the native-test label. A fresh review
-is pending. The working revision adds a 71-path marker inventory and explicit harness map;
-its hostile corpus now requires a v10 provider artifact before source-free
-consumer rejection. Expanded three-mode evidence covers 19 cases (38 profiles
-per mode): source-backed 38/38, ABI-v9 36/38, and ABI-v10 12/38. The two ABI-v9
-failures are generic raise/recover consumer failures with
-`raise requires a statically typed error value`; all 26 unsupported v10 profiles
-reject with `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE`. Invalid source probes
-separately classify range-as-iterator-argument, open Queue method dispatch,
-and untyped enum match. Exact evidence is in
-`docs/phase25/PHASE_25_1_R0_FULL_ORACLE.json`,
-`PHASE_25_1_R0_INVALID_PROBES.json`, and `PHASE_25_1_HARNESS_MAP.json`.
+R0 is green at `9c90573bda8daec5bd4254cc5f6c64c5dd3239e4`, independently approved by `/root/adversarial_architect`. Three review rounds found and drove closure of: valid generic surface coverage and provider-stage assertion; omitted Phase 24/Team A/typed-API source-free harness mapping; and stale GEN-006/native-test classification. Final review found no open P0/P1. P251-GEN-008 (`packages/time` source-build failure) remains P2 on R4.
 
-The required M2b2 hostile corpus passed after the revision, including provider
-emission then consumer-stage rejection, artifact mutation negatives, and ABI-v9
-controls. Agent-feedback validation and `git diff --check` passed. The inventoried
-`packages/time` build failure remains P2. The actual bytes `examples/range_copy`
-program is still an R3 requirement; R0 ran the acceptance repro. No R1 compiler
-implementation has started. Next: commit/push the second R0 remediation and obtain another independent
-adversarial review, then proceed to R1 if all P0/P1 findings are closed.
+The 19-case three-mode oracle records 38 profiles per mode: source-backed 38/38, ABI-v9 36/38, and ABI-v10 12/38. The two ABI-v9 failures are the generic raise/recover consumer diagnostic `raise requires a statically typed error value`; the 26 valid-but-unavailable v10 profiles fail closed with `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE`. The required M2b2 hostile corpus, feedback checker, JSON parsing and whitespace checks pass. R0 preserved the actual bytes `examples/range_copy` source-free test for R3; its R0 bytes positive is the acceptance repro.
+
+R1 is beginning. No compiler edits have started. Required invariants: one checker-owned exhaustive typed traversal for current valid Moss generic statement/expression forms, canonical bounded checked-body encoding/decoding, and projection through the normal checker/lowering path. No second specialization engine; ABI-v9 remains default. Next inspect all current shape-specific emitters/importers, establish a coherent consolidation design, then implement a minimal cross-crate round-trip slice while retaining all admitted fixtures.
 
 ---
 

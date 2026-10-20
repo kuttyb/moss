@@ -1,11 +1,6 @@
 # Phase 25.1 compatibility matrix
 
-Updated 2026-10-20. R0 checkpoint `19ffd638` received NO-GO; the revision
-`ad935043` closed its surface and stage findings, but re-review found an omitted
-source-free generic harness map entry. Mapping closure at `ecd4d99` also
-required closing P251-GEN-006 separately from the P2 `packages/time` issue and
-reclassifying `sdk/fs/tests/check_native.py` as source-backed native acceptance.
-This revision records those corrections and awaits fresh independent review. The expanded oracle
+Updated 2026-10-20. R0 received final independent GO at frozen checkpoint `9c90573bda8daec5bd4254cc5f6c64c5dd3239e4` with no open P0/P1; only P2 `packages/time` remains, tracked for R4. The expanded oracle
 uses compiler SHA `19ffd63822f08c255cde231b590828a986e9a00b`; package inventory
 artifacts were built at `43973e1adfdf015d5588e85f41d986925a85a565`, with no
 compiler source changes between those commits. This is not a v10 readiness
