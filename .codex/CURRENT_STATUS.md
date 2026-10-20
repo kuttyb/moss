@@ -9293,7 +9293,20 @@ one requirement, sees the same two requirements and unchanged body hash on
 clean D1 baseline). Feedback validation and `git diff --check` PASS. The full
 repository suite was not run.
 
-The D4 checkpoint is pushed as `f1c10a54` (full SHA recorded in Git). The
-M2b.4 compiler/test changes and final gate-status update are staged for their
-own follow-up commit; the overnight branch is not merged to integration or
-main.
+The D4 checkpoint is pushed as
+`f1c10a5460f58424532e448fea00964f94d654f4`; M2b.4 is pushed as
+`4c27f278ed40362d5160e2e14c90b8e16e740453`. The remote overnight ref matches
+the local HEAD, the worktree is clean, D2 `4ff42566ff66fa012cc9ac24c5440691e3b4cfd3`
+is an ancestor, and integration remains at that D2 SHA. Main was not touched.
+
+Gate closeout: Gate 0 PASS (`4ff42566ff66fa012cc9ac24c5440691e3b4cfd3`);
+D3a semantic-binding preflight PASS (`53a7e4bc2bf4f19bcd395ea631091411995cffe6`);
+D3a retention PASS (`204d898864fd12512fdd9d92448df6305908b411`); D3b PASS
+(`ead0bacf581c9543b01e5f4aad8c1f31a9c66ffd`); D3c PASS
+(`677410bde1a67220e1761d4483f62ef24cf196fe`); D3d PASS
+(`44e60b40120bcfb248878ee9ad4bb1d5ad15ab8e`); D4 PASS
+(`f1c10a5460f58424532e448fea00964f94d654f4`); M2b.4 PASS
+(`4c27f278ed40362d5160e2e14c90b8e16e740453`); focused G5/G6 readiness PASS
+with the exact baseline/toolchain exceptions above. The Phase 25 ABI-v10
+cutover itself remains BLOCKED pending L7's decision on the P1 `from_range`
+coverage gap and the full repository regression suite.
