@@ -89,7 +89,7 @@ std::vector<cir::Stmt> index_of_body(const moss::TypeRef& element_type) {
   cursor.expr = integer(int_type, "0");
 
   cir::Stmt length;
-  length.kind = cir::StmtKind::Let;
+  length.kind = cir::StmtKind::Var;
   length.local_ordinal = 1;
   length.type = int_type;
   length.expr = count(vector_type);
@@ -183,7 +183,7 @@ int main(int argc, char** argv) {
   assert(generic_decoded.size() == 4 &&
          generic_decoded[0].kind == cir::StmtKind::Var &&
          generic_decoded[0].local_ordinal == 0 &&
-         generic_decoded[1].kind == cir::StmtKind::Let &&
+         generic_decoded[1].kind == cir::StmtKind::Var &&
          generic_decoded[1].local_ordinal == 1 &&
          generic_decoded[2].kind == cir::StmtKind::While &&
          generic_decoded[3].kind == cir::StmtKind::Return);
@@ -211,7 +211,7 @@ int main(int argc, char** argv) {
          equality.operands[0].operands[0].type->structurally_equal(
              *generic_vector) &&
          equality.operands[1].type->structurally_equal(*variable));
-  assert(generic_decoded[1].kind == cir::StmtKind::Let &&
+  assert(generic_decoded[1].kind == cir::StmtKind::Var &&
          generic_decoded[1].expr->kind == cir::ExprKind::CollectionCount &&
          generic_decoded[1].expr->semantic_target_id ==
              cir::kCollectionCountOperationId &&
@@ -281,13 +281,33 @@ int main(int argc, char** argv) {
   assert(rejects(cir::encode_checked_body_v1(local_escapes_scope), context,
                  generic_parameters, int_type));
 
-  auto immutable_assignment = generic_statements;
+  auto mutable_assignment = generic_statements;
   cir::Stmt assign_n;
   assign_n.kind = cir::StmtKind::Assign;
   assign_n.local_ordinal = 1;
   assign_n.expr = integer(int_type, "7");
-  immutable_assignment.insert(immutable_assignment.begin() + 2, assign_n);
-  assert(rejects(cir::encode_checked_body_v1(immutable_assignment), context,
+  mutable_assignment.insert(mutable_assignment.begin() + 2, assign_n);
+  const auto mutable_assignment_bytes =
+      cir::encode_checked_body_v1(mutable_assignment);
+  const auto mutable_assignment_hash =
+      cir::compute_checked_body_hash_v1(mutable_assignment);
+  const auto mutable_assignment_decoded =
+      cir::decode_collection_loop_checked_body_v1(
+          mutable_assignment_bytes, context, generic_parameters, int_type,
+          mutable_assignment_hash);
+  assert(mutable_assignment_decoded[1].kind == cir::StmtKind::Var &&
+         mutable_assignment_decoded[2].kind == cir::StmtKind::Assign &&
+         mutable_assignment_decoded[2].local_ordinal == 1 &&
+         cir::encode_checked_body_v1(mutable_assignment_decoded) ==
+             mutable_assignment_bytes &&
+         cir::compute_checked_body_hash_v1(mutable_assignment_decoded) ==
+             mutable_assignment_hash);
+
+  auto explicit_let_assignment = generic_statements;
+  explicit_let_assignment[1].kind = cir::StmtKind::Let;
+  explicit_let_assignment.insert(explicit_let_assignment.begin() + 2,
+                                 assign_n);
+  assert(rejects(cir::encode_checked_body_v1(explicit_let_assignment), context,
                  generic_parameters, int_type));
 
   auto mismatched_n_type = generic_statements;
