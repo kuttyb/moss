@@ -9592,3 +9592,10 @@ moss-dev` all pass. Only the existing TypeSolver missing-initializer warnings
 remain on the build. This follow-up remains uncommitted and needs exact-SHA
 adversarial review. R1's totality proof and shared structural lowerer remain
 open; R2 has not started.
+
+The role-verifier correction is pushed at
+`11fbf47e210af8dad158039dbf6a458709af4f64`. The adversarial architect returned
+GO on that exact SHA: both the checker-resolved member dispatch finding and
+the member argument-role verifier mismatch are closed, including the FileIO
+namespace/operand path; no P0/P1/P2 remain. This approves the capture slice,
+not R1. Continue with the structural lowerer and the still-open totality ledger.

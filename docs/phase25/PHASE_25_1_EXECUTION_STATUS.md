@@ -10,7 +10,7 @@ Pinned instruction commit: `3de64dc633312267c37c4e4990b28c2a73cab104`
 |---|---|---|
 | T0 | PASS | Annotated tags published and remote peeled commits verified below; `origin/main` unchanged. |
 | R0 | PASS | Final independent GO at frozen checkpoint `9c90573bda8daec5bd4254cc5f6c64c5dd3239e4`; 19-case oracle, complete 71-path harness map, strict corpus and P2 inventory exception recorded. |
-| R1 | IN PROGRESS | Independent GO at architecture SHA `ff4470ffdcc93cedb3d66b1e068b7f5ea8ca3f5f`. Pushes `783f47ea`, `246f51c6`, and `7a71f95c` received NO-GO. Current working follow-up aligns member invocation receiver/argument role checks with checker capture; focused controls are green. Commit/push and follow-up exact-SHA review, total structural coverage and shared lowerer remain open. |
+| R1 | IN PROGRESS | Independent GO at architecture SHA `ff4470ffdcc93cedb3d66b1e068b7f5ea8ca3f5f` and capture correction SHA `11fbf47e210af8dad158039dbf6a458709af4f64`. Pushes `783f47ea`, `246f51c6`, and `7a71f95c` received NO-GO; the exact `11fbf47e` review closed the member dispatch and role-verifier findings with no open P0/P1/P2. Total structural coverage and shared lowerer remain open. |
 | R2–R5 | NOT STARTED | ABI-v9 remains default; no `main` or `phase25-integration` changes. |
 
 ## T0 transcript and verification
@@ -344,3 +344,12 @@ D3d and D4 actual SDK source-free controls, feedback validation,
 contains only the existing TypeSolver missing-initializer warnings. This
 follow-up is not yet committed or reviewed. R1 totality, one common structural
 lowerer and a cross-crate source-free slice remain open; R2 has not started.
+
+The follow-up was committed and pushed as
+`11fbf47e210af8dad158039dbf6a458709af4f64`. Independent adversarial review at
+that exact SHA returned **GO**, confirming exact dispatch/receiver/constraint
+capture, member receiver and `argument:<i>` verification, direct-call role
+preservation, and explicit FileIO namespace/static operand handling. No P0,
+P1, or P2 findings remain for this slice. This is not R1 acceptance: full
+source-to-occurrence totality, binding/scope lowering, the common structural
+lowerer, and a cross-crate source-free execution slice remain unfinished.
