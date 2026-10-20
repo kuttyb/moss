@@ -4887,6 +4887,7 @@ class Checker {
       std::uint32_t child_count = 0;
       int line = 0;
       string root_slot;
+      string child_role;
       string operation_id;
       moss::TypeRef checked_type;
       string semantic_target_id;
@@ -20820,7 +20821,8 @@ class Checker {
                            const std::unordered_map<string,string>& env,
                            const moss::TypeRef& expected_open_result = nullptr,
                            std::optional<std::pair<uint32_t, uint32_t>>
-                               nested_occurrences = std::nullopt) {
+                               nested_occurrences = std::nullopt,
+                           Function** resolved_target = nullptr) {
     if (name == "sort" && !functions_.count(name)) {
       check_sort_call(line, args, env);
       return;
@@ -20907,7 +20909,6 @@ class Checker {
       if (args.size() != 1)
         err(line, "assert expects 1 argument, got " +
             std::to_string(args.size()));
-      check_expression(line, args.front(), env);
       auto condition = inferred_expr_type(args.front(), env);
       if (!condition || canonical_type_name(*condition) != "bool")
         err(line, "assert condition must have type 'bool'");
@@ -20979,12 +20980,7 @@ class Checker {
       }
       err(line, "unknown local function '" + name + "'");
     }
-    if (current_body_types_ && !checking_specialization_ &&
-        !current_body_types_->active_expression_occurrences.empty()) {
-      current_body_types_->retain_expression_target(
-          current_body_types_->active_expression_occurrences.back(),
-          function_target->semantic_callable_id);
-    }
+    if (resolved_target) *resolved_target = function_target;
     require_staged_v10_callable_body(line, *function_target);
     struct FnWrapper {
       Function* second;
@@ -21755,8 +21751,10 @@ class Checker {
       err(line, op + " expects " + std::to_string(arity) + " argument" +
           (arity == 1 ? "" : "s"), "KEY_PROTOCOL_SIGNATURE");
     string type = declared;
-    for (const auto& argument : args) {
-      check_expression(line, argument, env);
+    for (size_t index = 0; index < args.size(); ++index) {
+      const auto& argument = args[index];
+      check_expression(line, argument, env, {},
+                       "argument:" + std::to_string(index));
       auto actual = inferred_expr_type(argument, env);
       string concrete = actual ? canonical_type_name(*actual) : "";
       if (!total_order_scalar(concrete))
@@ -21858,7 +21856,7 @@ class Checker {
       if ((source_expr->term && !source_expr->term->is_closed()) ||
           open_generic(source_expr->legacy) ||
           (source_expr->term && contains_internal_placeholder(source_expr->term))) {
-        check_expression(line, parsed->source, env);
+        check_expression(line, parsed->source, env, {}, "pipeline-source");
         return true;  // Rechecked with the specialization's concrete TypeEnv.
       }
     }
@@ -21868,13 +21866,13 @@ class Checker {
           local != env.end() && (!local->second || canonical_type_name(local->second).empty() ||
                                  canonical_type_name(local->second) == "_value" ||
                                  contains_internal_placeholder(canonical_type_name(local->second)))) {
-        check_expression(line, parsed->source, env);
+        check_expression(line, parsed->source, env, {}, "pipeline-source");
         return true;  // Rechecked with the specialization's concrete TypeEnv.
       }
       return false;
     }
     if (unresolved_semantic_type(*source_type)) {
-      check_expression(line, parsed->source, env);
+      check_expression(line, parsed->source, env, {}, "pipeline-source");
       return true;  // Rechecked with the specialization's concrete TypeEnv.
     }
     auto element = functional_element_type(*source_type, parsed->source);
@@ -21924,7 +21922,8 @@ class Checker {
         }
         case FunctionalNodeKind::Reduce: {
           require_arity(2);
-          check_expression(line, stage.arguments.front(), env);
+          check_expression(line, stage.arguments.front(), env, {},
+                           "reduce-seed");
           auto accumulator = inferred_expr_type(stage.arguments.front(), env);
           if (!accumulator || *accumulator == "vector" || *accumulator == "queue" || *accumulator == "map")
             teaching_err(
@@ -22086,7 +22085,8 @@ class Checker {
 
   void check_expression(int line, const string& expression,
                         const std::unordered_map<string,string>& env,
-                        std::string_view root_slot = {}) {
+                        std::string_view root_slot = {},
+                        std::string_view child_role = {}) {
     using OccurrenceKind = BodyTypeState::ExpressionOccurrence::Kind;
     string original = trim(expression);
     BodyTypeState* occurrence_state = current_body_types_;
@@ -22114,6 +22114,9 @@ class Checker {
         auto& parent = occurrence_state->expression_occurrences.at(
             occurrence.parent_id);
         occurrence.child_ordinal = parent.child_count++;
+        occurrence.child_role = child_role.empty()
+            ? "child:" + std::to_string(occurrence.child_ordinal)
+            : string(child_role);
       }
       occurrence_state->expression_occurrences.push_back(std::move(occurrence));
       occurrence_state->active_expression_occurrences.push_back(
@@ -22165,6 +22168,8 @@ class Checker {
       bool called = false;
       if (parse_enum_case_expression(original, enum_name, case_name, arguments, called) &&
           enums_.count(enum_name)) {
+        mark_active_expression(OccurrenceKind::Constructor,
+                               "enum-case:" + enum_name + "." + case_name);
         const EnumType& declaration = *enums_.at(enum_name);
         auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
             [&](const EnumCase& candidate) { return candidate.name == case_name; });
@@ -22193,7 +22198,7 @@ class Checker {
               [&](const Field& candidate) { return candidate.name == name; });
           if (field == item->fields.end())
             err(line, "unknown enum field '" + name + "'", "UNKNOWN_ENUM_FIELD");
-          check_expression(line, value, env);
+          check_expression(line, value, env, {}, "field:" + name);
           if (!checked_matches_declared(value, field->type, env))
             err(line, "enum field '" + name + "' expects '" + field->type + "'",
                 "ENUM_FIELD_TYPE_MISMATCH");
@@ -22207,6 +22212,7 @@ class Checker {
     if (domain_constructor(original))
       err(line, "domain construction is only allowed as a binding in main's composition prefix");
     if (starts_with(original, "message ")) {
+      mark_active_expression(OccurrenceKind::Message);
       string receiver, handler;
       vector<string> args;
       if (!parse_member_call(trim(original.substr(8)), receiver, handler, args) ||
@@ -22239,7 +22245,9 @@ class Checker {
             "local-helper",
             "move the shared logic into an ordinary non-domain helper and call it directly");
       }
-      for (const auto& argument : args) check_expression(line, argument, env);
+      for (size_t index = 0; index < args.size(); ++index)
+        check_expression(line, args[index], env, {},
+                         "argument:" + std::to_string(index));
       return;
     }
     if (auto type = inferred_expr_type(original, env))
@@ -22251,7 +22259,8 @@ class Checker {
     if (original.size() >= 2 && original.front() == '(' && original.back() == ')' &&
         matching_paren(original, 0) == original.size() - 1) {
       mark_active_expression(OccurrenceKind::Group);
-      check_expression(line, original.substr(1, original.size() - 2), env);
+      check_expression(line, original.substr(1, original.size() - 2), env,
+                       {}, "grouped-expression");
       return;
     }
     if (auto elements = parse_vector_literal(original)) {
@@ -22261,7 +22270,8 @@ class Checker {
         if (type && fileio_scoped_type(*type))
           err(line, "FileIO and ranges cannot enter ordinary collections",
               "FILEIO_COLLECTION_ESCAPE");
-        check_expression(line, element, env);
+        check_expression(line, element, env, {},
+                         "element:" + std::to_string(&element - elements->data()));
       }
       if (current_body_types_) {
         vector<moss::TypeRef> element_terms;
@@ -22310,8 +22320,8 @@ class Checker {
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
       if (auto binary = split_binary(value, {op})) {
         mark_active_expression(OccurrenceKind::Binary, trim(op));
-        check_expression(line, binary->first, env);
-        check_expression(line, binary->second, env);
+        check_expression(line, binary->first, env, {}, "left");
+        check_expression(line, binary->second, env, {}, "right");
         auto left = inferred_expr_type(binary->first, env);
         auto right = inferred_expr_type(binary->second, env);
         if (!left || !right ||
@@ -22325,7 +22335,7 @@ class Checker {
     if (starts_with(value, "not ")) {
       mark_active_expression(OccurrenceKind::Unary, "not");
       string operand = trim(value.substr(4));
-      check_expression(line, operand, env);
+      check_expression(line, operand, env, {}, "operand");
       retain_open_unary_operation(line, "not", operand, env);
       auto operand_type = inferred_expr_type(operand, env);
       if (!operand_type || canonical_type_name(*operand_type) != "bool")
@@ -22333,10 +22343,6 @@ class Checker {
       return;
     }
     if (auto ordering = split_binary(value, {"<=", ">=", "<", ">"})) {
-      mark_active_expression(OccurrenceKind::Binary,
-          split_binary(value, {"<="}) ? "<=" :
-          split_binary(value, {">="}) ? ">=" :
-          split_binary(value, {"<"}) ? "<" : ">");
       // This pass checks the ordering-specific exclusions. The common
       // comparison branch below owns the single recursive operand traversal,
       // so the checker occurrence graph represents each source operand once.
@@ -22383,8 +22389,8 @@ class Checker {
           split_binary(value, {"<="}) ? "<=" :
           split_binary(value, {">="}) ? ">=" :
           split_binary(value, {"<"}) ? "<" : ">");
-      check_expression(line, binary->first, env);
-      check_expression(line, binary->second, env);
+      check_expression(line, binary->first, env, {}, "left");
+      check_expression(line, binary->second, env, {}, "right");
       auto left_type = inferred_expr_type(binary->first, env);
       auto right_type = inferred_expr_type(binary->second, env);
       if ((left_type && contains_enum_type(*left_type)) ||
@@ -22452,8 +22458,8 @@ class Checker {
     for (const auto& op : vector<string>{"|", "^", "&"}) {
       if (auto binary = split_binary(value, {op})) {
         mark_active_expression(OccurrenceKind::Binary, op);
-        check_expression(line, binary->first, env);
-        check_expression(line, binary->second, env);
+        check_expression(line, binary->first, env, {}, "left");
+        check_expression(line, binary->second, env, {}, "right");
         retain_open_operator_operation(line, op, binary->first,
                                        binary->second, env);
         auto left_type = inferred_expr_type(binary->first, env);
@@ -22471,8 +22477,8 @@ class Checker {
       mark_active_expression(OccurrenceKind::Binary,
           split_binary(value, {"<<"}) ? "<<" : ">>");
       string op = split_binary(value, {"<<"}) ? "<<" : ">>";
-      check_expression(line, binary->first, env);
-      check_expression(line, binary->second, env);
+      check_expression(line, binary->first, env, {}, "left");
+      check_expression(line, binary->second, env, {}, "right");
       for (const string& candidate : vector<string>{"<<", ">>"})
         if (split_binary(value, {candidate})) {
           retain_open_operator_operation(line, candidate, binary->first,
@@ -22496,7 +22502,7 @@ class Checker {
       // (P25-S-ARCH-021) rather than letting member-call parsing see `-s`.
       string operand = trim(value.substr(1));
       if (!operand.empty() && operand.front() != '-') {
-        check_expression(line, operand, env);
+        check_expression(line, operand, env, {}, "operand");
         mark_active_expression(OccurrenceKind::Unary, "unary-");
         retain_open_unary_operation(line, "unary-", operand, env);
         auto operand_type = inferred_expr_type(operand, env);
@@ -22521,8 +22527,8 @@ class Checker {
             }
           }
           mark_active_expression(OccurrenceKind::Binary, operation_id);
-          check_expression(line, binary->first, env);
-          check_expression(line, binary->second, env);
+          check_expression(line, binary->first, env, {}, "left");
+          check_expression(line, binary->second, env, {}, "right");
           for (const string& candidate : operators) {
             auto operation = split_binary(value, {candidate});
             if (operation && operation->first == binary->first) {
@@ -22583,7 +22589,7 @@ class Checker {
     }
     if (!value.empty() && value.front() == '~') {
       string operand = trim(value.substr(1));
-      check_expression(line, operand, env);
+      check_expression(line, operand, env, {}, "operand");
       mark_active_expression(OccurrenceKind::Unary, "~");
       retain_open_unary_operation(line, "~", operand, env);
       auto operand_type = inferred_expr_type(operand, env);
@@ -22654,8 +22660,10 @@ class Checker {
           if (staged_abi_v10() && trim(receiver) == "Map()" &&
               starts_with(*receiver_type, "map["))
             check_map_key_type(line, map_key_value_types(*receiver_type)->first);
-          check_expression(line, receiver, env);
-          for (const auto& arg : args) check_expression(line, arg, env);
+          check_expression(line, receiver, env, {}, "receiver");
+          for (size_t index = 0; index < args.size(); ++index)
+            check_expression(line, args[index], env, {},
+                             "argument:" + std::to_string(index));
           vector<string> argument_types;
           for (const auto& arg : args)
             argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
@@ -22717,7 +22725,8 @@ class Checker {
             err(line, "argument " + std::to_string(index + 1) +
                 " to trait method '" + handler + "' has type '" + *actual +
                 "', expected '" + method->params[index].type + "'");
-          check_expression(line, args[index], env);
+          check_expression(line, args[index], env, {},
+                           "argument:" + std::to_string(index));
         }
         return;
       }
@@ -22732,18 +22741,22 @@ class Checker {
       string canon_recv = canonical_type_name(receiver);
       if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" ||
           canon_recv == "string" || canon_recv == "bool") {
-        for (const auto& arg : args) check_expression(line, arg, env);
+        for (size_t index = 0; index < args.size(); ++index)
+          check_expression(line, args[index], env, {},
+                           "argument:" + std::to_string(index));
         return;
       }
-      check_expression(line, receiver, env);
-      for (const auto& arg : args) check_expression(line, arg, env);
+      check_expression(line, receiver, env, {}, "receiver");
+      for (size_t index = 0; index < args.size(); ++index)
+        check_expression(line, args[index], env, {},
+                         "argument:" + std::to_string(index));
       return;
     }
     string ib, ii;
     if (parse_index(value, ib, ii)) {
       mark_active_expression(OccurrenceKind::Index, "builtin:index");
-      check_expression(line, ib, env);
-      check_expression(line, ii, env);
+      check_expression(line, ib, env, {}, "container");
+      check_expression(line, ii, env, {}, "index");
       const auto base = inferred_expr(ib, env);
       const auto bt = base ? std::optional<string>(base->projection()) : std::nullopt;
       const auto index_term = inferred_expr_term(ii, env);
@@ -22882,7 +22895,7 @@ class Checker {
           }
         }
         if (receiver_type && objects_.count(canonical_type_name(*receiver_type))) {
-          check_expression(line, value.substr(0, dot), env);
+          check_expression(line, value.substr(0, dot), env, {}, "receiver");
           string field_name = trim(value.substr(dot + 1));
           const ObjectType* obj = objects_.at(canonical_type_name(*receiver_type));
           auto it = std::find_if(obj->fields.begin(), obj->fields.end(),
@@ -22918,7 +22931,10 @@ class Checker {
     string callee;
     if (parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
       mark_active_expression(objects_.count(callee)
-          ? OccurrenceKind::Constructor : OccurrenceKind::Call,
+          ? OccurrenceKind::Constructor
+          : (callee == "Map" || callee == "Queue" || callee == "Set" ||
+             typed_empty_vector_constructor(value)
+                ? OccurrenceKind::CollectionLiteral : OccurrenceKind::Call),
           objects_.count(callee) ? "constructor:" + callee : "call:" + callee);
       if (current_body_types_) {
         vector<moss::TypeRef> argument_terms;
@@ -22969,8 +22985,8 @@ class Checker {
         if (!place)
           err(line, "replace first argument must be an assignable storage location",
               "REPLACE_REQUIRES_PLACE");
-        check_expression(line, args[0], env);
-        check_expression(line, args[1], env);
+        check_expression(line, args[0], env, {}, "place");
+        check_expression(line, args[1], env, {}, "replacement");
         auto place_type = inferred_expr_type(args[0], env);
         auto replacement_type = inferred_expr_type(args[1], env);
         if (!place_type || !replacement_type ||
@@ -23000,12 +23016,13 @@ class Checker {
       if (objects_.count(callee)) {
         constrain_constructor_fields(line, value, env);
         std::set<string> supplied;
-        for (const auto& arg : args) {
+        for (size_t index = 0; index < args.size(); ++index) {
+          const auto& arg = args[index];
           string field_name, field_value;
           if (!parse_named_argument(arg, field_name, field_value))
             err(line, "object constructor fields must be named for '" + callee + "'");
           supplied.insert(field_name);
-          check_expression(line, field_value, env);
+          check_expression(line, field_value, env, {}, "field:" + field_name);
         }
         for (const auto& field : objects_.at(callee)->fields)
           if (enums_.count(canonical_type_name(field.type)) &&
@@ -23013,13 +23030,23 @@ class Checker {
             err(line, "enum field '" + callee + "." + field.name +
                 "' requires an explicit constructor value", "ENUM_FIELD_INITIALIZER_REQUIRED");
       } else {
-        check_function_call(line, callee, args, env);
-        for (const auto& arg : args) {
+        Function* resolved_target = nullptr;
+        check_function_call(line, callee, args, env, nullptr, std::nullopt,
+                            &resolved_target);
+        if (resolved_target && current_body_types_ && !checking_specialization_ &&
+            !current_body_types_->active_expression_occurrences.empty())
+          current_body_types_->retain_expression_target(
+              current_body_types_->active_expression_occurrences.back(),
+              resolved_target->semantic_callable_id);
+        for (size_t index = 0; index < args.size(); ++index) {
+          const auto& arg = args[index];
           string name, val;
           if (parse_named_argument(arg, name, val))
-            check_expression(line, val, env);
+            check_expression(line, val, env, {},
+                             "argument:" + std::to_string(index));
           else
-            check_expression(line, arg, env);
+            check_expression(line, arg, env, {},
+                             "argument:" + std::to_string(index));
         }
       }
       return;

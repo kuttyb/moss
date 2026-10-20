@@ -213,3 +213,15 @@ Validation on the current worktree: compiler build, full M2b2 source-free
 hostile/v9-control corpus, H3 direct import, D3d SDK `index_of`, and D4 SDK
 collection source-free/hostile checks passed. The R1 gate remains open; this
 correction has not yet been committed or independently reviewed.
+
+The reviewer’s follow-up on `dcb912b3` confirmed the earlier root and duplicate
+visit defects were fixed, but found a repeated ordering-category mark, a
+nested-call target attribution hazard, and the unmarked enum-case constructor
+category. This correction checkpoint removes the ordering-pass mark,
+returns the selected callable only to the syntax-owning direct-call branch,
+adds explicit enum constructor capture, and labels recursive children by their
+checker roles (left/right, receiver, argument, field, container/index, and
+pipeline seed/source). M2b2 passed after these changes and the compiler build
+is green. A fresh exact-SHA review remains pending; source occurrence coverage,
+member target/resolution facts, local binding identity lowering, and a common
+tree emitter are still open.
