@@ -9444,3 +9444,21 @@ C++ test compile commands that previously failed on the existing aggregate
 initializer warning. Their focused jobs pass; no warning suppressions were
 added to compiler builds. The full suite has not been made green by changing
 the two unsupported source-free fixtures or weakening per-callable admission.
+
+## Phase 25 final regression cleanup — 2026-10-20
+
+On `phase25-integration` at baseline
+`c27350b6a9d521eba30858a6aa47095f9c8bde63`, updated only the typed-semantic
+API and Team A test runners to separate historical ABI-v9 source-free
+compatibility from staged ABI-v10 checked-body admission. The ABI-v9 scenarios
+now explicitly clear `MOSS_STAGED_ABI` and all `MOSS_PHASE25_*` switches.
+Separate ABI-v10 cases prove an admitted callable executes through checked-body
+projection and unsupported relay/member bodies reject with
+`SOURCE_FREE_CHECKED_BODY_UNAVAILABLE` and provider/consumer provenance.
+
+Validation passed: typed-semantic API; Team A semantics; staged ABI-v10
+source-free corpus; G2 conformance (11/11); mixed-provider admission; and the
+ABI-v9 collections SDK source-free smoke. `make check` passed all 131/131 jobs
+(0 failed, 0 skipped; 16.4 minute suite wall time). `git diff --check` passed.
+No compiler source or ABI/default behavior changed. Pending delivery at status
+record time: commit and push the tests-only correction.

@@ -13,6 +13,18 @@ ROOT = Path(__file__).resolve().parents[2]
 MOSS = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "moss"
 (ROOT / "tmp").mkdir(exist_ok=True)
 
+
+def clear_v10_environment(env):
+    for key in list(env):
+        if key == "MOSS_STAGED_ABI" or key.startswith("MOSS_PHASE25_"):
+            env.pop(key, None)
+    return env
+
+
+# Source-backed semantic compatibility checks in this file use the default
+# ABI contract even when the test runner itself was launched in staged mode.
+clear_v10_environment(os.environ)
+
 with tempfile.TemporaryDirectory(prefix="phase25-typed-api-", dir=ROOT / "tmp") as scratch_path:
     source = Path(scratch_path) / "main.moss"
     source.write_text("""type Box:
@@ -438,8 +450,9 @@ export fn relay():
 export fn size(value):
   return value.length()
 """)
-    env = os.environ.copy()
-    env["MOSS_STAGED_ABI"] = "v10"
+    # This scenario protects the original imported-provider semantics, which
+    # are ABI-v9 compatibility behavior for bodies not yet admitted to v10.
+    env = clear_v10_environment(os.environ.copy())
     env["TMPDIR"] = str(ROOT / "tmp")
     built = subprocess.run([str(ROOT / "margo"), "build", "--json"],
         cwd=provider, env=env, text=True, capture_output=True)
@@ -534,5 +547,78 @@ fn main():
     assert closed_requirement["origin"]["line"] == 10, closed_requirement
     assert closed_requirement["origin"]["call_expression_id"], (
         closed_requirement, imported_typed)
+
+    # ABI-v10 has a separate strict-admission contract: the admitted
+    # parameter-return callable projects from its checked body, while the
+    # unsupported body is rejected with structured provider/consumer origins.
+    strict_provider = Path(scratch_path) / "strict_provider"
+    strict_consumer = Path(scratch_path) / "strict_consumer"
+    for package_name, path in (("typed_strict_provider", strict_provider),
+                               ("typed_strict_consumer", strict_consumer)):
+        (path / "src").mkdir(parents=True)
+        (path / "Moss.toml").write_text(
+            f'[project]\nname = "{package_name}"\nversion = "1.0.0"\n'
+            '\n[build]\nsource = "src"\n')
+    (strict_provider / "src" / "provider.moss").write_text("""module StrictProvider
+export fn supported(value):
+  return value
+
+export fn unsupported(value):
+  var doubled = value + value
+  return doubled
+""")
+    v10_env = clear_v10_environment(os.environ.copy())
+    v10_env.update(MOSS_STAGED_ABI="v10", TMPDIR=str(ROOT / "tmp"),
+                   MARGO_HOME=str(ROOT / "tmp" / "typed-strict-margo-provider"))
+    strict_built = subprocess.run([str(ROOT / "margo"), "build", "--json"],
+        cwd=strict_provider, env=v10_env, text=True, capture_output=True)
+    assert strict_built.returncode == 0 and json.loads(strict_built.stdout)["ok"], (
+        strict_built.stdout, strict_built.stderr)
+    (strict_provider / "src" / "provider.moss").unlink()
+    (strict_consumer / "src" / "main.moss").write_text("""module Main
+import StrictProvider
+fn main():
+  echo StrictProvider.supported(17)
+""")
+    strict_artifacts = strict_provider / "build" / "debug"
+    admitted_env = v10_env.copy()
+    admitted_env.update(MOSS_MODULE_PATH=str(strict_artifacts),
+                        MARGO_HOME=str(ROOT / "tmp" / "typed-strict-margo-admitted"))
+    admitted_build = subprocess.run([str(ROOT / "margo"), "build", "--json"],
+        cwd=strict_consumer, env=admitted_env, text=True, capture_output=True)
+    assert admitted_build.returncode == 0 and json.loads(admitted_build.stdout)["ok"], (
+        admitted_build.stdout, admitted_build.stderr)
+    admitted_run = subprocess.run([str(ROOT / "margo"), "run"],
+        cwd=strict_consumer, env=admitted_env, text=True, capture_output=True)
+    assert admitted_run.returncode == 0 and admitted_run.stdout == "17\n", (
+        admitted_run.stdout, admitted_run.stderr)
+    trace_env = admitted_env | {"MOSS_PHASE25_CHECKED_BODY_TRACE": "1"}
+    projected = subprocess.run([str(MOSS), "check", "src/main.moss", "--json"],
+        cwd=strict_consumer, env=trace_env, text=True, capture_output=True)
+    assert projected.returncode == 0 and "MOSS_CHECKED_BODY_PROJECTED|" in (
+        projected.stderr), (projected.stdout, projected.stderr)
+    assert "::StrictProvider:fn:supported|checked-body-v1" in projected.stderr, (
+        projected.stderr)
+
+    (strict_consumer / "src" / "main.moss").write_text("""module Main
+import StrictProvider
+fn main():
+  echo StrictProvider.unsupported(17)
+""")
+    rejected = subprocess.run([str(MOSS), "check", "src/main.moss", "--json"],
+        cwd=strict_consumer, env=admitted_env, text=True, capture_output=True)
+    assert rejected.returncode != 0, (rejected.stdout, rejected.stderr)
+    rejected_doc = json.loads(rejected.stdout)
+    error = rejected_doc["error"]
+    assert error["code"] == "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE", error
+    related = error.get("related", [])
+    assert error.get("source", {}).get("file", "").endswith(
+        "StrictProvider.mossi"), error
+    assert any(note.get("source", {}).get("file", "").endswith("main.moss")
+               and "consumer selected" in note.get("message", "")
+               for note in related), error
+    assert any(note.get("source", {}).get("file", "") == "provider.moss"
+               and "StrictProvider.unsupported" in note.get("message", "")
+               for note in related), error
 
 print("Phase 25 typed semantic API compiler projection: PASS")

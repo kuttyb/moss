@@ -16,6 +16,18 @@ SCRATCH = ROOT / "tmp"
 os.environ["TMPDIR"] = str(SCRATCH)
 
 
+def clear_v10_environment(env):
+    for key in list(env):
+        if key == "MOSS_STAGED_ABI" or key.startswith("MOSS_PHASE25_"):
+            env.pop(key, None)
+    return env
+
+
+# The suite's historical compiler semantics are ABI-v9 unless a test opts in
+# explicitly below. This prevents the runner environment leaking v10 staging.
+clear_v10_environment(os.environ)
+
+
 def run(*args, cwd=ROOT, env=None):
     result = subprocess.run([str(arg) for arg in args], cwd=cwd, env=env,
                             capture_output=True, text=True, timeout=180)
@@ -1030,8 +1042,9 @@ export fn add_one(value: Int) -> Int:
   return value + 2
 ''',
         })
-        env = os.environ.copy()
-        env["MOSS_STAGED_ABI"] = "v10"
+        # The imported generic specialization, member diagnostics and borrowed
+        # Range checks below preserve their established ABI-v9 contract.
+        env = clear_v10_environment(os.environ.copy())
         built = run(MARGO, "build", "--json", cwd=scratch / "provider", env=env)
         assert built.returncode == 0 and json.loads(built.stdout)["ok"], (
             built.stdout, built.stderr)
@@ -1162,6 +1175,79 @@ fn main():
         assert range_data["source_removed"] and (
             range_data["range_output"] == "329"), range_data
         print("PASS source-free generic Range return keeps owned Vector type",
+              flush=True)
+
+        # Staged ABI-v10 admits the checked empty-vector callable while
+        # rejecting the unsupported relay and member-body selections.
+        strict_provider = scratch / "strict_provider"
+        package(strict_provider, "team_a_strict_provider", "0.1.0", {
+            "provider": '''module Provider
+export fn fresh():
+  return []
+
+export fn relay():
+  return fresh()
+
+export fn size(value):
+  return value.length()
+''',
+        })
+        strict_env = clear_v10_environment(os.environ.copy())
+        strict_env.update(MOSS_STAGED_ABI="v10",
+                          MOSS_PHASE25_EMPTY_VECTOR_EMIT="1")
+        strict_build = run(MARGO, "build", "--json", cwd=strict_provider,
+                           env=strict_env)
+        assert strict_build.returncode == 0 and json.loads(
+            strict_build.stdout)["ok"], (strict_build.stdout, strict_build.stderr)
+        strict_artifacts = strict_provider / "build" / "debug"
+        for provider_source in (strict_provider / "src").glob("*.moss"):
+            provider_source.unlink()
+        assert not list((strict_provider / "src").glob("*.moss"))
+
+        strict_fresh = scratch / "strict_fresh_consumer"
+        package(strict_fresh, "team_a_strict_fresh_consumer", "0.1.0", {
+            "main": '''module Main
+import Provider
+fn main():
+  values = Provider.fresh()
+  values.push(17)
+  echo values[0]
+''',
+        })
+        fresh_env = strict_env | {"MOSS_MODULE_PATH": str(strict_artifacts)}
+        strict_consumer_build = run(MARGO, "build", "--json", cwd=strict_fresh,
+                                    env=fresh_env)
+        assert strict_consumer_build.returncode == 0 and json.loads(
+            strict_consumer_build.stdout)["ok"], (
+                strict_consumer_build.stdout, strict_consumer_build.stderr)
+        strict_output = run(MARGO, "run", cwd=strict_fresh, env=fresh_env)
+        assert strict_output.returncode == 0 and strict_output.stdout == "17\n", (
+            strict_output.stdout, strict_output.stderr)
+        trace_env = fresh_env | {"MOSS_PHASE25_CHECKED_BODY_TRACE": "1"}
+        projected = run(MOSS, "check", "src/main.moss", "--json",
+                        cwd=strict_fresh, env=trace_env)
+        assert projected.returncode == 0 and "MOSS_CHECKED_BODY_PROJECTED|" in (
+            projected.stderr), (projected.stdout, projected.stderr)
+        assert "::Provider:fn:fresh|checked-body-v1" in projected.stderr, (
+            projected.stderr)
+
+        for name, call in (("relay", "Provider.relay()"),
+                           ("size", 'Provider.size("abc")')):
+            rejected_package = scratch / f"strict_{name}_consumer"
+            package(rejected_package, f"team_a_strict_{name}_consumer", "0.1.0", {
+                "main": "module Main\nimport Provider\nfn main():\n"
+                        f"  echo {call}\n",
+            })
+            rejected = project_check(rejected_package,
+                                     code="SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+                                     env=fresh_env)
+            error = rejected["error"]
+            assert error.get("source", {}).get("file", "").endswith(
+                "Provider.mossi"), error
+            assert any(note.get("source", {}).get("file", "").endswith(
+                "main.moss") and "consumer selected" in note.get("message", "")
+                for note in error.get("related", [])), error
+        print("PASS staged-v10 fresh projects by checked body and relay/size reject",
               flush=True)
 
     print("Phase 25 Team A compiler-path semantics: PASS")
