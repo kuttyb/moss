@@ -605,6 +605,74 @@ class H3BodyReader {
     return true;
   }
 
+  static bool is_decimal_float(std::string_view value) {
+    std::size_t index = 0;
+    if (index < value.size() && (value[index] == '+' || value[index] == '-'))
+      ++index;
+    auto digits = [&] {
+      const auto start = index;
+      while (index < value.size() &&
+             std::isdigit(static_cast<unsigned char>(value[index])))
+        ++index;
+      return index != start;
+    };
+    const bool before_point = digits();
+    const bool point = index < value.size() && value[index] == '.';
+    bool after_point = false;
+    if (point) {
+      ++index;
+      after_point = digits();
+    }
+    if (!before_point && !after_point) return false;
+    if (index < value.size() && (value[index] == 'e' || value[index] == 'E')) {
+      ++index;
+      if (index < value.size() && (value[index] == '+' || value[index] == '-'))
+        ++index;
+      if (!digits()) return false;
+    }
+    return index == value.size();
+  }
+
+  static TypeRef resolved_field_type(const TypeRef& receiver,
+                                    std::uint32_t ordinal,
+                                    std::string_view target_id) {
+    if (!receiver || receiver->kind != TypeKind::NominalInstance ||
+        !receiver->declaration ||
+        receiver->declaration->kind != DeclarationKind::Record ||
+        receiver->declaration->id != target_id ||
+        ordinal >= receiver->declaration->fields.size())
+      return nullptr;
+
+    const auto& declaration = receiver->declaration;
+    if (receiver->field_substitutions.size() !=
+        declaration->inferred_slot_count())
+      return nullptr;
+    std::size_t substitution_index = 0;
+    for (const auto& field : declaration->fields) {
+      if (!field.inferred) continue;
+      const auto& substitution =
+          receiver->field_substitutions[substitution_index++];
+      if (substitution.first != field.name || !substitution.second)
+        return nullptr;
+    }
+    const auto& slot = declaration->fields[ordinal];
+    if (slot.inferred) {
+      std::size_t inferred_ordinal = 0;
+      for (std::size_t index = 0; index < ordinal; ++index)
+        if (declaration->fields[index].inferred) ++inferred_ordinal;
+      if (inferred_ordinal >= receiver->field_substitutions.size()) return nullptr;
+      const auto& substitution = receiver->field_substitutions[inferred_ordinal];
+      if (substitution.first != slot.name || !substitution.second) return nullptr;
+      return substitution.second;
+    }
+
+    auto owner = declaration->owner.lock();
+    if (!owner) return nullptr;
+    const auto& annotations = owner->field_annotations(declaration->id);
+    if (ordinal >= annotations.size()) return nullptr;
+    return annotations[ordinal];
+  }
+
   static bool is_integer_arithmetic(BinaryOp operation) {
     switch (operation) {
       case BinaryOp::Add:
@@ -631,6 +699,23 @@ class H3BodyReader {
       if (!is_integer_type(expression.type) ||
           !is_canonical_integer(expression.literal_value))
         fail("checked body integer literal is invalid or mistyped");
+    } else if (expression.kind == ExprKind::FloatLiteral) {
+      expression.literal_value = field();
+      if (!expression.type || expression.type->kind != TypeKind::Primitive ||
+          expression.type->name != "float" ||
+          !is_decimal_float(expression.literal_value))
+        fail("checked body float literal is invalid or mistyped");
+    } else if (expression.kind == ExprKind::BoolLiteral) {
+      const auto value = field();
+      if (!expression.type || expression.type->kind != TypeKind::Primitive ||
+          expression.type->name != "bool" || (value != "0" && value != "1"))
+        fail("checked body bool literal is invalid or mistyped");
+      expression.literal_value = value == "1" ? "true" : "false";
+    } else if (expression.kind == ExprKind::StringLiteral) {
+      expression.literal_value = field();
+      if (!expression.type || expression.type->kind != TypeKind::Primitive ||
+          expression.type->name != "string")
+        fail("checked body string literal is mistyped");
     } else if (expression.kind == ExprKind::Parameter) {
       expression.ordinal = number();
       if (expression.ordinal >= parameters_.size() ||
@@ -664,6 +749,17 @@ class H3BodyReader {
       if (expression.ordinal != 0 || !local_type_ ||
           !expression.type->structurally_equal(*local_type_))
         fail("checked body local type is mismatched");
+    } else if (expression.kind == ExprKind::Field) {
+      expression.semantic_target_id = field();
+      expression.member_ordinal = number();
+      expression.operands.push_back(read_expr(depth + 1));
+      const auto field_type = resolved_field_type(
+          expression.operands.front().type, expression.member_ordinal,
+          expression.semantic_target_id);
+      if (!field_type || !field_type->structurally_equal(*expression.type))
+        fail("checked body field identity or type is mismatched");
+      expression.member_name = expression.operands.front().type->declaration
+          ->fields[expression.member_ordinal].name;
     } else if (expression.kind == ExprKind::VectorLiteral &&
                allow_empty_vector_return_) {
       if (number() != 0 ||
