@@ -499,3 +499,15 @@ Validation on this source: focused role test, `make --jobs="$(nproc)" moss-dev`,
 full M2b2 source-free/hostile/v9 corpus, agent feedback checker, and
 `git diff --check` passed. Existing TypeSolver missing-initializer warnings
 remain. The exact-SHA follow-up review is pending; R1 is still incomplete.
+
+Architect review of `cd1762b3414229d9ac8a16a482e1111a5e9fad47` returned
+**NO-GO** with one P1: statement-form sort could pass ledger completeness
+without retaining the statically selected `by:` callable identity and effects.
+The sort occurrence now retains the exact key callable ID, concrete argument
+and result TypeRefs, parameter access, and observable effects; the verifier
+requires that fact for keyed sort and rejects unexpected linked callables. The
+focused C++ checker regression also asserts those facts. Validation after this
+fix: focused checker test, `make --jobs="$(nproc)" moss-dev`, full M2b2
+source-free/hostile/v9 corpus, feedback checker and `git diff --check` passed.
+Existing TypeSolver missing-initializer warnings remain. Exact-SHA review is
+pending; R1 remains incomplete.

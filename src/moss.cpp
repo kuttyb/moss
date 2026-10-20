@@ -4752,6 +4752,14 @@ class Checker {
   // environment remains a projection for older walkers and lowering; it is
   // never used to recreate the term of a local already present here.
   struct BodyTypeState {
+    struct LinkedCallableFact {
+      string semantic_callable_id;
+      TypeRef argument_type;
+      TypeRef result_type;
+      Effect parameter_effect = Effect::Read;
+      ObservableEffects observable_effects;
+    };
+
     struct ExpressionOccurrence {
       enum class Kind : std::uint8_t {
         Unknown, Group, Literal, Identifier, Unary, Binary, Field, Index,
@@ -4779,6 +4787,7 @@ class Checker {
       moss::TypeRef checked_type;
       string semantic_target_id;
       vector<Constraint> linked_constraints;
+      vector<LinkedCallableFact> linked_callables;
       bool completed = false;
     };
     std::unordered_map<const Stmt*, std::uint32_t> statement_occurrence_ids;
@@ -22122,6 +22131,22 @@ class Checker {
     if (barrier != "none")
       err(line, "sort key '" + key + "' must be pure; it has " + barrier,
           "SORT_KEY_IMPURE");
+    if (current_body_types_ && !checking_specialization_ &&
+        !current_body_types_->active_expression_occurrences.empty()) {
+      const auto input_type = moss::Type::parse_canonical(element);
+      const auto result_type = moss::Type::parse_canonical(key_type);
+      if (function->second->semantic_callable_id.empty() || !input_type ||
+          !result_type) {
+        current_body_types_->expression_occurrence_ledger_complete = false;
+      } else {
+        current_body_types_->expression_occurrences.at(
+            current_body_types_->active_expression_occurrences.back())
+            .linked_callables.push_back({
+                function->second->semantic_callable_id, *input_type,
+                *result_type,
+                sort_key_effect(*function->second, element), effects});
+      }
+    }
   }
 
   bool check_functional_pipeline(int line, const string& expression,
@@ -24343,6 +24368,9 @@ class Checker {
         }
         const bool sort_builtin = statement.b.empty() && statement.a == "sort" &&
             !functions_.count(statement.a);
+        if (sort_builtin && call_occurrence_id != UINT32_MAX)
+          call_occurrence_state->expression_occurrences.at(call_occurrence_id)
+              .operation_id = "call:sort";
         for (size_t index = 0; index < statement.args.size(); ++index) {
           const auto& argument = statement.args[index];
           if (sort_builtin) {
@@ -24707,6 +24735,23 @@ class Checker {
           }
           if (!has_roles(expected))
             checked_types.expression_occurrence_ledger_complete = false;
+          if (occurrence.operation_id == "call:sort") {
+            const bool has_key = occurrence.source_operands.size() == 2;
+            if (occurrence.semantic_target_id != "builtin:sort" ||
+                occurrence.linked_callables.size() != (has_key ? 1u : 0u)) {
+              checked_types.expression_occurrence_ledger_complete = false;
+            } else if (has_key) {
+              const auto& key = occurrence.linked_callables.front();
+              if (!starts_with(key.semantic_callable_id, "callable-v1:") ||
+                  !key.argument_type || !key.argument_type->is_closed() ||
+                  !key.result_type || !key.result_type->is_closed() ||
+                  key.parameter_effect == Effect::Write ||
+                  !abi_v10_effects_pure(key.observable_effects))
+                checked_types.expression_occurrence_ledger_complete = false;
+            }
+          } else if (!occurrence.linked_callables.empty()) {
+            checked_types.expression_occurrence_ledger_complete = false;
+          }
           break;
         }
         case BodyTypeState::ExpressionOccurrence::Kind::MemberCall: {
@@ -24934,8 +24979,42 @@ export fn sort_values(values: Vector[Int]) -> Int:
       std::sort(wanted_roles.begin(), wanted_roles.end());
       return actual_roles == wanted_roles;
     };
-    return verifies_call("relay", {"call-argument:0"}, {}) &&
-        verifies_call("sort_values", {"call-argument:0"}, {1});
+    if (!verifies_call("relay", {"call-argument:0"}, {}) ||
+        !verifies_call("sort_values", {"call-argument:0"}, {1}))
+      return false;
+    const auto sort_function = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+          return candidate.name == "sort_values";
+        });
+    const auto key_function = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+          return candidate.name == "identity";
+        });
+    if (sort_function == program.functions.end() ||
+        key_function == program.functions.end())
+      return false;
+    const auto sort_state = checker.checked_body_states_.find(
+        &sort_function->body);
+    if (sort_state == checker.checked_body_states_.end() ||
+        !sort_state->second)
+      return false;
+    const auto statement_id = sort_state->second->statement_occurrence_ids.find(
+        &sort_function->body.front());
+    if (statement_id == sort_state->second->statement_occurrence_ids.end())
+      return false;
+    const auto root = sort_state->second->expression_root_slots.find(
+        {statement_id->second, "call-invocation"});
+    if (root == sort_state->second->expression_root_slots.end()) return false;
+    const auto& linked = sort_state->second->expression_occurrences.at(
+        root->second).linked_callables;
+    return linked.size() == 1 &&
+        linked.front().semantic_callable_id == key_function->semantic_callable_id &&
+        linked.front().argument_type &&
+        linked.front().argument_type->to_canonical_string() == "int" &&
+        linked.front().result_type &&
+        linked.front().result_type->to_canonical_string() == "int" &&
+        linked.front().parameter_effect == Effect::Read &&
+        abi_v10_effects_pure(linked.front().observable_effects);
   }
 
 private:

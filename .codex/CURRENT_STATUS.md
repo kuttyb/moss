@@ -9676,3 +9676,12 @@ only the named sort key. A direct checker-state regression asserts call/sort
 roles, the static operand marker, and ledger completeness; it passes. The
 production build, full M2b2 corpus, feedback checker and diff check pass on
 this source. The corrected checkpoint needs exact-SHA review; R1 remains open.
+
+Architect review of `cd1762b3414229d9ac8a16a482e1111a5e9fad47` found one P1:
+the sort key function ID and its typed/effect facts were absent from the
+occurrence. The current source adds an explicit linked-callable fact with
+callable ID, argument/result TypeRefs, parameter effect and observable effects;
+the verifier requires it for keyed sort. The focused checker test asserts the
+link and effect record. That test, the production build, full M2b2 corpus,
+feedback checker and diff check pass. Exact-SHA review is pending; R1 remains
+incomplete.
