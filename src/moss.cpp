@@ -2833,129 +2833,6 @@ static bool valid_checked_string_literal_spelling(const string& source) {
   return true;
 }
 
-// Build only the canonical generic identity body from checker-owned type
-// facts. The AST spelling selects the parameter occurrence; summary TypeRefs
-// remain authoritative for both the parameter and result.
-static std::optional<CheckedParameterReturnBody>
-checked_parameter_return_body(const Function& function) {
-  if (!function.open_summary || !function.open_summary->complete ||
-      function.body.size() != 1 ||
-      function.body.front().kind != Stmt::Kind::Return ||
-      function.params.size() != 1)
-    return std::nullopt;
-
-  const auto& facts = *function.open_summary;
-  if (!facts.result_type || facts.bound_variable_count != 1 ||
-      facts.parameter_types.size() != 1 ||
-      facts.parameter_access.size() != 1 ||
-      facts.parameter_access.front() != AccessMode::Read ||
-      !facts.requirements.empty() || !facts.member_requirements.empty() ||
-      !facts.semantic_dependencies.empty() ||
-      !abi_v10_effects_pure(facts.observable_effects) ||
-      !facts.parameter_types.front() ||
-      facts.parameter_types.front()->kind != TypeKind::InferenceVar ||
-      facts.parameter_types.front()->var_id.session_id != 0 ||
-      facts.parameter_types.front()->var_id.owner_id != 0 ||
-      facts.parameter_types.front()->var_id.ordinal != 0 ||
-      !facts.result_type->structurally_equal(*facts.parameter_types.front()) ||
-      !plain_identifier(function.params.front().name) ||
-      trim(function.body.front().a) != function.params.front().name)
-    return std::nullopt;
-
-  checked_ir::Expr parameter;
-  parameter.kind = checked_ir::ExprKind::Parameter;
-  parameter.type = facts.parameter_types.front();
-  parameter.ordinal = 0;
-  checked_ir::Stmt returned;
-  returned.kind = checked_ir::StmtKind::Return;
-  returned.type = facts.result_type;
-  returned.expr = std::move(parameter);
-
-  CheckedParameterReturnBody body;
-  body.statements.push_back(std::move(returned));
-  try {
-    body.semantic_hash = checked_ir::compute_checked_body_hash_v1(
-        body.statements);
-  } catch (const std::invalid_argument&) {
-    return std::nullopt;
-  }
-  return body;
-}
-
-static std::optional<CheckedParameterReturnBody>
-checked_scalar_return_body(const Function& function) {
-  if (!function.open_summary || !function.open_summary->complete ||
-      function.body.size() != 1 ||
-      function.body.front().kind != Stmt::Kind::Return ||
-      function.params.size() != 1)
-    return std::nullopt;
-  const auto& facts = *function.open_summary;
-  if (facts.bound_variable_count != 1 ||
-      facts.parameter_types.size() != 1 ||
-      facts.parameter_access.size() != 1 ||
-      facts.parameter_access.front() != AccessMode::Read ||
-      !facts.requirements.empty() || !facts.member_requirements.empty() ||
-      !facts.semantic_dependencies.empty() ||
-      !abi_v10_effects_pure(facts.observable_effects) ||
-      !facts.parameter_types.front() ||
-      facts.parameter_types.front()->kind != TypeKind::InferenceVar ||
-      facts.parameter_types.front()->var_id.session_id != 0 ||
-      facts.parameter_types.front()->var_id.owner_id != 0 ||
-      facts.parameter_types.front()->var_id.ordinal != 0 ||
-      !facts.result_type || facts.result_type->kind != TypeKind::Primitive)
-    return std::nullopt;
-
-  const string source = trim(function.body.front().a);
-  checked_ir::Expr literal;
-  literal.type = facts.result_type;
-  if (facts.result_type->name == "bool" &&
-      (source == "true" || source == "false")) {
-    literal.kind = checked_ir::ExprKind::BoolLiteral;
-    literal.literal_value = source;
-  } else if (facts.result_type->name == "int") {
-    std::size_t first_digit = !source.empty() && source.front() == '-' ? 1 : 0;
-    if (first_digit == source.size() ||
-        !std::all_of(source.begin() + static_cast<std::ptrdiff_t>(first_digit),
-                     source.end(), [](unsigned char c) { return std::isdigit(c); }))
-      return std::nullopt;
-    try {
-      std::size_t consumed = 0;
-      const auto number = std::stoll(source, &consumed, 10);
-      if (consumed != source.size()) return std::nullopt;
-      literal.kind = checked_ir::ExprKind::IntegerLiteral;
-      literal.literal_value = std::to_string(number);
-    } catch (const std::exception&) {
-      return std::nullopt;
-    }
-  } else if (facts.result_type->name == "float" &&
-             decimal_float_literal(source)) {
-    literal.kind = checked_ir::ExprKind::FloatLiteral;
-    literal.literal_value = source;
-  } else if (facts.result_type->name == "string" &&
-             valid_checked_string_literal_spelling(source)) {
-    // Keep the checked string token's escapes intact. The decoder and ordinary
-    // expression parser consume this same canonical Moss literal spelling.
-    literal.kind = checked_ir::ExprKind::StringLiteral;
-    literal.literal_value = source;
-  } else {
-    return std::nullopt;
-  }
-
-  checked_ir::Stmt returned;
-  returned.kind = checked_ir::StmtKind::Return;
-  returned.type = facts.result_type;
-  returned.expr = std::move(literal);
-  CheckedParameterReturnBody body;
-  body.statements.push_back(std::move(returned));
-  try {
-    body.semantic_hash = checked_ir::compute_checked_body_hash_v1(
-        body.statements);
-  } catch (const std::invalid_argument&) {
-    return std::nullopt;
-  }
-  return body;
-}
-
 static std::optional<std::pair<string, string>>
 checked_arithmetic_split_binary(const string& expression, const string& op) {
   int depth = 0;
@@ -5595,6 +5472,247 @@ class Checker {
     }
   }
 
+  // Lower the ordinary checker's retained occurrence for a one-return generic
+  // body. This is the first general path that consumes the typed occurrence
+  // tree directly; source spelling is used only as a canonical literal
+  // payload or to match an already checked parameter binding.
+  bool retain_checked_return_occurrence_ir(Function& function) {
+    if (!function.open_summary || !function.open_summary->complete ||
+        function.body.size() != 1 ||
+        function.body.front().kind != Stmt::Kind::Return ||
+        function.body.front().a.empty())
+      return false;
+    auto retained = checked_body_states_.find(&function.body);
+    if (retained == checked_body_states_.end() || !retained->second)
+      return false;
+    auto& state = *retained->second;
+    if (!state.expression_occurrence_ledger_complete)
+      return false;
+    const auto statement = state.statement_occurrence_ids.find(
+        &function.body.front());
+    if (statement == state.statement_occurrence_ids.end())
+      return false;
+    const auto root = state.expression_root_slots.find(
+        {statement->second, "return-value"});
+    if (root == state.expression_root_slots.end())
+      return false;
+
+    const auto& summary = *function.open_summary;
+    std::function<std::optional<checked_ir::Expr>(std::uint32_t, unsigned)>
+        lower_expression;
+    lower_expression = [&](std::uint32_t id, unsigned depth)
+        -> std::optional<checked_ir::Expr> {
+      if (depth > 32 || id >= state.expression_occurrences.size())
+        return std::nullopt;
+      const auto& occurrence = state.expression_occurrences[id];
+      if (!occurrence.completed || !occurrence.checked_type)
+        return std::nullopt;
+      const auto type = state.solver.resolve(occurrence.checked_type);
+      if (!type) return std::nullopt;
+      checked_ir::Expr result;
+      result.type = type;
+      auto children_for = [&](const string& first_role,
+                              const string& second_role = string{}) {
+        vector<const BodyTypeState::ExpressionOccurrence*> selected;
+        for (const auto& child : state.expression_occurrences) {
+          if (child.parent_id != id) continue;
+          if (child.child_role == first_role ||
+              (!second_role.empty() && child.child_role == second_role))
+            selected.push_back(&child);
+        }
+        std::sort(selected.begin(), selected.end(),
+            [](const auto* left, const auto* right) {
+              return left->child_ordinal < right->child_ordinal;
+            });
+        return selected;
+      };
+      switch (occurrence.kind) {
+        case BodyTypeState::ExpressionOccurrence::Kind::Group: {
+          vector<const BodyTypeState::ExpressionOccurrence*> children;
+          for (const auto& child : state.expression_occurrences)
+            if (child.parent_id == id) children.push_back(&child);
+          if (children.size() != 1) return std::nullopt;
+          auto nested = lower_expression(children.front()->id, depth + 1);
+          return nested;
+        }
+        case BodyTypeState::ExpressionOccurrence::Kind::Identifier: {
+          const string name = trim(occurrence.source_expression);
+          for (std::size_t index = 0; index < function.params.size(); ++index) {
+            if (function.params[index].name != name ||
+                index >= summary.parameter_types.size() ||
+                !summary.parameter_types[index])
+              continue;
+            auto binding = state.resolved_local(name);
+            auto checked_binding = binding ? state.solver.resolve(binding) : nullptr;
+            if (!checked_binding || !checked_binding->structurally_equal(*type))
+              return std::nullopt;
+            result.kind = checked_ir::ExprKind::Parameter;
+            result.type = summary.parameter_types[index];
+            result.ordinal = static_cast<std::uint32_t>(index);
+            return result;
+          }
+          return std::nullopt;
+        }
+        case BodyTypeState::ExpressionOccurrence::Kind::Literal: {
+          const string source = trim(occurrence.source_expression);
+          if (type->kind != TypeKind::Primitive) return std::nullopt;
+          if (type->name == "bool" &&
+              (source == "true" || source == "false")) {
+            result.kind = checked_ir::ExprKind::BoolLiteral;
+            result.literal_value = source;
+          } else if (type->name == "int") {
+            std::size_t first_digit = !source.empty() && source.front() == '-'
+                ? 1 : 0;
+            if (first_digit == source.size() ||
+                !std::all_of(source.begin() +
+                        static_cast<std::ptrdiff_t>(first_digit), source.end(),
+                    [](unsigned char character) {
+                      return std::isdigit(character);
+                    }))
+              return std::nullopt;
+            try {
+              std::size_t consumed = 0;
+              const auto number = std::stoll(source, &consumed, 10);
+              if (consumed != source.size()) return std::nullopt;
+              result.kind = checked_ir::ExprKind::IntegerLiteral;
+              result.literal_value = std::to_string(number);
+            } catch (const std::exception&) {
+              return std::nullopt;
+            }
+          } else if (type->name == "float" &&
+                     decimal_float_literal(source)) {
+            result.kind = checked_ir::ExprKind::FloatLiteral;
+            result.literal_value = source;
+          } else if (type->name == "string" &&
+                     valid_checked_string_literal_spelling(source)) {
+            result.kind = checked_ir::ExprKind::StringLiteral;
+            result.literal_value = source;
+          } else {
+            return std::nullopt;
+          }
+          return result;
+        }
+        case BodyTypeState::ExpressionOccurrence::Kind::Binary: {
+          const auto children = children_for("left", "right");
+          if (children.size() != 2 || children[0]->child_role != "left" ||
+              children[1]->child_role != "right")
+            return std::nullopt;
+          const auto operation = occurrence.operation_id;
+          if (operation == "+") result.binary_op = checked_ir::BinaryOp::Add;
+          else if (operation == "-") result.binary_op = checked_ir::BinaryOp::Sub;
+          else if (operation == "*") result.binary_op = checked_ir::BinaryOp::Mul;
+          else if (operation == "/") result.binary_op = checked_ir::BinaryOp::Div;
+          else if (operation == "%") result.binary_op = checked_ir::BinaryOp::Mod;
+          else if (operation == "==") result.binary_op = checked_ir::BinaryOp::Equal;
+          else if (operation == "!=") result.binary_op = checked_ir::BinaryOp::NotEqual;
+          else if (operation == "<") result.binary_op = checked_ir::BinaryOp::Less;
+          else if (operation == "<=") result.binary_op = checked_ir::BinaryOp::LessEqual;
+          else if (operation == ">") result.binary_op = checked_ir::BinaryOp::Greater;
+          else if (operation == ">=") result.binary_op = checked_ir::BinaryOp::GreaterEqual;
+          else if (operation == "and") result.binary_op = checked_ir::BinaryOp::And;
+          else if (operation == "or") result.binary_op = checked_ir::BinaryOp::Or;
+          else if (operation == "xor") result.binary_op = checked_ir::BinaryOp::Xor;
+          else return std::nullopt;
+          auto left = lower_expression(children[0]->id, depth + 1);
+          auto right = lower_expression(children[1]->id, depth + 1);
+          if (!left || !right) return std::nullopt;
+          result.kind = checked_ir::ExprKind::Binary;
+          result.operands = {std::move(*left), std::move(*right)};
+          return result;
+        }
+        case BodyTypeState::ExpressionOccurrence::Kind::Unary: {
+          const auto children = children_for("operand");
+          if (children.size() != 1) return std::nullopt;
+          if (occurrence.operation_id == "unary-")
+            result.unary_op = checked_ir::UnaryOp::Neg;
+          else if (occurrence.operation_id == "not")
+            result.unary_op = checked_ir::UnaryOp::Not;
+          else return std::nullopt;
+          auto operand = lower_expression(children.front()->id, depth + 1);
+          if (!operand) return std::nullopt;
+          result.kind = checked_ir::ExprKind::Unary;
+          result.operands.push_back(std::move(*operand));
+          return result;
+        }
+        case BodyTypeState::ExpressionOccurrence::Kind::Field: {
+          const string prefix = "field:";
+          if (!starts_with(occurrence.operation_id, prefix))
+            return std::nullopt;
+          const string field_name = occurrence.operation_id.substr(prefix.size());
+          const auto children = children_for("receiver");
+          if (children.size() != 1) return std::nullopt;
+          auto receiver = lower_expression(children.front()->id, depth + 1);
+          if (!receiver || !receiver->type ||
+              receiver->type->kind != TypeKind::NominalInstance ||
+              !receiver->type->declaration)
+            return std::nullopt;
+          const auto& fields = receiver->type->declaration->fields;
+          const auto member = std::find_if(fields.begin(), fields.end(),
+              [&](const moss::NominalFieldSlot& field) {
+                return field.name == field_name;
+              });
+          if (member == fields.end()) return std::nullopt;
+          result.kind = checked_ir::ExprKind::Field;
+          result.semantic_target_id = receiver->type->declaration->id;
+          result.member_name = field_name;
+          result.member_ordinal = static_cast<std::uint32_t>(
+              std::distance(fields.begin(), member));
+          result.operands.push_back(std::move(*receiver));
+          return result;
+        }
+        case BodyTypeState::ExpressionOccurrence::Kind::Index: {
+          if (occurrence.operation_id != checked_ir::kCollectionIndexOperationId)
+            return std::nullopt;
+          const auto children = children_for("container", "index");
+          if (children.size() != 2 || children[0]->child_role != "container" ||
+              children[1]->child_role != "index")
+            return std::nullopt;
+          auto container = lower_expression(children[0]->id, depth + 1);
+          auto index = lower_expression(children[1]->id, depth + 1);
+          if (!container || !index || !container->type || !index->type ||
+              container->type->kind != TypeKind::Builtin ||
+              (container->type->name != "vector" &&
+               container->type->name != "queue" &&
+               container->type->name != "map") ||
+              index->type->kind != TypeKind::Primitive ||
+              index->type->name != "int")
+            return std::nullopt;
+          result.kind = checked_ir::ExprKind::Index;
+          result.semantic_target_id = occurrence.operation_id;
+          result.operands = {std::move(*container), std::move(*index)};
+          return result;
+        }
+        default:
+          return std::nullopt;
+      }
+    };
+
+    auto expression = lower_expression(root->second, 0);
+    if (!expression || !summary.result_type || !expression->type ||
+        !expression->type->structurally_equal(*summary.result_type))
+      return false;
+    checked_ir::Stmt returned;
+    returned.kind = checked_ir::StmtKind::Return;
+    returned.type = summary.result_type;
+    returned.expr = std::move(*expression);
+    vector<checked_ir::Stmt> statements{std::move(returned)};
+    try {
+      const auto bytes = checked_ir::encode_checked_body_v1(statements);
+      const auto hash = checked_ir::compute_checked_body_hash_v1(statements);
+      const auto decoded = checked_ir::decode_h3_checked_body_v1(
+          bytes, *p_.type_context, summary.parameter_types,
+          summary.result_type, hash);
+      if (checked_ir::encode_checked_body_v1(decoded) != bytes ||
+          checked_ir::compute_checked_body_hash_v1(decoded) != hash)
+        return false;
+      function.checked_body_ir_v1_bytes = bytes;
+      function.checked_body_ir_v1_hash = hash;
+      return true;
+    } catch (const std::invalid_argument&) {
+      return false;
+    }
+  }
+
   // Materialize only body forms whose operands can be tied to checked summary
   // slots. No source spelling or physical path participates in the hash.
   void retain_checked_body_ir() {
@@ -5605,6 +5723,7 @@ class Checker {
       if (compiled_interface_file(function.source_file)) continue;
       if (!function.open_summary || !function.open_summary->complete) continue;
       if (retain_checked_collection_loop_ir(function)) continue;
+      (void)retain_checked_return_occurrence_ir(function);
       const auto& summary = *function.open_summary;
       string expression;
       if (function.body.empty() && function.result_expression)
@@ -22385,6 +22504,7 @@ class Checker {
                         std::string_view child_role = {}) {
     using OccurrenceKind = BodyTypeState::ExpressionOccurrence::Kind;
     string original = trim(expression);
+    const string occurrence_source = original;
     BodyTypeState* occurrence_state = current_body_types_;
     bool capture_occurrence = occurrence_state && current_check_statement_ &&
         !checking_specialization_ && !suppress_expression_occurrence_capture_ &&
@@ -22450,9 +22570,25 @@ class Checker {
       }
     } occurrence_scope(occurrence_state, capture_occurrence,
         capture_occurrence
-            ? std::function<void()>([this, occurrence_state, &original, &env] {
+            ? std::function<void()>([this, occurrence_state,
+                                     source = occurrence_source, &env] {
                 const auto id = occurrence_state->active_expression_occurrences.back();
-                auto term = checked_expression_term(original, env);
+                auto term = checked_expression_term(source, env);
+                if (!term) term = occurrence_state->known_expression(source);
+                if (!term) term = inferred_expr_term(source, env);
+                if (!term && current_check_result_function_ &&
+                    current_check_result_function_->open_summary) {
+                  for (std::size_t index = 0;
+                       index < current_check_result_function_->params.size() &&
+                       index < current_check_result_function_->open_summary
+                           ->parameter_types.size(); ++index)
+                    if (current_check_result_function_->params[index].name ==
+                            trim(source)) {
+                      term = current_check_result_function_->open_summary
+                          ->parameter_types[index];
+                      break;
+                    }
+                }
                 occurrence_state->retain_expression_type(
                     id, term ? occurrence_state->solver.resolve(term) : nullptr);
               })
@@ -23504,7 +23640,8 @@ class Checker {
           current_body_types_->active_expression_occurrences.back();
       if (current_body_types_->expression_occurrences[occurrence].kind ==
           OccurrenceKind::Unknown) {
-        if (plain_identifier(value))
+        if (plain_identifier(value) && value != "true" && value != "false" &&
+            value != "None")
           mark_active_expression(OccurrenceKind::Identifier);
         else if (value == "true" || value == "false" || value == "None" ||
                  is_single_string_literal(value) || is_single_char_literal(value) ||
@@ -43070,9 +43207,27 @@ static void append_abi_v10_direct_scalar_records(
         !belongs_to_module(function.name, module) ||
         std::filesystem::path(function.source_file).extension() == ".mossi")
       continue;
-    auto checked = checked_parameter_return_body(function);
-    if (!checked) checked = checked_scalar_return_body(function);
-    if (!checked) continue;
+    if (!function.checked_body_ir_v1_bytes ||
+        !function.checked_body_ir_v1_hash || !program.type_context ||
+        !function.open_summary || !function.open_summary->complete)
+      continue;
+    CheckedParameterReturnBody checked_body;
+    try {
+      checked_body.statements = checked_ir::decode_h3_checked_body_v1(
+          *function.checked_body_ir_v1_bytes, *program.type_context,
+          function.open_summary->parameter_types,
+          function.open_summary->result_type,
+          *function.checked_body_ir_v1_hash);
+    } catch (const std::invalid_argument&) {
+      continue;
+    }
+    if (checked_body.statements.size() != 1 ||
+        checked_body.statements.front().kind != checked_ir::StmtKind::Return ||
+        !checked_body.statements.front().expr)
+      continue;
+    checked_body.semantic_hash = *function.checked_body_ir_v1_hash;
+    auto checked = std::optional<CheckedParameterReturnBody>(
+        std::move(checked_body));
     const auto& facts = *function.open_summary;
     if (function.semantic_callable_id.empty() ||
         facts.callable_id != function.semantic_callable_id)
@@ -43114,8 +43269,7 @@ static void append_abi_v10_direct_scalar_records(
     abi_v10::CheckedBodyRecord body;
     body.callable_id = summary.callable_id;
     body.semantic_hash = checked->semantic_hash;
-    body.checked_ir_bytes = checked_ir::encode_checked_body_v1(
-        checked->statements);
+    body.checked_ir_bytes = *function.checked_body_ir_v1_bytes;
     const auto summary_record = abi_v10::summary_record(summary);
     const auto body_record = abi_v10::checked_body_record(body);
     try {
@@ -43281,6 +43435,13 @@ static void append_abi_v10_collection_loop_records(
         !function.checked_body_ir_v1_hash)
       continue;
     const auto& facts = *function.open_summary;
+    const bool has_collection_loop_operation = std::any_of(
+        facts.operations.begin(), facts.operations.end(),
+        [](const auto& operation) {
+      return operation.operation_id == checked_ir::kCollectionCountOperationId ||
+          operation.operation_id == checked_ir::kCollectionIndexOperationId;
+    });
+    if (!has_collection_loop_operation) continue;
     const auto& bytes = *function.checked_body_ir_v1_bytes;
     const auto& hash = *function.checked_body_ir_v1_hash;
     const auto invalid = [](const string& message) -> void {

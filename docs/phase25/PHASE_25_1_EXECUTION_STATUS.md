@@ -325,6 +325,41 @@ coverage, binding/scope lowering, and cross-crate source-free slice remain
 unfinished. R2 has not started. Commit and push this correction for exact-SHA
 adversarial follow-up before building further on the ledger.
 
+### R1 checked occurrence return lowerer — working tree
+
+The checker-retained expression occurrence tree now feeds checked-body-v1
+lowering for single-return generic functions. This path reads resolved
+occurrence TypeRefs, operation IDs and child roles, and can lower parameter and
+scalar literal leaves, unary/binary operators, nominal field reads and vector,
+queue or map index expressions. It verifies the result TypeRef, encodes and
+decodes the canonical checked body, and stores its bytes/hash on the function.
+The old dedicated parameter-return and scalar-return body constructors were
+removed. ABI-v10's direct scalar producer now reads that retained checked body
+instead of rebuilding those two forms. Other ABI-v10 producer/import paths
+remain shape-specific and are still required for current fixtures; this is an
+incremental lowering slice, not a claim that R1 is complete.
+
+Validation after the lowering edits:
+
+- `make --jobs="$(nproc)" moss-dev` passed; existing TypeSolver
+  missing-initializer warnings remain.
+- `check_phase25_m2b2_source_free_corpus.py` passed all current admitted
+  positives, hostile artifact negatives, dependency closure, generic-range
+  fail-closed behavior, and ABI-v9 controls.
+- `check_phase25_generic_arithmetic_requirements.py` and
+  `check_phase25_generic_collection_facts.py` passed.
+- H3 direct checked import, D3d actual SDK `index_of`, and D4 actual SDK
+  collections source-free tests passed, including bad requirement/effect
+  rejection and legacy-body removal.
+- `check_agent_feedback.py` and `git diff --check` passed.
+
+This working slice is not independently reviewed yet. It does not lower
+multiple statements, local bindings/scopes, constructors, generic calls,
+member calls, collection literals, pipelines, or general control flow. The
+occurrence totality/single-visit proof and consolidation/retirement of the
+remaining shape-specific producers/importers are still open. R1 remains open;
+R2 has not started.
+
 ### R1 member invocation role-verifier correction — working tree
 
 The architect reviewed exact pushed SHA

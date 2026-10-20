@@ -9599,3 +9599,23 @@ GO on that exact SHA: both the checker-resolved member dispatch finding and
 the member argument-role verifier mismatch are closed, including the FileIO
 namespace/operand path; no P0/P1/P2 remain. This approves the capture slice,
 not R1. Continue with the structural lowerer and the still-open totality ledger.
+
+### Current continuation: checker occurrence lowerer
+
+Working tree has an incremental checker-occurrence-to-checked-body-v1 lowerer
+for single-return generic functions. It consumes retained TypeRefs, child roles
+and operation IDs for parameters/literals, unary/binary operators, nominal
+field reads and vector/queue/map indexing. The shape-specific parameter/scalar
+body constructors were removed, and the ABI-v10 direct-scalar path consumes
+the retained encoded body. Other ABI-v10 producer/import paths remain
+shape-specific; R1 is not accepted.
+
+Current validation passed: `make --jobs="$(nproc)" moss-dev`; full M2b2
+source-free positive/hostile/v9-control corpus; generic arithmetic requirements
+and collection facts; H3 direct checked import; D3d SDK `index_of`; D4 SDK
+collections source-free cases including corrupt requirement/effect rejection;
+feedback validation; `git diff --check`. Build output has only existing
+TypeSolver missing-initializer warnings. Exact working diff is not yet
+committed/reviewed. Still open: complete expression and statement lowering,
+bindings/scopes, source-to-occurrence totality and single-visit proof, removal
+of duplicate shape-specific ABI-v10 routes, broader R0 matrix, and R2-R5.
