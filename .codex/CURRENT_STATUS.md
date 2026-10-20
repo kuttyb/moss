@@ -9135,3 +9135,11 @@ Focused validation passed: D2 codec plus pre-D2 reader compatibility, H3
 checked-body decoder, H3 arithmetic decoder/importer, H3 direct records, H3
 private chain, and `git diff --check`. No codec implementation changes were
 needed; full repository tests were not run.
+
+## Phase 25 overnight execution checkpoint
+
+Gate 0 passed. The remote integration baseline was `39e7d8ac810f579243400766f007e9e7550b209b`; the approved D2 branch was `4ff42566ff66fa012cc9ac24c5440691e3b4cfd3`; the existing overnight branch was `05bb2192672dc80efc55c974bfec405987d23139`. `phase25-integration` was fast-forwarded and pushed to the D2 SHA. The overnight branch descends from D2 and contains the pinned execution brief.
+
+Gate 0 validation passed: D2 codec/pre-D2 compatibility, D1 collection facts, generic arithmetic, G2 conformance (11/11), the existing source-free corpus (with the collection loop still legacy-dependent as expected), H3 checked decoder/arithmetic/direct/private-chain checks, and checked-body IR/hash fixtures. The checked-body IR and G2 declaration-authority Python runners fail unmodified because `-Werror` promotes the existing `TypeSolver::Undo::binding` missing-field initializer warnings; both passed with only `-Wno-missing-field-initializers`. The generic arithmetic runner already uses that targeted suppression.
+
+D3a is blocked before implementation by a checker-contract mismatch. The actual SDK `index_of` declares `n` using ordinary `n = items |> count` at `sdk/foundations/collections/src/collections.moss:7`. A minimal Moss program with `n = 1; n = 2` passes checking and interprets to `2`; replacing the first assignment with `let n = 1` rejects the second assignment with `IMMUTABLE_LOCAL_MUTATION`. Thus the source binding is mutable under current Moss semantics, while the D3a brief requires immutable ordinal 1 and the D2 fixture models it as `Let`. No checker or ABI code was changed. L7 must choose whether to update the required representation/fixture to preserve the source's mutable implicit binding, or to change the SDK source to explicit `let` and revalidate that source change before D3a continues.
