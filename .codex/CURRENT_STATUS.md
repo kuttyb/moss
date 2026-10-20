@@ -9667,3 +9667,12 @@ and diff checks were rerun. The untyped generic sort probe hit
 `SORT_REQUIRES_VECTOR` before a Vector TypeRef could be inferred; builtin
 replace as a statement currently diagnoses unknown local function. Both are
 unclassified valid-surface questions for later triage, not accepted exclusions.
+
+Architect follow-up at `b6ab6c862175db915ad9cdf107f506af7020e2c7` confirmed
+the direct call-root fix and found statement-form sort still attached its
+vector child as `argument:0` while marking every operand non-expression. The
+current correction uses `call-argument:0` under a statement root and marks
+only the named sort key. A direct checker-state regression asserts call/sort
+roles, the static operand marker, and ledger completeness; it passes. The
+production build, full M2b2 corpus, feedback checker and diff check pass on
+this source. The corrected checkpoint needs exact-SHA review; R1 remains open.

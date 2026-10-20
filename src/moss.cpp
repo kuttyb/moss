@@ -22071,7 +22071,14 @@ class Checker {
     if (!storage_location(args[0], env))
       err(line, "sort requires an assignable Vector place, found '" + args[0] + "'",
           "SORT_REQUIRES_PLACE");
-    check_expression(line, args[0], env, {}, "argument:0");
+    const string vector_role =
+        current_body_types_ &&
+                !current_body_types_->active_expression_occurrences.empty() &&
+                current_body_types_->expression_occurrences.at(
+                    current_body_types_->active_expression_occurrences.back())
+                        .root_slot == "call-invocation"
+            ? "call-argument:0" : "argument:0";
+    check_expression(line, args[0], env, {}, vector_role);
     auto vector_type = inferred_expr_type(args[0], env);
     string canonical = vector_type ? canonical_type_name(*vector_type) : "";
     if (!starts_with(canonical, "vector[") || !ends_with(canonical, "]"))
@@ -24338,7 +24345,16 @@ class Checker {
             !functions_.count(statement.a);
         for (size_t index = 0; index < statement.args.size(); ++index) {
           const auto& argument = statement.args[index];
-          if (!sort_builtin && !(fileio_builtin && (trim(argument) == "ro" ||
+          if (sort_builtin) {
+            // check_sort_call already visits the vector as child 0 while the
+            // invocation root is active. The named key is static syntax, not
+            // an evaluated argument child.
+            if (index == 1 && call_occurrence_id != UINT32_MAX)
+              call_occurrence_state->expression_occurrences.at(
+                  call_occurrence_id).non_expression_operand_ordinals.push_back(1);
+            continue;
+          }
+          if (!(fileio_builtin && (trim(argument) == "ro" ||
                 trim(argument) == "rw" || trim(argument) == "create" ||
                 trim(argument) == "dataonly"))) {
             string name, val;
@@ -24869,6 +24885,60 @@ class Checker {
     return checked_env;
   }
 
+public:
+  static bool unit_test_statement_call_occurrence_roles() {
+    std::istringstream input(R"moss(fn identity(value):
+  return value
+
+export fn relay(value):
+  identity(value)
+  return value
+
+export fn sort_values(values: Vector[Int]) -> Int:
+  sort(values, by: identity)
+  return values[0]
+)moss");
+    Program program = Parser(lex_lines(input, "<statement-call-occurrence-test>"))
+                          .parse();
+    Checker checker(program);
+    checker.run();
+    auto verifies_call = [&](const string& name,
+                             const vector<string>& expected_roles,
+                             const vector<std::uint32_t>& expected_non_expression) {
+      const auto function = std::find_if(program.functions.begin(),
+          program.functions.end(), [&](const Function& candidate) {
+            return candidate.name == name;
+          });
+      if (function == program.functions.end()) return false;
+      const auto state_entry = checker.checked_body_states_.find(&function->body);
+      if (state_entry == checker.checked_body_states_.end() ||
+          !state_entry->second ||
+          !state_entry->second->expression_occurrence_ledger_complete)
+        return false;
+      const auto& state = *state_entry->second;
+      const auto statement_id = state.statement_occurrence_ids.find(
+          &function->body.front());
+      if (statement_id == state.statement_occurrence_ids.end()) return false;
+      const auto root = state.expression_root_slots.find(
+          {statement_id->second, "call-invocation"});
+      if (root == state.expression_root_slots.end()) return false;
+      const auto& occurrence = state.expression_occurrences.at(root->second);
+      if (occurrence.non_expression_operand_ordinals != expected_non_expression)
+        return false;
+      vector<string> actual_roles;
+      for (const auto& child : state.expression_occurrences)
+        if (child.parent_id == root->second)
+          actual_roles.push_back(child.child_role);
+      std::sort(actual_roles.begin(), actual_roles.end());
+      auto wanted_roles = expected_roles;
+      std::sort(wanted_roles.begin(), wanted_roles.end());
+      return actual_roles == wanted_roles;
+    };
+    return verifies_call("relay", {"call-argument:0"}, {}) &&
+        verifies_call("sort_values", {"call-argument:0"}, {1});
+  }
+
+private:
 #include "executor_invoke_lowering.inc"
 #include "file_chunk_lowering.inc"
 };

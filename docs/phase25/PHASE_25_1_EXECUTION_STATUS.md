@@ -485,3 +485,17 @@ language builtin `replace(place, replacement)` as a statement was rejected as
 an unknown local function by the current statement checker; this must be
 classified against the source-surface contract and is not treated as an
 invalid-language conclusion. R1 remains incomplete.
+
+Architect follow-up at exact pushed SHA
+`b6ab6c862175db915ad9cdf107f506af7020e2c7` confirmed the direct
+statement-call correction and found one remaining P1: statement-form sort's
+active call root captured its vector as `argument:0`, then marked all sort
+arguments non-expression. The fix selects `call-argument:0` when the checker
+is under a `call-invocation` root and marks only the static key operand.
+`tests/tooling/check_phase25_statement_call_occurrence_roles.py` now compiles a
+focused C++ checker test that asserts the statement-call and statement-sort
+child roles, non-expression marker, and complete retained expression ledger.
+Validation on this source: focused role test, `make --jobs="$(nproc)" moss-dev`,
+full M2b2 source-free/hostile/v9 corpus, agent feedback checker, and
+`git diff --check` passed. Existing TypeSolver missing-initializer warnings
+remain. The exact-SHA follow-up review is pending; R1 is still incomplete.
