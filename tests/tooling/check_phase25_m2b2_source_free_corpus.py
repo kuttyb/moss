@@ -83,6 +83,37 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
             capture_output=True, text=True, timeout=240)
         provider_output = provider_build.stdout + provider_build.stderr
         if case.get("provider_expected_error"):
+            if case.get("provider_must_emit_v10"):
+                assert provider_build.returncode == 0, (
+                    case["id"], "provider must emit an ABI-v10 artifact before "
+                    "the expected source-free consumer rejection", provider_output)
+                artifacts = case_root / "artifacts"
+                shutil.copytree(provider / "build/debug", artifacts)
+                interface = artifacts / "Service.mossi"
+                assert interface.is_file() and b"native_abi 10" in interface.read_bytes(), (
+                    case["id"], "provider did not emit native_abi 10")
+                assert b"export fn fresh " in interface.read_bytes(), (
+                    case["id"], "provider artifact does not contain fresh")
+                shutil.rmtree(provider / "src")
+                assert not (provider / "src").exists(), (
+                    case["id"], "provider source deletion failed")
+                consumer = case_root / "consumer"
+                package(consumer,
+                        f"m2b2_{case['id'].replace('-', '_')}_consumer",
+                        case["consumer"])
+                env = base_env | {
+                    "MOSS_MODULE_PATH": str(artifacts),
+                    "MARGO_HOME": str(case_root / "margo-consumer"),
+                }
+                rejected = subprocess.run(
+                    [str(MARGO), "build"], cwd=consumer, env=env,
+                    capture_output=True, text=True, timeout=240)
+                reject_output = rejected.stdout + rejected.stderr
+                assert (rejected.returncode != 0 and
+                        case["provider_expected_error"] in reject_output), (
+                            case["id"], case["provider_expected_error"], reject_output)
+                print(f"PASS {case['id']}: emitted provider plus source-free consumer rejection")
+                continue
             if provider_build.returncode != 0:
                 assert case["provider_expected_error"] in provider_output, (
                     case["id"], case["provider_expected_error"], provider_output)

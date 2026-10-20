@@ -3,120 +3,835 @@
   "compiler_commit": "43973e1adfdf015d5588e85f41d986925a85a565",
   "existing_source_free_harnesses": [
     {
+      "discovery_reasons": [
+        "source-free diagnostic assertion",
+        "ABI artifact assertion"
+      ],
+      "path": "tests/phase25/check_phase25_b_acceptance.py",
+      "sha256": "11fbaa60856dad12c570469717e8c5318f4e8ef50261d4a38c09c4c8000e4b95",
+      "source_free_indicators": [
+        "SOURCE_FREE_",
+        "native_abi 9"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path",
+        "source-free diagnostic assertion",
+        "staged generic-body artifact manipulation",
+        "ABI artifact assertion"
+      ],
+      "path": "tests/phase25/compatibility/inventory.py",
+      "sha256": "c914de592ef045dbd57f245b975770635f0336ecfaadd9d7f45457010164ec16",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "SOURCE_FREE_",
+        "native_abi 9",
+        "native_abi 10",
+        "generic_stmt",
+        "MOSS_STAGED_ABI"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path",
+        "source-free diagnostic assertion",
+        "staged generic-body artifact manipulation",
+        "ABI artifact assertion"
+      ],
+      "path": "tests/phase25/compatibility/oracle.py",
+      "sha256": "fbe11e11738d4c4ce70bc4311d637ce8c5e1653fd8812ee87914e112977883ed",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "SOURCE_FREE_",
+        "native_abi 9",
+        "native_abi 10",
+        "generic_stmt",
+        "MOSS_STAGED_ABI"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path",
+        "source-free diagnostic assertion",
+        "ABI artifact assertion"
+      ],
+      "path": "tests/phase25/integration/cross_crate_harness.py",
+      "sha256": "4cdfeab9634da5c628991bbaef1266b1a3be5f8573634ec51d71ba093f23fd44",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "SOURCE_FREE_",
+        "native_abi 9",
+        "native_abi 10",
+        "MOSS_STAGED_ABI"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "source-free path/name"
+      ],
       "path": "tests/phase25/integration/fixtures/adversarial/family10_cross_package_monomorph/02_source_free_monomorph_blocked/app/src/main.moss",
-      "sha256": "4a99e9e79b00f47fbd9834d586e22f03c6b0605a8c9f2dec8ed21f295e3cf098"
+      "sha256": "4a99e9e79b00f47fbd9834d586e22f03c6b0605a8c9f2dec8ed21f295e3cf098",
+      "source_free_indicators": []
     },
     {
+      "discovery_reasons": [
+        "source-free path/name"
+      ],
       "path": "tests/phase25/integration/fixtures/adversarial/family10_cross_package_monomorph/02_source_free_monomorph_blocked/provider/src/main.moss",
-      "sha256": "f225821c633db06c68af95f247fef7b3d894e4d4b263f9e62d78751cd5db2acd"
+      "sha256": "f225821c633db06c68af95f247fef7b3d894e4d4b263f9e62d78751cd5db2acd",
+      "source_free_indicators": []
     },
     {
+      "discovery_reasons": [
+        "source-free diagnostic assertion",
+        "ABI artifact assertion"
+      ],
+      "path": "tests/phase25/integration/live_acceptance.py",
+      "sha256": "d3e19dd8dac0c8fd5151881853f958f42799730f3a74baa71323915980bb229f",
+      "source_free_indicators": [
+        "SOURCE_FREE_",
+        "native_abi 9",
+        "MOSS_STAGED_ABI"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "ABI artifact assertion"
+      ],
+      "path": "tests/phase25/integration/test_sdk_matrix.py",
+      "sha256": "a42297b43c3e9b8131f1aa0d64e15a5dda99e00d9d2020988cb167bb9a9fee47",
+      "source_free_indicators": [
+        "native_abi 10",
+        "MOSS_STAGED_ABI"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "source-free path/name"
+      ],
       "path": "tests/phase25/key_protocol/03-imported-nominal-keys-source-free/app/src/main.moss",
-      "sha256": "8ba90016cd6dde7bd30c2e304b8e7415a34201bade32f5cb132391b79918d7aa"
+      "sha256": "8ba90016cd6dde7bd30c2e304b8e7415a34201bade32f5cb132391b79918d7aa",
+      "source_free_indicators": []
     },
     {
+      "discovery_reasons": [
+        "source-free path/name"
+      ],
       "path": "tests/phase25/key_protocol/03-imported-nominal-keys-source-free/keyprov/src/main.moss",
-      "sha256": "6f73b017bbf99a389ad41bdc0262e780eb961312c6c9c713180913ce7acfb680"
+      "sha256": "6f73b017bbf99a389ad41bdc0262e780eb961312c6c9c713180913ce7acfb680",
+      "source_free_indicators": []
     },
     {
+      "discovery_reasons": [
+        "explicit compiled-module search path"
+      ],
+      "path": "tests/phase25/key_protocol/run_fixtures.py",
+      "sha256": "284d562e47ce96abc63eee70d193f576f548d474d171aa86947f1ccdf77a87f0",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "MOSS_STAGED_ABI"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path"
+      ],
+      "path": "tests/phase25/key_protocol/test_proof_transport.py",
+      "sha256": "04d32ea27e0a6def3064d8778c26e41cad4c79b7f25582acaf013dc34554a52e",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "MOSS_STAGED_ABI"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path",
+        "source-free diagnostic assertion",
+        "ABI artifact assertion"
+      ],
+      "path": "tests/phase25/runtime/check_shared_string_linkage.py",
+      "sha256": "259f6ca84422c4bac48a36c470699a4a75d2015f43a2296bdae6907ffb4bba52",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "SOURCE_FREE_",
+        "native_abi 10",
+        "MOSS_STAGED_ABI"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "source-free path/name",
+        "explicit compiled-module search path"
+      ],
       "path": "tests/tooling/check_enum_source_free.py",
-      "sha256": "c63b3cf256b22c9dbe2c936eef53a1ae011780f76ee44e06d4280ec2497b625a"
+      "sha256": "c63b3cf256b22c9dbe2c936eef53a1ae011780f76ee44e06d4280ec2497b625a",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH"
+      ]
     },
     {
+      "discovery_reasons": [
+        "source-free diagnostic assertion",
+        "ABI artifact assertion"
+      ],
+      "path": "tests/tooling/check_handler_2pl.py",
+      "sha256": "1c294d7d3e02d66fae8be00f414e840aacb0c87d6b4a53a8f53c3b77991a98bd",
+      "source_free_indicators": [
+        "SOURCE_FREE_",
+        "native_abi 9"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path"
+      ],
+      "path": "tests/tooling/check_margo.py",
+      "sha256": "85421fafab57c4df2fee7c015b7e551d0be7b580e89eeb3a4dcef029c1f9dedf",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path"
+      ],
+      "path": "tests/tooling/check_module_provider_ambiguity.py",
+      "sha256": "5223126dd8aa821ed42ee37d6998fb66f4680520806ed9dbd87524614da475bd",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path",
+        "ABI artifact assertion"
+      ],
+      "path": "tests/tooling/check_numerics_abi_v9.py",
+      "sha256": "b0269dda2949bb35323c0c22286ed15990de0d00efb3990a4a7690d358df56e4",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "native_abi 9"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "source-free diagnostic assertion",
+        "ABI artifact assertion"
+      ],
+      "path": "tests/tooling/check_phase106f1.py",
+      "sha256": "ef17e15ccfdb4a20be09591cf56a36f707a8e7c86d8b1fb73da4972ed671003b",
+      "source_free_indicators": [
+        "SOURCE_FREE_",
+        "native_abi 9"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path"
+      ],
+      "path": "tests/tooling/check_phase15_8_cross_package_fast_debug.py",
+      "sha256": "c0fe9b1156280fa9d2fade497c618700f871ccac8ca02a35138eafc7aa973adb",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path"
+      ],
+      "path": "tests/tooling/check_phase15_9_cross_package_specialization.py",
+      "sha256": "0e6d75af81416452e808c1d03004a18066f9ddad7b972d2a947145d5a5f0aedf",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path"
+      ],
+      "path": "tests/tooling/check_phase20_cross_crate_range_abi.py",
+      "sha256": "c8e5a638b9c465a148cf2e88594aeaba82f919b816e2188b83fa3f52c04bf51a",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path"
+      ],
+      "path": "tests/tooling/check_phase20_executor_fileio.py",
+      "sha256": "438171206f98ee4753808f46b83d1789728f893e02acaae37aa43174c4080c67",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path",
+        "source-free diagnostic assertion"
+      ],
+      "path": "tests/tooling/check_phase21_abi_v9_external_cache.py",
+      "sha256": "8c74387e0af4f15bede02fdfca836e58ff601d386e8155d22165e30099db5cb8",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "SOURCE_FREE_"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "source-free diagnostic assertion",
+        "ABI artifact assertion"
+      ],
+      "path": "tests/tooling/check_phase21_abi_v9_migration.py",
+      "sha256": "25d39a75e4c7a0ef749f13183d0bf1501d4b8012bb76c35e1e07de53273870d6",
+      "source_free_indicators": [
+        "SOURCE_FREE_",
+        "native_abi 9"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path"
+      ],
+      "path": "tests/tooling/check_phase21_borrowed_view_write.py",
+      "sha256": "326231e34bcd7cdc60c6bfb9c9564a9309e51e46517ce8f97f9e941c71eb13a0",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "source-free diagnostic assertion"
+      ],
+      "path": "tests/tooling/check_phase21_imported_effects.py",
+      "sha256": "a57ca907e7071f3495818dcfe9c35adf8494c72c8077912a406a8bb5d1d8e9a9",
+      "source_free_indicators": [
+        "SOURCE_FREE_"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "source-free path/name",
+        "ABI artifact assertion"
+      ],
       "path": "tests/tooling/check_phase21_source_free_abi.py",
-      "sha256": "104badc44b9a5f6088b97b3a5b218ab13b2aee1f535a40b1dcba1b34af5f38b6"
+      "sha256": "104badc44b9a5f6088b97b3a5b218ab13b2aee1f535a40b1dcba1b34af5f38b6",
+      "source_free_indicators": [
+        "native_abi 9"
+      ]
     },
     {
+      "discovery_reasons": [
+        "source-free path/name",
+        "explicit compiled-module search path",
+        "source-free diagnostic assertion"
+      ],
       "path": "tests/tooling/check_phase21_source_free_cache_binding.py",
-      "sha256": "2d4cd8af006659dc849a1915b8647cd9a0e07f79a8fedaefee6d1f154c19b12e"
+      "sha256": "2d4cd8af006659dc849a1915b8647cd9a0e07f79a8fedaefee6d1f154c19b12e",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "SOURCE_FREE_"
+      ]
     },
     {
+      "discovery_reasons": [
+        "source-free path/name"
+      ],
       "path": "tests/tooling/check_phase21_source_free_proof_edges.py",
-      "sha256": "a21291b35b3b5f75069a13cf2cc82b295b1c13392b9421d81061656b4f392253"
+      "sha256": "a21291b35b3b5f75069a13cf2cc82b295b1c13392b9421d81061656b4f392253",
+      "source_free_indicators": []
     },
     {
+      "discovery_reasons": [
+        "source-free path/name"
+      ],
       "path": "tests/tooling/check_phase21_source_free_standard_write_recovery.py",
-      "sha256": "3e457dd5c52f98a843584bfdeffa07fc267648211d47f619d0a88702fc0c9eee"
+      "sha256": "3e457dd5c52f98a843584bfdeffa07fc267648211d47f619d0a88702fc0c9eee",
+      "source_free_indicators": []
     },
     {
+      "discovery_reasons": [
+        "explicit compiled-module search path",
+        "source-free diagnostic assertion"
+      ],
+      "path": "tests/tooling/check_phase21c_branch_errors.py",
+      "sha256": "b758098f466c0176f8d368c65db2ca47108dca56a4b7088e45b19476032e71ea",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "SOURCE_FREE_"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path"
+      ],
+      "path": "tests/tooling/check_phase24_adversarial_architect.py",
+      "sha256": "294b8b663c69a06509ce2da31eb4678b11b750df23ef99c0f6f6cac31fe3be65",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path"
+      ],
+      "path": "tests/tooling/check_phase24_bitwise_operations.py",
+      "sha256": "0f6b32777498a7fde12773ea3ef11479a83fa3826f680c897550a291d09b780f",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path",
+        "source-free diagnostic assertion"
+      ],
+      "path": "tests/tooling/check_phase24_data_utils_oracles.py",
+      "sha256": "999e742f522884da37ce0b9f3b53aefed4075c500305668358b89689c2a4c803",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "SOURCE_FREE_"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path"
+      ],
+      "path": "tests/tooling/check_phase24_imported_generic_expressions.py",
+      "sha256": "071546eaad522214f19b084b45c7f0ad439c03a3d7d45e2a0866b80af5edf82f",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "source-free path/name",
+        "explicit compiled-module search path",
+        "source-free diagnostic assertion",
+        "staged generic-body artifact manipulation"
+      ],
       "path": "tests/tooling/check_phase25_c2b6c_source_free_arithmetic.py",
-      "sha256": "22b188300d3facda64308a14be16ed69b7aaaf8368c27390c136c19b78728a98"
+      "sha256": "22b188300d3facda64308a14be16ed69b7aaaf8368c27390c136c19b78728a98",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "SOURCE_FREE_",
+        "generic_stmt",
+        "MOSS_STAGED_ABI"
+      ]
     },
     {
+      "discovery_reasons": [
+        "explicit compiled-module search path"
+      ],
+      "path": "tests/tooling/check_phase25_char_string_sdk_packages.py",
+      "sha256": "867366ae530be2ab7d4995d7c33f328cd508e7644612e4c921ae2fff1b45aca0",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "MOSS_STAGED_ABI"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path",
+        "source-free diagnostic assertion",
+        "ABI artifact assertion"
+      ],
+      "path": "tests/tooling/check_phase25_conformance.py",
+      "sha256": "2e187db0b199a1fa0ade5191d2198a884c4d8073747f3c201370f31ec16497f5",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "SOURCE_FREE_",
+        "native_abi 10",
+        "MOSS_STAGED_ABI"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "staged generic-body artifact manipulation"
+      ],
+      "path": "tests/tooling/check_phase25_d3b_collection_emission.py",
+      "sha256": "d53cba66b2c8409587f5e1b14e83620db3a9ca7922c15a40880984694971c909",
+      "source_free_indicators": [
+        "generic_stmt",
+        "MOSS_STAGED_ABI"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path"
+      ],
+      "path": "tests/tooling/check_phase25_d3c_collection_projection.py",
+      "sha256": "6b9a3551ffbe3eed3c26f22160efd93a5d38503f698a3ecdaba887b33aa2827a",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "MOSS_STAGED_ABI"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "source-free path/name",
+        "explicit compiled-module search path",
+        "staged generic-body artifact manipulation"
+      ],
       "path": "tests/tooling/check_phase25_d3d_collection_source_free.py",
-      "sha256": "89d6dcceceaabc766ecda5af04f82298a4c2a377a15c4f95b69750928eacb1cd"
+      "sha256": "89d6dcceceaabc766ecda5af04f82298a4c2a377a15c4f95b69750928eacb1cd",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "generic_stmt",
+        "MOSS_STAGED_ABI"
+      ]
     },
     {
+      "discovery_reasons": [
+        "source-free path/name",
+        "explicit compiled-module search path",
+        "source-free diagnostic assertion",
+        "staged generic-body artifact manipulation"
+      ],
       "path": "tests/tooling/check_phase25_d4_collection_source_free.py",
-      "sha256": "541b99d83d07c600572f50fbeb6c56ccd91f6dfc697674434c5b812581a8d262"
+      "sha256": "541b99d83d07c600572f50fbeb6c56ccd91f6dfc697674434c5b812581a8d262",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "SOURCE_FREE_",
+        "generic_stmt",
+        "MOSS_STAGED_ABI"
+      ]
     },
     {
+      "discovery_reasons": [
+        "source-free path/name"
+      ],
       "path": "tests/tooling/check_phase25_g3_source_free_parity.py",
-      "sha256": "1450d28c8b9eac893eaf48529c1cdf59ef08dd70c50e642efc2eeca239fdf554"
+      "sha256": "1450d28c8b9eac893eaf48529c1cdf59ef08dd70c50e642efc2eeca239fdf554",
+      "source_free_indicators": []
     },
     {
+      "discovery_reasons": [
+        "ABI artifact assertion"
+      ],
+      "path": "tests/tooling/check_phase25_g4_unicode.py",
+      "sha256": "b55b13f230b653ed83c86330e18da3ed459af462a1598657aab34f2d52e4a284",
+      "source_free_indicators": [
+        "native_abi 9",
+        "native_abi 10"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path",
+        "staged generic-body artifact manipulation"
+      ],
+      "path": "tests/tooling/check_phase25_h3_direct_records.py",
+      "sha256": "83101dd52f0ad3ebd97d207b31c3b7a87f5fbd76625173ff23a1f2b7728867da",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "generic_stmt",
+        "MOSS_STAGED_ABI"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "source-free path/name",
+        "explicit compiled-module search path",
+        "source-free diagnostic assertion",
+        "staged generic-body artifact manipulation"
+      ],
       "path": "tests/tooling/check_phase25_h3_source_free_chain.py",
-      "sha256": "43a7214032002d3fac531be2d2d20d529ff0a707918b58d77a0c2f057c1445bd"
+      "sha256": "43a7214032002d3fac531be2d2d20d529ff0a707918b58d77a0c2f057c1445bd",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "SOURCE_FREE_",
+        "generic_stmt",
+        "MOSS_STAGED_ABI"
+      ]
     },
     {
+      "discovery_reasons": [
+        "source-free path/name",
+        "explicit compiled-module search path",
+        "source-free diagnostic assertion"
+      ],
       "path": "tests/tooling/check_phase25_h3_source_free_guard.py",
-      "sha256": "e91cfef4c11da770da1d1c48db1b2f9907dbb85b3e7cf4add4f6d6cfae53a1ad"
+      "sha256": "e91cfef4c11da770da1d1c48db1b2f9907dbb85b3e7cf4add4f6d6cfae53a1ad",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "SOURCE_FREE_",
+        "MOSS_STAGED_ABI"
+      ]
     },
     {
+      "discovery_reasons": [
+        "explicit compiled-module search path"
+      ],
+      "path": "tests/tooling/check_phase25_indexed_string.py",
+      "sha256": "3fef27f117378ad30a74fdb907f1aafb999650e26c538442260cd2909ab642d8",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "MOSS_STAGED_ABI"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path",
+        "source-free diagnostic assertion"
+      ],
+      "path": "tests/tooling/check_phase25_m2b1_provenance.py",
+      "sha256": "4b956985de17d8b52259da3edb55082c28f21189fc258e3f12601b7a29114bc2",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "SOURCE_FREE_",
+        "MOSS_STAGED_ABI"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "source-free path/name",
+        "explicit compiled-module search path",
+        "source-free diagnostic assertion",
+        "staged generic-body artifact manipulation",
+        "ABI artifact assertion"
+      ],
       "path": "tests/tooling/check_phase25_m2b2_source_free_corpus.py",
-      "sha256": "7470f4a509b29f21e85602893bb9d2e700a0421cf289769e2fb31a2246e8a2e2"
+      "sha256": "cf6b737018de851fd6a874d12078e2f491fed573049d5b726f6baefac403f377",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "SOURCE_FREE_",
+        "native_abi 10",
+        "generic_stmt",
+        "MOSS_STAGED_ABI"
+      ]
     },
     {
+      "discovery_reasons": [
+        "explicit compiled-module search path",
+        "source-free diagnostic assertion",
+        "staged generic-body artifact manipulation"
+      ],
+      "path": "tests/tooling/check_phase25_mixed_provider_admission.py",
+      "sha256": "a3ae720dad73156a2213d1c7d916b5367c1ef9ac3e13156bf52259263e05024b",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "SOURCE_FREE_",
+        "generic_stmt",
+        "MOSS_STAGED_ABI"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path",
+        "source-free diagnostic assertion"
+      ],
+      "path": "tests/tooling/check_phase25_nominal_identity.py",
+      "sha256": "605958370265168685667fa6e097b08669819f88bc8ea45a76554199c09a98c0",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "SOURCE_FREE_",
+        "MOSS_STAGED_ABI"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path",
+        "source-free diagnostic assertion",
+        "staged generic-body artifact manipulation"
+      ],
+      "path": "tests/tooling/check_phase25_r2c_empty_vector_consumer.py",
+      "sha256": "402789bad1c999328419dc323af48a595fb9dfca82cc0e64fe6af05ba844570a",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "SOURCE_FREE_",
+        "generic_stmt",
+        "MOSS_STAGED_ABI"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path",
+        "source-free diagnostic assertion"
+      ],
+      "path": "tests/tooling/check_phase25_team_a_semantics.py",
+      "sha256": "a30f79b9be6ca94ce129c5964edadbe53ebbd6b09a7ec841546168ca8e81f53d",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "SOURCE_FREE_",
+        "MOSS_STAGED_ABI"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "explicit compiled-module search path",
+        "source-free diagnostic assertion"
+      ],
+      "path": "tests/tooling/check_phase25_typed_semantic_api.py",
+      "sha256": "ddb771e082aadd43b3f6e629cb8a0b41531ce82d3a20b159880bec90eac1a08f",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "SOURCE_FREE_",
+        "MOSS_STAGED_ABI"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "source-free diagnostic assertion"
+      ],
+      "path": "tests/tooling/check_synchronization_plan.py",
+      "sha256": "b1c030608477d2a06227c9b604bd6e4b36453d720f4e741d559104914390efa0",
+      "source_free_indicators": [
+        "SOURCE_FREE_"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "source-free diagnostic assertion"
+      ],
+      "path": "tests/tooling/repro_phase21_mossi_pattern_forgery.py",
+      "sha256": "c6a996dda6a1a1dea604a80ad5e253542de7bf160d247c7706df1b44b15e74ee",
+      "source_free_indicators": [
+        "SOURCE_FREE_"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "source-free path/name",
+        "explicit compiled-module search path",
+        "ABI artifact assertion"
+      ],
       "path": "sdk/advanced-data-acceptance/check_source_free.py",
-      "sha256": "35ba1c9fbccca2e24872685d6654d1369a4cb0e2ad7cac4395e966474a71c710"
+      "sha256": "35ba1c9fbccca2e24872685d6654d1369a4cb0e2ad7cac4395e966474a71c710",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "native_abi 9"
+      ]
     },
     {
+      "discovery_reasons": [
+        "source-free path/name"
+      ],
       "path": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
-      "sha256": "1f0a4ac7350362af735cc18568156687158f5c2df2b3429d48611b5c340a2251"
+      "sha256": "1f0a4ac7350362af735cc18568156687158f5c2df2b3429d48611b5c340a2251",
+      "source_free_indicators": []
     },
     {
+      "discovery_reasons": [
+        "source-free path/name",
+        "explicit compiled-module search path"
+      ],
       "path": "sdk/data-acceptance/tests/check_source_free.py",
-      "sha256": "1b9a5e1999e153c7633aa7df60c1b6a1d95f9245b06b8697e71ee2d517f6af26"
+      "sha256": "1b9a5e1999e153c7633aa7df60c1b6a1d95f9245b06b8697e71ee2d517f6af26",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH"
+      ]
     },
     {
+      "discovery_reasons": [
+        "source-free path/name",
+        "explicit compiled-module search path",
+        "ABI artifact assertion"
+      ],
       "path": "sdk/encoding/tests/check_source_free.py",
-      "sha256": "2b31fa6995cab7630827a30a461a7b19f29f126aaa6d910cf9a76245f3db1ad7"
+      "sha256": "2b31fa6995cab7630827a30a461a7b19f29f126aaa6d910cf9a76245f3db1ad7",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH",
+        "native_abi 9"
+      ]
     },
     {
+      "discovery_reasons": [
+        "source-free path/name"
+      ],
       "path": "sdk/foundations/acceptance/repros/source_free_generics/src/main.moss",
-      "sha256": "a5318d7322eaf5e1ae5fe76ccc27ecf206e2420432c91a9d043927bde275119f"
+      "sha256": "a5318d7322eaf5e1ae5fe76ccc27ecf206e2420432c91a9d043927bde275119f",
+      "source_free_indicators": []
     },
     {
+      "discovery_reasons": [
+        "source-free path/name"
+      ],
       "path": "sdk/foundations/acceptance/repros/source_free_range/src/main.moss",
-      "sha256": "95c14f907519fc4f026f7e0aa9dbe8692d99ac6b494e3f8a99ebe78022e69554"
+      "sha256": "95c14f907519fc4f026f7e0aa9dbe8692d99ac6b494e3f8a99ebe78022e69554",
+      "source_free_indicators": []
     },
     {
+      "discovery_reasons": [
+        "source-free path/name",
+        "explicit compiled-module search path"
+      ],
       "path": "sdk/foundations/acceptance/validate_source_free.py",
-      "sha256": "1b066051cc8926508cbd22a7a80f825f8849a198d72c063a4a7d374adc914782"
+      "sha256": "1b066051cc8926508cbd22a7a80f825f8849a198d72c063a4a7d374adc914782",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH"
+      ]
     },
     {
+      "discovery_reasons": [
+        "source-free path/name",
+        "explicit compiled-module search path"
+      ],
       "path": "sdk/foundations/algorithms/tests/check_source_free.py",
-      "sha256": "43c61ae4493fea9941a4bae6066939e6d15897c9ac4972092eb3e187a398aad3"
+      "sha256": "43c61ae4493fea9941a4bae6066939e6d15897c9ac4972092eb3e187a398aad3",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH"
+      ]
     },
     {
+      "discovery_reasons": [
+        "source-free path/name",
+        "explicit compiled-module search path"
+      ],
       "path": "sdk/foundations/collections/tests/check_source_free.py",
-      "sha256": "588f794bae347560f000a9f0b17c47608c0c876f5ecb5d08b64fa14747c5a561"
+      "sha256": "588f794bae347560f000a9f0b17c47608c0c876f5ecb5d08b64fa14747c5a561",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH"
+      ]
     },
     {
+      "discovery_reasons": [
+        "ABI artifact assertion"
+      ],
+      "path": "sdk/fs/tests/check_native.py",
+      "sha256": "f1e81e3426142d7f101e7a9889b51d50ff245329ef862921786581eec001e27c",
+      "source_free_indicators": [
+        "native_abi 9"
+      ]
+    },
+    {
+      "discovery_reasons": [
+        "source-free path/name",
+        "explicit compiled-module search path"
+      ],
       "path": "sdk/fs/tests/check_source_free.py",
-      "sha256": "f77cb13c10653c1bd695581b90ae524dcd2130e3cb9207e3ea6cc89c41c119c2"
+      "sha256": "f77cb13c10653c1bd695581b90ae524dcd2130e3cb9207e3ea6cc89c41c119c2",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH"
+      ]
     },
     {
+      "discovery_reasons": [
+        "source-free path/name",
+        "explicit compiled-module search path"
+      ],
       "path": "sdk/path/tests/check_source_free.py",
-      "sha256": "1ddcf22c277fe0652579ae712017c11190361852b0535418a7f0a6cbde1a1a26"
+      "sha256": "1ddcf22c277fe0652579ae712017c11190361852b0535418a7f0a6cbde1a1a26",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH"
+      ]
     },
     {
+      "discovery_reasons": [
+        "source-free path/name",
+        "explicit compiled-module search path"
+      ],
       "path": "sdk/text/tests/check_source_free.py",
-      "sha256": "fe1abec902fd2b2cdf601e385f0d826f355e33f52a8346f10d4974eb2982aa34"
+      "sha256": "fe1abec902fd2b2cdf601e385f0d826f355e33f52a8346f10d4974eb2982aa34",
+      "source_free_indicators": [
+        "MOSS_MODULE_PATH"
+      ]
     }
   ],
   "generic_callable_count": 4,
   "inventory_method": "Margo debug package build; generic exports parsed from compiler-emitted semantic_exports in .mossi",
+  "inventory_refresh_commit": "19ffd63822f08c255cde231b590828a986e9a00b",
   "language_version": "moss-0.1",
   "package_count": 26,
   "packages": [
@@ -333,6 +1048,10 @@
           "source_free_harness_candidates": [
             {
               "match": "module-name-and-callable-token",
+              "path": "tests/phase25/compatibility/oracle.py"
+            },
+            {
+              "match": "module-name-and-callable-token",
               "path": "sdk/foundations/acceptance/repros/source_free_range/src/main.moss"
             }
           ],
@@ -408,6 +1127,10 @@
           "source_free_harness_candidates": [
             {
               "match": "module-name-and-callable-token",
+              "path": "tests/tooling/check_phase24_adversarial_architect.py"
+            },
+            {
+              "match": "module-name-and-callable-token",
               "path": "tests/tooling/check_phase25_d3d_collection_source_free.py"
             },
             {
@@ -471,6 +1194,10 @@
           "source_free_harness_candidates": [
             {
               "match": "module-name-and-callable-token",
+              "path": "tests/tooling/check_phase24_adversarial_architect.py"
+            },
+            {
+              "match": "module-name-and-callable-token",
               "path": "tests/tooling/check_phase25_d4_collection_source_free.py"
             },
             {
@@ -530,6 +1257,10 @@
           "return_type": "int",
           "semantic_hash": "233488c422dbb5b1",
           "source_free_harness_candidates": [
+            {
+              "match": "module-name-and-callable-token",
+              "path": "tests/tooling/check_phase24_adversarial_architect.py"
+            },
             {
               "match": "module-name-and-callable-token",
               "path": "tests/tooling/check_phase25_d4_collection_source_free.py"

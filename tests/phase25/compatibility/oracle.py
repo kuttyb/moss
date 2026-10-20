@@ -26,6 +26,7 @@ MARGO = ROOT / "margo"
 POISON_SOURCE = ROOT / "tests/tooling/poison_phase25_generic_callable.cpp"
 TMP = ROOT / "tmp"
 CORPUS = ROOT / "tests/phase25/source_free_corpus/corpus.json"
+SURFACE_PROBES = ROOT / "tests/phase25/compatibility/surface_probes.json"
 
 
 def invoke(argv: list[str], cwd: Path, env: dict[str, str], expected: int | None = 0) -> dict:
@@ -213,6 +214,8 @@ def main() -> int:
     parser.add_argument("--case", action="append", help="corpus case id; repeat to select more than one")
     parser.add_argument("--include-sdk-bytes-range", action="store_true",
                         help="also exercise the actual bytes.from_range provider and source-free consumer")
+    parser.add_argument("--include-surface-probes", action="store_true",
+                        help="also run the R0 generic construct validity/parity probes")
     parser.add_argument("--output", type=Path, default=ROOT / "tmp/phase25-1-r0-oracle.json")
     args = parser.parse_args()
     TMP.mkdir(exist_ok=True)
@@ -220,6 +223,8 @@ def main() -> int:
     cases = [case for case in corpus["cases"] if not args.case or case["id"] in args.case]
     if args.case and {case["id"] for case in cases} != set(args.case):
         raise SystemExit(f"unknown case(s): {sorted(set(args.case) - {case['id'] for case in cases})}")
+    if args.include_surface_probes:
+        cases.extend(json.loads(SURFACE_PROBES.read_text(encoding="utf-8"))["cases"])
     if args.include_sdk_bytes_range:
         cases.append({
             "id": "actual-sdk-bytes-from-range",

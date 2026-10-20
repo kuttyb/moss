@@ -59,6 +59,7 @@
       "provider": "module Service\n\nexport fn fresh(data):\n  var result = 0\n  for value in data:\n    result = result + 1\n  return result\n",
       "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh([1, 2, 3])\n",
       "expected_output": "3\n",
+      "provider_must_emit_v10": true,
       "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
       "checked_body_status": "provider emits an ABI-v10 interface, but source-free consumer selection rejects this valid generic iterator body",
       "evidence": "A generic static-iterator body over Vector is a valid source-backed form. The actual SDK borrowed-Range callable is tracked separately using bytes.from_range and the real FileIO consumer."

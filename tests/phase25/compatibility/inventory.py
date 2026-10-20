@@ -24,6 +24,14 @@ MARGO = ROOT / "margo"
 MOSS = ROOT / "moss"
 OUT_DEFAULT = ROOT / "docs/phase25/PHASE_25_1_GENERIC_INVENTORY.json"
 GENERIC_EXPORT = re.compile(r'^export fn (.+?) kind=generic semantic_hash=([^ ]+) return=([^ ]+) effects=(.*)$')
+SOURCE_FREE_MARKERS = {
+    "module-path": "MOSS_MODULE_PATH",
+    "source-free-diagnostic": "SOURCE_FREE_",
+    "abi-v9-artifact": "native_abi 9",
+    "abi-v10-artifact": "native_abi 10",
+    "legacy-generic-body": "generic_stmt",
+    "staged-abi-selector": "MOSS_STAGED_ABI",
+}
 STATEMENT_TAG = re.compile(r'^  generic_stmt (\d+) ')
 STMT_KIND = {0: "raw", 1: "pass", 2: "assign", 3: "call", 4: "message",
              5: "echo", 6: "if", 7: "else", 8: "while", 9: "for",
@@ -142,10 +150,28 @@ def harness_catalog() -> list[dict]:
                 continue
             rel = path.relative_to(ROOT).as_posix()
             name = path.name.lower()
+            text = path.read_text(encoding="utf-8", errors="replace")
+            reasons = []
             if "source_free" in name or "source-free" in name or "source_free" in rel or "source-free" in rel:
-                text = path.read_text(encoding="utf-8", errors="replace")
-                candidates.append({"path": rel, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-                                   "text": text})
+                reasons.append("source-free path/name")
+            indicators = [marker for key, marker in SOURCE_FREE_MARKERS.items()
+                          if marker in text]
+            if path.suffix in (".py", ".sh") and "MOSS_MODULE_PATH" in indicators:
+                reasons.append("explicit compiled-module search path")
+            if path.suffix in (".py", ".sh") and "SOURCE_FREE_" in indicators:
+                reasons.append("source-free diagnostic assertion")
+            if ("generic_stmt" in indicators and "MOSS_STAGED_ABI" in indicators):
+                reasons.append("staged generic-body artifact manipulation")
+            if any(marker in indicators for marker in ("native_abi 9", "native_abi 10")):
+                reasons.append("ABI artifact assertion")
+            if reasons:
+                candidates.append({
+                    "path": rel,
+                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                    "discovery_reasons": reasons,
+                    "source_free_indicators": indicators,
+                    "text": text,
+                })
     return candidates
 
 
@@ -221,10 +247,14 @@ def main() -> int:
         return 0
     args.output.parent.mkdir(parents=True, exist_ok=True)
     compiler_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    artifact_compiler_sha = compiler_sha
     if args.refresh_exports:
         payload = json.loads(args.output.read_text(encoding="utf-8"))
-        if payload.get("compiler_commit") != compiler_sha:
-            raise SystemExit("recorded inventory compiler_commit does not match HEAD")
+        artifact_compiler_sha = payload["compiler_commit"]
+        # Reparse the exact interfaces recorded by the original inventory
+        # build. Keep its compiler commit because package artifacts are not
+        # rebuilt by this mode; this supports refreshing discovery metadata
+        # without misattributing package builds to a later docs/test commit.
         for package in payload["packages"]:
             package["exported_generic_callables"] = []
             for interface in package.get("interfaces", []):
@@ -240,7 +270,8 @@ def main() -> int:
     link_harness_candidates(results, harnesses)
     payload = {
         "schema": "phase25-1-generic-inventory-v1",
-        "compiler_commit": compiler_sha,
+        "compiler_commit": artifact_compiler_sha,
+        "inventory_refresh_commit": compiler_sha,
         "language_version": "moss-0.1",
         "inventory_method": "Margo debug package build; generic exports parsed from compiler-emitted semantic_exports in .mossi",
         "package_count": len(results),

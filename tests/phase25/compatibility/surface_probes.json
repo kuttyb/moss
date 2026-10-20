@@ -1,0 +1,180 @@
+{
+  "schema": "phase25-1-generic-surface-probes-v1",
+  "purpose": "Source-backed and ABI-v9 controls for valid current Moss generic body shapes, with staged-v10 outcomes recorded by oracle.py.",
+  "cases": [
+    {
+      "id": "generic-empty-vector-result",
+      "priority": "P1-open-result",
+      "category": "zero-argument open Vector result and independent element specializations",
+      "provider": "module Service\n\nexport fn fresh():\n  return []\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  numbers = Service.fresh()\n  numbers.push(7)\n  echo numbers\n  flags = Service.fresh()\n  flags.push(true)\n  echo flags\n",
+      "expected_output": "[7]\n[true]\n",
+      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "checked_body_status": "ABI-v9 and source-backed are controls; v10 admission is measured without MOSS_PHASE25_EMPTY_VECTOR_EMIT. Existing R2c proves a separate flag is currently needed for positive v10 projection.",
+      "evidence": "tests/tooling/check_phase25_r2c_empty_vector_consumer.py"
+    },
+    {
+      "id": "generic-zero-argument-relay",
+      "priority": "P1-open-result",
+      "category": "zero-argument open result and private generic dependency closure",
+      "provider": "module Service\n\nfn fresh():\n  return []\n\nexport fn relay():\n  return fresh()\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  values = Service.relay()\n  values.push(17)\n  echo values\n  flags = Service.relay()\n  flags.push(true)\n  echo flags\n",
+      "expected_output": "[17]\n[true]\n",
+      "callable_name": "relay",
+      "poison_callables": ["relay", "fresh"],
+      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "checked_body_status": "v10 must prove both relay and fresh projection or reject the selected chain; legacy bodies for both are poisoned.",
+      "evidence": "tests/phase25/key_protocol/09d-empty-map-open-result-helper/case.moss; tests/tooling/check_phase25_r2c_empty_vector_consumer.py"
+    },
+    {
+      "id": "generic-member-length",
+      "priority": "P1-member-requirement",
+      "category": "structural member requirement and call-site specialization",
+      "provider": "module Service\n\nexport fn size(value):\n  return value.length()\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.size(\"moss\")\n",
+      "expected_output": "4\n",
+      "callable_name": "size",
+      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "checked_body_status": "Probe exact source-backed/v9 accepted structural requirement; record the v10 provider/import stage and requirement diagnostic.",
+      "evidence": "docs/GENTLE_INTRODUCTION_TO_MOSS.md#structural-traits"
+    },
+    {
+      "id": "generic-nonempty-vector-literal",
+      "priority": "P1-collection-literal",
+      "category": "open element type and nonempty Vector literal",
+      "provider": "module Service\n\nexport fn duplicate(value):\n  return [value]\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.duplicate(7)\n  echo Service.duplicate(\"moss\")\n",
+      "expected_output": "[7]\n[moss]\n",
+      "callable_name": "duplicate",
+      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "checked_body_status": "Valid source-backed/v9 forms are controls; v10 collection-literal support is classified from the isolated artifact path.",
+      "evidence": "docs/GENTLE_INTRODUCTION_TO_MOSS.md#collections"
+    },
+    {
+      "id": "generic-nominal-constructor",
+      "priority": "P1-nominal-identity",
+      "category": "provider-owned nominal construction and field identity",
+      "provider": "module Service\n\nexport type Box:\n  value\n\nexport fn wrap(value):\n  result = Box(value: value)\n  return result\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  number = Service.wrap(7)\n  echo number.value\n  text = Service.wrap(\"moss\")\n  echo text.value\n",
+      "expected_output": "7\nmoss\n",
+      "callable_name": "wrap",
+      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "checked_body_status": "The provider-owned Box identity and field TypeRef are checked source-backed/v9 and source-free v10; this language has no nominal methods, so structural member calls are covered separately.",
+      "evidence": "tests/tooling/check_phase25_h3_direct_records.py"
+    },
+    {
+      "id": "generic-map-index-mutation",
+      "priority": "P1-map-operation",
+      "category": "open Map key/value types, indexed mutation and indexed read",
+      "provider": "module Service\n\nexport fn insert_and_read(values, key, value) -> Int:\n  values[key] = value\n  return values[key]\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  values = Map()\n  values[\"seed\"] = 0\n  echo Service.insert_and_read(values, \"moss\", 7)\n  echo Service.insert_and_read(values, \"codex\", 9)\n  echo values[\"moss\"]\n",
+      "expected_output": "7\n9\n7\n",
+      "callable_name": "insert_and_read",
+      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "checked_body_status": "Valid Map operation and key/value specialization are checked in source-backed/v9; v10 admission is not inferred from ordinary concrete Map functions.",
+      "evidence": "docs/GENTLE_INTRODUCTION_TO_MOSS.md#map"
+    },
+    {
+      "id": "generic-if-early-return",
+      "priority": "P1-control-flow",
+      "category": "branch join and early return",
+      "provider": "module Service\n\nexport fn magnitude(value):\n  if value < 0:\n    return 0 - value\n  else:\n    return value\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.magnitude(-7)\n  echo Service.magnitude(5)\n",
+      "expected_output": "7\n5\n",
+      "callable_name": "magnitude",
+      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "checked_body_status": "Valid source-backed/v9 branch and early-return controls; v10 admission requires checked control-flow facts.",
+      "evidence": "src/ast.hpp: Stmt::Kind::If and Return"
+    },
+    {
+      "id": "generic-local-var-while",
+      "priority": "P1-control-flow",
+      "category": "explicit let/var bindings, assignment and while loop",
+      "provider": "module Service\n\nexport fn count_up(value) -> Int:\n  let target = value\n  var count = 0\n  while count < target:\n    count = count + 1\n  return count\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.count_up(0)\n  echo Service.count_up(4)\n",
+      "expected_output": "0\n4\n",
+      "callable_name": "count_up",
+      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "checked_body_status": "Source-backed/v9 controls cover explicit immutable/mutable binding, rebinding and while flow; v10 must preserve checked scope and loop semantics or reject callable selection.",
+      "evidence": "src/ast.hpp: Stmt::Kind::Let, Var, Assign and While"
+    },
+    {
+      "id": "generic-typed-enum-match",
+      "priority": "P1-match",
+      "category": "match with a provider-owned enum and a separate open parameter",
+      "provider": "module Service\n\nexport enum Outcome:\n  Ready(value: Int)\n  Empty\n\nexport fn unwrap(adjustment, outcome: Outcome) -> Int:\n  match outcome:\n    case Ready(value):\n      return value + adjustment\n    case Empty:\n      return adjustment\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.unwrap(5, Service.Outcome.Ready(value: 7))\n  echo Service.unwrap(5, Service.Outcome.Empty)\n",
+      "expected_output": "12\n5\n",
+      "callable_name": "unwrap",
+      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "checked_body_status": "Exhaustive match is valid in an open generic body when the match value has a statically closed provider enum type; v10 support is classified separately.",
+      "evidence": "docs/GENTLE_INTRODUCTION_TO_MOSS.md#closed-enums"
+    },
+    {
+      "id": "generic-functional-pipeline",
+      "priority": "P1-pipeline",
+      "category": "typed functional pipeline operation and placeholder expression",
+      "provider": "module Service\n\nexport fn double(values):\n  return values |> map(_ * 2)\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.double([1, 2, 3])\n",
+      "expected_output": "[2, 4, 6]\n",
+      "callable_name": "double",
+      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "checked_body_status": "Pipeline validity and source-free v9 execution are controls; v10 must preserve checked operation identity and type requirements or reject selection.",
+      "evidence": "docs/GENTLE_INTRODUCTION_TO_MOSS.md#functional-pipelines"
+    },
+    {
+      "id": "generic-assert-effect",
+      "priority": "P1-effect",
+      "category": "assert and may-panic effect on a generic body",
+      "provider": "module Service\n\nexport fn positive(value):\n  assert(value > 0)\n  return value\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.positive(7)\n",
+      "expected_output": "7\n",
+      "callable_name": "positive",
+      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "checked_body_status": "Source-backed/v9 controls establish accepted assertion requirements/effects; v10 must preserve them or reject selection.",
+      "evidence": "src/ast.hpp: Stmt::Kind::Call; sdk/foundations/bytes/src/bytes.moss"
+    },
+    {
+      "id": "generic-raise-recover",
+      "priority": "P1-exception-effect",
+      "category": "raise, try/recover and exceptional control flow",
+      "provider": "module Service\n\nenum Failure:\n  Bad\n\nexport fn nonnegative(value):\n  try:\n    if value < 0:\n      raise Failure.Bad\n    return value\n  recover Failure.Bad:\n    return 0\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.nonnegative(7)\n  echo Service.nonnegative(-2)\n",
+      "expected_output": "7\n0\n",
+      "callable_name": "nonnegative",
+      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "checked_body_status": "Probe source-backed validity and v9 native behavior of a generic body with inferred raise set before classifying v10 support.",
+      "evidence": "src/ast.hpp: Stmt::Kind::Try, Recover, Raise"
+    }
+  ],
+  "source_backed_invalid": [
+    {
+      "id": "generic-queue-method-on-open-parameter",
+      "provider": "module Service\n\nexport fn push_and_pop(values, item):\n  values.push(item)\n  return values.pop()\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  values = Queue()\n  values.push(1)\n  echo Service.push_and_pop(values, 7)\n",
+      "expected_diagnostic": "MOSS_COMPILE_ERROR",
+      "expected_message": "unresolved statically dispatched method 'values.push'",
+      "classification": "invalid-by-language for an open parameter: built-in Queue push/pop remain valid on a concretely typed Queue, but this structural generic receiver does not infer a Queue method requirement."
+    },
+    {
+      "id": "generic-enum-match-open-parameter",
+      "provider": "module Service\n\nenum Outcome:\n  Ready(value: Int)\n  Empty\n\nexport fn unwrap(value):\n  match value:\n    case Ready(item):\n      return item\n    case Empty:\n      return 0\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.unwrap(Service.Outcome.Ready(value: 7))\n  echo Service.unwrap(Service.Outcome.Empty)\n",
+      "expected_diagnostic": "TYPE_INFERENCE_FAILED",
+      "expected_message": "cannot infer concrete argument types for static specialization of function 'Service__unwrap'",
+      "classification": "invalid-by-language for this untyped open-parameter form: exhaustive matching requires the provider-owned enum parameter type to be statically closed."
+    }
+  ]
+}

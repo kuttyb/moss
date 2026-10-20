@@ -13,6 +13,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[3]
 MARGO = ROOT / "margo"
 CORPUS = ROOT / "tests/phase25/source_free_corpus/corpus.json"
+SURFACE_PROBES = ROOT / "tests/phase25/compatibility/surface_probes.json"
 TMP = ROOT / "tmp"
 
 
@@ -23,7 +24,9 @@ def main() -> int:
     TMP.mkdir(exist_ok=True)
     corpus = json.loads(CORPUS.read_text(encoding="utf-8"))
     results = []
-    for case in corpus.get("source_backed_invalid", []):
+    surface = json.loads(SURFACE_PROBES.read_text(encoding="utf-8"))
+    invalid_cases = corpus.get("source_backed_invalid", []) + surface.get("source_backed_invalid", [])
+    for case in invalid_cases:
         with tempfile.TemporaryDirectory(prefix=f"{case['id']}-", dir=TMP) as name:
             project = Path(name)
             source = project / "src"

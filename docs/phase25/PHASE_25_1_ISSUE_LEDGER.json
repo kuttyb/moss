@@ -1,18 +1,22 @@
 {
   "schema": "phase25-1-generic-issue-ledger-v1",
   "updated": "2026-10-20",
-  "compiler_commit": "43973e1adfdf015d5588e85f41d986925a85a565",
+  "compiler_commit": "19ffd63822f08c255cde231b590828a986e9a00b",
   "issues": [
     {
       "id": "P251-GEN-001",
       "severity": "P1",
       "status": "valid-but-unavailable-v10",
       "workload": "sdk/foundations/bytes::from_range(data)",
-      "symptom": "Staged ABI-v10 does not emit a checked body for the generic for/assert/Vector construction and mutation body.",
+      "symptom": "Staged ABI-v10 provider emits an interface without a validated checked body for the generic for/assert/Vector construction and mutation body; the source-free consumer rejects selection.",
       "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "source_evidence": ["sdk/foundations/bytes/src/bytes.moss", "sdk/foundations/bytes/examples/range_copy/src/main.moss", "sdk/foundations/acceptance/repros/source_free_range/src/main.moss"],
+      "source_evidence": [
+        "sdk/foundations/bytes/src/bytes.moss",
+        "sdk/foundations/acceptance/repros/source_free_range/src/main.moss",
+        "sdk/foundations/bytes/examples/range_copy/src/main.moss"
+      ],
       "existing_v9_harness": "sdk/foundations/acceptance/validate_source_free.py",
-      "r0_action": "Initial oracle proves source-backed and ABI-v9 Debug/Release output 329 after source deletion; v10 provider builds but consumer selection rejects with SOURCE_FREE_CHECKED_BODY_UNAVAILABLE. Retain until full R3 closure.",
+      "r0_action": "The oracle proves source-backed and ABI-v9 Debug/Release output 329 after source deletion using the source_free_range acceptance repro; v10 consumer selection rejects with SOURCE_FREE_CHECKED_BODY_UNAVAILABLE. The exact examples/range_copy program remains an R3 test requirement.",
       "owner": "Coordinator",
       "critical_path": "R3"
     },
@@ -21,53 +25,76 @@
       "severity": "P1",
       "status": "valid-but-unavailable-v10",
       "workload": "fresh(): return [] and relay(): return fresh()",
-      "symptom": "Existing narrow empty-vector support needs MOSS_PHASE25_EMPTY_VECTOR_EMIT; relay is rejected under current per-callable v10 admission.",
-      "source_evidence": ["tests/phase25/source_free_corpus/corpus.json", "tests/tooling/check_phase25_r2c_empty_vector_consumer.py", "tests/tooling/check_phase25_m2b2_source_free_corpus.py"],
-      "r0_action": "Run source-backed and v9 controls for both open-result functions; verify whether the hidden emission flag is required.",
+      "symptom": "Source-backed/v9 fresh and relay pass, but staged v10 rejects both without MOSS_PHASE25_EMPTY_VECTOR_EMIT. Existing narrow empty-vector support requires this hidden provider flag; relay is unavailable under current per-callable admission.",
+      "source_evidence": [
+        "tests/phase25/source_free_corpus/corpus.json",
+        "tests/tooling/check_phase25_r2c_empty_vector_consumer.py",
+        "tests/tooling/check_phase25_m2b2_source_free_corpus.py"
+      ],
+      "r0_action": "R0 surface oracle confirms source-backed/v9 Debug/Release behavior and records both no-flag v10 failures. R2 must remove the extra flag and prove fresh/relay dependency closure.",
       "owner": "Coordinator",
       "critical_path": "R2"
     },
     {
       "id": "P251-GEN-003",
       "severity": "P1",
-      "status": "unverified",
+      "status": "valid-but-unavailable-v10",
       "workload": "size(value): return value.length()",
       "symptom": "Generic member requirement serialization and selected static member dispatch are not covered by a positive v10 source-free proof.",
-      "source_evidence": ["docs/phase25/PHASE_25_1_V10_READINESS.md", "src/moss.cpp"],
-      "r0_action": "Add source-backed/v9/v10 probe; classify the exact accepted member/trait requirement.",
+      "source_evidence": [
+        "tests/phase25/compatibility/surface_probes.json",
+        "docs/phase25/PHASE_25_1_R0_FULL_ORACLE.json",
+        "docs/phase25/PHASE_25_1_V10_READINESS.md"
+      ],
+      "r0_action": "R0 probe establishes `size(value): return value.length()` for String in source-backed/v9 Debug/Release; staged v10 fails closed at consumer selection. Continue member-requirement closure in R2.",
       "owner": "Coordinator",
       "critical_path": "R2"
     },
     {
       "id": "P251-GEN-004",
       "severity": "P1",
-      "status": "unverified",
-      "workload": "Generic nominal methods, constructors, and provider-owned identities",
-      "symptom": "Existing checked-body nominal records cover selected constructor/field cases, not the complete valid method/identity surface.",
-      "source_evidence": ["tests/tooling/check_phase25_h3_direct_records.py", "tests/tooling/check_phase25_h3_source_free_chain.py", "tests/phase25/integration/fixtures/abi_v10/"],
-      "r0_action": "Enumerate actual exported nominal generic callables and source-free consumers; probe cross-module identity.",
+      "status": "partially-covered",
+      "workload": "Generic nominal construction and provider-owned identity; nominal methods are not Moss syntax",
+      "symptom": "The existing H3 direct-record harness proves a source-free generic Box constructor, provider-owned nominal identity, and consumer field read for Int and String; other nominal records and dependencies need a bounded inventory rather than a claim that Moss has nominal methods.",
+      "source_evidence": [
+        "tests/tooling/check_phase25_h3_direct_records.py",
+        "tests/phase25/compatibility/surface_probes.json",
+        "docs/phase25/PHASE_25_1_R0_FULL_ORACLE.json",
+        "docs/GENTLE_INTRODUCTION_TO_MOSS.md"
+      ],
+      "r0_action": "Added an isolated three-mode Box constructor probe; the H3 gate already provides positive source-free v10 proof. Moss exposes structural member calls and ordinary functions, not nominal methods. Track other actual nominal exports in the R4 package map.",
       "owner": "Coordinator",
-      "critical_path": "R2/R4"
+      "critical_path": "R0/R4"
     },
     {
       "id": "P251-GEN-005",
       "severity": "P1",
-      "status": "unverified",
-      "workload": "Generic branches, early returns, match, collection mutation, exception/assert effects, Map/Queue operations, and nested helpers",
-      "symptom": "The current provider emitter/importer covers selected expression and loop shapes, not an exhaustive checked statement/expression traversal.",
-      "source_evidence": ["src/checked_body_ir.hpp", "src/moss.cpp", "docs/phase25/PHASE_25_1_GENERIC_CHECKED_BODY_ARCHITECTURE.md"],
-      "r0_action": "Join the complete checker-valid surface map to compiler-emitted generic exports and current v9 source-free call sites.",
+      "status": "valid-but-unavailable-v10",
+      "workload": "Valid generic branches/early returns, local mutation and while, Map indexed mutation, nonempty Vector literals, functional pipelines, assert effects, typed match, and structured iteration",
+      "symptom": "All listed probe bodies pass source-backed and ABI-v9 native Debug/Release; staged-v10 source-free selection rejects them with SOURCE_FREE_CHECKED_BODY_UNAVAILABLE. A general checker-owned body traversal is still missing.",
+      "source_evidence": [
+        "tests/phase25/compatibility/surface_probes.json",
+        "docs/phase25/PHASE_25_1_R0_FULL_ORACLE.json",
+        "src/checked_body_ir.hpp",
+        "src/moss.cpp"
+      ],
+      "r0_action": "R0 surface probes close validity and ABI-v9 classification for the listed forms. Carry exact rows into R1/R3 and repeat full parity at R4.",
       "owner": "Coordinator",
       "critical_path": "R1/R3"
     },
     {
       "id": "P251-GEN-006",
       "severity": "P1",
-      "status": "unverified",
-      "workload": "All production SDK/package generic exports and the actual 14-provider advanced-data closure",
-      "symptom": "Prior acceptance is split across narrow checked-body tests and ABI-v9 source-free smoke suites; whole v10 source-free parity has not been measured.",
-      "source_evidence": ["tests/phase25/compatibility/inventory.py", "tests/phase25/compatibility/oracle.py", "sdk/advanced-data-acceptance/check_source_free.py"],
-      "r0_action": "Complete the compiler-emitted inventory and map every existing source-free harness to selected callables, then run the full 14-provider source-free v9 control.",
+      "status": "baseline-inventory-gap",
+      "workload": "All production SDK/package generic exports, source-free harnesses and the 14-provider advanced-data closure",
+      "symptom": "Inventory has 26 package roots, 4 open generic exports, and 71 discovered source-free/ABI harness candidates. The 14-provider v9 gate passes, but its concrete API fixture selects no open generic export. `packages/time` remains a P2 build failure and cannot be counted as zero generic exports.",
+      "source_evidence": [
+        "tests/phase25/compatibility/inventory.py",
+        "docs/phase25/PHASE_25_1_GENERIC_INVENTORY.json",
+        "docs/phase25/PHASE_25_1_HARNESS_MAP.json",
+        "sdk/advanced-data-acceptance/check_source_free.py"
+      ],
+      "r0_action": "Marker-based discovery now includes the previously missed R2c and mixed-admission harnesses. The explicit harness map distinguishes selected open generic callables from concrete API coverage. Keep packages/time red until independently classified.",
       "owner": "Coordinator",
       "critical_path": "R0/R4"
     },
@@ -77,8 +104,12 @@
       "status": "invalid-by-language",
       "workload": "Passing the `range(1, 4)` expression as an argument to an open generic `for value in data` helper",
       "symptom": "The source-backed consumer fails with MOSS_COMPILE_ERROR: `type 'range[int]' is not statically iterable`; the language supports range as a direct loop source, but this range value does not satisfy the helper's static-iterator parameter.",
-      "source_evidence": ["tests/phase25/source_free_corpus/corpus.json", "tests/phase25/compatibility/invalid_probes.py", "tmp/phase25-1-invalid-probes.json"],
-      "r0_action": "Keep the expected-invalid probe; the valid generic iterator positive uses Vector. Actual borrowed-Range SDK coverage is separately tracked as P251-GEN-001.",
+      "source_evidence": [
+        "tests/phase25/source_free_corpus/corpus.json",
+        "tests/phase25/compatibility/invalid_probes.py",
+        "docs/phase25/PHASE_25_1_R0_INVALID_PROBES.json"
+      ],
+      "r0_action": "Keep the expected-invalid probe; the valid generic iterator positive uses Vector. Borrowed-Range SDK coverage is separately tracked as P251-GEN-001 and the actual range_copy example remains for R3.",
       "owner": "Coordinator",
       "critical_path": "none"
     },
@@ -89,11 +120,65 @@
       "workload": "packages/time production package inventory",
       "symptom": "The R0 Margo build fails before compiler interface emission: time__pad_digit returns char while annotated string (packages/time/src/main.moss:379). The package cannot be classified for generic exports from this source build.",
       "expected_diagnostic": "MOSS_COMPILE_ERROR",
-      "source_evidence": ["packages/time/Moss.toml", "packages/time/src/main.moss", "docs/phase25/PHASE_25_1_GENERIC_INVENTORY.json"],
+      "source_evidence": [
+        "packages/time/Moss.toml",
+        "packages/time/src/main.moss",
+        "docs/phase25/PHASE_25_1_GENERIC_INVENTORY.json"
+      ],
       "existing_v9_harness": null,
       "r0_action": "Retain the exact baseline failure; no source-free generic consumer is currently indexed for this package. Reassess after remaining production consumer mapping, and do not silently count the package as having no generic exports.",
       "owner": "Coordinator",
       "critical_path": "R0/R4"
+    },
+    {
+      "id": "P251-GEN-009",
+      "severity": "P1",
+      "status": "valid-but-unavailable-v10",
+      "workload": "Generic try/raise/recover body with provider-owned error enum",
+      "symptom": "The source-backed generic body passes Debug/Release, but the ABI-v9 source-free consumer fails both profiles with `raise requires a statically typed error value`; staged-v10 consumer selection fails closed with SOURCE_FREE_CHECKED_BODY_UNAVAILABLE.",
+      "expected_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "source_evidence": [
+        "tests/phase25/compatibility/surface_probes.json",
+        "docs/phase25/PHASE_25_1_R0_FULL_ORACLE.json"
+      ],
+      "existing_v9_harness": null,
+      "r0_action": "Preserve the v9 consumer failure and v10 rejection as independent red rows. R1/R3 must serialize and project nominal error identity, raise set and recovery control flow; do not use the failing v9 path as evidence that this source-backed body is invalid.",
+      "owner": "Coordinator",
+      "critical_path": "R1/R3/R4"
+    },
+    {
+      "id": "P251-GEN-010",
+      "severity": "not-applicable",
+      "status": "invalid-by-language",
+      "workload": "Open generic receiver calling Queue.push/pop",
+      "symptom": "The minimal source-backed generic probe fails with MOSS_COMPILE_ERROR: `unresolved statically dispatched method 'values.push'`. Queue push/pop remain valid when the receiver has a concrete Queue type; this receiver form has no inferred generic method requirement.",
+      "expected_diagnostic": "MOSS_COMPILE_ERROR",
+      "source_evidence": [
+        "tests/phase25/compatibility/surface_probes.json",
+        "docs/phase25/PHASE_25_1_R0_INVALID_PROBES.json",
+        "docs/GENTLE_INTRODUCTION_TO_MOSS.md"
+      ],
+      "existing_v9_harness": null,
+      "r0_action": "Retain the expected-invalid probe. Do not count this exact open receiver form as a v10 regression; continue to track valid concrete Queue API consumers separately.",
+      "owner": "Coordinator",
+      "critical_path": "none"
+    },
+    {
+      "id": "P251-GEN-011",
+      "severity": "not-applicable",
+      "status": "invalid-by-language",
+      "workload": "Exhaustive enum match through an untyped open generic parameter",
+      "symptom": "The source-backed call cannot infer a concrete specialization for `Service.unwrap` and fails with TYPE_INFERENCE_FAILED. Matching a provider-owned nominal value requires the enum type to be statically closed; the function's untyped open parameter does not establish it.",
+      "expected_diagnostic": "TYPE_INFERENCE_FAILED",
+      "source_evidence": [
+        "tests/phase25/compatibility/surface_probes.json",
+        "docs/phase25/PHASE_25_1_R0_INVALID_PROBES.json",
+        "docs/GENTLE_INTRODUCTION_TO_MOSS.md"
+      ],
+      "existing_v9_harness": null,
+      "r0_action": "Retain the negative probe and keep typed nominal/match behavior separate from open generic validity. Do not infer that all match statements are invalid in generic bodies from this one open parameter form.",
+      "owner": "Coordinator",
+      "critical_path": "none"
     }
   ]
 }

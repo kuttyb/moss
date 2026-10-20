@@ -1,5 +1,40 @@
 # Moss current status
 
+## Phase 25.1 R0 revision — 2026-10-20
+
+Branch `phase25-1-work`; task work is at R0 review remediation. T0 passed
+before implementation: the remote peeled targets for `phase25-pre-main` and
+`phase25-delivered-v9` are respectively
+`fa3a340a0a6652568b97869489da1a84038b9857` and
+`dd45e30722bcc2d62d4bb46ba184d426cbaea066`. `origin/main` and
+`origin/phase25-integration` remain at the delivered v9 baseline.
+
+The R0 checkpoint `19ffd63822f08c255cde231b590828a986e9a00b` received
+independent NO-GO findings on valid generic surface coverage, source-free
+harness discovery, and the Vector-iteration provider/consumer stage assertion.
+The working revision adds a 71-path marker inventory and explicit harness map;
+its hostile corpus now requires a v10 provider artifact before source-free
+consumer rejection. Expanded three-mode evidence covers 19 cases (38 profiles
+per mode): source-backed 38/38, ABI-v9 36/38, and ABI-v10 12/38. The two ABI-v9
+failures are generic raise/recover consumer failures with
+`raise requires a statically typed error value`; all 26 unsupported v10 profiles
+reject with `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE`. Invalid source probes
+separately classify range-as-iterator-argument, open Queue method dispatch,
+and untyped enum match. Exact evidence is in
+`docs/phase25/PHASE_25_1_R0_FULL_ORACLE.json`,
+`PHASE_25_1_R0_INVALID_PROBES.json`, and `PHASE_25_1_HARNESS_MAP.json`.
+
+The required M2b2 hostile corpus passed after the revision, including provider
+emission then consumer-stage rejection, artifact mutation negatives, and ABI-v9
+controls. Agent-feedback validation and `git diff --check` passed. The inventoried
+`packages/time` build failure remains P2. The actual bytes `examples/range_copy`
+program is still an R3 requirement; R0 ran the acceptance repro. No R1 compiler
+implementation has started. Next: freeze and push the revised R0 checkpoint,
+obtain the designated independent adversarial review, then proceed to R1 if all
+P0/P1 findings are closed.
+
+---
+
 ## Phase 25-M2b.3d-D2 checked-body collection-loop codec — 2026-10-19
 
 Implementation is on `phase25-m2b3d-d2-loop-codec`, based on

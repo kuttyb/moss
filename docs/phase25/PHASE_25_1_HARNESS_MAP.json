@@ -1,0 +1,97 @@
+{
+  "schema": "phase25-1-source-free-harness-map-v1",
+  "inventory": "docs/phase25/PHASE_25_1_GENERIC_INVENTORY.json",
+  "inventory_compiler_commit": "43973e1adfdf015d5588e85f41d986925a85a565",
+  "discovery": "inventory.py catalogs files selected by source-free path/name or explicit module-path, source-free diagnostic, ABI artifact, or staged generic-body markers. Catalog entries are discovery evidence, not semantic coverage claims. This map records inspected selected-callable coverage.",
+  "sdk_generic_exports": [
+    {
+      "package": "sdk/foundations/collections",
+      "callable": "index_of",
+      "abi_v9": ["sdk/foundations/collections/tests/check_source_free.py"],
+      "abi_v10": ["tests/tooling/check_phase25_d3d_collection_source_free.py", "tests/tooling/check_phase25_d4_collection_source_free.py"],
+      "coverage": "Source physically removed; Int and String specializations; checked projection trace; generic_stmt removed. D4 also tests empty Vector and malformed requirement/effect artifacts."
+    },
+    {
+      "package": "sdk/foundations/collections",
+      "callable": "contains",
+      "abi_v9": ["sdk/foundations/collections/tests/check_source_free.py"],
+      "abi_v10": ["tests/tooling/check_phase25_d4_collection_source_free.py"],
+      "coverage": "Source physically removed; Int, String and empty String Vector; checked projection trace; generic_stmt removed."
+    },
+    {
+      "package": "sdk/foundations/collections",
+      "callable": "count_equal",
+      "abi_v9": ["sdk/foundations/collections/tests/check_source_free.py"],
+      "abi_v10": ["tests/tooling/check_phase25_d4_collection_source_free.py"],
+      "coverage": "Source physically removed; Int, String and empty Int Vector; checked projection trace; generic_stmt removed."
+    },
+    {
+      "package": "sdk/foundations/bytes",
+      "callable": "from_range",
+      "abi_v9": ["sdk/foundations/acceptance/validate_source_free.py"],
+      "abi_v10": ["tests/phase25/compatibility/oracle.py --include-sdk-bytes-range"],
+      "coverage": "R0 oracle source-backed and v9 Debug/Release pass, provider source removed, legacy body poisoned; v10 rejects at source-free consumer selection. The tested oracle/acceptance input is the `source_free_range` repro. The actual `sdk/foundations/bytes/examples/range_copy` program remains an R3 requirement and has not yet been run as the source-free acceptance case."
+    }
+  ],
+  "generic_shape_harnesses": [
+    {
+      "path": "tests/tooling/check_phase25_m2b2_source_free_corpus.py",
+      "synthetic_callables": ["Service.fresh", "Service.helper"],
+      "shapes": ["parameter return", "scalar literal", "field read", "private call", "collection loop", "generic Vector iteration"],
+      "coverage": "V10 source-free execution, selected generic_stmt poisoning, hostile artifact mutation negatives and ABI-v9 controls; generic Vector iteration must emit provider then reject at source-free consumer."
+    },
+    {
+      "path": "tests/tooling/check_phase25_r2c_empty_vector_consumer.py",
+      "synthetic_callables": ["Provider.fresh"],
+      "shapes": ["zero-argument open Vector result", "independent Int and Bool specializations"],
+      "coverage": "V10 positive currently requires MOSS_PHASE25_EMPTY_VECTOR_EMIT at the provider; source-free consumer removes provider source and has ABI-v9 control."
+    },
+    {
+      "path": "tests/tooling/check_phase25_mixed_provider_admission.py",
+      "synthetic_callables": ["Service.supported", "Service.unsupported"],
+      "shapes": ["per-callable v10 admission", "provider with both supported and unsupported generics"],
+      "coverage": "Source-free supported call executes by projection; unsupported call and missing body reject; ABI-v9 retained in separate coverage."
+    },
+    {
+      "path": "tests/tooling/check_phase25_c2b6c_source_free_arithmetic.py",
+      "synthetic_callables": ["Service.compute"],
+      "shapes": ["checked arithmetic", "Int and Float specialization"],
+      "coverage": "V10 source-free arithmetic, poisoned/removed legacy body and malformed artifact rejection."
+    },
+    {
+      "path": "tests/tooling/check_phase25_h3_direct_records.py",
+      "synthetic_callables": ["Service.fresh"],
+      "shapes": ["nominal construction and field records"],
+      "coverage": "Source-free v10 typed nominal/field projection after provider source removal."
+    },
+    {
+      "path": "tests/tooling/check_phase25_h3_source_free_chain.py",
+      "synthetic_callables": ["Service.fresh", "Service.helper"],
+      "shapes": ["private helper dependency closure", "nominal construction"],
+      "coverage": "Two source-free consumers, poisoned helper chain, missing dependency/body negatives."
+    },
+    {
+      "path": "tests/tooling/check_phase25_h3_source_free_guard.py",
+      "synthetic_callables": ["Service.fresh"],
+      "shapes": ["unsupported private generic chain admission"],
+      "coverage": "Unsupported chain fails closed with provider/call-site provenance."
+    }
+  ],
+  "advanced_data_v9_source_free_closure": {
+    "harness": "sdk/advanced-data-acceptance/check_source_free.py",
+    "consumer": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+    "build_provider_pairs": ["core", "text", "parse", "fmt", "csv", "bytes", "encoding", "math", "linalg", "ndarray", "datastructures", "tables", "binary", "cbor"],
+    "imported_modules": ["binary", "cbor", "csv", "datastructures", "linalg", "ndarray", "tables"],
+    "selected_calls": {
+      "binary": ["new_reader", "new_writer_with_limits", "read_u16_be", "reader_cursor", "write_length_delimited", "writer_output"],
+      "cbor": ["add_array", "add_int", "array_get", "array_length", "array_push", "decode", "edge_count", "encode", "int_value", "new_doc", "parent_of", "root_id", "set_root", "validate_doc"],
+      "datastructures": ["int_deque_push_back", "int_deque_push_front", "int_deque_values", "new_int_bounded_deque", "new_priority_queue", "new_union_find", "priority_queue_pop", "priority_queue_push", "union_find_same", "union_find_union"],
+      "linalg": ["matrix_get"],
+      "ndarray": ["flatten", "from_flat", "from_matrix", "multiply_scalar", "ones", "sum_axis", "to_matrix"],
+      "tables": ["add_column", "group_by_int", "group_sum_int", "inner_join_int", "int_column", "int_values", "new_table", "sort_by", "table_row_count"]
+    },
+    "generic_open_export_selection": [],
+    "coverage": "R0 gate passed: all 14 exact ABI-v9 provider pairs built, five Team A modules are included, all provider sources absent from the consumer module path, native consumer output matched. The fixture invokes typed concrete package APIs; it does not select any of the four open generic exports."
+  },
+  "unmapped_catalog_policy": "The inventory scanner preserves every discovered candidate path and SHA. A catalog path absent from this map is not presumed to cover a callable; broad v10 parity must add a reviewed map entry or explicit no-selected-generic classification before R4."
+}
