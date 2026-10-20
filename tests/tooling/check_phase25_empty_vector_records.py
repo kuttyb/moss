@@ -61,25 +61,13 @@ with tempfile.TemporaryDirectory(prefix="phase25-empty-vector-",
     enabled_env = os.environ.copy()
     enabled_env.update(
         MOSS_STAGED_ABI="v10",
-        MOSS_PHASE25_EMPTY_VECTOR_EMIT="1",
         MOSS=str(MOSS),
-        MARGO_HOME=str(scratch / "margo-experimental"),
+        MARGO_HOME=str(scratch / "margo-v10"),
         TMPDIR=str(TMP),
     )
     run([str(MARGO), "build"], cwd=experimental, env=enabled_env)
     experimental_interface = experimental / "build/debug/Provider.mossi"
     assert experimental_interface.is_file(), experimental_interface
-    print(run([str(verifier), str(experimental_interface), "experimental"]),
-          end="")
-
-    disabled = scratch / "disabled"
-    make_provider(disabled, "empty_vector_provider_disabled")
-    disabled_env = enabled_env.copy()
-    disabled_env.pop("MOSS_PHASE25_EMPTY_VECTOR_EMIT")
-    disabled_env["MARGO_HOME"] = str(scratch / "margo-disabled")
-    run([str(MARGO), "build"], cwd=disabled, env=disabled_env)
-    disabled_interface = disabled / "build/debug/Provider.mossi"
-    assert disabled_interface.is_file(), disabled_interface
-    print(run([str(verifier), str(disabled_interface), "disabled"]), end="")
+    print(run([str(verifier), str(experimental_interface)]), end="")
 
 print("PASS staged ABI-v10 opt-in empty-vector provider emission")

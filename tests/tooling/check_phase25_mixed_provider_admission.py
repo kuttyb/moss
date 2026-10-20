@@ -144,7 +144,6 @@ with tempfile.TemporaryDirectory(prefix="phase25-mixed-provider-",
 
     v9 = os.environ.copy()
     v9.pop("MOSS_STAGED_ABI", None)
-    v9.pop("MOSS_PHASE25_EMPTY_VECTOR_EMIT", None)
     v9.update(MOSS=str(MOSS), MARGO_HOME=str(scratch / "margo-v9-provider"),
               TMPDIR=str(TMP))
     provider_v9 = scratch / "provider-v9"

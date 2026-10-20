@@ -34,9 +34,10 @@ static Program checked_provider(const string& functions) {
 
 static std::pair<std::size_t, std::size_t> emitted_counts(
     Program& program) {
+  if (!staged_abi_v10()) return {0, 0};
   abi_v10::Interface value;
   value.module_id = kModuleId;
-  append_abi_v10_empty_vector_records(value, program, "Provider");
+  append_abi_v10_direct_return_records(value, program, "Provider");
   std::size_t summaries = 0;
   for (const auto& record : value.semantic_contract)
     if (!record.payload.empty() && record.payload.front() == 2 &&
@@ -55,7 +56,6 @@ static std::pair<std::size_t, std::size_t> emitted_counts(
 
 static void check_in_memory_eligibility() {
   setenv("MOSS_STAGED_ABI", "v10", 1);
-  setenv("MOSS_PHASE25_EMPTY_VECTOR_EMIT", "1", 1);
   auto good = checked_provider("export fn fresh():\n  return []\n");
   assert(good.functions.size() == 1 && good.functions.front().open_summary &&
          good.functions.front().open_summary->complete);
@@ -65,13 +65,17 @@ static void check_in_memory_eligibility() {
   for (const auto& source : {
            string("export fn fresh():\n  return [1]\n"),
            string("export fn fresh(unused):\n  return []\n"),
-           string("export fn fresh(values):\n  return values\n"),
            string("export fn fresh():\n  return 1\n"),
            string("export fn fresh():\n  values = []\n  return values\n")}) {
     auto unsupported = checked_provider(source);
     const auto unsupported_counts = emitted_counts(unsupported);
     assert(unsupported_counts.first == 0 && unsupported_counts.second == 0);
   }
+
+  auto parameter_return = checked_provider(
+      "export fn fresh(values):\n  return values\n");
+  counts = emitted_counts(parameter_return);
+  assert(counts.first == 1 && counts.second == 1);
 
   auto missing = checked_provider("export fn fresh():\n  return []\n");
   missing.functions.front().open_summary.reset();
@@ -90,11 +94,6 @@ static void check_in_memory_eligibility() {
   counts = emitted_counts(unresolved);
   assert(counts.first == 0 && counts.second == 0);
 
-  auto switch_disabled = checked_provider("export fn fresh():\n  return []\n");
-  setenv("MOSS_PHASE25_EMPTY_VECTOR_EMIT", "0", 1);
-  counts = emitted_counts(switch_disabled);
-  assert(counts.first == 0 && counts.second == 0);
-  setenv("MOSS_PHASE25_EMPTY_VECTOR_EMIT", "1", 1);
   setenv("MOSS_STAGED_ABI", "v9", 1);
   auto v9 = checked_provider("export fn fresh():\n  return []\n");
   counts = emitted_counts(v9);
@@ -117,7 +116,7 @@ static std::size_t count_lines_containing(const std::string& payload,
   return count;
 }
 
-static void check_artifact(const std::string& bytes, bool experimental) {
+static void check_artifact(const std::string& bytes) {
   const auto sealed = abi_v10::decode(bytes);
   abi_v10::validate_complete_interface(sealed);
   const auto& iface = sealed.value;
@@ -149,8 +148,7 @@ static void check_artifact(const std::string& bytes, bool experimental) {
       generic_statements = count_lines_containing(
           record.payload, "  generic_stmt ");
 
-  // Direct generic parameter returns are a separate always-on ABI-v10 body
-  // form. The empty-vector feature switch must not disable this record pair.
+  // Direct generic parameter returns share the same direct-return producer.
   std::vector<abi_v10::Summary> parameter_summaries;
   for (const auto* records : {&iface.semantic_contract,
                                &iface.private_semantic_dependencies})
@@ -192,13 +190,6 @@ static void check_artifact(const std::string& bytes, bool experimental) {
          parameter_statements.front().expr->kind ==
              checked_ir::ExprKind::Parameter &&
          parameter_statements.front().expr->ordinal == 0);
-
-  if (!experimental) {
-    assert(summaries.empty() && bodies.empty());
-    assert(generic_statements == 1);
-    std::cout << "PASS switch-disabled counts: summary=0 body=0 generic_stmt=1\n";
-    return;
-  }
 
   assert(summaries.size() == 1 && bodies.size() == 1);
   const auto& summary = summaries.front();
@@ -307,7 +298,7 @@ static void check_artifact(const std::string& bytes, bool experimental) {
         assert(abi_v10::read_checked_body_record(record.payload).callable_id !=
                id);
   }
-  std::cout << "PASS experimental empty-vector summary/body counts 1/1; hash="
+  std::cout << "PASS opt-in empty-vector summary/body counts 1/1; hash="
             << body.semantic_hash
             << "; provenance=1; canonical bytes and tree verified; "
                "legacy generic_stmt=1; unsupported empty-vector bodies=0; "
@@ -315,7 +306,7 @@ static void check_artifact(const std::string& bytes, bool experimental) {
 }
 
 int main(int argc, char** argv) {
-  assert(argc == 3);
+  assert(argc == 2);
   check_in_memory_eligibility();
-  check_artifact(read_file(argv[1]), string(argv[2]) == "experimental");
+  check_artifact(read_file(argv[1]));
 }

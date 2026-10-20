@@ -1193,8 +1193,7 @@ export fn size(value):
 ''',
         })
         strict_env = clear_v10_environment(os.environ.copy())
-        strict_env.update(MOSS_STAGED_ABI="v10",
-                          MOSS_PHASE25_EMPTY_VECTOR_EMIT="1")
+        strict_env.update(MOSS_STAGED_ABI="v10")
         strict_build = run(MARGO, "build", "--json", cwd=strict_provider,
                            env=strict_env)
         assert strict_build.returncode == 0 and json.loads(

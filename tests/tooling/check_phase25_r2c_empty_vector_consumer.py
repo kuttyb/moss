@@ -48,7 +48,7 @@ export fn fresh():
   return []
 """)
     staged = os.environ.copy()
-    staged.update(MOSS_STAGED_ABI="v10", MOSS_PHASE25_EMPTY_VECTOR_EMIT="1",
+    staged.update(MOSS_STAGED_ABI="v10",
                   MOSS=str(MOSS), MARGO_HOME=str(scratch / "margo-provider"),
                   TMPDIR=str(TMP))
     run([str(MARGO), "build"], cwd=provider, env=staged)
@@ -72,7 +72,6 @@ fn main():
   echo flags
 """)
     consumer_env = staged.copy()
-    consumer_env.pop("MOSS_PHASE25_EMPTY_VECTOR_EMIT", None)
     consumer_env.update(MOSS_MODULE_PATH=str(artifacts),
                         MOSS_PHASE25_CHECKED_BODY_TRACE="1",
                         MARGO_HOME=str(scratch / "margo-consumer"))
@@ -163,7 +162,6 @@ fn main():
 
     provenance_env = os.environ.copy()
     provenance_env.update(MOSS_STAGED_ABI="v10",
-                          MOSS_PHASE25_EMPTY_VECTOR_EMIT="1",
                           MOSS_PHASE25_CHECKED_BODY_TRACE="1",
                           MARGO_HOME=str(scratch / "margo-provenance"),
                           TMPDIR=str(TMP))

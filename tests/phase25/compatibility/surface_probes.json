@@ -9,9 +9,7 @@
       "provider": "module Service\n\nexport fn fresh():\n  return []\n",
       "consumer": "module Main\nimport Service\n\nfn main():\n  numbers = Service.fresh()\n  numbers.push(7)\n  echo numbers\n  flags = Service.fresh()\n  flags.push(true)\n  echo flags\n",
       "expected_output": "[7]\n[true]\n",
-      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "checked_body_status": "ABI-v9 and source-backed are controls; v10 admission is measured without MOSS_PHASE25_EMPTY_VECTOR_EMIT. Existing R2c proves a separate flag is currently needed for positive v10 projection.",
+      "checked_body_status": "The direct-return provider emits under MOSS_STAGED_ABI=v10 alone; source-deleted Int/Bool projection and hostile controls pass in R2c. The generic R0 three-mode oracle is still to be rerun for this updated path.",
       "evidence": "tests/tooling/check_phase25_r2c_empty_vector_consumer.py"
     },
     {

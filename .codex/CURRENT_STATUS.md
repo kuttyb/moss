@@ -9726,3 +9726,22 @@ nonempty-vector widening was reverted: the minimal `singleton(value): return
 the focused checker test. This is an unresolved generic inference/checker
 question, not an exclusion. Current tracked compiler source is restored to the
 reviewed `d95f0595` checkpoint; continue other complete occurrence families.
+
+Architect review of exact delivery HEAD
+`e8c6eadef8ed7a5411c275f0b5ed9e6397cc0631` (implementation was `d95f0595`)
+identified an R1 P1: empty-vector emission remained a separate
+`MOSS_PHASE25_EMPTY_VECTOR_EMIT`-gated producer. The current working change
+routes guarded empty-vector and generic parameter/scalar returns through the
+same `append_abi_v10_direct_return_records` producer and shared callable-record
+builder, validates with the unified checked-body decoder, preserves the
+checker-origin checks, and removes the separate empty-vector emitter and flag.
+After rebuilding `moss-dev`, the focused provider, source-deleted R2c consumer,
+full M2b2 source-free/hostile/v9 corpus, occurrence checker, feedback checker,
+and diff check pass. Existing TypeSolver initializer warnings remain. This
+implementation SHA awaits a commit and exact-SHA architect follow-up; R1 is not
+complete.
+
+The checked source probe `box_first(values): return [values[0]]` passes
+`moss check --json` but yields `open_summary.complete=false`, no result TypeRef
+and no checked bytes. This open generic-vector inference case remains
+unresolved, not an exclusion.

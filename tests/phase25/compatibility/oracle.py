@@ -61,7 +61,6 @@ def env_for(case_root: Path, *, mode: str, profile: str, provider: bool = False)
     env["MOSS"] = str(MOSS)
     env["MARGO_HOME"] = str(case_root / "margo" / mode / profile / ("provider" if provider else "consumer"))
     env["TMPDIR"] = str(TMP)
-    env.pop("MOSS_PHASE25_EMPTY_VECTOR_EMIT", None)
     env.pop("MOSS_STAGED_ABI", None)
     if mode == "v10":
         env["MOSS_STAGED_ABI"] = "v10"

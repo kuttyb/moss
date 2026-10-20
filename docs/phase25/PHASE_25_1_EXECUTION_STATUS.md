@@ -578,3 +578,35 @@ functions. The branch is restored to the reviewed `d95f0595` source. R1
 remains incomplete; continue with other complete and auditable occurrence
 families and revisit generic vector inference with a minimal valid-surface
 probe.
+
+### R1 direct-return consolidation — working checkpoint
+
+Architect reviewed exact delivery HEAD
+`e8c6eadef8ed7a5411c275f0b5ed9e6397cc0631` (implementation unchanged from
+reviewed `d95f0595`) and identified a P1 R1 gap: the empty-vector producer
+still used a separate emitter behind `MOSS_PHASE25_EMPTY_VECTOR_EMIT`. The
+review recommended consolidating the empty-only case into the direct-return
+producer while preserving complete summary/body/provenance checks and keeping
+all other vector forms open.
+
+The working tree now routes both generic parameter/scalar returns and the
+guarded empty open-vector return through `append_abi_v10_direct_return_records`
+and the shared callable-record builder. It uses the unified checked-body
+decoder for encode/decode validation, preserves the empty vector's checker
+origin check, and removes the separate empty-vector emitter and feature switch.
+No v10 code path requires `MOSS_PHASE25_EMPTY_VECTOR_EMIT`; ABI-v9 remains the
+default. Focused provider and source-deleted consumer suites pass without the
+flag, including Int/Bool specialization, projection trace, legacy-statement
+nonselection, hostile artifact rejection and v9 controls. `moss-dev`, the full
+M2b2 source-free/hostile/v9 corpus, occurrence-role checker, feedback checker
+and `git diff --check` pass after the last source rebuild. Existing
+TypeSolver missing-initializer warnings remain. The direct-return consolidation
+is not yet committed or independently reviewed; R1's totality, shared
+structural lowering, other shape-specific producers and cross-crate coverage
+remain open.
+
+The additional source-valid probe `box_first(values): return [values[0]]`
+passes `moss check --json`, but its open summary has no result TypeRef and is
+incomplete, so no canonical body is produced. This remains an unresolved
+generic inference/checker question; it is neither accepted nor excluded by the
+empty-vector slice.

@@ -24,7 +24,6 @@ G2 = ROOT / "tests/phase25/g2/conformance"
 # Production stays on ABI v9 until the joint Team S/Team G cutover; the
 # source-free gates prove the staged ABI-v10 path (TEAM_G_ABI_V10_STAGING.md).
 os.environ["MOSS_STAGED_ABI"] = "v10"
-os.environ["MOSS_PHASE25_EMPTY_VECTOR_EMIT"] = "1"
 
 
 def run(*args, cwd=ROOT, env=None):
@@ -179,7 +178,6 @@ def source_free(scratch, provider_source):
     env = os.environ.copy()
     env["MOSS_MODULE_PATH"] = str(artifacts)
     env["MOSS_STAGED_ABI"] = "v10"
-    env["MOSS_PHASE25_EMPTY_VECTOR_EMIT"] = "1"
     return env, artifacts
 
 

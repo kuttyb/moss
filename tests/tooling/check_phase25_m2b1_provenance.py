@@ -106,7 +106,6 @@ def main():
     with tempfile.TemporaryDirectory(prefix="phase25-m2b1-", dir=ROOT / "tmp") as temp:
         scratch = Path(temp)
         os.environ["MOSS_STAGED_ABI"] = "v10"
-        os.environ["MOSS_PHASE25_EMPTY_VECTOR_EMIT"] = "1"
         mutator = scratch / "mutate_empty_vector_artifact"
         compiled_mutator = g2.run(
             "g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",

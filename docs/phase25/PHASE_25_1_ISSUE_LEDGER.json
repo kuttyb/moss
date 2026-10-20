@@ -25,13 +25,13 @@
       "severity": "P1",
       "status": "valid-but-unavailable-v10",
       "workload": "fresh(): return [] and relay(): return fresh()",
-      "symptom": "Source-backed/v9 fresh and relay pass, but staged v10 rejects both without MOSS_PHASE25_EMPTY_VECTOR_EMIT. Existing narrow empty-vector support requires this hidden provider flag; relay is unavailable under current per-callable admission.",
+      "symptom": "Source-backed/v9 fresh and relay pass. The direct-return producer now emits fresh under MOSS_STAGED_ABI=v10 alone and source-deleted Int/Bool R2c consumers pass; relay remains unavailable under current per-callable admission.",
       "source_evidence": [
         "tests/phase25/source_free_corpus/corpus.json",
         "tests/tooling/check_phase25_r2c_empty_vector_consumer.py",
         "tests/tooling/check_phase25_m2b2_source_free_corpus.py"
       ],
-      "r0_action": "R0 surface oracle confirms source-backed/v9 Debug/Release behavior and records both no-flag v10 failures. R2 must remove the extra flag and prove fresh/relay dependency closure.",
+      "r0_action": "R0 originally recorded both no-flag failures. R1 now removes the flag and closes the direct fresh() slice; R2 must prove relay dependency closure and full parity.",
       "owner": "Coordinator",
       "critical_path": "R2"
     },

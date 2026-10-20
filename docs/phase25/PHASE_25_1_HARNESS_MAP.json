@@ -76,7 +76,7 @@
         "zero-argument open Vector result",
         "independent Int and Bool specializations"
       ],
-      "coverage": "V10 positive currently requires MOSS_PHASE25_EMPTY_VECTOR_EMIT at the provider; source-free consumer removes provider source and has ABI-v9 control."
+      "coverage": "V10 direct-return producer emits the empty-vector summary/body under MOSS_STAGED_ABI=v10 alone; source-free consumer removes provider source, confirms legacy generic_stmt is not selected, traces checked projection and has ABI-v9 control."
     },
     {
       "path": "tests/tooling/check_phase25_mixed_provider_admission.py",
@@ -160,9 +160,9 @@
         "ABI-v9 independent open-result freshening and private helper closure",
         "ABI-v9 structural String member requirement",
         "ABI-v9 provider callable identity",
-        "v10 empty-vector hidden-flag positive and relay/member negatives"
+        "v10 empty-vector direct-return positive and relay/member negatives"
       ],
-      "coverage": "ABI-v9 consumer builds and executes after provider source deletion for relay, fresh and size; separate v10 section explicitly sets MOSS_PHASE25_EMPTY_VECTOR_EMIT=1, removes source, executes fresh and rejects relay/size at consumer selection. This is a hidden-flag result, not default v10 support."
+      "coverage": "ABI-v9 consumer builds and executes after provider source deletion for relay, fresh and size; v10 removes source and executes fresh without a shape-specific flag, while relay/size selection remain unavailable."
     },
     {
       "path": "tests/tooling/check_phase25_typed_semantic_api.py",

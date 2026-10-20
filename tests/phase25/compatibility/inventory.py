@@ -193,7 +193,6 @@ def link_harness_candidates(packages: list[dict], harnesses: list[dict]) -> None
 def run_build(package: Path, out: Path) -> dict:
     env = os.environ.copy()
     env.pop("MOSS_STAGED_ABI", None)
-    env.pop("MOSS_PHASE25_EMPTY_VECTOR_EMIT", None)
     env["MOSS"] = str(MOSS)
     env["MARGO_HOME"] = str(ROOT / "tmp/phase25-1-r0-margo" / package.relative_to(ROOT))
     env["TMPDIR"] = str(ROOT / "tmp")
