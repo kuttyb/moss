@@ -39,6 +39,33 @@ test "regex character classes and ranges":
   assert(regex.is_match("[^0-9]+", "abc"))
   assert(not regex.is_match("^[0-9]+$", "abc"))
 
+test "regex Unicode characters use codepoint matching and indices":
+  assert(not regex.is_match(".", "\n"))
+  assert(not regex.is_match("[^λ]", "λ"))
+  let full = regex.full_match("λ+", "λλ")
+  match full:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 0)
+      assertEqual(end, 2)
+  assert(regex.is_match("[λ🙂]", "x🙂y"))
+  assert(not regex.is_match("^λ$", "🙂"))
+
+  let found = regex.search("🙂", "x🙂y")
+  match found:
+    case NoMatch:
+      assert(false)
+    case Matched(start, end):
+      assertEqual(start, 1)
+      assertEqual(end, 2)
+
+  let spans = regex.find_all("λ+", "xλλy")
+  assertEqual(spans |> count, 1)
+  assertEqual(spans[0].start, 1)
+  assertEqual(spans[0].end, 3)
+  assertEqual(spans[0].text, "λλ")
+
 test "regex predefined classes":
   assert(regex.is_match("\\d+", "987"))
   assert(regex.is_match("\\w+", "hello_123"))

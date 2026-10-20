@@ -173,7 +173,7 @@ export fn string_to_bytes(s: String) -> Vector[Int]:
   let lookup_table = "\n\r\t !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
   var i = 0
   while i < n:
-    let pos = lookup_table.find(chars_list[i])
+    let pos = lookup_table.find(chars_list[i].to_string())
     if pos < 0:
       raise HashError.InvalidByte(index: i, value: 0 - 1)
     var b = 0

@@ -121,4 +121,3 @@ finish
 second' ] || fail "shared-memory non_reentrant output was out of order on iteration $iteration"
   iteration=$((iteration + 1))
 done
-

@@ -299,4 +299,3 @@ reject_source example_recursive_call examples/errors/recursive_call.moss \
   "recursive local call cycle: countdown -> countdown"
 reject_source example_conflicting_access examples/errors/conflicting_access.moss \
   "'counter' is passed to 'increment_from' through overlapping WRITE and READ accesses"
-

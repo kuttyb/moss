@@ -132,10 +132,10 @@ export fn compile(pattern: String) -> Regex:
   var i = 0
   while i < n:
     let c = chars_vec[i]
-    if c == "(":
+    if c == '(':
       add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 15, "(", "", false)
     else:
-      if c == ")":
+      if c == ')':
         let num_r = raw_kinds |> count
         if num_r > 0:
           let prev_k = raw_kinds[num_r - 1]
@@ -143,7 +143,7 @@ export fn compile(pattern: String) -> Regex:
             raise RegexError.UnexpectedToken(index: i)
         add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 16, ")", "", false)
       else:
-        if c == "|":
+        if c == '|':
           let num_r = raw_kinds |> count
           if num_r == 0:
             raise RegexError.UnexpectedToken(index: i)
@@ -152,7 +152,7 @@ export fn compile(pattern: String) -> Regex:
             raise RegexError.UnexpectedToken(index: i)
           add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 11, "|", "", false)
         else:
-          if c == "*":
+          if c == '*':
             let num_r = raw_kinds |> count
             if num_r == 0:
               raise RegexError.DanglingRepetition(index: i)
@@ -161,7 +161,7 @@ export fn compile(pattern: String) -> Regex:
               raise RegexError.DanglingRepetition(index: i)
             add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 12, "*", "", false)
           else:
-            if c == "+":
+            if c == '+':
               let num_r = raw_kinds |> count
               if num_r == 0:
                 raise RegexError.DanglingRepetition(index: i)
@@ -170,7 +170,7 @@ export fn compile(pattern: String) -> Regex:
                 raise RegexError.DanglingRepetition(index: i)
               add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 13, "+", "", false)
             else:
-              if c == "?":
+              if c == '?':
                 let num_r = raw_kinds |> count
                 if num_r == 0:
                   raise RegexError.DanglingRepetition(index: i)
@@ -179,45 +179,45 @@ export fn compile(pattern: String) -> Regex:
                   raise RegexError.DanglingRepetition(index: i)
                 add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 14, "?", "", false)
               else:
-                if c == "^":
+                if c == '^':
                   add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 4, "^", "", false)
                 else:
-                  if c == "$":
+                  if c == '$':
                     add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 5, "$", "", false)
                   else:
-                    if c == ".":
+                    if c == '.':
                       add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 2, ".", "", false)
                     else:
-                      if c == "\\":
+                      if c == '\\':
                         i = i + 1
                         if i >= n:
                           raise RegexError.InvalidEscape(index: i - 1)
                         let esc_ch = chars_vec[i]
-                        if esc_ch == "d":
+                        if esc_ch == 'd':
                           add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 3, "", "0123456789", false)
                         else:
-                          if esc_ch == "D":
+                          if esc_ch == 'D':
                             add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 3, "", "0123456789", true)
                           else:
-                            if esc_ch == "w":
+                            if esc_ch == 'w':
                               add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 3, "", "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_", false)
                             else:
-                              if esc_ch == "W":
+                              if esc_ch == 'W':
                                 add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 3, "", "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_", true)
                               else:
-                                if esc_ch == "s":
+                                if esc_ch == 's':
                                   add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 3, "", " \t\r\n", false)
                                 else:
-                                  if esc_ch == "S":
+                                  if esc_ch == 'S':
                                     add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 3, "", " \t\r\n", true)
                                   else:
-                                    add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 1, esc_ch, "", false)
+                                    add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 1, esc_ch.to_string(), "", false)
                       else:
-                        if c == "[":
+                        if c == '[':
                           let start_class_idx = i
                           i = i + 1
                           var is_neg_class = false
-                          if i < n and chars_vec[i] == "^":
+                          if i < n and chars_vec[i] == '^':
                             is_neg_class = true
                             i = i + 1
                           var class_builder = ""
@@ -226,29 +226,29 @@ export fn compile(pattern: String) -> Regex:
                             if i >= n:
                               raise RegexError.UnclosedBracket(index: start_class_idx)
                             let cur_c = chars_vec[i]
-                            if cur_c == "]":
+                            if cur_c == ']':
                               in_class = false
                             else:
-                              if cur_c == "\\" and (i + 1) < n:
+                              if cur_c == '\\' and (i + 1) < n:
                                 i = i + 1
-                                class_builder = class_builder + chars_vec[i]
+                                class_builder = class_builder + chars_vec[i].to_string()
                               else:
-                                if (i + 2) < n and chars_vec[i + 1] == "-" and chars_vec[i + 2] != "]":
+                                if (i + 2) < n and chars_vec[i + 1] == '-' and chars_vec[i + 2] != ']':
                                   let printable_ref = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
-                                  let p_start = printable_ref.find(chars_vec[i])
-                                  let p_end = printable_ref.find(chars_vec[i + 2])
+                                  let p_start = printable_ref.find(chars_vec[i].to_string())
+                                  let p_end = printable_ref.find(chars_vec[i + 2].to_string())
                                   if p_start >= 0 and p_end >= 0 and p_start > p_end:
                                     raise RegexError.InvalidRange(index: i)
-                                  let rng = expand_range(chars_vec[i], chars_vec[i + 2])
+                                  let rng = expand_range(chars_vec[i].to_string(), chars_vec[i + 2].to_string())
                                   class_builder = class_builder + rng
                                   i = i + 2
                                 else:
-                                  class_builder = class_builder + cur_c
+                                  class_builder = class_builder + cur_c.to_string()
                             i = i + 1
                           i = i - 1 # compensate outer loop increment
                           add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 3, "", class_builder, is_neg_class)
                         else:
-                          add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 1, c, "", false)
+                          add_tok(raw_kinds, raw_chars, raw_classes, raw_negs, 1, c.to_string(), "", false)
     i = i + 1
 
   let total_raw = raw_kinds |> count
@@ -638,14 +638,14 @@ fn compute_epsilon_closure(re: Regex, initial_states: Vector[Int], pos: Int, tex
 
   return result
 
-fn char_in_class(cls: String, ch: String) -> Bool:
-  return cls.find(ch) >= 0
+fn char_in_class(cls: String, ch: Char) -> Bool:
+  return cls.find(ch.to_string()) >= 0
 
-fn char_matches(ch1: String, ch2: String) -> Bool:
-  return ch1 == ch2
+fn char_matches(ch1: String, ch2: Char) -> Bool:
+  return ch1 == ch2.to_string()
 
 # Match from start_idx up to end of text, returns longest matched end index (or -1 if no match)
-fn run_nfa_from(re: Regex, chars_vec: Vector[String], start_idx: Int) -> Int:
+fn run_nfa_from(re: Regex, chars_vec: Vector[Char], start_idx: Int) -> Int:
   let text_len = chars_vec |> count
   var init_vec = Vector[Int]()
   init_vec.push(re.start_state)
@@ -674,7 +674,7 @@ fn run_nfa_from(re: Regex, chars_vec: Vector[String], start_idx: Int) -> Int:
           matched = true
       else:
         if k == 2:
-          if not (chars_vec[pos] == "\n"):
+          if not (chars_vec[pos] == '\n'):
             matched = true
         else:
           if k == 3:
@@ -718,7 +718,7 @@ fn make_origins_vec(num_states: Int) -> Vector[Int]:
 
 # Single-pass unanchored Thompson NFA search with origin tracking
 # Enforces leftmost-longest semantics without repeated NFA restarts
-fn run_nfa_search_from(re: Regex, chars_vec: Vector[String], start_scan: Int) -> MatchResult:
+fn run_nfa_search_from(re: Regex, chars_vec: Vector[Char], start_scan: Int) -> MatchResult:
   let text_len = chars_vec |> count
   var best_match_origin = 0 - 1
   var best_match_end = 0 - 1
@@ -839,7 +839,7 @@ fn run_nfa_search_from(re: Regex, chars_vec: Vector[String], start_scan: Int) ->
               matched = true
           else:
             if k == 2:
-              if not (chars_vec[pos] == "\n"):
+              if not (chars_vec[pos] == '\n'):
                 matched = true
             else:
               if k == 3:

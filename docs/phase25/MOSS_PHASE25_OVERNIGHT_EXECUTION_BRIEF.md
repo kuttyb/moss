@@ -3,10 +3,10 @@
 
 **Authority:** L7 (user + ChatGPT) has authorized this *bounded overnight feature-branch execution*, not a merge to `main` or an ABI-default switch. This brief is for an L6 coordinator (Codex) to execute now. Do not reinterpret it as an L8 autonomous orchestration system.
 
-**Repository:** `kuttyb/moss` — https://github.com/kuttyb/moss  
-**Known verified integration HEAD (at brief creation):** `phase25-integration` = `39e7d8ac810f579243400766f007e9e7550b209b`  
-**Approved D2 source:** `phase25-m2b3d-d2-loop-codec` = `4ff42566ff66fa012cc9ac24c5440691e3b4cfd3`  
-**D2 base:** `39e7d8ac810f579243400766f007e9e7550b209b`  
+**Repository:** `kuttyb/moss` — https://github.com/kuttyb/moss
+**Known verified integration HEAD (at brief creation):** `phase25-integration` = `39e7d8ac810f579243400766f007e9e7550b209b`
+**Approved D2 source:** `phase25-m2b3d-d2-loop-codec` = `4ff42566ff66fa012cc9ac24c5440691e3b4cfd3`
+**D2 base:** `39e7d8ac810f579243400766f007e9e7550b209b`
 **Expected after D2 fast-forward:** `phase25-integration` at `4ff42566ff66fa012cc9ac24c5440691e3b4cfd3`, followed *only if needed* by a status-only commit. Record that actual SHA before starting implementation.
 **Pre-created overnight branch:** `phase25-m2b3d-overnight`, branched from reviewed D2 commit `4ff42566ff66fa012cc9ac24c5440691e3b4cfd3`; this document is committed to that branch. Do not try to create the branch again.
 **Morning checkpoint:** Gate 0 passed and `phase25-integration` is at `4ff42566ff66fa012cc9ac24c5440691e3b4cfd3`. Overnight handoff `590f7e8005ab7a6c06d2fca38de3911646cf0856` stopped at D3a over implicit-local mutability. L7 resolved that conflict below. Resume directly from D3a on the existing overnight branch; do not repeat Gate 0 or modify integration again.

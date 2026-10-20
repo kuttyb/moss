@@ -151,6 +151,7 @@ TOOLING_TESTS: list[tuple] = [
     ("check_phase225_semantic_ide", [sys.executable, "tests/tooling/check_phase225_semantic_ide.py", "{compiler}"]),
     ("check_phase15_15_string_api", [sys.executable, "tests/tooling/check_phase15_15_string_api.py"]),
     ("check_phase24_string_concat", [sys.executable, "tests/tooling/check_phase24_string_concat.py"]),
+    ("check_phase25_char_string_sdk_packages", [sys.executable, "tests/tooling/check_phase25_char_string_sdk_packages.py", "{compiler}", "{out}/phase25-char-string-sdk"]),
     ("check_swarm_003_formatter", [sys.executable, "tests/tooling/check_swarm_003_formatter.py", "{compiler}"]),
     ("check_swarm_032_formatter_parentheses", [sys.executable, "tests/tooling/check_swarm_032_formatter_parentheses.py", "{compiler}"]),
     ("check_formatter_indexing", [sys.executable, "tests/tooling/check_formatter_indexing.py", "{compiler}"]),

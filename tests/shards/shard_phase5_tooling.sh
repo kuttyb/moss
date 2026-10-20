@@ -230,4 +230,3 @@ if command -v python3 >/dev/null 2>&1 && [ -n "$tooling_lldb_dap" ]; then
 else
   echo 'skipping optional real Moss DAP test (lldb-dap or python3 not found)'
 fi
-

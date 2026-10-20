@@ -182,5 +182,3 @@ grep -F '"specialization_identity": "specialization:transform<vector[int],callab
 "$compiler" agent schema --json >"$test_build/phase105_schema.json"
 grep -F '"synchronization_diagnostics"' "$test_build/phase105_schema.json" >/dev/null ||
   fail 'agent schema omitted reserved synchronization diagnostics'
-
-
