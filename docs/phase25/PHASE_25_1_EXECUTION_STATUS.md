@@ -389,6 +389,14 @@ After this routing guard, the full M2b2 corpus and D4 actual SDK collections
 source-free/mutation suite passed. Feedback validation and diff check remain
 green. Exact-SHA adversarial review of this second correction is pending.
 
+The architect reviewed exact pushed SHA
+`62ff4975cde3268f91986e20aad478df8fe32559` and returned **GO**. The Count gate
+excludes the one-parameter index return while preserving the existing loop
+shape; its matcher requires exactly one Count and one Index operation. The
+review found no other broad-trigger/narrow-validator collision for the
+currently lowered Binary, Field or Index nodes. No P0/P1 findings remain for
+this routing correction. R1 remains incomplete.
+
 ### R1 member invocation role-verifier correction — working tree
 
 The architect reviewed exact pushed SHA

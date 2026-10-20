@@ -9638,3 +9638,8 @@ staged-v10 provider build for `first(values): return values[0]`, full M2b2
 source-free/hostile/v9 corpus, and D4 SDK collections source-free and
 mutation suite passed after that change. Exact-SHA follow-up review is pending;
 the working guard remains uncommitted at this point.
+
+Architect reviewed exact SHA `62ff4975cde3268f91986e20aad478df8fe32559` and
+returned GO: the Count gate excludes the generic index-return collision and
+preserves the existing Count/Index loop producer. No other current
+Binary/Field/Index broad-trigger conflicts were found. R1 is still incomplete.
