@@ -1,9 +1,10 @@
 # Moss Phase 25.1 — ABI-v10 Readiness and Complete Generic Source-Free Parity
 
-**Status:** Gate R0 kickoff on the delivered Phase 25 baseline; implementation not yet started
+**Status:** Long-run autonomous T0-R5 execution authorized; first create the two permanent Phase 25 annotated Git tags. No implementation has started from these instructions.
 **Baseline:** `main` at `dd45e30722bcc2d62d4bb46ba184d426cbaea066` (Phase 25 delivery; ABI-v9 default; source-free v10 opt-in; Char/String SDK fixes). Release validation accepted with two intermittent parallel-suite failures, both passing in isolation.
 **Working branch:** `phase25-1-work` (forked from Phase 25 delivered `main`)
 **Repository:** `kuttyb/moss`
+**Execution authority:** [PHASE_25_1_AUTONOMOUS_EXECUTION.md](PHASE_25_1_AUTONOMOUS_EXECUTION.md) controls the first-tag prerequisite, bounded long-run autonomy, independent review cadence, checkpoints and hard stops. Its execution governance supersedes earlier R0 L7 pause language.
 
 ## 0. Decisions and non-negotiable boundaries
 
@@ -141,11 +142,11 @@ The eventual v10 default switch is a **separate L7 decision** after opt-in stabi
 
 ## 8. Operating model and delivery
 
-L7 is the user and ChatGPT. **L6 Coordinator** owns the ordered DAG and implements or delegates **one compiler-code writer at a time**. Optional testing/inventory workers may use separate worktrees and files. Independent L6 adversarial reviewer runs at the R1 architectural gate, after R3 semantic coverage, and at final R5 readiness; measure actual defects found rather than optimizing for reviewer count.
+L7 is the user and ChatGPT. **L6 Coordinator** owns the ordered DAG and implements or delegates **one compiler-code writer at a time**. Optional testing/inventory workers may use separate worktrees and files. A separate **L6 Adversarial Architect** reviews R0 design, foundational R1, after R3 semantic coverage and final R5 readiness, plus approximately every three substantive compiler changes; measure actual defects found rather than optimizing for reviewer count. Follow the autonomous execution document for division of labor and hard stops.
 
-All implementation work on `phase25-1-work` or temporary child feature branches. No direct edits to `main` and no automatic integration into `phase25-integration`. Commit, push and report exact SHAs per green gate. Prefer focused tests during implementation; L7 controls when to demand full regression runs.
+All implementation work on `phase25-1-work` or temporary child feature branches. No direct edits to `main` and no automatic integration into `phase25-integration`. Commit, push and report exact SHAs per green gate. Prefer focused tests during implementation, with controlled full regression at cohesive R1/R3/R5 checkpoints; do not hide test failures or the recorded Phase 25 timing flakes.
 
-**First delegated task:** R0 inventory and honest compatibility matrix, with minimal test harness extensions where necessary. No immediate broad compiler rewrite. Return the actual failing callable/family list and proposal for the generalized IR bridge before R1 implementation. After L7 accepts architecture, an overnight coordinator may run R1-R4 autonomously gate-to-gate unless a semantic or ownership invariant is missing.
+**First delegated task:** T0 annotated-tag creation and remote verification, then R0 inventory and honest compatibility matrix, with minimal test harness extensions where necessary. No immediate broad compiler rewrite. The independent L6 adversarial architect must accept the R0 architecture and evidence before R1. The coordinator may then run **R1-R5 autonomously**, committing/pushing checkpoints without routine L7 pauses, subject to the hard stops defined in the autonomous execution document. No main promotion or ABI-default switch is authorized.
 
 ## 9. Non-goals
 
