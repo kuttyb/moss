@@ -52,8 +52,8 @@ int main(int argc, char** argv) {
       summaries.emplace(summary.callable_id, std::move(summary));
     }
   }
-  assert(templates.size() == 1 && summaries.size() == 3 &&
-         bodies.size() == 3 && iface.provenance.size() == 4);
+  assert(templates.size() == 1 && summaries.size() == 4 &&
+         bodies.size() == 4 && iface.provenance.size() == 5);
   const auto& nominal = templates.at(nominal_id);
   assert(nominal.variable_count == 1 && nominal.fields.size() == 1 &&
          nominal.fields[0].name == "value");
@@ -114,5 +114,35 @@ int main(int argc, char** argv) {
                  summaries.at(callee).body_semantic_hash);
     }
   }
+  const std::string relay_id = base + "relay";
+  const auto& relay_summary = summaries.at(relay_id);
+  const auto& relay_body = bodies.at(relay_id);
+  assert(relay_summary.variable_count == 1 &&
+         relay_summary.parameters.size() == 1 &&
+         relay_summary.parameters.front().kind ==
+             moss::abi_v10::WireTypeKind::Nominal &&
+         relay_summary.parameters.front().identity == nominal_id &&
+         relay_summary.parameters.front().arguments.size() == 1 &&
+         relay_summary.parameters.front().arguments.front().kind ==
+             moss::abi_v10::WireTypeKind::BoundVar &&
+         relay_summary.parameters.front().arguments.front().ordinal == 0 &&
+         relay_summary.result.kind == moss::abi_v10::WireTypeKind::BoundVar &&
+         relay_summary.result.ordinal == 0 &&
+         relay_summary.body_semantic_hash == relay_body.semantic_hash &&
+         relay_body.dependencies.size() == 1 &&
+         relay_body.dependencies.front().kind ==
+             moss::abi_v10::CheckedBodyRecord::Dependency::Kind::NominalType &&
+         relay_body.dependencies.front().target_id == nominal_id &&
+         relay_body.dependencies.front().expected_hash ==
+             nominal.representation_hash);
+  auto relay_decoded = moss::checked_ir::decode_h3_checked_body_v1(
+      relay_body.checked_ir_bytes, context, {result}, variable,
+      relay_body.semantic_hash);
+  assert(relay_decoded.size() == 1 && relay_decoded.front().expr &&
+         relay_decoded.front().expr->kind ==
+             moss::checked_ir::ExprKind::Field &&
+         relay_decoded.front().expr->semantic_target_id == nominal_id &&
+         relay_decoded.front().expr->member_ordinal == 0 &&
+         relay_decoded.front().expr->type->structurally_equal(*variable));
   std::cout << "H3 checked private chain records: PASS\n";
 }

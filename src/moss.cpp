@@ -2821,6 +2821,18 @@ struct CheckedParameterReturnBody {
   string semantic_hash;
 };
 
+static bool valid_checked_string_literal_spelling(const string& source) {
+  if (!is_single_string_literal(source)) return false;
+  for (size_t index = 1; index + 1 < source.size(); ++index) {
+    if (source[index] != '\\') continue;
+    std::uint32_t ignored = 0;
+    const size_t next = parse_rust_escape(source, index, ignored);
+    if (next == string::npos || next > source.size() - 1) return false;
+    index = next - 1;
+  }
+  return true;
+}
+
 // Build only the canonical generic identity body from checker-owned type
 // facts. The AST spelling selects the parameter occurrence; summary TypeRefs
 // remain authoritative for both the parameter and result.
@@ -2859,6 +2871,80 @@ checked_parameter_return_body(const Function& function) {
   returned.type = facts.result_type;
   returned.expr = std::move(parameter);
 
+  CheckedParameterReturnBody body;
+  body.statements.push_back(std::move(returned));
+  try {
+    body.semantic_hash = checked_ir::compute_checked_body_hash_v1(
+        body.statements);
+  } catch (const std::invalid_argument&) {
+    return std::nullopt;
+  }
+  return body;
+}
+
+static std::optional<CheckedParameterReturnBody>
+checked_scalar_return_body(const Function& function) {
+  if (!function.open_summary || !function.open_summary->complete ||
+      function.body.size() != 1 ||
+      function.body.front().kind != Stmt::Kind::Return ||
+      function.params.size() != 1)
+    return std::nullopt;
+  const auto& facts = *function.open_summary;
+  if (facts.bound_variable_count != 1 ||
+      facts.parameter_types.size() != 1 ||
+      facts.parameter_access.size() != 1 ||
+      facts.parameter_access.front() != AccessMode::Read ||
+      !facts.requirements.empty() || !facts.member_requirements.empty() ||
+      !facts.semantic_dependencies.empty() ||
+      !abi_v10_effects_pure(facts.observable_effects) ||
+      !facts.parameter_types.front() ||
+      facts.parameter_types.front()->kind != TypeKind::InferenceVar ||
+      facts.parameter_types.front()->var_id.session_id != 0 ||
+      facts.parameter_types.front()->var_id.owner_id != 0 ||
+      facts.parameter_types.front()->var_id.ordinal != 0 ||
+      !facts.result_type || facts.result_type->kind != TypeKind::Primitive)
+    return std::nullopt;
+
+  const string source = trim(function.body.front().a);
+  checked_ir::Expr literal;
+  literal.type = facts.result_type;
+  if (facts.result_type->name == "bool" &&
+      (source == "true" || source == "false")) {
+    literal.kind = checked_ir::ExprKind::BoolLiteral;
+    literal.literal_value = source;
+  } else if (facts.result_type->name == "int") {
+    std::size_t first_digit = !source.empty() && source.front() == '-' ? 1 : 0;
+    if (first_digit == source.size() ||
+        !std::all_of(source.begin() + static_cast<std::ptrdiff_t>(first_digit),
+                     source.end(), [](unsigned char c) { return std::isdigit(c); }))
+      return std::nullopt;
+    try {
+      std::size_t consumed = 0;
+      const auto number = std::stoll(source, &consumed, 10);
+      if (consumed != source.size()) return std::nullopt;
+      literal.kind = checked_ir::ExprKind::IntegerLiteral;
+      literal.literal_value = std::to_string(number);
+    } catch (const std::exception&) {
+      return std::nullopt;
+    }
+  } else if (facts.result_type->name == "float" &&
+             decimal_float_literal(source)) {
+    literal.kind = checked_ir::ExprKind::FloatLiteral;
+    literal.literal_value = source;
+  } else if (facts.result_type->name == "string" &&
+             valid_checked_string_literal_spelling(source)) {
+    // Keep the checked string token's escapes intact. The decoder and ordinary
+    // expression parser consume this same canonical Moss literal spelling.
+    literal.kind = checked_ir::ExprKind::StringLiteral;
+    literal.literal_value = source;
+  } else {
+    return std::nullopt;
+  }
+
+  checked_ir::Stmt returned;
+  returned.kind = checked_ir::StmtKind::Return;
+  returned.type = facts.result_type;
+  returned.expr = std::move(literal);
   CheckedParameterReturnBody body;
   body.statements.push_back(std::move(returned));
   try {
@@ -3020,8 +3106,48 @@ static std::optional<CheckedArithmeticBody> checked_arithmetic_body(
 // to select the already checked occurrence.
 static std::optional<CheckedPrivateChainBody> checked_private_chain_body(
     const Program& program, const Function& function) {
-  if (!function.open_summary || !function.open_summary->complete ||
-      function.body.size() != 2 ||
+  if (!function.open_summary || !function.open_summary->complete)
+    return std::nullopt;
+  const auto& summary = *function.open_summary;
+  if (!summary.result_type ||
+      summary.parameter_types.size() != function.params.size())
+    return std::nullopt;
+
+  // A direct field return already has checker-owned field identity, ordinal,
+  // and TypeRef in the retained body. Convert that node into the same checked
+  // IR and nominal dependency closure consumed by the constructor path below.
+  if (function.body.size() == 1 &&
+      function.body.front().kind == Stmt::Kind::Return &&
+      function.checked_body_v1 &&
+      function.checked_body_v1->statements.size() == 1 &&
+      function.checked_body_v1->statements.front().kind ==
+          CheckedBodyStmtV1::Kind::Return) {
+    auto returned = from_legacy_stmt(
+        function.checked_body_v1->statements.front());
+    if (returned.expr && returned.expr->kind == checked_ir::ExprKind::Field &&
+        returned.expr->operands.size() == 1 &&
+        returned.expr->operands.front().kind == checked_ir::ExprKind::Parameter &&
+        returned.expr->operands.front().ordinal < function.params.size() &&
+        returned.expr->type &&
+        returned.expr->type->structurally_equal(*summary.result_type)) {
+      CheckedPrivateChainBody body;
+      body.statements.push_back(std::move(returned));
+      try {
+        body.semantic_hash = checked_ir::compute_checked_body_hash_v1(
+            body.statements);
+        body.dependencies = extract_semantic_dependencies(body.statements);
+      } catch (const std::invalid_argument&) {
+        return std::nullopt;
+      }
+      if (body.dependencies.size() == 1 &&
+          body.dependencies.front().kind ==
+              SemanticDependency::Kind::NominalType)
+        return body;
+    }
+    return std::nullopt;
+  }
+
+  if (function.body.size() != 2 ||
       function.body.back().kind != Stmt::Kind::Return ||
       !plain_identifier(trim(function.body.back().a)) ||
       (function.body.front().kind != Stmt::Kind::Let &&
@@ -3029,10 +3155,6 @@ static std::optional<CheckedPrivateChainBody> checked_private_chain_body(
        function.body.front().kind != Stmt::Kind::Assign) ||
       trim(function.body.front().a) != trim(function.body.back().a) ||
       function.body.front().indent != function.body.back().indent)
-    return std::nullopt;
-  const auto& summary = *function.open_summary;
-  if (!summary.result_type ||
-      summary.parameter_types.size() != function.params.size())
     return std::nullopt;
   string target;
   vector<string> arguments;
@@ -3360,21 +3482,44 @@ static bool abi_v10_parameter_return_summary_candidate(
       !summary.provenance_id.empty();
 }
 
-static bool abi_v10_parameter_return_body_candidate(
-    std::string_view bytes, const moss::TypeContext& context,
-    std::string_view expected_hash) {
-  const auto type = moss::Type::var(moss::TypeVarId{0, 0, 0});
-  try {
-    const auto statements = checked_ir::decode_h3_checked_body_v1(
-        bytes, context, {type}, type, expected_hash);
-    return statements.size() == 1 &&
-        statements.front().kind == checked_ir::StmtKind::Return &&
-        statements.front().expr &&
-        statements.front().expr->kind == checked_ir::ExprKind::Parameter &&
-        statements.front().expr->ordinal == 0;
-  } catch (const std::invalid_argument&) {
-    return false;
-  }
+static bool abi_v10_scalar_return_summary_candidate(
+    const abi_v10::Summary& summary) {
+  const auto bound_zero = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::BoundVar &&
+        type.ordinal == 0 && type.arguments.empty();
+  };
+  const auto& result = summary.result;
+  return summary.variable_count == 1 && summary.parameters.size() == 1 &&
+      bound_zero(summary.parameters.front()) &&
+      summary.parameter_access.size() == 1 &&
+      summary.parameter_access.front() == abi_v10::Access::Read &&
+      result.kind == abi_v10::WireTypeKind::Primitive &&
+      (result.identity == "int" || result.identity == "float" ||
+       result.identity == "bool" || result.identity == "string") &&
+      result.arguments.empty() && summary.requirements.empty() &&
+      summary.dependencies.empty() && summary.observable_effect_bits == 0 &&
+      summary.observable_effect_tags.empty() &&
+      abi_v10::checked_body_hash_valid(summary.body_semantic_hash) &&
+      !summary.provenance_id.empty();
+}
+
+static bool abi_v10_generic_field_summary_candidate(
+    const abi_v10::Summary& summary) {
+  const auto bound_zero = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::BoundVar &&
+        type.ordinal == 0 && type.arguments.empty();
+  };
+  return summary.variable_count == 1 && summary.parameters.size() == 1 &&
+      summary.parameters.front().kind == abi_v10::WireTypeKind::Nominal &&
+      summary.parameters.front().arguments.size() == 1 &&
+      bound_zero(summary.result) &&
+      summary.parameter_access.size() == 1 &&
+      summary.parameter_access.front() == abi_v10::Access::Read &&
+      summary.requirements.empty() && summary.dependencies.empty() &&
+      summary.observable_effect_bits == 0 &&
+      summary.observable_effect_tags.empty() &&
+      abi_v10::checked_body_hash_valid(summary.body_semantic_hash) &&
+      !summary.provenance_id.empty();
 }
 
 static bool abi_v10_empty_vector_summary_candidate(
@@ -3532,6 +3677,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
     }
     const auto& expression = *statements.front().expr;
     string lowered;
+    bool direct_return_projection = false;
     if (abi_v10_parameter_return_summary_candidate(summary)) {
       if (parameters.size() != 1 || function.params.size() != 1 ||
           !plain_identifier(function.params.front().name) ||
@@ -3552,6 +3698,52 @@ static void project_imported_h3_checked_bodies(Program& program) {
       // ordinary Moss empty literal in the existing checker/native lowering
       // path, where its element variable closes at each imported call site.
       lowered = "[]";
+    } else if (abi_v10_scalar_return_summary_candidate(summary)) {
+      if (parameters.size() != 1 || function.params.size() != 1 ||
+          !plain_identifier(function.params.front().name) ||
+          statements.size() != 1 ||
+          statements.front().kind != checked_ir::StmtKind::Return ||
+          !statements.front().expr ||
+          !expression.type->structurally_equal(*result) ||
+          !expression.operands.empty() || !body.dependencies.empty())
+        invalid("checked ABI-v10 scalar-return body shape is unsupported");
+      const auto expected_kind = result->name == "bool"
+          ? checked_ir::ExprKind::BoolLiteral
+          : result->name == "int" ? checked_ir::ExprKind::IntegerLiteral
+          : result->name == "float" ? checked_ir::ExprKind::FloatLiteral
+          : checked_ir::ExprKind::StringLiteral;
+      if (expression.kind != expected_kind)
+        invalid("checked ABI-v10 scalar literal kind disagrees with its summary");
+      if (expression.kind == checked_ir::ExprKind::StringLiteral &&
+          !valid_checked_string_literal_spelling(expression.literal_value))
+        invalid("checked ABI-v10 string literal has an invalid Moss spelling");
+      lowered = expression.literal_value;
+      direct_return_projection = true;
+    } else if (abi_v10_generic_field_summary_candidate(summary)) {
+      if (parameters.size() != 1 || function.params.size() != 1 ||
+          !plain_identifier(function.params.front().name) ||
+          statements.size() != 1 ||
+          statements.front().kind != checked_ir::StmtKind::Return ||
+          expression.kind != checked_ir::ExprKind::Field ||
+          expression.operands.size() != 1 ||
+          expression.operands.front().kind != checked_ir::ExprKind::Parameter ||
+          expression.operands.front().ordinal != 0 ||
+          !expression.operands.front().type->structurally_equal(*parameters.front()) ||
+          !expression.type->structurally_equal(*result) ||
+          !parameters.front()->declaration ||
+          expression.semantic_target_id != parameters.front()->declaration->id ||
+          expression.member_ordinal >=
+              parameters.front()->declaration->fields.size() ||
+          expression.member_name != parameters.front()->declaration
+              ->fields[expression.member_ordinal].name ||
+          body.dependencies.size() != 1 ||
+          body.dependencies.front().kind !=
+              abi_v10::CheckedBodyRecord::Dependency::Kind::NominalType ||
+          body.dependencies.front().target_id != expression.semantic_target_id ||
+          !abi_v10::hex_hash(body.dependencies.front().expected_hash))
+        invalid("checked ABI-v10 generic field body identity or type is mismatched");
+      lowered = function.params.front().name + "." + expression.member_name;
+      direct_return_projection = true;
     } else if (statements.size() == 1 &&
         statements.front().kind == checked_ir::StmtKind::Return &&
         expression.kind == checked_ir::ExprKind::Binary &&
@@ -3692,6 +3884,22 @@ static void project_imported_h3_checked_bodies(Program& program) {
       lowered += ")";
     } else {
       invalid("checked ABI-v10 expression is outside the H3 subset");
+    }
+    if (direct_return_projection) {
+      Stmt returned;
+      returned.kind = Stmt::Kind::Return;
+      returned.line = std::max(function.line, 1);
+      returned.indent = 0;
+      returned.a = lowered;
+      returned.text = "return " + lowered;
+      function.body = {std::move(returned)};
+      function.result_expression.reset();
+      function.imported_checked_body_projected = true;
+      if (const char* trace = std::getenv("MOSS_PHASE25_CHECKED_BODY_TRACE");
+          trace && string(trace) == "1")
+        std::cerr << "MOSS_CHECKED_BODY_PROJECTED|"
+                  << function.semantic_callable_id << "|checked-body-v1\n";
+      continue;
     }
     const string local = "__moss_h3_result";
     if (std::any_of(function.params.begin(), function.params.end(),
@@ -38193,6 +38401,10 @@ static ParsedModuleUnit load_module_interface(
       abi_v10::Summary arithmetic_summary;
       const ImportedSummaryRecord* parameter_return_summary_record = nullptr;
       abi_v10::Summary parameter_return_summary;
+      const ImportedSummaryRecord* scalar_return_summary_record = nullptr;
+      abi_v10::Summary scalar_return_summary;
+      const ImportedSummaryRecord* generic_field_summary_record = nullptr;
+      abi_v10::Summary generic_field_summary;
       const ImportedSummaryRecord* empty_vector_summary_record = nullptr;
       abi_v10::Summary empty_vector_summary;
       if (summary_records != summaries.end()) {
@@ -38215,6 +38427,22 @@ static ParsedModuleUnit load_module_interface(
             parameter_return_summary_record = &candidate;
             parameter_return_summary = decoded;
           }
+          if (abi_v10_scalar_return_summary_candidate(decoded)) {
+            if (scalar_return_summary_record)
+              throw CompileError(0,
+                  "duplicate checked ABI-v10 scalar-return summary",
+                  "SOURCE_FREE_SUMMARY_INVALID");
+            scalar_return_summary_record = &candidate;
+            scalar_return_summary = decoded;
+          }
+          if (abi_v10_generic_field_summary_candidate(decoded)) {
+            if (generic_field_summary_record)
+              throw CompileError(0,
+                  "duplicate checked ABI-v10 generic field summary",
+                  "SOURCE_FREE_SUMMARY_INVALID");
+            generic_field_summary_record = &candidate;
+            generic_field_summary = decoded;
+          }
           if (!abi_v10_checked_arithmetic_summary_candidate(decoded)) continue;
           if (arithmetic_summary_record)
             throw CompileError(0, "duplicate checked ABI-v10 arithmetic summary",
@@ -38230,6 +38458,10 @@ static ParsedModuleUnit load_module_interface(
                       [](const ImportedSummaryRecord& record) {
             return record.typed_v2;
           });
+      if (has_body && !has_typed_summary)
+        throw CompileError(std::max(function.line, 1),
+            "checked ABI-v10 body is missing its typed v2 callable summary",
+            "SOURCE_FREE_SUMMARY_INVALID");
       if (has_typed_summary) {
         const ImportedSummaryRecord* callable_summary = nullptr;
         for (const auto& candidate : summary_records->second) {
@@ -38307,31 +38539,6 @@ static ParsedModuleUnit load_module_interface(
         function.provider_origin_module_id = origin.module_id;
         function.provider_origin_identity = origin.declaration_id;
       }
-      moss::TypeContext checked_body_type_context;
-      const bool empty_vector_body_without_typed_summary =
-          has_body && !has_typed_summary &&
-          std::any_of(body_records->second.begin(), body_records->second.end(),
-              [&](const auto& body_record) {
-            return checked_ir::is_empty_vector_return_checked_body_candidate_v1(
-                body_record.first.checked_ir_bytes,
-                checked_body_type_context);
-          });
-      if (empty_vector_body_without_typed_summary)
-        throw CompileError(std::max(function.line, 1),
-            "checked ABI-v10 empty-vector body is missing its typed v2 summary",
-            "SOURCE_FREE_SUMMARY_INVALID");
-      const bool parameter_return_body_without_typed_summary =
-          has_body && !has_typed_summary &&
-          std::any_of(body_records->second.begin(), body_records->second.end(),
-              [&](const auto& body_record) {
-            return abi_v10_parameter_return_body_candidate(
-                body_record.first.checked_ir_bytes, checked_body_type_context,
-                body_record.first.semantic_hash);
-          });
-      if (parameter_return_body_without_typed_summary)
-        throw CompileError(std::max(function.line, 1),
-            "checked ABI-v10 parameter-return body is missing its typed v2 summary",
-            "SOURCE_FREE_SUMMARY_INVALID");
       if (arithmetic_summary_record) {
         validate_abi_v10_checked_arithmetic_summary(arithmetic_summary,
                                                     function);
@@ -38382,6 +38589,48 @@ static ParsedModuleUnit load_module_interface(
             !checked_body.dependencies.empty())
           throw CompileError(std::max(function.line, 1),
               "checked ABI-v10 parameter-return body identity, hash, or dependencies do not match its summary",
+              "SOURCE_FREE_CHECKED_BODY_INVALID");
+      }
+      if (scalar_return_summary_record) {
+        if (summary_records->second.size() != 1)
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 scalar-return callable has duplicate summaries",
+              "SOURCE_FREE_SUMMARY_INVALID");
+        if (!has_body || body_records->second.size() != 1)
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 scalar-return summary requires exactly one checked body",
+              "SOURCE_FREE_CHECKED_BODY_INVALID");
+        const auto& checked_body = body_records->second.front().first;
+        if (checked_body.callable_id != id ||
+            checked_body.semantic_hash !=
+                scalar_return_summary.body_semantic_hash ||
+            !checked_body.dependencies.empty())
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 scalar-return body identity, hash, or dependencies do not match its summary",
+              "SOURCE_FREE_CHECKED_BODY_INVALID");
+      }
+      if (generic_field_summary_record) {
+        if (summary_records->second.size() != 1)
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 generic field callable has duplicate summaries",
+              "SOURCE_FREE_SUMMARY_INVALID");
+        if (!has_body || body_records->second.size() != 1)
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 generic field summary requires exactly one checked body",
+              "SOURCE_FREE_CHECKED_BODY_INVALID");
+        const auto& checked_body = body_records->second.front().first;
+        const auto& nominal = generic_field_summary.parameters.front();
+        if (checked_body.callable_id != id ||
+            checked_body.semantic_hash != generic_field_summary.body_semantic_hash ||
+            checked_body.dependencies.size() != 1 ||
+            checked_body.dependencies.front().kind !=
+                abi_v10::CheckedBodyRecord::Dependency::Kind::NominalType ||
+            checked_body.dependencies.front().target_id != nominal.identity ||
+            !abi_v10::nominal_template_id_valid(nominal.identity) ||
+            !abi_v10::hex_hash(
+                checked_body.dependencies.front().expected_hash))
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 generic field body identity or nominal dependency does not match its summary",
               "SOURCE_FREE_CHECKED_BODY_INVALID");
       }
       if (!has_body) continue;
@@ -40172,10 +40421,9 @@ static void append_abi_v10_direct_checked_records(
   }
 }
 
-// Emit the single-parameter generic identity body using the complete checker
-// summary and canonical checked-body codec. Other one-return expressions are
-// left to their existing producer paths or legacy compatibility handling.
-static void append_abi_v10_parameter_return_records(
+// Emit direct generic parameter and scalar return bodies using the complete
+// checker summary and the shared canonical checked-body record path.
+static void append_abi_v10_direct_scalar_records(
     abi_v10::Interface& value, const Program& program,
     const string& module) {
   if (!program.type_context) return;
@@ -40184,7 +40432,8 @@ static void append_abi_v10_parameter_return_records(
         !belongs_to_module(function.name, module) ||
         std::filesystem::path(function.source_file).extension() == ".mossi")
       continue;
-    const auto checked = checked_parameter_return_body(function);
+    auto checked = checked_parameter_return_body(function);
+    if (!checked) checked = checked_scalar_return_body(function);
     if (!checked) continue;
     const auto& facts = *function.open_summary;
     if (function.semantic_callable_id.empty() ||
@@ -41342,7 +41591,7 @@ static vector<std::filesystem::path> write_module_interfaces(
         abi_v10_declaration_records(binary_contract.str());
     value.semantic_contract = abi_v10_declaration_records(contents[module].str());
     append_abi_v10_direct_checked_records(value, program, module);
-    append_abi_v10_parameter_return_records(value, program, module);
+    append_abi_v10_direct_scalar_records(value, program, module);
     append_abi_v10_arithmetic_records(value, program, module);
     append_abi_v10_empty_vector_records(value, program, module);
     append_abi_v10_private_chain_records(value, program, module);

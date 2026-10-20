@@ -25,6 +25,29 @@ also passed. No full repository suite was run. Existing
 `TypeSolver::Undo::binding` aggregate initialization warnings appeared during
 the compiler build. No broader checked-body coverage is claimed.
 
+## Phase 25-M2b.3b scalar and generic field implementation — 2026-10-19
+
+Implementation is on dedicated branch `phase25-m2b3b-scalar-field`, based on
+`phase25-integration` at `b390acd16e8b5a7a60f8f076114850514efc4a08`. The
+existing direct checked-record path now emits scalar literal returns and
+generic field bodies. The importer reuses the H3 decoder and existing AST
+return lowering; generic field bodies retain the nominal template dependency,
+identity, ordinal, and checker-owned TypeRefs. The source-free corpus exercises
+Bool returns for Int/String generic arguments and Box field reads for Int/String
+values after provider source removal and `generic_stmt` poisoning. It also
+rejects missing/corrupt records, forged provenance, field identity/ordinal/type
+tampering, and a missing nominal dependency. ABI-v9 cases passed.
+
+Validation passed: `make --jobs="$(nproc)" moss-dev`, the source-free corpus,
+R2b records, R2c consumer, M2b.1 provenance, G2 conformance (11/11),
+checked-arithmetic acceptance, H3 direct records, H3 source-free chain,
+H3 Scenario 6 (output `99`), H3 arithmetic decoder, H3 checked-body decoder,
+agent-feedback validation, and `git diff --check`. The checked-body IR script's
+default C++ command fails because a pre-existing `TypeSolver::Undo::binding`
+warning is promoted by `-Werror`; the same script passed when that warning was
+suppressed. The H3 Scenario 6 run occurred on the uncommitted implementation
+tree (`dirty: true`). No full repository suite was run.
+
 ## Focused TypeSolver atomicity fix — 2026-10-19
 
 Integrated and pushed commit `3f2368bb4388812edec7efa03b3575c3766b0f84`

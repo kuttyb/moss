@@ -17,20 +17,20 @@
       "priority": "P1-essential",
       "category": "scalar expression",
       "provider": "module Service\n\nexport fn fresh(value):\n  return true\n",
-      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(17)\n",
-      "expected_output": "true\n",
-      "checked_body_status": "unsupported; ABI-v10 legacy reconstruction required",
-      "evidence": "Checked H3 decoder has no Bool literal node coverage."
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(17)\n  echo Service.fresh(\"moss\")\n",
+      "expected_output": "true\ntrue\n",
+      "checked_body_status": "checked-body supported; generic scalar literal return is projected before specialization",
+      "evidence": "M2b.3b acceptance poisons generic_stmt, requires checked-body projection trace, and executes Bool literal return for Int and String generic argument specializations after provider source removal."
     },
     {
       "id": "field-read",
       "priority": "P1-essential",
       "category": "generic field access",
       "provider": "module Service\n\nexport type Box:\n  value\n\nexport fn fresh(item: Box):\n  return item.value\n",
-      "consumer": "module Main\nimport Service\n\nfn main():\n  item = Service.Box(value: 23)\n  echo Service.fresh(item)\n",
-      "expected_output": "23\n",
-      "checked_body_status": "unsupported; ABI-v10 legacy reconstruction required",
-      "evidence": "H3 Scenario 6 exercises relay field access through retained generic_stmt; no checked-body field-read projection test exists."
+      "consumer": "module Main\nimport Service\n\nfn main():\n  item = Service.Box(value: 23)\n  echo Service.fresh(item)\n  text = Service.Box(value: \"moss\")\n  echo Service.fresh(text)\n",
+      "expected_output": "23\nmoss\n",
+      "checked_body_status": "checked-body supported; generic field read is projected before specialization",
+      "evidence": "M2b.3b acceptance poisons generic_stmt, requires checked-body projection trace, and executes the same authoritative field read for Int and String Box specializations after provider source removal."
     },
     {
       "id": "single-call",

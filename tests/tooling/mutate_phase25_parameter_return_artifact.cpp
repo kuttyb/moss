@@ -23,14 +23,15 @@ void write_file(const std::string& path, const std::string& bytes) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  assert(argc == 4);
+  assert(argc == 4 || argc == 5);
   const std::string interface_path = argv[1];
   const std::string archive_path = argv[2];
   const std::string mode = argv[3];
+  const std::string callable_name = argc == 5 ? argv[4] : "fresh";
   auto sealed = moss::abi_v10::decode(read_file(interface_path));
   const std::string old_digest = sealed.digest;
   const std::string callable = "callable-v1:" + sealed.value.module_id +
-      ":fn:fresh";
+      ":fn:" + callable_name;
 
   auto summary_at = std::find_if(sealed.value.semantic_contract.begin(),
       sealed.value.semantic_contract.end(), [&](const auto& record) {
@@ -95,6 +96,61 @@ int main(int argc, char** argv) {
     records.erase(std::remove_if(records.begin(), records.end(),
         [&](const auto& record) { return record.id == summary.provenance_id; }),
         records.end());
+  } else if (mode == "forged-provenance") {
+    auto& records = sealed.value.provenance;
+    auto provenance_at = std::find_if(records.begin(), records.end(),
+        [&](const auto& record) { return record.id == summary.provenance_id; });
+    assert(provenance_at != records.end());
+    auto provenance = moss::abi_v10::read_provenance(provenance_at->payload);
+    provenance.declaration_id += ":forged";
+    *provenance_at = moss::abi_v10::provenance_record(provenance);
+  } else if (mode == "bad-field-identity" ||
+             mode == "bad-field-ordinal" ||
+             mode == "bad-field-type") {
+    auto body = moss::abi_v10::read_checked_body_record(body_at->payload);
+    auto nominal = std::find_if(sealed.value.binary_contract.begin(),
+        sealed.value.binary_contract.end(), [&](const auto& record) {
+      return record.id == summary.parameters.front().identity;
+    });
+    assert(nominal != sealed.value.binary_contract.end());
+    const auto template_record = moss::abi_v10::read_template(nominal->payload);
+    moss::TypeContext context;
+    moss::NominalDeclaration declaration;
+    declaration.kind = moss::DeclarationKind::Record;
+    declaration.program_name = "Service__" + template_record.declaration_name;
+    declaration.module_id = sealed.value.module_id;
+    declaration.declaration_name = template_record.declaration_name;
+    for (const auto& field : template_record.fields)
+      declaration.fields.push_back({field.name, "", field.type.kind ==
+          moss::abi_v10::WireTypeKind::BoundVar});
+    auto owner = context.declare(std::move(declaration));
+    assert(owner->id == template_record.template_id &&
+           owner->fields.size() == 1);
+    const auto variable = moss::Type::var(moss::TypeVarId{0, 0, 0});
+    const auto receiver = moss::Type::nominal_bound(
+        owner, owner->program_name, {{owner->fields.front().name, variable}});
+    auto statements = moss::checked_ir::decode_h3_checked_body_v1(
+        body.checked_ir_bytes, context, {receiver}, variable,
+        body.semantic_hash);
+    assert(statements.size() == 1 && statements.front().expr &&
+           statements.front().expr->kind == moss::checked_ir::ExprKind::Field);
+    auto& field = *statements.front().expr;
+    if (mode == "bad-field-identity")
+      field.semantic_target_id += ":forged";
+    else if (mode == "bad-field-ordinal")
+      field.member_ordinal = 4;
+    else
+      field.type = moss::Type::primitive("bool");
+    body.checked_ir_bytes = moss::checked_ir::encode_checked_body_v1(statements);
+    body.semantic_hash =
+        moss::checked_ir::compute_checked_body_hash_v1(statements);
+    summary.body_semantic_hash = body.semantic_hash;
+    replace_summary();
+    replace_body(std::move(body));
+  } else if (mode == "missing-dependency") {
+    auto body = moss::abi_v10::read_checked_body_record(body_at->payload);
+    body.dependencies.clear();
+    replace_body(std::move(body));
   } else {
     assert(false && "unknown parameter-return artifact mutation mode");
   }

@@ -152,22 +152,32 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                 "missing-summary": ("SOURCE_FREE_SUMMARY_INVALID",),
                 "missing-body": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
                 "corrupted-summary": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
-                "type-binding": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
                 "identity": ("SOURCE_FREE_",),
                 "mismatch-hash": ("SOURCE_FREE_CHECKED_BODY_INVALID",
                                   "SOURCE_FREE_SUMMARY_INVALID"),
                 "missing-provenance": ("SOURCE_FREE_SUMMARY_INVALID",
                                        "SOURCE_FREE_CONTRACT_INVALID"),
+                "forged-provenance": ("SOURCE_FREE_SUMMARY_INVALID",),
             }
+            if case["id"] == "parameter-return":
+                negative_cases["type-binding"] = (
+                    "SOURCE_FREE_CHECKED_BODY_INVALID",)
+            if case["id"] == "field-read":
+                negative_cases.update({
+                    "bad-field-identity": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
+                    "bad-field-ordinal": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
+                    "bad-field-type": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
+                    "missing-dependency": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
+                })
             for mode, expected_codes in negative_cases.items():
-                mutated = case_root / f"parameter-{mode}"
+                mutated = case_root / f"checked-{mode}"
                 shutil.copytree(poisoned, mutated)
                 command([str(parameter_mutator), str(mutated / "Service.mossi"),
                          str(mutated / "libService.rlib"), mode],
                         cwd=ROOT, env=base_env)
                 bad_consumer = case_root / f"consumer-{mode}"
                 package(bad_consumer,
-                        f"m2b3a_parameter_{mode.replace('-', '_')}_consumer",
+                        f"m2b3b_{case['id'].replace('-', '_')}_{mode.replace('-', '_')}_consumer",
                         case["consumer"])
                 bad_env = poisoned_env | {
                     "MOSS_MODULE_PATH": str(mutated),
@@ -180,7 +190,7 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                 assert rejected.returncode != 0 and any(
                     code in reject_output for code in expected_codes), (
                         mode, expected_codes, reject_output)
-                print(f"PASS parameter-return {mode} rejects fail-closed")
+                print(f"PASS {case['id']} {mode} rejects fail-closed")
 
             v9_env = base_env.copy()
             v9_env.pop("MOSS_STAGED_ABI", None)
