@@ -88,6 +88,12 @@ std::vector<cir::Stmt> index_of_body(const moss::TypeRef& element_type) {
   cursor.type = int_type;
   cursor.expr = integer(int_type, "0");
 
+  cir::Stmt length;
+  length.kind = cir::StmtKind::Let;
+  length.local_ordinal = 1;
+  length.type = int_type;
+  length.expr = count(vector_type);
+
   cir::Stmt early_return = return_value(local(int_type, 0));
   cir::Stmt found;
   found.kind = cir::StmtKind::If;
@@ -105,10 +111,10 @@ std::vector<cir::Stmt> index_of_body(const moss::TypeRef& element_type) {
   cir::Stmt loop;
   loop.kind = cir::StmtKind::While;
   loop.expr = binary(bool_type, cir::BinaryOp::Less, local(int_type, 0),
-                     count(vector_type));
+                     local(int_type, 1));
   loop.body = {std::move(found), std::move(increment)};
 
-  return {std::move(cursor), std::move(loop),
+  return {std::move(cursor), std::move(length), std::move(loop),
           return_value(integer(int_type, "-1"))};
 }
 
@@ -174,11 +180,27 @@ int main(int argc, char** argv) {
       generic_body, context, generic_parameters, int_type, generic_hash);
   assert(cir::encode_checked_body_v1(generic_decoded) == generic_body);
   assert(cir::compute_checked_body_hash_v1(generic_decoded) == generic_hash);
-  assert(generic_decoded.size() == 3 &&
+  assert(generic_decoded.size() == 4 &&
          generic_decoded[0].kind == cir::StmtKind::Var &&
-         generic_decoded[1].kind == cir::StmtKind::While &&
-         generic_decoded[2].kind == cir::StmtKind::Return);
-  const auto& decoded_if = generic_decoded[1].body[0];
+         generic_decoded[0].local_ordinal == 0 &&
+         generic_decoded[1].kind == cir::StmtKind::Let &&
+         generic_decoded[1].local_ordinal == 1 &&
+         generic_decoded[2].kind == cir::StmtKind::While &&
+         generic_decoded[3].kind == cir::StmtKind::Return);
+  assert(generic_decoded[0].expr->kind == cir::ExprKind::IntegerLiteral &&
+         generic_decoded[0].expr->literal_value == "0" &&
+         generic_decoded[2].expr->kind == cir::ExprKind::Binary &&
+         generic_decoded[2].expr->binary_op == cir::BinaryOp::Less &&
+         generic_decoded[2].body.size() == 2 &&
+         generic_decoded[2].body[0].kind == cir::StmtKind::If &&
+         generic_decoded[2].body[0].then_branch.size() == 1 &&
+         generic_decoded[2].body[0].then_branch[0].kind ==
+             cir::StmtKind::Return &&
+         generic_decoded[2].body[1].kind == cir::StmtKind::Assign &&
+         generic_decoded[2].body[1].local_ordinal == 0 &&
+         generic_decoded[3].expr->kind == cir::ExprKind::IntegerLiteral &&
+         generic_decoded[3].expr->literal_value == "-1");
+  const auto& decoded_if = generic_decoded[2].body[0];
   const auto& equality = *decoded_if.expr;
   assert(equality.kind == cir::ExprKind::Binary &&
          equality.binary_op == cir::BinaryOp::Equal &&
@@ -189,11 +211,18 @@ int main(int argc, char** argv) {
          equality.operands[0].operands[0].type->structurally_equal(
              *generic_vector) &&
          equality.operands[1].type->structurally_equal(*variable));
-  assert(generic_decoded[1].expr->operands[1].kind ==
-             cir::ExprKind::CollectionCount &&
-         generic_decoded[1].expr->operands[1].semantic_target_id ==
+  assert(generic_decoded[1].kind == cir::StmtKind::Let &&
+         generic_decoded[1].expr->kind == cir::ExprKind::CollectionCount &&
+         generic_decoded[1].expr->semantic_target_id ==
              cir::kCollectionCountOperationId &&
-         generic_decoded[1].expr->operands[1].type->structurally_equal(
+         generic_decoded[1].expr->operands[0].kind == cir::ExprKind::Parameter &&
+         generic_decoded[1].expr->operands[0].ordinal == 0 &&
+         generic_decoded[1].expr->operands[0].type->structurally_equal(
+             *generic_vector) &&
+         generic_decoded[1].expr->type->structurally_equal(*int_type) &&
+         generic_decoded[2].expr->operands[1].kind == cir::ExprKind::LocalRead &&
+         generic_decoded[2].expr->operands[1].ordinal == 1 &&
+         generic_decoded[2].expr->operands[1].type->structurally_equal(
              *int_type));
 
   cir::Stmt one_local;
@@ -219,34 +248,51 @@ int main(int argc, char** argv) {
     const auto decoded = cir::decode_collection_loop_checked_body_v1(
         bytes, context, parameters, int_type, hash);
     assert(cir::encode_checked_body_v1(decoded) == bytes);
-    const auto& decoded_index = decoded[1].body[0].expr->operands[0];
+    assert(cir::compute_checked_body_hash_v1(decoded) == hash);
+    const auto& decoded_index = decoded[2].body[0].expr->operands[0];
     assert(decoded_index.type->structurally_equal(*concrete_type));
+    assert(decoded[1].expr->type->structurally_equal(*int_type) &&
+           decoded[2].expr->operands[1].ordinal == 1);
   }
 
   auto invalid_ordinal = generic_statements;
-  invalid_ordinal[1].body[1].local_ordinal = 17;
+  invalid_ordinal[2].body[1].local_ordinal = 17;
   assert(rejects(cir::encode_checked_body_v1(invalid_ordinal), context,
                  generic_parameters, int_type));
 
   auto read_before_declaration = generic_statements;
-  read_before_declaration[0].expr = local(int_type, 0);
+  read_before_declaration[1].expr = local(int_type, 1);
   assert(rejects(cir::encode_checked_body_v1(read_before_declaration), context,
+                 generic_parameters, int_type));
+
+  auto n_read_before_declaration = generic_statements;
+  n_read_before_declaration[0].expr = local(int_type, 1);
+  assert(rejects(cir::encode_checked_body_v1(n_read_before_declaration), context,
                  generic_parameters, int_type));
 
   auto local_escapes_scope = generic_statements;
   cir::Stmt scoped_let;
   scoped_let.kind = cir::StmtKind::Let;
-  scoped_let.local_ordinal = 1;
+  scoped_let.local_ordinal = 2;
   scoped_let.type = int_type;
   scoped_let.expr = integer(int_type, "7");
-  local_escapes_scope[1].body[0].else_branch.push_back(scoped_let);
-  local_escapes_scope[2].expr = local(int_type, 1);
+  local_escapes_scope[2].body[0].else_branch.push_back(scoped_let);
+  local_escapes_scope[3].expr = local(int_type, 2);
   assert(rejects(cir::encode_checked_body_v1(local_escapes_scope), context,
                  generic_parameters, int_type));
 
   auto immutable_assignment = generic_statements;
-  immutable_assignment[0].kind = cir::StmtKind::Let;
+  cir::Stmt assign_n;
+  assign_n.kind = cir::StmtKind::Assign;
+  assign_n.local_ordinal = 1;
+  assign_n.expr = integer(int_type, "7");
+  immutable_assignment.insert(immutable_assignment.begin() + 2, assign_n);
   assert(rejects(cir::encode_checked_body_v1(immutable_assignment), context,
+                 generic_parameters, int_type));
+
+  auto mismatched_n_type = generic_statements;
+  mismatched_n_type[1].type = primitive("bool");
+  assert(rejects(cir::encode_checked_body_v1(mismatched_n_type), context,
                  generic_parameters, int_type));
 
   auto mismatched_assignment = generic_statements;
@@ -254,23 +300,23 @@ int main(int argc, char** argv) {
   wrong_value.kind = cir::ExprKind::BoolLiteral;
   wrong_value.type = primitive("bool");
   wrong_value.literal_value = "true";
-  mismatched_assignment[1].body[1].expr = wrong_value;
+  mismatched_assignment[2].body[1].expr = wrong_value;
   assert(rejects(cir::encode_checked_body_v1(mismatched_assignment), context,
                  generic_parameters, int_type));
 
   auto invalid_index_type = generic_statements;
-  invalid_index_type[1].body[0].expr->operands[0].type = int_type;
+  invalid_index_type[2].body[0].expr->operands[0].type = int_type;
   auto invalid_index_bytes = cir::encode_checked_body_v1(invalid_index_type);
   assert(rejects(invalid_index_bytes, context, generic_parameters, int_type));
 
   auto invalid_operator = generic_statements;
-  invalid_operator[1].body[0].expr->binary_op =
+  invalid_operator[2].body[0].expr->binary_op =
       static_cast<cir::BinaryOp>(99);
   assert(rejects(cir::encode_checked_body_v1(invalid_operator), context,
                  generic_parameters, int_type));
 
   auto invalid_branch = generic_statements;
-  invalid_branch[1].body[0].expr = integer(int_type, "1");
+  invalid_branch[2].body[0].expr = integer(int_type, "1");
   assert(rejects(cir::encode_checked_body_v1(invalid_branch), context,
                  generic_parameters, int_type));
 
@@ -329,7 +375,7 @@ int main(int argc, char** argv) {
   unsupported_for.kind = cir::StmtKind::For;
   unsupported_for.expr = parameter(generic_vector, 0);
   const std::vector<cir::Stmt> unsupported_statements{
-      generic_statements.front(), unsupported_for,
+      generic_statements.front(), generic_statements[1], unsupported_for,
       generic_statements.back()};
   assert(rejects(cir::encode_checked_body_v1(unsupported_statements), context,
                  generic_parameters, int_type));

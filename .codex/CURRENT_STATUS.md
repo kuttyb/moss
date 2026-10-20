@@ -9121,3 +9121,17 @@ Final implementation validation:
 
 Agent-feedback validation and `git diff --check` passed. The full repository
 suite was not run. No debug instrumentation remains in compiler source.
+
+## D2 final acceptance correction
+
+Updated `check_phase25_d2_collection_loop_codec.cpp` so its primary fixture
+matches the `index_of` local structure: mutable `i` at ordinal 0, immutable
+`n` at ordinal 1, `While(i < n)` with indexed equality and early return,
+increment, and final `-1` return. Open-T, Int, and String bodies preserve
+canonical bytes and semantic hashes. Added rejection checks for reading `n`
+before declaration, assigning to immutable `n`, and mismatching `n`'s TypeRef.
+
+Focused validation passed: D2 codec plus pre-D2 reader compatibility, H3
+checked-body decoder, H3 arithmetic decoder/importer, H3 direct records, H3
+private chain, and `git diff --check`. No codec implementation changes were
+needed; full repository tests were not run.
