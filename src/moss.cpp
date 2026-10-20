@@ -5517,7 +5517,12 @@ class Checker {
       const auto& occurrence = state.expression_occurrences[id];
       if (!occurrence.completed || !occurrence.checked_type)
         return std::nullopt;
-      const auto type = state.solver.resolve(occurrence.checked_type);
+      const bool summary_typed_return_root =
+          occurrence.parent_id == UINT32_MAX &&
+          occurrence.root_slot == "return-value" && summary.result_type &&
+          occurrence.checked_type->structurally_equal(*summary.result_type);
+      const auto type = summary_typed_return_root
+          ? summary.result_type : state.solver.resolve(occurrence.checked_type);
       if (!type) return std::nullopt;
       checked_ir::Expr result;
       result.type = type;
@@ -5600,6 +5605,27 @@ class Checker {
           } else {
             return std::nullopt;
           }
+          return result;
+        }
+        case BodyTypeState::ExpressionOccurrence::Kind::VectorLiteral: {
+          vector<const BodyTypeState::ExpressionOccurrence*> children;
+          for (const auto& child : state.expression_occurrences)
+            if (child.parent_id == id) children.push_back(&child);
+          std::sort(children.begin(), children.end(),
+              [](const auto* left, const auto* right) {
+                return left->child_ordinal < right->child_ordinal;
+              });
+          if (children.size() != occurrence.source_operands.size())
+            return std::nullopt;
+          for (std::size_t index = 0; index < children.size(); ++index) {
+            if (children[index]->child_role !=
+                "element:" + std::to_string(index))
+              return std::nullopt;
+            auto element = lower_expression(children[index]->id, depth + 1);
+            if (!element) return std::nullopt;
+            result.operands.push_back(std::move(*element));
+          }
+          result.kind = checked_ir::ExprKind::VectorLiteral;
           return result;
         }
         case BodyTypeState::ExpressionOccurrence::Kind::Binary: {
@@ -5709,7 +5735,7 @@ class Checker {
     try {
       const auto bytes = checked_ir::encode_checked_body_v1(statements);
       const auto hash = checked_ir::compute_checked_body_hash_v1(statements);
-      const auto decoded = checked_ir::decode_h3_checked_body_v1(
+      const auto decoded = checked_ir::decode_checked_body_v1(
           bytes, *p_.type_context, summary.parameter_types,
           summary.result_type, hash);
       if (checked_ir::encode_checked_body_v1(decoded) != bytes ||
@@ -22624,9 +22650,44 @@ class Checker {
                           ->parameter_types[index];
                       break;
                     }
+                  const auto& checked_function =
+                      *current_check_result_function_;
+                  const auto& occurrence =
+                      occurrence_state->expression_occurrences.at(id);
+                  if (!term && occurrence.parent_id == UINT32_MAX &&
+                      occurrence.root_slot == "return-value" &&
+                      occurrence.kind ==
+                          BodyTypeState::ExpressionOccurrence::Kind::VectorLiteral &&
+                      occurrence.source_operands.empty() &&
+                      current_check_statement_ &&
+                      checked_function.body.size() == 1 &&
+                      &checked_function.body.front() ==
+                          current_check_statement_ &&
+                      checked_function.body.front().kind == Stmt::Kind::Return &&
+                      checked_function.open_summary->complete &&
+                      checked_function.open_summary->result_type &&
+                      checked_function.open_summary->result_type->kind ==
+                          moss::TypeKind::Builtin &&
+                      checked_function.open_summary->result_type->name == "vector" &&
+                      checked_function.open_summary->result_type->type_args.size() == 1)
+                    term = checked_function.open_summary->result_type;
                 }
+                const auto& occurrence =
+                    occurrence_state->expression_occurrences.at(id);
+                const bool summary_typed_return_root = term &&
+                    occurrence.parent_id == UINT32_MAX &&
+                    occurrence.root_slot == "return-value" &&
+                    occurrence.kind ==
+                        BodyTypeState::ExpressionOccurrence::Kind::VectorLiteral &&
+                    occurrence.source_operands.empty() &&
+                    current_check_result_function_ &&
+                    current_check_result_function_->open_summary &&
+                    current_check_result_function_->open_summary->result_type &&
+                    term->structurally_equal(
+                        *current_check_result_function_->open_summary->result_type);
                 occurrence_state->retain_expression_type(
-                    id, term ? occurrence_state->solver.resolve(term) : nullptr);
+                    id, summary_typed_return_root ? term
+                        : term ? occurrence_state->solver.resolve(term) : nullptr);
               })
             : std::function<void()>{});
     if (starts_with(original, "match "))
@@ -24950,6 +25011,9 @@ export fn sort_values(values: Vector[Int]) -> Int:
 export fn sort_values_reverse(values: Vector[Int]) -> Int:
   sort(values, by: Reverse(identity))
   return values[0]
+
+export fn empty_values():
+  return []
 )moss");
     Program program = Parser(lex_lines(input, "<statement-call-occurrence-test>"))
                           .parse();
@@ -24990,6 +25054,38 @@ export fn sort_values_reverse(values: Vector[Int]) -> Int:
     if (!verifies_call("relay", {"call-argument:0"}, {}) ||
         !verifies_call("sort_values", {"call-argument:0"}, {1}) ||
         !verifies_call("sort_values_reverse", {"call-argument:0"}, {1}))
+      return false;
+    const auto empty_function = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+          return candidate.name == "empty_values";
+        });
+    if (empty_function == program.functions.end() ||
+        !empty_function->open_summary ||
+        !empty_function->open_summary->complete)
+      return false;
+    const auto empty_state = checker.checked_body_states_.find(
+        &empty_function->body);
+    if (empty_state == checker.checked_body_states_.end() ||
+        !empty_state->second ||
+        !empty_state->second->expression_occurrence_ledger_complete)
+      return false;
+    const auto empty_statement =
+        empty_state->second->statement_occurrence_ids.find(
+            &empty_function->body.front());
+    if (empty_statement ==
+        empty_state->second->statement_occurrence_ids.end())
+      return false;
+    const auto empty_root = empty_state->second->expression_root_slots.find(
+        {empty_statement->second, "return-value"});
+    if (empty_root == empty_state->second->expression_root_slots.end())
+      return false;
+    const auto& empty_occurrence =
+        empty_state->second->expression_occurrences.at(empty_root->second);
+    if (empty_occurrence.kind !=
+            BodyTypeState::ExpressionOccurrence::Kind::VectorLiteral ||
+        !empty_occurrence.checked_type ||
+        !empty_occurrence.checked_type->structurally_equal(
+            *empty_function->open_summary->result_type))
       return false;
     const auto key_function = std::find_if(program.functions.begin(),
         program.functions.end(), [](const Function& candidate) {
@@ -43883,7 +43979,7 @@ static void append_abi_v10_collection_loop_records(
 static void append_abi_v10_empty_vector_records(
     abi_v10::Interface& value, const Program& program,
     const string& module) {
-  if (!phase25_empty_vector_emit_enabled()) return;
+  if (!phase25_empty_vector_emit_enabled() || !program.type_context) return;
   for (const auto& function : program.functions) {
     if (!function.exported || !function.static_dispatch ||
         !belongs_to_module(function.name, module) ||
@@ -43892,7 +43988,8 @@ static void append_abi_v10_empty_vector_records(
         function.params.size() != 0 || function.body.size() != 1 ||
         function.result_expression ||
         function.body.front().kind != Stmt::Kind::Return ||
-        trim(function.body.front().a) != "[]")
+        !function.checked_body_ir_v1_bytes ||
+        !function.checked_body_ir_v1_hash)
       continue;
 
     const auto& facts = *function.open_summary;
@@ -43940,19 +44037,22 @@ static void append_abi_v10_empty_vector_records(
       throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
                          "checked ABI-v10 empty-vector result TypeRef is unresolved");
 
-    checked_ir::Expr vector_literal;
-    vector_literal.kind = checked_ir::ExprKind::VectorLiteral;
-    vector_literal.type = facts.result_type;
-    checked_ir::Stmt returned;
-    returned.kind = checked_ir::StmtKind::Return;
-    returned.type = facts.result_type;
-    returned.expr = std::move(vector_literal);
-    vector<checked_ir::Stmt> statements{std::move(returned)};
-    const string semantic_hash =
-        checked_ir::compute_checked_body_hash_v1(statements);
-    const string encoded_body =
-        checked_ir::encode_checked_body_v1(statements);
-    if (checked_ir::encode_checked_body_v1(statements) != encoded_body ||
+    const string& semantic_hash = *function.checked_body_ir_v1_hash;
+    const string& encoded_body = *function.checked_body_ir_v1_bytes;
+    vector<checked_ir::Stmt> statements;
+    try {
+      statements = checked_ir::decode_checked_body_v1(
+          encoded_body, *program.type_context, facts.parameter_types,
+          facts.result_type, semantic_hash);
+    } catch (const std::invalid_argument&) {
+      continue;
+    }
+    if (statements.size() != 1 ||
+        statements.front().kind != checked_ir::StmtKind::Return ||
+        !statements.front().expr ||
+        statements.front().expr->kind != checked_ir::ExprKind::VectorLiteral ||
+        !statements.front().expr->operands.empty() ||
+        checked_ir::encode_checked_body_v1(statements) != encoded_body ||
         checked_ir::compute_checked_body_hash_v1(statements) != semantic_hash)
       throw ProjectError("SOURCE_FREE_CHECKED_BODY_INVALID",
                          "checked ABI-v10 empty-vector body is not canonical");

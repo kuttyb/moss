@@ -542,3 +542,21 @@ the same focused test then passed with the existing shape-specific producer.
 This remains an R1 checker-fact gap, not a language exclusion. The checker must
 attach the resolved return TypeRef to this literal before common lowering can
 consume it. The probe did not change tracked compiler code.
+
+R1 empty-vector occurrence gap resolved in the current working change: at the
+checker expression-type retention point, the sole direct return's empty
+`VectorLiteral` root now receives the complete open-callable result TypeRef
+under exact root/body/Vector guards. The occurrence lowerer supports ordered
+vector-literal children and routes round-trip validation through
+`decode_checked_body_v1`; the empty-vector emitter consumes those canonical
+checked bytes instead of constructing a second body from the source shape. The
+focused occurrence test now asserts ledger completeness and equality to the
+checked summary result TypeRef. Validation on this source passed:
+`check_phase25_empty_vector_records.py`, `check_phase25_r2c_empty_vector_consumer.py`
+(source deleted, checked-body projection trace, hostile controls, native
+execution, v9 default), `check_phase25_statement_call_occurrence_roles.py`,
+`make --jobs="$(nproc)" moss-dev`, and the full M2b2 source-free positive /
+hostile / v9 corpus. Existing TypeSolver missing-initializer warnings remain.
+The exact working checkpoint needs adversarial review; this resolves only the
+empty-vector occurrence slice and does not close R1's other totality,
+consolidation, or cross-crate requirements.

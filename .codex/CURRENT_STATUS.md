@@ -9707,3 +9707,12 @@ The attempted switch from the dedicated emitter to occurrence lowering failed
 the 1-summary/1-body assertion in `check_phase25_empty_vector_records.py`;
 that experiment was reverted and the existing producer regression passed
 again. This is an active R1 checker-fact gap, not an excluded source form.
+
+Follow-up resolved the empty-vector occurrence gap: the checker attaches the
+checked open-callable result TypeRef to the exact single-return empty
+VectorLiteral root before ledger validation; the occurrence lowerer handles
+VectorLiteral children and uses the unified bounded reader, and the emitter
+consumes these checked bytes. The checker occurrence regression, focused
+producer, source-free consumer, moss-dev build, and full M2b2 corpus pass. The
+build still has existing TypeSolver initializer warnings. Exact-SHA review is
+pending; broader R1 remains incomplete.
