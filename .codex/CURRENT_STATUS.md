@@ -9745,3 +9745,10 @@ The checked source probe `box_first(values): return [values[0]]` passes
 `moss check --json` but yields `open_summary.complete=false`, no result TypeRef
 and no checked bytes. This open generic-vector inference case remains
 unresolved, not an exclusion.
+
+Architect follow-up returned GO on exact pushed implementation SHA
+`561bdaa58d7237c6db432f99c7a14ea748dc8de6` for the narrow direct-return
+consolidation. The review found no P0/P1 in summary/Vector[BoundVar(0)] shape,
+origin and callable identity, canonical body round trip, duplicate handling,
+producer collisions, ABI-v9 control or v10 legacy nonselection. Nonempty
+vector result inference remains unresolved. This GO is not R1 acceptance.
