@@ -42,6 +42,8 @@ int main() {
   const std::vector<moss::checked_ir::Stmt> statements{let, returned};
   const auto bytes = moss::checked_ir::encode_checked_body_v1(statements);
   const auto hash = moss::checked_ir::compute_checked_body_hash_v1(statements);
+  assert(hash ==
+         "body-semantic-v1:sha256:18537b3ef108674bb3212ff2786a88ba699129bc04d9b0c36486c7669df64a8a");
   auto decoded = moss::checked_ir::decode_h3_checked_body_v1(
       bytes, context, {var}, result, hash);
   assert(moss::checked_ir::encode_checked_body_v1(decoded) == bytes);
@@ -57,6 +59,8 @@ int main() {
   const std::vector<moss::checked_ir::Stmt> nested{let, returned};
   const auto nested_bytes = moss::checked_ir::encode_checked_body_v1(nested);
   const auto nested_hash = moss::checked_ir::compute_checked_body_hash_v1(nested);
+  assert(nested_hash ==
+         "body-semantic-v1:sha256:5c3804e4d36d4adc483624922429fccb32357523893c97e75c680aeb787ef19e");
   auto nested_decoded = moss::checked_ir::decode_h3_checked_body_v1(
       nested_bytes, context, {var}, result, nested_hash);
   dependencies = moss::extract_semantic_dependencies(nested_decoded);

@@ -78,8 +78,17 @@ enum class ExprKind : uint32_t {
   Binary = 11,
   Message = 12,
   MapLiteral = 13,
-  NominalConstruct = 14
+  NominalConstruct = 14,
+  // Additive ABI-v10 checked-body-v1 tags. Keep existing values fixed: the
+  // encoder's canonical bytes and hashes are part of the sealed interface.
+  CollectionCount = 15,
+  Index = 16
 };
+
+inline constexpr std::string_view kCollectionCountOperationId =
+    "builtin:collection-count-v1";
+inline constexpr std::string_view kCollectionIndexOperationId =
+    "builtin:index";
 
 enum class UnaryOp : uint32_t {
   Neg = 1,
@@ -317,6 +326,28 @@ inline void encode_checked_expr(std::string& out, const Expr& expr) {
       for (const auto& child : expr.operands)
         encode_checked_expr(out, child);
       break;
+
+    case ExprKind::CollectionCount:
+      if (expr.operands.size() != 1 || !expr.literal_value.empty() ||
+          expr.semantic_target_id != kCollectionCountOperationId)
+        throw std::invalid_argument(
+            "invalid checked collection-count node: operation or arity mismatch");
+      checked_body_field(out, expr.semantic_target_id);
+      encode_checked_expr(out, expr.operands.front());
+      break;
+
+    case ExprKind::Index:
+      if (expr.operands.size() != 2 || !expr.literal_value.empty() ||
+          expr.semantic_target_id != kCollectionIndexOperationId)
+        throw std::invalid_argument(
+            "invalid checked index node: operation or arity mismatch");
+      checked_body_field(out, expr.semantic_target_id);
+      encode_checked_expr(out, expr.operands[0]);
+      encode_checked_expr(out, expr.operands[1]);
+      break;
+
+    default:
+      throw std::invalid_argument("unknown checked body expression kind");
   }
 }
 
@@ -416,6 +447,7 @@ inline void encode_checked_stmt(std::string& out, const Stmt& stmt) {
         for (const auto& s : c.body) encode_checked_stmt(out, s);
       }
       break;
+
   }
 }
 
@@ -449,9 +481,11 @@ class H3BodyReader {
  public:
   H3BodyReader(std::string_view bytes, const TypeContext& context,
                const std::vector<TypeRef>& parameters, const TypeRef& result,
-               bool allow_empty_vector_return = false)
+               bool allow_empty_vector_return = false,
+               bool allow_collection_loop_body = false)
       : bytes_(bytes), context_(context), parameters_(parameters), result_(result),
-        allow_empty_vector_return_(allow_empty_vector_return) {}
+        allow_empty_vector_return_(allow_empty_vector_return),
+        allow_collection_loop_body_(allow_collection_loop_body) {}
 
   std::vector<Stmt> read() {
     constexpr std::string_view header = "moss-checked-body-v1\n";
@@ -460,7 +494,27 @@ class H3BodyReader {
     position_ = header.size();
     std::vector<Stmt> statements;
     const auto statement_count = number();
-    if (statement_count == 1) {
+    if (allow_collection_loop_body_) {
+      if (bytes_.size() > (1u << 20) || statement_count == 0 ||
+          statement_count > kMaxBodyNodes)
+        fail("collection checked body exceeds bounds");
+      if (statement_count == 1) {
+        const auto marker_position = position_;
+        const auto first_field = field();
+        position_ = marker_position;
+        if (first_field == "return") {
+          statements.push_back(read_single_return());
+        } else {
+          scopes_.emplace_back();
+          statements.push_back(read_loop_stmt(0));
+          scopes_.pop_back();
+        }
+      } else {
+        scopes_.emplace_back();
+        read_loop_statements(statement_count, 0, statements);
+        scopes_.pop_back();
+      }
+    } else if (statement_count == 1) {
       statements.push_back(read_single_return());
     } else if (statement_count == 2) {
       statements.push_back(read_let());
@@ -482,6 +536,18 @@ class H3BodyReader {
   std::size_t position_ = 0;
   TypeRef local_type_;
   bool allow_empty_vector_return_ = false;
+  bool allow_collection_loop_body_ = false;
+  static constexpr std::uint32_t kMaxBodyNodes = 4096;
+  static constexpr std::uint32_t kMaxLocalCount = 256;
+  static constexpr unsigned kMaxBlockDepth = 32;
+  std::uint32_t node_count_ = 0;
+  std::uint32_t next_local_ordinal_ = 0;
+  struct LocalBinding {
+    TypeRef type;
+    bool mutable_binding = false;
+  };
+  std::map<std::uint32_t, LocalBinding> locals_;
+  std::vector<std::vector<std::uint32_t>> scopes_;
 
   [[noreturn]] static void fail(const char* message) {
     throw std::invalid_argument(message);
@@ -571,6 +637,16 @@ class H3BodyReader {
 
   static bool is_integer_type(const TypeRef& type) {
     return type && type->kind == TypeKind::Primitive && type->name == "int";
+  }
+
+  static bool is_bool_type(const TypeRef& type) {
+    return type && type->kind == TypeKind::Primitive && type->name == "bool";
+  }
+
+  static bool is_collection_type(const TypeRef& type) {
+    return type && type->kind == TypeKind::Builtin &&
+        type->name == "vector" && type->type_args.size() == 1 &&
+        type->type_args.front();
   }
 
   bool is_generic_parameter_type(const TypeRef& type) const {
@@ -688,11 +764,17 @@ class H3BodyReader {
 
   Expr read_expr(unsigned depth = 0) {
     if (depth >= 64) fail("checked body expression is too deep");
+    if (++node_count_ > kMaxBodyNodes)
+      fail("checked body node count exceeds bounds");
     const auto tag = number();
-    if (tag > static_cast<std::uint32_t>(ExprKind::NominalConstruct))
+    if (tag > static_cast<std::uint32_t>(ExprKind::Index))
       fail("checked body expression kind is unknown");
     Expr expression;
     expression.kind = static_cast<ExprKind>(tag);
+    if ((expression.kind == ExprKind::CollectionCount ||
+         expression.kind == ExprKind::Index) &&
+        !allow_collection_loop_body_)
+      fail("checked body collection operation is outside the H3 subset");
     expression.type = read_type();
     if (expression.kind == ExprKind::IntegerLiteral) {
       expression.literal_value = field();
@@ -736,19 +818,56 @@ class H3BodyReader {
           operation > static_cast<std::uint32_t>(BinaryOp::Xor))
         fail("checked body binary operator is unknown");
       expression.binary_op = static_cast<BinaryOp>(operation);
-      if (!is_integer_arithmetic(expression.binary_op))
-        fail("checked body binary expression is outside integer arithmetic");
       expression.operands.push_back(read_expr(depth + 1));
       expression.operands.push_back(read_expr(depth + 1));
-      if (!arithmetic_types_match(expression.type,
-                                  expression.operands[0].type,
-                                  expression.operands[1].type))
-        fail("checked body binary operand type is mismatched");
+      const auto& left = expression.operands[0].type;
+      const auto& right = expression.operands[1].type;
+      if (is_integer_arithmetic(expression.binary_op)) {
+        if (!arithmetic_types_match(expression.type, left, right))
+          fail("checked body binary operand type is mismatched");
+      } else if (allow_collection_loop_body_ &&
+                 (expression.binary_op == BinaryOp::Equal ||
+                  expression.binary_op == BinaryOp::NotEqual)) {
+        if (!is_bool_type(expression.type) || !left || !right ||
+            !left->structurally_equal(*right) ||
+            !(is_generic_parameter_type(left) ||
+              (left->kind == TypeKind::Primitive &&
+               (left->name == "int" || left->name == "float" ||
+                left->name == "bool" || left->name == "string" ||
+                left->name == "char"))))
+          fail("checked body equality operand type is mismatched");
+      } else if (allow_collection_loop_body_ &&
+                 (expression.binary_op == BinaryOp::Less ||
+                  expression.binary_op == BinaryOp::LessEqual ||
+                  expression.binary_op == BinaryOp::Greater ||
+                  expression.binary_op == BinaryOp::GreaterEqual)) {
+        if (!is_bool_type(expression.type) || !left || !right ||
+            !left->structurally_equal(*right) ||
+            !(is_integer_type(left) ||
+              (left->kind == TypeKind::Primitive &&
+               (left->name == "float" || left->name == "char"))))
+          fail("checked body ordering operand type is mismatched");
+      } else if (allow_collection_loop_body_ &&
+                 (expression.binary_op == BinaryOp::And ||
+                  expression.binary_op == BinaryOp::Or ||
+                  expression.binary_op == BinaryOp::Xor)) {
+        if (!is_bool_type(expression.type) || !is_bool_type(left) ||
+            !is_bool_type(right))
+          fail("checked body boolean operand type is mismatched");
+      } else {
+        fail("checked body binary operator is outside the collection subset");
+      }
     } else if (expression.kind == ExprKind::LocalRead) {
       expression.ordinal = number();
-      if (expression.ordinal != 0 || !local_type_ ||
-          !expression.type->structurally_equal(*local_type_))
+      if (allow_collection_loop_body_) {
+        const auto found = locals_.find(expression.ordinal);
+        if (found == locals_.end() || !found->second.type ||
+            !expression.type->structurally_equal(*found->second.type))
+          fail("checked body local is undeclared or mistyped");
+      } else if (expression.ordinal != 0 || !local_type_ ||
+                 !expression.type->structurally_equal(*local_type_)) {
         fail("checked body local type is mismatched");
+      }
     } else if (expression.kind == ExprKind::Field) {
       expression.semantic_target_id = field();
       expression.member_ordinal = number();
@@ -768,6 +887,25 @@ class H3BodyReader {
           expression.type->type_args.size() != 1 ||
           (result_ && !expression.type->structurally_equal(*result_)))
         fail("checked empty-vector return type or arity is mismatched");
+    } else if (expression.kind == ExprKind::CollectionCount) {
+      expression.semantic_target_id = field();
+      if (expression.semantic_target_id != kCollectionCountOperationId)
+        fail("checked collection-count operation identity is unknown");
+      expression.operands.push_back(read_expr(depth + 1));
+      if (!is_integer_type(expression.type) ||
+          !is_collection_type(expression.operands.front().type))
+        fail("checked collection-count receiver or result type is mismatched");
+    } else if (expression.kind == ExprKind::Index) {
+      expression.semantic_target_id = field();
+      if (expression.semantic_target_id != kCollectionIndexOperationId)
+        fail("checked index operation identity is unknown");
+      expression.operands.push_back(read_expr(depth + 1));
+      expression.operands.push_back(read_expr(depth + 1));
+      if (!is_collection_type(expression.operands[0].type) ||
+          !is_integer_type(expression.operands[1].type) ||
+          !expression.operands[0].type->type_args.front()->structurally_equal(
+              *expression.type))
+        fail("checked index receiver, index, or result TypeRef is mismatched");
     } else if (expression.kind == ExprKind::Call ||
                expression.kind == ExprKind::NominalConstruct) {
       expression.semantic_target_id = field();
@@ -796,6 +934,110 @@ class H3BodyReader {
       fail("checked body expression is outside the H3 subset");
     }
     return expression;
+  }
+
+  void declare_loop_local(std::uint32_t ordinal, const TypeRef& type,
+                          bool mutable_binding) {
+    if (ordinal != next_local_ordinal_ || ordinal >= kMaxLocalCount ||
+        !type || scopes_.empty() || locals_.count(ordinal))
+      fail("checked body local declaration ordinal or scope is invalid");
+    ++next_local_ordinal_;
+    locals_.emplace(ordinal, LocalBinding{type, mutable_binding});
+    scopes_.back().push_back(ordinal);
+  }
+
+  void read_loop_block(std::uint32_t count, unsigned depth,
+                       std::vector<Stmt>& output) {
+    if (depth > kMaxBlockDepth || count > kMaxBodyNodes - node_count_)
+      fail("checked body block exceeds bounds");
+    scopes_.emplace_back();
+    output.reserve(count);
+    for (std::uint32_t index = 0; index < count; ++index)
+      output.push_back(read_loop_stmt(depth));
+    for (const auto ordinal : scopes_.back()) locals_.erase(ordinal);
+    scopes_.pop_back();
+  }
+
+  void read_loop_statements(std::uint32_t count, unsigned depth,
+                            std::vector<Stmt>& output) {
+    if (count > kMaxBodyNodes - node_count_)
+      fail("checked body statement count exceeds bounds");
+    output.reserve(count);
+    for (std::uint32_t index = 0; index < count; ++index)
+      output.push_back(read_loop_stmt(depth));
+  }
+
+  Stmt read_loop_stmt(unsigned depth) {
+    if (++node_count_ > kMaxBodyNodes)
+      fail("checked body node count exceeds bounds");
+    const auto tag = number();
+    if (tag < static_cast<std::uint32_t>(StmtKind::Let) ||
+        tag > static_cast<std::uint32_t>(StmtKind::Match))
+      fail("checked body statement kind is unknown");
+    Stmt statement;
+    statement.kind = static_cast<StmtKind>(tag);
+    switch (statement.kind) {
+      case StmtKind::Let:
+      case StmtKind::Var: {
+        statement.local_ordinal = number();
+        statement.type = read_type();
+        statement.expr = read_expr();
+        if (!statement.type->structurally_equal(*statement.expr->type))
+          fail("checked body local initializer TypeRef is mismatched");
+        declare_loop_local(statement.local_ordinal, statement.type,
+                           statement.kind == StmtKind::Var);
+        break;
+      }
+      case StmtKind::Assign: {
+        statement.local_ordinal = number();
+        statement.expr = read_expr();
+        const auto found = locals_.find(statement.local_ordinal);
+        if (found == locals_.end() || !found->second.mutable_binding)
+          fail("checked body assignment target is undeclared or immutable");
+        if (!found->second.type->structurally_equal(*statement.expr->type))
+          fail("checked body assignment TypeRef is mismatched");
+        statement.type = found->second.type;
+        break;
+      }
+      case StmtKind::If: {
+        statement.expr = read_expr();
+        if (!is_bool_type(statement.expr->type))
+          fail("checked body if condition is not Bool");
+        const auto then_count = number();
+        read_loop_block(then_count, depth + 1, statement.then_branch);
+        const auto else_count = number();
+        read_loop_block(else_count, depth + 1, statement.else_branch);
+        break;
+      }
+      case StmtKind::While: {
+        statement.expr = read_expr();
+        if (!is_bool_type(statement.expr->type))
+          fail("checked body while condition is not Bool");
+        const auto body_count = number();
+        read_loop_block(body_count, depth + 1, statement.body);
+        break;
+      }
+      case StmtKind::Return: {
+        const auto has_value = number();
+        if (has_value != 1 || !result_)
+          fail("checked body return value is missing or unsupported");
+        statement.expr = read_expr();
+        if (!statement.expr->type->structurally_equal(*result_))
+          fail("checked body return TypeRef is mismatched");
+        statement.type = result_;
+        break;
+      }
+      case StmtKind::AssignField:
+      case StmtKind::AssignIndex:
+      case StmtKind::ExprStmt:
+      case StmtKind::Reply:
+      case StmtKind::For:
+      case StmtKind::Match:
+        fail("checked body statement is outside the collection-loop subset");
+      default:
+        fail("checked body statement kind is unsupported");
+    }
+    return statement;
   }
 
   Stmt read_single_return() {
@@ -850,6 +1092,20 @@ inline std::vector<Stmt> decode_h3_checked_body_v1(
   auto statements = reader.read();
   if (compute_checked_body_hash_v1(statements) != expected_hash)
     throw std::invalid_argument("H3 checked body hash is mismatched");
+  return statements;
+}
+
+// Bounded codec entry point for the statement/expression subset needed by
+// collection-loop checked bodies. The ordinary H3 decoder intentionally keeps
+// its narrow historical grammar; these nodes are not enabled there.
+inline std::vector<Stmt> decode_collection_loop_checked_body_v1(
+    std::string_view bytes, const TypeContext& context,
+    const std::vector<TypeRef>& parameters, const TypeRef& result,
+    std::string_view expected_hash) {
+  H3BodyReader reader(bytes, context, parameters, result, false, true);
+  auto statements = reader.read();
+  if (compute_checked_body_hash_v1(statements) != expected_hash)
+    throw std::invalid_argument("collection checked body hash is mismatched");
   return statements;
 }
 

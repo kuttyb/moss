@@ -1,5 +1,34 @@
 # Moss current status
 
+## Phase 25-M2b.3d-D2 checked-body collection-loop codec — 2026-10-19
+
+Implementation is on `phase25-m2b3d-d2-loop-codec`, based on
+`phase25-integration` at `39e7d8ac810f579243400766f007e9e7550b209b`. This is a
+codec-only change: checked-body-v1 adds expression tags 15 and 16 for typed
+`CollectionCount` (`builtin:collection-count-v1`) and `Index` (`builtin:index`)
+while retaining existing node tags and encodings. A bounded decoder accepts
+the requested Let/Var/Assign/If/While/Return and expression subset, validates
+scope, mutability, TypeRefs, operations, branch conditions, canonical bytes and
+hashes, and rejects unsupported statements. No provider emitter, checker body
+retention, consumer projection, or source-free loop execution was added.
+
+Compatibility evidence: the D1 baseline reader rejects both new tags, and the
+D1 importer maps decode failure to a thrown compile rejection. Golden hashes
+captured from the D1 encoder pin existing arithmetic, parameter, scalar,
+field, constructor, and call H3 fixtures. D2 codec fixtures pass for open T and
+concrete Int/String element types; malformed identity/type/operator/ordinal,
+scope, mutability, branch, nesting/bounds, truncated and unsupported forms
+reject.
+
+Validation: final `make --jobs="$(nproc)" moss-dev`, D2 codec and pre-D2
+compatibility runner, H3 arithmetic and checked-body decoder tests, checked-body
+IR/dependency-closure suite, H3 direct records and private chain, source-free
+ABI-v10 corpus, feedback validation, and `git diff --check` passed. The
+checked-body IR test used `-Wno-missing-field-initializers` for existing
+TypeSolver warnings promoted by its `-Werror` compile. D3 remains responsible
+for checker statement retention, ABI-v10 emission, consumer projection, and
+source-free loop execution. No full repository suite was run.
+
 ## Phase 25-M2b.3d-D1 integration — 2026-10-19
 
 `phase25-integration` was confirmed at expected baseline

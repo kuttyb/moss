@@ -17,3 +17,4 @@ ${CXX:-c++} -std=c++17 -Wall -Wextra -Werror -pedantic -Isrc \
 tmp/abi_v10_adversarial
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_empty_vector_records.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_r2c_empty_vector_consumer.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_d2_collection_loop_codec.py

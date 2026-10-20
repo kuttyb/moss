@@ -97,6 +97,8 @@ int main() {
   assert(arithmetic_body.find("generic_stmt") == std::string::npos);
   const auto arithmetic_hash =
       cir::compute_checked_body_hash_v1({returned(arithmetic)});
+  assert(arithmetic_hash ==
+         "body-semantic-v1:sha256:d1efb33af28881f27deb3485d4587a8ed60b3a59b57acf2015f8b98f96ba536a");
   const auto decoded = cir::decode_h3_checked_body_v1(
       arithmetic_body, context, {int_type}, int_type, arithmetic_hash);
   assert(decoded.size() == 1 && decoded[0].kind == cir::StmtKind::Return);
@@ -121,6 +123,8 @@ int main() {
       cir::encode_checked_body_v1(direct_parameter_statements);
   const auto direct_parameter_hash =
       cir::compute_checked_body_hash_v1(direct_parameter_statements);
+  assert(direct_parameter_hash ==
+         "body-semantic-v1:sha256:467d9bfcd6df1efdb681fff68c7afd64972e5586b6bba753ad6f1d8b588c9feb");
   const auto direct_parameter = cir::decode_h3_checked_body_v1(
       direct_parameter_body, context, {int_type}, int_type,
       direct_parameter_hash);
@@ -144,6 +148,8 @@ int main() {
   const auto generic_body = cir::encode_checked_body_v1(generic_statements);
   const auto generic_hash =
       cir::compute_checked_body_hash_v1(generic_statements);
+  assert(generic_hash ==
+         "body-semantic-v1:sha256:13de51438fae61d2dcf409d3b32d2e95f97a48496ac3f3e32b5da470be07f465");
   const auto generic_decoded = cir::decode_h3_checked_body_v1(
       generic_body, context, {generic_type}, generic_type, generic_hash);
   const auto& generic_add = *generic_decoded[0].expr;
@@ -163,6 +169,8 @@ int main() {
       cir::encode_checked_body_v1(generic_parameter_statements);
   const auto generic_parameter_hash =
       cir::compute_checked_body_hash_v1(generic_parameter_statements);
+  assert(generic_parameter_hash ==
+         "body-semantic-v1:sha256:80848c7ed73e0e8bec95d74204bd8e3322b8bcda1de35e4ca058e735f0bdcb5a");
   const auto generic_parameter = cir::decode_h3_checked_body_v1(
       generic_parameter_body, context, {generic_type}, generic_type,
       generic_parameter_hash);
@@ -177,10 +185,18 @@ int main() {
       {scalar(cir::ExprKind::BoolLiteral, bool_type, "false"), bool_type},
       {scalar(cir::ExprKind::StringLiteral, string_type, "moss language"),
        string_type}};
+  const std::vector<std::string> scalar_hashes = {
+      "body-semantic-v1:sha256:f6c7cbc17ec5495c177351559485513d96c04bb4fa3925e738c06eea95d155f2",
+      "body-semantic-v1:sha256:e26635add09562296aa3a2824b1f76089a12e3e70819c5bb0bc1000e96dfe763",
+      "body-semantic-v1:sha256:a74f9431d2a45e9b17a0bc4792599bd275a4a46cc5b0c6e3a005a0a0e999a353",
+      "body-semantic-v1:sha256:bb4bc92880271ea01c5f27d1c60e0638fb1eb3979622050bd5bf2288bb9579cc",
+      "body-semantic-v1:sha256:1c9cca618be4e98de0479324ccbedb7c70880c330d3784e1adb0490892296050"};
+  std::size_t scalar_index = 0;
   for (const auto& test_case : scalar_cases) {
     const auto statements = std::vector<cir::Stmt>{returned(test_case.first)};
     const auto body = cir::encode_checked_body_v1(statements);
     const auto hash = cir::compute_checked_body_hash_v1(statements);
+    assert(hash == scalar_hashes.at(scalar_index++));
     const auto round_trip = cir::decode_h3_checked_body_v1(
         body, context, {}, test_case.second, hash);
     assert(round_trip.size() == 1 && round_trip[0].expr);
@@ -203,6 +219,8 @@ int main() {
   const auto field_statements = std::vector<cir::Stmt>{returned(generic_field)};
   const auto field_body = cir::encode_checked_body_v1(field_statements);
   const auto field_hash = cir::compute_checked_body_hash_v1(field_statements);
+  assert(field_hash ==
+         "body-semantic-v1:sha256:be26ddd07d9d7a2d6d2ea9ea5dfc282f517308bb839261687d93c4fb77b62e19");
   const auto field_decoded = cir::decode_h3_checked_body_v1(
       field_body, context, {generic_box_type}, generic_type, field_hash);
   assert(field_decoded[0].expr->kind == cir::ExprKind::Field &&
@@ -297,6 +315,8 @@ int main() {
   auto h3_body_statements = std::vector<cir::Stmt>{let, returned(local)};
   const auto h3_body = cir::encode_checked_body_v1(h3_body_statements);
   const auto h3_hash = cir::compute_checked_body_hash_v1(h3_body_statements);
+  assert(h3_hash ==
+         "body-semantic-v1:sha256:efce6d9874a0288d11afe9f8289a00fc99f86300ef1ec618c06334e56eea85b2");
   const auto h3_decoded = cir::decode_h3_checked_body_v1(
       h3_body, context, {int_type}, int_type, h3_hash);
   assert(h3_decoded.size() == 2 &&
