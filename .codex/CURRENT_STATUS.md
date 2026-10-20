@@ -1,5 +1,26 @@
 # Moss current status
 
+## Phase 25-M2b.3d-D1 integration — 2026-10-19
+
+`phase25-integration` was confirmed at expected baseline
+`32c06c8278a5648b6f78c87e8ecd91c6048c6cc9` and fast-forwarded to the reviewed
+D1 HEAD `adfb5c9522cf5df6d94f6bd8e43ba528378f19f5`. No compiler changes were
+added during integration. The provider-only `index_of` harness confirms a
+complete open summary without consumer specialization. It also confirms that
+extra generic arithmetic, duplicate Count/Index observations, and unrelated
+equality do not produce a complete summary.
+
+Focused validation: `make --jobs="$(nproc)" moss-dev`, generic collection
+facts, generic arithmetic acceptance, G2 declaration authority, and the
+source-free ABI-v10 corpus passed. G2's unmodified `-Werror` invocation fails
+on pre-existing `TypeSolver::Undo::binding` missing-initializer warnings; it
+passes with the focused `-Wno-missing-field-initializers` wrapper. The typed
+semantic API test fails at `add_one`'s requirement-count assertion with count
+2 (the `return-operator` and `checked-arithmetic:0` requirements). The unchanged
+`32c06c8278a5648b6f78c87e8ecd91c6048c6cc9` baseline produces the same assertion,
+requirement IDs, and body semantic hash, so this is baseline-existing. No D2
+work or full repository regression was run.
+
 ## Phase 25-M2b.3d-D1 completeness correction — 2026-10-19
 
 On `phase25-m2b3d-d1-checker-facts`, the open-summary refresh now requires
