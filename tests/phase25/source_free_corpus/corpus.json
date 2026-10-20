@@ -50,7 +50,7 @@
       "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh([8, 3, 8], 3)\n  echo Service.fresh([8, 3, 8], 9)\n",
       "expected_output": "1\n-1\n",
       "checked_body_status": "checked-body supported; Count/Index/equality loop is projected before generic specialization",
-      "evidence": "D3d source-free acceptance removes the provider source and this callable's complete generic_stmt body, verifies checked-body projection, and executes Int and String specializations. The actual SDK collections.index_of is covered by tests/tooling/check_phase25_d3d_collection_source_free.py."
+      "evidence": "D3d/D4 source-free acceptance removes provider source and the callable's complete generic_stmt body, verifies checked-body projection, and executes Int and String specializations. Actual SDK index_of, contains, and count_equal Int/String cases are covered by tests/tooling/check_phase25_d4_collection_source_free.py."
     },
     {
       "id": "generic-range-iteration",
@@ -103,7 +103,7 @@
       "source": "src/collections.moss",
       "callables": ["index_of", "contains", "count_equal"],
       "current_test": "tests/check_source_free.py",
-      "abi_v10_checked_body_status": "uncovered; each uses a multi-statement generic loop with indexing and equality",
+      "abi_v10_checked_body_status": "checked-body proven for index_of, contains, and count_equal with source-free Int/String native execution and legacy-body poisoning",
       "cutover_priority": "P1-sdk-essential"
     },
     {

@@ -9179,3 +9179,81 @@ Promoted the `collection-loop-equality-index` corpus row to checked-body support
 Added `check_phase25_d3d_collection_source_free.py` against the actual `sdk/foundations/collections` package. Staged-v10 provider built and sealed; the poisoner removed all seven `generic_stmt` rows for `index_of`, preserving other SDK callables; provider source was removed; Int/String native consumers returned `1`, `-1`, `0`, `0`, `1`, `-1`, `-1` for match, miss, duplicate/first, first-position, string, string-miss, and typed empty-vector cases. Checked-body projection traces named the SDK `collections.index_of` callable.
 
 **D3d is not yet fully green:** the full source-free corpus runner fails its collection-loop `missing-body` negative because staged-v10 still succeeds when the checked body is removed. The positive poisoned path is verified, but M2b.4 must close the remaining fallback through other legacy metadata. This blocker is recorded and will be handled after the bounded D4 work, as sequenced by the brief.
+
+## D4 and M2b.4 overnight checkpoint — in progress
+
+D4 extends the existing checker-retained collection-loop path to the actual
+`contains` and `count_equal` shapes. The checker now accepts the same complete
+Count/Index/equality facts with a Bool result for `contains`, while preserving
+Int for `index_of` and `count_equal`. Retention requires checker-owned mutable
+binding identities for the cursor, implicit Count local, and `count_equal`
+counter; the checked body uses `Var`, `Assign`, Bool literals, and the existing
+D2 v1 control-flow codec. Import projection validates the exact count/index/
+equality tree, counter update or early-return form, effect tag, and concrete
+TypeRefs before ordinary Moss AST rechecking.
+
+Added `tests/tooling/check_phase25_d4_collection_source_free.py`. The actual
+SDK provider builds under staged ABI-v10; the poisoner removed 7 `generic_stmt`
+rows for `index_of`, 7 for `contains`, and 8 for `count_equal`; provider source
+was deleted; native Int/String consumers executed with checked-body projection
+traces. Output was `1, -1, 1, true, false, true, false, 3, 0, 2, 0, -1, false, 0`
+(one result per line), covering matches, misses, duplicates, and empty vectors.
+Default ABI-v9 collections build and source-free tests passed.
+
+M2b.4 begins strict staged-v10 admission: imported generic static callables
+without a validated typed summary/body now reject, even when compatibility
+`generic_stmt` remains. ABI-v10 emits standalone callable provenance for
+unsupported generic exports so rejection diagnostics can use the sealed
+provider declaration origin. Existing typed summary provenance continues to
+control supported callable hydration. `check_phase25_m2b1_provenance.py` passes:
+conflicting supported `fresh` diagnostics retain provider provenance,
+missing/forged `generic_source` does not alter attribution, unsupported `relay`
+rejects as `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE` with sealed provenance, and
+ordinary local conflicts gain no provider note.
+
+Focused validation passed: `make --jobs="$(nproc)" moss-dev` (existing
+TypeSolver missing-field-initializer warnings only), D1 facts, D2 codec and
+pre-D2 rejection, D3a binding preflight, D3b emission, D3c projection, D3d/D4
+actual SDK source-free execution, source-free corpus (all positive cases,
+poisoning, ABI-v9 controls, and missing/malformed record negatives), R2c,
+M2b.1 provenance, H3 direct/private-chain/checked-body/arithmetic checks,
+checked arithmetic, G2 conformance (11/11), G1/G2 authority (with the
+specific existing warning suppression), and H3 Scenario 6 (`--staged-v10`,
+release, output `99`). The ABI-v9 SDK source-free smoke also passed.
+
+Known baseline exception remains: `check_phase25_typed_semantic_api.py` fails at
+`add_one` because it expects one requirement while checker output contains two
+(`return-operator`, `checked-arithmetic:0`); no expectation was changed. The
+full repository suite was not run. M2b.4 still needs the remaining focused ABI
+shard/cutover inventory, final source-free matrix review, feedback validation,
+commit, and push.
+
+## D4 validated checkpoint — 2026-10-20
+
+D4 passed on the actual SDK provider. `index_of`, `contains`, and `count_equal`
+were independently built under staged ABI-v10; the scoped poisoner removed 7,
+7, and 8 `generic_stmt` rows respectively; provider source was removed before
+consumer compilation; Int and String specializations ran natively and each
+callable emitted its checked-body projection trace. Output was `1, -1, 1,
+true, false, true, false, 3, 0, 2, 0, -1, false, 0`. The new malformed
+summary tests reject a forged equality requirement and an erased `may_panic`
+effect. ABI-v9 SDK source-free smoke passed.
+
+Focused reruns passed for D1 collection facts, D2 codec/pre-D2 rejection, D3a
+binding preflight, D3b emission, D3c projection, D3d actual SDK index lookup,
+D4 source-free SDK execution, the complete source-free corpus, H3 direct and
+private-chain records, checked-body IR/dependency closure (with only the
+documented targeted warning suppression), H3 arithmetic decode, R2c, M2b.1
+provenance, G2 (11/11), generic arithmetic, checked arithmetic, and H3
+Scenario 6 (source removed, staged-v10, output `99`). `make
+--jobs="$(nproc)" moss-dev`, feedback validation, and `git diff --check` passed.
+
+M2b.4 strict staged-v10 admission and provenance edits are the next checkpoint
+and remain uncommitted at this point. `tests/shards/shard_abi_v10_units.sh`
+passes with `-Wno-missing-field-initializers`; without that targeted
+suppression its standalone `-Werror` compile fails on existing aggregate
+initializer warnings in `abi_v10_staging.cpp`. The typed-semantic API failure
+was reproduced on a detached clean D1 baseline at
+`39e7d8ac810f579243400766f007e9e7550b209b`: the exact `add_one` requirement
+count assertion expects 1 but sees 2, with unchanged body hash
+`body-semantic-v1:sha256:455a8ef8fcedd018807822f5aed1b9add6bbb1d6a61ebb1650129ab46807d343`.

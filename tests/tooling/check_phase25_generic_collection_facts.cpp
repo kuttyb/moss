@@ -374,7 +374,50 @@ fn main():
          !unrelated_equality_function->open_summary->complete);
   assert(!unrelated_equality_function->checked_body_ir_v1_bytes);
 
-  std::cout << "PASS index_of checker summary, Count/Index TypeRefs, equality "
-               "admissibility, READ accesses, may_panic, provider-only summary, "
-               "and fail-closed operation cases\n";
+  const auto d4_provider = check_source(R"moss(export fn contains(items, target) -> Bool:
+  var i = 0
+  n = items |> count
+  while i < n:
+    if items[i] == target:
+      return true
+    i = i + 1
+  return false
+
+export fn count_equal(items, target) -> Int:
+  var i = 0
+  var matches = 0
+  n = items |> count
+  while i < n:
+    if items[i] == target:
+      matches = matches + 1
+    i = i + 1
+  return matches
+)moss");
+  for (const auto& [name, expected_locals] :
+       vector<std::pair<string, size_t>>{{"contains", 2}, {"count_equal", 3}}) {
+    const auto found = std::find_if(d4_provider.functions.begin(),
+        d4_provider.functions.end(), [&](const Function& candidate) {
+      return candidate.name == name;
+    });
+    assert(found != d4_provider.functions.end());
+    assert(found->open_summary && found->open_summary->complete);
+    assert(found->open_summary->operations.size() == 2 &&
+           found->open_summary->requirements.size() == 2 &&
+           found->open_summary->observable_effects.may_panic);
+    assert(found->checked_body_ir_v1_bytes && found->checked_body_ir_v1_hash);
+    const auto decoded = checked_ir::decode_collection_loop_checked_body_v1(
+        *found->checked_body_ir_v1_bytes, *d4_provider.type_context,
+        found->open_summary->parameter_types, found->open_summary->result_type,
+        *found->checked_body_ir_v1_hash);
+    assert(decoded.size() == expected_locals + 2);
+    for (size_t ordinal = 0; ordinal < expected_locals; ++ordinal)
+      assert(decoded[ordinal].kind == checked_ir::StmtKind::Var &&
+             decoded[ordinal].local_ordinal == ordinal);
+    assert(decoded[expected_locals].kind == checked_ir::StmtKind::While);
+    assert(decoded.back().kind == checked_ir::StmtKind::Return);
+  }
+
+  std::cout << "PASS index_of/contains/count_equal checker summaries, Count/Index "
+               "TypeRefs, equality admissibility, READ accesses, may_panic, "
+               "provider-only summaries, and fail-closed operation cases\n";
 }
