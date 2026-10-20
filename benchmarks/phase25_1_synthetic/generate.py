@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Synthetic C++17 Codebase Generator for Moss Phase 25.1.
-Reproduces compilation characteristics of monolithic moss.cpp:
-- ~40K-50K lines of C++
-- 8 logical subsystems
-- Heavy STL container, template instantiation, algorithm, and codegen pressure
-- Deterministic executable workload
+Source-Faithful Synthetic C++17 Codebase Generator for Moss Phase 25.1B.
+Reproduces real Moss compiler characteristics derived from source fingerprint:
+- Asymmetric subsystem sizing based on MOSS_PARTITION_MAP (Checker divided into 3 TUs, Generator, Project Engine, etc.)
+- Concrete STL container specializations matching real Moss usage
+- ~49K-51K lines of C++
+- Heavy template instantiation, AST manipulation, type inference, Rust codegen simulation
+- Deterministic executable workload verifying end-to-end checksum
 """
 
 import os
@@ -13,18 +14,20 @@ import sys
 import argparse
 import random
 
-SUBSYSTEMS = [
-    "parsing",
-    "sema",
-    "types",
-    "graph",
-    "transform",
-    "indexing",
-    "serialize",
-    "runtime"
+SUBSYSTEM_SPECS = [
+    ("core_diag", 12, "Core Infrastructure, StageTimers & Diagnostic Descriptors"),
+    ("parser", 8, "Lexer & Recursive-Descent AST Parser"),
+    ("abi_sourcefree", 10, "ABI v9/v10 Records & Source-Free Deserializer"),
+    ("checker_core", 42, "Checker: Core Declarations, Scopes & Symbols"),
+    ("checker_expr", 45, "Checker: Expression Type Inference & Call Overloads"),
+    ("checker_ownership", 38, "Checker: Ownership Environment, Borrow Checking & Effects"),
+    ("generator", 42, "Generator: AST to Rust Lowering & Runtime Call Emission"),
+    ("semantic_queries", 28, "Semantic Queries, Fact Indexing & Agent APIs"),
+    ("project_engine", 42, "Project Manifest, Multi-Module Resolver & Pipeline Driver"),
+    ("tooling_driver", 28, "Tooling, Benchmark Comparison, Fast Debug & CLI Entrypoint")
 ]
 
-def generate_codebase(output_dir, num_functions_per_subsystem=33, seed=42):
+def generate_codebase(output_dir, seed=42):
     os.makedirs(output_dir, exist_ok=True)
     rng = random.Random(seed)
 
@@ -35,6 +38,7 @@ def generate_codebase(output_dir, num_functions_per_subsystem=33, seed=42):
 #include <map>
 #include <unordered_map>
 #include <set>
+#include <unordered_set>
 #include <algorithm>
 #include <memory>
 #include <optional>
@@ -46,6 +50,7 @@ def generate_codebase(output_dir, num_functions_per_subsystem=33, seed=42):
 #include <cstdint>
 #include <utility>
 #include <numeric>
+#include <string_view>
 """
     with open(os.path.join(output_dir, "pch.hpp"), "w") as f:
         f.write(pch_content)
@@ -68,7 +73,9 @@ enum class NodeKind : uint16_t {
     IfStmt,
     ReturnStmt,
     LoopStmt,
-    MatchStmt
+    MatchStmt,
+    DomainDecl,
+    HandlerDecl
 };
 
 enum class TypeKind : uint16_t {
@@ -82,7 +89,8 @@ enum class TypeKind : uint16_t {
     List,
     Map,
     Function,
-    Custom
+    Custom,
+    DomainHandle
 };
 
 struct SourceLocation {
@@ -209,6 +217,10 @@ size_t count_matching(const Container& c, Pred pred) {
     return std::count_if(c.begin(), c.end(), pred);
 }
 
+static inline void hash_combine(uint64_t& seed, uint64_t val) {
+    seed ^= val + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
+}
+
 } // namespace synth
 """
     with open(os.path.join(output_dir, "common_types.hpp"), "w") as f:
@@ -265,8 +277,8 @@ void explicit_instantiations_anchor() {
     with open(os.path.join(output_dir, "template_instantiations.cpp"), "w") as f:
         f.write(template_inst_content)
 
-    # 5. Generate 8 Subsystems
-    for sub_idx, sub_name in enumerate(SUBSYSTEMS):
+    # 5. Generate 10 Subsystems
+    for sub_idx, (sub_name, num_funcs, desc) in enumerate(SUBSYSTEM_SPECS):
         header_path = os.path.join(output_dir, f"subsystem_{sub_name}.hpp")
         cpp_path = os.path.join(output_dir, f"subsystem_{sub_name}.cpp")
 
@@ -277,6 +289,7 @@ void explicit_instantiations_anchor() {
             f'#include "common_types.hpp"',
             f'#include "eti_declarations.hpp"',
             f"",
+            f"// {desc}",
             f"namespace synth::{sub_name} {{",
             f"",
             f"struct SubsystemState {{",
@@ -295,7 +308,7 @@ void explicit_instantiations_anchor() {
             f"",
             f"uint64_t run_{sub_name}_pipeline(SubsystemState& state, int workload_size);",
         ]
-        for f_idx in range(num_functions_per_subsystem):
+        for f_idx in range(num_funcs):
             hdr_lines.append(f"uint64_t {sub_name}_worker_fn_{f_idx}(SubsystemState& state, int depth);")
 
         hdr_lines.append(f"}} // namespace synth::{sub_name}\n")
@@ -306,15 +319,12 @@ void explicit_instantiations_anchor() {
         cpp_lines = [
             f'#include "subsystem_{sub_name}.hpp"',
             f"",
+            f"// Implementation for {desc}",
             f"namespace synth::{sub_name} {{",
-            f"",
-            f"static inline void hash_combine(uint64_t& seed, uint64_t val) {{",
-            f"    seed ^= val + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);",
-            f"}}",
             f"",
         ]
 
-        for f_idx in range(num_functions_per_subsystem):
+        for f_idx in range(num_funcs):
             cpp_lines.append(f"uint64_t {sub_name}_worker_fn_{f_idx}(SubsystemState& state, int depth) {{")
             cpp_lines.append(f"    state.step_count++;")
             cpp_lines.append(f"    uint64_t local_hash = 0xbf58476d1ce4e5b9ULL ^ (static_cast<uint64_t>(depth) << 16) ^ {f_idx};")
@@ -336,7 +346,7 @@ void explicit_instantiations_anchor() {
             cpp_lines.append(f"    for (int i = 0; i < iterations; ++i) {{")
             cpp_lines.append(f"        AstNode n;")
             cpp_lines.append(f"        n.id = i * 100 + {f_idx};")
-            cpp_lines.append(f"        n.kind = static_cast<NodeKind>((i + {f_idx}) % 12);")
+            cpp_lines.append(f"        n.kind = static_cast<NodeKind>((i + {f_idx}) % 14);")
             cpp_lines.append(f'        n.name = "{sub_name}_sym_" + std::to_string(n.id);')
             cpp_lines.append(f"        n.int_val = static_cast<int64_t>(i) * 31 + {f_idx};")
             cpp_lines.append(f"        n.float_val = static_cast<double>(n.int_val) * 0.125;")
@@ -352,12 +362,12 @@ void explicit_instantiations_anchor() {
             cpp_lines.append(f"        sym.symbol_id = n.id;")
             cpp_lines.append(f"        sym.identifier = n.name;")
             cpp_lines.append(f'        sym.scope = "{sub_name}::scope_" + std::to_string(i);')
-            cpp_lines.append(f"        sym.type = static_cast<TypeKind>((i + {sub_idx}) % 10);")
+            cpp_lines.append(f"        sym.type = static_cast<TypeKind>((i + {sub_idx}) % 12);")
             cpp_lines.append(f"        sym.is_mutable = (i % 2 == 0);")
             cpp_lines.append(f"        sym.is_exported = (i % 3 == 0);")
             cpp_lines.append(f"        sym.tags.push_back(\"tag_\" + std::to_string(i));")
             cpp_lines.append(f"        sym.attributes[\"vis\"] = \"public\";")
-            cpp_lines.append(f"        sym.attributes[\"phase\"] = \"25\";")
+            cpp_lines.append(f"        sym.attributes[\"phase\"] = \"25_1b\";")
             cpp_lines.append(f"        local_symbols[sym.identifier] = sym;")
             cpp_lines.append(f"        scope_id_sets[sym.scope].insert(sym.symbol_id);")
             cpp_lines.append(f"")
@@ -393,7 +403,7 @@ void explicit_instantiations_anchor() {
             cpp_lines.append(f"    }}")
             cpp_lines.append(f"")
 
-            # Intermediate transformations
+            # Intermediate transformations simulating Checker / Generator logic
             cpp_lines.append(f"    int64_t accum_val = 0;")
             cpp_lines.append(f"    for (const auto& nd : nodes) {{")
             cpp_lines.append(f"        accum_val += nd.int_val;")
@@ -403,6 +413,8 @@ void explicit_instantiations_anchor() {
             cpp_lines.append(f"            accum_val = ~accum_val;")
             cpp_lines.append(f"        }} else if (nd.kind == NodeKind::FunctionDecl) {{")
             cpp_lines.append(f"            accum_val = (accum_val << 2) + nd.id;")
+            cpp_lines.append(f"        }} else if (nd.kind == NodeKind::DomainDecl) {{")
+            cpp_lines.append(f"            accum_val = (accum_val ^ 0x1f1f) * 7;")
             cpp_lines.append(f"        }} else {{")
             cpp_lines.append(f"            accum_val ^= nd.id + 17;")
             cpp_lines.append(f"        }}")
@@ -506,10 +518,10 @@ void explicit_instantiations_anchor() {
             cpp_lines.append(f"    return local_hash;")
             cpp_lines.append(f"}}\n")
 
-        # Subsystem pipeline runner
+        # Pipeline runner for subsystem
         cpp_lines.append(f"uint64_t run_{sub_name}_pipeline(SubsystemState& state, int workload_size) {{")
         cpp_lines.append(f"    uint64_t acc = 0;")
-        for f_idx in range(num_functions_per_subsystem):
+        for f_idx in range(num_funcs):
             cpp_lines.append(f"    acc ^= {sub_name}_worker_fn_{f_idx}(state, workload_size + {f_idx});")
         cpp_lines.append(f"    return acc;")
         cpp_lines.append(f"}}\n")
@@ -519,36 +531,30 @@ void explicit_instantiations_anchor() {
             f.write("\n".join(cpp_lines))
 
     # 6. unity.cpp
-    unity_content = """#include "pch.hpp"
-#include "common_types.hpp"
-#include "eti_declarations.hpp"
+    unity_lines = [
+        '#include "pch.hpp"',
+        '#include "common_types.hpp"',
+        '#include "eti_declarations.hpp"',
+        ""
+    ]
+    for sub_name, _, _ in SUBSYSTEM_SPECS:
+        unity_lines.append(f'#include "subsystem_{sub_name}.cpp"')
+    unity_lines.append('#include "template_instantiations.cpp"')
+    unity_lines.append('#include "main.cpp"')
+    unity_lines.append("")
 
-#include "subsystem_parsing.cpp"
-#include "subsystem_sema.cpp"
-#include "subsystem_types.cpp"
-#include "subsystem_graph.cpp"
-#include "subsystem_transform.cpp"
-#include "subsystem_indexing.cpp"
-#include "subsystem_serialize.cpp"
-#include "subsystem_runtime.cpp"
-#include "template_instantiations.cpp"
-#include "main.cpp"
-"""
     with open(os.path.join(output_dir, "unity.cpp"), "w") as f:
-        f.write(unity_content)
+        f.write("\n".join(unity_lines))
 
     # 7. main.cpp
-    main_content = """#include "pch.hpp"
-#include "common_types.hpp"
-#include "subsystem_parsing.hpp"
-#include "subsystem_sema.hpp"
-#include "subsystem_types.hpp"
-#include "subsystem_graph.hpp"
-#include "subsystem_transform.hpp"
-#include "subsystem_indexing.hpp"
-#include "subsystem_serialize.hpp"
-#include "subsystem_runtime.hpp"
+    main_lines = [
+        '#include "pch.hpp"',
+        '#include "common_types.hpp"',
+    ]
+    for sub_name, _, _ in SUBSYSTEM_SPECS:
+        main_lines.append(f'#include "subsystem_{sub_name}.hpp"')
 
+    main_lines.append("""
 int main(int argc, char** argv) {
     int workload = 5;
     if (argc > 1) {
@@ -561,61 +567,28 @@ int main(int argc, char** argv) {
         h ^= v;
         h *= 1099511628211ULL;
     };
+""")
+    for sub_name, _, _ in SUBSYSTEM_SPECS:
+        main_lines.append(f"    synth::{sub_name}::SubsystemState s_{sub_name};")
+        main_lines.append(f"    uint64_t r_{sub_name} = synth::{sub_name}::run_{sub_name}_pipeline(s_{sub_name}, workload);")
+        main_lines.append(f"    combine(total_checksum, r_{sub_name});")
+        main_lines.append(f"    combine(total_checksum, s_{sub_name}.checksum);")
+        main_lines.append("")
 
-    synth::parsing::SubsystemState s_parsing;
-    uint64_t r_parsing = synth::parsing::run_parsing_pipeline(s_parsing, workload);
-    combine(total_checksum, r_parsing);
-    combine(total_checksum, s_parsing.checksum);
-
-    synth::sema::SubsystemState s_sema;
-    uint64_t r_sema = synth::sema::run_sema_pipeline(s_sema, workload);
-    combine(total_checksum, r_sema);
-    combine(total_checksum, s_sema.checksum);
-
-    synth::types::SubsystemState s_types;
-    uint64_t r_types = synth::types::run_types_pipeline(s_types, workload);
-    combine(total_checksum, r_types);
-    combine(total_checksum, s_types.checksum);
-
-    synth::graph::SubsystemState s_graph;
-    uint64_t r_graph = synth::graph::run_graph_pipeline(s_graph, workload);
-    combine(total_checksum, r_graph);
-    combine(total_checksum, s_graph.checksum);
-
-    synth::transform::SubsystemState s_transform;
-    uint64_t r_transform = synth::transform::run_transform_pipeline(s_transform, workload);
-    combine(total_checksum, r_transform);
-    combine(total_checksum, s_transform.checksum);
-
-    synth::indexing::SubsystemState s_indexing;
-    uint64_t r_indexing = synth::indexing::run_indexing_pipeline(s_indexing, workload);
-    combine(total_checksum, r_indexing);
-    combine(total_checksum, s_indexing.checksum);
-
-    synth::serialize::SubsystemState s_serialize;
-    uint64_t r_serialize = synth::serialize::run_serialize_pipeline(s_serialize, workload);
-    combine(total_checksum, r_serialize);
-    combine(total_checksum, s_serialize.checksum);
-
-    synth::runtime::SubsystemState s_runtime;
-    uint64_t r_runtime = synth::runtime::run_runtime_pipeline(s_runtime, workload);
-    combine(total_checksum, r_runtime);
-    combine(total_checksum, s_runtime.checksum);
-
+    main_lines.append("""
     std::cout << "SYNTHETIC_WORKLOAD_CHECKSUM: " << std::hex << total_checksum << std::dec << std::endl;
     return 0;
 }
-"""
+""")
     with open(os.path.join(output_dir, "main.cpp"), "w") as f:
-        f.write(main_content)
+        f.write("\n".join(main_lines))
 
-    print(f"Generated synthetic codebase in {output_dir}")
+    print(f"Generated source-faithful synthetic codebase in {output_dir}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Generate synthetic C++17 benchmark codebase")
+    parser = argparse.ArgumentParser(description="Generate source-faithful C++17 benchmark codebase for Moss")
     parser.add_argument("--output-dir", default="generated", help="Target output directory")
-    parser.add_argument("--num-functions", type=int, default=33, help="Number of worker functions per subsystem")
     parser.add_argument("--seed", type=int, default=42, help="RNG seed")
     args = parser.parse_args()
 
-    generate_codebase(args.output_dir, args.num_functions, args.seed)
+    generate_codebase(args.output_dir, args.seed)

@@ -4,6 +4,7 @@
 #include <map>
 #include <unordered_map>
 #include <set>
+#include <unordered_set>
 #include <algorithm>
 #include <memory>
 #include <optional>
@@ -15,3 +16,4 @@
 #include <cstdint>
 #include <utility>
 #include <numeric>
+#include <string_view>

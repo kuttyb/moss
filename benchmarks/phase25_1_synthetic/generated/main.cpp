@@ -1,13 +1,15 @@
 #include "pch.hpp"
 #include "common_types.hpp"
-#include "subsystem_parsing.hpp"
-#include "subsystem_sema.hpp"
-#include "subsystem_types.hpp"
-#include "subsystem_graph.hpp"
-#include "subsystem_transform.hpp"
-#include "subsystem_indexing.hpp"
-#include "subsystem_serialize.hpp"
-#include "subsystem_runtime.hpp"
+#include "subsystem_core_diag.hpp"
+#include "subsystem_parser.hpp"
+#include "subsystem_abi_sourcefree.hpp"
+#include "subsystem_checker_core.hpp"
+#include "subsystem_checker_expr.hpp"
+#include "subsystem_checker_ownership.hpp"
+#include "subsystem_generator.hpp"
+#include "subsystem_semantic_queries.hpp"
+#include "subsystem_project_engine.hpp"
+#include "subsystem_tooling_driver.hpp"
 
 int main(int argc, char** argv) {
     int workload = 5;
@@ -22,45 +24,56 @@ int main(int argc, char** argv) {
         h *= 1099511628211ULL;
     };
 
-    synth::parsing::SubsystemState s_parsing;
-    uint64_t r_parsing = synth::parsing::run_parsing_pipeline(s_parsing, workload);
-    combine(total_checksum, r_parsing);
-    combine(total_checksum, s_parsing.checksum);
+    synth::core_diag::SubsystemState s_core_diag;
+    uint64_t r_core_diag = synth::core_diag::run_core_diag_pipeline(s_core_diag, workload);
+    combine(total_checksum, r_core_diag);
+    combine(total_checksum, s_core_diag.checksum);
 
-    synth::sema::SubsystemState s_sema;
-    uint64_t r_sema = synth::sema::run_sema_pipeline(s_sema, workload);
-    combine(total_checksum, r_sema);
-    combine(total_checksum, s_sema.checksum);
+    synth::parser::SubsystemState s_parser;
+    uint64_t r_parser = synth::parser::run_parser_pipeline(s_parser, workload);
+    combine(total_checksum, r_parser);
+    combine(total_checksum, s_parser.checksum);
 
-    synth::types::SubsystemState s_types;
-    uint64_t r_types = synth::types::run_types_pipeline(s_types, workload);
-    combine(total_checksum, r_types);
-    combine(total_checksum, s_types.checksum);
+    synth::abi_sourcefree::SubsystemState s_abi_sourcefree;
+    uint64_t r_abi_sourcefree = synth::abi_sourcefree::run_abi_sourcefree_pipeline(s_abi_sourcefree, workload);
+    combine(total_checksum, r_abi_sourcefree);
+    combine(total_checksum, s_abi_sourcefree.checksum);
 
-    synth::graph::SubsystemState s_graph;
-    uint64_t r_graph = synth::graph::run_graph_pipeline(s_graph, workload);
-    combine(total_checksum, r_graph);
-    combine(total_checksum, s_graph.checksum);
+    synth::checker_core::SubsystemState s_checker_core;
+    uint64_t r_checker_core = synth::checker_core::run_checker_core_pipeline(s_checker_core, workload);
+    combine(total_checksum, r_checker_core);
+    combine(total_checksum, s_checker_core.checksum);
 
-    synth::transform::SubsystemState s_transform;
-    uint64_t r_transform = synth::transform::run_transform_pipeline(s_transform, workload);
-    combine(total_checksum, r_transform);
-    combine(total_checksum, s_transform.checksum);
+    synth::checker_expr::SubsystemState s_checker_expr;
+    uint64_t r_checker_expr = synth::checker_expr::run_checker_expr_pipeline(s_checker_expr, workload);
+    combine(total_checksum, r_checker_expr);
+    combine(total_checksum, s_checker_expr.checksum);
 
-    synth::indexing::SubsystemState s_indexing;
-    uint64_t r_indexing = synth::indexing::run_indexing_pipeline(s_indexing, workload);
-    combine(total_checksum, r_indexing);
-    combine(total_checksum, s_indexing.checksum);
+    synth::checker_ownership::SubsystemState s_checker_ownership;
+    uint64_t r_checker_ownership = synth::checker_ownership::run_checker_ownership_pipeline(s_checker_ownership, workload);
+    combine(total_checksum, r_checker_ownership);
+    combine(total_checksum, s_checker_ownership.checksum);
 
-    synth::serialize::SubsystemState s_serialize;
-    uint64_t r_serialize = synth::serialize::run_serialize_pipeline(s_serialize, workload);
-    combine(total_checksum, r_serialize);
-    combine(total_checksum, s_serialize.checksum);
+    synth::generator::SubsystemState s_generator;
+    uint64_t r_generator = synth::generator::run_generator_pipeline(s_generator, workload);
+    combine(total_checksum, r_generator);
+    combine(total_checksum, s_generator.checksum);
 
-    synth::runtime::SubsystemState s_runtime;
-    uint64_t r_runtime = synth::runtime::run_runtime_pipeline(s_runtime, workload);
-    combine(total_checksum, r_runtime);
-    combine(total_checksum, s_runtime.checksum);
+    synth::semantic_queries::SubsystemState s_semantic_queries;
+    uint64_t r_semantic_queries = synth::semantic_queries::run_semantic_queries_pipeline(s_semantic_queries, workload);
+    combine(total_checksum, r_semantic_queries);
+    combine(total_checksum, s_semantic_queries.checksum);
+
+    synth::project_engine::SubsystemState s_project_engine;
+    uint64_t r_project_engine = synth::project_engine::run_project_engine_pipeline(s_project_engine, workload);
+    combine(total_checksum, r_project_engine);
+    combine(total_checksum, s_project_engine.checksum);
+
+    synth::tooling_driver::SubsystemState s_tooling_driver;
+    uint64_t r_tooling_driver = synth::tooling_driver::run_tooling_driver_pipeline(s_tooling_driver, workload);
+    combine(total_checksum, r_tooling_driver);
+    combine(total_checksum, s_tooling_driver.checksum);
+
 
     std::cout << "SYNTHETIC_WORKLOAD_CHECKSUM: " << std::hex << total_checksum << std::dec << std::endl;
     return 0;

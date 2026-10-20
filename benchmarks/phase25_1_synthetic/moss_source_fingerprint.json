@@ -1,0 +1,825 @@
+{
+  "moss_source_overview": {
+    "moss_cpp_lines": 46711,
+    "header_lines": {
+      "abi_v10_records.hpp": 1598,
+      "ast.hpp": 830,
+      "borrowed_view_write.inc": 48,
+      "borrowed_views.inc": 255,
+      "char_string_ordering_runtime.hpp": 440,
+      "checked_body_ir.hpp": 1343,
+      "constraints.hpp": 36,
+      "debug_map.hpp": 142,
+      "diagnostics.hpp": 60,
+      "display_runtime.hpp": 65,
+      "error_handling_abi.hpp": 823,
+      "executor_invoke_codegen.inc": 240,
+      "executor_invoke_lowering.inc": 654,
+      "executor_runtime.hpp": 1799,
+      "file_chunk_codegen.inc": 348,
+      "file_chunk_lowering.inc": 241,
+      "fileio_runtime.hpp": 1718,
+      "fileio_semantics.inc": 1000,
+      "float_format_runtime.hpp": 1233,
+      "functional_ir.hpp": 308,
+      "handler_lowering.inc": 1199,
+      "handler_runtime.hpp": 45,
+      "interpreter.hpp": 2831,
+      "interpreter_domains.inc": 358,
+      "interpreter_phase20.inc": 101,
+      "moss.cpp": 46711,
+      "moss_runtime_linkage.hpp": 429,
+      "numeric_literal.hpp": 369,
+      "numeric_runtime.hpp": 208,
+      "rust_float_display.hpp": 418,
+      "source_free_abi_v10.hpp": 445,
+      "source_free_abi_v9.hpp": 78,
+      "static_bounds.inc": 570,
+      "synchronization.hpp": 162,
+      "synchronization_diagnostics.inc": 88,
+      "synchronization_lowering.hpp": 87,
+      "type_ir.hpp": 1327,
+      "type_placeholders.hpp": 26,
+      "typed_semantic_api.hpp": 425
+    },
+    "total_repo_cpp_lines": 115769
+  },
+  "subsystem_distribution": [
+    {
+      "name": "Core & Infrastructure",
+      "start_line": 1,
+      "end_line": 1711,
+      "line_count": 1711,
+      "branches": 261,
+      "loops": 68,
+      "lambdas": 8,
+      "approx_methods": 96
+    },
+    {
+      "name": "Parser",
+      "start_line": 1712,
+      "end_line": 2792,
+      "line_count": 1081,
+      "branches": 277,
+      "loops": 41,
+      "lambdas": 4,
+      "approx_methods": 24
+    },
+    {
+      "name": "ABI Records & Serialization",
+      "start_line": 2793,
+      "end_line": 4094,
+      "line_count": 1302,
+      "branches": 140,
+      "loops": 28,
+      "lambdas": 27,
+      "approx_methods": 6
+    },
+    {
+      "name": "Checker: Core & Types",
+      "start_line": 4095,
+      "end_line": 11000,
+      "line_count": 6906,
+      "branches": 1274,
+      "loops": 409,
+      "lambdas": 96,
+      "approx_methods": 92
+    },
+    {
+      "name": "Checker: Ownership & Effects",
+      "start_line": 11001,
+      "end_line": 17500,
+      "line_count": 6500,
+      "branches": 927,
+      "loops": 486,
+      "lambdas": 76,
+      "approx_methods": 45
+    },
+    {
+      "name": "Checker: Bodies & Unification",
+      "start_line": 17501,
+      "end_line": 23615,
+      "line_count": 6115,
+      "branches": 996,
+      "loops": 255,
+      "lambdas": 56,
+      "approx_methods": 39
+    },
+    {
+      "name": "Generator (Rust Lowering)",
+      "start_line": 23616,
+      "end_line": 30444,
+      "line_count": 6829,
+      "branches": 1073,
+      "loops": 341,
+      "lambdas": 52,
+      "approx_methods": 80
+    },
+    {
+      "name": "Semantic Queries & Agent APIs",
+      "start_line": 30445,
+      "end_line": 35077,
+      "line_count": 4633,
+      "branches": 549,
+      "loops": 296,
+      "lambdas": 49,
+      "approx_methods": 27
+    },
+    {
+      "name": "Project & Module Engine",
+      "start_line": 35078,
+      "end_line": 41990,
+      "line_count": 6913,
+      "branches": 828,
+      "loops": 415,
+      "lambdas": 86,
+      "approx_methods": 33
+    },
+    {
+      "name": "Tooling, Bench & Impact",
+      "start_line": 41991,
+      "end_line": 45095,
+      "line_count": 3105,
+      "branches": 418,
+      "loops": 144,
+      "lambdas": 14,
+      "approx_methods": 21
+    },
+    {
+      "name": "Fast Debug & CLI Driver",
+      "start_line": 45096,
+      "end_line": 46711,
+      "line_count": 1616,
+      "branches": 282,
+      "loops": 68,
+      "lambdas": 3,
+      "approx_methods": 27
+    }
+  ],
+  "stl_container_summary": {
+    "vector": 296,
+    "map": 161,
+    "unordered_map": 173,
+    "set": 383,
+    "unordered_set": 1,
+    "optional": 272,
+    "variant": 0,
+    "tuple": 2,
+    "pair": 120,
+    "shared_ptr": 19,
+    "unique_ptr": 2
+  },
+  "top_container_specializations": {
+    "vector": [
+      [
+        "std::string",
+        74
+      ],
+      [
+        "TypeRef",
+        24
+      ],
+      [
+        "Value",
+        20
+      ],
+      [
+        "Stmt",
+        14
+      ],
+      [
+        "Record",
+        9
+      ],
+      [
+        "std::pair<std::string, TypeRef",
+        8
+      ],
+      [
+        "WireType",
+        8
+      ],
+      [
+        "SemanticDependency",
+        7
+      ],
+      [
+        "Requirement",
+        5
+      ],
+      [
+        "int",
+        5
+      ],
+      [
+        "AccessMode",
+        4
+      ],
+      [
+        "MemberDispatchRequirement",
+        4
+      ]
+    ],
+    "map": [
+      [
+        "string, string",
+        19
+      ],
+      [
+        "string, int",
+        10
+      ],
+      [
+        "string, size_t",
+        10
+      ],
+      [
+        "std::string, std::string",
+        10
+      ],
+      [
+        "size_t, SynchronizationMode",
+        9
+      ],
+      [
+        "string, std::set<string",
+        9
+      ],
+      [
+        "std::filesystem::path, string",
+        9
+      ],
+      [
+        "string, ExecutorLifecycle",
+        8
+      ],
+      [
+        "string, ParsedModuleUnit",
+        7
+      ],
+      [
+        "string, std::filesystem::path",
+        6
+      ],
+      [
+        "string, ResolvedTypeAbi",
+        5
+      ],
+      [
+        "std::pair<string, std::uint32_t",
+        3
+      ]
+    ],
+    "unordered_map": [
+      [
+        "string, string",
+        92
+      ],
+      [
+        "string, moss::TypeRef",
+        8
+      ],
+      [
+        "string, size_t",
+        6
+      ],
+      [
+        "string, vector<string",
+        6
+      ],
+      [
+        "string, const SemanticSnapshotUnit*",
+        5
+      ],
+      [
+        "std::string, std::string",
+        4
+      ],
+      [
+        "std::string, Value",
+        4
+      ],
+      [
+        "string, Function*",
+        2
+      ],
+      [
+        "const Stmt*, moss::TypeRef",
+        2
+      ],
+      [
+        "string, int",
+        2
+      ],
+      [
+        "string, const Domain*",
+        2
+      ],
+      [
+        "string, const Function*",
+        2
+      ]
+    ],
+    "set": [
+      [
+        "string",
+        313
+      ],
+      [
+        "std::string",
+        40
+      ],
+      [
+        "int",
+        6
+      ],
+      [
+        "RaisedIdentity",
+        6
+      ],
+      [
+        "uint32_t",
+        5
+      ],
+      [
+        "std::uint32_t",
+        4
+      ],
+      [
+        "size_t",
+        3
+      ],
+      [
+        "SemanticDependency",
+        3
+      ],
+      [
+        "std::pair<std::string, std::string",
+        1
+      ],
+      [
+        "std::pair<std::uint32_t, std::uint32_t",
+        1
+      ],
+      [
+        "std::tuple<std::uint32_t, std::uint32_t,\n                      ExceptionalEdgeKind, std::string",
+        1
+      ]
+    ],
+    "unordered_set": [
+      [
+        "std::string",
+        1
+      ]
+    ],
+    "optional": [
+      [
+        "string",
+        97
+      ],
+      [
+        "std::string",
+        23
+      ],
+      [
+        "size_t",
+        10
+      ],
+      [
+        "uint64_t",
+        9
+      ],
+      [
+        "uint32_t",
+        8
+      ],
+      [
+        "TypeRef",
+        8
+      ],
+      [
+        "std::pair<string, string",
+        6
+      ],
+      [
+        "Value",
+        6
+      ],
+      [
+        "moss::TypeRef",
+        5
+      ],
+      [
+        "StateLeafEffects",
+        5
+      ],
+      [
+        "Place",
+        5
+      ],
+      [
+        "Effect",
+        4
+      ]
+    ],
+    "tuple": [
+      [
+        "string,int,string",
+        1
+      ],
+      [
+        "std::uint32_t, std::uint32_t,\n                      ExceptionalEdgeKind, std::string",
+        1
+      ]
+    ],
+    "pair": [
+      [
+        "string, string",
+        32
+      ],
+      [
+        "string, moss::TypeRef",
+        16
+      ],
+      [
+        "std::string, TypeRef",
+        8
+      ],
+      [
+        "string, vector<string",
+        6
+      ],
+      [
+        "std::string, std::string",
+        6
+      ],
+      [
+        "uint32_t, moss::TypeRef",
+        5
+      ],
+      [
+        "string, int",
+        4
+      ],
+      [
+        "size_t, size_t",
+        4
+      ],
+      [
+        "string, std::uint32_t",
+        3
+      ],
+      [
+        "TypeRef, TypeRef",
+        3
+      ],
+      [
+        "Value, Value",
+        3
+      ],
+      [
+        "std::string, int",
+        3
+      ]
+    ],
+    "shared_ptr": [
+      [
+        "const std::string",
+        5
+      ],
+      [
+        "std::vector<Value",
+        4
+      ],
+      [
+        "HashIndex",
+        2
+      ],
+      [
+        "BodyTypeState",
+        1
+      ],
+      [
+        "Type",
+        1
+      ],
+      [
+        "const NominalDeclaration",
+        1
+      ],
+      [
+        "StructValue",
+        1
+      ],
+      [
+        "std::vector<std::pair<Value, Value",
+        1
+      ],
+      [
+        "std::vector<std::int64_t",
+        1
+      ],
+      [
+        "TypedSemanticModuleV1",
+        1
+      ],
+      [
+        "TypeContext",
+        1
+      ]
+    ],
+    "unique_ptr": [
+      [
+        "moss::TypeContext::Scope",
+        1
+      ],
+      [
+        "DomainValue",
+        1
+      ]
+    ]
+  },
+  "include_graph": {
+    "abi_v10_records.hpp": [
+      "source_free_abi_v10.hpp"
+    ],
+    "ast.hpp": [
+      "constraints.hpp",
+      "synchronization.hpp",
+      "type_ir.hpp"
+    ],
+    "checked_body_ir.hpp": [
+      "cctype",
+      "charconv",
+      "stdexcept",
+      "ast.hpp",
+      "source_free_abi_v9.hpp",
+      "type_ir.hpp"
+    ],
+    "constraints.hpp": [
+      "cstddef"
+    ],
+    "debug_map.hpp": [
+      "ostream"
+    ],
+    "diagnostics.hpp": [
+      "stdexcept"
+    ],
+    "error_handling_abi.hpp": [
+      "cctype"
+    ],
+    "functional_ir.hpp": [
+      "cstddef",
+      "constraints.hpp",
+      "error_handling_abi.hpp"
+    ],
+    "interpreter.hpp": [
+      "exception",
+      "charconv",
+      "cctype",
+      "limits",
+      "ostream",
+      "stdexcept",
+      "ast.hpp",
+      "numeric_literal.hpp",
+      "numeric_runtime.hpp",
+      "rust_float_display.hpp",
+      "type_placeholders.hpp"
+    ],
+    "moss.cpp": [
+      "cassert",
+      "cerrno",
+      "cctype",
+      "ctime",
+      "filesystem",
+      "iomanip",
+      "iterator",
+      "limits",
+      "numeric",
+      "stdexcept",
+      "ast.hpp",
+      "type_ir.hpp",
+      "typed_semantic_api.hpp",
+      "checked_body_ir.hpp",
+      "debug_map.hpp",
+      "diagnostics.hpp",
+      "type_placeholders.hpp",
+      "numeric_literal.hpp",
+      "interpreter.hpp",
+      "handler_runtime.hpp",
+      "fileio_runtime.hpp",
+      "float_format_runtime.hpp",
+      "display_runtime.hpp",
+      "executor_runtime.hpp",
+      "synchronization_lowering.hpp",
+      "source_free_abi_v9.hpp",
+      "source_free_abi_v10.hpp",
+      "abi_v10_records.hpp",
+      "moss_runtime_linkage.hpp",
+      "char_string_ordering_runtime.hpp"
+    ],
+    "moss_runtime_linkage.hpp": [
+      "source_free_abi_v10.hpp",
+      "filesystem",
+      "fcntl.h",
+      "poll.h"
+    ],
+    "numeric_literal.hpp": [
+      "cerrno",
+      "charconv",
+      "cctype"
+    ],
+    "numeric_runtime.hpp": [
+      "charconv",
+      "limits",
+      "locale.h"
+    ],
+    "source_free_abi_v10.hpp": [
+      "source_free_abi_v9.hpp",
+      "cstddef",
+      "limits",
+      "stdexcept"
+    ],
+    "source_free_abi_v9.hpp": [
+      "array",
+      "iomanip"
+    ],
+    "synchronization.hpp": [
+      "stdexcept",
+      "constraints.hpp"
+    ],
+    "synchronization_lowering.hpp": [
+      "ast.hpp"
+    ],
+    "type_ir.hpp": [
+      "charconv",
+      "stdexcept",
+      "source_free_abi_v9.hpp"
+    ],
+    "typed_semantic_api.hpp": [
+      "stdexcept",
+      "ast.hpp"
+    ]
+  },
+  "inc_dependencies": {
+    "interpreter.hpp": [
+      "interpreter_domains.inc",
+      "interpreter_phase20.inc"
+    ],
+    "moss.cpp": [
+      "static_bounds.inc",
+      "fileio_semantics.inc",
+      "borrowed_view_write.inc",
+      "executor_invoke_lowering.inc",
+      "file_chunk_lowering.inc",
+      "handler_lowering.inc",
+      "borrowed_views.inc",
+      "executor_invoke_codegen.inc",
+      "file_chunk_codegen.inc",
+      "synchronization_diagnostics.inc"
+    ]
+  },
+  "compilation_profile_summary": {
+    "clean_wall_med_s": 15.769670539011713,
+    "clean_cpu_med_s": 15.753564,
+    "peak_rss_mb": 981.9453125,
+    "raw_walls_s": [
+      18.008168192987796,
+      15.687234079989139,
+      15.496552955999505,
+      15.769670539011713,
+      17.500372170994524
+    ],
+    "raw_cpus_s": [
+      17.921217,
+      15.667438,
+      15.474956,
+      15.753564,
+      17.489776
+    ]
+  },
+  "top_codegen_hotspots": [
+    {
+      "name": "moss::load_module_interface",
+      "dur_s": 0.017474
+    },
+    {
+      "name": "moss::Checker::check_expression",
+      "dur_s": 0.015233
+    },
+    {
+      "name": "moss::Generator::expr",
+      "dur_s": 0.014345
+    },
+    {
+      "name": "moss::Generator::gen_block",
+      "dur_s": 0.01217
+    },
+    {
+      "name": "main",
+      "dur_s": 0.009683
+    },
+    {
+      "name": "moss::FastInterpreter::eval",
+      "dur_s": 0.009134
+    },
+    {
+      "name": "moss::Checker::check_stmts(const vector<Stmt> &, TypeEnv, const Domain *, const Handler *, const Function *, bool)::(anonymous class)::operator()",
+      "dur_s": 0.008058
+    },
+    {
+      "name": "moss::Checker::check_function_call",
+      "dur_s": 0.006741
+    },
+    {
+      "name": "moss::FastInterpreter::execute",
+      "dur_s": 0.006549
+    },
+    {
+      "name": "moss::Checker::check_ownership_expression_walk",
+      "dur_s": 0.005822
+    },
+    {
+      "name": "moss::run_semantic_edit",
+      "dur_s": 0.005787
+    },
+    {
+      "name": "moss::Checker::check_ownership_block",
+      "dur_s": 0.005663
+    },
+    {
+      "name": "moss::write_bootstrap_json",
+      "dur_s": 0.00542
+    },
+    {
+      "name": "moss::Checker::observable_expression_effects",
+      "dur_s": 0.005357
+    },
+    {
+      "name": "moss::run_project_command",
+      "dur_s": 0.005181
+    }
+  ],
+  "top_instantiations": [
+    {
+      "name": "std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_Rb_tree",
+      "dur_s": 0.034817
+    },
+    {
+      "name": "std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_M_copy",
+      "dur_s": 0.034598
+    },
+    {
+      "name": "std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_M_copy<false, std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_Alloc_node>",
+      "dur_s": 0.034494
+    },
+    {
+      "name": "std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_M_copy<false, std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_Alloc_node>",
+      "dur_s": 0.034385
+    },
+    {
+      "name": "std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_M_clone_node<false, std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_Alloc_node>",
+      "dur_s": 0.034266
+    },
+    {
+      "name": "std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_Alloc_node::operator()<const std::pair<const std::basic_string<char>, moss::ParsedModuleUnit> &>",
+      "dur_s": 0.034061
+    },
+    {
+      "name": "std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_M_create_node<const std::pair<const std::basic_string<char>, moss::ParsedModuleUnit> &>",
+      "dur_s": 0.034012
+    },
+    {
+      "name": "std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_M_construct_node<const std::pair<const std::basic_string<char>, moss::ParsedModuleUnit> &>",
+      "dur_s": 0.033966
+    },
+    {
+      "name": "std::allocator_traits<std::allocator<std::_Rb_tree_node<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>>>::construct<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, const std::pair<const std::basic_string<char>, moss::ParsedModuleUnit> &>",
+      "dur_s": 0.03358
+    },
+    {
+      "name": "std::__new_allocator<std::_Rb_tree_node<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>>::construct<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, const std::pair<const std::basic_string<char>, moss::ParsedModuleUnit> &>",
+      "dur_s": 0.033515
+    },
+    {
+      "name": "std::vector<std::pair<moss::Program, std::basic_string<char>>>::vector",
+      "dur_s": 0.031737
+    },
+    {
+      "name": "std::__uninitialized_copy_a<__gnu_cxx::__normal_iterator<const std::pair<moss::Program, std::basic_string<char>> *, std::vector<std::pair<moss::Program, std::basic_string<char>>>>, std::pair<moss::Program, std::basic_string<char>> *, std::pair<moss::Program, std::basic_string<char>>>",
+      "dur_s": 0.031529
+    },
+    {
+      "name": "std::uninitialized_copy<__gnu_cxx::__normal_iterator<const std::pair<moss::Program, std::basic_string<char>> *, std::vector<std::pair<moss::Program, std::basic_string<char>>>>, std::pair<moss::Program, std::basic_string<char>> *>",
+      "dur_s": 0.031407
+    },
+    {
+      "name": "std::__uninitialized_copy<false>::__uninit_copy<__gnu_cxx::__normal_iterator<const std::pair<moss::Program, std::basic_string<char>> *, std::vector<std::pair<moss::Program, std::basic_string<char>>>>, std::pair<moss::Program, std::basic_string<char>> *>",
+      "dur_s": 0.03062
+    },
+    {
+      "name": "std::__do_uninit_copy<__gnu_cxx::__normal_iterator<const std::pair<moss::Program, std::basic_string<char>> *, std::vector<std::pair<moss::Program, std::basic_string<char>>>>, std::pair<moss::Program, std::basic_string<char>> *>",
+      "dur_s": 0.030564
+    }
+  ]
+}

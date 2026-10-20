@@ -15,7 +15,9 @@ enum class NodeKind : uint16_t {
     IfStmt,
     ReturnStmt,
     LoopStmt,
-    MatchStmt
+    MatchStmt,
+    DomainDecl,
+    HandlerDecl
 };
 
 enum class TypeKind : uint16_t {
@@ -29,7 +31,8 @@ enum class TypeKind : uint16_t {
     List,
     Map,
     Function,
-    Custom
+    Custom,
+    DomainHandle
 };
 
 struct SourceLocation {
@@ -154,6 +157,10 @@ std::vector<T> filter_and_sort(const std::vector<T>& input, std::function<bool(c
 template<typename Container, typename Pred>
 size_t count_matching(const Container& c, Pred pred) {
     return std::count_if(c.begin(), c.end(), pred);
+}
+
+static inline void hash_combine(uint64_t& seed, uint64_t val) {
+    seed ^= val + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
 }
 
 } // namespace synth

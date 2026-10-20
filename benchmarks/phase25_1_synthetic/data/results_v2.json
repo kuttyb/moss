@@ -1,0 +1,66 @@
+{
+  "config_a": {
+    "clean_wall_med": 11.150907516013831,
+    "clean_cpu_med": 11.123502,
+    "peak_rss_mb": 735.8046875,
+    "incr_checker_med": 10.821859287971165,
+    "incr_generator_med": 10.728070408978965,
+    "incr_driver_med": 10.805484071024694,
+    "trace": {
+      "total_compile": 11.505008,
+      "template_inst": 4.243345,
+      "backend_codegen": 4.801107,
+      "ir_gen": 4.74323,
+      "parse_sema": 1.661024,
+      "header_parse": 2.094294,
+      "frontend": 6.458533,
+      "backend": 5.009783
+    },
+    "raw_clean_walls": [
+      11.395410842029378,
+      11.150907516013831,
+      11.243283851013985,
+      10.520520001999103,
+      10.302203844010364
+    ]
+  },
+  "config_b": {
+    "clean_wall_med": 2.917479383002501,
+    "clean_cpu_med": 19.987330999999998,
+    "peak_rss_mb": 225.6328125,
+    "pch_creation_med": 0.3022390410187654,
+    "link_med": 0.13683375203981996,
+    "critical_path_med": 2.915837301989086,
+    "longest_tu": {
+      "name": "subsystem_checker_expr",
+      "wall_s": 2.532866688037757
+    },
+    "incr_checker_med": 1.9011187540018,
+    "incr_generator_med": 1.8622458790196106,
+    "incr_driver_med": 1.403092314954847,
+    "tu_walls": {
+      "subsystem_core_diag": 1.1409715589834377,
+      "subsystem_parser": 1.0282865809858777,
+      "subsystem_abi_sourcefree": 1.1130140130408108,
+      "subsystem_checker_core": 2.6662837920011953,
+      "subsystem_checker_expr": 2.8055851390236057,
+      "subsystem_checker_ownership": 2.483679849014152,
+      "subsystem_generator": 2.7276018710108474,
+      "subsystem_semantic_queries": 1.991064299014397,
+      "subsystem_project_engine": 2.7517802320071496,
+      "subsystem_tooling_driver": 2.0143477430101484,
+      "template_instantiations": 1.4452512600109912,
+      "main": 0.19711225398350507
+    },
+    "trace": {
+      "total_compile": 22.148443999999998,
+      "template_inst": 11.647806,
+      "backend_codegen": 7.070530000000001,
+      "ir_gen": 7.009321,
+      "parse_sema": 3.2885780000000002,
+      "header_parse": 0.693126,
+      "frontend": 14.574767000000001,
+      "backend": 7.470852000000001
+    }
+  }
+}

@@ -1,0 +1,367 @@
+{
+  "uninstrumented": {
+    "clean_wall_med_s": 15.769670539011713,
+    "clean_cpu_med_s": 15.753564,
+    "peak_rss_mb": 981.9453125,
+    "raw_walls_s": [
+      18.008168192987796,
+      15.687234079989139,
+      15.496552955999505,
+      15.769670539011713,
+      17.500372170994524
+    ],
+    "raw_cpus_s": [
+      17.921217,
+      15.667438,
+      15.474956,
+      15.753564,
+      17.489776
+    ]
+  },
+  "instrumented_trace": {
+    "total_compile_s": 17.937851,
+    "frontend_s": 10.842615,
+    "backend_s": 7.032826,
+    "template_inst_s": 6.740257,
+    "backend_codegen_s": 6.420144,
+    "ir_gen_s": 6.329568,
+    "parse_sema_s": 4.631432,
+    "header_parse_s": 1.36766,
+    "all_totals": {
+      "Total ExecuteCompiler": 17.937851,
+      "Total Frontend": 10.842615,
+      "Total Backend": 7.032826,
+      "Total CodeGenPasses": 6.420144,
+      "Total OptModule": 6.329568,
+      "Total OptFunction": 5.791652,
+      "Total RunPass": 5.659761,
+      "Total ParseDeclarationOrFunctionDefinition": 4.631432,
+      "Total InstantiateFunction": 4.229613,
+      "Total PerformPendingInstantiations": 4.01388,
+      "Total ParseClass": 2.95024,
+      "Total InstantiateClass": 2.510644,
+      "Total CodeGen Function": 1.879791,
+      "Total ParseFunctionDefinition": 1.792612,
+      "Total Source": 1.36766,
+      "Total Optimizer": 0.588113,
+      "Total AlwaysInlinerPass": 0.537558,
+      "Total BlockFrequencyAnalysis": 0.295494,
+      "Total EvaluateAsConstantExpr": 0.27279,
+      "Total BranchProbabilityAnalysis": 0.249542,
+      "Total EvaluateAsRValue": 0.201622,
+      "Total EvaluateAsBooleanCondition": 0.146006,
+      "Total EvaluateAsInt": 0.075887,
+      "Total EvaluateForOverflow": 0.062951,
+      "Total LoopAnalysis": 0.062154,
+      "Total ModuleToFunctionPassAdaptor": 0.05053,
+      "Total AnnotationRemarksPass": 0.038559,
+      "Total PostDominatorTreeAnalysis": 0.037501,
+      "Total DominatorTreeAnalysis": 0.035624,
+      "Total EvaluateAsInitializer": 0.023849,
+      "Total AAManager": 0.017013,
+      "Total TargetLibraryAnalysis": 0.016264,
+      "Total AssumptionAnalysis": 0.00932,
+      "Total BasicAA": 0.006965,
+      "Total TargetIRAnalysis": 0.004174,
+      "Total EvaluateKnownConstInt": 0.002628,
+      "Total isIntegerConstantExpr": 0.001094,
+      "Total OuterAnalysisManagerProxy<ModuleAnalysisManager, Function>": 0.000721,
+      "Total ScopedNoAliasAA": 0.000652,
+      "Total TypeBasedAA": 0.000606,
+      "Total isPotentialConstantExpr": 0.00043,
+      "Total EvaluateAsLValue": 1.6e-05,
+      "Total EvaluateAsFloat": 1.5e-05,
+      "Total CoroConditionalWrapper": 1.2e-05,
+      "Total ProfileSummaryAnalysis": 2e-06,
+      "Total InnerAnalysisManagerProxy<FunctionAnalysisManager, Module>": 0.0
+    }
+  },
+  "hotspots": {
+    "top_codegen_functions": [
+      {
+        "name": "moss::load_module_interface",
+        "dur_s": 0.017474
+      },
+      {
+        "name": "moss::Checker::check_expression",
+        "dur_s": 0.015233
+      },
+      {
+        "name": "moss::Generator::expr",
+        "dur_s": 0.014345
+      },
+      {
+        "name": "moss::Generator::gen_block",
+        "dur_s": 0.01217
+      },
+      {
+        "name": "main",
+        "dur_s": 0.009683
+      },
+      {
+        "name": "moss::FastInterpreter::eval",
+        "dur_s": 0.009134
+      },
+      {
+        "name": "moss::Checker::check_stmts(const vector<Stmt> &, TypeEnv, const Domain *, const Handler *, const Function *, bool)::(anonymous class)::operator()",
+        "dur_s": 0.008058
+      },
+      {
+        "name": "moss::Checker::check_function_call",
+        "dur_s": 0.006741
+      },
+      {
+        "name": "moss::FastInterpreter::execute",
+        "dur_s": 0.006549
+      },
+      {
+        "name": "moss::Checker::check_ownership_expression_walk",
+        "dur_s": 0.005822
+      },
+      {
+        "name": "moss::run_semantic_edit",
+        "dur_s": 0.005787
+      },
+      {
+        "name": "moss::Checker::check_ownership_block",
+        "dur_s": 0.005663
+      },
+      {
+        "name": "moss::write_bootstrap_json",
+        "dur_s": 0.00542
+      },
+      {
+        "name": "moss::Checker::observable_expression_effects",
+        "dur_s": 0.005357
+      },
+      {
+        "name": "moss::run_project_command",
+        "dur_s": 0.005181
+      },
+      {
+        "name": "moss::compile_native_artifact",
+        "dur_s": 0.005142
+      },
+      {
+        "name": "moss::Checker::inferred_expr_core",
+        "dur_s": 0.004953
+      },
+      {
+        "name": "moss::Checker::infer_function_signatures",
+        "dur_s": 0.004862
+      },
+      {
+        "name": "moss::Checker::build_open_callable_summaries",
+        "dur_s": 0.004774
+      },
+      {
+        "name": "moss::Checker::solve_local_collection_types",
+        "dur_s": 0.004633
+      },
+      {
+        "name": "moss::Checker::analyze_effect_expression",
+        "dur_s": 0.004557
+      },
+      {
+        "name": "moss::write_module_interfaces",
+        "dur_s": 0.004277
+      },
+      {
+        "name": "moss::semantic_target_facts",
+        "dur_s": 0.004187
+      },
+      {
+        "name": "moss::Checker::build_concrete_domain_graph",
+        "dur_s": 0.003972
+      },
+      {
+        "name": "moss::Checker::derive_expression_constraints",
+        "dur_s": 0.003747
+      }
+    ],
+    "top_template_instantiations": [
+      {
+        "name": "std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_Rb_tree",
+        "dur_s": 0.034817
+      },
+      {
+        "name": "std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_M_copy",
+        "dur_s": 0.034598
+      },
+      {
+        "name": "std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_M_copy<false, std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_Alloc_node>",
+        "dur_s": 0.034494
+      },
+      {
+        "name": "std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_M_copy<false, std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_Alloc_node>",
+        "dur_s": 0.034385
+      },
+      {
+        "name": "std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_M_clone_node<false, std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_Alloc_node>",
+        "dur_s": 0.034266
+      },
+      {
+        "name": "std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_Alloc_node::operator()<const std::pair<const std::basic_string<char>, moss::ParsedModuleUnit> &>",
+        "dur_s": 0.034061
+      },
+      {
+        "name": "std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_M_create_node<const std::pair<const std::basic_string<char>, moss::ParsedModuleUnit> &>",
+        "dur_s": 0.034012
+      },
+      {
+        "name": "std::_Rb_tree<std::basic_string<char>, std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, std::_Select1st<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>, std::less<std::basic_string<char>>>::_M_construct_node<const std::pair<const std::basic_string<char>, moss::ParsedModuleUnit> &>",
+        "dur_s": 0.033966
+      },
+      {
+        "name": "std::allocator_traits<std::allocator<std::_Rb_tree_node<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>>>::construct<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, const std::pair<const std::basic_string<char>, moss::ParsedModuleUnit> &>",
+        "dur_s": 0.03358
+      },
+      {
+        "name": "std::__new_allocator<std::_Rb_tree_node<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>>>::construct<std::pair<const std::basic_string<char>, moss::ParsedModuleUnit>, const std::pair<const std::basic_string<char>, moss::ParsedModuleUnit> &>",
+        "dur_s": 0.033515
+      },
+      {
+        "name": "std::vector<std::pair<moss::Program, std::basic_string<char>>>::vector",
+        "dur_s": 0.031737
+      },
+      {
+        "name": "std::__uninitialized_copy_a<__gnu_cxx::__normal_iterator<const std::pair<moss::Program, std::basic_string<char>> *, std::vector<std::pair<moss::Program, std::basic_string<char>>>>, std::pair<moss::Program, std::basic_string<char>> *, std::pair<moss::Program, std::basic_string<char>>>",
+        "dur_s": 0.031529
+      },
+      {
+        "name": "std::uninitialized_copy<__gnu_cxx::__normal_iterator<const std::pair<moss::Program, std::basic_string<char>> *, std::vector<std::pair<moss::Program, std::basic_string<char>>>>, std::pair<moss::Program, std::basic_string<char>> *>",
+        "dur_s": 0.031407
+      },
+      {
+        "name": "std::__uninitialized_copy<false>::__uninit_copy<__gnu_cxx::__normal_iterator<const std::pair<moss::Program, std::basic_string<char>> *, std::vector<std::pair<moss::Program, std::basic_string<char>>>>, std::pair<moss::Program, std::basic_string<char>> *>",
+        "dur_s": 0.03062
+      },
+      {
+        "name": "std::__do_uninit_copy<__gnu_cxx::__normal_iterator<const std::pair<moss::Program, std::basic_string<char>> *, std::vector<std::pair<moss::Program, std::basic_string<char>>>>, std::pair<moss::Program, std::basic_string<char>> *>",
+        "dur_s": 0.030564
+      },
+      {
+        "name": "std::_Construct<std::pair<moss::Program, std::basic_string<char>>, const std::pair<moss::Program, std::basic_string<char>> &>",
+        "dur_s": 0.030276
+      },
+      {
+        "name": "std::vector<moss::Stmt>::operator=",
+        "dur_s": 0.026785
+      },
+      {
+        "name": "std::vector<moss::Stmt>::_M_assign_aux<const moss::Stmt *>",
+        "dur_s": 0.026704
+      },
+      {
+        "name": "std::copy<const moss::Stmt *, moss::Stmt *>",
+        "dur_s": 0.025835
+      },
+      {
+        "name": "std::__copy_move_a<false, const moss::Stmt *, moss::Stmt *>",
+        "dur_s": 0.025711
+      },
+      {
+        "name": "std::__copy_move_a1<false, const moss::Stmt *, moss::Stmt *>",
+        "dur_s": 0.025358
+      },
+      {
+        "name": "std::__copy_move_a2<false, const moss::Stmt *, moss::Stmt *>",
+        "dur_s": 0.025295
+      },
+      {
+        "name": "std::__copy_move<false, false, std::random_access_iterator_tag>::__copy_m<const moss::Stmt *, moss::Stmt *>",
+        "dur_s": 0.025242
+      },
+      {
+        "name": "std::unordered_map<std::basic_string<char>, std::shared_ptr<moss::Type>>::emplace<const std::basic_string<char> &, std::shared_ptr<moss::Type>>",
+        "dur_s": 0.024905
+      },
+      {
+        "name": "std::_Hashtable<std::basic_string<char>, std::pair<const std::basic_string<char>, std::shared_ptr<moss::Type>>, std::allocator<std::pair<const std::basic_string<char>, std::shared_ptr<moss::Type>>>, std::__detail::_Select1st, std::equal_to<std::basic_string<char>>, std::hash<std::basic_string<char>>, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits<true, false, true>>::emplace<const std::basic_string<char> &, std::shared_ptr<moss::Type>>",
+        "dur_s": 0.024839
+      }
+    ],
+    "top_source_headers": [
+      {
+        "header": "/usr/include/x86_64-linux-gnu/sys/utsname.h",
+        "dur_s": 0.438842
+      },
+      {
+        "header": "/home/owner/daji/code/moss/src/interpreter.hpp",
+        "dur_s": 0.258487
+      },
+      {
+        "header": "/usr/lib/gcc/x86_64-linux-gnu/13/../../../../include/c++/13/cmath",
+        "dur_s": 0.198867
+      },
+      {
+        "header": "/home/owner/daji/code/moss/src/type_ir.hpp",
+        "dur_s": 0.176951
+      },
+      {
+        "header": "/home/owner/daji/code/moss/src/functional_ir.hpp",
+        "dur_s": 0.097551
+      },
+      {
+        "header": "/usr/lib/gcc/x86_64-linux-gnu/13/../../../../include/c++/13/bits/fs_path.h",
+        "dur_s": 0.092456
+      },
+      {
+        "header": "/home/owner/daji/code/moss/src/abi_v10_records.hpp",
+        "dur_s": 0.091788
+      },
+      {
+        "header": "/home/owner/daji/code/moss/src/error_handling_abi.hpp",
+        "dur_s": 0.089521
+      },
+      {
+        "header": "/home/owner/daji/code/moss/src/checked_body_ir.hpp",
+        "dur_s": 0.069181
+      },
+      {
+        "header": "/home/owner/daji/code/moss/src/typed_semantic_api.hpp",
+        "dur_s": 0.067179
+      },
+      {
+        "header": "/usr/lib/gcc/x86_64-linux-gnu/13/../../../../include/c++/13/filesystem",
+        "dur_s": 0.064439
+      },
+      {
+        "header": "/usr/lib/gcc/x86_64-linux-gnu/13/../../../../include/c++/13/bits/fs_fwd.h",
+        "dur_s": 0.062092
+      },
+      {
+        "header": "/usr/lib/gcc/x86_64-linux-gnu/13/../../../../include/c++/13/stdexcept",
+        "dur_s": 0.057251
+      },
+      {
+        "header": "/usr/lib/gcc/x86_64-linux-gnu/13/../../../../include/c++/13/exception",
+        "dur_s": 0.056483
+      },
+      {
+        "header": "/usr/lib/gcc/x86_64-linux-gnu/13/../../../../include/c++/13/functional",
+        "dur_s": 0.047772
+      },
+      {
+        "header": "/usr/lib/gcc/x86_64-linux-gnu/13/../../../../include/c++/13/locale",
+        "dur_s": 0.045896
+      },
+      {
+        "header": "/usr/lib/gcc/x86_64-linux-gnu/13/../../../../include/c++/13/algorithm",
+        "dur_s": 0.038221
+      },
+      {
+        "header": "/home/owner/daji/code/moss/src/synchronization.hpp",
+        "dur_s": 0.032166
+      },
+      {
+        "header": "/usr/lib/gcc/x86_64-linux-gnu/13/../../../../include/c++/13/unordered_map",
+        "dur_s": 0.028496
+      },
+      {
+        "header": "/usr/lib/gcc/x86_64-linux-gnu/13/../../../../include/c++/13/bits/basic_string.h",
+        "dur_s": 0.028138
+      }
+    ]
+  }
+}
