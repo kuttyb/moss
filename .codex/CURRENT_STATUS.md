@@ -9575,3 +9575,20 @@ operations and control flow, binding/scope lowering, the common structural
 lowerer and cross-crate source-free proof remain open. R1 is not accepted and
 R2 has not started. Request exact-SHA adversarial review after committing and
 publishing this correction checkpoint.
+
+The first correction was committed/pushed as
+`7a71f95caa4752f884705f7e84f41380a06df72e`. The architect confirmed the
+dispatch/receiver/constraint defect was fixed but returned NO-GO with one P1:
+the completeness verifier expected `call-argument:<i>` while member expressions
+record `argument:<i>`, and it did not require a receiver child. The current
+working follow-up validates member receiver and `argument:<i>` children
+separately, while direct calls retain `call-argument:<i>`. It captures
+non-FileIO receivers once, preserves FileIO expression operands and static
+operand ordinals, and permits the FileIO namespace receiver to remain a
+non-value. Validation on this source: M2b2 hostile source-free corpus; generic
+collection and arithmetic facts; H3 direct records; D3d/D4 SDK source-free
+controls; feedback checker; `git diff --check`; and `make --jobs="$(nproc)"
+moss-dev` all pass. Only the existing TypeSolver missing-initializer warnings
+remain on the build. This follow-up remains uncommitted and needs exact-SHA
+adversarial review. R1's totality proof and shared structural lowerer remain
+open; R2 has not started.

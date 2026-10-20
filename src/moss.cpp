@@ -22940,6 +22940,11 @@ class Checker {
           current_body_types_->attach_open_operation({
               "method:" + handler, receiver_term, {}, nullptr, line});
       }
+      // The member resolver below owns dispatch; capture its receiver once
+      // here so every dispatch family has the same ordered child shape.
+      // FileIO is a static namespace in FileIO.open, not a value expression.
+      if (receiver != "FileIO")
+        check_expression(line, receiver, env, {}, "receiver");
       if (scalar_type_name(receiver) &&
           (handler == "less" || handler == "isequal" || handler == "hash")) {
         retain_active_expression_target(
@@ -22951,6 +22956,21 @@ class Checker {
       if (check_fileio_operation(line, receiver, handler, args, env)) {
         retain_active_expression_target(
             "builtin-fileio:" + handler);
+        for (size_t index = 0; index < args.size(); ++index) {
+          const string argument = trim(args[index]);
+          if (argument == "ro" || argument == "rw" ||
+              argument == "create" || argument == "dataonly") {
+            if (current_body_types_ && !checking_specialization_ &&
+                !current_body_types_->active_expression_occurrences.empty())
+              current_body_types_->expression_occurrences.at(
+                  current_body_types_->active_expression_occurrences.back())
+                  .non_expression_operand_ordinals.push_back(
+                      static_cast<std::uint32_t>(index));
+          } else {
+            check_expression(line, args[index], env, {},
+                             "argument:" + std::to_string(index));
+          }
+        }
         return;
       }
       if (auto receiver_type = inferred_expr_type(receiver, env)) {
@@ -22982,7 +23002,6 @@ class Checker {
           if (staged_abi_v10() && trim(receiver) == "Map()" &&
               starts_with(*receiver_type, "map["))
             check_map_key_type(line, map_key_value_types(*receiver_type)->first);
-          check_expression(line, receiver, env, {}, "receiver");
           for (size_t index = 0; index < args.size(); ++index)
             check_expression(line, args[index], env, {},
                              "argument:" + std::to_string(index));
@@ -23128,7 +23147,6 @@ class Checker {
         if (!linked && current_body_types_ && !checking_specialization_)
           current_body_types_->expression_occurrence_ledger_complete = false;
       }
-      check_expression(line, receiver, env, {}, "receiver");
       for (size_t index = 0; index < args.size(); ++index)
         check_expression(line, args[index], env, {},
                          "argument:" + std::to_string(index));
@@ -24191,7 +24209,8 @@ class Checker {
               check_expression(statement.line, argument, current_env,
                                occurrence_slot,
                                "call-argument:" + std::to_string(index));
-          } else if (call_occurrence_id != UINT32_MAX) {
+          } else if (call_occurrence_id != UINT32_MAX &&
+                     statement.b.empty()) {
             call_occurrence_state->expression_occurrences.at(
                 call_occurrence_id).non_expression_operand_ordinals.push_back(
                     static_cast<std::uint32_t>(index));
@@ -24532,13 +24551,7 @@ class Checker {
           break;
         case Stmt::Kind::Call:
           require_root(statement, "call-invocation");
-          for (size_t index = 0; index < statement.args.size(); ++index) {
-            const bool expression_child = checked_types.has_expression_child(
-                statement, "call-invocation",
-                "call-argument:" + std::to_string(index));
-            const std::size_t child_count = checked_types.expression_child_count(
-                statement, "call-invocation",
-                "call-argument:" + std::to_string(index));
+          {
             auto statement_id = checked_types.statement_occurrence_ids.find(
                 &statement);
             const auto root = statement_id ==
@@ -24546,17 +24559,35 @@ class Checker {
                 ? checked_types.expression_root_slots.end()
                 : checked_types.expression_root_slots.find(
                     {statement_id->second, "call-invocation"});
-            const bool non_expression_operand = root !=
-                    checked_types.expression_root_slots.end() &&
-                std::find(checked_types.expression_occurrences[root->second]
-                              .non_expression_operand_ordinals.begin(),
-                          checked_types.expression_occurrences[root->second]
-                              .non_expression_operand_ordinals.end(),
-                          index) != checked_types.expression_occurrences[
-                              root->second].non_expression_operand_ordinals.end();
-            if ((!expression_child && !non_expression_operand) ||
-                child_count > 1 || (expression_child && non_expression_operand))
-              checked_types.expression_occurrence_ledger_complete = false;
+            if (root == checked_types.expression_root_slots.end()) break;
+            const auto& invocation = checked_types.expression_occurrences[
+                root->second];
+            if (!statement.b.empty()) {
+              const bool static_fileio_receiver =
+                  !invocation.source_operands.empty() &&
+                  invocation.source_operands.front() == "FileIO";
+              const auto receiver_count = checked_types.expression_child_count(
+                  statement, "call-invocation", "receiver");
+              if (receiver_count != (static_fileio_receiver ? 0u : 1u))
+                checked_types.expression_occurrence_ledger_complete = false;
+            }
+            for (size_t index = 0; index < statement.args.size(); ++index) {
+              const string role = statement.b.empty()
+                  ? "call-argument:" + std::to_string(index)
+                  : "argument:" + std::to_string(index);
+              const bool expression_child = checked_types.has_expression_child(
+                  statement, "call-invocation", role);
+              const std::size_t child_count = checked_types.expression_child_count(
+                  statement, "call-invocation", role);
+              const bool non_expression_operand = std::find(
+                  invocation.non_expression_operand_ordinals.begin(),
+                  invocation.non_expression_operand_ordinals.end(), index) !=
+                  invocation.non_expression_operand_ordinals.end();
+              if ((!expression_child && !non_expression_operand) ||
+                  child_count > 1 ||
+                  (expression_child && non_expression_operand))
+                checked_types.expression_occurrence_ledger_complete = false;
+            }
           }
           break;
         case Stmt::Kind::Echo:

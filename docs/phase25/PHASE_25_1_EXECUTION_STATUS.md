@@ -10,7 +10,7 @@ Pinned instruction commit: `3de64dc633312267c37c4e4990b28c2a73cab104`
 |---|---|---|
 | T0 | PASS | Annotated tags published and remote peeled commits verified below; `origin/main` unchanged. |
 | R0 | PASS | Final independent GO at frozen checkpoint `9c90573bda8daec5bd4254cc5f6c64c5dd3239e4`; 19-case oracle, complete 71-path harness map, strict corpus and P2 inventory exception recorded. |
-| R1 | IN PROGRESS | Independent GO at architecture SHA `ff4470ffdcc93cedb3d66b1e068b7f5ea8ca3f5f`. Push `783f47ea` and later push `246f51c6` received NO-GO; the latest working correction routes statement member calls through checker-owned expression capture. Focused controls are green; commit/push and follow-up exact-SHA review, total structural coverage and shared lowerer remain open. |
+| R1 | IN PROGRESS | Independent GO at architecture SHA `ff4470ffdcc93cedb3d66b1e068b7f5ea8ca3f5f`. Pushes `783f47ea`, `246f51c6`, and `7a71f95c` received NO-GO. Current working follow-up aligns member invocation receiver/argument role checks with checker capture; focused controls are green. Commit/push and follow-up exact-SHA review, total structural coverage and shared lowerer remain open. |
 | R2–R5 | NOT STARTED | ABI-v9 remains default; no `main` or `phase25-integration` changes. |
 
 ## T0 transcript and verification
@@ -324,3 +324,23 @@ the common checked-body structural lowerer, full generic statement/expression
 coverage, binding/scope lowering, and cross-crate source-free slice remain
 unfinished. R2 has not started. Commit and push this correction for exact-SHA
 adversarial follow-up before building further on the ledger.
+
+### R1 member invocation role-verifier correction — working tree
+
+The architect reviewed exact pushed SHA
+`7a71f95caa4752f884705f7e84f41380a06df72e`. It confirmed the statement member
+dispatch fix but returned NO-GO with one P1: the completeness verifier required
+`call-argument:<i>` for all statement calls, while the expression checker
+records member arguments as `argument:<i>`, and the verifier did not require a
+receiver child. The current correction validates direct-call and member-call
+child roles separately, requires one receiver child for value receivers,
+captures receivers once across dispatch paths, and preserves FileIO's
+non-value namespace receiver and static operands explicitly.
+
+Validation on this source revision: the full M2b2 hostile source-free corpus,
+generic collection facts, generic arithmetic requirements, H3 direct records,
+D3d and D4 actual SDK source-free controls, feedback validation,
+`git diff --check`, and `make --jobs="$(nproc)" moss-dev` passed. Build output
+contains only the existing TypeSolver missing-initializer warnings. This
+follow-up is not yet committed or reviewed. R1 totality, one common structural
+lowerer and a cross-crate source-free slice remain open; R2 has not started.
