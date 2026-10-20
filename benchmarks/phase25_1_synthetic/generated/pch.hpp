@@ -1,0 +1,17 @@
+#pragma once
+#include <vector>
+#include <string>
+#include <map>
+#include <unordered_map>
+#include <set>
+#include <algorithm>
+#include <memory>
+#include <optional>
+#include <variant>
+#include <tuple>
+#include <functional>
+#include <iostream>
+#include <sstream>
+#include <cstdint>
+#include <utility>
+#include <numeric>
