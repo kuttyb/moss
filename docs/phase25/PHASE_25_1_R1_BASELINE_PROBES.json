@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "gate": "R1 architecture prerequisite baseline",
+  "compiler_source_commit": "c27350b6a9d521eba30858a6aa47095f9c8bde63",
+  "branch_checkpoint": "ff4470ffdcc93cedb3d66b1e068b7f5ea8ca3f5f",
+  "environment": {
+    "abi": "v9 default; MOSS_STAGED_ABI unset",
+    "temporary_storage": "repository tmp/",
+    "provider_source_deleted_before_consumer": true
+  },
+  "provider_source": "module Service\n\nexport fn make_queue(value):\n  queue = Queue()\n  queue.push(value)\n  return queue\n",
+  "consumer_source": "module Main\nimport Service\n\nfn main():\n  numbers = Service.make_queue(9)\n  words = Service.make_queue(\"moss\")\n  echo numbers.pop()\n  echo words.pop()\n",
+  "source_probe": {
+    "command": "./moss check --json tmp/phase25_queue_construction_probe.moss",
+    "exit_code": 0,
+    "ok": true,
+    "interpreter_command": "./moss run --interp tmp/phase25_queue_construction_probe.moss",
+    "interpreter_stdout": "9\n"
+  },
+  "source_backed_native": {
+    "commands": ["margo run", "margo --release run"],
+    "debug_exit_code": 0,
+    "release_exit_code": 0,
+    "debug_stdout": "9\nmoss\n",
+    "release_stdout": "9\nmoss\n"
+  },
+  "abi_v9_source_free_native": {
+    "provider_command": "margo build",
+    "provider_exit_code": 0,
+    "consumer_commands": ["margo run", "margo --release run"],
+    "consumer_debug_exit_code": 0,
+    "consumer_release_exit_code": 0,
+    "consumer_debug_stdout": "9\nmoss\n",
+    "consumer_release_stdout": "9\nmoss\n",
+    "provider_source_directory_removed": true,
+    "artifact_directory_selected_by_MOSS_MODULE_PATH": true
+  },
+  "classification": "Queue() inferred from a generic value followed by push is valid in source-backed and ABI-v9 source-free native consumers. ABI-v10 checked-body parity remains open. This does not change the separate invalid result for push on an otherwise open, untyped generic receiver.",
+  "limitations": "The temporary probe source and isolated Margo caches were under tmp/ and are disposable. This is a focused probe, not a full Queue operation cross-product or an ABI-v10 result."
+}

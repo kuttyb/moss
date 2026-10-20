@@ -62,7 +62,7 @@ source-free tests. A pending row is work, not an exclusion or a capability.
 | `Match`/`Case` | Scrutinee occurrence, exact enum/variant identity, payload bindings/types, exhaustiveness and branch scopes | Existing `Match`/`CaseBranch`; typed match is R0-valid and pending v10. |
 | `Try`, `Recover`, `Raise`; `assert` | Error/value occurrence links, active error scope, selected raise/handler identity, effect bits and ordering, assert condition and failure effect | No current checked-body node mapping; add append-only checked-body-v1 tags if same-version fail-closed compatibility holds. R0 source-backed valid raise/recover remains a v9 regression to fix, not an exclusion. |
 | Literals, parameter/local reads, unary/binary, field/index, vector/map construction, named calls, nominal construction, Count/Index | One typed occurrence per evaluated expression with resolved TypeRef, exact ordered child IDs, binding/member/call/operation ID, access and effects | Existing tags cover many cases; complete operator, literal, collection, identity and scope validation in unified codec. |
-| Queue construction and operations; constrained member dispatch | Receiver/argument/result TypeRefs, exact selected member and nominal identity, operation/requirement/access/effect facts | Queue construction is unprobed. R1 must run source-backed and ABI-v9 probes; valid forms map through existing call/nominal nodes or append-only tags. Open Queue `.push` currently has an invalid R0 probe; do not generalize it to construction or concrete calls. |
+| Queue construction and operations; constrained member dispatch | Receiver/argument/result TypeRefs, exact selected member and nominal identity, operation/requirement/access/effect facts | Queue construction is source-backed and ABI-v9 source-free valid (Int/String; Debug/Release output `9` / `moss`, provider source deleted), recorded in the compatibility matrix. V10 remains pending. Valid forms map through existing call/nominal nodes or append-only tags. Open Queue `.push` has a separate invalid R0 probe; do not generalize it to construction or concrete calls. |
 | Functional pipelines and supported collection methods | Checked functional plan with ordered stage identities, resolved operation/member IDs, input/output TypeRefs and effects; no stage inferred from placeholder spelling | Normalize the checked plan into canonical expression/operation nodes. Pipeline is source-backed/v9-valid in R0 and pending v10. |
 
 Every evaluated expression occurrence receives a unique checker-local ID while
@@ -89,9 +89,10 @@ before R4/R5 can claim readiness; per-callable fail-closed admission is not
 evidence of complete language coverage.
 
 R0 invalid probes remain negative controls; they do not imply adjacent valid
-forms are unsupported. The specific Queue construction probe is an R1
-prerequisite to classifying that row. Missing facts remain fail-closed only
-while their totality-ledger item is actively tracked to a later gate.
+forms are unsupported. Queue construction is now classified from independent
+source-backed and ABI-v9 source-free controls; its v10 implementation remains
+an open ledger item. Missing facts remain fail-closed only while their
+totality-ledger item is actively tracked to a later gate.
 
 ## Wire and importer invariants
 

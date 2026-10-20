@@ -10,7 +10,7 @@ Pinned instruction commit: `3de64dc633312267c37c4e4990b28c2a73cab104`
 |---|---|---|
 | T0 | PASS | Annotated tags published and remote peeled commits verified below; `origin/main` unchanged. |
 | R0 | PASS | Final independent GO at frozen checkpoint `9c90573bda8daec5bd4254cc5f6c64c5dd3239e4`; 19-case oracle, complete 71-path harness map, strict corpus and P2 inventory exception recorded. |
-| R1 | IN PROGRESS | Inspecting the existing shape-specific checked-body paths and planning one authoritative typed traversal; no compiler edits yet. |
+| R1 | IN PROGRESS | Independent GO at architecture SHA `ff4470ffdcc93cedb3d66b1e068b7f5ea8ca3f5f`; exhaustive totality ledger and completeness invariant accepted. Queue construction source-backed and ABI-v9 source-free Debug/Release probes pass; no compiler edits yet. |
 | R2–R5 | NOT STARTED | ABI-v9 remains default; no `main` or `phase25-integration` changes. |
 
 ## T0 transcript and verification
@@ -67,6 +67,29 @@ typed semantic API map entries, one-to-one disposition for all 71 discovered
 candidates, corrected 19-case wording, closed GEN-006, and the native-only fs
 classification. P251-GEN-008 (`packages/time`) remains P2 on the R4 path.
 
-R1 begins from this green checkpoint. No compiler implementation has started;
-next is architecture consolidation of existing shape-specific checked-body
-paths into one exhaustive checker-owned typed traversal and bounded codec.
+## R1 architecture review and Queue baseline — 2026-10-20
+
+The first R1 architecture checkpoint `84bdaf4b0758bc523a5c8fc49a542a1cecaf2dc3`
+received NO-GO with one P1: no exhaustive source-to-facts/IR mapping or
+per-occurrence completeness invariant; Queue construction was unprobed. The
+amended architecture at `ff4470ffdcc93cedb3d66b1e068b7f5ea8ca3f5f` received
+independent GO with no open P0/P1. The totality ledger and acceptance invariant
+are in `PHASE_25_1_R1_ARCHITECTURE.md`; the historical R0 proposal's status was
+corrected. Reviewer P2 required Queue source-backed plus ABI-v9 source-free
+evidence before classification.
+
+Queue baseline passed at compiler source commit
+`c27350b6a9d521eba30858a6aa47095f9c8bde63` (no compiler source edits between
+the R0 checkpoint and probe): source check and interpreter output `9`; native
+source-backed Debug/Release output `9` and `moss`; ABI-v9 provider source was
+physically deleted before consumer Native Debug/Release, which output `9` and
+`moss`. Exact source and commands are preserved in
+`PHASE_25_1_R1_BASELINE_PROBES.json`. This classifies inferred `Queue()` plus
+`push` as valid source-backed/v9, while v10 checked-body coverage remains
+pending. The separate open-receiver Queue method rejection remains invalid.
+
+No R1 compiler implementation or focused codec change has started. Next map
+all existing expression-checker recursion/operation facts and determine how
+the ordinary checker can retain occurrence-linked typed nodes without a
+second expression parser or specialization engine; then implement the common
+IR path and preserve the admitted H3/D1-D4/checked-arithmetic regressions.

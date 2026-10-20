@@ -107,7 +107,7 @@ representative oracle; no unsupported shape is treated as invalid by omission.
 | Explicit local initialization/rebinding and mutation | `generic-local-var-while`; SDK collection and hostile source-free corpus controls | Let/var/assignment is valid-but-unavailable-v10; individual inferred READ/WRITE/CONSUME combinations remain R1/R2 codec invariants, with malformed/overlap controls in existing ownership suites. |
 | If/else, early return, match/case | `generic-if-early-return`, `generic-typed-enum-match`; untyped enum match invalid probe | Valid branch and typed match are valid-but-unavailable-v10; untyped open match is invalid-by-language. |
 | While/for and static iteration | `collection-loop-equality-index`, `generic-range-iteration`, `generic-local-var-while`; range-as-helper-argument invalid probe | Existing supported loop shape passes v10; Vector iteration and local-var/while are valid-but-unavailable-v10; range value argument is invalid-by-language. |
-| Vector and Map construction/indexing/mutation; Queue methods | `generic-empty-vector-result`, `generic-nonempty-vector-literal`, `generic-map-index-mutation`; open Queue `.push`/`.pop` invalid probe | Open results, Vector literal and Map indexed operation are valid-but-unavailable-v10; Queue generic method form is invalid-by-language. Generic Queue construction is not separately probed. |
+| Vector and Map construction/indexing/mutation; Queue methods | `generic-empty-vector-result`, `generic-nonempty-vector-literal`, `generic-map-index-mutation`; open Queue `.push`/`.pop` invalid probe; R1 `Queue()` provider probe | Open results, Vector literal and Map indexed operation are valid-but-unavailable-v10; open-receiver Queue `.push`/`.pop` remains invalid-by-language. `Queue()` inferred from subsequent `push` is valid source-backed and ABI-v9 source-free for Int/String, Debug/Release, with provider source deleted; v10 remains pending. |
 | Field/member access and constrained member calls | `field-read`, `generic-member-length` | Field read supported-v10; String `.length()` is valid-but-unavailable-v10. |
 | Operators, Count/Index, equality, pipeline and assertions/effects | `collection-loop-equality-index`, `generic-functional-pipeline`, `generic-assert-effect`, D3/D4 actual collection callables | Existing supported arithmetic/collection rows pass; pipeline and assert are valid-but-unavailable-v10. |
 | Try/recover/raise | `generic-raise-recover` | Valid source-backed; ABI-v9 source-free currently fails in both profiles; v10 is valid-but-unavailable-v10. |
@@ -143,6 +143,14 @@ The exact valid subset for each row was established by `moss check --json` and
 source-backed/native or ABI-v9 executable controls where marked. Rows
 explicitly called partially mapped remain open inventory work; validity is not
 inferred from a Rust artifact or a single failed v10 build.
+
+Queue construction baseline (R1 prerequisite): `tmp/phase25_queue_construction_probe.moss`
+passes `./moss check --json` and `./moss run --interp` (output `9`). Separate
+source-backed Margo Native Debug/Release controls output `9` and `moss` for
+Int/String. An ABI-v9 provider/consumer control produces the same outputs in
+Debug/Release after physically deleting provider source. The repro sources and
+commands are captured in the R1 execution checkpoint; temporary files are
+disposable and are not a durable test fixture.
 
 ## R0 completion criteria
 
