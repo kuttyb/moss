@@ -3393,6 +3393,9 @@ static moss::AccessMode imported_abi_v10_requirement_access(
                        "ABI-v10 requirement access mode is unsupported");
 }
 
+static bool abi_v10_collection_loop_summary_candidate(
+    const abi_v10::Summary& summary);
+
 static vector<moss::Requirement> imported_abi_v10_requirements(
     const abi_v10::Summary& summary, const Function& function,
     const moss::TypeContext& context) {
@@ -3407,41 +3410,45 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
       invalid("checked ABI-v10 summary has unexpected requirement provenance");
     return {};
   }
+  const bool collection_loop =
+      abi_v10_collection_loop_summary_candidate(summary);
   if (summary.requirements.size() != 2)
-    invalid("checked ABI-v10 arithmetic requirement chain is incomplete");
-  if (summary.requirements[0].operation != "operator:*" ||
-      summary.requirements[1].operation != "operator:+" ||
-      summary.requirements[0].parent != 0 ||
-      summary.requirements[1].parent != 1)
-    invalid("checked ABI-v10 arithmetic requirement order or parent is invalid");
+    invalid("checked ABI-v10 typed requirement set is incomplete");
+  if (!collection_loop) {
+    if (summary.requirements[0].operation != "operator:*" ||
+        summary.requirements[1].operation != "operator:+" ||
+        summary.requirements[0].parent != 0 ||
+        summary.requirements[1].parent != 1)
+      invalid("checked ABI-v10 arithmetic requirement order or parent is invalid");
 
-  const auto& multiply = summary.requirements[0];
-  const auto& add = summary.requirements[1];
-  if (multiply.receiver.kind != abi_v10::WireTypeKind::BoundVar ||
-      add.receiver.kind != abi_v10::WireTypeKind::BoundVar ||
-      multiply.receiver.ordinal != add.receiver.ordinal ||
-      multiply.receiver.ordinal >= summary.variable_count ||
-      multiply.arguments.size() != 1 || add.arguments.size() != 1 ||
-      !multiply.result || !add.result ||
-      multiply.result->kind != abi_v10::WireTypeKind::BoundVar ||
-      add.result->kind != abi_v10::WireTypeKind::BoundVar ||
-      multiply.result->ordinal != multiply.receiver.ordinal ||
-      add.result->ordinal != multiply.receiver.ordinal ||
-      multiply.arguments.front().kind != abi_v10::WireTypeKind::Primitive ||
-      add.arguments.front().kind != abi_v10::WireTypeKind::Primitive ||
-      multiply.arguments.front().identity != "int" ||
-      add.arguments.front().identity != "int")
-    invalid("checked ABI-v10 arithmetic requirement type relationship is invalid");
-  const bool subject_is_parameter = std::any_of(
-      summary.parameters.begin(), summary.parameters.end(),
-      [&](const abi_v10::WireType& parameter) {
-    return parameter.kind == abi_v10::WireTypeKind::BoundVar &&
-        parameter.ordinal == multiply.receiver.ordinal;
-  });
-  if (!subject_is_parameter ||
-      summary.result.kind != abi_v10::WireTypeKind::BoundVar ||
-      summary.result.ordinal != multiply.receiver.ordinal)
-    invalid("checked ABI-v10 arithmetic requirement is detached from its generic callable type");
+    const auto& multiply = summary.requirements[0];
+    const auto& add = summary.requirements[1];
+    if (multiply.receiver.kind != abi_v10::WireTypeKind::BoundVar ||
+        add.receiver.kind != abi_v10::WireTypeKind::BoundVar ||
+        multiply.receiver.ordinal != add.receiver.ordinal ||
+        multiply.receiver.ordinal >= summary.variable_count ||
+        multiply.arguments.size() != 1 || add.arguments.size() != 1 ||
+        !multiply.result || !add.result ||
+        multiply.result->kind != abi_v10::WireTypeKind::BoundVar ||
+        add.result->kind != abi_v10::WireTypeKind::BoundVar ||
+        multiply.result->ordinal != multiply.receiver.ordinal ||
+        add.result->ordinal != multiply.receiver.ordinal ||
+        multiply.arguments.front().kind != abi_v10::WireTypeKind::Primitive ||
+        add.arguments.front().kind != abi_v10::WireTypeKind::Primitive ||
+        multiply.arguments.front().identity != "int" ||
+        add.arguments.front().identity != "int")
+      invalid("checked ABI-v10 arithmetic requirement type relationship is invalid");
+    const bool subject_is_parameter = std::any_of(
+        summary.parameters.begin(), summary.parameters.end(),
+        [&](const abi_v10::WireType& parameter) {
+      return parameter.kind == abi_v10::WireTypeKind::BoundVar &&
+          parameter.ordinal == multiply.receiver.ordinal;
+    });
+    if (!subject_is_parameter ||
+        summary.result.kind != abi_v10::WireTypeKind::BoundVar ||
+        summary.result.ordinal != multiply.receiver.ordinal)
+      invalid("checked ABI-v10 arithmetic requirement is detached from its generic callable type");
+  }
 
   auto callable = moss::CallableId::parse(summary.callable_id);
   if (!callable || callable->kind != "fn" ||
@@ -3492,7 +3499,9 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
 
     moss::Requirement requirement;
     requirement.id = origin.declaration_id;
-    requirement.kind = moss::RequirementKind::Operator;
+    requirement.kind = collection_loop && wire.operation == "builtin:index"
+        ? moss::RequirementKind::Index
+        : moss::RequirementKind::Operator;
     requirement.target_id = wire.operation;
     requirement.subject = std::move(subject);
     requirement.arguments.push_back(std::move(argument));
@@ -3605,6 +3614,60 @@ static bool abi_v10_empty_vector_summary_candidate(
       abi_v10::checked_body_hash_valid(summary.body_semantic_hash);
 }
 
+static bool abi_v10_collection_loop_summary_candidate(
+    const abi_v10::Summary& summary) {
+  const auto bound_zero = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::BoundVar &&
+        type.ordinal == 0 && type.arguments.empty();
+  };
+  const auto primitive = [](const abi_v10::WireType& type,
+                            std::string_view name) {
+    return type.kind == abi_v10::WireTypeKind::Primitive &&
+        type.identity == name && type.arguments.empty();
+  };
+  if (summary.variable_count != 1 || summary.parameters.size() != 2 ||
+      summary.parameter_access != vector<abi_v10::Access>{
+          abi_v10::Access::Read, abi_v10::Access::Read} ||
+      summary.parameters[0].kind != abi_v10::WireTypeKind::Builtin ||
+      summary.parameters[0].identity != "vector" ||
+      summary.parameters[0].arguments.size() != 1 ||
+      !bound_zero(summary.parameters[0].arguments.front()) ||
+      !bound_zero(summary.parameters[1]) || !primitive(summary.result, "int") ||
+      !summary.dependencies.empty() || summary.observable_effect_bits != 0 ||
+      summary.observable_effect_tags != vector<string>{"may_panic"} ||
+      !abi_v10::checked_body_hash_valid(summary.body_semantic_hash) ||
+      summary.provenance_id.empty() || summary.requirements.size() != 2)
+    return false;
+  const auto& index = summary.requirements[0];
+  const auto& equality = summary.requirements[1];
+  return index.operation == "builtin:index" && index.parent == 0 &&
+      index.access == abi_v10::Access::Read &&
+      index.receiver.kind == abi_v10::WireTypeKind::Builtin &&
+      index.receiver.identity == "vector" &&
+      index.receiver.arguments.size() == 1 &&
+      bound_zero(index.receiver.arguments.front()) &&
+      index.arguments.size() == 1 && index.argument_access.size() == 1 &&
+      index.argument_access.front() == abi_v10::Access::Read &&
+      primitive(index.arguments.front(), "int") && index.result &&
+      bound_zero(*index.result) &&
+      equality.operation == "operator:==" && equality.parent == 0 &&
+      equality.access == abi_v10::Access::Read &&
+      bound_zero(equality.receiver) && equality.arguments.size() == 1 &&
+      equality.argument_access.size() == 1 &&
+      equality.argument_access.front() == abi_v10::Access::Read &&
+      bound_zero(equality.arguments.front()) && equality.result &&
+      primitive(*equality.result, "bool") &&
+      !index.provenance_id.empty() && !equality.provenance_id.empty();
+}
+
+static bool abi_v10_collection_loop_effects(const ObservableEffects& effects) {
+  return effects.may_panic && !effects.local_capture_read &&
+      !effects.local_mutation && !effects.domain_read && !effects.domain_write &&
+      !effects.message && !effects.external_io && !effects.fileio &&
+      !effects.fileio_unknown && effects.raise_set.empty() &&
+      !effects.may_diverge && !effects.unresolved;
+}
+
 static void validate_abi_v10_checked_arithmetic_summary(
     const abi_v10::Summary& summary, const Function& function) {
   auto invalid = [&](const string& reason) -> void {
@@ -3688,15 +3751,21 @@ static void project_imported_h3_checked_bodies(Program& program) {
       invalid("checked ABI-v10 body is detached from its provider summary");
     const abi_v10::Summary summary = abi_v10::read_summary(
         function.imported_checked_summary_payload);
+    const bool collection_loop_candidate =
+        abi_v10_collection_loop_summary_candidate(summary);
     const abi_v10::CheckedBodyRecord body = abi_v10::read_checked_body_record(
         function.imported_checked_body_payload);
+    const bool effect_contract_valid = collection_loop_candidate
+        ? abi_v10_collection_loop_effects(function.observable_effects)
+        : abi_v10_effects_pure(function.observable_effects);
     if (summary.callable_id != function.semantic_callable_id ||
         body.callable_id != summary.callable_id ||
         body.semantic_hash != summary.body_semantic_hash ||
         summary.parameters.size() != function.params.size() ||
         summary.parameter_access.size() != function.parameter_effects.size() ||
-        summary.observable_effect_bits || !summary.observable_effect_tags.empty() ||
-        !abi_v10_effects_pure(function.observable_effects))
+        (!collection_loop_candidate &&
+         (summary.observable_effect_bits || !summary.observable_effect_tags.empty())) ||
+        !effect_contract_valid)
       invalid("checked ABI-v10 body disagrees with its callable summary");
     for (std::size_t index = 0; index < summary.parameter_access.size(); ++index)
       if (summary.parameter_access[index] !=
@@ -3720,6 +3789,10 @@ static void project_imported_h3_checked_bodies(Program& program) {
         statements = checked_ir::decode_empty_vector_return_checked_body_v1(
             body.checked_ir_bytes, *program.type_context, result,
             body.semantic_hash);
+      } else if (collection_loop_candidate) {
+        statements = checked_ir::decode_collection_loop_checked_body_v1(
+            body.checked_ir_bytes, *program.type_context, parameters, result,
+            body.semantic_hash);
       } else {
         statements = checked_ir::decode_h3_checked_body_v1(
             body.checked_ir_bytes, *program.type_context, parameters, result,
@@ -3739,6 +3812,228 @@ static void project_imported_h3_checked_bodies(Program& program) {
               (declared.kind ==
                abi_v10::CheckedBodyRecord::Dependency::Kind::Callable))
         invalid("checked ABI-v10 body dependency identity is mismatched");
+    }
+    if (collection_loop_candidate) {
+      const auto int_type = moss::Type::primitive("int");
+      const auto bool_type = moss::Type::primitive("bool");
+      const auto element_type = parameters.size() == 2 ? parameters[1] : nullptr;
+      const auto vector_type = parameters.empty() ? nullptr : parameters[0];
+      const bool types_match = parameters.size() == 2 && element_type &&
+          vector_type && vector_type->kind == moss::TypeKind::Builtin &&
+          vector_type->name == "vector" && vector_type->type_args.size() == 1 &&
+          vector_type->type_args.front()->structurally_equal(*element_type) &&
+          result->structurally_equal(*int_type);
+      const auto requirements = imported_abi_v10_requirements(
+          summary, function, *program.type_context);
+      if (!types_match || requirements.size() != 2 ||
+          requirements[0].kind != moss::RequirementKind::Index ||
+          requirements[0].target_id != "builtin:index" ||
+          requirements[1].kind != moss::RequirementKind::Operator ||
+          requirements[1].target_id != "operator:==" ||
+          !body.dependencies.empty() || statements.size() != 4 ||
+          statements[0].kind != checked_ir::StmtKind::Var ||
+          statements[0].local_ordinal != 0 ||
+          statements[1].kind != checked_ir::StmtKind::Var ||
+          statements[1].local_ordinal != 1 ||
+          statements[2].kind != checked_ir::StmtKind::While ||
+          statements[3].kind != checked_ir::StmtKind::Return ||
+          !statements[0].expr || !statements[1].expr ||
+          !statements[2].expr || !statements[3].expr ||
+          !statements[0].type->structurally_equal(*int_type) ||
+          !statements[1].type->structurally_equal(*int_type) ||
+          !statements[2].expr->type->structurally_equal(*bool_type) ||
+          !statements[3].expr->type->structurally_equal(*int_type) ||
+          statements[1].expr->kind != checked_ir::ExprKind::CollectionCount ||
+          statements[1].expr->semantic_target_id !=
+              checked_ir::kCollectionCountOperationId ||
+          statements[1].expr->operands.size() != 1 ||
+          statements[1].expr->operands.front().kind !=
+              checked_ir::ExprKind::Parameter ||
+          statements[1].expr->operands.front().ordinal != 0 ||
+          statements[2].body.size() != 2 ||
+          statements[2].body[0].kind != checked_ir::StmtKind::If ||
+          !statements[2].body[0].expr ||
+          statements[2].body[0].then_branch.size() != 1 ||
+          statements[2].body[0].then_branch.front().kind !=
+              checked_ir::StmtKind::Return ||
+          statements[2].body[1].kind != checked_ir::StmtKind::Assign ||
+          statements[2].body[1].local_ordinal != 0)
+        invalid("checked ABI-v10 collection body does not match its typed summary");
+      const auto& while_condition = *statements[2].expr;
+      const auto& if_condition = *statements[2].body[0].expr;
+      const auto& indexed_return = *statements[2].body[0].then_branch.front().expr;
+      const auto& increment = *statements[2].body[1].expr;
+      if (while_condition.kind != checked_ir::ExprKind::Binary ||
+          while_condition.binary_op != checked_ir::BinaryOp::Less ||
+          while_condition.operands.size() != 2 ||
+          while_condition.operands[0].kind != checked_ir::ExprKind::LocalRead ||
+          while_condition.operands[0].ordinal != 0 ||
+          while_condition.operands[1].kind != checked_ir::ExprKind::LocalRead ||
+          while_condition.operands[1].ordinal != 1 ||
+          if_condition.kind != checked_ir::ExprKind::Binary ||
+          if_condition.binary_op != checked_ir::BinaryOp::Equal ||
+          if_condition.operands.size() != 2 ||
+          if_condition.operands[0].kind != checked_ir::ExprKind::Index ||
+          if_condition.operands[0].semantic_target_id !=
+              checked_ir::kCollectionIndexOperationId ||
+          if_condition.operands[0].operands.size() != 2 ||
+          if_condition.operands[0].operands[0].kind !=
+              checked_ir::ExprKind::Parameter ||
+          if_condition.operands[0].operands[0].ordinal != 0 ||
+          if_condition.operands[0].operands[1].kind !=
+              checked_ir::ExprKind::LocalRead ||
+          if_condition.operands[0].operands[1].ordinal != 0 ||
+          if_condition.operands[1].kind != checked_ir::ExprKind::Parameter ||
+          if_condition.operands[1].ordinal != 1 ||
+          !if_condition.operands[0].type->structurally_equal(*element_type) ||
+          !if_condition.operands[1].type->structurally_equal(*element_type) ||
+          indexed_return.kind != checked_ir::ExprKind::LocalRead ||
+          indexed_return.ordinal != 0 ||
+          increment.kind != checked_ir::ExprKind::Binary ||
+          increment.binary_op != checked_ir::BinaryOp::Add ||
+          increment.operands.size() != 2 ||
+          increment.operands[0].kind != checked_ir::ExprKind::LocalRead ||
+          increment.operands[0].ordinal != 0 ||
+          increment.operands[1].kind != checked_ir::ExprKind::IntegerLiteral ||
+          increment.operands[1].literal_value != "1")
+        invalid("checked ABI-v10 collection operations or local relations are inconsistent");
+
+      if (function.params.size() != 2 ||
+          !plain_identifier(function.params[0].name) ||
+          !plain_identifier(function.params[1].name) ||
+          function.params[0].name == function.params[1].name)
+        invalid("checked ABI-v10 collection parameters are not projectable");
+      const vector<string> local_names{
+          "__moss_checked_local_0", "__moss_checked_local_1"};
+      if (std::any_of(function.params.begin(), function.params.end(),
+              [&](const Param& parameter) {
+        return std::find(local_names.begin(), local_names.end(),
+                         parameter.name) != local_names.end();
+      }))
+        invalid("checked ABI-v10 collection internal local collides with a parameter");
+      auto binary_operator = [](checked_ir::BinaryOp op) -> string {
+        switch (op) {
+          case checked_ir::BinaryOp::Add: return "+";
+          case checked_ir::BinaryOp::Sub: return "-";
+          case checked_ir::BinaryOp::Equal: return "==";
+          case checked_ir::BinaryOp::Less: return "<";
+          default: return {};
+        }
+      };
+      std::function<std::optional<string>(const checked_ir::Expr&, unsigned)> render =
+          [&](const checked_ir::Expr& expression, unsigned depth)
+              -> std::optional<string> {
+        if (depth > 8) return std::nullopt;
+        switch (expression.kind) {
+          case checked_ir::ExprKind::Parameter:
+            if (expression.ordinal >= function.params.size()) return std::nullopt;
+            return function.params[expression.ordinal].name;
+          case checked_ir::ExprKind::LocalRead:
+            if (expression.ordinal >= local_names.size()) return std::nullopt;
+            return local_names[expression.ordinal];
+          case checked_ir::ExprKind::IntegerLiteral:
+            return expression.literal_value;
+          case checked_ir::ExprKind::Binary: {
+            if (expression.operands.size() != 2) return std::nullopt;
+            auto op = binary_operator(expression.binary_op);
+            auto left = render(expression.operands[0], depth + 1);
+            auto right = render(expression.operands[1], depth + 1);
+            if (op.empty() || !left || !right) return std::nullopt;
+            return *left + " " + op + " " + *right;
+          }
+          case checked_ir::ExprKind::CollectionCount: {
+            if (expression.operands.size() != 1 ||
+                expression.semantic_target_id !=
+                    checked_ir::kCollectionCountOperationId)
+              return std::nullopt;
+            auto receiver = render(expression.operands.front(), depth + 1);
+            if (!receiver) return std::nullopt;
+            return *receiver + " |> count";
+          }
+          case checked_ir::ExprKind::Index: {
+            if (expression.operands.size() != 2 ||
+                expression.semantic_target_id !=
+                    checked_ir::kCollectionIndexOperationId)
+              return std::nullopt;
+            auto receiver = render(expression.operands[0], depth + 1);
+            auto index = render(expression.operands[1], depth + 1);
+            if (!receiver || !index) return std::nullopt;
+            return *receiver + "[" + *index + "]";
+          }
+          default: return std::nullopt;
+        }
+      };
+      vector<Stmt> projected;
+      std::function<bool(const checked_ir::Stmt&, int)> project_statement =
+          [&](const checked_ir::Stmt& checked, int indent) {
+        Stmt statement;
+        statement.indent = indent;
+        statement.line = std::max(function.line, 1) +
+            static_cast<int>(projected.size());
+        auto rendered = checked.expr ? render(*checked.expr, 0)
+                                     : std::optional<string>{};
+        switch (checked.kind) {
+          case checked_ir::StmtKind::Var:
+          case checked_ir::StmtKind::Let:
+            if (!rendered || checked.local_ordinal >= local_names.size())
+              return false;
+            statement.kind = checked.kind == checked_ir::StmtKind::Var
+                ? Stmt::Kind::Var : Stmt::Kind::Let;
+            statement.a = local_names[checked.local_ordinal];
+            statement.b = *rendered;
+            statement.text = (statement.kind == Stmt::Kind::Var ? "var " : "let ") +
+                statement.a + " = " + statement.b;
+            projected.push_back(std::move(statement));
+            return true;
+          case checked_ir::StmtKind::Assign:
+            if (!rendered || checked.local_ordinal >= local_names.size())
+              return false;
+            statement.kind = Stmt::Kind::Assign;
+            statement.a = local_names[checked.local_ordinal];
+            statement.b = *rendered;
+            statement.text = statement.a + " = " + statement.b;
+            projected.push_back(std::move(statement));
+            return true;
+          case checked_ir::StmtKind::Return:
+            if (!rendered) return false;
+            statement.kind = Stmt::Kind::Return;
+            statement.a = *rendered;
+            statement.text = "return " + statement.a;
+            projected.push_back(std::move(statement));
+            return true;
+          case checked_ir::StmtKind::If:
+          case checked_ir::StmtKind::While: {
+            if (!rendered) return false;
+            statement.kind = checked.kind == checked_ir::StmtKind::If
+                ? Stmt::Kind::If : Stmt::Kind::While;
+            statement.a = *rendered;
+            statement.text = (statement.kind == Stmt::Kind::If ? "if " : "while ") +
+                statement.a;
+            projected.push_back(std::move(statement));
+            const auto nested_indent = indent + 1;
+            const auto& children = checked.kind == checked_ir::StmtKind::If
+                ? checked.then_branch : checked.body;
+            for (const auto& child : children)
+              if (!project_statement(child, nested_indent)) return false;
+            if (checked.kind == checked_ir::StmtKind::If)
+              for (const auto& child : checked.else_branch)
+                if (!project_statement(child, nested_indent)) return false;
+            return true;
+          }
+          default: return false;
+        }
+      };
+      for (const auto& statement : statements)
+        if (!project_statement(statement, 0))
+          invalid("checked ABI-v10 collection body cannot be projected to Moss AST");
+      function.body = std::move(projected);
+      function.result_expression.reset();
+      function.imported_checked_body_projected = true;
+      if (const char* trace = std::getenv("MOSS_PHASE25_CHECKED_BODY_TRACE");
+          trace && string(trace) == "1")
+        std::cerr << "MOSS_CHECKED_BODY_PROJECTED|"
+                  << function.semantic_callable_id << "|checked-body-v1\n";
+      continue;
     }
     if (statements.empty() || !statements.front().expr ||
         (statements.size() == 1 &&
@@ -4050,11 +4345,15 @@ static void validate_imported_h3_summary_closure(const Program& program) {
     };
     const auto summary = abi_v10::read_summary(
         function.imported_checked_summary_payload);
+    const bool collection_loop =
+        abi_v10_collection_loop_summary_candidate(summary);
     if (!function.open_summary || !function.open_summary->complete ||
         function.open_summary->bound_variable_count != summary.variable_count ||
         function.open_summary->parameter_types.size() != summary.parameters.size() ||
         function.parameter_effects.size() != summary.parameter_access.size() ||
-        !abi_v10_effects_pure(function.observable_effects))
+        !(collection_loop
+              ? abi_v10_collection_loop_effects(function.observable_effects)
+              : abi_v10_effects_pure(function.observable_effects)))
       mismatch("checked ABI-v10 imported summary did not close in the checker " +
           string("(complete=") +
           (function.open_summary && function.open_summary->complete ? "1" : "0") +
