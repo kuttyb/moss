@@ -3380,7 +3380,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
       error.teaching.related.push_back({
           function.provider_origin_file.empty() ? function.source_file :
               function.provider_origin_file,
-          std::max(function.line, 1), 1,
+          std::max(function.line, 1), function.provider_origin_column,
           "sealed provider callable '" + function.name + "'"});
       throw error;
     };
@@ -3631,7 +3631,7 @@ static void validate_imported_h3_summary_closure(const Program& program) {
       error.teaching.related.push_back({
           function.provider_origin_file.empty() ? function.source_file :
               function.provider_origin_file,
-          std::max(function.line, 1), 1,
+          std::max(function.line, 1), function.provider_origin_column,
           "sealed provider callable '" + function.name + "'"});
       throw error;
     };
@@ -4145,6 +4145,7 @@ class Checker {
       string display_name;
       string callable_id;
       int line = 0;
+      int column = 1;
     };
     std::unordered_map<string, ProviderCallableOrigin> provider_origins;
 
@@ -4438,7 +4439,12 @@ class Checker {
         summary.origin.source_file = function.provider_origin_file.empty()
             ? function.source_file : function.provider_origin_file;
         summary.origin.line = function.line;
-        summary.origin.enclosing_callable = sealed.callable_id;
+        summary.origin.column = function.provider_origin_column;
+        summary.origin.module_id = function.provider_origin_module_id.empty()
+            ? callable->module_id : function.provider_origin_module_id;
+        summary.origin.enclosing_callable =
+            function.provider_origin_identity.empty()
+                ? sealed.callable_id : function.provider_origin_identity;
         for (std::size_t index = 0; index < sealed.parameters.size(); ++index) {
           auto parameter = imported_abi_v10_type(
               sealed.parameters[index], *p_.type_context,
@@ -9951,7 +9957,8 @@ class Checker {
                         ? function.source_file : function.provider_origin_file,
                     provider_callable_display(function.name),
                     function.semantic_callable_id,
-                    std::max(function.line, 1)});
+                    std::max(function.line, 1),
+                    function.provider_origin_column});
           }
         }
         auto retained_source = body_types.known_expression(statement.b);
@@ -10018,7 +10025,8 @@ class Checker {
             if (!current_source_file_.empty())
               error.source_file = current_source_file_;
             error.teaching.related.push_back({
-                origin->second.file, origin->second.line, 1,
+                origin->second.file, origin->second.line,
+                origin->second.column,
                 "provider callable '" + origin->second.display_name +
                     "' (" + origin->second.callable_id +
                     ") is declared here"});
@@ -18522,7 +18530,7 @@ class Checker {
         error.teaching.related.begin(),
         {function.provider_origin_file.empty()
              ? error.source_file : function.provider_origin_file,
-         error.line, 1,
+         std::max(function.line, 1), function.provider_origin_column,
          "inside provider function '" +
              provider_callable_display(function.name) + "'"});
     if (compiled_interface_file(call_source) || call_source.empty()) return;
@@ -18819,7 +18827,8 @@ class Checker {
         CompileError error(line, message, "TYPE_AMBIGUOUS_OPEN_RESULT");
         error.source_file = current_source_file_;
         error.teaching.related.push_back({
-            function.provider_origin_file, function.line, 1,
+            function.provider_origin_file, function.line,
+            function.provider_origin_column,
             "provider callable '" + provider_callable_display(function.name) +
                 "' (" + function.semantic_callable_id + ") is declared here"});
         throw error;
@@ -19343,7 +19352,8 @@ class Checker {
           function->second->provider_origin_file.empty()
               ? function->second->source_file
               : function->second->provider_origin_file,
-          function->second->line, 1,
+          function->second->line,
+          function->second->provider_origin_column,
           "provider callable requires an effect-polymorphic summary"});
       throw error;
     }
@@ -38110,6 +38120,83 @@ static ParsedModuleUnit load_module_interface(
                       [](const ImportedSummaryRecord& record) {
             return record.typed_v2;
           });
+      if (has_typed_summary) {
+        const ImportedSummaryRecord* callable_summary = nullptr;
+        for (const auto& candidate : summary_records->second) {
+          if (!candidate.typed_v2) continue;
+          if (callable_summary)
+            throw CompileError(std::max(function.line, 1),
+                "checked ABI-v10 callable has duplicate typed summaries",
+                "SOURCE_FREE_SUMMARY_INVALID");
+          callable_summary = &candidate;
+        }
+        if (!callable_summary)
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 callable has no typed summary",
+              "SOURCE_FREE_SUMMARY_INVALID");
+        const auto summary = abi_v10::read_summary(callable_summary->payload);
+        const auto callable = moss::CallableId::parse(summary.callable_id);
+        if (summary.callable_id != id || !callable ||
+            callable->kind != "fn" ||
+            callable->declaration_name != function.name ||
+            (!function.semantic_callable_id.empty() &&
+             callable->canonical_id != function.semantic_callable_id) ||
+            callable->module_id != unit.module_identity ||
+            summary.provenance_id.empty())
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 callable summary identity is invalid",
+              "SOURCE_FREE_SUMMARY_INVALID");
+        function.semantic_callable_id = summary.callable_id;
+        const abi_v10::Record* provenance_record = nullptr;
+        for (const auto& candidate : sealed.value.provenance) {
+          if (candidate.id != summary.provenance_id) continue;
+          if (provenance_record)
+            throw CompileError(std::max(function.line, 1),
+                "checked ABI-v10 callable provenance identity is duplicated",
+                "SOURCE_FREE_SUMMARY_INVALID");
+          provenance_record = &candidate;
+        }
+        if (!provenance_record)
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 callable summary has no provenance record",
+              "SOURCE_FREE_SUMMARY_INVALID");
+        abi_v10::SourceProvenance origin;
+        try {
+          abi_v10::validate_provenance(*provenance_record);
+          origin = abi_v10::read_provenance(provenance_record->payload);
+        } catch (const abi_v10::Error& error) {
+          throw CompileError(std::max(function.line, 1), error.what(),
+                              "SOURCE_FREE_SUMMARY_INVALID");
+        }
+        const string expected_logical_source = abi_v10::hash(
+            "moss-abi-v10-logical-source",
+            origin.module_id + "\n" + origin.source_file_display);
+        const string expected_provenance = abi_v10::hash(
+            "moss-abi-v10-provenance",
+            origin.declaration_id + "\n" + origin.logical_source_id + "\n" +
+                std::to_string(origin.start_line));
+        if (origin.provenance_id != summary.provenance_id ||
+            origin.module_id != callable->module_id ||
+            origin.declaration_id != summary.callable_id ||
+            origin.logical_source_id != expected_logical_source ||
+            origin.provenance_id != expected_provenance ||
+            origin.source_file_display.empty() ||
+            std::filesystem::path(origin.source_file_display).filename() !=
+                origin.source_file_display ||
+            origin.start_line == 0 || origin.start_column == 0 ||
+            origin.start_line > static_cast<std::uint32_t>(
+                std::numeric_limits<int>::max()) ||
+            origin.start_column > static_cast<std::uint32_t>(
+                std::numeric_limits<int>::max()))
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 callable provenance does not match its summary identity",
+              "SOURCE_FREE_SUMMARY_INVALID");
+        function.provider_origin_file = origin.source_file_display;
+        function.line = static_cast<int>(origin.start_line);
+        function.provider_origin_column = static_cast<int>(origin.start_column);
+        function.provider_origin_module_id = origin.module_id;
+        function.provider_origin_identity = origin.declaration_id;
+      }
       moss::TypeContext checked_body_type_context;
       const bool empty_vector_body_without_typed_summary =
           has_body && !has_typed_summary &&

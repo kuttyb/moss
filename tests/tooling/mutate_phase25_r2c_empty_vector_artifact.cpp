@@ -74,8 +74,26 @@ int main(int argc, char** argv) {
     replace_summary();
     *body_at = moss::abi_v10::checked_body_record(body);
   };
+  auto replace_generic_source = [&](const std::string& replacement) {
+    const std::string old = "  generic_source \"provider.moss\"";
+    bool found = false;
+    for (auto* records : {&sealed.value.binary_contract,
+                          &sealed.value.semantic_contract,
+                          &sealed.value.private_semantic_dependencies})
+      for (auto& record : *records) {
+        auto position = record.payload.find(old);
+        if (position == std::string::npos) continue;
+        record.payload.replace(position, old.size(), replacement);
+        found = true;
+      }
+    assert(found && "legacy generic_source record was not found");
+  };
 
-  if (mode == "missing-summary") {
+  if (mode == "generic-source-missing") {
+    replace_generic_source("");
+  } else if (mode == "generic-source-forged") {
+    replace_generic_source("  generic_source \"evil.moss\"");
+  } else if (mode == "missing-summary") {
     auto& records = sealed.value.semantic_contract;
     records.erase(std::remove_if(records.begin(), records.end(),
         [&](const auto& record) {
@@ -98,6 +116,17 @@ int main(int argc, char** argv) {
     records.erase(std::remove_if(records.begin(), records.end(),
         [&](const auto& record) { return record.id == summary.provenance_id; }),
         records.end());
+  } else if (mode == "mismatched-callable-provenance") {
+    auto& records = sealed.value.provenance;
+    auto provenance_at = std::find_if(records.begin(), records.end(),
+        [&](const auto& record) { return record.id == summary.provenance_id; });
+    assert(provenance_at != records.end());
+    auto provenance = moss::abi_v10::read_provenance(provenance_at->payload);
+    provenance.declaration_id += ":forged";
+    const auto replacement = moss::abi_v10::provenance_record(provenance);
+    summary.provenance_id = replacement.id;
+    replace_summary();
+    *provenance_at = replacement;
   } else if (mode == "unbound") {
     moss::checked_ir::Expr literal;
     literal.kind = moss::checked_ir::ExprKind::VectorLiteral;
