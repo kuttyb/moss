@@ -9694,3 +9694,8 @@ The focused test, production compiler build, full M2b2 source-free positive /
 hostile / v9 corpus, feedback checker, and diff check pass after the fix. The
 build still reports existing `TypeSolver::Undo::binding` initializer warnings.
 This fix needs exact-SHA review. R1 remains incomplete.
+
+Architect returned **GO** at exact SHA
+`e81c1a2b411ad950872c83df9787dc1d738897b3`: reverse order is an explicit
+checker fact and the focused regression checks both keyed sort modes. This
+review covers fact capture, not source-free sort lowering. R1 remains open.

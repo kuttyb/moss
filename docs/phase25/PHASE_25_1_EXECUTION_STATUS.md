@@ -524,3 +524,9 @@ M2b2 source-free positive/hostile/v9 corpus, agent feedback checker, and
 `git diff --check` passed. The build retains existing
 `TypeSolver::Undo::binding` missing-initializer warnings. This correction needs
 exact-SHA adversarial review; R1 remains incomplete.
+
+The architect returned **GO** on exact pushed SHA
+`e81c1a2b411ad950872c83df9787dc1d738897b3`: `Reverse(key)` is preserved as
+an explicit fact alongside the selected callable, and the focused regression
+checks ordinary and reverse keyed sort. This confirms checker fact capture,
+not source-free lowering of sort. R1 remains incomplete.
