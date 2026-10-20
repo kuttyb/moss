@@ -124,12 +124,22 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
 
             poisoned = case_root / "poisoned-artifacts"
             shutil.copytree(artifacts, poisoned)
-            poison_output = command(
-                [str(poisoner), str(poisoned / "Service.mossi"),
-                 str(poisoned / "libService.rlib"), "Service", "fresh"],
-                cwd=ROOT, env=base_env)
-            expected_removed = "removed 2 generic_stmt" if case["id"] == "single-call" else "removed 1 generic_stmt"
-            assert expected_removed in poison_output, poison_output
+            poison_targets = (("fresh", "helper")
+                              if case["id"] == "single-call" else ("fresh",))
+            poison_outputs = []
+            for callable_name in poison_targets:
+                poison_output = command(
+                    [str(poisoner), str(poisoned / "Service.mossi"),
+                     str(poisoned / "libService.rlib"), "Service",
+                     callable_name], cwd=ROOT, env=base_env)
+                expected_removed = f"removed 1 generic_stmt records from {callable_name}"
+                assert expected_removed in poison_output, poison_output
+                poison_outputs.append(poison_output)
+            if case["id"] == "single-call":
+                assert b"generic_stmt " not in (
+                    poisoned / "Service.mossi").read_bytes(), (
+                        "single-call still contains a legacy body after "
+                        "poisoning fresh and helper")
             poisoned_env = trace_env | {
                 "MOSS_MODULE_PATH": str(poisoned),
                 "MARGO_HOME": str(case_root / "margo-poisoned"),
@@ -151,7 +161,8 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                 [str(MARGO), "run"], cwd=consumer, env=poisoned_env)
             assert poisoned_output == case["expected_output"], (
                 case["id"], poisoned_output)
-            print(f"PASS {case['id']}: legacy generic_stmt removed; checked-body result unchanged")
+            removed_report = "; ".join(output.strip() for output in poison_outputs)
+            print(f"PASS {case['id']}: {removed_report}; checked-body result unchanged")
 
             negative_cases = {
                 "missing-summary": ("SOURCE_FREE_SUMMARY_INVALID",),

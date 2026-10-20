@@ -1,5 +1,21 @@
 # Moss current status
 
+## M2b.3c scoped legacy-body poisoner correction — 2026-10-19
+
+On `phase25-m2b3c-direct-call`, the source-free corpus poisoner now follows
+`generic_dependency_begin`/`generic_dependency_end` scopes to address exported
+and private callable bodies independently. Each invocation verifies the target
+had legacy statements, removes all of them, and confirms every other callable's
+legacy-statement count is unchanged. The `single-call` corpus poisons `fresh`
+and `helper` separately, checks neither body remains, retains projection-trace
+assertions for both, and executes the Int and String consumers.
+
+Validation passed: the source-free corpus (including R2b/R2c, H3 direct/chain,
+and ABI-v9 checks), H3 source-free chain, H3 direct records, R2c consumer,
+G2 conformance (11/11), M2b.1 provenance, and `git diff --check`. The standalone
+M2b.1 test requires the staged ABI, empty-vector emission, and checked-body
+trace environment; it passed with those settings. No compiler files changed.
+
 ## Phase 25-M2b.3a parameter-return implementation and integration — 2026-10-19
 
 Implementation is complete on dedicated branch `phase25-m2b3a-parameter-return`,

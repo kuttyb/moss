@@ -5,8 +5,10 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <sstream>
 #include <string>
+#include <vector>
 
 static std::string read_file(const std::string& path) {
   std::ifstream input(path, std::ios::binary);
@@ -29,6 +31,54 @@ int main(int argc, char** argv) {
   const std::string callable_name = argv[4];
   auto sealed = moss::abi_v10::decode(read_file(interface_path));
   const auto old_digest = sealed.digest;
+
+  auto legacy_counts = [](const moss::abi_v10::Interface& interface) {
+    std::map<std::string, std::size_t> counts;
+    for (const auto& record : interface.semantic_contract) {
+      if (record.payload.empty() || record.payload.front() == 1 ||
+          (static_cast<unsigned char>(record.payload.front()) == 2 &&
+           moss::abi_v10::hex_hash(record.id)) ||
+          moss::abi_v10::is_key_proof_payload(record.payload))
+        continue;
+      std::istringstream lines(record.payload);
+      std::string line;
+      std::vector<std::string> scopes;
+      while (std::getline(lines, line)) {
+        if (line.rfind("export fn ", 0) == 0) {
+          std::istringstream header(line.substr(10));
+          std::string callable;
+          header >> callable;
+          scopes.clear();
+          scopes.push_back(std::move(callable));
+        } else if (line.find("generic_dependency_begin ") !=
+                   std::string::npos) {
+          std::istringstream header(line.substr(
+              line.find("generic_dependency_begin ") + 25));
+          std::string callable;
+          header >> std::quoted(callable);
+          assert(!callable.empty());
+          scopes.push_back(std::move(callable));
+        } else if (line.find("generic_dependency_end") !=
+                   std::string::npos) {
+          assert(scopes.size() > 1 &&
+                 "generic dependency end has no matching private scope");
+          scopes.pop_back();
+        }
+        if (line.find("generic_stmt ") != std::string::npos &&
+            !scopes.empty())
+          ++counts[scopes.back()];
+      }
+      assert(scopes.size() <= 1 &&
+             "unterminated generic dependency scope");
+    }
+    return counts;
+  };
+
+  const auto counts_before = legacy_counts(sealed.value);
+  const auto found_before = counts_before.find(callable_name);
+  const std::size_t before = found_before == counts_before.end()
+      ? 0 : found_before->second;
+  assert(before > 0 && "requested callable had no legacy generic_stmt");
   std::size_t removed = 0;
 
   for (auto& record : sealed.value.semantic_contract) {
@@ -38,22 +88,49 @@ int main(int argc, char** argv) {
         moss::abi_v10::is_key_proof_payload(record.payload))
       continue;
     std::istringstream lines(record.payload);
-    std::string line, replacement, active_callable;
+    std::string line, replacement;
+    std::vector<std::string> scopes;
     while (std::getline(lines, line)) {
       if (line.rfind("export fn ", 0) == 0) {
         std::istringstream header(line.substr(10));
-        header >> active_callable;
+        std::string callable;
+        header >> callable;
+        scopes.clear();
+        scopes.push_back(std::move(callable));
+      } else if (line.find("generic_dependency_begin ") !=
+                 std::string::npos) {
+        std::istringstream header(line.substr(
+            line.find("generic_dependency_begin ") + 25));
+        std::string callable;
+        header >> std::quoted(callable);
+        assert(!callable.empty());
+        scopes.push_back(std::move(callable));
+      } else if (line.find("generic_dependency_end") != std::string::npos) {
+        assert(scopes.size() > 1 &&
+               "generic dependency end has no matching private scope");
+        scopes.pop_back();
       }
       if (line.find("generic_stmt ") != std::string::npos &&
-          active_callable == callable_name) {
+          !scopes.empty() && scopes.back() == callable_name) {
         ++removed;
         continue;
       }
       replacement += line + "\n";
     }
+    assert(scopes.size() <= 1 && "unterminated generic dependency scope");
     record.payload = std::move(replacement);
   }
-  assert(removed > 0 && "requested callable had no legacy generic_stmt");
+  assert(removed == before && "not all targeted legacy generic_stmt records were removed");
+  const auto counts_after = legacy_counts(sealed.value);
+  assert(counts_after.find(callable_name) == counts_after.end() &&
+         "targeted callable still has a legacy generic_stmt");
+  for (const auto& [callable, count] : counts_before) {
+    if (callable == callable_name) continue;
+    const auto found_after = counts_after.find(callable);
+    const std::size_t after = found_after == counts_after.end()
+        ? 0 : found_after->second;
+    assert(after == count && "poisoning changed an unrelated callable body");
+  }
   const auto rewritten = moss::abi_v10::encode(sealed.value);
   moss::abi_v10::validate_complete_interface(moss::abi_v10::decode(rewritten));
   const auto new_digest = moss::abi_v10::parse(rewritten).digest;
