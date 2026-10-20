@@ -9547,3 +9547,31 @@ empty-vector record, and full M2b2 source-free/hostile-artifact/v9-control gates
 pass. `check_agent_feedback.py` and `git diff --check` pass. Next implement the
 checker occurrence ledger and common structural lowerer, then remove redundant
 producer/import branches only after the frozen parity corpus stays green.
+
+## Phase 25.1 R1 continuation — statement member-call review correction
+
+The architect reviewed pushed commit
+`246f51c62d5b8351f4dcdc018bc326a596f43ec1` and returned NO-GO with one P1:
+statement-form member calls discarded the checker-selected method identity and
+generic `Method` constraint while suppressing the receiver occurrence. The
+working correction now lets `check_expression(statement.text)` own the
+`call-invocation` root, receiver and argument children, resolved target, and
+matching constraint. The manual guessed `method:<receiver>.<name>` target and
+duplicate suppressed expression validation are removed. The statement path
+recovers that root ID from the checker root map for operand bookkeeping.
+
+Validation after this correction: compiler-including generic collection facts,
+generic arithmetic requirements, H3 direct records, D3d and D4 actual SDK
+source-free controls, feedback validation, the full M2b2 source-free hostile
+corpus, and `git diff --check` passed. An initial `-Werror` compile exposed a
+signed/unsigned root-count comparison; it was fixed by making the count's
+`size_t` type explicit, after which the generic facts and arithmetic tests
+passed. The regular `moss-dev` build passed with existing TypeSolver
+missing-initializer warnings. The correction is not yet committed or reviewed.
+
+The occurrence ledger is still scaffolding rather than a complete checked-body
+IR: source expression totality/single-visit semantics, all valid generic
+operations and control flow, binding/scope lowering, the common structural
+lowerer and cross-crate source-free proof remain open. R1 is not accepted and
+R2 has not started. Request exact-SHA adversarial review after committing and
+publishing this correction checkpoint.

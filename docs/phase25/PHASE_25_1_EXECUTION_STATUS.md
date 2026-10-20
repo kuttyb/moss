@@ -10,7 +10,7 @@ Pinned instruction commit: `3de64dc633312267c37c4e4990b28c2a73cab104`
 |---|---|---|
 | T0 | PASS | Annotated tags published and remote peeled commits verified below; `origin/main` unchanged. |
 | R0 | PASS | Final independent GO at frozen checkpoint `9c90573bda8daec5bd4254cc5f6c64c5dd3239e4`; 19-case oracle, complete 71-path harness map, strict corpus and P2 inventory exception recorded. |
-| R1 | IN PROGRESS | Independent GO at architecture SHA `ff4470ffdcc93cedb3d66b1e068b7f5ea8ca3f5f`. Latest reviewed push `783f47ea` received NO-GO; the current working tree addresses its P1 findings and has green focused controls. Follow-up review, total structural coverage and shared lowerer remain open. |
+| R1 | IN PROGRESS | Independent GO at architecture SHA `ff4470ffdcc93cedb3d66b1e068b7f5ea8ca3f5f`. Push `783f47ea` and later push `246f51c6` received NO-GO; the latest working correction routes statement member calls through checker-owned expression capture. Focused controls are green; commit/push and follow-up exact-SHA review, total structural coverage and shared lowerer remain open. |
 | R2–R5 | NOT STARTED | ABI-v9 remains default; no `main` or `phase25-integration` changes. |
 
 ## T0 transcript and verification
@@ -295,3 +295,32 @@ This correction is not yet committed or independently reviewed. R1 remains
 open; deferred valid generic pipeline semantics, source-to-occurrence totality,
 single-visit semantics, binding/scope lowering and the shared structural body
 lowerer are still work, not exclusions. No R2 work has started.
+
+### R1 statement member-call correction — working tree
+
+The architect reviewed pushed commit
+`246f51c62d5b8351f4dcdc018bc326a596f43ec1` and returned NO-GO with one P1:
+statement-form member calls discarded checker-selected method identity and
+generic `Method` constraints while suppressing the receiver occurrence. The
+working correction now routes `statement.text` through the ordinary expression
+checker as the `call-invocation` root, which captures the receiver and arguments
+and retains exact builtin, trait, nominal, or constrained generic dispatch
+facts. The synthetic `method:<receiver type>.<name>` target and suppressed
+duplicate walk were removed. The statement call path reads the resulting root
+ID back from the checker root map for operand bookkeeping.
+
+Validation on the corrected source: `make --jobs="$(nproc)" moss-dev` passed
+with existing `TypeSolver::Undo::binding` warnings; the M2b2 source-free
+hostile corpus; generic collection facts; generic arithmetic requirements;
+H3 direct records; D3d and D4 actual SDK source-free controls; the feedback
+checker; and `git diff --check` passed. One initial `-Werror` compiler-including
+test caught signedness in the structural root-count verifier; the type was
+corrected to `size_t`, and both compiler-including generic tests passed after
+that edit.
+
+This is an uncommitted capture correction, not R1 acceptance. The occurrence
+ledger does not yet prove source-to-node totality or single-visit behavior, and
+the common checked-body structural lowerer, full generic statement/expression
+coverage, binding/scope lowering, and cross-crate source-free slice remain
+unfinished. R2 has not started. Commit and push this correction for exact-SHA
+adversarial follow-up before building further on the ledger.

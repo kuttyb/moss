@@ -18792,6 +18792,11 @@ class Checker {
                                            OwnershipEnv& env) {
     auto parsed = parse_functional_pipeline(expression);
     if (!parsed) return false;
+    if (current_body_types_ && !checking_specialization_ &&
+        !current_body_types_->active_expression_occurrences.empty())
+      current_body_types_->expression_occurrences.at(
+          current_body_types_->active_expression_occurrences.back())
+          .source_operands = {parsed->source};
     auto source_type = inferred_expr_type(parsed->source, env.types);
     if (!source_type) return false;
     auto element = functional_element_type(*source_type, parsed->source);
@@ -22563,6 +22568,11 @@ class Checker {
     }
     if (auto elements = parse_vector_literal(original)) {
       mark_active_expression(OccurrenceKind::VectorLiteral);
+      if (current_body_types_ && !checking_specialization_ &&
+          !current_body_types_->active_expression_occurrences.empty())
+        current_body_types_->expression_occurrences.at(
+            current_body_types_->active_expression_occurrences.back())
+            .source_operands = *elements;
       for (const auto& element : *elements) {
         auto type = inferred_expr_type(element, env);
         if (type && fileio_scoped_type(*type))
@@ -22913,6 +22923,14 @@ class Checker {
     vector<string> args;
     if (parse_member_call(value, receiver, handler, args)) {
       mark_active_expression(OccurrenceKind::MemberCall, "method:" + handler);
+      if (current_body_types_ && !checking_specialization_ &&
+          !current_body_types_->active_expression_occurrences.empty()) {
+        auto& occurrence = current_body_types_->expression_occurrences.at(
+            current_body_types_->active_expression_occurrences.back());
+        occurrence.source_operands.push_back(receiver);
+        occurrence.source_operands.insert(occurrence.source_operands.end(),
+                                           args.begin(), args.end());
+      }
       if (current_body_types_) {
         auto receiver_term = current_body_types_->known_expression(receiver);
         if (!receiver_term) receiver_term = inferred_expr_term(receiver, env);
@@ -23300,6 +23318,11 @@ class Checker {
              typed_empty_vector_constructor(value)
                 ? OccurrenceKind::CollectionLiteral : OccurrenceKind::Call),
           objects_.count(callee) ? "constructor:" + callee : "call:" + callee);
+      if (current_body_types_ && !checking_specialization_ &&
+          !current_body_types_->active_expression_occurrences.empty())
+        current_body_types_->expression_occurrences.at(
+            current_body_types_->active_expression_occurrences.back())
+            .source_operands = args;
       if (current_body_types_) {
         vector<moss::TypeRef> argument_terms;
         bool has_open_argument = false;
@@ -24000,7 +24023,12 @@ class Checker {
         BodyTypeState* call_occurrence_state = current_body_types_;
         std::uint32_t call_occurrence_id = UINT32_MAX;
         moss::TypeRef statement_call_type;
-        if (call_occurrence_state && !checking_specialization_) {
+        // Direct calls have no expression-tree call node to own their checked
+        // invocation facts, so retain their statement occurrence explicitly.
+        // Member calls are captured by check_expression(statement.text) below;
+        // that path owns checker-resolved receiver, dispatch, and argument facts.
+        if (call_occurrence_state && !checking_specialization_ &&
+            statement.b.empty()) {
           call_occurrence_id = call_occurrence_state->begin_statement_expression(
               statement, "call-invocation",
               statement.b.empty()
@@ -24131,34 +24159,19 @@ class Checker {
             }
           }
         }
-        if (!statement.b.empty())
-        {
-          struct SuppressExpressionOccurrenceScope {
-            bool& slot;
-            bool previous;
-            explicit SuppressExpressionOccurrenceScope(bool& target)
-                : slot(target), previous(target) { slot = true; }
-            ~SuppressExpressionOccurrenceScope() { slot = previous; }
-          } suppress_scope(suppress_expression_occurrence_capture_);
+        if (!statement.b.empty()) {
           check_expression(statement.line, statement.text, current_env,
-                           "call-expression");
-        }
-        if (call_occurrence_id != UINT32_MAX && !statement.b.empty()) {
-          auto receiver = current_env.find(statement.a);
-          auto receiver_type = receiver != current_env.end()
-              ? std::optional<string>(canonical_type_name(receiver->second))
-              : inferred_expr_type(statement.a, current_env);
-          const string target = receiver_type &&
-                  builtin_receiver_family(*receiver_type)
-              ? "builtin-method:" + canonical_type_name(*receiver_type) +
-                    "." + statement.b
-              : receiver_type
-                  ? "method:" + canonical_type_name(*receiver_type) +
-                        "." + statement.b
-                  : "member-binding:" + statement.a + "." + statement.b;
-          call_occurrence_state->retain_expression_target(
-              call_occurrence_id, target);
-          statement_call_type = inferred_expr_term(statement.text, current_env);
+                           "call-invocation");
+          if (call_occurrence_state && !checking_specialization_) {
+            const auto statement_id = call_occurrence_state->statement_occurrence_id(
+                statement);
+            auto occurrence = call_occurrence_state->expression_root_slots.find(
+                {statement_id, "call-invocation"});
+            if (occurrence == call_occurrence_state->expression_root_slots.end())
+              call_occurrence_state->expression_occurrence_ledger_complete = false;
+            else
+              call_occurrence_id = occurrence->second;
+          }
         }
         const bool sort_builtin = statement.b.empty() && statement.a == "sort" &&
             !functions_.count(statement.a);
@@ -24365,9 +24378,39 @@ class Checker {
     TypeEnv checked_env = walk_type_environment(
         statements, std::move(env), check_statement,
         true, true, true, join_context, &checked_types);
-    for (const auto& occurrence : checked_types.expression_occurrences) {
+    vector<vector<std::uint32_t>> expression_children(
+        checked_types.expression_occurrences.size());
+    std::set<std::uint32_t> statement_occurrence_values;
+    for (const auto& [statement_pointer, statement_id] :
+         checked_types.statement_occurrence_ids) {
+      (void)statement_pointer;
+      statement_occurrence_values.insert(statement_id);
+    }
+    for (std::size_t index = 0;
+         index < checked_types.expression_occurrences.size(); ++index) {
+      const auto& occurrence = checked_types.expression_occurrences[index];
       if (!occurrence.completed)
         checked_types.expression_occurrence_ledger_complete = false;
+      if (occurrence.id != index ||
+          !statement_occurrence_values.count(occurrence.statement_id))
+        checked_types.expression_occurrence_ledger_complete = false;
+      if (occurrence.parent_id == UINT32_MAX) {
+        auto root = checked_types.expression_root_slots.find(
+            {occurrence.statement_id, occurrence.root_slot});
+        if (occurrence.root_slot.empty() ||
+            root == checked_types.expression_root_slots.end() ||
+            root->second != index)
+          checked_types.expression_occurrence_ledger_complete = false;
+      } else if (occurrence.parent_id >= index ||
+                 occurrence.parent_id >= checked_types.expression_occurrences.size() ||
+                 occurrence.statement_id != checked_types.expression_occurrences[
+                     occurrence.parent_id].statement_id ||
+                 !occurrence.root_slot.empty() || occurrence.child_role.empty()) {
+        checked_types.expression_occurrence_ledger_complete = false;
+      } else {
+        expression_children[occurrence.parent_id].push_back(
+            static_cast<std::uint32_t>(index));
+      }
       const bool parameter_call =
           occurrence.semantic_target_id.rfind("parameter:", 0) == 0 &&
           (occurrence.kind == BodyTypeState::ExpressionOccurrence::Kind::Call ||
@@ -24387,6 +24430,30 @@ class Checker {
               occurrence.linked_constraints.end(), [](const Constraint& c) {
                 return c.kind == ConstraintKind::Method;
               }))
+        checked_types.expression_occurrence_ledger_complete = false;
+    }
+    const auto expression_root_count = static_cast<std::size_t>(std::count_if(
+        checked_types.expression_occurrences.begin(),
+        checked_types.expression_occurrences.end(),
+        [](const BodyTypeState::ExpressionOccurrence& occurrence) {
+          return occurrence.parent_id == UINT32_MAX;
+        }));
+    if (checked_types.expression_root_slots.size() != expression_root_count)
+      checked_types.expression_occurrence_ledger_complete = false;
+    for (std::size_t parent = 0; parent < expression_children.size(); ++parent) {
+      auto& children = expression_children[parent];
+      std::sort(children.begin(), children.end(), [&](std::uint32_t left,
+                                                       std::uint32_t right) {
+        return checked_types.expression_occurrences[left].child_ordinal <
+            checked_types.expression_occurrences[right].child_ordinal;
+      });
+      std::set<string> roles;
+      for (std::size_t ordinal = 0; ordinal < children.size(); ++ordinal) {
+        const auto& child = checked_types.expression_occurrences[children[ordinal]];
+        if (child.child_ordinal != ordinal || !roles.insert(child.child_role).second)
+          checked_types.expression_occurrence_ledger_complete = false;
+      }
+      if (checked_types.expression_occurrences[parent].child_count != children.size())
         checked_types.expression_occurrence_ledger_complete = false;
     }
     if (!checked_types.active_expression_occurrences.empty())
