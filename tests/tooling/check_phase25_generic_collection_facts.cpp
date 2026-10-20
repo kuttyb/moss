@@ -26,6 +26,23 @@ static bool rejects_with(const string& source, const string& code) {
 }
 
 int main() {
+  // The provider's open contract must close without any consumer call sites.
+  const auto provider_only = check_source(R"moss(export fn index_of(items, target) -> Int:
+  var i = 0
+  n = items |> count
+  while i < n:
+    if items[i] == target:
+      return i
+    i = i + 1
+  return 0 - 1
+)moss");
+  const auto provider_function = std::find_if(provider_only.functions.begin(),
+      provider_only.functions.end(),
+      [](const Function& candidate) { return candidate.name == "index_of"; });
+  assert(provider_function != provider_only.functions.end());
+  assert(provider_function->open_summary &&
+         provider_function->open_summary->complete);
+
   const auto program = check_source(R"moss(export fn index_of(items, target) -> Int:
   var i = 0
   n = items |> count
@@ -60,6 +77,12 @@ fn main():
   assert((summary.parameter_access ==
          vector<AccessMode>{AccessMode::Read, AccessMode::Read}));
   assert(summary.observable_effects.may_panic);
+  assert(summary.requirements.size() == 2);
+  assert(std::none_of(summary.requirements.begin(), summary.requirements.end(),
+      [](const Requirement& requirement) {
+    return requirement.kind == RequirementKind::Iterate &&
+        requirement.target_id == "functional source";
+  }));
 
   assert(summary.operations.size() == 2);
   const auto find_operation = [&](const string& id) ->
@@ -139,6 +162,77 @@ fn main():
   index_of([1, 2], "wrong-type")
 )moss", "TYPE_MISMATCH"));
 
+  const auto extra_generic_operation = check_source(R"moss(export fn index_of(items, target) -> Int:
+  var i = 0
+  n = items |> count
+  unused = target + target
+  while i < n:
+    if items[i] == target:
+      return i
+    i = i + 1
+  return 0 - 1
+)moss");
+  const auto extra_operation_function = std::find_if(
+      extra_generic_operation.functions.begin(), extra_generic_operation.functions.end(),
+      [](const Function& candidate) { return candidate.name == "index_of"; });
+  assert(extra_operation_function != extra_generic_operation.functions.end());
+  assert(!extra_operation_function->open_summary ||
+         !extra_operation_function->open_summary->complete);
+
+  const auto duplicate_count = check_source(R"moss(export fn index_of(items, target) -> Int:
+  var i = 0
+  n = items |> count
+  again = items |> count
+  while i < n:
+    if items[i] == target:
+      return i
+    i = i + 1
+  return 0 - 1
+)moss");
+  const auto duplicate_count_function = std::find_if(
+      duplicate_count.functions.begin(), duplicate_count.functions.end(),
+      [](const Function& candidate) { return candidate.name == "index_of"; });
+  assert(duplicate_count_function != duplicate_count.functions.end());
+  assert(!duplicate_count_function->open_summary ||
+         !duplicate_count_function->open_summary->complete);
+
+  const auto duplicate_index = check_source(R"moss(export fn index_of(items, target) -> Int:
+  var i = 0
+  n = items |> count
+  while i < n:
+    if items[i] == target:
+      return i
+    i = i + 1
+  if items[0] == target:
+    return 0
+  return 0 - 1
+)moss");
+  const auto duplicate_index_function = std::find_if(
+      duplicate_index.functions.begin(), duplicate_index.functions.end(),
+      [](const Function& candidate) { return candidate.name == "index_of"; });
+  assert(duplicate_index_function != duplicate_index.functions.end());
+  assert(!duplicate_index_function->open_summary ||
+         !duplicate_index_function->open_summary->complete);
+
+  const auto unrelated_equality = check_source(R"moss(export fn index_of(items, target) -> Int:
+  var i = 0
+  n = items |> count
+  if target == target:
+    return 0
+  while i < n:
+    if items[i] == target:
+      return i
+    i = i + 1
+  return 0 - 1
+)moss");
+  const auto unrelated_equality_function = std::find_if(
+      unrelated_equality.functions.begin(), unrelated_equality.functions.end(),
+      [](const Function& candidate) { return candidate.name == "index_of"; });
+  assert(unrelated_equality_function != unrelated_equality.functions.end());
+  assert(!unrelated_equality_function->open_summary ||
+         !unrelated_equality_function->open_summary->complete);
+
   std::cout << "PASS index_of checker summary, Count/Index TypeRefs, equality "
-               "admissibility, READ accesses, may_panic, and negative cases\n";
+               "admissibility, READ accesses, may_panic, provider-only summary, "
+               "and fail-closed operation cases\n";
 }

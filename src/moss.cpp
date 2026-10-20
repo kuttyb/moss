@@ -5558,11 +5558,29 @@ class Checker {
   // local its Int TypeRef, and it does not own equality's deferred type link.
   void refresh_open_collection_summaries_from_checked_types() {
     for (auto& function : p_.functions) {
-      if (function.imported_checked_summary_payload.size() ||
+      if (!function.imported_checked_summary_payload.empty() ||
           !function.open_summary || function.params.size() != 2) continue;
       auto retained = checked_body_states_.find(&function.body);
       if (retained == checked_body_states_.end() || !retained->second) continue;
       auto& state = *retained->second;
+      const auto count_count = std::count_if(state.open_operations.begin(),
+          state.open_operations.end(), [](const auto& operation) {
+        return operation.operation_id == "builtin:collection-count-v1";
+      });
+      const auto index_count = std::count_if(state.open_operations.begin(),
+          state.open_operations.end(), [](const auto& operation) {
+        return operation.operation_id == "builtin:index";
+      });
+      const auto equality_count = std::count_if(
+          state.open_operator_requirements.begin(),
+          state.open_operator_requirements.end(), [](const auto& requirement) {
+        return requirement.target_id == "operator:==";
+      });
+      // This refresh supports only the three exact generic operations below.
+      // Any other open operation observed by the body checker blocks promotion.
+      if (state.open_operations.size() != 2 || count_count != 1 ||
+          index_count != 1 || state.open_operator_requirements.size() != 1 ||
+          equality_count != 1) continue;
       auto count = std::find_if(state.open_operations.begin(),
           state.open_operations.end(), [](const auto& operation) {
         return operation.operation_id == "builtin:collection-count-v1";
@@ -5571,15 +5589,29 @@ class Checker {
           state.open_operations.end(), [](const auto& operation) {
         return operation.operation_id == "builtin:index";
       });
-      auto equality = std::find_if(state.open_operator_requirements.begin(),
-          state.open_operator_requirements.end(), [](const auto& requirement) {
-        return requirement.target_id == "operator:==";
-      });
-      if (count == state.open_operations.end() ||
-          index == state.open_operations.end() ||
-          equality == state.open_operator_requirements.end()) continue;
+      auto equality = state.open_operator_requirements.begin();
 
       auto summary = *function.open_summary;
+      // The signature pass retained one broad functional-source obligation and
+      // one generic Index obligation. The former is replaced by the typed Count
+      // operation fact below; the latter by the resolved Index requirement.
+      // Require that exact pair so no unrelated or duplicate obligation is lost.
+      const auto source_requirement_count = std::count_if(
+          summary.requirements.begin(), summary.requirements.end(),
+          [](const moss::Requirement& requirement) {
+        return requirement.kind == moss::RequirementKind::Iterate &&
+            requirement.target_id == "functional source";
+      });
+      const auto generic_index_requirement_count = std::count_if(
+          summary.requirements.begin(), summary.requirements.end(),
+          [](const moss::Requirement& requirement) {
+        return requirement.kind == moss::RequirementKind::Index &&
+            requirement.target_id == "builtin:index";
+      });
+      if (summary.requirements.size() != 2 ||
+          source_requirement_count != 1 ||
+          generic_index_requirement_count != 1) continue;
+
       std::map<std::tuple<uint32_t, uint32_t, uint32_t>, moss::TypeRef> variables;
       uint32_t next_variable = 0;
       std::function<moss::TypeRef(const moss::TypeRef&)> openize_checked =
@@ -20788,20 +20820,23 @@ class Checker {
                                  const TypeEnv& env) {
     auto parsed = parse_functional_pipeline(expression);
     if (!parsed) return false;
-    // Retain the operation's checker TypeRefs before an open generic pipeline
-    // defers concrete admission to specialization. Later body operations may
-    // refine this same receiver variable (for example, Vector indexing).
-    if (current_body_types_ && std::any_of(
-            parsed->stages.begin(), parsed->stages.end(),
-            [](const ParsedFunctionalStage& stage) {
-              return stage.kind == FunctionalNodeKind::Count;
-            })) {
+    // Retain checker-owned operation identities before an open generic
+    // pipeline defers concrete admission to specialization. Later body
+    // operations may refine the same source variable (for example indexing).
+    if (current_body_types_) {
       auto receiver = current_body_types_->known_expression(parsed->source);
       if (!receiver) receiver = inferred_expr_term(parsed->source, env);
-      if (receiver)
-        current_body_types_->open_operations.push_back({
-            "builtin:collection-count-v1", receiver, {},
-            moss::Type::primitive("int"), line});
+      if (receiver) for (const auto& stage : parsed->stages) {
+        if (stage.kind == FunctionalNodeKind::Count) {
+          current_body_types_->open_operations.push_back({
+              "builtin:collection-count-v1", receiver, {},
+              moss::Type::primitive("int"), line});
+        } else {
+          current_body_types_->open_operations.push_back({
+              string("functional:") + functional_node_name(stage.kind), receiver, {},
+              nullptr, line});
+        }
+      }
     }
     auto source_expr = inferred_expr(parsed->source, env);
     if (source_expr) {
@@ -20994,6 +21029,36 @@ class Checker {
     return std::nullopt;
   }
 
+  void retain_open_operator_operation(
+      int line, const string& operation_id, const string& left_expression,
+      const string& right_expression,
+      const std::unordered_map<string,string>& env) {
+    if (!current_body_types_) return;
+    auto left = current_body_types_->known_expression(left_expression);
+    if (!left) left = inferred_expr_term(left_expression, env);
+    auto right = current_body_types_->known_expression(right_expression);
+    if (!right) right = inferred_expr_term(right_expression, env);
+    if (!left || !right) return;
+    auto resolved_left = current_body_types_->solver.resolve(left);
+    auto resolved_right = current_body_types_->solver.resolve(right);
+    if (!resolved_left || !resolved_right ||
+        (resolved_left->is_closed() && resolved_right->is_closed())) return;
+    current_body_types_->open_operations.push_back({
+        "operator:" + operation_id, left, {right}, nullptr, line});
+  }
+
+  void retain_open_unary_operation(
+      int line, const string& operation_id, const string& operand,
+      const std::unordered_map<string,string>& env) {
+    if (!current_body_types_) return;
+    auto term = current_body_types_->known_expression(operand);
+    if (!term) term = inferred_expr_term(operand, env);
+    auto resolved = term ? current_body_types_->solver.resolve(term) : nullptr;
+    if (resolved && !resolved->is_closed())
+      current_body_types_->open_operations.push_back({
+          "operator:" + operation_id, term, {}, nullptr, line});
+  }
+
   void check_expression(int line, const string& expression,
                         const std::unordered_map<string,string>& env) {
     string original = trim(expression);
@@ -21107,6 +21172,28 @@ class Checker {
               "FILEIO_COLLECTION_ESCAPE");
         check_expression(line, element, env);
       }
+      if (current_body_types_) {
+        vector<moss::TypeRef> element_terms;
+        for (const auto& element : *elements) {
+          auto term = current_body_types_->known_expression(element);
+          if (!term) term = inferred_expr_term(element, env);
+          element_terms.push_back(std::move(term));
+        }
+        auto open = std::find_if(element_terms.begin(), element_terms.end(),
+            [&](const moss::TypeRef& term) {
+          auto resolved = term ? current_body_types_->solver.resolve(term) : nullptr;
+          return resolved && !resolved->is_closed();
+        });
+        if (open != element_terms.end()) {
+          moss::OpenCallableSummaryFacts::OperationFact operation;
+          operation.operation_id = "builtin:vector-literal";
+          operation.receiver = *open;
+          operation.line = line;
+          for (auto term = element_terms.begin(); term != element_terms.end(); ++term)
+            if (term != open) operation.arguments.push_back(*term);
+          current_body_types_->open_operations.push_back(std::move(operation));
+        }
+      }
       return;
     }
     if (check_functional_pipeline(line, original, env)) return;
@@ -21143,6 +21230,7 @@ class Checker {
     if (starts_with(value, "not ")) {
       string operand = trim(value.substr(4));
       check_expression(line, operand, env);
+      retain_open_unary_operation(line, "not", operand, env);
       auto operand_type = inferred_expr_type(operand, env);
       if (!operand_type || canonical_type_name(*operand_type) != "bool")
         err(line, "not operand must have type 'Bool'", "TYPE_MISMATCH");
@@ -21151,6 +21239,14 @@ class Checker {
     if (auto ordering = split_binary(value, {"<=", ">=", "<", ">"})) {
       check_expression(line, ordering->first, env);
       check_expression(line, ordering->second, env);
+      for (const string& op : vector<string>{"<=", ">=", "<", ">"}) {
+        auto candidate = split_binary(value, {op});
+        if (candidate && candidate->first == ordering->first) {
+          retain_open_operator_operation(line, op, ordering->first,
+                                         ordering->second, env);
+          break;
+        }
+      }
       auto left = inferred_expr_type(ordering->first, env);
       auto right = inferred_expr_type(ordering->second, env);
       if ((left && canonical_type_name(*left) == "string") ||
@@ -21191,13 +21287,7 @@ class Checker {
       if (binary->first.empty() || binary->second.empty())
         err(line, "invalid comparison expression");
       auto equality = split_binary(value, {"==", "!="});
-      string indexed_base, indexed_key;
-      const bool compares_index =
-          parse_index(binary->first, indexed_base, indexed_key) ||
-          parse_index(binary->second, indexed_base, indexed_key);
-      if (equality && equality->first == binary->first &&
-          value.find("==") != string::npos && compares_index &&
-          current_body_types_) {
+      if (equality && equality->first == binary->first && current_body_types_) {
         auto operand_term = [&](const string& operand) {
           auto retained = current_body_types_->known_expression(operand);
           return retained ? retained : inferred_expr_term(operand, env);
@@ -21208,13 +21298,20 @@ class Checker {
           auto resolved_left = current_body_types_->solver.resolve(left);
           auto resolved_right = current_body_types_->solver.resolve(right);
           if (resolved_left && resolved_right &&
-              !resolved_left->is_closed() && !resolved_right->is_closed()) {
-            if (!current_body_types_->solver.unify(left, right))
+              (!resolved_left->is_closed() || !resolved_right->is_closed())) {
+            string indexed_base, indexed_key;
+            const bool compares_index =
+                parse_index(binary->first, indexed_base, indexed_key) ||
+                parse_index(binary->second, indexed_base, indexed_key);
+            if (compares_index && !resolved_left->is_closed() &&
+                !resolved_right->is_closed() &&
+                !current_body_types_->solver.unify(left, right))
               err(line, "equality operands must have compatible types",
                   "TYPE_MISMATCH");
             moss::Requirement requirement;
             requirement.kind = moss::RequirementKind::Operator;
-            requirement.target_id = "operator:==";
+            requirement.target_id = split_binary(value, {"=="})
+                ? "operator:==" : "operator:!=";
             requirement.subject = left;
             requirement.arguments.push_back(right);
             requirement.argument_access.push_back(moss::AccessMode::Read);
@@ -21243,6 +21340,8 @@ class Checker {
       if (auto binary = split_binary(value, {op})) {
         check_expression(line, binary->first, env);
         check_expression(line, binary->second, env);
+        retain_open_operator_operation(line, op, binary->first,
+                                       binary->second, env);
         auto left_type = inferred_expr_type(binary->first, env);
         auto right_type = inferred_expr_type(binary->second, env);
         if (unresolved_expression(binary->first, env) ||
@@ -21258,6 +21357,12 @@ class Checker {
       string op = split_binary(value, {"<<"}) ? "<<" : ">>";
       check_expression(line, binary->first, env);
       check_expression(line, binary->second, env);
+      for (const string& candidate : vector<string>{"<<", ">>"})
+        if (split_binary(value, {candidate})) {
+          retain_open_operator_operation(line, candidate, binary->first,
+                                         binary->second, env);
+          break;
+        }
       auto left_type = inferred_expr_type(binary->first, env);
       auto right_type = inferred_expr_type(binary->second, env);
       if (unresolved_expression(binary->first, env) ||
@@ -21276,6 +21381,7 @@ class Checker {
       string operand = trim(value.substr(1));
       if (!operand.empty() && operand.front() != '-') {
         check_expression(line, operand, env);
+        retain_open_unary_operation(line, "unary-", operand, env);
         auto operand_type = inferred_expr_type(operand, env);
         if (operand_type) {
           string type = canonical_type_name(*operand_type);
@@ -21291,6 +21397,14 @@ class Checker {
         if (auto binary = split_binary(value, operators)) {
           check_expression(line, binary->first, env);
           check_expression(line, binary->second, env);
+          for (const string& candidate : operators) {
+            auto operation = split_binary(value, {candidate});
+            if (operation && operation->first == binary->first) {
+              retain_open_operator_operation(line, candidate,
+                  binary->first, binary->second, env);
+              break;
+            }
+          }
           auto left_type = inferred_expr_type(binary->first, env);
           auto right_type = inferred_expr_type(binary->second, env);
           if ((left_type && contains_enum_type(*left_type)) ||
@@ -21344,6 +21458,7 @@ class Checker {
     if (!value.empty() && value.front() == '~') {
       string operand = trim(value.substr(1));
       check_expression(line, operand, env);
+      retain_open_unary_operation(line, "~", operand, env);
       auto operand_type = inferred_expr_type(operand, env);
       if (unresolved_expression(operand, env)) return;
       if (!operand_type || canonical_type_name(*operand_type) != "int")
@@ -21366,6 +21481,15 @@ class Checker {
     string receiver, handler;
     vector<string> args;
     if (parse_member_call(value, receiver, handler, args)) {
+      if (current_body_types_) {
+        auto receiver_term = current_body_types_->known_expression(receiver);
+        if (!receiver_term) receiver_term = inferred_expr_term(receiver, env);
+        auto resolved_receiver = receiver_term
+            ? current_body_types_->solver.resolve(receiver_term) : nullptr;
+        if (resolved_receiver && !resolved_receiver->is_closed())
+          current_body_types_->open_operations.push_back({
+              "method:" + handler, receiver_term, {}, nullptr, line});
+      }
       if (scalar_type_name(receiver) &&
           (handler == "less" || handler == "isequal" || handler == "hash")) {
         check_scalar_protocol_call(line, handler, canonical_type_name(receiver),
@@ -21662,6 +21786,35 @@ class Checker {
     }
     string callee;
     if (parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
+      if (current_body_types_) {
+        vector<moss::TypeRef> argument_terms;
+        bool has_open_argument = false;
+        for (const auto& argument : args) {
+          string field_name, value = argument;
+          (void)parse_named_argument(argument, field_name, value);
+          auto term = current_body_types_->known_expression(value);
+          if (!term) term = inferred_expr_term(value, env);
+          auto resolved = term ? current_body_types_->solver.resolve(term) : nullptr;
+          has_open_argument = has_open_argument ||
+              (resolved && !resolved->is_closed());
+          argument_terms.push_back(std::move(term));
+        }
+        if (has_open_argument) {
+          auto open = std::find_if(argument_terms.begin(), argument_terms.end(),
+              [&](const moss::TypeRef& term) {
+            auto resolved = term ? current_body_types_->solver.resolve(term) : nullptr;
+            return resolved && !resolved->is_closed();
+          });
+          moss::OpenCallableSummaryFacts::OperationFact operation;
+          operation.operation_id = "call:" + callee;
+          operation.receiver = *open;
+          operation.line = line;
+          for (auto term = argument_terms.begin(); term != argument_terms.end();
+               ++term)
+            if (term != open) operation.arguments.push_back(*term);
+          current_body_types_->open_operations.push_back(std::move(operation));
+        }
+      }
       if (callee == "sort" && !functions_.count(callee)) {
         check_sort_call(line, args, env);
         return;

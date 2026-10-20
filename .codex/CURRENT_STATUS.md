@@ -1,5 +1,28 @@
 # Moss current status
 
+## Phase 25-M2b.3d-D1 completeness correction — 2026-10-19
+
+On `phase25-m2b3d-d1-checker-facts`, the open-summary refresh now requires
+exactly one observed Count, Index, and open equality; it rejects extra checker
+observations and requires the original signature obligations to be exactly
+the functional-source and Index obligations. It replaces the broad
+functional-source obligation with the typed Count operation fact, and replaces
+only the single generic Index obligation with its resolved equivalent. Other
+or duplicate obligations block promotion.
+Open generic operators, pipeline stages, calls, and method operands are
+recorded so unsupported extra operations keep this narrow summary incomplete.
+The focused harness passes provider-only summary derivation, extra generic
+arithmetic rejection, duplicate Count/Index rejection, and unrelated equality
+rejection.
+
+Validation on final source: `make --jobs="$(nproc)" moss-dev`, focused generic
+collection facts, generic arithmetic acceptance, and G2 all pass. G2 used the
+existing `-Wno-missing-field-initializers` wrapper because its `-Werror` build
+otherwise fails on pre-existing `TypeSolver::Undo::binding` warnings. The typed
+semantic API test fails the same `add_one` one-versus-two requirement-count
+assertion on both this branch and unchanged `phase25-integration` baseline
+`32c06c8278a5648b6f78c87e8ecd91c6048c6cc9`.
+
 ## Phase 25-M2b.3d-D1 checker-owned `index_of` facts — 2026-10-19
 
 Implementation is on the dedicated branch `phase25-m2b3d-d1-checker-facts`,
