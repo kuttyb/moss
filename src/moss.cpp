@@ -43454,13 +43454,15 @@ static void append_abi_v10_collection_loop_records(
         !function.checked_body_ir_v1_hash)
       continue;
     const auto& facts = *function.open_summary;
-    const bool has_collection_loop_operation = std::any_of(
+    // Every admitted loop body contains a checked Count initialization. An
+    // arbitrary generic index expression also records builtin:index, so that
+    // operation alone cannot route it into this loop-only producer.
+    const bool has_collection_loop_count = std::any_of(
         facts.operations.begin(), facts.operations.end(),
         [](const auto& operation) {
-      return operation.operation_id == checked_ir::kCollectionCountOperationId ||
-          operation.operation_id == checked_ir::kCollectionIndexOperationId;
+      return operation.operation_id == checked_ir::kCollectionCountOperationId;
     });
-    if (!has_collection_loop_operation) continue;
+    if (!has_collection_loop_count) continue;
     const auto& bytes = *function.checked_body_ir_v1_bytes;
     const auto& hash = *function.checked_body_ir_v1_hash;
     const auto invalid = [](const string& message) -> void {

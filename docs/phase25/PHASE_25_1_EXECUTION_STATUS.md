@@ -378,6 +378,17 @@ this guard, `make --jobs="$(nproc)" moss-dev`, the full M2b2 positive/hostile/v9
 corpus, generic arithmetic requirements, feedback validation and
 `git diff --check` passed. Follow-up exact-SHA adversarial review is pending.
 
+Review of the corrected checkpoint `0df08629efc045853b7ee9de3c12502243466032`
+confirmed the scalar-summary P1 was closed, but found a second P1: the
+collection-loop producer selected any `builtin:index` operation and rejected
+a valid one-parameter indexed-return body as malformed loop summary. Its
+admission now requires the checked Count initializer that identifies the
+existing loop body. A targeted staged-v10 provider build for generic
+`first(values): return values[0]` passed without `SOURCE_FREE_SUMMARY_INVALID`.
+After this routing guard, the full M2b2 corpus and D4 actual SDK collections
+source-free/mutation suite passed. Feedback validation and diff check remain
+green. Exact-SHA adversarial review of this second correction is pending.
+
 ### R1 member invocation role-verifier correction — working tree
 
 The architect reviewed exact pushed SHA

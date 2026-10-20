@@ -9629,3 +9629,12 @@ open READ parameter, no requirements/dependencies/effects, and only a
 parameter or primitive literal return). Post-fix `moss-dev`, M2b2 corpus,
 generic arithmetic requirements, feedback validation and diff check pass.
 This correction needs an exact-SHA follow-up review and push.
+
+The architect's follow-up on `0df08629efc045853b7ee9de3c12502243466032`
+confirmed that fix and found another P1: the collection-loop producer treated
+any generic `builtin:index` fact as evidence of its loop shape. Its route now
+requires a retained `builtin:collection-count-v1` initializer. A targeted
+staged-v10 provider build for `first(values): return values[0]`, full M2b2
+source-free/hostile/v9 corpus, and D4 SDK collections source-free and
+mutation suite passed after that change. Exact-SHA follow-up review is pending;
+the working guard remains uncommitted at this point.
