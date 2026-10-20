@@ -10,7 +10,7 @@ Pinned instruction commit: `3de64dc633312267c37c4e4990b28c2a73cab104`
 |---|---|---|
 | T0 | PASS | Annotated tags published and remote peeled commits verified below; `origin/main` unchanged. |
 | R0 | PASS | Final independent GO at frozen checkpoint `9c90573bda8daec5bd4254cc5f6c64c5dd3239e4`; 19-case oracle, complete 71-path harness map, strict corpus and P2 inventory exception recorded. |
-| R1 | IN PROGRESS | Independent GO at architecture SHA `ff4470ffdcc93cedb3d66b1e068b7f5ea8ca3f5f`; exhaustive totality ledger and completeness invariant accepted. Queue construction source-backed and ABI-v9 source-free Debug/Release probes pass; no compiler edits yet. |
+| R1 | IN PROGRESS | Independent GO at architecture SHA `ff4470ffdcc93cedb3d66b1e068b7f5ea8ca3f5f`. First code slice routes v10 import through one bounded checked-body decoder; focused R1 and H3/M2b.3 controls pass. Checker occurrence facts and unified provider lowering/record generation remain open. |
 | R2–R5 | NOT STARTED | ABI-v9 remains default; no `main` or `phase25-integration` changes. |
 
 ## T0 transcript and verification
@@ -93,3 +93,39 @@ all existing expression-checker recursion/operation facts and determine how
 the ordinary checker can retain occurrence-linked typed nodes without a
 second expression parser or specialization engine; then implement the common
 IR path and preserve the admitted H3/D1-D4/checked-arithmetic regressions.
+
+### R1 shared decoder checkpoint — pending commit
+
+`decode_checked_body_v1` now provides one bounded checked-body-v1 import entry
+point and ABI-v10 `import_checked_body` calls it without selecting H3,
+collection-loop, or empty-vector decoders from summary shape. It currently
+uses the shared bounded reader's union of admitted grammars; historical narrow
+decoder APIs remain for compatibility tests and old-reader rejection proof.
+The provider still has shape-specific lowerers and emitters, so this is a
+partial R1 implementation checkpoint, not R1 acceptance.
+
+Validation on this source revision:
+
+- `make --jobs="$(nproc)" moss-dev` passed (existing missing-field-initializer
+  warnings from `TypeSolver::Undo::binding` remain).
+- `python3 tests/tooling/check_phase25_d2_collection_loop_codec.py` passed; the
+  new unified reader round-trips the collection-loop body and rejects a bad
+  semantic hash, while the historical H3 decoder still rejects Count/Index.
+- `python3 tests/tooling/check_phase25_empty_vector_records.py` passed with the
+  unified reader round-tripping the empty-vector body.
+- `python3 tests/tooling/check_phase25_m2b2_source_free_corpus.py` passed:
+  checked-body positives executed after provider-source deletion and legacy
+  statement poisoning; malformed summary/body/hash/provenance/dependency cases
+  rejected; ABI-v9 compatibility controls passed.
+- `python3 tests/tooling/check_phase25_h3_direct_records.py`,
+  `check_phase25_h3_arithmetic_decode.py`,
+  `check_phase25_checked_body_ir.py`,
+  `check_phase25_generic_collection_facts.py`,
+  `check_phase25_d3d_collection_source_free.py`, and
+  `check_phase25_d4_collection_source_free.py` passed.
+- No full `make check` was run at this partial checkpoint.
+
+Next: finish the full occurrence-linked checker facts, common body lowerer and
+record builder, then repeat these controls plus the focused source-free and
+hostile-artifact corpus at a frozen commit before the required independent
+foundational R1 implementation review.

@@ -3784,21 +3784,9 @@ static void project_imported_h3_checked_bodies(Program& program) {
     if (!result) invalid("checked ABI-v10 result TypeRef is unresolved");
     vector<checked_ir::Stmt> statements;
     try {
-      if (abi_v10_empty_vector_summary_candidate(summary)) {
-        if (!parameters.empty())
-          invalid("checked empty-vector body has unexpected parameters");
-        statements = checked_ir::decode_empty_vector_return_checked_body_v1(
-            body.checked_ir_bytes, *program.type_context, result,
-            body.semantic_hash);
-      } else if (collection_loop_candidate) {
-        statements = checked_ir::decode_collection_loop_checked_body_v1(
-            body.checked_ir_bytes, *program.type_context, parameters, result,
-            body.semantic_hash);
-      } else {
-        statements = checked_ir::decode_h3_checked_body_v1(
-            body.checked_ir_bytes, *program.type_context, parameters, result,
-            body.semantic_hash);
-      }
+      statements = checked_ir::decode_checked_body_v1(
+          body.checked_ir_bytes, *program.type_context, parameters, result,
+          body.semantic_hash);
     } catch (const std::invalid_argument& error) {
       invalid(string("checked ABI-v10 body cannot be decoded: ") + error.what());
     }

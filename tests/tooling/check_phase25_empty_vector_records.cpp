@@ -235,11 +235,18 @@ static void check_artifact(const std::string& bytes, bool experimental) {
 
   auto decoded_empty = checked_ir::decode_empty_vector_return_checked_body_v1(
       body.checked_ir_bytes, context, vector_type, body.semantic_hash);
+  auto unified_empty = checked_ir::decode_checked_body_v1(
+      body.checked_ir_bytes, context, {}, vector_type, body.semantic_hash);
   assert(decoded_empty.size() == 1 &&
          decoded_empty.front().expr->kind ==
              checked_ir::ExprKind::VectorLiteral &&
          decoded_empty.front().expr->operands.empty() &&
          decoded_empty.front().expr->type->structurally_equal(*vector_type));
+  assert(unified_empty.size() == 1 &&
+         unified_empty.front().expr->kind ==
+             checked_ir::ExprKind::VectorLiteral &&
+         unified_empty.front().expr->operands.empty() &&
+         unified_empty.front().expr->type->structurally_equal(*vector_type));
   auto rejects_empty_vector_body = [&](const std::string& bytes,
                                        const TypeRef& result,
                                        const std::string& hash) {

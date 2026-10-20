@@ -180,8 +180,13 @@ int main(int argc, char** argv) {
   const auto generic_hash = cir::compute_checked_body_hash_v1(generic_statements);
   const auto generic_decoded = cir::decode_collection_loop_checked_body_v1(
       generic_body, context, generic_parameters, int_type, generic_hash);
+  const auto unified_decoded = cir::decode_checked_body_v1(
+      generic_body, context, generic_parameters, int_type, generic_hash);
   assert(cir::encode_checked_body_v1(generic_decoded) == generic_body);
+  assert(cir::encode_checked_body_v1(unified_decoded) == generic_body);
   assert(cir::compute_checked_body_hash_v1(generic_decoded) == generic_hash);
+  assert(cir::compute_checked_body_hash_v1(unified_decoded) == generic_hash);
+  assert(unified_decoded.size() == generic_decoded.size());
   assert(generic_decoded.size() == 4 &&
          generic_decoded[0].kind == cir::StmtKind::Var &&
          generic_decoded[0].local_ordinal == 0 &&
@@ -409,6 +414,11 @@ int main(int argc, char** argv) {
   assert(throws_invalid([&] {
     (void)cir::decode_h3_checked_body_v1(
         generic_body, context, generic_parameters, int_type, generic_hash);
+  }));
+  assert(throws_invalid([&] {
+    (void)cir::decode_checked_body_v1(
+        generic_body, context, generic_parameters, int_type,
+        "body-semantic-v1:sha256:wrong");
   }));
 
   std::cout << "D2 checked-body collection loop codec: PASS\n";

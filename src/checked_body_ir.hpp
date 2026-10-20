@@ -1131,6 +1131,22 @@ inline std::vector<Stmt> decode_empty_vector_return_checked_body_v1(
   return statements;
 }
 
+// Unified ABI-v10 checked-body-v1 entry point. All admitted expression and
+// statement forms share one bounded reader and canonical hash check; callers
+// do not select a decoder from summary or body shape. The historical narrow
+// entry points above remain available to compatibility tests and readers that
+// intentionally enforce their old subset.
+inline std::vector<Stmt> decode_checked_body_v1(
+    std::string_view bytes, const TypeContext& context,
+    const std::vector<TypeRef>& parameters, const TypeRef& result,
+    std::string_view expected_hash) {
+  H3BodyReader reader(bytes, context, parameters, result, true, true);
+  auto statements = reader.read();
+  if (compute_checked_body_hash_v1(statements) != expected_hash)
+    throw std::invalid_argument("checked body semantic hash is mismatched");
+  return statements;
+}
+
 inline bool is_empty_vector_return_checked_body_candidate_v1(
     std::string_view bytes, const TypeContext& context) {
   try {
