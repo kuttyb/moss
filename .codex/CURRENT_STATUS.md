@@ -9644,11 +9644,16 @@ returned GO: the Count gate excludes the generic index-return collision and
 preserves the existing Count/Index loop producer. No other current
 Binary/Field/Index broad-trigger conflicts were found. R1 is still incomplete.
 
-Current working diff adds per-kind occurrence child-role validation for leaf,
-group, unary/binary, field, index, vector literal, direct call, and member call;
-Unknown expression nodes now make the ledger incomplete. Validation on this
-revision: moss-dev build, M2b2 full source-free/hostile/v9 corpus, generic
-arithmetic requirements, generic collection facts, feedback validation and
-diff check pass. Constructor/collection-literal/pipeline/message accounting,
-statements, binding identity, totality, and most ABI-v10 paths remain open.
-Await exact-SHA review before extending this verifier further.
+The initial occurrence-role verifier at `858b82e24f7c6cdd6b591a9f928472714b87a2a2`
+received architect NO-GO: `replace` and static `FileIO.open` had role mismatches,
+and known unhandled expression kinds passed as complete. Current edits handle
+`replace`, `sort`, and FileIO operand ordinals and fail closed for unimplemented
+constructor, collection-literal, pipeline, message, and unknown kinds.
+Validation after these edits passed: `make --jobs="$(nproc)" moss-dev`, the
+full M2b2 positive/hostile/v9 corpus, generic arithmetic requirements,
+generic collection facts, D3d actual SDK `index_of`, D4 SDK collection
+source-free/mutation controls, feedback validation and `git diff --check`.
+Build output contains existing TypeSolver missing-initializer warnings.
+Current source needs an exact-SHA review. R1 remains incomplete; constructor,
+collection, pipeline and message lowering, statement/binding/scope accounting,
+source totality and a common lowerer remain open.

@@ -22071,7 +22071,7 @@ class Checker {
     if (!storage_location(args[0], env))
       err(line, "sort requires an assignable Vector place, found '" + args[0] + "'",
           "SORT_REQUIRES_PLACE");
-    check_expression(line, args[0], env);
+    check_expression(line, args[0], env, {}, "argument:0");
     auto vector_type = inferred_expr_type(args[0], env);
     string canonical = vector_type ? canonical_type_name(*vector_type) : "";
     if (!starts_with(canonical, "vector[") || !ends_with(canonical, "]"))
@@ -23508,6 +23508,12 @@ class Checker {
       }
       if (callee == "sort" && !functions_.count(callee)) {
         retain_active_expression_target("builtin:sort");
+        if (args.size() == 2 && current_body_types_ &&
+            !checking_specialization_ &&
+            !current_body_types_->active_expression_occurrences.empty())
+          current_body_types_->expression_occurrences.at(
+              current_body_types_->active_expression_occurrences.back())
+              .non_expression_operand_ordinals.push_back(1);
         check_sort_call(line, args, env);
         return;
       }
@@ -24666,9 +24672,16 @@ class Checker {
         }
         case BodyTypeState::ExpressionOccurrence::Kind::Call: {
           vector<string> expected;
-          for (std::size_t index = 0;
-               index < occurrence.source_operands.size(); ++index)
-            expected.push_back("argument:" + std::to_string(index));
+          if (occurrence.operation_id == "call:replace") {
+            expected = {"place", "replacement"};
+          } else {
+            for (std::size_t index = 0;
+                 index < occurrence.source_operands.size(); ++index)
+              if (std::find(occurrence.non_expression_operand_ordinals.begin(),
+                            occurrence.non_expression_operand_ordinals.end(), index) ==
+                  occurrence.non_expression_operand_ordinals.end())
+                expected.push_back("argument:" + std::to_string(index));
+          }
           if (!has_roles(expected))
             checked_types.expression_occurrence_ledger_complete = false;
           break;
@@ -24678,10 +24691,10 @@ class Checker {
           const bool static_fileio_receiver =
               !occurrence.source_operands.empty() &&
               occurrence.source_operands.front() == "FileIO";
-          const std::size_t argument_offset = static_fileio_receiver ? 0u : 1u;
+          const std::size_t operand_offset = static_fileio_receiver ? 1u : 1u;
           if (!static_fileio_receiver) expected.push_back("receiver");
           for (std::size_t index = 0;
-               index + argument_offset < occurrence.source_operands.size();
+               index + operand_offset < occurrence.source_operands.size();
                ++index) {
             if (std::find(occurrence.non_expression_operand_ordinals.begin(),
                           occurrence.non_expression_operand_ordinals.end(), index) ==
@@ -24692,7 +24705,18 @@ class Checker {
             checked_types.expression_occurrence_ledger_complete = false;
           break;
         }
+        case BodyTypeState::ExpressionOccurrence::Kind::CollectionLiteral:
+        case BodyTypeState::ExpressionOccurrence::Kind::Pipeline:
+        case BodyTypeState::ExpressionOccurrence::Kind::PipelineStage:
+        case BodyTypeState::ExpressionOccurrence::Kind::Constructor:
+        case BodyTypeState::ExpressionOccurrence::Kind::Message:
+          // These forms need richer source and semantic-fact contracts than a
+          // child-role list. Keep the ledger closed until each contract is
+          // validated, rather than treating an unrecognized tree as complete.
+          checked_types.expression_occurrence_ledger_complete = false;
+          break;
         default:
+          checked_types.expression_occurrence_ledger_complete = false;
           break;
       }
     }

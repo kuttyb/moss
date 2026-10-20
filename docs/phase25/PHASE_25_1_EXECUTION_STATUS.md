@@ -441,3 +441,27 @@ preservation, and explicit FileIO namespace/static operand handling. No P0,
 P1, or P2 findings remain for this slice. This is not R1 acceptance: full
 source-to-occurrence totality, binding/scope lowering, the common structural
 lowerer, and a cross-crate source-free execution slice remain unfinished.
+
+### R1 occurrence child-role verifier correction — pending exact-SHA review
+
+The initial verifier checkpoint at `858b82e24f7c6cdd6b591a9f928472714b87a2a2`
+received **NO-GO** from the adversarial architect. Findings: `replace` uses
+`place`/`replacement` roles instead of `argument:<i>`; static `FileIO.open`
+stores a namespace operand before its arguments; and known
+collection-literal/pipeline/constructor/message kinds fell through as
+complete. The correction validates special `replace` roles, checks sort's
+retained vector child as `argument:0`, skips its static `by:` operand, aligns
+FileIO argument ordinals after its namespace operand, and marks unimplemented
+constructor/collection-literal/pipeline/message contracts incomplete. Unknown
+kinds also fail closed.
+
+Validation after the correction: `make --jobs="$(nproc)" moss-dev`; full
+M2b2 source-free positive/hostile/v9 corpus; generic arithmetic requirements;
+generic collection facts; D3d actual SDK `index_of` source-free execution and
+legacy-body poison; D4 SDK collection source-free and mutation suite; agent
+feedback validation; and `git diff --check` passed. The build retains existing
+TypeSolver missing-initializer warnings. Constructor/collection-literal/
+pipeline/message lowering, statements, binding identity, source-to-occurrence
+totality, the common structural lowerer, and most ABI-v10 paths remain open.
+The corrected checkpoint requires exact-SHA adversarial review; R1 remains
+incomplete.
