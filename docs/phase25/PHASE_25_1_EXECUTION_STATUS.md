@@ -125,12 +125,15 @@ Validation on this source revision:
   `check_phase25_d4_collection_source_free.py` passed.
 - No full `make check` was run at this partial checkpoint.
 
-Next: finish the full occurrence-linked checker facts, common body lowerer and
-record builder, then repeat these controls plus the focused source-free and
+Next: finish occurrence-linked checker facts and the common structural body
+lowerer, then repeat the controls plus the focused source-free and
 hostile-artifact corpus at a frozen commit before the required independent
 foundational R1 implementation review.
 
-### R1 shared callable-record builder — implementation checkpoint
+### R1 shared callable-record builder — pushed implementation checkpoint
+
+Checkpoint `9db537ae900a0a802c32936c2eed71c759a5b7ea` is pushed to
+`origin/phase25-1-work`.
 
 One `append_abi_v10_checked_callable_records` path now validates a summary/body
 identity pair, validates both ABI records, rejects duplicate callable summaries,
@@ -141,7 +144,7 @@ use this path. Their shape-specific body lowerers and the generic provenance
 inventory remain as they were; this is consolidation progress, not R1
 acceptance.
 
-Validation on the working revision before its checkpoint commit:
+Validation on this exact source revision:
 
 - `make --jobs="$(nproc)" moss-dev` passed with only the existing
   `TypeSolver::Undo::binding` initializer warnings.

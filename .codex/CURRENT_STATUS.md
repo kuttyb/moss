@@ -9535,11 +9535,12 @@ artifacts remain under `tmp/`.
 The earlier R0-era status above is historical; R0 and its architecture review
 are complete, and R1 is active. The unified bounded checked-body reader is
 already on pushed checkpoint `f34706674ebf46bea29c435f5948a24667fa0124`.
-Current uncommitted work centralizes ABI-v10 checked callable record validation
-and insertion across the admitted constructor, scalar, arithmetic, empty-vector,
-collection-loop, and private-helper-chain producers. This is not R1 acceptance:
-per-shape lowerers/projection paths remain and checker-owned occurrence facts
-are still absent.
+Pushed checkpoint `9db537ae900a0a802c32936c2eed71c759a5b7ea` centralizes ABI-v10
+checked callable record validation and insertion across the admitted
+constructor, scalar, arithmetic, empty-vector, collection-loop, and
+private-helper-chain producers. This is not R1 acceptance: per-shape
+lowerers/projection paths remain and checker-owned occurrence facts are still
+absent.
 
 The current source build and focused H3 direct-record, arithmetic, D2 codec,
 empty-vector record, and full M2b2 source-free/hostile-artifact/v9-control gates
