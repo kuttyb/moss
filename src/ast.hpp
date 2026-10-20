@@ -584,6 +584,11 @@ struct Function {
   // Optional provider-authored logical source name retained by a compiled
   // interface for consumer diagnostics after its source tree is removed.
   string provider_origin_file;
+  // ABI-v10 callable provenance is authoritative for imported diagnostic
+  // origins. ABI-v9 keeps using the legacy interface fields above and line.
+  int provider_origin_column = 1;
+  string provider_origin_module_id;
+  string provider_origin_identity;
   // ABI-v10 sealed records retained across module rewriting. The checker
   // decodes these before inference and replaces any legacy generic_stmt body.
   string imported_checked_summary_payload;

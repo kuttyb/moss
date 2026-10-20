@@ -4,6 +4,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 
@@ -98,6 +99,14 @@ def main():
     evidence = {"compiler": str(MOSS), "abi_mode": "staged-v10", "cases": []}
     with tempfile.TemporaryDirectory(prefix="phase25-m2b1-", dir=ROOT / "tmp") as temp:
         scratch = Path(temp)
+        mutator = scratch / "mutate_empty_vector_artifact"
+        compiled_mutator = g2.run(
+            "g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
+            "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
+            "tests/tooling/mutate_phase25_r2c_empty_vector_artifact.cpp",
+            "-o", mutator)
+        assert compiled_mutator.returncode == 0, (
+            compiled_mutator.stdout, compiled_mutator.stderr)
         env, artifacts = g2.source_free(scratch / "provider_setup", g2.PROVIDER_OPEN)
         assert not (scratch / "provider_setup" / "provider" / "src").exists()
 
@@ -122,6 +131,27 @@ fn main():
 """,
             "TYPE_MISMATCH", 6, "Provider.fresh", 2,
             "callable-v1:module-v1:g2provider@0.1.0::Provider:fn:fresh"))
+        for name, mode in (
+                ("missing_generic_source", "generic-source-missing"),
+                ("forged_generic_source", "generic-source-forged")):
+            variant_artifacts = scratch / f"artifacts-{name}"
+            shutil.copytree(artifacts, variant_artifacts)
+            mutated = g2.run(mutator, variant_artifacts / "Provider.mossi",
+                             variant_artifacts / "libProvider.rlib", mode)
+            assert mutated.returncode == 0, (name, mutated.stdout, mutated.stderr)
+            variant_env = env.copy()
+            variant_env["MOSS_MODULE_PATH"] = str(variant_artifacts)
+            evidence["cases"].append(check_case(
+                g2, scratch / "provider_setup", variant_env, name,
+                """module Consumer
+import Provider
+fn main():
+  values = Provider.fresh()
+  values.push(1)
+  values.push("one")
+""",
+                "TYPE_MISMATCH", 6, "Provider.fresh", 2,
+                "callable-v1:module-v1:g2provider@0.1.0::Provider:fn:fresh"))
         evidence["cases"].append(check_case(
             g2, scratch / "provider_setup", env, "ordinary_local_conflict",
             """module Consumer

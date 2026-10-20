@@ -131,6 +131,7 @@ fn main():
                           "SOURCE_FREE_SUMMARY_INVALID"),
         "identity": ("SOURCE_FREE_",),
         "invalid-provenance": ("SOURCE_FREE_",),
+        "mismatched-callable-provenance": ("SOURCE_FREE_SUMMARY_INVALID",),
         "unbound": ("SOURCE_FREE_",),
         "nonempty": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
         "unsupported-shape": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
