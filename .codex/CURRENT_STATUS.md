@@ -42,11 +42,11 @@ Validation passed: `make --jobs="$(nproc)" moss-dev`, the source-free corpus,
 R2b records, R2c consumer, M2b.1 provenance, G2 conformance (11/11),
 checked-arithmetic acceptance, H3 direct records, H3 source-free chain,
 H3 Scenario 6 (output `99`), H3 arithmetic decoder, H3 checked-body decoder,
-agent-feedback validation, and `git diff --check`. The checked-body IR script's
+agent-feedback validation, and `git diff --check`. H3 Scenario 6 was rerun on
+commit `9197bc25f0ef1b54b394971876c10b6d2ae80adf` with `dirty: false`. The checked-body IR script's
 default C++ command fails because a pre-existing `TypeSolver::Undo::binding`
 warning is promoted by `-Werror`; the same script passed when that warning was
-suppressed. The H3 Scenario 6 run occurred on the uncommitted implementation
-tree (`dirty: true`). No full repository suite was run.
+suppressed. No full repository suite was run.
 
 ## Focused TypeSolver atomicity fix — 2026-10-19
 
