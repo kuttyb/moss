@@ -4875,6 +4875,11 @@ class Checker {
   // never used to recreate the term of a local already present here.
   struct BodyTypeState {
     struct ExpressionOccurrence {
+      enum class Kind : std::uint8_t {
+        Unknown, Group, Literal, Identifier, Unary, Binary, Field, Index,
+        VectorLiteral, CollectionLiteral, Call, MemberCall, Pipeline,
+        Constructor, Message
+      } kind = Kind::Unknown;
       std::uint32_t id = 0;
       std::uint32_t statement_id = 0;
       std::uint32_t parent_id = UINT32_MAX;
@@ -4882,6 +4887,9 @@ class Checker {
       std::uint32_t child_count = 0;
       int line = 0;
       string root_slot;
+      string operation_id;
+      moss::TypeRef checked_type;
+      string semantic_target_id;
       bool completed = false;
     };
     std::unordered_map<const Stmt*, std::uint32_t> statement_occurrence_ids;
@@ -4899,6 +4907,40 @@ class Checker {
       const auto id = static_cast<std::uint32_t>(statement_occurrence_ids.size());
       statement_occurrence_ids.emplace(&statement, id);
       return id;
+    }
+
+    void retain_expression_type(std::uint32_t occurrence,
+                                moss::TypeRef checked_type) {
+      if (occurrence >= expression_occurrences.size() || !checked_type) {
+        expression_occurrence_ledger_complete = false;
+        return;
+      }
+      expression_occurrences[occurrence].checked_type = std::move(checked_type);
+    }
+
+    void mark_expression_kind(std::uint32_t occurrence,
+                             ExpressionOccurrence::Kind kind,
+                             string operation_id = {}) {
+      if (occurrence >= expression_occurrences.size() ||
+          expression_occurrences[occurrence].kind !=
+              ExpressionOccurrence::Kind::Unknown) {
+        expression_occurrence_ledger_complete = false;
+        return;
+      }
+      expression_occurrences[occurrence].kind = kind;
+      expression_occurrences[occurrence].operation_id =
+          std::move(operation_id);
+    }
+
+    void retain_expression_target(std::uint32_t occurrence,
+                                  const string& semantic_target_id) {
+      if (occurrence >= expression_occurrences.size() ||
+          semantic_target_id.empty() ||
+          !expression_occurrences[occurrence].semantic_target_id.empty()) {
+        expression_occurrence_ledger_complete = false;
+        return;
+      }
+      expression_occurrences[occurrence].semantic_target_id = semantic_target_id;
     }
 
     bool has_expression_root(const Stmt& statement, const string& slot) const {
@@ -20937,6 +20979,12 @@ class Checker {
       }
       err(line, "unknown local function '" + name + "'");
     }
+    if (current_body_types_ && !checking_specialization_ &&
+        !current_body_types_->active_expression_occurrences.empty()) {
+      current_body_types_->retain_expression_target(
+          current_body_types_->active_expression_occurrences.back(),
+          function_target->semantic_callable_id);
+    }
     require_staged_v10_callable_body(line, *function_target);
     struct FnWrapper {
       Function* second;
@@ -22026,9 +22074,20 @@ class Checker {
           "operator:" + operation_id, term, {}, nullptr, line});
   }
 
+  void mark_active_expression(
+      BodyTypeState::ExpressionOccurrence::Kind kind,
+      const string& operation_id = {}) {
+    if (!current_body_types_ || checking_specialization_ ||
+        current_body_types_->active_expression_occurrences.empty()) return;
+    current_body_types_->mark_expression_kind(
+        current_body_types_->active_expression_occurrences.back(), kind,
+        operation_id);
+  }
+
   void check_expression(int line, const string& expression,
                         const std::unordered_map<string,string>& env,
                         std::string_view root_slot = {}) {
+    using OccurrenceKind = BodyTypeState::ExpressionOccurrence::Kind;
     string original = trim(expression);
     BodyTypeState* occurrence_state = current_body_types_;
     bool capture_occurrence = occurrence_state && current_check_statement_ &&
@@ -22064,8 +22123,11 @@ class Checker {
     struct ExpressionOccurrenceScope {
       BodyTypeState* state;
       bool active;
-      ExpressionOccurrenceScope(BodyTypeState* value, bool enabled)
-          : state(value), active(enabled) {}
+      std::function<void()> retain_checked_type;
+      ExpressionOccurrenceScope(BodyTypeState* value, bool enabled,
+                                std::function<void()> retain_type)
+          : state(value), active(enabled),
+            retain_checked_type(std::move(retain_type)) {}
       ~ExpressionOccurrenceScope() {
         if (!active || !state) return;
         if (state->active_expression_occurrences.empty()) {
@@ -22073,10 +22135,22 @@ class Checker {
           return;
         }
         const auto id = state->active_expression_occurrences.back();
+        if (retain_checked_type) retain_checked_type();
+        if (state->expression_occurrences.at(id).kind ==
+            BodyTypeState::ExpressionOccurrence::Kind::Unknown)
+          state->expression_occurrence_ledger_complete = false;
         state->active_expression_occurrences.pop_back();
         state->expression_occurrences.at(id).completed = true;
       }
-    } occurrence_scope(occurrence_state, capture_occurrence);
+    } occurrence_scope(occurrence_state, capture_occurrence,
+        capture_occurrence
+            ? std::function<void()>([this, occurrence_state, &original, &env] {
+                const auto id = occurrence_state->active_expression_occurrences.back();
+                auto term = checked_expression_term(original, env);
+                occurrence_state->retain_expression_type(
+                    id, term ? occurrence_state->solver.resolve(term) : nullptr);
+              })
+            : std::function<void()>{});
     if (starts_with(original, "match "))
       err(line, "match is a statement, not an expression",
           "MATCH_EXPRESSION_UNSUPPORTED");
@@ -22176,10 +22250,12 @@ class Checker {
     // from the ordinary-expression checker.
     if (original.size() >= 2 && original.front() == '(' && original.back() == ')' &&
         matching_paren(original, 0) == original.size() - 1) {
+      mark_active_expression(OccurrenceKind::Group);
       check_expression(line, original.substr(1, original.size() - 2), env);
       return;
     }
     if (auto elements = parse_vector_literal(original)) {
+      mark_active_expression(OccurrenceKind::VectorLiteral);
       for (const auto& element : *elements) {
         auto type = inferred_expr_type(element, env);
         if (type && fileio_scoped_type(*type))
@@ -22211,7 +22287,10 @@ class Checker {
       }
       return;
     }
-    if (check_functional_pipeline(line, original, env)) return;
+    if (check_functional_pipeline(line, original, env)) {
+      mark_active_expression(OccurrenceKind::Pipeline);
+      return;
+    }
     string value = normalize_pipeline(std::move(original));
     if (!value.empty() && value.front() == '!' &&
         (value.size() == 1 || value[1] != '='))
@@ -22230,6 +22309,7 @@ class Checker {
     }
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
       if (auto binary = split_binary(value, {op})) {
+        mark_active_expression(OccurrenceKind::Binary, trim(op));
         check_expression(line, binary->first, env);
         check_expression(line, binary->second, env);
         auto left = inferred_expr_type(binary->first, env);
@@ -22243,6 +22323,7 @@ class Checker {
       }
     }
     if (starts_with(value, "not ")) {
+      mark_active_expression(OccurrenceKind::Unary, "not");
       string operand = trim(value.substr(4));
       check_expression(line, operand, env);
       retain_open_unary_operation(line, "not", operand, env);
@@ -22252,8 +22333,13 @@ class Checker {
       return;
     }
     if (auto ordering = split_binary(value, {"<=", ">=", "<", ">"})) {
-      check_expression(line, ordering->first, env);
-      check_expression(line, ordering->second, env);
+      mark_active_expression(OccurrenceKind::Binary,
+          split_binary(value, {"<="}) ? "<=" :
+          split_binary(value, {">="}) ? ">=" :
+          split_binary(value, {"<"}) ? "<" : ">");
+      // This pass checks the ordering-specific exclusions. The common
+      // comparison branch below owns the single recursive operand traversal,
+      // so the checker occurrence graph represents each source operand once.
       for (const string& op : vector<string>{"<=", ">=", "<", ">"}) {
         auto candidate = split_binary(value, {op});
         if (candidate && candidate->first == ordering->first) {
@@ -22291,6 +22377,12 @@ class Checker {
       }
     }
     if (auto binary = split_binary(value, {"==", "!=", "<=", ">=", "<", ">"})) {
+      mark_active_expression(OccurrenceKind::Binary,
+          split_binary(value, {"=="}) ? "==" :
+          split_binary(value, {"!="}) ? "!=" :
+          split_binary(value, {"<="}) ? "<=" :
+          split_binary(value, {">="}) ? ">=" :
+          split_binary(value, {"<"}) ? "<" : ">");
       check_expression(line, binary->first, env);
       check_expression(line, binary->second, env);
       auto left_type = inferred_expr_type(binary->first, env);
@@ -22359,6 +22451,7 @@ class Checker {
     }
     for (const auto& op : vector<string>{"|", "^", "&"}) {
       if (auto binary = split_binary(value, {op})) {
+        mark_active_expression(OccurrenceKind::Binary, op);
         check_expression(line, binary->first, env);
         check_expression(line, binary->second, env);
         retain_open_operator_operation(line, op, binary->first,
@@ -22375,6 +22468,8 @@ class Checker {
       }
     }
     if (auto binary = split_binary(value, {"<<", ">>"})) {
+      mark_active_expression(OccurrenceKind::Binary,
+          split_binary(value, {"<<"}) ? "<<" : ">>");
       string op = split_binary(value, {"<<"}) ? "<<" : ">>";
       check_expression(line, binary->first, env);
       check_expression(line, binary->second, env);
@@ -22402,6 +22497,7 @@ class Checker {
       string operand = trim(value.substr(1));
       if (!operand.empty() && operand.front() != '-') {
         check_expression(line, operand, env);
+        mark_active_expression(OccurrenceKind::Unary, "unary-");
         retain_open_unary_operation(line, "unary-", operand, env);
         auto operand_type = inferred_expr_type(operand, env);
         if (operand_type) {
@@ -22416,6 +22512,15 @@ class Checker {
     }
     for (const auto& operators : vector<vector<string>>{{"+", "-", "*", "/", "%"}}) {
         if (auto binary = split_binary(value, operators)) {
+          string operation_id;
+          for (const auto& candidate : operators) {
+            auto operation = split_binary(value, {candidate});
+            if (operation && operation->first == binary->first) {
+              operation_id = candidate;
+              break;
+            }
+          }
+          mark_active_expression(OccurrenceKind::Binary, operation_id);
           check_expression(line, binary->first, env);
           check_expression(line, binary->second, env);
           for (const string& candidate : operators) {
@@ -22479,6 +22584,7 @@ class Checker {
     if (!value.empty() && value.front() == '~') {
       string operand = trim(value.substr(1));
       check_expression(line, operand, env);
+      mark_active_expression(OccurrenceKind::Unary, "~");
       retain_open_unary_operation(line, "~", operand, env);
       auto operand_type = inferred_expr_type(operand, env);
       if (unresolved_expression(operand, env)) return;
@@ -22502,6 +22608,7 @@ class Checker {
     string receiver, handler;
     vector<string> args;
     if (parse_member_call(value, receiver, handler, args)) {
+      mark_active_expression(OccurrenceKind::MemberCall, "method:" + handler);
       if (current_body_types_) {
         auto receiver_term = current_body_types_->known_expression(receiver);
         if (!receiver_term) receiver_term = inferred_expr_term(receiver, env);
@@ -22634,6 +22741,7 @@ class Checker {
     }
     string ib, ii;
     if (parse_index(value, ib, ii)) {
+      mark_active_expression(OccurrenceKind::Index, "builtin:index");
       check_expression(line, ib, env);
       check_expression(line, ii, env);
       const auto base = inferred_expr(ib, env);
@@ -22746,6 +22854,8 @@ class Checker {
         };
         bool float_literal = all_digits(digits) && (field.empty() || all_digits(field) ||
             exponent(field) || fraction_exponent(field));
+        if (!float_literal)
+          mark_active_expression(OccurrenceKind::Field, "field:" + field);
         if (receiver_type && !float_literal && (plain_identifier(field) || all_digits(field))) {
           // P25-S-ARCH-024: a projection must name a declared record field;
           // compiler-defined values have no fields.
@@ -22807,6 +22917,9 @@ class Checker {
     }
     string callee;
     if (parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
+      mark_active_expression(objects_.count(callee)
+          ? OccurrenceKind::Constructor : OccurrenceKind::Call,
+          objects_.count(callee) ? "constructor:" + callee : "call:" + callee);
       if (current_body_types_) {
         vector<moss::TypeRef> argument_terms;
         bool has_open_argument = false;
@@ -22919,6 +23032,24 @@ class Checker {
         !functions_.count(value) && !objects_.count(value) && !domains_.count(value) &&
         !traits_.count(value) && !env.count(value)) {
       err(line, "unknown identifier '" + value + "'");
+    }
+    if (current_body_types_ && !checking_specialization_ &&
+        !current_body_types_->active_expression_occurrences.empty()) {
+      const auto occurrence =
+          current_body_types_->active_expression_occurrences.back();
+      if (current_body_types_->expression_occurrences[occurrence].kind ==
+          OccurrenceKind::Unknown) {
+        if (plain_identifier(value))
+          mark_active_expression(OccurrenceKind::Identifier);
+        else if (value == "true" || value == "false" || value == "None" ||
+                 is_single_string_literal(value) || is_single_char_literal(value) ||
+                 decimal_float_literal(value) ||
+                 (!value.empty() && std::all_of(value.begin(), value.end(),
+                     [](unsigned char character) {
+                       return std::isdigit(character) || character == '_';
+                     })))
+          mark_active_expression(OccurrenceKind::Literal);
+      }
     }
   }
 
@@ -23745,7 +23876,14 @@ class Checker {
       if (!checked_types.has_expression_root(statement, slot))
         checked_types.expression_occurrence_ledger_complete = false;
     };
-    for (const auto& statement : statements) {
+    for (const auto& [statement_pointer, statement_id] :
+         checked_types.statement_occurrence_ids) {
+      (void)statement_id;
+      if (!statement_pointer) {
+        checked_types.expression_occurrence_ledger_complete = false;
+        continue;
+      }
+      const auto& statement = *statement_pointer;
       switch (statement.kind) {
         case Stmt::Kind::Let:
         case Stmt::Kind::Var:
@@ -23764,7 +23902,18 @@ class Checker {
           require_root(statement, "match-subject");
           break;
         case Stmt::Kind::For:
-          require_root(statement, "for-iterable");
+          {
+            string callee;
+            vector<string> arguments;
+            if (parse_simple_call(trim(statement.b), callee, arguments) &&
+                callee == "range") {
+              for (size_t index = 0; index < arguments.size(); ++index)
+                require_root(statement,
+                    "for-range-argument:" + std::to_string(index));
+            } else {
+              require_root(statement, "for-iterable");
+            }
+          }
           break;
         case Stmt::Kind::Message:
           for (size_t index = 0; index < statement.args.size(); ++index)

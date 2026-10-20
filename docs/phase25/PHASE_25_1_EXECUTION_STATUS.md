@@ -193,3 +193,23 @@ Validation after the latest source edits:
 R1 remains IN PROGRESS. Next extend checker-owned facts to typed nodes, call
 targets, members, bindings and control flow; implement one generic structural
 lowerer/record path; preserve fail-closed admission and ABI-v9 behavior.
+
+### R1 occurrence-capture correction — current worktree
+
+The independent architect reviewed pushed commit `22c05010` and returned
+NO-GO for using its visit graph as a lowering tree. Findings: range loops had
+no required root, root checks omitted nested statements, comparison checking
+created duplicate operand visits, and the graph lacked node kinds/source
+identity. The current worktree changes range validation to the roots actually
+captured, validates roots for all checker-registered statements (including
+nested blocks), and removes the duplicate comparison traversal. It additionally
+retains checker-selected categories, checked TypeRefs and direct resolved
+callable IDs where available. These edits do not resolve source occurrence
+identity/roles or complete structural coverage; the graph remains unusable as
+the generic lowering input until those are addressed. Do not interpret this as
+a GO review or R1 completion.
+
+Validation on the current worktree: compiler build, full M2b2 source-free
+hostile/v9-control corpus, H3 direct import, D3d SDK `index_of`, and D4 SDK
+collection source-free/hostile checks passed. The R1 gate remains open; this
+correction has not yet been committed or independently reviewed.
