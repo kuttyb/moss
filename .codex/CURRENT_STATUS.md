@@ -9716,3 +9716,13 @@ consumes these checked bytes. The checker occurrence regression, focused
 producer, source-free consumer, moss-dev build, and full M2b2 corpus pass. The
 build still has existing TypeSolver initializer warnings. Exact-SHA review is
 pending; broader R1 remains incomplete.
+
+Architect reviewed exact pushed SHA `d95f05951145cf2e0938e1d83280ed31b05877ac`
+and returned GO for this guarded empty-vector occurrence slice: checked summary
+TypeRef attachment, ordered occurrence children, unified-reader byte round trip,
+and emitter use of retained canonical bytes/hash. R1 remains open. A subsequent
+nonempty-vector widening was reverted: the minimal `singleton(value): return
+[value]` probe had no complete callable summary or canonical bytes and failed
+the focused checker test. This is an unresolved generic inference/checker
+question, not an exclusion. Current tracked compiler source is restored to the
+reviewed `d95f0595` checkpoint; continue other complete occurrence families.

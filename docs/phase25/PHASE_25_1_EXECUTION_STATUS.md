@@ -560,3 +560,21 @@ hostile / v9 corpus. Existing TypeSolver missing-initializer warnings remain.
 The exact working checkpoint needs adversarial review; this resolves only the
 empty-vector occurrence slice and does not close R1's other totality,
 consolidation, or cross-crate requirements.
+
+Architect review of exact pushed SHA
+`d95f05951145cf2e0938e1d83280ed31b05877ac` returned **GO** for the empty
+VectorLiteral return slice. It confirmed that the checker attaches the
+completed summary TypeRef only to the guarded sole direct return, the
+occurrence lowerer checks ordered element children, the unified reader
+round-trips the canonical bytes, and the emitter consumes the retained bytes
+and hash. This review does not close R1.
+
+A follow-up attempt to broaden the route to nonempty vector literals was
+reverted before commit. Its `singleton(value): return [value]` probe did not
+produce a complete open-callable summary (`complete=false`, no checked-body
+bytes), so the focused occurrence test failed. That result is an unresolved
+checker/inference question, not evidence for excluding generic vector
+functions. The branch is restored to the reviewed `d95f0595` source. R1
+remains incomplete; continue with other complete and auditable occurrence
+families and revisit generic vector inference with a minimal valid-surface
+probe.
