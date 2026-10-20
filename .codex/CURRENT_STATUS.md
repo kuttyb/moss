@@ -9348,3 +9348,52 @@ G2 passed 11/11; H3 Scenario 6 passed with output `99`; feedback validation and
 arithmetic projection flag and an attribution formatting mismatch; both were
 corrected and the complete focused corpus passed on final source. A post-commit H3 Scenario 6 rerun passed with `dirty: false` and output `99`. No full repository
 suite was run; ABI default and integration/main were not changed.
+
+## Phase 25 overnight integration validation — 2026-10-20
+
+Preflight confirmed local and remote `phase25-integration` at expected target
+`4ff42566ff66fa012cc9ac24c5440691e3b4cfd3`; reviewed source and upstream
+`phase25-m2b3d-overnight` both matched `7f753dc364432ce95d784b5a86a434f4ad777576`,
+which descends from the target. Integration was a fast-forward only. The
+integration candidate is `7f753dc364432ce95d784b5a86a434f4ad777576` before this
+status-only record.
+
+Integrated-tree validation passed:
+
+- `make --jobs="$(nproc)" moss-dev` (existing `TypeSolver::Undo::binding`
+  aggregate warnings only).
+- D1 collection facts; D2 codec and pre-D2 consumer rejection; D3a binding
+  preflight; D3b provider artifact verification; D3c projection; D3d actual
+  SDK `index_of` source-free Int/String execution with legacy-body poisoning.
+- D4 actual SDK `contains` and `count_equal` source-free execution. Combined
+  with D3d, `index_of`, `contains`, and `count_equal` all ran natively after
+  provider-source removal; legacy statement removal counts were 7, 7, and 8.
+- Mixed-provider per-callable admission: valid checked callable executes by
+  checked-body projection; unsupported callable rejects; missing supported
+  body and forged provenance reject; forged unsupported provenance does not
+  block the unrelated valid callable; ABI-v9 retains both generic bodies.
+- Complete staged-v10 source-free corpus, including malformed and missing
+  record negatives; ABI-v9 SDK collections source-free smoke.
+- M2b.1 provenance (5 cases); G2 (11/11); H3 checked-body IR/dependency suite
+  (passed with only `-Wno-missing-field-initializers`), H3 direct records,
+  H3 private chains, checked-body importer/arithmetic decoding, checked
+  arithmetic acceptance, R2b empty-vector records, and R2c consumer.
+- H3 Scenario 6 passed at the integrated candidate with `dirty: false`,
+  provider source removed, and output `99`.
+- Default ABI probe with `MOSS_STAGED_ABI` unset emitted the ABI-v9
+  `moss-module-interface-v2` format.
+- Staged-v10 source-free consumer of SDK `bytes.from_range` rejects with
+  `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE`; this workload remains documented as
+  unsupported and was not changed.
+- Agent-feedback validation and `git diff --check` passed.
+
+The typed-semantic API runner is recorded separately as `FAIL_BASELINE`: it
+fails at `add_one` because the test expects one requirement but the compiler
+reports two (`return-operator` and `checked-arithmetic:0`) with body hash
+`body-semantic-v1:sha256:455a8ef8fcedd018807822f5aed1b9add6bbb1d6a61ebb1650129ab46807d343`.
+The exact expected target baseline `4ff42566ff66fa012cc9ac24c5440691e3b4cfd3`
+was built in an isolated temporary worktree and fails the same assertion with
+the same count, requirement IDs, and body hash. The expectation was not changed.
+
+No full repository suite was run. No implementation changes were added during
+integration, ABI-v9 remains default, and `main` was not modified.
