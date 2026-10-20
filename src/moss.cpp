@@ -24611,6 +24611,90 @@ class Checker {
       }
       if (checked_types.expression_occurrences[parent].child_count != children.size())
         checked_types.expression_occurrence_ledger_complete = false;
+      vector<string> child_roles;
+      child_roles.reserve(children.size());
+      for (const auto child_id : children)
+        child_roles.push_back(
+            checked_types.expression_occurrences[child_id].child_role);
+      auto has_roles = [&](const vector<string>& expected) {
+        if (child_roles.size() != expected.size()) return false;
+        auto actual = child_roles;
+        auto wanted = expected;
+        std::sort(actual.begin(), actual.end());
+        std::sort(wanted.begin(), wanted.end());
+        return actual == wanted;
+      };
+      const auto& occurrence = checked_types.expression_occurrences[parent];
+      switch (occurrence.kind) {
+        case BodyTypeState::ExpressionOccurrence::Kind::Unknown:
+          checked_types.expression_occurrence_ledger_complete = false;
+          break;
+        case BodyTypeState::ExpressionOccurrence::Kind::Identifier:
+        case BodyTypeState::ExpressionOccurrence::Kind::Literal:
+          if (!children.empty())
+            checked_types.expression_occurrence_ledger_complete = false;
+          break;
+        case BodyTypeState::ExpressionOccurrence::Kind::Group:
+          if (!has_roles({"grouped-expression"}))
+            checked_types.expression_occurrence_ledger_complete = false;
+          break;
+        case BodyTypeState::ExpressionOccurrence::Kind::Unary:
+          if (!has_roles({"operand"}))
+            checked_types.expression_occurrence_ledger_complete = false;
+          break;
+        case BodyTypeState::ExpressionOccurrence::Kind::Binary:
+          if (!has_roles({"left", "right"}))
+            checked_types.expression_occurrence_ledger_complete = false;
+          break;
+        case BodyTypeState::ExpressionOccurrence::Kind::Field:
+          if (!has_roles({"receiver"}))
+            checked_types.expression_occurrence_ledger_complete = false;
+          break;
+        case BodyTypeState::ExpressionOccurrence::Kind::Index:
+          if (!has_roles({"container", "index"}))
+            checked_types.expression_occurrence_ledger_complete = false;
+          break;
+        case BodyTypeState::ExpressionOccurrence::Kind::VectorLiteral: {
+          vector<string> expected;
+          for (std::size_t index = 0;
+               index < occurrence.source_operands.size(); ++index)
+            expected.push_back("element:" + std::to_string(index));
+          if (occurrence.source_operands.size() != children.size() ||
+              !has_roles(expected))
+            checked_types.expression_occurrence_ledger_complete = false;
+          break;
+        }
+        case BodyTypeState::ExpressionOccurrence::Kind::Call: {
+          vector<string> expected;
+          for (std::size_t index = 0;
+               index < occurrence.source_operands.size(); ++index)
+            expected.push_back("argument:" + std::to_string(index));
+          if (!has_roles(expected))
+            checked_types.expression_occurrence_ledger_complete = false;
+          break;
+        }
+        case BodyTypeState::ExpressionOccurrence::Kind::MemberCall: {
+          vector<string> expected;
+          const bool static_fileio_receiver =
+              !occurrence.source_operands.empty() &&
+              occurrence.source_operands.front() == "FileIO";
+          const std::size_t argument_offset = static_fileio_receiver ? 0u : 1u;
+          if (!static_fileio_receiver) expected.push_back("receiver");
+          for (std::size_t index = 0;
+               index + argument_offset < occurrence.source_operands.size();
+               ++index) {
+            if (std::find(occurrence.non_expression_operand_ordinals.begin(),
+                          occurrence.non_expression_operand_ordinals.end(), index) ==
+                occurrence.non_expression_operand_ordinals.end())
+              expected.push_back("argument:" + std::to_string(index));
+          }
+          if (!has_roles(expected))
+            checked_types.expression_occurrence_ledger_complete = false;
+          break;
+        }
+        default:
+          break;
+      }
     }
     if (!checked_types.active_expression_occurrences.empty())
       checked_types.expression_occurrence_ledger_complete = false;

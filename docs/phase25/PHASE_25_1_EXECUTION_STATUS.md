@@ -397,6 +397,22 @@ review found no other broad-trigger/narrow-validator collision for the
 currently lowered Binary, Field or Index nodes. No P0/P1 findings remain for
 this routing correction. R1 remains incomplete.
 
+### R1 occurrence child-role verifier — working tree
+
+The checker now verifies child-role shape for leaf, group, unary, binary,
+field, index, vector-literal, direct-call, and member-call occurrences.
+`Unknown` nodes make the ledger incomplete instead of passing the generic
+ID/parent/count checks. Vector literal child count is checked against the
+retained source operand list. This strengthens the occurrence totality proof;
+it does not complete it. Constructor, collection-literal, pipeline, message,
+statement/binding and control-flow accounting remain open.
+
+Validation on this source: `make --jobs="$(nproc)" moss-dev`, full M2b2
+source-free positive/hostile/v9 corpus, generic arithmetic requirements,
+generic collection facts, feedback validation and `git diff --check` passed.
+Existing TypeSolver initializer warnings remain. Exact-SHA adversarial review
+is pending; R1 remains open.
+
 ### R1 member invocation role-verifier correction — working tree
 
 The architect reviewed exact pushed SHA

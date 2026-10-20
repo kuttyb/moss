@@ -9643,3 +9643,12 @@ Architect reviewed exact SHA `62ff4975cde3268f91986e20aad478df8fe32559` and
 returned GO: the Count gate excludes the generic index-return collision and
 preserves the existing Count/Index loop producer. No other current
 Binary/Field/Index broad-trigger conflicts were found. R1 is still incomplete.
+
+Current working diff adds per-kind occurrence child-role validation for leaf,
+group, unary/binary, field, index, vector literal, direct call, and member call;
+Unknown expression nodes now make the ledger incomplete. Validation on this
+revision: moss-dev build, M2b2 full source-free/hostile/v9 corpus, generic
+arithmetic requirements, generic collection facts, feedback validation and
+diff check pass. Constructor/collection-literal/pipeline/message accounting,
+statements, binding identity, totality, and most ABI-v10 paths remain open.
+Await exact-SHA review before extending this verifier further.
