@@ -9685,3 +9685,12 @@ the verifier requires it for keyed sort. The focused checker test asserts the
 link and effect record. That test, the production build, full M2b2 corpus,
 feedback checker and diff check pass. Exact-SHA review is pending; R1 remains
 incomplete.
+
+At `856fd0c84dc85233ada27c513220f08255ace1d2`, the architect found that
+`sort(v, by: Reverse(key))` lost reverse-order semantics when the checker
+unwrapped the key. The linked-callable fact now carries `reverse_order`, and
+the focused checker test covers ordinary and reverse keyed statement sorts.
+The focused test, production compiler build, full M2b2 source-free positive /
+hostile / v9 corpus, feedback checker, and diff check pass after the fix. The
+build still reports existing `TypeSolver::Undo::binding` initializer warnings.
+This fix needs exact-SHA review. R1 remains incomplete.

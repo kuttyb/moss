@@ -4758,6 +4758,7 @@ class Checker {
       TypeRef result_type;
       Effect parameter_effect = Effect::Read;
       ObservableEffects observable_effects;
+      bool reverse_order = false;
     };
 
     struct ExpressionOccurrence {
@@ -22107,10 +22108,12 @@ class Checker {
       err(line, "sort's second argument must be 'by: key'", "SORT_SIGNATURE");
     string reverse_callee;
     vector<string> reverse_args;
+    bool reverse_order = false;
     if (parse_simple_call(key, reverse_callee, reverse_args) &&
         reverse_callee == "Reverse") {
       if (reverse_args.size() != 1)
         err(line, "Reverse expects one key function", "SORT_SIGNATURE");
+      reverse_order = true;
       key = trim(reverse_args.front());
     }
     auto function = functions_.find(key);
@@ -22144,7 +22147,8 @@ class Checker {
             .linked_callables.push_back({
                 function->second->semantic_callable_id, *input_type,
                 *result_type,
-                sort_key_effect(*function->second, element), effects});
+                sort_key_effect(*function->second, element), effects,
+                reverse_order});
       }
     }
   }
@@ -24942,6 +24946,10 @@ export fn relay(value):
 export fn sort_values(values: Vector[Int]) -> Int:
   sort(values, by: identity)
   return values[0]
+
+export fn sort_values_reverse(values: Vector[Int]) -> Int:
+  sort(values, by: Reverse(identity))
+  return values[0]
 )moss");
     Program program = Parser(lex_lines(input, "<statement-call-occurrence-test>"))
                           .parse();
@@ -24980,41 +24988,45 @@ export fn sort_values(values: Vector[Int]) -> Int:
       return actual_roles == wanted_roles;
     };
     if (!verifies_call("relay", {"call-argument:0"}, {}) ||
-        !verifies_call("sort_values", {"call-argument:0"}, {1}))
+        !verifies_call("sort_values", {"call-argument:0"}, {1}) ||
+        !verifies_call("sort_values_reverse", {"call-argument:0"}, {1}))
       return false;
-    const auto sort_function = std::find_if(program.functions.begin(),
-        program.functions.end(), [](const Function& candidate) {
-          return candidate.name == "sort_values";
-        });
     const auto key_function = std::find_if(program.functions.begin(),
         program.functions.end(), [](const Function& candidate) {
           return candidate.name == "identity";
         });
-    if (sort_function == program.functions.end() ||
-        key_function == program.functions.end())
+    if (key_function == program.functions.end())
       return false;
-    const auto sort_state = checker.checked_body_states_.find(
-        &sort_function->body);
-    if (sort_state == checker.checked_body_states_.end() ||
-        !sort_state->second)
-      return false;
-    const auto statement_id = sort_state->second->statement_occurrence_ids.find(
-        &sort_function->body.front());
-    if (statement_id == sort_state->second->statement_occurrence_ids.end())
-      return false;
-    const auto root = sort_state->second->expression_root_slots.find(
-        {statement_id->second, "call-invocation"});
-    if (root == sort_state->second->expression_root_slots.end()) return false;
-    const auto& linked = sort_state->second->expression_occurrences.at(
-        root->second).linked_callables;
-    return linked.size() == 1 &&
-        linked.front().semantic_callable_id == key_function->semantic_callable_id &&
-        linked.front().argument_type &&
-        linked.front().argument_type->to_canonical_string() == "int" &&
-        linked.front().result_type &&
-        linked.front().result_type->to_canonical_string() == "int" &&
-        linked.front().parameter_effect == Effect::Read &&
-        abi_v10_effects_pure(linked.front().observable_effects);
+    auto has_sort_fact = [&](const string& name, bool reverse_order) {
+      const auto function = std::find_if(program.functions.begin(),
+          program.functions.end(), [&](const Function& candidate) {
+            return candidate.name == name;
+          });
+      if (function == program.functions.end()) return false;
+      const auto state = checker.checked_body_states_.find(&function->body);
+      if (state == checker.checked_body_states_.end() || !state->second)
+        return false;
+      const auto statement = state->second->statement_occurrence_ids.find(
+          &function->body.front());
+      if (statement == state->second->statement_occurrence_ids.end())
+        return false;
+      const auto root = state->second->expression_root_slots.find(
+          {statement->second, "call-invocation"});
+      if (root == state->second->expression_root_slots.end()) return false;
+      const auto& linked = state->second->expression_occurrences.at(
+          root->second).linked_callables;
+      return linked.size() == 1 &&
+          linked.front().semantic_callable_id == key_function->semantic_callable_id &&
+          linked.front().argument_type &&
+          linked.front().argument_type->to_canonical_string() == "int" &&
+          linked.front().result_type &&
+          linked.front().result_type->to_canonical_string() == "int" &&
+          linked.front().parameter_effect == Effect::Read &&
+          abi_v10_effects_pure(linked.front().observable_effects) &&
+          linked.front().reverse_order == reverse_order;
+    };
+    return has_sort_fact("sort_values", false) &&
+        has_sort_fact("sort_values_reverse", true);
   }
 
 private:

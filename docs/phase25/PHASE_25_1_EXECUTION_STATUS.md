@@ -511,3 +511,16 @@ fix: focused checker test, `make --jobs="$(nproc)" moss-dev`, full M2b2
 source-free/hostile/v9 corpus, feedback checker and `git diff --check` passed.
 Existing TypeSolver missing-initializer warnings remain. Exact-SHA review is
 pending; R1 remains incomplete.
+
+The adversarial architect reviewed exact pushed SHA
+`856fd0c84dc85233ada27c513220f08255ace1d2` and returned **NO-GO** with one
+P1: `sort(v, by: Reverse(key))` retained the inner callable but dropped reverse
+ordering semantics when `check_sort_call` stripped the wrapper. The linked
+callable fact now carries an explicit `reverse_order` flag; the completeness
+path retains that typed fact, and the focused checker regression covers both
+ordinary and reverse keyed statement sorts. Validation after this correction:
+focused statement-call checker test, `make --jobs="$(nproc)" moss-dev`, full
+M2b2 source-free positive/hostile/v9 corpus, agent feedback checker, and
+`git diff --check` passed. The build retains existing
+`TypeSolver::Undo::binding` missing-initializer warnings. This correction needs
+exact-SHA adversarial review; R1 remains incomplete.
