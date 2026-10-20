@@ -4363,6 +4363,7 @@ class Checker {
     { CompilerStageTimer timer("concrete_graph"); build_concrete_domain_graph(); }
     check_method_ownership();
     for (const auto& f : p_.functions) check_function(f);
+    refresh_open_collection_summaries_from_checked_types();
     for (const auto& d : p_.domains) check_domain(d);
     if (p_.main) check_main(*p_.main);
     check_test_and_benchmark_declarations();
@@ -4552,6 +4553,8 @@ class Checker {
     std::unordered_map<string, moss::TypeRef> scoped_locals;
     bool scoped_locals_active = false;
     std::unordered_map<const Stmt*, moss::TypeRef> assignment_values;
+    vector<moss::OpenCallableSummaryFacts::OperationFact> open_operations;
+    vector<moss::Requirement> open_operator_requirements;
     TypeEnv closed_projection;
     struct ProviderCallableOrigin {
       string file;
@@ -5545,6 +5548,187 @@ class Checker {
                       [](const moss::TypeRef& type) { return type != nullptr; });
       if (summary.bound_variable_count || function.generic)
         function.open_summary = std::move(summary);
+    }
+  }
+
+  // Complete the narrow collection contract from the TypeRefs and operations
+  // retained while the ordinary body checker validated the generic body.
+  // The earlier signature pass deliberately cannot close this shape: it sees
+  // `items[i]`'s local index spelling before the body solver has assigned that
+  // local its Int TypeRef, and it does not own equality's deferred type link.
+  void refresh_open_collection_summaries_from_checked_types() {
+    for (auto& function : p_.functions) {
+      if (function.imported_checked_summary_payload.size() ||
+          !function.open_summary || function.params.size() != 2) continue;
+      auto retained = checked_body_states_.find(&function.body);
+      if (retained == checked_body_states_.end() || !retained->second) continue;
+      auto& state = *retained->second;
+      auto count = std::find_if(state.open_operations.begin(),
+          state.open_operations.end(), [](const auto& operation) {
+        return operation.operation_id == "builtin:collection-count-v1";
+      });
+      auto index = std::find_if(state.open_operations.begin(),
+          state.open_operations.end(), [](const auto& operation) {
+        return operation.operation_id == "builtin:index";
+      });
+      auto equality = std::find_if(state.open_operator_requirements.begin(),
+          state.open_operator_requirements.end(), [](const auto& requirement) {
+        return requirement.target_id == "operator:==";
+      });
+      if (count == state.open_operations.end() ||
+          index == state.open_operations.end() ||
+          equality == state.open_operator_requirements.end()) continue;
+
+      auto summary = *function.open_summary;
+      std::map<std::tuple<uint32_t, uint32_t, uint32_t>, moss::TypeRef> variables;
+      uint32_t next_variable = 0;
+      std::function<moss::TypeRef(const moss::TypeRef&)> openize_checked =
+          [&](const moss::TypeRef& source) -> moss::TypeRef {
+        if (!source) return nullptr;
+        auto type = state.solver.resolve(source);
+        if (!type) return nullptr;
+        if (type->kind == moss::TypeKind::InferenceVar) {
+          const auto key = std::make_tuple(type->var_id.session_id,
+                                           type->var_id.owner_id,
+                                           type->var_id.ordinal);
+          auto found = variables.find(key);
+          if (found != variables.end()) return found->second;
+          auto opened = moss::Type::var({0, 0, next_variable++});
+          variables.emplace(key, opened);
+          return opened;
+        }
+        if (type->kind == moss::TypeKind::Builtin) {
+          vector<moss::TypeRef> arguments;
+          for (const auto& argument : type->type_args) {
+            auto opened = openize_checked(argument);
+            if (!opened) return nullptr;
+            arguments.push_back(std::move(opened));
+          }
+          return moss::Type::builtin(type->name, std::move(arguments));
+        }
+        if (type->kind == moss::TypeKind::NominalInstance) {
+          vector<std::pair<string, moss::TypeRef>> fields;
+          for (const auto& field : type->field_substitutions) {
+            auto opened = openize_checked(field.second);
+            if (!opened) return nullptr;
+            fields.emplace_back(field.first, std::move(opened));
+          }
+          return moss::Type::nominal_bound(type->declaration, type->name,
+                                           std::move(fields));
+        }
+        return type;
+      };
+
+      vector<moss::TypeRef> parameters;
+      bool valid = true;
+      for (const auto& parameter : function.params) {
+        auto local = state.locals.find(parameter.name);
+        auto type = local == state.locals.end()
+            ? nullptr : openize_checked(local->second);
+        if (!type) valid = false;
+        parameters.push_back(std::move(type));
+      }
+      auto result = summary.result_type
+          ? openize_checked(summary.result_type) : nullptr;
+      auto convert_operation = [&](const auto& operation)
+          -> moss::OpenCallableSummaryFacts::OperationFact {
+        moss::OpenCallableSummaryFacts::OperationFact converted;
+        converted.operation_id = operation.operation_id;
+        converted.receiver = openize_checked(operation.receiver);
+        for (const auto& argument : operation.arguments)
+          converted.arguments.push_back(openize_checked(argument));
+        converted.result = openize_checked(operation.result);
+        converted.line = operation.line;
+        return converted;
+      };
+      auto count_fact = convert_operation(*count);
+      auto index_fact = convert_operation(*index);
+      auto equality_subject = openize_checked(equality->subject);
+      vector<moss::TypeRef> equality_arguments;
+      for (const auto& argument : equality->arguments)
+        equality_arguments.push_back(openize_checked(argument));
+      auto equality_result = equality->result
+          ? openize_checked(*equality->result) : nullptr;
+      if (!result || !equality_subject || !equality_result ||
+          equality_arguments.size() != 1 || !equality_arguments.front() ||
+          !count_fact.receiver || !count_fact.result ||
+          !index_fact.receiver || !index_fact.result ||
+          index_fact.arguments.size() != 1 || !index_fact.arguments.front())
+        valid = false;
+
+      if (valid) {
+        const auto& vector_type = parameters[0];
+        const auto& element_type = parameters[1];
+        valid = vector_type->kind == moss::TypeKind::Builtin &&
+            vector_type->name == "vector" &&
+            vector_type->type_args.size() == 1 &&
+            vector_type->type_args.front()->structurally_equal(*element_type) &&
+            result->structurally_equal(*moss::Type::primitive("int")) &&
+            count_fact.receiver->structurally_equal(*vector_type) &&
+            count_fact.result->structurally_equal(
+                *moss::Type::primitive("int")) &&
+            index_fact.receiver->structurally_equal(*vector_type) &&
+            index_fact.arguments.front()->structurally_equal(
+                *moss::Type::primitive("int")) &&
+            index_fact.result->structurally_equal(*element_type) &&
+            equality_subject->structurally_equal(*element_type) &&
+            equality_arguments.front()->structurally_equal(*element_type) &&
+            equality_result->structurally_equal(
+                *moss::Type::primitive("bool"));
+      }
+      if (!valid || parameters.size() != summary.parameter_access.size() ||
+          summary.parameter_access.size() != 2 ||
+          std::any_of(summary.parameter_access.begin(),
+                      summary.parameter_access.end(), [](moss::AccessMode access) {
+            return access != moss::AccessMode::Read;
+          })) continue;
+
+      summary.parameter_types = std::move(parameters);
+      summary.result_type = std::move(result);
+      summary.operations = {std::move(count_fact), std::move(index_fact)};
+      summary.requirements.erase(std::remove_if(summary.requirements.begin(),
+          summary.requirements.end(), [](const moss::Requirement& requirement) {
+        return (requirement.kind == moss::RequirementKind::Iterate &&
+                requirement.target_id == "functional source") ||
+            (requirement.kind == moss::RequirementKind::Index &&
+             requirement.target_id == "builtin:index");
+      }), summary.requirements.end());
+      auto add_requirement_origin = [&](moss::Requirement& requirement,
+                                       int line, const string& suffix) {
+        requirement.id = function.semantic_callable_id + ":" + suffix + ":" +
+            std::to_string(line);
+        requirement.access = moss::AccessMode::Read;
+        requirement.origin = {summary.origin.module_id, function.source_file,
+            line, 1, function.semantic_callable_id, requirement.id};
+      };
+      moss::Requirement index_requirement;
+      index_requirement.kind = moss::RequirementKind::Index;
+      index_requirement.target_id = "builtin:index";
+      index_requirement.subject = summary.operations[1].receiver;
+      index_requirement.arguments = summary.operations[1].arguments;
+      index_requirement.argument_access = {moss::AccessMode::Read};
+      index_requirement.result = summary.operations[1].result;
+      add_requirement_origin(index_requirement, index->line,
+                             "typed-index");
+      summary.requirements.push_back(std::move(index_requirement));
+
+      moss::Requirement equality_requirement;
+      equality_requirement.kind = moss::RequirementKind::Operator;
+      equality_requirement.target_id = "operator:==";
+      equality_requirement.subject = std::move(equality_subject);
+      equality_requirement.arguments = std::move(equality_arguments);
+      equality_requirement.argument_access = {moss::AccessMode::Read};
+      equality_requirement.result = std::move(equality_result);
+      add_requirement_origin(equality_requirement, equality->origin.line,
+                             "typed-equality");
+      summary.requirements.push_back(std::move(equality_requirement));
+
+      summary.bound_variable_count = next_variable;
+      if (!moss::close_open_summary_ordinals(summary)) continue;
+      summary.observable_effects = function.observable_effects;
+      summary.complete = !summary.observable_effects.unresolved &&
+          summary.observable_effects.may_panic;
+      if (summary.complete) function.open_summary = std::move(summary);
     }
   }
 
@@ -20604,6 +20788,21 @@ class Checker {
                                  const TypeEnv& env) {
     auto parsed = parse_functional_pipeline(expression);
     if (!parsed) return false;
+    // Retain the operation's checker TypeRefs before an open generic pipeline
+    // defers concrete admission to specialization. Later body operations may
+    // refine this same receiver variable (for example, Vector indexing).
+    if (current_body_types_ && std::any_of(
+            parsed->stages.begin(), parsed->stages.end(),
+            [](const ParsedFunctionalStage& stage) {
+              return stage.kind == FunctionalNodeKind::Count;
+            })) {
+      auto receiver = current_body_types_->known_expression(parsed->source);
+      if (!receiver) receiver = inferred_expr_term(parsed->source, env);
+      if (receiver)
+        current_body_types_->open_operations.push_back({
+            "builtin:collection-count-v1", receiver, {},
+            moss::Type::primitive("int"), line});
+    }
     auto source_expr = inferred_expr(parsed->source, env);
     if (source_expr) {
       if ((source_expr->term && !source_expr->term->is_closed()) ||
@@ -20991,6 +21190,41 @@ class Checker {
             "ENUM_OPERATOR_UNSUPPORTED");
       if (binary->first.empty() || binary->second.empty())
         err(line, "invalid comparison expression");
+      auto equality = split_binary(value, {"==", "!="});
+      string indexed_base, indexed_key;
+      const bool compares_index =
+          parse_index(binary->first, indexed_base, indexed_key) ||
+          parse_index(binary->second, indexed_base, indexed_key);
+      if (equality && equality->first == binary->first &&
+          value.find("==") != string::npos && compares_index &&
+          current_body_types_) {
+        auto operand_term = [&](const string& operand) {
+          auto retained = current_body_types_->known_expression(operand);
+          return retained ? retained : inferred_expr_term(operand, env);
+        };
+        auto left = operand_term(binary->first);
+        auto right = operand_term(binary->second);
+        if (left && right) {
+          auto resolved_left = current_body_types_->solver.resolve(left);
+          auto resolved_right = current_body_types_->solver.resolve(right);
+          if (resolved_left && resolved_right &&
+              !resolved_left->is_closed() && !resolved_right->is_closed()) {
+            if (!current_body_types_->solver.unify(left, right))
+              err(line, "equality operands must have compatible types",
+                  "TYPE_MISMATCH");
+            moss::Requirement requirement;
+            requirement.kind = moss::RequirementKind::Operator;
+            requirement.target_id = "operator:==";
+            requirement.subject = left;
+            requirement.arguments.push_back(right);
+            requirement.argument_access.push_back(moss::AccessMode::Read);
+            requirement.result = moss::Type::primitive("bool");
+            requirement.origin.line = line;
+            current_body_types_->open_operator_requirements.push_back(
+                std::move(requirement));
+          }
+        }
+      }
       if (unresolved_expression(binary->first, env) ||
           unresolved_expression(binary->second, env)) return;
       if (left_type && right_type) {
@@ -21000,7 +21234,6 @@ class Checker {
           err(line, "Range equality requires two Range operands",
               "TYPE_MISMATCH");
         }
-        auto equality = split_binary(value, {"==", "!="});
         if (equality && equality->first == binary->first)
           check_equality_operands(line, lt, rt);
       }
@@ -21261,6 +21494,27 @@ class Checker {
       const auto base = inferred_expr(ib, env);
       const auto bt = base ? std::optional<string>(base->projection()) : std::nullopt;
       const auto index_term = inferred_expr_term(ii, env);
+      if (current_body_types_) {
+        // Ask the ordinary expression checker for the indexed result so its
+        // solver binds an open receiver to Vector[T] and the index to Int.
+        // Retain those same TypeRefs; do not infer them from the expression
+        // spelling when the open summary is built later.
+        const auto indexed = inferred_expr(value, env);
+        auto receiver = current_body_types_->known_expression(ib);
+        if (!receiver) receiver = inferred_expr_term(ib, env);
+        auto key = current_body_types_->known_expression(ii);
+        if (!key) key = index_term;
+        auto element = current_body_types_->known_expression(value);
+        if (!element && indexed) element = indexed->term;
+        if (receiver && key && element) {
+          auto resolved_receiver = current_body_types_->solver.resolve(receiver);
+          if (resolved_receiver &&
+              resolved_receiver->kind == moss::TypeKind::Builtin &&
+              resolved_receiver->name == "vector")
+            current_body_types_->open_operations.push_back({
+                "builtin:index", receiver, {key}, element, line});
+        }
+      }
       if (current_body_types_) {
         auto container = current_body_types_->known_expression(ib);
         auto key = current_body_types_->known_expression(ii);

@@ -120,6 +120,16 @@ struct OpenCallableSummaryFacts {
   vector<TypeRef> parameter_types;
   TypeRef result_type;
   vector<Requirement> requirements;
+  struct OperationFact {
+    string operation_id;
+    TypeRef receiver;
+    vector<TypeRef> arguments;
+    TypeRef result;
+    int line = 0;
+  };
+  // Checker-retained builtin operations used to close an otherwise open
+  // generic contract. These are semantic facts, not serialized body IR.
+  vector<OperationFact> operations;
   vector<MemberDispatchRequirement> member_requirements;
   vector<string> semantic_dependencies;
   vector<AccessMode> parameter_access;
@@ -147,6 +157,11 @@ inline bool close_open_summary_ordinals(OpenCallableSummaryFacts& summary) {
   };
   for (const auto& type : summary.parameter_types) visit(visit, type);
   visit(visit, summary.result_type);
+  for (const auto& operation : summary.operations) {
+    visit(visit, operation.receiver);
+    for (const auto& argument : operation.arguments) visit(visit, argument);
+    visit(visit, operation.result);
+  }
   for (const auto& requirement : summary.requirements) {
     visit(visit, requirement.subject);
     for (const auto& argument : requirement.arguments) visit(visit, argument);

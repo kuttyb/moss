@@ -1,5 +1,21 @@
 # Moss current status
 
+## Phase 25-M2b.3d-D1 checker-owned `index_of` facts — 2026-10-19
+
+Implementation is on the dedicated branch `phase25-m2b3d-d1-checker-facts`,
+based on `phase25-integration` at `32c06c8278a5648b6f78c87e8ecd91c6048c6cc9`.
+The checker now retains the open generic relation and checker-resolved Count,
+Index, and equality facts for the bounded `collections.index_of` shape. It
+does not add ABI emission, checked-body decoding, or consumer projection.
+
+The focused checker harness and generic arithmetic acceptance pass. The typed
+semantic API script has a pre-existing failure: its `add_one` assertion expects
+one operator requirement, while the compiler exposes both the return-operator
+and checked-arithmetic requirements. This assertion also failed with the
+pre-change root compiler. `make --jobs="$(nproc)" moss-dev` completed. No D2
+work has started; explicit body binding and control-flow retention remain for
+later checked-body work.
+
 ## Phase 25-M2b.3c integration — 2026-10-19
 
 `phase25-integration` was confirmed at expected baseline
