@@ -49,8 +49,8 @@
       "provider": "module Service\n\nexport fn fresh(items, target) -> Int:\n  var index = 0\n  count = items |> count\n  while index < count:\n    if items[index] == target:\n      return index\n    index = index + 1\n  return 0 - 1\n",
       "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh([8, 3, 8], 3)\n  echo Service.fresh([8, 3, 8], 9)\n",
       "expected_output": "1\n-1\n",
-      "checked_body_status": "unsupported; ABI-v10 legacy reconstruction required",
-      "evidence": "sdk/foundations/collections exports generic index_of/contains/count_equal with loops, indexing and equality; its current compiled-only smoke test is ABI-v9 and does not prove ABI-v10 checked-body execution."
+      "checked_body_status": "checked-body supported; Count/Index/equality loop is projected before generic specialization",
+      "evidence": "D3d source-free acceptance removes the provider source and this callable's complete generic_stmt body, verifies checked-body projection, and executes Int and String specializations. The actual SDK collections.index_of is covered by tests/tooling/check_phase25_d3d_collection_source_free.py."
     },
     {
       "id": "generic-range-iteration",

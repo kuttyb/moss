@@ -132,9 +132,16 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                     [str(poisoner), str(poisoned / "Service.mossi"),
                      str(poisoned / "libService.rlib"), "Service",
                      callable_name], cwd=ROOT, env=base_env)
-                expected_removed = f"removed 1 generic_stmt records from {callable_name}"
-                assert expected_removed in poison_output, poison_output
+                prefix = f"removed "
+                suffix = f" generic_stmt records from {callable_name}"
+                assert prefix in poison_output and suffix in poison_output, poison_output
+                removed = int(poison_output.split(prefix, 1)[1].split(suffix, 1)[0])
+                assert removed > 0, poison_output
                 poison_outputs.append(poison_output)
+            if case["id"] == "collection-loop-equality-index":
+                assert b"generic_stmt " not in (
+                    poisoned / "Service.mossi").read_bytes(), (
+                        "collection-loop still contains a legacy body after poisoning")
             if case["id"] == "single-call":
                 assert b"generic_stmt " not in (
                     poisoned / "Service.mossi").read_bytes(), (
