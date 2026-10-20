@@ -60,7 +60,13 @@ The R0 architecture note proposes one checker-retained typed traversal/codec/pro
 ## R0 review remediation in progress
 
 The first independent review of `19ffd63822f08c255cde231b590828a986e9a00b`
-was NO-GO. The revision expands marker-based source-free harness discovery
+was NO-GO and the surface/stage findings were remediated at
+`ad935043dd1661d7a77acc90e2ab43b84625b06d`. Re-review of that frozen SHA was
+NO-GO on a P1: `check_phase24_imported_generic_expressions.py` and the Team A /
+typed-semantic generic source-free controls were not mapped. It also identified
+a P2 stale 17-case sentence. The working revision maps those harnesses and every
+one of the 71 catalog paths, corrects the count to 19, and awaits a fresh review.
+The revision expands marker-based source-free harness discovery
 (71 paths), maps selected SDK and advanced-data calls, and makes the
 generic-Vector-iteration corpus assert v10 provider artifact emission before
 removing source and requiring consumer-stage rejection.

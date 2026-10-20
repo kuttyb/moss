@@ -12,7 +12,12 @@ before implementation: the remote peeled targets for `phase25-pre-main` and
 The R0 checkpoint `19ffd63822f08c255cde231b590828a986e9a00b` received
 independent NO-GO findings on valid generic surface coverage, source-free
 harness discovery, and the Vector-iteration provider/consumer stage assertion.
-The working revision adds a 71-path marker inventory and explicit harness map;
+Those first P1 findings were addressed at `ad935043dd1661d7a77acc90e2ab43b84625b06d`;
+its re-review closed the surface and stage assertions but found the explicit map
+omitted source-free generic harnesses, including Phase 24, Team A, and typed
+semantic API controls. Matrix wording also still said 17 cases. The current
+revision maps the omitted harnesses and all 71 catalog paths; it is pending a
+fresh review. The working revision adds a 71-path marker inventory and explicit harness map;
 its hostile corpus now requires a v10 provider artifact before source-free
 consumer rejection. Expanded three-mode evidence covers 19 cases (38 profiles
 per mode): source-backed 38/38, ABI-v9 36/38, and ABI-v10 12/38. The two ABI-v9
@@ -29,9 +34,8 @@ emission then consumer-stage rejection, artifact mutation negatives, and ABI-v9
 controls. Agent-feedback validation and `git diff --check` passed. The inventoried
 `packages/time` build failure remains P2. The actual bytes `examples/range_copy`
 program is still an R3 requirement; R0 ran the acceptance repro. No R1 compiler
-implementation has started. Next: freeze and push the revised R0 checkpoint,
-obtain the designated independent adversarial review, then proceed to R1 if all
-P0/P1 findings are closed.
+implementation has started. Next: commit/push the second R0 remediation and obtain another independent
+adversarial review, then proceed to R1 if all P0/P1 findings are closed.
 
 ---
 
