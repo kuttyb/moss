@@ -10,7 +10,7 @@ Pinned instruction commit: `3de64dc633312267c37c4e4990b28c2a73cab104`
 |---|---|---|
 | T0 | PASS | Annotated tags published and remote peeled commits verified below; `origin/main` unchanged. |
 | R0 | PASS | Final independent GO at frozen checkpoint `9c90573bda8daec5bd4254cc5f6c64c5dd3239e4`; 19-case oracle, complete 71-path harness map, strict corpus and P2 inventory exception recorded. |
-| R1 | IN PROGRESS | Independent GO at architecture SHA `ff4470ffdcc93cedb3d66b1e068b7f5ea8ca3f5f`. Current pushed base `b2b12b94`; uncommitted continuation adds statement-call and pipeline-stage capture. Full source-free hostile/v9 corpus and generic collection facts pass. Exact-SHA review, total structural coverage and shared lowerer remain open. |
+| R1 | IN PROGRESS | Independent GO at architecture SHA `ff4470ffdcc93cedb3d66b1e068b7f5ea8ca3f5f`. Latest reviewed push `783f47ea` received NO-GO; the current working tree addresses its P1 findings and has green focused controls. Follow-up review, total structural coverage and shared lowerer remain open. |
 | R2–R5 | NOT STARTED | ABI-v9 remains default; no `main` or `phase25-integration` changes. |
 
 ## T0 transcript and verification
@@ -258,3 +258,40 @@ deduplicated repeated semantic visits generally, and no common checked-body
 tree lowerer/record emitter exists. R1 remains open and the ledger must not be
 used for lowering yet. Freeze, rerun the listed gates, then obtain the
 independent exact-SHA review before proceeding.
+
+### R1 exact-SHA review and correction — working tree after `783f47ea`
+
+The independent architect reviewed pushed `783f47eaec6f14519b7e75e70a0c57f0872a3bdc`
+and returned NO-GO with four P1 findings: statement invocation argument links
+did not match the root validator; void statement calls were made incomplete by
+the missing result TypeRef; expression-position open generic callbacks lacked
+parameter/Callable links; and generic pipeline sources returned before stage
+capture. The review also required a selected member target/requirement link and
+an explicit completeness invariant for calls, members and stages.
+
+Current working correction: statement call validation now checks the
+`call-invocation` root and unique `call-argument:<i>` children, recording
+non-expression builtin operands separately. Void invocation nodes may complete
+without a value TypeRef. Expression-position generic callbacks retain a
+parameter ordinal and copy the matching Callable constraint. Generic-source
+pipeline paths now retain deferred stage nodes and their operand payloads; they
+remain incomplete when the ordinary checker has not resolved their concrete
+input/output semantics. Resolved builtin, trait, nominal, generic method,
+function, and functional stage paths attach their selected identity or
+requirement links, and missing identities keep the ledger incomplete.
+
+Validation on the corrected working tree:
+
+- `make --jobs="$(nproc)" moss-dev` passed.
+- `python3 tests/tooling/check_phase25_m2b2_source_free_corpus.py` passed all
+  admitted checked-body positives, hostile-artifact negatives, dependency
+  closure, generic-range fail-closed behavior and ABI-v9 controls.
+- `python3 tests/tooling/check_phase25_generic_collection_facts.py` and
+  `check_phase25_generic_arithmetic_requirements.py` passed.
+- H3 direct records, D3d actual SDK `index_of`, D4 actual SDK collections,
+  feedback validation and `git diff --check` passed.
+
+This correction is not yet committed or independently reviewed. R1 remains
+open; deferred valid generic pipeline semantics, source-to-occurrence totality,
+single-visit semantics, binding/scope lowering and the shared structural body
+lowerer are still work, not exclusions. No R2 work has started.
