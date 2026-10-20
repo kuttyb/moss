@@ -1,6 +1,6 @@
 # Moss current status
 
-## Phase 25-M2b.3a parameter-return implementation — 2026-10-19
+## Phase 25-M2b.3a parameter-return implementation and integration — 2026-10-19
 
 Implementation is complete on dedicated branch `phase25-m2b3a-parameter-return`,
 based on `c0ef11656d4718ebd694a6cd908c194ad8960523`. The change emits the
@@ -8,17 +8,22 @@ checker-owned generic identity summary, checked body, and callable provenance;
 the ABI-v10 importer validates and projects `Return(Parameter(0))` into the
 existing AST before ordinary specialization. The source-free corpus now
 requires an observable projection trace and proves both integer and string
-specializations still execute after removing `generic_stmt`. The change has
-not been integrated; integration review remains pending.
+specializations still execute after removing `generic_stmt`.
+`phase25-integration` was confirmed at the reviewed baseline
+`c0ef11656d4718ebd694a6cd908c194ad8960523` and fast-forwarded to
+`a2b5a5e9346b9990333b5a1fc967368204730b71`; no compiler changes were added
+during integration.
 
-Validation on the implementation branch: `make --jobs="$(nproc)" moss-dev`,
-the source-free corpus (including missing/corrupt record negatives and ABI-v9
-compatibility), the R2b empty-vector record verifier, R2c consumer and
-execution, M2b.1 provenance, G2 conformance, checked-arithmetic acceptance,
-H3 Scenario 6, feedback validation, and `git diff --check` passed. No full
-repository suite was run. Existing `TypeSolver::Undo::binding` aggregate
-initialization warnings appeared during the compiler build. No implementation
-or milestone closure is claimed for broader checked-body coverage.
+Integration validation on that compiler tree passed: the source-free corpus
+(parameter-return is checked-body supported; the other uncovered rows retain
+their legacy-dependent expectations), R2b empty-vector records, R2c consumer
+and execution (`Vector[i32]` and `Vector[bool]`), M2b.1 provenance, G2
+conformance (11/11), checked-arithmetic acceptance, and H3 Scenario 6 (1/1,
+output `99`, source removed, `dirty: false`). The earlier implementation build
+`make --jobs="$(nproc)" moss-dev`, feedback validation, and `git diff --check`
+also passed. No full repository suite was run. Existing
+`TypeSolver::Undo::binding` aggregate initialization warnings appeared during
+the compiler build. No broader checked-body coverage is claimed.
 
 ## Focused TypeSolver atomicity fix — 2026-10-19
 
