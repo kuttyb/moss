@@ -1,4 +1,4 @@
-## Phase 25.1 R1 continuation — common branch-arithmetic join — checkpoint ready for review — 2026-10-21
+## Phase 25.1 R1 continuation — common branch-arithmetic join — scoped GO at 1f4411fb — 2026-10-21
 
 The common occurrence producer now emits the exact checked-body record for the
 bounded generic `(T, Bool) -> T` arithmetic join with a multiply in each branch
@@ -22,6 +22,12 @@ compatibility. Agent-feedback validation and `git diff --check` pass. R1 remains
 totality and overall independent acceptance. The old H3 fallback remains a
 migration path, not evidence of generalized lowering. Preserve the remaining
 tracked unavailable profiles and known ABI-v9/package failures.
+
+The existing adversarial architect returned scoped GO at exact pushed SHA
+`1f4411fb4e73a026fbbc95247ca6c0e9687aa856`, with no P0/P1/P2 in this
+slice. The review checked exact producer/importer requirement order and
+dependency shape, nullable TypeRef guards, checked-body leaf decoding, and
+both hostile before-projection controls. It did not accept overall R1.
 
 ## Phase 25.1 R1 continuation — common pure branch-join lowering — scoped GO at 0ce302ab — 2026-10-21
 
