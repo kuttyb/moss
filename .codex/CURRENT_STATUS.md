@@ -1,10 +1,10 @@
 # Moss current status
 
-## Phase 25.1 R1 continuation — ownership-resolved assignment occurrences — 2026-10-20
+## Phase 25.1 R1 continuation — assignment reconciliation and Pass node — 2026-10-20
 
-Latest pushed checkpoint is `3603bcfced873e2301feb142d1ad2078917abfb4`; the current working slice reorders assignment reconciliation ahead of summary completeness derivation after the exact-SHA reviewer identified stale public flags. Reconciliation validates pre-write identity, post-write identity, mutability, resolved type equality, and identity uniqueness after ownership facts are final. Public summary and ledger completeness now derive from this reconciled state before checked-body retention. Exact-SHA follow-up review of this correction is pending.
+Latest pushed checkpoint is `6c2793abfd9965bfa9de1926e2de8e19724c0214`, independently GO for the focused assignment lifecycle slice. Review noted P2 coverage for generic local TypeRefs; the working source-free corpus now verifies a mutable local of generic type under Int/String specialization. The current uncommitted slice adds an append-only checked-body Pass node (tag 13), checker-driven lowering/projection, canonical codec validation, and a pre-change reader rejection test. R1 remains open: the checked occurrence ledger still fail-closes unsupported valid constructs, and shape-specific producers/record emitters remain.
 
-Validation on the working slice: `make --jobs="$(nproc)" moss`; `python3 tests/tooling/check_phase25_m2b2_source_free_corpus.py` (including source-free mutable-local Int/String specialization, removal of legacy `generic_stmt`, hostile artifact controls, and ABI-v9 compatibility); `python3 tests/tooling/check_phase25_statement_call_occurrence_roles.py`; `python3 tests/tooling/check_phase25_generic_arithmetic_requirements.py`; `python3 tests/tooling/check_agent_feedback.py`; and `git diff --check` pass. This is a focused assignment slice, not exhaustive R1 completion. R2 remains prohibited until independent R1 acceptance.
+Validation on the working tree: production compiler build; D2 checked-body loop codec plus baseline pre-D2 reader rejection for Count, Index, and Pass nodes; full prioritized M2b2 source-free corpus with generic mutable-local reassignment, explicit Pass, hostile artifact controls, and ABI-v9 controls; statement/call occurrence regression; generic arithmetic requirements; feedback validator; and whitespace check. The open generic inferred-return/local form remains incomplete and fail-closed. Next: finish focused tests, commit/push, obtain independent exact-SHA review, and continue the exhaustive checker ledger and common lowerer. Do not start R2 before independent full R1 acceptance.
 
 ## Phase 25.1 continuation — R1 in progress — 2026-10-20
 

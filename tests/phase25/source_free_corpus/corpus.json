@@ -77,11 +77,21 @@
       "id": "mutable-local-reassignment",
       "priority": "P1-essential",
       "category": "generic body mutation",
-      "provider": "module Service\n\nexport fn fresh(first: Int, second: Int, ignored):\n  var result = first\n  result = second\n  return result\n",
-      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(17, 23, 0)\n  echo Service.fresh(8, 41, \"moss\")\n",
-      "expected_output": "23\n41\n",
-      "checked_body_status": "checked-body supported; local reassignment preserves the checker binding identity and mutable declaration before specialization of an independent generic parameter",
-      "evidence": "R1 canonical occurrence lowering retains a local Assign only for the exact checker binding identity and mutable declaration. Source-free acceptance removes provider source and generic_stmt, requires projection, and executes Int and String specializations through an independent generic argument."
+      "provider": "module Service\n\nexport fn fresh(value):\n  var result = value\n  result = result\n  return 23\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(17)\n  echo Service.fresh(\"moss\")\n",
+      "expected_output": "23\n23\n",
+      "checked_body_status": "checked-body supported; generic mutable-local TypeRef and checker binding identity are projected before Int and String specialization",
+      "evidence": "R1 canonical occurrence lowering links declaration, pre-write and post-write identities while preserving the generic TypeRef on the mutable local. Source-free acceptance removes provider source and generic_stmt, requires projection, and executes Int and String local specializations."
+    },
+    {
+      "id": "explicit-pass-statement",
+      "priority": "P1-essential",
+      "category": "non-evaluating statement",
+      "provider": "module Service\n\nexport fn fresh(value):\n  pass\n  return value\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(19)\n  echo Service.fresh(\"moss\")\n",
+      "expected_output": "19\nmoss\n",
+      "checked_body_status": "checked-body supported; explicit Pass occurrence is encoded as an append-only no-op statement and projected before generic specialization",
+      "evidence": "R1 common occurrence lowerer preserves the parser statement as a checked-body Pass node. Source-free acceptance removes provider source and generic_stmt, requires projection, executes Int and String specializations, and verifies pre-Pass reader rejection."
     },
     {
       "id": "generic-range-iteration",

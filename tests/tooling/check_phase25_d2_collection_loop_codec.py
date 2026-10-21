@@ -34,7 +34,8 @@ try:
         "-o", str(PRECONSUMER),
     ], check=True)
     for operation, path in (("count", COMPAT_BASE),
-                            ("index", Path(str(COMPAT_BASE) + ".index"))):
+                            ("index", Path(str(COMPAT_BASE) + ".index")),
+                            ("pass", Path(str(COMPAT_BASE) + ".pass"))):
         subprocess.run([str(PRECONSUMER), str(path), operation], check=True)
 
     old_compiler = (BASELINE_TREE / "src" / "moss.cpp").read_text()

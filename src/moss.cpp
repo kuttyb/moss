@@ -3885,6 +3885,11 @@ static void project_imported_h3_checked_bodies(Program& program) {
             statement.text = statement.a + " = " + statement.b;
             projected.push_back(std::move(statement));
             return true;
+          case checked_ir::StmtKind::Pass:
+            statement.kind = Stmt::Kind::Pass;
+            statement.text = "pass";
+            projected.push_back(std::move(statement));
+            return true;
           case checked_ir::StmtKind::Return:
             if (!rendered) return false;
             statement.kind = Stmt::Kind::Return;
@@ -3942,6 +3947,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
         } else if (statement.kind == checked_ir::StmtKind::If) {
           contains_if = true;
         } else if (statement.kind != checked_ir::StmtKind::Return &&
+                   statement.kind != checked_ir::StmtKind::Pass &&
                    statement.kind != checked_ir::StmtKind::Assign) {
           checked_projection_subset = false;
         }
@@ -3956,10 +3962,11 @@ static void project_imported_h3_checked_bodies(Program& program) {
         statements.back().kind == checked_ir::StmtKind::Return &&
         std::all_of(statements.begin(), std::prev(statements.end()),
             [](const checked_ir::Stmt& statement) {
-          return (statement.kind == checked_ir::StmtKind::Let ||
-                  statement.kind == checked_ir::StmtKind::Var ||
-                  statement.kind == checked_ir::StmtKind::Assign) &&
-              statement.expr.has_value();
+          return ((statement.kind == checked_ir::StmtKind::Let ||
+                   statement.kind == checked_ir::StmtKind::Var ||
+                   statement.kind == checked_ir::StmtKind::Assign) &&
+                  statement.expr.has_value()) ||
+              statement.kind == checked_ir::StmtKind::Pass;
         });
     const bool checked_if_body = contains_if && checked_projection_subset;
     if ((checked_straight_line || checked_if_body) &&
@@ -4111,6 +4118,12 @@ static void project_imported_h3_checked_bodies(Program& program) {
           statement.kind = Stmt::Kind::Return;
           statement.a = *expression;
           statement.text = "return " + statement.a;
+          projected.push_back(std::move(statement));
+          return true;
+        }
+        if (checked.kind == checked_ir::StmtKind::Pass) {
+          statement.kind = Stmt::Kind::Pass;
+          statement.text = "pass";
           projected.push_back(std::move(statement));
           return true;
         }
@@ -6701,6 +6714,12 @@ class Checker {
           lowered.expr = std::move(*expression);
           return lowered;
         }
+        case Stmt::Kind::Pass:
+          if (!state.statement_occurrences.at(id).explicit_non_evaluating ||
+              !state.statement_occurrences.at(id).expression_roots.empty())
+            return std::nullopt;
+          lowered.kind = checked_ir::StmtKind::Pass;
+          return lowered;
         case Stmt::Kind::Assign: {
           // Reassignment is represented only when the checker retained the
           // existing mutable binding identity. A first assignment, field,

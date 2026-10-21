@@ -153,7 +153,8 @@ enum class StmtKind : uint32_t {
   If = 9,
   While = 10,
   For = 11,
-  Match = 12
+  Match = 12,
+  Pass = 13
 };
 
 struct Stmt;
@@ -446,6 +447,13 @@ inline void encode_checked_stmt(std::string& out, const Stmt& stmt) {
         checked_body_field(out, std::to_string(c.body.size()));
         for (const auto& s : c.body) encode_checked_stmt(out, s);
       }
+      break;
+
+    case StmtKind::Pass:
+      if (stmt.expr || !stmt.operands.empty() || stmt.type ||
+          !stmt.then_branch.empty() || !stmt.else_branch.empty() ||
+          !stmt.body.empty() || !stmt.match_cases.empty())
+        throw std::invalid_argument("invalid pass statement: payload present");
       break;
 
   }
@@ -972,7 +980,7 @@ class H3BodyReader {
       fail("checked body node count exceeds bounds");
     const auto tag = number();
     if (tag < static_cast<std::uint32_t>(StmtKind::Let) ||
-        tag > static_cast<std::uint32_t>(StmtKind::Match))
+        tag > static_cast<std::uint32_t>(StmtKind::Pass))
       fail("checked body statement kind is unknown");
     Stmt statement;
     statement.kind = static_cast<StmtKind>(tag);
@@ -1027,6 +1035,8 @@ class H3BodyReader {
         statement.type = result_;
         break;
       }
+      case StmtKind::Pass:
+        break;
       case StmtKind::AssignField:
       case StmtKind::AssignIndex:
       case StmtKind::ExprStmt:

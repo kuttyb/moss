@@ -173,7 +173,15 @@ int main(int argc, char** argv) {
                              std::ios::binary);
     index_file.write(index_body.data(),
                      static_cast<std::streamsize>(index_body.size()));
-    return count_file.good() && index_file.good() ? 0 : 1;
+    cir::Stmt pass;
+    pass.kind = cir::StmtKind::Pass;
+    auto pass_body = cir::encode_checked_body_v1(
+        {std::move(pass), return_value(integer(int_type, "42"))});
+    std::ofstream pass_file(std::string(argv[2]) + ".pass",
+                            std::ios::binary);
+    pass_file.write(pass_body.data(),
+                    static_cast<std::streamsize>(pass_body.size()));
+    return count_file.good() && index_file.good() && pass_file.good() ? 0 : 1;
   }
   auto generic_statements = index_of_body(variable);
   const auto generic_body = cir::encode_checked_body_v1(generic_statements);
@@ -414,6 +422,28 @@ int main(int argc, char** argv) {
   assert(throws_invalid([&] {
     (void)cir::decode_h3_checked_body_v1(
         generic_body, context, generic_parameters, int_type, generic_hash);
+  }));
+  cir::Stmt no_op;
+  no_op.kind = cir::StmtKind::Pass;
+  const auto pass_body = cir::encode_checked_body_v1(
+      {no_op, return_value(integer(int_type, "42"))});
+  const auto pass_hash = cir::compute_checked_body_hash_v1(
+      {no_op, return_value(integer(int_type, "42"))});
+  const auto pass_decoded = cir::decode_checked_body_v1(
+      pass_body, context, {}, int_type, pass_hash);
+  assert(pass_decoded.size() == 2 &&
+         pass_decoded.front().kind == cir::StmtKind::Pass &&
+         pass_decoded.back().kind == cir::StmtKind::Return &&
+         cir::encode_checked_body_v1(pass_decoded) == pass_body);
+  auto invalid_pass = no_op;
+  invalid_pass.expr = integer(int_type, "0");
+  assert(throws_invalid([&] {
+    (void)cir::encode_checked_body_v1(
+        {invalid_pass, return_value(integer(int_type, "42"))});
+  }));
+  assert(throws_invalid([&] {
+    (void)cir::decode_h3_checked_body_v1(
+        pass_body, context, {}, int_type, pass_hash);
   }));
   assert(throws_invalid([&] {
     (void)cir::decode_checked_body_v1(

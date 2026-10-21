@@ -18,16 +18,19 @@ int main(int argc, char** argv) {
   const std::vector<moss::TypeRef> parameters =
       std::string(argv[2]) == "count"
           ? std::vector<moss::TypeRef>{vector_type}
-          : std::vector<moss::TypeRef>{vector_type, int_type};
-  const auto result = std::string(argv[2]) == "count" ? int_type : variable;
+          : std::string(argv[2]) == "pass"
+              ? std::vector<moss::TypeRef>{}
+              : std::vector<moss::TypeRef>{vector_type, int_type};
+  const auto result = std::string(argv[2]) == "count" ||
+          std::string(argv[2]) == "pass" ? int_type : variable;
   const auto hash = "body-semantic-v1:sha256:" +
       moss::source_free_contract_sha256(bytes);
   try {
     (void)moss::checked_ir::decode_h3_checked_body_v1(
         bytes, context, parameters, result, hash);
   } catch (const std::invalid_argument&) {
-    std::cout << "pre-D2 H3 consumer rejected new " << argv[2]
-              << " expression tag\n";
+    std::cout << "pre-D2 H3 consumer rejected new checked-body " << argv[2]
+              << " node\n";
     return 0;
   }
   std::cerr << "pre-D2 H3 consumer unexpectedly accepted new node\n";
