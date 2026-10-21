@@ -30389,9 +30389,30 @@ fn inspect_sample(sample: Sample) -> Int:
             *parameter_pipeline_function, *parameter_pipeline_state->second);
     parameter_pipeline_occurrences[parameter_pipeline_callback_id]
         .linked_constraints = parameter_linked_constraints;
+    parameter_pipeline_occurrences[parameter_pipeline_callback_id]
+        .linked_constraints.front().arguments.front() = "wrong-input";
+    const bool wrong_pipeline_callable_arguments_rejected =
+        !checker.call_occurrence_dependencies_complete(
+            *parameter_pipeline_function, *parameter_pipeline_state->second);
+    parameter_pipeline_occurrences[parameter_pipeline_callback_id]
+        .linked_constraints = parameter_linked_constraints;
+    parameter_pipeline_function->constraints.back().arguments.front() =
+        "different-input";
+    const bool mismatched_function_callable_arguments_rejected =
+        !checker.call_occurrence_dependencies_complete(
+            *parameter_pipeline_function, *parameter_pipeline_state->second);
+    parameter_pipeline_function->constraints.back() = pipeline_formal_fact;
+    parameter_pipeline_function->constraints.push_back(pipeline_formal_fact);
+    const bool duplicate_pipeline_callable_rejected =
+        !checker.call_occurrence_dependencies_complete(
+            *parameter_pipeline_function, *parameter_pipeline_state->second);
+    parameter_pipeline_function->constraints.pop_back();
     parameter_pipeline_function->constraints = original_pipeline_constraints;
     if (!missing_pipeline_callable_rejected ||
         !wrong_pipeline_callable_arity_rejected ||
+        !wrong_pipeline_callable_arguments_rejected ||
+        !mismatched_function_callable_arguments_rejected ||
+        !duplicate_pipeline_callable_rejected ||
         checker.call_occurrence_dependencies_complete(
             *parameter_pipeline_function, *parameter_pipeline_state->second))
       return false;

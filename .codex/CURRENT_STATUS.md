@@ -1,7 +1,7 @@
 ## Phase 25.1 R1 continuation — formal and bound-method pipeline identity — working tree — 2026-10-21
 
-The remaining architect P2s in pipeline occurrence dependency completion are
-closed in the working tree. Formal callback targets now require exactly one
+The implementation for the remaining architect P2s in pipeline occurrence
+dependency completion is in place. Formal callback targets now require exactly one
 linked `Callable` fact whose subject, detail, arity, and arguments match the
 enclosing function's retained constraint. Bound-method targets now derive the
 canonical receiver type from the exact statement-local checked binding and must
@@ -11,13 +11,18 @@ binding resolver as direct calls; local aliases remain incomplete.
 
 The focused fixture exposes a source formal-callback pipeline whose callback
 has no linked Callable fact; it remains fail-closed. A synthetic matching fact
-is accepted only as a positive control, while missing and wrong-arity links
-reject. A concrete `Scale.apply` bound-method pipeline accepts its canonical
-target and rejects a forged receiver type with the same method suffix. The
-source build and statement/call occurrence harness pass. H3 source-free,
-feedback validation, and exact-SHA review are pending. R1 remains open; this
-does not resolve global operation/effect/dependency totality or the remaining
-bounded H3 producer migration. Preserve the 24 unavailable ABI-v10 profiles,
+is accepted only as a positive control, while missing, wrong-arity, wrong linked
+arguments, mismatched function-constraint arguments, and duplicate same-subject
+Callable facts reject. A concrete `Scale.apply` bound-method pipeline accepts its
+canonical target and rejects a forged receiver type with the same method suffix.
+The architect returned scoped GO at `9cfec857` with no P0/P1 and a P2 coverage
+note; these new argument-list and duplicate-constraint mutations address that
+note, and the source build plus statement/call occurrence harness pass. Exact-SHA
+re-review is pending. The H3 private-chain producer already consumes canonical
+occurrence-lowered checked-body-v1 bytes; its source-free chain test passed on
+`moss-dev` at `9cfec857`. Remaining R1 work includes the shape-specific Count/Index
+ABI record producer and global occurrence/effect/dependency totality. R1 remains
+open. Preserve the 24 unavailable ABI-v10 profiles,
 two ABI-v9 raise/recover failures, and `packages/time` failure.
 
 ## Phase 25.1 R1 continuation — call dependency occurrence totality — 2026-10-21
