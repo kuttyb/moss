@@ -20,9 +20,13 @@ with no P0/P1/P2; this closes the prior test-coverage note. On the subsequent
 read-only audit at pushed SHA `714df8cc2eb350c90c765c728a6434f1a846cff4`, the
 architect returned NO-GO for overall R1: H3 migration is verified, while exact
 Count/Index loop admission and global occurrence/effect/dependency totality remain
-open. The audit also identified the source-shaped arithmetic producer. That
-producer and its source-text body reconstruction have now been removed; the common
-occurrence producer emits the checked-arithmetic fixtures.
+open. The audit also identified the source-shaped arithmetic ABI record producer.
+That producer and its dedicated `checked_arithmetic_body` reconstruction helper
+have now been removed; the generic single-return migration fallback remains for
+shapes where checker-owned occurrence lowering is incomplete. The common
+occurrence producer emits the admitted checked-arithmetic fixture. Exact-SHA
+architect review at `35f005ea64cf7fb73e60513c4c15f187f8c99512` returned scoped
+GO for this migration, with no new P0/P1. This is not overall R1 acceptance.
 
 Current validation on the rebuilt `moss-dev` passes the full M2b2 source-free/
 hostile corpus, generic arithmetic requirements, D4 SDK collection source-free
