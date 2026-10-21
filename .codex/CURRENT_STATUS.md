@@ -9773,16 +9773,20 @@ coverage; no closed statement/control-flow graph exists; operation/requirement/
 effect/dependency links are partial; and provider lowerers/readers remain
 shape-specific. This remains the active R1 work; no R2 work has started.
 
-The current source slice retains a dense statement occurrence per parsed body
-statement, canonicalizes source IDs in AST order while preserving synthetic
-return roots, links statement roots to expression IDs, and records parent,
-branch, scope entry/exit, binding declaration/type/mutability, explicit Pass
-nodes, parameter read identities, and expression scope IDs. The statement-kind
-validator now explicitly rejects unrepresented new variants instead of
-silently accepting its default branch. A branch-join probe intentionally
-remains ledger-incomplete because the checker does not yet retain the joined
-local's exact binding identity; the occurrence is not assigned a guessed ID.
-This is a fail-closed foundation, not exhaustive R1 acceptance. Operation and
+The current source slice materializes every parser statement, including
+control markers that specialized checker paths skip, then canonicalizes dense
+IDs and control scopes by source line. This matters for match bodies because
+the parser's flattened vector can group case markers separately from their arm
+bodies. The graph links statement roots to expression IDs and records parent,
+branch, scope entry/exit, declaration binding/type/mutability, loop bindings,
+enum variant/payload bindings, explicit Pass nodes, parameter and unambiguous
+lexical binding identities, and expression scope IDs. Synthetic expression
+results retain their Return node and exact return-value root. The statement-
+kind validator rejects unrepresented new variants instead of silently
+accepting its default branch. A branch-join probe intentionally remains
+ledger-incomplete because the checker does not yet retain the joined local's
+exact binding identity; the occurrence is not assigned a guessed ID. This is a
+fail-closed foundation, not exhaustive R1 acceptance. Operation and
 requirement fact cross-checks, branch-join/local binding identity, resolved
 effects/dependencies, total lowerer/reader convergence, and summary/body
 completeness gating remain open.
@@ -9795,6 +9799,5 @@ Validation on the current working source: `make --jobs="$(nproc)" moss-dev`,
 `git diff --check` pass. The source-free corpus retains its ABI-v9 controls and
 hostile-artifact rejection checks. Existing TypeSolver initializer warnings
 remain. ABI-v9 raise/recover failures, the 24 unavailable v10 profiles, and
-`packages/time` remain visible in the compatibility ledger. Current changes
-are uncommitted and need an exact pushed-SHA review before they become a green
-R1 checkpoint.
+`packages/time` remain visible in the compatibility ledger. The current code
+changes need an exact pushed-SHA adversarial review; R1 remains in progress.

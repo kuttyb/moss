@@ -4782,6 +4782,12 @@ class Checker {
       bool completed = false;
     };
     struct StatementOccurrence {
+      struct BindingOccurrence {
+        string name;
+        string identity;
+        moss::TypeRef type;
+        bool mutable_binding = false;
+      };
       std::uint32_t id = 0;
       const Stmt* source = nullptr;
       Stmt::Kind kind = Stmt::Kind::Raw;
@@ -4795,6 +4801,9 @@ class Checker {
       vector<std::uint32_t> expression_roots;
       string binding_identity;
       moss::TypeRef binding_type;
+      vector<BindingOccurrence> bindings;
+      string variant_identity;
+      string variant_type;
       bool introduces_binding = false;
       bool mutable_binding = false;
       bool explicit_non_evaluating = false;
@@ -4997,11 +5006,17 @@ class Checker {
       string identity;
       moss::TypeRef type;
     };
+    struct CaseFact {
+      string variant_identity;
+      string variant_type;
+      vector<StatementOccurrence::BindingOccurrence> payload_bindings;
+    };
     moss::TypeSolver solver{1};
     std::unordered_map<string, moss::TypeRef> locals;
     std::unordered_map<const Stmt*,
         std::unordered_map<string, moss::TypeRef>> locals_at_statement;
     std::unordered_map<const Stmt*, BindingFact> binding_facts;
+    std::unordered_map<const Stmt*, CaseFact> case_facts;
     std::unordered_map<const Stmt*, std::unordered_map<string, string>>
         binding_identities_at_statement;
     std::unordered_map<const Stmt*, std::set<string>>
@@ -11652,6 +11667,9 @@ class Checker {
               declaration->cases.begin(), declaration->cases.end(),
               [&](const EnumCase& c) { return c.name == statement.a; });
           if (case_it != declaration->cases.end()) {
+            BodyTypeState::CaseFact fact;
+            fact.variant_type = declaration->name;
+            fact.variant_identity = declaration->name + "." + case_it->name;
             for (size_t i = 0; i < statement.args.size() && i < case_it->fields.size(); ++i) {
               const string& field_name = statement.args[i];
               const string& field_type = case_it->fields[i].type;
@@ -11660,9 +11678,17 @@ class Checker {
                 field_term = *parsed;
               else
                 field_term = moss::Type::primitive(field_type);
+              BodyTypeState::StatementOccurrence::BindingOccurrence binding;
+              binding.name = field_name;
+              binding.identity = statement_binding_identity(
+                  current_semantic_context_, statement.line) + ":" + field_name;
+              binding.type = solver.resolve(field_term);
+              fact.payload_bindings.push_back(std::move(binding));
               locals[field_name] = field_term;
               scan[field_name] = field_type;
             }
+            if (statement.args.size() == case_it->fields.size())
+              body_types.case_facts[&statement] = std::move(fact);
           }
         }
       }
@@ -11708,6 +11734,15 @@ class Checker {
             loop_term = solver.fresh(0);
         }
         body_types.for_bindings[&statement] = loop_term;
+        if (loop_term) {
+          BodyTypeState::BindingFact fact;
+          fact.introduced = true;
+          fact.mutable_binding = false;
+          fact.identity = statement_binding_identity(
+              current_semantic_context_, statement.line) + ":" + statement.a;
+          fact.type = solver.resolve(loop_term);
+          body_types.binding_facts[&statement] = std::move(fact);
+        }
         if (loop_term) {
           locals[statement.a] = loop_term;
           auto resolved = solver.resolve(loop_term);
@@ -23827,8 +23862,14 @@ class Checker {
       ~SyntheticStatementRegistration() {
         auto found = state.statement_occurrence_ids.find(&statement);
         if (found != state.statement_occurrence_ids.end() &&
-            found->second < state.statement_occurrences.size())
+            found->second < state.statement_occurrences.size()) {
           state.statement_occurrences[found->second].synthetic = true;
+          auto& roots = state.statement_occurrences[found->second].expression_roots;
+          for (const auto& [key, expression_id] : state.expression_root_slots)
+            if (key.first == found->second)
+              roots.push_back(expression_id);
+          std::sort(roots.begin(), roots.end());
+        }
         state.statement_occurrence_ids.erase(&statement);
       }
     } registration{*retained->second, synthetic_return};
@@ -24683,22 +24724,49 @@ class Checker {
         statements, std::move(env), check_statement,
         true, true, true, join_context, &checked_types);
     // Synthetic expression-body roots are retained while checking a result
-    // expression, then source statement IDs are canonicalized in AST order.
-    // Keep the synthetic node after the source tree and remap every edge so
-    // IDs are dense and source-order independent.
+    // expression, then source nodes are canonicalized by source line. The
+    // parser's flattened vectors can group match-arm bodies separately from
+    // their Case markers, so vector order is not a control-flow ordering.
+    vector<const Stmt*> source_statement_order;
+    source_statement_order.reserve(statements.size());
+    for (const auto& statement : statements)
+      source_statement_order.push_back(&statement);
+    std::stable_sort(source_statement_order.begin(), source_statement_order.end(),
+        [](const Stmt* left, const Stmt* right) {
+          return left->line < right->line;
+        });
+    // The type walker can visit Match/Case and other control markers through
+    // specialized paths without opening an expression root for every marker.
+    // Materialize every parser statement before remapping so the statement
+    // occurrence set remains one-to-one with the checked body.
+    for (const auto* statement : source_statement_order)
+      checked_types.statement_occurrence_id(*statement);
+    vector<std::uint32_t> source_occurrence_order;
+    for (std::uint32_t id = 0;
+         id < checked_types.statement_occurrences.size(); ++id)
+      if (!checked_types.statement_occurrences[id].synthetic)
+        source_occurrence_order.push_back(id);
+    std::stable_sort(source_occurrence_order.begin(),
+        source_occurrence_order.end(), [&](std::uint32_t left,
+                                           std::uint32_t right) {
+          return checked_types.statement_occurrences[left].line <
+              checked_types.statement_occurrences[right].line;
+        });
     vector<BodyTypeState::StatementOccurrence> canonical_statements;
     canonical_statements.reserve(checked_types.statement_occurrences.size());
     std::vector<std::uint32_t> statement_id_remap(
         checked_types.statement_occurrences.size(), UINT32_MAX);
-    for (const auto& statement : statements) {
-      auto found = checked_types.statement_occurrence_ids.find(&statement);
-      if (found == checked_types.statement_occurrence_ids.end() ||
-          found->second >= checked_types.statement_occurrences.size()) {
+    for (const auto old_id : source_occurrence_order) {
+      auto node = checked_types.statement_occurrences[old_id];
+      auto found = node.source
+          ? checked_types.statement_occurrence_ids.find(node.source)
+          : checked_types.statement_occurrence_ids.end();
+      if (!node.source || found == checked_types.statement_occurrence_ids.end() ||
+          found->second != old_id) {
         checked_types.expression_occurrence_ledger_complete = false;
         continue;
       }
-      auto node = checked_types.statement_occurrences[found->second];
-      statement_id_remap[found->second] =
+      statement_id_remap[old_id] =
           static_cast<std::uint32_t>(canonical_statements.size());
       node.id = static_cast<std::uint32_t>(canonical_statements.size());
       canonical_statements.push_back(std::move(node));
@@ -24777,11 +24845,11 @@ class Checker {
           return false;
       }
     };
-    for (const auto& statement : statements) {
-      const auto id = checked_types.statement_occurrence_id(statement);
+    for (const auto* statement : source_statement_order) {
+      const auto id = checked_types.statement_occurrence_id(*statement);
       auto& occurrence = checked_types.statement_occurrences.at(id);
       while (!statement_scopes.empty() &&
-             statement_scopes.back().indent >= statement.indent) {
+             statement_scopes.back().indent >= statement->indent) {
         checked_types.statement_occurrences.at(
             statement_scopes.back().statement_id).scope_exit = true;
         statement_scopes.pop_back();
@@ -24790,25 +24858,25 @@ class Checker {
         occurrence.parent_id = statement_scopes.back().statement_id;
         occurrence.scope_id = statement_scopes.back().scope_id;
       }
-      if (statement.kind == Stmt::Kind::Else ||
-          statement.kind == Stmt::Kind::Case ||
-          statement.kind == Stmt::Kind::Recover) {
-        const Stmt::Kind expected = statement.kind == Stmt::Kind::Else
+      if (statement->kind == Stmt::Kind::Else ||
+          statement->kind == Stmt::Kind::Case ||
+          statement->kind == Stmt::Kind::Recover) {
+        const Stmt::Kind expected = statement->kind == Stmt::Kind::Else
             ? Stmt::Kind::If
-            : statement.kind == Stmt::Kind::Case ? Stmt::Kind::Match
+            : statement->kind == Stmt::Kind::Case ? Stmt::Kind::Match
                                                  : Stmt::Kind::Try;
         for (std::size_t prior = id; prior > 0; --prior) {
           const auto& candidate = checked_types.statement_occurrences[prior - 1];
           const bool matching_depth = candidate.source &&
-              (statement.kind == Stmt::Kind::Case
-                   ? candidate.source->indent < statement.indent
-                   : candidate.source->indent == statement.indent);
+              (statement->kind == Stmt::Kind::Case
+                   ? candidate.source->indent < statement->indent
+                   : candidate.source->indent == statement->indent);
           if (candidate.kind == expected && matching_depth) {
             occurrence.control_parent_id = candidate.id;
-            occurrence.branch_role = statement.kind == Stmt::Kind::Else
-                ? "else" : statement.kind == Stmt::Kind::Case
-                    ? "case:" + statement.a : "recover";
-            if (statement.kind == Stmt::Kind::Else) {
+            occurrence.branch_role = statement->kind == Stmt::Kind::Else
+                ? "else" : statement->kind == Stmt::Kind::Case
+                    ? "case:" + statement->a : "recover";
+            if (statement->kind == Stmt::Kind::Else) {
               occurrence.parent_id = candidate.parent_id;
               occurrence.scope_id = candidate.scope_id;
             }
@@ -24816,32 +24884,32 @@ class Checker {
           }
         }
       }
-      if (opens_statement_scope(statement.kind)) {
+      if (opens_statement_scope(statement->kind)) {
         occurrence.scope_entry = true;
         const auto scope_id = next_scope_id++;
         occurrence.entered_scope_id = scope_id;
-        statement_scopes.push_back({id, scope_id, statement.indent});
+        statement_scopes.push_back({id, scope_id, statement->indent});
       }
-      occurrence.explicit_non_evaluating = statement.kind == Stmt::Kind::Pass;
-      auto binding = checked_types.binding_facts.find(&statement);
+      occurrence.explicit_non_evaluating = statement->kind == Stmt::Kind::Pass;
+      auto binding = checked_types.binding_facts.find(statement);
       if (binding != checked_types.binding_facts.end()) {
         occurrence.binding_identity = binding->second.identity;
         occurrence.binding_type = binding->second.type
             ? checked_types.solver.resolve(binding->second.type) : nullptr;
         occurrence.introduces_binding = binding->second.introduced;
         occurrence.mutable_binding = binding->second.mutable_binding;
-      } else if (statement.kind == Stmt::Kind::Let ||
-                 statement.kind == Stmt::Kind::Var) {
+      } else if (statement->kind == Stmt::Kind::Let ||
+                 statement->kind == Stmt::Kind::Var) {
         occurrence.binding_identity = statement_binding_identity(
-            current_semantic_context_, statement.line) + ":" + statement.a;
-        occurrence.binding_type = checked_types.assignment_value(statement);
+            current_semantic_context_, statement->line) + ":" + statement->a;
+        occurrence.binding_type = checked_types.assignment_value(*statement);
         occurrence.introduces_binding = true;
-        occurrence.mutable_binding = statement.kind == Stmt::Kind::Var;
-      } else if (statement.kind == Stmt::Kind::Assign &&
-                 simple_identifier(statement.a)) {
+        occurrence.mutable_binding = statement->kind == Stmt::Kind::Var;
+      } else if (statement->kind == Stmt::Kind::Assign &&
+                 simple_identifier(statement->a)) {
         occurrence.binding_identity = statement_binding_identity(
-            current_semantic_context_, statement.line) + ":" + statement.a;
-        occurrence.binding_type = checked_types.assignment_value(statement);
+            current_semantic_context_, statement->line) + ":" + statement->a;
+        occurrence.binding_type = checked_types.assignment_value(*statement);
         occurrence.introduces_binding = true;
         occurrence.mutable_binding = true;
       }
@@ -24856,6 +24924,23 @@ class Checker {
             occurrence.binding_type =
                 checked_types.solver.resolve(checked_value.checked_type);
         }
+      }
+      if (occurrence.introduces_binding &&
+          !occurrence.binding_identity.empty() && occurrence.binding_type) {
+        BodyTypeState::StatementOccurrence::BindingOccurrence binding;
+        binding.name = statement->a;
+        binding.identity = occurrence.binding_identity;
+        binding.type = checked_types.solver.resolve(occurrence.binding_type);
+        binding.mutable_binding = occurrence.mutable_binding;
+        occurrence.bindings.push_back(std::move(binding));
+      }
+      auto case_fact = checked_types.case_facts.find(statement);
+      if (case_fact != checked_types.case_facts.end()) {
+        occurrence.variant_identity = case_fact->second.variant_identity;
+        occurrence.variant_type = case_fact->second.variant_type;
+        occurrence.bindings.insert(occurrence.bindings.end(),
+            case_fact->second.payload_bindings.begin(),
+            case_fact->second.payload_bindings.end());
       }
     }
     std::map<std::uint32_t, std::uint32_t> next_statement_child_ordinal;
@@ -24905,6 +24990,47 @@ class Checker {
               immutable->second.count(name) == 0;
         }
       }
+      if (expression.resolved_binding_id.empty()) {
+        std::set<std::uint32_t> visible_scopes{expression.scope_id};
+        std::uint32_t scope = expression.scope_id;
+        while (scope != 0) {
+          auto opener = std::find_if(
+              checked_types.statement_occurrences.begin(),
+              checked_types.statement_occurrences.end(),
+              [&](const auto& candidate) {
+                return candidate.entered_scope_id == scope;
+              });
+          if (opener == checked_types.statement_occurrences.end() ||
+              !visible_scopes.insert(opener->scope_id).second) {
+            checked_types.expression_occurrence_ledger_complete = false;
+            break;
+          }
+          scope = opener->scope_id;
+        }
+        const BodyTypeState::StatementOccurrence::BindingOccurrence* nearest =
+            nullptr;
+        std::uint32_t nearest_statement_id = 0;
+        for (const auto& candidate : checked_types.statement_occurrences) {
+          if (candidate.id >= expression.statement_id || !candidate.source)
+            continue;
+          for (const auto& binding : candidate.bindings) {
+            if (binding.name != name) continue;
+            const auto binding_scope =
+                (candidate.kind == Stmt::Kind::For ||
+                 candidate.kind == Stmt::Kind::Case)
+                    ? candidate.entered_scope_id : candidate.scope_id;
+            if (!visible_scopes.count(binding_scope)) continue;
+            if (!nearest || candidate.id > nearest_statement_id) {
+              nearest = &binding;
+              nearest_statement_id = candidate.id;
+            }
+          }
+        }
+        if (nearest) {
+          expression.resolved_binding_id = nearest->identity;
+          expression.resolved_binding_mutable = nearest->mutable_binding;
+        }
+      }
       if (expression.resolved_binding_id.empty() && current_function) {
         bool shadowed = false;
         const auto source_position = std::find_if(statements.begin(),
@@ -24912,10 +25038,11 @@ class Checker {
               return &candidate == source_statement;
             });
         if (source_position != statements.end())
-          for (auto prior = statements.begin(); prior != source_position; ++prior)
-            if ((prior->kind == Stmt::Kind::Let ||
-                 prior->kind == Stmt::Kind::Var ||
-                 prior->kind == Stmt::Kind::Assign) && prior->a == name) {
+          for (const auto& prior : statements)
+            if (prior.line < source_position->line &&
+                (prior.kind == Stmt::Kind::Let ||
+                 prior.kind == Stmt::Kind::Var ||
+                 prior.kind == Stmt::Kind::Assign) && prior.a == name) {
               shadowed = true;
               break;
             }
@@ -24965,10 +25092,17 @@ class Checker {
          id < checked_types.statement_occurrences.size(); ++id) {
       const auto& occurrence = checked_types.statement_occurrences[id];
       if (occurrence.synthetic) {
-        if (occurrence.source == nullptr ||
+        if (occurrence.id != id || occurrence.source == nullptr ||
             occurrence.kind != Stmt::Kind::Return ||
-            occurrence.parent_id != UINT32_MAX)
+            occurrence.parent_id != UINT32_MAX ||
+            occurrence.expression_roots.size() != 1)
           checked_types.expression_occurrence_ledger_complete = false;
+        for (const auto root_id : occurrence.expression_roots)
+          if (root_id >= checked_types.expression_occurrences.size() ||
+              checked_types.expression_occurrences[root_id].statement_id != id ||
+              checked_types.expression_occurrences[root_id].root_slot !=
+                  "return-value")
+            checked_types.expression_occurrence_ledger_complete = false;
         continue;
       }
       auto mapped = occurrence.source
@@ -24993,14 +25127,46 @@ class Checker {
            occurrence.kind == Stmt::Kind::Recover) &&
           occurrence.control_parent_id == UINT32_MAX)
         checked_types.expression_occurrence_ledger_complete = false;
+      if ((occurrence.kind == Stmt::Kind::Let ||
+           occurrence.kind == Stmt::Kind::Var ||
+           occurrence.kind == Stmt::Kind::For) &&
+          (occurrence.bindings.size() != 1 ||
+           occurrence.bindings.front().name != occurrence.source->a ||
+           occurrence.bindings.front().identity.empty() ||
+           !occurrence.bindings.front().type ||
+           !occurrence.bindings.front().type->is_closed()))
+        checked_types.expression_occurrence_ledger_complete = false;
+      if (occurrence.kind == Stmt::Kind::Case) {
+        if (occurrence.variant_identity.empty() ||
+            occurrence.variant_type.empty() ||
+            occurrence.bindings.size() != occurrence.source->args.size())
+          checked_types.expression_occurrence_ledger_complete = false;
+        for (std::size_t binding = 0;
+             binding < occurrence.bindings.size(); ++binding) {
+          const auto& payload = occurrence.bindings[binding];
+          if (binding >= occurrence.source->args.size() ||
+              payload.name != occurrence.source->args[binding] ||
+              payload.identity.empty() || !payload.type ||
+              !payload.type->is_closed())
+            checked_types.expression_occurrence_ledger_complete = false;
+        }
+      }
     }
     vector<vector<std::uint32_t>> expression_children(
         checked_types.expression_occurrences.size());
     std::set<std::uint32_t> statement_occurrence_values;
+    for (const auto& occurrence : checked_types.statement_occurrences) {
+      if (occurrence.id >= checked_types.statement_occurrences.size() ||
+          !statement_occurrence_values.insert(occurrence.id).second)
+        checked_types.expression_occurrence_ledger_complete = false;
+    }
     for (const auto& [statement_pointer, statement_id] :
          checked_types.statement_occurrence_ids) {
       (void)statement_pointer;
-      statement_occurrence_values.insert(statement_id);
+      if (statement_id >= checked_types.statement_occurrences.size() ||
+          !statement_occurrence_values.count(statement_id) ||
+          checked_types.statement_occurrences[statement_id].synthetic)
+        checked_types.expression_occurrence_ledger_complete = false;
     }
     for (std::size_t index = 0;
          index < checked_types.expression_occurrences.size(); ++index) {
@@ -25375,6 +25541,24 @@ export fn branch(value: Bool) -> Int:
   else:
     let local = 2
   return local
+
+fn expression_identity(value) = value
+
+enum Sample:
+  Empty
+  Item(payload: Int)
+
+fn iterate(values: Vector[Int]) -> Int:
+  for item in values:
+    pass
+  return 0
+
+fn inspect_sample(sample: Sample) -> Int:
+  match sample:
+    case Empty:
+      return 0
+    case Item(payload):
+      return payload
 )moss");
     Program program = Parser(lex_lines(input, "<statement-call-occurrence-test>"))
                           .parse();
@@ -25489,6 +25673,59 @@ export fn branch(value: Bool) -> Int:
         });
     if (local_reads != 0 ||
         branch_state->second->expression_occurrence_ledger_complete)
+      return false;
+    auto state_for = [&](const string& name) -> const BodyTypeState* {
+      auto function = std::find_if(program.functions.begin(),
+          program.functions.end(), [&](const Function& candidate) {
+            return candidate.name == name;
+          });
+      if (function == program.functions.end()) return nullptr;
+      auto state = checker.checked_body_states_.find(&function->body);
+      return state == checker.checked_body_states_.end() || !state->second
+          ? nullptr : state->second.get();
+    };
+    const auto* expression_identity_state = state_for("expression_identity");
+    if (!expression_identity_state ||
+        !expression_identity_state->expression_occurrence_ledger_complete)
+      return false;
+    const auto synthetic_return = std::find_if(
+        expression_identity_state->statement_occurrences.begin(),
+        expression_identity_state->statement_occurrences.end(),
+        [](const auto& node) { return node.synthetic; });
+    if (synthetic_return ==
+            expression_identity_state->statement_occurrences.end() ||
+        synthetic_return->kind != Stmt::Kind::Return ||
+        synthetic_return->expression_roots.empty() ||
+        !expression_identity_state->statement_occurrence_ids.empty())
+      return false;
+    const auto* iterate_state = state_for("iterate");
+    if (!iterate_state || !iterate_state->expression_occurrence_ledger_complete)
+      return false;
+    auto loop = std::find_if(iterate_state->statement_occurrences.begin(),
+        iterate_state->statement_occurrences.end(), [](const auto& node) {
+          return node.kind == Stmt::Kind::For;
+        });
+    const auto int_type = moss::Type::primitive("int");
+    if (loop == iterate_state->statement_occurrences.end() ||
+        loop->bindings.size() != 1 || loop->bindings[0].name != "item" ||
+        loop->bindings[0].identity.empty() || !loop->bindings[0].type ||
+        !loop->bindings[0].type->structurally_equal(*int_type))
+      return false;
+    const auto* match_state = state_for("inspect_sample");
+    if (!match_state || !match_state->expression_occurrence_ledger_complete)
+      return false;
+    auto payload_case = std::find_if(match_state->statement_occurrences.begin(),
+        match_state->statement_occurrences.end(), [](const auto& node) {
+          return node.kind == Stmt::Kind::Case &&
+              node.variant_identity == "Sample.Item";
+        });
+    if (payload_case == match_state->statement_occurrences.end() ||
+        payload_case->variant_type != "Sample" ||
+        payload_case->bindings.size() != 1 ||
+        payload_case->bindings[0].name != "payload" ||
+        payload_case->bindings[0].identity.empty() ||
+        !payload_case->bindings[0].type ||
+        !payload_case->bindings[0].type->structurally_equal(*int_type))
       return false;
     const auto key_function = std::find_if(program.functions.begin(),
         program.functions.end(), [](const Function& candidate) {
