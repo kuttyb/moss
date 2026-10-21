@@ -29214,6 +29214,27 @@ fn inspect_sample(sample: Sample) -> Int:
             *relay_method_function, *method_fact,
             duplicate_method_constraint))
       return false;
+    auto reject_mutated_method_constraint = [&](auto mutate) {
+      auto occurrence = method_occurrence;
+      auto constraint = std::find_if(occurrence.linked_constraints.begin(),
+          occurrence.linked_constraints.end(), [](const Constraint& value) {
+        return value.kind == ConstraintKind::Method;
+      });
+      if (constraint == occurrence.linked_constraints.end()) return false;
+      mutate(*constraint);
+      return !checker.method_operation_identity_matches(
+          *relay_method_function, *method_fact, occurrence);
+    };
+    if (!reject_mutated_method_constraint([](Constraint& constraint) {
+          constraint.subject = "other";
+        }) ||
+        !reject_mutated_method_constraint([](Constraint& constraint) {
+          constraint.detail = "other";
+        }) ||
+        !reject_mutated_method_constraint([](Constraint& constraint) {
+          ++constraint.arity;
+        }))
+      return false;
     const auto count_function = std::find_if(program.functions.begin(),
         program.functions.end(), [](const Function& candidate) {
       return candidate.name == "count_values";
