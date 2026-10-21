@@ -373,6 +373,13 @@ export fn choose(value, flag: Bool):
   else:
     return value
 
+export fn select_two(first, second, flag: Bool):
+  if flag:
+    let local = first
+  else:
+    let local = second
+  return local
+
 export fn branch_compute(value, flag: Bool):
   if flag:
     let item = value * 2
@@ -391,6 +398,20 @@ export fn alias_compute(value):
   // Summary completeness must include that binding and all branch occurrences.
   assert(select.open_summary && select.open_summary->complete);
   assert(select.open_summary->occurrence_ledger_complete);
+
+  const Function& select_two = find_function(joined_binding, "select_two");
+  assert(select_two.open_summary && select_two.open_summary->scheme_complete &&
+         select_two.open_summary->occurrence_ledger_complete &&
+         select_two.open_summary->parameter_types.size() == 3 &&
+         select_two.open_summary->parameter_types[0] &&
+         select_two.open_summary->parameter_types[1] &&
+         select_two.open_summary->parameter_types[0]->structurally_equal(
+             *select_two.open_summary->parameter_types[1]) &&
+         select_two.open_summary->result_type &&
+         select_two.open_summary->result_type->structurally_equal(
+             *select_two.open_summary->parameter_types[0]) &&
+         select_two.checked_body_ir_v1_bytes &&
+         select_two.checked_body_ir_v1_hash);
 
   const Function& branch_compute = find_function(joined_binding,
                                                   "branch_compute");

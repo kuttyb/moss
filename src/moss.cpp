@@ -5308,6 +5308,162 @@ class Checker {
           function.body.back().kind == Stmt::Kind::Return &&
           body->second->expression_occurrence_ledger_complete) {
         auto& state = *body->second;
+        // A control-flow merge can prove that two otherwise independent open
+        // parameter variables are the same type. Preserve that relation in
+        // the callable scheme only for one exact IfJoin whose two predecessor
+        // bindings are direct parameter reads in the then/else arms. The
+        // checker occurrence graph supplies the edge identities and resolved
+        // types; source names alone never establish this equivalence.
+        if (function.open_summary->requirements.empty() &&
+            function.open_summary->operations.empty() &&
+            function.open_summary->member_requirements.empty() &&
+            function.open_summary->parameter_types.size() ==
+                function.params.size()) {
+          const BodyTypeState::StatementOccurrence* join_node = nullptr;
+          const BodyTypeState::StatementOccurrence* else_node = nullptr;
+          const BodyTypeState::StatementOccurrence* else_marker = nullptr;
+          const BodyTypeState::StatementOccurrence* then_node = nullptr;
+          const BodyTypeState::StatementOccurrence::BindingOccurrence* joined =
+              nullptr;
+          bool one_exact_top_level_join = true;
+          for (const auto& candidate : state.statement_occurrences) {
+            if (candidate.kind != Stmt::Kind::If || !candidate.source ||
+                std::none_of(function.body.begin(), function.body.end(),
+                    [&](const Stmt& source) {
+              return &source == candidate.source;
+            }))
+              continue;
+            if (join_node) {
+              one_exact_top_level_join = false;
+              break;
+            }
+            join_node = &candidate;
+            for (const auto& binding : candidate.bindings) {
+              if (binding.predecessor_binding_ids.empty()) continue;
+              if (joined) {
+                one_exact_top_level_join = false;
+                break;
+              }
+              joined = &binding;
+            }
+            if (!one_exact_top_level_join) break;
+          }
+          if (one_exact_top_level_join && join_node && joined &&
+              joined->predecessor_binding_ids.size() == 2 &&
+              joined->predecessor_control_edges.size() == 2 &&
+              !joined->identity.empty() && joined->type) {
+            for (const auto& candidate : state.statement_occurrences) {
+              if (!candidate.source) continue;
+              if (candidate.parent_id == join_node->id &&
+                  candidate.source->kind != Stmt::Kind::Else) {
+                if (then_node) one_exact_top_level_join = false;
+                then_node = &candidate;
+              }
+              if (candidate.kind == Stmt::Kind::Else &&
+                  candidate.control_parent_id == join_node->id) {
+                if (else_marker) one_exact_top_level_join = false;
+                else_marker = &candidate;
+              }
+            }
+            if (else_marker)
+              for (const auto& candidate : state.statement_occurrences) {
+                if (!candidate.source ||
+                    candidate.parent_id != else_marker->id ||
+                    candidate.kind == Stmt::Kind::Else) continue;
+                if (else_node) one_exact_top_level_join = false;
+                else_node = &candidate;
+              }
+            one_exact_top_level_join = one_exact_top_level_join && then_node &&
+                else_marker && else_node && then_node->bindings.size() == 1 &&
+                else_node->bindings.size() == 1 &&
+                then_node->source->kind == Stmt::Kind::Let &&
+                else_node->source->kind == Stmt::Kind::Let;
+            std::array<std::optional<std::size_t>, 2> parameter_ordinals;
+            std::array<const BodyTypeState::StatementOccurrence*, 2> branches{
+                then_node, else_node};
+            for (const auto& edge : joined->predecessor_control_edges) {
+              std::size_t branch = 0;
+              if (edge.control_statement_id != join_node->id ||
+                  edge.binding_id.empty()) {
+                one_exact_top_level_join = false;
+                break;
+              }
+              if (edge.branch_role == "then") branch = 0;
+              else if (edge.branch_role == "else") branch = 1;
+              else {
+                one_exact_top_level_join = false;
+                break;
+              }
+              const auto* predecessor = branches[branch];
+              if (!predecessor || predecessor->bindings.size() != 1 ||
+                  predecessor->bindings.front().identity != edge.binding_id ||
+                  std::find(joined->predecessor_binding_ids.begin(),
+                            joined->predecessor_binding_ids.end(),
+                            edge.binding_id) ==
+                      joined->predecessor_binding_ids.end()) {
+                one_exact_top_level_join = false;
+                break;
+              }
+              const auto root = state.expression_root_slots.find(
+                  {predecessor->id, "initializer"});
+              if (root == state.expression_root_slots.end() ||
+                  root->second >= state.expression_occurrences.size()) {
+                one_exact_top_level_join = false;
+                break;
+              }
+              const auto& value = state.expression_occurrences[root->second];
+              if (value.kind !=
+                      BodyTypeState::ExpressionOccurrence::Kind::Identifier ||
+                  !starts_with(value.resolved_binding_id, "parameter:")) {
+                one_exact_top_level_join = false;
+                break;
+              }
+              std::size_t ordinal = 0;
+              try {
+                ordinal = static_cast<std::size_t>(std::stoul(
+                    value.resolved_binding_id.substr(10)));
+              } catch (const std::exception&) {
+                one_exact_top_level_join = false;
+                break;
+              }
+              const auto body_type = ordinal < function.params.size()
+                  ? state.known_expression(function.params[ordinal].name)
+                  : nullptr;
+              const auto resolved_body = body_type
+                  ? state.solver.resolve(body_type) : nullptr;
+              const auto resolved_value = value.checked_type
+                  ? state.solver.resolve(value.checked_type) : nullptr;
+              const auto resolved_join = state.solver.resolve(joined->type);
+              if (ordinal >= function.open_summary->parameter_types.size() ||
+                  !resolved_body || !resolved_value || !resolved_join ||
+                  !resolved_body->structurally_equal(*resolved_value) ||
+                  !resolved_body->structurally_equal(*resolved_join) ||
+                  parameter_ordinals[branch]) {
+                one_exact_top_level_join = false;
+                break;
+              }
+              parameter_ordinals[branch] = ordinal;
+            }
+            if (one_exact_top_level_join && parameter_ordinals[0] &&
+                parameter_ordinals[1] &&
+                *parameter_ordinals[0] != *parameter_ordinals[1]) {
+              const auto& first = function.open_summary->parameter_types[
+                  *parameter_ordinals[0]];
+              const auto& second = function.open_summary->parameter_types[
+                  *parameter_ordinals[1]];
+              if (first && second &&
+                  first->kind == moss::TypeKind::InferenceVar &&
+                  second->kind == moss::TypeKind::InferenceVar) {
+                const auto canonical = first->var_id.ordinal <=
+                        second->var_id.ordinal ? first : second;
+                function.open_summary->parameter_types[
+                    *parameter_ordinals[0]] = canonical;
+                function.open_summary->parameter_types[
+                    *parameter_ordinals[1]] = canonical;
+              }
+            }
+          }
+        }
         std::map<moss::TypeVarId, moss::TypeRef> body_variable_projection;
         std::function<bool(const moss::TypeRef&, const moss::TypeRef&)> relate =
             [&](const moss::TypeRef& source, const moss::TypeRef& summary_type) {
