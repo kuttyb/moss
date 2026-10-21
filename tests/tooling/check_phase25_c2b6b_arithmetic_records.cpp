@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
 
   std::vector<moss::abi_v10::Summary> compute_summaries;
   for (const auto& record : iface.semantic_contract) {
-    if (record.payload.empty() || record.payload.front() != 2 ||
+    if (record.payload.empty() || !moss::abi_v10::typed_summary_payload(record.payload) ||
         !moss::abi_v10::hex_hash(record.id)) continue;
     moss::abi_v10::validate_summary(record);
     auto summary = moss::abi_v10::read_summary(record.payload);

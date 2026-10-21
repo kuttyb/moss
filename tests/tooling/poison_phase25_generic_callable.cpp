@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
     std::map<std::string, std::size_t> counts;
     for (const auto& record : interface.semantic_contract) {
       if (record.payload.empty() || record.payload.front() == 1 ||
-          (static_cast<unsigned char>(record.payload.front()) == 2 &&
+          (moss::abi_v10::typed_summary_payload(record.payload) &&
            moss::abi_v10::hex_hash(record.id)) ||
           moss::abi_v10::is_key_proof_payload(record.payload))
         continue;
@@ -83,7 +83,7 @@ int main(int argc, char** argv) {
 
   for (auto& record : sealed.value.semantic_contract) {
     if (record.payload.empty() || record.payload.front() == 1 ||
-        (static_cast<unsigned char>(record.payload.front()) == 2 &&
+        (moss::abi_v10::typed_summary_payload(record.payload) &&
          moss::abi_v10::hex_hash(record.id)) ||
         moss::abi_v10::is_key_proof_payload(record.payload))
       continue;

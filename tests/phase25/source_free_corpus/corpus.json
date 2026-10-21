@@ -85,6 +85,17 @@
       "evidence": "R1 generalized occurrence lowering emits a canonical two-statement body; source-free import removes provider source, poisons the legacy generic_stmt body, requires checked-body projection, and executes Int and Float specializations."
     },
     {
+      "id": "branch-join-generic-arithmetic-unavailable",
+      "priority": "P1-essential",
+      "category": "generic arithmetic through if/else joined local",
+      "provider": "module Service\n\nexport fn fresh(value, flag: Bool):\n  if flag:\n    let item = value * 2\n  else:\n    let item = value * 3\n  return item + 1\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(5, true)\n  echo Service.fresh(5, false)\n  echo Service.fresh(2.5, true)\n  echo Service.fresh(2.5, false)\n",
+      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "provider_must_emit_v10": true,
+      "checked_body_status": "checked-body unavailable pending join-capable checked IR; checker facts preserve guarded predecessor identities and both operation dependencies",
+      "evidence": "The exhaustive checker ledger and ABI-v10 summary preserve both branch operation dependencies, but checked-body-v1 cannot encode a branch join. The provider must fail closed and a source-deleted consumer must reject instead of selecting legacy generic_stmt. Keep this valid profile visible until an append-only join-capable checked-body form has source-free parity and hostile artifact acceptance."
+    },
+    {
       "id": "mutable-local-reassignment",
       "priority": "P1-essential",
       "category": "generic body mutation",

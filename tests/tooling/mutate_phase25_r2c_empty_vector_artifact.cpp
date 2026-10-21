@@ -34,7 +34,7 @@ int main(int argc, char** argv) {
   bool found_summary = false;
   for (const auto& record : sealed.value.semantic_contract) {
     if (!moss::abi_v10::hex_hash(record.id) || record.payload.empty() ||
-        static_cast<unsigned char>(record.payload.front()) != 2) continue;
+        !moss::abi_v10::typed_summary_payload(record.payload)) continue;
     auto candidate = moss::abi_v10::read_summary(record.payload);
     if (candidate.callable_id == callable) {
       summary = std::move(candidate);
@@ -54,7 +54,7 @@ int main(int argc, char** argv) {
     auto found = false;
     for (auto& record : sealed.value.semantic_contract) {
       if (!moss::abi_v10::hex_hash(record.id) || record.payload.empty() ||
-          static_cast<unsigned char>(record.payload.front()) != 2) continue;
+          !moss::abi_v10::typed_summary_payload(record.payload)) continue;
       if (moss::abi_v10::read_summary(record.payload).callable_id != callable)
         continue;
       record = replacement;
@@ -98,7 +98,7 @@ int main(int argc, char** argv) {
     records.erase(std::remove_if(records.begin(), records.end(),
         [&](const auto& record) {
       return moss::abi_v10::hex_hash(record.id) && !record.payload.empty() &&
-          static_cast<unsigned char>(record.payload.front()) == 2 &&
+          moss::abi_v10::typed_summary_payload(record.payload) &&
           moss::abi_v10::read_summary(record.payload).callable_id == callable;
     }), records.end());
   } else if (mode == "missing-body") {

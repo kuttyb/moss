@@ -131,6 +131,9 @@ struct OpenCallableSummaryFacts {
     // dense ordinals after it has a complete tree.
     std::uint32_t expression_occurrence_id = UINT32_MAX;
     std::uint32_t occurrence_ordinal = 0;
+    // Exact checker-derived value-flow dependencies. Control-flow joins can
+    // give one operation multiple incoming operation dependencies.
+    vector<std::uint32_t> dependency_occurrence_ids;
   };
   // Checker-retained builtin operations used to close an otherwise open
   // generic contract. These are semantic facts, not serialized body IR.

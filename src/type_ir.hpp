@@ -907,6 +907,9 @@ struct Requirement {
   AccessMode access{AccessMode::Read};
   std::vector<AccessMode> argument_access;
   std::optional<std::string> parent_requirement_id;
+  // Complete checker dependency relation. The legacy single parent is only a
+  // projection when this relation contains exactly one requirement.
+  std::vector<std::string> dependency_requirement_ids;
   RequirementOrigin origin;
   // Checker-local provenance used while assembling an open callable summary.
   // Canonical checked-body encoding assigns stable ordinals from the

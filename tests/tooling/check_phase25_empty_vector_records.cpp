@@ -40,7 +40,7 @@ static std::pair<std::size_t, std::size_t> emitted_counts(
   append_abi_v10_direct_return_records(value, program, "Provider");
   std::size_t summaries = 0;
   for (const auto& record : value.semantic_contract)
-    if (!record.payload.empty() && record.payload.front() == 2 &&
+    if (!record.payload.empty() && moss::abi_v10::typed_summary_payload(record.payload) &&
         abi_v10::hex_hash(record.id) &&
         abi_v10::read_summary(record.payload).callable_id.find(":fn:fresh") !=
             string::npos)
@@ -127,7 +127,7 @@ static void check_artifact(const std::string& bytes) {
   for (const auto* records : {&iface.semantic_contract,
                                &iface.private_semantic_dependencies}) {
     for (const auto& record : *records) {
-      if (record.payload.empty() || record.payload.front() != 2 ||
+      if (record.payload.empty() || !moss::abi_v10::typed_summary_payload(record.payload) ||
           !abi_v10::hex_hash(record.id)) continue;
       abi_v10::validate_summary(record);
       auto summary = abi_v10::read_summary(record.payload);
@@ -153,7 +153,7 @@ static void check_artifact(const std::string& bytes) {
   for (const auto* records : {&iface.semantic_contract,
                                &iface.private_semantic_dependencies})
     for (const auto& record : *records)
-      if (!record.payload.empty() && record.payload.front() == 2 &&
+      if (!record.payload.empty() && moss::abi_v10::typed_summary_payload(record.payload) &&
           abi_v10::hex_hash(record.id) &&
           abi_v10::read_summary(record.payload).callable_id == dependent_id)
         parameter_summaries.push_back(abi_v10::read_summary(record.payload));

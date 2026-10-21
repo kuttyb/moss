@@ -3383,6 +3383,12 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
         invalid("checked ABI-v10 requirement parent index is dangling");
       requirement.parent_requirement_id = converted[parent_index].id;
     }
+    for (const auto dependency : wire.dependencies) {
+      if (dependency == 0 || dependency > converted.size())
+        invalid("checked ABI-v10 requirement dependency is dangling");
+      requirement.dependency_requirement_ids.push_back(
+          converted[dependency - 1].id);
+    }
     requirement.origin = {
         origin.module_id, origin.source_file_display,
         static_cast<int>(origin.start_line),
@@ -5232,32 +5238,41 @@ class Checker {
             }
           }
           parents.erase(occurrence_id);
-          if (parents.size() > 1) {
+          const auto requirement =
+              requirement_ids_by_occurrence.find(occurrence_id);
+          if (requirement == requirement_ids_by_occurrence.end()) {
             operations_complete = false;
-            state.expression_occurrence_ledger_complete = false;
             break;
           }
-          if (!parents.empty()) {
-            const auto parent_id = *parents.begin();
-            auto requirement = requirement_ids_by_occurrence.find(occurrence_id);
-            auto parent_requirement =
-                requirement_ids_by_occurrence.find(parent_id);
-            if (requirement == requirement_ids_by_occurrence.end() ||
-                parent_requirement == requirement_ids_by_occurrence.end() ||
-                parent_id >= occurrence_id) {
-              operations_complete = false;
-              break;
-            }
-            const auto target = std::find_if(requirements.begin(),
-                requirements.end(), [&](const moss::Requirement& candidate) {
-              return candidate.id == requirement->second;
-            });
-            if (target == requirements.end()) {
-              operations_complete = false;
-              break;
-            }
-            target->parent_requirement_id = parent_requirement->second;
+          auto target = std::find_if(requirements.begin(), requirements.end(),
+              [&](const moss::Requirement& candidate) {
+            return candidate.id == requirement->second;
+          });
+          if (target == requirements.end()) {
+            operations_complete = false;
+            break;
           }
+          operations[index].dependency_occurrence_ids.assign(
+              parents.begin(), parents.end());
+          state.open_operations[index].dependency_occurrence_ids.assign(
+              parents.begin(), parents.end());
+          for (const auto dependency_occurrence : parents) {
+            const auto dependency_requirement =
+                requirement_ids_by_occurrence.find(dependency_occurrence);
+            if (dependency_requirement == requirement_ids_by_occurrence.end() ||
+                dependency_occurrence >= occurrence_id) {
+              operations_complete = false;
+              break;
+            }
+            target->dependency_requirement_ids.push_back(
+                dependency_requirement->second);
+          }
+          if (!operations_complete) break;
+          if (target->dependency_requirement_ids.size() == 1)
+            target->parent_requirement_id =
+                target->dependency_requirement_ids.front();
+          else if (target->dependency_requirement_ids.size() > 1)
+            target->parent_requirement_id.reset();
         }
         if (operations_complete && requirements.size() == state.open_operations.size()) {
           function.open_summary->operations = std::move(operations);
@@ -5515,6 +5530,11 @@ class Checker {
     };
     struct StatementOccurrence {
       struct BindingOccurrence {
+        struct PredecessorControlEdge {
+          string binding_id;
+          std::uint32_t control_statement_id = UINT32_MAX;
+          string branch_role;
+        };
         string name;
         string identity;
         moss::TypeRef type;
@@ -5523,6 +5543,7 @@ class Checker {
         // from each reaching branch definition. Ordinary declarations leave
         // this empty.
         vector<string> predecessor_binding_ids;
+        vector<PredecessorControlEdge> predecessor_control_edges;
       };
       std::uint32_t id = 0;
       const Stmt* source = nullptr;
@@ -5973,6 +5994,41 @@ class Checker {
     };
     std::unordered_map<string, std::uint32_t> local_ordinals;
     vector<moss::TypeRef> local_types;
+    std::unordered_map<string, string> predecessor_to_join_identity;
+    std::unordered_map<string, moss::TypeRef> join_identity_types;
+    for (const auto& occurrence : state.statement_occurrences) {
+      if (occurrence.kind != Stmt::Kind::If) continue;
+      for (const auto& binding : occurrence.bindings) {
+        if (binding.predecessor_binding_ids.empty()) continue;
+        if (binding.identity.empty() || binding.predecessor_binding_ids.size() < 2 ||
+            binding.predecessor_control_edges.size() !=
+                binding.predecessor_binding_ids.size() || !binding.type)
+          return false;
+        const auto join_type = checked_body_type(binding.type);
+        if (!join_type) return false;
+        const auto [known_join_type, new_join_type] =
+            join_identity_types.emplace(binding.identity, join_type);
+        if (!new_join_type &&
+            !known_join_type->second->structurally_equal(*join_type))
+          return false;
+        std::set<string> predecessors;
+        for (const auto& edge : binding.predecessor_control_edges) {
+          if (edge.control_statement_id != occurrence.id ||
+              edge.binding_id.empty() || edge.branch_role.empty() ||
+              !predecessors.insert(edge.binding_id).second)
+            return false;
+        }
+        if (predecessors != std::set<string>(
+                binding.predecessor_binding_ids.begin(),
+                binding.predecessor_binding_ids.end()))
+          return false;
+        for (const auto& predecessor : binding.predecessor_binding_ids) {
+          const auto [joined, inserted] = predecessor_to_join_identity.emplace(
+              predecessor, binding.identity);
+          if (!inserted && joined->second != binding.identity) return false;
+        }
+      }
+    }
     for (const auto& source_statement : function.body) {
       const auto statement = state.statement_occurrence_ids.find(
           &source_statement);
@@ -5989,8 +6045,7 @@ class Checker {
           !introduced_assignment)
         continue;
       if (node.bindings.size() != 1 || node.bindings.front().identity.empty() ||
-          !node.bindings.front().type ||
-          local_ordinals.count(node.bindings.front().identity))
+          !node.bindings.front().type)
         return false;
       if (binding_fact == state.binding_facts.end() ||
           !binding_fact->second.introduced ||
@@ -5998,8 +6053,36 @@ class Checker {
               node.bindings.front().mutable_binding ||
           binding_fact->second.identity.empty())
         return false;
-      const auto ordinal = static_cast<std::uint32_t>(local_types.size());
-      local_ordinals.emplace(node.bindings.front().identity, ordinal);
+      const auto predecessor = predecessor_to_join_identity.find(
+          node.bindings.front().identity);
+      const string canonical_identity = predecessor ==
+              predecessor_to_join_identity.end()
+          ? node.bindings.front().identity : predecessor->second;
+      if (canonical_identity.empty()) return false;
+      const auto binding_type = checked_body_type(node.bindings.front().type);
+      if (!binding_type) return false;
+      if (predecessor != predecessor_to_join_identity.end()) {
+        const auto joined_type = join_identity_types.find(canonical_identity);
+        if (joined_type == join_identity_types.end() || !joined_type->second ||
+            !joined_type->second->structurally_equal(*binding_type))
+          return false;
+      }
+      std::uint32_t ordinal = 0;
+      const auto existing_local = local_ordinals.find(canonical_identity);
+      if (existing_local == local_ordinals.end()) {
+        ordinal = static_cast<std::uint32_t>(local_types.size());
+        local_types.push_back(binding_type);
+        local_ordinals.emplace(canonical_identity, ordinal);
+      } else {
+        ordinal = existing_local->second;
+        if (ordinal >= local_types.size() || !local_types[ordinal] ||
+            !local_types[ordinal]->structurally_equal(*binding_type))
+          return false;
+      }
+      const auto [declaration_identity, declaration_inserted] =
+          local_ordinals.emplace(node.bindings.front().identity, ordinal);
+      if (!declaration_inserted && declaration_identity->second != ordinal)
+        return false;
       auto [checker_identity, checker_identity_inserted] =
           local_ordinals.emplace(binding_fact->second.identity, ordinal);
       if (!checker_identity_inserted && checker_identity->second != ordinal)
@@ -6011,8 +6094,6 @@ class Checker {
             assigned_identity->second != ordinal)
           return false;
       }
-      local_types.push_back(checked_body_type(node.bindings.front().type));
-      if (!local_types.back()) return false;
     }
     // Checker writes create a fresh lexical binding identity even when the
     // value occupies the same mutable local slot. Preserve that identity
@@ -11950,13 +12031,6 @@ class Checker {
           vector<BodyTypeState::StatementOccurrence::BindingOccurrence> joins;
           for (const auto& [name, joined_type] : env) {
             if (incoming.count(name) || !joined_type) continue;
-            auto joined_term = env.terms.find(name);
-            auto then_term = paths[0].terms.find(name);
-            auto else_term = paths[1].terms.find(name);
-            if (joined_term == env.terms.end() || !joined_term->second ||
-                then_term == paths[0].terms.end() || !then_term->second ||
-                else_term == paths[1].terms.end() || !else_term->second)
-              continue;
             auto branch_binding = [&](std::size_t begin, std::size_t end)
                 -> const Stmt* {
               const Stmt* found = nullptr;
@@ -11976,6 +12050,48 @@ class Checker {
             if (!then_binding || !else_binding ||
                 then_binding->kind != else_binding->kind)
               continue;
+            auto initializer_type = [&](const Stmt& binding) {
+              auto type = current_body_types_->assignment_value(binding);
+              if (type) return type;
+              const auto statement_id =
+                  current_body_types_->statement_occurrence_ids.find(&binding);
+              if (statement_id ==
+                  current_body_types_->statement_occurrence_ids.end())
+                return moss::TypeRef{};
+              const auto root = current_body_types_->expression_root_slots.find(
+                  {statement_id->second, "initializer"});
+              if (root == current_body_types_->expression_root_slots.end() ||
+                  root->second >=
+                      current_body_types_->expression_occurrences.size())
+                return moss::TypeRef{};
+              return current_body_types_->solver.resolve(
+                  current_body_types_->expression_occurrences[root->second]
+                      .checked_type);
+            };
+            auto then_term = paths[0].terms.find(name);
+            auto else_term = paths[1].terms.find(name);
+            auto then_type = then_term != paths[0].terms.end() && then_term->second
+                ? current_body_types_->solver.resolve(then_term->second)
+                : moss::TypeRef{};
+            auto else_type = else_term != paths[1].terms.end() && else_term->second
+                ? current_body_types_->solver.resolve(else_term->second)
+                : moss::TypeRef{};
+            if (!then_type) then_type = initializer_type(*then_binding);
+            if (!else_type) else_type = initializer_type(*else_binding);
+            auto joined_term = env.terms.find(name);
+            moss::TypeRef joined_type_ref =
+                joined_term != env.terms.end() && joined_term->second
+                    ? current_body_types_->solver.resolve(joined_term->second)
+                    : nullptr;
+            if (!joined_type_ref && then_type && else_type &&
+                then_type->structurally_equal(*else_type))
+              joined_type_ref = then_type;
+            if (!then_type || !else_type || !joined_type_ref ||
+                !then_type->structurally_equal(*else_type) ||
+                !then_type->structurally_equal(*joined_type_ref))
+              continue;
+            env.terms[name] = joined_type_ref;
+            current_body_types_->locals[name] = joined_type_ref;
             BodyTypeState::StatementOccurrence::BindingOccurrence binding;
             binding.name = name;
             // Ownership uses the control statement's binding identity for a
@@ -11984,7 +12100,7 @@ class Checker {
             // binding fact rather than to a display-name reconstruction.
             binding.identity = statement_binding_identity(
                 current_semantic_context_, statement.line) + ":" + name;
-            binding.type = current_body_types_->solver.resolve(joined_term->second);
+            binding.type = joined_type_ref;
             binding.mutable_binding = then_binding->kind == Stmt::Kind::Var;
             binding.predecessor_binding_ids = {
                 statement_binding_identity(current_semantic_context_,
@@ -23179,11 +23295,11 @@ class Checker {
         if (stage.kind == FunctionalNodeKind::Count) {
           current_body_types_->attach_open_operation({
               "builtin:collection-count-v1", receiver, {},
-              moss::Type::primitive("int"), line});
+              moss::Type::primitive("int"), line, UINT32_MAX, 0, {}});
         } else {
           current_body_types_->attach_open_operation({
               string("functional:") + functional_node_name(stage.kind), receiver, {},
-              nullptr, line});
+              nullptr, line, UINT32_MAX, 0, {}});
         }
       }
     }
@@ -23579,7 +23695,8 @@ class Checker {
       result = moss::Type::primitive("int");
     }
     current_body_types_->attach_open_operation({
-        "operator:" + operation_id, left, {right}, result, line});
+        "operator:" + operation_id, left, {right}, result, line,
+        UINT32_MAX, 0, {}});
     if (result) current_body_types_->retain_active_expression_type(result);
   }
 
@@ -23592,7 +23709,8 @@ class Checker {
     auto resolved = term ? current_body_types_->solver.resolve(term) : nullptr;
     if (resolved && !resolved->is_closed())
       current_body_types_->attach_open_operation({
-          "operator:" + operation_id, term, {}, nullptr, line});
+          "operator:" + operation_id, term, {}, nullptr, line,
+          UINT32_MAX, 0, {}});
   }
 
   void mark_active_expression(
@@ -24228,7 +24346,8 @@ class Checker {
             ? current_body_types_->solver.resolve(receiver_term) : nullptr;
         if (resolved_receiver && !resolved_receiver->is_closed())
           current_body_types_->attach_open_operation({
-              "method:" + handler, receiver_term, {}, nullptr, line});
+              "method:" + handler, receiver_term, {}, nullptr, line,
+              UINT32_MAX, 0, {}});
       }
       // The member resolver below owns dispatch; capture its receiver once
       // here so every dispatch family has the same ordered child shape.
@@ -24468,7 +24587,8 @@ class Checker {
               resolved_receiver->kind == moss::TypeKind::Builtin &&
               resolved_receiver->name == "vector")
             current_body_types_->attach_open_operation({
-                "builtin:index", receiver, {key}, element, line});
+                "builtin:index", receiver, {key}, element, line,
+                UINT32_MAX, 0, {}});
         }
       }
       if (current_body_types_) {
@@ -26283,11 +26403,17 @@ class Checker {
     // operation to the already checked Binary occurrence.
     for (auto& expression : checked_types.expression_occurrences) {
       if (expression.kind != BodyTypeState::ExpressionOccurrence::Kind::Binary ||
-          expression.checked_type ||
           (expression.operation_id != "+" && expression.operation_id != "-" &&
            expression.operation_id != "*" && expression.operation_id != "/" &&
            expression.operation_id != "%"))
         continue;
+      const bool already_linked = std::any_of(
+          checked_types.open_operations.begin(),
+          checked_types.open_operations.end(), [&](const auto& operation) {
+        return operation.expression_occurrence_id == expression.id &&
+            operation.operation_id == "operator:" + expression.operation_id;
+      });
+      if (already_linked) continue;
       const BodyTypeState::ExpressionOccurrence* left = nullptr;
       const BodyTypeState::ExpressionOccurrence* right = nullptr;
       for (const auto& child : checked_types.expression_occurrences) {
@@ -26302,18 +26428,23 @@ class Checker {
       if (!receiver || !argument || receiver->is_closed() ||
           !argument->structurally_equal(*moss::Type::primitive("int")))
         continue;
-      expression.checked_type = receiver;
-      const bool already_linked = std::any_of(
-          checked_types.open_operations.begin(), checked_types.open_operations.end(),
-          [&](const auto& operation) {
-        return operation.expression_occurrence_id == expression.id &&
-            operation.operation_id == "operator:" + expression.operation_id;
-      });
-      if (!already_linked) {
-        checked_types.open_operations.push_back({
-            "operator:" + expression.operation_id, receiver, {argument},
-            receiver, expression.line, expression.id, 0});
+      if (expression.checked_type) {
+        const auto previous = checked_types.solver.resolve(
+            expression.checked_type);
+        const auto same_type = previous &&
+            ((previous->kind == moss::TypeKind::InferenceVar &&
+              receiver->kind == moss::TypeKind::InferenceVar)
+                ? previous->var_id == receiver->var_id
+                : previous->structurally_equal(*receiver));
+        if (!same_type) {
+          checked_types.expression_occurrence_ledger_complete = false;
+          continue;
+        }
       }
+      expression.checked_type = receiver;
+      checked_types.open_operations.push_back({
+          "operator:" + expression.operation_id, receiver, {argument},
+          receiver, expression.line, expression.id, 0, {}});
     }
     for (auto& occurrence : checked_types.statement_occurrences) {
       std::sort(occurrence.expression_roots.begin(),
@@ -26411,8 +26542,8 @@ class Checker {
       for (const auto& binding : statement.bindings)
         if (!binding.identity.empty())
           bindings_by_identity[binding.identity].push_back(&binding);
-    for (const auto& statement : checked_types.statement_occurrences) {
-      for (const auto& binding : statement.bindings) {
+    for (auto& statement : checked_types.statement_occurrences) {
+      for (auto& binding : statement.bindings) {
         if (binding.predecessor_binding_ids.empty()) continue;
         if (statement.kind != Stmt::Kind::If ||
             binding.predecessor_binding_ids.size() != 2 ||
@@ -26422,9 +26553,37 @@ class Checker {
           checked_types.expression_occurrence_ledger_complete = false;
           continue;
         }
+        binding.predecessor_control_edges.clear();
         std::set<string> predecessor_ids;
         for (const auto& identity : binding.predecessor_binding_ids) {
           const auto found = bindings_by_identity.find(identity);
+          const BodyTypeState::StatementOccurrence* predecessor_node = nullptr;
+          std::size_t predecessor_nodes = 0;
+          for (const auto& candidate : checked_types.statement_occurrences)
+            if (std::any_of(candidate.bindings.begin(), candidate.bindings.end(),
+                    [&](const auto& candidate_binding) {
+                      return candidate_binding.identity == identity;
+                    })) {
+              predecessor_node = &candidate;
+              ++predecessor_nodes;
+            }
+          std::uint32_t control_statement_id = UINT32_MAX;
+          string branch_role;
+          if (predecessor_nodes == 1 && predecessor_node &&
+              predecessor_node->parent_id == statement.id) {
+            control_statement_id = statement.id;
+            branch_role = "then";
+          } else if (predecessor_nodes == 1 && predecessor_node &&
+              predecessor_node->parent_id <
+                  checked_types.statement_occurrences.size()) {
+            const auto& arm = checked_types.statement_occurrences[
+                predecessor_node->parent_id];
+            if (arm.kind == Stmt::Kind::Else &&
+                arm.control_parent_id == statement.id) {
+              control_statement_id = statement.id;
+              branch_role = "else";
+            }
+          }
           const auto predecessor_type = found != bindings_by_identity.end() &&
                   found->second.size() == 1 && found->second.front()->type
               ? checked_types.solver.resolve(found->second.front()->type)
@@ -26435,10 +26594,21 @@ class Checker {
               found == bindings_by_identity.end() || found->second.size() != 1 ||
               found->second.front()->name != binding.name ||
               found->second.front()->mutable_binding != binding.mutable_binding ||
+              control_statement_id != statement.id || branch_role.empty() ||
               !predecessor_type || !joined_type ||
               !predecessor_type->structurally_equal(*joined_type))
             checked_types.expression_occurrence_ledger_complete = false;
+          binding.predecessor_control_edges.push_back(
+              {identity, control_statement_id, branch_role});
         }
+        std::set<string> predecessor_roles;
+        for (const auto& edge : binding.predecessor_control_edges)
+          if (edge.binding_id.empty() ||
+              edge.control_statement_id != statement.id ||
+              !predecessor_roles.insert(edge.branch_role).second)
+            checked_types.expression_occurrence_ledger_complete = false;
+        if (predecessor_roles != std::set<string>{"else", "then"})
+          checked_types.expression_occurrence_ledger_complete = false;
       }
     }
     vector<vector<std::uint32_t>> expression_children(
@@ -27002,6 +27172,13 @@ public:
   else:
     let local = value
   return local
+
+export fn branch_compute(value, flag: Bool):
+  if flag:
+    let item = value * 2
+  else:
+    let item = value * 3
+  return item + 1
 )moss");
     Program program = Parser(
         lex_lines(input, "<control-join-binding-test>")).parse();
@@ -27039,9 +27216,69 @@ public:
     const auto read_type = read.checked_type
         ? state.solver.resolve(read.checked_type) : nullptr;
     const auto binding_type = state.solver.resolve(joined->second.front().type);
-    return read.kind == BodyTypeState::ExpressionOccurrence::Kind::Identifier &&
-        read.resolved_binding_id == joined->second.front().identity &&
-        read_type && binding_type && read_type->structurally_equal(*binding_type);
+    const auto branch_function = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+      return candidate.name == "branch_compute";
+    });
+    if (read.kind != BodyTypeState::ExpressionOccurrence::Kind::Identifier ||
+        read.resolved_binding_id != joined->second.front().identity ||
+        !read_type || !binding_type ||
+        !read_type->structurally_equal(*binding_type) ||
+        branch_function == program.functions.end() ||
+        !branch_function->open_summary ||
+        !branch_function->open_summary->complete ||
+        !branch_function->open_summary->occurrence_ledger_complete ||
+        branch_function->open_summary->operations.size() != 3 ||
+        branch_function->open_summary->requirements.size() != 3)
+      return false;
+    const auto branch_state_entry =
+        checker.checked_body_states_.find(&branch_function->body);
+    if (branch_state_entry == checker.checked_body_states_.end() ||
+        !branch_state_entry->second ||
+        !branch_state_entry->second->expression_occurrence_ledger_complete)
+      return false;
+    const auto& branch_state = *branch_state_entry->second;
+    const auto join = std::find_if(
+        branch_state.statement_occurrences.begin(),
+        branch_state.statement_occurrences.end(), [](const auto& occurrence) {
+      return occurrence.kind == Stmt::Kind::If &&
+          occurrence.bindings.size() == 1 &&
+          occurrence.bindings.front().name == "item";
+    });
+    if (join == branch_state.statement_occurrences.end() ||
+        join->bindings.front().predecessor_binding_ids.size() != 2 ||
+        join->bindings.front().predecessor_control_edges.size() != 2)
+      return false;
+    std::set<string> branch_roles;
+    for (const auto& edge : join->bindings.front().predecessor_control_edges)
+      if (edge.control_statement_id != join->id || edge.binding_id.empty() ||
+          !branch_roles.insert(edge.branch_role).second)
+        return false;
+    if (branch_roles != std::set<string>{"else", "then"}) return false;
+    vector<std::uint32_t> multiply_occurrences;
+    const OpenCallableSummaryFacts::OperationFact* addition = nullptr;
+    for (const auto& operation : branch_function->open_summary->operations) {
+      if (operation.operation_id == "operator:*")
+        multiply_occurrences.push_back(operation.expression_occurrence_id);
+      else if (operation.operation_id == "operator:+")
+        addition = &operation;
+    }
+    if (multiply_occurrences.size() != 2 || !addition) return false;
+    std::sort(multiply_occurrences.begin(), multiply_occurrences.end());
+    auto dependencies = addition->dependency_occurrence_ids;
+    std::sort(dependencies.begin(), dependencies.end());
+    if (dependencies != multiply_occurrences) return false;
+    const auto requirement = std::find_if(
+        branch_function->open_summary->requirements.begin(),
+        branch_function->open_summary->requirements.end(),
+        [](const moss::Requirement& candidate) {
+      return candidate.target_id == "operator:+";
+    });
+    if (requirement == branch_function->open_summary->requirements.end() ||
+        requirement->parent_requirement_id ||
+        requirement->dependency_requirement_ids.size() != 2)
+      return false;
+    return true;
   }
 
   static bool unit_test_statement_call_occurrence_roles() {
@@ -42374,10 +42611,11 @@ static string verified_abi_v10_interface_records(
       records += record.payload;
   records += "semantic_exports\n";
   for (const auto& record : parsed.value.semantic_contract) {
-    const bool typed_summary_v2 = abi_v10::hex_hash(record.id) &&
+    const bool typed_summary_v2_or_v3 = abi_v10::hex_hash(record.id) &&
         !record.payload.empty() &&
-        static_cast<unsigned char>(record.payload.front()) == 2;
-    if (typed_summary_v2) {
+        (static_cast<unsigned char>(record.payload.front()) == 2 ||
+         static_cast<unsigned char>(record.payload.front()) == 3);
+    if (typed_summary_v2_or_v3) {
       abi_v10::validate_summary(record);
       continue;
     }
@@ -43655,16 +43893,19 @@ static ParsedModuleUnit load_module_interface(
       auto summary = abi_v10::read_summary(record.payload);
       summaries[summary.callable_id].push_back({record.payload,
           !record.payload.empty() &&
-              static_cast<unsigned char>(record.payload.front()) == 2});
+              (static_cast<unsigned char>(record.payload.front()) == 2 ||
+               static_cast<unsigned char>(record.payload.front()) == 3)});
     }
     for (const auto& record : sealed.value.private_semantic_dependencies)
       if (abi_v10::hex_hash(record.id) && !record.payload.empty() &&
           (static_cast<unsigned char>(record.payload.front()) == 1 ||
-           static_cast<unsigned char>(record.payload.front()) == 2)) {
+           static_cast<unsigned char>(record.payload.front()) == 2 ||
+           static_cast<unsigned char>(record.payload.front()) == 3)) {
         auto summary = abi_v10::read_summary(record.payload);
         abi_v10::validate_summary(record);
         summaries[summary.callable_id].push_back({record.payload,
-            static_cast<unsigned char>(record.payload.front()) == 2});
+            static_cast<unsigned char>(record.payload.front()) == 2 ||
+            static_cast<unsigned char>(record.payload.front()) == 3});
       }
     for (const auto& record : sealed.value.private_semantic_dependencies)
       if (starts_with(record.id, "checked-body-v1:")) {
@@ -43750,7 +43991,7 @@ static ParsedModuleUnit load_module_interface(
           });
       if (has_body && !has_typed_summary)
         throw CompileError(std::max(function.line, 1),
-            "checked ABI-v10 body is missing its typed v2 callable summary",
+            "checked ABI-v10 body is missing its typed callable summary",
             "SOURCE_FREE_SUMMARY_INVALID");
       if (has_typed_callable_dependencies &&
           (!has_body || body_records->second.size() != 1))
@@ -45543,6 +45784,16 @@ abi_v10_checked_requirements(
     } else {
       wire.parent = 0;
     }
+    if (requirement.dependency_requirement_ids.empty() && wire.parent != 0) {
+      wire.dependencies.push_back(wire.parent);
+    } else {
+      for (const auto& dependency_id :
+           requirement.dependency_requirement_ids) {
+        const auto dependency = prior_ids.find(dependency_id);
+        if (dependency == prior_ids.end()) return std::nullopt;
+        wire.dependencies.push_back(dependency->second);
+      }
+    }
     for (const auto& argument : requirement.arguments) {
       auto type = abi_v10_checked_type(argument, variable_count);
       if (!type) return std::nullopt;
@@ -45700,7 +45951,8 @@ static void append_abi_v10_checked_callable_records(
             "checked ABI-v10 callable body is duplicated");
       if (record.payload.empty() ||
           (static_cast<unsigned char>(record.payload.front()) != 1 &&
-           static_cast<unsigned char>(record.payload.front()) != 2) ||
+           static_cast<unsigned char>(record.payload.front()) != 2 &&
+           static_cast<unsigned char>(record.payload.front()) != 3) ||
           !abi_v10::hex_hash(record.id))
         continue;
       const auto prior = abi_v10::read_summary(record.payload);
@@ -45744,7 +45996,8 @@ static bool abi_v10_checked_callable_records_present(
       if (record.id == "checked-body-v1:" + callable_id) return true;
       if (record.payload.empty() ||
           (static_cast<unsigned char>(record.payload.front()) != 1 &&
-           static_cast<unsigned char>(record.payload.front()) != 2) ||
+           static_cast<unsigned char>(record.payload.front()) != 2 &&
+           static_cast<unsigned char>(record.payload.front()) != 3) ||
           !abi_v10::hex_hash(record.id))
         return false;
       return abi_v10::read_summary(record.payload).callable_id == callable_id;
@@ -46264,7 +46517,8 @@ static void append_abi_v10_arithmetic_records(
     vector<abi_v10::Summary> decoded_existing_summaries;
     auto decode_existing_summaries = [&](const vector<abi_v10::Record>& records) {
       for (const auto& record : records) {
-        if (record.payload.empty() || record.payload.front() != 2 ||
+        if (record.payload.empty() ||
+            (record.payload.front() != 2 && record.payload.front() != 3) ||
             !abi_v10::hex_hash(record.id)) continue;
         auto summary = abi_v10::read_summary(record.payload);
         if (summary.callable_id == function.semantic_callable_id)
@@ -47363,7 +47617,8 @@ static vector<std::filesystem::path> write_module_interfaces(
       for (const auto& summary_record : value.semantic_contract) {
         if (!abi_v10::hex_hash(summary_record.id) ||
             summary_record.payload.empty() ||
-            static_cast<unsigned char>(summary_record.payload.front()) != 2)
+            (static_cast<unsigned char>(summary_record.payload.front()) != 2 &&
+             static_cast<unsigned char>(summary_record.payload.front()) != 3))
           continue;
         const auto summary = abi_v10::read_summary(summary_record.payload);
         if (summary.variable_count != 1 || summary.parameters.size() != 1 ||

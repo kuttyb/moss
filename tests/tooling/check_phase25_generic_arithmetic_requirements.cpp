@@ -383,9 +383,73 @@ export fn branch_compute(value, flag: Bool):
 
   const Function& branch_compute = find_function(joined_binding,
                                                   "branch_compute");
-  assert(branch_compute.open_summary);
-  assert(!branch_compute.open_summary->complete);
-  assert(!branch_compute.open_summary->occurrence_ledger_complete);
+  assert(branch_compute.open_summary && branch_compute.open_summary->complete);
+  assert(branch_compute.open_summary->occurrence_ledger_complete);
+  assert(branch_compute.open_summary->operations.size() == 3);
+  assert(branch_compute.open_summary->requirements.size() == 3);
+  vector<abi_v10::SourceProvenance> branch_provenance;
+  const auto branch_requirements = abi_v10_checked_requirements(
+      branch_compute.open_summary->requirements,
+      branch_compute.open_summary->bound_variable_count, branch_provenance);
+  assert(branch_requirements && branch_requirements->size() == 3);
+  abi_v10::Summary branch_wire;
+  branch_wire.callable_id = branch_compute.semantic_callable_id;
+  branch_wire.variable_count = branch_compute.open_summary->bound_variable_count;
+  for (size_t index = 0;
+       index < branch_compute.open_summary->parameter_types.size(); ++index) {
+    auto type = abi_v10_checked_type(
+        branch_compute.open_summary->parameter_types[index],
+        branch_wire.variable_count);
+    assert(type);
+    branch_wire.parameters.push_back(*type);
+    branch_wire.parameter_access.push_back(abi_v10_checked_access(
+        branch_compute.open_summary->parameter_access[index]));
+  }
+  auto branch_result = abi_v10_checked_type(
+      branch_compute.open_summary->result_type, branch_wire.variable_count);
+  assert(branch_result);
+  branch_wire.result = *branch_result;
+  branch_wire.requirements = *branch_requirements;
+  branch_wire.body_semantic_hash = "body-semantic-v1:sha256:" +
+      string(64, 'b');
+  const auto branch_callable_provenance = abi_v10_checked_provenance(
+      branch_compute.open_summary->origin.module_id,
+      branch_compute.semantic_callable_id, branch_compute.source_file,
+      branch_compute.line);
+  branch_wire.provenance_id = branch_callable_provenance.provenance_id;
+  assert(branch_wire.requirements[0].operation == "operator:*");
+  assert(branch_wire.requirements[1].operation == "operator:*");
+  assert(branch_wire.requirements[2].operation == "operator:+");
+  assert(branch_wire.requirements[0].dependencies.empty());
+  assert(branch_wire.requirements[1].dependencies.empty());
+  assert(branch_wire.requirements[2].parent == 0);
+  assert(branch_wire.requirements[2].dependencies == vector<uint32_t>({1, 2}));
+  const auto branch_payload = abi_v10::summary_payload(branch_wire);
+  const auto branch_roundtrip = abi_v10::read_summary(branch_payload);
+  assert(branch_roundtrip.requirements[2].parent == 0);
+  assert(branch_roundtrip.requirements[2].dependencies ==
+         vector<uint32_t>({1, 2}));
+  const auto legacy_v2_payload = abi_v10::summary_payload(wire_summary, 2);
+  const auto legacy_v2_summary = abi_v10::read_summary(legacy_v2_payload);
+  assert(legacy_v2_summary.requirements.size() == 2);
+  assert(legacy_v2_summary.requirements[1].dependencies ==
+         vector<uint32_t>{1});
+  bool multi_edge_v2_rejected = false;
+  try {
+    (void)abi_v10::summary_payload(branch_wire, 2);
+  } catch (const std::exception&) {
+    multi_edge_v2_rejected = true;
+  }
+  assert(multi_edge_v2_rejected);
+  auto duplicate_dependencies = branch_wire;
+  duplicate_dependencies.requirements[2].dependencies = {1, 1};
+  bool duplicate_rejected = false;
+  try {
+    (void)abi_v10::summary_payload(duplicate_dependencies);
+  } catch (const std::exception&) {
+    duplicate_rejected = true;
+  }
+  assert(duplicate_rejected);
 
   const Function& choose = find_function(joined_binding, "choose");
   assert(choose.open_summary && choose.open_summary->complete);

@@ -220,6 +220,7 @@ struct Requirement {
   std::vector<WireType> arguments;
   std::optional<WireType> result;
   std::vector<Access> argument_access;
+  std::vector<std::uint32_t> dependencies;
 };
 
 struct Summary {
@@ -235,6 +236,12 @@ struct Summary {
   std::string body_semantic_hash;
   std::string provenance_id;
 };
+
+inline bool typed_summary_payload(std::string_view payload) {
+  return !payload.empty() &&
+      (static_cast<unsigned char>(payload.front()) == 2 ||
+       static_cast<unsigned char>(payload.front()) == 3);
+}
 
 inline bool summary_ordinals_dense(const Summary& summary) {
   std::vector<bool> used(summary.variable_count, false);
@@ -264,7 +271,8 @@ inline bool summary_ordinals_dense(const Summary& summary) {
 
 inline void write_requirement(WireWriter& writer,
                               const Requirement& requirement,
-                              std::uint32_t variable_count) {
+                              std::uint32_t variable_count,
+                              std::uint8_t version = 2) {
   require(requirement.arguments.size() <= 64 &&
               requirement.arguments.size() ==
                   requirement.argument_access.size(),
@@ -292,10 +300,31 @@ inline void write_requirement(WireWriter& writer,
             "ABI-v10 argument access mode is invalid");
     writer.byte(static_cast<std::uint8_t>(access));
   }
+  if (version >= 3) {
+    const auto dependencies = requirement.dependencies.empty() &&
+            requirement.parent != 0
+        ? std::vector<std::uint32_t>{requirement.parent}
+        : requirement.dependencies;
+    require(dependencies.size() <= 4096 &&
+                std::is_sorted(dependencies.begin(), dependencies.end()) &&
+                std::adjacent_find(dependencies.begin(), dependencies.end()) ==
+                    dependencies.end() &&
+                std::all_of(dependencies.begin(), dependencies.end(),
+                    [](std::uint32_t dependency) { return dependency != 0; }) &&
+                ((dependencies.empty() && requirement.parent == 0) ||
+                 (dependencies.size() == 1 &&
+                  requirement.parent == dependencies.front()) ||
+                 (dependencies.size() > 1 && requirement.parent == 0)),
+            "SOURCE_FREE_SUMMARY_INVALID",
+            "ABI-v10 requirement dependency projection is invalid");
+    writer.number(static_cast<std::uint32_t>(dependencies.size()));
+    for (const auto dependency : dependencies) writer.number(dependency);
+  }
 }
 
 inline Requirement read_requirement(WireReader& reader,
-                                    std::uint32_t variable_count) {
+                                    std::uint32_t variable_count,
+                                    std::uint8_t version = 2) {
   Requirement requirement;
   requirement.receiver = read_type(reader, variable_count);
   requirement.operation = reader.string();
@@ -318,10 +347,20 @@ inline Requirement read_requirement(WireReader& reader,
           "ABI-v10 requirement argument/access counts disagree");
   for (std::uint32_t i = 0; i < accesses; ++i)
     requirement.argument_access.push_back(read_access(reader));
+  if (version >= 3) {
+    const auto dependencies = reader.number();
+    require(dependencies <= 4096, "SOURCE_FREE_SUMMARY_INVALID",
+            "ABI-v10 requirement has too many dependencies");
+    for (std::uint32_t i = 0; i < dependencies; ++i)
+      requirement.dependencies.push_back(reader.number());
+  } else if (requirement.parent != 0) {
+    requirement.dependencies.push_back(requirement.parent);
+  }
   return requirement;
 }
 
-inline std::string summary_payload(const Summary& summary) {
+inline std::string summary_payload(const Summary& summary,
+                                   std::uint8_t version = 3) {
   require(!summary.callable_id.empty() && summary.variable_count <= 4096 &&
               summary.parameters.size() <= 256 &&
               summary.parameters.size() == summary.parameter_access.size() &&
@@ -329,10 +368,10 @@ inline std::string summary_payload(const Summary& summary) {
               summary.dependencies.size() <= 4096 &&
               checked_body_hash_valid(summary.body_semantic_hash) &&
               !summary.provenance_id.empty() &&
-              summary_ordinals_dense(summary),
+              summary_ordinals_dense(summary) && (version == 2 || version == 3),
           "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 summary shape is invalid");
   WireWriter writer;
-  writer.byte(2);  // OpenCallableSummary typed-requirement record version.
+  writer.byte(version);
   writer.string(summary.callable_id);
   writer.number(summary.variable_count);
   writer.number(static_cast<std::uint32_t>(summary.parameters.size()));
@@ -347,10 +386,20 @@ inline std::string summary_payload(const Summary& summary) {
   writer.number(static_cast<std::uint32_t>(summary.requirements.size()));
   for (std::size_t i = 0; i < summary.requirements.size(); ++i) {
     const auto& requirement = summary.requirements[i];
-    require(requirement.parent <= i && !requirement.operation.empty() &&
+    const auto dependencies = requirement.dependencies.empty() &&
+            requirement.parent != 0
+        ? std::vector<std::uint32_t>{requirement.parent}
+        : requirement.dependencies;
+    require(requirement.parent <= i &&
+                std::all_of(dependencies.begin(), dependencies.end(),
+                    [&](std::uint32_t dependency) { return dependency <= i; }) &&
+                (version >= 3 || dependencies.size() <= 1) &&
+                (version >= 3 || dependencies.empty() ||
+                 requirement.parent == dependencies.front()) &&
+                !requirement.operation.empty() &&
                 !requirement.provenance_id.empty(),
             "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 requirement DAG is invalid");
-    write_requirement(writer, requirement, summary.variable_count);
+    write_requirement(writer, requirement, summary.variable_count, version);
   }
   writer.number(static_cast<std::uint32_t>(summary.dependencies.size()));
   std::string previous;
@@ -372,7 +421,8 @@ inline std::string summary_payload(const Summary& summary) {
 
 inline Summary read_summary(std::string_view payload) {
   WireReader reader(payload);
-  require(reader.byte() == 2, "SOURCE_FREE_SUMMARY_INVALID",
+  const auto version = reader.byte();
+  require(version == 2 || version == 3, "SOURCE_FREE_SUMMARY_INVALID",
           "ABI-v10 summary record version is unsupported");
   Summary summary;
   summary.callable_id = reader.string();
@@ -392,7 +442,7 @@ inline Summary read_summary(std::string_view payload) {
           "ABI-v10 summary has too many requirements");
   for (std::uint32_t i = 0; i < requirements; ++i) {
     summary.requirements.push_back(
-        read_requirement(reader, summary.variable_count));
+        read_requirement(reader, summary.variable_count, version));
   }
   const auto dependencies = reader.number();
   require(dependencies <= 4096, "SOURCE_FREE_SUMMARY_INVALID",
@@ -403,7 +453,7 @@ inline Summary read_summary(std::string_view payload) {
   summary.observable_effect_tags = read_effect_tags(reader);
   summary.body_semantic_hash = reader.string();
   summary.provenance_id = reader.string();
-  require(reader.done() && summary_payload(summary) == payload,
+  require(reader.done() && summary_payload(summary, version) == payload,
           "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 summary is noncanonical");
   return summary;
 }
@@ -1298,13 +1348,14 @@ inline void validate_complete_interface(
   std::vector<Record> key_proof_records;
   for (const auto& rec : sealed.value.semantic_contract) {
     if (rec.payload.empty()) continue;
-    const bool summary_v2 = hex_hash(rec.id) && rec.payload[0] == 2;
+    const bool summary_v2_or_v3 = hex_hash(rec.id) &&
+        (rec.payload[0] == 2 || rec.payload[0] == 3);
     require(rec.payload[0] == 1 ||
                 static_cast<unsigned char>(rec.payload[0]) >= 32 ||
-                summary_v2,
+                summary_v2_or_v3,
             "SOURCE_FREE_CONTRACT_INVALID",
             "Unknown ABI-v10 semantic record version");
-    if (rec.payload[0] != 1 && !summary_v2) continue;
+    if (rec.payload[0] != 1 && !summary_v2_or_v3) continue;
     // The record ID selects the versioned schema. A failed decode is fatal;
     // trying other schemas could hide a forged or truncated public contract.
     if (nominal_template_id_valid(rec.id)) {
@@ -1332,13 +1383,14 @@ inline void validate_complete_interface(
   std::map<std::string, CheckedBodyRecord> private_bodies;
   for (const auto& rec : sealed.value.private_semantic_dependencies) {
     if (rec.payload.empty()) continue;
-    const bool summary_v2 = hex_hash(rec.id) && rec.payload[0] == 2;
+    const bool summary_v2_or_v3 = hex_hash(rec.id) &&
+        (rec.payload[0] == 2 || rec.payload[0] == 3);
     require(rec.payload[0] == 1 ||
                 static_cast<unsigned char>(rec.payload[0]) >= 32 ||
-                summary_v2,
+                summary_v2_or_v3,
             "SOURCE_FREE_CONTRACT_INVALID",
             "Unknown ABI-v10 private dependency record version");
-    if (rec.payload[0] != 1 && !summary_v2) continue;
+    if (rec.payload[0] != 1 && !summary_v2_or_v3) continue;
     if (rec.id.rfind("checked-body-v1:", 0) == 0) {
       const auto body = read_checked_body_record(rec.payload);
       validate_checked_body_record(rec);

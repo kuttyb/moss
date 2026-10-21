@@ -42,7 +42,7 @@ int main(int argc, char** argv) {
     bool found_summary = false;
     for (auto& record : sealed.value.semantic_contract) {
       if (!moss::abi_v10::hex_hash(record.id) || record.payload.empty() ||
-          static_cast<unsigned char>(record.payload.front()) != 2)
+          !moss::abi_v10::typed_summary_payload(record.payload))
         continue;
       auto candidate = moss::abi_v10::read_summary(record.payload);
       if (candidate.callable_id != callable_id) continue;
@@ -86,7 +86,7 @@ int main(int argc, char** argv) {
     for (auto& record : sealed.value.semantic_contract)
       if (record.id == summary_record.id ||
           (moss::abi_v10::hex_hash(record.id) && !record.payload.empty() &&
-           static_cast<unsigned char>(record.payload.front()) == 2 &&
+           moss::abi_v10::typed_summary_payload(record.payload) &&
            moss::abi_v10::read_summary(record.payload).callable_id ==
                callable_id)) {
         record = summary_record;
@@ -131,7 +131,7 @@ int main(int argc, char** argv) {
     bool replaced = false;
     for (auto& record : sealed.value.semantic_contract) {
       if (!moss::abi_v10::hex_hash(record.id) || record.payload.empty() ||
-          static_cast<unsigned char>(record.payload.front()) != 2)
+          !moss::abi_v10::typed_summary_payload(record.payload))
         continue;
       auto summary = moss::abi_v10::read_summary(record.payload);
       if (summary.callable_id != callable_id) continue;

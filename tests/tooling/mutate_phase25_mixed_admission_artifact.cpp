@@ -60,7 +60,7 @@ int main(int argc, char** argv) {
     assert(std::any_of(sealed.value.semantic_contract.begin(),
         sealed.value.semantic_contract.end(), [&](const auto& record) {
       return moss::abi_v10::hex_hash(record.id) && !record.payload.empty() &&
-          static_cast<unsigned char>(record.payload.front()) == 2 &&
+          moss::abi_v10::typed_summary_payload(record.payload) &&
           moss::abi_v10::read_summary(record.payload).callable_id == supported;
     }));
     assert(std::any_of(sealed.value.semantic_contract.begin(),

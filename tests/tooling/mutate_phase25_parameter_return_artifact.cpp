@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
   auto summary_at = std::find_if(sealed.value.semantic_contract.begin(),
       sealed.value.semantic_contract.end(), [&](const auto& record) {
     return moss::abi_v10::hex_hash(record.id) && !record.payload.empty() &&
-        static_cast<unsigned char>(record.payload.front()) == 2 &&
+        moss::abi_v10::typed_summary_payload(record.payload) &&
         moss::abi_v10::read_summary(record.payload).callable_id == callable;
   });
   assert(summary_at != sealed.value.semantic_contract.end());
@@ -60,7 +60,7 @@ int main(int argc, char** argv) {
       sealed.value.private_semantic_dependencies.begin(),
       sealed.value.private_semantic_dependencies.end(), [&](const auto& record) {
     return moss::abi_v10::hex_hash(record.id) && !record.payload.empty() &&
-        static_cast<unsigned char>(record.payload.front()) == 2 &&
+        moss::abi_v10::typed_summary_payload(record.payload) &&
         moss::abi_v10::read_summary(record.payload).callable_id ==
             helper_callable;
   });

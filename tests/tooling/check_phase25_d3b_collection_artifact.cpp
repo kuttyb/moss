@@ -20,7 +20,7 @@ int main(int argc, char** argv) {
   std::vector<moss::abi_v10::SourceProvenance> provenance;
   for (const auto& record : sealed.value.semantic_contract) {
     if (record.payload.empty() ||
-        static_cast<unsigned char>(record.payload.front()) != 2) continue;
+        !moss::abi_v10::typed_summary_payload(record.payload)) continue;
     const auto decoded = moss::abi_v10::read_summary(record.payload);
     if (decoded.callable_id.size() >= callable_suffix.size() &&
         decoded.callable_id.compare(decoded.callable_id.size() -

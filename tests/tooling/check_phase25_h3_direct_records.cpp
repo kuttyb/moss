@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
     }
   for (const auto& record : iface.semantic_contract)
     if (!record.payload.empty() &&
-        static_cast<unsigned char>(record.payload.front()) == 2 &&
+        moss::abi_v10::typed_summary_payload(record.payload) &&
         moss::abi_v10::hex_hash(record.id)) {
       moss::abi_v10::validate_summary(record);
       summary_value = moss::abi_v10::read_summary(record.payload);
