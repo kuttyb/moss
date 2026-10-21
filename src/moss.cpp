@@ -5728,6 +5728,10 @@ class Checker {
     vector<std::uint32_t> active_expression_occurrences;
     std::unordered_map<std::uint32_t, std::uint32_t>
         operation_counts_by_occurrence;
+    std::set<std::pair<std::uint32_t, string>>
+        expected_open_operator_operations;
+    std::set<std::pair<std::uint32_t, string>>
+        expected_open_operator_requirements;
     bool expression_occurrence_ledger_complete = true;
 
     std::uint32_t statement_occurrence_id(const Stmt& statement) {
@@ -23917,6 +23921,14 @@ class Checker {
     auto resolved_right = current_body_types_->solver.resolve(right);
     if (!resolved_left || !resolved_right ||
         (resolved_left->is_closed() && resolved_right->is_closed())) return;
+    if (current_body_types_->active_expression_occurrences.empty()) {
+      current_body_types_->expression_occurrence_ledger_complete = false;
+      return;
+    }
+    const auto occurrence_id =
+        current_body_types_->active_expression_occurrences.back();
+    current_body_types_->expected_open_operator_operations.emplace(
+        occurrence_id, "operator:" + operation_id);
     moss::TypeRef result;
     if (operation_id == "+" || operation_id == "-" ||
         operation_id == "*" || operation_id == "/" ||
@@ -23947,10 +23959,19 @@ class Checker {
     auto term = current_body_types_->known_expression(operand);
     if (!term) term = inferred_expr_term(operand, env);
     auto resolved = term ? current_body_types_->solver.resolve(term) : nullptr;
-    if (resolved && !resolved->is_closed())
+    if (resolved && !resolved->is_closed()) {
+      if (current_body_types_->active_expression_occurrences.empty()) {
+        current_body_types_->expression_occurrence_ledger_complete = false;
+        return;
+      }
+      const auto occurrence_id =
+          current_body_types_->active_expression_occurrences.back();
+      current_body_types_->expected_open_operator_operations.emplace(
+          occurrence_id, "operator:" + operation_id);
       current_body_types_->attach_open_operation({
           "operator:" + operation_id, term, {}, nullptr, line,
           UINT32_MAX, 0, {}});
+    }
   }
 
   void mark_active_expression(
@@ -24391,6 +24412,9 @@ class Checker {
             } else {
               requirement.expression_occurrence_id =
                   current_body_types_->active_expression_occurrences.back();
+              current_body_types_->expected_open_operator_requirements.emplace(
+                  requirement.expression_occurrence_id,
+                  requirement.target_id);
             }
             current_body_types_->open_operator_requirements.push_back(
                 std::move(requirement));
@@ -26805,6 +26829,8 @@ class Checker {
         }
       }
       expression.checked_type = receiver;
+      checked_types.expected_open_operator_operations.emplace(
+          expression.id, "operator:" + expression.operation_id);
       checked_types.open_operations.push_back({
           "operator:" + expression.operation_id, receiver, {argument},
           receiver, expression.line, expression.id, 0, {}});
@@ -27401,40 +27427,39 @@ class Checker {
           !same_resolved_term(*requirement.result, linked.checked_type))
         checked_types.expression_occurrence_ledger_complete = false;
     }
-    // Equality constraints are retained separately from arithmetic operation
-    // facts. Prove that every generic equality occurrence has exactly one
-    // checker requirement and that no requirement is duplicated or orphaned.
-    for (const auto& occurrence : checked_types.expression_occurrences) {
-      if (occurrence.kind !=
-              BodyTypeState::ExpressionOccurrence::Kind::Binary ||
-          (occurrence.operation_id != "==" &&
-           occurrence.operation_id != "!="))
-        continue;
-      const auto left = std::find_if(
-          checked_types.expression_occurrences.begin(),
-          checked_types.expression_occurrences.end(), [&](const auto& child) {
-        return child.parent_id == occurrence.id &&
-            child.child_role == "left";
-      });
-      const auto right = std::find_if(
-          checked_types.expression_occurrences.begin(),
-          checked_types.expression_occurrences.end(), [&](const auto& child) {
-        return child.parent_id == occurrence.id &&
-            child.child_role == "right";
-      });
-      const auto left_type = left == checked_types.expression_occurrences.end()
-          || !left->checked_type
-          ? nullptr : checked_types.solver.resolve(left->checked_type);
-      const auto right_type = right == checked_types.expression_occurrences.end()
-          || !right->checked_type
-          ? nullptr : checked_types.solver.resolve(right->checked_type);
-      const bool checker_requires_constraint = left_type && right_type &&
-          (!left_type->is_closed() || !right_type->is_closed());
-      const bool has_constraint =
-          operator_requirement_occurrences.count(occurrence.id) == 1;
-      if (checker_requires_constraint != has_constraint)
+    // The checker records these expectations when it observes open operands.
+    // Compare against that point-in-time fact rather than final solver types:
+    // later annotations can close a type without erasing the requirement that
+    // was correctly retained at the operation site.
+    std::set<std::pair<std::uint32_t, string>> observed_operator_requirements;
+    for (const auto& requirement : checked_types.open_operator_requirements)
+      observed_operator_requirements.emplace(
+          requirement.expression_occurrence_id, requirement.target_id);
+    if (observed_operator_requirements.size() !=
+            checked_types.open_operator_requirements.size() ||
+        observed_operator_requirements !=
+            checked_types.expected_open_operator_requirements)
+      checked_types.expression_occurrence_ledger_complete = false;
+    std::map<std::pair<std::uint32_t, string>, std::size_t>
+        observed_open_operator_operations;
+    for (const auto& operation : checked_types.open_operations)
+      if (starts_with(operation.operation_id, "operator:"))
+        ++observed_open_operator_operations[
+            {operation.expression_occurrence_id, operation.operation_id}];
+    if (observed_open_operator_operations.size() !=
+            checked_types.expected_open_operator_operations.size())
+      checked_types.expression_occurrence_ledger_complete = false;
+    for (const auto& expected :
+         checked_types.expected_open_operator_operations) {
+      const auto observed = observed_open_operator_operations.find(expected);
+      if (observed == observed_open_operator_operations.end() ||
+          observed->second != 1)
         checked_types.expression_occurrence_ledger_complete = false;
     }
+    for (const auto& observed : observed_open_operator_operations)
+      if (observed.second != 1 ||
+          !checked_types.expected_open_operator_operations.count(observed.first))
+        checked_types.expression_occurrence_ledger_complete = false;
     for (const auto& linked : linked_operations)
       if (linked.second.empty() ||
           *linked.second.rbegin() + 1 != linked.second.size())
@@ -27679,6 +27704,51 @@ export fn branch_compute(value, flag: Bool):
         requirement->dependency_requirement_ids.size() != 2)
       return false;
     return true;
+  }
+
+  static bool unit_test_deferred_operator_requirement_occurrences() {
+    std::istringstream input(R"moss(fn pin_int(left: Int, right: Int) -> Int:
+  return left
+
+export fn compare_then_pin(left, right):
+  same = left == right
+  return pin_int(left, right)
+)moss");
+    Program program = Parser(
+        lex_lines(input, "<deferred-operator-occurrence-test>")).parse();
+    Checker checker(program);
+    checker.run();
+    const auto function = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+      return candidate.name == "compare_then_pin";
+    });
+    if (function == program.functions.end()) return false;
+    const auto retained = checker.checked_body_states_.find(&function->body);
+    if (retained == checker.checked_body_states_.end() || !retained->second)
+      return false;
+    auto& state = *retained->second;
+    const auto equality = std::find_if(state.expression_occurrences.begin(),
+        state.expression_occurrences.end(), [](const auto& occurrence) {
+      return occurrence.kind ==
+              BodyTypeState::ExpressionOccurrence::Kind::Binary &&
+          occurrence.operation_id == "==";
+    });
+    if (equality == state.expression_occurrences.end() ||
+        state.solver.resolve(equality->checked_type) == nullptr ||
+        state.expected_open_operator_requirements.count(
+            {equality->id, "operator:=="}) != 1 ||
+        std::count_if(state.open_operator_requirements.begin(),
+            state.open_operator_requirements.end(), [&](const auto& requirement) {
+          return requirement.expression_occurrence_id == equality->id &&
+              requirement.target_id == "operator:==";
+        }) != 1 || !state.expression_occurrence_ledger_complete)
+      return false;
+    const auto left_term = state.known_expression("left");
+    const auto right_term = state.known_expression("right");
+    const auto left_type = left_term ? state.solver.resolve(left_term) : nullptr;
+    const auto right_type = right_term ? state.solver.resolve(right_term) : nullptr;
+    return left_type && right_type && left_type->is_closed() &&
+        right_type->is_closed();
   }
 
   static bool unit_test_statement_call_occurrence_roles() {

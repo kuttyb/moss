@@ -158,6 +158,7 @@ static bool arithmetic_body_rejected(const string& expression) {
 
 int main() {
   assert(Checker::unit_test_control_join_binding_facts());
+  assert(Checker::unit_test_deferred_operator_requirement_occurrences());
   auto program = checked_program(R"moss(export fn compute(x):
   return x * 2 + 20
 
