@@ -5229,8 +5229,13 @@ class Checker {
         bool operations_complete = projection_complete &&
             function.open_summary->result_type;
         for (const auto& operation : state.open_operations) {
+          const bool unary_operator =
+              operation.operation_id == "operator:unary-" ||
+              operation.operation_id == "operator:not" ||
+              operation.operation_id == "operator:~";
           if (!starts_with(operation.operation_id, "operator:") ||
-              operation.arguments.size() != 1 || !operation.result ||
+              operation.arguments.size() != (unary_operator ? 0u : 1u) ||
+              !operation.result ||
               operation.expression_occurrence_id >=
                   state.expression_occurrences.size()) {
             operations_complete = false;
@@ -5238,10 +5243,13 @@ class Checker {
           }
           auto retained = operation;
           retained.receiver = project_type(operation.receiver);
-          retained.arguments = {project_type(operation.arguments.front())};
+          retained.arguments.clear();
+          for (const auto& argument : operation.arguments)
+            retained.arguments.push_back(project_type(argument));
           retained.result = project_type(operation.result);
-          if (!retained.receiver || !retained.arguments.front() ||
-              !retained.result) {
+          if (!retained.receiver || !retained.result ||
+              std::any_of(retained.arguments.begin(), retained.arguments.end(),
+                  [](const auto& argument) { return !argument; })) {
             operations_complete = false;
             break;
           }
@@ -5254,7 +5262,8 @@ class Checker {
           requirement.target_id = operation.operation_id;
           requirement.subject = retained.receiver;
           requirement.arguments = retained.arguments;
-          requirement.argument_access = {moss::AccessMode::Read};
+          requirement.argument_access.assign(retained.arguments.size(),
+              moss::AccessMode::Read);
           requirement.result = retained.result;
           requirement.origin = {function.open_summary->origin.module_id,
               function.source_file, operation.line, 1,
@@ -23966,11 +23975,20 @@ class Checker {
       }
       const auto occurrence_id =
           current_body_types_->active_expression_occurrences.back();
+      moss::TypeRef result;
+      if (operation_id == "unary-") result = term;
+      else if (operation_id == "not") result = moss::Type::primitive("bool");
+      else if (operation_id == "~") result = moss::Type::primitive("int");
+      else {
+        current_body_types_->expression_occurrence_ledger_complete = false;
+        return;
+      }
       current_body_types_->expected_open_operator_operations.emplace(
           occurrence_id, "operator:" + operation_id);
       current_body_types_->attach_open_operation({
-          "operator:" + operation_id, term, {}, nullptr, line,
+          "operator:" + operation_id, term, {}, result, line,
           UINT32_MAX, 0, {}});
+      current_body_types_->retain_active_expression_type(result);
     }
   }
 
@@ -27331,12 +27349,48 @@ class Checker {
         checked_types.expression_occurrence_ledger_complete = false;
       if (starts_with(operation.operation_id, "operator:")) {
         const string expected = operation.operation_id.substr(9);
-        if (linked.kind != BodyTypeState::ExpressionOccurrence::Kind::Binary ||
-            linked.operation_id != expected || !operation.result ||
-            !linked.checked_type ||
-            !linked.checked_type->structurally_equal(
-                *checked_types.solver.resolve(operation.result)))
-          checked_types.expression_occurrence_ledger_complete = false;
+        const bool unary = expected == "unary-" || expected == "not" ||
+            expected == "~";
+        if (unary) {
+          const auto operand = std::find_if(
+              checked_types.expression_occurrences.begin(),
+              checked_types.expression_occurrences.end(),
+              [&](const auto& candidate) {
+                return candidate.parent_id == occurrence &&
+                    candidate.child_role == "operand";
+              });
+          if (linked.kind != BodyTypeState::ExpressionOccurrence::Kind::Unary ||
+              linked.operation_id != expected || !operation.arguments.empty() ||
+              operand == checked_types.expression_occurrences.end() ||
+              !same_resolved_term(operand->checked_type, operation.receiver) ||
+              !operation.result || !linked.checked_type ||
+              !same_resolved_term(linked.checked_type, operation.result))
+            checked_types.expression_occurrence_ledger_complete = false;
+        } else {
+          const auto left = std::find_if(
+              checked_types.expression_occurrences.begin(),
+              checked_types.expression_occurrences.end(),
+              [&](const auto& candidate) {
+                return candidate.parent_id == occurrence &&
+                    candidate.child_role == "left";
+              });
+          const auto right = std::find_if(
+              checked_types.expression_occurrences.begin(),
+              checked_types.expression_occurrences.end(),
+              [&](const auto& candidate) {
+                return candidate.parent_id == occurrence &&
+                    candidate.child_role == "right";
+              });
+          if (linked.kind != BodyTypeState::ExpressionOccurrence::Kind::Binary ||
+              linked.operation_id != expected || operation.arguments.size() != 1 ||
+              left == checked_types.expression_occurrences.end() ||
+              right == checked_types.expression_occurrences.end() ||
+              !same_resolved_term(left->checked_type, operation.receiver) ||
+              !same_resolved_term(right->checked_type, operation.arguments.front()) ||
+              !operation.result || !linked.checked_type ||
+              !same_resolved_term(linked.checked_type, operation.result))
+            checked_types.expression_occurrence_ledger_complete = false;
+        }
       } else if (operation.operation_id == "builtin:index") {
         if (linked.kind != BodyTypeState::ExpressionOccurrence::Kind::Index ||
             linked.operation_id != "builtin:index" || !operation.result ||
@@ -27713,6 +27767,10 @@ export fn branch_compute(value, flag: Bool):
 export fn compare_then_pin(left, right):
   same = left == right
   return pin_int(left, right)
+
+export fn negate_then_pin(value):
+  let negated = -value
+  return pin_int(value, value)
 )moss");
     Program program = Parser(
         lex_lines(input, "<deferred-operator-occurrence-test>")).parse();
@@ -27747,8 +27805,36 @@ export fn compare_then_pin(left, right):
     const auto right_term = state.known_expression("right");
     const auto left_type = left_term ? state.solver.resolve(left_term) : nullptr;
     const auto right_type = right_term ? state.solver.resolve(right_term) : nullptr;
-    return left_type && right_type && left_type->is_closed() &&
-        right_type->is_closed();
+    if (!left_type || !right_type || !left_type->is_closed() ||
+        !right_type->is_closed()) return false;
+    const auto negate = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+      return candidate.name == "negate_then_pin";
+    });
+    if (negate == program.functions.end()) return false;
+    const auto negate_state = checker.checked_body_states_.find(&negate->body);
+    if (negate_state == checker.checked_body_states_.end() ||
+        !negate_state->second) return false;
+    auto& unary_state = *negate_state->second;
+    const auto unary = std::find_if(unary_state.expression_occurrences.begin(),
+        unary_state.expression_occurrences.end(), [](const auto& occurrence) {
+      return occurrence.kind ==
+              BodyTypeState::ExpressionOccurrence::Kind::Unary &&
+          occurrence.operation_id == "unary-";
+    });
+    if (unary == unary_state.expression_occurrences.end() ||
+        !unary_state.expression_occurrence_ledger_complete ||
+        unary_state.expected_open_operator_operations.count(
+            {unary->id, "operator:unary-"}) != 1 ||
+        std::count_if(unary_state.open_operations.begin(),
+            unary_state.open_operations.end(), [&](const auto& operation) {
+          return operation.expression_occurrence_id == unary->id &&
+              operation.operation_id == "operator:unary-" &&
+              operation.arguments.empty() && operation.result;
+        }) != 1)
+      return false;
+    const auto unary_result = unary_state.solver.resolve(unary->checked_type);
+    return unary_result && unary_result->is_closed();
   }
 
   static bool unit_test_statement_call_occurrence_roles() {
