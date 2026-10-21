@@ -4802,6 +4802,7 @@ class Checker {
       string binding_identity;
       moss::TypeRef binding_type;
       vector<BindingOccurrence> bindings;
+      string enum_identity;
       string variant_identity;
       string variant_type;
       bool introduces_binding = false;
@@ -5007,6 +5008,7 @@ class Checker {
       moss::TypeRef type;
     };
     struct CaseFact {
+      string enum_identity;
       string variant_identity;
       string variant_type;
       vector<StatementOccurrence::BindingOccurrence> payload_bindings;
@@ -11669,7 +11671,14 @@ class Checker {
           if (case_it != declaration->cases.end()) {
             BodyTypeState::CaseFact fact;
             fact.variant_type = declaration->name;
-            fact.variant_identity = declaration->name + "." + case_it->name;
+            const string enum_module = program_module_identity(
+                p_, declaration->defining_module);
+            const string enum_name = declaration->declaration_name.empty()
+                ? declaration->name : declaration->declaration_name;
+            fact.enum_identity = moss::declaration_identity(
+                moss::DeclarationKind::Enum, enum_module, enum_name);
+            fact.variant_identity = "nominal-enum-variant-v1:" +
+                fact.enum_identity + ":case:" + case_it->name;
             for (size_t i = 0; i < statement.args.size() && i < case_it->fields.size(); ++i) {
               const string& field_name = statement.args[i];
               const string& field_type = case_it->fields[i].type;
@@ -23864,6 +23873,10 @@ class Checker {
         if (found != state.statement_occurrence_ids.end() &&
             found->second < state.statement_occurrences.size()) {
           state.statement_occurrences[found->second].synthetic = true;
+          // The temporary Stmt is gone after this scope. Synthetic roots are
+          // represented by their owned occurrence metadata and must never
+          // retain a pointer into this stack frame.
+          state.statement_occurrences[found->second].source = nullptr;
           auto& roots = state.statement_occurrences[found->second].expression_roots;
           for (const auto& [key, expression_id] : state.expression_root_slots)
             if (key.first == found->second)
@@ -24936,8 +24949,10 @@ class Checker {
       }
       auto case_fact = checked_types.case_facts.find(statement);
       if (case_fact != checked_types.case_facts.end()) {
+        occurrence.enum_identity = case_fact->second.enum_identity;
         occurrence.variant_identity = case_fact->second.variant_identity;
         occurrence.variant_type = case_fact->second.variant_type;
+        occurrence.branch_role = "case:" + occurrence.variant_identity;
         occurrence.bindings.insert(occurrence.bindings.end(),
             case_fact->second.payload_bindings.begin(),
             case_fact->second.payload_bindings.end());
@@ -24953,6 +24968,73 @@ class Checker {
           statement_scopes.back().statement_id).scope_exit = true;
       statement_scopes.pop_back();
     }
+    // Validate the parser-derived control graph before it can be considered
+    // complete. A backwards edge alone is insufficient: each branch kind has
+    // one legal target kind, scope relationship, and role identity.
+    std::map<std::uint32_t, std::set<string>> branch_roles_by_control;
+    std::map<std::uint32_t, std::size_t> else_count_by_if;
+    std::set<std::uint32_t> entered_scope_ids;
+    std::uint32_t maximum_scope_id = 0;
+    for (const auto& node : checked_types.statement_occurrences) {
+      if (node.entered_scope_id != 0) {
+        maximum_scope_id = std::max(maximum_scope_id, node.entered_scope_id);
+        if (!entered_scope_ids.insert(node.entered_scope_id).second)
+          checked_types.expression_occurrence_ledger_complete = false;
+      }
+      if (node.parent_id != UINT32_MAX) {
+        if (node.parent_id >= node.id) {
+          checked_types.expression_occurrence_ledger_complete = false;
+        } else {
+          const auto& parent = checked_types.statement_occurrences[node.parent_id];
+          if (parent.entered_scope_id == 0 ||
+              node.scope_id != parent.entered_scope_id)
+            checked_types.expression_occurrence_ledger_complete = false;
+        }
+      } else if (node.scope_id != 0) {
+        checked_types.expression_occurrence_ledger_complete = false;
+      }
+      if (node.kind != Stmt::Kind::Else && node.kind != Stmt::Kind::Case &&
+          node.kind != Stmt::Kind::Recover)
+        continue;
+      if (node.control_parent_id >= node.id) {
+        checked_types.expression_occurrence_ledger_complete = false;
+        continue;
+      }
+      const auto& control =
+          checked_types.statement_occurrences[node.control_parent_id];
+      const auto expected_kind = node.kind == Stmt::Kind::Else
+          ? Stmt::Kind::If
+          : node.kind == Stmt::Kind::Case ? Stmt::Kind::Match
+                                          : Stmt::Kind::Try;
+      if (control.kind != expected_kind || !control.source || !node.source ||
+          !branch_roles_by_control[node.control_parent_id].insert(
+              node.branch_role).second)
+        checked_types.expression_occurrence_ledger_complete = false;
+      if (node.kind == Stmt::Kind::Else) {
+        ++else_count_by_if[node.control_parent_id];
+        if (node.source->indent != control.source->indent ||
+            node.parent_id != control.parent_id ||
+            node.scope_id != control.scope_id || node.branch_role != "else")
+          checked_types.expression_occurrence_ledger_complete = false;
+      } else {
+        if (node.source->indent <= control.source->indent ||
+            node.parent_id != control.id ||
+            node.scope_id != control.entered_scope_id)
+          checked_types.expression_occurrence_ledger_complete = false;
+        if (node.kind == Stmt::Kind::Case &&
+            (node.enum_identity.empty() || node.variant_identity.empty() ||
+             node.branch_role != "case:" + node.variant_identity))
+          checked_types.expression_occurrence_ledger_complete = false;
+        if (node.kind == Stmt::Kind::Recover &&
+            node.branch_role != "recover")
+          checked_types.expression_occurrence_ledger_complete = false;
+      }
+    }
+    for (const auto& [if_id, else_count] : else_count_by_if)
+      if (if_id >= checked_types.statement_occurrences.size() || else_count > 1)
+        checked_types.expression_occurrence_ledger_complete = false;
+    if (entered_scope_ids.size() != maximum_scope_id)
+      checked_types.expression_occurrence_ledger_complete = false;
     for (const auto& [root_key, root_id] : checked_types.expression_root_slots) {
       if (root_id >= checked_types.expression_occurrences.size() ||
           root_key.first >= checked_types.statement_occurrences.size()) {
@@ -25092,7 +25174,7 @@ class Checker {
          id < checked_types.statement_occurrences.size(); ++id) {
       const auto& occurrence = checked_types.statement_occurrences[id];
       if (occurrence.synthetic) {
-        if (occurrence.id != id || occurrence.source == nullptr ||
+        if (occurrence.id != id || occurrence.source != nullptr ||
             occurrence.kind != Stmt::Kind::Return ||
             occurrence.parent_id != UINT32_MAX ||
             occurrence.expression_roots.size() != 1)
@@ -25695,6 +25777,7 @@ fn inspect_sample(sample: Sample) -> Int:
     if (synthetic_return ==
             expression_identity_state->statement_occurrences.end() ||
         synthetic_return->kind != Stmt::Kind::Return ||
+        synthetic_return->source != nullptr ||
         synthetic_return->expression_roots.empty() ||
         !expression_identity_state->statement_occurrence_ids.empty())
       return false;
@@ -25714,12 +25797,30 @@ fn inspect_sample(sample: Sample) -> Int:
     const auto* match_state = state_for("inspect_sample");
     if (!match_state || !match_state->expression_occurrence_ledger_complete)
       return false;
+    const auto sample_enum = std::find_if(program.enums.begin(),
+        program.enums.end(), [](const EnumType& candidate) {
+          return candidate.name == "Sample";
+        });
+    if (sample_enum == program.enums.end()) return false;
+    const string sample_module_identity = program_module_identity(
+        program, sample_enum->defining_module);
+    const string sample_declaration_name = sample_enum->declaration_name.empty()
+        ? sample_enum->name : sample_enum->declaration_name;
+    const string sample_enum_identity = moss::declaration_identity(
+        moss::DeclarationKind::Enum, sample_module_identity,
+        sample_declaration_name);
+    const string sample_item_identity = "nominal-enum-variant-v1:" +
+        sample_enum_identity + ":case:Item";
     auto payload_case = std::find_if(match_state->statement_occurrences.begin(),
         match_state->statement_occurrences.end(), [](const auto& node) {
           return node.kind == Stmt::Kind::Case &&
-              node.variant_identity == "Sample.Item";
+              node.variant_identity.size() >= 10 &&
+              node.variant_identity.compare(node.variant_identity.size() - 10,
+                                             10, ":case:Item") == 0;
         });
     if (payload_case == match_state->statement_occurrences.end() ||
+        payload_case->enum_identity != sample_enum_identity ||
+        payload_case->variant_identity != sample_item_identity ||
         payload_case->variant_type != "Sample" ||
         payload_case->bindings.size() != 1 ||
         payload_case->bindings[0].name != "payload" ||
