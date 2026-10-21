@@ -49751,12 +49751,18 @@ static void append_abi_v10_occurrence_records(
         // Key evaluation can panic even when the same-key write dominates
         // the Map read, so the sealed summary must retain that effect.
         summary.observable_effect_tags = {"may_panic"};
-      } else if (abi_v10_collection_loop_summary_candidate(summary) &&
-          abi_v10_collection_loop_effects(facts.observable_effects) &&
-          abi_v10_checked_collection_loop_body(decoded, facts.result_type)) {
-        summary.observable_effect_tags = {"may_panic"};
       } else {
-        continue;
+        // The collection candidate includes its sealed effect contract, so
+        // validate it with the required tag already present. Do not check the
+        // empty intermediate summary and then add the tag afterward.
+        auto collection_summary = summary;
+        collection_summary.observable_effect_tags = {"may_panic"};
+        if (!abi_v10_collection_loop_summary_candidate(collection_summary) ||
+            !abi_v10_collection_loop_effects(facts.observable_effects) ||
+            !abi_v10_checked_collection_loop_body(decoded, facts.result_type))
+          continue;
+        summary.observable_effect_tags = {
+            std::move(collection_summary.observable_effect_tags.front())};
       }
     }
     // A complete checked body may depend on nominal templates or callees even
@@ -50049,176 +50055,6 @@ static void append_abi_v10_direct_return_records(
     }
     append_abi_v10_checked_callable_records(value, summary, body,
                                              {provenance});
-  }
-}
-
-// Emit the checker-retained collection-loop body using the same v1 body and
-// typed-v2 summary records as the existing ABI-v10 producers. This producer
-// admits only the complete D1 Count/Index/equality contract with may_panic.
-static void append_abi_v10_collection_loop_records(
-    abi_v10::Interface& value, const Program& program,
-    const string& module) {
-  if (!program.type_context) return;
-  for (const auto& function : program.functions) {
-    if (!function.exported || !function.static_dispatch ||
-        !belongs_to_module(function.name, module) ||
-        std::filesystem::path(function.source_file).extension() == ".mossi" ||
-        !function.open_summary || !function.open_summary->scheme_complete ||
-        !function.checked_body_ir_v1_bytes ||
-        !function.checked_body_ir_v1_hash)
-      continue;
-    const auto& facts = *function.open_summary;
-    if (abi_v10_checked_callable_records_present(value, facts.callable_id))
-      continue;
-    // Every admitted loop body contains a checked Count initialization. An
-    // arbitrary generic index expression also records builtin:index, so that
-    // operation alone cannot route it into this loop-only producer.
-    const bool has_collection_loop_count = std::any_of(
-        facts.operations.begin(), facts.operations.end(),
-        [](const auto& operation) {
-      return operation.operation_id == checked_ir::kCollectionCountOperationId;
-    });
-    if (!has_collection_loop_count) continue;
-    const auto& bytes = *function.checked_body_ir_v1_bytes;
-    const auto& hash = *function.checked_body_ir_v1_hash;
-    const auto invalid = [](const string& message) -> void {
-      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID", message);
-    };
-    if (facts.callable_id != function.semantic_callable_id ||
-        facts.bound_variable_count != 1 || facts.parameter_types.size() != 2 ||
-        facts.parameter_access != vector<AccessMode>{AccessMode::Read,
-                                                       AccessMode::Read} ||
-        facts.member_requirements.size() || !facts.semantic_dependencies.empty() ||
-        facts.operations.size() != 2 || facts.requirements.size() != 2 ||
-        facts.observable_effects.unresolved ||
-        !facts.observable_effects.may_panic ||
-        facts.observable_effects.local_capture_read ||
-        facts.observable_effects.local_mutation ||
-        facts.observable_effects.domain_read || facts.observable_effects.domain_write ||
-        facts.observable_effects.message || facts.observable_effects.external_io ||
-        facts.observable_effects.fileio || facts.observable_effects.fileio_unknown ||
-        facts.observable_effects.may_diverge ||
-        !facts.observable_effects.raise_set.empty())
-      invalid("checked ABI-v10 collection-loop summary is incomplete or has unsupported effects");
-    const auto int_type = Type::primitive("int");
-    const auto bool_type = Type::primitive("bool");
-    const auto& vector_type = facts.parameter_types[0];
-    const auto& element_type = facts.parameter_types[1];
-    if (!facts.result_type || !vector_type || !element_type ||
-        vector_type->kind != TypeKind::Builtin || vector_type->name != "vector" ||
-        vector_type->type_args.size() != 1 ||
-        !vector_type->type_args.front()->structurally_equal(*element_type) ||
-        (!facts.result_type->structurally_equal(*int_type) &&
-         !facts.result_type->structurally_equal(*bool_type)))
-      invalid("checked ABI-v10 collection-loop parameter/result TypeRefs disagree");
-    const auto count = std::find_if(facts.operations.begin(), facts.operations.end(),
-        [](const auto& operation) {
-      return operation.operation_id == checked_ir::kCollectionCountOperationId;
-    });
-    const auto index = std::find_if(facts.operations.begin(), facts.operations.end(),
-        [](const auto& operation) {
-      return operation.operation_id == checked_ir::kCollectionIndexOperationId;
-    });
-    if (count == facts.operations.end() || index == facts.operations.end() ||
-        !count->receiver || !count->result || !index->receiver || !index->result ||
-        index->arguments.size() != 1 || !index->arguments.front() ||
-        !count->receiver->structurally_equal(*vector_type) ||
-        !count->result->structurally_equal(*int_type) ||
-        !index->receiver->structurally_equal(*vector_type) ||
-        !index->arguments.front()->structurally_equal(*int_type) ||
-        !index->result->structurally_equal(*element_type))
-      invalid("checked ABI-v10 collection-loop operation TypeRefs disagree");
-    const auto index_requirement = std::find_if(facts.requirements.begin(),
-        facts.requirements.end(), [](const Requirement& requirement) {
-      return requirement.kind == RequirementKind::Index &&
-          requirement.target_id == "builtin:index";
-    });
-    const auto equality_requirement = std::find_if(facts.requirements.begin(),
-        facts.requirements.end(), [](const Requirement& requirement) {
-      return requirement.kind == RequirementKind::Operator &&
-          requirement.target_id == "operator:==";
-    });
-    if (index_requirement == facts.requirements.end() ||
-        equality_requirement == facts.requirements.end() ||
-        !index_requirement->subject || !index_requirement->result ||
-        !equality_requirement->subject || !equality_requirement->result ||
-        index_requirement->arguments.size() != 1 ||
-        !index_requirement->arguments.front() ||
-        equality_requirement->arguments.size() != 1 ||
-        !equality_requirement->arguments.front() ||
-        !index_requirement->subject->structurally_equal(*vector_type) ||
-        !index_requirement->arguments.front()->structurally_equal(*int_type) ||
-        !(*index_requirement->result)->structurally_equal(*element_type) ||
-        !equality_requirement->subject->structurally_equal(*element_type) ||
-        !equality_requirement->arguments.front()->structurally_equal(*element_type) ||
-        !(*equality_requirement->result)->structurally_equal(*bool_type))
-      invalid("checked ABI-v10 collection-loop requirements do not match operations");
-
-    abi_v10::Summary summary;
-    summary.callable_id = function.semantic_callable_id;
-    summary.variable_count = facts.bound_variable_count;
-    for (std::size_t ordinal = 0; ordinal < facts.parameter_types.size(); ++ordinal) {
-      auto parameter = abi_v10_checked_type(facts.parameter_types[ordinal],
-                                            summary.variable_count);
-      if (!parameter) invalid("checked ABI-v10 collection parameter TypeRef is unresolved");
-      summary.parameters.push_back(*parameter);
-      summary.parameter_access.push_back(
-          abi_v10_checked_access(facts.parameter_access[ordinal]));
-    }
-    auto result = abi_v10_checked_type(facts.result_type, summary.variable_count);
-    if (!result) invalid("checked ABI-v10 collection result TypeRef is unresolved");
-    summary.result = *result;
-    vector<abi_v10::SourceProvenance> requirement_provenance;
-    auto requirements = abi_v10_checked_requirements(
-        facts.requirements, summary.variable_count, requirement_provenance);
-    if (!requirements || requirements->size() != 2 ||
-        requirement_provenance.size() != 2)
-      invalid("checked ABI-v10 collection requirements lack typed provenance");
-    summary.requirements = std::move(*requirements);
-    summary.observable_effect_bits = 0;
-    summary.observable_effect_tags = {"may_panic"};
-    summary.body_semantic_hash = hash;
-    const auto callable_provenance = abi_v10_checked_provenance(
-        value.module_id, function.semantic_callable_id,
-        function.source_file, function.line);
-    summary.provenance_id = callable_provenance.provenance_id;
-
-    abi_v10::CheckedBodyRecord body;
-    body.callable_id = function.semantic_callable_id;
-    body.semantic_hash = hash;
-    body.checked_ir_bytes = bytes;
-    try {
-      const auto decoded = checked_ir::decode_checked_body_v1(
-          bytes, *program.type_context, facts.parameter_types, facts.result_type,
-          hash);
-      if (checked_ir::encode_checked_body_v1(decoded) != bytes ||
-          checked_ir::compute_checked_body_hash_v1(decoded) != hash ||
-          abi_v10::checked_body_record_payload(body).empty())
-        invalid("checked ABI-v10 collection body is not canonical");
-      // Summary facts route a callable to this producer, but they do not prove
-      // the consumer's loop lowering preconditions. Omit unsupported checked
-      // shapes so v10 selection fails closed instead of emitting an artifact
-      // that its importer cannot lower.
-      if (!abi_v10_checked_collection_loop_body(decoded, facts.result_type))
-        continue;
-      const auto summary_record = abi_v10::summary_record(summary);
-      const auto body_record = abi_v10::checked_body_record(body);
-      abi_v10::validate_summary(summary_record);
-      abi_v10::validate_checked_body_record(body_record);
-      if (abi_v10::read_summary(summary_record.payload).body_semantic_hash != hash ||
-          abi_v10::read_checked_body_record(body_record.payload).semantic_hash != hash)
-        invalid("checked ABI-v10 collection summary and body hashes disagree");
-      vector<abi_v10::SourceProvenance> all_provenance{
-          callable_provenance};
-      all_provenance.insert(all_provenance.end(), requirement_provenance.begin(),
-                            requirement_provenance.end());
-      append_abi_v10_checked_callable_records(
-          value, summary, body, all_provenance);
-    } catch (const abi_v10::Error& error) {
-      throw ProjectError(error.code, error.what());
-    } catch (const std::invalid_argument& error) {
-      throw ProjectError("SOURCE_FREE_CHECKED_BODY_INVALID", error.what());
-    }
   }
 }
 
@@ -51011,7 +50847,6 @@ static vector<std::filesystem::path> write_module_interfaces(
     append_abi_v10_occurrence_records(value, program, module);
     append_abi_v10_direct_checked_records(value, program, module);
     append_abi_v10_direct_return_records(value, program, module);
-    append_abi_v10_collection_loop_records(value, program, module);
     append_abi_v10_private_chain_records(value, program, module);
     append_abi_v10_generic_callable_provenance(value, program, module);
     // Drop legacy executable statements only when this interface contains a

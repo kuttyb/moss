@@ -22,11 +22,20 @@ architect returned NO-GO for overall R1: H3 migration is verified, while exact
 Count/Index loop admission and global occurrence/effect/dependency totality remain
 open. The audit also identified the source-shaped arithmetic ABI record producer.
 That producer and its dedicated `checked_arithmetic_body` reconstruction helper
-have now been removed; the generic single-return migration fallback remains for
-shapes where checker-owned occurrence lowering is incomplete. The common
-occurrence producer emits the admitted checked-arithmetic fixture. Exact-SHA
-architect review at `35f005ea64cf7fb73e60513c4c15f187f8c99512` returned scoped
-GO for this migration, with no new P0/P1. This is not overall R1 acceptance.
+have been removed; the generic single-return migration fallback remains for
+shapes where checker-owned occurrence lowering is incomplete. Exact-SHA review
+at `35f005ea64cf7fb73e60513c4c15f187f8c99512` returned scoped GO for the
+arithmetic migration with no new P0/P1.
+
+The later D4 run exposed a common-emitter ordering bug for Count/Index: the
+collection summary candidate required `may_panic` before the emitter had set the
+effect tag. The common producer now validates a candidate copy with `may_panic`
+already present, then retains that tag in the emitted summary. With the separate
+`append_abi_v10_collection_loop_records` producer removed, the common occurrence
+emitter passes the SDK's `index_of`, `contains`, and `count_equal` source-free
+profiles. The exact D1 loop-shape predicate remains an admission boundary; other
+valid loop forms remain unavailable. Exact-SHA architectural review of this
+Count/Index consolidation is pending. Overall R1 remains open.
 
 Current validation on the rebuilt `moss-dev` passes the full M2b2 source-free/
 hostile corpus, generic arithmetic requirements, D4 SDK collection source-free
@@ -39,9 +48,10 @@ nominal field read to a positive checked-body case. It classifies pure literal
 and direct-parameter IfJoin cases as v10-unavailable: source-built providers
 accept them, but emit no checked-body record. The arithmetic harness records the
 same limitation for `select_two`. These shapes remain open producer work and are
-not generalized-lowering evidence. R1 remains open; Count/Index still requires
-the exact admitted loop-shape predicate, and global occurrence/effect/dependency
-totality plus the other unavailable producer profiles remain. Preserve the 24
+not generalized-lowering evidence. R1 remains open; Count/Index now shares the
+common emitter but still requires the exact admitted loop-shape predicate, and
+global occurrence/effect/dependency totality plus the other unavailable producer
+profiles remain. Preserve the 24
 tracked unavailable ABI-v10 profiles, two ABI-v9
 raise/recover failures, and `packages/time` failure.
 
