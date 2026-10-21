@@ -6549,6 +6549,90 @@ class Checker {
     return callable_constraint_count == 1;
   }
 
+  void resolve_callable_occurrence_bindings(
+      const Function& function, BodyTypeState& state) const {
+    for (auto& expression : state.expression_occurrences) {
+      if (expression.kind !=
+              BodyTypeState::ExpressionOccurrence::Kind::Call ||
+          !starts_with(expression.semantic_target_id, "binding:pending:"))
+        continue;
+      const auto open_paren = expression.source_expression.find('(');
+      const string callee = trim(expression.source_expression.substr(
+          0, open_paren == string::npos ? string::npos : open_paren));
+      if (callee.empty() || expression.statement_id >=
+              state.statement_occurrences.size()) {
+        expression.semantic_target_id = "binding:unresolved:" + callee;
+        state.expression_occurrence_ledger_complete = false;
+        continue;
+      }
+      const auto* source_statement =
+          state.statement_occurrences[expression.statement_id].source;
+      const auto identities = source_statement
+          ? state.binding_identities_at_statement.find(source_statement)
+          : state.binding_identities_at_statement.end();
+      if (identities == state.binding_identities_at_statement.end()) {
+        expression.semantic_target_id = "binding:unresolved:" + callee;
+        state.expression_occurrence_ledger_complete = false;
+        continue;
+      }
+      const auto binding = identities->second.find(callee);
+      if (binding == identities->second.end() || binding->second.empty()) {
+        expression.semantic_target_id = "binding:unresolved:" + callee;
+        state.expression_occurrence_ledger_complete = false;
+        continue;
+      }
+      expression.semantic_target_id = starts_with(binding->second, "parameter:")
+          ? binding->second : "binding:" + binding->second;
+      expression.linked_constraints.erase(
+          std::remove_if(expression.linked_constraints.begin(),
+              expression.linked_constraints.end(), [](const Constraint& value) {
+            return value.kind == ConstraintKind::Callable;
+          }), expression.linked_constraints.end());
+      if (!starts_with(binding->second, "parameter:")) {
+        state.expression_occurrence_ledger_complete = false;
+        continue;
+      }
+      const string ordinal_text = binding->second.substr(10);
+      if (ordinal_text.empty() ||
+          !std::all_of(ordinal_text.begin(), ordinal_text.end(),
+              [](unsigned char character) { return std::isdigit(character); })) {
+        state.expression_occurrence_ledger_complete = false;
+        continue;
+      }
+      std::size_t ordinal = 0;
+      try {
+        std::size_t consumed = 0;
+        ordinal = std::stoul(ordinal_text, &consumed, 10);
+        if (consumed != ordinal_text.size() ||
+            std::to_string(ordinal) != ordinal_text ||
+            ordinal >= function.params.size() ||
+            function.params[ordinal].name != callee) {
+          state.expression_occurrence_ledger_complete = false;
+          continue;
+        }
+      } catch (const std::exception&) {
+        state.expression_occurrence_ledger_complete = false;
+        continue;
+      }
+      const auto argument_count = static_cast<std::size_t>(std::count_if(
+          state.expression_occurrences.begin(),
+          state.expression_occurrences.end(), [&](const auto& child) {
+        return child.parent_id == expression.id &&
+            starts_with(child.child_role, "argument:");
+      }));
+      std::size_t matching_constraints = 0;
+      for (const auto& constraint : function.constraints)
+        if (constraint.kind == ConstraintKind::Callable &&
+            constraint.subject == callee &&
+            constraint.arity == argument_count) {
+          expression.linked_constraints.push_back(constraint);
+          ++matching_constraints;
+        }
+      if (matching_constraints != 1)
+        state.expression_occurrence_ledger_complete = false;
+    }
+  }
+
   bool retain_checked_occurrence_ir(Function& function) {
     if (!function.open_summary || !function.open_summary->scheme_complete ||
         function.body.empty() ||
@@ -6559,6 +6643,7 @@ class Checker {
     if (retained == checked_body_states_.end() || !retained->second)
       return false;
     auto& state = *retained->second;
+    resolve_callable_occurrence_bindings(function, state);
     if (!state.expression_occurrence_ledger_complete)
       return false;
     const auto& summary = *function.open_summary;
@@ -7447,6 +7532,9 @@ class Checker {
   // slots. No source spelling or physical path participates in the hash.
   void retain_checked_body_ir() {
     for (auto& function : p_.functions) {
+      auto checked_state = checked_body_states_.find(&function.body);
+      if (checked_state != checked_body_states_.end() && checked_state->second)
+        resolve_callable_occurrence_bindings(function, *checked_state->second);
       function.checked_body_v1.reset();
       function.checked_body_ir_v1_bytes.reset();
       function.checked_body_ir_v1_hash.reset();
@@ -23800,40 +23888,8 @@ class Checker {
         if (starts_with(cid, "callable:")) cid = cid.substr(9);
         identity = cid;
       } else if (open_generic(local->second)) {
-        if (resolved_target_id) {
-          string parameter_identity = "binding:" + identity;
-          const Function* enclosing_function = nullptr;
-          if (starts_with(current_semantic_context_, "fn:")) {
-            auto enclosing = functions_.find(current_semantic_context_.substr(3));
-            if (enclosing != functions_.end())
-              enclosing_function = enclosing->second;
-          }
-          if (enclosing_function) {
-            for (size_t index = 0; index < enclosing_function->params.size(); ++index) {
-              if (enclosing_function->params[index].name == identity) {
-                parameter_identity = "parameter:" + std::to_string(index);
-                break;
-              }
-            }
-          }
-          *resolved_target_id = parameter_identity;
-          bool linked_callable_requirement = false;
-          if (enclosing_function && current_body_types_ &&
-              !checking_specialization_ &&
-              !current_body_types_->active_expression_occurrences.empty()) {
-            const auto occurrence =
-                current_body_types_->active_expression_occurrences.back();
-            for (const auto& requirement : enclosing_function->constraints)
-              if (requirement.kind == ConstraintKind::Callable &&
-                  requirement.subject == identity &&
-                  requirement.arity == input_types.size()) {
-                current_body_types_->retain_constraint(occurrence, requirement);
-                linked_callable_requirement = true;
-              }
-            if (!linked_callable_requirement)
-              current_body_types_->expression_occurrence_ledger_complete = false;
-          }
-        }
+        if (resolved_target_id)
+          *resolved_target_id = "binding:pending:" + identity;
         return "_functional_callable_result:" + identity;
       } else {
         err(line, "callable identity '" + identity +
@@ -25794,27 +25850,8 @@ class Checker {
                 occurrence, resolved_target->semantic_callable_id);
           } else if (auto binding = env.find(callee);
                      binding != env.end() && open_generic(binding->second)) {
-            string identity = "binding:" + callee;
-            const Function* enclosing_function = nullptr;
-            if (starts_with(current_semantic_context_, "fn:")) {
-              auto enclosing = functions_.find(current_semantic_context_.substr(3));
-              if (enclosing != functions_.end())
-                enclosing_function = enclosing->second;
-            }
-            if (enclosing_function) {
-              for (size_t index = 0; index < enclosing_function->params.size(); ++index)
-                if (enclosing_function->params[index].name == callee) {
-                  identity = "parameter:" + std::to_string(index);
-                  break;
-                }
-              for (const auto& requirement : enclosing_function->constraints)
-                if (requirement.kind == ConstraintKind::Callable &&
-                    requirement.subject == callee &&
-                    requirement.arity == args.size())
-                  current_body_types_->retain_constraint(
-                      occurrence, requirement);
-            }
-            current_body_types_->retain_expression_target(occurrence, identity);
+            current_body_types_->retain_expression_target(
+                occurrence, "binding:pending:" + callee);
           } else {
             current_body_types_->retain_expression_target(
                 occurrence, "builtin:" + callee);
@@ -26512,24 +26549,9 @@ class Checker {
             } else {
               auto binding = current_env.find(statement.a);
               if (binding != current_env.end() && open_generic(binding->second)) {
-                std::string identity = "binding:" + statement.a;
-                if (current_function) {
-                  for (std::size_t index = 0;
-                       index < current_function->params.size(); ++index) {
-                    if (current_function->params[index].name == statement.a) {
-                      identity = "parameter:" + std::to_string(index);
-                      break;
-                    }
-                  }
-                  for (const auto& requirement : current_function->constraints)
-                    if (requirement.kind == ConstraintKind::Callable &&
-                        requirement.subject == statement.a &&
-                        requirement.arity == statement.args.size())
-                      call_occurrence_state->retain_constraint(
-                          call_occurrence_id, requirement);
-                }
                 call_occurrence_state->retain_expression_target(
-                    call_occurrence_id, identity);
+                    call_occurrence_id,
+                    "binding:pending:" + statement.a);
               } else {
                 call_occurrence_state->retain_expression_target(
                     call_occurrence_id, "builtin:" + statement.a);
@@ -28887,6 +28909,12 @@ export fn mixed(first, second):
 export fn invoke_callback(callback, value):
   return callback(value)
 
+export fn invoke_shadow(callback, other, value, flag: Bool):
+  if flag:
+    let callback = other
+    return callback(value)
+  return value
+
 export fn relay(value):
   identity(value)
   return value
@@ -29166,6 +29194,33 @@ fn inspect_sample(sample: Sample) -> Int:
         }) ||
         !reject_mutated_callable_constraint([](Constraint& value) {
           value.arguments.front() = "callback";
+        }))
+      return false;
+    const auto shadow_function = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+      return candidate.name == "invoke_shadow";
+    });
+    if (shadow_function == program.functions.end()) return false;
+    const auto shadow_state_entry = checker.checked_body_states_.find(
+        &shadow_function->body);
+    if (shadow_state_entry == checker.checked_body_states_.end() ||
+        !shadow_state_entry->second) return false;
+    const auto& shadow_state = *shadow_state_entry->second;
+    const auto shadow_call = std::find_if(
+        shadow_state.expression_occurrences.begin(),
+        shadow_state.expression_occurrences.end(), [](const auto& occurrence) {
+      return occurrence.kind ==
+              BodyTypeState::ExpressionOccurrence::Kind::Call &&
+          occurrence.semantic_target_id != "parameter:0" &&
+          starts_with(occurrence.semantic_target_id, "binding:");
+    });
+    if (shadow_call == shadow_state.expression_occurrences.end() ||
+        shadow_state.expression_occurrence_ledger_complete ||
+        checker.callable_operation_identity_matches(
+            *shadow_function, *shadow_call) ||
+        std::any_of(shadow_call->linked_constraints.begin(),
+            shadow_call->linked_constraints.end(), [](const Constraint& value) {
+          return value.kind == ConstraintKind::Callable;
         }))
       return false;
     const auto* recovery_state = state_for("inspect_failure");
