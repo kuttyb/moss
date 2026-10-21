@@ -6318,11 +6318,19 @@ class Checker {
     auto has_matching_call_edge = [&](const auto& occurrence,
                                       const Function& target) {
       string source_file;
+      const Stmt* source_statement = nullptr;
       if (occurrence.statement_id < body.statement_occurrences.size()) {
-        const auto* statement =
+        source_statement =
             body.statement_occurrences[occurrence.statement_id].source;
-        if (statement) source_file = statement->source_file;
+        if (source_statement) source_file = source_statement->source_file;
       }
+      // Statement-call roots have no operation ID. Their target must still
+      // agree with the callee retained on the source statement; a same-line
+      // edge may belong to a nested call or a different invocation.
+      if (occurrence.operation_id.empty() &&
+          (!source_statement || source_statement->kind != Stmt::Kind::Call ||
+           !source_statement->b.empty() || source_statement->a != target.name))
+        return false;
       return std::any_of(p_.semantic_call_edges.begin(),
           p_.semantic_call_edges.end(), [&](const auto& edge) {
         return edge.source == "fn:" + function.name &&
@@ -6364,6 +6372,28 @@ class Checker {
             find_function_by_callable_id(callable.semantic_callable_id);
         if (!target || !expected_dependencies.count(
                            callable.semantic_callable_id))
+          return false;
+        if (occurrence.operation_id != "call:sort" ||
+            occurrence.source_operands.size() != 2)
+          return false;
+        string label, key;
+        if (!parse_named_argument(occurrence.source_operands[1], label, key) ||
+            label != "by")
+          return false;
+        string wrapper;
+        vector<string> wrapper_arguments;
+        bool reverse_order = false;
+        if (parse_simple_call(key, wrapper, wrapper_arguments) &&
+            wrapper == "Reverse") {
+          if (wrapper_arguments.size() != 1) return false;
+          reverse_order = true;
+          key = trim(wrapper_arguments.front());
+        }
+        const auto named_target = functions_.find(key);
+        if (!plain_identifier(key) || named_target == functions_.end() ||
+            named_target->second->semantic_callable_id !=
+                callable.semantic_callable_id ||
+            callable.reverse_order != reverse_order)
           return false;
         observed_dependencies.insert(callable.semantic_callable_id);
       }
@@ -29695,6 +29725,7 @@ fn inspect_sample(sample: Sample) -> Int:
     if (second_target_function == program.functions.end() ||
         second_target_function->semantic_callable_id.empty()) return false;
     const auto first_call_id = direct_call->id;
+    const auto direct_call_line = direct_call->line;
     auto second_call = *direct_call;
     second_call.id = static_cast<std::uint32_t>(relay_occurrences.size());
     second_call.operation_id = "call:expression_identity";
@@ -29709,6 +29740,36 @@ fn inspect_sample(sample: Sample) -> Int:
     const bool repeated_call_facts_match =
         checker.call_occurrence_dependencies_complete(
             *relay_function, *relay_state->second);
+    auto statement_root_peer = relay_occurrences[first_call_id];
+    statement_root_peer.id = static_cast<std::uint32_t>(relay_occurrences.size());
+    statement_root_peer.operation_id = "call:identity";
+    statement_root_peer.source_expression = "identity(value)";
+    statement_root_peer.semantic_target_id = call_target;
+    relay_occurrences.push_back(std::move(statement_root_peer));
+    const auto statement_root_source_edge = std::find_if(
+        program.semantic_call_edges.begin(), program.semantic_call_edges.end(),
+        [&](const auto& edge) {
+          return edge.source == "fn:" + relay_function->name &&
+              edge.target == "fn:" + call_function->name &&
+              edge.line == direct_call_line &&
+              edge.invocation_kind == "ordinary_call";
+        });
+    if (statement_root_source_edge == program.semantic_call_edges.end())
+      return false;
+    auto statement_root_peer_edge = *statement_root_source_edge;
+    statement_root_peer_edge.target = "fn:" + call_function->name;
+    statement_root_peer_edge.occurrence = 1;
+    program.semantic_call_edges.push_back(std::move(statement_root_peer_edge));
+    const bool statement_root_swap_rejected = [&] {
+      relay_occurrences[first_call_id].semantic_target_id =
+          second_target_function->semantic_callable_id;
+      const bool rejected = !checker.call_occurrence_dependencies_complete(
+          *relay_function, *relay_state->second);
+      relay_occurrences[first_call_id].semantic_target_id = call_target;
+      return rejected;
+    }();
+    relay_occurrences.pop_back();
+    program.semantic_call_edges.pop_back();
     std::swap(relay_occurrences[first_call_id].semantic_target_id,
               relay_occurrences.back().semantic_target_id);
     const bool swapped_call_targets_rejected =
@@ -29725,6 +29786,7 @@ fn inspect_sample(sample: Sample) -> Int:
     relay_occurrences.pop_back();
     program.semantic_call_edges.pop_back();
     if (!repeated_call_facts_match || !swapped_call_targets_rejected ||
+        !statement_root_swap_rejected ||
         !missing_call_target_rejected ||
         !checker.call_occurrence_dependencies_complete(
             *relay_function, *relay_state->second)) {
@@ -29776,6 +29838,47 @@ fn inspect_sample(sample: Sample) -> Int:
                 BodyTypeState::ExpressionOccurrence::Kind::Call)
           std::cerr << "  call op=" << occurrence.operation_id << " target="
                     << occurrence.semantic_target_id << "\n";
+      return false;
+    }
+    if (builtin_call->linked_callables.size() != 1) return false;
+    const auto identity_target = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+          return candidate.name == "identity";
+        });
+    if (identity_target == program.functions.end()) return false;
+    auto sort_peer = *builtin_call;
+    sort_peer.id = static_cast<std::uint32_t>(sort_occurrences.size());
+    sort_occurrences.push_back(std::move(sort_peer));
+    auto sort_peer_edge = std::find_if(program.semantic_call_edges.begin(),
+        program.semantic_call_edges.end(), [&](const auto& edge) {
+          return edge.source == "fn:sort_values" &&
+              edge.target == "fn:identity" &&
+              edge.invocation_kind == "ordinary_call";
+        });
+    if (sort_peer_edge == program.semantic_call_edges.end()) {
+      sort_occurrences.pop_back();
+      return false;
+    }
+    auto alternate_sort_edge = *sort_peer_edge;
+    alternate_sort_edge.target = "fn:expression_identity";
+    alternate_sort_edge.occurrence = 2;
+    program.semantic_call_edges.push_back(std::move(alternate_sort_edge));
+    sort_occurrences[builtin_call_id].linked_callables.front().semantic_callable_id =
+        second_target_function->semantic_callable_id;
+    const bool wrong_sort_callback_rejected =
+        !checker.call_occurrence_dependencies_complete(
+            *sort_function, *sort_state->second);
+    sort_occurrences[builtin_call_id].linked_callables.front().semantic_callable_id =
+        identity_target->semantic_callable_id;
+    sort_occurrences.pop_back();
+    program.semantic_call_edges.pop_back();
+    if (!wrong_sort_callback_rejected ||
+        !checker.call_occurrence_dependencies_complete(
+            *sort_function, *sort_state->second)) {
+      std::cerr << "sort callback identity mutation regression failed: rejected="
+                << wrong_sort_callback_rejected << " restored="
+                << checker.call_occurrence_dependencies_complete(
+                    *sort_function, *sort_state->second) << "\n";
       return false;
     }
     const auto callback_target_function = std::find_if(program.functions.begin(),

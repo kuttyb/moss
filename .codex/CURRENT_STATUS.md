@@ -2,24 +2,27 @@
 
 Closed the latest adversarial P1s in the working tree: dependency completion
 checks every retained Call occurrence against its exact `call:<name>` operation
-and canonical target. Statement-call roots without an operation ID must match a
-same-source-line semantic call edge. Builtin suffixes must match the operation;
-formal callback targets must match the parameter's canonical operation, and
-linked callable dependencies are included. The open-call validator accepts
+and canonical target. Statement-call roots without an operation ID must match
+the source statement's direct callee as well as a semantic call edge. Builtin
+suffixes must match the operation; formal callback targets must match the
+parameter's canonical operation; and each linked sort callable must match its
+named `by:` key and `Reverse(...)` flag. The open-call validator accepts
 `binding:pending:` only while `check_stmts` is running; ownership-stage binding
 resolution and final validation reject unresolved targets and local aliases.
 Focused mutations duplicate calls and clear one target, swap valid targets
-between distinct expected callees, forge a builtin suffix, and alter a formal
-callback's operation name; each malformed state rejects and restored state
-passes.
+between distinct expected callees, forge a builtin suffix, alter a formal
+callback's operation name, retarget an operation-less statement root while
+preserving the dependency set, and retarget a sort callback while preserving
+that set; each malformed state rejects and restored state passes.
 
-Validation on the rebuilt `build/compiler/moss-dev`: occurrence regression,
+Validation on the rebuilt `build/compiler/moss-dev`: occurrence regression and
 H3 common checked-body source-free chain (field read, two consumers, poisoned
-legacy chain, negative closures), feedback validation, and `git diff --check`
-pass. Build retains two existing `TypeSolver::Undo::binding` initializer
-warnings. This is not yet independently reviewed or accepted. Next: commit and
-push the frozen implementation, ask the existing architect for exact-SHA
-read-only review, and close any residual finding before R1 acceptance. Keep the
+legacy chain, negative closures), agent-feedback validation, and `git diff
+--check` pass. Build retains two existing `TypeSolver::Undo::binding` initializer
+warnings. This is not yet independently reviewed or accepted. Next: validate
+feedback, commit and push the frozen implementation, ask the existing architect
+for exact-SHA read-only review, and close any residual finding before R1
+acceptance. Keep the
 24 unavailable ABI-v10 profiles, two ABI-v9 raise/recover failures, and
 `packages/time` failure visible.
 
