@@ -34,8 +34,9 @@ already present, then retains that tag in the emitted summary. With the separate
 `append_abi_v10_collection_loop_records` producer removed, the common occurrence
 emitter passes the SDK's `index_of`, `contains`, and `count_equal` source-free
 profiles. The exact D1 loop-shape predicate remains an admission boundary; other
-valid loop forms remain unavailable. Exact-SHA architectural review of this
-Count/Index consolidation is pending. Overall R1 remains open.
+valid loop forms remain unavailable. Exact-SHA architectural review at pushed SHA
+`e0569279c81f6f69356e878153ee9238a36d14b5` returned scoped GO with no P0/P1/P2
+for this common Count/Index emission slice. Overall R1 remains open.
 
 Current validation on the rebuilt `moss-dev` passes the full M2b2 source-free/
 hostile corpus, generic arithmetic requirements, D4 SDK collection source-free
