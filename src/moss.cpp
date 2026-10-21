@@ -25849,7 +25849,11 @@ class Checker {
               (resolved && !resolved->is_closed());
           argument_terms.push_back(std::move(term));
         }
-        if (has_open_argument) {
+        // Nominal constructors are represented by their exact Constructor
+        // occurrence (declaration identity, field ordinals, child TypeRefs,
+        // and result TypeRef). They are not generic callable operations and
+        // must not be routed through the call-operation requirement ledger.
+        if (has_open_argument && !objects_.count(callee)) {
           auto open = std::find_if(argument_terms.begin(), argument_terms.end(),
               [&](const moss::TypeRef& term) {
             auto resolved = term ? current_body_types_->solver.resolve(term) : nullptr;
@@ -25971,6 +25975,59 @@ class Checker {
               !supplied.count(field.name) && field.init.empty())
             err(line, "enum field '" + callee + "." + field.name +
                 "' requires an explicit constructor value", "ENUM_FIELD_INITIALIZER_REQUIRED");
+        if (current_body_types_ && !checking_specialization_ &&
+            !current_body_types_->active_expression_occurrences.empty()) {
+          const auto occurrence_id =
+              current_body_types_->active_expression_occurrences.back();
+          auto& occurrence =
+              current_body_types_->expression_occurrences.at(occurrence_id);
+          auto declaration = p_.type_context
+              ? p_.type_context->find(objects_.at(callee)->name) : nullptr;
+          vector<std::pair<string, moss::TypeRef>> substitutions;
+          bool complete_type = declaration &&
+              occurrence.semantic_target_id == declaration->id &&
+              occurrence.semantic_operand_ordinals.size() == args.size();
+          for (std::size_t index = 0; complete_type && index < args.size(); ++index) {
+            const auto ordinal = occurrence.semantic_operand_ordinals[index];
+            if (ordinal >= declaration->fields.size()) {
+              complete_type = false;
+              break;
+            }
+            const auto& field = declaration->fields[ordinal];
+            const BodyTypeState::ExpressionOccurrence* child = nullptr;
+            for (const auto& candidate : current_body_types_->expression_occurrences) {
+              if (candidate.parent_id != occurrence_id ||
+                  candidate.child_role != "field:" + field.name)
+                continue;
+              if (child) {
+                complete_type = false;
+                break;
+              }
+              child = &candidate;
+            }
+            if (!complete_type || !child || !child->completed ||
+                !child->checked_type) {
+              complete_type = false;
+              break;
+            }
+            if (field.inferred)
+              substitutions.emplace_back(field.name, child->checked_type);
+          }
+          if (complete_type) {
+            for (const auto& field : declaration->fields)
+              if (field.inferred && std::none_of(
+                      substitutions.begin(), substitutions.end(),
+                      [&](const auto& item) { return item.first == field.name; }))
+                complete_type = false;
+          }
+          if (complete_type)
+            current_body_types_->retain_active_expression_type(
+                moss::Type::nominal_bound(declaration,
+                                          declaration->declaration_name,
+                                          std::move(substitutions)));
+          else
+            current_body_types_->expression_occurrence_ledger_complete = false;
+        }
       } else {
         Function* resolved_target = nullptr;
         check_function_call(line, callee, args, env, nullptr, std::nullopt,
@@ -29531,6 +29588,94 @@ fn inspect_sample(sample: Sample) -> Int:
         !call_result || !checked_call_result ||
         !call_result->structurally_equal(*checked_call_result))
       return false;
+    std::istringstream chain_input(R"moss(module Service
+export type Box:
+  value
+
+fn private_box(x):
+  result = Box(value: x)
+  return result
+
+fn nested_private_box(x):
+  result = private_box(x)
+  return result
+
+export fn fresh(x):
+  result = nested_private_box(x)
+  return result
+)moss");
+    Program chain_program = Parser(lex_lines(
+        chain_input, "<occurrence-private-chain-test>")).parse();
+    Checker chain_checker(chain_program);
+    chain_checker.run();
+    auto chain_function = [&](const string& name) -> const Function* {
+      auto found = std::find_if(chain_program.functions.begin(),
+          chain_program.functions.end(), [&](const Function& candidate) {
+        return candidate.name == name;
+      });
+      return found == chain_program.functions.end() ? nullptr : &*found;
+    };
+    const auto* private_box = chain_function("private_box");
+    const auto* nested_private_box = chain_function("nested_private_box");
+    const auto* fresh = chain_function("fresh");
+    if (!private_box || !nested_private_box || !fresh ||
+        !private_box->open_summary || !private_box->open_summary->complete)
+      return false;
+    const auto private_state_entry = chain_checker.checked_body_states_.find(
+        &private_box->body);
+    if (private_state_entry == chain_checker.checked_body_states_.end() ||
+        !private_state_entry->second ||
+        !private_state_entry->second->expression_occurrence_ledger_complete)
+      return false;
+    auto& private_state = *private_state_entry->second;
+    const auto constructor = std::find_if(
+        private_state.expression_occurrences.begin(),
+        private_state.expression_occurrences.end(), [](const auto& occurrence) {
+      return occurrence.kind ==
+              BodyTypeState::ExpressionOccurrence::Kind::Constructor;
+    });
+    const auto constructor_child = constructor ==
+            private_state.expression_occurrences.end()
+        ? private_state.expression_occurrences.end()
+        : std::find_if(private_state.expression_occurrences.begin(),
+              private_state.expression_occurrences.end(), [&](const auto& occurrence) {
+            return occurrence.parent_id == constructor->id &&
+                occurrence.child_role == "field:value";
+          });
+    auto constructor_type = constructor !=
+            private_state.expression_occurrences.end() &&
+            constructor->checked_type
+        ? private_state.solver.resolve(constructor->checked_type) : nullptr;
+    const auto summary_result = private_box->open_summary->result_type;
+    if (constructor == private_state.expression_occurrences.end() ||
+        constructor->semantic_operand_ordinals != vector<std::uint32_t>{0} ||
+        constructor->source_operands.size() != 1 || !constructor_type ||
+        constructor_type->kind != moss::TypeKind::NominalInstance ||
+        !constructor_type->declaration ||
+        constructor_type->declaration->id != constructor->semantic_target_id ||
+        constructor_child == private_state.expression_occurrences.end() ||
+        !constructor_child->checked_type || !summary_result ||
+        summary_result->kind != moss::TypeKind::NominalInstance ||
+        !summary_result->declaration ||
+        summary_result->declaration->id != constructor_type->declaration->id ||
+        constructor_type->field_substitutions.size() != 1 ||
+        constructor_type->field_substitutions.front().first != "value")
+      return false;
+    const auto constructor_field_type = private_state.solver.resolve(
+        constructor_type->field_substitutions.front().second);
+    const auto constructor_child_type = private_state.solver.resolve(
+        constructor_child->checked_type);
+    if (!constructor_field_type || !constructor_child_type ||
+        !constructor_field_type->structurally_equal(*constructor_child_type))
+      return false;
+    for (const auto* helper : {nested_private_box, fresh}) {
+      const auto state = chain_checker.checked_body_states_.find(&helper->body);
+      if (state == chain_checker.checked_body_states_.end() || !state->second ||
+          state->second->expression_occurrence_ledger_complete ||
+          !helper->open_summary || helper->open_summary->complete ||
+          helper->open_summary->occurrence_ledger_complete)
+        return false;
+    }
     const auto relay_method_function = std::find_if(program.functions.begin(),
         program.functions.end(), [](const Function& candidate) {
       return candidate.name == "relay_method";
