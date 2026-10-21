@@ -121,6 +121,14 @@ struct OpenCallableSummaryFacts {
   TypeRef result_type;
   vector<Requirement> requirements;
   struct OperationFact {
+    struct TypeRelationFact {
+      enum class Kind { SameType };
+      Kind kind = Kind::SameType;
+      TypeRef left;
+      TypeRef right;
+      std::uint32_t left_operand_ordinal = UINT32_MAX;
+      std::uint32_t right_operand_ordinal = UINT32_MAX;
+    };
     string operation_id;
     TypeRef receiver;
     vector<TypeRef> arguments;
@@ -140,6 +148,10 @@ struct OpenCallableSummaryFacts {
     // source-operand mapping.
     std::uint32_t receiver_operand_ordinal = UINT32_MAX;
     vector<std::uint32_t> argument_operand_ordinals;
+    // Deferred checker constraints that relate exact source operands without
+    // prematurely unifying distinct open generic parameters. Consumers must
+    // preserve these relations through specialization and body lowering.
+    vector<TypeRelationFact> type_relations;
   };
   // Checker-retained builtin operations used to close an otherwise open
   // generic contract. These are semantic facts, not serialized body IR.

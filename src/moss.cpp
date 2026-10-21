@@ -23549,11 +23549,11 @@ class Checker {
           current_body_types_->attach_open_operation({
               "builtin:collection-count-v1", receiver, {},
               moss::Type::primitive("int"), line, UINT32_MAX, 0, {},
-              UINT32_MAX, {}});
+              UINT32_MAX, {}, {}});
         } else {
           current_body_types_->attach_open_operation({
               string("functional:") + functional_node_name(stage.kind), receiver, {},
-              nullptr, line, UINT32_MAX, 0, {}, UINT32_MAX, {}});
+              nullptr, line, UINT32_MAX, 0, {}, UINT32_MAX, {}, {}});
         }
       }
     }
@@ -23958,7 +23958,7 @@ class Checker {
     }
     current_body_types_->attach_open_operation({
         "operator:" + operation_id, left, {right}, result, line,
-        UINT32_MAX, 0, {}, UINT32_MAX, {}});
+        UINT32_MAX, 0, {}, UINT32_MAX, {}, {}});
     if (result) current_body_types_->retain_active_expression_type(result);
   }
 
@@ -23988,7 +23988,7 @@ class Checker {
           occurrence_id, "operator:" + operation_id);
       current_body_types_->attach_open_operation({
           "operator:" + operation_id, term, {}, result, line,
-          UINT32_MAX, 0, {}, UINT32_MAX, {}});
+          UINT32_MAX, 0, {}, UINT32_MAX, {}, {}});
       current_body_types_->retain_active_expression_type(result);
     }
   }
@@ -24290,10 +24290,15 @@ class Checker {
           operation.line = line;
           for (auto term = element_terms.begin(); term != element_terms.end(); ++term) {
             if (term == open) continue;
+            const auto argument_ordinal = static_cast<std::uint32_t>(
+                std::distance(element_terms.begin(), term));
             operation.arguments.push_back(*term);
-            operation.argument_operand_ordinals.push_back(
-                static_cast<std::uint32_t>(
-                    std::distance(element_terms.begin(), term)));
+            operation.argument_operand_ordinals.push_back(argument_ordinal);
+            operation.type_relations.push_back({
+                moss::OpenCallableSummaryFacts::OperationFact::
+                    TypeRelationFact::Kind::SameType,
+                *open, *term, operation.receiver_operand_ordinal,
+                argument_ordinal});
           }
           current_body_types_->retain_active_expression_type(operation.result);
           current_body_types_->attach_open_operation(std::move(operation));
@@ -24639,7 +24644,7 @@ class Checker {
         if (resolved_receiver && !resolved_receiver->is_closed())
           current_body_types_->attach_open_operation({
               "method:" + handler, receiver_term, {}, nullptr, line,
-              UINT32_MAX, 0, {}, UINT32_MAX, {}});
+              UINT32_MAX, 0, {}, UINT32_MAX, {}, {}});
       }
       // The member resolver below owns dispatch; capture its receiver once
       // here so every dispatch family has the same ordered child shape.
@@ -24880,7 +24885,7 @@ class Checker {
               resolved_receiver->name == "vector")
             current_body_types_->attach_open_operation({
                 "builtin:index", receiver, {key}, element, line,
-                UINT32_MAX, 0, {}, UINT32_MAX, {}});
+                UINT32_MAX, 0, {}, UINT32_MAX, {}, {}});
         }
       }
       if (current_body_types_) {
@@ -26861,7 +26866,7 @@ class Checker {
           expression.id, "operator:" + expression.operation_id);
       checked_types.open_operations.push_back({
           "operator:" + expression.operation_id, receiver, {argument},
-          receiver, expression.line, expression.id, 0, {}, UINT32_MAX, {}});
+          receiver, expression.line, expression.id, 0, {}, UINT32_MAX, {}, {}});
     }
     for (auto& occurrence : checked_types.statement_occurrences) {
       std::sort(occurrence.expression_roots.begin(),
@@ -27460,6 +27465,7 @@ class Checker {
             operation.receiver_operand_ordinal < linked.source_operands.size() &&
             operation.argument_operand_ordinals.size() ==
                 operation.arguments.size() &&
+            operation.type_relations.size() == operation.arguments.size() &&
             operation.arguments.size() + 1 == linked.source_operands.size();
         std::set<std::uint32_t> operand_ordinals;
         if (valid) {
@@ -27479,6 +27485,7 @@ class Checker {
         for (std::size_t argument = 0;
              valid && argument < operation.arguments.size(); ++argument) {
           const auto ordinal = operation.argument_operand_ordinals[argument];
+          const auto& relation = operation.type_relations[argument];
           const auto element = std::find_if(
               checked_types.expression_occurrences.begin(),
               checked_types.expression_occurrences.end(),
@@ -27491,24 +27498,21 @@ class Checker {
               operand_ordinals.insert(ordinal).second &&
               element != checked_types.expression_occurrences.end() &&
               same_resolved_term(element->checked_type,
+                                 operation.arguments[argument]) &&
+              relation.kind ==
+                  moss::OpenCallableSummaryFacts::OperationFact::
+                      TypeRelationFact::Kind::SameType &&
+              relation.left_operand_ordinal ==
+                  operation.receiver_operand_ordinal &&
+              relation.right_operand_ordinal == ordinal &&
+              same_resolved_term(relation.left, operation.receiver) &&
+              same_resolved_term(relation.right,
                                  operation.arguments[argument]);
         }
         const auto result = operation.result
             ? checked_types.solver.resolve(operation.result) : nullptr;
         const auto checked_result = linked.checked_type
             ? checked_types.solver.resolve(linked.checked_type) : nullptr;
-        if (valid) {
-          // A vector literal is homogeneous. The operation ledger may only
-          // claim completeness when every source element has the exact same
-          // checker-resolved type as its selected receiver. Merely retaining
-          // the operands is insufficient: open variables need an explicit
-          // checker relation before this operation can be consumed.
-          for (const auto& argument : operation.arguments)
-            if (!same_resolved_term(operation.receiver, argument)) {
-              valid = false;
-              break;
-            }
-        }
         if (!valid || operand_ordinals.size() != linked.source_operands.size() ||
             !result || result->kind != moss::TypeKind::Builtin ||
             result->name != "vector" || result->type_args.size() != 1 ||
@@ -28106,7 +28110,52 @@ export fn mixed(first, second):
     const auto mixed_retained = checker.checked_body_states_.find(&mixed->body);
     if (mixed_retained == checker.checked_body_states_.end() ||
         !mixed_retained->second) return false;
-    return !mixed_retained->second->expression_occurrence_ledger_complete;
+    auto& mixed_state = *mixed_retained->second;
+    const auto mixed_occurrence = std::find_if(
+        mixed_state.expression_occurrences.begin(),
+        mixed_state.expression_occurrences.end(), [](const auto& candidate) {
+      return candidate.kind ==
+              BodyTypeState::ExpressionOccurrence::Kind::VectorLiteral;
+    });
+    const auto mixed_operation = std::find_if(
+        mixed_state.open_operations.begin(), mixed_state.open_operations.end(),
+        [](const auto& candidate) {
+      return candidate.operation_id == "builtin:vector-literal";
+    });
+    if (mixed_occurrence == mixed_state.expression_occurrences.end() ||
+        mixed_operation == mixed_state.open_operations.end() ||
+        mixed_operation->expression_occurrence_id != mixed_occurrence->id ||
+        mixed_operation->arguments.size() != 1 ||
+        mixed_operation->type_relations.size() != 1) return false;
+    const auto& relation = mixed_operation->type_relations.front();
+    const auto first = std::find_if(mixed_state.expression_occurrences.begin(),
+        mixed_state.expression_occurrences.end(), [&](const auto& candidate) {
+      return candidate.parent_id == mixed_occurrence->id &&
+          candidate.child_role == "element:0";
+    });
+    const auto second = std::find_if(mixed_state.expression_occurrences.begin(),
+        mixed_state.expression_occurrences.end(), [&](const auto& candidate) {
+      return candidate.parent_id == mixed_occurrence->id &&
+          candidate.child_role == "element:1";
+    });
+    if (first == mixed_state.expression_occurrences.end() ||
+        second == mixed_state.expression_occurrences.end() ||
+        relation.kind != moss::OpenCallableSummaryFacts::OperationFact::
+            TypeRelationFact::Kind::SameType ||
+        relation.left_operand_ordinal != 0 ||
+        relation.right_operand_ordinal != 1 || !relation.left ||
+        !relation.right || !first->checked_type || !second->checked_type)
+      return false;
+    const auto relation_left = mixed_state.solver.resolve(relation.left);
+    const auto relation_right = mixed_state.solver.resolve(relation.right);
+    const auto first_type = mixed_state.solver.resolve(first->checked_type);
+    const auto second_type = mixed_state.solver.resolve(second->checked_type);
+    return relation_left && relation_right && first_type && second_type &&
+        relation_left->structurally_equal(*first_type) &&
+        relation_right->structurally_equal(*second_type) &&
+        relation_left->kind == moss::TypeKind::InferenceVar &&
+        relation_right->kind == moss::TypeKind::InferenceVar &&
+        relation_left->var_id != relation_right->var_id;
   }
 
   static bool unit_test_statement_call_occurrence_roles() {
