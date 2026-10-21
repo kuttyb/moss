@@ -95,6 +95,17 @@
       "evidence": "R1 alias-lineage correction resolves late checker TypeRefs to exact declaration identities through multi-local chains. The provider/source-free consumer must agree for Int and Float after legacy generic_stmt poisoning; hostile checked-artifact mutations and ABI-v9 controls remain in the same corpus."
     },
     {
+      "id": "shadowing-alias-branch-local-unavailable",
+      "priority": "P1-essential",
+      "category": "generic arithmetic through shadowing branch-local alias",
+      "provider": "module Service\n\nexport fn fresh(value, flag: Bool):\n  let alias = value * 2\n  if flag:\n    let alias = alias + 1\n    return alias\n  else:\n    return alias\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(5, true)\n  echo Service.fresh(5, false)\n  echo Service.fresh(2.5, true)\n  echo Service.fresh(2.5, false)\n",
+      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "provider_must_emit_v10": true,
+      "checked_body_status": "checked-body unavailable; exact checker scopes and bindings are retained, but source-free shadowing-body projection remains unsupported",
+      "evidence": "The source-built provider emits ABI-v10 records, while the source-deleted consumer must fail closed on this valid shadowing case. Keep Int/Float branch behavior visible until the common lowerer and importer preserve the exact inner and outer binding identities end to end."
+    },
+    {
       "id": "branch-join-generic-arithmetic-unavailable",
       "priority": "P1-essential",
       "category": "generic arithmetic through if/else joined local",

@@ -9879,3 +9879,14 @@ parity, the hostile dependency-edge mutation, legacy generic-body poisoning,
 and ABI-v9 controls. Shadowing-specific alias coverage remains open.
 Branch-join body representation and complete R1 remain open; R2–R5 remain
 unstarted.
+### R1 shadowing-alias compatibility probe — working tree
+
+The source-free alias fixture now follows the three-step same-scope chain in
+both checker and ABI-v10 provider/consumer coverage. A separate valid Moss
+reproducer shadows an outer generic local inside an `if` branch. The provider
+emits ABI-v10 records, while the source-deleted consumer rejects with
+`SOURCE_FREE_CHECKED_BODY_UNAVAILABLE`; this profile remains explicit in the
+corpus rather than being treated as supported or excluded. The full M2b2 corpus
+passes after the split, including intact Int/Float alias parity, hostile
+dependency-edge rejection, legacy generic-body poisoning, and ABI-v9 controls.
+Shadowing projection and branch-join body support remain open R1 work.
