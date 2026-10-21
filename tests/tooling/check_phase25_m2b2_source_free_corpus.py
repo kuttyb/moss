@@ -289,6 +289,11 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                     "SOURCE_FREE_CHECKED_BODY_INVALID",
                     "SOURCE_FREE_SUMMARY_INVALID",
                 )
+            if case["id"] == "multi-statement-arithmetic-alias":
+                negative_cases["drop-requirement-dependency"] = (
+                    "SOURCE_FREE_CHECKED_BODY_INVALID",
+                    "SOURCE_FREE_SUMMARY_INVALID",
+                )
             if case["id"] == "generic-map-index-mutation":
                 negative_cases["weaken-effect"] = (
                     "SOURCE_FREE_CHECKED_BODY_INVALID",

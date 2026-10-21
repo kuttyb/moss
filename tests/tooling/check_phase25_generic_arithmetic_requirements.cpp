@@ -379,7 +379,8 @@ export fn branch_compute(value, flag: Bool):
 export fn alias_compute(value):
   let doubled = value * 2
   let alias = doubled
-  return alias + 1
+  let chained = alias
+  return chained + 1
 )moss");
   const Function& select = find_function(joined_binding, "select");
   // The checker retains one exact join binding at the control-flow merge.
@@ -471,6 +472,8 @@ export fn alias_compute(value):
          "operator:+");
   assert(alias_compute.open_summary->requirements[1].parent_requirement_id ==
          alias_compute.open_summary->requirements[0].id);
+  assert(alias_compute.open_summary->requirements[1].dependency_requirement_ids ==
+         vector<string>{alias_compute.open_summary->requirements[0].id});
   assert(alias_compute.checked_body_ir_v1_bytes &&
          alias_compute.checked_body_ir_v1_hash);
 

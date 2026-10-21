@@ -213,6 +213,14 @@ int main(int argc, char** argv) {
     summary.dependencies.clear();
     replace_summary();
     replace_body(std::move(body));
+  } else if (mode == "drop-requirement-dependency") {
+    assert(summary.requirements.size() >= 2);
+    auto& requirement = summary.requirements.back();
+    assert(!requirement.dependencies.empty());
+    requirement.dependencies.pop_back();
+    requirement.parent = requirement.dependencies.empty()
+        ? 0 : requirement.dependencies.front();
+    replace_summary();
   } else if (mode == "missing-callee-summary") {
     assert(helper_summary_at != sealed.value.private_semantic_dependencies.end());
     sealed.value.private_semantic_dependencies.erase(helper_summary_at);

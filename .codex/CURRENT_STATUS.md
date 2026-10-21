@@ -9860,3 +9860,19 @@ Validation on the current working source: `make --jobs="$(nproc)" moss-dev`; gen
 ### R1 alias-lineage follow-up — working tree, 2026-10-20
 
 The architect's exact-SHA review initially returned NO-GO with a P1 alleging that `compute(value): let doubled = value * 2; let alias = doubled; return alias + 1` could publish an incomplete dependency summary. Dependency assembly recursively traverses exact identifier binding and guarded predecessor links through initializer expression trees, rejecting missing or ambiguous ownership. Follow-up tracing showed late initializer TypeRefs were resolved after the first binding pass, leaving subsequent aliases without binding occurrences. The finalizer now iterates those exact checker TypeRefs through local declarations and resolves identifier occurrences again; unresolved typed identifiers keep the occurrence ledger incomplete. The checker regression confirms the `*` and `+` requirements and their dependency edge, and the source-free provider/consumer now passes Int and Float parity after legacy generic body poisoning and hostile artifact mutations. The alias row is supported in the corpus. The architect withdrew the earlier producer/consumer mismatch claim as unverified and returned scoped GO on exact SHA `2ce73996427778b87cd86c35927cbc8124d6b7a6`, with no P0/P1. The review confirmed the fixed point is bounded and unresolved or ambiguous bindings remain incomplete; the lowerer separately checks local type projection. P2 coverage remains for a hostile dependency-edge mutation and deeper shadowing alias chains. The common occurrence writer emits typed requirement summaries only for exact arithmetic or collection-loop shapes accepted by the importer. For-loop value dependencies fail closed because checker facts do not encode an element-production edge. Latest validation on the current working tree: build, focused arithmetic requirements, full M2b2 source-free/hostile corpus including alias plus ABI-v9 controls, checked-body IR, G3 parity, generic collection facts, statement/call occurrence roles, H3 direct records, D3d, D4, feedback validation, JSONL parsing, and diff check. Branch-join body representation remains open; R1 is not complete.
+
+#### R1 alias dependency-edge hostile coverage — working tree
+
+Extended the alias checker fixture from two to three local aliases and asserted
+that the final `+` requirement depends on the earlier `*` requirement. Added a
+source-free artifact mutation that removes the sealed requirement dependency
+edge while keeping the altered ABI container internally authenticated. The
+source-deleted consumer rejects the artifact with a checked-body/summary
+failure, and intact Int/Float alias execution plus ABI-v9 controls still pass.
+Validation on `build/compiler/moss-dev`: compiler build, focused arithmetic
+requirements, full M2b2 source-free/hostile corpus, feedback JSON validation,
+JSONL parsing, and `git diff --check` pass. This closes the hostile
+dependency-edge note and adds a deeper same-scope alias chain from the
+`2ce73996` scoped review, pending exact-SHA adversarial confirmation.
+Shadowing-specific alias coverage remains open. It does not close branch-join
+body representation or complete R1; R2–R5 remain unstarted.
