@@ -7034,6 +7034,34 @@ class Checker {
         }
       }
       if (definitions != 1 || !definition) return false;
+      if (definition->kind == Stmt::Kind::If) {
+        const BodyTypeState::StatementOccurrence::BindingOccurrence* join =
+            nullptr;
+        for (const auto& binding : definition->bindings)
+          if (binding.identity == returned->resolved_binding_id &&
+              !binding.predecessor_binding_ids.empty()) {
+            if (join) return false;
+            join = &binding;
+          }
+        const auto returned_type = state.solver.resolve(returned->checked_type);
+        const auto join_type = join
+            ? state.solver.resolve(join->type) : nullptr;
+        if (!join || join->predecessor_binding_ids.size() != 2 ||
+            join->predecessor_control_edges.size() != 2 || !returned_type ||
+            !join_type || !returned_type->structurally_equal(*join_type) ||
+            !relate_type(returned->checked_type, summary.result_type))
+          return false;
+        returned_local_types.emplace(returned->resolved_binding_id,
+                                     summary.result_type);
+        for (const auto& local_read : state.expression_occurrences)
+          if (local_read.kind ==
+                  BodyTypeState::ExpressionOccurrence::Kind::Identifier &&
+              local_read.resolved_binding_id ==
+                  returned->resolved_binding_id)
+            returned_initializer_types.emplace(local_read.id,
+                                               summary.result_type);
+        continue;
+      }
       const auto initializer = state.expression_root_slots.find(
           {definition->id, "initializer"});
       if (initializer == state.expression_root_slots.end()) return false;
@@ -29606,6 +29634,13 @@ export fn branch(value: Bool) -> Int:
     let local = 2
   return local
 
+export fn common_branch_join(first, second, flag: Bool):
+  if flag:
+    let joined = first
+  else:
+    let joined = second
+  return joined
+
 fn expression_identity(value) = value
 fn add_values(total, value) = total + value
 
@@ -29675,6 +29710,33 @@ fn inspect_sample(sample: Sample) -> Int:
               *common_single_return->checked_body_ir_v1_bytes ||
           checked_ir::compute_checked_body_hash_v1(common_body) !=
               *common_single_return->checked_body_ir_v1_hash)
+        return false;
+    } catch (const std::invalid_argument&) {
+      return false;
+    }
+    const auto common_branch_join = std::find_if(
+        program.functions.begin(), program.functions.end(),
+        [](const Function& candidate) {
+      return candidate.name == "common_branch_join";
+    });
+    if (common_branch_join == program.functions.end() ||
+        !common_branch_join->checked_body_ir_v1_occurrence_lowered ||
+        !common_branch_join->checked_body_ir_v1_bytes ||
+        !common_branch_join->checked_body_ir_v1_hash ||
+        !common_branch_join->open_summary ||
+        !common_branch_join->open_summary->occurrence_ledger_complete)
+      return false;
+    try {
+      const auto body = checked_ir::decode_checked_body_v1(
+          *common_branch_join->checked_body_ir_v1_bytes,
+          *program.type_context,
+          common_branch_join->open_summary->parameter_types,
+          common_branch_join->open_summary->result_type,
+          *common_branch_join->checked_body_ir_v1_hash);
+      if (body.size() != 2 || body[0].kind != checked_ir::StmtKind::IfJoin ||
+          body[1].kind != checked_ir::StmtKind::Return || !body[1].expr ||
+          body[1].expr->kind != checked_ir::ExprKind::LocalRead ||
+          body[1].expr->ordinal != body[0].local_ordinal)
         return false;
     } catch (const std::invalid_argument&) {
       return false;

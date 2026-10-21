@@ -140,27 +140,24 @@
       "evidence": "The checker ledger, ABI-v10 summary, and checked-body-v1 encode branch operation dependencies and joined/local values, but the importer does not yet validate every conditional operation one-to-one against summary requirements. Hostile source-free fixtures inject both IfJoin and ordinary If-plus-mutable-assignment bodies; both must reject before projection. Keep this valid profile visible until generalized lineage validation passes."
     },
     {
-      "id": "branch-join-generic-literals-unavailable",
+      "id": "branch-join-generic-literals",
       "priority": "P1-essential",
       "category": "generic conditional literal selection through joined local",
       "provider": "module Service\n\nexport fn fresh(value, flag: Bool):\n  if flag:\n    let item = 11\n  else:\n    let item = 22\n  return item\n",
       "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(5, true)\n  echo Service.fresh(5, false)\n  echo Service.fresh(\"moss\", true)\n  echo Service.fresh(\"moss\", false)\n",
-      "checked_body_status": "valid source-backed function; checked-body unavailable because the unused untyped parameter has no summary TypeRef",
-      "evidence": "A source-built provider accepts this pure IfJoin, but emits no checked-body record for the callable. The staged ABI-v10 consumer must reject after provider source removal; ABI-v9 source-free execution remains the compatibility control. Do not infer generic checked-body support from the IfJoin decoder admission predicate alone.",
-      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "provider_must_emit_v10": true,
-      "abi_v9_expected_output": "11\n22\n11\n22\n"
+      "checked_body_status": "checked-body supported; a pure IfJoin over checked literal predecessors emits a typed join and return-local body",
+      "evidence": "The occurrence lowerer emits a canonical typed IfJoin for pure literal predecessors with checked condition, result, and exact branch binding identities. The source-free corpus removes provider source, poisons the legacy generic_stmt body, and executes both Int and String consumer contexts.",
+      "expected_output": "11\n22\n11\n22\n"
     },
     {
-      "id": "branch-join-generic-parameters-unavailable",
+      "id": "branch-join-generic-parameters",
       "priority": "P1-essential",
       "category": "generic parameter selection through joined local",
       "provider": "module Service\n\nexport fn fresh(first, second, flag: Bool):\n  if flag:\n    let item = first\n  else:\n    let item = second\n  return item\n",
       "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(5, 7, true)\n  echo Service.fresh(5, 7, false)\n  echo Service.fresh(\"moss\", \"codex\", true)\n  echo Service.fresh(\"moss\", \"codex\", false)\n",
-      "checked_body_status": "valid source-backed function; v10 body unavailable because no validated typed body is emitted for the parameter join",
-      "evidence": "A source-built provider accepts direct-parameter IfJoin, but emits no checked-body record for the callable on this compiler revision. The staged ABI-v10 consumer must reject after source removal; ABI-v9 source-free execution is the compatibility control. Keep the exact predecessor/type-link implementation from the checker, but do not claim producer support without emitted body bytes.",
-      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "provider_must_emit_v10": true,
+      "checked_body_status": "checked-body supported; exact branch predecessor bindings share the checked result type and lower to an IfJoin body",
+      "evidence": "The occurrence lowerer emits a canonical typed IfJoin plus return-local body only when each branch predecessor identity and checked type agrees with the unique joined binding. The source-free corpus removes provider source and poisons the legacy generic_stmt body, then checks Int/String branch selection and checked-body projection.",
+      "expected_output": "5\n7\nmoss\ncodex\n",
       "abi_v9_expected_output": "5\n7\nmoss\ncodex\n"
     },
     {

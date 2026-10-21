@@ -1,3 +1,25 @@
+## Phase 25.1 R1 continuation — common pure branch-join lowering — working tree — 2026-10-21
+
+Common occurrence lowering now links a returned local to its unique checked
+`If` join when that binding has exactly two predecessor identities and control
+edges, the joined TypeRef matches the return occurrence, and the return TypeRef
+relates to the open summary result. The existing lowerer then verifies the
+exact then/else predecessor statements and branch value TypeRefs before it
+emits `IfJoin`. The source-free corpus promotes both `branch-join-generic-literals`
+and `branch-join-generic-parameters` from unavailable controls to positive
+checked-body profiles. It removes provider source and legacy `generic_stmt`
+rows, executes Int/String branch results, requires checked-body projection, and
+runs metadata mutations plus ABI-v9 compatibility controls.
+
+Validation on rebuilt `build/compiler/moss-dev`: compiler build, focused
+statement/call occurrence regression, and the full M2b2 source-free/hostile
+corpus pass, including both promoted join profiles. The build retains two
+existing TypeSolver missing-initializer warnings. Exact-SHA adversarial review of
+this producer expansion is pending. R1 remains open for broader accepted-surface
+totality, remaining producer profiles, and overall independent acceptance.
+Preserve 24 tracked unavailable ABI-v10 profiles, two ABI-v9 raise/recover
+failures, and `packages/time`.
+
 ## Phase 25.1 R1 continuation — summary effect/dependency parity mutations — working tree — 2026-10-21
 
 The focused occurrence verifier now has direct negative controls for function
