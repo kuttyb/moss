@@ -6661,7 +6661,7 @@ class Checker {
             formal_ordinal = index;
           }
         const auto& summary = *function.open_summary;
-        bool unique_constraint = false;
+        std::vector<std::size_t> matching_constraint_indices;
         for (std::size_t constraint_index = 0;
              constraint_index < function.constraints.size();
              ++constraint_index) {
@@ -6680,11 +6680,15 @@ class Checker {
                 trim(expression.source_operands[index]))
               arguments_match = false;
           if (!arguments_match) continue;
-          if (unique_constraint) {
-            unique_constraint = false;
-            break;
+          matching_constraint_indices.push_back(constraint_index);
+        }
+        if (matching_constraint_indices.size() == 1) {
+          const auto constraint_index = matching_constraint_indices.front();
+          const auto& constraint = function.constraints[constraint_index];
+          if (constraint.arity != expression.source_operands.size()) {
+            state.expression_occurrence_ledger_complete = false;
+            continue;
           }
-          unique_constraint = true;
           const string requirement_id = function.semantic_callable_id +
               ":requirement:" + std::to_string(constraint_index);
           std::vector<const moss::Requirement*> requirements;
@@ -6726,6 +6730,7 @@ class Checker {
               requirements.front()->result &&
               (*requirements.front()->result)->structurally_equal(
                   *summary.result_type) && arguments_resolved &&
+              requirements.front()->access == moss::AccessMode::Read &&
               requirements.front()->arguments.size() ==
                   expected_arguments.size() &&
               requirements.front()->argument_access ==
@@ -6737,7 +6742,7 @@ class Checker {
                                                  const auto& right) {
                 return left && right && left->structurally_equal(*right);
               });
-          if (unique_constraint && requirement_matches) {
+          if (requirement_matches) {
             expression.callable_result_relation =
                 summary.result_type;
             result_relation = true;
@@ -29328,7 +29333,8 @@ fn inspect_sample(sample: Sample) -> Int:
       if (altered_requirement ==
           altered_function.open_summary->requirements.end())
         return false;
-      mutate(*altered_function.open_summary, *altered_requirement);
+      mutate(altered_function, *altered_function.open_summary,
+             *altered_requirement);
       altered_occurrence->semantic_target_id = "binding:pending:callback";
       altered_occurrence->linked_constraints.clear();
       altered_occurrence->callable_result_relation.reset();
@@ -29337,21 +29343,36 @@ fn inspect_sample(sample: Sample) -> Int:
       return !altered_occurrence->callable_result_relation;
     };
     if (!rejects_callback_requirement_mutation(
-            [](auto&, auto& requirement) {
+            [](auto&, auto&, auto& requirement) {
           requirement.subject = moss::Type::primitive("int");
         }) ||
         !rejects_callback_requirement_mutation(
-            [](auto&, auto& requirement) {
+            [](auto&, auto&, auto& requirement) {
           requirement.arguments.front() = moss::Type::primitive("string");
         }) ||
         !rejects_callback_requirement_mutation(
-            [](auto&, auto& requirement) {
+            [](auto&, auto&, auto& requirement) {
           requirement.argument_access.front() = moss::AccessMode::Consume;
         }) ||
         !rejects_callback_requirement_mutation(
-            [](auto& summary, auto& requirement) {
+            [](auto&, auto& summary, auto& requirement) {
           auto duplicate = requirement;
           summary.requirements.push_back(std::move(duplicate));
+        }) ||
+        !rejects_callback_requirement_mutation(
+            [](auto&, auto&, auto& requirement) {
+          requirement.access = moss::AccessMode::Write;
+        }) ||
+        !rejects_callback_requirement_mutation(
+            [](auto& function, auto&, auto&) {
+          auto callable = std::find_if(function.constraints.begin(),
+              function.constraints.end(), [](const Constraint& value) {
+            return value.kind == ConstraintKind::Callable;
+          });
+          if (callable == function.constraints.end()) return;
+          auto duplicate = *callable;
+          duplicate.arity += 1;
+          function.constraints.push_back(std::move(duplicate));
         }))
       return false;
     auto noncanonical_callback_target = *callback_occurrence;
