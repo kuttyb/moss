@@ -2971,7 +2971,8 @@ static std::optional<CheckedArithmeticBody> checked_arithmetic_body(
 // body IR. Each parameter, nominal field slot, and callee comes from the
 // retained typed summary and exact checker edge; source spelling is used only
 // to select the already checked occurrence.
-static std::optional<CheckedPrivateChainBody> checked_private_chain_body(
+static std::optional<CheckedPrivateChainBody>
+checked_private_chain_body_legacy_parity(
     const Program& program, const Function& function) {
   if (!function.open_summary || !function.open_summary->scheme_complete)
     return std::nullopt;
@@ -3168,7 +3169,10 @@ static std::optional<CheckedPrivateChainBody> checked_private_chain_body(
     return std::nullopt;
   }
   checked_ir::Stmt bind;
-  bind.kind = checked_ir::StmtKind::Let;
+  bind.kind = function.body.front().kind == Stmt::Kind::Var ||
+          (function.body.front().kind == Stmt::Kind::Assign &&
+           function.checked_body_ir_v1_bytes.has_value())
+      ? checked_ir::StmtKind::Var : checked_ir::StmtKind::Let;
   bind.type = summary.result_type;
   bind.local_ordinal = 0;
   bind.expr = value;
@@ -3190,6 +3194,63 @@ static std::optional<CheckedPrivateChainBody> checked_private_chain_body(
     return std::nullopt;
   }
   return body;
+}
+
+// H3 consumes the common occurrence lowerer's canonical bytes. Until the
+// old shape recognizer has been removed, require exact encoded-body and
+// dependency parity for every form it previously admitted. The shape path is
+// only a migration parity oracle; the returned producer input comes from the
+// checked occurrence lowerer and its retained hash.
+static std::optional<CheckedPrivateChainBody> checked_private_chain_body(
+    const Program& program, const Function& function) {
+  if (!function.open_summary || !function.open_summary->scheme_complete ||
+      !function.open_summary->occurrence_ledger_complete ||
+      !program.type_context) {
+    return std::nullopt;
+  }
+  auto parity = checked_private_chain_body_legacy_parity(program, function);
+  if (!parity) return std::nullopt;
+  // Some already admitted H3 constructor helpers do not yet have enough
+  // occurrence facts for the common lowerer. Keep their exact, bounded
+  // checked shape on the existing canonical producer path until that gap is
+  // closed; a function with common bytes must pass strict parity below.
+  if (!function.checked_body_ir_v1_bytes ||
+      !function.checked_body_ir_v1_hash)
+    return parity;
+  const auto& summary = *function.open_summary;
+  vector<checked_ir::Stmt> common_statements;
+  try {
+    common_statements = checked_ir::decode_checked_body_v1(
+        *function.checked_body_ir_v1_bytes, *program.type_context,
+        summary.parameter_types, summary.result_type,
+        *function.checked_body_ir_v1_hash);
+    if (checked_ir::encode_checked_body_v1(common_statements) !=
+            *function.checked_body_ir_v1_bytes ||
+        checked_ir::compute_checked_body_hash_v1(common_statements) !=
+            *function.checked_body_ir_v1_hash)
+      return std::nullopt;
+  } catch (const std::invalid_argument&) {
+    return std::nullopt;
+  }
+  try {
+    const auto parity_bytes = checked_ir::encode_checked_body_v1(parity->statements);
+    if (parity_bytes != *function.checked_body_ir_v1_bytes)
+      return std::nullopt;
+  } catch (const std::invalid_argument&) {
+    return std::nullopt;
+  }
+  auto dependencies = extract_semantic_dependencies(common_statements);
+  if (dependencies.size() != parity->dependencies.size())
+    return std::nullopt;
+  for (std::size_t index = 0; index < dependencies.size(); ++index)
+    if (dependencies[index].kind != parity->dependencies[index].kind ||
+        dependencies[index].target_id != parity->dependencies[index].target_id)
+      return std::nullopt;
+  CheckedPrivateChainBody common;
+  common.statements = std::move(common_statements);
+  common.dependencies = std::move(dependencies);
+  common.semantic_hash = *function.checked_body_ir_v1_hash;
+  return common;
 }
 
 static moss::TypeRef imported_abi_v10_type(
@@ -4526,7 +4587,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
         (statements.size() == 1 &&
          statements.front().kind != checked_ir::StmtKind::Return) ||
         (statements.size() == 2 &&
-         (statements.front().kind != checked_ir::StmtKind::Let ||
+         ((statements.front().kind != checked_ir::StmtKind::Let &&
+           statements.front().kind != checked_ir::StmtKind::Var) ||
           statements.back().kind != checked_ir::StmtKind::Return)) ||
         statements.size() > 2)
       invalid("checked ABI-v10 body is outside the direct-return/local-result subset");
@@ -5917,6 +5979,7 @@ class Checker {
         bool reaches_private = false;
         bool unsupported_multi_statement = false;
         bool rich_body_ready = true;
+        string unavailable_body;
         while (!pending.empty()) {
           const Function* current = pending.back();
           pending.pop_back();
@@ -5924,7 +5987,8 @@ class Checker {
           if (!current->exported) reaches_private = true;
           if (current->body.size() > 1) {
             if (!checked_private_chain_body(p_, *current))
-              rich_body_ready = false;
+              { rich_body_ready = false;
+                if (unavailable_body.empty()) unavailable_body = current->name; }
             if (!current->open_summary || !current->open_summary->scheme_complete ||
                 !current->checked_body_v1)
               unsupported_multi_statement = true;
@@ -5943,7 +6007,8 @@ class Checker {
           err(exported.source_file, exported.line,
               "exported callable '" + exported.name +
                   "' reaches a private multi-statement body without "
-                  "checked ABI-v10 type facts and body IR",
+                  "checked ABI-v10 type facts and body IR ('" +
+                  unavailable_body + "')",
               "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE");
       }
     { CompilerStageTimer timer("synchronization_plan"); build_synchronization_plan(p_.concrete_domain_graph); }
@@ -29784,11 +29849,17 @@ export fn fresh(x):
                                                           nested_private_box}}) {
       const auto* helper = helper_and_target.first;
       const auto* target = helper_and_target.second;
+      auto checked_helper = checked_private_chain_body(chain_program, *helper);
       const auto state = chain_checker.checked_body_states_.find(&helper->body);
       if (state == chain_checker.checked_body_states_.end() || !state->second ||
           !state->second->expression_occurrence_ledger_complete ||
           !helper->open_summary || !helper->open_summary->complete ||
-          !helper->open_summary->occurrence_ledger_complete)
+          !helper->open_summary->occurrence_ledger_complete ||
+          !helper->checked_body_ir_v1_bytes ||
+          !helper->checked_body_ir_v1_hash ||
+          !checked_helper || checked_helper->statements.size() != 2 ||
+          checked_helper->statements.front().kind != checked_ir::StmtKind::Var ||
+          checked_helper->statements.back().kind != checked_ir::StmtKind::Return)
         return false;
       auto& body = *state->second;
       const auto call = std::find_if(body.expression_occurrences.begin(),
@@ -49342,7 +49413,8 @@ static void append_abi_v10_private_chain_records(
     auto body = checked_private_chain_body(program, function);
     if (!body)
       throw ProjectError("SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-                         "private checked ABI-v10 callable has no canonical body IR");
+                         "private checked ABI-v10 callable '" + function.name +
+                             "' has no canonical body IR");
     std::set<string> callable_edges;
     for (const auto& dependency : body->dependencies)
       if (dependency.kind == SemanticDependency::Kind::Callable) {

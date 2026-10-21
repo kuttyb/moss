@@ -1162,10 +1162,12 @@ class H3BodyReader {
   }
 
   Stmt read_let() {
-    if (number() != static_cast<std::uint32_t>(StmtKind::Let))
-      fail("H3 checked body has no leading let");
+    const auto kind = number();
+    if (kind != static_cast<std::uint32_t>(StmtKind::Let) &&
+        kind != static_cast<std::uint32_t>(StmtKind::Var))
+      fail("H3 checked body has no leading local declaration");
     Stmt statement;
-    statement.kind = StmtKind::Let;
+    statement.kind = static_cast<StmtKind>(kind);
     statement.local_ordinal = number();
     if (statement.local_ordinal != 0)
       fail("H3 checked body local ordinal is not zero");
