@@ -180,7 +180,10 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
             poisoned = case_root / "poisoned-artifacts"
             shutil.copytree(artifacts, poisoned)
             poison_targets = (("fresh", "helper")
-                              if case["id"] == "single-call" else ("fresh",))
+                              if case["id"] == "single-call" else
+                              ("fresh", "choose")
+                              if case["id"] == "multi-statement-arithmetic" else
+                              ("fresh",))
             poison_outputs = []
             for callable_name in poison_targets:
                 poison_output = command(
@@ -218,6 +221,10 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
             if case["id"] == "single-call":
                 assert ":fn:helper|checked-body-v1" in poisoned_build + poisoned_check, (
                     case["id"], "private helper projection trace missing",
+                    poisoned_build + poisoned_check)
+            if case["id"] == "multi-statement-arithmetic":
+                assert ":fn:choose|checked-body-v1" in poisoned_build + poisoned_check, (
+                    case["id"], "if/else body projection trace missing",
                     poisoned_build + poisoned_check)
             poisoned_output = command(
                 [str(MARGO), "run"], cwd=consumer, env=poisoned_env)
@@ -271,6 +278,11 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                     "bad-field-type": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
                     "missing-dependency": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
                 })
+            if case["id"] == "multi-statement-arithmetic":
+                negative_cases["corrupted-summary"] = (
+                    "SOURCE_FREE_CHECKED_BODY_INVALID",
+                    "SOURCE_FREE_SUMMARY_INVALID",
+                )
             for mode, expected_codes in negative_cases.items():
                 mutated = case_root / f"checked-{mode}"
                 shutil.copytree(poisoned, mutated)

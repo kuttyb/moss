@@ -248,6 +248,16 @@ int main(int argc, char** argv) {
     assert(false && "unknown parameter-return artifact mutation mode");
   }
 
+  auto sort_records = [](auto& records) {
+    std::sort(records.begin(), records.end(), [](const auto& left,
+                                                  const auto& right) {
+      return left.id < right.id;
+    });
+  };
+  sort_records(sealed.value.binary_contract);
+  sort_records(sealed.value.semantic_contract);
+  sort_records(sealed.value.private_semantic_dependencies);
+  sort_records(sealed.value.provenance);
   const auto rewritten = moss::abi_v10::encode(sealed.value);
   const auto new_digest = moss::abi_v10::parse(rewritten).digest;
   auto archive = read_file(archive_path);

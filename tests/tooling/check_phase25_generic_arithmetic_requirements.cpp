@@ -157,6 +157,7 @@ static bool arithmetic_body_rejected(const string& expression) {
 }
 
 int main() {
+  assert(Checker::unit_test_control_join_binding_facts());
   auto program = checked_program(R"moss(export fn compute(x):
   return x * 2 + 20
 
@@ -360,14 +361,34 @@ fn main():
   else:
     let local = value
   return local
+
+export fn choose(value, flag: Bool):
+  if flag:
+    return value
+  else:
+    return value
 )moss");
   const Function& select = find_function(joined_binding, "select");
-  // A control-flow join whose local identity is not retained must never leak
-  // through the public callable-complete bit. The checker may conservatively
-  // withhold the open summary entirely.
-  assert(!select.open_summary || !select.open_summary->complete);
-  if (select.open_summary)
-    assert(!select.open_summary->occurrence_ledger_complete);
+  // The checker retains one exact join binding at the control-flow merge.
+  // Summary completeness must include that binding and all branch occurrences.
+  assert(select.open_summary && select.open_summary->complete);
+  assert(select.open_summary->occurrence_ledger_complete);
+
+  const Function& choose = find_function(joined_binding, "choose");
+  assert(choose.open_summary && choose.open_summary->complete);
+  assert(choose.checked_body_ir_v1_bytes && choose.checked_body_ir_v1_hash);
+  const auto choose_body = checked_ir::decode_checked_body_v1(
+      *choose.checked_body_ir_v1_bytes, *joined_binding.type_context,
+      choose.open_summary->parameter_types, choose.open_summary->result_type,
+      *choose.checked_body_ir_v1_hash);
+  assert(choose_body.size() == 1 &&
+         choose_body.front().kind == checked_ir::StmtKind::If &&
+         choose_body.front().then_branch.size() == 1 &&
+         choose_body.front().else_branch.size() == 1 &&
+         choose_body.front().then_branch.front().kind ==
+             checked_ir::StmtKind::Return &&
+         choose_body.front().else_branch.front().kind ==
+             checked_ir::StmtKind::Return);
 
   std::istringstream staged_input(R"moss(export fn staged(value):
   let doubled = value * 2
