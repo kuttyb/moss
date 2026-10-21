@@ -39,6 +39,14 @@ cir::Expr integer(moss::TypeRef type, std::string literal) {
   return value;
 }
 
+cir::Expr string_literal(moss::TypeRef type, std::string literal) {
+  cir::Expr value;
+  value.kind = cir::ExprKind::StringLiteral;
+  value.type = std::move(type);
+  value.literal_value = std::move(literal);
+  return value;
+}
+
 cir::Expr binary(moss::TypeRef type, cir::BinaryOp op, cir::Expr left,
                  cir::Expr right) {
   cir::Expr value;
@@ -218,6 +226,63 @@ int main(int argc, char** argv) {
          generic_decoded[3].expr->operands.size() == 2 &&
          generic_decoded[3].expr->operands[0].literal_value == "0" &&
          generic_decoded[3].expr->operands[1].literal_value == "1");
+
+  const auto string_int_map = moss::Type::builtin("map", {string_type, int_type});
+  cir::Expr empty_map;
+  empty_map.kind = cir::ExprKind::MapLiteral;
+  empty_map.type = string_int_map;
+  cir::Stmt map_binding;
+  map_binding.kind = cir::StmtKind::Var;
+  map_binding.local_ordinal = 0;
+  map_binding.type = string_int_map;
+  map_binding.expr = empty_map;
+  cir::Stmt map_write;
+  map_write.kind = cir::StmtKind::AssignIndex;
+  map_write.operands = {local(string_int_map, 0),
+                        string_literal(string_type, "key")};
+  map_write.expr = integer(int_type, "7");
+  cir::Expr map_read;
+  map_read.kind = cir::ExprKind::Index;
+  map_read.type = int_type;
+  map_read.semantic_target_id = std::string(cir::kCollectionIndexOperationId);
+  map_read.operands = {local(string_int_map, 0),
+                       string_literal(string_type, "key")};
+  const auto map_body = std::vector<cir::Stmt>{
+      map_binding, map_write, return_value(map_read)};
+  const auto map_bytes = cir::encode_checked_body_v1(map_body);
+  const auto map_hash = cir::compute_checked_body_hash_v1(map_body);
+  const auto map_decoded = cir::decode_collection_loop_checked_body_v1(
+      map_bytes, context, {}, int_type, map_hash);
+  assert(map_decoded.size() == 3 &&
+         map_decoded[1].kind == cir::StmtKind::AssignIndex &&
+         map_decoded[1].operands.size() == 2 &&
+         map_decoded[2].expr->kind == cir::ExprKind::Index &&
+         cir::encode_checked_body_v1(map_decoded) == map_bytes &&
+         cir::compute_checked_body_hash_v1(map_decoded) == map_hash);
+  auto wrong_map_key = map_body;
+  wrong_map_key[1].operands[1] = integer(int_type, "1");
+  assert(rejects(cir::encode_checked_body_v1(wrong_map_key), context, {},
+                 int_type));
+  auto noncanonical_map_write = map_body;
+  noncanonical_map_write[1].local_ordinal = 1;
+  assert(throws_invalid([&] {
+    (void)cir::encode_checked_body_v1(noncanonical_map_write);
+  }));
+  noncanonical_map_write = map_body;
+  noncanonical_map_write[1].semantic_target_id = "unexpected-target";
+  assert(throws_invalid([&] {
+    (void)cir::encode_checked_body_v1(noncanonical_map_write);
+  }));
+  auto noncanonical_map_literal = map_body;
+  noncanonical_map_literal[0].expr->member_name = "unexpected-member";
+  assert(throws_invalid([&] {
+    (void)cir::encode_checked_body_v1(noncanonical_map_literal);
+  }));
+  auto immutable_map_target = map_body;
+  immutable_map_target[0].kind = cir::StmtKind::Let;
+  assert(rejects(cir::encode_checked_body_v1(immutable_map_target), context, {},
+                 int_type));
+
   const auto& decoded_if = generic_decoded[2].body[0];
   const auto& equality = *decoded_if.expr;
   assert(equality.kind == cir::ExprKind::Binary &&
@@ -437,6 +502,18 @@ int main(int argc, char** argv) {
          cir::encode_checked_body_v1(pass_decoded) == pass_body);
   auto invalid_pass = no_op;
   invalid_pass.expr = integer(int_type, "0");
+  assert(throws_invalid([&] {
+    (void)cir::encode_checked_body_v1(
+        {invalid_pass, return_value(integer(int_type, "42"))});
+  }));
+  invalid_pass = no_op;
+  invalid_pass.local_ordinal = 1;
+  assert(throws_invalid([&] {
+    (void)cir::encode_checked_body_v1(
+        {invalid_pass, return_value(integer(int_type, "42"))});
+  }));
+  invalid_pass = no_op;
+  invalid_pass.semantic_target_id = "unexpected-target";
   assert(throws_invalid([&] {
     (void)cir::encode_checked_body_v1(
         {invalid_pass, return_value(integer(int_type, "42"))});

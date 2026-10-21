@@ -70,7 +70,7 @@
       "id": "P251-GEN-005",
       "severity": "P1",
       "status": "valid-but-unavailable-v10",
-      "workload": "Valid generic branches/early returns, local mutation and while, Map indexed mutation, nonempty Vector literals, functional pipelines, assert effects, typed match, and structured iteration",
+      "workload": "Valid generic branches/early returns, local mutation and while, Map parameter indexed mutation, nonempty Vector literals, functional pipelines, assert effects, typed match, and structured iteration. A separate local empty-Map/write/same-key-read body is now source-free supported-v10.",
       "symptom": "All listed probe bodies pass source-backed and ABI-v9 native Debug/Release; staged-v10 source-free selection rejects them with SOURCE_FREE_CHECKED_BODY_UNAVAILABLE. A general checker-owned body traversal is still missing.",
       "source_evidence": [
         "tests/phase25/compatibility/surface_probes.json",
@@ -78,7 +78,7 @@
         "src/checked_body_ir.hpp",
         "src/moss.cpp"
       ],
-      "r0_action": "R0 surface probes close validity and ABI-v9 classification for the listed forms. Carry exact rows into R1/R3 and repeat full parity at R4.",
+      "r0_action": "R0 surface probes close validity and ABI-v9 classification for the listed forms. The bounded local Map construction/write/read source-free case now passes R1, while the original Map-parameter probe remains unavailable. Carry exact remaining rows into R1/R3 and repeat full parity at R4.",
       "owner": "Coordinator",
       "critical_path": "R1/R3"
     },

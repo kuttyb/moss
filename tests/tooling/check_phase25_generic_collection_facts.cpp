@@ -417,7 +417,42 @@ export fn count_equal(items, target) -> Int:
     assert(decoded.back().kind == checked_ir::StmtKind::Return);
   }
 
+  const auto generic_map = check_source(R"moss(module Service
+
+export fn fresh(key, value):
+  var values = Map()
+  values[key] = value
+  return values[key]
+)moss");
+  const auto map_function = std::find_if(generic_map.functions.begin(),
+      generic_map.functions.end(), [](const Function& candidate) {
+    return candidate.name == "Service__fresh" || candidate.name == "fresh";
+  });
+  assert(map_function != generic_map.functions.end());
+  assert(map_function->open_summary && map_function->open_summary->complete &&
+         map_function->open_summary->occurrence_ledger_complete &&
+         map_function->open_summary->observable_effects.may_panic &&
+         map_function->checked_body_ir_v1_bytes &&
+         map_function->checked_body_ir_v1_hash);
+  const auto map_body = checked_ir::decode_checked_body_v1(
+      *map_function->checked_body_ir_v1_bytes, *generic_map.type_context,
+      map_function->open_summary->parameter_types,
+      map_function->open_summary->result_type,
+      *map_function->checked_body_ir_v1_hash);
+  assert(map_body.size() == 3 &&
+         map_body[0].kind == checked_ir::StmtKind::Var &&
+         map_body[0].expr &&
+         map_body[0].expr->kind == checked_ir::ExprKind::MapLiteral &&
+         map_body[1].kind == checked_ir::StmtKind::AssignIndex &&
+         map_body[1].operands.size() == 2 && map_body[1].expr &&
+         map_body[2].kind == checked_ir::StmtKind::Return &&
+         map_body[2].expr &&
+         map_body[2].expr->kind == checked_ir::ExprKind::Index);
+  assert(abi_v10_local_map_effects_covered(
+      map_function->open_summary->observable_effects, map_body));
+
   std::cout << "PASS index_of/contains/count_equal checker summaries, Count/Index "
                "TypeRefs, equality admissibility, READ accesses, may_panic, "
-               "provider-only summaries, and fail-closed operation cases\n";
+               "provider-only summaries, fail-closed operation cases, and "
+               "generic Map local construction/mutation/read\n";
 }

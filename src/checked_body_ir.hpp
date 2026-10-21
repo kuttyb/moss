@@ -276,7 +276,11 @@ inline void encode_checked_expr(std::string& out, const Expr& expr) {
       break;
 
     case ExprKind::MapLiteral:
-      if (expr.operands.size() % 2 != 0 || !expr.semantic_target_id.empty() || !expr.literal_value.empty())
+      if (expr.operands.size() % 2 != 0 || expr.ordinal != 0 ||
+          !expr.literal_value.empty() ||
+          expr.unary_op != UnaryOp::Neg || expr.binary_op != BinaryOp::Add ||
+          !expr.semantic_target_id.empty() || expr.member_ordinal != 0 ||
+          !expr.member_name.empty() || !expr.target_domain.empty())
         throw std::invalid_argument("invalid checked map node: expected even key-value count");
       checked_body_field(out, std::to_string(expr.operands.size() / 2));
       for (const auto& child : expr.operands)
@@ -381,7 +385,11 @@ inline void encode_checked_stmt(std::string& out, const Stmt& stmt) {
       break;
 
     case StmtKind::AssignIndex:
-      if (stmt.operands.size() != 2 || !stmt.expr)
+      if (stmt.operands.size() != 2 || !stmt.expr || stmt.type ||
+          stmt.local_ordinal != 0 || !stmt.semantic_target_id.empty() ||
+          stmt.member_ordinal != 0 || !stmt.member_name.empty() ||
+          !stmt.then_branch.empty() || !stmt.else_branch.empty() ||
+          !stmt.body.empty() || !stmt.match_cases.empty())
         throw std::invalid_argument("invalid assign index statement: missing receiver, index, or value");
       encode_checked_expr(out, stmt.operands[0]);
       encode_checked_expr(out, stmt.operands[1]);
@@ -450,7 +458,9 @@ inline void encode_checked_stmt(std::string& out, const Stmt& stmt) {
       break;
 
     case StmtKind::Pass:
-      if (stmt.expr || !stmt.operands.empty() || stmt.type ||
+      if (stmt.expr || stmt.local_ordinal != 0 || !stmt.operands.empty() ||
+          !stmt.semantic_target_id.empty() || stmt.member_ordinal != 0 ||
+          !stmt.member_name.empty() || stmt.type ||
           !stmt.then_branch.empty() || !stmt.else_branch.empty() ||
           !stmt.body.empty() || !stmt.match_cases.empty())
         throw std::invalid_argument("invalid pass statement: payload present");
@@ -876,6 +886,22 @@ class H3BodyReader {
                  !expression.type->structurally_equal(*local_type_)) {
         fail("checked body local type is mismatched");
       }
+    } else if (expression.kind == ExprKind::MapLiteral) {
+      if (!allow_collection_loop_body_ ||
+          expression.type->kind != TypeKind::Builtin ||
+          expression.type->name != "map" ||
+          expression.type->type_args.size() != 2)
+        fail("checked body map literal has an unsupported type or context");
+      const auto count = number();
+      if (count > 32) fail("checked body map literal exceeds bounds");
+      for (std::uint32_t index = 0; index < count * 2; ++index)
+        expression.operands.push_back(read_expr(depth + 1));
+      for (std::size_t index = 0; index < expression.operands.size(); index += 2)
+        if (!expression.type->type_args[0]->structurally_equal(
+                *expression.operands[index].type) ||
+            !expression.type->type_args[1]->structurally_equal(
+                *expression.operands[index + 1].type))
+          fail("checked body map literal key or value TypeRef is mismatched");
     } else if (expression.kind == ExprKind::Field) {
       expression.semantic_target_id = field();
       expression.member_ordinal = number();
@@ -909,10 +935,19 @@ class H3BodyReader {
         fail("checked index operation identity is unknown");
       expression.operands.push_back(read_expr(depth + 1));
       expression.operands.push_back(read_expr(depth + 1));
-      if (!is_collection_type(expression.operands[0].type) ||
-          !is_integer_type(expression.operands[1].type) ||
-          !expression.operands[0].type->type_args.front()->structurally_equal(
-              *expression.type))
+      const auto& container = expression.operands[0].type;
+      const auto& index = expression.operands[1].type;
+      const bool sequence_index = container &&
+          container->kind == TypeKind::Builtin &&
+          (container->name == "vector" || container->name == "queue") &&
+          container->type_args.size() == 1 && is_integer_type(index) &&
+          container->type_args.front()->structurally_equal(*expression.type);
+      const bool map_index = container &&
+          container->kind == TypeKind::Builtin && container->name == "map" &&
+          container->type_args.size() == 2 &&
+          container->type_args[0]->structurally_equal(*index) &&
+          container->type_args[1]->structurally_equal(*expression.type);
+      if (!sequence_index && !map_index)
         fail("checked index receiver, index, or result TypeRef is mismatched");
     } else if (expression.kind == ExprKind::Call ||
                expression.kind == ExprKind::NominalConstruct) {
@@ -1007,6 +1042,22 @@ class H3BodyReader {
         statement.type = found->second.type;
         break;
       }
+      case StmtKind::AssignIndex: {
+        statement.operands.push_back(read_expr());
+        statement.operands.push_back(read_expr());
+        statement.expr = read_expr();
+        const auto& receiver = statement.operands[0];
+        const auto& index = statement.operands[1];
+        if (receiver.kind != ExprKind::LocalRead ||
+            receiver.ordinal >= locals_.size() ||
+            !locals_.at(receiver.ordinal).mutable_binding ||
+            !receiver.type || receiver.type->kind != TypeKind::Builtin ||
+            receiver.type->name != "map" || receiver.type->type_args.size() != 2 ||
+            !receiver.type->type_args[0]->structurally_equal(*index.type) ||
+            !receiver.type->type_args[1]->structurally_equal(*statement.expr->type))
+          fail("checked body indexed assignment target is not a mutable typed local Map");
+        break;
+      }
       case StmtKind::If: {
         statement.expr = read_expr();
         if (!is_bool_type(statement.expr->type))
@@ -1038,7 +1089,6 @@ class H3BodyReader {
       case StmtKind::Pass:
         break;
       case StmtKind::AssignField:
-      case StmtKind::AssignIndex:
       case StmtKind::ExprStmt:
       case StmtKind::Reply:
       case StmtKind::For:

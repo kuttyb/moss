@@ -94,6 +94,16 @@
       "evidence": "R1 common occurrence lowerer preserves the parser statement as a checked-body Pass node. Source-free acceptance removes provider source and generic_stmt, requires projection, executes Int and String specializations, and verifies pre-Pass reader rejection."
     },
     {
+      "id": "generic-map-index-mutation",
+      "priority": "P1-map-operation",
+      "category": "open Map key/value types, indexed mutation and indexed read",
+      "provider": "module Service\n\nexport fn fresh(key, value):\n  var values = Map()\n  values[key] = value\n  return values[key]\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(\"moss\", 7)\n  echo Service.fresh(\"codex\", 9)\n",
+      "expected_output": "7\n9\n",
+      "checked_body_status": "checked-body supported; generic local Map construction, indexed mutation and indexed read are projected before specialization",
+      "evidence": "R1 checked-body acceptance removes provider source and generic_stmt, requires checked-body projection, and executes open Map key/value specializations through local mutation and indexed read. Mutation through a Map parameter remains a separate unavailable profile."
+    },
+    {
       "id": "generic-range-iteration",
       "priority": "P1-sdk-essential",
       "category": "other: generic iterator body",
