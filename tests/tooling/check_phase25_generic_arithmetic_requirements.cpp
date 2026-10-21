@@ -328,6 +328,7 @@ fn main():
         abi_v10::provenance_record(requirement_provenance[index]));
   }
   const string encoded_summary = abi_v10::summary_payload(wire_summary);
+  assert(abi_v10_checked_arithmetic_summary_candidate(wire_summary));
   const auto decoded_summary = abi_v10::read_summary(encoded_summary);
   assert(abi_v10::summary_payload(decoded_summary) == encoded_summary);
   assert(decoded_summary.requirements.size() == 2);
@@ -415,6 +416,7 @@ export fn alias_compute(value):
   assert(branch_result);
   branch_wire.result = *branch_result;
   branch_wire.requirements = *branch_requirements;
+  assert(!abi_v10_checked_arithmetic_summary_candidate(branch_wire));
   branch_wire.body_semantic_hash = "body-semantic-v1:sha256:" +
       string(64, 'b');
   const auto branch_callable_provenance = abi_v10_checked_provenance(

@@ -3403,12 +3403,34 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
 // Other ABI-v10 summaries may intentionally use a summary-only lowering path.
 static bool abi_v10_checked_arithmetic_summary_candidate(
     const abi_v10::Summary& summary) {
-  return summary.parameters.size() == 1 &&
-      std::any_of(summary.requirements.begin(), summary.requirements.end(),
-          [](const abi_v10::Requirement& requirement) {
-        return requirement.operation == "operator:*" ||
-            requirement.operation == "operator:+";
-      });
+  const auto bound_zero = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::BoundVar &&
+        type.ordinal == 0 && type.arguments.empty();
+  };
+  const auto integer = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::Primitive &&
+        type.identity == "int" && type.arguments.empty();
+  };
+  if (summary.variable_count != 1 || summary.parameters.size() != 1 ||
+      summary.parameter_access != vector<abi_v10::Access>{
+          abi_v10::Access::Read} || !bound_zero(summary.parameters.front()) ||
+      !bound_zero(summary.result) || summary.requirements.size() != 2)
+    return false;
+  const auto& multiply = summary.requirements[0];
+  const auto& add = summary.requirements[1];
+  return multiply.operation == "operator:*" &&
+      add.operation == "operator:+" && multiply.parent == 0 &&
+      add.parent == 1 && multiply.dependencies.empty() &&
+      multiply.access == abi_v10::Access::Read &&
+      add.access == abi_v10::Access::Read &&
+      bound_zero(multiply.receiver) && bound_zero(add.receiver) &&
+      multiply.arguments.size() == 1 && add.arguments.size() == 1 &&
+      multiply.argument_access == vector<abi_v10::Access>{
+          abi_v10::Access::Read} &&
+      add.argument_access == vector<abi_v10::Access>{abi_v10::Access::Read} &&
+      integer(multiply.arguments.front()) && integer(add.arguments.front()) &&
+      multiply.result && add.result && bound_zero(*multiply.result) &&
+      bound_zero(*add.result);
 }
 
 static bool abi_v10_parameter_return_summary_candidate(
@@ -5158,13 +5180,16 @@ class Checker {
           return found;
         };
         std::function<bool(const string&, std::set<std::uint32_t>&,
-                           std::set<string>&)> collect_binding_value =
+                           std::map<string, std::uint8_t>&)> collect_binding_value =
             [&](const string& binding_id,
                 std::set<std::uint32_t>& dependencies,
-                std::set<string>& visited_bindings) {
+                std::map<string, std::uint8_t>& binding_visits) {
           if (starts_with(binding_id, "parameter:")) return true;
           if (binding_id.empty()) return false;
-          if (!visited_bindings.insert(binding_id).second) return true;
+          const auto prior_visit = binding_visits.find(binding_id);
+          if (prior_visit != binding_visits.end())
+            return prior_visit->second == 2;
+          binding_visits.emplace(binding_id, 1);
           const BodyTypeState::StatementOccurrence* owner = nullptr;
           const BodyTypeState::StatementOccurrence::BindingOccurrence* binding =
               nullptr;
@@ -5189,14 +5214,17 @@ class Checker {
               return false;
             for (const auto& predecessor : binding->predecessor_binding_ids)
               if (!collect_binding_value(predecessor, dependencies,
-                                         visited_bindings))
+                                         binding_visits))
                 return false;
+            binding_visits[binding_id] = 2;
             return true;
           }
-          const string root_slot = owner->kind == Stmt::Kind::For
-              ? "iterable" : "initializer";
+          // An iterator binding is not value-identical to the iterable
+          // expression. Until the checker retains an element-production edge
+          // with its type/effect relation, do not invent that dependency.
+          if (owner->kind == Stmt::Kind::For) return false;
           const auto initializer = state.expression_root_slots.find(
-              {owner->id, root_slot});
+              {owner->id, "initializer"});
           if (initializer == state.expression_root_slots.end()) return false;
           const auto operations = collect_operations_in_subtree(
               initializer->second);
@@ -5208,9 +5236,10 @@ class Checker {
                 !operation_descends_from(expression.id, initializer->second))
               continue;
             if (!collect_binding_value(expression.resolved_binding_id,
-                                       dependencies, visited_bindings))
+                                       dependencies, binding_visits))
               return false;
           }
+          binding_visits[binding_id] = 2;
           return true;
         };
         // Requirement parent edges follow checked value flow. Direct nested
@@ -5229,7 +5258,7 @@ class Checker {
                 operation_descends_from(earlier.expression_occurrence_id,
                                         occurrence_id))
               parents.insert(earlier.expression_occurrence_id);
-          std::set<string> visited_bindings;
+          std::map<string, std::uint8_t> binding_visits;
           for (const auto& expression : state.expression_occurrences) {
             if (expression.kind !=
                     BodyTypeState::ExpressionOccurrence::Kind::Identifier ||
@@ -5237,7 +5266,7 @@ class Checker {
                 !operation_descends_from(expression.id, occurrence_id))
               continue;
             if (!collect_binding_value(expression.resolved_binding_id,
-                                       parents, visited_bindings)) {
+                                       parents, binding_visits)) {
               operations_complete = false;
               state.expression_occurrence_ledger_complete = false;
               break;
@@ -46209,6 +46238,10 @@ static void append_abi_v10_occurrence_records(
     // dependency closure. The importer independently recomputes this set.
     body.dependencies.clear();
     if (!extract_semantic_dependencies(decoded).empty())
+      continue;
+    if (!summary.requirements.empty() &&
+        !abi_v10_checked_arithmetic_summary_candidate(summary) &&
+        !abi_v10_collection_loop_summary_candidate(summary))
       continue;
     vector<abi_v10::SourceProvenance> provenance{callable_provenance};
     provenance.insert(provenance.end(), requirement_provenance.begin(),
