@@ -114,8 +114,8 @@
       "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(5, true)\n  echo Service.fresh(5, false)\n  echo Service.fresh(2.5, true)\n  echo Service.fresh(2.5, false)\n",
       "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
       "provider_must_emit_v10": true,
-      "checked_body_status": "checked-body unavailable pending join-capable checked IR; checker facts preserve guarded predecessor identities and both operation dependencies",
-      "evidence": "The exhaustive checker ledger and ABI-v10 summary preserve both branch operation dependencies, but checked-body-v1 cannot encode a branch join. The provider must fail closed and a source-deleted consumer must reject instead of selecting legacy generic_stmt. Keep this valid profile visible until an append-only join-capable checked-body form has source-free parity and hostile artifact acceptance."
+      "checked_body_status": "source-free import explicitly rejects IfJoin until body-to-requirement and dependency lineage validation is implemented; checker facts preserve guarded predecessor identities and both operation dependencies",
+      "evidence": "The checker ledger, ABI-v10 summary, and checked-body-v1 now encode both branch operation dependencies and the joined local, but the importer does not yet validate the IfJoin predecessor occurrences one-to-one against summary requirements. The source-deleted consumer must reject this emitted artifact rather than project it based only on generic type/effect closure. Keep this valid profile visible until lineage validation and hostile artifact acceptance pass."
     },
     {
       "id": "mutable-local-reassignment",

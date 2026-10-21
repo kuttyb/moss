@@ -1,5 +1,11 @@
 # Moss current status
 
+## Phase 25.1 R1 — IfJoin importer admission guard — working tree — 2026-10-21
+
+Independent review of frozen checkpoint `c13ef0a83ffb03c5a0ea9109560ee1555c5c6891` found a P1 boundary leak: source-free import could project an `IfJoin` under generic type/effect/dependency checks before validating its branch operation lineage against summary requirements. The importer now recursively detects decoded `IfJoin` nodes and rejects them before any AST projection. This is deliberately fail-closed while the one-to-one body-operation/requirement/dependency validator is still absent; checked-body codec support is not source-free admission evidence.
+
+The `branch-join-generic-arithmetic-unavailable` corpus row now states this exact blocker. The current provider does not emit a checked-body record for that row, so its normal consumer rejection does not independently exercise the new hostile-import guard; the architect's P1 specifically concerns a crafted artifact that reaches the generic projection path. Focused arithmetic requirements and checked-body IR/dependency closure suites pass. The M2b2 corpus passes, including branch-join unavailability and ABI-v9 controls. Feedback checker and `git diff --check` pass. This is a scoped P1 correction, not independent R1 acceptance. Freeze and push, then obtain exact-SHA architect review of the guard and its hostile-artifact coverage.
+
 ## Phase 25.1 R1 — specialized collection producer fail-closed correction — working tree — 2026-10-20
 
 Independent adversarial review of frozen pushed SHA `068ecf56e04a52c95a1b0523dc51eebb044420c6` returned NO-GO with one P1. A non-loop body with the same Count/Index/equality operation, requirement, and may-panic summary facts as the accepted collection loops was emitted by the specialized producer although the v10 importer rejected its body shape. Reproducer: `count_if_first_matches(items, target)` initializes `n = items |> count`, conditionally returns `n` when `items[0] == target`, then returns `n`.

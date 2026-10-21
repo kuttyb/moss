@@ -3680,6 +3680,24 @@ static void project_imported_h3_checked_bodies(Program& program) {
     } catch (const std::invalid_argument& error) {
       invalid(string("checked ABI-v10 body cannot be decoded: ") + error.what());
     }
+    // The checked-body codec and lowerer can represent a branch join, but
+    // source-free admission is not safe until every IfJoin predecessor is
+    // proven to correspond one-to-one with the summary's operation and
+    // dependency edges. Keep the format readable while failing closed at this
+    // boundary; generic type/effect closure alone does not establish lineage.
+    std::function<bool(const vector<checked_ir::Stmt>&)> contains_if_join =
+        [&](const vector<checked_ir::Stmt>& block) {
+      for (const auto& statement : block) {
+        if (statement.kind == checked_ir::StmtKind::IfJoin ||
+            contains_if_join(statement.then_branch) ||
+            contains_if_join(statement.else_branch) ||
+            contains_if_join(statement.body))
+          return true;
+      }
+      return false;
+    };
+    if (contains_if_join(statements))
+      invalid("checked ABI-v10 branch-join body lacks requirement lineage validation");
     const bool local_map_effect_contract =
         abi_v10_local_map_effects_covered(
             function.observable_effects, statements);
