@@ -31,9 +31,10 @@ GO for this migration, with no new P0/P1. This is not overall R1 acceptance.
 Current validation on the rebuilt `moss-dev` passes the full M2b2 source-free/
 hostile corpus, generic arithmetic requirements, D4 SDK collection source-free
 corpus, H3 source-free chain regression, and focused statement/call occurrence
-harness. The generic arithmetic harness confirms common checked-body bytes for
-`x + 20`, `x * 2 - 20`, and `x * 2 + 20 + 1`; source-valid `20 + x * 2` currently
-has no checked body. The corpus now promotes the multi-statement
+harness. The generic arithmetic harness checks canonical common checked-body
+bytes/hash for `x * 2 + 20`, confirms body availability for `x + 20`,
+`x * 2 - 20`, and `x * 2 + 20 + 1`, and confirms source-valid `20 + x * 2`
+currently has no checked body. The corpus now promotes the multi-statement
 nominal field read to a positive checked-body case. It classifies pure literal
 and direct-parameter IfJoin cases as v10-unavailable: source-built providers
 accept them, but emit no checked-body record. The arithmetic harness records the
