@@ -2,7 +2,17 @@
 
 ## Phase 25.1 R1 continuation — Map effect review correction — 2026-10-20
 
-Latest pushed code checkpoint is `75e1da78a776cf64c0c85b9878df77cacf2ae672`. The scoped follow-up audit closed the Map effect-understatement P1 and encoder/decoder bound P2 with GO; it noted the initial hostile test did not mutate both separate effect surfaces. The expanded corpus now exercises open Map key/value types and a division key, poisons both legacy bodies, checks both projection traces, and erases the sealed `may_panic` tag plus legacy `local_mutation`/`may_panic` flags independently for each callable. The expanded corpus passes, including ABI-v9 controls. Test-ledger/doc refinements are still uncommitted.
+Latest pushed checkpoint before this working slice is `c52db1e844247bb21020f769a2e4b0950765ef23`. The scoped Map follow-up audit closed the effect-understatement P1 and encoder/decoder bound P2 with GO. The expanded source-free corpus covers open Map key/value types and a division key, poisons both legacy bodies, checks both projection traces, and erases sealed `may_panic` plus legacy `local_mutation`/`may_panic` flags for each callable.
+
+## R1 common producer migration — working tree
+
+Moved the common checker-occurrence producer ahead of direct-return and arithmetic producers. Both shape-specific producers now skip callables once the common checked summary/body records exist. This migrates only bodies eligible for the dependency-free common path; nominal/dependency bodies still use their existing producers or fail closed. The source-free corpus and focused checked-body importer suites pass on `build/compiler/moss-dev`.
+
+Validation correction: the repository-root `./moss` is a prebuilt binary from before this working source. `make --jobs="$(nproc)" moss` builds `build/compiler/moss-dev`; acceptance runs for this slice explicitly pass that path. The first default-binary run is not counted as implementation validation. That source-built run exposed stale nested-call expectations in the checked-body and G3 scripts: checker retention now supplies canonical checked IR and the exact helper dependency. Those assertions were updated. Multi-statement generic bodies remain unavailable.
+
+Passing source-built checks: compiler build; full M2b2 source-free corpus (including hostile mutation and ABI-v9 controls); checked-body IR and G3; H3 direct records; H3 arithmetic decoder; generic collection facts; statement/call occurrence roles; D2 codec and pinned pre-D2 reader rejection; generic arithmetic requirements; agent-feedback validator; JSONL parsing; `git diff --check`. The standalone checked-body C++ suite passed before its wrapper assertion was updated; the full wrapper now passes.
+
+R1 remains open pending exhaustive occurrence/control-flow closure, additional lowerer migrations, fail-closed proof across the accepted Moss surface, and independent acceptance on a frozen SHA. The 24 valid-but-unavailable v10 profiles, two ABI-v9 raise/recover failures, and `packages/time` P2 remain visible. Do not start R2 before R1 acceptance.
 
 R1 remains open: exhaustive occurrence/control-flow coverage and generalized lowerer parity are still required. The 24 unavailable ABI-v10 profiles, two ABI-v9 raise/recover consumer failures, and `packages/time` R4 P2 remain visible. Do not enter R2 before independent full R1 acceptance.
 

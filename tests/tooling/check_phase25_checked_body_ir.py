@@ -116,8 +116,13 @@ fn main():
     assert direct_call["semantic_dependencies"] == [
         "callable-v1:module-v1:__standalone__@0.0.0::main:fn:helper"
     ], direct_call
-    assert not nested_call["checked_body_ir_available"], nested_call
-    assert nested_call["body_semantic_hash"] is None, nested_call
-    assert nested_call["body_semantic_status"] == "unsupported_checked_body_form", nested_call
+    assert nested_call["checked_body_ir_available"], nested_call
+    assert re.fullmatch(
+        r"body-semantic-v1:sha256:[0-9a-f]{64}",
+        nested_call["body_semantic_hash"]), nested_call
+    assert nested_call["body_semantic_status"] == "available_checked_body_v1", nested_call
+    assert nested_call["semantic_dependencies"] == [
+        "callable-v1:module-v1:__standalone__@0.0.0::main:fn:helper"
+    ], nested_call
 
 print("checked body IR hash: literal, nominal field, vector order, path, and fail-closed cases passed")

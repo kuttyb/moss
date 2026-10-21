@@ -66,10 +66,13 @@ fn main():
 """
 typed_nested = inspect_typed_semantic(nested_call)
 s_nested = next(s for s in typed_nested["open_summaries"] if "outer_call" in s["callable_id"])
-assert not s_nested["checked_body_ir_available"], s_nested
-assert s_nested["body_semantic_hash"] is None, s_nested
-assert s_nested["body_semantic_status"] == "unsupported_checked_body_form", s_nested
-print("PASS G3 nested call in generic body marks checked body IR unavailable fail-closed", flush=True)
+assert s_nested["checked_body_ir_available"], s_nested
+assert re.fullmatch(r"body-semantic-v1:sha256:[0-9a-f]{64}",
+                    s_nested["body_semantic_hash"]), s_nested
+assert s_nested["semantic_dependencies"] == [
+    "callable-v1:module-v1:__standalone__@0.0.0::main:fn:helper"
+], s_nested
+print("PASS G3 nested call retains checked body IR and explicit dependency", flush=True)
 
 # 3. Supported single return form
 single_return = """
@@ -137,7 +140,7 @@ print("PASS G3 three-engine specialization parity (interp, trace, native) across
 matrix = [
     ("single_return_arithmetic", True, True, "available_checked_body_v1"),
     ("multi_statement_generic", False, False, "unsupported_checked_body_form"),
-    ("nested_call_generic", False, False, "unsupported_checked_body_form"),
+    ("nested_call_generic", True, True, "available_checked_body_v1"),
 ]
 for form, expected_avail, expected_hash, expected_status in matrix:
     if expected_avail:

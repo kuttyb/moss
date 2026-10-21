@@ -46088,6 +46088,23 @@ static void append_abi_v10_checked_callable_records(
       std::make_move_iterator(provenance_records.end()));
 }
 
+static bool abi_v10_checked_callable_records_present(
+    const abi_v10::Interface& value, const string& callable_id) {
+  auto contains = [&](const vector<abi_v10::Record>& records) {
+    return std::any_of(records.begin(), records.end(), [&](const auto& record) {
+      if (record.id == "checked-body-v1:" + callable_id) return true;
+      if (record.payload.empty() ||
+          (static_cast<unsigned char>(record.payload.front()) != 1 &&
+           static_cast<unsigned char>(record.payload.front()) != 2) ||
+          !abi_v10::hex_hash(record.id))
+        return false;
+      return abi_v10::read_summary(record.payload).callable_id == callable_id;
+    });
+  };
+  return contains(value.semantic_contract) ||
+      contains(value.private_semantic_dependencies);
+}
+
 // Emit complete checker-lowered bodies through the common callable record
 // builder. Keep this first slice dependency-free and effect-pure; specialized
 // producers below remain parity checks for their already admitted shapes.
@@ -46112,19 +46129,7 @@ static void append_abi_v10_occurrence_records(
         !facts.semantic_dependencies.empty() ||
         !facts.member_requirements.empty())
       continue;
-    auto already_emitted = [&](const vector<abi_v10::Record>& records) {
-      return std::any_of(records.begin(), records.end(), [&](const auto& record) {
-        if (record.id == "checked-body-v1:" + facts.callable_id) return true;
-        if (record.payload.empty() ||
-            (static_cast<unsigned char>(record.payload.front()) != 1 &&
-             static_cast<unsigned char>(record.payload.front()) != 2) ||
-            !abi_v10::hex_hash(record.id)) return false;
-        return abi_v10::read_summary(record.payload).callable_id ==
-            facts.callable_id;
-      });
-    };
-    if (already_emitted(value.semantic_contract) ||
-        already_emitted(value.private_semantic_dependencies))
+    if (abi_v10_checked_callable_records_present(value, facts.callable_id))
       continue;
 
     abi_v10::Summary summary;
@@ -46339,6 +46344,9 @@ static void append_abi_v10_direct_return_records(
         !function.checked_body_ir_v1_hash || !program.type_context ||
         !function.open_summary || !function.open_summary->scheme_complete)
       continue;
+    if (abi_v10_checked_callable_records_present(
+            value, function.semantic_callable_id))
+      continue;
     vector<checked_ir::Stmt> checked_statements;
     try {
       checked_statements = checked_ir::decode_checked_body_v1(
@@ -46479,6 +46487,9 @@ static void append_abi_v10_arithmetic_records(
         !function.open_summary || !function.open_summary->scheme_complete ||
         !function.open_summary->member_requirements.empty() ||
         !abi_v10_effects_pure(function.open_summary->observable_effects))
+      continue;
+    if (abi_v10_checked_callable_records_present(
+            value, function.semantic_callable_id))
       continue;
     auto checked = checked_arithmetic_body(function);
     if (!checked) continue;
@@ -47574,12 +47585,12 @@ static vector<std::filesystem::path> write_module_interfaces(
     value.binary_contract =
         abi_v10_declaration_records(binary_contract.str());
     value.semantic_contract = abi_v10_declaration_records(contents[module].str());
+    append_abi_v10_occurrence_records(value, program, module);
     append_abi_v10_direct_checked_records(value, program, module);
     append_abi_v10_direct_return_records(value, program, module);
     append_abi_v10_arithmetic_records(value, program, module);
     append_abi_v10_collection_loop_records(value, program, module);
     append_abi_v10_private_chain_records(value, program, module);
-    append_abi_v10_occurrence_records(value, program, module);
     append_abi_v10_generic_callable_provenance(value, program, module);
     // Drop legacy executable statements only when this interface contains a
     // matching emitted v2 arithmetic summary and checked-body record. This
