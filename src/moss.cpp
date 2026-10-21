@@ -27366,6 +27366,24 @@ class Checker {
               !operation.result || !linked.checked_type ||
               !same_resolved_term(linked.checked_type, operation.result))
             checked_types.expression_occurrence_ledger_complete = false;
+          const auto resolved_operand = checked_types.solver.resolve(
+              operation.receiver);
+          if (resolved_operand && resolved_operand->is_closed()) {
+            const string type = canonical_type_name(resolved_operand);
+            const bool valid = expected == "unary-"
+                ? (type == "int" || type == "float")
+                : expected == "not" ? type == "bool" : type == "int";
+            if (!valid) {
+              checked_types.expression_occurrence_ledger_complete = false;
+              const string message = expected == "unary-"
+                  ? "unary '-' requires an Int or Float operand, found '" +
+                      type + "'"
+                  : expected == "not"
+                      ? "not operand must have type 'Bool'"
+                      : "bitwise operator '~' requires an Int operand";
+              err(operation.line, message, "TYPE_MISMATCH");
+            }
+          }
         } else {
           const auto left = std::find_if(
               checked_types.expression_occurrences.begin(),
@@ -27764,6 +27782,9 @@ export fn branch_compute(value, flag: Bool):
     std::istringstream input(R"moss(fn pin_int(left: Int, right: Int) -> Int:
   return left
 
+fn pin_float(value: Float) -> Float:
+  return value
+
 export fn compare_then_pin(left, right):
   same = left == right
   return pin_int(left, right)
@@ -27771,6 +27792,10 @@ export fn compare_then_pin(left, right):
 export fn negate_then_pin(value):
   let negated = -value
   return pin_int(value, value)
+
+export fn negate_open(value):
+  let negated = -value
+  return negated
 )moss");
     Program program = Parser(
         lex_lines(input, "<deferred-operator-occurrence-test>")).parse();
@@ -27834,7 +27859,40 @@ export fn negate_then_pin(value):
         }) != 1)
       return false;
     const auto unary_result = unary_state.solver.resolve(unary->checked_type);
-    return unary_result && unary_result->is_closed();
+    if (!unary_result || !unary_result->is_closed()) return false;
+    const auto negate_open = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+      return candidate.name == "negate_open";
+    });
+    if (negate_open == program.functions.end() || !negate_open->open_summary)
+      return false;
+    return std::count_if(negate_open->open_summary->requirements.begin(),
+        negate_open->open_summary->requirements.end(),
+        [](const moss::Requirement& requirement) {
+      return requirement.target_id == "operator:unary-" &&
+          requirement.arguments.empty() &&
+          requirement.argument_access.empty() && requirement.result;
+    }) == 1;
+  }
+
+  static bool unit_test_deferred_unary_invalid_type_rejected() {
+    std::istringstream input(R"moss(fn pin_float(value: Float) -> Float:
+  return value
+
+export fn reject_float_tilde(value):
+  let result = ~value
+  return pin_float(value)
+)moss");
+    Program program = Parser(
+        lex_lines(input, "<deferred-unary-invalid-type-test>")).parse();
+    Checker checker(program);
+    try {
+      checker.run();
+    } catch (const CompileError& error) {
+      return error.code == "TYPE_MISMATCH" &&
+          string(error.what()).find("requires an Int operand") != string::npos;
+    }
+    return false;
   }
 
   static bool unit_test_statement_call_occurrence_roles() {
