@@ -6509,6 +6509,46 @@ class Checker {
     return method_constraint_count == 1;
   }
 
+  bool callable_operation_identity_matches(
+      const Function& function,
+      const BodyTypeState::ExpressionOccurrence& occurrence) const {
+    if (occurrence.kind != BodyTypeState::ExpressionOccurrence::Kind::Call ||
+        !starts_with(occurrence.semantic_target_id, "parameter:"))
+      return false;
+    const string ordinal_text = occurrence.semantic_target_id.substr(10);
+    if (ordinal_text.empty() ||
+        !std::all_of(ordinal_text.begin(), ordinal_text.end(),
+            [](unsigned char character) { return std::isdigit(character); }))
+      return false;
+    std::size_t consumed = 0;
+    std::size_t ordinal = 0;
+    try {
+      ordinal = std::stoul(ordinal_text, &consumed, 10);
+    } catch (const std::exception&) {
+      return false;
+    }
+    if (consumed != ordinal_text.size() ||
+        std::to_string(ordinal) != ordinal_text ||
+        ordinal >= function.params.size())
+      return false;
+    const string& parameter = function.params[ordinal].name;
+    std::size_t callable_constraint_count = 0;
+    for (const auto& constraint : occurrence.linked_constraints) {
+      if (constraint.kind != ConstraintKind::Callable) continue;
+      ++callable_constraint_count;
+      if (constraint.subject != parameter ||
+          constraint.detail != "static callable" ||
+          constraint.arity != occurrence.source_operands.size() ||
+          constraint.arguments.size() != occurrence.source_operands.size())
+        return false;
+      for (std::size_t index = 0; index < constraint.arguments.size(); ++index)
+        if (trim(constraint.arguments[index]) !=
+            trim(occurrence.source_operands[index]))
+          return false;
+    }
+    return callable_constraint_count == 1;
+  }
+
   bool retain_checked_occurrence_ir(Function& function) {
     if (!function.open_summary || !function.open_summary->scheme_complete ||
         function.body.empty() ||
@@ -27622,6 +27662,12 @@ class Checker {
                 return c.kind == ConstraintKind::Callable;
               }))
         checked_types.expression_occurrence_ledger_complete = false;
+      if (parameter_call &&
+          occurrence.kind == BodyTypeState::ExpressionOccurrence::Kind::Call &&
+          (!current_function || !callable_operation_identity_matches(
+              *current_function, occurrence))) {
+        checked_types.expression_occurrence_ledger_complete = false;
+      }
       if (parameter_method && std::none_of(
               occurrence.linked_constraints.begin(),
               occurrence.linked_constraints.end(), [](const Constraint& c) {
@@ -28838,6 +28884,9 @@ export fn mixed(first, second):
     std::istringstream input(R"moss(fn identity(value):
   return value
 
+export fn invoke_callback(callback, value):
+  return callback(value)
+
 export fn relay(value):
   identity(value)
   return value
@@ -29046,6 +29095,79 @@ fn inspect_sample(sample: Sample) -> Int:
       return state == checker.checked_body_states_.end() || !state->second
           ? nullptr : state->second.get();
     };
+    const auto callback_function = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+      return candidate.name == "invoke_callback";
+    });
+    if (callback_function == program.functions.end()) return false;
+    const auto callback_state_entry = checker.checked_body_states_.find(
+        &callback_function->body);
+    if (callback_state_entry == checker.checked_body_states_.end() ||
+        !callback_state_entry->second)
+      return false;
+    const auto& callback_state = *callback_state_entry->second;
+    const auto callback_occurrence = std::find_if(
+        callback_state.expression_occurrences.begin(),
+        callback_state.expression_occurrences.end(), [](const auto& occurrence) {
+      return occurrence.kind ==
+              BodyTypeState::ExpressionOccurrence::Kind::Call &&
+          occurrence.semantic_target_id == "parameter:0";
+    });
+    if (callback_occurrence == callback_state.expression_occurrences.end() ||
+        !checker.callable_operation_identity_matches(
+            *callback_function, *callback_occurrence))
+      return false;
+    auto noncanonical_callback_target = *callback_occurrence;
+    noncanonical_callback_target.semantic_target_id = "parameter:00";
+    if (checker.callable_operation_identity_matches(
+            *callback_function, noncanonical_callback_target))
+      return false;
+    auto reject_mutated_callable_constraint = [&](auto mutate) {
+      auto occurrence = *callback_occurrence;
+      auto constraint = std::find_if(occurrence.linked_constraints.begin(),
+          occurrence.linked_constraints.end(), [](const Constraint& value) {
+        return value.kind == ConstraintKind::Callable;
+      });
+      if (constraint == occurrence.linked_constraints.end()) return false;
+      mutate(*constraint);
+      return !checker.callable_operation_identity_matches(
+          *callback_function, occurrence);
+    };
+    auto missing_callable_constraint = *callback_occurrence;
+    missing_callable_constraint.linked_constraints.erase(
+        std::remove_if(missing_callable_constraint.linked_constraints.begin(),
+            missing_callable_constraint.linked_constraints.end(),
+            [](const Constraint& value) {
+          return value.kind == ConstraintKind::Callable;
+        }), missing_callable_constraint.linked_constraints.end());
+    auto duplicate_callable_constraint = *callback_occurrence;
+    const auto callable_constraint = std::find_if(
+        duplicate_callable_constraint.linked_constraints.begin(),
+        duplicate_callable_constraint.linked_constraints.end(),
+        [](const Constraint& value) {
+      return value.kind == ConstraintKind::Callable;
+    });
+    if (callable_constraint == duplicate_callable_constraint.linked_constraints.end())
+      return false;
+    duplicate_callable_constraint.linked_constraints.push_back(
+        *callable_constraint);
+    if (checker.callable_operation_identity_matches(
+            *callback_function, missing_callable_constraint) ||
+        checker.callable_operation_identity_matches(
+            *callback_function, duplicate_callable_constraint) ||
+        !reject_mutated_callable_constraint([](Constraint& value) {
+          value.subject = "value";
+        }) ||
+        !reject_mutated_callable_constraint([](Constraint& value) {
+          value.detail = "functional callable";
+        }) ||
+        !reject_mutated_callable_constraint([](Constraint& value) {
+          ++value.arity;
+        }) ||
+        !reject_mutated_callable_constraint([](Constraint& value) {
+          value.arguments.front() = "callback";
+        }))
+      return false;
     const auto* recovery_state = state_for("inspect_failure");
     if (!recovery_state) return false;
     auto try_node = std::find_if(recovery_state->statement_occurrences.begin(),
