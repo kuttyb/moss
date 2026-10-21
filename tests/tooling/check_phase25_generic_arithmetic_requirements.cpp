@@ -367,12 +367,25 @@ export fn choose(value, flag: Bool):
     return value
   else:
     return value
+
+export fn branch_compute(value, flag: Bool):
+  if flag:
+    let item = value * 2
+  else:
+    let item = value * 3
+  return item + 1
 )moss");
   const Function& select = find_function(joined_binding, "select");
   // The checker retains one exact join binding at the control-flow merge.
   // Summary completeness must include that binding and all branch occurrences.
   assert(select.open_summary && select.open_summary->complete);
   assert(select.open_summary->occurrence_ledger_complete);
+
+  const Function& branch_compute = find_function(joined_binding,
+                                                  "branch_compute");
+  assert(branch_compute.open_summary);
+  assert(!branch_compute.open_summary->complete);
+  assert(!branch_compute.open_summary->occurrence_ledger_complete);
 
   const Function& choose = find_function(joined_binding, "choose");
   assert(choose.open_summary && choose.open_summary->complete);

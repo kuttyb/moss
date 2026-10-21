@@ -5024,15 +5024,60 @@ class Checker {
               if (!owns_binding) continue;
               const auto initializer = state.expression_root_slots.find(
                   {statement.id, "initializer"});
-              if (initializer == state.expression_root_slots.end()) continue;
-              const auto dependencies =
-                  collect_operations_in_subtree(initializer->second);
-              parents.insert(dependencies.begin(), dependencies.end());
+              if (initializer != state.expression_root_slots.end()) {
+                const auto dependencies =
+                    collect_operations_in_subtree(initializer->second);
+                parents.insert(dependencies.begin(), dependencies.end());
+                continue;
+              }
+              const auto joined_binding = std::find_if(
+                  statement.bindings.begin(), statement.bindings.end(),
+                  [&](const auto& binding) {
+                return binding.identity == expression.resolved_binding_id;
+              });
+              if (joined_binding == statement.bindings.end() ||
+                  joined_binding->predecessor_binding_ids.empty()) {
+                operations_complete = false;
+                state.expression_occurrence_ledger_complete = false;
+                break;
+              }
+              for (const auto& predecessor :
+                   joined_binding->predecessor_binding_ids) {
+                const BodyTypeState::StatementOccurrence* predecessor_node =
+                    nullptr;
+                std::size_t predecessor_matches = 0;
+                for (const auto& candidate : state.statement_occurrences)
+                  if (std::any_of(candidate.bindings.begin(),
+                          candidate.bindings.end(), [&](const auto& binding) {
+                        return binding.identity == predecessor;
+                      })) {
+                    predecessor_node = &candidate;
+                    ++predecessor_matches;
+                  }
+                if (predecessor_matches != 1 || !predecessor_node) {
+                  operations_complete = false;
+                  state.expression_occurrence_ledger_complete = false;
+                  break;
+                }
+                const auto predecessor_initializer =
+                    state.expression_root_slots.find(
+                        {predecessor_node->id, "initializer"});
+                if (predecessor_initializer ==
+                    state.expression_root_slots.end()) {
+                  operations_complete = false;
+                  state.expression_occurrence_ledger_complete = false;
+                  break;
+                }
+                const auto dependencies = collect_operations_in_subtree(
+                    predecessor_initializer->second);
+                parents.insert(dependencies.begin(), dependencies.end());
+              }
             }
           }
           parents.erase(occurrence_id);
           if (parents.size() > 1) {
             operations_complete = false;
+            state.expression_occurrence_ledger_complete = false;
             break;
           }
           if (!parents.empty()) {
@@ -46288,7 +46333,7 @@ static void append_abi_v10_collection_loop_records(
     body.semantic_hash = hash;
     body.checked_ir_bytes = bytes;
     try {
-      const auto decoded = checked_ir::decode_collection_loop_checked_body_v1(
+      const auto decoded = checked_ir::decode_checked_body_v1(
           bytes, *program.type_context, facts.parameter_types, facts.result_type,
           hash);
       if (checked_ir::encode_checked_body_v1(decoded) != bytes ||
@@ -47211,7 +47256,7 @@ static vector<std::filesystem::path> write_module_interfaces(
         if (!parameter_type || !result_type) continue;
         vector<checked_ir::Stmt> checked_statements;
         try {
-          checked_statements = checked_ir::decode_h3_checked_body_v1(
+          checked_statements = checked_ir::decode_checked_body_v1(
               body.checked_ir_bytes, *program.type_context,
               {parameter_type}, result_type, body.semantic_hash);
         } catch (const std::invalid_argument&) {
