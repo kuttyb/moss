@@ -24935,10 +24935,21 @@ class Checker {
         if (!receiver_term) receiver_term = inferred_expr_term(receiver, env);
         auto resolved_receiver = receiver_term
             ? current_body_types_->solver.resolve(receiver_term) : nullptr;
-        if (resolved_receiver && !resolved_receiver->is_closed())
-          current_body_types_->attach_open_operation({
-              "method:" + handler, receiver_term, {}, nullptr, line,
-              UINT32_MAX, 0, {}, UINT32_MAX, {}, {}});
+        if (resolved_receiver && !resolved_receiver->is_closed()) {
+          moss::OpenCallableSummaryFacts::OperationFact operation;
+          operation.operation_id = "method:" + handler;
+          operation.receiver = receiver_term;
+          operation.receiver_operand_ordinal = 0;
+          operation.line = line;
+          for (std::size_t index = 0; index < args.size(); ++index) {
+            auto argument = current_body_types_->known_expression(args[index]);
+            if (!argument) argument = inferred_expr_term(args[index], env);
+            operation.arguments.push_back(argument);
+            operation.argument_operand_ordinals.push_back(
+                static_cast<std::uint32_t>(index + 1));
+          }
+          current_body_types_->attach_open_operation(std::move(operation));
+        }
       }
       // The member resolver below owns dispatch; capture its receiver once
       // here so every dispatch family has the same ordered child shape.
@@ -27875,9 +27886,48 @@ class Checker {
             !same_resolved_term(operation.result, linked.checked_type))
           checked_types.expression_occurrence_ledger_complete = false;
       } else if (starts_with(operation.operation_id, "method:")) {
-        if (linked.kind !=
-                BodyTypeState::ExpressionOccurrence::Kind::MemberCall ||
-            linked.operation_id != operation.operation_id)
+        bool valid =
+            linked.kind == BodyTypeState::ExpressionOccurrence::Kind::MemberCall &&
+            linked.operation_id == operation.operation_id &&
+            linked.semantic_target_id.size() != 0 &&
+            operation.receiver_operand_ordinal == 0 &&
+            operation.argument_operand_ordinals.size() ==
+                operation.arguments.size() &&
+            operation.arguments.size() + 1 == linked.source_operands.size() &&
+            linked.non_expression_operand_ordinals.empty();
+        auto exact_child = [&](const string& role)
+            -> const BodyTypeState::ExpressionOccurrence* {
+          const BodyTypeState::ExpressionOccurrence* found = nullptr;
+          for (const auto& candidate : checked_types.expression_occurrences) {
+            if (candidate.parent_id != occurrence ||
+                candidate.child_role != role) continue;
+            if (found) return nullptr;
+            found = &candidate;
+          }
+          return found;
+        };
+        const auto receiver = valid ? exact_child("receiver") : nullptr;
+        valid = valid && receiver &&
+            same_resolved_term(receiver->checked_type, operation.receiver);
+        std::set<std::uint32_t> operand_ordinals;
+        valid = valid && operand_ordinals.insert(0).second;
+        for (std::size_t index = 0; valid &&
+             index < operation.arguments.size(); ++index) {
+          const auto ordinal = operation.argument_operand_ordinals[index];
+          const auto* argument = ordinal == index + 1
+              ? exact_child("argument:" + std::to_string(index)) : nullptr;
+          valid = argument &&
+              operand_ordinals.insert(ordinal).second &&
+              same_resolved_term(argument->checked_type,
+                                 operation.arguments[index]);
+        }
+        if (valid && linked.checked_type &&
+            operand_ordinals.size() == linked.source_operands.size())
+          operation.result = linked.checked_type;
+        else
+          valid = false;
+        if (!valid || !operation.result || !linked.checked_type ||
+            !same_resolved_term(operation.result, linked.checked_type))
           checked_types.expression_occurrence_ledger_complete = false;
       } else if (starts_with(operation.operation_id, "functional:")) {
         // Functional operations attach to their pipeline occurrence while the
@@ -28534,6 +28584,9 @@ export fn relay(value):
 export fn relay_return(value):
   return identity(value)
 
+export fn relay_method(item, other):
+  return item.score(other)
+
 export fn sort_values(values: Vector[Int]) -> Int:
   sort(values, by: identity)
   return values[0]
@@ -28806,6 +28859,63 @@ fn inspect_sample(sample: Sample) -> Int:
             *call_state.solver.resolve(call_argument->checked_type)) ||
         !call_result || !checked_call_result ||
         !call_result->structurally_equal(*checked_call_result))
+      return false;
+    const auto relay_method_function = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+      return candidate.name == "relay_method";
+    });
+    if (relay_method_function == program.functions.end()) return false;
+    const auto relay_method_state = checker.checked_body_states_.find(
+        &relay_method_function->body);
+    if (relay_method_state == checker.checked_body_states_.end() ||
+        !relay_method_state->second ||
+        !relay_method_state->second->expression_occurrence_ledger_complete)
+      return false;
+    auto& method_state = *relay_method_state->second;
+    const auto method_fact = std::find_if(method_state.open_operations.begin(),
+        method_state.open_operations.end(), [](const auto& operation) {
+      return operation.operation_id == "method:score";
+    });
+    if (method_fact == method_state.open_operations.end() ||
+        method_fact->receiver_operand_ordinal != 0 ||
+        method_fact->argument_operand_ordinals != vector<std::uint32_t>{1} ||
+        method_fact->arguments.size() != 1 || !method_fact->result ||
+        method_fact->expression_occurrence_id >=
+            method_state.expression_occurrences.size())
+      return false;
+    const auto& method_occurrence = method_state.expression_occurrences[
+        method_fact->expression_occurrence_id];
+    const auto method_receiver = std::find_if(
+        method_state.expression_occurrences.begin(),
+        method_state.expression_occurrences.end(), [&](const auto& candidate) {
+      return candidate.parent_id == method_occurrence.id &&
+          candidate.child_role == "receiver";
+    });
+    const auto method_argument = std::find_if(
+        method_state.expression_occurrences.begin(),
+        method_state.expression_occurrences.end(), [&](const auto& candidate) {
+      return candidate.parent_id == method_occurrence.id &&
+          candidate.child_role == "argument:0";
+    });
+    const auto method_result = method_state.solver.resolve(method_fact->result);
+    const auto checked_method_result = method_occurrence.checked_type
+        ? method_state.solver.resolve(method_occurrence.checked_type) : nullptr;
+    if (method_occurrence.kind !=
+            BodyTypeState::ExpressionOccurrence::Kind::MemberCall ||
+        method_occurrence.semantic_target_id !=
+            "parameter:0.method:score" ||
+        method_receiver == method_state.expression_occurrences.end() ||
+        method_argument == method_state.expression_occurrences.end() ||
+        !method_state.solver.resolve(method_receiver->checked_type) ||
+        !method_state.solver.resolve(method_fact->receiver) ||
+        !method_state.solver.resolve(method_receiver->checked_type)->structurally_equal(
+            *method_state.solver.resolve(method_fact->receiver)) ||
+        !method_state.solver.resolve(method_argument->checked_type) ||
+        !method_state.solver.resolve(method_fact->arguments.front()) ||
+        !method_state.solver.resolve(method_argument->checked_type)->structurally_equal(
+            *method_state.solver.resolve(method_fact->arguments.front())) ||
+        !method_result || !checked_method_result ||
+        !method_result->structurally_equal(*checked_method_result))
       return false;
     const auto synthetic_return = std::find_if(
         expression_identity_state->statement_occurrences.begin(),
