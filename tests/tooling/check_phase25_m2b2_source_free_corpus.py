@@ -69,6 +69,11 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
              "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
              "tests/tooling/mutate_phase25_parameter_return_artifact.cpp", "-o",
              str(parameter_mutator)], cwd=ROOT, env=os.environ.copy())
+    ifjoin_injector = scratch / "inject_ifjoin_artifact"
+    command(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
+             "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
+             "tests/tooling/inject_phase25_ifjoin_artifact.cpp", "-o",
+             str(ifjoin_injector)], cwd=ROOT, env=os.environ.copy())
 
     base_env = os.environ.copy()
     base_env.update(MOSS_STAGED_ABI="v10", MOSS=str(MOSS), TMPDIR=str(TMP))
@@ -94,6 +99,10 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                     case["id"], "provider did not emit native_abi 10")
                 assert b"export fn fresh " in interface.read_bytes(), (
                     case["id"], "provider artifact does not contain fresh")
+                if case["id"] == "branch-join-generic-arithmetic-unavailable":
+                    command([str(ifjoin_injector), str(interface),
+                             str(artifacts / "libService.rlib")], cwd=ROOT,
+                            env=os.environ.copy())
                 shutil.rmtree(provider / "src")
                 assert not (provider / "src").exists(), (
                     case["id"], "provider source deletion failed")
@@ -105,6 +114,8 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                     "MOSS_MODULE_PATH": str(artifacts),
                     "MARGO_HOME": str(case_root / "margo-consumer"),
                 }
+                if case["id"] == "branch-join-generic-arithmetic-unavailable":
+                    env["MOSS_PHASE25_CHECKED_BODY_TRACE"] = "1"
                 rejected = subprocess.run(
                     [str(MARGO), "build"], cwd=consumer, env=env,
                     capture_output=True, text=True, timeout=240)
@@ -112,6 +123,13 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                 assert (rejected.returncode != 0 and
                         case["provider_expected_error"] in reject_output), (
                             case["id"], case["provider_expected_error"], reject_output)
+                if case["id"] == "branch-join-generic-arithmetic-unavailable":
+                    assert "lacks requirement lineage validation" in reject_output, (
+                        case["id"], "crafted IfJoin did not hit the importer guard",
+                        reject_output)
+                    assert "MOSS_CHECKED_BODY_PROJECTED" not in reject_output, (
+                        case["id"], "IfJoin was projected before rejection",
+                        reject_output)
                 if "abi_v9_expected_output" in case:
                     v9_env = base_env.copy()
                     v9_env.pop("MOSS_STAGED_ABI", None)
