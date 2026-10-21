@@ -66,6 +66,17 @@
       "evidence": "M2b.3c acceptance removes provider source, poisons both fresh and helper generic_stmt bodies, requires checked-body projection traces for both callables, and executes Int and String specializations."
     },
     {
+      "id": "returned-callback",
+      "priority": "P1-essential",
+      "category": "generic callable parameter invocation",
+      "provider": "module Service\n\nexport fn fresh(callback, value):\n  return callback(value)\n",
+      "consumer": "module Main\nimport Service\n\nfn identity(value):\n  return value\n\nfn main():\n  echo Service.fresh(identity, 31)\n  echo Service.fresh(identity, \"moss\")\n",
+      "provider_expected_error": "SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED",
+      "abi_v9_expected_output": "31\nmoss\n",
+      "checked_body_status": "checked-body unavailable; callback invocation result occurrence is linked, but unresolved higher-order callback effects prevent ABI-v10 admission",
+      "evidence": "The provider rejects this valid generic callback body because its inferred callback effects are unresolved in the current ABI-v10 summary. The compiler occurrence test verifies the call result is linked to its checked operation and summary Callable result; ABI-v9 source-free execution remains the compatibility control."
+    },
+    {
       "id": "collection-loop-equality-index",
       "priority": "P1-sdk-essential",
       "category": "collection method and operations",

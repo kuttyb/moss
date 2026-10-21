@@ -6630,6 +6630,11 @@ class Checker {
         }
       if (matching_constraints != 1)
         state.expression_occurrence_ledger_complete = false;
+      for (auto& operation : state.open_operations)
+        if (operation.expression_occurrence_id == expression.id &&
+            operation.operation_id == "call:" + callee &&
+            !operation.result)
+          operation.result = expression.checked_type;
     }
   }
 
@@ -8115,6 +8120,11 @@ class Checker {
       } else if (starts_with(result, "_specialized_result:")) {
         if (returned_callable)
           summary.result_type = bound();
+      } else if (starts_with(result, "_functional_callable_result:")) {
+        if (returned_callable)
+          summary.result_type = bound();
+        else
+          complete = false;
       } else if (!contains_internal_placeholder(result)) {
         summary.result_type = type_term(result);
       }
@@ -25852,6 +25862,8 @@ class Checker {
                      binding != env.end() && open_generic(binding->second)) {
             current_body_types_->retain_expression_target(
                 occurrence, "binding:pending:" + callee);
+            current_body_types_->retain_expression_type(
+                occurrence, current_body_types_->solver.fresh(0));
           } else {
             current_body_types_->retain_expression_target(
                 occurrence, "builtin:" + callee);
@@ -29134,6 +29146,10 @@ fn inspect_sample(sample: Sample) -> Int:
         !callback_state_entry->second)
       return false;
     const auto& callback_state = *callback_state_entry->second;
+    if (!callback_state.expression_occurrence_ledger_complete ||
+        !callback_function->open_summary ||
+        !callback_function->open_summary->scheme_complete)
+      return false;
     const auto callback_occurrence = std::find_if(
         callback_state.expression_occurrences.begin(),
         callback_state.expression_occurrences.end(), [](const auto& occurrence) {
@@ -29144,6 +29160,31 @@ fn inspect_sample(sample: Sample) -> Int:
     if (callback_occurrence == callback_state.expression_occurrences.end() ||
         !checker.callable_operation_identity_matches(
             *callback_function, *callback_occurrence))
+      return false;
+    const auto callback_operation = std::find_if(
+        callback_state.open_operations.begin(),
+        callback_state.open_operations.end(), [&](const auto& operation) {
+      return operation.expression_occurrence_id == callback_occurrence->id &&
+          operation.operation_id == "call:callback";
+    });
+    if (!callback_occurrence->checked_type ||
+        callback_operation == callback_state.open_operations.end() ||
+        !callback_operation->result ||
+        !callback_occurrence->checked_type->structurally_equal(
+            *callback_operation->result) ||
+        !callback_function->open_summary)
+      return false;
+    const auto callback_requirement = std::find_if(
+        callback_function->open_summary->requirements.begin(),
+        callback_function->open_summary->requirements.end(),
+        [](const auto& requirement) {
+      return requirement.kind == moss::RequirementKind::Callable;
+    });
+    if (!callback_function->open_summary->result_type ||
+        callback_requirement == callback_function->open_summary->requirements.end() ||
+        !callback_requirement->result ||
+        !(*callback_requirement->result)->structurally_equal(
+            *callback_function->open_summary->result_type))
       return false;
     auto noncanonical_callback_target = *callback_occurrence;
     noncanonical_callback_target.semantic_target_id = "parameter:00";
