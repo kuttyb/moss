@@ -6498,13 +6498,15 @@ class Checker {
             "parameter:" + std::to_string(*parameter_ordinal) +
                 ".method:" + method_name)
       return false;
+    std::size_t method_constraint_count = 0;
     for (const auto& constraint : occurrence.linked_constraints) {
       if (constraint.kind != ConstraintKind::Method) continue;
+      ++method_constraint_count;
       if (constraint.subject != receiver_name ||
           constraint.detail != method_name ||
           constraint.arity != operation.arguments.size()) return false;
     }
-    return true;
+    return method_constraint_count == 1;
   }
 
   bool retain_checked_occurrence_ir(Function& function) {
@@ -29187,6 +29189,30 @@ fn inspect_sample(sample: Sample) -> Int:
         checker.method_operation_identity_matches(
             *relay_method_function, *method_fact,
             forged_method_occurrence))
+      return false;
+    auto missing_method_constraint = method_occurrence;
+    missing_method_constraint.linked_constraints.erase(
+        std::remove_if(missing_method_constraint.linked_constraints.begin(),
+            missing_method_constraint.linked_constraints.end(),
+            [](const Constraint& constraint) {
+          return constraint.kind == ConstraintKind::Method;
+        }), missing_method_constraint.linked_constraints.end());
+    auto duplicate_method_constraint = method_occurrence;
+    const auto method_constraint = std::find_if(
+        duplicate_method_constraint.linked_constraints.begin(),
+        duplicate_method_constraint.linked_constraints.end(),
+        [](const Constraint& constraint) {
+      return constraint.kind == ConstraintKind::Method;
+    });
+    if (method_constraint == duplicate_method_constraint.linked_constraints.end())
+      return false;
+    duplicate_method_constraint.linked_constraints.push_back(*method_constraint);
+    if (checker.method_operation_identity_matches(
+            *relay_method_function, *method_fact,
+            missing_method_constraint) ||
+        checker.method_operation_identity_matches(
+            *relay_method_function, *method_fact,
+            duplicate_method_constraint))
       return false;
     const auto count_function = std::find_if(program.functions.begin(),
         program.functions.end(), [](const Function& candidate) {
