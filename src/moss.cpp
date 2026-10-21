@@ -6398,6 +6398,21 @@ class Checker {
         observed_dependencies.insert(callable.semantic_callable_id);
       }
     }
+    for (const auto& occurrence : body.expression_occurrences) {
+      if (occurrence.kind !=
+              BodyTypeState::ExpressionOccurrence::Kind::PipelineStage ||
+          !starts_with(occurrence.semantic_target_id, "callable-v1:"))
+        continue;
+      const auto* target =
+          find_function_by_callable_id(occurrence.semantic_target_id);
+      if (!target || !expected_dependencies.count(
+                         occurrence.semantic_target_id) ||
+          !starts_with(occurrence.operation_id, "functional:") ||
+          occurrence.source_operands.size() != 1 ||
+          !has_matching_call_edge(occurrence, *target))
+        return false;
+      observed_dependencies.insert(occurrence.semantic_target_id);
+    }
     return observed_dependencies == expected_dependencies;
   }
   std::unordered_map<const vector<Stmt>*, std::shared_ptr<BodyTypeState>>
@@ -29379,6 +29394,9 @@ export fn relay_method(item, other):
 export fn count_values(values):
   return values |> count
 
+export fn pipeline_named(values: Vector[Int]) -> Int:
+  return values |> map(identity) |> count
+
 export fn sort_values(values: Vector[Int]) -> Int:
   sort(values, by: identity)
   return values[0]
@@ -29915,6 +29933,48 @@ fn inspect_sample(sample: Sample) -> Int:
                 << "\n";
       return false;
     }
+    const auto pipeline_function = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+          return candidate.name == "pipeline_named";
+        });
+    if (pipeline_function == program.functions.end()) return false;
+    const auto pipeline_state = checker.checked_body_states_.find(
+        &pipeline_function->body);
+    if (pipeline_state == checker.checked_body_states_.end() ||
+        !pipeline_state->second) return false;
+    auto& pipeline_occurrences =
+        pipeline_state->second->expression_occurrences;
+    auto pipeline_callback = std::find_if(pipeline_occurrences.begin(),
+        pipeline_occurrences.end(), [](const auto& occurrence) {
+          return occurrence.kind ==
+                  BodyTypeState::ExpressionOccurrence::Kind::PipelineStage &&
+              starts_with(occurrence.semantic_target_id, "callable-v1:");
+        });
+    if (pipeline_callback == pipeline_occurrences.end() ||
+        !checker.call_occurrence_dependencies_complete(
+            *pipeline_function, *pipeline_state->second)) {
+      std::cerr << "pipeline callback baseline failed: found="
+                << (pipeline_callback != pipeline_occurrences.end())
+                << " target=" << (pipeline_callback == pipeline_occurrences.end()
+                    ? string("<missing>") : pipeline_callback->semantic_target_id)
+                << " op=" << (pipeline_callback == pipeline_occurrences.end()
+                    ? string("<missing>") : pipeline_callback->operation_id)
+                << " deps=" << checker.call_occurrence_dependencies_complete(
+                    *pipeline_function, *pipeline_state->second) << "\n";
+      return false;
+    }
+    const auto pipeline_callback_id = pipeline_callback->id;
+    const string pipeline_target = pipeline_callback->semantic_target_id;
+    pipeline_occurrences[pipeline_callback_id].semantic_target_id.clear();
+    const bool missing_pipeline_target_rejected =
+        !checker.call_occurrence_dependencies_complete(
+            *pipeline_function, *pipeline_state->second);
+    pipeline_occurrences[pipeline_callback_id].semantic_target_id =
+        pipeline_target;
+    if (!missing_pipeline_target_rejected ||
+        !checker.call_occurrence_dependencies_complete(
+            *pipeline_function, *pipeline_state->second))
+      return false;
     const auto empty_function = std::find_if(program.functions.begin(),
         program.functions.end(), [](const Function& candidate) {
           return candidate.name == "empty_values";
