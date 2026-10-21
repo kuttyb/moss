@@ -6416,7 +6416,8 @@ class Checker {
       const string source_callback =
           trim(occurrence.source_operands[callback_operand]);
       const auto named_callback = functions_.find(source_callback);
-      if (named_callback != functions_.end() &&
+      if (!plain_identifier(source_callback) ||
+          named_callback == functions_.end() ||
           named_callback->second->semantic_callable_id !=
               occurrence.semantic_target_id)
         return false;
@@ -29987,6 +29988,15 @@ fn inspect_sample(sample: Sample) -> Int:
         });
     if (second_pipeline_callback == pipeline_occurrences.end()) return false;
     const auto second_pipeline_callback_id = second_pipeline_callback->id;
+    const string pipeline_callback_source =
+        pipeline_occurrences[pipeline_callback_id].source_operands[0];
+    pipeline_occurrences[pipeline_callback_id].source_operands[0] =
+        "missing_callback";
+    const bool unresolved_pipeline_callback_rejected =
+        !checker.call_occurrence_dependencies_complete(
+            *pipeline_function, *pipeline_state->second);
+    pipeline_occurrences[pipeline_callback_id].source_operands[0] =
+        pipeline_callback_source;
     std::swap(pipeline_occurrences[pipeline_callback_id].semantic_target_id,
               pipeline_occurrences[second_pipeline_callback_id].semantic_target_id);
     const bool swapped_pipeline_targets_rejected =
@@ -30000,7 +30010,8 @@ fn inspect_sample(sample: Sample) -> Int:
             *pipeline_function, *pipeline_state->second);
     pipeline_occurrences[pipeline_callback_id].semantic_target_id =
         pipeline_target;
-    if (!swapped_pipeline_targets_rejected || !missing_pipeline_target_rejected ||
+    if (!unresolved_pipeline_callback_rejected ||
+        !swapped_pipeline_targets_rejected || !missing_pipeline_target_rejected ||
         !checker.call_occurrence_dependencies_complete(
             *pipeline_function, *pipeline_state->second))
       return false;
@@ -30013,6 +30024,33 @@ fn inspect_sample(sample: Sample) -> Int:
         &pipeline_reduce_function->body);
     if (pipeline_reduce_state == checker.checked_body_states_.end() ||
         !pipeline_reduce_state->second ||
+        !checker.call_occurrence_dependencies_complete(
+            *pipeline_reduce_function, *pipeline_reduce_state->second))
+      return false;
+    auto& pipeline_reduce_occurrences =
+        pipeline_reduce_state->second->expression_occurrences;
+    const auto pipeline_reduce_callback = std::find_if(
+        pipeline_reduce_occurrences.begin(), pipeline_reduce_occurrences.end(),
+        [](const auto& occurrence) {
+          return occurrence.kind ==
+                  BodyTypeState::ExpressionOccurrence::Kind::PipelineStage &&
+              occurrence.operation_id == "functional:Reduce" &&
+              starts_with(occurrence.semantic_target_id, "callable-v1:");
+        });
+    if (pipeline_reduce_callback == pipeline_reduce_occurrences.end() ||
+        pipeline_reduce_callback->source_operands.size() != 2) return false;
+    const auto pipeline_reduce_callback_id = pipeline_reduce_callback->id;
+    const string reduce_callback_source =
+        pipeline_reduce_occurrences[pipeline_reduce_callback_id]
+            .source_operands[1];
+    pipeline_reduce_occurrences[pipeline_reduce_callback_id]
+        .source_operands[1] = "missing_callback";
+    const bool unresolved_reduce_callback_rejected =
+        !checker.call_occurrence_dependencies_complete(
+            *pipeline_reduce_function, *pipeline_reduce_state->second);
+    pipeline_reduce_occurrences[pipeline_reduce_callback_id]
+        .source_operands[1] = reduce_callback_source;
+    if (!unresolved_reduce_callback_rejected ||
         !checker.call_occurrence_dependencies_complete(
             *pipeline_reduce_function, *pipeline_reduce_state->second))
       return false;
