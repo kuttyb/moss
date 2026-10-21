@@ -88,7 +88,7 @@
       "id": "multi-statement-arithmetic-alias",
       "priority": "P1-essential",
       "category": "generic arithmetic through local alias",
-      "provider": "module Service\n\nexport fn fresh(value):\n  let doubled = value * 2\n  let alias = doubled\n  return alias + 1\n",
+      "provider": "module Service\n\nexport fn fresh(value):\n  let doubled = value * 2\n  let alias = doubled\n  let chained = alias\n  return chained + 1\n",
       "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(5)\n  echo Service.fresh(2.5)\n",
       "expected_output": "11\n6.0\n",
       "checked_body_status": "checked-body supported; exact local alias TypeRefs and operation dependencies are retained before canonical occurrence lowering",

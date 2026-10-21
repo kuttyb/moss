@@ -9871,8 +9871,11 @@ source-deleted consumer rejects the artifact with a checked-body/summary
 failure, and intact Int/Float alias execution plus ABI-v9 controls still pass.
 Validation on `build/compiler/moss-dev`: compiler build, focused arithmetic
 requirements, full M2b2 source-free/hostile corpus, feedback JSON validation,
-JSONL parsing, and `git diff --check` pass. This closes the hostile
-dependency-edge note and adds a deeper same-scope alias chain from the
-`2ce73996` scoped review, pending exact-SHA adversarial confirmation.
-Shadowing-specific alias coverage remains open. It does not close branch-join
-body representation or complete R1; R2–R5 remain unstarted.
+JSONL parsing, and `git diff --check` pass. The independent review of the
+pushed `de9657b3` slice returned scoped GO with no P0/P1. It noted that the
+three-step chain was not yet used by the source-free row; the corpus provider
+now has the same chain as the checker fixture. The full rerun passes Int/Float
+parity, the hostile dependency-edge mutation, legacy generic-body poisoning,
+and ABI-v9 controls. Shadowing-specific alias coverage remains open.
+Branch-join body representation and complete R1 remain open; R2–R5 remain
+unstarted.
