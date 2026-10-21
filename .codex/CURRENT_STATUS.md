@@ -21,6 +21,10 @@ sort mutation clears one callback while the other retains the same ID and is
 rejected. A named reduce fixture confirms two-operand callback accounting.
 Pipeline stage operations are checked against their retained source stage name
 and operands; unknown stages and Map/Filter operation mismatches reject.
+Operand-free Any/All/Sum/Count stages also require their checked builtin target;
+Count retains either of the two canonical IDs used by the checked pipeline
+shapes. The regression forges Count's target to a named Map callback ID and
+requires rejection.
 Standalone formal-Callable statement calls remain fail-closed because they
 currently retain no Callable constraint for the occurrence; callback
 source-free admission remains disabled.
@@ -46,8 +50,10 @@ working tree and need exact-SHA review. Next: commit/push, ask the existing
 architect for read-only review, and close residual findings before R1
 acceptance. Review of `c60fbe92fe9927d538fdf6a612f4a6c6c53517fc` scoped GO'd the
 P1 occurrence-binding findings but found a P2 operation-mismatch gap. That gap
-is fixed in this working tree with unknown and cross-operation mutations; exact
-re-review is pending. Keep the
+was fixed at `9b2c430ccddf6ded78643dc0c4ce6acf488d741d`. Review there found a
+P2 target-identity gap on operand-free stages; this working tree validates their
+builtin targets and includes a forged-target mutation. Exact re-review is
+pending. Keep the
 24 unavailable ABI-v10 profiles, two ABI-v9 raise/recover failures, and
 `packages/time` failure visible.
 

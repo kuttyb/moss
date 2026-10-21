@@ -6439,11 +6439,25 @@ class Checker {
         if (occurrence.source_operands.size() != 1) return false;
       } else if (occurrence.operation_id == "functional:Any" ||
                  occurrence.operation_id == "functional:All") {
-        if (occurrence.source_operands.empty()) continue;
+        if (occurrence.source_operands.empty()) {
+          if (occurrence.semantic_target_id !=
+              "builtin:functional:" + stage_name) return false;
+          continue;
+        }
         if (occurrence.source_operands.size() != 1) return false;
       } else if (occurrence.operation_id == "functional:Sum" ||
                  occurrence.operation_id == "functional:Count") {
-        if (!occurrence.source_operands.empty()) return false;
+        const bool valid_terminal_target =
+            occurrence.operation_id == "functional:Count"
+                ? occurrence.semantic_target_id ==
+                      "builtin:collection-count-v1" ||
+                      occurrence.semantic_target_id ==
+                          "builtin:functional:Count"
+                : occurrence.semantic_target_id ==
+                      "builtin:functional:" + stage_name;
+        if (!occurrence.source_operands.empty() ||
+            !valid_terminal_target)
+          return false;
         continue;
       } else {
         return false;
@@ -6454,7 +6468,30 @@ class Checker {
       if (named_callback == functions_.end()) {
         if (starts_with(occurrence.semantic_target_id, "callable-v1:"))
           return false;
-        continue;
+        if (starts_with(occurrence.semantic_target_id, "placeholder:") &&
+            occurrence.semantic_target_id ==
+                "placeholder:" + source_callback)
+          continue;
+        if (plain_identifier(source_callback)) {
+          bool parameter_found = false;
+          for (std::size_t parameter = 0;
+               parameter < function.params.size(); ++parameter)
+            if (function.params[parameter].name == source_callback) {
+              parameter_found = true;
+              if (occurrence.semantic_target_id !=
+                  "parameter:" + std::to_string(parameter))
+                return false;
+              break;
+            }
+          if (parameter_found) continue;
+          return false;
+        }
+        string receiver, method;
+        if (parse_bound_method_callable(source_callback, receiver, method) &&
+            starts_with(occurrence.semantic_target_id, "method:") &&
+            ends_with(occurrence.semantic_target_id, "." + method))
+          continue;
+        return false;
       }
       const string& target_id = occurrence.semantic_target_id;
       if (!plain_identifier(source_callback) ||
@@ -30026,19 +30063,30 @@ fn inspect_sample(sample: Sample) -> Int:
         });
     if (pipeline_callback == pipeline_occurrences.end() ||
         !checker.call_occurrence_dependencies_complete(
-            *pipeline_function, *pipeline_state->second)) {
-      std::cerr << "pipeline callback baseline failed: found="
-                << (pipeline_callback != pipeline_occurrences.end())
-                << " target=" << (pipeline_callback == pipeline_occurrences.end()
-                    ? string("<missing>") : pipeline_callback->semantic_target_id)
-                << " op=" << (pipeline_callback == pipeline_occurrences.end()
-                    ? string("<missing>") : pipeline_callback->operation_id)
-                << " deps=" << checker.call_occurrence_dependencies_complete(
-                    *pipeline_function, *pipeline_state->second) << "\n";
-      return false;
-    }
+            *pipeline_function, *pipeline_state->second)) return false;
     const auto pipeline_callback_id = pipeline_callback->id;
     const string pipeline_target = pipeline_callback->semantic_target_id;
+    const auto pipeline_count_stage = std::find_if(
+        pipeline_occurrences.begin(), pipeline_occurrences.end(),
+        [](const auto& occurrence) {
+          return occurrence.kind ==
+                  BodyTypeState::ExpressionOccurrence::Kind::PipelineStage &&
+              occurrence.operation_id == "functional:Count";
+        });
+    if (pipeline_count_stage == pipeline_occurrences.end()) return false;
+    const auto pipeline_count_id = pipeline_count_stage->id;
+    const string pipeline_count_target =
+        pipeline_occurrences[pipeline_count_id].semantic_target_id;
+    pipeline_occurrences[pipeline_count_id].semantic_target_id = pipeline_target;
+    const bool forged_pipeline_count_target_rejected =
+        !checker.call_occurrence_dependencies_complete(
+            *pipeline_function, *pipeline_state->second);
+    pipeline_occurrences[pipeline_count_id].semantic_target_id =
+        pipeline_count_target;
+    if (!forged_pipeline_count_target_rejected ||
+        !checker.call_occurrence_dependencies_complete(
+            *pipeline_function, *pipeline_state->second))
+      return false;
     const string pipeline_operation =
         pipeline_occurrences[pipeline_callback_id].operation_id;
     pipeline_occurrences[pipeline_callback_id].operation_id =
