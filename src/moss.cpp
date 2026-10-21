@@ -3811,11 +3811,11 @@ static void project_imported_h3_checked_bodies(Program& program) {
         abi_v10_checked_vector_literal_body_candidate(summary, statements);
     if (vector_literal_summary_candidate && !vector_literal_body_candidate)
       invalid("checked ABI-v10 vector requirement does not match its body operands");
-    // The checked-body codec and lowerer can represent a branch join, but
-    // source-free admission is not safe until every IfJoin predecessor is
-    // proven to correspond one-to-one with the summary's operation and
-    // dependency edges. Keep the format readable while failing closed at this
-    // boundary; generic type/effect closure alone does not establish lineage.
+    // A branch join with no operation, dependency, or effect can be admitted
+    // without operation-lineage records: its meaning is fully determined by
+    // the exact typed condition and predecessor values in checked IR. Keep
+    // operation-bearing and more complex branch bodies fail-closed until the
+    // generic occurrence-to-summary validator covers them.
     std::function<bool(const vector<checked_ir::Stmt>&)> contains_if_join =
         [&](const vector<checked_ir::Stmt>& block) {
       for (const auto& statement : block) {
@@ -3827,7 +3827,43 @@ static void project_imported_h3_checked_bodies(Program& program) {
       }
       return false;
     };
-    if (contains_if_join(statements))
+    auto leaf_expression = [](const checked_ir::Expr& expression) {
+      if (!expression.type || !expression.operands.empty()) return false;
+      switch (expression.kind) {
+        case checked_ir::ExprKind::Parameter:
+        case checked_ir::ExprKind::IntegerLiteral:
+        case checked_ir::ExprKind::FloatLiteral:
+        case checked_ir::ExprKind::BoolLiteral:
+        case checked_ir::ExprKind::StringLiteral:
+        case checked_ir::ExprKind::LocalRead:
+          return true;
+        default:
+          return false;
+      }
+    };
+    const bool pure_branch_join_candidate = [&] {
+      if (summary.observable_effect_bits != 0 ||
+          !summary.observable_effect_tags.empty() ||
+          !summary.requirements.empty() || !summary.dependencies.empty() ||
+          !body.dependencies.empty() || statements.size() != 2 ||
+          statements[0].kind != checked_ir::StmtKind::IfJoin ||
+          statements[1].kind != checked_ir::StmtKind::Return ||
+          !statements[0].expr || statements[0].operands.size() != 2 ||
+          !statements[1].expr ||
+          statements[1].expr->kind != checked_ir::ExprKind::LocalRead ||
+          statements[1].expr->ordinal != statements[0].local_ordinal ||
+          !leaf_expression(*statements[0].expr) ||
+          !leaf_expression(statements[0].operands[0]) ||
+          !leaf_expression(statements[0].operands[1]) ||
+          !leaf_expression(*statements[1].expr))
+        return false;
+      return std::all_of(summary.parameter_access.begin(),
+                         summary.parameter_access.end(),
+                         [](abi_v10::Access access) {
+        return access == abi_v10::Access::Read;
+      });
+    }();
+    if (contains_if_join(statements) && !pure_branch_join_candidate)
       invalid("checked ABI-v10 branch-join body lacks requirement lineage validation");
     std::function<bool(const checked_ir::Expr&)> is_operation_expression =
         [&](const checked_ir::Expr& expression) {

@@ -1,3 +1,9 @@
+## Phase 25.1 R1 — bounded pure IfJoin source-free admission — working tree — 2026-10-21
+
+The importer now admits exactly one typed IfJoin followed by a Return of its joined local when condition and branch expressions are leaves, all parameter accesses are READ, and summary/body requirements, observable effects, and semantic dependencies are empty. This is the subset whose exact behavior is carried by checked IR without operation-lineage claims. The source-free corpus case `branch-join-generic-literals` executes both branches for Int and String specializations. The adjacent `branch-join-generic-arithmetic-unavailable` hostile IfJoin and ordinary If/assignment mutations still reject before projection.
+
+A first broader probe using two generic parameter predecessors was rejected because its checker summary contains a SameType relation; this is retained as unavailable until that relation is linked to both exact predecessor operands. It was narrowed to literal predecessors rather than weakening admission. Validation on `build/compiler/moss-dev`: compiler build (two pre-existing TypeSolver missing-initializer warnings); full M2b2 corpus including all hostile artifacts and ABI-v9 controls; statement/call occurrence roles; generic arithmetic requirements; checked-body IR/dependency closure; D4 actual SDK source-free collection corpus; agent-feedback validator; corpus JSON parse; and `git diff --check` all pass. Freeze and push for exact-SHA adversarial review. This is a scoped importer admission slice, not overall R1 acceptance. Preserve the 24 unavailable ABI-v10 profiles, two ABI-v9 raise/recover failures, and `packages/time` failure. R1 remains gated on complete occurrence/control-flow facts, generalized lowerer migration, totality and fail-closed proof, and independent acceptance. Do not start R2 before R1 acceptance.
+
 # Moss current status
 
 ## Phase 25.1 R1 — IfJoin importer admission guard — working tree — 2026-10-21
