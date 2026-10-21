@@ -5733,16 +5733,8 @@ class Checker {
       bool occurrence_dependencies_complete = false;
       if (body != checked_body_states_.end() && body->second &&
           body->second->expression_occurrence_ledger_complete) {
-        std::set<string> observed_dependencies;
-        for (const auto& occurrence : body->second->expression_occurrences) {
-          if (occurrence.kind !=
-                  BodyTypeState::ExpressionOccurrence::Kind::Call ||
-              !starts_with(occurrence.semantic_target_id, "callable-v1:"))
-            continue;
-          observed_dependencies.insert(occurrence.semantic_target_id);
-        }
         occurrence_dependencies_complete =
-            observed_dependencies == expected_dependencies;
+            call_occurrence_dependencies_complete(function, *body->second);
       }
       function.open_summary->complete =
           function.open_summary->scheme_complete &&
@@ -6308,6 +6300,41 @@ class Checker {
       return nullptr;
     }
   };
+  bool call_occurrence_dependencies_complete(
+      const Function& function, const BodyTypeState& body) const {
+    std::set<string> expected_dependencies;
+    for (const auto& edge : p_.semantic_call_edges) {
+      if (edge.source != "fn:" + function.name ||
+          edge.invocation_kind != "ordinary_call" ||
+          !edge.source_specialization_key.empty() ||
+          !starts_with(edge.target, "fn:"))
+        continue;
+      const auto dependency = functions_.find(edge.target.substr(3));
+      if (dependency == functions_.end() ||
+          dependency->second->semantic_callable_id.empty())
+        return false;
+      expected_dependencies.insert(dependency->second->semantic_callable_id);
+    }
+    std::set<string> observed_dependencies;
+    for (const auto& occurrence : body.expression_occurrences) {
+      if (occurrence.kind !=
+              BodyTypeState::ExpressionOccurrence::Kind::Call)
+        continue;
+      const string& target_id = occurrence.semantic_target_id;
+      if (starts_with(target_id, "callable-v1:")) {
+        const auto* target = find_function_by_callable_id(target_id);
+        if (!target || !expected_dependencies.count(target_id)) return false;
+        observed_dependencies.insert(target_id);
+      } else if (starts_with(target_id, "parameter:")) {
+        if (!callable_operation_identity_matches(function, occurrence))
+          return false;
+      } else if (!starts_with(target_id, "builtin:") &&
+                 !starts_with(target_id, "builtin-scalar-protocol:")) {
+        return false;
+      }
+    }
+    return observed_dependencies == expected_dependencies;
+  }
   std::unordered_map<const vector<Stmt>*, std::shared_ptr<BodyTypeState>>
       checked_body_states_;
 
@@ -28497,12 +28524,26 @@ class Checker {
           checked_types.expression_occurrence_ledger_complete = false;
         }
       } else if (starts_with(operation.operation_id, "call:")) {
-        bool target_identity_valid = true;
+        bool target_identity_valid = false;
+        const string called_name = operation.operation_id.substr(5);
         if (starts_with(linked.semantic_target_id, "callable-v1:")) {
           const Function* selected =
               find_function_by_callable_id(linked.semantic_target_id);
           target_identity_valid = selected &&
               operation.operation_id == "call:" + selected->name;
+        } else if (starts_with(linked.semantic_target_id, "parameter:")) {
+          target_identity_valid = current_function &&
+              callable_operation_identity_matches(*current_function, linked);
+        } else if (starts_with(linked.semantic_target_id,
+                               "binding:pending:")) {
+          // Exact binding identities are attached after ownership checking.
+          // resolve_callable_occurrence_bindings and the summary dependency
+          // validator reject unresolved or non-parameter aliases afterward.
+          target_identity_valid = true;
+        } else if (linked.semantic_target_id == "builtin:" + called_name ||
+                   linked.semantic_target_id ==
+                       "builtin-scalar-protocol:" + called_name) {
+          target_identity_valid = true;
         }
         bool valid =
             linked.kind == BodyTypeState::ExpressionOccurrence::Kind::Call &&
@@ -28554,8 +28595,9 @@ class Checker {
           valid = false;
         }
         if (!valid || !operation.result || !linked.checked_type ||
-            !same_resolved_term(operation.result, linked.checked_type))
+            !same_resolved_term(operation.result, linked.checked_type)) {
           checked_types.expression_occurrence_ledger_complete = false;
+        }
       } else if (starts_with(operation.operation_id, "method:")) {
         bool valid =
             linked.kind == BodyTypeState::ExpressionOccurrence::Kind::MemberCall &&
@@ -29521,22 +29563,21 @@ fn inspect_sample(sample: Sample) -> Int:
       const std::set<string> summary_dependencies(
           function->open_summary->semantic_dependencies.begin(),
           function->open_summary->semantic_dependencies.end());
-      std::set<string> occurrence_dependencies;
-      for (const auto& occurrence : body.expression_occurrences)
-        if (occurrence.kind ==
-                BodyTypeState::ExpressionOccurrence::Kind::Call &&
-            starts_with(occurrence.semantic_target_id, "callable-v1:"))
-          occurrence_dependencies.insert(occurrence.semantic_target_id);
       const bool dependency_total =
           summary_dependencies.size() ==
               function->open_summary->semantic_dependencies.size() &&
           summary_dependencies == expected_dependencies &&
-          occurrence_dependencies == expected_dependencies;
+          checker.call_occurrence_dependencies_complete(*function, body);
       return statements.size() == function->body.size() && dependency_total;
     };
-    if (!verifies_call("relay", {"call-argument:0"}, {}) ||
-        !verifies_call("sort_values", {"call-argument:0"}, {1}) ||
-        !verifies_call("sort_values_reverse", {"call-argument:0"}, {1}) ||
+    const bool relay_call_verified =
+        verifies_call("relay", {"call-argument:0"}, {});
+    const bool sort_call_verified =
+        verifies_call("sort_values", {"call-argument:0"}, {1});
+    const bool reverse_sort_call_verified =
+        verifies_call("sort_values_reverse", {"call-argument:0"}, {1});
+    if (!relay_call_verified || !sort_call_verified ||
+        !reverse_sort_call_verified ||
         !verifies_occurrence_totality("relay") ||
         !verifies_occurrence_totality("relay_return") ||
         !verifies_occurrence_totality("relay_method") ||
@@ -29576,6 +29617,62 @@ fn inspect_sample(sample: Sample) -> Int:
     child_occurrence->parent_id = original_parent;
     if (!self_parent_rejected ||
         !verifies_occurrence_totality("relay_method")) return false;
+    const auto relay_function = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+          return candidate.name == "relay";
+        });
+    if (relay_function == program.functions.end() ||
+        !relay_function->open_summary ||
+        !relay_function->open_summary->occurrence_ledger_complete) {
+      return false;
+    }
+    auto relay_state = checker.checked_body_states_.find(&relay_function->body);
+    if (relay_state == checker.checked_body_states_.end() ||
+        !relay_state->second) return false;
+    auto& relay_occurrences = relay_state->second->expression_occurrences;
+    auto direct_call = std::find_if(relay_occurrences.begin(),
+        relay_occurrences.end(), [](const auto& occurrence) {
+      return occurrence.kind ==
+              BodyTypeState::ExpressionOccurrence::Kind::Call &&
+          starts_with(occurrence.semantic_target_id, "callable-v1:");
+    });
+    if (direct_call == relay_occurrences.end()) return false;
+    const auto call_target = direct_call->semantic_target_id;
+    const auto* call_function = checker.find_function_by_callable_id(call_target);
+    if (!call_function) return false;
+    auto matching_edge = std::find_if(program.semantic_call_edges.begin(),
+        program.semantic_call_edges.end(), [&](const auto& edge) {
+      return edge.source == "fn:" + relay_function->name &&
+          edge.target == "fn:" + call_function->name &&
+          edge.line == direct_call->line &&
+          edge.invocation_kind == "ordinary_call";
+    });
+    if (matching_edge == program.semantic_call_edges.end()) return false;
+    auto second_call = *direct_call;
+    second_call.id = static_cast<std::uint32_t>(relay_occurrences.size());
+    relay_occurrences.push_back(std::move(second_call));
+    auto second_edge = *matching_edge;
+    ++second_edge.occurrence;
+    program.semantic_call_edges.push_back(std::move(second_edge));
+    const bool repeated_call_facts_match =
+        checker.call_occurrence_dependencies_complete(
+            *relay_function, *relay_state->second);
+    relay_occurrences.back().semantic_target_id.clear();
+    const bool missing_call_target_rejected =
+        !checker.call_occurrence_dependencies_complete(
+            *relay_function, *relay_state->second);
+    relay_occurrences.pop_back();
+    program.semantic_call_edges.pop_back();
+    if (!repeated_call_facts_match || !missing_call_target_rejected ||
+        !checker.call_occurrence_dependencies_complete(
+            *relay_function, *relay_state->second)) {
+      std::cerr << "repeated call dependency regression: baseline="
+                << repeated_call_facts_match << " missing-target-rejected="
+                << missing_call_target_rejected << " restored="
+                << checker.call_occurrence_dependencies_complete(
+                    *relay_function, *relay_state->second) << "\n";
+      return false;
+    }
     const auto empty_function = std::find_if(program.functions.begin(),
         program.functions.end(), [](const Function& candidate) {
           return candidate.name == "empty_values";

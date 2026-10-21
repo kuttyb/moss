@@ -1,3 +1,25 @@
+## Phase 25.1 R1 continuation — call dependency occurrence totality — 2026-10-21
+
+Closed the latest adversarial P1 in the working tree: dependency completion now
+checks every retained Call occurrence for an explicit canonical function,
+checked Callable parameter, or builtin target before comparing dependency sets.
+The open-call validator accepts only the temporary `binding:pending:` state
+while `check_stmts` is running; ownership-stage binding resolution and final
+dependency validation reject unresolved targets and local aliases. The focused
+mutation regression duplicates a same-target Call occurrence and semantic edge,
+clears one occurrence target, and verifies completion fails; restoring it makes
+completion pass.
+
+Validation on the rebuilt `build/compiler/moss-dev`: occurrence regression,
+H3 common checked-body source-free chain (field read, two consumers, poisoned
+legacy chain, negative closures), feedback validation, and `git diff --check`
+pass. Build retains two existing `TypeSolver::Undo::binding` initializer
+warnings. This is not yet independently reviewed or accepted. Next: commit and
+push the frozen implementation, ask the existing architect for exact-SHA
+read-only review, and close any residual finding before R1 acceptance. Keep the
+24 unavailable ABI-v10 profiles, two ABI-v9 raise/recover failures, and
+`packages/time` failure visible.
+
 ## Phase 25.1 R1 continuation — common checked-body H3 closure — 2026-10-21
 
 The bounded `checked_private_chain_body_legacy_parity` producer is removed. H3 records now consume only occurrence-lowered canonical checked-body-v1 bytes/hash. Constructor ledger completeness verifies every inferred result field slot against the exact field child TypeRef. Common lowering links parameter occurrences and a returned local's unique definition/initializer path to the open summary result, including transparent group nodes and local reads. A mutation regression forges the constructor child TypeRef and confirms common retention rejects it.
