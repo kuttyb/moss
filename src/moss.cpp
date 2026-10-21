@@ -4805,6 +4805,7 @@ class Checker {
       string enum_identity;
       string variant_identity;
       string variant_type;
+      vector<string> recover_identities;
       bool introduces_binding = false;
       bool mutable_binding = false;
       bool explicit_non_evaluating = false;
@@ -24889,7 +24890,8 @@ class Checker {
             occurrence.branch_role = statement->kind == Stmt::Kind::Else
                 ? "else" : statement->kind == Stmt::Kind::Case
                     ? "case:" + statement->a : "recover";
-            if (statement->kind == Stmt::Kind::Else) {
+            if (statement->kind == Stmt::Kind::Else ||
+                statement->kind == Stmt::Kind::Recover) {
               occurrence.parent_id = candidate.parent_id;
               occurrence.scope_id = candidate.scope_id;
             }
@@ -24957,6 +24959,14 @@ class Checker {
             case_fact->second.payload_bindings.begin(),
             case_fact->second.payload_bindings.end());
       }
+      if (statement->kind == Stmt::Kind::Recover) {
+        for (const auto& identity : statement->exceptional_alternatives)
+          occurrence.recover_identities.push_back(identity.canonical());
+        occurrence.branch_role = "recover";
+        for (const auto& identity : occurrence.recover_identities)
+          occurrence.branch_role += ":" + std::to_string(identity.size()) +
+              ":" + identity;
+      }
     }
     std::map<std::uint32_t, std::uint32_t> next_statement_child_ordinal;
     for (auto& occurrence : checked_types.statement_occurrences)
@@ -24972,7 +24982,8 @@ class Checker {
     // complete. A backwards edge alone is insufficient: each branch kind has
     // one legal target kind, scope relationship, and role identity.
     std::map<std::uint32_t, std::set<string>> branch_roles_by_control;
-    std::map<std::uint32_t, std::size_t> else_count_by_if;
+    std::map<std::uint32_t, std::size_t> sibling_arm_count_by_control;
+    std::map<std::uint32_t, std::set<string>> recover_identities_by_try;
     std::set<std::uint32_t> entered_scope_ids;
     std::uint32_t maximum_scope_id = 0;
     for (const auto& node : checked_types.statement_occurrences) {
@@ -25006,16 +25017,35 @@ class Checker {
           ? Stmt::Kind::If
           : node.kind == Stmt::Kind::Case ? Stmt::Kind::Match
                                           : Stmt::Kind::Try;
+      const bool duplicate_branch_role = node.kind == Stmt::Kind::Recover
+          ? false
+          : !branch_roles_by_control[node.control_parent_id].insert(
+                node.branch_role).second;
       if (control.kind != expected_kind || !control.source || !node.source ||
-          !branch_roles_by_control[node.control_parent_id].insert(
-              node.branch_role).second)
+          duplicate_branch_role)
         checked_types.expression_occurrence_ledger_complete = false;
-      if (node.kind == Stmt::Kind::Else) {
-        ++else_count_by_if[node.control_parent_id];
+      if (node.kind == Stmt::Kind::Else || node.kind == Stmt::Kind::Recover) {
+        ++sibling_arm_count_by_control[node.control_parent_id];
         if (node.source->indent != control.source->indent ||
             node.parent_id != control.parent_id ||
-            node.scope_id != control.scope_id || node.branch_role != "else")
+            node.scope_id != control.scope_id ||
+            (node.kind == Stmt::Kind::Else && node.branch_role != "else"))
           checked_types.expression_occurrence_ledger_complete = false;
+        if (node.kind == Stmt::Kind::Recover) {
+          if (node.recover_identities.empty())
+            checked_types.expression_occurrence_ledger_complete = false;
+          string expected_role = "recover";
+          for (const auto& identity : node.recover_identities) {
+            if (identity.empty() ||
+                !recover_identities_by_try[node.control_parent_id].insert(
+                    identity).second)
+              checked_types.expression_occurrence_ledger_complete = false;
+            expected_role += ":" + std::to_string(identity.size()) + ":" +
+                identity;
+          }
+          if (node.branch_role != expected_role)
+            checked_types.expression_occurrence_ledger_complete = false;
+        }
       } else {
         if (node.source->indent <= control.source->indent ||
             node.parent_id != control.id ||
@@ -25025,13 +25055,14 @@ class Checker {
             (node.enum_identity.empty() || node.variant_identity.empty() ||
              node.branch_role != "case:" + node.variant_identity))
           checked_types.expression_occurrence_ledger_complete = false;
-        if (node.kind == Stmt::Kind::Recover &&
-            node.branch_role != "recover")
-          checked_types.expression_occurrence_ledger_complete = false;
       }
     }
-    for (const auto& [if_id, else_count] : else_count_by_if)
-      if (if_id >= checked_types.statement_occurrences.size() || else_count > 1)
+    for (const auto& [control_id, arm_count] :
+         sibling_arm_count_by_control)
+      if (control_id >= checked_types.statement_occurrences.size() ||
+          (checked_types.statement_occurrences[control_id].kind ==
+               Stmt::Kind::If &&
+           arm_count > 1))
         checked_types.expression_occurrence_ledger_complete = false;
     if (entered_scope_ids.size() != maximum_scope_id)
       checked_types.expression_occurrence_ledger_complete = false;
@@ -25630,10 +25661,22 @@ enum Sample:
   Empty
   Item(payload: Int)
 
+enum Failure:
+  First
+  Second
+
 fn iterate(values: Vector[Int]) -> Int:
   for item in values:
     pass
   return 0
+
+fn inspect_failure(error: Failure) -> Int:
+  try:
+    raise error
+  recover Failure.First:
+    return 1
+  recover Failure.Second:
+    return 2
 
 fn inspect_sample(sample: Sample) -> Int:
   match sample:
@@ -25766,6 +25809,35 @@ fn inspect_sample(sample: Sample) -> Int:
       return state == checker.checked_body_states_.end() || !state->second
           ? nullptr : state->second.get();
     };
+    const auto* recovery_state = state_for("inspect_failure");
+    if (!recovery_state) return false;
+    auto try_node = std::find_if(recovery_state->statement_occurrences.begin(),
+        recovery_state->statement_occurrences.end(), [](const auto& node) {
+          return node.kind == Stmt::Kind::Try;
+        });
+    vector<const BodyTypeState::StatementOccurrence*> recover_nodes;
+    for (const auto& node : recovery_state->statement_occurrences)
+      if (node.kind == Stmt::Kind::Recover) recover_nodes.push_back(&node);
+    if (try_node == recovery_state->statement_occurrences.end() ||
+        recover_nodes.size() != 2)
+      return false;
+    std::set<string> recover_roles;
+    std::set<string> recovered_identities;
+    for (const auto* recover : recover_nodes) {
+      if (!recover->source || !try_node->source ||
+          recover->control_parent_id != try_node->id ||
+          recover->parent_id != try_node->parent_id ||
+          recover->scope_id != try_node->scope_id ||
+          recover->source->indent != try_node->source->indent ||
+          recover->recover_identities.empty() ||
+          !recover_roles.insert(recover->branch_role).second)
+        return false;
+      for (const auto& identity : recover->recover_identities)
+        if (!recovered_identities.insert(identity).second)
+          return false;
+    }
+    if (recovered_identities.size() != 2)
+      return false;
     const auto* expression_identity_state = state_for("expression_identity");
     if (!expression_identity_state ||
         !expression_identity_state->expression_occurrence_ledger_complete)
