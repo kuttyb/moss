@@ -277,6 +277,7 @@ inline void encode_checked_expr(std::string& out, const Expr& expr) {
 
     case ExprKind::MapLiteral:
       if (expr.operands.size() % 2 != 0 || expr.ordinal != 0 ||
+          expr.operands.size() / 2 > 32 ||
           !expr.literal_value.empty() ||
           expr.unary_op != UnaryOp::Neg || expr.binary_op != BinaryOp::Add ||
           !expr.semantic_target_id.empty() || expr.member_ordinal != 0 ||

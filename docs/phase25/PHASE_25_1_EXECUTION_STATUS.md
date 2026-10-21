@@ -629,3 +629,30 @@ remain red. Full raw evidence is in
 `PHASE_25_1_R0_RECHECK_AFTER_R1.json`. Its recorded compiler commit is the
 docs-only delivery HEAD `aa542b7117de40ce71878335a968ffce68cd95ee`; the
 implementation under test is exact reviewed SHA `561bdaa58d7237c6db432f99c7a14ea748dc8de6`.
+
+## R1 Map effect correction — 2026-10-20
+
+Independent scoped review of frozen pushed SHA
+`fd1c1273a15aedf66688b0e334832b80f9725343` returned NO-GO with one P1 and
+one P2. The P1 reproducer was a local Map write/read keyed by `1 / divisor`:
+matching encoded key trees do not prove key evaluation is non-panicking, and a
+hostile ABI-v10 summary could erase `may_panic`. The P2 was an encoder/decoder
+MapLiteral bound mismatch (decoder capped at 32 entries; encoder did not).
+
+The correction requires checker-observed `may_panic` for the admitted local Map
+body, emits the exact sealed `may_panic` tag, and verifies the tag and body
+shape at checked projection and imported-summary closure. The source-free
+corpus mutator now clears that effect tag and requires fail-closed rejection.
+The MapLiteral encoder rejects more than 32 entries, matching the bounded
+reader. The writer requires an exact three-statement local Map body; broader
+Map expressions remain unavailable and tracked.
+
+Validation on this working tree: `make --jobs="$(nproc)" moss`; complete
+`check_phase25_m2b2_source_free_corpus.py` (including generic Map source
+removal, all legacy statement poisoning, effect-erasure hostile mutation,
+projection trace and ABI-v9 source-free control); generic collection checker
+facts; checked-body IR and bound tests; D2 codec and pinned pre-D2 Count/Index/
+Pass rejection; generic arithmetic requirements; statement/call occurrence
+roles; agent-feedback checker; `git diff --check`. No full repository suite was
+run. This correction is pending commit/push and exact-SHA adversarial follow-up;
+R1 is not accepted.

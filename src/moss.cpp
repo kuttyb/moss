@@ -3628,8 +3628,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
         body.semantic_hash != summary.body_semantic_hash ||
         summary.parameters.size() != function.params.size() ||
         summary.parameter_access.size() != function.parameter_effects.size() ||
-        (!collection_loop_candidate &&
-         (summary.observable_effect_bits || !summary.observable_effect_tags.empty())))
+        (!collection_loop_candidate && summary.observable_effect_bits))
       invalid("checked ABI-v10 body disagrees with its callable summary");
     for (std::size_t index = 0; index < summary.parameter_access.size(); ++index)
       if (summary.parameter_access[index] !=
@@ -3653,11 +3652,17 @@ static void project_imported_h3_checked_bodies(Program& program) {
     } catch (const std::invalid_argument& error) {
       invalid(string("checked ABI-v10 body cannot be decoded: ") + error.what());
     }
+    const bool local_map_effect_contract =
+        abi_v10_local_map_effects_covered(
+            function.observable_effects, statements);
+    const bool map_effect_record_valid = local_map_effect_contract &&
+        summary.observable_effect_tags == vector<string>{"may_panic"};
+    const bool pure_effect_record_valid =
+        abi_v10_effects_pure(function.observable_effects) &&
+        summary.observable_effect_tags.empty();
     const bool effect_contract_valid = collection_loop_candidate
         ? abi_v10_collection_loop_effects(function.observable_effects)
-        : abi_v10_effects_pure(function.observable_effects) ||
-            abi_v10_local_map_effects_covered(
-                function.observable_effects, statements);
+        : pure_effect_record_valid || map_effect_record_valid;
     if (!effect_contract_valid)
       invalid("checked ABI-v10 body disagrees with its callable summary");
     const auto dependencies = extract_semantic_dependencies(statements);
@@ -4525,7 +4530,9 @@ static void validate_imported_h3_summary_closure(const Program& program) {
         abi_v10_collection_loop_summary_candidate(summary);
     bool effects_valid = collection_loop
         ? abi_v10_collection_loop_effects(function.observable_effects)
-        : abi_v10_effects_pure(function.observable_effects);
+        : abi_v10_effects_pure(function.observable_effects) &&
+            summary.observable_effect_bits == 0 &&
+            summary.observable_effect_tags.empty();
     if (!effects_valid && !collection_loop) {
       try {
         vector<moss::TypeRef> parameters;
@@ -4549,7 +4556,9 @@ static void validate_imported_h3_summary_closure(const Program& program) {
               body.checked_ir_bytes, *program.type_context, parameters,
               result, body.semantic_hash);
           effects_valid = abi_v10_local_map_effects_covered(
-              function.observable_effects, statements);
+                  function.observable_effects, statements) &&
+              summary.observable_effect_bits == 0 &&
+              summary.observable_effect_tags == vector<string>{"may_panic"};
         }
       } catch (const std::exception&) {
         effects_valid = false;
@@ -45941,7 +45950,7 @@ static bool abi_v10_local_map_effects_covered(
       effects.external_io || effects.fileio || effects.fileio_unknown ||
       !effects.raise_set.empty() || effects.may_diverge ||
       effects.unresolved || body.size() != 3 ||
-      (!effects.local_mutation && !effects.may_panic))
+      !effects.may_panic)
     return false;
   const auto& declaration = body[0];
   const auto& write = body[1];
@@ -46164,10 +46173,16 @@ static void append_abi_v10_occurrence_records(
     } catch (const std::invalid_argument&) {
       continue;
     }
-    if (!abi_v10_effects_pure(facts.observable_effects) &&
-        !abi_v10_local_map_effects_covered(
-            facts.observable_effects, decoded))
-      continue;
+    if (!abi_v10_effects_pure(facts.observable_effects)) {
+      if (!abi_v10_local_map_effects_covered(
+              facts.observable_effects, decoded))
+        continue;
+      // The checked Map read/write body can only rely on an external effect
+      // when the summary conservatively retains the index may-panic effect.
+      // This remains required even when the same-key write dominates the read:
+      // evaluating either key expression can itself panic.
+      summary.observable_effect_tags = {"may_panic"};
+    }
     // A complete checked body may depend on nominal templates or callees even
     // when its open callable summary has no signature-level dependencies.
     // This producer has not yet emitted those dependency records, so inspect

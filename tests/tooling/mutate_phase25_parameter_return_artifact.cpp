@@ -101,6 +101,10 @@ int main(int argc, char** argv) {
     summary.result.arguments.clear();
     summary.result.ordinal = 0;
     replace_summary();
+  } else if (mode == "weaken-effect") {
+    summary.observable_effect_bits = 0;
+    summary.observable_effect_tags.clear();
+    replace_summary();
   } else if (mode == "type-binding") {
     auto body = moss::abi_v10::read_checked_body_record(body_at->payload);
     auto wrong_type = moss::Type::var(moss::TypeVarId{0, 0, 1});

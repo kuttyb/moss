@@ -97,6 +97,21 @@ int main() {
   cir::Expr vec_lit12{cir::ExprKind::VectorLiteral, vector_int_type, 0, {}, cir::UnaryOp::Neg, cir::BinaryOp::Add, {int_lit1, int_lit2}, {}, 0, {}, {}};
   cir::Expr vec_lit21{cir::ExprKind::VectorLiteral, vector_int_type, 0, {}, cir::UnaryOp::Neg, cir::BinaryOp::Add, {int_lit2, int_lit1}, {}, 0, {}, {}};
 
+  auto map_int_type = moss::Type::builtin("map", {int_type, int_type});
+  cir::Expr oversized_map{cir::ExprKind::MapLiteral, map_int_type};
+  for (int entry = 0; entry < 33; ++entry) {
+    auto key = int_lit1;
+    key.literal_value = std::to_string(entry);
+    auto value = int_lit2;
+    value.literal_value = std::to_string(entry + 1);
+    oversized_map.operands.push_back(std::move(key));
+    oversized_map.operands.push_back(std::move(value));
+  }
+  assert(throws_invalid([&] {
+    std::string encoded;
+    cir::encode_checked_expr(encoded, oversized_map);
+  }));
+
   // Call
   const std::string helper_id = "callable-v1:module-v1:app@1.0.0::main:fn:helper";
   const std::string other_helper_id = "callable-v1:module-v1:app@1.0.0::main:fn:other_helper";
