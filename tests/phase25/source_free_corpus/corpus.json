@@ -85,15 +85,14 @@
       "evidence": "R1 generalized occurrence lowering emits a canonical two-statement body; source-free import removes provider source, poisons the legacy generic_stmt body, requires checked-body projection, and executes Int and Float specializations."
     },
     {
-      "id": "multi-statement-arithmetic-alias-fail-closed",
+      "id": "multi-statement-arithmetic-alias",
       "priority": "P1-essential",
       "category": "generic arithmetic through local alias",
       "provider": "module Service\n\nexport fn fresh(value):\n  let doubled = value * 2\n  let alias = doubled\n  return alias + 1\n",
       "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(5)\n  echo Service.fresh(2.5)\n",
-      "checked_body_status": "checked-body unavailable; the current checker does not close the open generic signature through the alias chain",
-      "evidence": "The source-built checker reports scheme_complete=false, complete=false, and occurrence_ledger_complete=false for this body; the provider emits no callable summary/body, and the source-deleted consumer rejects. Keep this valid profile visible until checker type/dependency facts close and source-free Int/Float parity plus hostile artifact acceptance pass.",
-      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "provider_must_emit_v10": true
+      "expected_output": "11\n6.0\n",
+      "checked_body_status": "checked-body supported; exact local alias TypeRefs and operation dependencies are retained before canonical occurrence lowering",
+      "evidence": "R1 alias-lineage correction resolves late checker TypeRefs to exact declaration identities through multi-local chains. The provider/source-free consumer must agree for Int and Float after legacy generic_stmt poisoning; hostile checked-artifact mutations and ABI-v9 controls remain in the same corpus."
     },
     {
       "id": "branch-join-generic-arithmetic-unavailable",

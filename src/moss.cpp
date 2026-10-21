@@ -26137,9 +26137,16 @@ class Checker {
             initializer->second < checked_types.expression_occurrences.size()) {
           const auto& checked_value =
               checked_types.expression_occurrences[initializer->second];
-          if (checked_value.checked_type)
-            occurrence.binding_type =
-                checked_types.solver.resolve(checked_value.checked_type);
+          if (checked_value.checked_type) {
+            auto resolved = checked_types.solver.resolve(
+                checked_value.checked_type);
+            // Keep the exact checker TypeRef if the solver has not assigned
+            // it yet. The identity relation from this declaration to its
+            // initializer is still exact; discarding the unresolved variable
+            // here loses otherwise complete local alias chains.
+            occurrence.binding_type = resolved ? std::move(resolved)
+                                               : checked_value.checked_type;
+          }
         }
       }
       if (occurrence.introduces_binding &&
@@ -26148,6 +26155,7 @@ class Checker {
         binding.name = statement->a;
         binding.identity = occurrence.binding_identity;
         binding.type = checked_types.solver.resolve(occurrence.binding_type);
+        if (!binding.type) binding.type = occurrence.binding_type;
         binding.mutable_binding = occurrence.mutable_binding;
         occurrence.bindings.push_back(std::move(binding));
       }
@@ -26399,11 +26407,6 @@ class Checker {
             break;
           }
       }
-      auto locals = checked_types.locals_at_statement.find(source_statement);
-      if (locals != checked_types.locals_at_statement.end() &&
-          locals->second.count(name) && expression.resolved_binding_id.empty()) {
-        checked_types.expression_occurrence_ledger_complete = false;
-      }
     }
     // Resolve reads whose exact lexical identity was retained before their
     // TypeRef was available (for example, an open generic local used by a
@@ -26430,8 +26433,128 @@ class Checker {
       }
       expression.checked_type = checked_types.solver.resolve(matched->type);
       if (!expression.checked_type)
-        checked_types.expression_occurrence_ledger_complete = false;
+        expression.checked_type = matched->type;
     }
+    // Local aliases can be introduced before an open operation's result TypeRef
+    // has been closed by the body solver. Resolve those declarations from the
+    // exact initializer occurrence after the first binding/type pass, then
+    // repeat through alias chains. This preserves checker identities and never
+    // infers a type from the source spelling.
+    for (std::size_t pass = 0;
+         pass <= checked_types.statement_occurrences.size(); ++pass) {
+      bool progress = false;
+      for (auto& statement : checked_types.statement_occurrences) {
+        if ((statement.kind != Stmt::Kind::Let &&
+             statement.kind != Stmt::Kind::Var) || !statement.source ||
+            statement.bindings.size() != 0 ||
+            statement.binding_identity.empty())
+          continue;
+        const auto root = checked_types.expression_root_slots.find(
+            {statement.id, "initializer"});
+        if (root == checked_types.expression_root_slots.end() ||
+            root->second >= checked_types.expression_occurrences.size())
+          continue;
+        const auto& initializer =
+            checked_types.expression_occurrences[root->second];
+        if (!initializer.checked_type) continue;
+        auto type = checked_types.solver.resolve(initializer.checked_type);
+        if (!type) type = initializer.checked_type;
+        if (!type) continue;
+        statement.binding_type = type;
+        BodyTypeState::StatementOccurrence::BindingOccurrence binding;
+        binding.name = statement.source->a;
+        binding.identity = statement.binding_identity;
+        binding.type = type;
+        binding.mutable_binding = statement.mutable_binding;
+        statement.bindings.push_back(std::move(binding));
+        progress = true;
+      }
+      for (auto& expression : checked_types.expression_occurrences) {
+        if (expression.kind !=
+                BodyTypeState::ExpressionOccurrence::Kind::Identifier ||
+            expression.statement_id >=
+                checked_types.statement_occurrences.size())
+          continue;
+        const auto* source_statement = checked_types.statement_occurrences[
+            expression.statement_id].source;
+        if (!source_statement) continue;
+        const string name = trim(expression.source_expression);
+        if (expression.resolved_binding_id.empty() &&
+            expression.semantic_target_id.empty()) {
+          std::set<std::uint32_t> visible_scopes{expression.scope_id};
+          std::uint32_t scope = expression.scope_id;
+          while (scope != 0) {
+            const auto opener = std::find_if(
+                checked_types.statement_occurrences.begin(),
+                checked_types.statement_occurrences.end(),
+                [&](const auto& candidate) {
+              return candidate.entered_scope_id == scope;
+            });
+            if (opener == checked_types.statement_occurrences.end() ||
+                !visible_scopes.insert(opener->scope_id).second) {
+              visible_scopes.clear();
+              break;
+            }
+            scope = opener->scope_id;
+          }
+          const BodyTypeState::StatementOccurrence::BindingOccurrence* nearest =
+              nullptr;
+          std::uint32_t nearest_statement = 0;
+          bool ambiguous = false;
+          for (const auto& candidate : checked_types.statement_occurrences) {
+            if (candidate.id >= expression.statement_id || !candidate.source)
+              continue;
+            for (const auto& binding : candidate.bindings) {
+              const auto binding_scope =
+                  candidate.kind == Stmt::Kind::For ||
+                          candidate.kind == Stmt::Kind::Case
+                      ? candidate.entered_scope_id : candidate.scope_id;
+              if (binding.name != name ||
+                  !visible_scopes.count(binding_scope)) continue;
+              if (!nearest || candidate.id > nearest_statement) {
+                nearest = &binding;
+                nearest_statement = candidate.id;
+                ambiguous = false;
+              } else if (candidate.id == nearest_statement &&
+                         binding.identity != nearest->identity) {
+                ambiguous = true;
+              }
+            }
+          }
+          if (nearest && !ambiguous) {
+            expression.resolved_binding_id = nearest->identity;
+            expression.resolved_binding_mutable = nearest->mutable_binding;
+            progress = true;
+          }
+        }
+        if (!expression.resolved_binding_id.empty() &&
+            !expression.checked_type &&
+            !starts_with(expression.resolved_binding_id, "parameter:")) {
+          const BodyTypeState::StatementOccurrence::BindingOccurrence* matched =
+              nullptr;
+          std::size_t matches = 0;
+          for (const auto& candidate : checked_types.statement_occurrences)
+            for (const auto& binding : candidate.bindings)
+              if (binding.identity == expression.resolved_binding_id) {
+                matched = &binding;
+                ++matches;
+              }
+          if (matches == 1 && matched && matched->type) {
+            auto type = checked_types.solver.resolve(matched->type);
+            expression.checked_type = type ? std::move(type) : matched->type;
+            progress = true;
+          }
+        }
+      }
+      if (!progress) break;
+    }
+    for (const auto& expression : checked_types.expression_occurrences)
+      if (expression.kind ==
+              BodyTypeState::ExpressionOccurrence::Kind::Identifier &&
+          expression.requires_type &&
+          (expression.resolved_binding_id.empty() ||
+           !expression.checked_type))
+        checked_types.expression_occurrence_ledger_complete = false;
     // The ordinary checker can first see the operator contract while its
     // receiver is a local introduced by an earlier open generic expression.
     // Once the exact child TypeRefs have been retained, attach that missing

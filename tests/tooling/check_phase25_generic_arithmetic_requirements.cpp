@@ -461,12 +461,18 @@ export fn alias_compute(value):
   const Function& alias_compute = find_function(joined_binding,
                                                  "alias_compute");
   assert(alias_compute.open_summary);
-  // The current checker cannot close the generic result facts through this
-  // alias chain. Preserve the unsupported profile as unavailable instead of
-  // claiming a complete summary with a lost dependency edge.
-  assert(!alias_compute.open_summary->scheme_complete);
-  assert(!alias_compute.open_summary->complete);
-  assert(!alias_compute.open_summary->occurrence_ledger_complete);
+  assert(alias_compute.open_summary->scheme_complete);
+  assert(alias_compute.open_summary->complete);
+  assert(alias_compute.open_summary->occurrence_ledger_complete);
+  assert(alias_compute.open_summary->requirements.size() == 2);
+  assert(alias_compute.open_summary->requirements[0].target_id ==
+         "operator:*");
+  assert(alias_compute.open_summary->requirements[1].target_id ==
+         "operator:+");
+  assert(alias_compute.open_summary->requirements[1].parent_requirement_id ==
+         alias_compute.open_summary->requirements[0].id);
+  assert(alias_compute.checked_body_ir_v1_bytes &&
+         alias_compute.checked_body_ir_v1_hash);
 
   const Function& choose = find_function(joined_binding, "choose");
   assert(choose.open_summary && choose.open_summary->complete);
