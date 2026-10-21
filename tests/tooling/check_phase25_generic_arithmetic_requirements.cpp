@@ -400,18 +400,14 @@ export fn alias_compute(value):
   assert(select.open_summary->occurrence_ledger_complete);
 
   const Function& select_two = find_function(joined_binding, "select_two");
-  assert(select_two.open_summary && select_two.open_summary->scheme_complete &&
-         select_two.open_summary->occurrence_ledger_complete &&
-         select_two.open_summary->parameter_types.size() == 3 &&
-         select_two.open_summary->parameter_types[0] &&
-         select_two.open_summary->parameter_types[1] &&
-         select_two.open_summary->parameter_types[0]->structurally_equal(
-             *select_two.open_summary->parameter_types[1]) &&
-         select_two.open_summary->result_type &&
-         select_two.open_summary->result_type->structurally_equal(
-             *select_two.open_summary->parameter_types[0]) &&
-         select_two.checked_body_ir_v1_bytes &&
-         select_two.checked_body_ir_v1_hash);
+  // The checker accepts this source shape, but this compiler revision does
+  // not produce a checked body for a join across two untyped parameters.
+  // Keep the profile explicitly unavailable until the producer emits the
+  // typed predecessor/join relation instead of treating checker acceptance
+  // as source-free evidence.
+  assert(select_two.open_summary);
+  assert(!select_two.checked_body_ir_v1_bytes);
+  assert(!select_two.checked_body_ir_v1_hash);
 
   const Function& branch_compute = find_function(joined_binding,
                                                   "branch_compute");

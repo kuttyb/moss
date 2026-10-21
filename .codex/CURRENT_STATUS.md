@@ -1,4 +1,4 @@
-## Phase 25.1 R1 continuation — formal and bound-method pipeline identity — working tree — 2026-10-21
+## Phase 25.1 R1 continuation — verified pipeline identity and current profile evidence — 2026-10-21
 
 The implementation for the remaining architect P2s in pipeline occurrence
 dependency completion is in place. Formal callback targets now require exactly one
@@ -15,15 +15,23 @@ is accepted only as a positive control, while missing, wrong-arity, wrong linked
 arguments, mismatched function-constraint arguments, and duplicate same-subject
 Callable facts reject. A concrete `Scale.apply` bound-method pipeline accepts its
 canonical target and rejects a forged receiver type with the same method suffix.
-The architect returned scoped GO at `9cfec857` with no P0/P1 and a P2 coverage
-note; these new argument-list and duplicate-constraint mutations address that
-note, and the source build plus statement/call occurrence harness pass. Exact-SHA
-re-review is pending. The H3 private-chain producer already consumes canonical
-occurrence-lowered checked-body-v1 bytes; its source-free chain test passed on
-`moss-dev` at `9cfec857`. Remaining R1 work includes the shape-specific Count/Index
-ABI record producer and global occurrence/effect/dependency totality. R1 remains
-open. Preserve the 24 unavailable ABI-v10 profiles,
-two ABI-v9 raise/recover failures, and `packages/time` failure.
+The architect returned scoped GO at exact SHA `ccc2723fd4cf07f7626f4b3a629828d1f1020e08`,
+with no P0/P1/P2; this closes the prior test-coverage note. H3 common checked-body
+production was verified on `moss-dev`: its chain test covers a multi-statement
+field read, two source-free consumers, poisoned legacy chain records, and negative
+closures.
+
+Current validation also passes the full M2b2 source-free/hostile corpus, generic
+arithmetic requirements, D4 SDK collection source-free corpus, and the focused
+statement/call occurrence harness. The corpus now promotes the multi-statement
+nominal field read to a positive checked-body case. It classifies pure literal
+and direct-parameter IfJoin cases as v10-unavailable: source-built providers
+accept them, but emit no checked-body record. The arithmetic harness records the
+same limitation for `select_two`. These shapes remain open producer work and are
+not generalized-lowering evidence. R1 remains open; remaining work includes the
+shape-specific Count/Index ABI record producer and global occurrence/effect/
+dependency totality. Preserve the 24 unavailable ABI-v10 profiles, two ABI-v9
+raise/recover failures, and `packages/time` failure.
 
 ## Phase 25.1 R1 continuation — call dependency occurrence totality — 2026-10-21
 
