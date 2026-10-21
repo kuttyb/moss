@@ -1,3 +1,25 @@
+## Phase 25.1 R1 continuation — formal and bound-method pipeline identity — working tree — 2026-10-21
+
+The remaining architect P2s in pipeline occurrence dependency completion are
+closed in the working tree. Formal callback targets now require exactly one
+linked `Callable` fact whose subject, detail, arity, and arguments match the
+enclosing function's retained constraint. Bound-method targets now derive the
+canonical receiver type from the exact statement-local checked binding and must
+match the full `method:<receiver-type>.<method>` identity. Pipeline callbacks
+whose exact statement binding is pending now pass through the same post-check
+binding resolver as direct calls; local aliases remain incomplete.
+
+The focused fixture exposes a source formal-callback pipeline whose callback
+has no linked Callable fact; it remains fail-closed. A synthetic matching fact
+is accepted only as a positive control, while missing and wrong-arity links
+reject. A concrete `Scale.apply` bound-method pipeline accepts its canonical
+target and rejects a forged receiver type with the same method suffix. The
+source build and statement/call occurrence harness pass. H3 source-free,
+feedback validation, and exact-SHA review are pending. R1 remains open; this
+does not resolve global operation/effect/dependency totality or the remaining
+bounded H3 producer migration. Preserve the 24 unavailable ABI-v10 profiles,
+two ABI-v9 raise/recover failures, and `packages/time` failure.
+
 ## Phase 25.1 R1 continuation — call dependency occurrence totality — 2026-10-21
 
 Closed the latest adversarial P1s in the working tree: dependency completion

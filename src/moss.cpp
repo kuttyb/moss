@@ -6481,16 +6481,62 @@ class Checker {
               if (occurrence.semantic_target_id !=
                   "parameter:" + std::to_string(parameter))
                 return false;
+              const std::size_t arity =
+                  occurrence.operation_id == "functional:Reduce" ? 2 : 1;
+              std::size_t callable_count = 0;
+              for (const auto& constraint : function.constraints) {
+                if (constraint.kind != ConstraintKind::Callable ||
+                    constraint.subject != source_callback)
+                  continue;
+                ++callable_count;
+                if (constraint.detail != "static callable" ||
+                    constraint.arity != arity ||
+                    constraint.arguments.size() != arity)
+                  return false;
+              }
+              if (callable_count != 1 ||
+                  occurrence.linked_constraints.size() != 1)
+                return false;
+              const auto& linked = occurrence.linked_constraints.front();
+              if (linked.kind != ConstraintKind::Callable ||
+                  linked.subject != source_callback ||
+                  linked.detail != "static callable" ||
+                  linked.arity != arity || linked.arguments.size() != arity)
+                return false;
+              const auto matching = std::find_if(
+                  function.constraints.begin(), function.constraints.end(),
+                  [&](const auto& constraint) {
+                    return constraint.kind == ConstraintKind::Callable &&
+                        constraint.subject == source_callback;
+                  });
+              if (matching == function.constraints.end() ||
+                  matching->detail != linked.detail ||
+                  matching->arity != linked.arity ||
+                  matching->arguments != linked.arguments)
+                return false;
               break;
             }
           if (parameter_found) continue;
           return false;
         }
         string receiver, method;
-        if (parse_bound_method_callable(source_callback, receiver, method) &&
-            starts_with(occurrence.semantic_target_id, "method:") &&
-            ends_with(occurrence.semantic_target_id, "." + method))
+        if (parse_bound_method_callable(source_callback, receiver, method)) {
+          if (!plain_identifier(receiver) ||
+              occurrence.statement_id >= body.statement_occurrences.size())
+            return false;
+          const Stmt* statement =
+              body.statement_occurrences[occurrence.statement_id].source;
+          if (!statement) return false;
+          const auto locals = body.locals_at_statement.find(statement);
+          if (locals == body.locals_at_statement.end()) return false;
+          const auto receiver_type = locals->second.find(receiver);
+          if (receiver_type == locals->second.end() || !receiver_type->second)
+            return false;
+          const string expected_target = "method:" +
+              receiver_type->second->to_canonical_string() + "." + method;
+          if (occurrence.semantic_target_id != expected_target) return false;
           continue;
+        }
         return false;
       }
       const string& target_id = occurrence.semantic_target_id;
@@ -6602,6 +6648,76 @@ class Checker {
   void resolve_callable_occurrence_bindings(
       const Function& function, BodyTypeState& state) const {
     for (auto& expression : state.expression_occurrences) {
+      if (expression.kind ==
+              BodyTypeState::ExpressionOccurrence::Kind::PipelineStage &&
+          starts_with(expression.semantic_target_id, "binding:pending:")) {
+        const std::size_t callback_operand =
+            expression.operation_id == "functional:Reduce" ? 1 : 0;
+        if (callback_operand >= expression.source_operands.size() ||
+            expression.statement_id >= state.statement_occurrences.size()) {
+          expression.semantic_target_id = "binding:unresolved:pipeline";
+          state.expression_occurrence_ledger_complete = false;
+          continue;
+        }
+        const string callee = trim(expression.source_operands[callback_operand]);
+        const auto* source_statement =
+            state.statement_occurrences[expression.statement_id].source;
+        const auto identities = source_statement
+            ? state.binding_identities_at_statement.find(source_statement)
+            : state.binding_identities_at_statement.end();
+        if (callee.empty() ||
+            identities == state.binding_identities_at_statement.end()) {
+          expression.semantic_target_id = "binding:unresolved:" + callee;
+          state.expression_occurrence_ledger_complete = false;
+          continue;
+        }
+        const auto binding = identities->second.find(callee);
+        if (binding == identities->second.end() || binding->second.empty()) {
+          expression.semantic_target_id = "binding:unresolved:" + callee;
+          state.expression_occurrence_ledger_complete = false;
+          continue;
+        }
+        expression.semantic_target_id = starts_with(binding->second,
+                "parameter:")
+            ? binding->second : "binding:" + binding->second;
+        expression.linked_constraints.erase(
+            std::remove_if(expression.linked_constraints.begin(),
+                expression.linked_constraints.end(), [](const Constraint& value) {
+              return value.kind == ConstraintKind::Callable;
+            }), expression.linked_constraints.end());
+        if (!starts_with(binding->second, "parameter:")) {
+          state.expression_occurrence_ledger_complete = false;
+          continue;
+        }
+        const string ordinal_text = binding->second.substr(10);
+        std::size_t ordinal = 0;
+        try {
+          std::size_t consumed = 0;
+          ordinal = std::stoul(ordinal_text, &consumed, 10);
+          if (consumed != ordinal_text.size() ||
+              std::to_string(ordinal) != ordinal_text ||
+              ordinal >= function.params.size() ||
+              function.params[ordinal].name != callee) {
+            state.expression_occurrence_ledger_complete = false;
+            continue;
+          }
+        } catch (const std::exception&) {
+          state.expression_occurrence_ledger_complete = false;
+          continue;
+        }
+        const std::size_t arity =
+            expression.operation_id == "functional:Reduce" ? 2 : 1;
+        std::size_t matching_constraints = 0;
+        for (const auto& constraint : function.constraints)
+          if (constraint.kind == ConstraintKind::Callable &&
+              constraint.subject == callee && constraint.arity == arity) {
+            expression.linked_constraints.push_back(constraint);
+            ++matching_constraints;
+          }
+        if (matching_constraints != 1)
+          state.expression_occurrence_ledger_complete = false;
+        continue;
+      }
       if (expression.kind !=
               BodyTypeState::ExpressionOccurrence::Kind::Call ||
           !starts_with(expression.semantic_target_id, "binding:pending:"))
@@ -29488,6 +29604,12 @@ export fn pipeline_named(values: Vector[Int]) -> Int:
 export fn pipeline_reduce(values: Vector[Int]) -> Int:
   return values |> reduce(0, add_values)
 
+export fn pipeline_parameter(values: Vector[Int], callback):
+  return values |> map(callback)
+
+export fn pipeline_bound(values: Vector[Int], scaler: Scale):
+  return values |> map(scaler.apply)
+
 export fn sort_values(values: Vector[Int]) -> Int:
   sort(values, by: identity)
   sort(values, by: identity)
@@ -29509,6 +29631,12 @@ export fn branch(value: Bool) -> Int:
 
 fn expression_identity(value) = value
 fn add_values(total, value) = total + value
+
+type Scale:
+  factor: Int
+
+  fn apply(value: Int) -> Int:
+    return value * factor
 
 enum Sample:
   Empty
@@ -30195,6 +30323,114 @@ fn inspect_sample(sample: Sample) -> Int:
     if (!unresolved_reduce_callback_rejected ||
         !checker.call_occurrence_dependencies_complete(
             *pipeline_reduce_function, *pipeline_reduce_state->second))
+      return false;
+    const auto parameter_pipeline_function = std::find_if(
+        program.functions.begin(), program.functions.end(),
+        [](const Function& candidate) {
+          return candidate.name == "pipeline_parameter";
+        });
+    if (parameter_pipeline_function == program.functions.end()) return false;
+    const auto parameter_pipeline_state = checker.checked_body_states_.find(
+        &parameter_pipeline_function->body);
+    if (parameter_pipeline_state == checker.checked_body_states_.end() ||
+        !parameter_pipeline_state->second) return false;
+    auto& parameter_pipeline_occurrences =
+        parameter_pipeline_state->second->expression_occurrences;
+    const auto parameter_pipeline_callback = std::find_if(
+        parameter_pipeline_occurrences.begin(),
+        parameter_pipeline_occurrences.end(), [](const auto& occurrence) {
+          return occurrence.kind ==
+                  BodyTypeState::ExpressionOccurrence::Kind::PipelineStage &&
+              occurrence.operation_id == "functional:Map" &&
+              occurrence.semantic_target_id == "parameter:1";
+        });
+    if (parameter_pipeline_callback ==
+            parameter_pipeline_occurrences.end() ||
+        !parameter_pipeline_callback->linked_constraints.empty() ||
+        checker.call_occurrence_dependencies_complete(
+            *parameter_pipeline_function, *parameter_pipeline_state->second))
+      return false;
+    const auto parameter_pipeline_callback_id =
+        parameter_pipeline_callback->id;
+    const auto original_pipeline_constraints =
+        parameter_pipeline_function->constraints;
+    parameter_pipeline_function->constraints.erase(
+        std::remove_if(parameter_pipeline_function->constraints.begin(),
+            parameter_pipeline_function->constraints.end(),
+            [](const Constraint& constraint) {
+              return constraint.kind == ConstraintKind::Callable &&
+                  constraint.subject == "callback";
+            }), parameter_pipeline_function->constraints.end());
+    Constraint pipeline_formal_fact{ConstraintKind::Callable, "callback",
+        "static callable", "callable-result"};
+    pipeline_formal_fact.arity = 1;
+    pipeline_formal_fact.arguments = {"pipeline-input"};
+    parameter_pipeline_function->constraints.push_back(pipeline_formal_fact);
+    parameter_pipeline_occurrences[parameter_pipeline_callback_id]
+        .linked_constraints.push_back(pipeline_formal_fact);
+    const bool synthetic_pipeline_fact_accepted =
+        checker.call_occurrence_dependencies_complete(
+            *parameter_pipeline_function, *parameter_pipeline_state->second);
+    if (!synthetic_pipeline_fact_accepted) return false;
+    auto parameter_linked_constraints =
+        parameter_pipeline_occurrences[parameter_pipeline_callback_id]
+            .linked_constraints;
+    parameter_pipeline_occurrences[parameter_pipeline_callback_id]
+        .linked_constraints.clear();
+    const bool missing_pipeline_callable_rejected =
+        !checker.call_occurrence_dependencies_complete(
+            *parameter_pipeline_function, *parameter_pipeline_state->second);
+    parameter_pipeline_occurrences[parameter_pipeline_callback_id]
+        .linked_constraints = parameter_linked_constraints;
+    parameter_pipeline_occurrences[parameter_pipeline_callback_id]
+        .linked_constraints.front().arity = 2;
+    const bool wrong_pipeline_callable_arity_rejected =
+        !checker.call_occurrence_dependencies_complete(
+            *parameter_pipeline_function, *parameter_pipeline_state->second);
+    parameter_pipeline_occurrences[parameter_pipeline_callback_id]
+        .linked_constraints = parameter_linked_constraints;
+    parameter_pipeline_function->constraints = original_pipeline_constraints;
+    if (!missing_pipeline_callable_rejected ||
+        !wrong_pipeline_callable_arity_rejected ||
+        checker.call_occurrence_dependencies_complete(
+            *parameter_pipeline_function, *parameter_pipeline_state->second))
+      return false;
+
+    const auto bound_pipeline_function = std::find_if(
+        program.functions.begin(), program.functions.end(),
+        [](const Function& candidate) {
+          return candidate.name == "pipeline_bound";
+        });
+    if (bound_pipeline_function == program.functions.end()) return false;
+    const auto bound_pipeline_state = checker.checked_body_states_.find(
+        &bound_pipeline_function->body);
+    if (bound_pipeline_state == checker.checked_body_states_.end() ||
+        !bound_pipeline_state->second) return false;
+    auto& bound_pipeline_occurrences =
+        bound_pipeline_state->second->expression_occurrences;
+    const auto bound_pipeline_callback = std::find_if(
+        bound_pipeline_occurrences.begin(), bound_pipeline_occurrences.end(),
+        [](const auto& occurrence) {
+          return occurrence.kind ==
+                  BodyTypeState::ExpressionOccurrence::Kind::PipelineStage &&
+              occurrence.operation_id == "functional:Map" &&
+              occurrence.semantic_target_id == "method:Scale.apply";
+        });
+    if (bound_pipeline_callback == bound_pipeline_occurrences.end() ||
+        !checker.call_occurrence_dependencies_complete(
+            *bound_pipeline_function, *bound_pipeline_state->second))
+      return false;
+    const auto bound_pipeline_callback_id = bound_pipeline_callback->id;
+    bound_pipeline_occurrences[bound_pipeline_callback_id].semantic_target_id =
+        "method:DifferentType.apply";
+    const bool wrong_bound_receiver_rejected =
+        !checker.call_occurrence_dependencies_complete(
+            *bound_pipeline_function, *bound_pipeline_state->second);
+    bound_pipeline_occurrences[bound_pipeline_callback_id].semantic_target_id =
+        "method:Scale.apply";
+    if (!wrong_bound_receiver_rejected ||
+        !checker.call_occurrence_dependencies_complete(
+            *bound_pipeline_function, *bound_pipeline_state->second))
       return false;
     const auto empty_function = std::find_if(program.functions.begin(),
         program.functions.end(), [](const Function& candidate) {
