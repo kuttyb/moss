@@ -6288,6 +6288,33 @@ class Checker {
   // Lower a bounded body from the ordinary checker's retained statement
   // and expression occurrences. This path consumes checker identities and
   // TypeRefs; source spelling is used only for literal payloads.
+  bool method_operation_identity_matches(
+      const Function& function,
+      const moss::OpenCallableSummaryFacts::OperationFact& operation,
+      const BodyTypeState::ExpressionOccurrence& occurrence) const {
+    if (!starts_with(operation.operation_id, "method:") ||
+        occurrence.source_operands.empty()) return false;
+    const string method_name = operation.operation_id.substr(7);
+    const string receiver_name = trim(occurrence.source_operands.front());
+    std::optional<std::size_t> parameter_ordinal;
+    for (std::size_t index = 0; index < function.params.size(); ++index) {
+      if (function.params[index].name != receiver_name) continue;
+      if (parameter_ordinal) return false;
+      parameter_ordinal = index;
+    }
+    if (!parameter_ordinal || occurrence.semantic_target_id !=
+            "parameter:" + std::to_string(*parameter_ordinal) +
+                ".method:" + method_name)
+      return false;
+    for (const auto& constraint : occurrence.linked_constraints) {
+      if (constraint.kind != ConstraintKind::Method) continue;
+      if (constraint.subject != receiver_name ||
+          constraint.detail != method_name ||
+          constraint.arity != operation.arguments.size()) return false;
+    }
+    return true;
+  }
+
   bool retain_checked_occurrence_ir(Function& function) {
     if (!function.open_summary || !function.open_summary->scheme_complete ||
         function.body.empty() ||
@@ -27765,8 +27792,47 @@ class Checker {
           checked_types.expression_occurrence_ledger_complete = false;
       } else if (operation.operation_id ==
                  "builtin:collection-count-v1") {
+        const auto source = std::find_if(
+            checked_types.expression_occurrences.begin(),
+            checked_types.expression_occurrences.end(),
+            [&](const auto& candidate) {
+          return candidate.parent_id == occurrence &&
+              candidate.child_role == "pipeline-source";
+        });
+        const auto stage = std::find_if(
+            checked_types.expression_occurrences.begin(),
+            checked_types.expression_occurrences.end(),
+            [&](const auto& candidate) {
+          return candidate.parent_id == occurrence &&
+              candidate.child_role == "stage:0";
+        });
+        const auto stage_count = std::count_if(
+            checked_types.expression_occurrences.begin(),
+            checked_types.expression_occurrences.end(),
+            [&](const auto& candidate) {
+          return candidate.parent_id == occurrence &&
+              candidate.kind ==
+                  BodyTypeState::ExpressionOccurrence::Kind::PipelineStage &&
+              candidate.operation_id == "functional:Count";
+        });
         if (linked.kind != BodyTypeState::ExpressionOccurrence::Kind::Pipeline ||
-            !operation.result || !linked.checked_type ||
+            linked.operation_id != "functional-pipeline-v1" ||
+            linked.source_operands.size() != 1 ||
+            !operation.arguments.empty() ||
+            !operation.argument_operand_ordinals.empty() ||
+            source == checked_types.expression_occurrences.end() ||
+            stage == checked_types.expression_occurrences.end() ||
+            stage_count != 1 ||
+            !same_resolved_term(source->checked_type, operation.receiver) ||
+            stage->operation_id != "functional:Count" ||
+            stage->semantic_target_id != "builtin:collection-count-v1" ||
+            !stage->input_type_ref || !source->checked_type ||
+            !same_resolved_term(stage->input_type_ref, source->checked_type) ||
+            !stage->output_type_ref || !same_type(stage->output_type, "int") ||
+            !same_resolved_term(stage->checked_type, stage->output_type_ref) ||
+            !operation.result || !stage->output_type_ref ||
+            !same_resolved_term(operation.result, stage->output_type_ref) ||
+            !linked.checked_type ||
             !same_resolved_term(linked.checked_type, operation.result))
           checked_types.expression_occurrence_ledger_complete = false;
       } else if (operation.operation_id == "builtin:vector-literal") {
@@ -27889,7 +27955,8 @@ class Checker {
         bool valid =
             linked.kind == BodyTypeState::ExpressionOccurrence::Kind::MemberCall &&
             linked.operation_id == operation.operation_id &&
-            linked.semantic_target_id.size() != 0 &&
+            current_function && method_operation_identity_matches(
+                *current_function, operation, linked) &&
             operation.receiver_operand_ordinal == 0 &&
             operation.argument_operand_ordinals.size() ==
                 operation.arguments.size() &&
@@ -28587,6 +28654,9 @@ export fn relay_return(value):
 export fn relay_method(item, other):
   return item.score(other)
 
+export fn count_values(values):
+  return values |> count
+
 export fn sort_values(values: Vector[Int]) -> Int:
   sort(values, by: identity)
   return values[0]
@@ -28916,6 +28986,64 @@ fn inspect_sample(sample: Sample) -> Int:
             *method_state.solver.resolve(method_fact->arguments.front())) ||
         !method_result || !checked_method_result ||
         !method_result->structurally_equal(*checked_method_result))
+      return false;
+    auto forged_method_occurrence = method_occurrence;
+    forged_method_occurrence.semantic_target_id =
+        "parameter:1.method:score";
+    if (checker.method_operation_identity_matches(
+            *relay_method_function, *method_fact, method_occurrence) == false ||
+        checker.method_operation_identity_matches(
+            *relay_method_function, *method_fact,
+            forged_method_occurrence))
+      return false;
+    const auto count_function = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+      return candidate.name == "count_values";
+    });
+    if (count_function == program.functions.end()) return false;
+    const auto count_state_entry = checker.checked_body_states_.find(
+        &count_function->body);
+    if (count_state_entry == checker.checked_body_states_.end() ||
+        !count_state_entry->second ||
+        !count_state_entry->second->expression_occurrence_ledger_complete)
+      return false;
+    auto& count_state = *count_state_entry->second;
+    const auto count_fact = std::find_if(count_state.open_operations.begin(),
+        count_state.open_operations.end(), [](const auto& operation) {
+      return operation.operation_id == "builtin:collection-count-v1";
+    });
+    if (count_fact == count_state.open_operations.end() || !count_fact->result ||
+        count_fact->expression_occurrence_id >=
+            count_state.expression_occurrences.size()) return false;
+    const auto& count_occurrence = count_state.expression_occurrences[
+        count_fact->expression_occurrence_id];
+    const auto count_source = std::find_if(
+        count_state.expression_occurrences.begin(),
+        count_state.expression_occurrences.end(), [&](const auto& candidate) {
+      return candidate.parent_id == count_occurrence.id &&
+          candidate.child_role == "pipeline-source";
+    });
+    const auto count_stage = std::find_if(
+        count_state.expression_occurrences.begin(),
+        count_state.expression_occurrences.end(), [&](const auto& candidate) {
+      return candidate.parent_id == count_occurrence.id &&
+          candidate.child_role == "stage:0";
+    });
+    if (count_occurrence.kind !=
+            BodyTypeState::ExpressionOccurrence::Kind::Pipeline ||
+        count_occurrence.operation_id != "functional-pipeline-v1" ||
+        count_source == count_state.expression_occurrences.end() ||
+        count_stage == count_state.expression_occurrences.end() ||
+        count_stage->operation_id != "functional:Count" ||
+        !count_state.solver.resolve(count_source->checked_type) ||
+        !count_state.solver.resolve(count_fact->receiver) ||
+        !count_state.solver.resolve(count_source->checked_type)->structurally_equal(
+            *count_state.solver.resolve(count_fact->receiver)) ||
+        !count_stage->output_type_ref ||
+        !count_state.solver.resolve(count_stage->output_type_ref) ||
+        !count_state.solver.resolve(count_fact->result) ||
+        !count_state.solver.resolve(count_stage->output_type_ref)->structurally_equal(
+            *count_state.solver.resolve(count_fact->result)))
       return false;
     const auto synthetic_return = std::find_if(
         expression_identity_state->statement_occurrences.begin(),
