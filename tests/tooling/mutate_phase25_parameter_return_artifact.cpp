@@ -303,6 +303,62 @@ int main(int argc, char** argv) {
                "builtin:vector-literal");
     summary.requirements.clear();
     replace_summary();
+  } else if (mode == "vector-impossible-sametype") {
+    assert(summary.parameters.size() == 2 && summary.requirements.size() == 1 &&
+           summary.requirements.front().operation ==
+               "builtin:vector-literal");
+    auto set_primitive = [](auto& type, const std::string& identity) {
+      type.kind = moss::abi_v10::WireTypeKind::Primitive;
+      type.identity = identity;
+      type.ordinal = 0;
+      type.arguments.clear();
+    };
+    set_primitive(summary.parameters[0], "int");
+    set_primitive(summary.parameters[1], "string");
+    summary.variable_count = 0;
+    summary.result.kind = moss::abi_v10::WireTypeKind::Builtin;
+    summary.result.identity = "vector";
+    summary.result.ordinal = 0;
+    summary.result.arguments = {summary.parameters[0]};
+    auto& relation = summary.requirements.front();
+    set_primitive(relation.receiver, "int");
+    assert(relation.arguments.size() == 2);
+    set_primitive(relation.arguments[0], "int");
+    set_primitive(relation.arguments[1], "string");
+    assert(relation.result);
+    relation.result->kind = moss::abi_v10::WireTypeKind::Builtin;
+    relation.result->identity = "vector";
+    relation.result->ordinal = 0;
+    relation.result->arguments = {relation.receiver};
+
+    auto body = moss::abi_v10::read_checked_body_record(body_at->payload);
+    moss::TypeContext context;
+    const auto integer = moss::Type::primitive("int");
+    const auto text = moss::Type::primitive("string");
+    const auto vector = moss::Type::builtin("vector", {integer});
+    moss::checked_ir::Expr first;
+    first.kind = moss::checked_ir::ExprKind::Parameter;
+    first.type = integer;
+    first.ordinal = 0;
+    moss::checked_ir::Expr second;
+    second.kind = moss::checked_ir::ExprKind::Parameter;
+    second.type = text;
+    second.ordinal = 1;
+    moss::checked_ir::Expr literal;
+    literal.kind = moss::checked_ir::ExprKind::VectorLiteral;
+    literal.type = vector;
+    literal.operands = {first, second};
+    moss::checked_ir::Stmt returned;
+    returned.kind = moss::checked_ir::StmtKind::Return;
+    returned.type = vector;
+    returned.expr = std::move(literal);
+    const std::vector<moss::checked_ir::Stmt> statements{std::move(returned)};
+    body.checked_ir_bytes = moss::checked_ir::encode_checked_body_v1(statements);
+    body.semantic_hash =
+        moss::checked_ir::compute_checked_body_hash_v1(statements);
+    summary.body_semantic_hash = body.semantic_hash;
+    replace_summary();
+    replace_body(std::move(body));
   } else if (mode == "collection-extra-else") {
     rewrite_collection_body([&](auto& statements) {
       assert(statements.size() >= 4 &&

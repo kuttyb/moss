@@ -3543,6 +3543,13 @@ static bool abi_v10_checked_vector_literal_summary_candidate(
     return true;
   };
   const auto& requirement = summary.requirements.front();
+  std::function<bool(const abi_v10::WireType&)> valid_variables =
+      [&](const abi_v10::WireType& type) {
+    if (type.kind == abi_v10::WireTypeKind::BoundVar &&
+        type.ordinal >= summary.variable_count) return false;
+    return std::all_of(type.arguments.begin(), type.arguments.end(),
+                       valid_variables);
+  };
   if (requirement.operation != "builtin:vector-literal" ||
       requirement.parent != 0 || !requirement.dependencies.empty() ||
       requirement.access != abi_v10::Access::Read ||
@@ -3550,17 +3557,80 @@ static bool abi_v10_checked_vector_literal_summary_candidate(
       requirement.arguments.size() > 64 ||
       requirement.argument_access != vector<abi_v10::Access>(
           requirement.arguments.size(), abi_v10::Access::Read) ||
+      !valid_variables(requirement.receiver) ||
+      !std::all_of(requirement.arguments.begin(), requirement.arguments.end(),
+                   valid_variables) ||
       !requirement.result ||
       requirement.result->kind != abi_v10::WireTypeKind::Builtin ||
       requirement.result->identity != "vector" ||
       requirement.result->arguments.size() != 1 ||
+      !same_wire_type(summary.result, *requirement.result) ||
       !same_wire_type(requirement.result->arguments.front(),
                       requirement.receiver))
     return false;
-  return std::any_of(requirement.arguments.begin(),
+  if (!std::any_of(requirement.arguments.begin(),
       requirement.arguments.end(), [&](const abi_v10::WireType& argument) {
     return same_wire_type(argument, requirement.receiver);
-  });
+  }))
+    return false;
+  std::map<std::uint32_t, abi_v10::WireType> substitutions;
+  std::function<bool(std::uint32_t, const abi_v10::WireType&,
+                     std::set<std::uint32_t>&)> occurs =
+      [&](std::uint32_t ordinal, const abi_v10::WireType& type,
+          std::set<std::uint32_t>& visiting) {
+    if (type.kind == abi_v10::WireTypeKind::BoundVar) {
+      if (type.ordinal == ordinal) return true;
+      const auto bound = substitutions.find(type.ordinal);
+      if (bound != substitutions.end()) {
+        if (!visiting.insert(type.ordinal).second) return true;
+        const bool found = occurs(ordinal, bound->second, visiting);
+        visiting.erase(type.ordinal);
+        if (found) return true;
+      }
+    }
+    for (const auto& argument : type.arguments)
+      if (occurs(ordinal, argument, visiting)) return true;
+    return false;
+  };
+  std::function<bool(abi_v10::WireType, abi_v10::WireType)> unify =
+      [&](abi_v10::WireType left, abi_v10::WireType right) {
+    auto dereference = [&](abi_v10::WireType& type) {
+      std::set<std::uint32_t> visited;
+      while (type.kind == abi_v10::WireTypeKind::BoundVar) {
+        const auto found = substitutions.find(type.ordinal);
+        if (found == substitutions.end()) break;
+        if (!visited.insert(type.ordinal).second) return false;
+        type = found->second;
+      }
+      return true;
+    };
+    if (!dereference(left) || !dereference(right)) return false;
+    if (left.kind == abi_v10::WireTypeKind::BoundVar &&
+        right.kind == abi_v10::WireTypeKind::BoundVar &&
+        left.ordinal == right.ordinal) return true;
+    if (left.kind == abi_v10::WireTypeKind::BoundVar) {
+      std::set<std::uint32_t> visiting;
+      if (occurs(left.ordinal, right, visiting)) return false;
+      substitutions.emplace(left.ordinal, std::move(right));
+      return true;
+    }
+    if (right.kind == abi_v10::WireTypeKind::BoundVar) {
+      std::set<std::uint32_t> visiting;
+      if (occurs(right.ordinal, left, visiting)) return false;
+      substitutions.emplace(right.ordinal, std::move(left));
+      return true;
+    }
+    if (left.kind != right.kind || left.identity != right.identity ||
+        left.ordinal != right.ordinal ||
+        left.arguments.size() != right.arguments.size())
+      return false;
+    for (std::size_t index = 0; index < left.arguments.size(); ++index)
+      if (!unify(left.arguments[index], right.arguments[index])) return false;
+    return true;
+  };
+  for (const auto& argument : requirement.arguments)
+    if (!unify(requirement.receiver, argument)) return false;
+  return true;
 }
 
 static bool abi_v10_collection_loop_summary_candidate(
@@ -7077,10 +7147,27 @@ class Checker {
     try {
       const auto bytes = checked_ir::encode_checked_body_v1(statements);
       const auto hash = checked_ir::compute_checked_body_hash_v1(statements);
-      const bool vector_relation_summary = summary.requirements.size() == 1 &&
-          summary.requirements.front().kind == moss::RequirementKind::SameType &&
-          summary.requirements.front().target_id ==
-              "builtin:vector-literal";
+      const auto vector_relation = summary.requirements.size() == 1
+          ? &summary.requirements.front() : nullptr;
+      const bool vector_relation_summary = vector_relation &&
+          vector_relation->kind == moss::RequirementKind::SameType &&
+          vector_relation->target_id == "builtin:vector-literal" &&
+          vector_relation->subject && vector_relation->result &&
+          (*vector_relation->result)->kind == moss::TypeKind::Builtin &&
+          (*vector_relation->result)->name == "vector" &&
+          (*vector_relation->result)->type_args.size() == 1 &&
+          (*vector_relation->result)->type_args.front() &&
+          (*vector_relation->result)->type_args.front()->structurally_equal(
+              *vector_relation->subject) &&
+          !vector_relation->arguments.empty() &&
+          vector_relation->argument_access == vector<moss::AccessMode>(
+              vector_relation->arguments.size(), moss::AccessMode::Read) &&
+          vector_relation->access == moss::AccessMode::Read &&
+          std::any_of(vector_relation->arguments.begin(),
+              vector_relation->arguments.end(), [&](const auto& argument) {
+            return argument && vector_relation->subject->structurally_equal(
+                *argument);
+          });
       const auto decoded = checked_ir::decode_checked_body_v1(
           bytes, *p_.type_context, summary.parameter_types,
           summary.result_type, hash, vector_relation_summary);
@@ -25309,10 +25396,17 @@ class Checker {
           moss::OpenCallableSummaryFacts::OperationFact operation;
           operation.operation_id = "call:" + callee;
           operation.receiver = *open;
+          operation.receiver_operand_ordinal = static_cast<std::uint32_t>(
+              std::distance(argument_terms.begin(), open));
           operation.line = line;
           for (auto term = argument_terms.begin(); term != argument_terms.end();
                ++term)
-            if (term != open) operation.arguments.push_back(*term);
+            if (term != open) {
+              operation.arguments.push_back(*term);
+              operation.argument_operand_ordinals.push_back(
+                  static_cast<std::uint32_t>(
+                      std::distance(argument_terms.begin(), term)));
+            }
           current_body_types_->attach_open_operation(std::move(operation));
         }
       }
@@ -27558,7 +27652,7 @@ class Checker {
       return resolved_left->structurally_equal(*resolved_right);
     };
     std::map<std::uint32_t, std::set<std::uint32_t>> linked_operations;
-    for (const auto& operation : checked_types.open_operations) {
+    for (auto& operation : checked_types.open_operations) {
       if (operation.expression_occurrence_id >=
           checked_types.expression_occurrences.size()) {
         checked_types.expression_occurrence_ledger_complete = false;
@@ -27729,8 +27823,56 @@ class Checker {
           checked_types.expression_occurrence_ledger_complete = false;
         }
       } else if (starts_with(operation.operation_id, "call:")) {
-        if (linked.kind != BodyTypeState::ExpressionOccurrence::Kind::Call ||
-            linked.operation_id != operation.operation_id)
+        bool valid =
+            linked.kind == BodyTypeState::ExpressionOccurrence::Kind::Call &&
+            linked.operation_id == operation.operation_id &&
+            operation.receiver_operand_ordinal < linked.source_operands.size() &&
+            operation.argument_operand_ordinals.size() ==
+                operation.arguments.size() &&
+            operation.arguments.size() + 1 == linked.source_operands.size() &&
+            linked.non_expression_operand_ordinals.empty();
+        std::set<std::uint32_t> operand_ordinals;
+        auto argument_role = [&](std::uint32_t ordinal) {
+          if (linked.operation_id == "call:replace")
+            return ordinal == 0 ? string("place") : string("replacement");
+          return linked.root_slot == "call-invocation"
+              ? "call-argument:" + std::to_string(ordinal)
+              : "argument:" + std::to_string(ordinal);
+        };
+        auto exact_child = [&](std::uint32_t ordinal)
+            -> const BodyTypeState::ExpressionOccurrence* {
+          const auto role = argument_role(ordinal);
+          const BodyTypeState::ExpressionOccurrence* found = nullptr;
+          for (const auto& candidate : checked_types.expression_occurrences) {
+            if (candidate.parent_id != occurrence ||
+                candidate.child_role != role) continue;
+            if (found) return nullptr;
+            found = &candidate;
+          }
+          return found;
+        };
+        const auto receiver = valid
+            ? exact_child(operation.receiver_operand_ordinal) : nullptr;
+        valid = valid && receiver &&
+            same_resolved_term(receiver->checked_type, operation.receiver) &&
+            operand_ordinals.insert(operation.receiver_operand_ordinal).second;
+        for (std::size_t index = 0; valid &&
+             index < operation.arguments.size(); ++index) {
+          const auto ordinal = operation.argument_operand_ordinals[index];
+          const auto* argument = ordinal < linked.source_operands.size()
+              ? exact_child(ordinal) : nullptr;
+          valid = argument && operand_ordinals.insert(ordinal).second &&
+              same_resolved_term(argument->checked_type,
+                                 operation.arguments[index]);
+        }
+        if (valid && operand_ordinals.size() == linked.source_operands.size() &&
+            linked.checked_type) {
+          operation.result = linked.checked_type;
+        } else {
+          valid = false;
+        }
+        if (!valid || !operation.result || !linked.checked_type ||
+            !same_resolved_term(operation.result, linked.checked_type))
           checked_types.expression_occurrence_ledger_complete = false;
       } else if (starts_with(operation.operation_id, "method:")) {
         if (linked.kind !=
@@ -28389,6 +28531,9 @@ export fn relay(value):
   identity(value)
   return value
 
+export fn relay_return(value):
+  return identity(value)
+
 export fn sort_values(values: Vector[Int]) -> Int:
   sort(values, by: identity)
   return values[0]
@@ -28616,6 +28761,51 @@ fn inspect_sample(sample: Sample) -> Int:
     const auto* expression_identity_state = state_for("expression_identity");
     if (!expression_identity_state ||
         !expression_identity_state->expression_occurrence_ledger_complete)
+      return false;
+    const auto relay_return_function = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+      return candidate.name == "relay_return";
+    });
+    if (relay_return_function == program.functions.end()) return false;
+    const auto relay_return_state = checker.checked_body_states_.find(
+        &relay_return_function->body);
+    if (relay_return_state == checker.checked_body_states_.end() ||
+        !relay_return_state->second ||
+        !relay_return_state->second->expression_occurrence_ledger_complete)
+      return false;
+    auto& call_state = *relay_return_state->second;
+    const auto call_fact = std::find_if(call_state.open_operations.begin(),
+        call_state.open_operations.end(), [](const auto& operation) {
+      return operation.operation_id == "call:identity";
+    });
+    if (call_fact == call_state.open_operations.end() ||
+        call_fact->receiver_operand_ordinal != 0 ||
+        !call_fact->argument_operand_ordinals.empty() ||
+        !call_fact->arguments.empty() || !call_fact->result ||
+        call_fact->expression_occurrence_id >=
+            call_state.expression_occurrences.size())
+      return false;
+    const auto& call_occurrence = call_state.expression_occurrences[
+        call_fact->expression_occurrence_id];
+    const auto call_argument = std::find_if(
+        call_state.expression_occurrences.begin(),
+        call_state.expression_occurrences.end(), [&](const auto& candidate) {
+      return candidate.parent_id == call_occurrence.id &&
+          candidate.child_role == "argument:0";
+    });
+    const auto call_result = call_state.solver.resolve(call_fact->result);
+    const auto checked_call_result = call_occurrence.checked_type
+        ? call_state.solver.resolve(call_occurrence.checked_type) : nullptr;
+    if (call_occurrence.kind !=
+            BodyTypeState::ExpressionOccurrence::Kind::Call ||
+        call_occurrence.operation_id != "call:identity" ||
+        call_argument == call_state.expression_occurrences.end() ||
+        !call_state.solver.resolve(call_fact->receiver) ||
+        !call_state.solver.resolve(call_argument->checked_type) ||
+        !call_state.solver.resolve(call_fact->receiver)->structurally_equal(
+            *call_state.solver.resolve(call_argument->checked_type)) ||
+        !call_result || !checked_call_result ||
+        !call_result->structurally_equal(*checked_call_result))
       return false;
     const auto synthetic_return = std::find_if(
         expression_identity_state->statement_occurrences.begin(),

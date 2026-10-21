@@ -409,6 +409,10 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                     "SOURCE_FREE_CHECKED_BODY_INVALID",
                     "SOURCE_FREE_SUMMARY_INVALID",
                 )
+                negative_cases["vector-impossible-sametype"] = (
+                    "SOURCE_FREE_SUMMARY_INVALID",
+                    "SOURCE_FREE_CHECKED_BODY_INVALID",
+                )
             for mode, expected_codes in negative_cases.items():
                 targets = ("fresh", "panic_key") if (
                     mode == "weaken-effect" and
@@ -450,7 +454,8 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                                     "hostile collection body was projected",
                                     reject_output)
                     if mode in {"vector-mislink-element",
-                                "vector-drop-relation"}:
+                                "vector-drop-relation",
+                                "vector-impossible-sametype"}:
                         assert ("MOSS_CHECKED_BODY_PROJECTED|" not in
                                 reject_output), (
                                     mutation_id,
