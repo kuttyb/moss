@@ -27497,10 +27497,23 @@ class Checker {
             ? checked_types.solver.resolve(operation.result) : nullptr;
         const auto checked_result = linked.checked_type
             ? checked_types.solver.resolve(linked.checked_type) : nullptr;
+        if (valid) {
+          // A vector literal is homogeneous. The operation ledger may only
+          // claim completeness when every source element has the exact same
+          // checker-resolved type as its selected receiver. Merely retaining
+          // the operands is insufficient: open variables need an explicit
+          // checker relation before this operation can be consumed.
+          for (const auto& argument : operation.arguments)
+            if (!same_resolved_term(operation.receiver, argument)) {
+              valid = false;
+              break;
+            }
+        }
         if (!valid || operand_ordinals.size() != linked.source_operands.size() ||
-            !result || !checked_result ||
-            !same_resolved_term(operation.receiver,
-                result->type_args.empty() ? nullptr : result->type_args.front()) ||
+            !result || result->kind != moss::TypeKind::Builtin ||
+            result->name != "vector" || result->type_args.size() != 1 ||
+            !checked_result ||
+            !same_resolved_term(operation.receiver, result->type_args.front()) ||
             !result->structurally_equal(*checked_result))
           checked_types.expression_occurrence_ledger_complete = false;
       } else if (starts_with(operation.operation_id, "call:")) {
@@ -28034,6 +28047,8 @@ export fn reject_float_tilde(value):
   static bool unit_test_vector_literal_operand_occurrences() {
     std::istringstream input(R"moss(export fn singleton(value):
   return [value]
+export fn mixed(first, second):
+  return [first, second]
 )moss");
     Program program = Parser(
         lex_lines(input, "<vector-literal-occurrence-test>")).parse();
@@ -28077,10 +28092,21 @@ export fn reject_float_tilde(value):
     const auto receiver_child_type = state.solver.resolve(receiver->checked_type);
     const auto result_type = state.solver.resolve(operation->result);
     const auto expression_type = state.solver.resolve(occurrence->checked_type);
-    return receiver_type && receiver_child_type &&
+    const bool singleton_valid = receiver_type && receiver_child_type &&
         receiver_type->structurally_equal(*receiver_child_type) &&
         result_type && expression_type &&
         result_type->structurally_equal(*expression_type);
+    if (!singleton_valid) return false;
+
+    const auto mixed = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+      return candidate.name == "mixed";
+    });
+    if (mixed == program.functions.end()) return false;
+    const auto mixed_retained = checker.checked_body_states_.find(&mixed->body);
+    if (mixed_retained == checker.checked_body_states_.end() ||
+        !mixed_retained->second) return false;
+    return !mixed_retained->second->expression_occurrence_ledger_complete;
   }
 
   static bool unit_test_statement_call_occurrence_roles() {
