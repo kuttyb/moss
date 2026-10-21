@@ -19,9 +19,10 @@ emission; H3 source-free chain and direct records; statement/call occurrence
 roles; generic arithmetic requirements; actual D4 SDK source-free collection
 profiles; agent-feedback validation; and `git diff --check` pass. The build
 retains two existing TypeSolver missing-initializer warnings. Exact-SHA review by
-the existing adversarial architect is pending. This closes the three current
-call-occurrence reproduction findings and verifies H3 common lowering, but does
-not accept overall R1. Global occurrence/effect/dependency totality, remaining
+the existing adversarial architect returned scoped GO at exact SHA
+`d8b85055e44e8db4bb5607718fc0d00a3b5c2cca`, with no open P0/P1/P2 in this
+slice. This closes the three current call-occurrence reproduction findings and
+verifies H3 common lowering, but does not accept overall R1. Global occurrence/effect/dependency totality, remaining
 bounded producer profiles, and independent overall acceptance remain open.
 Preserve 24 unavailable ABI-v10 profiles, two ABI-v9 raise/recover failures, and
 the `packages/time` failure; do not start R2 before R1 acceptance.
