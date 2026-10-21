@@ -5171,6 +5171,68 @@ class Checker {
           effects_complete && dependencies_complete &&
           occurrence_dependencies_complete;
     }
+    // Ownership checking runs after expression/statement occurrence capture.
+    // Reconcile assignment targets only now, when BindingFact has the final
+    // pre-write and post-write identities from the ownership walk.
+    for (auto& [body_key, state_ptr] : checked_body_states_) {
+      (void)body_key;
+      if (!state_ptr) continue;
+      auto& state = *state_ptr;
+      std::set<string> assigned_binding_ids;
+      for (auto& occurrence : state.statement_occurrences) {
+        if (!occurrence.source || occurrence.kind != Stmt::Kind::Assign ||
+            !simple_identifier(occurrence.source->a)) {
+          if (!occurrence.assigned_binding_identity.empty())
+            state.expression_occurrence_ledger_complete = false;
+          continue;
+        }
+        const auto fact = state.binding_facts.find(occurrence.source);
+        if (fact == state.binding_facts.end()) {
+          state.expression_occurrence_ledger_complete = false;
+          continue;
+        }
+        occurrence.binding_identity = fact->second.identity;
+        occurrence.assigned_binding_identity = fact->second.assigned_identity;
+        occurrence.binding_type = fact->second.type
+            ? state.solver.resolve(fact->second.type) : nullptr;
+        occurrence.introduces_binding = fact->second.introduced;
+        occurrence.mutable_binding = fact->second.mutable_binding;
+        occurrence.bindings.clear();
+        if (fact->second.introduced && !fact->second.identity.empty() &&
+            occurrence.binding_type) {
+          BodyTypeState::StatementOccurrence::BindingOccurrence binding;
+          binding.name = occurrence.source->a;
+          binding.identity = fact->second.identity;
+          binding.type = occurrence.binding_type;
+          binding.mutable_binding = fact->second.mutable_binding;
+          occurrence.bindings.push_back(std::move(binding));
+        }
+        const auto checked_type = occurrence.binding_type
+            ? state.solver.resolve(occurrence.binding_type) : nullptr;
+        const auto fact_type = fact->second.type
+            ? state.solver.resolve(fact->second.type) : nullptr;
+        if (!fact->second.mutable_binding || fact->second.identity.empty() ||
+            fact->second.assigned_identity.empty() ||
+            occurrence.binding_identity != fact->second.identity ||
+            occurrence.assigned_binding_identity !=
+                fact->second.assigned_identity ||
+            !checked_type || !fact_type ||
+            !checked_type->structurally_equal(*fact_type) ||
+            !assigned_binding_ids.insert(fact->second.assigned_identity).second)
+          state.expression_occurrence_ledger_complete = false;
+        if (fact->second.introduced &&
+            (occurrence.bindings.size() != 1 ||
+             occurrence.bindings.front().identity != fact->second.identity ||
+             occurrence.bindings.front().name != occurrence.source->a ||
+             !occurrence.bindings.front().type || !checked_type ||
+             !state.solver.resolve(occurrence.bindings.front().type) ||
+             !checked_type->structurally_equal(*state.solver.resolve(
+                 occurrence.bindings.front().type))))
+          state.expression_occurrence_ledger_complete = false;
+        if (!fact->second.introduced && !occurrence.bindings.empty())
+          state.expression_occurrence_ledger_complete = false;
+      }
+    }
     retain_checked_body_ir();
     // The staged ABI cannot publish a multi-statement generic/private-helper
     // chain through the legacy generic_stmt fallback. Until every reachable
@@ -5392,6 +5454,9 @@ class Checker {
       string branch_role;
       vector<std::uint32_t> expression_roots;
       string binding_identity;
+      // A simple-local assignment retains both the checked binding before
+      // the write and the new checker identity read by later expressions.
+      string assigned_binding_identity;
       moss::TypeRef binding_type;
       vector<BindingOccurrence> bindings;
       string enum_identity;
@@ -5610,6 +5675,7 @@ class Checker {
       bool introduced = false;
       bool mutable_binding = false;
       string identity;
+      string assigned_identity;
       moss::TypeRef type;
     };
     struct CaseFact {
@@ -6266,19 +6332,17 @@ class Checker {
       const auto& node = state.statement_occurrences.at(statement->second);
       const auto local = local_ordinals.find(fact->second.identity);
       const auto prior_type = checked_body_type(fact->second.type);
-      const auto post_type = node.bindings.size() == 1
-          ? checked_body_type(node.bindings.front().type) : nullptr;
-      if (node.bindings.size() != 1 || local == local_ordinals.end() ||
-          node.bindings.front().name != source_statement.a ||
-          node.bindings.front().identity.empty() ||
-          !node.bindings.front().mutable_binding ||
-          !node.bindings.front().type || !prior_type || !post_type ||
+      const auto post_type = checked_body_type(node.binding_type);
+      if (local == local_ordinals.end() ||
+          node.assigned_binding_identity.empty() ||
+          node.binding_identity != fact->second.identity ||
+          !node.mutable_binding || !prior_type || !post_type ||
           !local_types[local->second] ||
           !prior_type->structurally_equal(*local_types[local->second]) ||
           !post_type->structurally_equal(*local_types[local->second]))
         return false;
       auto [alias, inserted] = local_ordinals.emplace(
-          node.bindings.front().identity, local->second);
+          node.assigned_binding_identity, local->second);
       if (!inserted && alias->second != local->second) return false;
     }
     std::function<std::optional<checked_ir::Expr>(std::uint32_t, unsigned)>
@@ -6644,10 +6708,21 @@ class Checker {
           // remain unavailable here.
           if (!simple_identifier(source.a)) return std::nullopt;
           const auto fact = state.binding_facts.find(&source);
+          const auto statement = state.statement_occurrence_ids.find(&source);
           auto expression = expression_for("initializer");
           if (fact == state.binding_facts.end() || fact->second.introduced ||
               !fact->second.mutable_binding || fact->second.identity.empty() ||
+              statement == state.statement_occurrence_ids.end() ||
               !expression || !expression->type)
+            return std::nullopt;
+          const auto& occurrence = state.statement_occurrences.at(statement->second);
+          if (occurrence.binding_identity != fact->second.identity ||
+              occurrence.assigned_binding_identity.empty() ||
+              !occurrence.mutable_binding || !occurrence.binding_type ||
+              !fact->second.type ||
+              !state.solver.resolve(occurrence.binding_type) ||
+              !state.solver.resolve(occurrence.binding_type)->structurally_equal(
+                  *fact->second.type))
             return std::nullopt;
           const auto local = local_ordinals.find(fact->second.identity);
           if (local == local_ordinals.end() || local->second >= local_types.size() ||
@@ -21257,6 +21332,8 @@ class Checker {
               auto identity = env.binding_identities.find(s.a);
               if (identity != env.binding_identities.end())
                 fact.identity = identity->second;
+              fact.assigned_identity = statement_binding_identity(
+                  current_semantic_context_, s.line) + ":" + s.a;
               fact.type = current_body_types_->assignment_value(s);
               current_body_types_->binding_facts[&s] = std::move(fact);
             }
@@ -26088,6 +26165,8 @@ class Checker {
       auto binding = checked_types.binding_facts.find(statement);
       if (binding != checked_types.binding_facts.end()) {
         occurrence.binding_identity = binding->second.identity;
+        occurrence.assigned_binding_identity =
+            binding->second.assigned_identity;
         occurrence.binding_type = binding->second.type
             ? checked_types.solver.resolve(binding->second.type) : nullptr;
         occurrence.introduces_binding = binding->second.introduced;
@@ -26449,9 +26528,10 @@ class Checker {
             checked_types.statement_occurrence_ids.size() ||
         source_statement_node_count != statements.size())
       checked_types.expression_occurrence_ledger_complete = false;
+    std::set<string> assigned_binding_ids;
     for (std::size_t id = 0;
          id < checked_types.statement_occurrences.size(); ++id) {
-      const auto& occurrence = checked_types.statement_occurrences[id];
+      auto& occurrence = checked_types.statement_occurrences[id];
       if (occurrence.synthetic) {
         if (occurrence.id != id || occurrence.source != nullptr ||
             occurrence.kind != Stmt::Kind::Return ||
