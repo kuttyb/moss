@@ -55,7 +55,9 @@ int main(int argc, char** argv) {
       }
       if (line.find("generic_stmt ") != std::string::npos &&
           (callable == "fresh" || callable == "private_box" ||
-           callable == "nested_private_box")) {
+           callable == "nested_private_box" ||
+           callable == "identity_chain" ||
+           callable == "private_identity")) {
         ++removed;
         continue;
       }
@@ -68,22 +70,28 @@ int main(int argc, char** argv) {
               << argv[4] << '\n';
     return 2;
   }
-  const bool drop_private = argc == 6 &&
-      std::string(argv[5]) == "drop-private-box-body";
-  if (drop_private) {
+  const std::string drop_mode = argc == 6 ? argv[5] : "";
+  const bool drop_private_box = drop_mode == "drop-private_box-body" ||
+      drop_mode == "drop-private-box-body";
+  const bool drop_private_identity =
+      drop_mode == "drop-private_identity-body" ||
+      drop_mode == "drop-private-identity-body";
+  if (drop_private_box || drop_private_identity) {
+    const std::string name = drop_private_box ? "private_box" :
+                                                "private_identity";
     auto& records = sealed.value.private_semantic_dependencies;
     const auto before = records.size();
     records.erase(std::remove_if(records.begin(), records.end(),
-        [](const moss::abi_v10::Record& record) {
+        [&](const moss::abi_v10::Record& record) {
       return record.id.rfind("checked-body-v1:", 0) == 0 &&
-          record.id.size() >= std::string(":fn:private_box").size() &&
+          record.id.size() >= std::string(":fn:" + name).size() &&
           record.id.substr(record.id.size() -
-              std::string(":fn:private_box").size()) == ":fn:private_box";
+              std::string(":fn:" + name).size()) == ":fn:" + name;
     }), records.end());
     assert(before == records.size() + 1);
   }
   const auto rewritten = moss::abi_v10::encode(sealed.value);
-  if (!drop_private)
+  if (!drop_private_box && !drop_private_identity)
     moss::abi_v10::validate_complete_interface(
         moss::abi_v10::decode(rewritten));
   const auto new_digest = moss::abi_v10::parse(rewritten).digest;

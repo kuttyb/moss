@@ -621,6 +621,10 @@ struct Function {
   // summary projection retained for existing API clients.
   std::optional<std::string> checked_body_ir_v1_bytes;
   std::optional<std::string> checked_body_ir_v1_hash;
+  // True only when the retained bytes came directly from checked
+  // statement/expression occurrences. The bounded source-text projection is
+  // a migration fallback and must not be counted as common-lowerer evidence.
+  bool checked_body_ir_v1_occurrence_lowered = false;
   // Concrete callable specializations referenced by functional code.  This is
   // retained as semantic dependency information for later incremental work.
   vector<string> callable_dependencies;

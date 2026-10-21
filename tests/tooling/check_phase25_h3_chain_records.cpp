@@ -52,8 +52,8 @@ int main(int argc, char** argv) {
       summaries.emplace(summary.callable_id, std::move(summary));
     }
   }
-  assert(templates.size() == 1 && summaries.size() == 4 &&
-         bodies.size() == 4 && iface.provenance.size() == 5);
+  assert(templates.size() == 1 && summaries.size() == 6 &&
+         bodies.size() == 6 && iface.provenance.size() == 7);
   const auto& nominal = templates.at(nominal_id);
   assert(nominal.variable_count == 1 && nominal.fields.size() == 1 &&
          nominal.fields[0].name == "value");
@@ -69,6 +69,60 @@ int main(int argc, char** argv) {
   auto variable = moss::Type::var(moss::TypeVarId{0, 0, 0});
   auto result = moss::Type::nominal_bound(box, box->program_name,
                                            {{"value", variable}});
+  const std::string identity_id = base + "private_identity";
+  const auto& identity_summary = summaries.at(identity_id);
+  const auto& identity_body = bodies.at(identity_id);
+  assert(identity_summary.variable_count == 1 &&
+         identity_summary.parameters.size() == 1 &&
+         identity_summary.parameters.front().kind ==
+             moss::abi_v10::WireTypeKind::BoundVar &&
+         identity_summary.parameters.front().ordinal == 0 &&
+         identity_summary.result.kind ==
+             moss::abi_v10::WireTypeKind::BoundVar &&
+         identity_summary.result.ordinal == 0 &&
+         identity_summary.body_semantic_hash == identity_body.semantic_hash &&
+         identity_body.dependencies.empty());
+  const auto identity_decoded = moss::checked_ir::decode_checked_body_v1(
+      identity_body.checked_ir_bytes, context, {variable}, variable,
+      identity_body.semantic_hash);
+  assert(identity_decoded.size() == 1 &&
+         identity_decoded.front().kind == moss::checked_ir::StmtKind::Return &&
+         identity_decoded.front().expr &&
+         identity_decoded.front().expr->kind ==
+             moss::checked_ir::ExprKind::Parameter &&
+         identity_decoded.front().expr->ordinal == 0 &&
+         moss::checked_ir::encode_checked_body_v1(identity_decoded) ==
+             identity_body.checked_ir_bytes &&
+         moss::checked_ir::compute_checked_body_hash_v1(identity_decoded) ==
+             identity_body.semantic_hash);
+  const std::string identity_chain_id = base + "identity_chain";
+  const auto& identity_chain_summary = summaries.at(identity_chain_id);
+  const auto& identity_chain_body = bodies.at(identity_chain_id);
+  assert(identity_chain_summary.dependencies.size() == 1 &&
+         identity_chain_summary.dependencies.front().first == identity_id &&
+         identity_chain_summary.dependencies.front().second ==
+             identity_summary.body_semantic_hash &&
+         identity_chain_body.dependencies.size() == 1 &&
+         identity_chain_body.dependencies.front().kind ==
+             moss::abi_v10::CheckedBodyRecord::Dependency::Kind::Callable &&
+         identity_chain_body.dependencies.front().target_id == identity_id &&
+         identity_chain_body.dependencies.front().expected_hash ==
+             identity_summary.body_semantic_hash);
+  const auto identity_chain_decoded =
+      moss::checked_ir::decode_checked_body_v1(
+          identity_chain_body.checked_ir_bytes, context, {variable}, variable,
+          identity_chain_body.semantic_hash);
+  assert(identity_chain_decoded.size() == 1 &&
+         identity_chain_decoded.front().kind ==
+             moss::checked_ir::StmtKind::Return &&
+         identity_chain_decoded.front().expr &&
+         identity_chain_decoded.front().expr->kind ==
+             moss::checked_ir::ExprKind::Call &&
+         identity_chain_decoded.front().expr->semantic_target_id == identity_id &&
+         moss::checked_ir::encode_checked_body_v1(identity_chain_decoded) ==
+             identity_chain_body.checked_ir_bytes &&
+         moss::checked_ir::compute_checked_body_hash_v1(identity_chain_decoded) ==
+             identity_chain_body.semantic_hash);
   for (const char* name : {"private_box", "nested_private_box", "fresh"}) {
     const std::string id = base + name;
     const auto& summary = summaries.at(id);

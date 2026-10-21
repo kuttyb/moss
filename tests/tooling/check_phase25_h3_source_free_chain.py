@@ -66,9 +66,15 @@ fn nested_private_box(x):
   result = private_box(x)
   return result
 
+fn private_identity(x):
+  return x
+
 export fn fresh(x):
   result = nested_private_box(x)
   return result
+
+export fn identity_chain(x):
+  return private_identity(x)
 
 export fn relay(b: Box):
   extracted = b.value
@@ -87,8 +93,8 @@ export fn relay(b: Box):
     interface_text = interface.read_text(errors="replace")
     legacy_statements = [line for line in interface_text.splitlines()
                          if "generic_stmt " in line]
-    assert len(legacy_statements) == 9, legacy_statements
-    command([str(poison), str(interface), str(archive), "Service", "6"])
+    assert len(legacy_statements) == 11, legacy_statements
+    command([str(poison), str(interface), str(archive), "Service", "8"])
     poisoned_text = interface.read_text(errors="replace")
     remaining_legacy = [line for line in poisoned_text.splitlines()
                         if "generic_stmt " in line]
@@ -99,13 +105,14 @@ export fn relay(b: Box):
 
     env["MOSS_MODULE_PATH"] = str(artifacts)
     for name, argument, expected in (
-            ("int", "99", "99\n"),
-            ("string", '"hello"', "hello\n")):
+            ("int", "99", "99\n99\n"),
+            ("string", '"hello"', "hello\nhello\n")):
         consumer = scratch / name
         package(consumer, f"h3_{name}",
                 "module Main\nimport Service\n\nfn main():\n"
                 f"  item = Service.fresh({argument})\n"
-                "  echo Service.relay(item)\n")
+                "  echo Service.relay(item)\n"
+                f"  echo Service.identity_chain({argument})\n")
         built = subprocess.run([str(MARGO), "build", *profile_flag],
                                cwd=consumer, env=env,
                                capture_output=True, text=True)
@@ -121,22 +128,24 @@ export fn relay(b: Box):
                 traced.stdout, traced.stderr)
         assert command([str(MARGO), "run", *profile_flag], cwd=consumer, env=env) == expected
 
-    forged = scratch / "forged-artifacts"
-    shutil.copytree(artifacts, forged)
-    command([str(poison), str(forged / "Service.mossi"),
-             str(forged / "libService.rlib"), "Service", "0",
-             "drop-private-box-body"])
-    bad_env = env.copy()
-    bad_env["MOSS_MODULE_PATH"] = str(forged)
-    negative = scratch / "negative"
-    package(negative, "h3_missing_private",
-            "module Main\nimport Service\n\nfn main():\n"
-            "  item = Service.fresh(1)\n  echo Service.relay(item)\n")
-    rejected = subprocess.run([str(MOSS), "build", "--json"], cwd=negative,
-                              env=bad_env, capture_output=True, text=True)
-    assert rejected.returncode != 0, (rejected.stdout, rejected.stderr)
-    diagnostic = json.loads(rejected.stdout)["error"]
-    assert diagnostic["code"] == "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING", (
-        diagnostic, rejected.stderr)
+    for missing in ("private_box", "private_identity"):
+        forged = scratch / f"forged-{missing}"
+        shutil.copytree(artifacts, forged)
+        command([str(poison), str(forged / "Service.mossi"),
+                 str(forged / "libService.rlib"), "Service", "0",
+                 f"drop-{missing}-body"])
+        bad_env = env.copy()
+        bad_env["MOSS_MODULE_PATH"] = str(forged)
+        negative = scratch / f"negative-{missing}"
+        package(negative, f"h3_missing_{missing}",
+                "module Main\nimport Service\n\nfn main():\n"
+                f"  item = Service.identity_chain(1)\n"
+                "  echo Service.relay(item)\n")
+        rejected = subprocess.run([str(MOSS), "build", "--json"], cwd=negative,
+                                  env=bad_env, capture_output=True, text=True)
+        assert rejected.returncode != 0, (rejected.stdout, rejected.stderr)
+        diagnostic = json.loads(rejected.stdout)["error"]
+        assert diagnostic["code"] == "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING", (
+            diagnostic, rejected.stderr)
 
 print("H3 common checked-body chain, multi-statement field read, two source-free consumers, poisoned chain fallback, and negative closures: PASS")

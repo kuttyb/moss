@@ -7839,23 +7839,18 @@ class Checker {
       function.checked_body_v1.reset();
       function.checked_body_ir_v1_bytes.reset();
       function.checked_body_ir_v1_hash.reset();
+      function.checked_body_ir_v1_occurrence_lowered = false;
       if (compiled_interface_file(function.source_file)) continue;
       if (!function.open_summary || !function.open_summary->scheme_complete) continue;
       const bool occurrence_lowered =
           retain_checked_occurrence_ir(function);
-      const bool vector_relation_summary =
-          function.open_summary->requirements.size() == 1 &&
-          function.open_summary->requirements.front().kind ==
-              moss::RequirementKind::SameType &&
-          function.open_summary->requirements.front().target_id ==
-              "builtin:vector-literal";
-      const bool legacy_return_shape = function.body.size() == 1 &&
-          function.body.front().kind == Stmt::Kind::Return;
-      // Until each shape producer consumes the canonical body directly, keep
-      // its bounded legacy projection alongside the occurrence IR. The ABI
-      // record builder still uses the shared canonical bytes where admitted.
-      if (occurrence_lowered &&
-          (!legacy_return_shape || vector_relation_summary)) continue;
+      // Once occurrence lowering succeeds, its bytes are authoritative for
+      // every body shape. The bounded source-text projection below is only a
+      // migration fallback for shapes the common lowerer cannot yet retain.
+      if (occurrence_lowered) {
+        function.checked_body_ir_v1_occurrence_lowered = true;
+        continue;
+      }
       const auto& summary = *function.open_summary;
       string expression;
       if (function.body.empty() && function.result_expression)
@@ -29427,6 +29422,9 @@ export fn mixed(first, second):
     std::istringstream input(R"moss(fn identity(value):
   return value
 
+fn common_single_return(value):
+  return value
+
 export fn invoke_callback(callback, value):
   return callback(value)
 
@@ -29521,6 +29519,38 @@ fn inspect_sample(sample: Sample) -> Int:
                           .parse();
     Checker checker(program);
     checker.run();
+    const auto common_single_return = std::find_if(
+        program.functions.begin(), program.functions.end(),
+        [](const Function& candidate) {
+      return candidate.name == "common_single_return";
+    });
+    if (common_single_return == program.functions.end() ||
+        !common_single_return->checked_body_ir_v1_occurrence_lowered ||
+        !common_single_return->checked_body_ir_v1_bytes ||
+        !common_single_return->checked_body_ir_v1_hash ||
+        !common_single_return->open_summary || !program.type_context)
+      return false;
+    try {
+      const auto common_body = checked_ir::decode_checked_body_v1(
+          *common_single_return->checked_body_ir_v1_bytes,
+          *program.type_context,
+          common_single_return->open_summary->parameter_types,
+          common_single_return->open_summary->result_type,
+          *common_single_return->checked_body_ir_v1_hash);
+      if (common_body.size() != 1 ||
+          common_body.front().kind != checked_ir::StmtKind::Return ||
+          !common_body.front().expr ||
+          common_body.front().expr->kind !=
+              checked_ir::ExprKind::Parameter ||
+          common_body.front().expr->ordinal != 0 ||
+          checked_ir::encode_checked_body_v1(common_body) !=
+              *common_single_return->checked_body_ir_v1_bytes ||
+          checked_ir::compute_checked_body_hash_v1(common_body) !=
+              *common_single_return->checked_body_ir_v1_hash)
+        return false;
+    } catch (const std::invalid_argument&) {
+      return false;
+    }
     auto verifies_call = [&](const string& name,
                              const vector<string>& expected_roles,
                              const vector<std::uint32_t>& expected_non_expression) {

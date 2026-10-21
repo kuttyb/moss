@@ -38,10 +38,25 @@ valid loop forms remain unavailable. Exact-SHA architectural review at pushed SH
 `e0569279c81f6f69356e878153ee9238a36d14b5` returned scoped GO with no P0/P1/P2
 for this common Count/Index emission slice. Overall R1 remains open.
 
+The architect's read-only audit of `7ee386cbf3a124361e066138415627bbf05f07d5`
+found that a successful common one-return lowering was subsequently overwritten
+by the bounded source-text migration projection. `retain_checked_body_ir()` now
+preserves occurrence bytes whenever common lowering succeeds and runs the
+source-text fallback only when it fails; an explicit in-memory provenance bit
+distinguishes the two. The focused occurrence regression checks a one-return
+parameter body's decoded tree, canonical bytes/hash, and common-lowering marker.
+The H3 source-free chain now includes a one-return private helper reached from
+an exported one-return call, verifies both checked bodies and dependency hashes,
+poisons their legacy statements, runs Int/String consumers, and rejects either
+missing private body. This closes the reviewed single-return authority gap for
+the exercised H3 profile; it does not generalize all body shapes or dependency
+closures. Exact-SHA re-review is pending.
+
 Current validation on the rebuilt `moss-dev` passes the full M2b2 source-free/
 hostile corpus, generic arithmetic requirements, D4 SDK collection source-free
 corpus, H3 source-free chain regression, and focused statement/call occurrence
-harness. The generic arithmetic harness checks canonical common checked-body
+harness. Those tests were rerun after the single-return source-authority fix on
+the rebuilt `moss-dev`. The generic arithmetic harness checks canonical common checked-body
 bytes/hash for `x * 2 + 20`, confirms body availability for `x + 20`,
 `x * 2 - 20`, and `x * 2 + 20 + 1`, and confirms source-valid `20 + x * 2`
 currently has no checked body. The corpus now promotes the multi-statement
