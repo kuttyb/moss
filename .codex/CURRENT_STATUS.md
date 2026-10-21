@@ -1,3 +1,9 @@
+## Phase 25.1 R1 — generic parameter branch-join backlog captured — working tree — 2026-10-21
+
+Added corpus profile `branch-join-generic-parameters-unavailable`: ABI-v9 source-free Int/String execution remains green, while staged ABI-v10 source-free selection must fail with `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE`. The checker retains a complete occurrence ledger for this valid body, but its open signature summary is incomplete and it emits no checked callable body. This is now a measured R1 gap: close the result and shared parameter TypeRefs from the exact predecessor binding/control edges, then serialize only after relation parity is proven. The full M2b2 corpus passes with this backlog row.
+
+The last independently reviewed code checkpoint is `af5a802afdae44e8d48431633ae23706bcc671e7` (scoped GO for pure literal IfJoin admission); docs/feedback update and this corpus row are pending commit. Overall R1 remains incomplete. Keep the 24 unavailable ABI-v10 profiles, two ABI-v9 raise/recover failures, and `packages/time` visible; do not start R2 before independent R1 acceptance.
+
 ## Phase 25.1 R1 — bounded pure IfJoin source-free admission — working tree — 2026-10-21
 
 The importer now admits exactly one typed IfJoin followed by a Return of its joined local when condition and branch expressions are leaves, all parameter accesses are READ, and summary/body requirements, observable effects, and semantic dependencies are empty. This is the subset whose exact behavior is carried by checked IR without operation-lineage claims. The source-free corpus case `branch-join-generic-literals` executes both branches for Int and String specializations. The adjacent `branch-join-generic-arithmetic-unavailable` hostile IfJoin and ordinary If/assignment mutations still reject before projection.

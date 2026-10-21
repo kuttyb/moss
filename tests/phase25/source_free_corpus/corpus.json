@@ -140,6 +140,18 @@
       "evidence": "The admitted subset is exactly one typed IfJoin and a return of its joined local, with leaf-only condition and predecessor expressions, READ-only parameters, no requirements, effects, or dependencies. Generic parameter selection whose join requires a SameType relation remains unavailable until that relation is checked against the exact branch operands. Adjacent branch-arithmetic hostile artifacts must continue to reject before projection."
     },
     {
+      "id": "branch-join-generic-parameters-unavailable",
+      "priority": "P1-essential",
+      "category": "generic parameter selection through joined local",
+      "provider": "module Service\n\nexport fn fresh(first, second, flag: Bool):\n  if flag:\n    let item = first\n  else:\n    let item = second\n  return item\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(5, 7, true)\n  echo Service.fresh(5, 7, false)\n  echo Service.fresh(\"moss\", \"codex\", true)\n  echo Service.fresh(\"moss\", \"codex\", false)\n",
+      "abi_v9_expected_output": "5\n7\nmoss\ncodex\n",
+      "provider_must_emit_v10": true,
+      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "checked_body_status": "valid generic parameter join is preserved on ABI-v9; staged v10 fails closed because the checker summary does not yet close the joined open result and no checked callable summary/body is emitted",
+      "evidence": "The source-backed function selects between two generic parameters and executes for Int and String under ABI-v9. The checker retains the join binding and a complete occurrence ledger, but the open signature summary remains incomplete and checked-body v1 is unavailable. Keep this case measurable until result TypeRef closure and exact predecessor lineage are admitted end to end."
+    },
+    {
       "id": "mutable-local-reassignment",
       "priority": "P1-essential",
       "category": "generic body mutation",
