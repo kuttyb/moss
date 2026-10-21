@@ -33,6 +33,17 @@
       "evidence": "M2b.3b acceptance poisons generic_stmt, requires checked-body projection trace, and executes the same authoritative field read for Int and String Box specializations after provider source removal."
     },
     {
+      "id": "multi-statement-field-read-fail-closed",
+      "priority": "P1-essential",
+      "category": "multi-statement nominal dependency",
+      "provider": "module Service\n\nexport type Box:\n  value\n\nexport fn fresh(item: Box):\n  let result = item.value\n  return result\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  item = Service.Box(value: 23)\n  echo Service.fresh(item)\n",
+      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "provider_must_emit_v10": true,
+      "checked_body_status": "checked-body unavailable; provider must not emit an occurrence body with an omitted nominal dependency",
+      "evidence": "Adversarial R1 review found that a general occurrence producer could omit dependencies extracted from canonical checked IR. The producer now declines dependency-bearing bodies until it can emit their dependency records; v10 import must fail closed after source removal."
+    },
+    {
       "id": "single-call",
       "priority": "P1-essential",
       "category": "generic call",

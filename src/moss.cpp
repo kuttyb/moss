@@ -5317,6 +5317,10 @@ class Checker {
         string identity;
         moss::TypeRef type;
         bool mutable_binding = false;
+        // A control-flow merge is a new lexical value with an explicit edge
+        // from each reaching branch definition. Ordinary declarations leave
+        // this empty.
+        vector<string> predecessor_binding_ids;
       };
       std::uint32_t id = 0;
       const Stmt* source = nullptr;
@@ -11991,10 +11995,19 @@ class Checker {
               continue;
             BodyTypeState::StatementOccurrence::BindingOccurrence binding;
             binding.name = name;
-            binding.identity = "join:" + current_semantic_context_ + ":" +
-                std::to_string(statement.line) + ":" + name;
+            // Ownership uses the control statement's binding identity for a
+            // merged local. Match that checker-owned identity exactly so a
+            // later identifier occurrence resolves to this single joined
+            // binding fact rather than to a display-name reconstruction.
+            binding.identity = statement_binding_identity(
+                current_semantic_context_, statement.line) + ":" + name;
             binding.type = current_body_types_->solver.resolve(joined_term->second);
             binding.mutable_binding = then_binding->kind == Stmt::Kind::Var;
+            binding.predecessor_binding_ids = {
+                statement_binding_identity(current_semantic_context_,
+                    then_binding->line) + ":" + name,
+                statement_binding_identity(current_semantic_context_,
+                    else_binding->line) + ":" + name};
             if (binding.type) joins.push_back(std::move(binding));
           }
           if (!joins.empty())
@@ -26378,6 +26391,42 @@ class Checker {
         }
       }
     }
+    std::map<string, vector<const BodyTypeState::StatementOccurrence::BindingOccurrence*>>
+        bindings_by_identity;
+    for (const auto& statement : checked_types.statement_occurrences)
+      for (const auto& binding : statement.bindings)
+        if (!binding.identity.empty())
+          bindings_by_identity[binding.identity].push_back(&binding);
+    for (const auto& statement : checked_types.statement_occurrences) {
+      for (const auto& binding : statement.bindings) {
+        if (binding.predecessor_binding_ids.empty()) continue;
+        if (statement.kind != Stmt::Kind::If ||
+            binding.predecessor_binding_ids.size() != 2 ||
+            binding.identity != statement_binding_identity(
+                current_semantic_context_, statement.line) + ":" +
+                binding.name) {
+          checked_types.expression_occurrence_ledger_complete = false;
+          continue;
+        }
+        std::set<string> predecessor_ids;
+        for (const auto& identity : binding.predecessor_binding_ids) {
+          const auto found = bindings_by_identity.find(identity);
+          const auto predecessor_type = found != bindings_by_identity.end() &&
+                  found->second.size() == 1 && found->second.front()->type
+              ? checked_types.solver.resolve(found->second.front()->type)
+              : nullptr;
+          const auto joined_type = binding.type
+              ? checked_types.solver.resolve(binding.type) : nullptr;
+          if (identity.empty() || !predecessor_ids.insert(identity).second ||
+              found == bindings_by_identity.end() || found->second.size() != 1 ||
+              found->second.front()->name != binding.name ||
+              found->second.front()->mutable_binding != binding.mutable_binding ||
+              !predecessor_type || !joined_type ||
+              !predecessor_type->structurally_equal(*joined_type))
+            checked_types.expression_occurrence_ledger_complete = false;
+        }
+      }
+    }
     vector<vector<std::uint32_t>> expression_children(
         checked_types.expression_occurrences.size());
     std::set<std::uint32_t> statement_occurrence_values;
@@ -26663,6 +26712,18 @@ class Checker {
     }
     if (!checked_types.active_expression_occurrences.empty())
       checked_types.expression_occurrence_ledger_complete = false;
+    auto same_resolved_term = [&](const moss::TypeRef& left,
+                                  const moss::TypeRef& right) {
+      auto resolved_left = left ? checked_types.solver.resolve(left) : nullptr;
+      auto resolved_right = right ? checked_types.solver.resolve(right) : nullptr;
+      if (!resolved_left || !resolved_right) return false;
+      if (resolved_left->kind == moss::TypeKind::InferenceVar ||
+          resolved_right->kind == moss::TypeKind::InferenceVar)
+        return resolved_left->kind == moss::TypeKind::InferenceVar &&
+            resolved_right->kind == moss::TypeKind::InferenceVar &&
+            resolved_left->var_id == resolved_right->var_id;
+      return resolved_left->structurally_equal(*resolved_right);
+    };
     std::map<std::uint32_t, std::set<std::uint32_t>> linked_operations;
     for (const auto& operation : checked_types.open_operations) {
       if (operation.expression_occurrence_id >=
@@ -26683,20 +26744,91 @@ class Checker {
             !linked.checked_type->structurally_equal(
                 *checked_types.solver.resolve(operation.result)))
           checked_types.expression_occurrence_ledger_complete = false;
+      } else if (operation.operation_id == "builtin:index") {
+        if (linked.kind != BodyTypeState::ExpressionOccurrence::Kind::Index ||
+            linked.operation_id != "builtin:index" || !operation.result ||
+            !linked.checked_type ||
+            !same_resolved_term(linked.checked_type, operation.result))
+          checked_types.expression_occurrence_ledger_complete = false;
       } else if (operation.operation_id ==
                  "builtin:collection-count-v1") {
         if (linked.kind != BodyTypeState::ExpressionOccurrence::Kind::Pipeline ||
             !operation.result || !linked.checked_type ||
-            !linked.checked_type->structurally_equal(
-                *checked_types.solver.resolve(operation.result)))
+            !same_resolved_term(linked.checked_type, operation.result))
           checked_types.expression_occurrence_ledger_complete = false;
+      } else if (operation.operation_id == "builtin:vector-literal") {
+        if (linked.kind !=
+                BodyTypeState::ExpressionOccurrence::Kind::VectorLiteral ||
+            linked.operation_id != "builtin:vector-literal")
+          checked_types.expression_occurrence_ledger_complete = false;
+      } else if (starts_with(operation.operation_id, "call:")) {
+        if (linked.kind != BodyTypeState::ExpressionOccurrence::Kind::Call ||
+            linked.operation_id != operation.operation_id)
+          checked_types.expression_occurrence_ledger_complete = false;
+      } else if (starts_with(operation.operation_id, "method:")) {
+        if (linked.kind !=
+                BodyTypeState::ExpressionOccurrence::Kind::MemberCall ||
+            linked.operation_id != operation.operation_id)
+          checked_types.expression_occurrence_ledger_complete = false;
+      } else if (starts_with(operation.operation_id, "functional:")) {
+        // Functional operations attach to their pipeline occurrence while the
+        // parser-derived stage nodes retain the per-stage identity. Require a
+        // unique matching stage under that exact pipeline; spelling-only or
+        // orphan operation facts must not make a body eligible for lowering.
+        const string stage_name = operation.operation_id.substr(11);
+        const auto stage_matches = std::count_if(
+            checked_types.expression_occurrences.begin(),
+            checked_types.expression_occurrences.end(),
+            [&](const auto& candidate) {
+          return candidate.parent_id == occurrence &&
+              candidate.kind ==
+                  BodyTypeState::ExpressionOccurrence::Kind::PipelineStage &&
+              candidate.operation_id == "functional:" + stage_name;
+        });
+        if (linked.kind !=
+                BodyTypeState::ExpressionOccurrence::Kind::Pipeline ||
+            linked.operation_id != "functional-pipeline-v1" ||
+            stage_matches != 1)
+          checked_types.expression_occurrence_ledger_complete = false;
+      } else {
+        // New checker operation families must define their occurrence
+        // correspondence before they can participate in a complete ledger.
+        checked_types.expression_occurrence_ledger_complete = false;
       }
     }
     for (const auto& requirement : checked_types.open_operator_requirements) {
       if (requirement.expression_occurrence_id >=
           checked_types.expression_occurrences.size() ||
           !checked_types.expression_occurrences[
-              requirement.expression_occurrence_id].completed)
+              requirement.expression_occurrence_id].completed) {
+        checked_types.expression_occurrence_ledger_complete = false;
+        continue;
+      }
+      const auto& linked = checked_types.expression_occurrences[
+          requirement.expression_occurrence_id];
+      const string expected_operator = starts_with(requirement.target_id,
+              "operator:")
+          ? requirement.target_id.substr(9) : string{};
+      const BodyTypeState::ExpressionOccurrence* left = nullptr;
+      const BodyTypeState::ExpressionOccurrence* right = nullptr;
+      for (const auto& child : checked_types.expression_occurrences) {
+        if (child.parent_id != linked.id) continue;
+        if (child.child_role == "left") left = &child;
+        if (child.child_role == "right") right = &child;
+      }
+      if (linked.kind != BodyTypeState::ExpressionOccurrence::Kind::Binary ||
+          expected_operator.empty() || linked.operation_id != expected_operator ||
+          !left || !right || !left->checked_type || !right->checked_type ||
+          !checked_types.solver.resolve(requirement.subject) ||
+          !checked_types.solver.resolve(requirement.arguments.empty()
+              ? nullptr : requirement.arguments.front()) ||
+          !same_resolved_term(left->checked_type, requirement.subject) ||
+          !same_resolved_term(right->checked_type,
+              requirement.arguments.empty() ? nullptr :
+                  requirement.arguments.front()) ||
+          requirement.arguments.size() != 1 || !requirement.result ||
+          !linked.checked_type ||
+          !same_resolved_term(*requirement.result, linked.checked_type))
         checked_types.expression_occurrence_ledger_complete = false;
     }
     for (const auto& linked : linked_operations)
@@ -27057,7 +27189,19 @@ fn inspect_sample(sample: Sample) -> Int:
           trim(occurrence.source_expression) == "local";
     });
     if (joined_read == branch_state->second->expression_occurrences.end() ||
-        !starts_with(joined_read->resolved_binding_id, "join:"))
+        if_node->bindings.size() != 1 ||
+        joined_read->resolved_binding_id != if_node->bindings.front().identity ||
+        if_node->bindings.front().predecessor_binding_ids.size() != 2)
+      return false;
+    std::set<string> joined_predecessors(
+        if_node->bindings.front().predecessor_binding_ids.begin(),
+        if_node->bindings.front().predecessor_binding_ids.end());
+    for (const auto& declaration : statement_nodes)
+      if (declaration.kind == Stmt::Kind::Let &&
+          declaration.introduces_binding && declaration.binding_type &&
+          declaration.source && declaration.source->a == "local")
+        joined_predecessors.erase(declaration.binding_identity);
+    if (!joined_predecessors.empty())
       return false;
     auto state_for = [&](const string& name) -> const BodyTypeState* {
       auto function = std::find_if(program.functions.begin(),
@@ -45591,8 +45735,9 @@ static void append_abi_v10_occurrence_records(
     body.callable_id = summary.callable_id;
     body.semantic_hash = summary.body_semantic_hash;
     body.checked_ir_bytes = *function.checked_body_ir_v1_bytes;
+    vector<checked_ir::Stmt> decoded;
     try {
-      const auto decoded = checked_ir::decode_checked_body_v1(
+      decoded = checked_ir::decode_checked_body_v1(
           body.checked_ir_bytes, *program.type_context,
           facts.parameter_types, facts.result_type, body.semantic_hash);
       if (checked_ir::encode_checked_body_v1(decoded) != body.checked_ir_bytes ||
@@ -45602,6 +45747,14 @@ static void append_abi_v10_occurrence_records(
     } catch (const std::invalid_argument&) {
       continue;
     }
+    // A complete checked body may depend on nominal templates or callees even
+    // when its open callable summary has no signature-level dependencies.
+    // This producer has not yet emitted those dependency records, so inspect
+    // the decoded checked IR and fail closed until it can publish the complete
+    // dependency closure. The importer independently recomputes this set.
+    body.dependencies.clear();
+    if (!extract_semantic_dependencies(decoded).empty())
+      continue;
     vector<abi_v10::SourceProvenance> provenance{callable_provenance};
     provenance.insert(provenance.end(), requirement_provenance.begin(),
                       requirement_provenance.end());
