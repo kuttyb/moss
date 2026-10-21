@@ -3698,6 +3698,45 @@ static void project_imported_h3_checked_bodies(Program& program) {
     };
     if (contains_if_join(statements))
       invalid("checked ABI-v10 branch-join body lacks requirement lineage validation");
+    std::function<bool(const checked_ir::Expr&)> is_operation_expression =
+        [&](const checked_ir::Expr& expression) {
+      switch (expression.kind) {
+        case checked_ir::ExprKind::Parameter:
+        case checked_ir::ExprKind::IntegerLiteral:
+        case checked_ir::ExprKind::FloatLiteral:
+        case checked_ir::ExprKind::BoolLiteral:
+        case checked_ir::ExprKind::StringLiteral:
+        case checked_ir::ExprKind::LocalRead:
+          break;
+        default:
+          return true;
+      }
+      return std::any_of(expression.operands.begin(), expression.operands.end(),
+          [&](const checked_ir::Expr& operand) {
+        return is_operation_expression(operand);
+      });
+    };
+    bool contains_conditional = false;
+    bool contains_operation = false;
+    std::function<void(const vector<checked_ir::Stmt>&)> inspect_operations =
+        [&](const vector<checked_ir::Stmt>& block) {
+      for (const auto& statement : block) {
+        if (statement.kind == checked_ir::StmtKind::If)
+          contains_conditional = true;
+        if (statement.expr && is_operation_expression(*statement.expr))
+          contains_operation = true;
+        for (const auto& operand : statement.operands)
+          if (is_operation_expression(operand)) contains_operation = true;
+        inspect_operations(statement.then_branch);
+        inspect_operations(statement.else_branch);
+        inspect_operations(statement.body);
+        for (const auto& branch : statement.match_cases)
+          inspect_operations(branch.body);
+      }
+    };
+    inspect_operations(statements);
+    if (contains_conditional && contains_operation && !collection_loop_candidate)
+      invalid("checked ABI-v10 conditional body lacks requirement lineage validation");
     const bool local_map_effect_contract =
         abi_v10_local_map_effects_covered(
             function.observable_effects, statements);

@@ -114,8 +114,8 @@
       "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(5, true)\n  echo Service.fresh(5, false)\n  echo Service.fresh(2.5, true)\n  echo Service.fresh(2.5, false)\n",
       "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_INVALID",
       "provider_must_emit_v10": true,
-      "checked_body_status": "source-free import explicitly rejects IfJoin until body-to-requirement and dependency lineage validation is implemented; checker facts preserve guarded predecessor identities and both operation dependencies",
-      "evidence": "The checker ledger, ABI-v10 summary, and checked-body-v1 now encode both branch operation dependencies and the joined local, but the importer does not yet validate the IfJoin predecessor occurrences one-to-one against summary requirements. The source-deleted consumer must reject this emitted artifact rather than project it based only on generic type/effect closure. Keep this valid profile visible until lineage validation and hostile artifact acceptance pass."
+      "checked_body_status": "source-free import rejects branch arithmetic in both IfJoin and ordinary If/assignment forms until body-operation and dependency lineage validation is implemented; checker facts preserve guarded predecessor identities and both operation dependencies",
+      "evidence": "The checker ledger, ABI-v10 summary, and checked-body-v1 encode branch operation dependencies and joined/local values, but the importer does not yet validate every conditional operation one-to-one against summary requirements. Hostile source-free fixtures inject both IfJoin and ordinary If-plus-mutable-assignment bodies; both must reject before projection. Keep this valid profile visible until generalized lineage validation passes."
     },
     {
       "id": "mutable-local-reassignment",

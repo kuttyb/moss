@@ -93,9 +93,10 @@ moss::abi_v10::SourceProvenance add_provenance(
 }  // namespace
 
 int main(int argc, char** argv) {
-  assert(argc == 3);
+  assert(argc == 3 || argc == 4);
   const std::string interface_path = argv[1];
   const std::string archive_path = argv[2];
+  const std::string shape = argc == 4 ? argv[3] : "if-join";
   auto sealed = moss::abi_v10::decode(read_file(interface_path));
   const std::string old_digest = sealed.digest;
   const std::string callable = "callable-v1:" + sealed.value.module_id +
@@ -103,16 +104,40 @@ int main(int argc, char** argv) {
   const auto variable = moss::Type::var(moss::TypeVarId{0, 0, 0});
   const auto bool_type = moss::Type::primitive("bool");
 
-  moss::checked_ir::Stmt join;
-  join.kind = moss::checked_ir::StmtKind::IfJoin;
-  join.local_ordinal = 0;
-  join.type = variable;
-  join.expr = parameter(bool_type, 1);
-  join.operands = {
-      binary(variable, moss::checked_ir::BinaryOp::Mul,
-             parameter(variable, 0), integer("2")),
-      binary(variable, moss::checked_ir::BinaryOp::Mul,
-             parameter(variable, 0), integer("3"))};
+  std::vector<moss::checked_ir::Stmt> statements;
+  if (shape == "if-join") {
+    moss::checked_ir::Stmt join;
+    join.kind = moss::checked_ir::StmtKind::IfJoin;
+    join.local_ordinal = 0;
+    join.type = variable;
+    join.expr = parameter(bool_type, 1);
+    join.operands = {
+        binary(variable, moss::checked_ir::BinaryOp::Mul,
+               parameter(variable, 0), integer("2")),
+        binary(variable, moss::checked_ir::BinaryOp::Mul,
+               parameter(variable, 0), integer("3"))};
+    statements.push_back(std::move(join));
+  } else if (shape == "if-assign") {
+    moss::checked_ir::Stmt initial;
+    initial.kind = moss::checked_ir::StmtKind::Var;
+    initial.local_ordinal = 0;
+    initial.type = variable;
+    initial.expr = binary(variable, moss::checked_ir::BinaryOp::Mul,
+                          parameter(variable, 0), integer("2"));
+    statements.push_back(std::move(initial));
+    moss::checked_ir::Stmt conditional;
+    conditional.kind = moss::checked_ir::StmtKind::If;
+    conditional.expr = parameter(bool_type, 1);
+    moss::checked_ir::Stmt assignment;
+    assignment.kind = moss::checked_ir::StmtKind::Assign;
+    assignment.local_ordinal = 0;
+    assignment.expr = binary(variable, moss::checked_ir::BinaryOp::Mul,
+                             parameter(variable, 0), integer("3"));
+    conditional.then_branch.push_back(std::move(assignment));
+    statements.push_back(std::move(conditional));
+  } else {
+    assert(false && "unknown IfJoin artifact shape");
+  }
   moss::checked_ir::Expr local;
   local.kind = moss::checked_ir::ExprKind::LocalRead;
   local.type = variable;
@@ -121,8 +146,7 @@ int main(int argc, char** argv) {
   returned.kind = moss::checked_ir::StmtKind::Return;
   returned.expr = binary(variable, moss::checked_ir::BinaryOp::Add,
                          std::move(local), integer("1"));
-  const std::vector<moss::checked_ir::Stmt> statements{
-      std::move(join), std::move(returned)};
+  statements.push_back(std::move(returned));
   const auto body_bytes = moss::checked_ir::encode_checked_body_v1(statements);
   const auto body_hash =
       moss::checked_ir::compute_checked_body_hash_v1(statements);
