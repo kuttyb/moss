@@ -4828,6 +4828,68 @@ class Checker {
               "static specialization has inconsistent observable effects for one key",
               "SOURCE_FREE_SPECIALIZATION_MISMATCH");
       }
+    // Ownership checking runs after expression/statement occurrence capture.
+    // Reconcile assignment targets only now, when BindingFact has the final
+    // pre-write and post-write identities from the ownership walk.
+    for (auto& [body_key, state_ptr] : checked_body_states_) {
+      (void)body_key;
+      if (!state_ptr) continue;
+      auto& state = *state_ptr;
+      std::set<string> assigned_binding_ids;
+      for (auto& occurrence : state.statement_occurrences) {
+        if (!occurrence.source || occurrence.kind != Stmt::Kind::Assign ||
+            !simple_identifier(occurrence.source->a)) {
+          if (!occurrence.assigned_binding_identity.empty())
+            state.expression_occurrence_ledger_complete = false;
+          continue;
+        }
+        const auto fact = state.binding_facts.find(occurrence.source);
+        if (fact == state.binding_facts.end()) {
+          state.expression_occurrence_ledger_complete = false;
+          continue;
+        }
+        occurrence.binding_identity = fact->second.identity;
+        occurrence.assigned_binding_identity = fact->second.assigned_identity;
+        occurrence.binding_type = fact->second.type
+            ? state.solver.resolve(fact->second.type) : nullptr;
+        occurrence.introduces_binding = fact->second.introduced;
+        occurrence.mutable_binding = fact->second.mutable_binding;
+        occurrence.bindings.clear();
+        if (fact->second.introduced && !fact->second.identity.empty() &&
+            occurrence.binding_type) {
+          BodyTypeState::StatementOccurrence::BindingOccurrence binding;
+          binding.name = occurrence.source->a;
+          binding.identity = fact->second.identity;
+          binding.type = occurrence.binding_type;
+          binding.mutable_binding = fact->second.mutable_binding;
+          occurrence.bindings.push_back(std::move(binding));
+        }
+        const auto checked_type = occurrence.binding_type
+            ? state.solver.resolve(occurrence.binding_type) : nullptr;
+        const auto fact_type = fact->second.type
+            ? state.solver.resolve(fact->second.type) : nullptr;
+        if (!fact->second.mutable_binding || fact->second.identity.empty() ||
+            fact->second.assigned_identity.empty() ||
+            occurrence.binding_identity != fact->second.identity ||
+            occurrence.assigned_binding_identity !=
+                fact->second.assigned_identity ||
+            !checked_type || !fact_type ||
+            !checked_type->structurally_equal(*fact_type) ||
+            !assigned_binding_ids.insert(fact->second.assigned_identity).second)
+          state.expression_occurrence_ledger_complete = false;
+        if (fact->second.introduced &&
+            (occurrence.bindings.size() != 1 ||
+             occurrence.bindings.front().identity != fact->second.identity ||
+             occurrence.bindings.front().name != occurrence.source->a ||
+             !occurrence.bindings.front().type || !checked_type ||
+             !state.solver.resolve(occurrence.bindings.front().type) ||
+             !checked_type->structurally_equal(*state.solver.resolve(
+                 occurrence.bindings.front().type))))
+          state.expression_occurrence_ledger_complete = false;
+        if (!fact->second.introduced && !occurrence.bindings.empty())
+          state.expression_occurrence_ledger_complete = false;
+      }
+    }
     // Generic signature schemes are used while all function, domain, main,
     // and functional bodies are checked. Keep scheme and body-occurrence
     // completeness independent: bounded legacy producers retain their own
@@ -5170,68 +5232,6 @@ class Checker {
           body->second->expression_occurrence_ledger_complete &&
           effects_complete && dependencies_complete &&
           occurrence_dependencies_complete;
-    }
-    // Ownership checking runs after expression/statement occurrence capture.
-    // Reconcile assignment targets only now, when BindingFact has the final
-    // pre-write and post-write identities from the ownership walk.
-    for (auto& [body_key, state_ptr] : checked_body_states_) {
-      (void)body_key;
-      if (!state_ptr) continue;
-      auto& state = *state_ptr;
-      std::set<string> assigned_binding_ids;
-      for (auto& occurrence : state.statement_occurrences) {
-        if (!occurrence.source || occurrence.kind != Stmt::Kind::Assign ||
-            !simple_identifier(occurrence.source->a)) {
-          if (!occurrence.assigned_binding_identity.empty())
-            state.expression_occurrence_ledger_complete = false;
-          continue;
-        }
-        const auto fact = state.binding_facts.find(occurrence.source);
-        if (fact == state.binding_facts.end()) {
-          state.expression_occurrence_ledger_complete = false;
-          continue;
-        }
-        occurrence.binding_identity = fact->second.identity;
-        occurrence.assigned_binding_identity = fact->second.assigned_identity;
-        occurrence.binding_type = fact->second.type
-            ? state.solver.resolve(fact->second.type) : nullptr;
-        occurrence.introduces_binding = fact->second.introduced;
-        occurrence.mutable_binding = fact->second.mutable_binding;
-        occurrence.bindings.clear();
-        if (fact->second.introduced && !fact->second.identity.empty() &&
-            occurrence.binding_type) {
-          BodyTypeState::StatementOccurrence::BindingOccurrence binding;
-          binding.name = occurrence.source->a;
-          binding.identity = fact->second.identity;
-          binding.type = occurrence.binding_type;
-          binding.mutable_binding = fact->second.mutable_binding;
-          occurrence.bindings.push_back(std::move(binding));
-        }
-        const auto checked_type = occurrence.binding_type
-            ? state.solver.resolve(occurrence.binding_type) : nullptr;
-        const auto fact_type = fact->second.type
-            ? state.solver.resolve(fact->second.type) : nullptr;
-        if (!fact->second.mutable_binding || fact->second.identity.empty() ||
-            fact->second.assigned_identity.empty() ||
-            occurrence.binding_identity != fact->second.identity ||
-            occurrence.assigned_binding_identity !=
-                fact->second.assigned_identity ||
-            !checked_type || !fact_type ||
-            !checked_type->structurally_equal(*fact_type) ||
-            !assigned_binding_ids.insert(fact->second.assigned_identity).second)
-          state.expression_occurrence_ledger_complete = false;
-        if (fact->second.introduced &&
-            (occurrence.bindings.size() != 1 ||
-             occurrence.bindings.front().identity != fact->second.identity ||
-             occurrence.bindings.front().name != occurrence.source->a ||
-             !occurrence.bindings.front().type || !checked_type ||
-             !state.solver.resolve(occurrence.bindings.front().type) ||
-             !checked_type->structurally_equal(*state.solver.resolve(
-                 occurrence.bindings.front().type))))
-          state.expression_occurrence_ledger_complete = false;
-        if (!fact->second.introduced && !occurrence.bindings.empty())
-          state.expression_occurrence_ledger_complete = false;
-      }
     }
     retain_checked_body_ir();
     // The staged ABI cannot publish a multi-statement generic/private-helper
