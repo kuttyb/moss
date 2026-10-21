@@ -23548,11 +23548,12 @@ class Checker {
         if (stage.kind == FunctionalNodeKind::Count) {
           current_body_types_->attach_open_operation({
               "builtin:collection-count-v1", receiver, {},
-              moss::Type::primitive("int"), line, UINT32_MAX, 0, {}});
+              moss::Type::primitive("int"), line, UINT32_MAX, 0, {},
+              UINT32_MAX, {}});
         } else {
           current_body_types_->attach_open_operation({
               string("functional:") + functional_node_name(stage.kind), receiver, {},
-              nullptr, line, UINT32_MAX, 0, {}});
+              nullptr, line, UINT32_MAX, 0, {}, UINT32_MAX, {}});
         }
       }
     }
@@ -23957,7 +23958,7 @@ class Checker {
     }
     current_body_types_->attach_open_operation({
         "operator:" + operation_id, left, {right}, result, line,
-        UINT32_MAX, 0, {}});
+        UINT32_MAX, 0, {}, UINT32_MAX, {}});
     if (result) current_body_types_->retain_active_expression_type(result);
   }
 
@@ -23987,7 +23988,7 @@ class Checker {
           occurrence_id, "operator:" + operation_id);
       current_body_types_->attach_open_operation({
           "operator:" + operation_id, term, {}, result, line,
-          UINT32_MAX, 0, {}});
+          UINT32_MAX, 0, {}, UINT32_MAX, {}});
       current_body_types_->retain_active_expression_type(result);
     }
   }
@@ -24283,9 +24284,18 @@ class Checker {
           moss::OpenCallableSummaryFacts::OperationFact operation;
           operation.operation_id = "builtin:vector-literal";
           operation.receiver = *open;
+          operation.result = moss::Type::builtin("vector", {*open});
+          operation.receiver_operand_ordinal = static_cast<std::uint32_t>(
+              std::distance(element_terms.begin(), open));
           operation.line = line;
-          for (auto term = element_terms.begin(); term != element_terms.end(); ++term)
-            if (term != open) operation.arguments.push_back(*term);
+          for (auto term = element_terms.begin(); term != element_terms.end(); ++term) {
+            if (term == open) continue;
+            operation.arguments.push_back(*term);
+            operation.argument_operand_ordinals.push_back(
+                static_cast<std::uint32_t>(
+                    std::distance(element_terms.begin(), term)));
+          }
+          current_body_types_->retain_active_expression_type(operation.result);
           current_body_types_->attach_open_operation(std::move(operation));
         }
       }
@@ -24629,7 +24639,7 @@ class Checker {
         if (resolved_receiver && !resolved_receiver->is_closed())
           current_body_types_->attach_open_operation({
               "method:" + handler, receiver_term, {}, nullptr, line,
-              UINT32_MAX, 0, {}});
+              UINT32_MAX, 0, {}, UINT32_MAX, {}});
       }
       // The member resolver below owns dispatch; capture its receiver once
       // here so every dispatch family has the same ordered child shape.
@@ -24870,7 +24880,7 @@ class Checker {
               resolved_receiver->name == "vector")
             current_body_types_->attach_open_operation({
                 "builtin:index", receiver, {key}, element, line,
-                UINT32_MAX, 0, {}});
+                UINT32_MAX, 0, {}, UINT32_MAX, {}});
         }
       }
       if (current_body_types_) {
@@ -26851,7 +26861,7 @@ class Checker {
           expression.id, "operator:" + expression.operation_id);
       checked_types.open_operations.push_back({
           "operator:" + expression.operation_id, receiver, {argument},
-          receiver, expression.line, expression.id, 0, {}});
+          receiver, expression.line, expression.id, 0, {}, UINT32_MAX, {}});
     }
     for (auto& occurrence : checked_types.statement_occurrences) {
       std::sort(occurrence.expression_roots.begin(),
@@ -27443,9 +27453,55 @@ class Checker {
             !same_resolved_term(linked.checked_type, operation.result))
           checked_types.expression_occurrence_ledger_complete = false;
       } else if (operation.operation_id == "builtin:vector-literal") {
-        if (linked.kind !=
-                BodyTypeState::ExpressionOccurrence::Kind::VectorLiteral ||
-            linked.operation_id != "builtin:vector-literal")
+        bool valid = linked.kind ==
+                BodyTypeState::ExpressionOccurrence::Kind::VectorLiteral &&
+            linked.operation_id == "builtin:vector-literal" &&
+            operation.result && linked.checked_type &&
+            operation.receiver_operand_ordinal < linked.source_operands.size() &&
+            operation.argument_operand_ordinals.size() ==
+                operation.arguments.size() &&
+            operation.arguments.size() + 1 == linked.source_operands.size();
+        std::set<std::uint32_t> operand_ordinals;
+        if (valid) {
+          const auto receiver = std::find_if(
+              checked_types.expression_occurrences.begin(),
+              checked_types.expression_occurrences.end(),
+              [&](const auto& candidate) {
+                return candidate.parent_id == occurrence &&
+                    candidate.child_role == "element:" + std::to_string(
+                        operation.receiver_operand_ordinal);
+              });
+          valid = receiver != checked_types.expression_occurrences.end() &&
+              same_resolved_term(receiver->checked_type, operation.receiver) &&
+              operand_ordinals.insert(
+                  operation.receiver_operand_ordinal).second;
+        }
+        for (std::size_t argument = 0;
+             valid && argument < operation.arguments.size(); ++argument) {
+          const auto ordinal = operation.argument_operand_ordinals[argument];
+          const auto element = std::find_if(
+              checked_types.expression_occurrences.begin(),
+              checked_types.expression_occurrences.end(),
+              [&](const auto& candidate) {
+                return candidate.parent_id == occurrence &&
+                    candidate.child_role == "element:" +
+                        std::to_string(ordinal);
+              });
+          valid = ordinal < linked.source_operands.size() &&
+              operand_ordinals.insert(ordinal).second &&
+              element != checked_types.expression_occurrences.end() &&
+              same_resolved_term(element->checked_type,
+                                 operation.arguments[argument]);
+        }
+        const auto result = operation.result
+            ? checked_types.solver.resolve(operation.result) : nullptr;
+        const auto checked_result = linked.checked_type
+            ? checked_types.solver.resolve(linked.checked_type) : nullptr;
+        if (!valid || operand_ordinals.size() != linked.source_operands.size() ||
+            !result || !checked_result ||
+            !same_resolved_term(operation.receiver,
+                result->type_args.empty() ? nullptr : result->type_args.front()) ||
+            !result->structurally_equal(*checked_result))
           checked_types.expression_occurrence_ledger_complete = false;
       } else if (starts_with(operation.operation_id, "call:")) {
         if (linked.kind != BodyTypeState::ExpressionOccurrence::Kind::Call ||
@@ -27973,6 +28029,58 @@ export fn reject_float_tilde(value):
         argument_type->structurally_equal(*index_type) &&
         result_type && occurrence_type &&
         result_type->structurally_equal(*occurrence_type);
+  }
+
+  static bool unit_test_vector_literal_operand_occurrences() {
+    std::istringstream input(R"moss(export fn singleton(value):
+  return [value]
+)moss");
+    Program program = Parser(
+        lex_lines(input, "<vector-literal-occurrence-test>")).parse();
+    Checker checker(program);
+    checker.run();
+    const auto function = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+      return candidate.name == "singleton";
+    });
+    if (function == program.functions.end()) return false;
+    const auto retained = checker.checked_body_states_.find(&function->body);
+    if (retained == checker.checked_body_states_.end() || !retained->second)
+      return false;
+    auto& state = *retained->second;
+    const auto occurrence = std::find_if(state.expression_occurrences.begin(),
+        state.expression_occurrences.end(), [](const auto& candidate) {
+      return candidate.kind ==
+              BodyTypeState::ExpressionOccurrence::Kind::VectorLiteral;
+    });
+    const auto operation = std::find_if(state.open_operations.begin(),
+        state.open_operations.end(), [](const auto& candidate) {
+      return candidate.operation_id == "builtin:vector-literal";
+    });
+    if (occurrence == state.expression_occurrences.end() ||
+        operation == state.open_operations.end() ||
+        operation->expression_occurrence_id != occurrence->id ||
+        operation->receiver_operand_ordinal != 0 ||
+        !operation->argument_operand_ordinals.empty() ||
+        !operation->arguments.empty() || !operation->result) {
+      return false;
+    }
+    const auto receiver = std::find_if(state.expression_occurrences.begin(),
+        state.expression_occurrences.end(), [&](const auto& candidate) {
+      return candidate.parent_id == occurrence->id &&
+          candidate.child_role == "element:0";
+    });
+    if (receiver == state.expression_occurrences.end()) return false;
+    if (!operation->receiver || !receiver->checked_type ||
+        !operation->result || !occurrence->checked_type) return false;
+    const auto receiver_type = state.solver.resolve(operation->receiver);
+    const auto receiver_child_type = state.solver.resolve(receiver->checked_type);
+    const auto result_type = state.solver.resolve(operation->result);
+    const auto expression_type = state.solver.resolve(occurrence->checked_type);
+    return receiver_type && receiver_child_type &&
+        receiver_type->structurally_equal(*receiver_child_type) &&
+        result_type && expression_type &&
+        result_type->structurally_equal(*expression_type);
   }
 
   static bool unit_test_statement_call_occurrence_roles() {

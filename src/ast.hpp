@@ -134,6 +134,12 @@ struct OpenCallableSummaryFacts {
     // Exact checker-derived value-flow dependencies. Control-flow joins can
     // give one operation multiple incoming operation dependencies.
     vector<std::uint32_t> dependency_occurrence_ids;
+    // Source-order operand ordinals for operation families whose receiver and
+    // arguments are selected from a variable-arity occurrence (for example,
+    // vector literals and calls). UINT32_MAX means the family has no such
+    // source-operand mapping.
+    std::uint32_t receiver_operand_ordinal = UINT32_MAX;
+    vector<std::uint32_t> argument_operand_ordinals;
   };
   // Checker-retained builtin operations used to close an otherwise open
   // generic contract. These are semantic facts, not serialized body IR.
