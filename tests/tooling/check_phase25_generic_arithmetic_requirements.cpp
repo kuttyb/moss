@@ -147,13 +147,10 @@ static Program checked_arithmetic_source(const string& expression) {
   return program;
 }
 
-static bool arithmetic_body_rejected(const string& expression) {
-  try {
-    Program program = checked_arithmetic_source(expression);
-    return !checked_arithmetic_body(find_function(program, "compute"));
-  } catch (const CompileError&) {
-    return true;
-  }
+static bool checked_body_available(const string& expression) {
+  Program program = checked_arithmetic_source(expression);
+  const Function& function = find_function(program, "compute");
+  return function.checked_body_ir_v1_bytes && function.checked_body_ir_v1_hash;
 }
 
 int main() {
@@ -190,10 +187,17 @@ fn main():
   }
   assert(summary.requirements.size() == 2);
 
-  auto checked_body = checked_arithmetic_body(compute);
-  assert(checked_body);
-  assert(checked_body->statements.size() == 1);
-  const auto& return_stmt = checked_body->statements.front();
+  assert(compute.checked_body_ir_v1_bytes && compute.checked_body_ir_v1_hash);
+  const string checked_ir_bytes = *compute.checked_body_ir_v1_bytes;
+  auto checked_ir_roundtrip = checked_ir::decode_checked_body_v1(
+      checked_ir_bytes, *program.type_context, summary.parameter_types,
+      summary.result_type, *compute.checked_body_ir_v1_hash);
+  assert(checked_ir_roundtrip.size() == 1);
+  assert(checked_ir::encode_checked_body_v1(checked_ir_roundtrip) ==
+         checked_ir_bytes);
+  assert(checked_ir::compute_checked_body_hash_v1(checked_ir_roundtrip) ==
+         *compute.checked_body_ir_v1_hash);
+  const auto& return_stmt = checked_ir_roundtrip.front();
   assert(return_stmt.kind == checked_ir::StmtKind::Return);
   assert(return_stmt.type->structurally_equal(*generic));
   assert(return_stmt.expr);
@@ -217,40 +221,16 @@ fn main():
            literal->type->structurally_equal(*Type::primitive("int")));
   assert(multiply_literal.literal_value == "2");
   assert(add_literal.literal_value == "20");
-  const string checked_ir_bytes =
-      checked_ir::encode_checked_body_v1(checked_body->statements);
-  auto checked_ir_roundtrip = checked_ir::decode_h3_checked_body_v1(
-      checked_ir_bytes, *program.type_context, summary.parameter_types,
-      summary.result_type, checked_body->semantic_hash);
-  assert(checked_ir_roundtrip.size() == 1);
-  assert(checked_ir::encode_checked_body_v1(checked_ir_roundtrip) ==
-         checked_ir_bytes);
-  assert(checked_ir::compute_checked_body_hash_v1(checked_ir_roundtrip) ==
-         checked_body->semantic_hash);
-
-  auto missing_requirement = *compute.open_summary;
-  missing_requirement.requirements.pop_back();
-  Function bad_facts = compute;
-  bad_facts.open_summary = std::move(missing_requirement);
-  assert(!checked_arithmetic_body(bad_facts));
-  auto reordered_requirements = *compute.open_summary;
-  std::swap(reordered_requirements.requirements[0],
-            reordered_requirements.requirements[1]);
-  bad_facts.open_summary = std::move(reordered_requirements);
-  assert(!checked_arithmetic_body(bad_facts));
-  auto inconsistent_requirement = *compute.open_summary;
-  inconsistent_requirement.requirements[1].parent_requirement_id =
-      string("missing-parent");
-  bad_facts.open_summary = std::move(inconsistent_requirement);
-  assert(!checked_arithmetic_body(bad_facts));
-  auto inconsistent_type = *compute.open_summary;
-  inconsistent_type.requirements[0].result = Type::primitive("int");
-  bad_facts.open_summary = std::move(inconsistent_type);
-  assert(!checked_arithmetic_body(bad_facts));
-  assert(arithmetic_body_rejected("x + 20"));
-  assert(arithmetic_body_rejected("x * 2 - 20"));
-  assert(arithmetic_body_rejected("x * 2 + 20 + 1"));
-  assert(arithmetic_body_rejected("20 + x * 2"));
+  assert(checked_body_available("x + 20"));
+  assert(checked_body_available("x * 2 - 20"));
+  assert(checked_body_available("x * 2 + 20 + 1"));
+  auto leading_literal = checked_arithmetic_source("20 + x * 2");
+  const Function& leading_literal_function =
+      find_function(leading_literal, "compute");
+  assert(leading_literal_function.open_summary &&
+         leading_literal_function.open_summary->scheme_complete);
+  assert(!leading_literal_function.checked_body_ir_v1_bytes);
+  assert(!leading_literal_function.checked_body_ir_v1_hash);
 
   const auto& multiply = summary.requirements[0];
   const auto& add = summary.requirements[1];
@@ -717,9 +697,10 @@ export fn alias_compute(value):
   assert(synthetic_summary_rejected(abi_v10::summary_payload(h3_wire),
                                     imported_provenance));
 
-  std::cout << "PASS checked arithmetic body hash: " << checked_body->semantic_hash
-               << "; canonical tree and codec roundtrip passed; missing, reordered, "
-               "inconsistent, and unsupported body forms rejected; checker retained "
+  std::cout << "PASS common checked arithmetic body hash: "
+               << *compute.checked_body_ir_v1_hash
+               << "; canonical tree and codec roundtrip passed; checker-retained "
+               "typed requirements and broader valid arithmetic bodies passed; "
                "and ABI-v10 roundtripped two typed operator "
                "requirements for * and +; import preserves T, parent links, and provenance; H3 empty requirements and malformed-record rejection pass\n";
 }

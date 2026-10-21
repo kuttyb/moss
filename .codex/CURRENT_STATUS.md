@@ -1,4 +1,4 @@
-## Phase 25.1 R1 continuation — verified pipeline identity and current profile evidence — 2026-10-21
+## Phase 25.1 R1 continuation — common arithmetic emission and current profile evidence — 2026-10-21
 
 The implementation for the remaining architect P2s in pipeline occurrence
 dependency completion is in place. Formal callback targets now require exactly one
@@ -16,21 +16,28 @@ arguments, mismatched function-constraint arguments, and duplicate same-subject
 Callable facts reject. A concrete `Scale.apply` bound-method pipeline accepts its
 canonical target and rejects a forged receiver type with the same method suffix.
 The architect returned scoped GO at exact SHA `ccc2723fd4cf07f7626f4b3a629828d1f1020e08`,
-with no P0/P1/P2; this closes the prior test-coverage note. H3 common checked-body
-production was verified on `moss-dev`: its chain test covers a multi-statement
-field read, two source-free consumers, poisoned legacy chain records, and negative
-closures.
+with no P0/P1/P2; this closes the prior test-coverage note. On the subsequent
+read-only audit at pushed SHA `714df8cc2eb350c90c765c728a6434f1a846cff4`, the
+architect returned NO-GO for overall R1: H3 migration is verified, while exact
+Count/Index loop admission and global occurrence/effect/dependency totality remain
+open. The audit also identified the source-shaped arithmetic producer. That
+producer and its source-text body reconstruction have now been removed; the common
+occurrence producer emits the checked-arithmetic fixtures.
 
-Current validation also passes the full M2b2 source-free/hostile corpus, generic
-arithmetic requirements, D4 SDK collection source-free corpus, and the focused
-statement/call occurrence harness. The corpus now promotes the multi-statement
+Current validation on the rebuilt `moss-dev` passes the full M2b2 source-free/
+hostile corpus, generic arithmetic requirements, D4 SDK collection source-free
+corpus, H3 source-free chain regression, and focused statement/call occurrence
+harness. The generic arithmetic harness confirms common checked-body bytes for
+`x + 20`, `x * 2 - 20`, and `x * 2 + 20 + 1`; source-valid `20 + x * 2` currently
+has no checked body. The corpus now promotes the multi-statement
 nominal field read to a positive checked-body case. It classifies pure literal
 and direct-parameter IfJoin cases as v10-unavailable: source-built providers
 accept them, but emit no checked-body record. The arithmetic harness records the
 same limitation for `select_two`. These shapes remain open producer work and are
-not generalized-lowering evidence. R1 remains open; remaining work includes the
-shape-specific Count/Index ABI record producer and global occurrence/effect/
-dependency totality. Preserve the 24 unavailable ABI-v10 profiles, two ABI-v9
+not generalized-lowering evidence. R1 remains open; Count/Index still requires
+the exact admitted loop-shape predicate, and global occurrence/effect/dependency
+totality plus the other unavailable producer profiles remain. Preserve the 24
+tracked unavailable ABI-v10 profiles, two ABI-v9
 raise/recover failures, and `packages/time` failure.
 
 ## Phase 25.1 R1 continuation — call dependency occurrence totality — 2026-10-21
