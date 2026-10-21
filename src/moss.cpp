@@ -6405,11 +6405,20 @@ class Checker {
         continue;
       const auto* target =
           find_function_by_callable_id(occurrence.semantic_target_id);
+      const std::size_t callback_operand =
+          occurrence.operation_id == "functional:Reduce" ? 1u : 0u;
       if (!target || !expected_dependencies.count(
                          occurrence.semantic_target_id) ||
           !starts_with(occurrence.operation_id, "functional:") ||
-          occurrence.source_operands.size() != 1 ||
+          occurrence.source_operands.size() <= callback_operand ||
           !has_matching_call_edge(occurrence, *target))
+        return false;
+      const string source_callback =
+          trim(occurrence.source_operands[callback_operand]);
+      const auto named_callback = functions_.find(source_callback);
+      if (named_callback != functions_.end() &&
+          named_callback->second->semantic_callable_id !=
+              occurrence.semantic_target_id)
         return false;
       observed_dependencies.insert(occurrence.semantic_target_id);
     }
@@ -29395,7 +29404,10 @@ export fn count_values(values):
   return values |> count
 
 export fn pipeline_named(values: Vector[Int]) -> Int:
-  return values |> map(identity) |> count
+  return values |> map(identity) |> map(expression_identity) |> count
+
+export fn pipeline_reduce(values: Vector[Int]) -> Int:
+  return values |> reduce(0, add_values)
 
 export fn sort_values(values: Vector[Int]) -> Int:
   sort(values, by: identity)
@@ -29416,6 +29428,7 @@ export fn branch(value: Bool) -> Int:
   return local
 
 fn expression_identity(value) = value
+fn add_values(total, value) = total + value
 
 enum Sample:
   Empty
@@ -29965,15 +29978,43 @@ fn inspect_sample(sample: Sample) -> Int:
     }
     const auto pipeline_callback_id = pipeline_callback->id;
     const string pipeline_target = pipeline_callback->semantic_target_id;
+    const auto second_pipeline_callback = std::find_if(
+        std::next(pipeline_callback), pipeline_occurrences.end(),
+        [](const auto& occurrence) {
+          return occurrence.kind ==
+                  BodyTypeState::ExpressionOccurrence::Kind::PipelineStage &&
+              starts_with(occurrence.semantic_target_id, "callable-v1:");
+        });
+    if (second_pipeline_callback == pipeline_occurrences.end()) return false;
+    const auto second_pipeline_callback_id = second_pipeline_callback->id;
+    std::swap(pipeline_occurrences[pipeline_callback_id].semantic_target_id,
+              pipeline_occurrences[second_pipeline_callback_id].semantic_target_id);
+    const bool swapped_pipeline_targets_rejected =
+        !checker.call_occurrence_dependencies_complete(
+            *pipeline_function, *pipeline_state->second);
+    std::swap(pipeline_occurrences[pipeline_callback_id].semantic_target_id,
+              pipeline_occurrences[second_pipeline_callback_id].semantic_target_id);
     pipeline_occurrences[pipeline_callback_id].semantic_target_id.clear();
     const bool missing_pipeline_target_rejected =
         !checker.call_occurrence_dependencies_complete(
             *pipeline_function, *pipeline_state->second);
     pipeline_occurrences[pipeline_callback_id].semantic_target_id =
         pipeline_target;
-    if (!missing_pipeline_target_rejected ||
+    if (!swapped_pipeline_targets_rejected || !missing_pipeline_target_rejected ||
         !checker.call_occurrence_dependencies_complete(
             *pipeline_function, *pipeline_state->second))
+      return false;
+    const auto pipeline_reduce_function = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+          return candidate.name == "pipeline_reduce";
+        });
+    if (pipeline_reduce_function == program.functions.end()) return false;
+    const auto pipeline_reduce_state = checker.checked_body_states_.find(
+        &pipeline_reduce_function->body);
+    if (pipeline_reduce_state == checker.checked_body_states_.end() ||
+        !pipeline_reduce_state->second ||
+        !checker.call_occurrence_dependencies_complete(
+            *pipeline_reduce_function, *pipeline_reduce_state->second))
       return false;
     const auto empty_function = std::find_if(program.functions.begin(),
         program.functions.end(), [](const Function& candidate) {

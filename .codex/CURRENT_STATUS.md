@@ -9,11 +9,14 @@ parameter's canonical operation; and each linked sort callable must match its
 named `by:` key and `Reverse(...)` flag. The open-call validator accepts
 `binding:pending:` only while `check_stmts` is running; ownership-stage binding
 resolution and final validation reject unresolved targets and local aliases.
-Named pipeline callback stages also contribute their exact callable target to
-dependency completion and must match a same-source-line ordinary semantic call
-edge. Standalone formal-Callable statement calls remain fail-closed because
-they currently retain no Callable constraint for the occurrence; callback
-source-free admission remains disabled.
+Named pipeline callback stages contribute their callable target to dependency
+completion, must match a same-source-line ordinary semantic call edge, and bind
+direct named source operands to the same callable ID. Reduce uses its callback
+operand after the seed. Mutations remove a pipeline target and swap two valid
+same-line targets; both reject. A named reduce fixture confirms two-operand
+callback accounting. Standalone formal-Callable statement calls remain
+fail-closed because they currently retain no Callable constraint for the
+occurrence; callback source-free admission remains disabled.
 Focused mutations duplicate calls and clear one target, swap valid targets
 between distinct expected callees, forge a builtin suffix, alter a formal
 callback's operation name, retarget an operation-less statement root while
@@ -24,11 +27,12 @@ Validation on the rebuilt `build/compiler/moss-dev`: occurrence regression and
 H3 common checked-body source-free chain (field read, two consumers, poisoned
 legacy chain, negative closures), agent-feedback validation, and
 `git diff --check` pass. Build retains two existing `TypeSolver::Undo::binding`
-initializer warnings. The statement-root and sort-callback fixes received
-scoped GO at `93c743a0bc4040ba417927faf0eda283fd339cb3`; this follow-up still
-needs exact-SHA review. Next: commit and push the frozen implementation, ask
-the existing architect for read-only review, and close any residual finding
-before R1 acceptance. Keep the
+initializer warnings. Statement-root and sort-callback fixes received scoped
+GO at `93c743a0bc4040ba417927faf0eda283fd339cb3`. The subsequent pipeline
+checkpoint `4f6ddfcd91b12c10e660aa8718042e3b77123a13` was NO-GO for a same-line
+valid-target swap and Reduce callback arity; both are fixed in this working
+tree and need exact-SHA review. Next: commit/push, ask the existing architect
+for read-only review, and close residual findings before R1 acceptance. Keep the
 24 unavailable ABI-v10 profiles, two ABI-v9 raise/recover failures, and
 `packages/time` failure visible.
 
