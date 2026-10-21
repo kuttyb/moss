@@ -45754,6 +45754,108 @@ static bool abi_v10_checked_callable_records_present(
       contains(value.private_semantic_dependencies);
 }
 
+static bool abi_v10_checked_collection_loop_body(
+    const vector<checked_ir::Stmt>& body, const moss::TypeRef& result_type) {
+  if ((body.size() != 4 && body.size() != 5) || !result_type) return false;
+  const auto int_type = moss::Type::primitive("int");
+  const auto bool_type = moss::Type::primitive("bool");
+  const std::size_t local_count = body.size() - 2;
+  if ((local_count != 2 && local_count != 3) ||
+      (local_count == 3 && !result_type->structurally_equal(*int_type)))
+    return false;
+  auto local = [](const checked_ir::Expr& expression, std::uint32_t ordinal) {
+    return expression.kind == checked_ir::ExprKind::LocalRead &&
+        expression.ordinal == ordinal;
+  };
+  auto parameter = [](const checked_ir::Expr& expression,
+                      std::uint32_t ordinal) {
+    return expression.kind == checked_ir::ExprKind::Parameter &&
+        expression.ordinal == ordinal;
+  };
+  auto integer = [](const checked_ir::Expr& expression, std::string_view value) {
+    return expression.kind == checked_ir::ExprKind::IntegerLiteral &&
+        expression.literal_value == value;
+  };
+  for (std::size_t ordinal = 0; ordinal < local_count; ++ordinal) {
+    const auto& declaration = body[ordinal];
+    if (declaration.kind != checked_ir::StmtKind::Var ||
+        declaration.local_ordinal != ordinal || !declaration.expr ||
+        !declaration.type || !declaration.type->structurally_equal(*int_type))
+      return false;
+    if (ordinal + 1 < local_count && !integer(*declaration.expr, "0"))
+      return false;
+  }
+  const auto& count = *body[local_count - 1].expr;
+  const auto& loop = body[local_count];
+  if (count.kind != checked_ir::ExprKind::CollectionCount ||
+      count.semantic_target_id != checked_ir::kCollectionCountOperationId ||
+      count.operands.size() != 1 || !parameter(count.operands.front(), 0) ||
+      loop.kind != checked_ir::StmtKind::While || !loop.expr ||
+      loop.body.size() != 2 ||
+      loop.body[0].kind != checked_ir::StmtKind::If ||
+      !loop.body[0].expr || loop.body[0].then_branch.size() != 1 ||
+      !loop.body[0].else_branch.empty() || !loop.body[0].body.empty() ||
+      !loop.body[0].match_cases.empty() ||
+      loop.body[1].kind != checked_ir::StmtKind::Assign ||
+      loop.body[1].local_ordinal != 0 || !loop.body[1].expr ||
+      body.back().kind != checked_ir::StmtKind::Return || !body.back().expr)
+    return false;
+  const auto& condition = *loop.expr;
+  const auto& matched = *loop.body[0].expr;
+  const auto& increment = *loop.body[1].expr;
+  const auto& terminal = *body.back().expr;
+  if (condition.kind != checked_ir::ExprKind::Binary ||
+      condition.binary_op != checked_ir::BinaryOp::Less ||
+      !condition.type || !condition.type->structurally_equal(*bool_type) ||
+      condition.operands.size() != 2 || !local(condition.operands[0], 0) ||
+      !local(condition.operands[1],
+             static_cast<std::uint32_t>(local_count - 1)) ||
+      matched.kind != checked_ir::ExprKind::Binary ||
+      matched.binary_op != checked_ir::BinaryOp::Equal ||
+      !matched.type || !matched.type->structurally_equal(*bool_type) ||
+      matched.operands.size() != 2 ||
+      matched.operands[0].kind != checked_ir::ExprKind::Index ||
+      matched.operands[0].semantic_target_id !=
+          checked_ir::kCollectionIndexOperationId ||
+      matched.operands[0].operands.size() != 2 ||
+      !parameter(matched.operands[0].operands[0], 0) ||
+      !local(matched.operands[0].operands[1], 0) ||
+      !parameter(matched.operands[1], 1) ||
+      !loop.body[0].expr->type ||
+      !loop.body[0].expr->type->structurally_equal(*bool_type) ||
+      increment.kind != checked_ir::ExprKind::Binary ||
+      increment.binary_op != checked_ir::BinaryOp::Add ||
+      !increment.type || !increment.type->structurally_equal(*int_type) ||
+      increment.operands.size() != 2 || !local(increment.operands[0], 0) ||
+      !integer(increment.operands[1], "1") ||
+      !terminal.type || !terminal.type->structurally_equal(*result_type))
+    return false;
+  const auto& action = loop.body[0].then_branch.front();
+  if (local_count == 3) {
+    return action.kind == checked_ir::StmtKind::Assign &&
+        action.local_ordinal == 1 && action.expr &&
+        action.expr->kind == checked_ir::ExprKind::Binary &&
+        action.expr->binary_op == checked_ir::BinaryOp::Add &&
+        action.expr->operands.size() == 2 &&
+        local(action.expr->operands[0], 1) &&
+        integer(action.expr->operands[1], "1") &&
+        local(terminal, 1);
+  }
+  if (result_type->structurally_equal(*int_type)) {
+    return action.kind == checked_ir::StmtKind::Return && action.expr &&
+        local(*action.expr, 0) && terminal.kind == checked_ir::ExprKind::Binary &&
+        terminal.binary_op == checked_ir::BinaryOp::Sub &&
+        terminal.operands.size() == 2 && integer(terminal.operands[0], "0") &&
+        integer(terminal.operands[1], "1");
+  }
+  return result_type->structurally_equal(*bool_type) &&
+      action.kind == checked_ir::StmtKind::Return && action.expr &&
+      action.expr->kind == checked_ir::ExprKind::BoolLiteral &&
+      action.expr->literal_value == "true" &&
+      terminal.kind == checked_ir::ExprKind::BoolLiteral &&
+      terminal.literal_value == "false";
+}
+
 // Emit complete checker-lowered bodies through the common callable record
 // builder. Keep this first slice dependency-free and effect-pure; specialized
 // producers below remain parity checks for their already admitted shapes.
@@ -45828,14 +45930,18 @@ static void append_abi_v10_occurrence_records(
       continue;
     }
     if (!abi_v10_effects_pure(facts.observable_effects)) {
-      if (!abi_v10_local_map_effects_covered(
-              facts.observable_effects, decoded))
+      if (abi_v10_local_map_effects_covered(
+              facts.observable_effects, decoded)) {
+        // Key evaluation can panic even when the same-key write dominates
+        // the Map read, so the sealed summary must retain that effect.
+        summary.observable_effect_tags = {"may_panic"};
+      } else if (abi_v10_collection_loop_summary_candidate(summary) &&
+          abi_v10_collection_loop_effects(facts.observable_effects) &&
+          abi_v10_checked_collection_loop_body(decoded, facts.result_type)) {
+        summary.observable_effect_tags = {"may_panic"};
+      } else {
         continue;
-      // The checked Map read/write body can only rely on an external effect
-      // when the summary conservatively retains the index may-panic effect.
-      // This remains required even when the same-key write dominates the read:
-      // evaluating either key expression can itself panic.
-      summary.observable_effect_tags = {"may_panic"};
+      }
     }
     // A complete checked body may depend on nominal templates or callees even
     // when its open callable summary has no signature-level dependencies.
@@ -46266,6 +46372,8 @@ static void append_abi_v10_collection_loop_records(
         !function.checked_body_ir_v1_hash)
       continue;
     const auto& facts = *function.open_summary;
+    if (abi_v10_checked_callable_records_present(value, facts.callable_id))
+      continue;
     // Every admitted loop body contains a checked Count initialization. An
     // arbitrary generic index expression also records builtin:index, so that
     // operation alone cannot route it into this loop-only producer.
@@ -46391,6 +46499,12 @@ static void append_abi_v10_collection_loop_records(
           checked_ir::compute_checked_body_hash_v1(decoded) != hash ||
           abi_v10::checked_body_record_payload(body).empty())
         invalid("checked ABI-v10 collection body is not canonical");
+      // Summary facts route a callable to this producer, but they do not prove
+      // the consumer's loop lowering preconditions. Omit unsupported checked
+      // shapes so v10 selection fails closed instead of emitting an artifact
+      // that its importer cannot lower.
+      if (!abi_v10_checked_collection_loop_body(decoded, facts.result_type))
+        continue;
       const auto summary_record = abi_v10::summary_record(summary);
       const auto body_record = abi_v10::checked_body_record(body);
       abi_v10::validate_summary(summary_record);

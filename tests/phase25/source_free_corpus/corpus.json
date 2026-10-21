@@ -64,6 +64,17 @@
       "evidence": "D3d/D4 source-free acceptance removes provider source and the callable's complete generic_stmt body, verifies checked-body projection, and executes Int and String specializations. Actual SDK index_of, contains, and count_equal Int/String cases are covered by tests/tooling/check_phase25_d4_collection_source_free.py."
     },
     {
+      "id": "collection-count-nonloop-fail-closed",
+      "priority": "P1-essential",
+      "category": "collection operation outside accepted loop shape",
+      "provider": "module Service\n\nexport fn fresh(items, target) -> Int:\n  let n = items |> count\n  if items[0] == target:\n    return n\n  return n\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh([8, 3], 3)\n",
+      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "provider_must_emit_v10": true,
+      "checked_body_status": "checked-body unavailable; a Count/Index/equality summary outside the accepted loop control-flow shape must not emit a consumer-incompatible body",
+      "evidence": "Adversarial R1 review found that operation/effect summaries alone routed unrelated control flow into the collection-loop producer. The provider now decodes the canonical occurrence body and checks the complete accepted loop shape before emitting records; this case verifies source-free selection fails closed."
+    },
+    {
       "id": "multi-statement-arithmetic",
       "priority": "P1-essential",
       "category": "generic arithmetic with local binding",

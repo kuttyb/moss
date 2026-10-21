@@ -1,8 +1,18 @@
 # Moss current status
 
+## Phase 25.1 R1 — specialized collection producer fail-closed correction — working tree — 2026-10-20
+
+Independent adversarial review of frozen pushed SHA `068ecf56e04a52c95a1b0523dc51eebb044420c6` returned NO-GO with one P1. A non-loop body with the same Count/Index/equality operation, requirement, and may-panic summary facts as the accepted collection loops was emitted by the specialized producer although the v10 importer rejected its body shape. Reproducer: `count_if_first_matches(items, target)` initializes `n = items |> count`, conditionally returns `n` when `items[0] == target`, then returns `n`.
+
+The working correction checks the canonical decoded body against the bounded accepted loop structure before the specialized producer appends any records. The common occurrence producer uses the same predicate, so a valid supported loop is emitted there and the specialized producer skips its duplicate. Unsupported shapes produce no checked callable records and source-free v10 selection fails with `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE`. Added corpus row `collection-count-nonloop-fail-closed` asserts the provider interface is emitted and the source-deleted consumer rejects as expected.
+
+Validation on the source-built `build/compiler/moss-dev`: `make --jobs="$(nproc)" moss` passes (two existing TypeSolver missing-initializer warnings); the full 12-case M2b2 source-free corpus passes, including hostile mutations, supported Count/Index loop projection, ABI-v9 controls, and the new reproducer; checked-body IR and G3 parity pass; corpus inventory, JSON parse, and `git diff --check` pass. The checked-body IR and G3 parity suites were rerun after the final rebuild and passed. The repository-root `./moss` remains stale and is not validation evidence.
+
+The corrected tree is not yet frozen or independently reviewed. R1 is still in progress; occurrence exhaustiveness, complete operation/effect/dependency links, summary coverage gating, generalized lowerer migration, and full accepted-surface totality remain open. Do not start R2 until independent R1 acceptance. Preserve ABI-v9 default and v10 opt-in. Keep the 24 unavailable v10 profiles, two ABI-v9 raise/recover failures, and `packages/time` P2 visible. No R2–R5 work has started.
+
 ## Phase 25.1 R1 continuation — Map effect review correction — 2026-10-20
 
-Latest pushed checkpoint before these working slices is `4e53fbbeb2c6de6492ba3b7f3001036185432d86`. The scoped Map follow-up audit closed the effect-understatement P1 and encoder/decoder bound P2 with GO. The expanded source-free corpus covers open Map key/value types and a division key, poisons both legacy bodies, checks both projection traces, and erases sealed `may_panic` plus legacy `local_mutation`/`may_panic` flags for each callable.
+Latest pushed checkpoint before this correction is `068ecf56e04a52c95a1b0523dc51eebb044420c6`. The scoped Map follow-up audit closed the effect-understatement P1 and encoder/decoder bound P2 with GO. The expanded source-free corpus covers open Map key/value types and a division key, poisons both legacy bodies, checks both projection traces, and erases sealed `may_panic` plus legacy `local_mutation`/`may_panic` flags for each callable.
 
 ## R1 common producer migration — working tree
 
