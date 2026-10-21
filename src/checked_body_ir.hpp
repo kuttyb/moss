@@ -154,7 +154,8 @@ enum class StmtKind : uint32_t {
   While = 10,
   For = 11,
   Match = 12,
-  Pass = 13
+  Pass = 13,
+  IfJoin = 14
 };
 
 struct Stmt;
@@ -422,6 +423,25 @@ inline void encode_checked_stmt(std::string& out, const Stmt& stmt) {
       for (const auto& s : stmt.then_branch) encode_checked_stmt(out, s);
       checked_body_field(out, std::to_string(stmt.else_branch.size()));
       for (const auto& s : stmt.else_branch) encode_checked_stmt(out, s);
+      break;
+
+    case StmtKind::IfJoin:
+      if (!stmt.expr || !stmt.type || stmt.operands.size() != 2 ||
+          !stmt.expr->type ||
+          !stmt.expr->type->structurally_equal(*Type::primitive("bool")) ||
+          !stmt.operands[0].type || !stmt.operands[1].type ||
+          !stmt.type->structurally_equal(*stmt.operands[0].type) ||
+          !stmt.type->structurally_equal(*stmt.operands[1].type) ||
+          !stmt.then_branch.empty() || !stmt.else_branch.empty() ||
+          !stmt.body.empty() || !stmt.match_cases.empty() ||
+          !stmt.semantic_target_id.empty() || stmt.member_ordinal != 0 ||
+          !stmt.member_name.empty())
+        throw std::invalid_argument("invalid checked if-join statement");
+      checked_body_field(out, std::to_string(stmt.local_ordinal));
+      encode_checked_body_type_v1(out, stmt.type);
+      encode_checked_expr(out, *stmt.expr);
+      encode_checked_expr(out, stmt.operands[0]);
+      encode_checked_expr(out, stmt.operands[1]);
       break;
 
     case StmtKind::While:
@@ -1016,7 +1036,7 @@ class H3BodyReader {
       fail("checked body node count exceeds bounds");
     const auto tag = number();
     if (tag < static_cast<std::uint32_t>(StmtKind::Let) ||
-        tag > static_cast<std::uint32_t>(StmtKind::Pass))
+        tag > static_cast<std::uint32_t>(StmtKind::IfJoin))
       fail("checked body statement kind is unknown");
     Stmt statement;
     statement.kind = static_cast<StmtKind>(tag);
@@ -1067,6 +1087,19 @@ class H3BodyReader {
         read_loop_block(then_count, depth + 1, statement.then_branch);
         const auto else_count = number();
         read_loop_block(else_count, depth + 1, statement.else_branch);
+        break;
+      }
+      case StmtKind::IfJoin: {
+        statement.local_ordinal = number();
+        statement.type = read_type();
+        statement.expr = read_expr();
+        statement.operands.push_back(read_expr());
+        statement.operands.push_back(read_expr());
+        if (!is_bool_type(statement.expr->type) ||
+            !statement.type->structurally_equal(*statement.operands[0].type) ||
+            !statement.type->structurally_equal(*statement.operands[1].type))
+          fail("checked if-join condition or branch TypeRef is mismatched");
+        declare_loop_local(statement.local_ordinal, statement.type, false);
         break;
       }
       case StmtKind::While: {

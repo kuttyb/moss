@@ -432,6 +432,64 @@ export fn alias_compute(value):
   assert(branch_wire.requirements[1].dependencies.empty());
   assert(branch_wire.requirements[2].parent == 0);
   assert(branch_wire.requirements[2].dependencies == vector<uint32_t>({1, 2}));
+  assert(branch_compute.checked_body_ir_v1_bytes &&
+         branch_compute.checked_body_ir_v1_hash);
+  const auto branch_body = checked_ir::decode_checked_body_v1(
+      *branch_compute.checked_body_ir_v1_bytes, *joined_binding.type_context,
+      branch_compute.open_summary->parameter_types,
+      branch_compute.open_summary->result_type,
+      *branch_compute.checked_body_ir_v1_hash);
+  assert(branch_body.size() == 2);
+  const auto& joined_if = branch_body.front();
+  assert(joined_if.kind == checked_ir::StmtKind::IfJoin &&
+         joined_if.local_ordinal == 0 && joined_if.type &&
+         joined_if.type->structurally_equal(*generic) &&
+         joined_if.operands.size() == 2);
+  for (size_t index = 0; index < joined_if.operands.size(); ++index) {
+    const auto& branch_value = joined_if.operands[index];
+    assert(branch_value.kind == checked_ir::ExprKind::Binary &&
+           branch_value.binary_op == checked_ir::BinaryOp::Mul &&
+           branch_value.operands.size() == 2 &&
+           branch_value.operands.front().kind ==
+               checked_ir::ExprKind::Parameter &&
+           branch_value.operands.front().ordinal == 0 &&
+           branch_value.operands.back().kind ==
+               checked_ir::ExprKind::IntegerLiteral &&
+           branch_value.operands.back().literal_value ==
+               (index == 0 ? "2" : "3"));
+  }
+  const auto& branch_return = branch_body.back();
+  assert(branch_return.kind == checked_ir::StmtKind::Return &&
+         branch_return.expr &&
+         branch_return.expr->kind == checked_ir::ExprKind::Binary &&
+         branch_return.expr->operands.front().kind ==
+             checked_ir::ExprKind::LocalRead &&
+         branch_return.expr->operands.front().ordinal ==
+             joined_if.local_ordinal);
+  auto invalid_join_ordinal = branch_body;
+  invalid_join_ordinal.front().local_ordinal = 1;
+  bool invalid_join_rejected = false;
+  try {
+    const auto bytes = checked_ir::encode_checked_body_v1(
+        invalid_join_ordinal);
+    (void)checked_ir::decode_checked_body_v1(
+        bytes, *joined_binding.type_context,
+        branch_compute.open_summary->parameter_types,
+        branch_compute.open_summary->result_type,
+        checked_ir::compute_checked_body_hash_v1(invalid_join_ordinal));
+  } catch (const std::exception&) {
+    invalid_join_rejected = true;
+  }
+  assert(invalid_join_rejected);
+  auto mismatched_join_value = branch_body;
+  mismatched_join_value.front().operands[0].type = Type::primitive("bool");
+  bool mismatched_join_rejected = false;
+  try {
+    (void)checked_ir::encode_checked_body_v1(mismatched_join_value);
+  } catch (const std::invalid_argument&) {
+    mismatched_join_rejected = true;
+  }
+  assert(mismatched_join_rejected);
   const auto branch_payload = abi_v10::summary_payload(branch_wire);
   const auto branch_roundtrip = abi_v10::read_summary(branch_payload);
   assert(branch_roundtrip.requirements[2].parent == 0);

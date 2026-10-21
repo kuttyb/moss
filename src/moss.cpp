@@ -3983,6 +3983,12 @@ static void project_imported_h3_checked_bodies(Program& program) {
               !checked_local_types.emplace(statement.local_ordinal,
                                             statement.type).second)
             checked_projection_subset = false;
+        } else if (statement.kind == checked_ir::StmtKind::IfJoin) {
+          contains_if = true;
+          if (!statement.type || statement.local_ordinal > 256 ||
+              !checked_local_types.emplace(statement.local_ordinal,
+                                            statement.type).second)
+            checked_projection_subset = false;
         } else if (statement.kind == checked_ir::StmtKind::If) {
           contains_if = true;
         } else if (statement.kind == checked_ir::StmtKind::AssignIndex) {
@@ -4207,6 +4213,47 @@ static void project_imported_h3_checked_bodies(Program& program) {
             projected.push_back(std::move(otherwise));
             if (!project_block(checked.else_branch, indent + 1)) return false;
           }
+          return true;
+        }
+        if (checked.kind == checked_ir::StmtKind::IfJoin) {
+          if (!expression || checked.operands.size() != 2 ||
+              checked.local_ordinal >= local_names.size() || !checked.type)
+            return false;
+          auto then_value = render(checked.operands[0], 0);
+          auto else_value = render(checked.operands[1], 0);
+          if (!then_value || !else_value ||
+              !checked.type->structurally_equal(*checked.operands[0].type) ||
+              !checked.type->structurally_equal(*checked.operands[1].type))
+            return false;
+          const auto& local_name = local_names[checked.local_ordinal];
+          statement.kind = Stmt::Kind::If;
+          statement.a = *expression;
+          statement.text = "if " + statement.a;
+          projected.push_back(std::move(statement));
+          Stmt then_binding;
+          then_binding.kind = Stmt::Kind::Let;
+          then_binding.line = projected_line++;
+          then_binding.indent = indent + 1;
+          then_binding.a = local_name;
+          then_binding.b = *then_value;
+          then_binding.text = "let " + then_binding.a + " = " +
+              then_binding.b;
+          projected.push_back(std::move(then_binding));
+          Stmt otherwise;
+          otherwise.kind = Stmt::Kind::Else;
+          otherwise.line = projected_line++;
+          otherwise.indent = indent;
+          otherwise.text = "else";
+          projected.push_back(std::move(otherwise));
+          Stmt else_binding;
+          else_binding.kind = Stmt::Kind::Let;
+          else_binding.line = projected_line++;
+          else_binding.indent = indent + 1;
+          else_binding.a = local_name;
+          else_binding.b = *else_value;
+          else_binding.text = "let " + else_binding.a + " = " +
+              else_binding.b;
+          projected.push_back(std::move(else_binding));
           return true;
         }
         return false;
@@ -6070,6 +6117,19 @@ class Checker {
       if (statement == state.statement_occurrence_ids.end()) return false;
       const auto& node = state.statement_occurrences.at(statement->second);
       const auto binding_fact = state.binding_facts.find(&source_statement);
+      if (source_statement.kind == Stmt::Kind::If) {
+        for (const auto& binding : node.bindings) {
+          if (binding.predecessor_binding_ids.empty()) continue;
+          const auto type = join_identity_types.find(binding.identity);
+          if (type == join_identity_types.end() || !type->second ||
+              binding.identity.empty())
+            return false;
+          const auto ordinal = static_cast<std::uint32_t>(local_types.size());
+          if (!local_ordinals.emplace(binding.identity, ordinal).second)
+            return false;
+          local_types.push_back(type->second);
+        }
+      }
       const bool introduced_assignment =
           source_statement.kind == Stmt::Kind::Assign &&
           simple_identifier(source_statement.a) &&
@@ -6088,20 +6148,22 @@ class Checker {
               node.bindings.front().mutable_binding ||
           binding_fact->second.identity.empty())
         return false;
-      const auto predecessor = predecessor_to_join_identity.find(
-          node.bindings.front().identity);
-      const string canonical_identity = predecessor ==
-              predecessor_to_join_identity.end()
-          ? node.bindings.front().identity : predecessor->second;
+      if (predecessor_to_join_identity.count(
+              node.bindings.front().identity)) {
+        const auto joined = predecessor_to_join_identity.find(
+            node.bindings.front().identity);
+        const auto joined_type = join_identity_types.find(joined->second);
+        const auto binding_type = checked_body_type(node.bindings.front().type);
+        if (joined_type == join_identity_types.end() ||
+            !joined_type->second || !binding_type ||
+            !joined_type->second->structurally_equal(*binding_type))
+          return false;
+        continue;
+      }
+      const string canonical_identity = node.bindings.front().identity;
       if (canonical_identity.empty()) return false;
       const auto binding_type = checked_body_type(node.bindings.front().type);
       if (!binding_type) return false;
-      if (predecessor != predecessor_to_join_identity.end()) {
-        const auto joined_type = join_identity_types.find(canonical_identity);
-        if (joined_type == join_identity_types.end() || !joined_type->second ||
-            !joined_type->second->structurally_equal(*binding_type))
-          return false;
-      }
       std::uint32_t ordinal = 0;
       const auto existing_local = local_ordinals.find(canonical_identity);
       if (existing_local == local_ordinals.end()) {
@@ -6628,6 +6690,84 @@ class Checker {
               !condition->type->structurally_equal(
                   *moss::Type::primitive("bool")))
             return std::nullopt;
+          const auto& if_occurrence = state.statement_occurrences.at(id);
+          const auto joined = std::find_if(if_occurrence.bindings.begin(),
+              if_occurrence.bindings.end(), [](const auto& binding) {
+            return !binding.predecessor_binding_ids.empty();
+          });
+          if (joined != if_occurrence.bindings.end()) {
+            if (std::count_if(if_occurrence.bindings.begin(),
+                    if_occurrence.bindings.end(), [](const auto& binding) {
+                  return !binding.predecessor_binding_ids.empty();
+                }) != 1 || joined->identity.empty() ||
+                joined->predecessor_control_edges.size() != 2 ||
+                joined->predecessor_binding_ids.size() != 2)
+              return std::nullopt;
+            const auto else_node = std::find_if(
+                state.statement_occurrences.begin(),
+                state.statement_occurrences.end(), [&](const auto& candidate) {
+              return candidate.kind == Stmt::Kind::Else &&
+                  candidate.control_parent_id == id && candidate.source;
+            });
+            if (else_node == state.statement_occurrences.end() ||
+                !consumed_statements.insert(else_node->id).second)
+              return std::nullopt;
+            vector<const BodyTypeState::StatementOccurrence*> then_nodes;
+            vector<const BodyTypeState::StatementOccurrence*> else_nodes;
+            for (const auto& candidate : state.statement_occurrences) {
+              if (!candidate.source || candidate.kind == Stmt::Kind::Else)
+                continue;
+              if (candidate.parent_id == id) then_nodes.push_back(&candidate);
+              if (candidate.parent_id == else_node->id)
+                else_nodes.push_back(&candidate);
+            }
+            if (then_nodes.size() != 1 || else_nodes.size() != 1)
+              return std::nullopt;
+            std::array<std::optional<checked_ir::Expr>, 2> branch_values;
+            std::array<bool, 2> seen_roles{false, false};
+            for (const auto& edge : joined->predecessor_control_edges) {
+              std::size_t role_index = 0;
+              const BodyTypeState::StatementOccurrence* predecessor = nullptr;
+              if (edge.branch_role == "then") {
+                predecessor = then_nodes.front();
+              } else if (edge.branch_role == "else") {
+                role_index = 1;
+                predecessor = else_nodes.front();
+              } else {
+                return std::nullopt;
+              }
+              if (seen_roles[role_index] || !predecessor ||
+                  predecessor->bindings.size() != 1 ||
+                  predecessor->bindings.front().identity != edge.binding_id ||
+                  predecessor->source->kind != Stmt::Kind::Let)
+                return std::nullopt;
+              const auto root = state.expression_root_slots.find(
+                  {predecessor->id, "initializer"});
+              if (root == state.expression_root_slots.end())
+                return std::nullopt;
+              auto value = lower_expression(root->second, 0);
+              const auto join_type = checked_body_type(joined->type);
+              if (!value || !join_type || !value->type ||
+                  !value->type->structurally_equal(*join_type))
+                return std::nullopt;
+              branch_values[role_index] = std::move(*value);
+              seen_roles[role_index] = true;
+              if (!consumed_statements.insert(predecessor->id).second)
+                return std::nullopt;
+            }
+            const auto join_ordinal = local_ordinals.find(joined->identity);
+            if (!seen_roles[0] || !seen_roles[1] ||
+                join_ordinal == local_ordinals.end() ||
+                !branch_values[0] || !branch_values[1])
+              return std::nullopt;
+            lowered.kind = checked_ir::StmtKind::IfJoin;
+            lowered.expr = std::move(*condition);
+            lowered.type = checked_body_type(joined->type);
+            lowered.local_ordinal = join_ordinal->second;
+            lowered.operands.push_back(std::move(*branch_values[0]));
+            lowered.operands.push_back(std::move(*branch_values[1]));
+            return lowered;
+          }
           lowered.kind = checked_ir::StmtKind::If;
           lowered.expr = std::move(*condition);
           auto then_branch = lower_block(id, depth + 1);

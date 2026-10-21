@@ -9892,3 +9892,25 @@ dependency-edge rejection, legacy generic-body poisoning, and ABI-v9 controls.
 The shadowing row has ABI-v9 source-free output control `11`, `10`, `6.0`,
 `5.0`; ABI-v10 remains fail-closed for its unavailable checked body.
 Shadowing projection and branch-join body support remain open R1 work.
+
+### R1 simple branch-join checked-body form — working tree
+
+Added an append-only `IfJoin` checked-body statement carrying the exact Bool
+condition, one result local ordinal/type, and both checked branch values. The
+common occurrence lowerer emits it only for an if/else whose checker facts give
+one exact declaration predecessor in each arm with matching resolved types;
+ambiguous shapes still fail closed. The unified bounded reader verifies both
+branch types and allocates one post-join local. The generic source-free AST
+projection restores the same lexical binding in each arm so Moss checker
+resolution can establish the merge.
+
+The focused arithmetic test confirms `branch_compute` retains an `IfJoin`
+whose arms are the exact `value * 2` and `value * 3` checker expressions, and
+that the later `+ 1` reads the joined ordinal. It also rejects a skipped local
+ordinal and mismatched branch TypeRef. Compiler build, focused arithmetic and
+checked-body IR suites, and full M2b2 source-free corpus pass. The branch-join
+corpus profile is still explicitly unavailable: the common ABI-v10 producer
+does not yet admit its three-operation, multi-edge summary, and the importer
+does not yet prove requirement identity/dependency correspondence against the
+new body node. This internal codec/lowerer slice is not end-to-end parity or R1
+acceptance.
