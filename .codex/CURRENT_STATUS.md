@@ -1,3 +1,55 @@
+## Phase 25.1 R1 continuation — common direct-call and H3 producer closure — working tree — 2026-10-21
+
+The H3 bounded direct-return record producer is removed. The common occurrence
+producer and private-chain body accessor now require the checker provenance bit
+for successful occurrence lowering; H3 records use its canonical checked-body
+bytes/hash. Direct returned calls are linked to the module-qualified selected
+callee, ordered checked argument occurrences, unique summary dependency, and one
+matching ordinary semantic call edge. The operation's receiver and argument
+TypeRefs/ordinals are checked against those exact occurrences. Reproducing
+mutations reject forged receiver and argument ordinals for receiver positions 0
+and 1. The package harness checks `private_identity` and `identity_chain`
+markers, canonical bytes/hash and decoded trees, strips their legacy rows, runs
+Int/String consumers with provider source removed, and rejects missing private
+bodies.
+
+Validation on rebuilt `build/compiler/moss-dev`: compiler build; full M2b2
+source-free/hostile corpus including ABI-v9 controls; empty-vector record
+emission; H3 source-free chain and direct records; statement/call occurrence
+roles; generic arithmetic requirements; actual D4 SDK source-free collection
+profiles; agent-feedback validation; and `git diff --check` pass. The build
+retains two existing TypeSolver missing-initializer warnings. Exact-SHA review by
+the existing adversarial architect is pending. This closes the three current
+call-occurrence reproduction findings and verifies H3 common lowering, but does
+not accept overall R1. Global occurrence/effect/dependency totality, remaining
+bounded producer profiles, and independent overall acceptance remain open.
+Preserve 24 unavailable ABI-v10 profiles, two ABI-v9 raise/recover failures, and
+the `packages/time` failure; do not start R2 before R1 acceptance.
+
+## Phase 25.1 R1 continuation — exact H3 common-lowering proof — 2026-10-21
+
+The source-free H3 provider regression now directly checks that the actual
+`private_identity` and `identity_chain` functions carry the common occurrence
+lowering provenance marker, and decodes their retained bytes to verify canonical
+bytes/hash plus the expected Parameter and Call trees. This exposed that a
+retained direct-call operation may intentionally have no copied argument TypeRefs;
+the producer now validates the ordered checked argument occurrences against the
+selected callee arity and requires any retained operation arguments to match those
+occurrences. The direct return result is linked to the open summary only with a
+unique callable target/dependency and exactly one matching semantic call edge.
+
+On rebuilt `build/compiler/moss-dev`, `make --jobs="$(nproc)" moss-dev`,
+`python3 tests/tooling/check_phase25_h3_source_free_chain.py build/compiler/moss-dev`,
+and `python3 tests/tooling/check_phase25_statement_call_occurrence_roles.py
+build/compiler/moss-dev` pass. The H3 run decodes the exact provider bodies, strips
+legacy rows, runs Int and String consumers without provider source, and rejects
+missing private bodies. `python3 tests/tooling/check_agent_feedback.py` and
+`git diff --check` pass. Build retains the two existing TypeSolver initializer
+warnings. Exact-SHA architect review is pending; this closes the H3 provenance
+coverage note only. R1 remains open for the other totality/effect/dependency and
+remaining bounded producer findings. Preserve 24 unavailable ABI-v10 profiles,
+two ABI-v9 raise/recover failures, and the `packages/time` failure.
+
 ## Phase 25.1 R1 continuation — common arithmetic emission and current profile evidence — 2026-10-21
 
 The implementation for the remaining architect P2s in pipeline occurrence

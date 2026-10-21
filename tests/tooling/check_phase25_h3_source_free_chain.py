@@ -41,6 +41,7 @@ with tempfile.TemporaryDirectory(prefix="phase25-h3-chain-", dir=TMP) as td:
     scratch = Path(td)
     verifier = scratch / "verify_chain"
     poison = scratch / "poison_legacy"
+    common_lowering = scratch / "check_common_lowering"
     command(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
              "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
              "tests/tooling/check_phase25_h3_chain_records.cpp", "-o",
@@ -49,6 +50,10 @@ with tempfile.TemporaryDirectory(prefix="phase25-h3-chain-", dir=TMP) as td:
              "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
              "tests/tooling/check_phase25_h3_poison_legacy.cpp", "-o",
              str(poison)])
+    command(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
+             "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
+             "tests/tooling/check_phase25_h3_common_lowering.cpp", "-o",
+             str(common_lowering)])
 
     env = os.environ.copy()
     env.update(MOSS_STAGED_ABI="v10", MOSS=str(MOSS), TMPDIR=str(TMP))
@@ -82,6 +87,7 @@ export fn relay(b: Box):
   return result
 """
     package(provider, "h3_provider", provider_source)
+    command([str(common_lowering), str(provider / "src" / "main.moss")])
     profile_flag = ["--release"] if args.profile == "release" else []
     command([str(MARGO), "build", *profile_flag], cwd=provider, env=env)
     artifacts = scratch / "artifacts"

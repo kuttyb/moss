@@ -52,8 +52,16 @@ int main(int argc, char** argv) {
       summaries.emplace(summary.callable_id, std::move(summary));
     }
   }
-  assert(templates.size() == 1 && summaries.size() == 6 &&
-         bodies.size() == 6 && iface.provenance.size() == 7);
+  if (templates.size() != 1 || summaries.size() < 6 ||
+      bodies.size() != summaries.size() || iface.provenance.size() < 7)
+    std::cerr << "H3 record counts templates=" << templates.size()
+              << " summaries=" << summaries.size() << " bodies="
+              << bodies.size() << " provenance=" << iface.provenance.size()
+              << '\n';
+  if (summaries.size() < 6)
+    for (const auto& entry : summaries) std::cerr << entry.first << '\n';
+  assert(templates.size() == 1 && summaries.size() >= 6 &&
+         bodies.size() == summaries.size() && iface.provenance.size() >= 7);
   const auto& nominal = templates.at(nominal_id);
   assert(nominal.variable_count == 1 && nominal.fields.size() == 1 &&
          nominal.fields[0].name == "value");

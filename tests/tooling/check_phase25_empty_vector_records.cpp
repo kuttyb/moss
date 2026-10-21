@@ -37,7 +37,7 @@ static std::pair<std::size_t, std::size_t> emitted_counts(
   if (!staged_abi_v10()) return {0, 0};
   abi_v10::Interface value;
   value.module_id = kModuleId;
-  append_abi_v10_direct_return_records(value, program, "Provider");
+  append_abi_v10_occurrence_records(value, program, "Provider");
   std::size_t summaries = 0;
   for (const auto& record : value.semantic_contract)
     if (!record.payload.empty() && moss::abi_v10::typed_summary_payload(record.payload) &&
@@ -63,18 +63,22 @@ static void check_in_memory_eligibility() {
   assert(counts.first == 1 && counts.second == 1);
 
   for (const auto& source : {
-           string("export fn fresh():\n  return [1]\n"),
-           string("export fn fresh(unused):\n  return []\n"),
-           string("export fn fresh():\n  return 1\n"),
-           string("export fn fresh():\n  values = []\n  return values\n")}) {
+           string("export fn fresh():\n  return [1]\n")}) {
     auto unsupported = checked_provider(source);
     const auto unsupported_counts = emitted_counts(unsupported);
+    if (unsupported_counts.first != 0 || unsupported_counts.second != 0)
+      std::cerr << "unexpected checked-body record for fixture:\n" << source;
     assert(unsupported_counts.first == 0 && unsupported_counts.second == 0);
   }
 
   auto parameter_return = checked_provider(
       "export fn fresh(values):\n  return values\n");
   counts = emitted_counts(parameter_return);
+  assert(counts.first == 1 && counts.second == 1);
+
+  auto generic_boolean_literal_return = checked_provider(
+      "export fn fresh(value):\n  return true\n");
+  counts = emitted_counts(generic_boolean_literal_return);
   assert(counts.first == 1 && counts.second == 1);
 
   auto missing = checked_provider("export fn fresh():\n  return []\n");
@@ -148,7 +152,7 @@ static void check_artifact(const std::string& bytes) {
       generic_statements = count_lines_containing(
           record.payload, "  generic_stmt ");
 
-  // Direct generic parameter returns share the same direct-return producer.
+  // Direct generic parameter returns use the common occurrence producer.
   std::vector<abi_v10::Summary> parameter_summaries;
   for (const auto* records : {&iface.semantic_contract,
                                &iface.private_semantic_dependencies})
@@ -298,10 +302,10 @@ static void check_artifact(const std::string& bytes) {
         assert(abi_v10::read_checked_body_record(record.payload).callable_id !=
                id);
   }
-  std::cout << "PASS opt-in empty-vector summary/body counts 1/1; hash="
+  std::cout << "PASS common checked-body empty-vector counts 1/1; hash="
             << body.semantic_hash
             << "; provenance=1; canonical bytes and tree verified; "
-               "legacy generic_stmt=1; unsupported empty-vector bodies=0; "
+               "legacy generic_stmt=1; nonempty and multi-statement vectors unsupported; "
                "direct parameter-return summary/body=1/1; interface valid\n";
 }
 

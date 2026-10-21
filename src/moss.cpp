@@ -2824,6 +2824,7 @@ static std::optional<CheckedPrivateChainBody> common_checked_body(
     const Program& program, const Function& function) {
   if (!function.open_summary || !function.open_summary->scheme_complete ||
       !function.open_summary->occurrence_ledger_complete ||
+      !function.checked_body_ir_v1_occurrence_lowered ||
       !function.checked_body_ir_v1_bytes ||
       !function.checked_body_ir_v1_hash || !program.type_context)
     return std::nullopt;
@@ -6770,11 +6771,13 @@ class Checker {
     if (!function.open_summary || !function.open_summary->scheme_complete ||
         function.body.empty() ||
         function.body.back().kind != Stmt::Kind::Return ||
-        function.body.back().a.empty())
+        function.body.back().a.empty()) {
       return false;
+    }
     auto retained = checked_body_states_.find(&function.body);
-    if (retained == checked_body_states_.end() || !retained->second)
+    if (retained == checked_body_states_.end() || !retained->second) {
       return false;
+    }
     auto& state = *retained->second;
     resolve_callable_occurrence_bindings(function, state);
     if (!state.expression_occurrence_ledger_complete) {
@@ -6822,11 +6825,14 @@ class Checker {
       }
       return resolved->structurally_equal(*scheme);
     };
-    if (summary.parameter_types.size() != function.params.size()) return false;
+    if (summary.parameter_types.size() != function.params.size()) {
+      return false;
+    }
     for (std::size_t index = 0; index < function.params.size(); ++index) {
       auto actual = state.resolved_local(function.params[index].name);
-      if (!actual || !relate_type(actual, summary.parameter_types[index]))
+      if (!actual || !relate_type(actual, summary.parameter_types[index])) {
         return false;
+      }
     }
     for (const auto& occurrence : state.expression_occurrences) {
       if (occurrence.kind !=
@@ -6844,8 +6850,120 @@ class Checker {
           parameter >= summary.parameter_types.size() ||
           !summary.parameter_types[parameter] ||
           !relate_type(occurrence.checked_type,
-                       summary.parameter_types[parameter]))
+                       summary.parameter_types[parameter])) {
+          return false;
+        }
+    }
+    // A direct named call at the function's return root has its own body
+    // solver result variable. Relate that occurrence to the open summary
+    // result only when the retained call operation, ordered argument
+    // occurrences, summary dependency, and semantic call edge agree.
+    std::set<std::uint32_t> verified_direct_return_calls;
+    for (const auto& [slot, root_id] : state.expression_root_slots) {
+      if (slot.second != "return-value" ||
+          root_id >= state.expression_occurrences.size())
+        continue;
+      const auto& returned = state.expression_occurrences[root_id];
+      if (returned.kind !=
+              BodyTypeState::ExpressionOccurrence::Kind::Call ||
+          returned.parent_id != UINT32_MAX ||
+          returned.statement_id != slot.first ||
+          !starts_with(returned.semantic_target_id, "callable-v1:") ||
+          !returned.checked_type)
+        continue;
+      const auto* callee = find_function_by_callable_id(
+          returned.semantic_target_id);
+      if (!callee || callee->semantic_callable_id !=
+                         returned.semantic_target_id) {
         return false;
+      }
+      if (returned.operation_id != "call:" + callee->name ||
+          std::count(summary.semantic_dependencies.begin(),
+                     summary.semantic_dependencies.end(),
+                     callee->semantic_callable_id) != 1) {
+        return false;
+      }
+      std::vector<const moss::OpenCallableSummaryFacts::OperationFact*>
+          matching_operations;
+      for (const auto& operation : state.open_operations)
+        if (operation.expression_occurrence_id == returned.id &&
+            operation.operation_id == returned.operation_id)
+          matching_operations.push_back(&operation);
+      if (matching_operations.size() > 1) {
+        return false;
+      }
+      std::vector<const BodyTypeState::ExpressionOccurrence*> arguments;
+      for (const auto& candidate : state.expression_occurrences)
+        if (candidate.parent_id == returned.id &&
+            starts_with(candidate.child_role, "argument:"))
+          arguments.push_back(&candidate);
+      std::sort(arguments.begin(), arguments.end(),
+          [](const auto* left, const auto* right) {
+        return left->child_ordinal < right->child_ordinal;
+      });
+      if (arguments.size() != callee->params.size()) {
+        return false;
+      }
+      for (std::size_t index = 0; index < arguments.size(); ++index) {
+        if (arguments[index]->child_role !=
+                "argument:" + std::to_string(index) ||
+            !arguments[index]->checked_type) {
+          return false;
+        }
+      }
+      if (!matching_operations.empty()) {
+        const auto& operation = *matching_operations.front();
+        if (operation.arguments.size() + 1 != arguments.size() ||
+            operation.argument_operand_ordinals.size() !=
+                operation.arguments.size() ||
+            operation.receiver_operand_ordinal >= arguments.size() ||
+            !operation.result ||
+            !state.solver.resolve(operation.result) ||
+            !state.solver.resolve(returned.checked_type) ||
+            !state.solver.resolve(operation.result)->structurally_equal(
+                *state.solver.resolve(returned.checked_type))) {
+          return false;
+        }
+        std::set<std::uint32_t> operand_ordinals;
+        if (!state.solver.resolve(operation.receiver) ||
+            !state.solver.resolve(arguments[
+                operation.receiver_operand_ordinal]->checked_type) ||
+            !state.solver.resolve(operation.receiver)->structurally_equal(
+                *state.solver.resolve(arguments[
+                    operation.receiver_operand_ordinal]->checked_type)) ||
+            !operand_ordinals.insert(
+                operation.receiver_operand_ordinal).second) {
+          return false;
+        }
+        for (std::size_t index = 0; index < operation.arguments.size(); ++index) {
+          const auto ordinal = operation.argument_operand_ordinals[index];
+          if (ordinal >= arguments.size() ||
+              arguments[ordinal]->child_role !=
+                  "argument:" + std::to_string(ordinal) ||
+              !operand_ordinals.insert(ordinal).second ||
+              !operation.arguments[index] ||
+              !state.solver.resolve(operation.arguments[index]) ||
+              !state.solver.resolve(arguments[ordinal]->checked_type) ||
+              !state.solver.resolve(operation.arguments[index])->structurally_equal(
+                  *state.solver.resolve(arguments[ordinal]->checked_type))) {
+            return false;
+          }
+        }
+        if (operand_ordinals.size() != arguments.size()) return false;
+      }
+      std::size_t matching_edges = 0;
+      for (const auto& edge : p_.semantic_call_edges)
+        if (edge.source == "fn:" + function.name &&
+            edge.target == "fn:" + callee->name &&
+            edge.line == returned.line &&
+            edge.invocation_kind == "ordinary_call")
+          ++matching_edges;
+      const bool result_type_related =
+          relate_type(returned.checked_type, summary.result_type);
+      if (matching_edges != 1 || !result_type_related) {
+        return false;
+      }
+      verified_direct_return_calls.insert(returned.id);
     }
     for (const auto& occurrence : state.expression_occurrences)
       if (occurrence.callable_result_relation &&
@@ -7274,7 +7392,8 @@ class Checker {
               [](const auto* left, const auto* right) {
                 return left->child_ordinal < right->child_ordinal;
               });
-          if (children.size() != occurrence.source_operands.size())
+          if (children.size() != occurrence.source_operands.size() &&
+              !verified_direct_return_calls.count(id))
             return std::nullopt;
           for (std::size_t index = 0; index < children.size(); ++index) {
             if (children[index]->child_role !=
@@ -29441,6 +29560,15 @@ export fn relay(value):
 export fn relay_return(value):
   return identity(value)
 
+fn choose_second(fixed, value):
+  return value
+
+export fn direct_call_receiver_first(first, second):
+  return choose_second(first, second)
+
+export fn direct_call_receiver_second(fixed: Int, value):
+  return choose_second(fixed, value)
+
 export fn relay_method(item, other):
   return item.score(other)
 
@@ -29781,6 +29909,85 @@ fn inspect_sample(sample: Sample) -> Int:
           std::cerr << "occurrence totality failed: " << name << "\n";
       return false;
     }
+    auto direct_call_state = [&](const string& name)
+        -> std::optional<std::pair<Function*, BodyTypeState*>> {
+      auto function = std::find_if(program.functions.begin(),
+          program.functions.end(), [&](Function& candidate) {
+        return candidate.name == name;
+      });
+      if (function == program.functions.end()) return std::nullopt;
+      auto state = checker.checked_body_states_.find(&function->body);
+      if (state == checker.checked_body_states_.end() || !state->second)
+        return std::nullopt;
+      return std::make_pair(&*function, state->second.get());
+    };
+    auto verifies_direct_call_receiver = [&](const string& function_name,
+                                              std::uint32_t receiver_ordinal,
+                                              std::uint32_t argument_ordinal) {
+      auto selected = direct_call_state(function_name);
+      if (!selected || !selected->first->open_summary) {
+        std::cerr << "direct-call receiver fixture missing: " << function_name
+                  << "\n";
+        return false;
+      }
+      auto& state = *selected->second;
+      auto operation = std::find_if(state.open_operations.begin(),
+          state.open_operations.end(), [](const auto& candidate) {
+        return candidate.operation_id == "call:choose_second";
+      });
+      const bool occurrence_lowered = operation != state.open_operations.end() &&
+          checker.retain_checked_occurrence_ir(*selected->first);
+      if (operation == state.open_operations.end() ||
+          operation->receiver_operand_ordinal != receiver_ordinal ||
+          operation->argument_operand_ordinals !=
+              vector<std::uint32_t>{argument_ordinal} ||
+          !occurrence_lowered) {
+        std::cerr << "direct-call receiver baseline failed: " << function_name
+                  << " operations=" << state.open_operations.size()
+                  << (operation == state.open_operations.end()
+                          ? " missing-call-operation"
+                          : " receiver=" + std::to_string(
+                                operation->receiver_operand_ordinal) +
+                                " args=" + std::to_string(
+                                    operation->argument_operand_ordinals.size()) +
+                                (operation->argument_operand_ordinals.empty()
+                                    ? ""
+                                    : " first-ordinal=" + std::to_string(
+                                          operation->argument_operand_ordinals.front())))
+                  << " expected-receiver=" << receiver_ordinal
+                  << " expected-argument=" << argument_ordinal
+                  << " lowered=" << occurrence_lowered
+                  << " scheme=" << selected->first->open_summary->scheme_complete
+                  << " summary-ledger=" << selected->first->open_summary->occurrence_ledger_complete
+                  << " state-ledger=" << state.expression_occurrence_ledger_complete
+                  << " body-statements=" << selected->first->body.size()
+                  << "\n";
+        return false;
+      }
+      const auto original_receiver = operation->receiver_operand_ordinal;
+      operation->receiver_operand_ordinal = argument_ordinal;
+      const bool forged_receiver_rejected =
+          !checker.retain_checked_occurrence_ir(*selected->first);
+      operation->receiver_operand_ordinal = original_receiver;
+      const auto original_argument_ordinals =
+          operation->argument_operand_ordinals;
+      operation->argument_operand_ordinals = {receiver_ordinal};
+      const bool forged_argument_ordinal_rejected =
+          !checker.retain_checked_occurrence_ir(*selected->first);
+      operation->argument_operand_ordinals = original_argument_ordinals;
+      const bool restored = checker.retain_checked_occurrence_ir(*selected->first);
+      if (!forged_receiver_rejected || !forged_argument_ordinal_rejected ||
+          !restored)
+        std::cerr << "direct-call receiver mutations failed: " << function_name
+                  << " receiver-rejected=" << forged_receiver_rejected
+                  << " ordinal-rejected=" << forged_argument_ordinal_rejected
+                  << " restored=" << restored << "\n";
+      return forged_receiver_rejected && forged_argument_ordinal_rejected &&
+          restored;
+    };
+    if (!verifies_direct_call_receiver("direct_call_receiver_first", 0, 1) ||
+        !verifies_direct_call_receiver("direct_call_receiver_second", 1, 0))
+      return false;
     const auto self_parent_function = std::find_if(program.functions.begin(),
         program.functions.end(), [](const Function& candidate) {
           return candidate.name == "relay_method";
@@ -49712,6 +49919,7 @@ static void append_abi_v10_occurrence_records(
         std::filesystem::path(function.source_file).extension() == ".mossi" ||
         !function.open_summary || !function.open_summary->complete ||
         !function.open_summary->occurrence_ledger_complete ||
+        !function.checked_body_ir_v1_occurrence_lowered ||
         !function.checked_body_ir_v1_bytes ||
         !function.checked_body_ir_v1_hash)
       continue;
@@ -49939,152 +50147,6 @@ static void append_abi_v10_direct_checked_records(
         requirement_provenance.begin(), requirement_provenance.end());
     append_abi_v10_checked_callable_records(
         value, summary, body, callable_provenance);
-  }
-}
-
-// Emit checker-retained direct-return bodies through the shared canonical
-// checked-body record path. This currently admits parameter/scalar returns
-// and the guarded empty open-vector return.
-static void append_abi_v10_direct_return_records(
-    abi_v10::Interface& value, const Program& program,
-    const string& module) {
-  if (!program.type_context) return;
-  for (const auto& function : program.functions) {
-    if (!function.exported || !function.static_dispatch ||
-        !belongs_to_module(function.name, module) ||
-        std::filesystem::path(function.source_file).extension() == ".mossi")
-      continue;
-    if (!function.checked_body_ir_v1_bytes ||
-        !function.checked_body_ir_v1_hash || !program.type_context ||
-        !function.open_summary || !function.open_summary->scheme_complete)
-      continue;
-    if (abi_v10_checked_callable_records_present(
-            value, function.semantic_callable_id))
-      continue;
-    vector<checked_ir::Stmt> checked_statements;
-    try {
-      checked_statements = checked_ir::decode_checked_body_v1(
-          *function.checked_body_ir_v1_bytes, *program.type_context,
-          function.open_summary->parameter_types,
-          function.open_summary->result_type,
-          *function.checked_body_ir_v1_hash);
-    } catch (const std::invalid_argument&) {
-      continue;
-    }
-    if (checked_statements.size() != 1 ||
-        checked_statements.front().kind != checked_ir::StmtKind::Return ||
-        !checked_statements.front().expr)
-      continue;
-    const auto& facts = *function.open_summary;
-    const auto& returned = *checked_statements.front().expr;
-    const bool scalar_return_kind =
-        returned.kind == checked_ir::ExprKind::Parameter ||
-        returned.kind == checked_ir::ExprKind::IntegerLiteral ||
-        returned.kind == checked_ir::ExprKind::FloatLiteral ||
-        returned.kind == checked_ir::ExprKind::BoolLiteral ||
-        returned.kind == checked_ir::ExprKind::StringLiteral;
-    const bool empty_open_vector_return =
-        returned.kind == checked_ir::ExprKind::VectorLiteral &&
-        returned.operands.empty() && facts.parameter_types.empty() &&
-        facts.parameter_access.empty() && facts.result_type &&
-        facts.result_type->kind == TypeKind::Builtin &&
-        facts.result_type->name == "vector" &&
-        facts.result_type->type_args.size() == 1 &&
-        facts.result_type->type_args.front() &&
-        facts.result_type->type_args.front()->kind == TypeKind::InferenceVar &&
-        facts.result_type->type_args.front()->var_id.session_id == 0 &&
-        facts.result_type->type_args.front()->var_id.owner_id == 0 &&
-        facts.result_type->type_args.front()->var_id.ordinal == 0;
-    const bool scalar_parameter_return = scalar_return_kind &&
-        facts.parameter_types.size() == 1 && facts.parameter_access.size() == 1 &&
-        facts.parameter_access.front() == AccessMode::Read &&
-        facts.parameter_types.front() &&
-        facts.parameter_types.front()->kind == TypeKind::InferenceVar &&
-        facts.parameter_types.front()->var_id.session_id == 0 &&
-        facts.parameter_types.front()->var_id.owner_id == 0 &&
-        facts.parameter_types.front()->var_id.ordinal == 0;
-    if ((!empty_open_vector_return && !scalar_parameter_return) ||
-        facts.bound_variable_count != 1 ||
-        !facts.requirements.empty() || !facts.member_requirements.empty() ||
-        !facts.semantic_dependencies.empty() ||
-        !abi_v10_effects_pure(facts.observable_effects))
-      continue;
-    if (empty_open_vector_return &&
-        (facts.origin.module_id != value.module_id ||
-         facts.origin.enclosing_callable != function.semantic_callable_id ||
-         facts.origin.source_file.empty() ||
-         facts.origin.source_file != function.source_file ||
-         facts.origin.line < 1 || facts.origin.line != function.line))
-      continue;
-    const string& body_hash = *function.checked_body_ir_v1_hash;
-    if (function.semantic_callable_id.empty() ||
-        facts.callable_id != function.semantic_callable_id)
-      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
-          "checked ABI-v10 direct-return callable identity is inconsistent");
-    const auto callable = moss::CallableId::parse(function.semantic_callable_id);
-    const string declaration_name = function.declaration_name.empty()
-        ? function.name : function.declaration_name;
-    if (!callable || callable->kind != "fn" ||
-        callable->module_id != value.module_id ||
-        callable->declaration_name != declaration_name)
-      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
-          "checked ABI-v10 direct-return callable identity is invalid");
-
-    abi_v10::Summary summary;
-    summary.callable_id = function.semantic_callable_id;
-    summary.variable_count = facts.bound_variable_count;
-    if (facts.parameter_types.size() != facts.parameter_access.size() ||
-        facts.parameter_types.size() != function.params.size())
-      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
-          "checked ABI-v10 direct-return summary is incomplete");
-    const auto result = abi_v10_checked_type(
-        facts.result_type, summary.variable_count);
-    if (!result)
-      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
-          "checked ABI-v10 direct-return TypeRefs are inconsistent");
-    for (std::size_t index = 0; index < facts.parameter_types.size(); ++index) {
-      const auto parameter = abi_v10_checked_type(
-          facts.parameter_types[index], summary.variable_count);
-      if (!parameter)
-        throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
-            "checked ABI-v10 direct-return parameter TypeRef is inconsistent");
-      summary.parameters.push_back(*parameter);
-      summary.parameter_access.push_back(
-          abi_v10_checked_access(facts.parameter_access[index]));
-    }
-    summary.result = *result;
-    summary.body_semantic_hash = body_hash;
-    const auto provenance = abi_v10_checked_provenance(
-        value.module_id, summary.callable_id,
-        function.source_file, function.line);
-    summary.provenance_id = provenance.provenance_id;
-
-    abi_v10::CheckedBodyRecord body;
-    body.callable_id = summary.callable_id;
-    body.semantic_hash = body_hash;
-    body.checked_ir_bytes = *function.checked_body_ir_v1_bytes;
-    const auto summary_record = abi_v10::summary_record(summary);
-    const auto body_record = abi_v10::checked_body_record(body);
-    try {
-      abi_v10::validate_summary(summary_record);
-      abi_v10::validate_checked_body_record(body_record);
-      const auto decoded = checked_ir::decode_checked_body_v1(
-          body.checked_ir_bytes, *program.type_context,
-          facts.parameter_types, facts.result_type,
-          body.semantic_hash);
-      if (checked_ir::encode_checked_body_v1(decoded) !=
-              body.checked_ir_bytes ||
-          abi_v10::read_summary(summary_record.payload).body_semantic_hash !=
-              body.semantic_hash)
-        throw ProjectError("SOURCE_FREE_CHECKED_BODY_INVALID",
-            "checked ABI-v10 direct-return records are not canonical");
-    } catch (const abi_v10::Error& error) {
-      throw ProjectError(error.code, error.what());
-    } catch (const std::invalid_argument& error) {
-      throw ProjectError("SOURCE_FREE_CHECKED_BODY_INVALID", error.what());
-    }
-    append_abi_v10_checked_callable_records(value, summary, body,
-                                             {provenance});
   }
 }
 
@@ -50876,7 +50938,6 @@ static vector<std::filesystem::path> write_module_interfaces(
     value.semantic_contract = abi_v10_declaration_records(contents[module].str());
     append_abi_v10_occurrence_records(value, program, module);
     append_abi_v10_direct_checked_records(value, program, module);
-    append_abi_v10_direct_return_records(value, program, module);
     append_abi_v10_private_chain_records(value, program, module);
     append_abi_v10_generic_callable_provenance(value, program, module);
     // Drop legacy executable statements only when this interface contains a
