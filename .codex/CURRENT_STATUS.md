@@ -2,7 +2,7 @@
 
 ## Phase 25.1 R1 continuation — occurrence completeness, lowering and source-free projection — 2026-10-20
 
-Latest pushed checkpoint is `b1238b52dbdbc3546d3dc9d1ff8bd5cadc05c219`. This working slice is uncommitted; R1 remains open. The independent architect gave a focused GO on that checkpoint with no P0/P1 findings; this was not overall R1 acceptance. Public `.complete` now requires scheme, effect, dependency, occurrence-ledger, and occurrence-dependency completeness.
+Latest pushed checkpoint is `4182b75db7abb8e8e675a178583d59ce1f95d994`. This working slice is uncommitted; R1 remains open. The independent architect gave a focused GO on that checkpoint with no P0/P1 findings; this was not overall R1 acceptance. Public `.complete` now requires scheme, effect, dependency, occurrence-ledger, and occurrence-dependency completeness.
 
 This slice adds checker-derived branch-join binding identity and TypeRef for an `if/else` local present on both paths; a generalized checked-body lowerer for straight-line Let/Var/Return and returning If/Else bodies; a shared source-free record path for complete, effect-pure, dependency-free occurrence bodies; and generic multi-statement/if-return import projection. It also links operation requirement parent edges through direct expression nesting or an exact local initializer. Bounded field/call/constructor/collection producers retain their parity checks. Other valid constructs, including full loop/match/message/exception control flow, effectful or dependency-bearing generic record production, and complete all-producer/importer consolidation remain open. Do not start R2 until independent R1 acceptance.
 
