@@ -26060,6 +26060,107 @@ class Checker {
             check_expression(line, arg, env, {},
                              "argument:" + std::to_string(index));
         }
+        // A direct call's result is retained only by instantiating the exact
+        // selected callee summary from its completed, ordered argument
+        // occurrences. Source spelling and inferred display types are not
+        // sufficient to connect the caller's body solver to the callee's
+        // summary namespace.
+        if (resolved_target && current_body_types_ &&
+            !checking_specialization_ &&
+            !current_body_types_->active_expression_occurrences.empty() &&
+            resolved_target->open_summary &&
+            resolved_target->open_summary->scheme_complete &&
+            resolved_target->open_summary->parameter_types.size() == args.size() &&
+            resolved_target->open_summary->result_type) {
+          auto& state = *current_body_types_;
+          const auto call_id = state.active_expression_occurrences.back();
+          std::map<moss::TypeVarId, moss::TypeRef> substitutions;
+          std::function<bool(const moss::TypeRef&, const moss::TypeRef&)> bind =
+              [&](const moss::TypeRef& formal,
+                  const moss::TypeRef& actual) -> bool {
+            if (!formal || !actual) return false;
+            auto resolved_actual = state.solver.resolve(actual);
+            if (!resolved_actual) return false;
+            if (formal->kind == moss::TypeKind::InferenceVar) {
+              if (formal->var_id.session_id != 0 ||
+                  formal->var_id.owner_id != 0 ||
+                  formal->var_id.ordinal >=
+                      resolved_target->open_summary->bound_variable_count)
+                return false;
+              auto [found, inserted] = substitutions.emplace(
+                  formal->var_id, resolved_actual);
+              return inserted || (found->second &&
+                  found->second->structurally_equal(*resolved_actual));
+            }
+            if (formal->kind != resolved_actual->kind ||
+                formal->name != resolved_actual->name ||
+                ((formal->kind == moss::TypeKind::NominalInstance ||
+                  formal->kind == moss::TypeKind::Enum ||
+                  formal->kind == moss::TypeKind::Domain) &&
+                 (!formal->declaration || !resolved_actual->declaration ||
+                  formal->declaration->id != resolved_actual->declaration->id)) ||
+                formal->type_args.size() != resolved_actual->type_args.size() ||
+                formal->field_substitutions.size() !=
+                    resolved_actual->field_substitutions.size())
+              return false;
+            for (std::size_t index = 0; index < formal->type_args.size(); ++index)
+              if (!bind(formal->type_args[index],
+                        resolved_actual->type_args[index])) return false;
+            for (std::size_t index = 0;
+                 index < formal->field_substitutions.size(); ++index)
+              if (formal->field_substitutions[index].first !=
+                      resolved_actual->field_substitutions[index].first ||
+                  !bind(formal->field_substitutions[index].second,
+                        resolved_actual->field_substitutions[index].second))
+                return false;
+            return true;
+          };
+          bool exact_arguments = true;
+          for (std::size_t index = 0; exact_arguments && index < args.size();
+               ++index) {
+            const BodyTypeState::ExpressionOccurrence* child = nullptr;
+            for (const auto& candidate : state.expression_occurrences) {
+              if (candidate.parent_id != call_id ||
+                  candidate.child_role != "argument:" + std::to_string(index))
+                continue;
+              if (child) {
+                exact_arguments = false;
+                break;
+              }
+              child = &candidate;
+            }
+            exact_arguments = exact_arguments && child && child->completed &&
+                child->checked_type &&
+                bind(resolved_target->open_summary->parameter_types[index],
+                     child->checked_type);
+          }
+          std::function<moss::TypeRef(const moss::TypeRef&)> substitute =
+              [&](const moss::TypeRef& type) -> moss::TypeRef {
+            if (!type) return nullptr;
+            if (type->kind == moss::TypeKind::InferenceVar) {
+              if (type->var_id.session_id != 0 || type->var_id.owner_id != 0 ||
+                  type->var_id.ordinal >=
+                      resolved_target->open_summary->bound_variable_count)
+                return nullptr;
+              auto found = substitutions.find(type->var_id);
+              return found == substitutions.end() ? nullptr : found->second;
+            }
+            auto result = std::make_shared<moss::Type>(*type);
+            for (auto& argument : result->type_args) {
+              argument = substitute(argument);
+              if (!argument) return nullptr;
+            }
+            for (auto& field : result->field_substitutions) {
+              field.second = substitute(field.second);
+              if (!field.second) return nullptr;
+            }
+            return result;
+          };
+          if (exact_arguments) {
+            auto result = substitute(resolved_target->open_summary->result_type);
+            if (result) state.retain_active_expression_type(std::move(result));
+          }
+        }
       }
       return;
     }
@@ -28355,9 +28456,17 @@ class Checker {
           checked_types.expression_occurrence_ledger_complete = false;
         }
       } else if (starts_with(operation.operation_id, "call:")) {
+        bool target_identity_valid = true;
+        if (starts_with(linked.semantic_target_id, "callable-v1:")) {
+          const Function* selected =
+              find_function_by_callable_id(linked.semantic_target_id);
+          target_identity_valid = selected &&
+              operation.operation_id == "call:" + selected->name;
+        }
         bool valid =
             linked.kind == BodyTypeState::ExpressionOccurrence::Kind::Call &&
             linked.operation_id == operation.operation_id &&
+            target_identity_valid &&
             operation.receiver_operand_ordinal < linked.source_operands.size() &&
             operation.argument_operand_ordinals.size() ==
                 operation.arguments.size() &&
@@ -29668,12 +29777,47 @@ export fn fresh(x):
     if (!constructor_field_type || !constructor_child_type ||
         !constructor_field_type->structurally_equal(*constructor_child_type))
       return false;
-    for (const auto* helper : {nested_private_box, fresh}) {
+    for (const auto& helper_and_target : {
+             std::pair<const Function*, const Function*>{nested_private_box,
+                                                          private_box},
+             std::pair<const Function*, const Function*>{fresh,
+                                                          nested_private_box}}) {
+      const auto* helper = helper_and_target.first;
+      const auto* target = helper_and_target.second;
       const auto state = chain_checker.checked_body_states_.find(&helper->body);
       if (state == chain_checker.checked_body_states_.end() || !state->second ||
-          state->second->expression_occurrence_ledger_complete ||
-          !helper->open_summary || helper->open_summary->complete ||
-          helper->open_summary->occurrence_ledger_complete)
+          !state->second->expression_occurrence_ledger_complete ||
+          !helper->open_summary || !helper->open_summary->complete ||
+          !helper->open_summary->occurrence_ledger_complete)
+        return false;
+      auto& body = *state->second;
+      const auto call = std::find_if(body.expression_occurrences.begin(),
+          body.expression_occurrences.end(), [&](const auto& occurrence) {
+        return occurrence.kind ==
+                BodyTypeState::ExpressionOccurrence::Kind::Call &&
+            occurrence.semantic_target_id == target->semantic_callable_id;
+      });
+      if (call == body.expression_occurrences.end() ||
+          call->source_operands.size() != 1 || !call->checked_type)
+        return false;
+      const auto argument = std::find_if(body.expression_occurrences.begin(),
+          body.expression_occurrences.end(), [&](const auto& occurrence) {
+        return occurrence.parent_id == call->id &&
+            occurrence.child_role == "argument:0";
+      });
+      const auto operation = std::find_if(body.open_operations.begin(),
+          body.open_operations.end(), [&](const auto& candidate) {
+        return candidate.expression_occurrence_id == call->id &&
+            candidate.operation_id == "call:" + target->name;
+      });
+      const auto call_type = body.solver.resolve(call->checked_type);
+      const auto operation_type = operation != body.open_operations.end() &&
+              operation->result
+          ? body.solver.resolve(operation->result) : nullptr;
+      if (argument == body.expression_occurrences.end() ||
+          !argument->checked_type || operation == body.open_operations.end() ||
+          !call_type || !operation_type ||
+          !call_type->structurally_equal(*operation_type))
         return false;
     }
     const auto relay_method_function = std::find_if(program.functions.begin(),
