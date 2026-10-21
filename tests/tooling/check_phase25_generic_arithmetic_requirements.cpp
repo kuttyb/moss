@@ -374,6 +374,11 @@ export fn branch_compute(value, flag: Bool):
   else:
     let item = value * 3
   return item + 1
+
+export fn alias_compute(value):
+  let doubled = value * 2
+  let alias = doubled
+  return alias + 1
 )moss");
   const Function& select = find_function(joined_binding, "select");
   // The checker retains one exact join binding at the control-flow merge.
@@ -450,6 +455,16 @@ export fn branch_compute(value, flag: Bool):
     duplicate_rejected = true;
   }
   assert(duplicate_rejected);
+
+  const Function& alias_compute = find_function(joined_binding,
+                                                 "alias_compute");
+  assert(alias_compute.open_summary);
+  // The current checker cannot close the generic result facts through this
+  // alias chain. Preserve the unsupported profile as unavailable instead of
+  // claiming a complete summary with a lost dependency edge.
+  assert(!alias_compute.open_summary->scheme_complete);
+  assert(!alias_compute.open_summary->complete);
+  assert(!alias_compute.open_summary->occurrence_ledger_complete);
 
   const Function& choose = find_function(joined_binding, "choose");
   assert(choose.open_summary && choose.open_summary->complete);

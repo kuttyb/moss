@@ -85,6 +85,17 @@
       "evidence": "R1 generalized occurrence lowering emits a canonical two-statement body; source-free import removes provider source, poisons the legacy generic_stmt body, requires checked-body projection, and executes Int and Float specializations."
     },
     {
+      "id": "multi-statement-arithmetic-alias-fail-closed",
+      "priority": "P1-essential",
+      "category": "generic arithmetic through local alias",
+      "provider": "module Service\n\nexport fn fresh(value):\n  let doubled = value * 2\n  let alias = doubled\n  return alias + 1\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(5)\n  echo Service.fresh(2.5)\n",
+      "checked_body_status": "checked-body unavailable; the current checker does not close the open generic signature through the alias chain",
+      "evidence": "The source-built checker reports scheme_complete=false, complete=false, and occurrence_ledger_complete=false for this body; the provider emits no callable summary/body, and the source-deleted consumer rejects. Keep this valid profile visible until checker type/dependency facts close and source-free Int/Float parity plus hostile artifact acceptance pass.",
+      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+      "provider_must_emit_v10": true
+    },
+    {
       "id": "branch-join-generic-arithmetic-unavailable",
       "priority": "P1-essential",
       "category": "generic arithmetic through if/else joined local",

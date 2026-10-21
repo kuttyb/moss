@@ -5157,10 +5157,67 @@ class Checker {
               found.insert(candidate.expression_occurrence_id);
           return found;
         };
+        std::function<bool(const string&, std::set<std::uint32_t>&,
+                           std::set<string>&)> collect_binding_value =
+            [&](const string& binding_id,
+                std::set<std::uint32_t>& dependencies,
+                std::set<string>& visited_bindings) {
+          if (starts_with(binding_id, "parameter:")) return true;
+          if (binding_id.empty()) return false;
+          if (!visited_bindings.insert(binding_id).second) return true;
+          const BodyTypeState::StatementOccurrence* owner = nullptr;
+          const BodyTypeState::StatementOccurrence::BindingOccurrence* binding =
+              nullptr;
+          std::size_t owner_count = 0;
+          for (const auto& statement : state.statement_occurrences) {
+            const auto found = std::find_if(statement.bindings.begin(),
+                statement.bindings.end(), [&](const auto& candidate) {
+              return candidate.identity == binding_id;
+            });
+            const bool owns_version = found != statement.bindings.end() ||
+                statement.binding_identity == binding_id ||
+                statement.assigned_binding_identity == binding_id;
+            if (!owns_version) continue;
+            ++owner_count;
+            owner = &statement;
+            if (found != statement.bindings.end()) binding = &*found;
+          }
+          if (owner_count != 1 || !owner) return false;
+          if (binding && !binding->predecessor_binding_ids.empty()) {
+            if (binding->predecessor_control_edges.size() !=
+                binding->predecessor_binding_ids.size())
+              return false;
+            for (const auto& predecessor : binding->predecessor_binding_ids)
+              if (!collect_binding_value(predecessor, dependencies,
+                                         visited_bindings))
+                return false;
+            return true;
+          }
+          const string root_slot = owner->kind == Stmt::Kind::For
+              ? "iterable" : "initializer";
+          const auto initializer = state.expression_root_slots.find(
+              {owner->id, root_slot});
+          if (initializer == state.expression_root_slots.end()) return false;
+          const auto operations = collect_operations_in_subtree(
+              initializer->second);
+          dependencies.insert(operations.begin(), operations.end());
+          for (const auto& expression : state.expression_occurrences) {
+            if (expression.kind !=
+                    BodyTypeState::ExpressionOccurrence::Kind::Identifier ||
+                expression.resolved_binding_id.empty() ||
+                !operation_descends_from(expression.id, initializer->second))
+              continue;
+            if (!collect_binding_value(expression.resolved_binding_id,
+                                       dependencies, visited_bindings))
+              return false;
+          }
+          return true;
+        };
         // Requirement parent edges follow checked value flow. Direct nested
         // operations are linked by the occurrence tree; an operation whose
         // receiver is a local read links through that exact binding's checked
-        // initializer. Ambiguous or missing bindings keep the scheme closed.
+        // value, recursively following aliases and branch predecessors.
+        // Ambiguous or missing bindings keep the scheme closed.
         for (std::size_t index = 0;
              operations_complete && index < operations.size(); ++index) {
           const auto occurrence_id = operations[index].expression_occurrence_id;
@@ -5172,69 +5229,18 @@ class Checker {
                 operation_descends_from(earlier.expression_occurrence_id,
                                         occurrence_id))
               parents.insert(earlier.expression_occurrence_id);
+          std::set<string> visited_bindings;
           for (const auto& expression : state.expression_occurrences) {
             if (expression.kind !=
                     BodyTypeState::ExpressionOccurrence::Kind::Identifier ||
                 expression.resolved_binding_id.empty() ||
                 !operation_descends_from(expression.id, occurrence_id))
               continue;
-            for (const auto& statement : state.statement_occurrences) {
-              const bool owns_binding = std::any_of(
-                  statement.bindings.begin(), statement.bindings.end(),
-                  [&](const auto& binding) {
-                return binding.identity == expression.resolved_binding_id;
-              });
-              if (!owns_binding) continue;
-              const auto initializer = state.expression_root_slots.find(
-                  {statement.id, "initializer"});
-              if (initializer != state.expression_root_slots.end()) {
-                const auto dependencies =
-                    collect_operations_in_subtree(initializer->second);
-                parents.insert(dependencies.begin(), dependencies.end());
-                continue;
-              }
-              const auto joined_binding = std::find_if(
-                  statement.bindings.begin(), statement.bindings.end(),
-                  [&](const auto& binding) {
-                return binding.identity == expression.resolved_binding_id;
-              });
-              if (joined_binding == statement.bindings.end() ||
-                  joined_binding->predecessor_binding_ids.empty()) {
-                operations_complete = false;
-                state.expression_occurrence_ledger_complete = false;
-                break;
-              }
-              for (const auto& predecessor :
-                   joined_binding->predecessor_binding_ids) {
-                const BodyTypeState::StatementOccurrence* predecessor_node =
-                    nullptr;
-                std::size_t predecessor_matches = 0;
-                for (const auto& candidate : state.statement_occurrences)
-                  if (std::any_of(candidate.bindings.begin(),
-                          candidate.bindings.end(), [&](const auto& binding) {
-                        return binding.identity == predecessor;
-                      })) {
-                    predecessor_node = &candidate;
-                    ++predecessor_matches;
-                  }
-                if (predecessor_matches != 1 || !predecessor_node) {
-                  operations_complete = false;
-                  state.expression_occurrence_ledger_complete = false;
-                  break;
-                }
-                const auto predecessor_initializer =
-                    state.expression_root_slots.find(
-                        {predecessor_node->id, "initializer"});
-                if (predecessor_initializer ==
-                    state.expression_root_slots.end()) {
-                  operations_complete = false;
-                  state.expression_occurrence_ledger_complete = false;
-                  break;
-                }
-                const auto dependencies = collect_operations_in_subtree(
-                    predecessor_initializer->second);
-                parents.insert(dependencies.begin(), dependencies.end());
-              }
+            if (!collect_binding_value(expression.resolved_binding_id,
+                                       parents, visited_bindings)) {
+              operations_complete = false;
+              state.expression_occurrence_ledger_complete = false;
+              break;
             }
           }
           parents.erase(occurrence_id);
