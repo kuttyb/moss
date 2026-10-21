@@ -354,6 +354,48 @@ fn main():
   assert(!unsupported.open_summary->result_type);
   assert(unsupported.open_summary->requirements.empty());
 
+  auto joined_binding = checked_program(R"moss(export fn select(value, flag: Bool):
+  if flag:
+    let local = value
+  else:
+    let local = value
+  return local
+)moss");
+  const Function& select = find_function(joined_binding, "select");
+  // A control-flow join whose local identity is not retained must never leak
+  // through the public callable-complete bit. The checker may conservatively
+  // withhold the open summary entirely.
+  assert(!select.open_summary || !select.open_summary->complete);
+  if (select.open_summary)
+    assert(!select.open_summary->occurrence_ledger_complete);
+
+  std::istringstream staged_input(R"moss(export fn staged(value):
+  let doubled = value * 2
+  return doubled + 20
+)moss");
+  Program staged_program = Parser(
+      lex_lines(staged_input, "<checked-straight-line-body>")).parse();
+  staged_program.type_context = std::make_shared<TypeContext>();
+  Checker staged_checker(staged_program);
+  staged_checker.run();
+  const Function& staged = find_function(staged_program, "staged");
+  assert(staged.open_summary && staged.open_summary->complete);
+  assert(staged.checked_body_ir_v1_bytes && staged.checked_body_ir_v1_hash);
+  const auto staged_body = checked_ir::decode_checked_body_v1(
+      *staged.checked_body_ir_v1_bytes, *staged_program.type_context,
+      staged.open_summary->parameter_types, staged.open_summary->result_type,
+      *staged.checked_body_ir_v1_hash);
+  assert(staged_body.size() == 2);
+  assert(staged_body[0].kind == checked_ir::StmtKind::Let &&
+         staged_body[0].local_ordinal == 0 && staged_body[0].expr &&
+         staged_body[0].expr->kind == checked_ir::ExprKind::Binary);
+  assert(staged_body[1].kind == checked_ir::StmtKind::Return &&
+         staged_body[1].expr &&
+         staged_body[1].expr->kind == checked_ir::ExprKind::Binary &&
+         staged_body[1].expr->operands.front().kind ==
+             checked_ir::ExprKind::LocalRead);
+
+
   auto imported_wire = synthetic_arithmetic_summary();
   vector<std::pair<string, string>> imported_provenance;
   for (size_t index = 0; index < 2; ++index) {
