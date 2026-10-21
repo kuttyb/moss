@@ -27363,11 +27363,14 @@ class Checker {
         checked_types.expression_occurrence_ledger_complete = false;
       }
     }
+    std::set<std::uint32_t> operator_requirement_occurrences;
     for (const auto& requirement : checked_types.open_operator_requirements) {
       if (requirement.expression_occurrence_id >=
           checked_types.expression_occurrences.size() ||
           !checked_types.expression_occurrences[
-              requirement.expression_occurrence_id].completed) {
+              requirement.expression_occurrence_id].completed ||
+          !operator_requirement_occurrences.insert(
+              requirement.expression_occurrence_id).second) {
         checked_types.expression_occurrence_ledger_complete = false;
         continue;
       }
@@ -27396,6 +27399,40 @@ class Checker {
           requirement.arguments.size() != 1 || !requirement.result ||
           !linked.checked_type ||
           !same_resolved_term(*requirement.result, linked.checked_type))
+        checked_types.expression_occurrence_ledger_complete = false;
+    }
+    // Equality constraints are retained separately from arithmetic operation
+    // facts. Prove that every generic equality occurrence has exactly one
+    // checker requirement and that no requirement is duplicated or orphaned.
+    for (const auto& occurrence : checked_types.expression_occurrences) {
+      if (occurrence.kind !=
+              BodyTypeState::ExpressionOccurrence::Kind::Binary ||
+          (occurrence.operation_id != "==" &&
+           occurrence.operation_id != "!="))
+        continue;
+      const auto left = std::find_if(
+          checked_types.expression_occurrences.begin(),
+          checked_types.expression_occurrences.end(), [&](const auto& child) {
+        return child.parent_id == occurrence.id &&
+            child.child_role == "left";
+      });
+      const auto right = std::find_if(
+          checked_types.expression_occurrences.begin(),
+          checked_types.expression_occurrences.end(), [&](const auto& child) {
+        return child.parent_id == occurrence.id &&
+            child.child_role == "right";
+      });
+      const auto left_type = left == checked_types.expression_occurrences.end()
+          || !left->checked_type
+          ? nullptr : checked_types.solver.resolve(left->checked_type);
+      const auto right_type = right == checked_types.expression_occurrences.end()
+          || !right->checked_type
+          ? nullptr : checked_types.solver.resolve(right->checked_type);
+      const bool checker_requires_constraint = left_type && right_type &&
+          (!left_type->is_closed() || !right_type->is_closed());
+      const bool has_constraint =
+          operator_requirement_occurrences.count(occurrence.id) == 1;
+      if (checker_requires_constraint != has_constraint)
         checked_types.expression_occurrence_ledger_complete = false;
     }
     for (const auto& linked : linked_operations)

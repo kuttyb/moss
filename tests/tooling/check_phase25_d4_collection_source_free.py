@@ -143,9 +143,18 @@ fn main():
     rejected = subprocess.run([str(MARGO), "build"], cwd=bad_consumer,
                               env=bad_env, capture_output=True, text=True,
                               timeout=300)
-    diagnostic = rejected.stdout + rejected.stderr
-    assert rejected.returncode != 0 and "SOURCE_FREE_CHECKED_BODY_INVALID" in diagnostic, (
-        "collection-count-start", rejected.returncode, diagnostic)
+    assert rejected.returncode != 0, ("collection-count-start", rejected.returncode,
+                                      rejected.stdout + rejected.stderr)
+    checked = subprocess.run(
+        [str(MOSS), "check", str(bad_consumer / "src/main.moss"), "--json"],
+        cwd=bad_consumer,
+        env=bad_env | {"MOSS_PHASE25_CHECKED_BODY_TRACE": "1"},
+        capture_output=True, text=True, timeout=300)
+    diagnostic = checked.stdout + checked.stderr
+    assert checked.returncode != 0 and "SOURCE_FREE_CHECKED_BODY_INVALID" in diagnostic, (
+        "collection-count-start", checked.returncode, diagnostic)
+    assert "checked ABI-v10 collection loop counters must start at zero" in diagnostic, diagnostic
+    assert "MOSS_CHECKED_BODY_PROJECTED|callable-v1:collections:fn:count_equal|" not in diagnostic, diagnostic
     print("PASS collection-count-start rejected through the checked ABI-v10 path")
 
 print("D4 actual SDK source-free outputs passed; legacy records removed: " +

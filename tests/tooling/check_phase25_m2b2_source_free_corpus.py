@@ -409,6 +409,19 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                     assert rejected.returncode != 0 and any(
                         code in reject_output for code in expected_codes), (
                             mutation_id, expected_codes, reject_output)
+                    if mode in {"collection-extra-else",
+                                "collection-index-start"}:
+                        expected_message = (
+                            "checked ABI-v10 collection body does not match its typed summary"
+                            if mode == "collection-extra-else" else
+                            "checked ABI-v10 collection loop counters must start at zero")
+                        assert expected_message in reject_output, (
+                            mutation_id, expected_message, reject_output)
+                        assert ("MOSS_CHECKED_BODY_PROJECTED|" +
+                                "callable-v1:Service:fn:fresh|") not in reject_output, (
+                                    mutation_id,
+                                    "hostile collection body was projected",
+                                    reject_output)
                     print(f"PASS {case['id']} {mutation_id} rejects fail-closed")
 
             v9_env = base_env.copy()
