@@ -160,6 +160,7 @@ int main() {
   assert(Checker::unit_test_control_join_binding_facts());
   assert(Checker::unit_test_deferred_operator_requirement_occurrences());
   assert(Checker::unit_test_deferred_unary_invalid_type_rejected());
+  assert(Checker::unit_test_builtin_index_occurrence_fact());
   auto program = checked_program(R"moss(export fn compute(x):
   return x * 2 + 20
 

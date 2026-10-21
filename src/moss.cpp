@@ -27410,8 +27410,29 @@ class Checker {
             checked_types.expression_occurrence_ledger_complete = false;
         }
       } else if (operation.operation_id == "builtin:index") {
+        const auto container = std::find_if(
+            checked_types.expression_occurrences.begin(),
+            checked_types.expression_occurrences.end(),
+            [&](const auto& candidate) {
+              return candidate.parent_id == occurrence &&
+                  candidate.child_role == "container";
+            });
+        const auto index = std::find_if(
+            checked_types.expression_occurrences.begin(),
+            checked_types.expression_occurrences.end(),
+            [&](const auto& candidate) {
+              return candidate.parent_id == occurrence &&
+                  candidate.child_role == "index";
+            });
         if (linked.kind != BodyTypeState::ExpressionOccurrence::Kind::Index ||
-            linked.operation_id != "builtin:index" || !operation.result ||
+            linked.operation_id != "builtin:index" ||
+            operation.arguments.size() != 1 ||
+            container == checked_types.expression_occurrences.end() ||
+            index == checked_types.expression_occurrences.end() ||
+            !same_resolved_term(container->checked_type, operation.receiver) ||
+            !same_resolved_term(index->checked_type,
+                                operation.arguments.front()) ||
+            !operation.result ||
             !linked.checked_type ||
             !same_resolved_term(linked.checked_type, operation.result))
           checked_types.expression_occurrence_ledger_complete = false;
@@ -27893,6 +27914,65 @@ export fn reject_float_tilde(value):
           string(error.what()).find("requires an Int operand") != string::npos;
     }
     return false;
+  }
+
+  static bool unit_test_builtin_index_occurrence_fact() {
+    std::istringstream input(R"moss(export fn first(values):
+  return values[0]
+)moss");
+    Program program = Parser(
+        lex_lines(input, "<builtin-index-occurrence-test>")).parse();
+    Checker checker(program);
+    checker.run();
+    const auto function = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+      return candidate.name == "first";
+    });
+    if (function == program.functions.end()) return false;
+    const auto retained = checker.checked_body_states_.find(&function->body);
+    if (retained == checker.checked_body_states_.end() || !retained->second)
+      return false;
+    auto& state = *retained->second;
+    const auto occurrence = std::find_if(state.expression_occurrences.begin(),
+        state.expression_occurrences.end(), [](const auto& candidate) {
+      return candidate.kind ==
+              BodyTypeState::ExpressionOccurrence::Kind::Index;
+    });
+    if (occurrence == state.expression_occurrences.end() ||
+        !state.expression_occurrence_ledger_complete)
+      return false;
+    const auto operation = std::find_if(state.open_operations.begin(),
+        state.open_operations.end(), [&](const auto& candidate) {
+      return candidate.expression_occurrence_id == occurrence->id &&
+          candidate.operation_id == "builtin:index";
+    });
+    const auto container = std::find_if(state.expression_occurrences.begin(),
+        state.expression_occurrences.end(), [&](const auto& candidate) {
+      return candidate.parent_id == occurrence->id &&
+          candidate.child_role == "container";
+    });
+    const auto index = std::find_if(state.expression_occurrences.begin(),
+        state.expression_occurrences.end(), [&](const auto& candidate) {
+      return candidate.parent_id == occurrence->id &&
+          candidate.child_role == "index";
+    });
+    if (operation == state.open_operations.end() ||
+        operation->arguments.size() != 1 ||
+        container == state.expression_occurrences.end() ||
+        index == state.expression_occurrences.end())
+      return false;
+    const auto receiver_type = state.solver.resolve(operation->receiver);
+    const auto container_type = state.solver.resolve(container->checked_type);
+    const auto argument_type = state.solver.resolve(operation->arguments.front());
+    const auto index_type = state.solver.resolve(index->checked_type);
+    const auto result_type = state.solver.resolve(operation->result);
+    const auto occurrence_type = state.solver.resolve(occurrence->checked_type);
+    return receiver_type && container_type &&
+        receiver_type->structurally_equal(*container_type) &&
+        argument_type && index_type &&
+        argument_type->structurally_equal(*index_type) &&
+        result_type && occurrence_type &&
+        result_type->structurally_equal(*occurrence_type);
   }
 
   static bool unit_test_statement_call_occurrence_roles() {
