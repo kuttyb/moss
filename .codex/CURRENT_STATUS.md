@@ -1,4 +1,4 @@
-## Phase 25.1 R1 continuation — common pure branch-join lowering — working tree — 2026-10-21
+## Phase 25.1 R1 continuation — common pure branch-join lowering — review pending — 2026-10-21
 
 Common occurrence lowering now links a returned local to its unique checked
 `If` join when that binding has exactly two predecessor identities and control
@@ -11,11 +11,20 @@ checked-body profiles. It removes provider source and legacy `generic_stmt`
 rows, executes Int/String branch results, requires checked-body projection, and
 runs metadata mutations plus ABI-v9 compatibility controls.
 
+The adversarial architect returned scoped GO at exact SHA
+`63a515cf0eae111ddddadd2bdc81c3761e125d8b` and identified a P2 coverage gap for
+malformed selected join identity, predecessor/control-edge relation, and
+predecessor type. The producer now independently checks each retained
+predecessor binding TypeRef against the join TypeRef. The focused regression
+mutates the selected join identity, forges an edge binding identity, and changes
+a predecessor binding type; the common producer rejects all three and the
+restored fixture remains valid.
+
 Validation on rebuilt `build/compiler/moss-dev`: compiler build, focused
-statement/call occurrence regression, and the full M2b2 source-free/hostile
-corpus pass, including both promoted join profiles. The build retains two
-existing TypeSolver missing-initializer warnings. Exact-SHA adversarial review of
-this producer expansion is pending. R1 remains open for broader accepted-surface
+statement/call occurrence regression, full M2b2 source-free/hostile corpus,
+and H3 source-free chain pass, including both promoted join profiles. The build
+retains two existing TypeSolver missing-initializer warnings. Exact-SHA
+adversarial re-review is pending. R1 remains open for broader accepted-surface
 totality, remaining producer profiles, and overall independent acceptance.
 Preserve 24 tracked unavailable ABI-v10 profiles, two ABI-v9 raise/recover
 failures, and `packages/time`.

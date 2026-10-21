@@ -7842,8 +7842,13 @@ class Checker {
                   {predecessor->id, "initializer"});
               if (root == state.expression_root_slots.end())
                 return std::nullopt;
-              auto value = lower_expression(root->second, 0);
+              const auto predecessor_type = checked_body_type(
+                  predecessor->bindings.front().type);
               const auto join_type = checked_body_type(joined->type);
+              if (!predecessor_type || !join_type ||
+                  !predecessor_type->structurally_equal(*join_type))
+                return std::nullopt;
+              auto value = lower_expression(root->second, 0);
               if (!value || !join_type || !value->type ||
                   !value->type->structurally_equal(*join_type))
                 return std::nullopt;
@@ -29741,6 +29746,72 @@ fn inspect_sample(sample: Sample) -> Int:
     } catch (const std::invalid_argument&) {
       return false;
     }
+    const auto branch_state_entry = checker.checked_body_states_.find(
+        &common_branch_join->body);
+    if (branch_state_entry == checker.checked_body_states_.end() ||
+        !branch_state_entry->second)
+      return false;
+    auto rejects_join_mutation = [&](const auto& mutate) {
+      auto& state = *branch_state_entry->second;
+      const auto saved_state = state;
+      const auto saved_summary = *common_branch_join->open_summary;
+      const auto saved_bytes = common_branch_join->checked_body_ir_v1_bytes;
+      const auto saved_hash = common_branch_join->checked_body_ir_v1_hash;
+      const bool saved_common =
+          common_branch_join->checked_body_ir_v1_occurrence_lowered;
+      mutate(state);
+      common_branch_join->checked_body_ir_v1_bytes.reset();
+      common_branch_join->checked_body_ir_v1_hash.reset();
+      common_branch_join->checked_body_ir_v1_occurrence_lowered = false;
+      const bool accepted = checker.retain_checked_occurrence_ir(
+          *common_branch_join);
+      state = saved_state;
+      *common_branch_join->open_summary = saved_summary;
+      common_branch_join->checked_body_ir_v1_bytes = saved_bytes;
+      common_branch_join->checked_body_ir_v1_hash = saved_hash;
+      common_branch_join->checked_body_ir_v1_occurrence_lowered = saved_common;
+      return !accepted;
+    };
+    const auto branch_join_occurrence = [&]() ->
+        BodyTypeState::StatementOccurrence* {
+      for (auto& occurrence : branch_state_entry->second->statement_occurrences)
+        if (occurrence.kind == Stmt::Kind::If &&
+            occurrence.bindings.size() == 1 &&
+            occurrence.bindings.front().name == "joined")
+          return &occurrence;
+      return nullptr;
+    };
+    if (!branch_join_occurrence() ||
+        !rejects_join_mutation([&](BodyTypeState& state) {
+          (void)state;
+          auto* join = branch_join_occurrence();
+          if (!join) return;
+          join->bindings.front().identity += ":forged";
+        }) ||
+        !rejects_join_mutation([&](BodyTypeState& state) {
+          (void)state;
+          auto* join = branch_join_occurrence();
+          if (!join || join->bindings.front().predecessor_control_edges.empty())
+            return;
+          join->bindings.front().predecessor_control_edges.front().binding_id =
+              "forged-predecessor";
+        }) ||
+        !rejects_join_mutation([&](BodyTypeState& state) {
+          auto* join = branch_join_occurrence();
+          if (!join || join->bindings.front().predecessor_control_edges.empty())
+            return;
+          const auto& edge =
+              join->bindings.front().predecessor_control_edges.front();
+          for (auto& predecessor : state.statement_occurrences) {
+            for (auto& binding : predecessor.bindings) {
+              if (binding.identity == edge.binding_id) {
+                binding.type = moss::Type::primitive("bool");
+                return;
+              }
+            }
+          }
+        }))
+      return false;
     auto verifies_call = [&](const string& name,
                              const vector<string>& expected_roles,
                              const vector<std::uint32_t>& expected_non_expression) {
