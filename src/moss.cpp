@@ -6409,6 +6409,27 @@ class Checker {
       if (occurrence.kind !=
               BodyTypeState::ExpressionOccurrence::Kind::PipelineStage)
         continue;
+      if (!starts_with(occurrence.operation_id, "functional:")) return false;
+      const string stage_name = occurrence.operation_id.substr(11);
+      static const std::set<string> known_stages{
+          "Map", "Filter", "Reduce", "Sum", "Count", "Any", "All"};
+      if (!known_stages.count(stage_name)) return false;
+      if (occurrence.source_operands.empty()) {
+        if (trim(occurrence.source_expression) != stage_name) return false;
+      } else {
+        string source_stage;
+        vector<string> source_arguments;
+        if (!parse_simple_call(occurrence.source_expression, source_stage,
+                               source_arguments) ||
+            source_stage != stage_name ||
+            source_arguments.size() != occurrence.source_operands.size())
+          return false;
+        for (std::size_t index = 0;
+             index < source_arguments.size(); ++index)
+          if (trim(source_arguments[index]) !=
+              trim(occurrence.source_operands[index]))
+            return false;
+      }
       std::size_t callback_operand = 0;
       if (occurrence.operation_id == "functional:Reduce") {
         if (occurrence.source_operands.size() != 2) return false;
@@ -6420,8 +6441,12 @@ class Checker {
                  occurrence.operation_id == "functional:All") {
         if (occurrence.source_operands.empty()) continue;
         if (occurrence.source_operands.size() != 1) return false;
-      } else {
+      } else if (occurrence.operation_id == "functional:Sum" ||
+                 occurrence.operation_id == "functional:Count") {
+        if (!occurrence.source_operands.empty()) return false;
         continue;
+      } else {
+        return false;
       }
       const string source_callback =
           trim(occurrence.source_operands[callback_operand]);
@@ -30014,6 +30039,25 @@ fn inspect_sample(sample: Sample) -> Int:
     }
     const auto pipeline_callback_id = pipeline_callback->id;
     const string pipeline_target = pipeline_callback->semantic_target_id;
+    const string pipeline_operation =
+        pipeline_occurrences[pipeline_callback_id].operation_id;
+    pipeline_occurrences[pipeline_callback_id].operation_id =
+        "functional:Unknown";
+    const bool unknown_pipeline_operation_rejected =
+        !checker.call_occurrence_dependencies_complete(
+            *pipeline_function, *pipeline_state->second);
+    pipeline_occurrences[pipeline_callback_id].operation_id =
+        "functional:Filter";
+    const bool mismatched_pipeline_operation_rejected =
+        !checker.call_occurrence_dependencies_complete(
+            *pipeline_function, *pipeline_state->second);
+    pipeline_occurrences[pipeline_callback_id].operation_id =
+        pipeline_operation;
+    if (!unknown_pipeline_operation_rejected ||
+        !mismatched_pipeline_operation_rejected ||
+        !checker.call_occurrence_dependencies_complete(
+            *pipeline_function, *pipeline_state->second))
+      return false;
     const auto second_pipeline_callback = std::find_if(
         std::next(pipeline_callback), pipeline_occurrences.end(),
         [](const auto& occurrence) {
