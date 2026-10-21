@@ -10076,7 +10076,7 @@ Validation on the corrected source: `make --jobs="$(nproc)" moss-dev`; focused s
 
 Independent adversarial review returned scoped GO with no P0/P1 on exact pushed SHA `8ef1d4f94ceaa9fc98d7f0f752e7b99ca2e07a50`. The reviewer confirmed the result P1 is closed for this boundary, the lowered checked-body path downgrades both summary completeness flags, and no v10 admission bypass exists. This is not overall R1 acceptance and does not enable callback v10. Next: continue remaining occurrence/control-flow totality and generalized-lowerer parity. Preserve the 24 unavailable ABI-v10 profiles, two ABI-v9 raise/recover failures, and `packages/time` failure in the ledger; do not begin R2 before independent R1 acceptance.
 
-## Phase 25.1 continuation — H3 Var parity checkpoint — working tree — 2026-10-21
+## Phase 25.1 continuation — H3 Var parity checkpoint — pushed `1e388802` — 2026-10-21
 
 Resumed on `phase25-1-work` at pushed `71299055` with the in-progress common-body parity wrapper in `src/moss.cpp`. The narrow two-statement parity builder previously encoded implicit assignment locals as Let, while the occurrence lowerer correctly retained them as Var. The common-body parity path now preserves Var for checked implicit assignments and requires exact encoded-body and dependency parity whenever common checked-body bytes exist. Existing bounded H3 shapes without common bytes continue through their prior checker-backed path; this specifically preserves the private constructor helper whose common occurrence body is not yet retained in the standalone checker fixture.
 
