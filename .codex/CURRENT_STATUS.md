@@ -1,14 +1,17 @@
 ## Phase 25.1 R1 continuation — call dependency occurrence totality — 2026-10-21
 
-Closed the latest adversarial P1 in the working tree: dependency completion now
-checks every retained Call occurrence for an explicit canonical function,
-checked Callable parameter, or builtin target before comparing dependency sets.
-The open-call validator accepts only the temporary `binding:pending:` state
-while `check_stmts` is running; ownership-stage binding resolution and final
-dependency validation reject unresolved targets and local aliases. The focused
-mutation regression duplicates a same-target Call occurrence and semantic edge,
-clears one occurrence target, and verifies completion fails; restoring it makes
-completion pass.
+Closed the latest adversarial P1s in the working tree: dependency completion
+checks every retained Call occurrence against its exact `call:<name>` operation
+and canonical target. Statement-call roots without an operation ID must match a
+same-source-line semantic call edge. Builtin suffixes must match the operation;
+formal callback targets must match the parameter's canonical operation, and
+linked callable dependencies are included. The open-call validator accepts
+`binding:pending:` only while `check_stmts` is running; ownership-stage binding
+resolution and final validation reject unresolved targets and local aliases.
+Focused mutations duplicate calls and clear one target, swap valid targets
+between distinct expected callees, forge a builtin suffix, and alter a formal
+callback's operation name; each malformed state rejects and restored state
+passes.
 
 Validation on the rebuilt `build/compiler/moss-dev`: occurrence regression,
 H3 common checked-body source-free chain (field read, two consumers, poisoned

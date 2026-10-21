@@ -6315,6 +6315,24 @@ class Checker {
         return false;
       expected_dependencies.insert(dependency->second->semantic_callable_id);
     }
+    auto has_matching_call_edge = [&](const auto& occurrence,
+                                      const Function& target) {
+      string source_file;
+      if (occurrence.statement_id < body.statement_occurrences.size()) {
+        const auto* statement =
+            body.statement_occurrences[occurrence.statement_id].source;
+        if (statement) source_file = statement->source_file;
+      }
+      return std::any_of(p_.semantic_call_edges.begin(),
+          p_.semantic_call_edges.end(), [&](const auto& edge) {
+        return edge.source == "fn:" + function.name &&
+            edge.target == "fn:" + target.name &&
+            edge.line == occurrence.line &&
+            (source_file.empty() || edge.source_file == source_file) &&
+            edge.invocation_kind == "ordinary_call" &&
+            edge.source_specialization_key.empty();
+      });
+    };
     std::set<string> observed_dependencies;
     for (const auto& occurrence : body.expression_occurrences) {
       if (occurrence.kind !=
@@ -6323,14 +6341,31 @@ class Checker {
       const string& target_id = occurrence.semantic_target_id;
       if (starts_with(target_id, "callable-v1:")) {
         const auto* target = find_function_by_callable_id(target_id);
-        if (!target || !expected_dependencies.count(target_id)) return false;
+        if (!target || !expected_dependencies.count(target_id) ||
+            !has_matching_call_edge(occurrence, *target) ||
+            (!occurrence.operation_id.empty() &&
+             occurrence.operation_id != "call:" + target->name))
+          return false;
         observed_dependencies.insert(target_id);
       } else if (starts_with(target_id, "parameter:")) {
         if (!callable_operation_identity_matches(function, occurrence))
           return false;
-      } else if (!starts_with(target_id, "builtin:") &&
-                 !starts_with(target_id, "builtin-scalar-protocol:")) {
-        return false;
+      } else {
+        if (!starts_with(occurrence.operation_id, "call:")) return false;
+        const string called_name = occurrence.operation_id.substr(5);
+        if ((target_id != "builtin:" + called_name &&
+             target_id != "builtin-scalar-protocol:" + called_name))
+          return false;
+      }
+      for (const auto& callable : occurrence.linked_callables) {
+        if (!starts_with(callable.semantic_callable_id, "callable-v1:"))
+          return false;
+        const auto* target =
+            find_function_by_callable_id(callable.semantic_callable_id);
+        if (!target || !expected_dependencies.count(
+                           callable.semantic_callable_id))
+          return false;
+        observed_dependencies.insert(callable.semantic_callable_id);
       }
     }
     return observed_dependencies == expected_dependencies;
@@ -6413,6 +6448,7 @@ class Checker {
         ordinal >= function.params.size())
       return false;
     const string& parameter = function.params[ordinal].name;
+    if (occurrence.operation_id != "call:" + parameter) return false;
     std::size_t callable_constraint_count = 0;
     for (const auto& constraint : occurrence.linked_constraints) {
       if (constraint.kind != ConstraintKind::Callable) continue;
@@ -29585,6 +29621,9 @@ fn inspect_sample(sample: Sample) -> Int:
         !verifies_occurrence_totality("branch") ||
         !verifies_occurrence_totality("iterate") ||
         !verifies_occurrence_totality("inspect_sample")) {
+      std::cerr << "call fixtures: relay=" << relay_call_verified
+                << " sort=" << sort_call_verified
+                << " reverse-sort=" << reverse_sort_call_verified << "\n";
       for (const auto& name : {"relay", "relay_return", "relay_method",
                                "count_values", "branch", "iterate",
                                "inspect_sample"})
@@ -29648,29 +29687,129 @@ fn inspect_sample(sample: Sample) -> Int:
           edge.invocation_kind == "ordinary_call";
     });
     if (matching_edge == program.semantic_call_edges.end()) return false;
+    const auto second_target_function = std::find_if(
+        program.functions.begin(), program.functions.end(),
+        [](const Function& candidate) {
+          return candidate.name == "expression_identity";
+        });
+    if (second_target_function == program.functions.end() ||
+        second_target_function->semantic_callable_id.empty()) return false;
+    const auto first_call_id = direct_call->id;
     auto second_call = *direct_call;
     second_call.id = static_cast<std::uint32_t>(relay_occurrences.size());
+    second_call.operation_id = "call:expression_identity";
+    second_call.source_expression = "expression_identity(value)";
+    second_call.semantic_target_id =
+        second_target_function->semantic_callable_id;
     relay_occurrences.push_back(std::move(second_call));
     auto second_edge = *matching_edge;
-    ++second_edge.occurrence;
+    second_edge.target = "fn:expression_identity";
+    second_edge.occurrence = 0;
     program.semantic_call_edges.push_back(std::move(second_edge));
     const bool repeated_call_facts_match =
         checker.call_occurrence_dependencies_complete(
             *relay_function, *relay_state->second);
+    std::swap(relay_occurrences[first_call_id].semantic_target_id,
+              relay_occurrences.back().semantic_target_id);
+    const bool swapped_call_targets_rejected =
+        !checker.call_occurrence_dependencies_complete(
+            *relay_function, *relay_state->second);
+    std::swap(relay_occurrences[first_call_id].semantic_target_id,
+              relay_occurrences.back().semantic_target_id);
     relay_occurrences.back().semantic_target_id.clear();
     const bool missing_call_target_rejected =
         !checker.call_occurrence_dependencies_complete(
             *relay_function, *relay_state->second);
+    relay_occurrences.back().semantic_target_id =
+        second_target_function->semantic_callable_id;
     relay_occurrences.pop_back();
     program.semantic_call_edges.pop_back();
-    if (!repeated_call_facts_match || !missing_call_target_rejected ||
+    if (!repeated_call_facts_match || !swapped_call_targets_rejected ||
+        !missing_call_target_rejected ||
         !checker.call_occurrence_dependencies_complete(
             *relay_function, *relay_state->second)) {
-      std::cerr << "repeated call dependency regression: baseline="
-                << repeated_call_facts_match << " missing-target-rejected="
-                << missing_call_target_rejected << " restored="
+      std::cerr << "call dependency occurrence regressions: baseline="
+                << repeated_call_facts_match << " swapped-targets-rejected="
+                << swapped_call_targets_rejected
+                << " missing-target-rejected=" << missing_call_target_rejected
+                << " restored="
                 << checker.call_occurrence_dependencies_complete(
                     *relay_function, *relay_state->second) << "\n";
+      return false;
+    }
+    const auto sort_function = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+          return candidate.name == "sort_values";
+        });
+    if (sort_function == program.functions.end()) return false;
+    auto sort_state = checker.checked_body_states_.find(&sort_function->body);
+    if (sort_state == checker.checked_body_states_.end() || !sort_state->second)
+      return false;
+    auto& sort_occurrences = sort_state->second->expression_occurrences;
+    auto builtin_call = std::find_if(sort_occurrences.begin(),
+        sort_occurrences.end(), [](const auto& occurrence) {
+      return occurrence.kind ==
+              BodyTypeState::ExpressionOccurrence::Kind::Call &&
+          occurrence.operation_id == "call:sort";
+    });
+    if (builtin_call == sort_occurrences.end() ||
+        builtin_call->semantic_target_id != "builtin:sort") return false;
+    const auto builtin_call_id = builtin_call->id;
+    const bool builtin_call_baseline =
+        checker.call_occurrence_dependencies_complete(
+            *sort_function, *sort_state->second);
+    sort_occurrences[builtin_call_id].semantic_target_id = "builtin:wrong";
+    const bool wrong_builtin_target_rejected =
+        !checker.call_occurrence_dependencies_complete(
+            *sort_function, *sort_state->second);
+    sort_occurrences[builtin_call_id].semantic_target_id = "builtin:sort";
+    if (!wrong_builtin_target_rejected ||
+        !checker.call_occurrence_dependencies_complete(
+            *sort_function, *sort_state->second)) {
+      std::cerr << "builtin target mutation regression failed: baseline="
+                << builtin_call_baseline << " rejected="
+                << wrong_builtin_target_rejected << " restored="
+                << checker.call_occurrence_dependencies_complete(
+                    *sort_function, *sort_state->second) << "\n";
+      for (const auto& occurrence : sort_occurrences)
+        if (occurrence.kind ==
+                BodyTypeState::ExpressionOccurrence::Kind::Call)
+          std::cerr << "  call op=" << occurrence.operation_id << " target="
+                    << occurrence.semantic_target_id << "\n";
+      return false;
+    }
+    const auto callback_target_function = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+          return candidate.name == "invoke_callback";
+        });
+    if (callback_target_function == program.functions.end()) return false;
+    auto callback_target_state = checker.checked_body_states_.find(
+        &callback_target_function->body);
+    if (callback_target_state == checker.checked_body_states_.end() ||
+        !callback_target_state->second) return false;
+    auto& callback_occurrences =
+        callback_target_state->second->expression_occurrences;
+    auto parameter_call = std::find_if(callback_occurrences.begin(),
+        callback_occurrences.end(), [](const auto& occurrence) {
+      return occurrence.kind ==
+              BodyTypeState::ExpressionOccurrence::Kind::Call &&
+          occurrence.semantic_target_id == "parameter:0";
+    });
+    if (parameter_call == callback_occurrences.end()) return false;
+    const auto parameter_call_id = parameter_call->id;
+    callback_occurrences[parameter_call_id].operation_id = "call:other";
+    const bool wrong_parameter_target_rejected =
+        !checker.call_occurrence_dependencies_complete(
+            *callback_target_function, *callback_target_state->second);
+    callback_occurrences[parameter_call_id].operation_id = "call:callback";
+    if (!wrong_parameter_target_rejected ||
+        !checker.call_occurrence_dependencies_complete(
+            *callback_target_function, *callback_target_state->second)) {
+      std::cerr << "parameter target mutation regression failed: rejected="
+                << wrong_parameter_target_rejected << " restored="
+                << checker.call_occurrence_dependencies_complete(
+                    *callback_target_function, *callback_target_state->second)
+                << "\n";
       return false;
     }
     const auto empty_function = std::find_if(program.functions.begin(),
