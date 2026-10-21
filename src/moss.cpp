@@ -6091,6 +6091,11 @@ class Checker {
       moss::TypeRef output_type_ref;
       string operation_id;
       moss::TypeRef checked_type;
+      // Explicit cross-namespace relation for a formal Callable invocation
+      // whose result is the enclosing function result. The body solver and
+      // open summary use distinct variable IDs, so structural equality alone
+      // cannot establish this edge.
+      moss::TypeRef callable_result_relation;
       string resolved_binding_id;
       bool resolved_binding_mutable = false;
       string semantic_target_id;
@@ -6635,12 +6640,57 @@ class Checker {
             operation.operation_id == "call:" + callee &&
             !operation.result)
           operation.result = expression.checked_type;
-      // The functional Callable result placeholder is summarized in a
-      // different type-variable namespace from the body solver. Until an
-      // explicit checker relation bridges this Call result to the summary's
-      // Callable result, retain the operation fact but do not call the
-      // occurrence ledger complete.
-      state.expression_occurrence_ledger_complete = false;
+      bool result_relation = false;
+      const auto& statement = state.statement_occurrences[
+          expression.statement_id];
+      const auto result_root = state.expression_root_slots.find(
+          {expression.statement_id, "return-value"});
+      if (statement.kind == Stmt::Kind::Return &&
+          result_root != state.expression_root_slots.end() &&
+          result_root->second == expression.id && function.open_summary &&
+          function.open_summary->result_type &&
+          expression.checked_type) {
+        for (std::size_t constraint_index = 0;
+             constraint_index < function.constraints.size();
+             ++constraint_index) {
+          const auto& constraint = function.constraints[constraint_index];
+          if (constraint.kind != ConstraintKind::Callable ||
+              constraint.subject != callee ||
+              constraint.detail != "static callable" ||
+              constraint.arguments.size() !=
+                  expression.source_operands.size() ||
+              constraint.result != "callable-result")
+            continue;
+          bool arguments_match = true;
+          for (std::size_t index = 0;
+               index < constraint.arguments.size(); ++index)
+            if (trim(constraint.arguments[index]) !=
+                trim(expression.source_operands[index]))
+              arguments_match = false;
+          if (!arguments_match) continue;
+          const string requirement_id = function.semantic_callable_id +
+              ":requirement:" + std::to_string(constraint_index);
+          const auto requirement = std::find_if(
+              function.open_summary->requirements.begin(),
+              function.open_summary->requirements.end(),
+              [&](const moss::Requirement& candidate) {
+            return candidate.id == requirement_id &&
+                candidate.kind == moss::RequirementKind::Callable &&
+                candidate.target_id == "static callable" &&
+                candidate.result &&
+                (*candidate.result)->structurally_equal(
+                    *function.open_summary->result_type);
+          });
+          if (requirement != function.open_summary->requirements.end()) {
+            expression.callable_result_relation =
+                function.open_summary->result_type;
+            result_relation = true;
+          }
+          break;
+        }
+      }
+      if (!result_relation)
+        state.expression_occurrence_ledger_complete = false;
     }
   }
 
@@ -6706,6 +6756,11 @@ class Checker {
       if (!actual || !relate_type(actual, summary.parameter_types[index]))
         return false;
     }
+    for (const auto& occurrence : state.expression_occurrences)
+      if (occurrence.callable_result_relation &&
+          (!occurrence.checked_type || !relate_type(
+              occurrence.checked_type, occurrence.callable_result_relation)))
+        return false;
     std::function<moss::TypeRef(const moss::TypeRef&)> checked_body_type =
         [&](const moss::TypeRef& source) -> moss::TypeRef {
       if (!source) return nullptr;
@@ -29155,10 +29210,11 @@ fn inspect_sample(sample: Sample) -> Int:
         !callback_state_entry->second)
       return false;
     const auto& callback_state = *callback_state_entry->second;
-    if (callback_state.expression_occurrence_ledger_complete ||
+    if (!callback_state.expression_occurrence_ledger_complete ||
         !callback_function->open_summary ||
         !callback_function->open_summary->scheme_complete ||
-        callback_function->open_summary->occurrence_ledger_complete)
+        callback_function->open_summary->occurrence_ledger_complete ||
+        callback_function->open_summary->complete)
       return false;
     const auto callback_occurrence = std::find_if(
         callback_state.expression_occurrences.begin(),
@@ -29194,6 +29250,9 @@ fn inspect_sample(sample: Sample) -> Int:
         callback_requirement == callback_function->open_summary->requirements.end() ||
         !callback_requirement->result ||
         !(*callback_requirement->result)->structurally_equal(
+            *callback_function->open_summary->result_type) ||
+        !callback_occurrence->callable_result_relation ||
+        !callback_occurrence->callable_result_relation->structurally_equal(
             *callback_function->open_summary->result_type))
       return false;
     auto noncanonical_callback_target = *callback_occurrence;
