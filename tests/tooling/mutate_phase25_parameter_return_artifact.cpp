@@ -105,6 +105,26 @@ int main(int argc, char** argv) {
     summary.observable_effect_bits = 0;
     summary.observable_effect_tags.clear();
     replace_summary();
+    auto weaken_legacy_effects = [&](auto& records) {
+      std::size_t changed = 0;
+      for (auto& record : records) {
+        if (record.payload.find("fn " + callable_name) == std::string::npos ||
+            record.payload.find("effects=") == std::string::npos)
+          continue;
+        const auto mutation = record.payload.find("local_mutation=0");
+        const auto panic = record.payload.find("may_panic=1");
+        assert(mutation != std::string::npos && panic != std::string::npos);
+        record.payload.replace(mutation, std::string("local_mutation=0").size(),
+                               "local_mutation=1");
+        record.payload.replace(panic, std::string("may_panic=1").size(),
+                               "may_panic=0");
+        ++changed;
+      }
+      return changed;
+    };
+    const auto changed = weaken_legacy_effects(sealed.value.binary_contract) +
+        weaken_legacy_effects(sealed.value.semantic_contract);
+    assert(changed >= 2);
   } else if (mode == "type-binding") {
     auto body = moss::abi_v10::read_checked_body_record(body_at->payload);
     auto wrong_type = moss::Type::var(moss::TypeVarId{0, 0, 1});

@@ -97,11 +97,11 @@
       "id": "generic-map-index-mutation",
       "priority": "P1-map-operation",
       "category": "open Map key/value types, indexed mutation and indexed read",
-      "provider": "module Service\n\nexport fn fresh(key, value):\n  var values = Map()\n  values[key] = value\n  return values[key]\n",
-      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(\"moss\", 7)\n  echo Service.fresh(\"codex\", 9)\n",
-      "expected_output": "7\n9\n",
+      "provider": "module Service\n\nexport fn fresh(key, value):\n  var values = Map()\n  values[key] = value\n  return values[key]\n\nexport fn panic_key(divisor: Int, value):\n  var values = Map()\n  values[1 / divisor] = value\n  return values[1 / divisor]\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(\"moss\", 7)\n  echo Service.fresh(\"codex\", 9)\n  echo Service.panic_key(1, 11)\n",
+      "expected_output": "7\n9\n11\n",
       "checked_body_status": "checked-body supported; generic local Map construction, indexed mutation and indexed read are projected before specialization",
-      "evidence": "R1 checked-body acceptance removes provider source and generic_stmt, requires checked-body projection, and executes open Map key/value specializations through local mutation and indexed read. Mutation through a Map parameter remains a separate unavailable profile."
+      "evidence": "R1 checked-body acceptance removes provider source and both generic_stmt bodies, requires checked-body projection, and executes open Map key/value specializations plus an integer-division key whose may_panic effect must survive import. Hostile tests erase both ABI-v10 and legacy effect records. Mutation through a Map parameter remains a separate unavailable profile."
     },
     {
       "id": "generic-range-iteration",

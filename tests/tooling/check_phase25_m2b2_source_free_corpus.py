@@ -183,6 +183,8 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                               if case["id"] == "single-call" else
                               ("fresh", "choose")
                               if case["id"] == "multi-statement-arithmetic" else
+                              ("fresh", "panic_key")
+                              if case["id"] == "generic-map-index-mutation" else
                               ("fresh",))
             poison_outputs = []
             for callable_name in poison_targets:
@@ -221,6 +223,10 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
             if case["id"] == "single-call":
                 assert ":fn:helper|checked-body-v1" in poisoned_build + poisoned_check, (
                     case["id"], "private helper projection trace missing",
+                    poisoned_build + poisoned_check)
+            if case["id"] == "generic-map-index-mutation":
+                assert ":fn:panic_key|checked-body-v1" in poisoned_build + poisoned_check, (
+                    case["id"], "panic-key projection trace missing",
                     poisoned_build + poisoned_check)
             if case["id"] == "multi-statement-arithmetic":
                 assert ":fn:choose|checked-body-v1" in poisoned_build + poisoned_check, (
@@ -289,28 +295,33 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                     "SOURCE_FREE_SUMMARY_INVALID",
                 )
             for mode, expected_codes in negative_cases.items():
-                mutated = case_root / f"checked-{mode}"
-                shutil.copytree(poisoned, mutated)
-                command([str(parameter_mutator), str(mutated / "Service.mossi"),
-                         str(mutated / "libService.rlib"), mode,
-                         "fresh"],
-                        cwd=ROOT, env=base_env)
-                bad_consumer = case_root / f"consumer-{mode}"
-                package(bad_consumer,
-                        f"m2b3b_{case['id'].replace('-', '_')}_{mode.replace('-', '_')}_consumer",
-                        case["consumer"])
-                bad_env = poisoned_env | {
-                    "MOSS_MODULE_PATH": str(mutated),
-                    "MARGO_HOME": str(case_root / f"margo-{mode}"),
-                }
-                rejected = subprocess.run(
-                    [str(MARGO), "build"], cwd=bad_consumer, env=bad_env,
-                    capture_output=True, text=True, timeout=240)
-                reject_output = rejected.stdout + rejected.stderr
-                assert rejected.returncode != 0 and any(
-                    code in reject_output for code in expected_codes), (
-                        mode, expected_codes, reject_output)
-                print(f"PASS {case['id']} {mode} rejects fail-closed")
+                targets = ("fresh", "panic_key") if (
+                    mode == "weaken-effect" and
+                    case["id"] == "generic-map-index-mutation") else ("fresh",)
+                for target in targets:
+                    mutation_id = f"{mode}-{target}"
+                    mutated = case_root / f"checked-{mutation_id}"
+                    shutil.copytree(poisoned, mutated)
+                    command([str(parameter_mutator), str(mutated / "Service.mossi"),
+                             str(mutated / "libService.rlib"), mode,
+                             target],
+                            cwd=ROOT, env=base_env)
+                    bad_consumer = case_root / f"consumer-{mutation_id}"
+                    package(bad_consumer,
+                            f"m2b3b_{case['id'].replace('-', '_')}_{mutation_id.replace('-', '_')}_consumer",
+                            case["consumer"])
+                    bad_env = poisoned_env | {
+                        "MOSS_MODULE_PATH": str(mutated),
+                        "MARGO_HOME": str(case_root / f"margo-{mutation_id}"),
+                    }
+                    rejected = subprocess.run(
+                        [str(MOSS), "build", "--json"], cwd=bad_consumer, env=bad_env,
+                        capture_output=True, text=True, timeout=240)
+                    reject_output = rejected.stdout + rejected.stderr
+                    assert rejected.returncode != 0 and any(
+                        code in reject_output for code in expected_codes), (
+                            mutation_id, expected_codes, reject_output)
+                    print(f"PASS {case['id']} {mutation_id} rejects fail-closed")
 
             v9_env = base_env.copy()
             v9_env.pop("MOSS_STAGED_ABI", None)

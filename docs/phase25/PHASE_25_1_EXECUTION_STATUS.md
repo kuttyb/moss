@@ -656,3 +656,23 @@ Pass rejection; generic arithmetic requirements; statement/call occurrence
 roles; agent-feedback checker; `git diff --check`. No full repository suite was
 run. This correction is pending commit/push and exact-SHA adversarial follow-up;
 R1 is not accepted.
+
+### Scoped Map follow-up review and hostile coverage closure — 2026-10-20
+
+The exact-SHA follow-up review of `75e1da78a776cf64c0c85b9878df77cacf2ae672`
+returned GO for the P1 effect-summary validation and P2 matching encoder/reader
+bounds. It noted a test-only gap: the hostile artifact cleared the ABI-v10 effect
+tag but left the separate legacy effect flags unchanged. The corpus was expanded
+to exercise both the open generic Map key/value body and a division-key body,
+remove both callables' provider source and all legacy statements, verify both
+projection traces, and independently mutate each callable's sealed tag plus
+legacy `local_mutation`/`may_panic` flags.
+
+The expanded complete M2b2 corpus passes, including each effect-erasure
+rejection, source-free Int/String and division-key execution, and ABI-v9
+controls. A transient harness mismatch was fixed by running negative package
+checks through `moss build --json`, preserving the structured rejection code
+when the sibling callable emits a projection trace. The codec, generic checker
+facts and prior focused gates also pass. This closes the scoped review note;
+it is not full R1 acceptance. The corpus/doc follow-up is working-tree only at
+this point.
