@@ -6347,6 +6347,13 @@ class Checker {
               BodyTypeState::ExpressionOccurrence::Kind::Call)
         continue;
       const string& target_id = occurrence.semantic_target_id;
+      if (occurrence.operation_id == "call:sort") {
+        if (occurrence.source_operands.size() < 1 ||
+            occurrence.source_operands.size() > 2 ||
+            occurrence.linked_callables.size() !=
+                (occurrence.source_operands.size() == 2 ? 1u : 0u))
+          return false;
+      }
       if (starts_with(target_id, "callable-v1:")) {
         const auto* target = find_function_by_callable_id(target_id);
         if (!target || !expected_dependencies.count(target_id) ||
@@ -6400,28 +6407,37 @@ class Checker {
     }
     for (const auto& occurrence : body.expression_occurrences) {
       if (occurrence.kind !=
-              BodyTypeState::ExpressionOccurrence::Kind::PipelineStage ||
-          !starts_with(occurrence.semantic_target_id, "callable-v1:"))
+              BodyTypeState::ExpressionOccurrence::Kind::PipelineStage)
         continue;
-      const auto* target =
-          find_function_by_callable_id(occurrence.semantic_target_id);
-      const std::size_t callback_operand =
-          occurrence.operation_id == "functional:Reduce" ? 1u : 0u;
-      if (!target || !expected_dependencies.count(
-                         occurrence.semantic_target_id) ||
-          !starts_with(occurrence.operation_id, "functional:") ||
-          occurrence.source_operands.size() <= callback_operand ||
-          !has_matching_call_edge(occurrence, *target))
-        return false;
+      std::size_t callback_operand = 0;
+      if (occurrence.operation_id == "functional:Reduce") {
+        if (occurrence.source_operands.size() != 2) return false;
+        callback_operand = 1;
+      } else if (occurrence.operation_id == "functional:Map" ||
+                 occurrence.operation_id == "functional:Filter") {
+        if (occurrence.source_operands.size() != 1) return false;
+      } else if (occurrence.operation_id == "functional:Any" ||
+                 occurrence.operation_id == "functional:All") {
+        if (occurrence.source_operands.empty()) continue;
+        if (occurrence.source_operands.size() != 1) return false;
+      } else {
+        continue;
+      }
       const string source_callback =
           trim(occurrence.source_operands[callback_operand]);
       const auto named_callback = functions_.find(source_callback);
+      if (named_callback == functions_.end()) {
+        if (starts_with(occurrence.semantic_target_id, "callable-v1:"))
+          return false;
+        continue;
+      }
+      const string& target_id = occurrence.semantic_target_id;
       if (!plain_identifier(source_callback) ||
-          named_callback == functions_.end() ||
-          named_callback->second->semantic_callable_id !=
-              occurrence.semantic_target_id)
+          target_id != named_callback->second->semantic_callable_id ||
+          !expected_dependencies.count(target_id) ||
+          !has_matching_call_edge(occurrence, *named_callback->second))
         return false;
-      observed_dependencies.insert(occurrence.semantic_target_id);
+      observed_dependencies.insert(target_id);
     }
     return observed_dependencies == expected_dependencies;
   }
@@ -29405,12 +29421,13 @@ export fn count_values(values):
   return values |> count
 
 export fn pipeline_named(values: Vector[Int]) -> Int:
-  return values |> map(identity) |> map(expression_identity) |> count
+  return values |> map(identity) |> map(expression_identity) |> map(identity) |> count
 
 export fn pipeline_reduce(values: Vector[Int]) -> Int:
   return values |> reduce(0, add_values)
 
 export fn sort_values(values: Vector[Int]) -> Int:
+  sort(values, by: identity)
   sort(values, by: identity)
   return values[0]
 
@@ -29857,7 +29874,25 @@ fn inspect_sample(sample: Sample) -> Int:
         !checker.call_occurrence_dependencies_complete(
             *sort_function, *sort_state->second);
     sort_occurrences[builtin_call_id].semantic_target_id = "builtin:sort";
+    const auto duplicate_sort_call = std::find_if(
+        std::next(builtin_call), sort_occurrences.end(), [](const auto& occurrence) {
+          return occurrence.kind ==
+                  BodyTypeState::ExpressionOccurrence::Kind::Call &&
+              occurrence.operation_id == "call:sort";
+        });
+    if (duplicate_sort_call == sort_occurrences.end() ||
+        duplicate_sort_call->linked_callables.size() != 1) return false;
+    const auto duplicate_sort_id = duplicate_sort_call->id;
+    const auto duplicate_sort_callable =
+        sort_occurrences[duplicate_sort_id].linked_callables.front();
+    sort_occurrences[duplicate_sort_id].linked_callables.clear();
+    const bool missing_duplicate_sort_callback_rejected =
+        !checker.call_occurrence_dependencies_complete(
+            *sort_function, *sort_state->second);
+    sort_occurrences[duplicate_sort_id].linked_callables.push_back(
+        duplicate_sort_callable);
     if (!wrong_builtin_target_rejected ||
+        !missing_duplicate_sort_callback_rejected ||
         !checker.call_occurrence_dependencies_complete(
             *sort_function, *sort_state->second)) {
       std::cerr << "builtin target mutation regression failed: baseline="
@@ -29988,6 +30023,21 @@ fn inspect_sample(sample: Sample) -> Int:
         });
     if (second_pipeline_callback == pipeline_occurrences.end()) return false;
     const auto second_pipeline_callback_id = second_pipeline_callback->id;
+    const auto duplicate_pipeline_callback = std::find_if(
+        std::next(second_pipeline_callback), pipeline_occurrences.end(),
+        [&](const auto& occurrence) {
+          return occurrence.kind ==
+                  BodyTypeState::ExpressionOccurrence::Kind::PipelineStage &&
+              occurrence.semantic_target_id == pipeline_target;
+        });
+    if (duplicate_pipeline_callback == pipeline_occurrences.end()) return false;
+    pipeline_occurrences[pipeline_callback_id].semantic_target_id.clear();
+    const bool missing_duplicate_pipeline_target_rejected =
+        !checker.call_occurrence_dependencies_complete(
+            *pipeline_function, *pipeline_state->second);
+    pipeline_occurrences[pipeline_callback_id].semantic_target_id =
+        pipeline_target;
+    if (!missing_duplicate_pipeline_target_rejected) return false;
     const string pipeline_callback_source =
         pipeline_occurrences[pipeline_callback_id].source_operands[0];
     pipeline_occurrences[pipeline_callback_id].source_operands[0] =

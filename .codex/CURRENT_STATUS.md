@@ -14,10 +14,14 @@ completion, must match a same-source-line ordinary semantic call edge, and bind
 direct named source operands to the same callable ID; unresolved operands now
 reject. Reduce uses its callback operand after the seed. Mutations remove a
 pipeline target, swap two valid same-line targets, and replace map/Reduce
-callback operands with unresolved names; all reject. A named reduce fixture
-confirms two-operand callback accounting. Standalone formal-Callable statement
-calls remain fail-closed because they currently retain no Callable constraint
-for the occurrence; callback source-free admission remains disabled.
+callback operands with unresolved names; all reject. A duplicate same-callback
+stage mutation proves one retained stage cannot mask another missing target.
+Each keyed sort occurrence must carry exactly one linked callback; a duplicate
+sort mutation clears one callback while the other retains the same ID and is
+rejected. A named reduce fixture confirms two-operand callback accounting.
+Standalone formal-Callable statement calls remain fail-closed because they
+currently retain no Callable constraint for the occurrence; callback
+source-free admission remains disabled.
 Focused mutations duplicate calls and clear one target, swap valid targets
 between distinct expected callees, forge a builtin suffix, alter a formal
 callback's operation name, retarget an operation-less statement root while
@@ -33,9 +37,12 @@ GO at `93c743a0bc4040ba417927faf0eda283fd339cb3`. The subsequent pipeline
 checkpoint `4f6ddfcd91b12c10e660aa8718042e3b77123a13` was NO-GO for a same-line
 valid-target swap and Reduce callback arity; both are fixed in this working
 tree. Review of `d09bc1e057af4120b81c8d211a8c4ab739444e00` found an unresolved
-source operand fail-open, now covered for map and Reduce. This follow-up needs
-exact-SHA review. Next: commit/push, ask the existing architect for read-only
-review, and close residual findings before R1 acceptance. Keep the
+source operand fail-open, fixed at `6b99f0aeeb974a3337638aff0a78f245baaf2966`.
+Review there found per-occurrence omissions could be masked by a duplicate
+same-target stage or sort callback; both now have reproducing mutations in this
+working tree and need exact-SHA review. Next: commit/push, ask the existing
+architect for read-only review, and close residual findings before R1
+acceptance. Keep the
 24 unavailable ABI-v10 profiles, two ABI-v9 raise/recover failures, and
 `packages/time` failure visible.
 
