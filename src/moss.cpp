@@ -30026,6 +30026,35 @@ fn inspect_sample(sample: Sample) -> Int:
     if (relay_state == checker.checked_body_states_.end() ||
         !relay_state->second) return false;
     auto& relay_occurrences = relay_state->second->expression_occurrences;
+    const auto original_function_effects = relay_function->observable_effects;
+    relay_function->observable_effects.local_mutation = true;
+    const bool forged_function_effect_rejected =
+        !verifies_occurrence_totality("relay");
+    relay_function->observable_effects = original_function_effects;
+    const auto original_summary_effects =
+        relay_function->open_summary->observable_effects;
+    relay_function->open_summary->observable_effects.may_panic = true;
+    const bool forged_summary_effect_rejected =
+        !verifies_occurrence_totality("relay");
+    relay_function->open_summary->observable_effects = original_summary_effects;
+    const auto original_dependencies =
+        relay_function->open_summary->semantic_dependencies;
+    if (original_dependencies.empty()) return false;
+    relay_function->open_summary->semantic_dependencies.push_back(
+        original_dependencies.front());
+    const bool duplicate_dependency_rejected =
+        !verifies_occurrence_totality("relay");
+    relay_function->open_summary->semantic_dependencies = original_dependencies;
+    if (!forged_function_effect_rejected || !forged_summary_effect_rejected ||
+        !duplicate_dependency_rejected ||
+        !verifies_occurrence_totality("relay")) {
+      std::cerr << "summary totality mutations: function-effect="
+                << forged_function_effect_rejected << " summary-effect="
+                << forged_summary_effect_rejected << " duplicate-dependency="
+                << duplicate_dependency_rejected << " restored="
+                << verifies_occurrence_totality("relay") << "\n";
+      return false;
+    }
     auto direct_call = std::find_if(relay_occurrences.begin(),
         relay_occurrences.end(), [](const auto& occurrence) {
       return occurrence.kind ==

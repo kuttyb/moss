@@ -1,3 +1,21 @@
+## Phase 25.1 R1 continuation — summary effect/dependency parity mutations — working tree — 2026-10-21
+
+The focused occurrence verifier now has direct negative controls for function
+observable effects that disagree with the open summary, an open-summary effect
+forged against the checked function, and a duplicated semantic dependency. Each
+mutation is rejected and the restored relay fixture passes. The existing
+verifier compares the complete effect tuple and requires a unique dependency
+vector equal to call-edge-derived targets before allowing the occurrence ledger
+to count as complete.
+
+Validation on rebuilt `build/compiler/moss-dev`: `make --jobs="$(nproc)" moss-dev`
+and `python3 tests/tooling/check_phase25_statement_call_occurrence_roles.py
+build/compiler/moss-dev` pass. Build retains two existing TypeSolver
+missing-initializer warnings. This is a focused totality regression slice;
+overall R1 remains open for broader accepted-surface totality, residual
+producer profiles, and independent acceptance. Preserve 24 unavailable
+ABI-v10 profiles, two ABI-v9 raise/recover failures, and `packages/time`.
+
 ## Phase 25.1 R1 continuation — common direct-call and H3 producer closure — working tree — 2026-10-21
 
 The H3 bounded direct-return record producer is removed. The common occurrence
