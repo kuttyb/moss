@@ -6649,7 +6649,19 @@ class Checker {
           result_root != state.expression_root_slots.end() &&
           result_root->second == expression.id && function.open_summary &&
           function.open_summary->result_type &&
-          expression.checked_type) {
+          expression.checked_type &&
+          callable_operation_identity_matches(function, expression)) {
+        std::size_t formal_ordinal = function.params.size();
+        for (std::size_t index = 0; index < function.params.size(); ++index)
+          if (function.params[index].name == callee) {
+            if (formal_ordinal != function.params.size()) {
+              formal_ordinal = function.params.size();
+              break;
+            }
+            formal_ordinal = index;
+          }
+        const auto& summary = *function.open_summary;
+        bool unique_constraint = false;
         for (std::size_t constraint_index = 0;
              constraint_index < function.constraints.size();
              ++constraint_index) {
@@ -6668,25 +6680,68 @@ class Checker {
                 trim(expression.source_operands[index]))
               arguments_match = false;
           if (!arguments_match) continue;
+          if (unique_constraint) {
+            unique_constraint = false;
+            break;
+          }
+          unique_constraint = true;
           const string requirement_id = function.semantic_callable_id +
               ":requirement:" + std::to_string(constraint_index);
-          const auto requirement = std::find_if(
-              function.open_summary->requirements.begin(),
-              function.open_summary->requirements.end(),
-              [&](const moss::Requirement& candidate) {
-            return candidate.id == requirement_id &&
-                candidate.kind == moss::RequirementKind::Callable &&
-                candidate.target_id == "static callable" &&
-                candidate.result &&
-                (*candidate.result)->structurally_equal(
-                    *function.open_summary->result_type);
-          });
-          if (requirement != function.open_summary->requirements.end()) {
+          std::vector<const moss::Requirement*> requirements;
+          for (const auto& candidate : summary.requirements)
+            if (candidate.id == requirement_id)
+              requirements.push_back(&candidate);
+          std::vector<moss::TypeRef> expected_arguments;
+          bool arguments_resolved = true;
+          for (const auto& argument : constraint.arguments) {
+            const string operand = trim(argument);
+            auto parameter = std::find_if(function.params.begin(),
+                function.params.end(), [&](const auto& candidate) {
+              return candidate.name == operand;
+            });
+            moss::TypeRef argument_type;
+            if (parameter != function.params.end()) {
+              const auto parameter_index = static_cast<std::size_t>(
+                  std::distance(function.params.begin(), parameter));
+              if (parameter_index < summary.parameter_types.size())
+                argument_type = summary.parameter_types[parameter_index];
+            } else if (auto spelling =
+                           constraint_expression_type(function, operand)) {
+              argument_type = parsed_type(*spelling);
+            }
+            if (!argument_type) {
+              arguments_resolved = false;
+              break;
+            }
+            expected_arguments.push_back(std::move(argument_type));
+          }
+          const bool requirement_matches = requirements.size() == 1 &&
+              formal_ordinal < summary.parameter_types.size() &&
+              summary.parameter_types[formal_ordinal] &&
+              requirements.front()->kind == moss::RequirementKind::Callable &&
+              requirements.front()->target_id == "static callable" &&
+              requirements.front()->subject &&
+              requirements.front()->subject->structurally_equal(
+                  *summary.parameter_types[formal_ordinal]) &&
+              requirements.front()->result &&
+              (*requirements.front()->result)->structurally_equal(
+                  *summary.result_type) && arguments_resolved &&
+              requirements.front()->arguments.size() ==
+                  expected_arguments.size() &&
+              requirements.front()->argument_access ==
+                  std::vector<moss::AccessMode>(expected_arguments.size(),
+                      moss::AccessMode::Read) &&
+              std::equal(requirements.front()->arguments.begin(),
+                  requirements.front()->arguments.end(),
+                  expected_arguments.begin(), [](const auto& left,
+                                                 const auto& right) {
+                return left && right && left->structurally_equal(*right);
+              });
+          if (unique_constraint && requirement_matches) {
             expression.callable_result_relation =
-                function.open_summary->result_type;
+                summary.result_type;
             result_relation = true;
           }
-          break;
         }
       }
       if (!result_relation)
@@ -29254,6 +29309,50 @@ fn inspect_sample(sample: Sample) -> Int:
         !callback_occurrence->callable_result_relation ||
         !callback_occurrence->callable_result_relation->structurally_equal(
             *callback_function->open_summary->result_type))
+      return false;
+    auto rejects_callback_requirement_mutation = [&](auto mutate) {
+      Function altered_function = *callback_function;
+      BodyTypeState altered_state = callback_state;
+      auto altered_occurrence = std::find_if(
+          altered_state.expression_occurrences.begin(),
+          altered_state.expression_occurrences.end(), [&](const auto& value) {
+        return value.id == callback_occurrence->id;
+      });
+      if (altered_occurrence == altered_state.expression_occurrences.end() ||
+          !altered_function.open_summary)
+        return false;
+      auto altered_requirement = std::find_if(
+          altered_function.open_summary->requirements.begin(),
+          altered_function.open_summary->requirements.end(),
+          [&](const auto& value) { return value.id == callback_requirement->id; });
+      if (altered_requirement ==
+          altered_function.open_summary->requirements.end())
+        return false;
+      mutate(*altered_function.open_summary, *altered_requirement);
+      altered_occurrence->semantic_target_id = "binding:pending:callback";
+      altered_occurrence->linked_constraints.clear();
+      altered_occurrence->callable_result_relation.reset();
+      checker.resolve_callable_occurrence_bindings(altered_function,
+                                                   altered_state);
+      return !altered_occurrence->callable_result_relation;
+    };
+    if (!rejects_callback_requirement_mutation(
+            [](auto&, auto& requirement) {
+          requirement.subject = moss::Type::primitive("int");
+        }) ||
+        !rejects_callback_requirement_mutation(
+            [](auto&, auto& requirement) {
+          requirement.arguments.front() = moss::Type::primitive("string");
+        }) ||
+        !rejects_callback_requirement_mutation(
+            [](auto&, auto& requirement) {
+          requirement.argument_access.front() = moss::AccessMode::Consume;
+        }) ||
+        !rejects_callback_requirement_mutation(
+            [](auto& summary, auto& requirement) {
+          auto duplicate = requirement;
+          summary.requirements.push_back(std::move(duplicate));
+        }))
       return false;
     auto noncanonical_callback_target = *callback_occurrence;
     noncanonical_callback_target.semantic_target_id = "parameter:00";
