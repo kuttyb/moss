@@ -13,6 +13,18 @@
       "evidence": "M2b.3a acceptance poisons generic_stmt, requires checked-body projection trace, and executes both Int and String specializations after provider source removal."
     },
     {
+      "id": "homogeneous-vector-literal",
+      "priority": "P1-essential",
+      "category": "generic vector literal with deferred element equality",
+      "provider": "module Service\n\nexport fn fresh(first, second):\n  return [first, second]\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(17, 18)[1]\n  echo Service.fresh(\"moss\", \"codex\")[0]\n",
+      "expected_output": "18\nmoss\n",
+      "invalid_consumer": "module Main\nimport Service\n\nfn main():\n  let mixed = Service.fresh(17, \"moss\")\n  echo mixed[0]\n",
+      "invalid_consumer_expected_error": "TYPE_MISMATCH",
+      "checked_body_status": "checked-body supported; ordered vector element TypeRefs and checker SameType relation are validated before source-free projection",
+      "evidence": "R1 vector relation acceptance must remove provider source and the generic_stmt body, require checked-body projection, execute Int/String same-type specializations, and reject a summary whose second element TypeRef is mislinked or whose relation requirement is dropped."
+    },
+    {
       "id": "scalar-literal",
       "priority": "P1-essential",
       "category": "scalar expression",

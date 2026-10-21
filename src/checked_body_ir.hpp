@@ -521,10 +521,12 @@ class H3BodyReader {
   H3BodyReader(std::string_view bytes, const TypeContext& context,
                const std::vector<TypeRef>& parameters, const TypeRef& result,
                bool allow_empty_vector_return = false,
-               bool allow_collection_loop_body = false)
+               bool allow_collection_loop_body = false,
+               bool allow_vector_literal_relation = false)
       : bytes_(bytes), context_(context), parameters_(parameters), result_(result),
         allow_empty_vector_return_(allow_empty_vector_return),
-        allow_collection_loop_body_(allow_collection_loop_body) {}
+        allow_collection_loop_body_(allow_collection_loop_body),
+        allow_vector_literal_relation_(allow_vector_literal_relation) {}
 
   std::vector<Stmt> read() {
     constexpr std::string_view header = "moss-checked-body-v1\n";
@@ -576,6 +578,7 @@ class H3BodyReader {
   TypeRef local_type_;
   bool allow_empty_vector_return_ = false;
   bool allow_collection_loop_body_ = false;
+  bool allow_vector_literal_relation_ = false;
   static constexpr std::uint32_t kMaxBodyNodes = 4096;
   static constexpr std::uint32_t kMaxLocalCount = 256;
   static constexpr unsigned kMaxBlockDepth = 32;
@@ -935,6 +938,17 @@ class H3BodyReader {
       expression.member_name = expression.operands.front().type->declaration
           ->fields[expression.member_ordinal].name;
     } else if (expression.kind == ExprKind::VectorLiteral &&
+               allow_vector_literal_relation_) {
+      const auto count = number();
+      if (count == 0 || count > 64 ||
+          expression.type->kind != TypeKind::Builtin ||
+          expression.type->name != "vector" ||
+          expression.type->type_args.size() != 1 ||
+          (result_ && !expression.type->structurally_equal(*result_)))
+        fail("checked vector literal relation has an unsupported type or arity");
+      for (std::uint32_t index = 0; index < count; ++index)
+        expression.operands.push_back(read_expr(depth + 1));
+    } else if (expression.kind == ExprKind::VectorLiteral &&
                allow_empty_vector_return_) {
       if (number() != 0 ||
           expression.type->kind != TypeKind::Builtin ||
@@ -1233,8 +1247,10 @@ inline std::vector<Stmt> decode_empty_vector_return_checked_body_v1(
 inline std::vector<Stmt> decode_checked_body_v1(
     std::string_view bytes, const TypeContext& context,
     const std::vector<TypeRef>& parameters, const TypeRef& result,
-    std::string_view expected_hash) {
-  H3BodyReader reader(bytes, context, parameters, result, true, true);
+    std::string_view expected_hash,
+    bool allow_vector_literal_relation = false) {
+  H3BodyReader reader(bytes, context, parameters, result, true, true,
+                      allow_vector_literal_relation);
   auto statements = reader.read();
   if (compute_checked_body_hash_v1(statements) != expected_hash)
     throw std::invalid_argument("checked body semantic hash is mismatched");

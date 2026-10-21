@@ -3262,6 +3262,11 @@ static moss::AccessMode imported_abi_v10_requirement_access(
 
 static bool abi_v10_collection_loop_summary_candidate(
     const abi_v10::Summary& summary);
+static bool abi_v10_checked_vector_literal_summary_candidate(
+    const abi_v10::Summary& summary);
+static bool abi_v10_checked_vector_literal_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements);
 
 static vector<moss::Requirement> imported_abi_v10_requirements(
     const abi_v10::Summary& summary, const Function& function,
@@ -3279,9 +3284,11 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
   }
   const bool collection_loop =
       abi_v10_collection_loop_summary_candidate(summary);
-  if (summary.requirements.size() != 2)
+  const bool vector_literal =
+      abi_v10_checked_vector_literal_summary_candidate(summary);
+  if (!vector_literal && summary.requirements.size() != 2)
     invalid("checked ABI-v10 typed requirement set is incomplete");
-  if (!collection_loop) {
+  if (!collection_loop && !vector_literal) {
     if (summary.requirements[0].operation != "operator:*" ||
         summary.requirements[1].operation != "operator:+" ||
         summary.requirements[0].parent != 0 ||
@@ -3357,21 +3364,28 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
       invalid("checked ABI-v10 requirement provenance is inconsistent");
     auto subject = imported_abi_v10_type(
         wire.receiver, context, summary.variable_count);
-    auto argument = imported_abi_v10_type(
-        wire.arguments.front(), context, summary.variable_count);
-    auto result = imported_abi_v10_type(
-        *wire.result, context, summary.variable_count);
-    if (!subject || !argument || !result)
+    auto result = wire.result
+        ? imported_abi_v10_type(*wire.result, context, summary.variable_count)
+        : moss::TypeRef{};
+    if (!subject || !result)
       invalid("checked ABI-v10 requirement TypeRef is unresolved");
 
     moss::Requirement requirement;
     requirement.id = origin.declaration_id;
-    requirement.kind = collection_loop && wire.operation == "builtin:index"
-        ? moss::RequirementKind::Index
-        : moss::RequirementKind::Operator;
+    requirement.kind = vector_literal
+        ? moss::RequirementKind::SameType
+        : collection_loop && wire.operation == "builtin:index"
+            ? moss::RequirementKind::Index
+            : moss::RequirementKind::Operator;
     requirement.target_id = wire.operation;
     requirement.subject = std::move(subject);
-    requirement.arguments.push_back(std::move(argument));
+    for (const auto& wire_argument : wire.arguments) {
+      auto argument = imported_abi_v10_type(
+          wire_argument, context, summary.variable_count);
+      if (!argument)
+        invalid("checked ABI-v10 requirement argument TypeRef is unresolved");
+      requirement.arguments.push_back(std::move(argument));
+    }
     requirement.result = std::move(result);
     requirement.access = imported_abi_v10_requirement_access(wire.access);
     for (const auto access : wire.argument_access)
@@ -3507,6 +3521,46 @@ static bool abi_v10_empty_vector_summary_candidate(
       summary.result.arguments.size() == 1 &&
       bound_zero(summary.result.arguments.front()) &&
       abi_v10::checked_body_hash_valid(summary.body_semantic_hash);
+}
+
+static bool abi_v10_checked_vector_literal_summary_candidate(
+    const abi_v10::Summary& summary) {
+  if (summary.requirements.size() != 1 ||
+      !abi_v10::checked_body_hash_valid(summary.body_semantic_hash) ||
+      summary.provenance_id.empty() || !summary.dependencies.empty() ||
+      summary.observable_effect_bits != 0 ||
+      !summary.observable_effect_tags.empty())
+    return false;
+  std::function<bool(const abi_v10::WireType&, const abi_v10::WireType&)>
+      same_wire_type = [&](const abi_v10::WireType& left,
+                           const abi_v10::WireType& right) {
+    if (left.kind != right.kind || left.identity != right.identity ||
+        left.ordinal != right.ordinal ||
+        left.arguments.size() != right.arguments.size()) return false;
+    for (std::size_t index = 0; index < left.arguments.size(); ++index)
+      if (!same_wire_type(left.arguments[index], right.arguments[index]))
+        return false;
+    return true;
+  };
+  const auto& requirement = summary.requirements.front();
+  if (requirement.operation != "builtin:vector-literal" ||
+      requirement.parent != 0 || !requirement.dependencies.empty() ||
+      requirement.access != abi_v10::Access::Read ||
+      requirement.arguments.empty() ||
+      requirement.arguments.size() > 64 ||
+      requirement.argument_access != vector<abi_v10::Access>(
+          requirement.arguments.size(), abi_v10::Access::Read) ||
+      !requirement.result ||
+      requirement.result->kind != abi_v10::WireTypeKind::Builtin ||
+      requirement.result->identity != "vector" ||
+      requirement.result->arguments.size() != 1 ||
+      !same_wire_type(requirement.result->arguments.front(),
+                      requirement.receiver))
+    return false;
+  return std::any_of(requirement.arguments.begin(),
+      requirement.arguments.end(), [&](const abi_v10::WireType& argument) {
+    return same_wire_type(argument, requirement.receiver);
+  });
 }
 
 static bool abi_v10_collection_loop_summary_candidate(
@@ -3672,14 +3726,21 @@ static void project_imported_h3_checked_bodies(Program& program) {
     auto result = imported_abi_v10_type(
         summary.result, *program.type_context, summary.variable_count);
     if (!result) invalid("checked ABI-v10 result TypeRef is unresolved");
+    const bool vector_literal_summary_candidate =
+        abi_v10_checked_vector_literal_summary_candidate(summary);
     vector<checked_ir::Stmt> statements;
     try {
       statements = checked_ir::decode_checked_body_v1(
           body.checked_ir_bytes, *program.type_context, parameters, result,
-          body.semantic_hash);
+          body.semantic_hash, vector_literal_summary_candidate);
     } catch (const std::invalid_argument& error) {
       invalid(string("checked ABI-v10 body cannot be decoded: ") + error.what());
     }
+    const bool vector_literal_body_candidate =
+        vector_literal_summary_candidate &&
+        abi_v10_checked_vector_literal_body_candidate(summary, statements);
+    if (vector_literal_summary_candidate && !vector_literal_body_candidate)
+      invalid("checked ABI-v10 vector requirement does not match its body operands");
     // The checked-body codec and lowerer can represent a branch join, but
     // source-free admission is not safe until every IfJoin predecessor is
     // proven to correspond one-to-one with the summary's operation and
@@ -4088,7 +4149,11 @@ static void project_imported_h3_checked_bodies(Program& program) {
               statement.kind == checked_ir::StmtKind::Pass;
         });
     const bool checked_if_body = contains_if && checked_projection_subset;
-    if ((checked_straight_line || checked_if_body) &&
+    const bool checked_direct_vector_return =
+        vector_literal_body_candidate && checked_projection_subset &&
+        body.dependencies.empty();
+    if ((checked_straight_line || checked_if_body ||
+         checked_direct_vector_return) &&
         checked_projection_subset && body.dependencies.empty()) {
       const std::size_t local_count = checked_local_types.size();
       vector<string> local_names;
@@ -4380,7 +4445,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
           !expression.type->structurally_equal(*result))
         invalid("checked ABI-v10 direct parameter-return body is unsupported");
       lowered = function.params.front().name;
-    } else if (expression.kind == checked_ir::ExprKind::VectorLiteral) {
+    } else if (expression.kind == checked_ir::ExprKind::VectorLiteral &&
+               expression.operands.empty()) {
       if (!direct_return_body ||
           !abi_v10_empty_vector_summary_candidate(summary) ||
           !expression.operands.empty())
@@ -5125,7 +5191,14 @@ class Checker {
       auto body = checked_body_states_.find(&function.body);
       if (body != checked_body_states_.end() && body->second &&
           !function.open_summary->scheme_complete &&
-          function.constraints.empty() && function.body.size() >= 2 &&
+          function.constraints.empty() && !function.body.empty() &&
+          (function.body.size() >= 2 ||
+           (function.body.size() == 1 &&
+            function.body.front().kind == Stmt::Kind::Return &&
+            std::any_of(body->second->open_operations.begin(),
+                body->second->open_operations.end(), [](const auto& operation) {
+              return operation.operation_id == "builtin:vector-literal";
+            }))) &&
           function.body.back().kind == Stmt::Kind::Return &&
           body->second->expression_occurrence_ledger_complete) {
         auto& state = *body->second;
@@ -5233,8 +5306,57 @@ class Checker {
               operation.operation_id == "operator:unary-" ||
               operation.operation_id == "operator:not" ||
               operation.operation_id == "operator:~";
-          if (!starts_with(operation.operation_id, "operator:") ||
-              operation.arguments.size() != (unary_operator ? 0u : 1u) ||
+          const bool vector_literal =
+              operation.operation_id == "builtin:vector-literal";
+          bool vector_relations_complete = vector_literal;
+          if (vector_literal &&
+              operation.expression_occurrence_id <
+                  state.expression_occurrences.size()) {
+            const auto& occurrence = state.expression_occurrences[
+                operation.expression_occurrence_id];
+            vector_relations_complete =
+                occurrence.kind ==
+                    BodyTypeState::ExpressionOccurrence::Kind::VectorLiteral &&
+                occurrence.operation_id == "builtin:vector-literal" &&
+                operation.receiver_operand_ordinal <
+                    occurrence.source_operands.size() &&
+                operation.arguments.size() + 1 ==
+                    occurrence.source_operands.size() &&
+                operation.argument_operand_ordinals.size() ==
+                    operation.arguments.size() &&
+                operation.type_relations.size() ==
+                    operation.arguments.size();
+            for (std::size_t relation_index = 0;
+                 vector_relations_complete &&
+                     relation_index < operation.type_relations.size();
+                 ++relation_index) {
+              const auto& relation = operation.type_relations[relation_index];
+              vector_relations_complete =
+                  relation.kind ==
+                      moss::OpenCallableSummaryFacts::OperationFact::
+                          TypeRelationFact::Kind::SameType &&
+                  relation.left_operand_ordinal ==
+                      operation.receiver_operand_ordinal &&
+                  relation.right_operand_ordinal ==
+                      operation.argument_operand_ordinals[relation_index] &&
+                  relation.left && relation.right &&
+                  operation.receiver && operation.arguments[relation_index] &&
+                  state.solver.resolve(relation.left) &&
+                  state.solver.resolve(operation.receiver) &&
+                  state.solver.resolve(relation.left)->structurally_equal(
+                      *state.solver.resolve(operation.receiver)) &&
+                  state.solver.resolve(relation.right) &&
+                  state.solver.resolve(operation.arguments[relation_index]) &&
+                  state.solver.resolve(relation.right)->structurally_equal(
+                      *state.solver.resolve(
+                          operation.arguments[relation_index]));
+            }
+          }
+          if ((!starts_with(operation.operation_id, "operator:") &&
+               !vector_literal) ||
+              (!vector_literal && operation.arguments.size() !=
+                   (unary_operator ? 0u : 1u)) ||
+              (vector_literal && !vector_relations_complete) ||
               !operation.result ||
               operation.expression_occurrence_id >=
                   state.expression_occurrences.size()) {
@@ -5247,9 +5369,17 @@ class Checker {
           for (const auto& argument : operation.arguments)
             retained.arguments.push_back(project_type(argument));
           retained.result = project_type(operation.result);
+          for (auto& relation : retained.type_relations) {
+            relation.left = project_type(relation.left);
+            relation.right = project_type(relation.right);
+          }
           if (!retained.receiver || !retained.result ||
               std::any_of(retained.arguments.begin(), retained.arguments.end(),
-                  [](const auto& argument) { return !argument; })) {
+                  [](const auto& argument) { return !argument; }) ||
+              std::any_of(retained.type_relations.begin(),
+                  retained.type_relations.end(), [](const auto& relation) {
+                return !relation.left || !relation.right;
+              })) {
             operations_complete = false;
             break;
           }
@@ -5258,11 +5388,36 @@ class Checker {
               ":requirement:checked-operation:" +
               std::to_string(operation.expression_occurrence_id) + ":" +
               std::to_string(operation.occurrence_ordinal);
-          requirement.kind = moss::RequirementKind::Operator;
+          requirement.kind = vector_literal
+              ? moss::RequirementKind::SameType
+              : moss::RequirementKind::Operator;
           requirement.target_id = operation.operation_id;
           requirement.subject = retained.receiver;
-          requirement.arguments = retained.arguments;
-          requirement.argument_access.assign(retained.arguments.size(),
+          if (vector_literal) {
+            vector<std::pair<std::uint32_t, moss::TypeRef>> ordered_elements;
+            ordered_elements.emplace_back(
+                operation.receiver_operand_ordinal, retained.receiver);
+            for (std::size_t index = 0;
+                 index < retained.arguments.size(); ++index)
+              ordered_elements.emplace_back(
+                  operation.argument_operand_ordinals[index],
+                  retained.arguments[index]);
+            std::sort(ordered_elements.begin(), ordered_elements.end(),
+                [](const auto& left, const auto& right) {
+              return left.first < right.first;
+            });
+            for (std::size_t index = 0; index < ordered_elements.size(); ++index)
+              if (ordered_elements[index].first != index) {
+                operations_complete = false;
+                break;
+              }
+            if (!operations_complete) break;
+            for (const auto& element : ordered_elements)
+              requirement.arguments.push_back(element.second);
+          } else {
+            requirement.arguments = retained.arguments;
+          }
+          requirement.argument_access.assign(requirement.arguments.size(),
               moss::AccessMode::Read);
           requirement.result = retained.result;
           requirement.origin = {function.open_summary->origin.module_id,
@@ -6922,9 +7077,13 @@ class Checker {
     try {
       const auto bytes = checked_ir::encode_checked_body_v1(statements);
       const auto hash = checked_ir::compute_checked_body_hash_v1(statements);
+      const bool vector_relation_summary = summary.requirements.size() == 1 &&
+          summary.requirements.front().kind == moss::RequirementKind::SameType &&
+          summary.requirements.front().target_id ==
+              "builtin:vector-literal";
       const auto decoded = checked_ir::decode_checked_body_v1(
           bytes, *p_.type_context, summary.parameter_types,
-          summary.result_type, hash);
+          summary.result_type, hash, vector_relation_summary);
       if (checked_ir::encode_checked_body_v1(decoded) != bytes ||
           checked_ir::compute_checked_body_hash_v1(decoded) != hash)
         return false;
@@ -6947,12 +7106,19 @@ class Checker {
       if (!function.open_summary || !function.open_summary->scheme_complete) continue;
       const bool occurrence_lowered =
           retain_checked_occurrence_ir(function);
+      const bool vector_relation_summary =
+          function.open_summary->requirements.size() == 1 &&
+          function.open_summary->requirements.front().kind ==
+              moss::RequirementKind::SameType &&
+          function.open_summary->requirements.front().target_id ==
+              "builtin:vector-literal";
       const bool legacy_return_shape = function.body.size() == 1 &&
           function.body.front().kind == Stmt::Kind::Return;
       // Until each shape producer consumes the canonical body directly, keep
       // its bounded legacy projection alongside the occurrence IR. The ABI
       // record builder still uses the shared canonical bytes where admitted.
-      if (occurrence_lowered && !legacy_return_shape) continue;
+      if (occurrence_lowered &&
+          (!legacy_return_shape || vector_relation_summary)) continue;
       const auto& summary = *function.open_summary;
       string expression;
       if (function.body.empty() && function.result_expression)
@@ -12687,6 +12853,30 @@ class Checker {
           argument = instantiate(argument);
         if (source.result) requirement.result = instantiate(*source.result);
         structural_requirements.emplace_back(line, requirement);
+        if (requirement.kind == moss::RequirementKind::SameType &&
+            requirement.target_id == "builtin:vector-literal") {
+          const auto vector_result = requirement.result
+              ? solver.resolve(*requirement.result) : nullptr;
+          const auto subject_type = requirement.subject
+              ? solver.resolve(requirement.subject) : nullptr;
+          if (!subject_type || !vector_result ||
+              vector_result->kind != moss::TypeKind::Builtin ||
+              vector_result->name != "vector" ||
+              vector_result->type_args.size() != 1 ||
+              !vector_result->type_args.front()->structurally_equal(
+                  *subject_type)) {
+            err(line, "function '" + callee +
+                "' has an invalid homogeneous vector type relation",
+                "TYPE_MISMATCH");
+            continue;
+          }
+          for (const auto& argument : requirement.arguments)
+            if (!argument || !solver.unify(requirement.subject, argument))
+              err(line, "arguments to function '" + callee +
+                  "' violate a homogeneous vector element type relation",
+                  "TYPE_MISMATCH");
+          continue;
+        }
         auto subject = requirement.subject
             ? solver.resolve(requirement.subject) : nullptr;
         if (subject && subject->kind == moss::TypeKind::InferenceVar)
@@ -24254,7 +24444,8 @@ class Checker {
       return;
     }
     if (auto elements = parse_vector_literal(original)) {
-      mark_active_expression(OccurrenceKind::VectorLiteral);
+      mark_active_expression(OccurrenceKind::VectorLiteral,
+                             "builtin:vector-literal");
       if (current_body_types_ && !checking_specialization_ &&
           !current_body_types_->active_expression_occurrences.empty())
         current_body_types_->expression_occurrences.at(
@@ -24270,10 +24461,26 @@ class Checker {
       }
       if (current_body_types_) {
         vector<moss::TypeRef> element_terms;
-        for (const auto& element : *elements) {
-          auto term = current_body_types_->known_expression(element);
-          if (!term) term = inferred_expr_term(element, env);
-          element_terms.push_back(std::move(term));
+        const auto parent_id = current_body_types_->active_expression_occurrences.empty()
+            ? UINT32_MAX
+            : current_body_types_->active_expression_occurrences.back();
+        for (std::size_t ordinal = 0; ordinal < elements->size(); ++ordinal) {
+          const auto child = std::find_if(
+              current_body_types_->expression_occurrences.begin(),
+              current_body_types_->expression_occurrences.end(),
+              [&](const auto& candidate) {
+            return candidate.parent_id == parent_id &&
+                candidate.child_role == "element:" +
+                    std::to_string(ordinal);
+          });
+          if (parent_id == UINT32_MAX ||
+              child == current_body_types_->expression_occurrences.end() ||
+              !child->completed || !child->checked_type) {
+            current_body_types_->expression_occurrence_ledger_complete = false;
+            element_terms.push_back(nullptr);
+          } else {
+            element_terms.push_back(child->checked_type);
+          }
         }
         auto open = std::find_if(element_terms.begin(), element_terms.end(),
             [&](const moss::TypeRef& term) {
@@ -27518,8 +27725,9 @@ class Checker {
             result->name != "vector" || result->type_args.size() != 1 ||
             !checked_result ||
             !same_resolved_term(operation.receiver, result->type_args.front()) ||
-            !result->structurally_equal(*checked_result))
+            !result->structurally_equal(*checked_result)) {
           checked_types.expression_occurrence_ledger_complete = false;
+        }
       } else if (starts_with(operation.operation_id, "call:")) {
         if (linked.kind != BodyTypeState::ExpressionOccurrence::Kind::Call ||
             linked.operation_id != operation.operation_id)
@@ -28106,7 +28314,22 @@ export fn mixed(first, second):
         program.functions.end(), [](const Function& candidate) {
       return candidate.name == "mixed";
     });
-    if (mixed == program.functions.end()) return false;
+    if (mixed == program.functions.end() || !mixed->open_summary ||
+        !mixed->open_summary->scheme_complete ||
+        mixed->open_summary->requirements.size() != 1)
+      return false;
+    const auto& summary_relation = mixed->open_summary->requirements.front();
+    if (summary_relation.kind != moss::RequirementKind::SameType ||
+        summary_relation.target_id != "builtin:vector-literal" ||
+        summary_relation.arguments.size() != 2 ||
+        summary_relation.argument_access.size() != 2 ||
+        !summary_relation.subject || !summary_relation.result ||
+        (*summary_relation.result)->kind != moss::TypeKind::Builtin ||
+        (*summary_relation.result)->name != "vector" ||
+        (*summary_relation.result)->type_args.size() != 1 ||
+        !(*summary_relation.result)->type_args.front()->structurally_equal(
+            *summary_relation.subject))
+      return false;
     const auto mixed_retained = checker.checked_body_states_.find(&mixed->body);
     if (mixed_retained == checker.checked_body_states_.end() ||
         !mixed_retained->second) return false;
@@ -46640,7 +46863,29 @@ abi_v10_checked_requirements(
         (requirement.target_id == "operator:*" ||
          requirement.target_id == "operator:+" ||
          requirement.target_id == "operator:==");
-    if ((!supported_index && !supported_operator) ||
+    const auto vector_result = requirement.result && *requirement.result &&
+        (*requirement.result)->kind == moss::TypeKind::Builtin &&
+        (*requirement.result)->name == "vector" &&
+        (*requirement.result)->type_args.size() == 1 &&
+        requirement.subject &&
+        (*requirement.result)->type_args.front()->structurally_equal(
+            *requirement.subject) &&
+        !requirement.arguments.empty() &&
+        std::any_of(requirement.arguments.begin(),
+            requirement.arguments.end(), [&](const moss::TypeRef& argument) {
+          return argument && argument->structurally_equal(
+              *requirement.subject);
+        });
+    const bool supported_vector_relation = requirement.kind ==
+            moss::RequirementKind::SameType &&
+        requirement.target_id == "builtin:vector-literal" && vector_result &&
+        requirement.access == moss::AccessMode::Read &&
+        std::all_of(requirement.argument_access.begin(),
+            requirement.argument_access.end(), [](moss::AccessMode access) {
+          return access == moss::AccessMode::Read;
+        });
+    if ((!supported_index && !supported_operator &&
+         !supported_vector_relation) ||
         requirement.id.empty() || requirement.origin.module_id.empty() ||
         requirement.origin.enclosing_callable.empty() ||
         requirement.origin.call_expression_id.empty() ||
@@ -46704,6 +46949,39 @@ abi_v10_checked_requirements(
       std::make_move_iterator(converted_provenance.begin()),
       std::make_move_iterator(converted_provenance.end()));
   return converted;
+}
+
+static bool abi_v10_checked_vector_literal_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements) {
+  if (!abi_v10_checked_vector_literal_summary_candidate(summary) ||
+      statements.size() != 1 ||
+      statements.front().kind != checked_ir::StmtKind::Return ||
+      !statements.front().expr ||
+      statements.front().expr->kind != checked_ir::ExprKind::VectorLiteral)
+    return false;
+  const auto& expression = *statements.front().expr;
+  const auto& requirement = summary.requirements.front();
+  if (expression.operands.size() != requirement.arguments.size()) return false;
+  auto same_checked_wire_type = [&](const moss::TypeRef& type,
+                                    const abi_v10::WireType& wire) {
+    auto encoded = abi_v10_checked_type(type, summary.variable_count);
+    return encoded && abi_v10::type_bytes(*encoded, summary.variable_count) ==
+        abi_v10::type_bytes(wire, summary.variable_count);
+  };
+  if (!same_checked_wire_type(expression.type, summary.result) ||
+      !requirement.result ||
+      !same_checked_wire_type(expression.type, *requirement.result))
+    return false;
+  for (std::size_t index = 0; index < expression.operands.size(); ++index)
+    if (!same_checked_wire_type(expression.operands[index].type,
+                                 requirement.arguments[index]))
+      return false;
+  return std::any_of(requirement.arguments.begin(),
+      requirement.arguments.end(), [&](const abi_v10::WireType& argument) {
+    return abi_v10::type_bytes(argument, summary.variable_count) ==
+        abi_v10::type_bytes(requirement.receiver, summary.variable_count);
+  });
 }
 
 static bool abi_v10_effects_pure(const ObservableEffects& effects) {
@@ -47048,10 +47326,13 @@ static void append_abi_v10_occurrence_records(
     body.semantic_hash = summary.body_semantic_hash;
     body.checked_ir_bytes = *function.checked_body_ir_v1_bytes;
     vector<checked_ir::Stmt> decoded;
+    const bool vector_literal_summary_candidate =
+        abi_v10_checked_vector_literal_summary_candidate(summary);
     try {
       decoded = checked_ir::decode_checked_body_v1(
           body.checked_ir_bytes, *program.type_context,
-          facts.parameter_types, facts.result_type, body.semantic_hash);
+          facts.parameter_types, facts.result_type, body.semantic_hash,
+          vector_literal_summary_candidate);
       if (checked_ir::encode_checked_body_v1(decoded) != body.checked_ir_bytes ||
           checked_ir::compute_checked_body_hash_v1(decoded) !=
               body.semantic_hash)
@@ -47081,9 +47362,13 @@ static void append_abi_v10_occurrence_records(
     body.dependencies.clear();
     if (!extract_semantic_dependencies(decoded).empty())
       continue;
+    const bool checked_vector_literal =
+        abi_v10_checked_vector_literal_summary_candidate(summary) &&
+        abi_v10_checked_vector_literal_body_candidate(summary, decoded);
     if (!summary.requirements.empty() &&
         !abi_v10_checked_arithmetic_summary_candidate(summary) &&
-        !abi_v10_collection_loop_summary_candidate(summary))
+        !abi_v10_collection_loop_summary_candidate(summary) &&
+        !checked_vector_literal)
       continue;
     vector<abi_v10::SourceProvenance> provenance{callable_provenance};
     provenance.insert(provenance.end(), requirement_provenance.begin(),

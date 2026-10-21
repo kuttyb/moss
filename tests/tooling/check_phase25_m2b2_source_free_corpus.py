@@ -312,6 +312,24 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                 [str(MARGO), "run"], cwd=consumer, env=poisoned_env)
             assert poisoned_output == case["expected_output"], (
                 case["id"], poisoned_output)
+            if "invalid_consumer" in case:
+                invalid_consumer = case_root / "consumer-invalid-specialization"
+                package(invalid_consumer,
+                        f"m2b2_{case['id'].replace('-', '_')}_invalid_consumer",
+                        case["invalid_consumer"])
+                invalid_env = poisoned_env | {
+                    "MARGO_HOME": str(case_root / "margo-invalid-specialization"),
+                }
+                invalid_build = subprocess.run(
+                    [str(MOSS), "build", "--json"], cwd=invalid_consumer,
+                    env=invalid_env, capture_output=True, text=True, timeout=240)
+                invalid_output = invalid_build.stdout + invalid_build.stderr
+                assert (invalid_build.returncode != 0 and
+                        case["invalid_consumer_expected_error"] in invalid_output), (
+                            case["id"],
+                            case["invalid_consumer_expected_error"],
+                            invalid_output)
+                print(f"PASS {case['id']}: heterogeneous specialization rejected")
             removed_report = "; ".join(output.strip() for output in poison_outputs)
             print(f"PASS {case['id']}: {removed_report}; checked-body result unchanged")
 
@@ -382,6 +400,15 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                 negative_cases["collection-index-start"] = (
                     "SOURCE_FREE_CHECKED_BODY_INVALID",
                 )
+            if case["id"] == "homogeneous-vector-literal":
+                negative_cases["vector-mislink-element"] = (
+                    "SOURCE_FREE_CHECKED_BODY_INVALID",
+                    "SOURCE_FREE_SUMMARY_INVALID",
+                )
+                negative_cases["vector-drop-relation"] = (
+                    "SOURCE_FREE_CHECKED_BODY_INVALID",
+                    "SOURCE_FREE_SUMMARY_INVALID",
+                )
             for mode, expected_codes in negative_cases.items():
                 targets = ("fresh", "panic_key") if (
                     mode == "weaken-effect" and
@@ -421,6 +448,13 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                                 "callable-v1:Service:fn:fresh|") not in reject_output, (
                                     mutation_id,
                                     "hostile collection body was projected",
+                                    reject_output)
+                    if mode in {"vector-mislink-element",
+                                "vector-drop-relation"}:
+                        assert ("MOSS_CHECKED_BODY_PROJECTED|" not in
+                                reject_output), (
+                                    mutation_id,
+                                    "hostile vector body was projected",
                                     reject_output)
                     print(f"PASS {case['id']} {mutation_id} rejects fail-closed")
 

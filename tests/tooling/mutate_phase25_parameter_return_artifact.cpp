@@ -285,6 +285,24 @@ int main(int argc, char** argv) {
       expression.operands.clear();
       expression.ordinal = 0;
     });
+  } else if (mode == "vector-mislink-element") {
+    assert(summary.requirements.size() == 1 &&
+           summary.requirements.front().operation ==
+               "builtin:vector-literal" &&
+           summary.requirements.front().arguments.size() == 2);
+    auto& second = summary.requirements.front().arguments.back();
+    const auto& receiver = summary.requirements.front().receiver;
+    assert(second.kind == moss::abi_v10::WireTypeKind::BoundVar &&
+           receiver.kind == moss::abi_v10::WireTypeKind::BoundVar &&
+           second.ordinal != receiver.ordinal);
+    second = receiver;
+    replace_summary();
+  } else if (mode == "vector-drop-relation") {
+    assert(summary.requirements.size() == 1 &&
+           summary.requirements.front().operation ==
+               "builtin:vector-literal");
+    summary.requirements.clear();
+    replace_summary();
   } else if (mode == "collection-extra-else") {
     rewrite_collection_body([&](auto& statements) {
       assert(statements.size() >= 4 &&
