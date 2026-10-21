@@ -105,7 +105,7 @@ int main(int argc, char** argv) {
   const auto bool_type = moss::Type::primitive("bool");
 
   std::vector<moss::checked_ir::Stmt> statements;
-  if (shape == "if-join") {
+  if (shape == "if-join" || shape == "if-join-bad-lineage") {
     moss::checked_ir::Stmt join;
     join.kind = moss::checked_ir::StmtKind::IfJoin;
     join.local_ordinal = 0;
@@ -162,6 +162,13 @@ int main(int argc, char** argv) {
   summary.result = bound_zero();
   summary.body_semantic_hash = body_hash;
   summary.provenance_id = callable_provenance;
+  sealed.value.provenance.erase(std::remove_if(
+      sealed.value.provenance.begin(), sealed.value.provenance.end(),
+      [&](const auto& record) {
+    if (record.payload.empty() || record.payload.front() != 1) return false;
+    return moss::abi_v10::read_provenance(record.payload).declaration_id.find(
+        callable + ":requirement:") == 0;
+  }), sealed.value.provenance.end());
   for (std::uint32_t index = 0; index < 3; ++index) {
     moss::abi_v10::Requirement requirement;
     requirement.receiver = bound_zero();
@@ -173,9 +180,28 @@ int main(int argc, char** argv) {
     requirement.provenance_id = add_provenance(sealed.value,
         sealed.value.module_id, callable + ":requirement:" +
             std::to_string(index), 4 + index).provenance_id;
-    if (index == 2) requirement.dependencies = {1, 2};
+    if (index == 2) {
+      requirement.dependencies = shape == "if-join-bad-lineage"
+          ? std::vector<std::uint32_t>{1}
+          : std::vector<std::uint32_t>{1, 2};
+      if (shape == "if-join-bad-lineage") requirement.parent = 1;
+    }
     summary.requirements.push_back(std::move(requirement));
   }
+  auto remove_existing_callable_records = [&](auto& records) {
+    records.erase(std::remove_if(records.begin(), records.end(),
+        [&](const auto& record) {
+      if (record.id == "checked-body-v1:" + callable) return true;
+      if (record.payload.empty() ||
+          (static_cast<unsigned char>(record.payload.front()) != 1 &&
+           static_cast<unsigned char>(record.payload.front()) != 2 &&
+           static_cast<unsigned char>(record.payload.front()) != 3) ||
+          !moss::abi_v10::hex_hash(record.id)) return false;
+      return moss::abi_v10::read_summary(record.payload).callable_id == callable;
+    }), records.end());
+  };
+  remove_existing_callable_records(sealed.value.semantic_contract);
+  remove_existing_callable_records(sealed.value.private_semantic_dependencies);
   sealed.value.semantic_contract.push_back(
       moss::abi_v10::summary_record(summary));
   moss::abi_v10::CheckedBodyRecord body;

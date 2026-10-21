@@ -95,21 +95,10 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                 artifacts = case_root / "artifacts"
                 shutil.copytree(provider / "build/debug", artifacts)
                 interface = artifacts / "Service.mossi"
-                if case["id"] == "branch-join-generic-arithmetic-unavailable":
-                    alternate_artifacts = case_root / "artifacts-if-assign"
-                    shutil.copytree(artifacts, alternate_artifacts)
                 assert interface.is_file() and b"native_abi 10" in interface.read_bytes(), (
                     case["id"], "provider did not emit native_abi 10")
                 assert b"export fn fresh " in interface.read_bytes(), (
                     case["id"], "provider artifact does not contain fresh")
-                if case["id"] == "branch-join-generic-arithmetic-unavailable":
-                    command([str(ifjoin_injector), str(interface),
-                             str(artifacts / "libService.rlib"), "if-join"], cwd=ROOT,
-                            env=os.environ.copy())
-                    command([str(ifjoin_injector),
-                             str(alternate_artifacts / "Service.mossi"),
-                             str(alternate_artifacts / "libService.rlib"),
-                             "if-assign"], cwd=ROOT, env=os.environ.copy())
                 shutil.rmtree(provider / "src")
                 assert not (provider / "src").exists(), (
                     case["id"], "provider source deletion failed")
@@ -121,8 +110,6 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                     "MOSS_MODULE_PATH": str(artifacts),
                     "MARGO_HOME": str(case_root / "margo-consumer"),
                 }
-                if case["id"] == "branch-join-generic-arithmetic-unavailable":
-                    env["MOSS_PHASE25_CHECKED_BODY_TRACE"] = "1"
                 rejected = subprocess.run(
                     [str(MARGO), "build"], cwd=consumer, env=env,
                     capture_output=True, text=True, timeout=240)
@@ -130,38 +117,6 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                 assert (rejected.returncode != 0 and
                         case["provider_expected_error"] in reject_output), (
                             case["id"], case["provider_expected_error"], reject_output)
-                if case["id"] == "branch-join-generic-arithmetic-unavailable":
-                    assert "lacks requirement lineage validation" in reject_output, (
-                        case["id"], "crafted IfJoin did not hit the importer guard",
-                        reject_output)
-                    assert "MOSS_CHECKED_BODY_PROJECTED" not in reject_output, (
-                        case["id"], "IfJoin was projected before rejection",
-                        reject_output)
-                    alternate_consumer = case_root / "consumer-if-assign"
-                    package(alternate_consumer,
-                            f"m2b2_{case['id'].replace('-', '_')}_consumer_if_assign",
-                            case["consumer"])
-                    alternate_env = base_env | {
-                        "MOSS_MODULE_PATH": str(alternate_artifacts),
-                        "MARGO_HOME": str(case_root / "margo-consumer-if-assign"),
-                        "MOSS_PHASE25_CHECKED_BODY_TRACE": "1",
-                    }
-                    alternate = subprocess.run(
-                        [str(MARGO), "build"], cwd=alternate_consumer,
-                        env=alternate_env, capture_output=True, text=True,
-                        timeout=240)
-                    alternate_output = alternate.stdout + alternate.stderr
-                    assert (alternate.returncode != 0 and
-                            "SOURCE_FREE_CHECKED_BODY_INVALID" in alternate_output and
-                            "conditional body lacks requirement lineage validation"
-                                in alternate_output), (
-                                    case["id"],
-                                    "ordinary If/Assign artifact bypassed the guard",
-                                    alternate_output)
-                    assert "MOSS_CHECKED_BODY_PROJECTED" not in alternate_output, (
-                        case["id"],
-                        "ordinary If/Assign body was projected before rejection",
-                        alternate_output)
                 if "abi_v9_expected_output" in case:
                     v9_env = base_env.copy()
                     v9_env.pop("MOSS_STAGED_ABI", None)
@@ -312,6 +267,43 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                 [str(MARGO), "run"], cwd=consumer, env=poisoned_env)
             assert poisoned_output == case["expected_output"], (
                 case["id"], poisoned_output)
+            if case["id"] == "branch-join-generic-arithmetic":
+                for shape, expected_code, expected_message in (
+                    ("if-join-bad-lineage", "SOURCE_FREE_CHECKED_BODY_INVALID",
+                     "branch-join body lacks requirement lineage validation"),
+                    ("if-assign", "SOURCE_FREE_CHECKED_BODY_INVALID",
+                     "conditional body lacks requirement lineage validation"),
+                ):
+                    mutated = case_root / f"arithmetic-join-{shape}"
+                    shutil.copytree(artifacts, mutated)
+                    command([str(ifjoin_injector),
+                             str(mutated / "Service.mossi"),
+                             str(mutated / "libService.rlib"), shape],
+                            cwd=ROOT, env=base_env)
+                    hostile_consumer = case_root / f"consumer-{shape}"
+                    package(hostile_consumer,
+                            f"m2b3b_branch_join_{shape.replace('-', '_')}_consumer",
+                            case["consumer"])
+                    hostile_env = base_env | {
+                        "MOSS_MODULE_PATH": str(mutated),
+                        "MARGO_HOME": str(case_root / f"margo-{shape}"),
+                        "MOSS_PHASE25_CHECKED_BODY_TRACE": "1",
+                    }
+                    hostile = subprocess.run(
+                        [str(MARGO), "build"], cwd=hostile_consumer,
+                        env=hostile_env, capture_output=True, text=True,
+                        timeout=240)
+                    hostile_output = hostile.stdout + hostile.stderr
+                    assert (hostile.returncode != 0 and
+                            expected_code in hostile_output and
+                            expected_message in hostile_output), (
+                                case["id"], shape, expected_code,
+                                expected_message, hostile_output)
+                    assert "MOSS_CHECKED_BODY_PROJECTED|" not in hostile_output, (
+                        case["id"], shape,
+                        "hostile conditional body was projected",
+                        hostile_output)
+                    print(f"PASS {case['id']} {shape}: hostile lineage rejects before projection")
             if "invalid_consumer" in case:
                 invalid_consumer = case_root / "consumer-invalid-specialization"
                 package(invalid_consumer,

@@ -1,3 +1,28 @@
+## Phase 25.1 R1 continuation — common branch-arithmetic join — checkpoint ready for review — 2026-10-21
+
+The common occurrence producer now emits the exact checked-body record for the
+bounded generic `(T, Bool) -> T` arithmetic join with a multiply in each branch
+and an add over the joined local. The ABI-v10 importer admits this profile only
+when the three typed requirements, both branch operation trees, parameter and
+result TypeRefs, and the add's two predecessor dependencies match exactly.
+Ordinary If/Assign and forged requirement lineage remain rejected before body
+projection. The source-free Int/Float consumer runs after provider source
+deletion and legacy `generic_stmt` poisoning; ABI-v9 remains a control.
+
+The source-free smoke initially exposed a null `checked_type` in a branch
+initializer occurrence during post-projection rechecking. The checker now
+returns an empty TypeRef for that absent value instead of resolving a null
+pointer. A separate nullable condition TypeRef in the importer predicate is
+also guarded. The rebuilt `moss-dev`, focused generic arithmetic and
+statement/call occurrence regressions, and direct H3 source-free chain pass.
+The full M2b2 corpus passes on the final tree, including arithmetic-join
+source-free Int/Float execution, poisoned legacy rows, forged dependency and
+ordinary If/Assign rejection before projection, metadata mutations, and ABI-v9
+compatibility. Agent-feedback validation and `git diff --check` pass. R1 remains open for accepted-surface
+totality and overall independent acceptance. The old H3 fallback remains a
+migration path, not evidence of generalized lowering. Preserve the remaining
+tracked unavailable profiles and known ABI-v9/package failures.
+
 ## Phase 25.1 R1 continuation — common pure branch-join lowering — scoped GO at 0ce302ab — 2026-10-21
 
 Common occurrence lowering now links a returned local to its unique checked

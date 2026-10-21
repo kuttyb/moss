@@ -129,15 +129,14 @@
       "evidence": "The source-built provider emits ABI-v10 records, while the source-deleted consumer must fail closed on this valid shadowing case. Keep Int/Float branch behavior visible until the common lowerer and importer preserve the exact inner and outer binding identities end to end."
     },
     {
-      "id": "branch-join-generic-arithmetic-unavailable",
+      "id": "branch-join-generic-arithmetic",
       "priority": "P1-essential",
       "category": "generic arithmetic through if/else joined local",
       "provider": "module Service\n\nexport fn fresh(value, flag: Bool):\n  if flag:\n    let item = value * 2\n  else:\n    let item = value * 3\n  return item + 1\n",
       "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(5, true)\n  echo Service.fresh(5, false)\n  echo Service.fresh(2.5, true)\n  echo Service.fresh(2.5, false)\n",
-      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_INVALID",
-      "provider_must_emit_v10": true,
-      "checked_body_status": "source-free import rejects branch arithmetic in both IfJoin and ordinary If/assignment forms until body-operation and dependency lineage validation is implemented; checker facts preserve guarded predecessor identities and both operation dependencies",
-      "evidence": "The checker ledger, ABI-v10 summary, and checked-body-v1 encode branch operation dependencies and joined/local values, but the importer does not yet validate every conditional operation one-to-one against summary requirements. Hostile source-free fixtures inject both IfJoin and ordinary If-plus-mutable-assignment bodies; both must reject before projection. Keep this valid profile visible until generalized lineage validation passes."
+      "checked_body_status": "checked-body supported; the common occurrence lowerer retains both branch multiplications and the joined-local addition with exact requirement dependencies",
+      "evidence": "The source-free consumer runs after provider source removal and legacy generic_stmt poisoning. The common checked-body requirement lineage must map both branch multiplication nodes and the joined-local addition one-to-one, including the addition dependency on both predecessor operations; hostile forged dependency and ordinary If/Assign artifacts reject before projection.",
+      "expected_output": "11\n16\n6.0\n8.5\n"
     },
     {
       "id": "branch-join-generic-literals",

@@ -2923,6 +2923,8 @@ static bool abi_v10_checked_vector_literal_summary_candidate(
 static bool abi_v10_checked_vector_literal_body_candidate(
     const abi_v10::Summary& summary,
     const vector<checked_ir::Stmt>& statements);
+static bool abi_v10_checked_branch_arithmetic_summary_candidate(
+    const abi_v10::Summary& summary);
 
 static vector<moss::Requirement> imported_abi_v10_requirements(
     const abi_v10::Summary& summary, const Function& function,
@@ -2942,9 +2944,12 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
       abi_v10_collection_loop_summary_candidate(summary);
   const bool vector_literal =
       abi_v10_checked_vector_literal_summary_candidate(summary);
-  if (!vector_literal && summary.requirements.size() != 2)
+  const bool branch_arithmetic =
+      abi_v10_checked_branch_arithmetic_summary_candidate(summary);
+  if (!vector_literal && !branch_arithmetic &&
+      summary.requirements.size() != 2)
     invalid("checked ABI-v10 typed requirement set is incomplete");
-  if (!collection_loop && !vector_literal) {
+  if (!collection_loop && !vector_literal && !branch_arithmetic) {
     if (summary.requirements[0].operation != "operator:*" ||
         summary.requirements[1].operation != "operator:+" ||
         summary.requirements[0].parent != 0 ||
@@ -3101,6 +3106,110 @@ static bool abi_v10_checked_arithmetic_summary_candidate(
       integer(multiply.arguments.front()) && integer(add.arguments.front()) &&
       multiply.result && add.result && bound_zero(*multiply.result) &&
       bound_zero(*add.result);
+}
+
+// A pure two-arm arithmetic join has three source operation occurrences:
+// one multiply in each predecessor and one add over the joined local. Admit
+// this shape only when the summary retains the exact occurrence order and the
+// add depends on both predecessor operations.
+static bool abi_v10_checked_branch_arithmetic_summary_candidate(
+    const abi_v10::Summary& summary) {
+  const auto bound_zero = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::BoundVar &&
+        type.ordinal == 0 && type.arguments.empty();
+  };
+  const auto integer = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::Primitive &&
+        type.identity == "int" && type.arguments.empty();
+  };
+  const auto boolean = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::Primitive &&
+        type.identity == "bool" && type.arguments.empty();
+  };
+  if (summary.variable_count != 1 || summary.parameters.size() != 2 ||
+      summary.parameter_access != vector<abi_v10::Access>{
+          abi_v10::Access::Read, abi_v10::Access::Read} ||
+      !bound_zero(summary.parameters[0]) ||
+      !boolean(summary.parameters[1]) || !bound_zero(summary.result) ||
+      summary.requirements.size() != 3 ||
+      summary.observable_effect_bits != 0 ||
+      !summary.observable_effect_tags.empty() ||
+      !summary.dependencies.empty())
+    return false;
+  for (std::size_t index = 0; index < summary.requirements.size(); ++index) {
+    const auto& requirement = summary.requirements[index];
+    if (requirement.operation != (index == 2 ? "operator:+" : "operator:*") ||
+        !bound_zero(requirement.receiver) ||
+        requirement.access != abi_v10::Access::Read ||
+        requirement.arguments.size() != 1 ||
+        !integer(requirement.arguments.front()) ||
+        requirement.argument_access !=
+            vector<abi_v10::Access>{abi_v10::Access::Read} ||
+        !requirement.result || !bound_zero(*requirement.result))
+      return false;
+  }
+  return summary.requirements[0].parent == 0 &&
+      summary.requirements[0].dependencies.empty() &&
+      summary.requirements[1].parent == 0 &&
+      summary.requirements[1].dependencies.empty() &&
+      summary.requirements[2].parent == 0 &&
+      summary.requirements[2].dependencies == vector<std::uint32_t>{1, 2};
+}
+
+static bool abi_v10_checked_branch_arithmetic_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements,
+    const moss::TypeContext& context) {
+  if (!abi_v10_checked_branch_arithmetic_summary_candidate(summary) ||
+      statements.size() != 2 ||
+      statements[0].kind != checked_ir::StmtKind::IfJoin ||
+      statements[1].kind != checked_ir::StmtKind::Return ||
+      !statements[0].expr || statements[0].operands.size() != 2 ||
+      !statements[1].expr ||
+      statements[1].expr->kind != checked_ir::ExprKind::Binary ||
+      statements[1].expr->binary_op != checked_ir::BinaryOp::Add ||
+      statements[1].expr->operands.size() != 2 ||
+      statements[1].expr->operands[0].kind !=
+          checked_ir::ExprKind::LocalRead ||
+      statements[1].expr->operands[0].ordinal != statements[0].local_ordinal ||
+      statements[1].expr->operands[1].kind !=
+          checked_ir::ExprKind::IntegerLiteral ||
+      !statements[0].type || !statements[0].expr->type ||
+      !statements[1].expr->type ||
+      !statements[0].type->structurally_equal(*statements[1].expr->type))
+    return false;
+  const auto value_type = imported_abi_v10_type(
+      summary.parameters[0], context, summary.variable_count);
+  const auto bool_type = imported_abi_v10_type(
+      summary.parameters[1], context, summary.variable_count);
+  const auto int_type = moss::Type::primitive("int");
+  if (!value_type || !bool_type || !int_type ||
+      !statements[0].type->structurally_equal(*value_type) ||
+      !statements[0].expr->type->structurally_equal(*bool_type))
+    return false;
+  const auto& condition = *statements[0].expr;
+  if (condition.kind != checked_ir::ExprKind::Parameter ||
+      condition.ordinal != 1)
+    return false;
+  for (const auto& branch : statements[0].operands) {
+    if (branch.kind != checked_ir::ExprKind::Binary ||
+        branch.binary_op != checked_ir::BinaryOp::Mul ||
+        branch.operands.size() != 2 || !branch.type ||
+        !branch.type->structurally_equal(*value_type) ||
+        branch.operands[0].kind != checked_ir::ExprKind::Parameter ||
+        branch.operands[0].ordinal != 0 || !branch.operands[0].type ||
+        !branch.operands[0].type->structurally_equal(*value_type) ||
+        branch.operands[1].kind != checked_ir::ExprKind::IntegerLiteral ||
+        !branch.operands[1].type ||
+        !branch.operands[1].type->structurally_equal(*int_type))
+      return false;
+  }
+  const auto& addition = *statements[1].expr;
+  return addition.type->structurally_equal(*value_type) &&
+      addition.operands[0].type &&
+      addition.operands[0].type->structurally_equal(*value_type) &&
+      addition.operands[1].type &&
+      addition.operands[1].type->structurally_equal(*int_type);
 }
 
 static bool abi_v10_parameter_return_summary_candidate(
@@ -3519,7 +3628,12 @@ static void project_imported_h3_checked_bodies(Program& program) {
         return access == abi_v10::Access::Read;
       });
     }();
-    if (contains_if_join(statements) && !pure_branch_join_candidate)
+    const bool checked_branch_arithmetic_candidate =
+        body.dependencies.empty() &&
+        abi_v10_checked_branch_arithmetic_body_candidate(
+            summary, statements, *program.type_context);
+    if (contains_if_join(statements) && !pure_branch_join_candidate &&
+        !checked_branch_arithmetic_candidate)
       invalid("checked ABI-v10 branch-join body lacks requirement lineage validation");
     std::function<bool(const checked_ir::Expr&)> is_operation_expression =
         [&](const checked_ir::Expr& expression) {
@@ -13372,9 +13486,11 @@ class Checker {
                   root->second >=
                       current_body_types_->expression_occurrences.size())
                 return moss::TypeRef{};
-              return current_body_types_->solver.resolve(
-                  current_body_types_->expression_occurrences[root->second]
-                      .checked_type);
+              const auto& occurrence =
+                  current_body_types_->expression_occurrences[root->second];
+              return occurrence.checked_type
+                  ? current_body_types_->solver.resolve(occurrence.checked_type)
+                  : moss::TypeRef{};
             };
             auto then_term = paths[0].terms.find(name);
             auto else_term = paths[1].terms.find(name);
@@ -50176,10 +50292,13 @@ static void append_abi_v10_occurrence_records(
     const bool checked_vector_literal =
         abi_v10_checked_vector_literal_summary_candidate(summary) &&
         abi_v10_checked_vector_literal_body_candidate(summary, decoded);
+    const bool checked_branch_arithmetic =
+        abi_v10_checked_branch_arithmetic_body_candidate(
+            summary, decoded, *program.type_context);
     if (!summary.requirements.empty() &&
         !abi_v10_checked_arithmetic_summary_candidate(summary) &&
         !abi_v10_collection_loop_summary_candidate(summary) &&
-        !checked_vector_literal)
+        !checked_vector_literal && !checked_branch_arithmetic)
       continue;
     vector<abi_v10::SourceProvenance> provenance{callable_provenance};
     provenance.insert(provenance.end(), requirement_provenance.begin(),

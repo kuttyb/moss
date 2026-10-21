@@ -456,6 +456,7 @@ export fn alias_compute(value):
   assert(branch_wire.requirements[1].dependencies.empty());
   assert(branch_wire.requirements[2].parent == 0);
   assert(branch_wire.requirements[2].dependencies == vector<uint32_t>({1, 2}));
+  assert(abi_v10_checked_branch_arithmetic_summary_candidate(branch_wire));
   assert(branch_compute.checked_body_ir_v1_bytes &&
          branch_compute.checked_body_ir_v1_hash);
   const auto branch_body = checked_ir::decode_checked_body_v1(
@@ -463,6 +464,27 @@ export fn alias_compute(value):
       branch_compute.open_summary->parameter_types,
       branch_compute.open_summary->result_type,
       *branch_compute.checked_body_ir_v1_hash);
+  assert(abi_v10_checked_branch_arithmetic_body_candidate(
+      branch_wire, branch_body, *joined_binding.type_context));
+  auto dropped_join_dependency = branch_wire;
+  dropped_join_dependency.requirements[2].dependencies = {1};
+  dropped_join_dependency.requirements[2].parent = 1;
+  assert(!abi_v10_checked_branch_arithmetic_summary_candidate(
+      dropped_join_dependency));
+  auto swapped_branch_operation = branch_wire;
+  swapped_branch_operation.requirements[1].operation = "operator:+";
+  swapped_branch_operation.requirements[2].operation = "operator:*";
+  assert(!abi_v10_checked_branch_arithmetic_summary_candidate(
+      swapped_branch_operation));
+  auto mismatched_branch_type = branch_body;
+  mismatched_branch_type[0].operands[0].operands[1].type =
+      Type::primitive("bool");
+  assert(!abi_v10_checked_branch_arithmetic_body_candidate(
+      branch_wire, mismatched_branch_type, *joined_binding.type_context));
+  auto forged_join_condition = branch_body;
+  forged_join_condition[0].expr->ordinal = 0;
+  assert(!abi_v10_checked_branch_arithmetic_body_candidate(
+      branch_wire, forged_join_condition, *joined_binding.type_context));
   assert(branch_body.size() == 2);
   const auto& joined_if = branch_body.front();
   assert(joined_if.kind == checked_ir::StmtKind::IfJoin &&
