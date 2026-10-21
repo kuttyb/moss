@@ -1,3 +1,19 @@
+## Phase 25.1 R1 next-slice probes — shadowed returns and generic For — 2026-10-21
+
+Read-only checker probes on the valid source-free corpus rows distinguish two
+remaining gaps. `shadowing-alias-branch-local-unavailable` retains an open
+summary but has no result TypeRef, no complete scheme or occurrence ledger, and
+no common checked body. Its function ends with `If` containing separate branch
+returns, outside the current terminal-Return summary closure. The ABI-v9
+source-free Int/Float control remains valid. `generic-range-iteration` has a
+complete scheme and occurrence ledger with one requirement, but no common body:
+the occurrence lowerer has no `For` case and the bounded reader rejects `For`.
+Both stay fail-closed under ABI-v10. The probes and provider artifact are in
+disposable `tmp/r1-shadowing-probe/`; they are diagnostic evidence, not new
+acceptance claims. Next work should close checker-owned multi-return result
+relations and/or a bounded typed `For` path with source-free and hostile tests.
+R1 remains open; no R2 work has started.
+
 ## Phase 25.1 R1 continuation — common branch-arithmetic join — scoped GO at 1f4411fb — 2026-10-21
 
 The common occurrence producer now emits the exact checked-body record for the
