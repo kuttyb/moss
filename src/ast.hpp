@@ -140,7 +140,14 @@ struct OpenCallableSummaryFacts {
   vector<AccessMode> parameter_access;
   ObservableEffects observable_effects;
   RequirementOrigin origin;
+  // A complete open type scheme is available to ordinary generic call
+  // checking before bodies have been checked. `complete` describes the type,
+  // effect, and callable-dependency summary; the occurrence ledger has its
+  // own independent completeness bit because existing checked-body producers
+  // still validate a bounded shape directly.
+  bool scheme_complete = false;
   bool complete = false;
+  bool occurrence_ledger_complete = false;
 };
 // Body analysis may allocate a provisional result variable before discovering
 // that the result aliases a parameter. Discard only unused trailing ordinals;

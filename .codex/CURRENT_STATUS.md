@@ -1,5 +1,13 @@
 # Moss current status
 
+## Phase 25.1 R1 continuation — checker facts slice — 2026-10-20
+
+Latest pushed checkpoint remains `2064a658859c1190cd831bc006c93eb03541f340`; this work is still uncommitted and R1 is not accepted. The open type/effect/dependency summary now has a separate `scheme_complete` bit for pre-body generic checking and `occurrence_ledger_complete` for exhaustive body facts. Summary promotion verifies effects and semantic call dependencies independently. Missing occurrence facts remain explicitly incomplete, and the existing bounded checked-body producers keep their own validation until a shared lowerer reaches parity.
+
+The checker now retains nested generic arithmetic result TypeRefs and operation identities; a deferred generic `count` pipeline stage links its checker operation, input, and output types; field reads retain a receiver occurrence plus nominal record identity/field ordinal; constructor arguments retain checker-resolved field ordinals. The occurrence graph still does not represent the complete Moss expression language, and no shared general body lowerer has been delivered. Do not claim R1 complete or proceed to R2.
+
+Validation on this working tree: `make --jobs="$(nproc)" moss-dev` passed with the existing `TypeSolver::Undo::binding` warnings. Final-source runs passed for `check_phase25_generic_arithmetic_requirements.py`, `check_phase25_generic_collection_facts.py`, `check_phase25_statement_call_occurrence_roles.py`, `check_phase25_m2b2_source_free_corpus.py`, `check_agent_feedback.py`, and `git diff --check`. The M2b2 corpus covered H3/M2b/SDK positives, hostile artifact mutations, and ABI-v9 controls. These are focused results only. No R1 adversarial acceptance has been requested for this slice.
+
 ## Phase 25.1 continuation — R1 in progress — 2026-10-20
 
 Branch `phase25-1-work`; pinned instructions `3de64dc633312267c37c4e4990b28c2a73cab104`. T0 passed before implementation: the remote peeled targets for `phase25-pre-main` and `phase25-delivered-v9` are respectively `fa3a340a0a6652568b97869489da1a84038b9857` and `dd45e30722bcc2d62d4bb46ba184d426cbaea066`. `origin/main` and `origin/phase25-integration` remain at the delivered v9 baseline.

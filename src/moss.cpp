@@ -4243,7 +4243,8 @@ static void validate_imported_h3_summary_closure(const Program& program) {
         function.imported_checked_summary_payload);
     const bool collection_loop =
         abi_v10_collection_loop_summary_candidate(summary);
-    if (!function.open_summary || !function.open_summary->complete ||
+    if (!function.open_summary ||
+        !function.open_summary->scheme_complete ||
         function.open_summary->bound_variable_count != summary.variable_count ||
         function.open_summary->parameter_types.size() != summary.parameters.size() ||
         function.parameter_effects.size() != summary.parameter_access.size() ||
@@ -4252,7 +4253,8 @@ static void validate_imported_h3_summary_closure(const Program& program) {
               : abi_v10_effects_pure(function.observable_effects)))
       mismatch("checked ABI-v10 imported summary did not close in the checker " +
           string("(complete=") +
-          (function.open_summary && function.open_summary->complete ? "1" : "0") +
+          (function.open_summary &&
+           function.open_summary->scheme_complete ? "1" : "0") +
           ", variables=" +
           std::to_string(function.open_summary
               ? function.open_summary->bound_variable_count : 0) +
@@ -4527,7 +4529,8 @@ class Checker {
                          [](const Constraint& constraint) {
               return constraint.kind == ConstraintKind::Callable;
             })) continue;
-        if (!function.open_summary || !function.open_summary->complete ||
+        if (!function.open_summary ||
+            !function.open_summary->scheme_complete ||
             function.observable_effects.unresolved)
           err(function.source_file, function.line,
               "exported callable '" + function.name +
@@ -4588,6 +4591,61 @@ class Checker {
               "static specialization has inconsistent observable effects for one key",
               "SOURCE_FREE_SPECIALIZATION_MISMATCH");
       }
+    // Generic signature schemes are used while all function, domain, main,
+    // and functional bodies are checked. Keep scheme and body-occurrence
+    // completeness independent: bounded legacy producers retain their own
+    // shape validation until the shared lowerer has parity.
+    for (auto& function : p_.functions) {
+      if (!function.open_summary) continue;
+      if (!function.imported_checked_summary_payload.empty()) {
+        function.open_summary->complete = true;
+        continue;
+      }
+      auto body = checked_body_states_.find(&function.body);
+      std::set<string> expected_dependencies;
+      for (const auto& edge : p_.semantic_call_edges) {
+        if (edge.source != "fn:" + function.name ||
+            !starts_with(edge.target, "fn:")) continue;
+        auto dependency = functions_.find(edge.target.substr(3));
+        if (dependency == functions_.end() ||
+            dependency->second->semantic_callable_id.empty()) continue;
+        expected_dependencies.insert(
+            dependency->second->semantic_callable_id);
+      }
+      const std::set<string> summary_dependencies(
+          function.open_summary->semantic_dependencies.begin(),
+          function.open_summary->semantic_dependencies.end());
+      bool dependencies_complete =
+          summary_dependencies.size() ==
+              function.open_summary->semantic_dependencies.size() &&
+          summary_dependencies == expected_dependencies;
+      bool effects_complete =
+          !function.open_summary->observable_effects.unresolved &&
+          function.open_summary->parameter_access.size() ==
+              function.params.size();
+      bool occurrence_dependencies_complete = false;
+      if (body != checked_body_states_.end() && body->second &&
+          body->second->expression_occurrence_ledger_complete) {
+        std::set<string> observed_dependencies;
+        for (const auto& occurrence : body->second->expression_occurrences) {
+          if (occurrence.kind !=
+                  BodyTypeState::ExpressionOccurrence::Kind::Call ||
+              !starts_with(occurrence.semantic_target_id, "callable-v1:"))
+            continue;
+          observed_dependencies.insert(occurrence.semantic_target_id);
+        }
+        occurrence_dependencies_complete =
+            observed_dependencies == expected_dependencies;
+      }
+      function.open_summary->complete =
+          function.open_summary->scheme_complete &&
+          effects_complete && dependencies_complete;
+      function.open_summary->occurrence_ledger_complete =
+          body != checked_body_states_.end() && body->second &&
+          body->second->expression_occurrence_ledger_complete &&
+          effects_complete && dependencies_complete &&
+          occurrence_dependencies_complete;
+    }
     retain_checked_body_ir();
     // The staged ABI cannot publish a multi-statement generic/private-helper
     // chain through the legacy generic_stmt fallback. Until every reachable
@@ -4772,11 +4830,15 @@ class Checker {
       vector<std::uint32_t> non_expression_operand_ordinals;
       string input_type;
       string output_type;
+      moss::TypeRef input_type_ref;
+      moss::TypeRef output_type_ref;
       string operation_id;
       moss::TypeRef checked_type;
       string resolved_binding_id;
       bool resolved_binding_mutable = false;
       string semantic_target_id;
+      std::uint32_t semantic_target_ordinal = UINT32_MAX;
+      vector<std::uint32_t> semantic_operand_ordinals;
       vector<Constraint> linked_constraints;
       vector<LinkedCallableFact> linked_callables;
       bool completed = false;
@@ -4869,6 +4931,15 @@ class Checker {
         return;
       }
       expression_occurrences[occurrence].semantic_target_id = semantic_target_id;
+    }
+
+    void retain_active_expression_type(moss::TypeRef checked_type) {
+      if (active_expression_occurrences.empty()) {
+        expression_occurrence_ledger_complete = false;
+        return;
+      }
+      retain_expression_type(active_expression_occurrences.back(),
+                             solver.resolve(std::move(checked_type)));
     }
 
     void retain_constraint(std::uint32_t occurrence,
@@ -6029,7 +6100,9 @@ class Checker {
         if (!moss::close_open_summary_ordinals(summary) ||
             summary.bound_variable_count != sealed.variable_count)
           invalid("checked ABI-v10 imported summary has invalid bound variables");
+        summary.scheme_complete = true;
         summary.complete = true;
+        summary.occurrence_ledger_complete = true;
         function.open_summary = std::move(summary);
         continue;
       }
@@ -6195,7 +6268,7 @@ class Checker {
           } else {
             auto callee = functions_.find(qualified);
             if (callee != functions_.end() && callee->second->open_summary &&
-                callee->second->open_summary->complete &&
+                callee->second->open_summary->scheme_complete &&
                 arguments.size() == callee->second->params.size()) {
               const auto& source = *callee->second->open_summary;
               const bool exact_edge = std::any_of(
@@ -6737,13 +6810,14 @@ class Checker {
         summary.member_requirements.push_back(std::move(member));
       }
       const bool dense_ordinals = moss::close_open_summary_ordinals(summary);
-      summary.complete = complete &&
+      summary.scheme_complete = complete &&
           (!unresolved_open_generic_return ||
            complete_open_arithmetic_return) &&
           dense_ordinals && summary.result_type &&
           std::all_of(summary.parameter_types.begin(),
                       summary.parameter_types.end(),
                       [](const moss::TypeRef& type) { return type != nullptr; });
+      summary.complete = false;
       if (summary.bound_variable_count || function.generic)
         function.open_summary = std::move(summary);
     }
@@ -6959,9 +7033,10 @@ class Checker {
       summary.bound_variable_count = next_variable;
       if (!moss::close_open_summary_ordinals(summary)) continue;
       summary.observable_effects = function.observable_effects;
-      summary.complete = !summary.observable_effects.unresolved &&
+      summary.scheme_complete = !summary.observable_effects.unresolved &&
           summary.observable_effects.may_panic;
-      if (summary.complete) function.open_summary = std::move(summary);
+      summary.complete = false;
+      if (summary.scheme_complete) function.open_summary = std::move(summary);
     }
   }
 
@@ -11363,7 +11438,7 @@ class Checker {
       if (!parse_simple_call(trim(expression), callee, arguments)) return nullptr;
       auto function = functions_.find(callee);
       if (function == functions_.end() || !function->second->open_summary ||
-          !function->second->open_summary->complete) return nullptr;
+          !function->second->open_summary->scheme_complete) return nullptr;
       const auto& summary = *function->second->open_summary;
       if (arguments.size() != summary.parameter_types.size()) return nullptr;
       vector<moss::TypeRef> fresh;
@@ -20945,7 +21020,8 @@ class Checker {
   OpenCallResultFacts close_open_result_summary(
       int line, const Function& function, const vector<string>& actual_types,
       const moss::TypeRef& expected) const {
-    if (!function.open_summary || !function.open_summary->complete || !expected)
+    if (!function.open_summary || !function.open_summary->scheme_complete ||
+        !expected)
       err(line, "open-result call has no complete checked summary",
           "TYPE_AMBIGUOUS_OPEN_RESULT");
     const auto& summary = *function.open_summary;
@@ -21356,7 +21432,7 @@ class Checker {
           return constraint.kind == ConstraintKind::Callable;
         }) &&
         (!function->second->open_summary ||
-         !function->second->open_summary->complete ||
+         !function->second->open_summary->scheme_complete ||
          function->second->observable_effects.unresolved)) {
       CompileError error(line,
           "source-free callable '" + name +
@@ -21401,7 +21477,7 @@ class Checker {
           parse_simple_call(trim(argument), nested_name, nested_arguments)) {
         auto nested = functions_.find(nested_name);
         if (nested != functions_.end() && nested->second->open_summary &&
-            nested->second->open_summary->complete &&
+            nested->second->open_summary->scheme_complete &&
             nested->second->open_summary->result_type &&
             !nested->second->open_summary->result_type->is_closed()) {
           uint32_t target_occurrence = 0;
@@ -21430,7 +21506,7 @@ class Checker {
       actual_types.push_back(actual_results.back().projection());
     }
     if (function->second->open_summary &&
-        function->second->open_summary->complete) {
+        function->second->open_summary->scheme_complete) {
       const auto& summary = *function->second->open_summary;
       for (const auto& requirement : summary.requirements) {
         if (requirement.kind != moss::RequirementKind::Operator ||
@@ -21662,7 +21738,7 @@ class Checker {
       std::optional<OpenCallResultFacts> nested_result;
       std::optional<OpenCallResultFacts> returned_result;
       if (expected_open_result && function->second->open_summary &&
-          function->second->open_summary->complete) {
+          function->second->open_summary->scheme_complete) {
         nested_result = close_open_result_summary(
             line, *function->second, actual_types, expected_open_result);
         open_result = &*nested_result;
@@ -21700,7 +21776,7 @@ class Checker {
       if (!open_result && current_check_result_function_ &&
           checking_specialization_ &&
           function->second->open_summary &&
-          function->second->open_summary->complete) {
+          function->second->open_summary->scheme_complete) {
         const string* result_expression = current_check_statement_ &&
             current_check_statement_->kind == Stmt::Kind::Return
             ? &current_check_statement_->a
@@ -22257,6 +22333,13 @@ class Checker {
                                  const TypeEnv& env) {
     auto parsed = parse_functional_pipeline(expression);
     if (!parsed) return false;
+    if (current_body_types_ && !checking_specialization_ &&
+        !current_body_types_->active_expression_occurrences.empty()) {
+      auto& occurrence = current_body_types_->expression_occurrences.at(
+          current_body_types_->active_expression_occurrences.back());
+      occurrence.operation_id = "functional-pipeline-v1";
+      occurrence.source_operands = {parsed->source};
+    }
     // Retain checker-owned operation identities before an open generic
     // pipeline defers concrete admission to specialization. Later body
     // operations may refine the same source variable (for example indexing).
@@ -22278,6 +22361,9 @@ class Checker {
     auto capture_deferred_pipeline_stages = [&]() {
       if (!current_body_types_ || checking_specialization_ ||
           current_body_types_->active_expression_occurrences.empty()) return;
+      const auto pipeline_id =
+          current_body_types_->active_expression_occurrences.back();
+      bool stages_resolved = true;
       for (size_t index = 0; index < parsed->stages.size(); ++index) {
         const auto& stage = parsed->stages[index];
         string source = functional_node_name(stage.kind);
@@ -22299,6 +22385,36 @@ class Checker {
         occurrence.source_operands = stage.arguments;
         occurrence.input_type.clear();
         occurrence.output_type.clear();
+        const auto operation = std::find_if(
+            current_body_types_->open_operations.begin(),
+            current_body_types_->open_operations.end(),
+            [&](const auto& fact) {
+              return fact.expression_occurrence_id == pipeline_id &&
+                  fact.occurrence_ordinal == index;
+            });
+        if (operation != current_body_types_->open_operations.end() &&
+            operation->result &&
+            operation->operation_id == "builtin:collection-count-v1" &&
+            stage.kind == FunctionalNodeKind::Count) {
+          occurrence.semantic_target_id = operation->operation_id;
+          occurrence.output_type_ref = current_body_types_->solver.resolve(
+              operation->result);
+          occurrence.output_type = occurrence.output_type_ref
+              ? occurrence.output_type_ref->to_canonical_string() : "";
+          occurrence.input_type_ref = operation->receiver
+              ? current_body_types_->solver.resolve(operation->receiver)
+              : nullptr;
+          occurrence.input_type = occurrence.input_type_ref
+              ? occurrence.input_type_ref->to_canonical_string() : "";
+          occurrence.checked_type = occurrence.output_type_ref;
+          stages_resolved = stages_resolved &&
+              occurrence.input_type_ref && occurrence.output_type_ref;
+          if (parsed->stages.size() == 1)
+            current_body_types_->expression_occurrences.at(pipeline_id)
+                .checked_type = occurrence.output_type_ref;
+        } else {
+          stages_resolved = false;
+        }
         size_t callable_index = stage.kind == FunctionalNodeKind::Reduce
             ? 1 : 0;
         if (callable_index < stage.arguments.size()) {
@@ -22336,9 +22452,10 @@ class Checker {
                 callable_function->second->semantic_callable_id;
           }
         }
-        current_body_types_->expression_occurrence_ledger_complete = false;
         current_body_types_->finish_child_expression(id);
       }
+      if (!stages_resolved)
+        current_body_types_->expression_occurrence_ledger_complete = false;
     };
     auto source_expr = inferred_expr(parsed->source, env);
     if (source_expr) {
@@ -22595,13 +22712,43 @@ class Checker {
     if (!left) left = inferred_expr_term(left_expression, env);
     auto right = current_body_types_->known_expression(right_expression);
     if (!right) right = inferred_expr_term(right_expression, env);
+    if (!current_body_types_->active_expression_occurrences.empty()) {
+      const auto parent = current_body_types_->active_expression_occurrences.back();
+      for (const auto& child : current_body_types_->expression_occurrences) {
+        if (child.parent_id != parent || !child.checked_type) continue;
+        if (!left && child.child_role == "left" &&
+            trim(child.source_expression) == trim(left_expression))
+          left = child.checked_type;
+        if (!right && child.child_role == "right" &&
+            trim(child.source_expression) == trim(right_expression))
+          right = child.checked_type;
+      }
+    }
     if (!left || !right) return;
     auto resolved_left = current_body_types_->solver.resolve(left);
     auto resolved_right = current_body_types_->solver.resolve(right);
     if (!resolved_left || !resolved_right ||
         (resolved_left->is_closed() && resolved_right->is_closed())) return;
+    moss::TypeRef result;
+    if (operation_id == "+" || operation_id == "-" ||
+        operation_id == "*" || operation_id == "/" ||
+        operation_id == "%") {
+      // Generic arithmetic's checked operator contract returns the receiver
+      // type. Keep that solver term on the exact binary occurrence; later
+      // lowerers must not reconstruct it from source spelling.
+      result = left;
+    } else if (operation_id == "==" || operation_id == "!=" ||
+               operation_id == "<" || operation_id == "<=" ||
+               operation_id == ">" || operation_id == ">=") {
+      result = moss::Type::primitive("bool");
+    } else if (operation_id == "|" || operation_id == "^" ||
+               operation_id == "&" || operation_id == "<<" ||
+               operation_id == ">>") {
+      result = moss::Type::primitive("int");
+    }
     current_body_types_->attach_open_operation({
-        "operator:" + operation_id, left, {right}, nullptr, line});
+        "operator:" + operation_id, left, {right}, result, line});
+    if (result) current_body_types_->retain_active_expression_type(result);
   }
 
   void retain_open_unary_operation(
@@ -22712,6 +22859,9 @@ class Checker {
                 auto term = checked_expression_term(source, env);
                 if (!term) term = occurrence_state->known_expression(source);
                 if (!term) term = inferred_expr_term(source, env);
+                if (!term)
+                  term = occurrence_state->expression_occurrences.at(id)
+                      .checked_type;
                 if (!term && current_check_result_function_ &&
                     current_check_result_function_->open_summary) {
                   for (std::size_t index = 0;
@@ -22738,7 +22888,7 @@ class Checker {
                       &checked_function.body.front() ==
                           current_check_statement_ &&
                       checked_function.body.front().kind == Stmt::Kind::Return &&
-                      checked_function.open_summary->complete &&
+                      checked_function.open_summary->scheme_complete &&
                       checked_function.open_summary->result_type &&
                       checked_function.open_summary->result_type->kind ==
                           moss::TypeKind::Builtin &&
@@ -22913,7 +23063,8 @@ class Checker {
       return;
     }
     if (check_functional_pipeline(line, original, env)) {
-      mark_active_expression(OccurrenceKind::Pipeline);
+      mark_active_expression(OccurrenceKind::Pipeline,
+                             "functional-pipeline-v1");
       return;
     }
     string value = normalize_pipeline(std::move(original));
@@ -23574,8 +23725,10 @@ class Checker {
         };
         bool float_literal = all_digits(digits) && (field.empty() || all_digits(field) ||
             exponent(field) || fraction_exponent(field));
-        if (!float_literal)
+        if (!float_literal) {
           mark_active_expression(OccurrenceKind::Field, "field:" + field);
+          check_expression(line, base, env, {}, "receiver");
+        }
         if (receiver_type && !float_literal && (plain_identifier(field) || all_digits(field))) {
           // P25-S-ARCH-024: a projection must name a declared record field;
           // compiler-defined values have no fields.
@@ -23601,10 +23754,27 @@ class Checker {
                 "UNKNOWN_FIELD");
           }
         }
-        if (receiver_type && objects_.count(canonical_type_name(*receiver_type))) {
-          check_expression(line, value.substr(0, dot), env, {}, "receiver");
+        const ObjectType* field_owner = nullptr;
+        if (receiver_type) {
+          auto object = objects_.find(canonical_type_name(*receiver_type));
+          if (object != objects_.end()) field_owner = object->second;
+        }
+        if (!field_owner) {
+          auto receiver_term = current_body_types_
+              ? current_body_types_->known_expression(base) : nullptr;
+          if (!receiver_term) receiver_term = inferred_expr_term(base, env);
+          auto resolved_receiver = receiver_term && current_body_types_
+              ? current_body_types_->solver.resolve(receiver_term)
+              : receiver_term;
+          if (resolved_receiver && resolved_receiver->declaration) {
+            auto object = objects_.find(
+                resolved_receiver->declaration->program_name);
+            if (object != objects_.end()) field_owner = object->second;
+          }
+        }
+        if (field_owner) {
           string field_name = trim(value.substr(dot + 1));
-          const ObjectType* obj = objects_.at(canonical_type_name(*receiver_type));
+          const ObjectType* obj = field_owner;
           auto it = std::find_if(obj->fields.begin(), obj->fields.end(),
               [&](const Field& f) { return f.name == field_name; });
           if (it == obj->fields.end()) {
@@ -23631,6 +23801,19 @@ class Checker {
                   "' is private to its defining module",
                   "FIELD_VISIBILITY_ERROR");
             }
+          }
+          if (it != obj->fields.end() && current_body_types_ &&
+              !checking_specialization_ &&
+              !current_body_types_->active_expression_occurrences.empty()) {
+            auto& occurrence = current_body_types_->expression_occurrences.at(
+                current_body_types_->active_expression_occurrences.back());
+            const string type_name = obj->declaration_name.empty()
+                ? obj->name : obj->declaration_name;
+            occurrence.semantic_target_id = moss::declaration_identity(
+                moss::DeclarationKind::Record,
+                program_module_identity(p_, obj->defining_module), type_name);
+            occurrence.semantic_target_ordinal = static_cast<std::uint32_t>(
+                std::distance(obj->fields.begin(), it));
           }
         }
       }
@@ -23735,6 +23918,32 @@ class Checker {
         return;
       }
       if (objects_.count(callee)) {
+        if (current_body_types_ && !checking_specialization_ &&
+            !current_body_types_->active_expression_occurrences.empty()) {
+          auto& occurrence = current_body_types_->expression_occurrences.at(
+              current_body_types_->active_expression_occurrences.back());
+          const ObjectType& object = *objects_.at(callee);
+          const string type_name = object.declaration_name.empty()
+              ? object.name : object.declaration_name;
+          occurrence.semantic_target_id = moss::declaration_identity(
+              moss::DeclarationKind::Record,
+              program_module_identity(p_, object.defining_module), type_name);
+          for (const auto& argument : args) {
+            string field_name, field_value;
+            if (!parse_named_argument(argument, field_name, field_value)) {
+              occurrence.semantic_operand_ordinals.push_back(UINT32_MAX);
+              continue;
+            }
+            auto field = std::find_if(object.fields.begin(), object.fields.end(),
+                [&](const Field& candidate) {
+                  return candidate.name == field_name;
+                });
+            occurrence.semantic_operand_ordinals.push_back(
+                field == object.fields.end() ? UINT32_MAX :
+                    static_cast<std::uint32_t>(
+                        std::distance(object.fields.begin(), field)));
+          }
+        }
         constrain_constructor_fields(line, value, env);
         std::set<string> supplied;
         for (size_t index = 0; index < args.size(); ++index) {
@@ -25386,7 +25595,10 @@ class Checker {
             checked_types.expression_occurrence_ledger_complete = false;
           break;
         case BodyTypeState::ExpressionOccurrence::Kind::Field:
-          if (!has_roles({"receiver"}))
+          if (!has_roles({"receiver"}) ||
+              occurrence.semantic_target_id.empty() ||
+              occurrence.semantic_target_ordinal == UINT32_MAX ||
+              !occurrence.checked_type)
             checked_types.expression_occurrence_ledger_complete = false;
           break;
         case BodyTypeState::ExpressionOccurrence::Kind::Index:
@@ -25462,10 +25674,77 @@ class Checker {
             checked_types.expression_occurrence_ledger_complete = false;
           break;
         }
-        case BodyTypeState::ExpressionOccurrence::Kind::CollectionLiteral:
-        case BodyTypeState::ExpressionOccurrence::Kind::Pipeline:
+        case BodyTypeState::ExpressionOccurrence::Kind::Pipeline: {
+          vector<string> expected{"pipeline-source"};
+          for (std::size_t index = 0; index + 1 < children.size(); ++index)
+            expected.push_back("stage:" + std::to_string(index));
+          const bool one_count_stage = children.size() == 2 &&
+              occurrence.operation_id == "functional-pipeline-v1" &&
+              occurrence.source_operands.size() == 1 &&
+              occurrence.checked_type && occurrence.checked_type->is_closed();
+          const auto& stage = children.size() == 2
+              ? checked_types.expression_occurrences[children[1]]
+              : occurrence;
+          const auto& source = children.size() == 2
+              ? checked_types.expression_occurrences[children[0]]
+              : occurrence;
+          if (!has_roles(expected) || !one_count_stage ||
+              stage.kind !=
+                  BodyTypeState::ExpressionOccurrence::Kind::PipelineStage ||
+              stage.operation_id != "functional:Count" ||
+              stage.semantic_target_id != "builtin:collection-count-v1" ||
+              !stage.input_type_ref || !stage.output_type_ref ||
+              !source.checked_type ||
+              !stage.input_type_ref->structurally_equal(
+                  *source.checked_type) ||
+              !stage.output_type_ref->is_closed() ||
+              !stage.checked_type ||
+              !stage.checked_type->structurally_equal(
+                  *stage.output_type_ref) ||
+              !occurrence.checked_type->structurally_equal(
+                  *stage.output_type_ref) ||
+              !same_type(stage.output_type, "int"))
+            checked_types.expression_occurrence_ledger_complete = false;
+          break;
+        }
         case BodyTypeState::ExpressionOccurrence::Kind::PipelineStage:
-        case BodyTypeState::ExpressionOccurrence::Kind::Constructor:
+          if (occurrence.operation_id != "functional:Count" ||
+              occurrence.semantic_target_id !=
+                  "builtin:collection-count-v1" ||
+              !occurrence.input_type_ref || !occurrence.output_type_ref ||
+              !occurrence.checked_type)
+            checked_types.expression_occurrence_ledger_complete = false;
+          break;
+        case BodyTypeState::ExpressionOccurrence::Kind::Constructor: {
+          bool valid = occurrence.checked_type &&
+              occurrence.checked_type->kind == moss::TypeKind::NominalInstance &&
+              occurrence.checked_type->declaration &&
+              occurrence.semantic_target_id ==
+                  occurrence.checked_type->declaration->id &&
+              occurrence.semantic_operand_ordinals.size() == children.size() &&
+              occurrence.source_operands.size() == children.size();
+          vector<string> expected;
+          if (valid) {
+            const auto& fields = occurrence.checked_type->declaration->fields;
+            for (std::size_t index = 0; index < children.size(); ++index) {
+              const auto ordinal = occurrence.semantic_operand_ordinals[index];
+              if (ordinal >= fields.size()) {
+                valid = false;
+                continue;
+              }
+              expected.push_back("field:" + fields[ordinal].name);
+              const auto& child = checked_types.expression_occurrences[
+                  children[index]];
+              if (!child.checked_type ||
+                  child.child_role != expected.back())
+                valid = false;
+            }
+          }
+          if (!valid || !has_roles(expected))
+            checked_types.expression_occurrence_ledger_complete = false;
+          break;
+        }
+        case BodyTypeState::ExpressionOccurrence::Kind::CollectionLiteral:
         case BodyTypeState::ExpressionOccurrence::Kind::Message:
           // These forms need richer source and semantic-fact contracts than a
           // child-role list. Keep the ledger closed until each contract is
@@ -25491,6 +25770,22 @@ class Checker {
       if (!linked.completed || !linked_operations[occurrence].insert(
               operation.occurrence_ordinal).second)
         checked_types.expression_occurrence_ledger_complete = false;
+      if (starts_with(operation.operation_id, "operator:")) {
+        const string expected = operation.operation_id.substr(9);
+        if (linked.kind != BodyTypeState::ExpressionOccurrence::Kind::Binary ||
+            linked.operation_id != expected || !operation.result ||
+            !linked.checked_type ||
+            !linked.checked_type->structurally_equal(
+                *checked_types.solver.resolve(operation.result)))
+          checked_types.expression_occurrence_ledger_complete = false;
+      } else if (operation.operation_id ==
+                 "builtin:collection-count-v1") {
+        if (linked.kind != BodyTypeState::ExpressionOccurrence::Kind::Pipeline ||
+            !operation.result || !linked.checked_type ||
+            !linked.checked_type->structurally_equal(
+                *checked_types.solver.resolve(operation.result)))
+          checked_types.expression_occurrence_ledger_complete = false;
+      }
     }
     for (const auto& requirement : checked_types.open_operator_requirements) {
       if (requirement.expression_occurrence_id >=
