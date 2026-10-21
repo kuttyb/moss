@@ -3941,7 +3941,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
             checked_projection_subset = false;
         } else if (statement.kind == checked_ir::StmtKind::If) {
           contains_if = true;
-        } else if (statement.kind != checked_ir::StmtKind::Return) {
+        } else if (statement.kind != checked_ir::StmtKind::Return &&
+                   statement.kind != checked_ir::StmtKind::Assign) {
           checked_projection_subset = false;
         }
         collect_local_types(statement.then_branch);
@@ -3956,7 +3957,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
         std::all_of(statements.begin(), std::prev(statements.end()),
             [](const checked_ir::Stmt& statement) {
           return (statement.kind == checked_ir::StmtKind::Let ||
-                  statement.kind == checked_ir::StmtKind::Var) &&
+                  statement.kind == checked_ir::StmtKind::Var ||
+                  statement.kind == checked_ir::StmtKind::Assign) &&
               statement.expr.has_value();
         });
     const bool checked_if_body = contains_if && checked_projection_subset;
@@ -4089,6 +4091,17 @@ static void project_imported_h3_checked_bodies(Program& program) {
           statement.b = *expression;
           statement.text = (statement.kind == Stmt::Kind::Var ? "var " : "let ") +
               statement.a + " = " + statement.b;
+          projected.push_back(std::move(statement));
+          return true;
+        }
+        if (checked.kind == checked_ir::StmtKind::Assign) {
+          if (!expression || checked.local_ordinal >= local_names.size() ||
+              !checked_local_types.count(checked.local_ordinal))
+            return false;
+          statement.kind = Stmt::Kind::Assign;
+          statement.a = local_names[checked.local_ordinal];
+          statement.b = *expression;
+          statement.text = statement.a + " = " + statement.b;
           projected.push_back(std::move(statement));
           return true;
         }
@@ -6220,10 +6233,53 @@ class Checker {
           !node.bindings.front().type ||
           local_ordinals.count(node.bindings.front().identity))
         return false;
+      const auto binding_fact = state.binding_facts.find(&source_statement);
+      if (binding_fact == state.binding_facts.end() ||
+          !binding_fact->second.introduced ||
+          binding_fact->second.mutable_binding !=
+              node.bindings.front().mutable_binding ||
+          binding_fact->second.identity.empty())
+        return false;
       const auto ordinal = static_cast<std::uint32_t>(local_types.size());
       local_ordinals.emplace(node.bindings.front().identity, ordinal);
+      auto [checker_identity, checker_identity_inserted] =
+          local_ordinals.emplace(binding_fact->second.identity, ordinal);
+      if (!checker_identity_inserted && checker_identity->second != ordinal)
+        return false;
       local_types.push_back(checked_body_type(node.bindings.front().type));
       if (!local_types.back()) return false;
+    }
+    // Checker writes create a fresh lexical binding identity even when the
+    // value occupies the same mutable local slot. Preserve that identity
+    // version as an alias to the slot only when the assignment's retained
+    // prior binding fact and post-write binding occurrence agree exactly.
+    for (const auto& source_statement : function.body) {
+      if (source_statement.kind != Stmt::Kind::Assign ||
+          !simple_identifier(source_statement.a)) continue;
+      const auto fact = state.binding_facts.find(&source_statement);
+      const auto statement = state.statement_occurrence_ids.find(
+          &source_statement);
+      if (fact == state.binding_facts.end() || fact->second.introduced ||
+          !fact->second.mutable_binding || fact->second.identity.empty() ||
+          statement == state.statement_occurrence_ids.end())
+        continue;
+      const auto& node = state.statement_occurrences.at(statement->second);
+      const auto local = local_ordinals.find(fact->second.identity);
+      const auto prior_type = checked_body_type(fact->second.type);
+      const auto post_type = node.bindings.size() == 1
+          ? checked_body_type(node.bindings.front().type) : nullptr;
+      if (node.bindings.size() != 1 || local == local_ordinals.end() ||
+          node.bindings.front().name != source_statement.a ||
+          node.bindings.front().identity.empty() ||
+          !node.bindings.front().mutable_binding ||
+          !node.bindings.front().type || !prior_type || !post_type ||
+          !local_types[local->second] ||
+          !prior_type->structurally_equal(*local_types[local->second]) ||
+          !post_type->structurally_equal(*local_types[local->second]))
+        return false;
+      auto [alias, inserted] = local_ordinals.emplace(
+          node.bindings.front().identity, local->second);
+      if (!inserted && alias->second != local->second) return false;
     }
     std::function<std::optional<checked_ir::Expr>(std::uint32_t, unsigned)>
         lower_expression;
@@ -6578,6 +6634,28 @@ class Checker {
             return std::nullopt;
           lowered.kind = checked_ir::StmtKind::Return;
           lowered.type = summary.result_type;
+          lowered.expr = std::move(*expression);
+          return lowered;
+        }
+        case Stmt::Kind::Assign: {
+          // Reassignment is represented only when the checker retained the
+          // existing mutable binding identity. A first assignment, field,
+          // or indexed target needs a different checked-body node and must
+          // remain unavailable here.
+          if (!simple_identifier(source.a)) return std::nullopt;
+          const auto fact = state.binding_facts.find(&source);
+          auto expression = expression_for("initializer");
+          if (fact == state.binding_facts.end() || fact->second.introduced ||
+              !fact->second.mutable_binding || fact->second.identity.empty() ||
+              !expression || !expression->type)
+            return std::nullopt;
+          const auto local = local_ordinals.find(fact->second.identity);
+          if (local == local_ordinals.end() || local->second >= local_types.size() ||
+              !local_types[local->second] ||
+              !local_types[local->second]->structurally_equal(*expression->type))
+            return std::nullopt;
+          lowered.kind = checked_ir::StmtKind::Assign;
+          lowered.local_ordinal = local->second;
           lowered.expr = std::move(*expression);
           return lowered;
         }

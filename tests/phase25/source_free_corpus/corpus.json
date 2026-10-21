@@ -74,6 +74,16 @@
       "evidence": "R1 generalized occurrence lowering emits a canonical two-statement body; source-free import removes provider source, poisons the legacy generic_stmt body, requires checked-body projection, and executes Int and Float specializations."
     },
     {
+      "id": "mutable-local-reassignment",
+      "priority": "P1-essential",
+      "category": "generic body mutation",
+      "provider": "module Service\n\nexport fn fresh(first: Int, second: Int, ignored):\n  var result = first\n  result = second\n  return result\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(17, 23, 0)\n  echo Service.fresh(8, 41, \"moss\")\n",
+      "expected_output": "23\n41\n",
+      "checked_body_status": "checked-body supported; local reassignment preserves the checker binding identity and mutable declaration before specialization of an independent generic parameter",
+      "evidence": "R1 canonical occurrence lowering retains a local Assign only for the exact checker binding identity and mutable declaration. Source-free acceptance removes provider source and generic_stmt, requires projection, and executes Int and String specializations through an independent generic argument."
+    },
+    {
       "id": "generic-range-iteration",
       "priority": "P1-sdk-essential",
       "category": "other: generic iterator body",
