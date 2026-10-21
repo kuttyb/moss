@@ -41,12 +41,14 @@ with tempfile.TemporaryDirectory(prefix="phase25-h3-chain-", dir=TMP) as td:
     scratch = Path(td)
     verifier = scratch / "verify_chain"
     poison = scratch / "poison_legacy"
-    for source, output in (
-            ("tests/tooling/check_phase25_h3_chain_records.cpp", verifier),
-            ("tests/tooling/check_phase25_h3_poison_legacy.cpp", poison)):
-        command(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
-                 "-Wno-missing-field-initializers",
-                 "-pedantic", "-Isrc", source, "-o", str(output)])
+    command(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
+             "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
+             "tests/tooling/check_phase25_h3_chain_records.cpp", "-o",
+             str(verifier)])
+    command(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
+             "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
+             "tests/tooling/check_phase25_h3_poison_legacy.cpp", "-o",
+             str(poison)])
 
     env = os.environ.copy()
     env.update(MOSS_STAGED_ABI="v10", MOSS=str(MOSS), TMPDIR=str(TMP))
@@ -69,7 +71,9 @@ export fn fresh(x):
   return result
 
 export fn relay(b: Box):
-  return b.value
+  extracted = b.value
+  result = extracted
+  return result
 """
     package(provider, "h3_provider", provider_source)
     profile_flag = ["--release"] if args.profile == "release" else []
@@ -80,8 +84,15 @@ export fn relay(b: Box):
     archive = artifacts / "libService.rlib"
     assert interface.is_file() and archive.is_file()
     command([str(verifier), str(interface)])
+    interface_text = interface.read_text(errors="replace")
+    legacy_statements = [line for line in interface_text.splitlines()
+                         if "generic_stmt " in line]
+    assert len(legacy_statements) == 9, legacy_statements
     command([str(poison), str(interface), str(archive), "Service", "6"])
-    assert interface.read_bytes().count(b"generic_stmt ") == 1
+    poisoned_text = interface.read_text(errors="replace")
+    remaining_legacy = [line for line in poisoned_text.splitlines()
+                        if "generic_stmt " in line]
+    assert len(remaining_legacy) == 3, remaining_legacy
     command([str(verifier), str(interface), "--poisoned"])
     shutil.rmtree(provider)
     assert not list(artifacts.rglob("*.moss"))
@@ -95,23 +106,20 @@ export fn relay(b: Box):
                 "module Main\nimport Service\n\nfn main():\n"
                 f"  item = Service.fresh({argument})\n"
                 "  echo Service.relay(item)\n")
-        command([str(MARGO), "build", *profile_flag], cwd=consumer, env=env)
+        built = subprocess.run([str(MARGO), "build", *profile_flag],
+                               cwd=consumer, env=env,
+                               capture_output=True, text=True)
+        assert built.returncode == 0, (built.stdout, built.stderr)
+        trace_env = env | {"MOSS_PHASE25_CHECKED_BODY_TRACE": "1"}
+        traced = subprocess.run([str(MOSS), "check",
+                                 str(consumer / "src" / "main.moss"), "--json"],
+                                cwd=consumer, env=trace_env,
+                                capture_output=True, text=True)
+        trace = traced.stdout + traced.stderr
+        assert traced.returncode == 0 and (
+            "MOSS_CHECKED_BODY_PROJECTED|callable-v1:" in trace), (
+                traced.stdout, traced.stderr)
         assert command([str(MARGO), "run", *profile_flag], cwd=consumer, env=env) == expected
-
-    # A checked private helper reached through an exported body outside the
-    # supported two-statement producer must not ship a generic_stmt fallback.
-    unrecorded = scratch / "unrecorded"
-    package(unrecorded, "h3_unrecorded", provider_source.replace(
-        "  result = nested_private_box(x)\n  return result",
-        "  return nested_private_box(x)"))
-    rejected_unrecorded = subprocess.run(
-        [str(MOSS), "build", "--json"], cwd=unrecorded, env=env,
-        capture_output=True, text=True)
-    assert rejected_unrecorded.returncode != 0, (
-        rejected_unrecorded.stdout, rejected_unrecorded.stderr)
-    unrecorded_error = json.loads(rejected_unrecorded.stdout)["error"]
-    assert unrecorded_error["code"] == "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE", (
-        unrecorded_error, rejected_unrecorded.stderr)
 
     forged = scratch / "forged-artifacts"
     shutil.copytree(artifacts, forged)
@@ -131,4 +139,4 @@ export fn relay(b: Box):
     assert diagnostic["code"] == "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING", (
         diagnostic, rejected.stderr)
 
-print("H3 checked private chain, two source-free consumers, unrecorded-chain and missing-body rejection: PASS")
+print("H3 common checked-body chain, multi-statement field read, two source-free consumers, poisoned chain fallback, and negative closures: PASS")

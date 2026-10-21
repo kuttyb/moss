@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
         at += std::string("generic_stmt ").size();
       }
     }
-    assert(remaining == 1);
+    assert(remaining == 3);
   }
   for (const auto& record : iface.private_semantic_dependencies) {
     if (record.id.rfind("checked-body-v1:", 0) == 0) {
@@ -83,7 +83,7 @@ int main(int argc, char** argv) {
            summary.result.arguments[0].ordinal == 0 &&
            summary.body_semantic_hash == body.semantic_hash &&
            body.dependencies.size() == 1);
-    auto decoded = moss::checked_ir::decode_h3_checked_body_v1(
+    auto decoded = moss::checked_ir::decode_checked_body_v1(
         body.checked_ir_bytes, context, {variable}, result,
         body.semantic_hash);
     auto extracted = moss::extract_semantic_dependencies(decoded);
@@ -91,8 +91,15 @@ int main(int argc, char** argv) {
            extracted[0].target_id == body.dependencies[0].target_id);
     if (id == base + "private_box") {
       assert(summary.dependencies.empty() &&
+             decoded.size() == 2 &&
+             decoded[0].kind == moss::checked_ir::StmtKind::Var &&
+             decoded[0].expr &&
              decoded[0].expr->kind ==
                  moss::checked_ir::ExprKind::NominalConstruct &&
+             decoded[0].expr->operands.size() == 1 &&
+             decoded[0].expr->operands[0].kind ==
+                 moss::checked_ir::ExprKind::Parameter &&
+             decoded[1].kind == moss::checked_ir::StmtKind::Return &&
              body.dependencies[0].kind ==
                  moss::abi_v10::CheckedBodyRecord::Dependency::Kind::NominalType &&
              body.dependencies[0].target_id == nominal_id &&
@@ -101,8 +108,12 @@ int main(int argc, char** argv) {
     } else {
       const std::string callee = id == base + "fresh"
           ? base + "nested_private_box" : base + "private_box";
-      assert(decoded[0].expr->kind == moss::checked_ir::ExprKind::Call &&
+      assert(decoded.size() == 2 &&
+             decoded[0].kind == moss::checked_ir::StmtKind::Var &&
+             decoded[0].expr &&
+             decoded[0].expr->kind == moss::checked_ir::ExprKind::Call &&
              decoded[0].expr->semantic_target_id == callee &&
+             decoded[1].kind == moss::checked_ir::StmtKind::Return &&
              summary.dependencies.size() == 1 &&
              summary.dependencies[0].first == callee &&
              summary.dependencies[0].second ==
@@ -135,14 +146,19 @@ int main(int argc, char** argv) {
          relay_body.dependencies.front().target_id == nominal_id &&
          relay_body.dependencies.front().expected_hash ==
              nominal.representation_hash);
-  auto relay_decoded = moss::checked_ir::decode_h3_checked_body_v1(
+  auto relay_decoded = moss::checked_ir::decode_checked_body_v1(
       relay_body.checked_ir_bytes, context, {result}, variable,
       relay_body.semantic_hash);
-  assert(relay_decoded.size() == 1 && relay_decoded.front().expr &&
-         relay_decoded.front().expr->kind ==
-             moss::checked_ir::ExprKind::Field &&
-         relay_decoded.front().expr->semantic_target_id == nominal_id &&
-         relay_decoded.front().expr->member_ordinal == 0 &&
-         relay_decoded.front().expr->type->structurally_equal(*variable));
+  assert(relay_decoded.size() == 3 &&
+         relay_decoded[0].kind == moss::checked_ir::StmtKind::Var &&
+         relay_decoded[0].expr &&
+         relay_decoded[0].expr->kind == moss::checked_ir::ExprKind::Field &&
+         relay_decoded[0].expr->semantic_target_id == nominal_id &&
+         relay_decoded[0].expr->member_ordinal == 0 &&
+         relay_decoded[0].expr->type->structurally_equal(*variable) &&
+         relay_decoded[1].kind == moss::checked_ir::StmtKind::Var &&
+         relay_decoded[1].expr &&
+         relay_decoded[1].expr->kind == moss::checked_ir::ExprKind::LocalRead &&
+         relay_decoded[2].kind == moss::checked_ir::StmtKind::Return);
   std::cout << "H3 checked private chain records: PASS\n";
 }

@@ -2967,290 +2967,33 @@ static std::optional<CheckedArithmeticBody> checked_arithmetic_body(
   return body;
 }
 
-// Bridge the checked straight-line local-result form into the versioned rich
-// body IR. Each parameter, nominal field slot, and callee comes from the
-// retained typed summary and exact checker edge; source spelling is used only
-// to select the already checked occurrence.
-static std::optional<CheckedPrivateChainBody>
-checked_private_chain_body_legacy_parity(
-    const Program& program, const Function& function) {
-  if (!function.open_summary || !function.open_summary->scheme_complete)
-    return std::nullopt;
-  const auto& summary = *function.open_summary;
-  if (!summary.result_type ||
-      summary.parameter_types.size() != function.params.size())
-    return std::nullopt;
-
-  // Direct expression returns already have checker-owned identities, ordinals,
-  // and TypeRefs in the retained body. Convert the supported parameter, field,
-  // and call nodes into the same checked IR and dependency closure used by the
-  // private-chain producer. In particular, a direct call remains a Call node;
-  // it is not rewritten into a source-derived local-result body.
-  if (function.body.size() == 1 &&
-      function.body.front().kind == Stmt::Kind::Return &&
-      function.checked_body_v1 &&
-      function.checked_body_v1->statements.size() == 1 &&
-      function.checked_body_v1->statements.front().kind ==
-          CheckedBodyStmtV1::Kind::Return) {
-    auto returned = from_legacy_stmt(
-        function.checked_body_v1->statements.front());
-    const auto& expression = returned.expr;
-    const bool typed_return = expression && expression->type &&
-        expression->type->structurally_equal(*summary.result_type);
-    bool supported_return = false;
-    if (typed_return && expression->kind == checked_ir::ExprKind::Parameter) {
-      supported_return = expression->ordinal < function.params.size() &&
-          expression->ordinal < summary.parameter_types.size() &&
-          summary.parameter_types[expression->ordinal] &&
-          expression->type->structurally_equal(
-              *summary.parameter_types[expression->ordinal]) &&
-          summary.semantic_dependencies.empty();
-    } else if (typed_return &&
-               expression->kind == checked_ir::ExprKind::Field) {
-      supported_return = expression->operands.size() == 1 &&
-          expression->operands.front().kind ==
-              checked_ir::ExprKind::Parameter &&
-          expression->operands.front().ordinal < function.params.size() &&
-          expression->operands.front().type &&
-          expression->operands.front().type->declaration &&
-          expression->semantic_target_id ==
-              expression->operands.front().type->declaration->id;
-    } else if (typed_return && expression->kind == checked_ir::ExprKind::Call &&
-               !expression->semantic_target_id.empty()) {
-      auto callee = std::find_if(program.functions.begin(), program.functions.end(),
-          [&](const Function& candidate) {
-        return candidate.semantic_callable_id == expression->semantic_target_id;
-      });
-      const bool exact_edge = callee != program.functions.end() &&
-          std::any_of(program.semantic_call_edges.begin(),
-              program.semantic_call_edges.end(), [&](const SemanticCallEdge& edge) {
-        return edge.source == "fn:" + function.name &&
-            edge.target == "fn:" + callee->name &&
-            edge.line == function.body.front().line &&
-            edge.invocation_kind == "ordinary_call" && edge.occurrence == 0 &&
-            edge.source_specialization_key.empty();
-      });
-      supported_return = exact_edge && callee->open_summary &&
-          callee->open_summary->scheme_complete &&
-          callee->params.size() == expression->operands.size() &&
-          callee->open_summary->parameter_types.size() ==
-              expression->operands.size();
-      if (supported_return)
-        for (std::size_t index = 0; index < expression->operands.size(); ++index) {
-          const auto& operand = expression->operands[index];
-          if (operand.kind != checked_ir::ExprKind::Parameter ||
-              operand.ordinal >= summary.parameter_types.size() ||
-              !summary.parameter_types[operand.ordinal] || !operand.type ||
-              !operand.type->structurally_equal(
-                  *summary.parameter_types[operand.ordinal]) ||
-              !callee->open_summary->parameter_types[index] ||
-              !operand.type->structurally_equal(
-                  *callee->open_summary->parameter_types[index])) {
-            supported_return = false;
-            break;
-          }
-        }
-      if (supported_return && callee->open_summary->result_type)
-        supported_return = expression->type->structurally_equal(
-            *callee->open_summary->result_type);
-    }
-    if (supported_return) {
-      const bool direct_field = expression->kind == checked_ir::ExprKind::Field;
-      const bool direct_call = expression->kind == checked_ir::ExprKind::Call;
-      const bool direct_parameter =
-          expression->kind == checked_ir::ExprKind::Parameter;
-      CheckedPrivateChainBody body;
-      body.statements.push_back(std::move(returned));
-      try {
-        body.semantic_hash = checked_ir::compute_checked_body_hash_v1(
-            body.statements);
-        body.dependencies = extract_semantic_dependencies(body.statements);
-      } catch (const std::invalid_argument&) {
-        return std::nullopt;
-      }
-      if ((direct_field && body.dependencies.size() == 1 &&
-           body.dependencies.front().kind ==
-               SemanticDependency::Kind::NominalType) ||
-          (direct_call && body.dependencies.size() == 1 &&
-           body.dependencies.front().kind ==
-               SemanticDependency::Kind::Callable) ||
-          (direct_parameter && body.dependencies.empty()))
-        return body;
-    }
-    return std::nullopt;
-  }
-
-  if (function.body.size() != 2 ||
-      function.body.back().kind != Stmt::Kind::Return ||
-      !plain_identifier(trim(function.body.back().a)) ||
-      (function.body.front().kind != Stmt::Kind::Let &&
-       function.body.front().kind != Stmt::Kind::Var &&
-       function.body.front().kind != Stmt::Kind::Assign) ||
-      trim(function.body.front().a) != trim(function.body.back().a) ||
-      function.body.front().indent != function.body.back().indent)
-    return std::nullopt;
-  string target;
-  vector<string> arguments;
-  if (!parse_simple_call(trim(function.body.front().b), target, arguments))
-    return std::nullopt;
-  string qualified = target;
-  auto function_by_name = [&](const string& name) -> const Function* {
-    auto found = std::find_if(program.functions.begin(), program.functions.end(),
-        [&](const Function& candidate) { return candidate.name == name; });
-    return found == program.functions.end() ? nullptr : &*found;
-  };
-  auto object_by_name = [&](const string& name) -> const ObjectType* {
-    auto found = std::find_if(program.objects.begin(), program.objects.end(),
-        [&](const ObjectType& candidate) { return candidate.name == name; });
-    return found == program.objects.end() ? nullptr : &*found;
-  };
-  if (!function_by_name(qualified) && !object_by_name(qualified) &&
-      !function.defining_module.empty())
-    qualified = function.defining_module + "__" + target;
-  auto parameter_expr = [&](const string& name)
-      -> std::optional<checked_ir::Expr> {
-    for (size_t index = 0; index < function.params.size(); ++index)
-      if (function.params[index].name == trim(name) &&
-          summary.parameter_types[index]) {
-        checked_ir::Expr expression;
-        expression.kind = checked_ir::ExprKind::Parameter;
-        expression.type = summary.parameter_types[index];
-        expression.ordinal = static_cast<std::uint32_t>(index);
-        return expression;
-      }
-    return std::nullopt;
-  };
-  checked_ir::Expr value;
-  value.type = summary.result_type;
-  if (const ObjectType* object = object_by_name(qualified)) {
-    if (summary.result_type->kind != TypeKind::NominalInstance ||
-        !summary.result_type->declaration ||
-        summary.result_type->name != object->name ||
-        arguments.size() != object->fields.size())
-      return std::nullopt;
-    value.kind = checked_ir::ExprKind::NominalConstruct;
-    value.semantic_target_id = summary.result_type->declaration->id;
-    for (const auto& field : object->fields) {
-      std::optional<checked_ir::Expr> operand;
-      for (const auto& argument : arguments) {
-        string name, expression;
-        if (parse_named_argument(argument, name, expression) &&
-            name == field.name) {
-          if (operand) return std::nullopt;
-          operand = parameter_expr(expression);
-        }
-      }
-      if (!operand) return std::nullopt;
-      value.operands.push_back(*operand);
-    }
-  } else if (const Function* callee = function_by_name(qualified)) {
-    if (!callee->open_summary || !callee->open_summary->scheme_complete ||
-        callee->semantic_callable_id.empty() ||
-        arguments.size() != callee->params.size())
-      return std::nullopt;
-    const bool exact_edge = std::any_of(
-        program.semantic_call_edges.begin(), program.semantic_call_edges.end(),
-        [&](const SemanticCallEdge& edge) {
-      return edge.source == "fn:" + function.name &&
-          edge.target == "fn:" + callee->name &&
-          edge.line == function.body.front().line &&
-          edge.invocation_kind == "ordinary_call" &&
-          edge.occurrence == 0 && edge.source_specialization_key.empty();
-    });
-    if (!exact_edge) return std::nullopt;
-    value.kind = checked_ir::ExprKind::Call;
-    value.semantic_target_id = callee->semantic_callable_id;
-    for (const auto& argument : arguments) {
-      auto operand = parameter_expr(argument);
-      if (!operand) return std::nullopt;
-      value.operands.push_back(*operand);
-    }
-  } else {
-    return std::nullopt;
-  }
-  checked_ir::Stmt bind;
-  bind.kind = function.body.front().kind == Stmt::Kind::Var ||
-          (function.body.front().kind == Stmt::Kind::Assign &&
-           function.checked_body_ir_v1_bytes.has_value())
-      ? checked_ir::StmtKind::Var : checked_ir::StmtKind::Let;
-  bind.type = summary.result_type;
-  bind.local_ordinal = 0;
-  bind.expr = value;
-  checked_ir::Expr local;
-  local.kind = checked_ir::ExprKind::LocalRead;
-  local.type = summary.result_type;
-  local.ordinal = 0;
-  checked_ir::Stmt returned;
-  returned.kind = checked_ir::StmtKind::Return;
-  returned.type = summary.result_type;
-  returned.expr = local;
-  CheckedPrivateChainBody body;
-  body.statements = {std::move(bind), std::move(returned)};
-  try {
-    body.semantic_hash = checked_ir::compute_checked_body_hash_v1(
-        body.statements);
-    body.dependencies = extract_semantic_dependencies(body.statements);
-  } catch (const std::invalid_argument&) {
-    return std::nullopt;
-  }
-  return body;
-}
-
-// H3 consumes the common occurrence lowerer's canonical bytes. Until the
-// old shape recognizer has been removed, require exact encoded-body and
-// dependency parity for every form it previously admitted. The shape path is
-// only a migration parity oracle; the returned producer input comes from the
-// checked occurrence lowerer and its retained hash.
-static std::optional<CheckedPrivateChainBody> checked_private_chain_body(
+// H3 producer input comes only from the occurrence lowerer's retained,
+// canonical checked-body-v1 bytes and hash.
+static std::optional<CheckedPrivateChainBody> common_checked_body(
     const Program& program, const Function& function) {
   if (!function.open_summary || !function.open_summary->scheme_complete ||
       !function.open_summary->occurrence_ledger_complete ||
-      !program.type_context) {
+      !function.checked_body_ir_v1_bytes ||
+      !function.checked_body_ir_v1_hash || !program.type_context)
     return std::nullopt;
-  }
-  auto parity = checked_private_chain_body_legacy_parity(program, function);
-  if (!parity) return std::nullopt;
-  // Some already admitted H3 constructor helpers do not yet have enough
-  // occurrence facts for the common lowerer. Keep their exact, bounded
-  // checked shape on the existing canonical producer path until that gap is
-  // closed; a function with common bytes must pass strict parity below.
-  if (!function.checked_body_ir_v1_bytes ||
-      !function.checked_body_ir_v1_hash)
-    return parity;
   const auto& summary = *function.open_summary;
-  vector<checked_ir::Stmt> common_statements;
   try {
-    common_statements = checked_ir::decode_checked_body_v1(
+    CheckedPrivateChainBody body;
+    body.statements = checked_ir::decode_checked_body_v1(
         *function.checked_body_ir_v1_bytes, *program.type_context,
         summary.parameter_types, summary.result_type,
         *function.checked_body_ir_v1_hash);
-    if (checked_ir::encode_checked_body_v1(common_statements) !=
+    if (checked_ir::encode_checked_body_v1(body.statements) !=
             *function.checked_body_ir_v1_bytes ||
-        checked_ir::compute_checked_body_hash_v1(common_statements) !=
+        checked_ir::compute_checked_body_hash_v1(body.statements) !=
             *function.checked_body_ir_v1_hash)
       return std::nullopt;
+    body.semantic_hash = *function.checked_body_ir_v1_hash;
+    body.dependencies = extract_semantic_dependencies(body.statements);
+    return body;
   } catch (const std::invalid_argument&) {
     return std::nullopt;
   }
-  try {
-    const auto parity_bytes = checked_ir::encode_checked_body_v1(parity->statements);
-    if (parity_bytes != *function.checked_body_ir_v1_bytes)
-      return std::nullopt;
-  } catch (const std::invalid_argument&) {
-    return std::nullopt;
-  }
-  auto dependencies = extract_semantic_dependencies(common_statements);
-  if (dependencies.size() != parity->dependencies.size())
-    return std::nullopt;
-  for (std::size_t index = 0; index < dependencies.size(); ++index)
-    if (dependencies[index].kind != parity->dependencies[index].kind ||
-        dependencies[index].target_id != parity->dependencies[index].target_id)
-      return std::nullopt;
-  CheckedPrivateChainBody common;
-  common.statements = std::move(common_statements);
-  common.dependencies = std::move(dependencies);
-  common.semantic_hash = *function.checked_body_ir_v1_hash;
-  return common;
 }
 
 static moss::TypeRef imported_abi_v10_type(
@@ -4183,6 +3926,26 @@ static void project_imported_h3_checked_bodies(Program& program) {
             if (!receiver || !index) return std::nullopt;
             return *receiver + "[" + *index + "]";
           }
+          case checked_ir::ExprKind::Field: {
+            if (expression.operands.size() != 1 ||
+                expression.semantic_target_id.empty() ||
+                expression.member_name.empty() ||
+                expression.member_ordinal == UINT32_MAX ||
+                !expression.operands.front().type ||
+                expression.operands.front().type->kind !=
+                    moss::TypeKind::NominalInstance ||
+                !expression.operands.front().type->declaration ||
+                expression.operands.front().type->declaration->id !=
+                    expression.semantic_target_id ||
+                expression.member_ordinal >=
+                    expression.operands.front().type->declaration->fields.size() ||
+                expression.operands.front().type->declaration->fields[
+                    expression.member_ordinal].name != expression.member_name)
+              return std::nullopt;
+            auto receiver = render(expression.operands.front(), depth + 1);
+            if (!receiver) return std::nullopt;
+            return *receiver + "." + expression.member_name;
+          }
           default: return std::nullopt;
         }
       };
@@ -4319,9 +4082,15 @@ static void project_imported_h3_checked_bodies(Program& program) {
     const bool checked_direct_vector_return =
         vector_literal_body_candidate && checked_projection_subset &&
         body.dependencies.empty();
+    const bool checked_nominal_field_body =
+        summary.dependencies.empty() && body.dependencies.size() == 1 &&
+        body.dependencies.front().kind ==
+            abi_v10::CheckedBodyRecord::Dependency::Kind::NominalType;
     if ((checked_straight_line || checked_if_body ||
          checked_direct_vector_return) &&
-        checked_projection_subset && body.dependencies.empty()) {
+        checked_projection_subset &&
+        (body.dependencies.empty() ||
+         (checked_straight_line && checked_nominal_field_body))) {
       const std::size_t local_count = checked_local_types.size();
       vector<string> local_names;
       for (std::size_t index = 0; index < local_count; ++index)
@@ -4425,6 +4194,26 @@ static void project_imported_h3_checked_bodies(Program& program) {
             auto index = render(expression.operands[1], depth + 1);
             if (!source || !index) return std::nullopt;
             return *source + "[" + *index + "]";
+          }
+          case checked_ir::ExprKind::Field: {
+            if (expression.operands.size() != 1 ||
+                expression.semantic_target_id.empty() ||
+                expression.member_name.empty() ||
+                expression.member_ordinal == UINT32_MAX ||
+                !expression.operands.front().type ||
+                expression.operands.front().type->kind !=
+                    moss::TypeKind::NominalInstance ||
+                !expression.operands.front().type->declaration ||
+                expression.operands.front().type->declaration->id !=
+                    expression.semantic_target_id ||
+                expression.member_ordinal >=
+                    expression.operands.front().type->declaration->fields.size() ||
+                expression.operands.front().type->declaration->fields[
+                    expression.member_ordinal].name != expression.member_name)
+              return std::nullopt;
+            auto receiver = render(expression.operands.front(), depth + 1);
+            if (!receiver) return std::nullopt;
+            return *receiver + "." + expression.member_name;
           }
           default: return std::nullopt;
         }
@@ -5977,7 +5766,6 @@ class Checker {
         std::set<string> visited;
         std::vector<const Function*> pending{&exported};
         bool reaches_private = false;
-        bool unsupported_multi_statement = false;
         bool rich_body_ready = true;
         string unavailable_body;
         while (!pending.empty()) {
@@ -5986,12 +5774,9 @@ class Checker {
           if (!visited.insert(current->name).second) continue;
           if (!current->exported) reaches_private = true;
           if (current->body.size() > 1) {
-            if (!checked_private_chain_body(p_, *current))
+            if (!common_checked_body(p_, *current))
               { rich_body_ready = false;
                 if (unavailable_body.empty()) unavailable_body = current->name; }
-            if (!current->open_summary || !current->open_summary->scheme_complete ||
-                !current->checked_body_v1)
-              unsupported_multi_statement = true;
           }
           for (const auto& edge : p_.semantic_call_edges) {
             if (edge.source != "fn:" + current->name ||
@@ -6002,8 +5787,7 @@ class Checker {
               pending.push_back(dependency->second);
           }
         }
-        if (reaches_private && unsupported_multi_statement &&
-            !rich_body_ready)
+        if (reaches_private && !rich_body_ready)
           err(exported.source_file, exported.line,
               "exported callable '" + exported.name +
                   "' reaches a private multi-statement body without "
@@ -6881,6 +6665,25 @@ class Checker {
       if (!actual || !relate_type(actual, summary.parameter_types[index]))
         return false;
     }
+    for (const auto& occurrence : state.expression_occurrences) {
+      if (occurrence.kind !=
+              BodyTypeState::ExpressionOccurrence::Kind::Identifier ||
+          !starts_with(occurrence.resolved_binding_id, "parameter:"))
+        continue;
+      std::size_t parameter = 0;
+      try {
+        parameter = static_cast<std::size_t>(std::stoul(
+            occurrence.resolved_binding_id.substr(10)));
+      } catch (const std::exception&) {
+        return false;
+      }
+      if (parameter >= function.params.size() ||
+          parameter >= summary.parameter_types.size() ||
+          !summary.parameter_types[parameter] ||
+          !relate_type(occurrence.checked_type,
+                       summary.parameter_types[parameter]))
+        return false;
+    }
     for (const auto& occurrence : state.expression_occurrences)
       if (occurrence.callable_result_relation &&
           (!occurrence.checked_type || !relate_type(
@@ -6917,6 +6720,103 @@ class Checker {
       }
       return type->is_closed() ? type : nullptr;
     };
+    std::unordered_map<string, moss::TypeRef> returned_local_types;
+    std::unordered_map<std::uint32_t, moss::TypeRef>
+        returned_initializer_types;
+    for (const auto& [slot, root_id] : state.expression_root_slots) {
+      if (slot.second != "return-value") continue;
+      const auto returned = std::find_if(
+          state.expression_occurrences.begin(),
+          state.expression_occurrences.end(), [&](const auto& candidate) {
+        return candidate.id == root_id && candidate.statement_id == slot.first;
+      });
+      if (returned == state.expression_occurrences.end() ||
+          returned->kind !=
+              BodyTypeState::ExpressionOccurrence::Kind::Identifier ||
+          returned->resolved_binding_id.empty() ||
+          starts_with(returned->resolved_binding_id, "parameter:"))
+        continue;
+      const BodyTypeState::StatementOccurrence* definition = nullptr;
+      std::size_t definitions = 0;
+      for (const auto& statement : state.statement_occurrences) {
+        const bool matches = statement.binding_identity ==
+                returned->resolved_binding_id ||
+            statement.assigned_binding_identity ==
+                returned->resolved_binding_id ||
+            std::any_of(statement.bindings.begin(), statement.bindings.end(),
+                [&](const auto& binding) {
+              return binding.identity == returned->resolved_binding_id;
+            });
+        if (matches) {
+          definition = &statement;
+          ++definitions;
+        }
+      }
+      if (definitions != 1 || !definition) return false;
+      const auto initializer = state.expression_root_slots.find(
+          {definition->id, "initializer"});
+      if (initializer == state.expression_root_slots.end()) return false;
+      const auto value = std::find_if(
+          state.expression_occurrences.begin(),
+          state.expression_occurrences.end(), [&](const auto& candidate) {
+        return candidate.id == initializer->second;
+      });
+      if (value == state.expression_occurrences.end()) return false;
+      vector<std::uint32_t> initializer_path{value->id};
+      const BodyTypeState::ExpressionOccurrence* checked_value = &*value;
+      while (checked_value->kind ==
+             BodyTypeState::ExpressionOccurrence::Kind::Group) {
+        const BodyTypeState::ExpressionOccurrence* nested = nullptr;
+        for (const auto& child : state.expression_occurrences)
+          if (child.parent_id == checked_value->id) {
+            if (nested) return false;
+            nested = &child;
+          }
+        if (!nested) return false;
+        checked_value = nested;
+        initializer_path.push_back(checked_value->id);
+      }
+      const auto returned_type = state.solver.resolve(returned->checked_type);
+      const auto binding_source = definition->binding_type
+          ? definition->binding_type
+          : definition->bindings.size() == 1
+              ? definition->bindings.front().type : nullptr;
+      const auto binding_type = binding_source
+          ? state.solver.resolve(binding_source) : nullptr;
+      const auto value_type = checked_value->checked_type
+          ? state.solver.resolve(checked_value->checked_type) : nullptr;
+      const bool constructor_result = checked_value->kind ==
+              BodyTypeState::ExpressionOccurrence::Kind::Constructor &&
+          value_type && summary.result_type &&
+          value_type->kind == moss::TypeKind::NominalInstance &&
+          summary.result_type->kind == moss::TypeKind::NominalInstance &&
+          value_type->declaration && summary.result_type->declaration &&
+          value_type->declaration->id == summary.result_type->declaration->id &&
+          checked_value->semantic_target_id ==
+              summary.result_type->declaration->id;
+      if (!returned_type ||
+          !binding_type || !value_type ||
+          !returned_type->structurally_equal(*binding_type) ||
+          (!constructor_result &&
+           !returned_type->structurally_equal(*value_type)))
+        return false;
+      returned_local_types.emplace(returned->resolved_binding_id,
+                                   summary.result_type);
+      if (!definition->binding_identity.empty())
+        returned_local_types.emplace(definition->binding_identity,
+                                     summary.result_type);
+      if (!definition->assigned_binding_identity.empty())
+        returned_local_types.emplace(definition->assigned_binding_identity,
+                                     summary.result_type);
+      for (const auto id : initializer_path)
+        returned_initializer_types.emplace(id, summary.result_type);
+      for (const auto& local_read : state.expression_occurrences)
+        if (local_read.kind ==
+                BodyTypeState::ExpressionOccurrence::Kind::Identifier &&
+            local_read.resolved_binding_id == returned->resolved_binding_id)
+          returned_initializer_types.emplace(local_read.id,
+                                             summary.result_type);
+    }
     std::unordered_map<string, std::uint32_t> local_ordinals;
     vector<moss::TypeRef> local_types;
     std::unordered_map<string, string> predecessor_to_join_identity;
@@ -7005,7 +6905,10 @@ class Checker {
       }
       const string canonical_identity = node.bindings.front().identity;
       if (canonical_identity.empty()) return false;
-      const auto binding_type = checked_body_type(node.bindings.front().type);
+      const auto returned_type = returned_local_types.find(canonical_identity);
+      const auto binding_type = returned_type == returned_local_types.end()
+          ? checked_body_type(node.bindings.front().type)
+          : returned_type->second;
       if (!binding_type) return false;
       std::uint32_t ordinal = 0;
       const auto existing_local = local_ordinals.find(canonical_identity);
@@ -7078,8 +6981,36 @@ class Checker {
           occurrence.parent_id == UINT32_MAX &&
           occurrence.root_slot == "return-value" && summary.result_type &&
           occurrence.checked_type->structurally_equal(*summary.result_type);
-      const auto type = summary_typed_return_root
-          ? summary.result_type : checked_body_type(occurrence.checked_type);
+      moss::TypeRef type;
+      if (occurrence.kind ==
+              BodyTypeState::ExpressionOccurrence::Kind::Identifier &&
+          starts_with(occurrence.resolved_binding_id, "parameter:")) {
+        std::size_t parameter = 0;
+        try {
+          parameter = static_cast<std::size_t>(std::stoul(
+              occurrence.resolved_binding_id.substr(10)));
+        } catch (const std::exception&) {
+          return std::nullopt;
+        }
+        if (parameter >= function.params.size() ||
+            parameter >= summary.parameter_types.size() ||
+            !summary.parameter_types[parameter])
+          return std::nullopt;
+        const auto parameter_type = state.resolved_local(
+            function.params[parameter].name);
+        const auto occurrence_type = state.solver.resolve(
+            occurrence.checked_type);
+        if (!parameter_type || !occurrence_type ||
+            !parameter_type->structurally_equal(*occurrence_type))
+          return std::nullopt;
+        type = summary.parameter_types[parameter];
+      } else {
+        type = summary_typed_return_root
+            ? summary.result_type : checked_body_type(occurrence.checked_type);
+      }
+      const auto returned_initializer = returned_initializer_types.find(id);
+      if (returned_initializer != returned_initializer_types.end())
+        type = returned_initializer->second;
       if (!type) return std::nullopt;
       checked_ir::Expr result;
       result.type = type;
@@ -7428,8 +7359,14 @@ class Checker {
         case Stmt::Kind::Var: {
           auto expression = expression_for("initializer");
           const auto& node = state.statement_occurrences.at(id);
+          const auto returned_type = node.bindings.size() == 1
+              ? returned_local_types.find(node.bindings.front().identity)
+              : returned_local_types.end();
           auto binding_type = node.bindings.size() == 1
-              ? checked_body_type(node.bindings.front().type) : nullptr;
+              ? returned_type != returned_local_types.end()
+                  ? returned_type->second
+                  : checked_body_type(node.bindings.front().type)
+              : nullptr;
           if (!expression || !expression->type || !binding_type ||
               !binding_type->structurally_equal(*expression->type))
             return std::nullopt;
@@ -7465,8 +7402,15 @@ class Checker {
               fact != state.binding_facts.end() && fact->second.introduced) {
             const auto& occurrence = state.statement_occurrences.at(id);
             const auto local = local_ordinals.find(fact->second.identity);
+            const auto returned_type = occurrence.bindings.size() == 1
+                ? returned_local_types.find(
+                      occurrence.bindings.front().identity)
+                : returned_local_types.end();
             const auto binding_type = occurrence.bindings.size() == 1
-                ? checked_body_type(occurrence.bindings.front().type) : nullptr;
+                ? returned_type != returned_local_types.end()
+                    ? returned_type->second
+                    : checked_body_type(occurrence.bindings.front().type)
+                : nullptr;
             if (fact->second.identity.empty() || local == local_ordinals.end() ||
                 occurrence.binding_identity != fact->second.identity ||
                 !occurrence.introduces_binding ||
@@ -28246,6 +28190,11 @@ class Checker {
           vector<string> expected;
           if (valid) {
             const auto& fields = occurrence.checked_type->declaration->fields;
+            auto resolved_result = checked_types.solver.resolve(
+                occurrence.checked_type);
+            if (!resolved_result ||
+                resolved_result->kind != moss::TypeKind::NominalInstance)
+              valid = false;
             for (std::size_t index = 0; index < children.size(); ++index) {
               const auto ordinal = occurrence.semantic_operand_ordinals[index];
               if (ordinal >= fields.size()) {
@@ -28258,6 +28207,33 @@ class Checker {
               if (!child.checked_type ||
                   child.child_role != expected.back())
                 valid = false;
+              if (resolved_result && child.checked_type) {
+                const auto inferred_field = std::find_if(
+                    resolved_result->field_substitutions.begin(),
+                    resolved_result->field_substitutions.end(),
+                    [&](const auto& substitution) {
+                  return substitution.first == fields[ordinal].name;
+                });
+                const auto inferred_field_count = std::count_if(
+                    resolved_result->field_substitutions.begin(),
+                    resolved_result->field_substitutions.end(),
+                    [&](const auto& substitution) {
+                  return substitution.first == fields[ordinal].name;
+                });
+                if (inferred_field_count > 1 ||
+                    (fields[ordinal].inferred && inferred_field_count != 1))
+                  valid = false;
+                if (inferred_field !=
+                    resolved_result->field_substitutions.end()) {
+                  const auto field_type = checked_types.solver.resolve(
+                      inferred_field->second);
+                  const auto child_type = checked_types.solver.resolve(
+                      child.checked_type);
+                  if (!field_type || !child_type ||
+                      !field_type->structurally_equal(*child_type))
+                    valid = false;
+                }
+              }
             }
           }
           if (!valid || !has_roles(expected))
@@ -29379,10 +29355,75 @@ fn inspect_sample(sample: Sample) -> Int:
       std::sort(wanted_roles.begin(), wanted_roles.end());
       return actual_roles == wanted_roles;
     };
+    auto verifies_occurrence_totality = [&](const string& name) {
+      const auto function = std::find_if(program.functions.begin(),
+          program.functions.end(), [&](const Function& candidate) {
+        return candidate.name == name;
+      });
+      if (function == program.functions.end()) return false;
+      const auto retained = checker.checked_body_states_.find(&function->body);
+      if (retained == checker.checked_body_states_.end() || !retained->second)
+        return false;
+      const auto& body = *retained->second;
+      if (!body.expression_occurrence_ledger_complete) return false;
+      std::set<std::uint32_t> statements;
+      for (const auto& source : function->body) {
+        const auto found = body.statement_occurrence_ids.find(&source);
+        if (found == body.statement_occurrence_ids.end() ||
+            found->second >= body.statement_occurrences.size() ||
+            !statements.insert(found->second).second ||
+            body.statement_occurrences[found->second].source != &source)
+          return false;
+      }
+      std::set<std::uint32_t> accounted_expressions;
+      for (const auto& [slot, root_id] : body.expression_root_slots) {
+        if (root_id >= body.expression_occurrences.size() ||
+            !accounted_expressions.insert(root_id).second)
+          return false;
+        const auto& root = body.expression_occurrences[root_id];
+        if (!root.completed || root.id != root_id ||
+            root.parent_id != UINT32_MAX || root.statement_id != slot.first ||
+            root.root_slot != slot.second)
+          return false;
+      }
+      std::map<std::uint32_t, std::set<std::uint32_t>> child_ordinals;
+      std::map<std::uint32_t, std::set<string>> child_roles;
+      for (std::size_t index = 0;
+           index < body.expression_occurrences.size(); ++index) {
+        const auto& occurrence = body.expression_occurrences[index];
+        if (!occurrence.completed || occurrence.id != index) return false;
+        if (occurrence.parent_id != UINT32_MAX) {
+          if (occurrence.parent_id >= body.expression_occurrences.size() ||
+              occurrence.child_role.empty() ||
+              !child_ordinals[occurrence.parent_id].insert(
+                  occurrence.child_ordinal).second ||
+              !child_roles[occurrence.parent_id].insert(
+                  occurrence.child_role).second ||
+              !accounted_expressions.insert(occurrence.id).second)
+            return false;
+        }
+      }
+      if (accounted_expressions.size() != body.expression_occurrences.size())
+        return false;
+      return statements.size() == function->body.size();
+    };
     if (!verifies_call("relay", {"call-argument:0"}, {}) ||
         !verifies_call("sort_values", {"call-argument:0"}, {1}) ||
-        !verifies_call("sort_values_reverse", {"call-argument:0"}, {1}))
+        !verifies_call("sort_values_reverse", {"call-argument:0"}, {1}) ||
+        !verifies_occurrence_totality("relay") ||
+        !verifies_occurrence_totality("relay_return") ||
+        !verifies_occurrence_totality("relay_method") ||
+        !verifies_occurrence_totality("count_values") ||
+        !verifies_occurrence_totality("branch") ||
+        !verifies_occurrence_totality("iterate") ||
+        !verifies_occurrence_totality("inspect_sample")) {
+      for (const auto& name : {"relay", "relay_return", "relay_method",
+                               "count_values", "branch", "iterate",
+                               "inspect_sample"})
+        if (!verifies_occurrence_totality(name))
+          std::cerr << "occurrence totality failed: " << name << "\n";
       return false;
+    }
     const auto empty_function = std::find_if(program.functions.begin(),
         program.functions.end(), [](const Function& candidate) {
           return candidate.name == "empty_values";
@@ -29782,6 +29823,7 @@ export fn fresh(x):
         chain_input, "<occurrence-private-chain-test>")).parse();
     Checker chain_checker(chain_program);
     chain_checker.run();
+    chain_checker.retain_checked_body_ir();
     auto chain_function = [&](const string& name) -> const Function* {
       auto found = std::find_if(chain_program.functions.begin(),
           chain_program.functions.end(), [&](const Function& candidate) {
@@ -29842,6 +29884,55 @@ export fn fresh(x):
     if (!constructor_field_type || !constructor_child_type ||
         !constructor_field_type->structurally_equal(*constructor_child_type))
       return false;
+    if (!private_box->checked_body_ir_v1_bytes ||
+        !private_box->checked_body_ir_v1_hash || !chain_program.type_context)
+      return false;
+    const auto common_private_body = checked_ir::decode_checked_body_v1(
+        *private_box->checked_body_ir_v1_bytes, *chain_program.type_context,
+        private_box->open_summary->parameter_types,
+        private_box->open_summary->result_type,
+        *private_box->checked_body_ir_v1_hash);
+    if (common_private_body.size() != 2 ||
+        common_private_body.front().kind != checked_ir::StmtKind::Var ||
+        !common_private_body.front().expr ||
+        common_private_body.front().expr->kind !=
+            checked_ir::ExprKind::NominalConstruct ||
+        common_private_body.front().expr->semantic_target_id !=
+            constructor->semantic_target_id ||
+        common_private_body.front().expr->operands.size() != 1 ||
+        common_private_body.front().expr->operands.front().kind !=
+            checked_ir::ExprKind::Parameter ||
+        common_private_body.front().expr->operands.front().ordinal != 0 ||
+        common_private_body.back().kind != checked_ir::StmtKind::Return ||
+        !common_private_body.back().expr ||
+        common_private_body.back().expr->kind !=
+            checked_ir::ExprKind::LocalRead ||
+        common_private_body.back().expr->ordinal != 0)
+      return false;
+    auto mutable_private_box = std::find_if(chain_program.functions.begin(),
+        chain_program.functions.end(), [](const Function& candidate) {
+      return candidate.name == "private_box";
+    });
+    if (mutable_private_box == chain_program.functions.end()) return false;
+    const auto saved_child_type = constructor_child->checked_type;
+    mutable_private_box->checked_body_ir_v1_bytes.reset();
+    mutable_private_box->checked_body_ir_v1_hash.reset();
+    constructor_child->checked_type = moss::Type::primitive("string");
+    const bool rejected_forged_constructor_child =
+        !chain_checker.retain_checked_occurrence_ir(*mutable_private_box) &&
+        !mutable_private_box->checked_body_ir_v1_bytes &&
+        !mutable_private_box->checked_body_ir_v1_hash;
+    constructor_child->checked_type = saved_child_type;
+    const bool restored_constructor_lowering =
+        chain_checker.retain_checked_occurrence_ir(*mutable_private_box);
+    if (!rejected_forged_constructor_child || !restored_constructor_lowering ||
+        !mutable_private_box->checked_body_ir_v1_bytes ||
+        !mutable_private_box->checked_body_ir_v1_hash) {
+      std::cerr << "constructor mutation rejected="
+                << rejected_forged_constructor_child << " restored="
+                << restored_constructor_lowering << "\n";
+      return false;
+    }
     for (const auto& helper_and_target : {
              std::pair<const Function*, const Function*>{nested_private_box,
                                                           private_box},
@@ -29849,7 +29940,7 @@ export fn fresh(x):
                                                           nested_private_box}}) {
       const auto* helper = helper_and_target.first;
       const auto* target = helper_and_target.second;
-      auto checked_helper = checked_private_chain_body(chain_program, *helper);
+      auto checked_helper = common_checked_body(chain_program, *helper);
       const auto state = chain_checker.checked_body_states_.find(&helper->body);
       if (state == chain_checker.checked_body_states_.end() || !state->second ||
           !state->second->expression_occurrence_ledger_complete ||
@@ -48812,9 +48903,8 @@ static void append_abi_v10_occurrence_records(
   }
 }
 
-// First live producer of the rich ABI-v10 subset: a checked two-statement
-// exported constructor with no callable dependency. The private-chain form
-// remains guarded until source-free import can decode its body records.
+// Emit checked nominal constructor bodies with no callable dependency. Their
+// full statement trees come from the shared occurrence lowerer.
 static void append_abi_v10_direct_checked_records(
     abi_v10::Interface& value, const Program& program,
     const string& module) {
@@ -48828,7 +48918,7 @@ static void append_abi_v10_direct_checked_records(
         !function.open_summary->member_requirements.empty() ||
         !abi_v10_effects_pure(function.open_summary->observable_effects))
       continue;
-    auto checked = checked_private_chain_body(program, function);
+    auto checked = common_checked_body(program, function);
     if (!checked || checked->dependencies.size() != 1 ||
         checked->dependencies.front().kind !=
             SemanticDependency::Kind::NominalType)
@@ -49410,7 +49500,7 @@ static void append_abi_v10_private_chain_records(
         !abi_v10_effects_pure(function.open_summary->observable_effects))
       throw ProjectError("SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
                          "private checked ABI-v10 callable has incomplete type or effect facts");
-    auto body = checked_private_chain_body(program, function);
+    auto body = common_checked_body(program, function);
     if (!body)
       throw ProjectError("SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
                          "private checked ABI-v10 callable '" + function.name +
@@ -49423,25 +49513,6 @@ static void append_abi_v10_private_chain_records(
         if (!callee)
           throw ProjectError("SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
                              "checked ABI-v10 body names an unresolved private callable");
-        const bool direct_return_call = body->statements.size() == 1 &&
-            body->statements.front().kind == checked_ir::StmtKind::Return &&
-            body->statements.front().expr &&
-            body->statements.front().expr->kind ==
-                checked_ir::ExprKind::Call;
-        if (direct_return_call) {
-          auto callee_body = checked_private_chain_body(program, *callee);
-          const bool direct_parameter_leaf = callee_body &&
-              callee_body->statements.size() == 1 &&
-              callee_body->statements.front().kind ==
-                  checked_ir::StmtKind::Return &&
-              callee_body->statements.front().expr &&
-              callee_body->statements.front().expr->kind ==
-                  checked_ir::ExprKind::Parameter &&
-              callee_body->dependencies.empty();
-          if (!direct_parameter_leaf)
-            throw ProjectError("SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-                "direct checked ABI-v10 helper calls require a checked parameter-return leaf");
-        }
         visit(*callee);
       }
     const std::set<string> summary_edges(
@@ -49473,30 +49544,12 @@ static void append_abi_v10_private_chain_records(
         !belongs_to_module(function.name, module) ||
         std::filesystem::path(function.source_file).extension() == ".mossi")
       continue;
-    auto body = checked_private_chain_body(program, function);
+    auto body = common_checked_body(program, function);
     if (!body || !std::any_of(body->dependencies.begin(),
                              body->dependencies.end(),
         [](const SemanticDependency& dep) {
       return dep.kind == SemanticDependency::Kind::Callable;
     })) continue;
-    const bool direct_return_call = body->statements.size() == 1 &&
-        body->statements.front().kind == checked_ir::StmtKind::Return &&
-        body->statements.front().expr &&
-        body->statements.front().expr->kind == checked_ir::ExprKind::Call;
-    if (direct_return_call) {
-      auto callee = find_callable(body->statements.front().expr->semantic_target_id);
-      auto callee_body = callee
-          ? checked_private_chain_body(program, *callee) : std::nullopt;
-      const bool direct_private_parameter_leaf = callee && !callee->exported &&
-          callee_body && callee_body->statements.size() == 1 &&
-          callee_body->statements.front().kind ==
-              checked_ir::StmtKind::Return &&
-          callee_body->statements.front().expr &&
-          callee_body->statements.front().expr->kind ==
-              checked_ir::ExprKind::Parameter &&
-          callee_body->dependencies.empty();
-      if (!direct_private_parameter_leaf) continue;
-    }
     visit(function);
   }
   // The checker may lift its provisional private-chain guard only for a
