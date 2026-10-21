@@ -58,6 +58,12 @@ A first broader probe using two generic parameter predecessors was rejected beca
 
 # Moss current status
 
+## Phase 25.1 R1 continuation — occurrence fact totality regression — working tree — 2026-10-21
+
+The focused occurrence verifier now traverses expression facts from registered roots and rejects parent cycles, detached nodes, duplicate roots, and sparse child ordinals. It checks every retained open operation against its occurrence and ordinal counter, compares operator requirement observations with the expected set, checks complete effect summaries against function effects, and matches summary and occurrence dependencies to checked semantic call edges. Summary-less control-flow fixtures are required to have no projected callable dependencies. A reproducing regression self-parents a child in `relay_method`, requires totality rejection, restores it, and requires acceptance.
+
+Validation on the rebuilt `build/compiler/moss-dev`: `make --jobs="$(nproc)" moss-dev`; `python3 tests/tooling/check_phase25_statement_call_occurrence_roles.py build/compiler/moss-dev`; and `python3 tests/tooling/check_phase25_h3_source_free_chain.py build/compiler/moss-dev` pass. The H3 test reports common checked-body chain, multi-statement field read, two source-free consumers, poisoned-chain fallback, and negative closures PASS. `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` pass. Build retains two pre-existing TypeSolver missing-initializer warnings. Committed as `phase25.1: verify occurrence fact totality`; normal push and existing architect exact-SHA re-review are pending. Do not accept R1 until the architect returns GO with no open P0/P1. Preserve the 24 unavailable ABI-v10 profiles, two ABI-v9 raise/recover consumer failures, and `packages/time` failure.
+
 ## Phase 25.1 R1 — IfJoin importer admission guard — working tree — 2026-10-21
 
 Independent review of frozen checkpoint `c13ef0a83ffb03c5a0ea9109560ee1555c5c6891` found a P1 boundary leak: source-free import could project an `IfJoin` under generic type/effect/dependency checks before validating its branch operation lineage against summary requirements. The importer now recursively detects decoded `IfJoin` nodes and rejects them before any AST projection. This is deliberately fail-closed while the one-to-one body-operation/requirement/dependency validator is still absent; checked-body codec support is not source-free admission evidence.

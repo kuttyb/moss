@@ -29364,7 +29364,7 @@ fn inspect_sample(sample: Sample) -> Int:
       const auto retained = checker.checked_body_states_.find(&function->body);
       if (retained == checker.checked_body_states_.end() || !retained->second)
         return false;
-      const auto& body = *retained->second;
+      auto& body = *retained->second;
       if (!body.expression_occurrence_ledger_complete) return false;
       std::set<std::uint32_t> statements;
       for (const auto& source : function->body) {
@@ -29375,16 +29375,18 @@ fn inspect_sample(sample: Sample) -> Int:
             body.statement_occurrences[found->second].source != &source)
           return false;
       }
-      std::set<std::uint32_t> accounted_expressions;
+      vector<vector<std::uint32_t>> children(body.expression_occurrences.size());
+      vector<std::uint32_t> roots;
       for (const auto& [slot, root_id] : body.expression_root_slots) {
-        if (root_id >= body.expression_occurrences.size() ||
-            !accounted_expressions.insert(root_id).second)
+        if (root_id >= body.expression_occurrences.size())
           return false;
         const auto& root = body.expression_occurrences[root_id];
         if (!root.completed || root.id != root_id ||
             root.parent_id != UINT32_MAX || root.statement_id != slot.first ||
-            root.root_slot != slot.second)
+            root.root_slot != slot.second ||
+            !statements.count(root.statement_id))
           return false;
+        roots.push_back(root_id);
       }
       std::map<std::uint32_t, std::set<std::uint32_t>> child_ordinals;
       std::map<std::uint32_t, std::set<string>> child_roles;
@@ -29399,13 +29401,138 @@ fn inspect_sample(sample: Sample) -> Int:
                   occurrence.child_ordinal).second ||
               !child_roles[occurrence.parent_id].insert(
                   occurrence.child_role).second ||
-              !accounted_expressions.insert(occurrence.id).second)
+              occurrence.statement_id != body.expression_occurrences[
+                  occurrence.parent_id].statement_id)
             return false;
+          children[occurrence.parent_id].push_back(occurrence.id);
         }
       }
-      if (accounted_expressions.size() != body.expression_occurrences.size())
+      for (const auto& [parent, ordinals] : child_ordinals)
+        if (ordinals.size() != children[parent].size() ||
+            (!ordinals.empty() && *ordinals.rbegin() + 1 != ordinals.size()))
+          return false;
+      // Count nodes only after walking from registered statement roots. This
+      // rejects self-parented and detached cycles that a flat ID count misses.
+      vector<std::uint8_t> visits(body.expression_occurrences.size(), 0);
+      std::function<bool(std::uint32_t)> visit = [&](std::uint32_t id) {
+        if (id >= visits.size() || visits[id] == 1) return false;
+        if (visits[id] == 2) return false;
+        visits[id] = 1;
+        for (const auto child : children[id])
+          if (!visit(child)) return false;
+        visits[id] = 2;
+        return true;
+      };
+      for (const auto root : roots)
+        if (!visit(root)) return false;
+      if (std::any_of(visits.begin(), visits.end(), [](auto visit) {
+            return visit != 2;
+          }))
         return false;
-      return statements.size() == function->body.size();
+
+      std::map<std::uint32_t, std::set<std::uint32_t>> operation_ordinals;
+      std::map<std::uint32_t, std::uint32_t> observed_operation_counts;
+      for (const auto& operation : body.open_operations) {
+        if (operation.expression_occurrence_id >=
+                body.expression_occurrences.size() ||
+            operation.result == nullptr || operation.operation_id.empty())
+          return false;
+        const auto occurrence_id = operation.expression_occurrence_id;
+        const auto& occurrence = body.expression_occurrences[occurrence_id];
+        bool operation_identity_matches =
+            occurrence.operation_id == operation.operation_id;
+        if (!operation_identity_matches &&
+            occurrence.kind ==
+                BodyTypeState::ExpressionOccurrence::Kind::Pipeline) {
+          std::function<bool(std::uint32_t)> contains_stage_operation =
+              [&](std::uint32_t parent) {
+            for (const auto child : children[parent])
+              if (body.expression_occurrences[child].operation_id ==
+                      operation.operation_id ||
+                  body.expression_occurrences[child].semantic_target_id ==
+                      operation.operation_id ||
+                  contains_stage_operation(child))
+                return true;
+            return false;
+          };
+          operation_identity_matches = contains_stage_operation(occurrence_id);
+        }
+        if (!operation_identity_matches ||
+            !operation_ordinals[occurrence_id].insert(
+                operation.occurrence_ordinal).second)
+          return false;
+        ++observed_operation_counts[occurrence_id];
+      }
+      for (const auto& [occurrence, count] : observed_operation_counts) {
+        const auto retained_count = body.operation_counts_by_occurrence.find(
+            occurrence);
+        const auto& ordinals = operation_ordinals[occurrence];
+        if (retained_count == body.operation_counts_by_occurrence.end() ||
+            retained_count->second != count || ordinals.size() != count ||
+            *ordinals.begin() != 0 || *ordinals.rbegin() + 1 != count)
+          return false;
+      }
+      if (observed_operation_counts.size() !=
+          body.operation_counts_by_occurrence.size())
+        return false;
+      std::set<std::pair<std::uint32_t, string>> observed_requirements;
+      for (const auto& requirement : body.open_operator_requirements)
+        if (!observed_requirements.emplace(
+                requirement.expression_occurrence_id,
+                requirement.target_id).second)
+          return false;
+      if (observed_requirements != body.expected_open_operator_requirements)
+        return false;
+
+      if (!function->open_summary) {
+        const bool has_calls = std::any_of(program.semantic_call_edges.begin(),
+            program.semantic_call_edges.end(), [&](const auto& edge) {
+          return edge.source == "fn:" + function->name &&
+              starts_with(edge.target, "fn:");
+        });
+        const bool has_occurrence_targets = std::any_of(
+            body.expression_occurrences.begin(),
+            body.expression_occurrences.end(), [](const auto& occurrence) {
+          return occurrence.kind ==
+                  BodyTypeState::ExpressionOccurrence::Kind::Call &&
+              starts_with(occurrence.semantic_target_id, "callable-v1:");
+        });
+        return statements.size() == function->body.size() &&
+            !has_calls && !has_occurrence_targets;
+      }
+      const bool effects_match = same_observable_effects(
+          function->observable_effects,
+          function->open_summary->observable_effects);
+      if (!effects_match && function->open_summary->scheme_complete &&
+          !function->open_summary->observable_effects.unresolved)
+        return false;
+      std::set<string> expected_dependencies;
+      for (const auto& edge : program.semantic_call_edges) {
+        if (edge.source != "fn:" + function->name ||
+            !starts_with(edge.target, "fn:")) continue;
+        const auto dependency = std::find_if(program.functions.begin(),
+            program.functions.end(), [&](const Function& candidate) {
+          return "fn:" + candidate.name == edge.target &&
+              !candidate.semantic_callable_id.empty();
+        });
+        if (dependency != program.functions.end())
+          expected_dependencies.insert(dependency->semantic_callable_id);
+      }
+      const std::set<string> summary_dependencies(
+          function->open_summary->semantic_dependencies.begin(),
+          function->open_summary->semantic_dependencies.end());
+      std::set<string> occurrence_dependencies;
+      for (const auto& occurrence : body.expression_occurrences)
+        if (occurrence.kind ==
+                BodyTypeState::ExpressionOccurrence::Kind::Call &&
+            starts_with(occurrence.semantic_target_id, "callable-v1:"))
+          occurrence_dependencies.insert(occurrence.semantic_target_id);
+      const bool dependency_total =
+          summary_dependencies.size() ==
+              function->open_summary->semantic_dependencies.size() &&
+          summary_dependencies == expected_dependencies &&
+          occurrence_dependencies == expected_dependencies;
+      return statements.size() == function->body.size() && dependency_total;
     };
     if (!verifies_call("relay", {"call-argument:0"}, {}) ||
         !verifies_call("sort_values", {"call-argument:0"}, {1}) ||
@@ -29424,6 +29551,31 @@ fn inspect_sample(sample: Sample) -> Int:
           std::cerr << "occurrence totality failed: " << name << "\n";
       return false;
     }
+    const auto self_parent_function = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+          return candidate.name == "relay_method";
+        });
+    if (self_parent_function == program.functions.end()) return false;
+    auto self_parent_state = checker.checked_body_states_.find(
+        &self_parent_function->body);
+    if (self_parent_state == checker.checked_body_states_.end() ||
+        !self_parent_state->second) return false;
+    auto& relay_method_occurrences =
+        self_parent_state->second->expression_occurrences;
+    const auto child_occurrence = std::find_if(
+        relay_method_occurrences.begin(), relay_method_occurrences.end(),
+        [](const auto& occurrence) {
+          return occurrence.parent_id != UINT32_MAX;
+        });
+    if (child_occurrence == relay_method_occurrences.end()) return false;
+    const auto child_id = child_occurrence->id;
+    const auto original_parent = child_occurrence->parent_id;
+    child_occurrence->parent_id = child_id;
+    const bool self_parent_rejected =
+        !verifies_occurrence_totality("relay_method");
+    child_occurrence->parent_id = original_parent;
+    if (!self_parent_rejected ||
+        !verifies_occurrence_totality("relay_method")) return false;
     const auto empty_function = std::find_if(program.functions.begin(),
         program.functions.end(), [](const Function& candidate) {
           return candidate.name == "empty_values";
