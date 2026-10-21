@@ -9889,4 +9889,6 @@ emits ABI-v10 records, while the source-deleted consumer rejects with
 corpus rather than being treated as supported or excluded. The full M2b2 corpus
 passes after the split, including intact Int/Float alias parity, hostile
 dependency-edge rejection, legacy generic-body poisoning, and ABI-v9 controls.
+The shadowing row has ABI-v9 source-free output control `11`, `10`, `6.0`,
+`5.0`; ABI-v10 remains fail-closed for its unavailable checked body.
 Shadowing projection and branch-join body support remain open R1 work.

@@ -112,6 +112,32 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                 assert (rejected.returncode != 0 and
                         case["provider_expected_error"] in reject_output), (
                             case["id"], case["provider_expected_error"], reject_output)
+                if "abi_v9_expected_output" in case:
+                    v9_env = base_env.copy()
+                    v9_env.pop("MOSS_STAGED_ABI", None)
+                    v9_provider = case_root / "provider-v9"
+                    package(v9_provider,
+                            f"m2b2_{case['id'].replace('-', '_')}_provider_v9",
+                            case["provider"])
+                    v9_provider_env = v9_env | {
+                        "MARGO_HOME": str(case_root / "margo-provider-v9")}
+                    command([str(MARGO), "build"], cwd=v9_provider,
+                            env=v9_provider_env)
+                    v9_artifacts = case_root / "artifacts-v9"
+                    shutil.copytree(v9_provider / "build/debug", v9_artifacts)
+                    shutil.rmtree(v9_provider / "src")
+                    v9_consumer = case_root / "consumer-v9"
+                    package(v9_consumer,
+                            f"m2b2_{case['id'].replace('-', '_')}_consumer_v9",
+                            case["consumer"])
+                    v9_consumer_env = v9_env | {
+                        "MOSS_MODULE_PATH": str(v9_artifacts),
+                        "MARGO_HOME": str(case_root / "margo-consumer-v9")}
+                    v9_output = command([str(MARGO), "run"], cwd=v9_consumer,
+                                       env=v9_consumer_env)
+                    assert v9_output == case["abi_v9_expected_output"], (
+                        case["id"], v9_output)
+                    print(f"PASS {case['id']}: ABI-v9 source-free compatibility")
                 print(f"PASS {case['id']}: emitted provider plus source-free consumer rejection")
                 continue
             if provider_build.returncode != 0:

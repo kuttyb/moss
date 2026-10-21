@@ -100,6 +100,7 @@
       "category": "generic arithmetic through shadowing branch-local alias",
       "provider": "module Service\n\nexport fn fresh(value, flag: Bool):\n  let alias = value * 2\n  if flag:\n    let alias = alias + 1\n    return alias\n  else:\n    return alias\n",
       "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(5, true)\n  echo Service.fresh(5, false)\n  echo Service.fresh(2.5, true)\n  echo Service.fresh(2.5, false)\n",
+      "abi_v9_expected_output": "11\n10\n6.0\n5.0\n",
       "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
       "provider_must_emit_v10": true,
       "checked_body_status": "checked-body unavailable; exact checker scopes and bindings are retained, but source-free shadowing-body projection remains unsupported",
