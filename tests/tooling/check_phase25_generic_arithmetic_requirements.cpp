@@ -380,14 +380,37 @@ export fn alias_compute(value):
   assert(select.open_summary->occurrence_ledger_complete);
 
   const Function& select_two = find_function(joined_binding, "select_two");
-  // The checker accepts this source shape, but this compiler revision does
-  // not produce a checked body for a join across two untyped parameters.
-  // Keep the profile explicitly unavailable until the producer emits the
-  // typed predecessor/join relation instead of treating checker acceptance
-  // as source-free evidence.
-  assert(select_two.open_summary);
-  assert(!select_two.checked_body_ir_v1_bytes);
-  assert(!select_two.checked_body_ir_v1_hash);
+  // The common occurrence lowerer preserves the exact two parameter
+  // predecessors as one typed IfJoin and returns that joined local.
+  assert(select_two.open_summary &&
+         select_two.checked_body_ir_v1_occurrence_lowered &&
+         select_two.checked_body_ir_v1_bytes &&
+         select_two.checked_body_ir_v1_hash);
+  const auto select_two_body = checked_ir::decode_checked_body_v1(
+      *select_two.checked_body_ir_v1_bytes, *joined_binding.type_context,
+      select_two.open_summary->parameter_types,
+      select_two.open_summary->result_type,
+      *select_two.checked_body_ir_v1_hash);
+  assert(select_two_body.size() == 2);
+  assert(select_two_body[0].kind == checked_ir::StmtKind::IfJoin);
+  assert(select_two_body[0].expr &&
+         select_two_body[0].expr->kind == checked_ir::ExprKind::Parameter &&
+         select_two_body[0].expr->ordinal == 2);
+  assert(select_two_body[0].operands.size() == 2);
+  assert(select_two_body[0].operands[0].kind ==
+         checked_ir::ExprKind::Parameter);
+  assert(select_two_body[0].operands[0].ordinal == 0);
+  assert(select_two_body[0].operands[1].kind ==
+         checked_ir::ExprKind::Parameter);
+  assert(select_two_body[0].operands[1].ordinal == 1);
+  assert(select_two_body[1].kind == checked_ir::StmtKind::Return);
+  assert(select_two_body[1].expr &&
+         select_two_body[1].expr->kind == checked_ir::ExprKind::LocalRead &&
+         select_two_body[1].expr->ordinal == select_two_body[0].local_ordinal);
+  assert(checked_ir::encode_checked_body_v1(select_two_body) ==
+         *select_two.checked_body_ir_v1_bytes);
+  assert(checked_ir::compute_checked_body_hash_v1(select_two_body) ==
+         *select_two.checked_body_ir_v1_hash);
 
   const Function& branch_compute = find_function(joined_binding,
                                                   "branch_compute");

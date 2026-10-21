@@ -1,4 +1,4 @@
-## Phase 25.1 R1 continuation — common pure branch-join lowering — review pending — 2026-10-21
+## Phase 25.1 R1 continuation — common pure branch-join lowering — scoped GO at 0ce302ab — 2026-10-21
 
 Common occurrence lowering now links a returned local to its unique checked
 `If` join when that binding has exactly two predecessor identities and control
@@ -18,13 +18,17 @@ predecessor type. The producer now independently checks each retained
 predecessor binding TypeRef against the join TypeRef. The focused regression
 mutates the selected join identity, forges an edge binding identity, and changes
 a predecessor binding type; the common producer rejects all three and the
-restored fixture remains valid.
+restored fixture remains valid. Exact-SHA re-review at pushed commit
+`0ce302aba9a27a56b3b72e11ddd61f0bac25469e` returned scoped GO with no remaining
+P0/P1/P2 in this slice. The hostile importer tests continue to reject
+operation-bearing joins before projection.
 
 Validation on rebuilt `build/compiler/moss-dev`: compiler build, focused
 statement/call occurrence regression, full M2b2 source-free/hostile corpus,
-and H3 source-free chain pass, including both promoted join profiles. The build
-retains two existing TypeSolver missing-initializer warnings. Exact-SHA
-adversarial re-review is pending. R1 remains open for broader accepted-surface
+and H3 source-free chain pass, including both promoted join profiles. The generic arithmetic harness now verifies `select_two`'s canonical IfJoin
+tree, exact parameter ordinals, return-local relation, bytes, and hash. Its
+source-built run passes. The build retains two existing TypeSolver
+missing-initializer warnings. R1 remains open for broader accepted-surface
 totality, remaining producer profiles, and overall independent acceptance.
 Preserve 24 tracked unavailable ABI-v10 profiles, two ABI-v9 raise/recover
 failures, and `packages/time`.
