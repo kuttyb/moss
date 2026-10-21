@@ -4762,6 +4762,7 @@ class Checker {
       int line = 0;
       string root_slot;
       string child_role;
+      std::uint32_t scope_id = 0;
       // Preserve the exact checked source fragment as payload for leaf and
       // call nodes. The checker supplies the node kind, type and target; a
       // later structural projection must never rediscover those facts by
@@ -4773,12 +4774,36 @@ class Checker {
       string output_type;
       string operation_id;
       moss::TypeRef checked_type;
+      string resolved_binding_id;
+      bool resolved_binding_mutable = false;
       string semantic_target_id;
       vector<Constraint> linked_constraints;
       vector<LinkedCallableFact> linked_callables;
       bool completed = false;
     };
+    struct StatementOccurrence {
+      std::uint32_t id = 0;
+      const Stmt* source = nullptr;
+      Stmt::Kind kind = Stmt::Kind::Raw;
+      std::uint32_t parent_id = UINT32_MAX;
+      std::uint32_t control_parent_id = UINT32_MAX;
+      std::uint32_t child_ordinal = 0;
+      std::uint32_t scope_id = 0;
+      std::uint32_t entered_scope_id = 0;
+      int line = 0;
+      string branch_role;
+      vector<std::uint32_t> expression_roots;
+      string binding_identity;
+      moss::TypeRef binding_type;
+      bool introduces_binding = false;
+      bool mutable_binding = false;
+      bool explicit_non_evaluating = false;
+      bool synthetic = false;
+      bool scope_entry = false;
+      bool scope_exit = false;
+    };
     std::unordered_map<const Stmt*, std::uint32_t> statement_occurrence_ids;
+    vector<StatementOccurrence> statement_occurrences;
     std::map<std::pair<std::uint32_t, string>, std::uint32_t>
         expression_root_slots;
     vector<ExpressionOccurrence> expression_occurrences;
@@ -4790,8 +4815,14 @@ class Checker {
     std::uint32_t statement_occurrence_id(const Stmt& statement) {
       auto found = statement_occurrence_ids.find(&statement);
       if (found != statement_occurrence_ids.end()) return found->second;
-      const auto id = static_cast<std::uint32_t>(statement_occurrence_ids.size());
+      const auto id = static_cast<std::uint32_t>(statement_occurrences.size());
       statement_occurrence_ids.emplace(&statement, id);
+      StatementOccurrence occurrence;
+      occurrence.id = id;
+      occurrence.source = &statement;
+      occurrence.kind = statement.kind;
+      occurrence.line = statement.line;
+      statement_occurrences.push_back(std::move(occurrence));
       return id;
     }
 
@@ -4971,6 +5002,10 @@ class Checker {
     std::unordered_map<const Stmt*,
         std::unordered_map<string, moss::TypeRef>> locals_at_statement;
     std::unordered_map<const Stmt*, BindingFact> binding_facts;
+    std::unordered_map<const Stmt*, std::unordered_map<string, string>>
+        binding_identities_at_statement;
+    std::unordered_map<const Stmt*, std::set<string>>
+        immutable_bindings_at_statement;
     // A for binding is lexical, even when it uses the name of an outer open
     // local. Keep its term at the statement and activate it only in the body.
     std::unordered_map<const Stmt*, moss::TypeRef> for_bindings;
@@ -8930,6 +8965,9 @@ class Checker {
     });
     OwnershipEnv ownership;
     ownership.types = std::move(entry_env);
+    for (std::size_t index = 0; index < f.params.size(); ++index)
+      ownership.binding_identities[f.params[index].name] =
+          "parameter:" + std::to_string(index);
     OwnershipEnv final_ownership = deferred_match ? std::move(ownership) :
         check_ownership(f.body, std::move(ownership), nullptr, nullptr);
     check_fileio_lifecycle(f.body, entry_env, nullptr, f.line,
@@ -19668,6 +19706,10 @@ class Checker {
           current_body_types_->scoped_locals_active = true;
           env.types.terms = found->second;
         }
+        current_body_types_->binding_identities_at_statement[&s] =
+            env.binding_identities;
+        current_body_types_->immutable_bindings_at_statement[&s] =
+            env.immutable_locals;
       }
       struct OwnershipStatementScope {
         const Stmt*& slot;
@@ -23783,6 +23825,10 @@ class Checker {
       BodyTypeState& state;
       const Stmt& statement;
       ~SyntheticStatementRegistration() {
+        auto found = state.statement_occurrence_ids.find(&statement);
+        if (found != state.statement_occurrence_ids.end() &&
+            found->second < state.statement_occurrences.size())
+          state.statement_occurrences[found->second].synthetic = true;
         state.statement_occurrence_ids.erase(&statement);
       }
     } registration{*retained->second, synthetic_return};
@@ -24636,6 +24682,318 @@ class Checker {
     TypeEnv checked_env = walk_type_environment(
         statements, std::move(env), check_statement,
         true, true, true, join_context, &checked_types);
+    // Synthetic expression-body roots are retained while checking a result
+    // expression, then source statement IDs are canonicalized in AST order.
+    // Keep the synthetic node after the source tree and remap every edge so
+    // IDs are dense and source-order independent.
+    vector<BodyTypeState::StatementOccurrence> canonical_statements;
+    canonical_statements.reserve(checked_types.statement_occurrences.size());
+    std::vector<std::uint32_t> statement_id_remap(
+        checked_types.statement_occurrences.size(), UINT32_MAX);
+    for (const auto& statement : statements) {
+      auto found = checked_types.statement_occurrence_ids.find(&statement);
+      if (found == checked_types.statement_occurrence_ids.end() ||
+          found->second >= checked_types.statement_occurrences.size()) {
+        checked_types.expression_occurrence_ledger_complete = false;
+        continue;
+      }
+      auto node = checked_types.statement_occurrences[found->second];
+      statement_id_remap[found->second] =
+          static_cast<std::uint32_t>(canonical_statements.size());
+      node.id = static_cast<std::uint32_t>(canonical_statements.size());
+      canonical_statements.push_back(std::move(node));
+    }
+    for (std::size_t old_id = 0;
+         old_id < checked_types.statement_occurrences.size(); ++old_id) {
+      auto node = checked_types.statement_occurrences[old_id];
+      if (!node.synthetic) continue;
+      statement_id_remap[old_id] =
+          static_cast<std::uint32_t>(canonical_statements.size());
+      node.id = static_cast<std::uint32_t>(canonical_statements.size());
+      canonical_statements.push_back(std::move(node));
+    }
+    for (auto& node : canonical_statements) {
+      auto remap = [&](std::uint32_t& id) {
+        if (id == UINT32_MAX) return;
+        if (id >= statement_id_remap.size() ||
+            statement_id_remap[id] == UINT32_MAX) {
+          checked_types.expression_occurrence_ledger_complete = false;
+          id = UINT32_MAX;
+        } else {
+          id = statement_id_remap[id];
+        }
+      };
+      remap(node.parent_id);
+      remap(node.control_parent_id);
+    }
+    for (auto& [statement, id] : checked_types.statement_occurrence_ids) {
+      (void)statement;
+      if (id >= statement_id_remap.size() || statement_id_remap[id] == UINT32_MAX)
+        checked_types.expression_occurrence_ledger_complete = false;
+      else
+        id = statement_id_remap[id];
+    }
+    for (auto& expression : checked_types.expression_occurrences) {
+      if (expression.statement_id >= statement_id_remap.size() ||
+          statement_id_remap[expression.statement_id] == UINT32_MAX) {
+        checked_types.expression_occurrence_ledger_complete = false;
+      } else {
+        expression.statement_id = statement_id_remap[expression.statement_id];
+      }
+    }
+    std::map<std::pair<std::uint32_t, string>, std::uint32_t> remapped_roots;
+    for (const auto& [key, expression_id] : checked_types.expression_root_slots) {
+      if (key.first >= statement_id_remap.size() ||
+          statement_id_remap[key.first] == UINT32_MAX ||
+          !remapped_roots.emplace(
+              std::make_pair(statement_id_remap[key.first], key.second),
+              expression_id).second)
+        checked_types.expression_occurrence_ledger_complete = false;
+    }
+    checked_types.expression_root_slots = std::move(remapped_roots);
+    checked_types.statement_occurrences = std::move(canonical_statements);
+    // The parser stores block statements in source order with indentation.
+    // Retain that already-parsed control structure as an explicit tree so
+    // body lowering never has to reconstruct it from source fragments.
+    struct OpenStatementScope {
+      std::uint32_t statement_id;
+      std::uint32_t scope_id;
+      int indent;
+    };
+    vector<OpenStatementScope> statement_scopes;
+    std::uint32_t next_scope_id = 1;
+    auto opens_statement_scope = [](Stmt::Kind kind) {
+      switch (kind) {
+        case Stmt::Kind::If:
+        case Stmt::Kind::Else:
+        case Stmt::Kind::While:
+        case Stmt::Kind::For:
+        case Stmt::Kind::Match:
+        case Stmt::Kind::Case:
+        case Stmt::Kind::Try:
+        case Stmt::Kind::Recover:
+          return true;
+        default:
+          return false;
+      }
+    };
+    for (const auto& statement : statements) {
+      const auto id = checked_types.statement_occurrence_id(statement);
+      auto& occurrence = checked_types.statement_occurrences.at(id);
+      while (!statement_scopes.empty() &&
+             statement_scopes.back().indent >= statement.indent) {
+        checked_types.statement_occurrences.at(
+            statement_scopes.back().statement_id).scope_exit = true;
+        statement_scopes.pop_back();
+      }
+      if (!statement_scopes.empty()) {
+        occurrence.parent_id = statement_scopes.back().statement_id;
+        occurrence.scope_id = statement_scopes.back().scope_id;
+      }
+      if (statement.kind == Stmt::Kind::Else ||
+          statement.kind == Stmt::Kind::Case ||
+          statement.kind == Stmt::Kind::Recover) {
+        const Stmt::Kind expected = statement.kind == Stmt::Kind::Else
+            ? Stmt::Kind::If
+            : statement.kind == Stmt::Kind::Case ? Stmt::Kind::Match
+                                                 : Stmt::Kind::Try;
+        for (std::size_t prior = id; prior > 0; --prior) {
+          const auto& candidate = checked_types.statement_occurrences[prior - 1];
+          const bool matching_depth = candidate.source &&
+              (statement.kind == Stmt::Kind::Case
+                   ? candidate.source->indent < statement.indent
+                   : candidate.source->indent == statement.indent);
+          if (candidate.kind == expected && matching_depth) {
+            occurrence.control_parent_id = candidate.id;
+            occurrence.branch_role = statement.kind == Stmt::Kind::Else
+                ? "else" : statement.kind == Stmt::Kind::Case
+                    ? "case:" + statement.a : "recover";
+            if (statement.kind == Stmt::Kind::Else) {
+              occurrence.parent_id = candidate.parent_id;
+              occurrence.scope_id = candidate.scope_id;
+            }
+            break;
+          }
+        }
+      }
+      if (opens_statement_scope(statement.kind)) {
+        occurrence.scope_entry = true;
+        const auto scope_id = next_scope_id++;
+        occurrence.entered_scope_id = scope_id;
+        statement_scopes.push_back({id, scope_id, statement.indent});
+      }
+      occurrence.explicit_non_evaluating = statement.kind == Stmt::Kind::Pass;
+      auto binding = checked_types.binding_facts.find(&statement);
+      if (binding != checked_types.binding_facts.end()) {
+        occurrence.binding_identity = binding->second.identity;
+        occurrence.binding_type = binding->second.type
+            ? checked_types.solver.resolve(binding->second.type) : nullptr;
+        occurrence.introduces_binding = binding->second.introduced;
+        occurrence.mutable_binding = binding->second.mutable_binding;
+      } else if (statement.kind == Stmt::Kind::Let ||
+                 statement.kind == Stmt::Kind::Var) {
+        occurrence.binding_identity = statement_binding_identity(
+            current_semantic_context_, statement.line) + ":" + statement.a;
+        occurrence.binding_type = checked_types.assignment_value(statement);
+        occurrence.introduces_binding = true;
+        occurrence.mutable_binding = statement.kind == Stmt::Kind::Var;
+      } else if (statement.kind == Stmt::Kind::Assign &&
+                 simple_identifier(statement.a)) {
+        occurrence.binding_identity = statement_binding_identity(
+            current_semantic_context_, statement.line) + ":" + statement.a;
+        occurrence.binding_type = checked_types.assignment_value(statement);
+        occurrence.introduces_binding = true;
+        occurrence.mutable_binding = true;
+      }
+      if (!occurrence.binding_type) {
+        auto initializer = checked_types.expression_root_slots.find(
+            {id, "initializer"});
+        if (initializer != checked_types.expression_root_slots.end() &&
+            initializer->second < checked_types.expression_occurrences.size()) {
+          const auto& checked_value =
+              checked_types.expression_occurrences[initializer->second];
+          if (checked_value.checked_type)
+            occurrence.binding_type =
+                checked_types.solver.resolve(checked_value.checked_type);
+        }
+      }
+    }
+    std::map<std::uint32_t, std::uint32_t> next_statement_child_ordinal;
+    for (auto& occurrence : checked_types.statement_occurrences)
+      if (occurrence.parent_id != UINT32_MAX)
+        occurrence.child_ordinal =
+            next_statement_child_ordinal[occurrence.parent_id]++;
+    while (!statement_scopes.empty()) {
+      checked_types.statement_occurrences.at(
+          statement_scopes.back().statement_id).scope_exit = true;
+      statement_scopes.pop_back();
+    }
+    for (const auto& [root_key, root_id] : checked_types.expression_root_slots) {
+      if (root_id >= checked_types.expression_occurrences.size() ||
+          root_key.first >= checked_types.statement_occurrences.size()) {
+        checked_types.expression_occurrence_ledger_complete = false;
+        continue;
+      }
+      auto& statement_occurrence =
+          checked_types.statement_occurrences[root_key.first];
+      statement_occurrence.expression_roots.push_back(root_id);
+    }
+    for (auto& expression : checked_types.expression_occurrences) {
+      if (expression.statement_id >= checked_types.statement_occurrences.size()) {
+        checked_types.expression_occurrence_ledger_complete = false;
+        continue;
+      }
+      expression.scope_id =
+          checked_types.statement_occurrences[expression.statement_id].scope_id;
+      if (expression.kind !=
+          BodyTypeState::ExpressionOccurrence::Kind::Identifier)
+        continue;
+      const auto* source_statement = checked_types.statement_occurrences[
+          expression.statement_id].source;
+      if (!source_statement) continue;
+      auto identities = checked_types.binding_identities_at_statement.find(
+          source_statement);
+      const string name = trim(expression.source_expression);
+      if (identities != checked_types.binding_identities_at_statement.end()) {
+        auto binding = identities->second.find(name);
+        if (binding != identities->second.end()) {
+          expression.resolved_binding_id = binding->second;
+          auto immutable = checked_types.immutable_bindings_at_statement.find(
+              source_statement);
+          expression.resolved_binding_mutable =
+              immutable != checked_types.immutable_bindings_at_statement.end() &&
+              immutable->second.count(name) == 0;
+        }
+      }
+      if (expression.resolved_binding_id.empty() && current_function) {
+        bool shadowed = false;
+        const auto source_position = std::find_if(statements.begin(),
+            statements.end(), [&](const Stmt& candidate) {
+              return &candidate == source_statement;
+            });
+        if (source_position != statements.end())
+          for (auto prior = statements.begin(); prior != source_position; ++prior)
+            if ((prior->kind == Stmt::Kind::Let ||
+                 prior->kind == Stmt::Kind::Var ||
+                 prior->kind == Stmt::Kind::Assign) && prior->a == name) {
+              shadowed = true;
+              break;
+            }
+        for (std::size_t parameter = 0;
+             parameter < current_function->params.size() && !shadowed;
+             ++parameter)
+          if (current_function->params[parameter].name == name) {
+            expression.resolved_binding_id =
+                "parameter:" + std::to_string(parameter);
+            expression.resolved_binding_mutable =
+                parameter < current_function->parameter_effects.size() &&
+                current_function->parameter_effects[parameter] != Effect::Read;
+            break;
+          }
+      }
+      auto locals = checked_types.locals_at_statement.find(source_statement);
+      if (locals != checked_types.locals_at_statement.end() &&
+          locals->second.count(name) && expression.resolved_binding_id.empty()) {
+        checked_types.expression_occurrence_ledger_complete = false;
+      }
+    }
+    for (auto& occurrence : checked_types.statement_occurrences) {
+      std::sort(occurrence.expression_roots.begin(),
+                occurrence.expression_roots.end());
+      vector<std::uint32_t> expected_roots;
+      for (const auto& [key, expression_id] : checked_types.expression_root_slots)
+        if (key.first == occurrence.id) expected_roots.push_back(expression_id);
+      std::sort(expected_roots.begin(), expected_roots.end());
+      if (expected_roots != occurrence.expression_roots)
+        checked_types.expression_occurrence_ledger_complete = false;
+      for (const auto root_id : occurrence.expression_roots)
+        if (root_id >= checked_types.expression_occurrences.size() ||
+            checked_types.expression_occurrences[root_id].statement_id !=
+                occurrence.id ||
+            checked_types.expression_occurrences[root_id].parent_id != UINT32_MAX)
+          checked_types.expression_occurrence_ledger_complete = false;
+    }
+    const auto source_statement_node_count = static_cast<std::size_t>(
+        std::count_if(checked_types.statement_occurrences.begin(),
+            checked_types.statement_occurrences.end(),
+            [](const auto& node) { return !node.synthetic; }));
+    if (source_statement_node_count !=
+            checked_types.statement_occurrence_ids.size() ||
+        source_statement_node_count != statements.size())
+      checked_types.expression_occurrence_ledger_complete = false;
+    for (std::size_t id = 0;
+         id < checked_types.statement_occurrences.size(); ++id) {
+      const auto& occurrence = checked_types.statement_occurrences[id];
+      if (occurrence.synthetic) {
+        if (occurrence.source == nullptr ||
+            occurrence.kind != Stmt::Kind::Return ||
+            occurrence.parent_id != UINT32_MAX)
+          checked_types.expression_occurrence_ledger_complete = false;
+        continue;
+      }
+      auto mapped = occurrence.source
+          ? checked_types.statement_occurrence_ids.find(occurrence.source)
+          : checked_types.statement_occurrence_ids.end();
+      if (occurrence.id != id || !occurrence.source ||
+          mapped == checked_types.statement_occurrence_ids.end() ||
+          mapped->second != id ||
+          (occurrence.parent_id != UINT32_MAX &&
+           occurrence.parent_id >= id) ||
+          (occurrence.control_parent_id != UINT32_MAX &&
+           occurrence.control_parent_id >= id))
+        checked_types.expression_occurrence_ledger_complete = false;
+      if (opens_statement_scope(occurrence.kind) !=
+              (occurrence.scope_entry && occurrence.scope_exit) ||
+          (occurrence.kind == Stmt::Kind::Pass &&
+           (!occurrence.explicit_non_evaluating ||
+            !occurrence.expression_roots.empty())))
+        checked_types.expression_occurrence_ledger_complete = false;
+      if ((occurrence.kind == Stmt::Kind::Else ||
+           occurrence.kind == Stmt::Kind::Case ||
+           occurrence.kind == Stmt::Kind::Recover) &&
+          occurrence.control_parent_id == UINT32_MAX)
+        checked_types.expression_occurrence_ledger_complete = false;
+    }
     vector<vector<std::uint32_t>> expression_children(
         checked_types.expression_occurrences.size());
     std::set<std::uint32_t> statement_occurrence_values;
@@ -24966,6 +25324,13 @@ class Checker {
         case Stmt::Kind::Return:
           if (!statement.a.empty()) require_root(statement, "return-value");
           break;
+        case Stmt::Kind::Pass:
+        case Stmt::Kind::Else:
+        case Stmt::Kind::Case:
+          // These are represented in the statement tree. Pass is an explicit
+          // non-evaluating node; Else and Case are checked below for exact
+          // branch-parent links.
+          break;
         case Stmt::Kind::Raw:
         case Stmt::Kind::Try:
         case Stmt::Kind::Recover:
@@ -24973,6 +25338,8 @@ class Checker {
           checked_types.expression_occurrence_ledger_complete = false;
           break;
         default:
+          // New AST statement kinds must be explicitly represented here.
+          checked_types.expression_occurrence_ledger_complete = false;
           break;
       }
     }
@@ -25001,6 +25368,13 @@ export fn sort_values_reverse(values: Vector[Int]) -> Int:
 
 export fn empty_values():
   return []
+
+export fn branch(value: Bool) -> Int:
+  if value:
+    let local = 1
+  else:
+    let local = 2
+  return local
 )moss");
     Program program = Parser(lex_lines(input, "<statement-call-occurrence-test>"))
                           .parse();
@@ -25059,8 +25433,7 @@ export fn empty_values():
     const auto empty_statement =
         empty_state->second->statement_occurrence_ids.find(
             &empty_function->body.front());
-    if (empty_statement ==
-        empty_state->second->statement_occurrence_ids.end())
+    if (empty_statement == empty_state->second->statement_occurrence_ids.end())
       return false;
     const auto empty_root = empty_state->second->expression_root_slots.find(
         {empty_statement->second, "return-value"});
@@ -25073,6 +25446,49 @@ export fn empty_values():
         !empty_occurrence.checked_type ||
         !empty_occurrence.checked_type->structurally_equal(
             *empty_function->open_summary->result_type))
+      return false;
+    const auto branch_function = std::find_if(program.functions.begin(),
+        program.functions.end(), [](const Function& candidate) {
+          return candidate.name == "branch";
+        });
+    if (branch_function == program.functions.end()) return false;
+    const auto branch_state = checker.checked_body_states_.find(
+        &branch_function->body);
+    if (branch_state == checker.checked_body_states_.end() ||
+        !branch_state->second ||
+        branch_state->second->statement_occurrences.size() !=
+            branch_function->body.size()) {
+      return false;
+    }
+    const auto& statement_nodes = branch_state->second->statement_occurrences;
+    auto if_node = std::find_if(statement_nodes.begin(), statement_nodes.end(),
+        [](const auto& node) { return node.kind == Stmt::Kind::If; });
+    auto else_node = std::find_if(statement_nodes.begin(), statement_nodes.end(),
+        [](const auto& node) { return node.kind == Stmt::Kind::Else; });
+    if (if_node == statement_nodes.end() || else_node == statement_nodes.end() ||
+        else_node->control_parent_id != if_node->id ||
+        else_node->branch_role != "else" || !if_node->scope_entry ||
+        !if_node->scope_exit || !else_node->scope_entry ||
+        !else_node->scope_exit)
+      return false;
+    const auto local_nodes = std::count_if(statement_nodes.begin(),
+        statement_nodes.end(), [](const auto& node) {
+          return node.kind == Stmt::Kind::Let && node.introduces_binding &&
+              !node.binding_identity.empty() && node.binding_type;
+        });
+    if (local_nodes != 2)
+      return false;
+    const auto local_reads = std::count_if(
+        branch_state->second->expression_occurrences.begin(),
+        branch_state->second->expression_occurrences.end(),
+        [](const auto& occurrence) {
+          return occurrence.kind ==
+                  BodyTypeState::ExpressionOccurrence::Kind::Identifier &&
+              trim(occurrence.source_expression) == "local" &&
+              !occurrence.resolved_binding_id.empty();
+        });
+    if (local_reads != 0 ||
+        branch_state->second->expression_occurrence_ledger_complete)
       return false;
     const auto key_function = std::find_if(program.functions.begin(),
         program.functions.end(), [](const Function& candidate) {

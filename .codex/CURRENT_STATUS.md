@@ -9762,3 +9762,39 @@ under v10 without a shape-specific flag. Zero-argument relay and actual SDK
 from_range remain unavailable. Raw evidence is
 `docs/phase25/PHASE_25_1_R0_RECHECK_AFTER_R1.json` (compiler commit field is
 docs-only `aa542b71`; implementation SHA is reviewed `561bdaa5`).
+
+## Phase 25.1 R1 — Statement/control-flow occurrence foundation — in progress
+
+L7 reviewed the pushed `f24e1986478e62528d766bb28fdaf2ef29ce3812` and directed
+continuation through R1 without a new architecture pause. The independent
+architect audit of that exact SHA returned NO-GO for R1 completeness and listed
+four remaining P1 areas: summary completion is not gated on occurrence
+coverage; no closed statement/control-flow graph exists; operation/requirement/
+effect/dependency links are partial; and provider lowerers/readers remain
+shape-specific. This remains the active R1 work; no R2 work has started.
+
+The current source slice retains a dense statement occurrence per parsed body
+statement, canonicalizes source IDs in AST order while preserving synthetic
+return roots, links statement roots to expression IDs, and records parent,
+branch, scope entry/exit, binding declaration/type/mutability, explicit Pass
+nodes, parameter read identities, and expression scope IDs. The statement-kind
+validator now explicitly rejects unrepresented new variants instead of
+silently accepting its default branch. A branch-join probe intentionally
+remains ledger-incomplete because the checker does not yet retain the joined
+local's exact binding identity; the occurrence is not assigned a guessed ID.
+This is a fail-closed foundation, not exhaustive R1 acceptance. Operation and
+requirement fact cross-checks, branch-join/local binding identity, resolved
+effects/dependencies, total lowerer/reader convergence, and summary/body
+completeness gating remain open.
+
+Validation on the current working source: `make --jobs="$(nproc)" moss-dev`,
+`python3 tests/tooling/check_phase25_statement_call_occurrence_roles.py`,
+`check_phase25_empty_vector_records.py`,
+`check_phase25_r2c_empty_vector_consumer.py`,
+`check_phase25_m2b2_source_free_corpus.py`, `check_agent_feedback.py`, and
+`git diff --check` pass. The source-free corpus retains its ABI-v9 controls and
+hostile-artifact rejection checks. Existing TypeSolver initializer warnings
+remain. ABI-v9 raise/recover failures, the 24 unavailable v10 profiles, and
+`packages/time` remain visible in the compatibility ledger. Current changes
+are uncommitted and need an exact pushed-SHA review before they become a green
+R1 checkpoint.
