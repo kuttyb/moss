@@ -9930,3 +9930,9 @@ does not yet admit its three-operation, multi-edge summary, and the importer
 does not yet prove requirement identity/dependency correspondence against the
 new body node. This internal codec/lowerer slice is not end-to-end parity or R1
 acceptance.
+
+### R1 collection-loop hostile-slot correction — working tree, 2026-10-21
+
+The adversarial audit of the conditional importer guard found two unchecked slots in the narrow Count/Index loop exception: projection emitted an unvalidated `else` body, and loop index / optional `count_equal` accumulator initializers were checked only for Int type. The importer now requires an empty `else`, index literal `0`, and optional match-counter literal `0`. Added sealed artifact mutations that add the accepted then-action to an else branch, start the index at `1`, and start the SDK `count_equal` accumulator at `1`.
+
+Validation on `build/compiler/moss-dev`: compiler build, full M2b2 source-free corpus (including IfJoin, If+Assign, and collection mutations), and actual SDK D4 source-free corpus passed. D4 ran `index_of`, `contains`, and `count_equal` after legacy body poisoning, verified Int/String outputs, and rejected the mutated `count_equal` accumulator. An initial D4 mutation invocation exposed that ABI archive marker module names are package names rather than module IDs; the fixture now takes the marker name explicitly (`collections`). The Architect returned NO-GO on the prior frozen `e8849ad0` for these two holes; request exact-SHA review after this correction is committed. Operation-to-requirement parity, generalized lowerer coverage, source-surface totality, and overall R1 acceptance remain open. R2–R5 remain unstarted.

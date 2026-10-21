@@ -3785,6 +3785,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
           statements[loop_index].expr && statements[loop_index].body.size() == 2 &&
           statements[loop_index].body[0].kind == checked_ir::StmtKind::If &&
           statements[loop_index].body[0].expr &&
+          statements[loop_index].body[0].else_branch.empty() &&
           statements[loop_index].body[0].then_branch.size() == 1 &&
           statements[loop_index].body[1].kind == checked_ir::StmtKind::Assign &&
           statements[loop_index].body[1].local_ordinal == 0;
@@ -3803,6 +3804,13 @@ static void project_imported_h3_checked_bodies(Program& program) {
             !declaration.type || !declaration.type->structurally_equal(*int_type))
           invalid("checked ABI-v10 collection local declarations are inconsistent");
       }
+      const auto is_zero_literal = [](const checked_ir::Expr& expression) {
+        return expression.kind == checked_ir::ExprKind::IntegerLiteral &&
+            expression.literal_value == "0";
+      };
+      if (!is_zero_literal(*statements[0].expr) ||
+          (local_count == 3 && !is_zero_literal(*statements[1].expr)))
+        invalid("checked ABI-v10 collection loop counters must start at zero");
       const size_t count_ordinal = local_count - 1;
       const auto& count_initializer = *statements[count_ordinal].expr;
       const auto& loop = statements[loop_index];

@@ -23,11 +23,12 @@ void write_file(const std::string& path, const std::string& bytes) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  assert(argc == 4 || argc == 5);
+  assert(argc == 4 || argc == 5 || argc == 6);
   const std::string interface_path = argv[1];
   const std::string archive_path = argv[2];
   const std::string mode = argv[3];
-  const std::string callable_name = argc == 5 ? argv[4] : "fresh";
+  const std::string callable_name = argc >= 5 ? argv[4] : "fresh";
+  const std::string provider_name = argc == 6 ? argv[5] : "Service";
   auto sealed = moss::abi_v10::decode(read_file(interface_path));
   const std::string old_digest = sealed.digest;
   const std::string callable = "callable-v1:" + sealed.value.module_id +
@@ -79,6 +80,23 @@ int main(int argc, char** argv) {
     assert(statements.size() == 1 && statements.front().expr &&
            statements.front().expr->kind == moss::checked_ir::ExprKind::Call);
     rewrite(statements.front().expr.value());
+    body.checked_ir_bytes =
+        moss::checked_ir::encode_checked_body_v1(statements);
+    body.semantic_hash =
+        moss::checked_ir::compute_checked_body_hash_v1(statements);
+    summary.body_semantic_hash = body.semantic_hash;
+    replace_summary();
+    replace_body(std::move(body));
+  };
+  auto rewrite_collection_body = [&](auto&& rewrite) {
+    auto body = moss::abi_v10::read_checked_body_record(body_at->payload);
+    moss::TypeContext context;
+    const auto variable = moss::Type::var(moss::TypeVarId{0, 0, 0});
+    const auto vector = moss::Type::builtin("vector", {variable});
+    auto statements = moss::checked_ir::decode_collection_loop_checked_body_v1(
+        body.checked_ir_bytes, context, {vector, variable},
+        moss::Type::primitive("int"), body.semantic_hash);
+    rewrite(statements);
     body.checked_ir_bytes =
         moss::checked_ir::encode_checked_body_v1(statements);
     body.semantic_hash =
@@ -267,6 +285,32 @@ int main(int argc, char** argv) {
       expression.operands.clear();
       expression.ordinal = 0;
     });
+  } else if (mode == "collection-extra-else") {
+    rewrite_collection_body([&](auto& statements) {
+      assert(statements.size() >= 4 &&
+             statements[2].kind == moss::checked_ir::StmtKind::While &&
+             !statements[2].body.empty() &&
+             statements[2].body[0].kind == moss::checked_ir::StmtKind::If &&
+             statements[2].body[0].then_branch.size() == 1);
+      statements[2].body[0].else_branch.push_back(
+          statements[2].body[0].then_branch.front());
+    });
+  } else if (mode == "collection-index-start") {
+    rewrite_collection_body([&](auto& statements) {
+      assert(!statements.empty() && statements[0].kind ==
+                 moss::checked_ir::StmtKind::Var && statements[0].expr &&
+             statements[0].expr->kind ==
+                 moss::checked_ir::ExprKind::IntegerLiteral);
+      statements[0].expr->literal_value = "1";
+    });
+  } else if (mode == "collection-count-start") {
+    rewrite_collection_body([&](auto& statements) {
+      assert(statements.size() == 5 && statements[1].kind ==
+                 moss::checked_ir::StmtKind::Var && statements[1].expr &&
+             statements[1].expr->kind ==
+                 moss::checked_ir::ExprKind::IntegerLiteral);
+      statements[1].expr->literal_value = "1";
+    });
   } else if (mode == "duplicate-record") {
     auto duplicate = *summary_at;
     duplicate.id = "sha256:" + std::string(64, 'f');
@@ -294,9 +338,9 @@ int main(int argc, char** argv) {
   const auto new_digest = moss::abi_v10::parse(rewritten).digest;
   auto archive = read_file(archive_path);
   const auto old_marker = moss::abi_v10::provider_marker(
-      "Service", old_digest);
+      provider_name, old_digest);
   const auto new_marker = moss::abi_v10::provider_marker(
-      "Service", new_digest);
+      provider_name, new_digest);
   std::size_t replacements = 0;
   for (auto position = archive.find(old_marker);
        position != std::string::npos;
@@ -305,7 +349,7 @@ int main(int argc, char** argv) {
     ++replacements;
   }
   assert(replacements > 0);
-  moss::abi_v10::validate_selected_rlib(archive, "Service", new_digest);
+  moss::abi_v10::validate_selected_rlib(archive, provider_name, new_digest);
   write_file(interface_path, rewritten);
   write_file(archive_path, archive);
 }

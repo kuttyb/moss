@@ -50,6 +50,11 @@ with tempfile.TemporaryDirectory(prefix="phase25-d4-sdk-collections-", dir=TMP) 
          "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
          "tests/tooling/mutate_phase25_d4_collection_artifact.cpp",
          "-o", str(mutator)])
+    checked_body_mutator = scratch / "mutate_checked_collection_artifact"
+    run(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
+         "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
+         "tests/tooling/mutate_phase25_parameter_return_artifact.cpp",
+         "-o", str(checked_body_mutator)])
     poison_counts = {}
     for callable_name in ("index_of", "contains", "count_equal"):
         out, err = run([str(poisoner), str(interface), str(archive),
@@ -121,6 +126,27 @@ fn main():
         assert rejected.returncode != 0 and "SOURCE_FREE_" in diagnostic, (
             mode, rejected.returncode, diagnostic)
         print(f"PASS {mode} rejected through the checked ABI-v10 path")
+
+    mutated = scratch / "artifacts-count-counter-start"
+    shutil.copytree(artifacts, mutated)
+    run([str(checked_body_mutator), str(mutated / "collections.mossi"),
+         str(mutated / "libcollections.rlib"), "collection-count-start",
+         "count_equal", "collections"])
+    bad_consumer = scratch / "consumer-count-counter-start"
+    (bad_consumer / "src").mkdir(parents=True)
+    (bad_consumer / "Moss.toml").write_text(
+        '[package]\nname = "phase25_d4_bad_count_counter_start"\n'
+        'version = "0.1.0"\n\n[build]\nsource = "src"\n')
+    (bad_consumer / "src/main.moss").write_text(source)
+    bad_env = env | {"MOSS_MODULE_PATH": str(mutated),
+                     "MARGO_HOME": str(scratch / "margo-count-counter-start")}
+    rejected = subprocess.run([str(MARGO), "build"], cwd=bad_consumer,
+                              env=bad_env, capture_output=True, text=True,
+                              timeout=300)
+    diagnostic = rejected.stdout + rejected.stderr
+    assert rejected.returncode != 0 and "SOURCE_FREE_CHECKED_BODY_INVALID" in diagnostic, (
+        "collection-count-start", rejected.returncode, diagnostic)
+    print("PASS collection-count-start rejected through the checked ABI-v10 path")
 
 print("D4 actual SDK source-free outputs passed; legacy records removed: " +
       ", ".join(f"{name}={count}" for name, count in poison_counts.items()))
