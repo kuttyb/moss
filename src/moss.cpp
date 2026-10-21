@@ -6635,6 +6635,12 @@ class Checker {
             operation.operation_id == "call:" + callee &&
             !operation.result)
           operation.result = expression.checked_type;
+      // The functional Callable result placeholder is summarized in a
+      // different type-variable namespace from the body solver. Until an
+      // explicit checker relation bridges this Call result to the summary's
+      // Callable result, retain the operation fact but do not call the
+      // occurrence ledger complete.
+      state.expression_occurrence_ledger_complete = false;
     }
   }
 
@@ -6649,8 +6655,11 @@ class Checker {
       return false;
     auto& state = *retained->second;
     resolve_callable_occurrence_bindings(function, state);
-    if (!state.expression_occurrence_ledger_complete)
+    if (!state.expression_occurrence_ledger_complete) {
+      function.open_summary->occurrence_ledger_complete = false;
+      function.open_summary->complete = false;
       return false;
+    }
     const auto& summary = *function.open_summary;
     std::map<moss::TypeVarId, moss::TypeRef> body_type_projection;
     std::function<bool(const moss::TypeRef&, const moss::TypeRef&)> relate_type =
@@ -29146,9 +29155,10 @@ fn inspect_sample(sample: Sample) -> Int:
         !callback_state_entry->second)
       return false;
     const auto& callback_state = *callback_state_entry->second;
-    if (!callback_state.expression_occurrence_ledger_complete ||
+    if (callback_state.expression_occurrence_ledger_complete ||
         !callback_function->open_summary ||
-        !callback_function->open_summary->scheme_complete)
+        !callback_function->open_summary->scheme_complete ||
+        callback_function->open_summary->occurrence_ledger_complete)
       return false;
     const auto callback_occurrence = std::find_if(
         callback_state.expression_occurrences.begin(),
