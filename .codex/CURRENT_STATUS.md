@@ -2,7 +2,7 @@
 
 ## Phase 25.1 R1 continuation — Map effect review correction — 2026-10-20
 
-Latest pushed checkpoint before this working slice is `c52db1e844247bb21020f769a2e4b0950765ef23`. The scoped Map follow-up audit closed the effect-understatement P1 and encoder/decoder bound P2 with GO. The expanded source-free corpus covers open Map key/value types and a division key, poisons both legacy bodies, checks both projection traces, and erases sealed `may_panic` plus legacy `local_mutation`/`may_panic` flags for each callable.
+Latest pushed checkpoint before these working slices is `4e53fbbeb2c6de6492ba3b7f3001036185432d86`. The scoped Map follow-up audit closed the effect-understatement P1 and encoder/decoder bound P2 with GO. The expanded source-free corpus covers open Map key/value types and a division key, poisons both legacy bodies, checks both projection traces, and erases sealed `may_panic` plus legacy `local_mutation`/`may_panic` flags for each callable.
 
 ## R1 common producer migration — working tree
 
@@ -13,6 +13,14 @@ Validation correction: the repository-root `./moss` is a prebuilt binary from be
 Passing source-built checks: compiler build; full M2b2 source-free corpus (including hostile mutation and ABI-v9 controls); checked-body IR and G3; H3 direct records; H3 arithmetic decoder; generic collection facts; statement/call occurrence roles; D2 codec and pinned pre-D2 reader rejection; generic arithmetic requirements; agent-feedback validator; JSONL parsing; `git diff --check`. The standalone checked-body C++ suite passed before its wrapper assertion was updated; the full wrapper now passes.
 
 R1 remains open pending exhaustive occurrence/control-flow closure, additional lowerer migrations, fail-closed proof across the accepted Moss surface, and independent acceptance on a frozen SHA. The 24 valid-but-unavailable v10 profiles, two ABI-v9 raise/recover failures, and `packages/time` P2 remain visible. Do not start R2 before R1 acceptance.
+
+## R1 occurrence-lowered Count/Index loop migration — working tree
+
+Extended the common occurrence lowerer for `while` control flow and implicit first assignment bindings. The checker retains a declaration identity and a post-assignment identity alias; the lowerer now links both exact identities to one local ordinal so subsequent reads and writes resolve without display-name matching. The source-pattern `retain_checked_collection_loop_ir` lowerer was removed. The checked Count/Index record producer remains as a temporary ABI summary/effect validator; it consumes the common lowerer's canonical body and is the next producer to migrate.
+
+Parity evidence: with the old lowerer removed from selection, `python3 tests/tooling/check_phase25_m2b2_source_free_corpus.py build/compiler/moss-dev` passes against the cleaned implementation, including the source-free Count/Index loop, all hostile checked-body mutations, and ABI-v9 controls. A direct source-built provider probe confirmed canonical body retention for the implicit `count` binding and loop local identities. `make --jobs="$(nproc)" moss`, the checked-body IR suite, G3 source-free parity, feedback validation, JSONL parsing, and `git diff --check` pass. Existing TypeSolver missing-initializer warnings remain.
+
+R1 remains open. The common body lowerer still rejects many valid statements/expressions and the Count/Index ABI record producer remains shape-specific. No independent full R1 acceptance has been requested yet.
 
 R1 remains open: exhaustive occurrence/control-flow coverage and generalized lowerer parity are still required. The 24 unavailable ABI-v10 profiles, two ABI-v9 raise/recover consumer failures, and `packages/time` R4 P2 remain visible. Do not enter R2 before independent full R1 acceptance.
 

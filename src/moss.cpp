@@ -5879,403 +5879,6 @@ class Checker {
     }
   };
 
-  bool retain_checked_collection_loop_ir(Function& function) {
-    if (!function.open_summary || !function.open_summary->scheme_complete ||
-        function.params.size() != 2 ||
-        (function.body.size() != 7 && function.body.size() != 8))
-      return false;
-    auto retained = checked_body_states_.find(&function.body);
-    if (retained == checked_body_states_.end() || !retained->second)
-      return false;
-    auto& state = *retained->second;
-    const auto& summary = *function.open_summary;
-    const auto& body = function.body;
-    const bool counts_matches = body.size() == 8;
-    const size_t count_statement = counts_matches ? 2 : 1;
-    const size_t while_statement = count_statement + 1;
-    const size_t if_statement = while_statement + 1;
-    const size_t match_statement = if_statement + 1;
-    const size_t increment_statement = match_statement + 1;
-    const size_t terminal_statement = body.size() - 1;
-    const bool bool_result = summary.result_type &&
-        summary.result_type->structurally_equal(*moss::Type::primitive("bool"));
-    if (body[0].kind != Stmt::Kind::Var ||
-        (counts_matches && body[1].kind != Stmt::Kind::Var) ||
-        body[count_statement].kind != Stmt::Kind::Assign ||
-        body[while_statement].kind != Stmt::Kind::While ||
-        body[if_statement].kind != Stmt::Kind::If ||
-        body[increment_statement].kind != Stmt::Kind::Assign ||
-        body[terminal_statement].kind != Stmt::Kind::Return ||
-        (counts_matches && body[match_statement].kind != Stmt::Kind::Assign) ||
-        (!counts_matches && body[match_statement].kind != Stmt::Kind::Return) ||
-        (summary.result_type && summary.result_type->structurally_equal(
-            *moss::Type::primitive("int")) && !counts_matches &&
-         body[match_statement].kind != Stmt::Kind::Return) ||
-        (!summary.result_type || (!bool_result && !summary.result_type->structurally_equal(
-            *moss::Type::primitive("int")))) ||
-        body[0].indent != 0 ||
-        (counts_matches && body[1].indent != 0) ||
-        body[count_statement].indent != 0 ||
-        body[while_statement].indent != 0 || body[if_statement].indent != 1 ||
-        body[match_statement].indent != 2 ||
-        (counts_matches && body[increment_statement].indent != 1) ||
-        body[terminal_statement].indent != 0)
-      return false;
-    const auto first_binding = state.binding_facts.find(&body[0]);
-    const auto count_binding = state.binding_facts.find(&body[count_statement]);
-    const auto increment_binding = state.binding_facts.find(&body[increment_statement]);
-    const auto matches_binding = counts_matches
-        ? state.binding_facts.find(&body[1]) : state.binding_facts.end();
-    const auto matches_update_binding = counts_matches
-        ? state.binding_facts.find(&body[match_statement]) : state.binding_facts.end();
-    if (first_binding == state.binding_facts.end() ||
-        count_binding == state.binding_facts.end() ||
-        increment_binding == state.binding_facts.end() ||
-        !first_binding->second.introduced ||
-        !first_binding->second.mutable_binding ||
-        !count_binding->second.introduced ||
-        !count_binding->second.mutable_binding ||
-        increment_binding->second.introduced ||
-        !increment_binding->second.mutable_binding ||
-        first_binding->second.identity.empty() ||
-        count_binding->second.identity.empty() ||
-        increment_binding->second.identity != first_binding->second.identity ||
-        (counts_matches && (matches_binding == state.binding_facts.end() ||
-          matches_update_binding == state.binding_facts.end() ||
-          !matches_binding->second.introduced ||
-          !matches_binding->second.mutable_binding ||
-          matches_binding->second.identity.empty() ||
-          matches_update_binding->second.introduced ||
-          !matches_update_binding->second.mutable_binding ||
-          matches_update_binding->second.identity != matches_binding->second.identity)))
-      return false;
-    const auto int_type = moss::Type::primitive("int");
-    const auto bool_type = moss::Type::primitive("bool");
-    if (!first_binding->second.type || !count_binding->second.type ||
-        !increment_binding->second.type ||
-        !state.solver.resolve(first_binding->second.type)->structurally_equal(*int_type) ||
-        !state.solver.resolve(count_binding->second.type)->structurally_equal(*int_type) ||
-        !state.solver.resolve(increment_binding->second.type)->structurally_equal(*int_type) ||
-        (counts_matches && (!matches_binding->second.type ||
-          !matches_update_binding->second.type ||
-          !state.solver.resolve(matches_binding->second.type)->structurally_equal(*int_type) ||
-          !state.solver.resolve(matches_update_binding->second.type)->structurally_equal(*int_type))))
-      return false;
-
-    const auto count_facts = std::count_if(summary.operations.begin(),
-        summary.operations.end(), [](const auto& fact) {
-      return fact.operation_id == checked_ir::kCollectionCountOperationId;
-    });
-    const auto index_facts = std::count_if(summary.operations.begin(),
-        summary.operations.end(), [](const auto& fact) {
-      return fact.operation_id == checked_ir::kCollectionIndexOperationId;
-    });
-    if (summary.operations.size() != 2 || count_facts != 1 || index_facts != 1 ||
-        summary.parameter_types.size() != 2 ||
-        summary.parameter_access.size() != 2 ||
-        summary.parameter_access[0] != moss::AccessMode::Read ||
-        summary.parameter_access[1] != moss::AccessMode::Read ||
-        !summary.result_type ||
-        (!summary.result_type->structurally_equal(*int_type) &&
-         !summary.result_type->structurally_equal(*bool_type)) ||
-        !function.observable_effects.may_panic ||
-        function.observable_effects.unresolved)
-      return false;
-    const auto count_fact = std::find_if(summary.operations.begin(),
-        summary.operations.end(), [](const auto& fact) {
-      return fact.operation_id == checked_ir::kCollectionCountOperationId;
-    });
-    const auto index_fact = std::find_if(summary.operations.begin(),
-        summary.operations.end(), [](const auto& fact) {
-      return fact.operation_id == checked_ir::kCollectionIndexOperationId;
-    });
-    const auto vector_type = summary.parameter_types[0];
-    const auto element_type = summary.parameter_types[1];
-    if (!vector_type || !element_type ||
-        vector_type->kind != moss::TypeKind::Builtin ||
-        vector_type->name != "vector" || vector_type->type_args.size() != 1 ||
-        !vector_type->type_args.front()->structurally_equal(*element_type) ||
-        !count_fact->receiver || !count_fact->result ||
-        !count_fact->receiver->structurally_equal(*vector_type) ||
-        !count_fact->result->structurally_equal(*int_type) ||
-        !index_fact->receiver || !index_fact->result ||
-        index_fact->arguments.size() != 1 || !index_fact->arguments.front() ||
-        !index_fact->receiver->structurally_equal(*vector_type) ||
-        !index_fact->arguments.front()->structurally_equal(*int_type) ||
-        !index_fact->result->structurally_equal(*element_type))
-      return false;
-    const auto equality = std::find_if(summary.requirements.begin(),
-        summary.requirements.end(), [](const moss::Requirement& requirement) {
-      return requirement.kind == moss::RequirementKind::Operator &&
-          requirement.target_id == "operator:==";
-    });
-    const auto typed_index = std::find_if(summary.requirements.begin(),
-        summary.requirements.end(), [](const moss::Requirement& requirement) {
-      return requirement.kind == moss::RequirementKind::Index &&
-          requirement.target_id == "builtin:index";
-    });
-    if (summary.requirements.size() != 2 || equality == summary.requirements.end() ||
-        typed_index == summary.requirements.end() || !equality->subject ||
-        equality->arguments.size() != 1 || !equality->arguments.front() ||
-        !equality->result ||
-        !equality->subject->structurally_equal(*element_type) ||
-        !equality->arguments.front()->structurally_equal(*element_type) ||
-        !(*equality->result)->structurally_equal(*bool_type))
-      return false;
-
-    auto expected_operation = [&](std::string_view operation_id, int line) {
-      return std::count_if(state.open_operations.begin(),
-          state.open_operations.end(), [&](const auto& fact) {
-        return fact.operation_id == operation_id && fact.line == line;
-      }) == 1;
-    };
-    if (state.open_operations.size() != 2 ||
-        !expected_operation(checked_ir::kCollectionCountOperationId,
-                           body[count_statement].line) ||
-        !expected_operation(checked_ir::kCollectionIndexOperationId,
-                           body[if_statement].line) ||
-        state.open_operator_requirements.size() != 1 ||
-        state.open_operator_requirements.front().target_id != "operator:==" ||
-        state.open_operator_requirements.front().origin.line != body[if_statement].line)
-      return false;
-
-    auto parameter_ordinal = [&](const string& name) -> std::optional<uint32_t> {
-      for (uint32_t index = 0; index < function.params.size(); ++index)
-        if (function.params[index].name == name) return index;
-      return std::nullopt;
-    };
-    std::map<string, uint32_t> local_ordinals{{body[0].a, 0}};
-    if (counts_matches) local_ordinals.emplace(body[1].a, 1);
-    local_ordinals.emplace(body[count_statement].a, counts_matches ? 2 : 1);
-    if (body[0].a.empty() || body[count_statement].a.empty() ||
-        (counts_matches && body[1].a.empty()) ||
-        local_ordinals.size() != (counts_matches ? 3u : 2u) ||
-        body[0].a == body[count_statement].a ||
-        (counts_matches && (body[0].a == body[1].a ||
-                            body[1].a == body[count_statement].a)) ||
-        body[0].a == function.params[0].name || body[0].a == function.params[1].name ||
-        body[count_statement].a == function.params[0].name ||
-        body[count_statement].a == function.params[1].name ||
-        (counts_matches && (body[1].a == function.params[0].name ||
-                            body[1].a == function.params[1].name)))
-      return false;
-    auto snapshot_has = [&](size_t statement_index, const string& name) {
-      auto snapshot = state.locals_at_statement.find(&body[statement_index]);
-      return snapshot != state.locals_at_statement.end() &&
-          snapshot->second.count(name) != 0;
-    };
-    for (size_t statement_index = 0; statement_index < body.size(); ++statement_index) {
-      for (const auto& [name, ordinal] : local_ordinals) {
-        (void)ordinal;
-        const size_t declaration_index = ordinal == 0 ? 0
-            : counts_matches && ordinal == 1 ? 1 : count_statement;
-        if ((declaration_index < statement_index) !=
-            snapshot_has(statement_index, name))
-          return false;
-      }
-    }
-
-    auto local_type = [&](const string& name) -> moss::TypeRef {
-      auto snapshot = state.locals_at_statement.find(&body[while_statement]);
-      if (snapshot == state.locals_at_statement.end()) return nullptr;
-      auto found = snapshot->second.find(name);
-      return found == snapshot->second.end() ? nullptr : state.solver.resolve(found->second);
-    };
-    auto checked_local_type = [&](const string& name) -> moss::TypeRef {
-      if (local_ordinals.count(name)) return int_type;
-      return nullptr;
-    };
-    std::function<std::optional<checked_ir::Expr>(const string&,
-        const moss::TypeRef&, size_t, unsigned)> expression;
-    expression = [&](const string& source, const moss::TypeRef& expected,
-                     size_t statement_index, unsigned depth)
-        -> std::optional<checked_ir::Expr> {
-      if (!expected || depth > 8) return std::nullopt;
-      const string value = trim(source);
-      if (auto ordinal = parameter_ordinal(value)) {
-        auto type = summary.parameter_types[*ordinal];
-        if (!type->structurally_equal(*expected)) return std::nullopt;
-        checked_ir::Expr result;
-        result.kind = checked_ir::ExprKind::Parameter;
-        result.type = type;
-        result.ordinal = *ordinal;
-        return result;
-      }
-      if (auto local = local_ordinals.find(value); local != local_ordinals.end()) {
-        const size_t declaration_index = local->second == 0 ? 0
-            : counts_matches && local->second == 1 ? 1 : count_statement;
-        const auto identity_fact = state.binding_facts.find(&body[declaration_index]);
-        if (!snapshot_has(statement_index, value) ||
-            identity_fact == state.binding_facts.end() ||
-            identity_fact->second.identity.empty() ||
-            !checked_local_type(value)->structurally_equal(*expected))
-          return std::nullopt;
-        auto actual = local_type(value);
-        if (!actual || !actual->structurally_equal(*int_type)) return std::nullopt;
-        checked_ir::Expr result;
-        result.kind = checked_ir::ExprKind::LocalRead;
-        result.type = actual;
-        result.ordinal = local->second;
-        return result;
-      }
-      if (statement_index == count_statement &&
-          value == function.params[0].name + " |> count") {
-        if (!expected->structurally_equal(*int_type) ||
-            !count_fact->receiver->structurally_equal(*summary.parameter_types[0]))
-          return std::nullopt;
-        checked_ir::Expr receiver;
-        receiver.kind = checked_ir::ExprKind::Parameter;
-        receiver.type = summary.parameter_types[0];
-        receiver.ordinal = 0;
-        checked_ir::Expr result;
-        result.kind = checked_ir::ExprKind::CollectionCount;
-        result.type = count_fact->result;
-        result.semantic_target_id = string(checked_ir::kCollectionCountOperationId);
-        result.operands.push_back(std::move(receiver));
-        return result;
-      }
-      string index_base, index_expression;
-      if (parse_index(value, index_base, index_expression) &&
-          statement_index == if_statement && index_base == function.params[0].name &&
-          index_expression == body[0].a) {
-        auto index_type = expression(index_expression, int_type, statement_index,
-                                     depth + 1);
-        if (!index_type || !index_fact->result->structurally_equal(*expected))
-          return std::nullopt;
-        checked_ir::Expr receiver;
-        receiver.kind = checked_ir::ExprKind::Parameter;
-        receiver.type = summary.parameter_types[0];
-        receiver.ordinal = 0;
-        checked_ir::Expr result;
-        result.kind = checked_ir::ExprKind::Index;
-        result.type = index_fact->result;
-        result.semantic_target_id = string(checked_ir::kCollectionIndexOperationId);
-        result.operands = {std::move(receiver), std::move(*index_type)};
-        return result;
-      }
-      if (!value.empty() && std::all_of(value.begin(), value.end(),
-            [](unsigned char ch) { return std::isdigit(ch); })) {
-        if (!expected->structurally_equal(*int_type)) return std::nullopt;
-        checked_ir::Expr result;
-        result.kind = checked_ir::ExprKind::IntegerLiteral;
-        result.type = int_type;
-        result.literal_value = value;
-        return result;
-      }
-      if ((value == "true" || value == "false") &&
-          expected->structurally_equal(*bool_type)) {
-        checked_ir::Expr result;
-        result.kind = checked_ir::ExprKind::BoolLiteral;
-        result.type = bool_type;
-        result.literal_value = value;
-        return result;
-      }
-      for (const auto& operators : vector<vector<string>>{{"=="}, {"<"}, {"+"}, {"-"}}) {
-        auto parts = split_binary(value, operators);
-        if (!parts) continue;
-        const string op = operators.front();
-        const moss::TypeRef operand_type = op == "==" ? element_type : int_type;
-        if ((op == "==" && (statement_index != if_statement ||
-                            !expected->structurally_equal(*bool_type))) ||
-            (op == "<" && !expected->structurally_equal(*bool_type)) ||
-            ((op == "+" || op == "-") &&
-             !expected->structurally_equal(*int_type)))
-          return std::nullopt;
-        auto left = expression(parts->first, operand_type, statement_index,
-                               depth + 1);
-        auto right = expression(parts->second, operand_type, statement_index,
-                                depth + 1);
-        if (!left || !right) return std::nullopt;
-        checked_ir::Expr result;
-        result.kind = checked_ir::ExprKind::Binary;
-        result.type = expected;
-        result.binary_op = op == "==" ? checked_ir::BinaryOp::Equal
-            : op == "<" ? checked_ir::BinaryOp::Less
-            : op == "+" ? checked_ir::BinaryOp::Add
-                           : checked_ir::BinaryOp::Sub;
-        result.operands = {std::move(*left), std::move(*right)};
-        return result;
-      }
-      return std::nullopt;
-    };
-
-    auto make_statement = [](checked_ir::StmtKind kind, moss::TypeRef type,
-                             std::optional<checked_ir::Expr> value = std::nullopt) {
-      checked_ir::Stmt statement;
-      statement.kind = kind;
-      statement.type = std::move(type);
-      statement.expr = std::move(value);
-      return statement;
-    };
-    auto initial = expression(body[0].b, int_type, 0, 0);
-    auto matches_initial = counts_matches
-        ? expression(body[1].b, int_type, 1, 0)
-        : std::optional<checked_ir::Expr>{};
-    auto count = expression(body[count_statement].b, int_type, count_statement, 0);
-    auto condition = expression(body[while_statement].a, bool_type, while_statement, 0);
-    auto equality_condition = expression(body[if_statement].a, bool_type, if_statement, 0);
-    auto match_value = expression(body[match_statement].kind == Stmt::Kind::Return
-            ? body[match_statement].a : body[match_statement].b,
-        counts_matches ? int_type : summary.result_type, match_statement, 0);
-    auto increment = expression(body[increment_statement].b, int_type,
-                                increment_statement, 0);
-    auto terminal = expression(body[terminal_statement].a, summary.result_type,
-                               terminal_statement, 0);
-    if (!initial || (counts_matches && !matches_initial) || !count || !condition ||
-        !equality_condition || !match_value || !increment || !terminal)
-      return false;
-    vector<checked_ir::Stmt> declarations;
-    checked_ir::Stmt local_i = make_statement(
-        checked_ir::StmtKind::Var, int_type, std::move(initial));
-    local_i.local_ordinal = 0;
-    declarations.push_back(std::move(local_i));
-    if (counts_matches) {
-      checked_ir::Stmt local_matches = make_statement(
-          checked_ir::StmtKind::Var, int_type, std::move(matches_initial));
-      local_matches.local_ordinal = 1;
-      declarations.push_back(std::move(local_matches));
-    }
-    checked_ir::Stmt local_n = make_statement(
-        checked_ir::StmtKind::Var, int_type, std::move(count));
-    local_n.local_ordinal = counts_matches ? 2 : 1;
-    declarations.push_back(std::move(local_n));
-    checked_ir::Stmt branch = make_statement(
-        checked_ir::StmtKind::If, bool_type, std::move(equality_condition));
-    if (counts_matches) {
-      checked_ir::Stmt update = make_statement(
-          checked_ir::StmtKind::Assign, int_type, std::move(match_value));
-      update.local_ordinal = 1;
-      branch.then_branch.push_back(std::move(update));
-    } else {
-      checked_ir::Stmt early_return = make_statement(
-          checked_ir::StmtKind::Return, summary.result_type, std::move(match_value));
-      branch.then_branch.push_back(std::move(early_return));
-    }
-    checked_ir::Stmt assign_i = make_statement(
-        checked_ir::StmtKind::Assign, int_type, std::move(increment));
-    assign_i.local_ordinal = 0;
-    checked_ir::Stmt loop = make_statement(
-        checked_ir::StmtKind::While, bool_type, std::move(condition));
-    loop.body = {std::move(branch), std::move(assign_i)};
-    checked_ir::Stmt final_return = make_statement(
-        checked_ir::StmtKind::Return, summary.result_type, std::move(terminal));
-    vector<checked_ir::Stmt> statements = std::move(declarations);
-    statements.push_back(std::move(loop));
-    statements.push_back(std::move(final_return));
-    try {
-      const auto bytes = checked_ir::encode_checked_body_v1(statements);
-      const auto hash = checked_ir::compute_checked_body_hash_v1(statements);
-      if (checked_ir::encode_checked_body_v1(statements) != bytes ||
-          checked_ir::compute_checked_body_hash_v1(statements) != hash)
-        return false;
-      function.checked_body_ir_v1_bytes = bytes;
-      function.checked_body_ir_v1_hash = hash;
-      return true;
-    } catch (const std::invalid_argument&) {
-      return false;
-    }
-  }
-
   // Lower a bounded body from the ordinary checker's retained statement
   // and expression occurrences. This path consumes checker identities and
   // TypeRefs; source spelling is used only for literal payloads.
@@ -6375,13 +5978,20 @@ class Checker {
           &source_statement);
       if (statement == state.statement_occurrence_ids.end()) return false;
       const auto& node = state.statement_occurrences.at(statement->second);
+      const auto binding_fact = state.binding_facts.find(&source_statement);
+      const bool introduced_assignment =
+          source_statement.kind == Stmt::Kind::Assign &&
+          simple_identifier(source_statement.a) &&
+          binding_fact != state.binding_facts.end() &&
+          binding_fact->second.introduced;
       if (source_statement.kind != Stmt::Kind::Let &&
-          source_statement.kind != Stmt::Kind::Var) continue;
+          source_statement.kind != Stmt::Kind::Var &&
+          !introduced_assignment)
+        continue;
       if (node.bindings.size() != 1 || node.bindings.front().identity.empty() ||
           !node.bindings.front().type ||
           local_ordinals.count(node.bindings.front().identity))
         return false;
-      const auto binding_fact = state.binding_facts.find(&source_statement);
       if (binding_fact == state.binding_facts.end() ||
           !binding_fact->second.introduced ||
           binding_fact->second.mutable_binding !=
@@ -6394,6 +6004,13 @@ class Checker {
           local_ordinals.emplace(binding_fact->second.identity, ordinal);
       if (!checker_identity_inserted && checker_identity->second != ordinal)
         return false;
+      if (!node.assigned_binding_identity.empty()) {
+        auto [assigned_identity, assigned_identity_inserted] =
+            local_ordinals.emplace(node.assigned_binding_identity, ordinal);
+        if (!assigned_identity_inserted &&
+            assigned_identity->second != ordinal)
+          return false;
+      }
       local_types.push_back(checked_body_type(node.bindings.front().type));
       if (!local_types.back()) return false;
     }
@@ -6822,6 +6439,26 @@ class Checker {
         case Stmt::Kind::Assign: {
           auto expression = expression_for("initializer");
           if (!expression || !expression->type) return std::nullopt;
+          const auto fact = state.binding_facts.find(&source);
+          if (simple_identifier(source.a) &&
+              fact != state.binding_facts.end() && fact->second.introduced) {
+            const auto& occurrence = state.statement_occurrences.at(id);
+            const auto local = local_ordinals.find(fact->second.identity);
+            const auto binding_type = occurrence.bindings.size() == 1
+                ? checked_body_type(occurrence.bindings.front().type) : nullptr;
+            if (fact->second.identity.empty() || local == local_ordinals.end() ||
+                occurrence.binding_identity != fact->second.identity ||
+                !occurrence.introduces_binding ||
+                occurrence.bindings.size() != 1 || !binding_type ||
+                !binding_type->structurally_equal(*expression->type))
+              return std::nullopt;
+            lowered.kind = occurrence.mutable_binding
+                ? checked_ir::StmtKind::Var : checked_ir::StmtKind::Let;
+            lowered.local_ordinal = local->second;
+            lowered.type = binding_type;
+            lowered.expr = std::move(*expression);
+            return lowered;
+          }
           if (!simple_identifier(source.a)) {
             // Indexed assignment consumes the exact checked place tree. This
             // initial producer subset admits only a mutable local Map target;
@@ -6844,7 +6481,6 @@ class Checker {
             lowered.expr = std::move(*expression);
             return lowered;
           }
-          const auto fact = state.binding_facts.find(&source);
           const auto statement = state.statement_occurrence_ids.find(&source);
           if (fact == state.binding_facts.end() || fact->second.introduced ||
               !fact->second.mutable_binding || fact->second.identity.empty() ||
@@ -6894,6 +6530,20 @@ class Checker {
             if (!else_branch) return std::nullopt;
             lowered.else_branch = std::move(*else_branch);
           }
+          return lowered;
+        }
+        case Stmt::Kind::While: {
+          auto condition = expression_for("condition");
+          if (!condition || !condition->type ||
+              !condition->type->structurally_equal(
+                  *moss::Type::primitive("bool"))) {
+            return std::nullopt;
+          }
+          lowered.kind = checked_ir::StmtKind::While;
+          lowered.expr = std::move(*condition);
+          auto loop_body = lower_block(id, depth + 1);
+          if (!loop_body) return std::nullopt;
+          lowered.body = std::move(*loop_body);
           return lowered;
         }
         case Stmt::Kind::Else:
@@ -6961,7 +6611,6 @@ class Checker {
       function.checked_body_ir_v1_hash.reset();
       if (compiled_interface_file(function.source_file)) continue;
       if (!function.open_summary || !function.open_summary->scheme_complete) continue;
-      if (retain_checked_collection_loop_ir(function)) continue;
       const bool occurrence_lowered =
           retain_checked_occurrence_ir(function);
       const bool legacy_return_shape = function.body.size() == 1 &&
