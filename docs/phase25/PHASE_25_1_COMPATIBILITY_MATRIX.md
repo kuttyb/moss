@@ -1,10 +1,16 @@
 # Phase 25.1 compatibility matrix
 
-Updated 2026-10-20. R0 received final independent GO at frozen checkpoint `9c90573bda8daec5bd4254cc5f6c64c5dd3239e4` with no open P0/P1; only P2 `packages/time` remains, tracked for R4. The expanded oracle
+**Historical snapshot:** 2026-10-20. R0 received final independent GO at frozen checkpoint `9c90573bda8daec5bd4254cc5f6c64c5dd3239e4` with no open P0/P1; only P2 `packages/time` remained, tracked for R4. The expanded oracle
 uses compiler SHA `19ffd63822f08c255cde231b590828a986e9a00b`; package inventory
 artifacts were built at `43973e1adfdf015d5588e85f41d986925a85a565`, with no
 compiler source changes between those commits. This is not a v10 readiness
 claim.
+
+The current accepted-baseline refresh is at `d289024c7c578de26ba670d4bd477ba90609c23e` and is recorded in
+[`PHASE_25_1_R0_RECHECK_D289024C.json`](PHASE_25_1_R0_RECHECK_D289024C.json)
+and [`PHASE_25_1_REMAINING_WORK.md`](PHASE_25_1_REMAINING_WORK.md). The old
+rows below remain historical evidence; use the refreshed ledger for current
+counts and newly discovered regressions.
 
 ## Collection and source-free inventory
 

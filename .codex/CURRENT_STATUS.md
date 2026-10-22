@@ -10536,3 +10536,48 @@ Implementation commits: a36e9ec02b901f0e92cdd6d5d9e1e80e395760dd
 (adversarial P1 correction). The task branch is phase25-1-work. This is an
 R1 stabilization candidate with scoped implementation GO, not overall R1
 acceptance or Phase 25.1 closeout. L7 retains final R1 decision authority.
+
+## L7 R1 stabilization acceptance and R2 readiness — baseline d289024c — 2026-10-21
+
+L7 accepted R1 stabilization at baseline
+`d289024c7c578de26ba670d4bd477ba90609c23e`. The shadowed-return and generic
+Vector-`For` behavior is frozen. This closes the R1 stabilization work order;
+it does not assert that all Phase 25.1 R2–R5 gates are complete. No compiler
+code was changed during this planning pass, and no R2 implementation has
+started.
+
+At the accepted baseline, a forced source build
+`make --jobs="$(nproc)" -B moss-dev` passed with the two existing
+TypeSolver initializer warnings. The full M2b2 source-free/hostile corpus
+passed on the rebuilt `build/compiler/moss-dev`, including source-deleted
+shadowed returns, generic Vector iteration, hostile Iterate/binder/occurrence
+mutations, ABI-v9 controls, and the valid same-type outer-binding substitution.
+The 132-job suite was not rerun.
+
+The fresh 19-case R0 baseline reconciliation is saved in
+`docs/phase25/PHASE_25_1_R0_RECHECK_D289024C.json`. Source-backed results are
+36/38 pass; the two `bytes.from_range` builds fail with
+`SOURCE_FREE_SUMMARY_INVALID` because Iterate binder substitution cannot match
+the checked Range element type. The prior R0 run at `aa542b71` passed those two
+source-backed profiles, so this is a newly found regression (first known
+commit: `a36e9ec0`), to be addressed before R3 claims Range support. ABI-v9
+source-free has 34/36 measured passes and the two generic raise/recover
+consumer failures still report `RAISE_REQUIRES_TYPED_VALUE`. ABI-v10 has 20
+passing profiles and 16 still valid-but-unavailable profiles across eight R0
+rows. The actual Range row was not measured under v9/v10 because the shared
+oracle exits that row after source-backed compilation fails.
+
+The three R0 invalid-language probes remain intentionally rejected. The
+current `packages/time` build still fails at line 379 because `char_at`
+returns Char while `time__pad_digit` declares String; this is a package source
+defect/P2 inventory gap. The oracle also has a duplicate surface Map case ID
+and two null-output control rows that produce misleading `output-mismatch`
+labels; the refreshed report uses a temporary unique ID and this harness
+repair is tracked in the plan.
+
+The remaining-work ledger is
+`docs/phase25/PHASE_25_1_REMAINING_WORK.md`; the R2 DAG is
+`docs/phase25/PHASE_25_1_R2_EXECUTION_PLAN.md`. Both are awaiting the existing
+Adversarial Architect's scoped planning review. No language-design decision
+is currently identified. Stop after review and wait for L7 approval before
+R2 coding.

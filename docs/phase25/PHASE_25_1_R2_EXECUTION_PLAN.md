@@ -1,0 +1,135 @@
+# Phase 25.1 R2 execution plan
+
+**Planning baseline:** `d289024c7c578de26ba670d4bd477ba90609c23e`
+**State:** Proposal only. No R2 implementation has started. L7 approval is
+required before coding.
+
+## R2 objectives from the established plan
+
+R2 closes open results, selected member constraints, and generic composition:
+
+- Source-free ABI-v10 `fresh(): return []` for independently inferred concrete
+  element types, plus `relay(): return fresh()`, multi-hop chains, and private
+  helper dependency closure including zero-argument calls.
+- `size(value): return value.length()` and selected statically resolved generic
+  member requirements.
+- Preserve the passing generic parameter/scalar/field/arithmetic/direct-call
+  profiles. Prove provider-owned nominal type identity, receiver/template
+  visibility, and sharing across independently compiled consumers.
+- Reject open-result ambiguity/conflicts and unsupported methods with correct
+  requirement-chain and provider/consumer diagnostics.
+- Require provider-source deletion, selected legacy-body poisoning, checked
+  projection trace, distinguishable concrete specializations, and native
+  Debug/Release execution for each positive. Hostile cases mutate callable,
+  body, requirement, dependency, and provenance identity.
+- The only v10 opt-in is `MOSS_STAGED_ABI=v10`.
+
+## Accepted prerequisites
+
+- L7 accepted and froze the R1 shadowed-return and generic Vector-`For`
+  stabilization at `d289024c`; M2b2 source-free/hostile corpus passes.
+- The checked-body-v1 bounded codec, canonical hash checks, local/branch
+  identities, common occurrence lowerer, generic arithmetic, homogeneous
+  Vector relation, direct call, zero-argument one-hop relay, and tested H3
+  private/nominal chains are available as existing infrastructure.
+- `fresh()` and one-hop `relay()` each pass Int/Bool Debug and Release in the
+  current R0 refresh. Treat these as regression controls, not open work.
+- ABI-v9 remains the default. No source generic declarations, dynamic
+  dispatch, new ABI version, or compiler-wide rewrite is in scope.
+
+## Bounded work packages and dependency DAG
+
+```mermaid
+flowchart TD
+  A[WP1: checker call-result and dependency facts] --> B[WP2: common call/member lowering and importer proof]
+  A --> C[WP3: private-chain and nominal identity across consumers]
+  B --> D[WP4: R2 matrix, diagnostics, and hostile acceptance]
+  C --> D
+```
+
+### WP1 — Checker authority for call results and closure
+
+Extend the existing checked occurrence/summary facts only where the current
+R2 cases expose a gap. Link each call result to its exact selected callable,
+ordered checked arguments, result TypeRef, access/effects, and private
+dependency. Retain the full result relation through zero-argument and nested
+calls. Preserve the already passing `fresh` and one-hop `relay` profiles.
+
+**Positive tests:** a three-function zero-argument chain returning
+`Vector[T]`, direct helper result, Int/String or Bool/String consumers in
+  separate source-free runs.
+**Hostile tests:** missing intermediate summary/body, wrong callable ID,
+result TypeRef substitution, reordered/forged arguments, missing/duplicate
+dependency, altered dependency hash, and stale provenance. Each must reject
+before projection.
+
+### WP2 — Common call/member representation and imported proof
+
+Use the same call-expression and requirement path for direct calls and
+selected member calls. Add the String `length()` profile by retaining the
+checker-selected member identity, receiver and result TypeRefs, access, and
+observable effects. The importer must validate substitutions from exact
+checked types; it must not reconstruct a member from display text or infer a
+result from its name.
+
+**Positive tests:** `size(value): return value.length()` for String in
+source-free Debug/Release, with the current direct-call/arithmetic controls.
+**Hostile tests:** wrong member identity, receiver/result TypeRef, access,
+effect, and requirement order; ordinary source diagnostics for unsupported
+methods and ambiguous/conflicting open results.
+
+### WP3 — Provider-owned nominal identity across independent consumers
+
+Extend the current bounded generic record proof to two independently built
+consumer crates using the same provider-owned type identity. Validate
+constructor declaration identity, field ordinal/type links, visibility and
+private dependency closure at import. Moss still has static structural
+dispatch; this package does not add user generic declarations or dynamic
+nominal methods.
+
+**Positive tests:** two consumers specialize the same exported Box-like
+provider record with different concrete field types after source deletion.
+**Hostile tests:** substitute the nominal declaration/provider identity,
+field ordinal/type, visibility, or dependency/provider hash; reject before
+projection.
+
+### WP4 — R2 acceptance matrix and harness integrity
+
+Add a stable distinct ID for the R0 Map-parameter probe, give negative/control
+rows explicit expected source/v9 outcomes, and add a combined-inventory runner
+test so `--include-surface-probes` cannot collide on paths. Run the complete
+R2 call/member/nominal matrix against one frozen candidate in native Debug and
+Release; retain ABI-v9 controls and exact diagnostics.
+
+**Completion tests:** all positives have removed provider source, poisoned
+selected legacy records, and a checked projection trace. All hostile mutations
+reject before projection. Open-result ambiguity, type conflict, and unsupported
+member cases retain their source-level diagnostics. No per-shape opt-in is
+needed beyond `MOSS_STAGED_ABI=v10`.
+
+## Sequencing and ownership
+
+Keep the existing L6 Coordinator as the single compiler-code writer. WP1
+precedes WP2 and WP3; WP4 follows both. These packages touch the same checker,
+ABI-v10 summary builder, common lowerer, and importer in `src/moss.cpp` and
+`src/checked_body_ir.hpp`, so parallel compiler writers would increase
+integration risk without independent semantic ownership. The existing
+Adversarial Architect reviews this inventory/plan once, then reviews the
+frozen R2 implementation checkpoint under the established cadence. A separate
+read-only inventory task is unnecessary for this bounded R2 slice.
+
+R3 remains separately ordered after R2: generic Map mutation/control flow,
+effects and exception handling, then the actual borrowed-Range
+`bytes.from_range`/`range_copy` path. The current R3 source-build failure for
+Range iteration must be repaired before claiming the SDK profile. R4 runs the
+whole SDK/cross-crate/cache/ABI-migration mutation matrix; R5 runs the complete
+release-readiness gates and independent final review. Do not start R3–R5 as
+part of this R2 plan, do not change the default ABI, and do not merge to main.
+
+## Stop and escalation rules
+
+No language-design decision is currently required. Preserve the bounded
+checker-owned contracts and fail-closed admission. If a required relation
+cannot fit an append-only checked-body-v1 node or the change would alter
+ABI-v10 meaning, stop and request L7 direction before implementation. This
+proposal does not authorize coding; wait for L7 approval after the plan review.
