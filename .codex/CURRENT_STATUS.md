@@ -10827,13 +10827,20 @@ focused harnesses, full M2b2 source-free/hostile corpus, checked-body IR, G2
 conformance (11/11), invalid-source diagnostics, H3 direct-record test, and
 feedback validation. The architect's final bounded verdict is GO at exact
 compiler candidate `2f1647b7636766e6c898550bba2437f7b2d69a29`, with no open
-P0/P1/P2 findings. L7 owns final R2 acceptance. Do not merge, change ABI-v9
-default, or start R3 before L7's closeout decision.
+P0/P1/P2 findings.
 
-Recommended first R3 work package, pending L7 authorization: take the actual
+## L7 R2 acceptance and R3 authorization — 2026-10-22
+
+L7 accepted the R2 implementation at `2f1647b7` and authorized R3. Freeze the
+passing R1/R2 implementation and regression tests; do not make further R2
+changes unless R3 exposes a concrete regression. ABI-v9 remains default,
+ABI-v10 remains opt-in, and no changes to `main` or `phase25-integration` are
+authorized.
+
+Authorized first R3A work package: take the actual
 `bytes.from_range`/`range_copy` workload through checker-owned Iterate binder
 and effect/ownership facts, common checked-body emission and reading, imported
 dependency validation, then source-deleted Debug/Release execution with legacy
 poisoning and hostile iterator/binder/dependency/borrow checks. This is the
-smallest direct continuation of the R1.1 compatibility repair; no R3 code has
-started.
+smallest direct continuation of the R1.1 compatibility repair; R3A is now in
+progress.

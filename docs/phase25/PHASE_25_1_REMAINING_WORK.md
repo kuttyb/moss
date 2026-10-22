@@ -4,8 +4,8 @@
 **Branch:** `phase25-1-work`
 **Status:** L7 accepted R1 stabilization at `d289024c`; R1.1 restored the
 source-backed borrowed-Range behavior at `ec0f64d5`. The accepted shadow-return
-and generic-`For` behavior remains frozen. R2 has architect implementation GO
-at `2f1647b7`; L7 closeout is pending and R3–R5 remain open.
+and generic-`For` behavior remains frozen. L7 accepted R2 at `2f1647b7` and
+authorized R3; R3–R5 remain open.
 
 ## Reconciled evidence
 
@@ -61,14 +61,14 @@ member profiles from the previous unavailable set to pass. The Map-parameter
 surface profile remains intentionally unavailable. Callback-result and
 non-loop Count controls pass source-backed/ABI-v9; their v10 errors remain
 fail-closed at the expected stages. Full M2b2 and focused R2 hostile gates
-passed; architect GO is implementation-level only. L7 has not accepted R2.
+passed; architect issued implementation GO and L7 accepted R2.
 
-Recommended first R3 work package, pending L7 authorization: carry the actual
+Authorized first R3A work package: carry the actual
 `bytes.from_range`/`range_copy` workload through authoritative Iterate binder,
 effect and ownership evidence, common checked-body emission/reading, imported
 dependency validation, and source-deleted Debug/Release execution. Include
 legacy poisoning and hostile iterator, binder, dependency, and borrow cases.
-No R3 implementation has started.
+R3A implementation is in progress.
 
 ## Remaining-work ledger
 

@@ -5,12 +5,11 @@
 `6cd9cf7f66b4a26b235c313153eba3019eac1910`. R1.1 is complete at
 `ec0f64d5`; WP1 through WP4 have pushed implementation checkpoints. The final
 bounded R2 matrix passed on `2f1647b7`, and the architect issued implementation
-GO on that exact HEAD. L7 R2 closeout remains pending.
+GO on that exact HEAD. L7 accepted R2 and authorized R3 on 2026-10-22.
 
 The coordinator's detailed result and remaining R3–R5 gaps are recorded in
-`.codex/CURRENT_STATUS.md` and `PHASE_25_1_REMAINING_WORK.md`. This is an R2
-implementation candidate only; do not infer R2 acceptance from the architect's
-GO.
+`.codex/CURRENT_STATUS.md` and `PHASE_25_1_REMAINING_WORK.md`. Preserve the
+L7-accepted R1/R2 behavior during R3.
 
 ## R2 objectives from the established plan
 
