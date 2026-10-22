@@ -10508,3 +10508,31 @@ checks pass.
 
 The original candidate review is NO-GO with this P1. The correction is not yet
 committed or pushed and awaits architect re-review on the revised exact SHA.
+
+## R1 stabilization implementation review — scoped GO — 2026-10-21
+
+The exact-SHA adversarial architect review first returned NO-GO/P1 on
+a36e9ec02b901f0e92cdd6d5d9e1e80e395760dd for a rehashed return substitution
+from a branch-local binding to a still-valid same-typed outer binding. Commit
+29703e60edd22a39eadb2af894960e8f67c8ee61 fixes the finding by checking return
+requirement lineage against each control-flow path and adds the rehashed
+outer-ordinal hostile case.
+
+The architect re-reviewed exact pushed SHA
+29703e60edd22a39eadb2af894960e8f67c8ee61 and issued implementation-level
+scoped GO with no P0/P1/P2 findings. The rehashed outer-local mutation rejects
+before checked-body projection; source-free positives remain effective after
+provider source deletion and legacy generic_stmt removal/poisoning.
+
+Final candidate gates pass on build/compiler/moss-dev:
+- generic arithmetic requirements harness
+- D2 collection-loop codec, including typed For roundtrip and mismatch rejection
+- checked-body IR and dependency closure
+- full M2b2 source-free/hostile corpus, including generic For and the rehashed shadow return mutation
+- agent-feedback validator and git diff check
+
+Implementation commits: a36e9ec02b901f0e92cdd6d5d9e1e80e395760dd
+(initial shadow/For slice), 29703e60edd22a39eadb2af894960e8f67c8ee61
+(adversarial P1 correction). The task branch is phase25-1-work. This is an
+R1 stabilization candidate with scoped implementation GO, not overall R1
+acceptance or Phase 25.1 closeout. L7 retains final R1 decision authority.
