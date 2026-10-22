@@ -10612,3 +10612,11 @@ Three expected-invalid language probes remain intentionally rejected and do
 not count as regressions. R2 also retains deeper-chain and independent
 consumer acceptance gaps without a current red profile. No language-design
 decision is currently identified. No R2 coding has started; await L7 approval.
+
+The architect performed a disposition check on exact pushed SHA
+`6cd9cf7f66b4a26b235c313153eba3019eac1910` and issued a scoped planning GO.
+The P2 cohort-reproducibility finding is closed; the 19-case/38-profile
+filtered artifact agrees with the raw recheck, with unmeasured Range profiles
+explicitly marked. WP1/WP3 scope is separated, duplicate hostile records are
+explicit, and R3–R5 detail is outside the R2 proposal. No material planning
+blocker remains. This is not implementation review or L7 approval to begin R2.

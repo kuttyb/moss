@@ -1,8 +1,9 @@
 # Phase 25.1 R2 execution plan
 
 **Planning baseline:** `d289024c7c578de26ba670d4bd477ba90609c23e`
-**State:** Proposal only. No R2 implementation has started. L7 approval is
-required before coding.
+**State:** Planning-review GO at
+`6cd9cf7f66b4a26b235c313153eba3019eac1910`. Proposal only; no R2
+implementation has started. L7 approval is required before coding.
 
 ## R2 objectives from the established plan
 
