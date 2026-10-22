@@ -158,10 +158,10 @@ def combined_inventory(*, include_surface: bool = False,
             "provider_filename": "bytes.moss",
             "callable_name": "from_range",
             "poison_callables": ["from_range"],
-            "consumer": (ROOT / "sdk/foundations/acceptance/repros/source_free_range/src/main.moss").read_text(encoding="utf-8"),
-            "input_files": {"p4.bin": b"ABABC"},
-            "expected_output": "329\n",
-            "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            "provider_must_emit_v10": True,
+            "consumer": (ROOT / "sdk/foundations/bytes/examples/range_copy/src/main.moss").read_text(encoding="utf-8"),
+            "input_files": {"input.bin": (ROOT / "sdk/foundations/bytes/examples/range_copy/input.bin").read_bytes()},
+            "expected_output": "5\n",
         })
     validate_inventory(cases)
     return cases

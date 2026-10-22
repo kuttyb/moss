@@ -84,7 +84,10 @@ enum class ExprKind : uint32_t {
   CollectionCount = 15,
   Index = 16,
   // Generic member calls link to a checker-owned summary requirement by ID.
-  MemberCall = 17
+  MemberCall = 17,
+  // Statically checked mutable Vector.push, retained as an explicit checked
+  // operation so the reader can validate its WRITE target and element type.
+  CollectionPush = 18
 };
 
 inline constexpr std::string_view kCollectionCountOperationId =
@@ -93,6 +96,8 @@ inline constexpr std::string_view kCollectionIndexOperationId =
     "builtin:index";
 inline constexpr std::string_view kMemberRequirementPrefix =
     "member-requirement-v1:";
+inline constexpr std::string_view kCollectionPushOperationId =
+    "builtin:vector-push-v1";
 
 enum class UnaryOp : uint32_t {
   Neg = 1,
@@ -366,6 +371,18 @@ inline void encode_checked_expr(std::string& out, const Expr& expr) {
       checked_body_field(out, expr.semantic_target_id);
       checked_body_field(out, std::to_string(expr.member_ordinal));
       checked_body_field(out, expr.member_name);
+      checked_body_field(out, std::to_string(expr.operands.size()));
+      for (const auto& child : expr.operands)
+        encode_checked_expr(out, child);
+      break;
+
+    case ExprKind::CollectionPush:
+      if (expr.semantic_target_id != kCollectionPushOperationId ||
+          expr.operands.size() != 2 || !expr.type ||
+          expr.type->kind != TypeKind::Unit || !expr.literal_value.empty())
+        throw std::invalid_argument(
+            "invalid checked Vector.push operation identity or shape");
+      checked_body_field(out, expr.semantic_target_id);
       checked_body_field(out, std::to_string(expr.operands.size()));
       for (const auto& child : expr.operands)
         encode_checked_expr(out, child);
@@ -686,7 +703,8 @@ class H3BodyReader {
       return Type::primitive(identity);
     if (kind == TypeKind::Builtin && !identity.empty() && !field_count)
       return Type::builtin(identity, std::move(arguments));
-    if (kind == TypeKind::Unit && identity.empty() && !type_count &&
+    if (kind == TypeKind::Unit &&
+        (identity.empty() || identity == "unit") && !type_count &&
         !field_count)
       return Type::unit();
     if (kind == TypeKind::NominalInstance && !type_count) {
@@ -832,12 +850,13 @@ class H3BodyReader {
     if (++node_count_ > kMaxBodyNodes)
       fail("checked body node count exceeds bounds");
     const auto tag = number();
-    if (tag > static_cast<std::uint32_t>(ExprKind::MemberCall))
+    if (tag > static_cast<std::uint32_t>(ExprKind::CollectionPush))
       fail("checked body expression kind is unknown");
     Expr expression;
     expression.kind = static_cast<ExprKind>(tag);
     if ((expression.kind == ExprKind::CollectionCount ||
-         expression.kind == ExprKind::Index) &&
+         expression.kind == ExprKind::Index ||
+         expression.kind == ExprKind::CollectionPush) &&
         !allow_collection_loop_body_)
       fail("checked body collection operation is outside the H3 subset");
     expression.type = read_type();
@@ -1020,16 +1039,39 @@ class H3BodyReader {
         fail("checked member call requirement identity or arity is invalid");
       for (std::uint32_t index = 0; index < count; ++index)
         expression.operands.push_back(read_expr(depth + 1));
+    } else if (expression.kind == ExprKind::CollectionPush) {
+      if (!allow_collection_loop_body_)
+        fail("checked Vector.push is outside the collection-loop reader");
+      expression.semantic_target_id = field();
+      const auto count = number();
+      if (expression.semantic_target_id != kCollectionPushOperationId ||
+          count != 2 || expression.type->kind != TypeKind::Unit)
+        fail("checked Vector.push identity, result, or arity is invalid");
+      for (std::uint32_t index = 0; index < count; ++index)
+        expression.operands.push_back(read_expr(depth + 1));
+      const auto& receiver = expression.operands[0].type;
+      const auto& value = expression.operands[1].type;
+      if (!receiver || receiver->kind != TypeKind::Builtin ||
+          receiver->name != "vector" || receiver->type_args.size() != 1 ||
+          !receiver->type_args.front()->structurally_equal(*value))
+        fail("checked Vector.push receiver and element TypeRefs disagree");
     } else if (expression.kind == ExprKind::Call ||
                expression.kind == ExprKind::NominalConstruct) {
       expression.semantic_target_id = field();
       const auto count = number();
       if (count > 64) fail("checked body expression has too many operands");
       if (expression.kind == ExprKind::Call) {
-        if (expression.semantic_target_id.rfind("callable-v1:", 0) != 0)
+        const bool builtin_assert =
+            expression.semantic_target_id == "builtin:assert";
+        if (!builtin_assert &&
+            expression.semantic_target_id.rfind("callable-v1:", 0) != 0)
           fail("checked body call target is not a callable ID");
         for (std::uint32_t index = 0; index < count; ++index)
           expression.operands.push_back(read_expr(depth + 1));
+        if (builtin_assert &&
+            (count != 1 || expression.type->kind != TypeKind::Unit ||
+             !is_bool_type(expression.operands.front().type)))
+          fail("checked assert must consume one Bool and return Unit");
       } else {
         if (expression.type->kind != TypeKind::NominalInstance ||
             !expression.type->declaration ||
@@ -1172,8 +1214,29 @@ class H3BodyReader {
       }
       case StmtKind::Pass:
         break;
+      case StmtKind::ExprStmt: {
+        if (!allow_collection_loop_body_)
+          fail("checked expression statement is outside the collection-loop subset");
+        statement.expr = read_expr();
+        const auto& expression = *statement.expr;
+        const bool checked_assert =
+            expression.kind == ExprKind::Call &&
+            expression.semantic_target_id == "builtin:assert";
+        const bool checked_push =
+            expression.kind == ExprKind::CollectionPush;
+        if (!checked_assert && !checked_push)
+          fail("checked expression statement is not a validated assertion or mutation");
+        if (checked_push) {
+          if (expression.operands.size() != 2 ||
+              expression.operands.front().kind != ExprKind::LocalRead)
+            fail("checked Vector.push receiver is not a local binding");
+          const auto local = locals_.find(expression.operands.front().ordinal);
+          if (local == locals_.end() || !local->second.mutable_binding)
+            fail("checked Vector.push target is undeclared or not writable");
+        }
+        break;
+      }
       case StmtKind::AssignField:
-      case StmtKind::ExprStmt:
       case StmtKind::Reply:
         fail("checked body statement is outside the collection-loop subset");
       case StmtKind::For: {
@@ -1486,7 +1549,13 @@ inline void collect_expr_dependencies(const checked_ir::Expr& expr,
   if (expr.kind == checked_ir::ExprKind::Call) {
     if (expr.semantic_target_id.empty())
       throw std::invalid_argument("call expression has empty semantic target id");
-    out.insert({SemanticDependency::Kind::Callable, expr.semantic_target_id, ""});
+    // Builtin operations carry their own stable operation identity and are
+    // validated by the checked-body reader. They are not callable closure
+    // edges; only checker-selected callable IDs enter dependency records.
+    if (expr.semantic_target_id.rfind("builtin:", 0) != 0 &&
+        expr.semantic_target_id.rfind("builtin-scalar-protocol:", 0) != 0)
+      out.insert({SemanticDependency::Kind::Callable,
+                  expr.semantic_target_id, ""});
   } else if (expr.kind == checked_ir::ExprKind::Message) {
     if (expr.semantic_target_id.empty())
       throw std::invalid_argument("message expression has empty semantic target id");

@@ -10844,3 +10844,56 @@ dependency validation, then source-deleted Debug/Release execution with legacy
 poisoning and hostile iterator/binder/dependency/borrow checks. This is the
 smallest direct continuation of the R1.1 compatibility repair; R3A is now in
 progress.
+
+## R3A implementation checkpoint — 2026-10-22
+
+R2 remains L7-accepted at `2f1647b7`; its implementation and regression tests
+are frozen. R3B has not started.
+
+The first missing producer invariant was that the nested checker-selected
+`is_byte` call inside the statement-form `assert` prevented the occurrence
+dependency ledger from closing. After that ledger was corrected, the common
+producer still had no complete monomorphic checked callable record for this
+concrete dependency. The source-free importer also lacked the checked closed
+`Int -> Bool` comparison/boolean body and the generic For projection lacked
+call, assert, push, and typed empty-Vector expression cases. The Iterate
+requirement retains its exact checker-owned binder TypeRef; ABI-v10 carries the
+`is_byte` checked summary/body closure and `may_panic` plus `may_diverge` tags.
+
+The unchanged `sdk/foundations/bytes/examples/range_copy/src/main.moss`
+workload now passes source-backed, ABI-v9 source-free, and ABI-v10
+source-deleted Debug and Release through the compatibility oracle. Each of the
+six runs prints `5`; ABI-v10 removes provider source and poisons the selected
+`from_range` legacy generic body, with checked-body projection traced. A
+separate source-free hostile harness rejects rehashed Iterate-result,
+assert-effect, and missing-call-dependency mutations before projecting
+`from_range`. M2b2, checked-body IR, D2 collection-loop codec, FileIO semantic
+and runtime suites, and borrowed-view WRITE checks passed after the compiler
+change. M2b2 retains the Vector[Int]/Vector[String] For positives and hostile
+receiver, binder TypeRef, and local ordinal cases.
+
+The independent architect review found one P2 test-coverage gap: prior
+source-free positives checked only the copied vector's length. The focused
+positive now uses the actual `input.bin` bytes, closes the FileIO owner, then
+computes an order-sensitive weighted checksum from the returned owned vector.
+With the ABI-v10 provider source deleted and `from_range`'s legacy body
+poisoned, Debug and Release both print `991`; the rehashed hostile mutations
+continue to reject. This establishes both byte content/order and post-close
+ownership behavior.
+
+Generated native code confirms the specialized `from_range` function and
+borrowed `&Range` argument are in the consumer's generated Rust crate; the
+borrowed Range does not cross a native provider/consumer crate boundary. The
+provider dependency call to `is_byte` remains a direct native symbol call.
+There is no evidence requiring a borrowed-Range ABI redesign.
+
+The architect independently ran the actual Range oracle and rehashed-hostile
+harness on the compiler candidate and confirmed all source-backed, ABI-v9, and
+source-deleted ABI-v10 Debug/Release results, with no P0/P1. The architect's
+P2 content/order coverage note is addressed by the additional weighted
+post-close check above. In a scoped follow-up, the architect independently
+reran the enhanced test, found no P0/P1/P2 findings, and issued implementation-
+level GO for R3A. The final unchanged-workload oracle also passes all six
+profiles with zero unexpected results. Feedback validation, Python syntax
+checks, and `git diff --check` pass. The accepted R3A milestone is ready to
+commit and push; R3B remains unstarted pending this checkpoint's push.
