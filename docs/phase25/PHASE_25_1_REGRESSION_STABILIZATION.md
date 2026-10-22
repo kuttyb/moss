@@ -41,6 +41,11 @@ failure.
 - The only intermediate failure after the first repair batch was
   `check_teaching_diagnostics` on the domain-handle receiver case. Its cause and
   correction are above; the final full suite and focused diagnostic check pass.
-- Generic-For body lowering and shadowed branch returns remain deferred until
-  stabilization is independently reviewed. This record does not claim overall
-  R1 acceptance or authorize R2.
+- Independent adversarial review returned scoped GO with no P0/P1 on exact
+  pushed implementation SHA `a163aacfa922d8a3fbf85db17f8d0d7d0a0f11b0`.
+  The architect reran M2b2, M2b1 provenance, and H3 source-free chain; checked
+  both full-suite log roots contain 132 job directories and reviewed the
+  negative-shard output. The architect did not rerun the full suite. This
+  stabilization is complete; shadowed branch returns and generic-For lowering
+  are the next R1 gaps. Overall R1 acceptance is not claimed and R2 is not
+  authorized.
