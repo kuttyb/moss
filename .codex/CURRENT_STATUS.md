@@ -11050,3 +11050,32 @@ The independent adversarial architect reviewed exact candidate
 P0/P1/P2 findings. The reviewer independently ran the source-free ABI-v10
 Float case, the unsupported String specialization, all three resealed while
 mutations, and the M2b2 collection-loop corpus.
+
+## R3B generic assert effect — bounded checked-body profile — 2026-10-22
+
+The `generic-assert-effect` profile had a checker-retained body, a single
+`T > Int -> Bool` requirement, and the inferred `may_panic` effect. The ABI-v10
+producer and importer now admit only this checked profile: its assertion must
+be the builtin `assert` over the checked comparison, requirement TypeRefs must
+match both operands and the Bool result, and the following return must preserve
+the original parameter and `T` result. The source-free importer validates the
+panic effect before projecting through common checked IR. Other assertions
+outside this bounded shape remain fail-closed.
+
+The unchanged surface probe passes source-backed, ABI-v9, and source-deleted
+ABI-v10 Debug/Release and prints `7`. ABI-v10 deletes provider source, poisons
+the legacy generic body, and requires checked-body projection. Four rehashed
+mutations (predicate, return identity, operator result, and panic effect)
+reject before projection. The complete 31-case surface oracle passes this
+profile and retains the known ABI-v9 `generic-raise-recover` consumer failure
+(`RAISE_REQUIRES_TYPED_VALUE`). Numeric and mutable-local While probes remain
+green in all three modes. The R3B numeric/while/Map harnesses, R3A Range suite,
+generic arithmetic requirement check, checked-body IR suite, and full M2B2
+source-free hostile corpus pass. The earlier numeric and While exact-SHA
+architect reviews remain recorded above; this assertion follow-on is pending
+review.
+
+Typed enum Match remains source/v9-valid but ABI-v10-unavailable because its
+checker inspection exposes no checked body or operation requirements. The
+generic raise/recover v9 consumer failure and `packages/time` source error are
+unchanged. Functional pipeline and higher-order callback profiles remain open.

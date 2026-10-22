@@ -2995,6 +2995,13 @@ static bool abi_v10_checked_numeric_while_body_candidate(
     const abi_v10::Summary& summary,
     const vector<checked_ir::Stmt>& statements,
     const moss::TypeContext& context);
+static bool abi_v10_checked_assert_summary_candidate(
+    const abi_v10::Summary& summary);
+static bool abi_v10_checked_assert_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements,
+    const moss::TypeContext& context);
+static bool abi_v10_checked_assert_effects(const ObservableEffects& effects);
 static bool abi_v10_checked_for_summary_candidate(
     const abi_v10::Summary& summary);
 static bool abi_v10_checked_for_assert_mutation_summary_candidate(
@@ -3027,6 +3034,8 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
       abi_v10_checked_numeric_summary_candidate(summary);
   const bool checked_numeric_while =
       abi_v10_checked_numeric_while_summary_candidate(summary);
+  const bool checked_assert =
+      abi_v10_checked_assert_summary_candidate(summary);
   const bool generic_for = abi_v10_checked_for_summary_candidate(summary) ||
       abi_v10_checked_for_assert_mutation_summary_candidate(summary);
   const bool generic_map_mutation =
@@ -3037,13 +3046,13 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
     if (summary.requirements.size() > 64)
       invalid("checked ABI-v10 member requirement set exceeds its limit");
   } else if (!vector_literal && !branch_arithmetic && !checked_numeric &&
-      !checked_numeric_while && !generic_for &&
+      !checked_numeric_while && !checked_assert && !generic_for &&
       !generic_map_mutation &&
       summary.requirements.size() != 2)
     invalid("checked ABI-v10 typed requirement set is incomplete");
   if (!member_summary && !collection_loop && !vector_literal &&
       !branch_arithmetic && !checked_numeric && !checked_numeric_while &&
-      !generic_for &&
+      !checked_assert && !generic_for &&
       !generic_map_mutation) {
     if (summary.requirements[0].operation != "operator:*" ||
         summary.requirements[1].operation != "operator:+" ||
@@ -3828,6 +3837,105 @@ static bool abi_v10_checked_numeric_while_body_candidate(
       result->structurally_equal(*condition.type);
 }
 
+static bool abi_v10_checked_assert_summary_candidate(
+    const abi_v10::Summary& summary) {
+  const auto bound_zero = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::BoundVar &&
+        type.ordinal == 0 && type.arguments.empty();
+  };
+  const auto integer = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::Primitive &&
+        type.identity == "int" && type.arguments.empty();
+  };
+  const auto boolean = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::Primitive &&
+        type.identity == "bool" && type.arguments.empty();
+  };
+  if (summary.variable_count != 1 || summary.parameters.size() != 1 ||
+      !bound_zero(summary.parameters.front()) ||
+      summary.parameter_access != vector<abi_v10::Access>{
+          abi_v10::Access::Read} || !bound_zero(summary.result) ||
+      summary.requirements.size() != 1 ||
+      summary.observable_effect_bits != 0 ||
+      summary.observable_effect_tags != vector<string>{"may_panic"} ||
+      !summary.dependencies.empty())
+    return false;
+  const auto& comparison = summary.requirements.front();
+  return comparison.operation == "operator:>" && comparison.parent == 0 &&
+      comparison.dependencies.empty() &&
+      comparison.access == abi_v10::Access::Read &&
+      comparison.argument_access == vector<abi_v10::Access>{
+          abi_v10::Access::Read} && bound_zero(comparison.receiver) &&
+      comparison.arguments.size() == 1 &&
+      integer(comparison.arguments.front()) && comparison.result &&
+      boolean(*comparison.result);
+}
+
+static bool abi_v10_checked_assert_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements,
+    const moss::TypeContext& context) {
+  if (!abi_v10_checked_assert_summary_candidate(summary) ||
+      statements.size() != 2 ||
+      statements.front().kind != checked_ir::StmtKind::ExprStmt ||
+      !statements.front().expr ||
+      statements.back().kind != checked_ir::StmtKind::Return ||
+      !statements.back().expr)
+    return false;
+  const auto parameter_type = imported_abi_v10_type(
+      summary.parameters.front(), context, summary.variable_count);
+  const auto int_type = moss::Type::primitive("int");
+  const auto bool_type = moss::Type::primitive("bool");
+  const auto unit_type = moss::Type::unit();
+  const auto& assertion = *statements.front().expr;
+  const auto& returned = *statements.back().expr;
+  if (!parameter_type || !int_type || !bool_type || !unit_type ||
+      assertion.kind != checked_ir::ExprKind::Call ||
+      assertion.semantic_target_id != "builtin:assert" ||
+      !assertion.type || !assertion.type->structurally_equal(*unit_type) ||
+      assertion.operands.size() != 1 ||
+      assertion.operands.front().kind != checked_ir::ExprKind::Binary ||
+      assertion.operands.front().binary_op != checked_ir::BinaryOp::Greater ||
+      !assertion.operands.front().type ||
+      !assertion.operands.front().type->structurally_equal(*bool_type) ||
+      assertion.operands.front().operands.size() != 2 ||
+      assertion.operands.front().operands[0].kind !=
+          checked_ir::ExprKind::Parameter ||
+      assertion.operands.front().operands[0].ordinal != 0 ||
+      !assertion.operands.front().operands[0].type ||
+      !assertion.operands.front().operands[0].type->structurally_equal(
+          *parameter_type) ||
+      assertion.operands.front().operands[1].kind !=
+          checked_ir::ExprKind::IntegerLiteral ||
+      assertion.operands.front().operands[1].literal_value != "0" ||
+      !assertion.operands.front().operands[1].type ||
+      !assertion.operands.front().operands[1].type->structurally_equal(
+          *int_type) ||
+      returned.kind != checked_ir::ExprKind::Parameter ||
+      returned.ordinal != 0 || !returned.type ||
+      !returned.type->structurally_equal(*parameter_type))
+    return false;
+  const auto receiver = imported_abi_v10_type(
+      summary.requirements.front().receiver, context, summary.variable_count);
+  const auto argument = imported_abi_v10_type(
+      summary.requirements.front().arguments.front(), context,
+      summary.variable_count);
+  const auto result = imported_abi_v10_type(
+      *summary.requirements.front().result, context, summary.variable_count);
+  return receiver && argument && result &&
+      receiver->structurally_equal(*assertion.operands.front().operands[0].type) &&
+      argument->structurally_equal(*assertion.operands.front().operands[1].type) &&
+      result->structurally_equal(*assertion.operands.front().type);
+}
+
+static bool abi_v10_checked_assert_effects(const ObservableEffects& effects) {
+  return effects.may_panic && !effects.local_capture_read &&
+      !effects.local_mutation && !effects.domain_read &&
+      !effects.domain_write && !effects.message && !effects.external_io &&
+      !effects.fileio && !effects.fileio_unknown && effects.raise_set.empty() &&
+      !effects.may_diverge && !effects.unresolved;
+}
+
 static bool abi_v10_parameter_return_summary_candidate(
     const abi_v10::Summary& summary) {
   const auto bound_zero = [](const abi_v10::WireType& type) {
@@ -4368,6 +4476,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
         abi_v10_generic_map_mutation_summary_candidate(summary);
     const bool numeric_while_summary_candidate =
         abi_v10_checked_numeric_while_summary_candidate(summary);
+    const bool assert_summary_candidate =
+        abi_v10_checked_assert_summary_candidate(summary);
     const bool assert_mutation_for_candidate =
         abi_v10_checked_for_assert_mutation_summary_candidate(summary);
     const abi_v10::CheckedBodyRecord body = abi_v10::read_checked_body_record(
@@ -4379,6 +4489,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
         summary.parameter_access.size() != function.parameter_effects.size() ||
         (!collection_loop_candidate && !generic_for_candidate &&
          !generic_map_mutation_candidate &&
+         !assert_summary_candidate &&
          summary.observable_effect_bits))
       invalid("checked ABI-v10 body disagrees with its callable summary");
     for (std::size_t index = 0; index < summary.parameter_access.size(); ++index)
@@ -4423,6 +4534,11 @@ static void project_imported_h3_checked_bodies(Program& program) {
             summary, statements, *program.type_context);
     if (numeric_while_summary_candidate && !numeric_while_body_candidate)
       invalid("checked ABI-v10 while body does not match its comparison and local lineage");
+    const bool checked_assert_body_candidate = body.dependencies.empty() &&
+        assert_summary_candidate && abi_v10_checked_assert_body_candidate(
+            summary, statements, *program.type_context);
+    if (assert_summary_candidate && !checked_assert_body_candidate)
+      invalid("checked ABI-v10 assertion body does not match its operator and return lineage");
     const bool member_summary_candidate =
         abi_v10_generic_member_summary_candidate(summary);
     const bool checked_member_body_candidate = member_summary_candidate &&
@@ -4617,6 +4733,10 @@ static void project_imported_h3_checked_bodies(Program& program) {
         abi_v10_generic_map_mutation_effects_covered(
             function.observable_effects, statements) &&
         summary.observable_effect_tags == vector<string>{"may_panic"};
+    const bool checked_assert_effect_record_valid =
+        checked_assert_body_candidate &&
+        abi_v10_checked_assert_effects(function.observable_effects) &&
+        summary.observable_effect_tags == vector<string>{"may_panic"};
     const bool pure_effect_record_valid =
         abi_v10_effects_pure(function.observable_effects) &&
         summary.observable_effect_tags.empty();
@@ -4637,7 +4757,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
                       summary.observable_effect_tags ==
                           vector<string>{"may_diverge"})
         : pure_effect_record_valid || map_effect_record_valid ||
-                  generic_map_effect_record_valid || member_effect_record_valid;
+                  generic_map_effect_record_valid ||
+                  checked_assert_effect_record_valid || member_effect_record_valid;
     if (!effect_contract_valid)
       invalid("checked ABI-v10 body disagrees with its callable summary");
     const auto dependencies = extract_semantic_dependencies(statements);
@@ -5213,7 +5334,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
         } else if (statement.kind == checked_ir::StmtKind::ExprStmt) {
           if (!statement.expr ||
               !((statement.expr->kind == checked_ir::ExprKind::Call &&
-                 statement.expr->semantic_target_id == "builtin:assert") ||
+                 statement.expr->semantic_target_id == "builtin:assert" &&
+                 (checked_assert_body_candidate || generic_for_candidate)) ||
                 statement.expr->kind ==
                     checked_ir::ExprKind::CollectionPush))
             checked_projection_subset = false;
@@ -5257,6 +5379,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
         contains_for && checked_projection_subset;
     const bool checked_numeric_while_body = numeric_while_body_candidate &&
         contains_checked_while && checked_projection_subset;
+    const bool checked_assert_projection = checked_assert_body_candidate &&
+        checked_projection_subset;
     const bool checked_direct_vector_return =
         vector_literal_body_candidate && checked_projection_subset &&
         body.dependencies.empty();
@@ -5266,6 +5390,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
             abi_v10::CheckedBodyRecord::Dependency::Kind::NominalType;
     if ((checked_straight_line || checked_if_body || checked_generic_for_body ||
          checked_numeric_while_body ||
+         checked_assert_projection ||
          checked_member_body_candidate ||
          checked_direct_vector_return) &&
         checked_projection_subset &&
@@ -6126,6 +6251,8 @@ static void validate_imported_h3_summary_closure(const Program& program) {
     const bool generic_for = abi_v10_checked_for_summary_candidate(summary);
     const bool generic_map_mutation =
         abi_v10_generic_map_mutation_summary_candidate(summary);
+    const bool checked_assert =
+        abi_v10_checked_assert_summary_candidate(summary);
     const bool assert_mutation_for =
         abi_v10_checked_for_assert_mutation_summary_candidate(summary);
     bool effects_valid = collection_loop
@@ -6179,6 +6306,14 @@ static void validate_imported_h3_summary_closure(const Program& program) {
               (generic_map_mutation &&
                abi_v10_generic_map_mutation_effects_covered(
                    function.observable_effects, statements) &&
+               summary.observable_effect_bits == 0 &&
+               summary.observable_effect_tags ==
+                   vector<string>{"may_panic"});
+          effects_valid = effects_valid ||
+              (checked_assert && body.dependencies.empty() &&
+               abi_v10_checked_assert_body_candidate(
+                   summary, statements, *program.type_context) &&
+               abi_v10_checked_assert_effects(function.observable_effects) &&
                summary.observable_effect_bits == 0 &&
                summary.observable_effect_tags ==
                    vector<string>{"may_panic"});
@@ -53188,25 +53323,34 @@ static void append_abi_v10_occurrence_records(
               facts.observable_effects, decoded)) {
         summary.observable_effect_tags = {"may_panic"};
       } else {
-        auto for_summary = summary;
-        for_summary.observable_effect_tags = {"may_diverge"};
-        if (abi_v10_checked_for_summary_candidate(for_summary) &&
-            abi_v10_checked_for_effects(facts.observable_effects) &&
-            abi_v10_checked_for_body_candidate(
-                for_summary, decoded, *program.type_context)) {
-          summary.observable_effect_tags = {"may_diverge"};
+        auto assert_summary = summary;
+        assert_summary.observable_effect_tags = {"may_panic"};
+        if (abi_v10_checked_assert_summary_candidate(assert_summary) &&
+            abi_v10_checked_assert_effects(facts.observable_effects) &&
+            abi_v10_checked_assert_body_candidate(
+                assert_summary, decoded, *program.type_context)) {
+          summary.observable_effect_tags = {"may_panic"};
         } else {
-        // The collection candidate includes its sealed effect contract, so
-        // validate it with the required tag already present. Do not check the
-        // empty intermediate summary and then add the tag afterward.
-        auto collection_summary = summary;
-        collection_summary.observable_effect_tags = {"may_panic"};
-        if (!abi_v10_collection_loop_summary_candidate(collection_summary) ||
-            !abi_v10_collection_loop_effects(facts.observable_effects) ||
-            !abi_v10_checked_collection_loop_body(decoded, facts.result_type))
-          continue;
-        summary.observable_effect_tags = {
-            std::move(collection_summary.observable_effect_tags.front())};
+          auto for_summary = summary;
+          for_summary.observable_effect_tags = {"may_diverge"};
+          if (abi_v10_checked_for_summary_candidate(for_summary) &&
+              abi_v10_checked_for_effects(facts.observable_effects) &&
+              abi_v10_checked_for_body_candidate(
+                  for_summary, decoded, *program.type_context)) {
+            summary.observable_effect_tags = {"may_diverge"};
+          } else {
+            // The collection candidate includes its sealed effect contract, so
+            // validate it with the required tag already present. Do not check
+            // the empty intermediate summary and then add the tag afterward.
+            auto collection_summary = summary;
+            collection_summary.observable_effect_tags = {"may_panic"};
+            if (!abi_v10_collection_loop_summary_candidate(collection_summary) ||
+                !abi_v10_collection_loop_effects(facts.observable_effects) ||
+                !abi_v10_checked_collection_loop_body(decoded, facts.result_type))
+              continue;
+            summary.observable_effect_tags = {
+                std::move(collection_summary.observable_effect_tags.front())};
+          }
         }
       }
     }
@@ -53230,6 +53374,10 @@ static void append_abi_v10_occurrence_records(
     const bool checked_numeric_while =
         abi_v10_checked_numeric_while_body_candidate(
             summary, decoded, *program.type_context);
+    const bool checked_assert = body.dependencies.empty() &&
+        abi_v10_checked_assert_body_candidate(
+            summary, decoded, *program.type_context) &&
+        abi_v10_checked_assert_effects(facts.observable_effects);
     const bool checked_member_summary =
         !facts.member_requirements.empty() &&
         abi_v10_generic_member_summary_candidate(summary);
@@ -53278,6 +53426,7 @@ static void append_abi_v10_occurrence_records(
         !checked_branch_arithmetic &&
         !checked_numeric_early_return &&
         !checked_numeric_while &&
+        !checked_assert &&
         !checked_member_summary)
       continue;
     vector<abi_v10::SourceProvenance> provenance{callable_provenance};

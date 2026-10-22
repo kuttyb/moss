@@ -29,10 +29,12 @@ int main(int argc, char** argv) {
   const std::string mode = argv[3];
   const std::string provider_name = argv[4];
   const bool while_mutation = mode.rfind("while-", 0) == 0;
+  const bool assert_mutation = mode.rfind("assert-", 0) == 0;
   auto sealed = moss::abi_v10::decode(read_file(interface_path));
   const std::string old_digest = sealed.digest;
   const std::string callable_id = "callable-v1:" + sealed.value.module_id +
-      ":fn:" + (while_mutation ? "count_up" : "magnitude");
+      ":fn:" + (while_mutation ? "count_up" :
+          assert_mutation ? "positive" : "magnitude");
   auto summary_position = std::find_if(
       sealed.value.semantic_contract.begin(),
       sealed.value.semantic_contract.end(), [&](const auto& record) {
@@ -64,6 +66,45 @@ int main(int argc, char** argv) {
     subtraction.arguments.front().kind =
         moss::abi_v10::WireTypeKind::Primitive;
     subtraction.arguments.front().identity = "bool";
+  } else if (mode == "assert-effect") {
+    assert(assert_mutation && summary.observable_effect_tags ==
+        std::vector<std::string>{"may_panic"});
+    summary.observable_effect_tags.clear();
+  } else if (assert_mutation) {
+    const auto type = moss::Type::var({0, 0, 0});
+    moss::TypeContext context;
+    auto statements = moss::checked_ir::decode_checked_body_v1(
+        body.checked_ir_bytes, context, {type}, type, body.semantic_hash);
+    assert(statements.size() == 2 &&
+           statements.front().kind == moss::checked_ir::StmtKind::ExprStmt &&
+           statements.front().expr &&
+           statements.front().expr->kind == moss::checked_ir::ExprKind::Call &&
+           statements.front().expr->operands.size() == 1 &&
+           statements.front().expr->operands.front().kind ==
+               moss::checked_ir::ExprKind::Binary);
+    if (mode == "assert-predicate") {
+      auto& predicate = statements.front().expr->operands.front();
+      assert(predicate.binary_op == moss::checked_ir::BinaryOp::Greater);
+      predicate.binary_op = moss::checked_ir::BinaryOp::GreaterEqual;
+    } else if (mode == "assert-return-identity") {
+      assert(statements.back().kind == moss::checked_ir::StmtKind::Return &&
+             statements.back().expr &&
+             statements.back().expr->kind == moss::checked_ir::ExprKind::Parameter);
+      statements.back().expr->ordinal = 1;
+    } else if (mode == "assert-requirement-result") {
+      assert(summary.requirements.size() == 1 &&
+             summary.requirements.front().result);
+      summary.requirements.front().result = moss::abi_v10::WireType{};
+      summary.requirements.front().result->kind =
+          moss::abi_v10::WireTypeKind::Primitive;
+      summary.requirements.front().result->identity = "int";
+    } else {
+      assert(false && "unknown assertion mutation mode");
+    }
+    body.checked_ir_bytes = moss::checked_ir::encode_checked_body_v1(statements);
+    body.semantic_hash = moss::checked_ir::compute_checked_body_hash_v1(statements);
+    summary.body_semantic_hash = body.semantic_hash;
+    *body_position = moss::abi_v10::checked_body_record(body);
   } else if (while_mutation) {
     if (mode == "while-requirement-result") {
       assert(summary.requirements.size() == 1 &&

@@ -138,9 +138,9 @@
       "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.positive(7)\n",
       "expected_output": "7\n",
       "callable_name": "positive",
-      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "checked_body_status": "Source-backed/v9 controls establish accepted assertion requirements/effects; v10 must preserve them or reject selection.",
+      "poison_callables": ["positive"],
+      "provider_must_emit_v10": true,
+      "checked_body_status": "Source-backed, ABI-v9, and source-deleted ABI-v10 Debug/Release preserve the checked T > Int -> Bool assertion requirement, return lineage, and may_panic effect.",
       "evidence": "src/ast.hpp: Stmt::Kind::Call; sdk/foundations/bytes/src/bytes.moss"
     },
     {
