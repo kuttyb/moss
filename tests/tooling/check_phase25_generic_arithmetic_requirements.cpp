@@ -597,6 +597,51 @@ export fn alias_compute(value):
          choose_body.front().else_branch.front().kind ==
              checked_ir::StmtKind::Return);
 
+  auto shadowing_returns = checked_program(R"moss(module Service
+export fn fresh(value, flag: Bool):
+  let alias = value * 2
+  if flag:
+    let alias = alias + 1
+    return alias
+  else:
+    return alias
+)moss");
+  const Function& shadowed = find_function(shadowing_returns, "fresh");
+  assert(shadowed.open_summary && shadowed.open_summary->complete);
+  assert(shadowed.open_summary->occurrence_ledger_complete);
+  assert(shadowed.open_summary->parameter_types.size() == 2);
+  const auto& shadowed_result = shadowed.open_summary->parameter_types.front();
+  assert(shadowed_result && shadowed_result->kind == TypeKind::InferenceVar);
+  assert(shadowed.open_summary->result_type &&
+         shadowed.open_summary->result_type->structurally_equal(
+             *shadowed_result));
+  assert(shadowed.open_summary->requirements.size() == 2);
+  assert(shadowed.open_summary->requirements[0].target_id == "operator:*");
+  assert(shadowed.open_summary->requirements[1].target_id == "operator:+");
+  assert(shadowed.checked_body_ir_v1_bytes &&
+         shadowed.checked_body_ir_v1_hash);
+  const auto shadowed_body = checked_ir::decode_checked_body_v1(
+      *shadowed.checked_body_ir_v1_bytes, *shadowing_returns.type_context,
+      shadowed.open_summary->parameter_types, shadowed.open_summary->result_type,
+      *shadowed.checked_body_ir_v1_hash);
+  assert(shadowed_body.size() == 2 &&
+         shadowed_body[0].kind == checked_ir::StmtKind::Let &&
+         shadowed_body[1].kind == checked_ir::StmtKind::If);
+  assert(shadowed_body[1].then_branch.size() == 2 &&
+         shadowed_body[1].else_branch.size() == 1);
+  assert(shadowed_body[1].then_branch[0].kind ==
+             checked_ir::StmtKind::Let &&
+         shadowed_body[1].then_branch[1].kind ==
+             checked_ir::StmtKind::Return &&
+         shadowed_body[1].else_branch[0].kind ==
+             checked_ir::StmtKind::Return);
+  assert(shadowed_body[1].then_branch[1].expr->kind ==
+             checked_ir::ExprKind::LocalRead &&
+         shadowed_body[1].else_branch[0].expr->kind ==
+             checked_ir::ExprKind::LocalRead &&
+         shadowed_body[1].then_branch[1].expr->ordinal !=
+             shadowed_body[1].else_branch[0].expr->ordinal);
+
   std::istringstream staged_input(R"moss(export fn staged(value):
   let doubled = value * 2
   return doubled + 20

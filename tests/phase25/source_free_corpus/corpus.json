@@ -125,8 +125,8 @@
       "abi_v9_expected_output": "11\n10\n6.0\n5.0\n",
       "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
       "provider_must_emit_v10": true,
-      "checked_body_status": "checked-body unavailable; exact checker scopes and bindings are retained, but source-free shadowing-body projection remains unsupported",
-      "evidence": "The source-built provider emits ABI-v10 records, while the source-deleted consumer must fail closed on this valid shadowing case. Keep Int/Float branch behavior visible until the common lowerer and importer preserve the exact inner and outer binding identities end to end."
+      "checked_body_status": "checked-body unavailable; in-memory checker facts now retain distinct return roots and shadow binding identities, but the current ABI-v10 consumer does not yet admit this two-return arithmetic body",
+      "evidence": "The source-built provider emits ABI-v10 records, while the source-deleted consumer must fail closed on this valid shadowing case. Keep Int/Float branch behavior visible until common checked-body serialization and importer admission preserve the exact inner and outer binding identities end to end."
     },
     {
       "id": "branch-join-generic-arithmetic",

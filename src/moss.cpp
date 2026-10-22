@@ -5136,6 +5136,30 @@ class Checker {
         continue;
       }
       auto body = checked_body_states_.find(&function.body);
+      bool all_paths_return = false;
+      if (body != checked_body_states_.end() && body->second) {
+        const auto& state = *body->second;
+        auto block_returns = [&](auto&& self, std::uint32_t parent_id) -> bool {
+          for (const auto& node : state.statement_occurrences) {
+            if (node.parent_id != parent_id || !node.source ||
+                node.kind == Stmt::Kind::Else)
+              continue;
+            if (node.kind == Stmt::Kind::Return) return true;
+            if (node.kind != Stmt::Kind::If) continue;
+            const auto otherwise = std::find_if(
+                state.statement_occurrences.begin(),
+                state.statement_occurrences.end(), [&](const auto& candidate) {
+              return candidate.kind == Stmt::Kind::Else &&
+                  candidate.control_parent_id == node.id && candidate.source;
+            });
+            if (otherwise != state.statement_occurrences.end() &&
+                self(self, node.id) && self(self, otherwise->id))
+              return true;
+          }
+          return false;
+        };
+        all_paths_return = block_returns(block_returns, UINT32_MAX);
+      }
       if (body != checked_body_states_.end() && body->second &&
           !function.open_summary->scheme_complete &&
           function.constraints.empty() && !function.body.empty() &&
@@ -5146,7 +5170,7 @@ class Checker {
                 body->second->open_operations.end(), [](const auto& operation) {
               return operation.operation_id == "builtin:vector-literal";
             }))) &&
-          function.body.back().kind == Stmt::Kind::Return &&
+          all_paths_return &&
           body->second->expression_occurrence_ledger_complete) {
         auto& state = *body->second;
         // A control-flow merge can prove that two otherwise independent open
@@ -5388,21 +5412,41 @@ class Checker {
           }
           return resolved->is_closed() ? resolved : nullptr;
         };
-        const auto return_statement = state.statement_occurrence_ids.find(
-            &function.body.back());
-        if (projection_complete &&
-            return_statement != state.statement_occurrence_ids.end()) {
-          auto root = state.expression_root_slots.find(
-              {return_statement->second, "return-value"});
-          if (root != state.expression_root_slots.end() &&
-              root->second < state.expression_occurrences.size())
-            function.open_summary->result_type = project_type(
-                state.expression_occurrences[root->second].checked_type);
+        moss::TypeRef checked_result_type;
+        std::size_t checked_return_count = 0;
+        bool returns_projected = projection_complete;
+        for (const auto& occurrence : state.statement_occurrences) {
+          if (!occurrence.source || occurrence.kind != Stmt::Kind::Return)
+            continue;
+          ++checked_return_count;
+          const auto root = state.expression_root_slots.find(
+              {occurrence.id, "return-value"});
+          if (root == state.expression_root_slots.end() ||
+              root->second >= state.expression_occurrences.size()) {
+            returns_projected = false;
+            break;
+          }
+          auto result = project_type(
+              state.expression_occurrences[root->second].checked_type);
+          if (!result || (checked_result_type &&
+              !checked_result_type->structurally_equal(*result))) {
+            returns_projected = false;
+            break;
+          }
+          checked_result_type = std::move(result);
         }
+        returns_projected = returns_projected && checked_return_count > 0 &&
+            checked_result_type &&
+            (checked_return_count == 1 ||
+             !function.open_summary->result_type ||
+             function.open_summary->result_type->structurally_equal(
+                 *checked_result_type));
+        if (returns_projected)
+          function.open_summary->result_type = checked_result_type;
         vector<moss::OpenCallableSummaryFacts::OperationFact> operations;
         vector<moss::Requirement> requirements;
         std::map<std::uint32_t, string> requirement_ids_by_occurrence;
-        bool operations_complete = projection_complete &&
+        bool operations_complete = returns_projected &&
             function.open_summary->result_type;
         for (const auto& operation : state.open_operations) {
           const bool unary_operator =
@@ -28265,6 +28309,108 @@ class Checker {
       checked_types.open_operations.push_back({
           "operator:" + expression.operation_id, receiver, {argument},
           receiver, expression.line, expression.id, 0, {}, UINT32_MAX, {}, {}});
+    }
+    // Linking a deferred open operator can provide the initializer TypeRef
+    // for a shadowing local after the first alias pass. Resolve that exact
+    // declaration before validating the statement and identifier ledgers.
+    for (auto& statement : checked_types.statement_occurrences) {
+      if ((statement.kind != Stmt::Kind::Let &&
+           statement.kind != Stmt::Kind::Var) || !statement.source ||
+          !statement.bindings.empty() || statement.binding_identity.empty())
+        continue;
+      const auto root = checked_types.expression_root_slots.find(
+          {statement.id, "initializer"});
+      if (root == checked_types.expression_root_slots.end() ||
+          root->second >= checked_types.expression_occurrences.size())
+        continue;
+      const auto& initializer =
+          checked_types.expression_occurrences[root->second];
+      if (!initializer.checked_type) continue;
+      auto type = checked_types.solver.resolve(initializer.checked_type);
+      if (!type) type = initializer.checked_type;
+      if (!type) continue;
+      statement.binding_type = type;
+      BodyTypeState::StatementOccurrence::BindingOccurrence binding;
+      binding.name = statement.source->a;
+      binding.identity = statement.binding_identity;
+      binding.type = type;
+      binding.mutable_binding = statement.mutable_binding;
+      statement.bindings.push_back(std::move(binding));
+    }
+    // Ownership has the final lexical binding map, but the first occurrence
+    // pass can run before a deferred local declaration has a TypeRef. Resolve
+    // identifier reads again from the checker-retained scope tree so a local
+    // shadow is linked to its own declaration rather than an outer same-name
+    // binding. The nearest visible declaration identity is the authority.
+    for (auto& expression : checked_types.expression_occurrences) {
+      if (expression.kind !=
+              BodyTypeState::ExpressionOccurrence::Kind::Identifier ||
+          expression.statement_id >=
+              checked_types.statement_occurrences.size())
+        continue;
+      std::set<std::uint32_t> visible_scopes{expression.scope_id};
+      std::uint32_t scope = expression.scope_id;
+      while (scope != 0) {
+        const auto opener = std::find_if(
+            checked_types.statement_occurrences.begin(),
+            checked_types.statement_occurrences.end(),
+            [&](const auto& candidate) {
+          return candidate.entered_scope_id == scope;
+        });
+        if (opener == checked_types.statement_occurrences.end() ||
+            !visible_scopes.insert(opener->scope_id).second) {
+          checked_types.expression_occurrence_ledger_complete = false;
+          visible_scopes.clear();
+          break;
+        }
+        scope = opener->scope_id;
+      }
+      if (visible_scopes.empty()) continue;
+      const string name = trim(expression.source_expression);
+      const BodyTypeState::StatementOccurrence::BindingOccurrence* nearest =
+          nullptr;
+      std::uint32_t nearest_statement = 0;
+      bool ambiguous = false;
+      for (const auto& candidate : checked_types.statement_occurrences) {
+        if (candidate.id >= expression.statement_id || !candidate.source)
+          continue;
+        for (const auto& binding : candidate.bindings) {
+          const auto binding_scope = candidate.kind == Stmt::Kind::For ||
+                  candidate.kind == Stmt::Kind::Case
+              ? candidate.entered_scope_id : candidate.scope_id;
+          if (binding.name != name ||
+              !visible_scopes.count(binding_scope))
+            continue;
+          if (!nearest || candidate.id > nearest_statement) {
+            nearest = &binding;
+            nearest_statement = candidate.id;
+            ambiguous = false;
+          } else if (candidate.id == nearest_statement &&
+                     binding.identity != nearest->identity) {
+            ambiguous = true;
+          }
+        }
+      }
+      if (!nearest && starts_with(expression.resolved_binding_id,
+                                  "parameter:"))
+        continue;
+      if (!nearest || ambiguous || nearest->identity.empty() ||
+          !nearest->type) {
+        if (expression.requires_type)
+          checked_types.expression_occurrence_ledger_complete = false;
+        continue;
+      }
+      auto expected_type = checked_types.solver.resolve(nearest->type);
+      auto actual_type = expression.checked_type
+          ? checked_types.solver.resolve(expression.checked_type) : nullptr;
+      if (!expected_type || (actual_type &&
+          !actual_type->structurally_equal(*expected_type))) {
+        checked_types.expression_occurrence_ledger_complete = false;
+        continue;
+      }
+      expression.resolved_binding_id = nearest->identity;
+      expression.resolved_binding_mutable = nearest->mutable_binding;
+      expression.checked_type = expected_type;
     }
     for (auto& occurrence : checked_types.statement_occurrences) {
       std::sort(occurrence.expression_roots.begin(),
