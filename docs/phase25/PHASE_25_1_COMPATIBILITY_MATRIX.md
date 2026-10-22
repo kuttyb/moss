@@ -8,6 +8,8 @@ claim.
 
 The current accepted-baseline refresh is at `d289024c7c578de26ba670d4bd477ba90609c23e` and is recorded in
 [`PHASE_25_1_R0_RECHECK_D289024C.json`](PHASE_25_1_R0_RECHECK_D289024C.json)
+with the exact 19-case cohort and rollup isolated in
+[`PHASE_25_1_R0_COHORT_D289024C.json`](PHASE_25_1_R0_COHORT_D289024C.json)
 and [`PHASE_25_1_REMAINING_WORK.md`](PHASE_25_1_REMAINING_WORK.md). The old
 rows below remain historical evidence; use the refreshed ledger for current
 counts and newly discovered regressions.

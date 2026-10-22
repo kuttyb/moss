@@ -15,10 +15,11 @@ generic Vector iteration, checked-body projection, legacy-body poisoning,
 ABI-v9 controls, and hostile summary/body mutations, including the valid
 same-type outer-binding substitution.
 
-The refreshed three-mode oracle used the 19 R0 case IDs at this commit. Raw
-evidence is `PHASE_25_1_R0_RECHECK_D289024C.json`; the compatibility runner's
-duplicate surface-probe ID was given a temporary unique ID so both distinct
-Map profiles could run. Results:
+The refreshed three-mode oracle evidence is `PHASE_25_1_R0_RECHECK_D289024C.json`.
+That raw report contains the base corpus plus surface probes. The exact historical
+19-case R0 cohort and its filtered profiles are recorded in
+`PHASE_25_1_R0_COHORT_D289024C.json`; the historical Map ID was replaced with a
+distinct surface-probe ID to avoid the combined-inventory collision. Results:
 
 | Mode | Current R0 profile results |
 |---|---|
@@ -87,3 +88,9 @@ There is no established language-design decision blocking the proposed R2
 work. If later implementation requires changing ABI-v10 meaning or replacing
 checked-body-v1 rather than adding a bounded append-only node, stop and ask L7
 before changing that contract.
+
+R3–R5 remain downstream milestones as specified in
+`PHASE_25_1_V10_READINESS.md`: R3 closes valid structured iteration/effect/
+mutation workloads including the actual borrowed-Range SDK use; R4 runs the
+full SDK, cross-crate, cache, ABI-migration, and adversarial matrix; R5 is the
+opt-in release-readiness gate. These are not R2 implementation packages.

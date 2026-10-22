@@ -42,7 +42,7 @@ R2 closes open results, selected member constraints, and generic composition:
 ```mermaid
 flowchart TD
   A[WP1: checker call-result and dependency facts] --> B[WP2: common call/member lowering and importer proof]
-  A --> C[WP3: private-chain and nominal identity across consumers]
+  A --> C[WP3: nominal identity across independent consumers]
   B --> D[WP4: R2 matrix, diagnostics, and hostile acceptance]
   C --> D
 ```
@@ -58,10 +58,10 @@ calls. Preserve the already passing `fresh` and one-hop `relay` profiles.
 **Positive tests:** a three-function zero-argument chain returning
 `Vector[T]`, direct helper result, Int/String or Bool/String consumers in
   separate source-free runs.
-**Hostile tests:** missing intermediate summary/body, wrong callable ID,
-result TypeRef substitution, reordered/forged arguments, missing/duplicate
-dependency, altered dependency hash, and stale provenance. Each must reject
-before projection.
+**Hostile tests:** missing intermediate summary/body, wrong or duplicate
+callable identity, duplicate body record, result TypeRef substitution,
+reordered/forged arguments, missing/duplicate dependency, altered dependency
+hash, and stale provenance. Each must reject before projection.
 
 ### WP2 — Common call/member representation and imported proof
 
@@ -75,23 +75,24 @@ result from its name.
 **Positive tests:** `size(value): return value.length()` for String in
 source-free Debug/Release, with the current direct-call/arithmetic controls.
 **Hostile tests:** wrong member identity, receiver/result TypeRef, access,
-effect, and requirement order; ordinary source diagnostics for unsupported
-methods and ambiguous/conflicting open results.
+effect, duplicate selected requirement/constraint records, and requirement
+order; ordinary source diagnostics for unsupported methods and
+ambiguous/conflicting open results.
 
 ### WP3 — Provider-owned nominal identity across independent consumers
 
-Extend the current bounded generic record proof to two independently built
-consumer crates using the same provider-owned type identity. Validate
-constructor declaration identity, field ordinal/type links, visibility and
-private dependency closure at import. Moss still has static structural
-dispatch; this package does not add user generic declarations or dynamic
-nominal methods.
+Reuse WP1's same-provider call-result and private-dependency proof. Extend the
+current bounded generic record proof to two independently built consumer
+crates using the same provider-owned type identity. Validate constructor
+declaration identity, field ordinal/type links, visibility and provider
+identity at import. Moss still has static structural dispatch; this package
+does not add user generic declarations or dynamic nominal methods.
 
 **Positive tests:** two consumers specialize the same exported Box-like
 provider record with different concrete field types after source deletion.
-**Hostile tests:** substitute the nominal declaration/provider identity,
-field ordinal/type, visibility, or dependency/provider hash; reject before
-projection.
+**Hostile tests:** substitute or duplicate the nominal declaration/provider
+identity, field ordinal/type, visibility, or dependency/provider hash; reject
+before projection.
 
 ### WP4 — R2 acceptance matrix and harness integrity
 
@@ -118,13 +119,9 @@ Adversarial Architect reviews this inventory/plan once, then reviews the
 frozen R2 implementation checkpoint under the established cadence. A separate
 read-only inventory task is unnecessary for this bounded R2 slice.
 
-R3 remains separately ordered after R2: generic Map mutation/control flow,
-effects and exception handling, then the actual borrowed-Range
-`bytes.from_range`/`range_copy` path. The current R3 source-build failure for
-Range iteration must be repaired before claiming the SDK profile. R4 runs the
-whole SDK/cross-crate/cache/ABI-migration mutation matrix; R5 runs the complete
-release-readiness gates and independent final review. Do not start R3–R5 as
-part of this R2 plan, do not change the default ABI, and do not merge to main.
+R3–R5 are downstream milestones and are not part of this R2 plan. See the
+remaining-work ledger and established readiness plan for their acceptance
+requirements. Do not change the default ABI or merge to main.
 
 ## Stop and escalation rules
 

@@ -10581,3 +10581,34 @@ The remaining-work ledger is
 Adversarial Architect's scoped planning review. No language-design decision
 is currently identified. Stop after review and wait for L7 approval before
 R2 coding.
+
+## Phase 25.1 R2 readiness — architect planning review and disposition — 2026-10-21
+
+The existing Adversarial Architect reviewed the inventory and proposal at
+`7c6ba1d8019a08fc2a406aec20daf6e007aa054a`; this was a planning review only,
+not an implementation re-review. Verdict: planning-only NO-GO on one P2
+evidence-reconciliation issue; no P0/P1 findings. The reviewer noted that the
+19-case ledger counts were not reproducible from the 32-case raw report, WP1
+and WP3 partly overlapped on dependency closure, duplicate callable/body and
+requirement records were not explicit hostile cases, and the R2 proposal
+included unnecessary R3–R5 roadmap detail.
+
+Disposition: added
+`docs/phase25/PHASE_25_1_R0_COHORT_D289024C.json`, a filtered 19-case view
+with exact cohort IDs and rollups from the refreshed raw report; expanded the
+hostile tests to reject duplicate callable/body/requirement records; scoped
+WP1 to same-provider call-result/dependency proof and WP3 to independent
+consumer nominal identity; and moved R3–R5 sequencing detail to the remaining
+work ledger. The rollup confirms source-backed 36 pass/2 Range build failures;
+ABI-v9 34 pass/2 raise-recover consumer build failures/2 Range unmeasured;
+ABI-v10 20 pass/16 unavailable/2 Range unmeasured.
+
+At the profile level, 20 genuine current red outcomes are confirmed: 16
+valid-but-unavailable ABI-v10 profiles across eight rows, two newly
+regressed source-backed borrowed-Range profiles, and two ABI-v9
+raise/recover consumer failures. Separately, `packages/time` has one P2 source
+build/inventory blocker and the combined-inventory oracle has a test defect.
+Three expected-invalid language probes remain intentionally rejected and do
+not count as regressions. R2 also retains deeper-chain and independent
+consumer acceptance gaps without a current red profile. No language-design
+decision is currently identified. No R2 coding has started; await L7 approval.
