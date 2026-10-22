@@ -18,6 +18,7 @@ PROVIDER = """module Service
 
 enum Failure:
   Bad
+  Detailed(code: Int)
 
 export fn nonnegative(value):
   try:
@@ -26,6 +27,12 @@ export fn nonnegative(value):
     return value
   recover Failure.Bad:
     return 0
+
+export fn payload(code: Int) -> Int:
+  try:
+    raise Failure.Detailed(code: code)
+  recover Failure.Detailed(code):
+    return code
 """
 CONSUMER = """module Main
 import Service
@@ -33,8 +40,9 @@ import Service
 fn main():
   echo Service.nonnegative(7)
   echo Service.nonnegative(-2)
+  echo Service.payload(23)
 """
-EXPECTED = "7\n0\n"
+EXPECTED = "7\n0\n23\n"
 
 
 def run(argv, *, cwd, env, expected=0):
@@ -70,6 +78,7 @@ with tempfile.TemporaryDirectory(prefix="phase25-r3f-raise-recover-", dir=TMP) a
         text = interface.read_text()
         assert 'generic_error_enum "Failure"' in text, text
         assert 'generic_error_case "Bad" 0' in text, text
+        assert 'generic_error_case "Detailed" 1 "code" "int"' in text, text
         assert "export enum Failure" not in text, text
         artifacts_by_profile[profile] = artifacts
     shutil.rmtree(provider / "src")
