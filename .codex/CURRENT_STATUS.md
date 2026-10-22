@@ -10931,5 +10931,40 @@ and ABI-v10 Debug/Release pass with zero unexpected results; the architect
 issued scoped GO with no compiler P0/P1/P2 findings. Work is limited to this
 Map operation profile; early return, mutable-local `while`, typed enum
 `match`, pipelines, generic `assert`, exception control flow, and higher-order
-callback evidence remain open R3 work. The R4 ABI-v9 raise/recover defect and
-`packages/time` source error remain visible.
+callback evidence remain open R3 work. The Map slice and updated status are
+saved in implementation commit `9f9f168f9b08c295670a457aff5654db2ba42e13`.
+The R4 ABI-v9 raise/recover defect and `packages/time` source error remain
+visible.
+
+## R3B control-flow intake — L7 decision required — 2026-10-22
+
+The accepted Map slice is committed and pushed at `9f9f168f`. On the clean
+source-built compiler at that checkpoint, the focused surface oracle confirms
+`generic-if-early-return` and `generic-local-var-while` are source-backed and
+ABI-v9 Debug/Release passes, while ABI-v10 source-deleted Debug/Release fails
+closed at consumer selection (`SOURCE_FREE_CHECKED_BODY_UNAVAILABLE`). Typed
+inspection reports complete open summaries but no checked body; both current
+summaries expose zero requirements.
+
+A source-checked Float specialization of the early-return `magnitude` profile
+is valid and the interpreter prints `1.0`. The architect independently
+confirmed its then-branch return TypeRef is `Int`, its else return TypeRef is
+open `T`, its ordering operation is `T < Int -> Bool`, and its subtraction
+operation is `Int - T -> Int`, while the callable summary result is `T`. The
+facts establish no conversion or join relation from `Int` to `T`. A producer
+that retags the subtraction or return as `T` would invent checker authority.
+The source-free body remains unavailable, which is the correct fail-closed
+result with current facts. The architect independently audited the mismatch
+and issued NO-GO for implementing this profile from the existing facts. This
+meets the R3 stop condition for disagreeing authoritative callable and
+occurrence TypeRefs. L7 must decide whether Moss should retain/define a
+numeric-literal promotion relation for this form or keep it unsupported for
+generalized lowering. No compiler change was made for this profile.
+Exploratory instrumentation was removed and `moss-dev` rebuilt from clean
+commit `9f9f168f`. The remaining R3 groups and overall R3 candidate work are not
+accepted; the R4 ABI-v9 raise/recover defect and `packages/time` source error
+remain visible.
+
+Diagnostic evidence: `tmp/r3b-control-flow-baseline.json`,
+`tmp/r3b_control_probes.moss`, and `tmp/r3b_magnitude_float.moss`. The R4
+ABI-v9 raise/recover defect and `packages/time` source error remain unchanged.
