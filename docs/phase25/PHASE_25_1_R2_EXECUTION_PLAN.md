@@ -3,8 +3,9 @@
 **Planning baseline:** `d289024c7c578de26ba670d4bd477ba90609c23e`
 **State:** L7 authorized execution after R1.1. Planning review GO at
 `6cd9cf7f66b4a26b235c313153eba3019eac1910`. R1.1 is complete at
-`ec0f64d5`; WP1 is complete with scoped implementation GO. WP2 through WP4
-remain open and authorized.
+`ec0f64d5`; WP1 through WP3 have scoped implementation GO and pushed
+checkpoints. WP4 harness repair is implemented; final candidate matrix and
+architect review remain before an R2 candidate report.
 
 ## R2 objectives from the established plan
 
@@ -107,11 +108,12 @@ before projection.
 
 ### WP4 — R2 acceptance matrix and harness integrity
 
-Add a stable distinct ID for the R0 Map-parameter probe, give negative/control
-rows explicit expected source/v9 outcomes, and add a combined-inventory runner
-test so `--include-surface-probes` cannot collide on paths. Run the complete
-R2 call/member/nominal matrix against one frozen candidate in native Debug and
-Release; retain ABI-v9 controls and exact diagnostics.
+The oracle now gives the Map-parameter surface probe a distinct ID, records
+mode-specific expected source/v9/v10 outputs for negative controls, and checks
+combined inventories for duplicate IDs and missing source/v9 expectations.
+The self-test covers corpus plus surface probes and duplicate-ID rejection.
+Run the complete R2 call/member/nominal matrix against one frozen candidate in
+native Debug and Release; retain ABI-v9 controls and exact diagnostics.
 
 **Completion tests:** all positives have removed provider source, poisoned
 selected legacy records, and a checked projection trace. All hostile mutations

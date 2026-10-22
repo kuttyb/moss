@@ -10711,8 +10711,8 @@ and `git diff --check` pass. The existing adversarial architect reviewed the
 WP2 correction against base `4e4616477db8ed11e9113709dd66f25f5b3f3f2c` and
 issued scoped GO: the prior P2 hostile-coverage note is closed, with no new
 P0/P1/P2 findings. This accepts the WP2 slice only; WP3 independent nominal
-consumers and WP4 harness repair/final R2 matrix remain open. WP2 is ready to
-commit and push; R2 is not accepted.
+consumers and WP4 harness repair/final R2 matrix remained open at review time.
+WP2 was subsequently committed and pushed as `29f2cad2`; R2 is not accepted.
 
 ## Phase 25.1 R2 WP3 — independent provider-owned nominal consumers — 2026-10-22
 
@@ -10740,4 +10740,29 @@ feedback validation, and `git diff --check`. The adversarial architect reviewed
 the working diff based on `29f2cad2fac95a5f3d088ce18c59b4183832e009` and issued
 WP3 GO with no P0/P1/P2 findings; review was code/harness inspection and did not
 rerun the reported gates. WP3 is ready for its own commit and push. WP4 and the
-final R2 matrix remain open; R2 is not accepted.
+rerun the reported gates. WP3 was subsequently committed and pushed as
+`b410596e`. WP4 and the final R2 matrix remain open; R2 is not accepted.
+
+## Phase 25.1 R2 WP4 — compatibility oracle reliability and matrix — 2026-10-22
+
+The R0 surface Map-parameter probe now has the distinct ID
+`surface-map-index-mutation`; the combined oracle validates unique IDs and
+requires expected source-backed and ABI-v9 outcomes. Per-mode expected output
+keeps valid controls distinct from expected ABI-v10 rejection. The combined
+corpus/surface inventory self-test passes with 31 unique cases and verifies
+duplicate IDs are rejected.
+
+The two controls with no previously recorded common expected output now
+explicitly pass source-backed and ABI-v9: callback result prints `31` and
+`moss`, and non-loop Count prints `2`. Their ABI-v10 provider failures remain
+expected and are reported as `valid-but-unavailable-v10`.
+
+Initial WP4 acceptance evidence on compiler candidate `b410596ea3657b1f62a73c8cb0c0951858e9a18f`:
+the six-profile R2/R0 oracle slice passes source-backed and ABI-v9 in Debug and
+Release; ABI-v10 passes empty Vector results, zero-argument relay, String
+member length, provider-owned nominal construction, and local Map mutation in
+both profiles. The Map-parameter surface probe remains intentionally
+unavailable. WP1/2/3 focused harnesses, checked-body IR tests, M2b2 source-free
+and hostile corpus, G2 ambiguity/conflict conformance, and invalid-member
+source diagnostics pass. These gates are being rerun after the WP4 harness
+checkpoint; final architect review and R2 candidate report remain outstanding.

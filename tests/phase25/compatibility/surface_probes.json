@@ -66,7 +66,7 @@
       "evidence": "tests/tooling/check_phase25_h3_direct_records.py"
     },
     {
-      "id": "generic-map-index-mutation",
+      "id": "surface-map-index-mutation",
       "priority": "P1-map-operation",
       "category": "open Map key/value types, indexed mutation and indexed read",
       "provider": "module Service\n\nexport fn insert_and_read(values, key, value) -> Int:\n  values[key] = value\n  return values[key]\n",

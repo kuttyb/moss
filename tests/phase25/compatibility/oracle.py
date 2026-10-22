@@ -95,11 +95,58 @@ def run_binary(package: Path, name: str, profile: str, mode: str,
     return invoke([str(binary_path(package, name, profile))], package, env)
 
 
+def expected_output_for(case: dict, mode: str) -> str | None:
+    field = {
+        "source": "source_expected_output",
+        "v9": "abi_v9_expected_output",
+        "v10": "abi_v10_expected_output",
+    }[mode]
+    return case.get(field, case.get("expected_output"))
+
+
+def validate_inventory(cases: list[dict]) -> None:
+    seen: set[str] = set()
+    for case in cases:
+        case_id = case.get("id")
+        if not isinstance(case_id, str) or not case_id:
+            raise ValueError("oracle case has no stable nonempty id")
+        if case_id in seen:
+            raise ValueError(f"duplicate oracle case id: {case_id}")
+        seen.add(case_id)
+        for mode in ("source", "v9"):
+            if expected_output_for(case, mode) is None:
+                raise ValueError(
+                    f"{case_id} has no expected {mode} outcome; use an explicit "
+                    "mode-specific output for valid negative controls")
+
+
+def combined_inventory(*, include_surface: bool = False,
+                       include_sdk_bytes_range: bool = False) -> list[dict]:
+    cases = list(json.loads(CORPUS.read_text(encoding="utf-8"))["cases"])
+    if include_surface:
+        cases.extend(json.loads(SURFACE_PROBES.read_text(encoding="utf-8"))["cases"])
+    if include_sdk_bytes_range:
+        cases.append({
+            "id": "actual-sdk-bytes-from-range",
+            "priority": "P1-sdk-essential",
+            "category": "SDK generic iteration, assert effect, borrowed Range, owned Vector mutation",
+            "provider_source": (ROOT / "sdk/foundations/bytes/src/bytes.moss").read_text(encoding="utf-8"),
+            "provider_filename": "bytes.moss",
+            "callable_name": "from_range",
+            "poison_callables": ["from_range"],
+            "consumer": (ROOT / "sdk/foundations/acceptance/repros/source_free_range/src/main.moss").read_text(encoding="utf-8"),
+            "input_files": {"p4.bin": b"ABABC"},
+            "expected_output": "329\n",
+            "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+        })
+    validate_inventory(cases)
+    return cases
+
+
 def case_result(case: dict, root: Path, poisoner: Path) -> dict:
     case_id = case["id"]
     safe_id = case_id.replace("-", "_")
     result = {"id": case_id, "priority": case.get("priority"), "category": case.get("category"), "modes": {}}
-    expected = case.get("expected_output")
     for profile in ("debug", "release"):
         # A: provider and consumer sources in one root package.
         source_app = root / "source-backed" / profile
@@ -116,13 +163,15 @@ def case_result(case: dict, root: Path, poisoner: Path) -> dict:
             continue
         run = run_binary(source_app, f"p251_{safe_id}_source_{profile}", profile,
                          "source", root)
-        source_status = "pass" if run["stdout"] == expected else "output-mismatch"
+        source_expected = expected_output_for(case, "source")
+        source_status = "pass" if run["stdout"] == source_expected else "output-mismatch"
         result["modes"].setdefault("source_backed", {})[profile] = {
             "status": source_status, "build": build, "run": run,
         }
 
         # B/C: independent provider builds with separate fresh artifact dirs.
         for mode in ("v9", "v10"):
+            expected = expected_output_for(case, mode)
             provider = root / mode / profile / "provider"
             provider_name = f"p251_{safe_id}_{mode}_{profile}_provider"
             write_package(provider, provider_name, {
@@ -218,26 +267,12 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=ROOT / "tmp/phase25-1-r0-oracle.json")
     args = parser.parse_args()
     TMP.mkdir(exist_ok=True)
-    corpus = json.loads(CORPUS.read_text(encoding="utf-8"))
-    cases = [case for case in corpus["cases"] if not args.case or case["id"] in args.case]
+    all_cases = combined_inventory(
+        include_surface=args.include_surface_probes,
+        include_sdk_bytes_range=args.include_sdk_bytes_range)
+    cases = [case for case in all_cases if not args.case or case["id"] in args.case]
     if args.case and {case["id"] for case in cases} != set(args.case):
         raise SystemExit(f"unknown case(s): {sorted(set(args.case) - {case['id'] for case in cases})}")
-    if args.include_surface_probes:
-        cases.extend(json.loads(SURFACE_PROBES.read_text(encoding="utf-8"))["cases"])
-    if args.include_sdk_bytes_range:
-        cases.append({
-            "id": "actual-sdk-bytes-from-range",
-            "priority": "P1-sdk-essential",
-            "category": "SDK generic iteration, assert effect, borrowed Range, owned Vector mutation",
-            "provider_source": (ROOT / "sdk/foundations/bytes/src/bytes.moss").read_text(encoding="utf-8"),
-            "provider_filename": "bytes.moss",
-            "callable_name": "from_range",
-            "poison_callables": ["from_range"],
-            "consumer": (ROOT / "sdk/foundations/acceptance/repros/source_free_range/src/main.moss").read_text(encoding="utf-8"),
-            "input_files": {"p4.bin": b"ABABC"},
-            "expected_output": "329\n",
-            "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-        })
     with tempfile.TemporaryDirectory(prefix="phase25-1-r0-oracle-", dir=TMP) as directory:
         root = Path(directory)
         poisoner = root / "poison_legacy"

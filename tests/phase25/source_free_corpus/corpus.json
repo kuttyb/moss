@@ -73,7 +73,8 @@
       "provider_expected_error": "SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED",
       "abi_v9_expected_output": "31\nmoss\n",
       "checked_body_status": "checked-body unavailable; callback invocation result occurrence is linked, but unresolved higher-order callback effects prevent ABI-v10 admission",
-      "evidence": "The provider rejects this valid generic callback body because its inferred callback effects are unresolved in the current ABI-v10 summary. The compiler occurrence test verifies the call result is linked to its checked operation and summary Callable result; ABI-v9 source-free execution remains the compatibility control."
+      "evidence": "The provider rejects this valid generic callback body because its inferred callback effects are unresolved in the current ABI-v10 summary. The compiler occurrence test verifies the call result is linked to its checked operation and summary Callable result; ABI-v9 source-free execution remains the compatibility control.",
+      "source_expected_output": "31\nmoss\n"
     },
     {
       "id": "collection-loop-equality-index",
@@ -94,7 +95,9 @@
       "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
       "provider_must_emit_v10": true,
       "checked_body_status": "checked-body unavailable; a Count/Index/equality summary outside the accepted loop control-flow shape must not emit a consumer-incompatible body",
-      "evidence": "Adversarial R1 review found that operation/effect summaries alone routed unrelated control flow into the collection-loop producer. The provider now decodes the canonical occurrence body and checks the complete accepted loop shape before emitting records; this case verifies source-free selection fails closed."
+      "evidence": "Adversarial R1 review found that operation/effect summaries alone routed unrelated control flow into the collection-loop producer. The provider now decodes the canonical occurrence body and checks the complete accepted loop shape before emitting records; this case verifies source-free selection fails closed.",
+      "source_expected_output": "2\n",
+      "abi_v9_expected_output": "2\n"
     },
     {
       "id": "multi-statement-arithmetic",
@@ -186,7 +189,9 @@
       "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(\"moss\", 7)\n  echo Service.fresh(\"codex\", 9)\n  echo Service.panic_key(1, 11)\n",
       "expected_output": "7\n9\n11\n",
       "checked_body_status": "checked-body supported; generic local Map construction, indexed mutation and indexed read are projected before specialization",
-      "evidence": "R1 checked-body acceptance removes provider source and both generic_stmt bodies, requires checked-body projection, and executes open Map key/value specializations plus an integer-division key whose may_panic effect must survive import. Hostile tests erase both ABI-v10 and legacy effect records. Mutation through a Map parameter remains a separate unavailable profile."
+      "evidence": "R1 checked-body acceptance removes provider source and both generic_stmt bodies, requires checked-body projection, and executes open Map key/value specializations plus an integer-division key whose may_panic effect must survive import. Hostile tests erase both ABI-v10 and legacy effect records. Mutation through a Map parameter remains a separate unavailable profile.",
+      "source_expected_output": "7\n9\n11\n",
+      "abi_v9_expected_output": "7\n9\n11\n"
     },
     {
       "id": "generic-range-iteration",
