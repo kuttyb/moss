@@ -10753,8 +10753,10 @@ duplicate IDs are rejected.
 
 The two controls with no previously recorded common expected output now
 explicitly pass source-backed and ABI-v9: callback result prints `31` and
-`moss`, and non-loop Count prints `2`. Their ABI-v10 provider failures remain
-expected and are reported as `valid-but-unavailable-v10`.
+`moss`, and non-loop Count prints `2`. The callback is expected to reject at
+v10 provider build; Count's provider is required to emit, then its source-free
+consumer rejects. The oracle reports both stages as
+`valid-but-unavailable-v10` for their distinct declared expectations.
 
 On final candidate `2f1647b7636766e6c898550bba2437f7b2d69a29`, the six-case
 R2/R0 oracle slice passes source-backed and ABI-v9 in Debug and Release.
