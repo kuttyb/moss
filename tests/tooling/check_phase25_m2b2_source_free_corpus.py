@@ -380,6 +380,21 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                     "SOURCE_FREE_CHECKED_BODY_INVALID",
                     "SOURCE_FREE_SUMMARY_INVALID",
                 )
+            if case["id"] == "shadowing-alias-branch-local-unavailable":
+                negative_cases["shadow-local-ordinal"] = (
+                    "SOURCE_FREE_CHECKED_BODY_INVALID",
+                )
+            if case["id"] == "generic-range-iteration":
+                negative_cases.update({
+                    "for-iterator-receiver": (
+                        "SOURCE_FREE_SUMMARY_INVALID",
+                        "SOURCE_FREE_CHECKED_BODY_INVALID"),
+                    "for-requirement-result": (
+                        "SOURCE_FREE_SUMMARY_INVALID",
+                        "SOURCE_FREE_CHECKED_BODY_INVALID"),
+                    "for-binder-type": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
+                    "for-local-ordinal": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
+                })
             if case["id"] == "generic-map-index-mutation":
                 negative_cases["weaken-effect"] = (
                     "SOURCE_FREE_CHECKED_BODY_INVALID",
@@ -452,6 +467,17 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                                 reject_output), (
                                     mutation_id,
                                     "hostile vector body was projected",
+                                    reject_output)
+                    if mode.startswith("for-") or mode == "shadow-local-ordinal":
+                        assert "MOSS_CHECKED_BODY_PROJECTED|" not in reject_output, (
+                            mutation_id,
+                            "hostile checked body projected before rejection",
+                            reject_output)
+                    if mode == "shadow-local-ordinal":
+                        assert ("MOSS_CHECKED_BODY_PROJECTED|" not in
+                                reject_output), (
+                                    mutation_id,
+                                    "hostile shadowed return was projected",
                                     reject_output)
                     print(f"PASS {case['id']} {mutation_id} rejects fail-closed")
 

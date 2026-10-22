@@ -169,7 +169,7 @@ int main() {
   cir::Stmt while_stmt{cir::StmtKind::While, unit_type, 0, bin_eq, {}, {}, 0, {}, {}, {}, {assign_y}, {}};
 
   // For
-  cir::Stmt for_stmt{cir::StmtKind::For, unit_type, 0, vec_lit12, {}, {}, 0, {}, {}, {}, {assign_y}, {}};
+  cir::Stmt for_stmt{cir::StmtKind::For, int_type, 0, vec_lit12, {}, {}, 0, {}, {}, {}, {assign_y}, {}};
 
   // Match
   cir::CaseBranch branch_ok{"Ok", "enum-v1:app:Result:Ok", {0}, {int_type}, {ret_bin_add}};

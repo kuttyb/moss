@@ -642,6 +642,60 @@ export fn fresh(value, flag: Bool):
          shadowed_body[1].then_branch[1].expr->ordinal !=
              shadowed_body[1].else_branch[0].expr->ordinal);
 
+  auto nested_shadowing_returns = checked_program(R"moss(module Service
+export fn fresh(value, outer: Bool, inner: Bool):
+  let alias = value * 2
+  if outer:
+    if inner:
+      let alias = alias + 1
+      return alias
+    else:
+      return alias
+  else:
+    return alias
+)moss");
+  const Function& nested_shadowed =
+      find_function(nested_shadowing_returns, "fresh");
+  assert(nested_shadowed.open_summary &&
+         nested_shadowed.open_summary->complete &&
+         nested_shadowed.open_summary->occurrence_ledger_complete &&
+         nested_shadowed.checked_body_ir_v1_bytes &&
+         nested_shadowed.checked_body_ir_v1_hash);
+  const auto nested_shadowed_body = checked_ir::decode_checked_body_v1(
+      *nested_shadowed.checked_body_ir_v1_bytes,
+      *nested_shadowing_returns.type_context,
+      nested_shadowed.open_summary->parameter_types,
+      nested_shadowed.open_summary->result_type,
+      *nested_shadowed.checked_body_ir_v1_hash);
+  assert(nested_shadowed_body.size() == 2 &&
+         nested_shadowed_body[0].kind == checked_ir::StmtKind::Let &&
+         nested_shadowed_body[1].kind == checked_ir::StmtKind::If);
+  const auto& outer_if = nested_shadowed_body[1];
+  assert(outer_if.then_branch.size() == 1 &&
+         outer_if.then_branch[0].kind == checked_ir::StmtKind::If &&
+         outer_if.else_branch.size() == 1 &&
+         outer_if.else_branch[0].kind == checked_ir::StmtKind::Return);
+  const auto& inner_if = outer_if.then_branch[0];
+  assert(inner_if.then_branch.size() == 2 &&
+         inner_if.then_branch[0].kind == checked_ir::StmtKind::Let &&
+         inner_if.then_branch[1].kind == checked_ir::StmtKind::Return &&
+         inner_if.else_branch.size() == 1 &&
+         inner_if.else_branch[0].kind == checked_ir::StmtKind::Return);
+  assert(inner_if.then_branch[0].local_ordinal !=
+             nested_shadowed_body[0].local_ordinal &&
+         inner_if.then_branch[1].expr->kind ==
+             checked_ir::ExprKind::LocalRead &&
+         inner_if.then_branch[1].expr->ordinal ==
+             inner_if.then_branch[0].local_ordinal &&
+         inner_if.else_branch[0].expr->kind ==
+             checked_ir::ExprKind::LocalRead &&
+         outer_if.else_branch[0].expr->kind ==
+             checked_ir::ExprKind::LocalRead &&
+         inner_if.else_branch[0].expr->ordinal ==
+             nested_shadowed_body[0].local_ordinal &&
+         outer_if.else_branch[0].expr->ordinal ==
+             nested_shadowed_body[0].local_ordinal);
+
   std::istringstream staged_input(R"moss(export fn staged(value):
   let doubled = value * 2
   return doubled + 20

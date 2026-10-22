@@ -10445,3 +10445,45 @@ The existing adversarial architect reviewed the exact diagnostic checkpoint
 concrete flaw. The review confirms the provider-emission/source-deletion
 reproducer and the lowerer/reader limitations; it does not claim a generic-For
 admission or overall R1 acceptance.
+
+## Phase 25.1 R1 stabilization implementation — architect review pending — 2026-10-21
+
+Starting from `f8fefe51` on `phase25-1-work`, both ordered gaps now have
+source-free ABI-v10 coverage. Shadowed returns retain checker result types and
+branch-local binding ordinals through common lowering. The nested reproducer
+uses distinct same-name bindings; source-deleted Int/Float consumers preserve
+outputs after `generic_stmt` removal, and a rehashed hostile return ordinal
+rejects before projection.
+
+Generic `For` now goes through the common checked-body lowerer and v1 reader.
+The For node carries its loop-local ordinal and checker TypeRef. The existing
+ABI-v10 Iterate requirement's result TypeRef carries the binder relationship;
+the post-check summary refresh obtains it from `BodyTypeState::for_bindings`,
+and the common lowerer verifies it against the exact For occurrence. Import
+requires the checked static-iterator requirement, exact iterable TypeRef,
+requirement result/binder TypeRef match, complete loop body and local identity.
+At specialization, checked Vector/Seq/Range TypeRefs bind the checked Iterate
+result; no source text or display-string inference is used. Source-deleted
+Vector[Int] and Vector[String] consumers execute, with legacy `generic_stmt`
+removed. Hostile Iterate receiver/result, binder TypeRef and local ordinal
+mutations reject before projection. ABI-v10 version is unchanged.
+
+Validation on rebuilt `build/compiler/moss-dev`:
+
+- `python3 tests/tooling/check_phase25_generic_arithmetic_requirements.py build/compiler/moss-dev` — PASS.
+- `python3 tests/tooling/check_phase25_d2_collection_loop_codec.py build/compiler/moss-dev` — PASS, including valid typed For roundtrip and mismatched binder/ordinal rejection.
+- `python3 tests/tooling/check_phase25_checked_body_ir.py build/compiler/moss-dev` — PASS.
+- `python3 tests/tooling/check_phase25_m2b2_source_free_corpus.py build/compiler/moss-dev` — PASS; includes source-deleted shadowing and generic For positives, ABI-v9 controls, legacy-body poisoning, and hostile evidence mutations. Existing collection-loop and arithmetic cases also pass.
+- `python3 tests/tooling/check_agent_feedback.py` and `git diff --check` — PASS.
+
+The first full M2b2 attempt exposed a producer guard regression for the existing
+checked collection loop; the guard now preserves the collection-loop validator.
+Test fixture corrections were made after the ABI record validator rejected an
+unused bound variable. The compiler build retains the two pre-existing
+TypeSolver missing-initializer warnings.
+
+The existing adversarial architect has not yet reviewed the implementation
+SHA. Next: commit and push this candidate, request exact-SHA review, address any
+P0/P1/P2 findings, and record the verdict. This is not an R1 GO or Phase 25.1
+closeout; L7 retains final R1 acceptance authority. No merge or ABI-default
+change has been made.

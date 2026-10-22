@@ -3,9 +3,11 @@
 
 #include <algorithm>
 #include <cassert>
+#include <functional>
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <vector>
 
 namespace {
 std::string read_file(const std::string& path) {
@@ -238,6 +240,92 @@ int main(int argc, char** argv) {
     requirement.dependencies.pop_back();
     requirement.parent = requirement.dependencies.empty()
         ? 0 : requirement.dependencies.front();
+    replace_summary();
+  } else if (mode == "shadow-local-ordinal") {
+    assert(summary.parameters.size() == 3 &&
+           summary.parameters[0].kind == moss::abi_v10::WireTypeKind::BoundVar &&
+           summary.parameters[1].kind == moss::abi_v10::WireTypeKind::Primitive &&
+           summary.parameters[1].identity == "bool" &&
+           summary.parameters[2].kind == moss::abi_v10::WireTypeKind::Primitive &&
+           summary.parameters[2].identity == "bool");
+    auto body = moss::abi_v10::read_checked_body_record(body_at->payload);
+    moss::TypeContext context;
+    const auto variable = moss::Type::var(moss::TypeVarId{0, 0, 0});
+    const auto boolean = moss::Type::primitive("bool");
+    auto statements = moss::checked_ir::decode_checked_body_v1(
+        body.checked_ir_bytes, context, {variable, boolean, boolean}, variable,
+        body.semantic_hash);
+    bool changed = false;
+    std::function<void(std::vector<moss::checked_ir::Stmt>&)> substitute =
+        [&](std::vector<moss::checked_ir::Stmt>& block) {
+      for (auto& statement : block) {
+        if (!changed && statement.kind == moss::checked_ir::StmtKind::Return &&
+            statement.expr && statement.expr->kind ==
+                moss::checked_ir::ExprKind::LocalRead) {
+          statement.expr->ordinal = 999;
+          changed = true;
+        }
+        substitute(statement.then_branch);
+        substitute(statement.else_branch);
+        substitute(statement.body);
+      }
+    };
+    substitute(statements);
+    assert(changed);
+    body.checked_ir_bytes = moss::checked_ir::encode_checked_body_v1(statements);
+    body.semantic_hash =
+        moss::checked_ir::compute_checked_body_hash_v1(statements);
+    summary.body_semantic_hash = body.semantic_hash;
+    replace_summary();
+    replace_body(std::move(body));
+  } else if (mode == "for-binder-type" || mode == "for-local-ordinal") {
+    assert(summary.parameters.size() == 1 &&
+           summary.requirements.size() == 1 &&
+           summary.requirements.front().operation == "static iterator");
+    auto body = moss::abi_v10::read_checked_body_record(body_at->payload);
+    moss::TypeContext context;
+    const auto source_type = moss::Type::var(moss::TypeVarId{0, 0, 0});
+    const auto int_type = moss::Type::primitive("int");
+    auto statements = moss::checked_ir::decode_checked_body_v1(
+        body.checked_ir_bytes, context, {source_type}, int_type,
+        body.semantic_hash);
+    bool changed = false;
+    std::function<void(std::vector<moss::checked_ir::Stmt>&)> mutate =
+        [&](std::vector<moss::checked_ir::Stmt>& block) {
+      for (auto& statement : block) {
+        if (!changed && statement.kind == moss::checked_ir::StmtKind::For) {
+          if (mode == "for-binder-type")
+            statement.type = moss::Type::primitive("bool");
+          else
+            statement.local_ordinal = 999;
+          changed = true;
+        }
+        mutate(statement.then_branch);
+        mutate(statement.else_branch);
+        mutate(statement.body);
+      }
+    };
+    mutate(statements);
+    assert(changed);
+    body.checked_ir_bytes =
+        moss::checked_ir::encode_checked_body_v1(statements);
+    body.semantic_hash =
+        moss::checked_ir::compute_checked_body_hash_v1(statements);
+    summary.body_semantic_hash = body.semantic_hash;
+    replace_summary();
+    replace_body(std::move(body));
+  } else if (mode == "for-requirement-result") {
+    assert(summary.requirements.size() == 1 &&
+           summary.requirements.front().operation == "static iterator");
+    summary.variable_count = 1;
+    summary.requirements.front().result = moss::abi_v10::WireType{
+        moss::abi_v10::WireTypeKind::Primitive, "bool", {}, 0};
+    replace_summary();
+  } else if (mode == "for-iterator-receiver") {
+    assert(summary.requirements.size() == 1 &&
+           summary.requirements.front().operation == "static iterator");
+    summary.requirements.front().receiver = moss::abi_v10::WireType{
+        moss::abi_v10::WireTypeKind::Primitive, "int", {}, 0};
     replace_summary();
   } else if (mode == "missing-callee-summary") {
     assert(helper_summary_at != sealed.value.private_semantic_dependencies.end());

@@ -453,9 +453,11 @@ inline void encode_checked_stmt(std::string& out, const Stmt& stmt) {
       break;
 
     case StmtKind::For:
-      if (!stmt.expr)
-        throw std::invalid_argument("invalid for statement: missing iterable expr");
+      if (!stmt.expr || !stmt.type || stmt.body.empty())
+        throw std::invalid_argument(
+            "invalid for statement: missing checked binder, iterable, or body");
       checked_body_field(out, std::to_string(stmt.local_ordinal));
+      encode_checked_body_type_v1(out, stmt.type);
       encode_checked_expr(out, *stmt.expr);
       checked_body_field(out, std::to_string(stmt.body.size()));
       for (const auto& s : stmt.body) encode_checked_stmt(out, s);
@@ -1139,7 +1141,32 @@ class H3BodyReader {
       case StmtKind::AssignField:
       case StmtKind::ExprStmt:
       case StmtKind::Reply:
-      case StmtKind::For:
+        fail("checked body statement is outside the collection-loop subset");
+      case StmtKind::For: {
+        statement.local_ordinal = number();
+        statement.type = read_type();
+        statement.expr = read_expr();
+        const auto body_count = number();
+        if (!body_count)
+          fail("checked body for loop has an empty body");
+        if (statement.expr->type->kind == TypeKind::Builtin &&
+            (statement.expr->type->name == "vector" ||
+             statement.expr->type->name == "seq") &&
+            statement.expr->type->type_args.size() == 1 &&
+            !statement.expr->type->type_args.front()->structurally_equal(
+                *statement.type))
+          fail("checked body for binder TypeRef disagrees with iterable element");
+        if (statement.expr->type->kind == TypeKind::Primitive &&
+            statement.expr->type->name == "Range" &&
+            !statement.type->structurally_equal(*Type::primitive("int")))
+          fail("checked body Range binder TypeRef is not Int");
+        scopes_.emplace_back();
+        declare_loop_local(statement.local_ordinal, statement.type, false);
+        read_loop_block(body_count, depth + 1, statement.body);
+        for (const auto ordinal : scopes_.back()) locals_.erase(ordinal);
+        scopes_.pop_back();
+        break;
+      }
       case StmtKind::Match:
         fail("checked body statement is outside the collection-loop subset");
       default:

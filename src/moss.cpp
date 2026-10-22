@@ -2949,6 +2949,8 @@ static bool abi_v10_checked_vector_literal_body_candidate(
     const vector<checked_ir::Stmt>& statements);
 static bool abi_v10_checked_branch_arithmetic_summary_candidate(
     const abi_v10::Summary& summary);
+static bool abi_v10_checked_for_summary_candidate(
+    const abi_v10::Summary& summary);
 
 static vector<moss::Requirement> imported_abi_v10_requirements(
     const abi_v10::Summary& summary, const Function& function,
@@ -2970,10 +2972,12 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
       abi_v10_checked_vector_literal_summary_candidate(summary);
   const bool branch_arithmetic =
       abi_v10_checked_branch_arithmetic_summary_candidate(summary);
-  if (!vector_literal && !branch_arithmetic &&
+  const bool generic_for = abi_v10_checked_for_summary_candidate(summary);
+  if (!vector_literal && !branch_arithmetic && !generic_for &&
       summary.requirements.size() != 2)
     invalid("checked ABI-v10 typed requirement set is incomplete");
-  if (!collection_loop && !vector_literal && !branch_arithmetic) {
+  if (!collection_loop && !vector_literal && !branch_arithmetic &&
+      !generic_for) {
     if (summary.requirements[0].operation != "operator:*" ||
         summary.requirements[1].operation != "operator:+" ||
         summary.requirements[0].parent != 0 ||
@@ -3057,7 +3061,9 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
 
     moss::Requirement requirement;
     requirement.id = origin.declaration_id;
-    requirement.kind = vector_literal
+    requirement.kind = generic_for
+        ? moss::RequirementKind::Iterate
+        : vector_literal
         ? moss::RequirementKind::SameType
         : collection_loop && wire.operation == "builtin:index"
             ? moss::RequirementKind::Index
@@ -3110,9 +3116,17 @@ static bool abi_v10_checked_arithmetic_summary_candidate(
     return type.kind == abi_v10::WireTypeKind::Primitive &&
         type.identity == "int" && type.arguments.empty();
   };
-  if (summary.variable_count != 1 || summary.parameters.size() != 1 ||
-      summary.parameter_access != vector<abi_v10::Access>{
-          abi_v10::Access::Read} || !bound_zero(summary.parameters.front()) ||
+  const bool parameter_shape = summary.parameters.size() == 1 ||
+      (summary.parameters.size() >= 2 &&
+       std::all_of(std::next(summary.parameters.begin()),
+                   summary.parameters.end(), [](const auto& parameter) {
+         return parameter.kind == abi_v10::WireTypeKind::Primitive &&
+             parameter.identity == "bool" && parameter.arguments.empty();
+       }));
+  if (summary.variable_count != 1 || !parameter_shape ||
+      summary.parameter_access != vector<abi_v10::Access>(
+          summary.parameters.size(), abi_v10::Access::Read) ||
+      !bound_zero(summary.parameters.front()) ||
       !bound_zero(summary.result) || summary.requirements.size() != 2)
     return false;
   const auto& multiply = summary.requirements[0];
@@ -3234,6 +3248,173 @@ static bool abi_v10_checked_branch_arithmetic_body_candidate(
       addition.operands[0].type->structurally_equal(*value_type) &&
       addition.operands[1].type &&
       addition.operands[1].type->structurally_equal(*int_type);
+}
+
+// Validate conditional bodies whose exact arithmetic requirement sites are
+// unique and whose data-flow dependencies agree with the checked summary.
+// This admits ordinary checked control flow, including branch-local shadowing,
+// while keeping every operation tied to one typed requirement fact.
+static bool abi_v10_checked_conditional_arithmetic_lineage_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements,
+    const moss::TypeContext& context) {
+  if (!abi_v10_checked_arithmetic_summary_candidate(summary) ||
+      summary.parameters.size() < 2)
+    return false;
+  const auto value_type = imported_abi_v10_type(
+      summary.parameters[0], context, summary.variable_count);
+  const auto bool_type = moss::Type::primitive("bool");
+  if (!value_type || !bool_type ||
+      std::any_of(std::next(summary.parameters.begin()), summary.parameters.end(),
+          [&](const auto& parameter) {
+        const auto type = imported_abi_v10_type(
+            parameter, context, summary.variable_count);
+        return !type || !type->structurally_equal(*bool_type);
+      })) return false;
+  const auto& multiply = summary.requirements[0];
+  const auto& add = summary.requirements[1];
+  if (!multiply.dependencies.empty() ||
+      add.dependencies != vector<std::uint32_t>{1})
+    return false;
+  vector<std::size_t> operation_counts(summary.requirements.size(), 0);
+  std::function<std::optional<std::set<std::uint32_t>>(
+      const checked_ir::Expr&, const std::map<std::uint32_t,
+      std::set<std::uint32_t>>&, unsigned)> expression_dependencies;
+  expression_dependencies = [&](const checked_ir::Expr& expression,
+      const std::map<std::uint32_t, std::set<std::uint32_t>>& locals,
+      unsigned depth) -> std::optional<std::set<std::uint32_t>> {
+    if (depth > 64 || !expression.type) return std::nullopt;
+    switch (expression.kind) {
+      case checked_ir::ExprKind::Parameter:
+        if (expression.ordinal >= summary.parameters.size())
+          return std::nullopt;
+        return std::set<std::uint32_t>{};
+      case checked_ir::ExprKind::LocalRead: {
+        const auto found = locals.find(expression.ordinal);
+        if (found == locals.end()) return std::nullopt;
+        return found->second;
+      }
+      case checked_ir::ExprKind::IntegerLiteral:
+      case checked_ir::ExprKind::FloatLiteral:
+      case checked_ir::ExprKind::BoolLiteral:
+      case checked_ir::ExprKind::StringLiteral:
+        return std::set<std::uint32_t>{};
+      case checked_ir::ExprKind::Binary: {
+        if (expression.operands.size() != 2) return std::nullopt;
+        std::size_t requirement_index = summary.requirements.size();
+        if (expression.binary_op == checked_ir::BinaryOp::Mul)
+          requirement_index = 0;
+        else if (expression.binary_op == checked_ir::BinaryOp::Add)
+          requirement_index = 1;
+        else
+          return std::nullopt;
+        const auto left = expression_dependencies(
+            expression.operands[0], locals, depth + 1);
+        const auto right = expression_dependencies(
+            expression.operands[1], locals, depth + 1);
+        if (!left || !right) return std::nullopt;
+        const auto& requirement = summary.requirements[requirement_index];
+        const auto receiver = imported_abi_v10_type(
+            requirement.receiver, context, summary.variable_count);
+        const auto argument = requirement.arguments.size() == 1
+            ? imported_abi_v10_type(requirement.arguments.front(), context,
+                                    summary.variable_count)
+            : nullptr;
+        const auto result = requirement.result
+            ? imported_abi_v10_type(*requirement.result, context,
+                                    summary.variable_count)
+            : nullptr;
+        if (!receiver || !argument || !result ||
+            !receiver->structurally_equal(*expression.operands[0].type) ||
+            !argument->structurally_equal(*expression.operands[1].type) ||
+            !result->structurally_equal(*expression.type))
+          return std::nullopt;
+        std::set<std::uint32_t> dependencies = *left;
+        dependencies.insert(right->begin(), right->end());
+        if (dependencies != std::set<std::uint32_t>(
+                requirement.dependencies.begin(),
+                requirement.dependencies.end()))
+          return std::nullopt;
+        ++operation_counts[requirement_index];
+        dependencies.insert(static_cast<std::uint32_t>(requirement_index + 1));
+        return dependencies;
+      }
+      default:
+        return std::nullopt;
+    }
+  };
+  bool saw_conditional = false;
+  std::function<bool(const vector<checked_ir::Stmt>&,
+                     std::map<std::uint32_t, std::set<std::uint32_t>>&,
+                     unsigned)> check_block;
+  check_block = [&](const vector<checked_ir::Stmt>& block,
+                    std::map<std::uint32_t, std::set<std::uint32_t>>& locals,
+                    unsigned depth) {
+    if (depth > 32) return false;
+    for (const auto& statement : block) {
+      switch (statement.kind) {
+        case checked_ir::StmtKind::Let:
+        case checked_ir::StmtKind::Var:
+          if (!statement.expr || !statement.type ||
+              !statement.type->structurally_equal(*statement.expr->type) ||
+              locals.count(statement.local_ordinal)) return false;
+          if (auto dependencies = expression_dependencies(
+                  *statement.expr, locals, 0))
+            locals.emplace(statement.local_ordinal, std::move(*dependencies));
+          else
+            return false;
+          break;
+        case checked_ir::StmtKind::Assign: {
+          if (!statement.expr || !locals.count(statement.local_ordinal))
+            return false;
+          auto dependencies = expression_dependencies(
+              *statement.expr, locals, 0);
+          if (!dependencies) return false;
+          locals[statement.local_ordinal] = std::move(*dependencies);
+          break;
+        }
+        case checked_ir::StmtKind::If: {
+          if (!statement.expr || !statement.expr->type ||
+              !statement.expr->type->structurally_equal(*bool_type))
+            return false;
+          const auto condition = expression_dependencies(
+              *statement.expr, locals, 0);
+          if (!condition || !condition->empty()) return false;
+          saw_conditional = true;
+          auto then_locals = locals;
+          auto else_locals = locals;
+          if (!check_block(statement.then_branch, then_locals, depth + 1) ||
+              !check_block(statement.else_branch, else_locals, depth + 1))
+            return false;
+          for (auto& [ordinal, dependencies] : locals) {
+            const auto then_value = then_locals.find(ordinal);
+            const auto else_value = else_locals.find(ordinal);
+            if (then_value == then_locals.end() ||
+                else_value == else_locals.end()) return false;
+            dependencies = then_value->second;
+            dependencies.insert(else_value->second.begin(),
+                                else_value->second.end());
+          }
+          break;
+        }
+        case checked_ir::StmtKind::Return:
+          if (!statement.expr || !expression_dependencies(
+                  *statement.expr, locals, 0)) return false;
+          break;
+        case checked_ir::StmtKind::Pass:
+          break;
+        default:
+          return false;
+      }
+    }
+    return true;
+  };
+  std::map<std::uint32_t, std::set<std::uint32_t>> locals;
+  if (!check_block(statements, locals, 0) || !saw_conditional ||
+      operation_counts.size() != 2 || operation_counts[0] != 1 ||
+      operation_counts[1] != 1)
+    return false;
+  return true;
 }
 
 static bool abi_v10_parameter_return_summary_candidate(
@@ -3469,12 +3650,97 @@ static bool abi_v10_collection_loop_summary_candidate(
       !index.provenance_id.empty() && !equality.provenance_id.empty();
 }
 
+// Bounded ABI-v10 contract for a generic callable whose source is iterated
+// once through the checker-owned static-iterator obligation. The requirement
+// result carries the checked loop binder TypeRef; it is not reconstructed by
+// the importer from source spelling or a display string.
+static bool abi_v10_checked_for_summary_candidate(
+    const abi_v10::Summary& summary) {
+  const auto bound_zero = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::BoundVar &&
+        type.ordinal == 0 && type.arguments.empty();
+  };
+  const auto primitive_int = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::Primitive &&
+        type.identity == "int" && type.arguments.empty();
+  };
+  if ((summary.variable_count != 1 && summary.variable_count != 2) ||
+      summary.parameters.size() != 1 ||
+      !bound_zero(summary.parameters.front()) ||
+      summary.parameter_access != vector<abi_v10::Access>{
+          abi_v10::Access::Read} || !primitive_int(summary.result) ||
+      !summary.dependencies.empty() || summary.observable_effect_bits != 0 ||
+      summary.observable_effect_tags != vector<string>{"may_diverge"} ||
+      !abi_v10::checked_body_hash_valid(summary.body_semantic_hash) ||
+      summary.provenance_id.empty() || summary.requirements.size() != 1)
+    return false;
+  const auto& iterate = summary.requirements.front();
+  return iterate.operation == "static iterator" && iterate.parent == 0 &&
+      iterate.access == abi_v10::Access::Read &&
+      bound_zero(iterate.receiver) && iterate.arguments.empty() &&
+      iterate.argument_access.empty() && iterate.result &&
+      ((summary.variable_count == 1 && primitive_int(*iterate.result)) ||
+       (summary.variable_count == 2 &&
+        iterate.result->kind == abi_v10::WireTypeKind::BoundVar &&
+        iterate.result->ordinal == 1 && iterate.result->arguments.empty())) &&
+      iterate.dependencies.empty() &&
+      !iterate.provenance_id.empty();
+}
+
 static bool abi_v10_collection_loop_effects(const ObservableEffects& effects) {
   return effects.may_panic && !effects.local_capture_read &&
       !effects.local_mutation && !effects.domain_read && !effects.domain_write &&
       !effects.message && !effects.external_io && !effects.fileio &&
       !effects.fileio_unknown && effects.raise_set.empty() &&
       !effects.may_diverge && !effects.unresolved;
+}
+
+static bool abi_v10_checked_for_effects(const ObservableEffects& effects) {
+  return effects.may_diverge && !effects.may_panic &&
+      !effects.local_capture_read && !effects.local_mutation &&
+      !effects.domain_read && !effects.domain_write && !effects.message &&
+      !effects.external_io && !effects.fileio && !effects.fileio_unknown &&
+      effects.raise_set.empty() && !effects.unresolved;
+}
+
+static bool abi_v10_checked_for_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements,
+    const moss::TypeContext& context) {
+  if (!abi_v10_checked_for_summary_candidate(summary) ||
+      statements.size() < 2 || statements.back().kind !=
+          checked_ir::StmtKind::Return || !statements.back().expr ||
+      !statements.back().expr->type)
+    return false;
+  const auto& requirement = summary.requirements.front();
+  const auto iterable_type = imported_abi_v10_type(
+      requirement.receiver, context, summary.variable_count);
+  const auto binder_type = imported_abi_v10_type(
+      *requirement.result, context, summary.variable_count);
+  const auto result_type = imported_abi_v10_type(
+      summary.result, context, summary.variable_count);
+  if (!iterable_type || !binder_type || !result_type) return false;
+  std::size_t for_count = 0;
+  std::function<void(const vector<checked_ir::Stmt>&)> count_for =
+      [&](const vector<checked_ir::Stmt>& block) {
+    for (const auto& statement : block) {
+      if (statement.kind == checked_ir::StmtKind::For) ++for_count;
+      count_for(statement.then_branch);
+      count_for(statement.else_branch);
+      count_for(statement.body);
+    }
+  };
+  count_for(statements);
+  if (for_count != 1) return false;
+  const auto loop = std::find_if(statements.begin(), std::prev(statements.end()),
+      [](const auto& statement) {
+    return statement.kind == checked_ir::StmtKind::For;
+  });
+  return loop != std::prev(statements.end()) && loop->expr && loop->type &&
+      !loop->body.empty() &&
+      loop->expr->type->structurally_equal(*iterable_type) &&
+      loop->type->structurally_equal(*binder_type) &&
+      statements.back().expr->type->structurally_equal(*result_type);
 }
 
 static void validate_abi_v10_checked_arithmetic_summary(
@@ -3493,15 +3759,24 @@ static void validate_abi_v10_checked_arithmetic_summary(
     return type.kind == abi_v10::WireTypeKind::Primitive &&
         type.identity == "int" && type.arguments.empty();
   };
-  if (summary.requirements.size() != 2)
+  if (summary.requirements.size() != 2 || summary.parameters.empty())
     invalid("checked ABI-v10 arithmetic summary requirement chain is incomplete");
   const auto& multiply = summary.requirements[0];
   const auto& add = summary.requirements[1];
   if (summary.variable_count != 1 ||
       !bound_var_zero(summary.parameters[0]) ||
+      (summary.parameters.size() > 1 &&
+       !std::all_of(std::next(summary.parameters.begin()),
+                    summary.parameters.end(), [](const auto& parameter) {
+         return parameter.kind == abi_v10::WireTypeKind::Primitive &&
+             parameter.identity == "bool" && parameter.arguments.empty();
+       })) ||
       !bound_var_zero(summary.result) ||
-      summary.parameter_access.size() != 1 ||
-      summary.parameter_access[0] != abi_v10::Access::Read ||
+      summary.parameter_access.size() != summary.parameters.size() ||
+      std::any_of(summary.parameter_access.begin(),
+                  summary.parameter_access.end(), [](abi_v10::Access access) {
+        return access != abi_v10::Access::Read;
+      }) ||
       summary.observable_effect_bits != 0 ||
       !summary.observable_effect_tags.empty() ||
       !summary.dependencies.empty() ||
@@ -3562,6 +3837,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
         function.imported_checked_summary_payload);
     const bool collection_loop_candidate =
         abi_v10_collection_loop_summary_candidate(summary);
+    const bool generic_for_candidate =
+        abi_v10_checked_for_summary_candidate(summary);
     const abi_v10::CheckedBodyRecord body = abi_v10::read_checked_body_record(
         function.imported_checked_body_payload);
     if (summary.callable_id != function.semantic_callable_id ||
@@ -3656,6 +3933,10 @@ static void project_imported_h3_checked_bodies(Program& program) {
         body.dependencies.empty() &&
         abi_v10_checked_branch_arithmetic_body_candidate(
             summary, statements, *program.type_context);
+    const bool checked_conditional_arithmetic_candidate =
+        body.dependencies.empty() &&
+        abi_v10_checked_conditional_arithmetic_lineage_candidate(
+            summary, statements, *program.type_context);
     if (contains_if_join(statements) && !pure_branch_join_candidate &&
         !checked_branch_arithmetic_candidate)
       invalid("checked ABI-v10 branch-join body lacks requirement lineage validation");
@@ -3696,7 +3977,9 @@ static void project_imported_h3_checked_bodies(Program& program) {
       }
     };
     inspect_operations(statements);
-    if (contains_conditional && contains_operation && !collection_loop_candidate)
+    if (contains_conditional && contains_operation && !collection_loop_candidate &&
+        !checked_branch_arithmetic_candidate &&
+        !checked_conditional_arithmetic_candidate)
       invalid("checked ABI-v10 conditional body lacks requirement lineage validation");
     const bool local_map_effect_contract =
         abi_v10_local_map_effects_covered(
@@ -3708,7 +3991,11 @@ static void project_imported_h3_checked_bodies(Program& program) {
         summary.observable_effect_tags.empty();
     const bool effect_contract_valid = collection_loop_candidate
         ? abi_v10_collection_loop_effects(function.observable_effects)
-        : pure_effect_record_valid || map_effect_record_valid;
+        : generic_for_candidate
+            ? abi_v10_checked_for_effects(function.observable_effects) &&
+                  summary.observable_effect_tags ==
+                      vector<string>{"may_diverge"}
+            : pure_effect_record_valid || map_effect_record_valid;
     if (!effect_contract_valid)
       invalid("checked ABI-v10 body disagrees with its callable summary");
     const auto dependencies = extract_semantic_dependencies(statements);
@@ -4016,6 +4303,18 @@ static void project_imported_h3_checked_bodies(Program& program) {
                   << function.semantic_callable_id << "|checked-body-v1\n";
       continue;
     }
+    if (generic_for_candidate) {
+      const auto requirements = imported_abi_v10_requirements(
+          summary, function, *program.type_context);
+      if (requirements.size() != 1 ||
+          requirements.front().kind != moss::RequirementKind::Iterate ||
+          requirements.front().target_id != "static iterator" ||
+          !requirements.front().result ||
+          !abi_v10_checked_for_body_candidate(
+              summary, statements, *program.type_context) ||
+          !body.dependencies.empty())
+        invalid("checked ABI-v10 For body does not match its Iterate evidence");
+    }
     std::map<std::uint32_t, TypeRef> checked_local_types;
     bool checked_projection_subset = true;
     bool contains_if = false;
@@ -4037,6 +4336,11 @@ static void project_imported_h3_checked_bodies(Program& program) {
             checked_projection_subset = false;
         } else if (statement.kind == checked_ir::StmtKind::If) {
           contains_if = true;
+        } else if (statement.kind == checked_ir::StmtKind::For) {
+          if (!statement.expr || !statement.type ||
+              !checked_local_types.emplace(statement.local_ordinal,
+                                            statement.type).second)
+            checked_projection_subset = false;
         } else if (statement.kind == checked_ir::StmtKind::AssignIndex) {
           if (statement.operands.size() != 2 || !statement.expr ||
               statement.operands[0].kind != checked_ir::ExprKind::LocalRead ||
@@ -4052,6 +4356,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
         }
         collect_local_types(statement.then_branch);
         collect_local_types(statement.else_branch);
+        collect_local_types(statement.body);
       }
     };
     collect_local_types(statements);
@@ -4069,6 +4374,19 @@ static void project_imported_h3_checked_bodies(Program& program) {
               statement.kind == checked_ir::StmtKind::Pass;
         });
     const bool checked_if_body = contains_if && checked_projection_subset;
+    bool contains_for = false;
+    std::function<void(const vector<checked_ir::Stmt>&)> find_for =
+        [&](const vector<checked_ir::Stmt>& block) {
+      for (const auto& statement : block) {
+        if (statement.kind == checked_ir::StmtKind::For) contains_for = true;
+        find_for(statement.then_branch);
+        find_for(statement.else_branch);
+        find_for(statement.body);
+      }
+    };
+    find_for(statements);
+    const bool checked_generic_for_body = generic_for_candidate &&
+        contains_for && checked_projection_subset;
     const bool checked_direct_vector_return =
         vector_literal_body_candidate && checked_projection_subset &&
         body.dependencies.empty();
@@ -4076,7 +4394,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
         summary.dependencies.empty() && body.dependencies.size() == 1 &&
         body.dependencies.front().kind ==
             abi_v10::CheckedBodyRecord::Dependency::Kind::NominalType;
-    if ((checked_straight_line || checked_if_body ||
+    if ((checked_straight_line || checked_if_body || checked_generic_for_body ||
          checked_direct_vector_return) &&
         checked_projection_subset &&
         (body.dependencies.empty() ||
@@ -4331,6 +4649,20 @@ static void project_imported_h3_checked_bodies(Program& program) {
               else_binding.b;
           projected.push_back(std::move(else_binding));
           return true;
+        }
+        if (checked.kind == checked_ir::StmtKind::For) {
+          if (!expression || checked.local_ordinal >= local_names.size() ||
+              !checked.type || !checked.expr ||
+              !checked_local_types.count(checked.local_ordinal) ||
+              !checked_local_types.at(checked.local_ordinal)
+                   ->structurally_equal(*checked.type))
+            return false;
+          statement.kind = Stmt::Kind::For;
+          statement.a = local_names[checked.local_ordinal];
+          statement.b = *expression;
+          statement.text = "for " + statement.a + " in " + statement.b;
+          projected.push_back(std::move(statement));
+          return project_block(checked.body, indent + 1);
         }
         return false;
       };
@@ -4681,12 +5013,18 @@ static void validate_imported_h3_summary_closure(const Program& program) {
         function.imported_checked_summary_payload);
     const bool collection_loop =
         abi_v10_collection_loop_summary_candidate(summary);
+    const bool generic_for = abi_v10_checked_for_summary_candidate(summary);
     bool effects_valid = collection_loop
         ? abi_v10_collection_loop_effects(function.observable_effects)
-        : abi_v10_effects_pure(function.observable_effects) &&
+        : generic_for
+            ? abi_v10_checked_for_effects(function.observable_effects) &&
+                  summary.observable_effect_bits == 0 &&
+                  summary.observable_effect_tags ==
+                      vector<string>{"may_diverge"}
+            : abi_v10_effects_pure(function.observable_effects) &&
             summary.observable_effect_bits == 0 &&
             summary.observable_effect_tags.empty();
-    if (!effects_valid && !collection_loop) {
+    if (!effects_valid && !collection_loop && !generic_for) {
       try {
         vector<moss::TypeRef> parameters;
         bool types_complete = true;
@@ -5034,6 +5372,7 @@ class Checker {
     check_method_ownership();
     for (const auto& f : p_.functions) check_function(f);
     refresh_open_collection_summaries_from_checked_types();
+    refresh_open_for_summaries_from_checked_types();
     for (const auto& d : p_.domains) check_domain(d);
     if (p_.main) check_main(*p_.main);
     check_test_and_benchmark_declarations();
@@ -7036,6 +7375,44 @@ class Checker {
           return false;
         }
     }
+    std::size_t iterate_requirements = 0;
+    for (const auto& requirement : summary.requirements) {
+      if (requirement.kind != moss::RequirementKind::Iterate ||
+          requirement.target_id != "static iterator")
+        continue;
+      ++iterate_requirements;
+      if (!requirement.result || !*requirement.result) return false;
+      const BodyTypeState::StatementOccurrence* loop = nullptr;
+      std::size_t loop_count = 0;
+      for (const auto& statement : state.statement_occurrences)
+        if (statement.kind == Stmt::Kind::For) {
+          loop = &statement;
+          ++loop_count;
+        }
+      if (loop_count != 1 || !loop || !loop->source ||
+          loop->bindings.size() != 1 ||
+          loop->bindings.front().identity.empty() ||
+          !loop->bindings.front().type)
+        return false;
+      const auto iterable_root = state.expression_root_slots.find(
+          {loop->id, "for-iterable"});
+      if (iterable_root == state.expression_root_slots.end()) return false;
+      const auto iterable = std::find_if(state.expression_occurrences.begin(),
+          state.expression_occurrences.end(), [&](const auto& occurrence) {
+        return occurrence.id == iterable_root->second &&
+            occurrence.statement_id == loop->id && occurrence.checked_type;
+      });
+      if (iterable == state.expression_occurrences.end() ||
+          !relate_type(iterable->checked_type, requirement.subject) ||
+          !relate_type(loop->bindings.front().type, *requirement.result))
+        return false;
+    }
+    if (iterate_requirements > 0) {
+      const auto for_count = std::count_if(
+          state.statement_occurrences.begin(), state.statement_occurrences.end(),
+          [](const auto& statement) { return statement.kind == Stmt::Kind::For; });
+      if (iterate_requirements != 1 || for_count != 1) return false;
+    }
     // A direct named call at the function's return root has its own body
     // solver result variable. Relate that occurrence to the open summary
     // result only when the retained call operation, ordered argument
@@ -7377,9 +7754,11 @@ class Checker {
           simple_identifier(source_statement.a) &&
           binding_fact != state.binding_facts.end() &&
           binding_fact->second.introduced;
+      const bool introduced_for_binding =
+          source_statement.kind == Stmt::Kind::For;
       if (source_statement.kind != Stmt::Kind::Let &&
           source_statement.kind != Stmt::Kind::Var &&
-          !introduced_assignment)
+          !introduced_assignment && !introduced_for_binding)
         continue;
       if (node.bindings.size() != 1 || node.bindings.front().identity.empty() ||
           !node.bindings.front().type)
@@ -8091,6 +8470,32 @@ class Checker {
           lowered.expr = std::move(*condition);
           auto loop_body = lower_block(id, depth + 1);
           if (!loop_body) return std::nullopt;
+          lowered.body = std::move(*loop_body);
+          return lowered;
+        }
+        case Stmt::Kind::For: {
+          auto iterable = expression_for("for-iterable");
+          const auto& node = state.statement_occurrences.at(id);
+          if (!iterable || !iterable->type || node.bindings.size() != 1 ||
+              node.bindings.front().identity.empty() ||
+              !node.bindings.front().type)
+            return std::nullopt;
+          const auto identity = local_ordinals.find(
+              node.bindings.front().identity);
+          const auto binder_type = checked_body_type(
+              node.bindings.front().type);
+          if (identity == local_ordinals.end() || !binder_type ||
+              identity->second >= local_types.size() ||
+              !local_types[identity->second] ||
+              !binder_type->structurally_equal(
+                  *local_types[identity->second]))
+            return std::nullopt;
+          lowered.kind = checked_ir::StmtKind::For;
+          lowered.local_ordinal = identity->second;
+          lowered.type = binder_type;
+          lowered.expr = std::move(*iterable);
+          auto loop_body = lower_block(id, depth + 1);
+          if (!loop_body || loop_body->empty()) return std::nullopt;
           lowered.body = std::move(*loop_body);
           return lowered;
         }
@@ -9390,6 +9795,70 @@ class Checker {
           summary.observable_effects.may_panic;
       summary.complete = false;
       if (summary.scheme_complete) function.open_summary = std::move(summary);
+    }
+  }
+
+  // The signature pass can retain the static Iterate obligation but cannot
+  // know the loop binder type. Promote it only after the ordinary body
+  // checker has retained the exact For binding TypeRef and identity.
+  void refresh_open_for_summaries_from_checked_types() {
+    for (auto& function : p_.functions) {
+      if (!function.imported_checked_summary_payload.empty() ||
+          !function.open_summary || function.params.size() != 1 ||
+          !function.open_summary->scheme_complete)
+        continue;
+      auto& summary = *function.open_summary;
+      auto requirement = std::find_if(summary.requirements.begin(),
+          summary.requirements.end(), [](const moss::Requirement& candidate) {
+        return candidate.kind == moss::RequirementKind::Iterate &&
+            candidate.target_id == "static iterator";
+      });
+      if (summary.requirements.size() != 1 ||
+          requirement == summary.requirements.end() || requirement->result)
+        continue;
+      auto retained = checked_body_states_.find(&function.body);
+      if (retained == checked_body_states_.end() || !retained->second ||
+          !retained->second->expression_occurrence_ledger_complete)
+        continue;
+      auto& state = *retained->second;
+      const Stmt* loop = nullptr;
+      std::size_t loop_count = 0;
+      for (const auto& statement : function.body)
+        if (statement.kind == Stmt::Kind::For) {
+          loop = &statement;
+          ++loop_count;
+        }
+      const auto constraint = std::find_if(function.constraints.begin(),
+          function.constraints.end(), [&](const Constraint& candidate) {
+        return candidate.kind == ConstraintKind::Iterable &&
+            candidate.detail == "static iterator" &&
+            candidate.subject == function.params.front().name;
+      });
+      if (loop_count != 1 || !loop ||
+          trim(loop->b) != function.params.front().name ||
+          constraint == function.constraints.end())
+        continue;
+      const auto binder = state.for_bindings.find(loop);
+      const auto binder_type = binder == state.for_bindings.end()
+          ? nullptr : state.solver.resolve(binder->second);
+      if (!binder_type) continue;
+      if (binder_type->kind == moss::TypeKind::InferenceVar) {
+        requirement->result = moss::Type::var({
+            0, 0, summary.bound_variable_count++});
+      } else if (binder_type->is_closed()) {
+        requirement->result = binder_type;
+      } else {
+        continue;
+      }
+      if (!moss::close_open_summary_ordinals(summary)) {
+        requirement->result.reset();
+        continue;
+      }
+      summary.scheme_complete = summary.result_type &&
+          summary.parameter_types.size() == 1 &&
+          summary.parameter_access.size() == 1 &&
+          !summary.observable_effects.unresolved;
+      summary.complete = false;
     }
   }
 
@@ -26702,6 +27171,65 @@ class Checker {
             }
             return result;
           };
+          bool invalid_iterate_substitution = false;
+          if (exact_arguments) {
+            for (const auto& requirement :
+                 resolved_target->open_summary->requirements) {
+              if (requirement.kind != moss::RequirementKind::Iterate ||
+                  requirement.target_id != "static iterator")
+                continue;
+              std::size_t parameter_index = args.size();
+              for (std::size_t index = 0; index <
+                       resolved_target->open_summary->parameter_types.size();
+                   ++index)
+                if (requirement.subject &&
+                    resolved_target->open_summary->parameter_types[index] &&
+                    requirement.subject->structurally_equal(
+                        *resolved_target->open_summary->parameter_types[index])) {
+                  if (parameter_index != args.size()) {
+                    parameter_index = args.size();
+                    break;
+                  }
+                  parameter_index = index;
+                }
+              const BodyTypeState::ExpressionOccurrence* child = nullptr;
+              if (parameter_index < args.size())
+                for (const auto& candidate : state.expression_occurrences)
+                  if (candidate.parent_id == call_id &&
+                      candidate.child_role ==
+                          "argument:" + std::to_string(parameter_index)) {
+                    if (child) {
+                      child = nullptr;
+                      break;
+                    }
+                    child = &candidate;
+                  }
+              auto actual = child && child->checked_type
+                  ? state.solver.resolve(child->checked_type) : nullptr;
+              moss::TypeRef element;
+              if (actual && actual->kind == moss::TypeKind::Builtin &&
+                  (actual->name == "vector" || actual->name == "seq") &&
+                  actual->type_args.size() == 1)
+                element = actual->type_args.front();
+              else if (actual && actual->kind == moss::TypeKind::Primitive &&
+                       actual->name == "Range")
+                element = moss::Type::primitive("int");
+              else if (actual && actual->kind == moss::TypeKind::Primitive &&
+                       actual->name == "RangeBatch")
+                element = moss::Type::primitive("Range");
+              if (parameter_index >= args.size() || !child || !element ||
+                  !requirement.result || !*requirement.result ||
+                  !bind(*requirement.result, element)) {
+                exact_arguments = false;
+                invalid_iterate_substitution = true;
+                break;
+              }
+            }
+          }
+          if (invalid_iterate_substitution)
+            err(line,
+                "checked ABI-v10 Iterate binder TypeRef cannot be matched to the checked iterable element type",
+                "SOURCE_FREE_SUMMARY_INVALID");
           if (exact_arguments) {
             auto result = substitute(resolved_target->open_summary->result_type);
             if (result) state.retain_active_expression_type(std::move(result));
@@ -50003,6 +50531,12 @@ abi_v10_checked_requirements(
         (requirement.target_id == "operator:*" ||
          requirement.target_id == "operator:+" ||
          requirement.target_id == "operator:==");
+    const bool supported_iterate = requirement.kind ==
+            moss::RequirementKind::Iterate &&
+        requirement.target_id == "static iterator" &&
+        requirement.arguments.empty() &&
+        requirement.argument_access.empty() && requirement.result &&
+        requirement.access == moss::AccessMode::Read;
     const auto vector_result = requirement.result && *requirement.result &&
         (*requirement.result)->kind == moss::TypeKind::Builtin &&
         (*requirement.result)->name == "vector" &&
@@ -50024,7 +50558,7 @@ abi_v10_checked_requirements(
             requirement.argument_access.end(), [](moss::AccessMode access) {
           return access == moss::AccessMode::Read;
         });
-    if ((!supported_index && !supported_operator &&
+    if ((!supported_index && !supported_operator && !supported_iterate &&
          !supported_vector_relation) ||
         requirement.id.empty() || requirement.origin.module_id.empty() ||
         requirement.origin.enclosing_callable.empty() ||
@@ -50488,6 +51022,14 @@ static void append_abi_v10_occurrence_records(
         // the Map read, so the sealed summary must retain that effect.
         summary.observable_effect_tags = {"may_panic"};
       } else {
+        auto for_summary = summary;
+        for_summary.observable_effect_tags = {"may_diverge"};
+        if (abi_v10_checked_for_summary_candidate(for_summary) &&
+            abi_v10_checked_for_effects(facts.observable_effects) &&
+            abi_v10_checked_for_body_candidate(
+                for_summary, decoded, *program.type_context)) {
+          summary.observable_effect_tags = {"may_diverge"};
+        } else {
         // The collection candidate includes its sealed effect contract, so
         // validate it with the required tag already present. Do not check the
         // empty intermediate summary and then add the tag afterward.
@@ -50499,6 +51041,7 @@ static void append_abi_v10_occurrence_records(
           continue;
         summary.observable_effect_tags = {
             std::move(collection_summary.observable_effect_tags.front())};
+        }
       }
     }
     // A complete checked body may depend on nominal templates or callees even
@@ -50515,9 +51058,39 @@ static void append_abi_v10_occurrence_records(
     const bool checked_branch_arithmetic =
         abi_v10_checked_branch_arithmetic_body_candidate(
             summary, decoded, *program.type_context);
+    bool contains_conditional = false;
+    bool contains_operation = false;
+    std::function<void(const vector<checked_ir::Stmt>&)> inspect_lineage_body =
+        [&](const vector<checked_ir::Stmt>& block) {
+      for (const auto& statement : block) {
+        if (statement.kind == checked_ir::StmtKind::If)
+          contains_conditional = true;
+        if (statement.expr && statement.expr->kind !=
+                checked_ir::ExprKind::Parameter &&
+            statement.expr->kind != checked_ir::ExprKind::LocalRead &&
+            statement.expr->kind != checked_ir::ExprKind::IntegerLiteral &&
+            statement.expr->kind != checked_ir::ExprKind::FloatLiteral &&
+            statement.expr->kind != checked_ir::ExprKind::BoolLiteral &&
+            statement.expr->kind != checked_ir::ExprKind::StringLiteral)
+          contains_operation = true;
+        inspect_lineage_body(statement.then_branch);
+        inspect_lineage_body(statement.else_branch);
+        inspect_lineage_body(statement.body);
+      }
+    };
+    inspect_lineage_body(decoded);
+    const bool checked_conditional_arithmetic = contains_conditional &&
+        contains_operation &&
+        abi_v10_checked_conditional_arithmetic_lineage_candidate(
+            summary, decoded, *program.type_context);
+    if (contains_conditional && contains_operation &&
+        !abi_v10_collection_loop_summary_candidate(summary) &&
+        !checked_branch_arithmetic && !checked_conditional_arithmetic)
+      continue;
     if (!summary.requirements.empty() &&
         !abi_v10_checked_arithmetic_summary_candidate(summary) &&
         !abi_v10_collection_loop_summary_candidate(summary) &&
+        !abi_v10_checked_for_summary_candidate(summary) &&
         !checked_vector_literal && !checked_branch_arithmetic)
       continue;
     vector<abi_v10::SourceProvenance> provenance{callable_provenance};

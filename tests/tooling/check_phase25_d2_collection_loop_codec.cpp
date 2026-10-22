@@ -474,13 +474,35 @@ int main(int argc, char** argv) {
   assert(rejects(cir::encode_checked_body_v1(too_many_locals), context,
                  generic_parameters, int_type));
 
-  cir::Stmt unsupported_for;
-  unsupported_for.kind = cir::StmtKind::For;
-  unsupported_for.expr = parameter(generic_vector, 0);
-  const std::vector<cir::Stmt> unsupported_statements{
-      generic_statements.front(), generic_statements[1], unsupported_for,
-      generic_statements.back()};
-  assert(rejects(cir::encode_checked_body_v1(unsupported_statements), context,
+  cir::Stmt checked_for;
+  checked_for.kind = cir::StmtKind::For;
+  checked_for.local_ordinal = 0;
+  checked_for.type = variable;
+  checked_for.expr = parameter(generic_vector, 0);
+  cir::Stmt loop_pass;
+  loop_pass.kind = cir::StmtKind::Pass;
+  checked_for.body = {loop_pass};
+  const std::vector<cir::Stmt> checked_for_statements{
+      checked_for, return_value(integer(int_type, "0"))};
+  const auto checked_for_bytes =
+      cir::encode_checked_body_v1(checked_for_statements);
+  const auto checked_for_hash =
+      cir::compute_checked_body_hash_v1(checked_for_statements);
+  const auto checked_for_decoded = cir::decode_checked_body_v1(
+      checked_for_bytes, context, generic_parameters, int_type,
+      checked_for_hash);
+  assert(checked_for_decoded.size() == 2 &&
+         checked_for_decoded.front().kind == cir::StmtKind::For &&
+         checked_for_decoded.front().local_ordinal == 0 &&
+         checked_for_decoded.front().type->structurally_equal(*variable) &&
+         checked_for_decoded.front().body.size() == 1);
+  auto mismatched_for = checked_for_statements;
+  mismatched_for.front().type = int_type;
+  assert(rejects(cir::encode_checked_body_v1(mismatched_for), context,
+                 generic_parameters, int_type));
+  auto mismatched_for_ordinal = checked_for_statements;
+  mismatched_for_ordinal.front().local_ordinal = 1;
+  assert(rejects(cir::encode_checked_body_v1(mismatched_for_ordinal), context,
                  generic_parameters, int_type));
 
   // The historical H3 entry point continues to reject new operation tags.

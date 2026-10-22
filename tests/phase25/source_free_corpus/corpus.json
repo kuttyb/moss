@@ -120,13 +120,12 @@
       "id": "shadowing-alias-branch-local-unavailable",
       "priority": "P1-essential",
       "category": "generic arithmetic through shadowing branch-local alias",
-      "provider": "module Service\n\nexport fn fresh(value, flag: Bool):\n  let alias = value * 2\n  if flag:\n    let alias = alias + 1\n    return alias\n  else:\n    return alias\n",
-      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(5, true)\n  echo Service.fresh(5, false)\n  echo Service.fresh(2.5, true)\n  echo Service.fresh(2.5, false)\n",
-      "abi_v9_expected_output": "11\n10\n6.0\n5.0\n",
-      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "provider_must_emit_v10": true,
-      "checked_body_status": "checked-body unavailable; in-memory checker facts now retain distinct return roots and shadow binding identities, but the current ABI-v10 consumer does not yet admit this two-return arithmetic body",
-      "evidence": "The source-built provider emits ABI-v10 records, while the source-deleted consumer must fail closed on this valid shadowing case. Keep Int/Float branch behavior visible until common checked-body serialization and importer admission preserve the exact inner and outer binding identities end to end."
+      "provider": "module Service\n\nexport fn fresh(value, outer: Bool, inner: Bool):\n  let alias = value * 2\n  if outer:\n    if inner:\n      let alias = alias + 1\n      return alias\n    else:\n      return alias\n  else:\n    return alias\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh(5, true, true)\n  echo Service.fresh(5, true, false)\n  echo Service.fresh(5, false, true)\n  echo Service.fresh(2.5, true, true)\n  echo Service.fresh(2.5, true, false)\n  echo Service.fresh(2.5, false, true)\n",
+      "abi_v9_expected_output": "11\n10\n10\n6.0\n5.0\n5.0\n",
+      "expected_output": "11\n10\n10\n6.0\n5.0\n5.0\n",
+      "checked_body_status": "checked-body supported; common typed arithmetic lineage preserves nested branch returns and distinct same-spelling local bindings",
+      "evidence": "Source-free Int/Float execution after provider source deletion and legacy generic_stmt poisoning preserves nested branch behavior. The checked importer validates exact operator requirement counts, types, data-flow dependencies, local ordinals, and all-path returns; hostile undeclared-local substitution rejects before projection."
     },
     {
       "id": "branch-join-generic-arithmetic",
@@ -194,12 +193,11 @@
       "priority": "P1-sdk-essential",
       "category": "other: generic iterator body",
       "provider": "module Service\n\nexport fn fresh(data):\n  var result = 0\n  for value in data:\n    result = result + 1\n  return result\n",
-      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh([1, 2, 3])\n",
-      "expected_output": "3\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.fresh([1, 2, 3])\n  echo Service.fresh([\"a\", \"b\"])\n",
+      "expected_output": "3\n2\n",
       "provider_must_emit_v10": true,
-      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "checked_body_status": "provider emits an ABI-v10 interface, but source-free consumer selection rejects this valid generic iterator body",
-      "evidence": "A generic static-iterator body over Vector is a valid source-backed form. The actual SDK borrowed-Range callable is tracked separately using bytes.from_range and the real FileIO consumer."
+      "checked_body_status": "checked-body supported; generic For and its binder type are retained and projected from checked ABI-v10 records",
+      "evidence": "The provider's checked Iterate result TypeRef is the authority for the For binder. Source-free Int and String Vector substitutions execute after provider source and generic_stmt removal; hostile changes to the Iterate receiver/result, binder TypeRef, and loop local ordinal reject before projection."
     }
   ],
   "already-covered": [
