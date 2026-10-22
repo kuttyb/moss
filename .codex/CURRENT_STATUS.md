@@ -10895,5 +10895,6 @@ post-close check above. In a scoped follow-up, the architect independently
 reran the enhanced test, found no P0/P1/P2 findings, and issued implementation-
 level GO for R3A. The final unchanged-workload oracle also passes all six
 profiles with zero unexpected results. Feedback validation, Python syntax
-checks, and `git diff --check` pass. The accepted R3A milestone is ready to
-commit and push; R3B remains unstarted pending this checkpoint's push.
+checks, and `git diff --check` pass. The accepted R3A implementation is
+committed and pushed as `84a9bb28`; R3B remains unstarted and is authorized to
+continue after this accepted checkpoint.
