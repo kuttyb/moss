@@ -243,6 +243,7 @@ fn main():
                        if entry["callable_id"] == total_id]
     assert len(total_summaries) == 1, structural_typed
     assert total_summaries[0]["requirement_count"] == 1, total_summaries
+    assert not total_summaries[0]["checked_body_ir_available"], total_summaries
 
     member_source = Path(scratch_path) / "member_access.moss"
     member_source.write_text("""fn append(values, item):

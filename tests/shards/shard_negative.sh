@@ -180,4 +180,6 @@ reject_case functional_placeholder_noncopy_field \
 reject_case functional_helper_mutable_capture \
   "functional placeholder requires WRITE access to captured binding 'captured'"
 
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_baseline_regressions.py "$compiler"
+
 echo "all negative cases passed"

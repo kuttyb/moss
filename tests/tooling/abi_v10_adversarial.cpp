@@ -539,7 +539,10 @@ int main() {
     validate_complete_interface(decode(encode(malformed_private)));
   }, "SOURCE_FREE_CONTRACT_INVALID");
   Interface unknown_private_version = iface_with_helper;
-  unknown_private_version.private_semantic_dependencies.front().payload[0] = 3;
+  assert(static_cast<unsigned char>(
+      unknown_private_version.private_semantic_dependencies.front().payload[0]) == 3);
+  validate_complete_interface(decode(encode(unknown_private_version)));
+  unknown_private_version.private_semantic_dependencies.front().payload[0] = 4;
   expect_error([&] {
     validate_complete_interface(decode(encode(unknown_private_version)));
   }, "SOURCE_FREE_CONTRACT_INVALID");

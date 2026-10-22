@@ -1523,6 +1523,30 @@ static size_t top_level_colon(const string& text) {
   return string::npos;
 }
 
+static size_t top_level_field_dot(const string& text) {
+  int par = 0, br = 0, sq = 0;
+  bool in_str = false, esc = false;
+  size_t dot = string::npos;
+  for (size_t i = 0; i < text.size(); ++i) {
+    char c = text[i];
+    if (in_str) {
+      if (esc) esc = false;
+      else if (c == '\\') esc = true;
+      else if (c == '"') in_str = false;
+      continue;
+    }
+    if (c == '"') { in_str = true; continue; }
+    if (c == '(') ++par;
+    else if (c == ')') --par;
+    else if (c == '{') ++br;
+    else if (c == '}') --br;
+    else if (c == '[') ++sq;
+    else if (c == ']') --sq;
+    else if (c == '.' && par == 0 && br == 0 && sq == 0) dot = i;
+  }
+  return dot;
+}
+
 // Named object constructor arguments use '=' in the preferred surface syntax.
 // The ':' spelling remains a compatibility form while the frontend migrates.
 static bool parse_named_argument(const string& text, string& name, string& value) {
@@ -7065,12 +7089,20 @@ class Checker {
         }
         if (operand_ordinals.size() != arguments.size()) return false;
       }
+      std::uint32_t matching_edge_occurrence = 0;
+      for (const auto& candidate : state.expression_occurrences)
+        if (candidate.id < returned.id && candidate.line == returned.line &&
+            candidate.kind ==
+                BodyTypeState::ExpressionOccurrence::Kind::Call &&
+            candidate.semantic_target_id == returned.semantic_target_id)
+          ++matching_edge_occurrence;
       std::size_t matching_edges = 0;
       for (const auto& edge : p_.semantic_call_edges)
         if (edge.source == "fn:" + function.name &&
             edge.target == "fn:" + callee->name &&
             edge.line == returned.line &&
-            edge.invocation_kind == "ordinary_call")
+            edge.invocation_kind == "ordinary_call" &&
+            edge.occurrence == matching_edge_occurrence)
           ++matching_edges;
       const bool result_type_related =
           relate_type(returned.checked_type, summary.result_type);
@@ -25315,6 +25347,10 @@ class Checker {
           "' is followed by '" + juxtaposed->second +
           "' with no operator between them (if, while, and for are statements, not expressions)",
           "INVALID_EXPRESSION");
+    if (is_single_string_literal(original) || is_single_char_literal(original)) {
+      mark_active_expression(OccurrenceKind::Literal);
+      return;
+    }
     {
       string enum_name, case_name;
       vector<string> arguments;
@@ -25840,7 +25876,11 @@ class Checker {
       // The member resolver below owns dispatch; capture its receiver once
       // here so every dispatch family has the same ordered child shape.
       // FileIO is a static namespace in FileIO.open, not a value expression.
-      if (receiver != "FileIO")
+      const auto receiver_binding = env.find(receiver);
+      const bool domain_handle_receiver = receiver_binding != env.end() &&
+          domains_.count(canonical_type_name(receiver_binding->second));
+      if (receiver != "FileIO" && !scalar_type_name(receiver) &&
+          !domain_handle_receiver)
         check_expression(line, receiver, env, {}, "receiver");
       if (scalar_type_name(receiver) &&
           (handler == "less" || handler == "isequal" || handler == "hash")) {
@@ -26136,7 +26176,7 @@ class Checker {
       return;
     }
     {
-      auto dot = value.rfind('.');
+      auto dot = top_level_field_dot(value);
       if (dot != string::npos && value.find('(', dot) == string::npos) {
         auto receiver_type = inferred_expr_type(value.substr(0, dot), env);
         if (receiver_type && enums_.count(canonical_type_name(*receiver_type)))
@@ -26464,6 +26504,25 @@ class Checker {
             current_body_types_->expression_occurrence_ledger_complete = false;
         }
       } else {
+        // Validate the operand of assert before its builtin signature check.
+        // This preserves the operand's more specific diagnostic (for example,
+        // `not 1` is a TYPE_MISMATCH from unary checking) instead of treating
+        // an unresolved intermediate type as a generic assert configuration
+        // error. The argument is retained here so it is not visited twice.
+        if (callee == "assert") {
+          for (size_t index = 0; index < args.size(); ++index) {
+            const auto& arg = args[index];
+            string name, val;
+            if (parse_named_argument(arg, name, val))
+              check_expression(line, val, env, {},
+                               "argument:" + std::to_string(index));
+            else
+              check_expression(line, arg, env, {},
+                               "argument:" + std::to_string(index));
+          }
+          check_function_call(line, callee, args, env);
+          return;
+        }
         Function* resolved_target = nullptr;
         check_function_call(line, callee, args, env, nullptr, std::nullopt,
                             &resolved_target);
@@ -26578,7 +26637,15 @@ class Checker {
                       resolved_target->open_summary->bound_variable_count)
                 return nullptr;
               auto found = substitutions.find(type->var_id);
-              return found == substitutions.end() ? nullptr : found->second;
+              if (found != substitutions.end()) return found->second;
+              // A callee result variable that is not constrained by an
+              // argument (for example a nullary fresh() -> Vector[T]) is
+              // still part of this exact generic instantiation. Allocate its
+              // caller-owned variable once and reuse it wherever the result
+              // scheme refers to that bound ordinal.
+              auto fresh_result = state.solver.fresh(0);
+              substitutions.emplace(type->var_id, fresh_result);
+              return fresh_result;
             }
             auto result = std::make_shared<moss::Type>(*type);
             for (auto& argument : result->type_args) {
@@ -27263,10 +27330,13 @@ class Checker {
             }
           }
         } else {
-          check_function_call(statement.line, statement.a, statement.args,
-                              current_env, nullptr, std::nullopt,
-                              call_occurrence_id == UINT32_MAX
-                                  ? nullptr : &selected_function);
+          const bool delayed_assert_check = statement.a == "assert" &&
+              !functions_.count(statement.a);
+          if (!delayed_assert_check)
+            check_function_call(statement.line, statement.a, statement.args,
+                                current_env, nullptr, std::nullopt,
+                                call_occurrence_id == UINT32_MAX
+                                    ? nullptr : &selected_function);
           if (call_occurrence_id != UINT32_MAX) {
             if (selected_function) {
               call_occurrence_state->retain_expression_target(
@@ -27342,6 +27412,10 @@ class Checker {
                     static_cast<std::uint32_t>(index));
           }
         }
+        if (statement.b.empty() && statement.a == "assert" &&
+            !functions_.count(statement.a))
+          check_function_call(statement.line, statement.a, statement.args,
+                              current_env);
         if (!statement.message_result.empty()) {
           const Domain* target = nullptr;
           auto receiver = current_env.find(statement.a);
@@ -50511,6 +50585,20 @@ static void append_abi_v10_private_chain_records(
         [](const SemanticDependency& dep) {
       return dep.kind == SemanticDependency::Kind::Callable;
     })) continue;
+    // This producer closes private helper chains. A direct call to another
+    // exported callable is outside that tested chain shape; the source-free
+    // importer does not project exported call targets as private dependencies.
+    const bool has_private_callable_dependency =
+        std::any_of(body->dependencies.begin(), body->dependencies.end(),
+            [&](const SemanticDependency& dependency) {
+      if (dependency.kind != SemanticDependency::Kind::Callable) return false;
+      auto callee = std::find_if(program.functions.begin(),
+          program.functions.end(), [&](const Function& candidate) {
+        return candidate.semantic_callable_id == dependency.target_id;
+      });
+      return callee != program.functions.end() && !callee->exported;
+    });
+    if (!has_private_callable_dependency) continue;
     visit(function);
   }
   // The checker may lift its provisional private-chain guard only for a
@@ -50679,6 +50767,30 @@ static void append_abi_v10_private_chain_records(
     vector<abi_v10::SourceProvenance> all_provenance{provenance};
     all_provenance.insert(all_provenance.end(), requirement_provenance.begin(),
                           requirement_provenance.end());
+    // The dependency chain can overlap a body already emitted by the common
+    // occurrence producer (for example an exported fresh() called by relay()).
+    // Reuse that record only when its exact canonical summary and body match
+    // the chain's independently checked projection.
+    const auto expected_summary_record = abi_v10::summary_record(summary);
+    const auto expected_body_record = abi_v10::checked_body_record(body);
+    auto matching_records = [&](const string& id) {
+      vector<const abi_v10::Record*> matches;
+      for (const auto* records : {&value.semantic_contract,
+                                  &value.private_semantic_dependencies})
+        for (const auto& record : *records)
+          if (record.id == id) matches.push_back(&record);
+      return matches;
+    };
+    const auto prior_summaries = matching_records(expected_summary_record.id);
+    const auto prior_bodies = matching_records(expected_body_record.id);
+    if (!prior_summaries.empty() || !prior_bodies.empty()) {
+      if (prior_summaries.size() != 1 || prior_bodies.size() != 1 ||
+          prior_summaries.front()->payload != expected_summary_record.payload ||
+          prior_bodies.front()->payload != expected_body_record.payload)
+        throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+            "overlapping checked ABI-v10 producers disagree on a callable record");
+      continue;
+    }
     append_abi_v10_checked_callable_records(
         value, summary, body, all_provenance, !function.exported);
   }

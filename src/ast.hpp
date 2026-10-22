@@ -161,12 +161,13 @@ struct OpenCallableSummaryFacts {
   vector<AccessMode> parameter_access;
   ObservableEffects observable_effects;
   RequirementOrigin origin;
-  // `scheme_complete` makes a generic signature available to ordinary call
-  // checking before its body has a total occurrence representation. `complete`
-  // is reserved for a callable whose type, effects, dependency closure, and
-  // checker-owned body occurrences are all verified. Some bounded producers
-  // can still admit a narrower body while the public completeness bit remains
-  // false; those producers must validate their exact body shape themselves.
+  // `scheme_complete` makes a generic signature and its requirements
+  // available to typed queries and ordinary call checking before whole-body
+  // effects, dependency closure, and occurrence coverage are known. `complete`
+  // requires all those facts. ABI-v10 body admission additionally requires
+  // common checked-body bytes. A typed scheme can therefore remain queryable
+  // when its checked body is not yet representable, while source-free body
+  // consumers still fail closed.
   bool scheme_complete = false;
   bool complete = false;
   bool occurrence_ledger_complete = false;

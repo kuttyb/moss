@@ -233,7 +233,7 @@ inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) 
   for (const auto& function : program.functions) {
     if (function.semantic_callable_id.empty())
       throw std::invalid_argument("checked function has no semantic callable identity");
-    if (function.open_summary && function.open_summary->complete)
+    if (function.open_summary && function.open_summary->scheme_complete)
       for (const auto& requirement : function.open_summary->requirements) {
         if (requirement.id.empty() || requirement.origin.module_id.empty() ||
             requirement.origin.enclosing_callable != function.semantic_callable_id ||
@@ -242,7 +242,7 @@ inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) 
           throw std::invalid_argument(
               "checked source requirement lacks exact provenance");
       }
-    if (function.open_summary && function.open_summary->complete)
+    if (function.open_summary && function.open_summary->scheme_complete)
       for (const auto& requirement : function.open_summary->member_requirements) {
         if (requirement.requirement_id.empty() ||
             requirement.origin.module_id.empty() ||
@@ -252,7 +252,7 @@ inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) 
           throw std::invalid_argument(
               "checked source member requirement lacks exact provenance");
       }
-    if (function.open_summary && function.open_summary->complete &&
+    if (function.open_summary && function.open_summary->scheme_complete &&
         !function.open_summary->observable_effects.unresolved &&
         function.open_summary->parameter_access.size() ==
             function.params.size()) {
@@ -343,12 +343,13 @@ inline TypedSemanticModuleV1 project_typed_semantics_v1(const Program& program) 
         throw std::invalid_argument("duplicate typed semantic open summary");
     } else if (function.generic || function.static_dispatch) {
       result.open_summaries_complete = false;
-      const auto gap = !function.open_summary ||
-          !function.open_summary->complete
+      const auto gap = !function.open_summary
           ? TypedOpenSummaryGapV1::MissingTypedFacts
           : function.open_summary->observable_effects.unresolved
               ? TypedOpenSummaryGapV1::UnresolvedEffects
-              : TypedOpenSummaryGapV1::MissingParameterAccess;
+              : !function.open_summary->complete
+                  ? TypedOpenSummaryGapV1::MissingTypedFacts
+                  : TypedOpenSummaryGapV1::MissingParameterAccess;
       result.unavailable_open_summaries.emplace(
           function.semantic_callable_id, gap);
     }
