@@ -138,6 +138,59 @@ int main() {
   }
   assert(roundtrip.observable_effect_tags == valid.observable_effect_tags);
 
+  auto callback_summary = valid;
+  callback_summary.requirements = {
+      {variable, "static callable", Access::Read, 0, "provider:callback:1",
+       {{WireTypeKind::Primitive, "int", {}, 0}}, variable,
+       {Access::Read}},
+  };
+  callback_summary.dependencies.clear();
+  callback_summary.observable_effect_bits = 0;
+  callback_summary.observable_effect_tags.clear();
+  callback_summary.effect_dependencies = {1};
+  const auto callback_v4 = summary_record(callback_summary);
+  assert(static_cast<unsigned char>(callback_v4.payload.front()) == 4);
+  validate_summary(callback_v4);
+  assert(read_summary(callback_v4.payload).effect_dependencies ==
+         std::vector<std::uint32_t>{1});
+  callback_summary.effect_dependencies.clear();
+  const auto callback_v3 = summary_record(callback_summary);
+  assert(static_cast<unsigned char>(callback_v3.payload.front()) == 3);
+  const auto callback_v2_payload = summary_payload(callback_summary, 2);
+  assert(static_cast<unsigned char>(callback_v2_payload.front()) == 2);
+  assert(summary_payload(read_summary(callback_v2_payload), 2) ==
+         callback_v2_payload);
+  assert(summary_payload(read_summary(callback_v3.payload)) ==
+         callback_v3.payload);
+  auto unsupported_summary = callback_v4.payload;
+  unsupported_summary.front() = 5;
+  expect_error([&] { (void)read_summary(unsupported_summary); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  auto invalid_callback = callback_summary;
+  invalid_callback.effect_dependencies = {1, 1};
+  expect_error([&] { (void)summary_payload(invalid_callback, 4); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  invalid_callback.effect_dependencies = {2};
+  expect_error([&] { (void)summary_payload(invalid_callback, 4); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  invalid_callback.effect_dependencies = {1};
+  invalid_callback.requirements.push_back(callback_summary.requirements.front());
+  invalid_callback.effect_dependencies = {2, 1};
+  expect_error([&] { (void)summary_payload(invalid_callback, 4); },
+               "SOURCE_FREE_SUMMARY_INVALID");
+  auto provider_callback = callback_summary;
+  provider_callback.effect_dependencies = {1};
+  auto consumer_callback = provider_callback;
+  consumer_callback.requirements.push_back(
+      {variable, "operator:+", Access::Read, 0, "consumer:extra:1",
+       {{WireTypeKind::Primitive, "int", {}, 0}}, variable,
+       {Access::Read}});
+  validate_summary_nonweakening(provider_callback, consumer_callback);
+  consumer_callback.effect_dependencies.clear();
+  expect_error([&] {
+    validate_summary_nonweakening(provider_callback, consumer_callback);
+  }, "SOURCE_FREE_SUMMARY_INVALID");
+
   validate_summary_nonweakening(valid, roundtrip);
   auto weakened = valid;
   weakened.parameter_access[0] = Access::Read;

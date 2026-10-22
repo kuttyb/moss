@@ -69,12 +69,15 @@
       "priority": "P1-essential",
       "category": "generic callable parameter invocation",
       "provider": "module Service\n\nexport fn fresh(callback, value):\n  return callback(value)\n",
-      "consumer": "module Main\nimport Service\n\nfn identity(value):\n  return value\n\nfn main():\n  echo Service.fresh(identity, 31)\n  echo Service.fresh(identity, \"moss\")\n",
-      "provider_expected_error": "SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED",
-      "abi_v9_expected_output": "31\nmoss\n",
-      "checked_body_status": "checked-body unavailable; callback invocation result occurrence is linked, but unresolved higher-order callback effects prevent ABI-v10 admission",
-      "evidence": "The provider rejects this valid generic callback body because its inferred callback effects are unresolved in the current ABI-v10 summary. The compiler occurrence test verifies the call result is linked to its checked operation and summary Callable result; ABI-v9 source-free execution remains the compatibility control.",
-      "source_expected_output": "31\nmoss\n"
+      "consumer": "module Main\nimport Service\n\nfn identity(value):\n  return value\n\nfn checked(value: Int) -> Int:\n  assert(value >= 0)\n  return value\n\nfn ignore(callback):\n  return 0\n\nfn invoke_checked(value: Int) -> Int:\n  return Service.fresh(checked, value)\n\nfn pass_only(value: Int) -> Int:\n  ignore(checked)\n  return value\n\nfn main():\n  echo Service.fresh(identity, 31)\n  echo Service.fresh(identity, \"moss\")\n  echo invoke_checked(23)\n  echo pass_only(7)\n",
+      "provider_must_emit_v10": true,
+      "poison_callables": ["fresh"],
+      "callable_name": "fresh",
+      "abi_v10_expected_output": "31\nmoss\n23\n7\n",
+      "abi_v9_expected_output": "31\nmoss\n23\n7\n",
+      "checked_body_status": "checked-body supported; the formal Callable requirement carries a checker-owned effect dependency resolved against each selected static callback during specialization",
+      "evidence": "R3E acceptance deletes provider source, poisons the legacy generic body, checks the ABI-v10 projection trace, and exercises Int, String, plus a may_panic callback specialization.",
+      "source_expected_output": "31\nmoss\n23\n7\n"
     },
     {
       "id": "collection-loop-equality-index",

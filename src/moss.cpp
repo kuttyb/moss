@@ -3444,9 +3444,9 @@ static bool abi_v10_returned_callback_summary_candidate(
     return type.kind == abi_v10::WireTypeKind::BoundVar &&
         type.ordinal == ordinal && type.arguments.empty();
   };
-  if (summary.variable_count != 2 || summary.parameters.size() != 2 ||
+  if (summary.variable_count != 3 || summary.parameters.size() != 2 ||
       !is_var(summary.parameters[0], 0) ||
-      !is_var(summary.parameters[1], 1) || !is_var(summary.result, 1) ||
+      !is_var(summary.parameters[1], 1) || !is_var(summary.result, 2) ||
       summary.parameter_access != vector<abi_v10::Access>{
           abi_v10::Access::Read, abi_v10::Access::Read} ||
       summary.requirements.size() != 1 ||
@@ -3463,7 +3463,7 @@ static bool abi_v10_returned_callback_summary_candidate(
       callable.arguments.size() == 1 && is_var(callable.arguments.front(), 1) &&
       callable.argument_access == vector<abi_v10::Access>{
           abi_v10::Access::Read} && callable.result &&
-      is_var(*callable.result, 1);
+      is_var(*callable.result, 2);
 }
 
 static bool abi_v10_returned_callback_body_candidate(
@@ -3481,7 +3481,7 @@ static bool abi_v10_returned_callback_body_candidate(
       returned.operands.front().kind != checked_ir::ExprKind::Parameter ||
       returned.operands.front().ordinal != 1 || !returned.type ||
       returned.type->kind != moss::TypeKind::InferenceVar ||
-      returned.type->var_id != moss::TypeVarId{0, 0, 1} ||
+      returned.type->var_id != moss::TypeVarId{0, 0, 2} ||
       !returned.operands.front().type ||
       returned.operands.front().type->kind != moss::TypeKind::InferenceVar ||
       returned.operands.front().type->var_id != moss::TypeVarId{0, 0, 1} ||
@@ -4791,6 +4791,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
         abi_v10_typed_enum_match_summary_candidate(summary);
     const bool pipeline_map_candidate =
         abi_v10_checked_pipeline_map_summary_candidate(summary);
+    const bool returned_callback_candidate =
+        abi_v10_returned_callback_summary_candidate(summary);
     const bool numeric_while_summary_candidate =
         abi_v10_checked_numeric_while_summary_candidate(summary);
     const bool assert_summary_candidate =
@@ -4808,6 +4810,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
          !generic_map_mutation_candidate &&
          !pipeline_map_candidate &&
          !typed_enum_match_candidate &&
+         !returned_callback_candidate &&
          !assert_summary_candidate &&
          summary.observable_effect_bits))
       invalid("checked ABI-v10 body disagrees with its callable summary");
@@ -4833,7 +4836,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
           body.checked_ir_bytes, *program.type_context, parameters, result,
           body.semantic_hash, vector_literal_summary_candidate,
           generic_map_mutation_candidate, typed_enum_match_candidate,
-          pipeline_map_candidate);
+          pipeline_map_candidate, returned_callback_candidate);
     } catch (const std::invalid_argument& error) {
       invalid(string("checked ABI-v10 body cannot be decoded: ") + error.what());
     }
@@ -4848,6 +4851,22 @@ static void project_imported_h3_checked_bodies(Program& program) {
             summary, statements, *program.type_context);
     if (pipeline_map_candidate && !pipeline_map_body_candidate)
       invalid("checked ABI-v10 Map body does not preserve its operation and element type relation");
+    const bool returned_callback_body_candidate =
+        body.dependencies.empty() && returned_callback_candidate &&
+        abi_v10_returned_callback_body_candidate(summary, statements);
+    if (returned_callback_candidate && !returned_callback_body_candidate)
+      invalid("checked ABI-v10 callback body does not preserve its Callable result relation");
+    if (returned_callback_body_candidate) {
+      const auto& declared = function.observable_effects;
+      if (declared.local_capture_read || declared.local_mutation ||
+          declared.domain_read || declared.domain_write || declared.message ||
+          declared.external_io || declared.fileio || declared.fileio_unknown ||
+          declared.may_panic || !declared.raise_set.empty() ||
+          declared.may_diverge)
+        invalid("checked ABI-v10 callback summary omits direct effects declared by the provider");
+      function.observable_effects = ObservableEffects{};
+      function.observable_effects.unresolved = false;
+    }
     const bool vector_literal_body_candidate =
         vector_literal_summary_candidate &&
         abi_v10_checked_vector_literal_body_candidate(summary, statements);
@@ -5076,6 +5095,10 @@ static void project_imported_h3_checked_bodies(Program& program) {
         abi_v10_deferred_member_effects(function.observable_effects) &&
         summary.observable_effect_tags ==
             vector<string>{"member-dispatch-v1"};
+    const bool returned_callback_effect_record_valid =
+        returned_callback_body_candidate &&
+        abi_v10_effects_pure(function.observable_effects) &&
+        summary.observable_effect_tags.empty();
     const bool effect_contract_valid = collection_loop_candidate
         ? abi_v10_collection_loop_effects(function.observable_effects)
         : generic_for_candidate
@@ -5089,7 +5112,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
                           vector<string>{"may_diverge"})
         : pure_effect_record_valid || map_effect_record_valid ||
                   generic_map_effect_record_valid ||
-                  checked_assert_effect_record_valid || member_effect_record_valid;
+                  checked_assert_effect_record_valid || member_effect_record_valid ||
+                  returned_callback_effect_record_valid;
     if (!effect_contract_valid)
       invalid("checked ABI-v10 body disagrees with its callable summary");
     const auto dependencies = extract_semantic_dependencies(statements);
@@ -6569,6 +6593,17 @@ static void project_imported_h3_checked_bodies(Program& program) {
         std::cerr << "MOSS_CHECKED_BODY_PROJECTED|"
                   << function.semantic_callable_id << "|checked-body-v1\n";
       continue;
+    } else if (expression.kind == checked_ir::ExprKind::Call &&
+               expression.semantic_target_id == "parameter:0") {
+      if (!returned_callback_body_candidate || function.params.size() != 2 ||
+          expression.operands.size() != 1 ||
+          expression.operands.front().kind !=
+              checked_ir::ExprKind::Parameter ||
+          expression.operands.front().ordinal != 1)
+        invalid("checked ABI-v10 formal callback call is detached from its Callable requirement");
+      lowered = function.params[0].name + "(" +
+          function.params[expression.operands.front().ordinal].name + ")";
+      direct_return_projection = true;
     } else if (expression.kind == checked_ir::ExprKind::Call) {
       auto callee = std::find_if(program.functions.begin(),
                                  program.functions.end(),
@@ -10256,7 +10291,42 @@ class Checker {
         case BodyTypeState::ExpressionOccurrence::Kind::Call: {
           const bool builtin_assert =
               occurrence.semantic_target_id == "builtin:assert";
-          if (!builtin_assert &&
+          const bool returned_callback_call =
+              occurrence.semantic_target_id == "parameter:0" &&
+              occurrence.root_slot == "return-value" &&
+              function.body.size() == 1 && function.params.size() == 2 &&
+              summary.parameter_types.size() == 2 &&
+              summary.result_type &&
+              occurrence.callable_result_relation &&
+              occurrence.callable_result_relation->structurally_equal(
+                  *summary.result_type) &&
+              occurrence.source_operands ==
+                  vector<string>{function.params[1].name} &&
+              occurrence.linked_constraints.size() == 1 &&
+              occurrence.linked_constraints.front().kind ==
+                  ConstraintKind::Callable &&
+              occurrence.linked_constraints.front().subject ==
+                  function.params[0].name &&
+              occurrence.linked_constraints.front().detail ==
+                  "static callable" &&
+              occurrence.linked_constraints.front().arity == 1 &&
+              occurrence.linked_constraints.front().arguments ==
+                  vector<string>{function.params[1].name} &&
+              std::count_if(summary.requirements.begin(),
+                  summary.requirements.end(), [&](const moss::Requirement& req) {
+                return req.kind == moss::RequirementKind::Callable &&
+                    req.target_id == "static callable" && req.subject &&
+                    req.subject->structurally_equal(
+                        *summary.parameter_types[0]) &&
+                    req.arguments.size() == 1 && req.arguments.front() &&
+                    req.arguments.front()->structurally_equal(
+                        *summary.parameter_types[1]) && req.result &&
+                    (*req.result)->structurally_equal(*summary.result_type) &&
+                    req.access == moss::AccessMode::Read &&
+                    req.argument_access ==
+                        vector<moss::AccessMode>{moss::AccessMode::Read};
+              }) == 1;
+          if (!builtin_assert && !returned_callback_call &&
               !starts_with(occurrence.semantic_target_id, "callable-v1:"))
             return std::nullopt;
           vector<const BodyTypeState::ExpressionOccurrence*> children;
@@ -11029,13 +11099,40 @@ class Checker {
               *moss::Type::primitive("int")) &&
           map_operator->result && *map_operator->result &&
           is_bound_variable(*map_operator->result, 1);
+      const auto callback_requirement = std::find_if(
+          summary.requirements.begin(), summary.requirements.end(),
+          [](const moss::Requirement& requirement) {
+        return requirement.kind == moss::RequirementKind::Callable &&
+            requirement.target_id == "static callable";
+      });
+      const bool returned_callback_summary =
+          summary.bound_variable_count == 3 &&
+          function.params.size() == 2 && summary.parameter_types.size() == 2 &&
+          is_bound_variable(summary.parameter_types[0], 0) &&
+          is_bound_variable(summary.parameter_types[1], 1) &&
+          summary.result_type &&
+          summary.result_type->kind == moss::TypeKind::InferenceVar &&
+          summary.result_type->var_id == moss::TypeVarId{0, 0, 2} &&
+          summary.requirements.size() == 1 &&
+          callback_requirement != summary.requirements.end() &&
+          callback_requirement->subject &&
+          callback_requirement->subject->structurally_equal(
+              *summary.parameter_types[0]) &&
+          callback_requirement->arguments.size() == 1 &&
+          callback_requirement->arguments.front() &&
+          callback_requirement->arguments.front()->structurally_equal(
+              *summary.parameter_types[1]) && callback_requirement->result &&
+          (*callback_requirement->result)->structurally_equal(
+              *summary.result_type) &&
+          summary.effect_requirement_ids ==
+              vector<string>{callback_requirement->id};
       const auto decoded = checked_ir::decode_checked_body_v1(
           bytes, *p_.type_context, summary.parameter_types,
           summary.result_type, hash, vector_relation_summary,
           checked_generic_map_write,
           std::any_of(statements.begin(), statements.end(), [](const auto& s) {
             return s.kind == checked_ir::StmtKind::Match;
-          }), pipeline_map_summary);
+          }), pipeline_map_summary, returned_callback_summary);
       if (checked_ir::encode_checked_body_v1(decoded) != bytes ||
           checked_ir::compute_checked_body_hash_v1(decoded) != hash)
         return false;
@@ -11319,6 +11416,16 @@ class Checker {
         summary.requirements = imported_abi_v10_requirements(
             sealed, function, *p_.type_context,
             &summary.member_requirements);
+        for (const auto dependency : sealed.effect_dependencies) {
+          if (dependency == 0 || dependency > summary.requirements.size() ||
+              summary.requirements[dependency - 1].kind !=
+                  moss::RequirementKind::Callable ||
+              summary.requirements[dependency - 1].target_id !=
+                  "static callable")
+            invalid("checked ABI-v10 effect dependency does not name its Callable requirement");
+          summary.effect_requirement_ids.push_back(
+              summary.requirements[dependency - 1].id);
+        }
         if (!summary.member_requirements.empty()) {
           function.constraints.erase(std::remove_if(
               function.constraints.begin(), function.constraints.end(),
@@ -11618,7 +11725,13 @@ class Checker {
             }))
           returned_callable = std::make_pair(callee, arguments);
       }
-      if (local_result_type)
+      if (returned_callable)
+        // A returned formal callback's result is a distinct checker-owned
+        // type variable. It must not inherit the callback's own callable
+        // TypeRef merely because the source signature uses that parameter's
+        // unresolved spelling.
+        summary.result_type = bound();
+      else if (local_result_type)
         summary.result_type = local_result_type;
       else if (open_generic(result)) {
         auto source = parameter_variables.find(result.substr(9));
@@ -12922,8 +13035,19 @@ class Checker {
       }) != 1)
         continue;
       function.open_summary->effect_requirement_ids = {callable->id};
+      // The exact body is a single callback invocation and return. Its
+      // observable row is represented by this dependency, so retain no
+      // callback-derived flags as if they were fixed direct effects.
+      function.open_summary->observable_effects = ObservableEffects{};
       function.open_summary->observable_effects.unresolved = false;
       function.open_summary->scheme_complete = true;
+      function.open_summary->occurrence_ledger_complete =
+          state.expression_occurrence_ledger_complete &&
+          function.open_summary->parameter_access.size() ==
+              function.params.size() &&
+          function.open_summary->semantic_dependencies.empty();
+      function.open_summary->complete =
+          function.open_summary->occurrence_ledger_complete;
     }
   }
 
@@ -23500,6 +23624,87 @@ class Checker {
           *function.result_expression,
           walk_type_environment(function.body, env,
               [](const Stmt&, const TypeEnv&) {}, false)));
+
+    // A checked open summary may state that a formal Callable requirement
+    // contributes to this body's effect row. Resolve that exact requirement
+    // against the concrete static specialization arguments and merge the
+    // selected callback's checker-derived effects. TypeRefs and requirement
+    // identities come from the open summary; display spellings are used only
+    // by the existing specialization argument resolver.
+    bool callback_effect_dependency_resolved =
+        function.open_summary &&
+        !function.open_summary->effect_requirement_ids.empty();
+    if (callback_effect_dependency_resolved) {
+      const auto& open = *function.open_summary;
+      for (const auto& requirement_id : open.effect_requirement_ids) {
+        const auto requirement = std::find_if(open.requirements.begin(),
+            open.requirements.end(), [&](const moss::Requirement& candidate) {
+          return candidate.id == requirement_id &&
+              candidate.kind == moss::RequirementKind::Callable &&
+              candidate.target_id == "static callable";
+        });
+        if (requirement == open.requirements.end()) {
+          callback_effect_dependency_resolved = false;
+          break;
+        }
+        std::optional<std::size_t> callback_parameter;
+        for (std::size_t index = 0; index < open.parameter_types.size(); ++index)
+          if (open.parameter_types[index] && requirement->subject &&
+              open.parameter_types[index]->structurally_equal(
+                  *requirement->subject)) {
+            if (callback_parameter) {
+              callback_effect_dependency_resolved = false;
+              break;
+            }
+            callback_parameter = index;
+          }
+        if (!callback_effect_dependency_resolved || !callback_parameter ||
+            *callback_parameter >= resolved_arguments.size()) {
+          callback_effect_dependency_resolved = false;
+          break;
+        }
+        const string& callback_identity =
+            resolved_arguments[*callback_parameter];
+        const Function* callback = starts_with(callback_identity, "callable-v1:")
+            ? find_function_by_callable_id(callback_identity) : nullptr;
+        if (!callback || !callback->static_dispatch ||
+            requirement->arguments.empty()) {
+          callback_effect_dependency_resolved = false;
+          break;
+        }
+        vector<string> callback_arguments;
+        for (const auto& required_type : requirement->arguments) {
+          std::optional<std::size_t> argument_parameter;
+          for (std::size_t index = 0; index < open.parameter_types.size(); ++index)
+            if (open.parameter_types[index] && required_type &&
+                open.parameter_types[index]->structurally_equal(
+                    *required_type)) {
+              if (argument_parameter) {
+                callback_effect_dependency_resolved = false;
+                break;
+              }
+              argument_parameter = index;
+            }
+          if (!callback_effect_dependency_resolved || !argument_parameter ||
+              *argument_parameter >= resolved_arguments.size()) {
+            callback_effect_dependency_resolved = false;
+            break;
+          }
+          callback_arguments.push_back(
+              resolved_arguments[*argument_parameter]);
+        }
+        if (!callback_effect_dependency_resolved) break;
+        const ObservableEffects callback_effects =
+            concrete_function_observable_effects(*callback, callback_arguments);
+        concrete.merge(callback_effects);
+        if (callback_effects.unresolved)
+          callback_effect_dependency_resolved = false;
+      }
+      // For the bounded returned-call profile, the exact checked dependency
+      // accounts for the only otherwise-open effect in this body.
+      if (callback_effect_dependency_resolved)
+        concrete.unresolved = false;
+    }
 
     // A compiled provider's checked .mossi effect record is authoritative.
     // Its embedded generic IR may refine a concrete use, but must never erase
@@ -50824,11 +51029,12 @@ static string verified_abi_v10_interface_records(
       records += record.payload;
   records += "semantic_exports\n";
   for (const auto& record : parsed.value.semantic_contract) {
-    const bool typed_summary_v2_or_v3 = abi_v10::hex_hash(record.id) &&
+    const bool typed_summary_v2_to_v4 = abi_v10::hex_hash(record.id) &&
         !record.payload.empty() &&
         (static_cast<unsigned char>(record.payload.front()) == 2 ||
-         static_cast<unsigned char>(record.payload.front()) == 3);
-    if (typed_summary_v2_or_v3) {
+         static_cast<unsigned char>(record.payload.front()) == 3 ||
+         static_cast<unsigned char>(record.payload.front()) == 4);
+    if (typed_summary_v2_to_v4) {
       abi_v10::validate_summary(record);
       continue;
     }
@@ -52221,18 +52427,21 @@ static ParsedModuleUnit load_module_interface(
       summaries[summary.callable_id].push_back({record.payload,
           !record.payload.empty() &&
               (static_cast<unsigned char>(record.payload.front()) == 2 ||
-               static_cast<unsigned char>(record.payload.front()) == 3)});
+               static_cast<unsigned char>(record.payload.front()) == 3 ||
+               static_cast<unsigned char>(record.payload.front()) == 4)});
     }
     for (const auto& record : sealed.value.private_semantic_dependencies)
       if (abi_v10::hex_hash(record.id) && !record.payload.empty() &&
           (static_cast<unsigned char>(record.payload.front()) == 1 ||
            static_cast<unsigned char>(record.payload.front()) == 2 ||
-           static_cast<unsigned char>(record.payload.front()) == 3)) {
+           static_cast<unsigned char>(record.payload.front()) == 3 ||
+           static_cast<unsigned char>(record.payload.front()) == 4)) {
         auto summary = abi_v10::read_summary(record.payload);
         abi_v10::validate_summary(record);
         summaries[summary.callable_id].push_back({record.payload,
             static_cast<unsigned char>(record.payload.front()) == 2 ||
-            static_cast<unsigned char>(record.payload.front()) == 3});
+            static_cast<unsigned char>(record.payload.front()) == 3 ||
+            static_cast<unsigned char>(record.payload.front()) == 4});
       }
     for (const auto& record : sealed.value.private_semantic_dependencies)
       if (starts_with(record.id, "checked-body-v1:")) {
@@ -54562,7 +54771,8 @@ static void append_abi_v10_checked_callable_records(
       if (record.payload.empty() ||
           (static_cast<unsigned char>(record.payload.front()) != 1 &&
            static_cast<unsigned char>(record.payload.front()) != 2 &&
-           static_cast<unsigned char>(record.payload.front()) != 3) ||
+           static_cast<unsigned char>(record.payload.front()) != 3 &&
+           static_cast<unsigned char>(record.payload.front()) != 4) ||
           !abi_v10::hex_hash(record.id))
         continue;
       const auto prior = abi_v10::read_summary(record.payload);
@@ -54607,7 +54817,8 @@ static bool abi_v10_checked_callable_records_present(
       if (record.payload.empty() ||
           (static_cast<unsigned char>(record.payload.front()) != 1 &&
            static_cast<unsigned char>(record.payload.front()) != 2 &&
-           static_cast<unsigned char>(record.payload.front()) != 3) ||
+           static_cast<unsigned char>(record.payload.front()) != 3 &&
+           static_cast<unsigned char>(record.payload.front()) != 4) ||
           !abi_v10::hex_hash(record.id))
         return false;
       return abi_v10::read_summary(record.payload).callable_id == callable_id;
@@ -54741,8 +54952,9 @@ static void append_abi_v10_occurrence_records(
         facts.callable_id != function.semantic_callable_id ||
         facts.parameter_types.size() != function.params.size() ||
         facts.parameter_access.size() != function.params.size() ||
-        !facts.semantic_dependencies.empty())
+        !facts.semantic_dependencies.empty()) {
       continue;
+    }
     if (abi_v10_checked_callable_records_present(value, facts.callable_id))
       continue;
 
@@ -54770,6 +54982,44 @@ static void append_abi_v10_occurrence_records(
         facts.requirements, summary.variable_count, requirement_provenance);
     if (!requirements) continue;
     summary.requirements = std::move(*requirements);
+    if (!facts.effect_requirement_ids.empty()) {
+      for (const auto& requirement_id : facts.effect_requirement_ids) {
+        auto found = std::find_if(facts.requirements.begin(),
+            facts.requirements.end(), [&](const moss::Requirement& item) {
+          return item.id == requirement_id &&
+              item.kind == moss::RequirementKind::Callable &&
+              item.target_id == "static callable";
+        });
+        if (found == facts.requirements.end() ||
+            std::count_if(facts.requirements.begin(), facts.requirements.end(),
+                [&](const moss::Requirement& item) {
+          return item.id == requirement_id;
+        }) != 1)
+          continue;
+        summary.effect_dependencies.push_back(static_cast<std::uint32_t>(
+            std::distance(facts.requirements.begin(), found) + 1));
+      }
+      if (summary.effect_dependencies.size() !=
+              facts.effect_requirement_ids.size() ||
+          !std::is_sorted(summary.effect_dependencies.begin(),
+                          summary.effect_dependencies.end()) ||
+          std::adjacent_find(summary.effect_dependencies.begin(),
+                             summary.effect_dependencies.end()) !=
+              summary.effect_dependencies.end())
+        continue;
+      if (facts.observable_effects.may_panic)
+        summary.observable_effect_tags.push_back("may_panic");
+      if (facts.observable_effects.may_diverge)
+        summary.observable_effect_tags.push_back("may_diverge");
+      std::sort(summary.observable_effect_tags.begin(),
+                summary.observable_effect_tags.end());
+      const auto& effects = facts.observable_effects;
+      if (effects.local_capture_read || effects.local_mutation ||
+          effects.domain_read || effects.domain_write || effects.message ||
+          effects.external_io || effects.fileio || effects.fileio_unknown ||
+          !effects.raise_set.empty() || effects.unresolved)
+        continue;
+    }
     auto member_requirements = abi_v10_checked_member_requirements(
         facts.member_requirements, summary.variable_count,
         requirement_provenance);
@@ -54792,6 +55042,8 @@ static void append_abi_v10_occurrence_records(
         abi_v10_typed_enum_match_summary_candidate(summary);
     const bool pipeline_map_candidate =
         abi_v10_checked_pipeline_map_summary_candidate(summary);
+    const bool returned_callback_candidate =
+        abi_v10_returned_callback_summary_candidate(summary);
     const bool vector_literal_summary_candidate =
         abi_v10_checked_vector_literal_summary_candidate(summary);
     const bool generic_map_mutation_candidate =
@@ -54802,7 +55054,7 @@ static void append_abi_v10_occurrence_records(
           facts.parameter_types, facts.result_type, body.semantic_hash,
           vector_literal_summary_candidate,
           generic_map_mutation_candidate, typed_enum_match_candidate,
-          pipeline_map_candidate);
+          pipeline_map_candidate, returned_callback_candidate);
       if (checked_ir::encode_checked_body_v1(decoded) != body.checked_ir_bytes ||
           checked_ir::compute_checked_body_hash_v1(decoded) !=
               body.semantic_hash)
@@ -54818,6 +55070,9 @@ static void append_abi_v10_occurrence_records(
         abi_v10_checked_pipeline_map_body_candidate(
             summary, decoded, *program.type_context);
     if (pipeline_map_candidate && !pipeline_map_body) continue;
+    const bool returned_callback_body = returned_callback_candidate &&
+        abi_v10_returned_callback_body_candidate(summary, decoded);
+    if (returned_callback_candidate && !returned_callback_body) continue;
     const bool deferred_member_effects =
         facts.member_requirements.size() == 1 &&
         abi_v10_deferred_member_effects(facts.observable_effects) &&
@@ -54903,6 +55158,8 @@ static void append_abi_v10_occurrence_records(
         abi_v10_checked_assert_body_candidate(
             summary, decoded, *program.type_context) &&
         abi_v10_checked_assert_effects(facts.observable_effects);
+    const bool checked_returned_callback =
+        returned_callback_body && !summary.effect_dependencies.empty();
     const bool checked_member_summary =
         !facts.member_requirements.empty() &&
         abi_v10_generic_member_summary_candidate(summary);
@@ -54953,9 +55210,12 @@ static void append_abi_v10_occurrence_records(
         !checked_numeric_early_return &&
         !checked_numeric_while &&
         !checked_assert &&
+        !checked_returned_callback &&
         !typed_enum_match_body &&
         !checked_member_summary)
+      {
       continue;
+      }
     vector<abi_v10::SourceProvenance> provenance{callable_provenance};
     provenance.insert(provenance.end(), requirement_provenance.begin(),
                       requirement_provenance.end());
@@ -56019,7 +56279,8 @@ static vector<std::filesystem::path> write_module_interfaces(
         if (!abi_v10::hex_hash(summary_record.id) ||
             summary_record.payload.empty() ||
             (static_cast<unsigned char>(summary_record.payload.front()) != 2 &&
-             static_cast<unsigned char>(summary_record.payload.front()) != 3))
+             static_cast<unsigned char>(summary_record.payload.front()) != 3 &&
+             static_cast<unsigned char>(summary_record.payload.front()) != 4))
           continue;
         const auto summary = abi_v10::read_summary(summary_record.payload);
         if (summary.variable_count != 1 || summary.parameters.size() != 1 ||

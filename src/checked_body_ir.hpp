@@ -1561,11 +1561,13 @@ inline std::vector<Stmt> decode_checked_body_v1(
     bool allow_vector_literal_relation = false,
     bool allow_generic_map_index_mutation = false,
     bool allow_typed_enum_match = false,
-    bool allow_pipeline_map = false) {
+    bool allow_pipeline_map = false,
+    bool allow_returned_callback = false) {
   H3BodyReader reader(bytes, context, parameters, result, true, true,
                       allow_vector_literal_relation, true,
                       allow_generic_map_index_mutation,
-                      allow_typed_enum_match, allow_pipeline_map);
+                      allow_typed_enum_match, allow_pipeline_map,
+                      allow_returned_callback);
   auto statements = reader.read();
   if (compute_checked_body_hash_v1(statements) != expected_hash)
     throw std::invalid_argument("checked body semantic hash is mismatched");
@@ -1742,7 +1744,8 @@ inline void collect_expr_dependencies(const checked_ir::Expr& expr,
     // validated by the checked-body reader. They are not callable closure
     // edges; only checker-selected callable IDs enter dependency records.
     if (expr.semantic_target_id.rfind("builtin:", 0) != 0 &&
-        expr.semantic_target_id.rfind("builtin-scalar-protocol:", 0) != 0)
+        expr.semantic_target_id.rfind("builtin-scalar-protocol:", 0) != 0 &&
+        expr.semantic_target_id.rfind("parameter:", 0) != 0)
       out.insert({SemanticDependency::Kind::Callable,
                   expr.semantic_target_id, ""});
   } else if (expr.kind == checked_ir::ExprKind::Message) {

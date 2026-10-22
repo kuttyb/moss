@@ -364,7 +364,7 @@ inline Requirement read_requirement(WireReader& reader,
 }
 
 inline std::string summary_payload(const Summary& summary,
-                                   std::uint8_t version = 3) {
+                                  std::uint8_t version = 3) {
   require(!summary.callable_id.empty() && summary.variable_count <= 4096 &&
               summary.parameters.size() <= 256 &&
               summary.parameters.size() == summary.parameter_access.size() &&
@@ -408,6 +408,9 @@ inline std::string summary_payload(const Summary& summary,
     write_requirement(writer, requirement, summary.variable_count, version);
   }
   if (version >= 4) {
+    require(!summary.effect_dependencies.empty(),
+            "SOURCE_FREE_SUMMARY_INVALID",
+            "ABI-v10 summary version 4 requires an effect dependency");
     std::uint32_t previous_effect_dependency = 0;
     for (const auto dependency : summary.effect_dependencies) {
       require(dependency > previous_effect_dependency &&
@@ -473,9 +476,9 @@ inline Summary read_summary(std::string_view payload) {
   }
   if (version >= 4) {
     const auto effect_dependencies = reader.number();
-    require(effect_dependencies <= requirements,
+    require(effect_dependencies > 0 && effect_dependencies <= requirements,
             "SOURCE_FREE_SUMMARY_INVALID",
-            "ABI-v10 effect dependency set exceeds its requirements");
+            "ABI-v10 version-4 summary has an empty or oversized effect dependency set");
     for (std::uint32_t i = 0; i < effect_dependencies; ++i)
       summary.effect_dependencies.push_back(reader.number());
   }
@@ -494,7 +497,10 @@ inline Summary read_summary(std::string_view payload) {
 }
 
 inline Record summary_record(const Summary& summary) {
-  auto payload = summary_payload(summary, 4);
+  // Keep dependency-free summaries readable by existing ABI-v10 readers.
+  // Version 4 is required only when the summary carries callback effects.
+  auto payload = summary_payload(summary,
+      summary.effect_dependencies.empty() ? 3 : 4);
   return {hash("moss-abi-v10-open-summary", payload), std::move(payload)};
 }
 
@@ -609,6 +615,8 @@ inline void validate_summary_nonweakening(const Summary& provider,
               provider.parameters.size() == consumer.parameters.size() &&
               provider.parameter_access == consumer.parameter_access &&
               provider.requirements.size() <= consumer.requirements.size() &&
+              provider.effect_dependencies.size() <=
+                  consumer.effect_dependencies.size() &&
               (consumer.observable_effect_bits & provider.observable_effect_bits) ==
                   provider.observable_effect_bits &&
               provider.body_semantic_hash == consumer.body_semantic_hash,
@@ -628,6 +636,23 @@ inline void validate_summary_nonweakening(const Summary& provider,
                 requirement_bytes(consumer.requirements[i], consumer.variable_count),
             "SOURCE_FREE_SUMMARY_INVALID",
             "ABI-v10 consumer erases an imported requirement");
+  for (const auto dependency : provider.effect_dependencies) {
+    require(dependency > 0 && dependency <= provider.requirements.size() &&
+                dependency <= consumer.requirements.size(),
+            "SOURCE_FREE_SUMMARY_INVALID",
+            "ABI-v10 provider effect dependency is dangling");
+    const auto provider_requirement = requirement_bytes(
+        provider.requirements[dependency - 1], provider.variable_count);
+    const bool retained = std::any_of(
+        consumer.effect_dependencies.begin(),
+        consumer.effect_dependencies.end(), [&](std::uint32_t candidate) {
+      return candidate > 0 && candidate <= consumer.requirements.size() &&
+          requirement_bytes(consumer.requirements[candidate - 1],
+                            consumer.variable_count) == provider_requirement;
+    });
+    require(retained, "SOURCE_FREE_SUMMARY_INVALID",
+            "ABI-v10 consumer erases an imported callback effect dependency");
+  }
   for (const auto& dependency : provider.dependencies) {
     const auto match = std::find(consumer.dependencies.begin(),
                                  consumer.dependencies.end(), dependency);
@@ -1383,14 +1408,14 @@ inline void validate_complete_interface(
   std::vector<Record> key_proof_records;
   for (const auto& rec : sealed.value.semantic_contract) {
     if (rec.payload.empty()) continue;
-    const bool summary_v2_or_v3 = hex_hash(rec.id) &&
-        (rec.payload[0] == 2 || rec.payload[0] == 3);
+    const bool summary_v2_to_v4 = hex_hash(rec.id) &&
+        (rec.payload[0] == 2 || rec.payload[0] == 3 || rec.payload[0] == 4);
     require(rec.payload[0] == 1 ||
                 static_cast<unsigned char>(rec.payload[0]) >= 32 ||
-                summary_v2_or_v3,
+                summary_v2_to_v4,
             "SOURCE_FREE_CONTRACT_INVALID",
             "Unknown ABI-v10 semantic record version");
-    if (rec.payload[0] != 1 && !summary_v2_or_v3) continue;
+    if (rec.payload[0] != 1 && !summary_v2_to_v4) continue;
     // The record ID selects the versioned schema. A failed decode is fatal;
     // trying other schemas could hide a forged or truncated public contract.
     if (nominal_template_id_valid(rec.id)) {
