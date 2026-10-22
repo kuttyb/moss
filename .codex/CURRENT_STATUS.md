@@ -10408,3 +10408,34 @@ This does **not** yet establish ABI-v10 source-free support. The package artifac
 Validation before push: `make --jobs="$(nproc)" moss-dev`; `python3 tests/tooling/check_phase25_generic_arithmetic_requirements.py build/compiler/moss-dev`; full `python3 tests/tooling/check_phase25_m2b2_source_free_corpus.py build/compiler/moss-dev` including the unavailable shadowing case, ABI-v9 control, all source-free profiles, and hostile mutations; agent-feedback validator; and `git diff --check` pass. Build retains the two existing TypeSolver missing-initializer warnings. Feedback observation `phase25-team-i-integration-occurrence-totality-007` records the distinction between in-memory producer facts and package ABI emission. The existing adversarial architect reviewed exact SHA `3ac453e14cc3c713c05cc8837baf59371e43401c` and returned scoped GO with no P0/P1/P2. The review confirms checker-side facts only; it does not accept source-free ABI-v10 admission or overall R1.
 
 Generic `For` remains untouched and unavailable. R1 remains open; no overall GO or R2 work is claimed. Preserve the known unavailable profiles and package compatibility failures already listed above.
+
+### Phase 25.1 R1 continuation — generic `For` source-free blocker — working tree — 2026-10-21
+
+Reproduced `generic-range-iteration` from the source-free corpus using the
+source-built compiler. The staged provider accepts the valid function and emits
+an ABI-v10 module with the checker-retained `static iterator` generic constraint
+and legacy `generic_stmt` rows, but no checked-body summary/body for `fresh`.
+After provider source removal, the consumer rejects with
+`SOURCE_FREE_CHECKED_BODY_UNAVAILABLE`; this is the corpus's expected
+fail-closed result. The generic body IR encoder has a `For` wire shape, but the
+bounded body reader explicitly rejects `For`, and the common occurrence lowerer
+has no `For` case. Separately, checked requirement serialization currently
+admits only Index, Operator, and the vector-literal SameType relation; the
+`Iterate` fact does not have a source-free checked-body admission contract.
+
+This loop's binder is unused, but inferring that a successful loop source implies
+a safely projectable element TypeRef would exceed the retained ABI contract.
+Do not lower this shape by consulting `generic_stmt` source text or by adding a
+shape-specific v10 producer. A safe continuation needs a shared checked-body
+representation and importer validation for iterable source and binder typing;
+until then this profile remains unavailable. The separate borrowed-Range SDK
+case is not covered by this vector iterator probe.
+
+Validation on the unchanged source code at checkpoint `99772877`:
+`make --jobs="$(nproc)" moss-dev`; full M2b2 source-free/hostile corpus (including
+generic iterator rejection and accepted controls); checked-body IR/dependency
+closure tests; `python3 tests/tooling/check_agent_feedback.py`; and
+`git diff --check` all pass. No implementation behavior changed in this
+diagnostic checkpoint. R1 remains open; shadowed returns remain unavailable at
+the ABI-v10 package boundary, and generic `For` remains fail-closed. No new L7
+decision is required to preserve these constraints.
