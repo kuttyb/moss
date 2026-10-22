@@ -10848,7 +10848,7 @@ progress.
 ## R3A implementation checkpoint — 2026-10-22
 
 R2 remains L7-accepted at `2f1647b7`; its implementation and regression tests
-are frozen. R3B has not started.
+are frozen.
 
 The first missing producer invariant was that the nested checker-selected
 `is_byte` call inside the statement-form `assert` prevented the occurrence
@@ -10896,5 +10896,28 @@ reran the enhanced test, found no P0/P1/P2 findings, and issued implementation-
 level GO for R3A. The final unchanged-workload oracle also passes all six
 profiles with zero unexpected results. Feedback validation, Python syntax
 checks, and `git diff --check` pass. The accepted R3A implementation is
-committed and pushed as `84a9bb28`; R3B remains unstarted and is authorized to
-continue after this accepted checkpoint.
+committed and pushed as `84a9bb28`; the acceptance record is pushed at
+`7668a8ff`.
+
+## R3B initial Map baseline — 2026-10-22
+
+The first remaining R3B slice is open Map-parameter mutation. The focused
+compatibility oracle at `7668a8ff` confirms the unchanged probe passes
+source-backed and ABI-v9 Debug/Release with output `7`, `9`, `7`; ABI-v10
+remains intentionally fail-closed at provider admission with
+`SOURCE_FREE_CHECKED_BODY_UNAVAILABLE` because `Service__insert_and_read` has
+no validated typed summary and checked body. Source inspection confirms the
+existing common indexed-assignment reader only admits a mutable local typed
+`Map[K,V]`; the producer's corresponding local-target check also excludes an
+open parameter. The structured `inspect insert_and_read` result shows one
+`index` requirement (receiver bound variable 0, key variable 1, result
+variable 3), while the value parameter is a separate variable 2. Top-level
+checker ownership facts say `values: WRITE`, `key: READ`, `value: READ`, and
+observable effects include `local_mutation` and `may_panic`; however the typed
+open summary has `parameter_leaf_effects: null` and no explicit checked
+index-write relation. A concrete source-backed call that passes a String
+value to a Map[String,Int] is rejected with `TYPE_MISMATCH`, so that
+specialization relation exists in the live checker but is missing from the
+source-free typed contract/body. This is the first authority gap to close.
+No compiler edits for R3B have been made yet. Other R3B profiles and the R4
+ABI-v9 raise/recover and `packages/time` findings remain open.
