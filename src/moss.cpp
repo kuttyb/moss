@@ -2989,6 +2989,12 @@ static bool abi_v10_checked_branch_arithmetic_summary_candidate(
     const abi_v10::Summary& summary);
 static bool abi_v10_checked_numeric_summary_candidate(
     const abi_v10::Summary& summary);
+static bool abi_v10_checked_numeric_while_summary_candidate(
+    const abi_v10::Summary& summary);
+static bool abi_v10_checked_numeric_while_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements,
+    const moss::TypeContext& context);
 static bool abi_v10_checked_for_summary_candidate(
     const abi_v10::Summary& summary);
 static bool abi_v10_checked_for_assert_mutation_summary_candidate(
@@ -3019,6 +3025,8 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
       abi_v10_checked_branch_arithmetic_summary_candidate(summary);
   const bool checked_numeric =
       abi_v10_checked_numeric_summary_candidate(summary);
+  const bool checked_numeric_while =
+      abi_v10_checked_numeric_while_summary_candidate(summary);
   const bool generic_for = abi_v10_checked_for_summary_candidate(summary) ||
       abi_v10_checked_for_assert_mutation_summary_candidate(summary);
   const bool generic_map_mutation =
@@ -3029,12 +3037,13 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
     if (summary.requirements.size() > 64)
       invalid("checked ABI-v10 member requirement set exceeds its limit");
   } else if (!vector_literal && !branch_arithmetic && !checked_numeric &&
-      !generic_for &&
+      !checked_numeric_while && !generic_for &&
       !generic_map_mutation &&
       summary.requirements.size() != 2)
     invalid("checked ABI-v10 typed requirement set is incomplete");
   if (!member_summary && !collection_loop && !vector_literal &&
-      !branch_arithmetic && !checked_numeric && !generic_for &&
+      !branch_arithmetic && !checked_numeric && !checked_numeric_while &&
+      !generic_for &&
       !generic_map_mutation) {
     if (summary.requirements[0].operation != "operator:*" ||
         summary.requirements[1].operation != "operator:+" ||
@@ -3708,6 +3717,117 @@ static bool abi_v10_checked_numeric_early_return_body_candidate(
       arithmetic_result->structurally_equal(*result->type);
 }
 
+// Bounded mutable-local while profile: copy the open parameter to an immutable
+// loop target, count upward in one mutable Int local, and return that local.
+// The generic comparison remains a checker requirement; local slots, writes,
+// arithmetic result, and return lineage are independently tied to checked IR.
+static bool abi_v10_checked_numeric_while_summary_candidate(
+    const abi_v10::Summary& summary) {
+  const auto bound_zero = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::BoundVar &&
+        type.ordinal == 0 && type.arguments.empty();
+  };
+  const auto integer = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::Primitive &&
+        type.identity == "int" && type.arguments.empty();
+  };
+  const auto boolean = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::Primitive &&
+        type.identity == "bool" && type.arguments.empty();
+  };
+  if (summary.variable_count != 1 || summary.parameters.size() != 1 ||
+      !bound_zero(summary.parameters.front()) ||
+      summary.parameter_access != vector<abi_v10::Access>{
+          abi_v10::Access::Read} || !integer(summary.result) ||
+      summary.requirements.size() != 1 ||
+      summary.observable_effect_bits != 0 ||
+      !summary.observable_effect_tags.empty() ||
+      !summary.dependencies.empty())
+    return false;
+  const auto& comparison = summary.requirements.front();
+  return comparison.operation == "operator:<" && comparison.parent == 0 &&
+      comparison.dependencies.empty() &&
+      comparison.access == abi_v10::Access::Read &&
+      comparison.argument_access == vector<abi_v10::Access>{
+          abi_v10::Access::Read} && integer(comparison.receiver) &&
+      comparison.arguments.size() == 1 &&
+      bound_zero(comparison.arguments.front()) && comparison.result &&
+      boolean(*comparison.result);
+}
+
+static bool abi_v10_checked_numeric_while_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements,
+    const moss::TypeContext& context) {
+  if (!abi_v10_checked_numeric_while_summary_candidate(summary) ||
+      statements.size() != 4 ||
+      statements[0].kind != checked_ir::StmtKind::Let ||
+      statements[1].kind != checked_ir::StmtKind::Var ||
+      statements[2].kind != checked_ir::StmtKind::While ||
+      statements[3].kind != checked_ir::StmtKind::Return ||
+      statements[0].local_ordinal != 0 || statements[1].local_ordinal != 1 ||
+      !statements[0].expr || !statements[1].expr || !statements[2].expr ||
+      !statements[3].expr || !statements[0].type || !statements[1].type)
+    return false;
+  const auto parameter_type = imported_abi_v10_type(
+      summary.parameters.front(), context, summary.variable_count);
+  const auto int_type = moss::Type::primitive("int");
+  const auto bool_type = moss::Type::primitive("bool");
+  if (!parameter_type || !int_type || !bool_type ||
+      !statements[0].type->structurally_equal(*parameter_type) ||
+      !statements[1].type->structurally_equal(*int_type) ||
+      statements[0].expr->kind != checked_ir::ExprKind::Parameter ||
+      statements[0].expr->ordinal != 0 || !statements[0].expr->type ||
+      !statements[0].expr->type->structurally_equal(*parameter_type) ||
+      statements[1].expr->kind != checked_ir::ExprKind::IntegerLiteral ||
+      statements[1].expr->literal_value != "0" ||
+      !statements[1].expr->type ||
+      !statements[1].expr->type->structurally_equal(*int_type) ||
+      statements[2].body.size() != 1 ||
+      statements[2].body.front().kind != checked_ir::StmtKind::Assign ||
+      statements[2].body.front().local_ordinal != 1 ||
+      !statements[2].body.front().expr ||
+      statements[3].expr->kind != checked_ir::ExprKind::LocalRead ||
+      statements[3].expr->ordinal != 1 || !statements[3].expr->type ||
+      !statements[3].expr->type->structurally_equal(*int_type))
+    return false;
+  const auto& condition = *statements[2].expr;
+  const auto& increment = *statements[2].body.front().expr;
+  if (condition.kind != checked_ir::ExprKind::Binary ||
+      condition.binary_op != checked_ir::BinaryOp::Less ||
+      !condition.type || !condition.type->structurally_equal(*bool_type) ||
+      condition.operands.size() != 2 ||
+      condition.operands[0].kind != checked_ir::ExprKind::LocalRead ||
+      condition.operands[0].ordinal != 1 || !condition.operands[0].type ||
+      !condition.operands[0].type->structurally_equal(*int_type) ||
+      condition.operands[1].kind != checked_ir::ExprKind::LocalRead ||
+      condition.operands[1].ordinal != 0 || !condition.operands[1].type ||
+      !condition.operands[1].type->structurally_equal(*parameter_type) ||
+      increment.kind != checked_ir::ExprKind::Binary ||
+      increment.binary_op != checked_ir::BinaryOp::Add ||
+      !increment.type || !increment.type->structurally_equal(*int_type) ||
+      increment.operands.size() != 2 ||
+      increment.operands[0].kind != checked_ir::ExprKind::LocalRead ||
+      increment.operands[0].ordinal != 1 || !increment.operands[0].type ||
+      !increment.operands[0].type->structurally_equal(*int_type) ||
+      increment.operands[1].kind != checked_ir::ExprKind::IntegerLiteral ||
+      increment.operands[1].literal_value != "1" ||
+      !increment.operands[1].type ||
+      !increment.operands[1].type->structurally_equal(*int_type))
+    return false;
+  const auto receiver = imported_abi_v10_type(
+      summary.requirements.front().receiver, context, summary.variable_count);
+  const auto argument = imported_abi_v10_type(
+      summary.requirements.front().arguments.front(), context,
+      summary.variable_count);
+  const auto result = imported_abi_v10_type(
+      *summary.requirements.front().result, context, summary.variable_count);
+  return receiver && argument && result &&
+      receiver->structurally_equal(*condition.operands[0].type) &&
+      argument->structurally_equal(*condition.operands[1].type) &&
+      result->structurally_equal(*condition.type);
+}
+
 static bool abi_v10_parameter_return_summary_candidate(
     const abi_v10::Summary& summary) {
   const auto bound_zero = [](const abi_v10::WireType& type) {
@@ -4246,6 +4366,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
         abi_v10_checked_for_assert_mutation_summary_candidate(summary);
     const bool generic_map_mutation_candidate =
         abi_v10_generic_map_mutation_summary_candidate(summary);
+    const bool numeric_while_summary_candidate =
+        abi_v10_checked_numeric_while_summary_candidate(summary);
     const bool assert_mutation_for_candidate =
         abi_v10_checked_for_assert_mutation_summary_candidate(summary);
     const abi_v10::CheckedBodyRecord body = abi_v10::read_checked_body_record(
@@ -4295,6 +4417,12 @@ static void project_imported_h3_checked_bodies(Program& program) {
     if (generic_map_mutation_candidate &&
         !generic_map_mutation_body_candidate)
       invalid("checked ABI-v10 Map mutation requirement does not match its body");
+    const bool numeric_while_body_candidate =
+        body.dependencies.empty() && numeric_while_summary_candidate &&
+        abi_v10_checked_numeric_while_body_candidate(
+            summary, statements, *program.type_context);
+    if (numeric_while_summary_candidate && !numeric_while_body_candidate)
+      invalid("checked ABI-v10 while body does not match its comparison and local lineage");
     const bool member_summary_candidate =
         abi_v10_generic_member_summary_candidate(summary);
     const bool checked_member_body_candidate = member_summary_candidate &&
@@ -4450,12 +4578,15 @@ static void project_imported_h3_checked_bodies(Program& program) {
       });
     };
     bool contains_conditional = false;
+    bool contains_while = false;
     bool contains_operation = false;
     std::function<void(const vector<checked_ir::Stmt>&)> inspect_operations =
         [&](const vector<checked_ir::Stmt>& block) {
       for (const auto& statement : block) {
         if (statement.kind == checked_ir::StmtKind::If)
           contains_conditional = true;
+        if (statement.kind == checked_ir::StmtKind::While)
+          contains_while = true;
         if (statement.expr && is_operation_expression(*statement.expr))
           contains_operation = true;
         for (const auto& operand : statement.operands)
@@ -4473,6 +4604,9 @@ static void project_imported_h3_checked_bodies(Program& program) {
         !checked_conditional_arithmetic_candidate &&
         !checked_numeric_early_return_candidate)
       invalid("checked ABI-v10 conditional body lacks requirement lineage validation");
+    if (contains_while && !numeric_while_body_candidate &&
+        !collection_loop_candidate)
+      invalid("checked ABI-v10 while body lacks checked condition and mutation lineage");
     const bool local_map_effect_contract =
         abi_v10_local_map_effects_covered(
             function.observable_effects, statements);
@@ -5022,6 +5156,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
     std::map<std::uint32_t, TypeRef> checked_local_types;
     bool checked_projection_subset = true;
     bool contains_if = false;
+    bool contains_checked_while = false;
     std::function<void(const vector<checked_ir::Stmt>&)> collect_local_types =
         [&](const vector<checked_ir::Stmt>& block) {
       for (const auto& statement : block) {
@@ -5040,6 +5175,13 @@ static void project_imported_h3_checked_bodies(Program& program) {
             checked_projection_subset = false;
         } else if (statement.kind == checked_ir::StmtKind::If) {
           contains_if = true;
+        } else if (statement.kind == checked_ir::StmtKind::While) {
+          contains_checked_while = true;
+          if (!numeric_while_body_candidate || !statement.expr ||
+              !statement.expr->type ||
+              !statement.expr->type->structurally_equal(
+                  *moss::Type::primitive("bool")))
+            checked_projection_subset = false;
         } else if (statement.kind == checked_ir::StmtKind::For) {
           if (!statement.expr || !statement.type ||
               !checked_local_types.emplace(statement.local_ordinal,
@@ -5113,6 +5255,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
     find_for(statements);
     const bool checked_generic_for_body = generic_for_candidate &&
         contains_for && checked_projection_subset;
+    const bool checked_numeric_while_body = numeric_while_body_candidate &&
+        contains_checked_while && checked_projection_subset;
     const bool checked_direct_vector_return =
         vector_literal_body_candidate && checked_projection_subset &&
         body.dependencies.empty();
@@ -5121,6 +5265,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
         body.dependencies.front().kind ==
             abi_v10::CheckedBodyRecord::Dependency::Kind::NominalType;
     if ((checked_straight_line || checked_if_body || checked_generic_for_body ||
+         checked_numeric_while_body ||
          checked_member_body_candidate ||
          checked_direct_vector_return) &&
         checked_projection_subset &&
@@ -5491,6 +5636,17 @@ static void project_imported_h3_checked_bodies(Program& program) {
             if (!project_block(checked.else_branch, indent + 1)) return false;
           }
           return true;
+        }
+        if (checked.kind == checked_ir::StmtKind::While) {
+          if (!numeric_while_body_candidate || !expression ||
+              !checked.expr->type->structurally_equal(
+                  *moss::Type::primitive("bool")))
+            return false;
+          statement.kind = Stmt::Kind::While;
+          statement.a = *expression;
+          statement.text = "while " + statement.a;
+          projected.push_back(std::move(statement));
+          return project_block(checked.body, indent + 1);
         }
         if (checked.kind == checked_ir::StmtKind::IfJoin) {
           if (!expression || checked.operands.size() != 2 ||
@@ -53071,16 +53227,22 @@ static void append_abi_v10_occurrence_records(
     const bool checked_numeric_early_return =
         abi_v10_checked_numeric_early_return_body_candidate(
             summary, decoded, *program.type_context);
+    const bool checked_numeric_while =
+        abi_v10_checked_numeric_while_body_candidate(
+            summary, decoded, *program.type_context);
     const bool checked_member_summary =
         !facts.member_requirements.empty() &&
         abi_v10_generic_member_summary_candidate(summary);
     bool contains_conditional = false;
+    bool contains_while = false;
     bool contains_operation = false;
     std::function<void(const vector<checked_ir::Stmt>&)> inspect_lineage_body =
         [&](const vector<checked_ir::Stmt>& block) {
       for (const auto& statement : block) {
         if (statement.kind == checked_ir::StmtKind::If)
           contains_conditional = true;
+        if (statement.kind == checked_ir::StmtKind::While)
+          contains_while = true;
         if (statement.expr && statement.expr->kind !=
                 checked_ir::ExprKind::Parameter &&
             statement.expr->kind != checked_ir::ExprKind::LocalRead &&
@@ -53104,6 +53266,9 @@ static void append_abi_v10_occurrence_records(
         !checked_branch_arithmetic && !checked_conditional_arithmetic &&
         !checked_numeric_early_return)
       continue;
+    if (contains_while && contains_operation && !checked_numeric_while &&
+        !abi_v10_collection_loop_summary_candidate(summary))
+      continue;
     if (!summary.requirements.empty() &&
         !abi_v10_checked_arithmetic_summary_candidate(summary) &&
         !abi_v10_collection_loop_summary_candidate(summary) &&
@@ -53112,6 +53277,7 @@ static void append_abi_v10_occurrence_records(
         !checked_vector_literal && !generic_map_mutation_candidate &&
         !checked_branch_arithmetic &&
         !checked_numeric_early_return &&
+        !checked_numeric_while &&
         !checked_member_summary)
       continue;
     vector<abi_v10::SourceProvenance> provenance{callable_provenance};

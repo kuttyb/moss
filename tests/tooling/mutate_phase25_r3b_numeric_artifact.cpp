@@ -28,10 +28,11 @@ int main(int argc, char** argv) {
   const std::string archive_path = argv[2];
   const std::string mode = argv[3];
   const std::string provider_name = argv[4];
+  const bool while_mutation = mode.rfind("while-", 0) == 0;
   auto sealed = moss::abi_v10::decode(read_file(interface_path));
   const std::string old_digest = sealed.digest;
   const std::string callable_id = "callable-v1:" + sealed.value.module_id +
-      ":fn:magnitude";
+      ":fn:" + (while_mutation ? "count_up" : "magnitude");
   auto summary_position = std::find_if(
       sealed.value.semantic_contract.begin(),
       sealed.value.semantic_contract.end(), [&](const auto& record) {
@@ -63,6 +64,40 @@ int main(int argc, char** argv) {
     subtraction.arguments.front().kind =
         moss::abi_v10::WireTypeKind::Primitive;
     subtraction.arguments.front().identity = "bool";
+  } else if (while_mutation) {
+    if (mode == "while-requirement-result") {
+      assert(summary.requirements.size() == 1 &&
+             summary.requirements.front().result);
+      summary.requirements.front().result = moss::abi_v10::WireType{};
+      summary.requirements.front().result->kind =
+          moss::abi_v10::WireTypeKind::Primitive;
+      summary.requirements.front().result->identity = "int";
+    } else {
+      const auto type = moss::Type::var({0, 0, 0});
+      const auto integer = moss::Type::primitive("int");
+      moss::TypeContext context;
+      auto statements = moss::checked_ir::decode_checked_body_v1(
+          body.checked_ir_bytes, context, {type}, integer, body.semantic_hash);
+      assert(statements.size() == 4 &&
+             statements[2].kind == moss::checked_ir::StmtKind::While &&
+             statements[2].body.size() == 1 &&
+             statements[2].body.front().kind ==
+                 moss::checked_ir::StmtKind::Assign);
+      if (mode == "while-condition") {
+      assert(statements[2].expr->kind == moss::checked_ir::ExprKind::Binary &&
+             statements[2].expr->binary_op ==
+                 moss::checked_ir::BinaryOp::Less);
+        statements[2].expr->binary_op = moss::checked_ir::BinaryOp::LessEqual;
+      } else if (mode == "while-assignment-target") {
+        statements[2].body.front().local_ordinal = 0;
+      } else {
+        assert(false && "unknown while mutation mode");
+      }
+      body.checked_ir_bytes = moss::checked_ir::encode_checked_body_v1(statements);
+      body.semantic_hash = moss::checked_ir::compute_checked_body_hash_v1(statements);
+      summary.body_semantic_hash = body.semantic_hash;
+      *body_position = moss::abi_v10::checked_body_record(body);
+    }
   } else {
     const auto type = moss::Type::var({0, 0, 0});
     moss::TypeContext context;

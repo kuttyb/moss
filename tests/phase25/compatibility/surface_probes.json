@@ -96,12 +96,12 @@
       "priority": "P1-control-flow",
       "category": "explicit let/var bindings, assignment and while loop",
       "provider": "module Service\n\nexport fn count_up(value) -> Int:\n  let target = value\n  var count = 0\n  while count < target:\n    count = count + 1\n  return count\n",
-      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.count_up(0)\n  echo Service.count_up(4)\n",
-      "expected_output": "0\n4\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.count_up(0)\n  echo Service.count_up(4)\n  echo Service.count_up(2.5)\n",
+      "expected_output": "0\n4\n3\n",
       "callable_name": "count_up",
-      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "checked_body_status": "Source-backed/v9 controls cover explicit immutable/mutable binding, rebinding and while flow; v10 must preserve checked scope and loop semantics or reject callable selection.",
+      "poison_callables": ["count_up"],
+      "provider_must_emit_v10": true,
+      "checked_body_status": "Source-backed, ABI-v9, and source-deleted ABI-v10 Debug/Release preserve the checked mixed Int/Float comparison, mutable counter, loop body, and return lineage.",
       "evidence": "src/ast.hpp: Stmt::Kind::Let, Var, Assign and While"
     },
     {

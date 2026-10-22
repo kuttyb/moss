@@ -11006,7 +11006,44 @@ The independent adversarial architect reviewed exact candidate
 P0/P1/P2 findings. The reviewer independently ran the four-value source/v9/v10
 Debug/Release oracle and all five resealed hostile numeric mutations, and
 reran the preserved M2B2, R3A Range, and R3B Map suites. Other R3 control-flow
-groups (mutable-local `while`, typed enum `match`, pipelines, generic
-`assert`, exception control flow, and higher-order callback evidence) remain
-open. The R4 ABI-v9 raise/recover defect and `packages/time` source error
-remain unchanged.
+groups (typed enum `match`, pipelines, generic `assert`, exception control
+flow, and higher-order callback evidence) remain open; mutable-local `while`
+is recorded in the next checkpoint. The R4 ABI-v9 raise/recover defect and
+`packages/time` source error remain unchanged.
+
+
+## R3B mutable-local while — bounded checked-body profile — 2026-10-22
+
+The next control-flow profile, `generic-local-var-while`, already had a
+complete checker occurrence body and one checker-owned `Int < T -> Bool`
+requirement. The common checked reader understands its checked statements,
+but ABI-v10 admission lacked a requirement/body lineage validator and the
+importer did not project a checked While statement. The bounded ABI-v10
+candidate now validates the exact `let target = parameter`, mutable Int
+counter initialized to zero, `count < target` test, `count = count + 1`
+assignment, and Int local return. It links the single checked generic
+comparison requirement to the condition TypeRefs, and the importer projects
+the body through the common checked IR path. Existing collection-loop
+validation remains intact.
+
+The unchanged surface profile passes source-backed, ABI-v9, and source-deleted
+ABI-v10 Debug/Release with `count_up(0)`, `(4)`, and `(2.5)` printing
+`0\n4\n3\n`. ABI-v10 deletes provider source, poisons the `count_up` legacy
+body, and requires checked-body projection. Unsupported String specialization
+rejects with `TYPE_MISMATCH`. Resealed condition-op, assignment-target, and
+comparison-result mutations reject before projection. The complete M2b2
+source-free and hostile corpus, focused numeric arithmetic/IR gates, R3B
+numeric hostile harness, R3A Range hostile suite, and R3B Map hostile suite
+pass after this change. Agent-feedback validation passes. Build warnings are
+the existing two `TypeSolver::Undo` missing initializers.
+
+The initial M2b2 rerun caught an overbroad While admission guard rejecting its
+existing collection-loop profile; the guard was narrowed to preserve that
+validated candidate and the complete M2b2 rerun passed. This slice does not
+close the other open R3 profiles: typed enum `match`, functional pipeline,
+generic `assert`, exception control flow, and higher-order callback evidence
+remain open. The R4 ABI-v9 raise/recover defect and `packages/time` source
+error remain unchanged.
+
+The mutable-local while checkpoint is awaiting an independent exact-candidate
+adversarial review before it is accepted.
