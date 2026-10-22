@@ -2949,7 +2949,13 @@ static moss::TypeRef imported_abi_v10_type(
           ? moss::Type::var(moss::TypeVarId{0, 0, wire.ordinal}) : nullptr;
     case abi_v10::WireTypeKind::Unit:
       return moss::Type::unit();
-    case abi_v10::WireTypeKind::Enum:
+    case abi_v10::WireTypeKind::Enum: {
+      auto declaration = context.find_id(wire.identity);
+      if (!declaration || declaration->kind != moss::DeclarationKind::Enum)
+        return nullptr;
+      return moss::Type::enumeration_bound(declaration,
+                                            declaration->program_name);
+    }
     case abi_v10::WireTypeKind::Domain:
       return nullptr;
   }
@@ -2995,6 +3001,12 @@ static bool abi_v10_checked_numeric_while_body_candidate(
     const abi_v10::Summary& summary,
     const vector<checked_ir::Stmt>& statements,
     const moss::TypeContext& context);
+static bool abi_v10_typed_enum_match_summary_candidate(
+    const abi_v10::Summary& summary);
+static bool abi_v10_typed_enum_match_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements,
+    const moss::TypeContext& context, const Program& program);
 static bool abi_v10_checked_assert_summary_candidate(
     const abi_v10::Summary& summary);
 static bool abi_v10_checked_assert_body_candidate(
@@ -3040,6 +3052,8 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
       abi_v10_checked_for_assert_mutation_summary_candidate(summary);
   const bool generic_map_mutation =
       abi_v10_generic_map_mutation_summary_candidate(summary);
+  const bool typed_enum_match =
+      abi_v10_typed_enum_match_summary_candidate(summary);
   const bool member_summary =
       abi_v10_generic_member_summary_candidate(summary);
   if (member_summary) {
@@ -3047,13 +3061,13 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
       invalid("checked ABI-v10 member requirement set exceeds its limit");
   } else if (!vector_literal && !branch_arithmetic && !checked_numeric &&
       !checked_numeric_while && !checked_assert && !generic_for &&
-      !generic_map_mutation &&
+      !generic_map_mutation && !typed_enum_match &&
       summary.requirements.size() != 2)
     invalid("checked ABI-v10 typed requirement set is incomplete");
   if (!member_summary && !collection_loop && !vector_literal &&
       !branch_arithmetic && !checked_numeric && !checked_numeric_while &&
       !checked_assert && !generic_for &&
-      !generic_map_mutation) {
+      !generic_map_mutation && !typed_enum_match) {
     if (summary.requirements[0].operation != "operator:*" ||
         summary.requirements[1].operation != "operator:+" ||
         summary.requirements[0].parent != 0 ||
@@ -3724,6 +3738,124 @@ static bool abi_v10_checked_numeric_early_return_body_candidate(
       arithmetic_receiver->structurally_equal(*result->operands[0].type) &&
       arithmetic_argument->structurally_equal(*result->operands[1].type) &&
       arithmetic_result->structurally_equal(*result->type);
+}
+
+static bool abi_v10_typed_enum_match_summary_candidate(
+    const abi_v10::Summary& summary) {
+  return summary.variable_count == 1 && summary.parameters.size() == 2 &&
+      summary.parameters[0].kind == abi_v10::WireTypeKind::BoundVar &&
+      summary.parameters[0].ordinal == 0 &&
+      summary.parameters[1].kind == abi_v10::WireTypeKind::Enum &&
+      !summary.parameters[1].identity.empty() &&
+      summary.parameters[1].arguments.empty() &&
+      summary.result.kind == abi_v10::WireTypeKind::BoundVar &&
+      summary.result.ordinal == 0 && summary.requirements.size() == 1 &&
+      summary.requirements[0].operation == "operator:+" &&
+      summary.requirements[0].receiver.kind ==
+          abi_v10::WireTypeKind::Primitive &&
+      summary.requirements[0].receiver.identity == "int" &&
+      summary.requirements[0].arguments.size() == 1 &&
+      summary.requirements[0].arguments[0].kind ==
+          abi_v10::WireTypeKind::BoundVar &&
+      summary.requirements[0].arguments[0].ordinal == 0 &&
+      summary.requirements[0].result &&
+      summary.requirements[0].result->kind ==
+          abi_v10::WireTypeKind::BoundVar &&
+      summary.requirements[0].result->ordinal == 0 &&
+      summary.requirements[0].access == abi_v10::Access::Read &&
+      summary.requirements[0].argument_access ==
+          vector<abi_v10::Access>{abi_v10::Access::Read} &&
+      summary.observable_effect_bits == 0 &&
+      summary.observable_effect_tags.empty() && summary.dependencies.empty() &&
+      summary.parameter_access == vector<abi_v10::Access>{
+          abi_v10::Access::Read, abi_v10::Access::Read};
+}
+
+static bool abi_v10_typed_enum_match_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements,
+    const moss::TypeContext& context, const Program& program) {
+  if (!abi_v10_typed_enum_match_summary_candidate(summary) ||
+      statements.size() != 1 ||
+      statements.front().kind != checked_ir::StmtKind::Match ||
+      !statements.front().expr || !statements.front().expr->type ||
+      statements.front().expr->kind != checked_ir::ExprKind::Parameter ||
+      statements.front().expr->ordinal != 1 ||
+      statements.front().match_cases.size() != 2)
+    return false;
+  const auto enum_type = imported_abi_v10_type(
+      summary.parameters[1], context, summary.variable_count);
+  const auto value_type = imported_abi_v10_type(
+      summary.parameters[0], context, summary.variable_count);
+  if (!enum_type || !value_type || !enum_type->declaration ||
+      !statements.front().expr->type->structurally_equal(*enum_type))
+    return false;
+  const EnumType* declaration = nullptr;
+  for (const auto& candidate : program.enums) {
+    const string module_id = program_module_identity(
+        program, candidate.defining_module);
+    const string declaration_name = candidate.declaration_name.empty()
+        ? candidate.name : candidate.declaration_name;
+    if (moss::declaration_identity(moss::DeclarationKind::Enum,
+            module_id, declaration_name) == enum_type->declaration->id) {
+      if (declaration) return false;
+      declaration = &candidate;
+    }
+  }
+  if (!declaration || declaration->cases.size() != 2) return false;
+  const auto int_type = moss::Type::primitive("int");
+  std::set<string> seen;
+  bool saw_payload = false;
+  bool saw_empty = false;
+  for (const auto& branch : statements.front().match_cases) {
+    const auto expected_id = "nominal-enum-variant-v1:" +
+        enum_type->declaration->id + ":case:" + branch.variant_tag;
+    if (branch.variant_id != expected_id ||
+        !seen.insert(branch.variant_tag).second)
+      return false;
+    const EnumCase* variant = nullptr;
+    for (const auto& candidate : declaration->cases)
+      if (candidate.name == branch.variant_tag) variant = &candidate;
+    if (!variant || branch.payload_types.size() != variant->fields.size() ||
+        branch.payload_ordinals.size() != variant->fields.size() ||
+        branch.body.size() != 1 ||
+        branch.body.front().kind != checked_ir::StmtKind::Return ||
+        !branch.body.front().expr || !branch.body.front().type ||
+        !branch.body.front().type->structurally_equal(*value_type) ||
+        !branch.body.front().expr->type ||
+        !branch.body.front().expr->type->structurally_equal(*value_type))
+      return false;
+    for (std::size_t index = 0; index < variant->fields.size(); ++index) {
+      const auto expected_type = parsed_type(variant->fields[index].type);
+      if (!expected_type || !branch.payload_types[index] ||
+          !branch.payload_types[index]->structurally_equal(*expected_type))
+        return false;
+    }
+    const auto& returned = *branch.body.front().expr;
+    if (variant->fields.empty()) {
+      if (saw_empty || returned.kind != checked_ir::ExprKind::Parameter ||
+          returned.ordinal != 0)
+        return false;
+      saw_empty = true;
+    } else {
+      if (saw_payload || variant->fields.size() != 1 ||
+          !branch.payload_types.front()->structurally_equal(*int_type) ||
+          returned.kind != checked_ir::ExprKind::Binary ||
+          returned.binary_op != checked_ir::BinaryOp::Add ||
+          returned.operands.size() != 2 ||
+          returned.operands[0].kind != checked_ir::ExprKind::LocalRead ||
+          returned.operands[0].ordinal != branch.payload_ordinals.front() ||
+          !returned.operands[0].type ||
+          !returned.operands[0].type->structurally_equal(*int_type) ||
+          returned.operands[1].kind != checked_ir::ExprKind::Parameter ||
+          returned.operands[1].ordinal != 0 ||
+          !returned.operands[1].type ||
+          !returned.operands[1].type->structurally_equal(*value_type))
+        return false;
+      saw_payload = true;
+    }
+  }
+  return saw_payload && saw_empty && seen.size() == declaration->cases.size();
 }
 
 // Bounded mutable-local while profile: copy the open parameter to an immutable
@@ -4474,6 +4606,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
         abi_v10_checked_for_assert_mutation_summary_candidate(summary);
     const bool generic_map_mutation_candidate =
         abi_v10_generic_map_mutation_summary_candidate(summary);
+    const bool typed_enum_match_candidate =
+        abi_v10_typed_enum_match_summary_candidate(summary);
     const bool numeric_while_summary_candidate =
         abi_v10_checked_numeric_while_summary_candidate(summary);
     const bool assert_summary_candidate =
@@ -4489,6 +4623,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
         summary.parameter_access.size() != function.parameter_effects.size() ||
         (!collection_loop_candidate && !generic_for_candidate &&
          !generic_map_mutation_candidate &&
+         !typed_enum_match_candidate &&
          !assert_summary_candidate &&
          summary.observable_effect_bits))
       invalid("checked ABI-v10 body disagrees with its callable summary");
@@ -4513,10 +4648,15 @@ static void project_imported_h3_checked_bodies(Program& program) {
       statements = checked_ir::decode_checked_body_v1(
           body.checked_ir_bytes, *program.type_context, parameters, result,
           body.semantic_hash, vector_literal_summary_candidate,
-          generic_map_mutation_candidate);
+          generic_map_mutation_candidate, typed_enum_match_candidate);
     } catch (const std::invalid_argument& error) {
       invalid(string("checked ABI-v10 body cannot be decoded: ") + error.what());
     }
+    const bool typed_enum_match_body_candidate = body.dependencies.empty() &&
+        typed_enum_match_candidate && abi_v10_typed_enum_match_body_candidate(
+            summary, statements, *program.type_context, program);
+    if (typed_enum_match_candidate && !typed_enum_match_body_candidate)
+      invalid("checked ABI-v10 enum match does not preserve provider variants and return lineage");
     const bool vector_literal_body_candidate =
         vector_literal_summary_candidate &&
         abi_v10_checked_vector_literal_body_candidate(summary, statements);
@@ -5278,6 +5418,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
     bool checked_projection_subset = true;
     bool contains_if = false;
     bool contains_checked_while = false;
+    bool contains_typed_enum_match = false;
     std::function<void(const vector<checked_ir::Stmt>&)> collect_local_types =
         [&](const vector<checked_ir::Stmt>& block) {
       for (const auto& statement : block) {
@@ -5308,6 +5449,24 @@ static void project_imported_h3_checked_bodies(Program& program) {
               !checked_local_types.emplace(statement.local_ordinal,
                                             statement.type).second)
             checked_projection_subset = false;
+        } else if (statement.kind == checked_ir::StmtKind::Match) {
+          contains_typed_enum_match = true;
+          if (!typed_enum_match_body_candidate || !statement.expr ||
+              statement.match_cases.size() != 2)
+            checked_projection_subset = false;
+          for (const auto& branch : statement.match_cases) {
+            if (branch.payload_ordinals.size() != branch.payload_types.size()) {
+              checked_projection_subset = false;
+              continue;
+            }
+            for (std::size_t index = 0;
+                 index < branch.payload_ordinals.size(); ++index)
+              if (!branch.payload_types[index] ||
+                  !checked_local_types.emplace(branch.payload_ordinals[index],
+                      branch.payload_types[index]).second)
+                checked_projection_subset = false;
+            collect_local_types(branch.body);
+          }
         } else if (statement.kind == checked_ir::StmtKind::AssignIndex) {
           const bool local_map_receiver = statement.operands.size() == 2 &&
               statement.operands[0].kind ==
@@ -5341,7 +5500,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
             checked_projection_subset = false;
         } else if (statement.kind != checked_ir::StmtKind::Return &&
                    statement.kind != checked_ir::StmtKind::Pass &&
-                   statement.kind != checked_ir::StmtKind::Assign) {
+                   statement.kind != checked_ir::StmtKind::Assign &&
+                   statement.kind != checked_ir::StmtKind::Match) {
           checked_projection_subset = false;
         }
         collect_local_types(statement.then_branch);
@@ -5391,6 +5551,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
     if ((checked_straight_line || checked_if_body || checked_generic_for_body ||
          checked_numeric_while_body ||
          checked_assert_projection ||
+         contains_typed_enum_match ||
          checked_member_body_candidate ||
          checked_direct_vector_return) &&
         checked_projection_subset &&
@@ -5762,6 +5923,67 @@ static void project_imported_h3_checked_bodies(Program& program) {
           }
           return true;
         }
+        if (checked.kind == checked_ir::StmtKind::Match) {
+          if (!typed_enum_match_body_candidate || !expression ||
+              !checked.expr || !checked.expr->type ||
+              checked.expr->type->kind != moss::TypeKind::Enum ||
+              !checked.expr->type->declaration ||
+              checked.match_cases.size() != 2)
+            return false;
+          statement.kind = Stmt::Kind::Match;
+          statement.a = *expression;
+          statement.text = "match " + statement.a;
+          projected.push_back(std::move(statement));
+          for (const auto& branch : checked.match_cases) {
+            const EnumType* enum_declaration = nullptr;
+            for (const auto& candidate : program.enums) {
+              const string module_id = program_module_identity(
+                  program, candidate.defining_module);
+              const string declaration_name = candidate.declaration_name.empty()
+                  ? candidate.name : candidate.declaration_name;
+              if (moss::declaration_identity(moss::DeclarationKind::Enum,
+                      module_id, declaration_name) ==
+                  checked.expr->type->declaration->id)
+                enum_declaration = &candidate;
+            }
+            if (!enum_declaration) return false;
+            const auto variant = std::find_if(enum_declaration->cases.begin(),
+                enum_declaration->cases.end(), [&](const EnumCase& item) {
+              return item.name == branch.variant_tag;
+            });
+            if (variant == enum_declaration->cases.end() ||
+                variant->fields.size() != branch.payload_ordinals.size())
+              return false;
+            for (std::size_t index = 0;
+                 index < branch.payload_ordinals.size(); ++index) {
+              const auto ordinal = branch.payload_ordinals[index];
+              if (ordinal >= local_names.size() ||
+                  !plain_identifier(variant->fields[index].name) ||
+                  std::any_of(function.params.begin(), function.params.end(),
+                      [&](const Param& parameter) {
+                return parameter.name == variant->fields[index].name;
+              }))
+                return false;
+              local_names[ordinal] = variant->fields[index].name;
+            }
+            Stmt arm;
+            arm.kind = Stmt::Kind::Case;
+            arm.line = projected_line++;
+            arm.indent = indent + 1;
+            arm.a = branch.variant_tag;
+            arm.text = "case " + arm.a;
+            for (const auto ordinal : branch.payload_ordinals) {
+              if (ordinal >= local_names.size()) return false;
+              arm.args.push_back(local_names[ordinal]);
+              arm.text += arm.args.size() == 1 ? "(" : ", ";
+              arm.text += arm.args.back();
+            }
+            if (!branch.payload_ordinals.empty()) arm.text += ")";
+            projected.push_back(std::move(arm));
+            if (!project_block(branch.body, indent + 2)) return false;
+          }
+          return true;
+        }
         if (checked.kind == checked_ir::StmtKind::While) {
           if (!numeric_while_body_candidate || !expression ||
               !checked.expr->type->structurally_equal(
@@ -5841,6 +6063,12 @@ static void project_imported_h3_checked_bodies(Program& program) {
         if (block.empty()) return false;
         const auto& last = block.back();
         if (last.kind == checked_ir::StmtKind::Return) return true;
+        if (last.kind == checked_ir::StmtKind::Match)
+          return typed_enum_match_body_candidate &&
+              std::all_of(last.match_cases.begin(), last.match_cases.end(),
+                  [&](const auto& branch) {
+            return returns_on_all_paths(branch.body);
+          });
         return last.kind == checked_ir::StmtKind::If &&
             !last.else_branch.empty() &&
             returns_on_all_paths(last.then_branch) &&
@@ -8640,9 +8868,7 @@ class Checker {
 
   bool retain_checked_occurrence_ir(Function& function) {
     if (!function.open_summary || !function.open_summary->scheme_complete ||
-        function.body.empty() ||
-        function.body.back().kind != Stmt::Kind::Return ||
-        function.body.back().a.empty()) {
+        function.body.empty()) {
       return false;
     }
     auto retained = checked_body_states_.find(&function.body);
@@ -8655,6 +8881,77 @@ class Checker {
       function.open_summary->occurrence_ledger_complete = false;
       function.open_summary->complete = false;
       return false;
+    }
+    // Promote the retained open operation relation into the callable's
+    // ordinary requirement evidence. This covers branch-local operations
+    // whose result cannot be discovered by the older single-return scanner.
+    // The operands and result must be the exact checker occurrences.
+    for (const auto& operation : state.open_operations) {
+      if (operation.operation_id != "operator:+" ||
+          operation.expression_occurrence_id >=
+              state.expression_occurrences.size())
+        continue;
+      const auto& expression =
+          state.expression_occurrences[operation.expression_occurrence_id];
+      const auto left = std::find_if(state.expression_occurrences.begin(),
+          state.expression_occurrences.end(), [&](const auto& candidate) {
+        return candidate.parent_id == expression.id &&
+            candidate.child_role == "left";
+      });
+      const auto right = std::find_if(state.expression_occurrences.begin(),
+          state.expression_occurrences.end(), [&](const auto& candidate) {
+        return candidate.parent_id == expression.id &&
+            candidate.child_role == "right";
+      });
+      const auto receiver = state.solver.resolve(operation.receiver);
+      const auto argument = operation.arguments.size() == 1
+          ? state.solver.resolve(operation.arguments.front()) : nullptr;
+      const auto result = operation.result
+          ? state.solver.resolve(operation.result) : nullptr;
+      const auto left_type = left != state.expression_occurrences.end() &&
+              left->checked_type
+          ? state.solver.resolve(left->checked_type) : nullptr;
+      const auto right_type = right != state.expression_occurrences.end() &&
+              right->checked_type
+          ? state.solver.resolve(right->checked_type) : nullptr;
+      const auto callable_value_type =
+          function.open_summary->parameter_types.empty()
+              ? moss::TypeRef{} : function.open_summary->parameter_types.front();
+      const auto int_type = moss::Type::primitive("int");
+      if (expression.kind !=
+              BodyTypeState::ExpressionOccurrence::Kind::Binary ||
+          expression.operation_id != "+" || left == state.expression_occurrences.end() ||
+          right == state.expression_occurrences.end() || !left->checked_type ||
+          !right->checked_type || !left_type || !right_type || !receiver ||
+          !argument || !result || !callable_value_type ||
+          !receiver->structurally_equal(*int_type) ||
+          argument->kind != moss::TypeKind::InferenceVar ||
+          !result->structurally_equal(*argument) ||
+          callable_value_type->kind != moss::TypeKind::InferenceVar ||
+          !left_type->structurally_equal(*receiver) ||
+          !right_type->structurally_equal(*argument))
+        continue;
+      const string requirement_id = function.semantic_callable_id +
+          ":requirement:checked-occurrence:" +
+          std::to_string(operation.expression_occurrence_id);
+      auto existing = std::find_if(function.open_summary->requirements.begin(),
+          function.open_summary->requirements.end(), [&](const auto& item) {
+        return item.id == requirement_id;
+      });
+      if (existing != function.open_summary->requirements.end()) continue;
+      moss::Requirement requirement;
+      requirement.id = requirement_id;
+      requirement.kind = moss::RequirementKind::Operator;
+      requirement.target_id = "operator:+";
+      requirement.subject = receiver;
+      requirement.arguments.push_back(callable_value_type);
+      requirement.argument_access.push_back(moss::AccessMode::Read);
+      requirement.result = callable_value_type;
+      requirement.expression_occurrence_id = expression.id;
+      requirement.origin = {function.open_summary->origin.module_id,
+          function.source_file, expression.line, 1,
+          function.semantic_callable_id, requirement_id};
+      function.open_summary->requirements.push_back(std::move(requirement));
     }
     const auto& summary = *function.open_summary;
     const auto is_bound_variable = [](const moss::TypeRef& type,
@@ -9138,6 +9435,18 @@ class Checker {
       if (statement == state.statement_occurrence_ids.end()) return false;
       const auto& node = state.statement_occurrences.at(statement->second);
       const auto binding_fact = state.binding_facts.find(&source_statement);
+      if (source_statement.kind == Stmt::Kind::Case) {
+        if (node.bindings.size() > 64) return false;
+        for (const auto& payload : node.bindings) {
+          auto type = checked_body_type(payload.type);
+          if (payload.identity.empty() || !type ||
+              !local_ordinals.emplace(payload.identity,
+                  static_cast<std::uint32_t>(local_types.size())).second)
+            return false;
+          local_types.push_back(type);
+        }
+        continue;
+      }
       if (source_statement.kind == Stmt::Kind::If) {
         for (const auto& binding : node.bindings) {
           if (binding.predecessor_binding_ids.empty()) continue;
@@ -10118,6 +10427,51 @@ class Checker {
           lowered.body = std::move(*loop_body);
           return lowered;
         }
+        case Stmt::Kind::Match: {
+          auto subject = expression_for("match-subject");
+          if (!subject || !subject->type ||
+              subject->type->kind != moss::TypeKind::Enum ||
+              !subject->type->declaration)
+            return std::nullopt;
+          lowered.kind = checked_ir::StmtKind::Match;
+          lowered.expr = std::move(*subject);
+          for (const auto& candidate : state.statement_occurrences) {
+            if (candidate.kind != Stmt::Kind::Case ||
+                candidate.parent_id != id || !candidate.source)
+              continue;
+            const string expected_variant =
+                "nominal-enum-variant-v1:" +
+                lowered.expr->type->declaration->id + ":case:" +
+                candidate.source->a;
+            if (candidate.control_parent_id != id ||
+                candidate.enum_identity !=
+                    lowered.expr->type->declaration->id ||
+                candidate.variant_identity != expected_variant ||
+                candidate.branch_role != "case:" + expected_variant ||
+                !consumed_statements.insert(candidate.id).second)
+              return std::nullopt;
+            checked_ir::CaseBranch branch;
+            branch.variant_tag = candidate.source->a;
+            branch.variant_id = candidate.variant_identity;
+            for (const auto& payload : candidate.bindings) {
+              const auto ordinal = local_ordinals.find(payload.identity);
+              auto type = checked_body_type(payload.type);
+              if (ordinal == local_ordinals.end() || !type ||
+                  ordinal->second >= local_types.size() ||
+                  !local_types[ordinal->second] ||
+                  !local_types[ordinal->second]->structurally_equal(*type))
+                return std::nullopt;
+              branch.payload_ordinals.push_back(ordinal->second);
+              branch.payload_types.push_back(type);
+            }
+            auto body = lower_block(candidate.id, depth + 1);
+            if (!body || body->empty()) return std::nullopt;
+            branch.body = std::move(*body);
+            lowered.match_cases.push_back(std::move(branch));
+          }
+          if (lowered.match_cases.empty()) return std::nullopt;
+          return lowered;
+        }
         case Stmt::Kind::For: {
           auto iterable = expression_for("for-iterable");
           const auto& node = state.statement_occurrences.at(id);
@@ -10145,6 +10499,7 @@ class Checker {
           return lowered;
         }
         case Stmt::Kind::Else:
+        case Stmt::Kind::Case:
           return std::nullopt;
         default:
           return std::nullopt;
@@ -10179,6 +10534,12 @@ class Checker {
       if (block.empty()) return false;
       const auto& last = block.back();
       if (last.kind == checked_ir::StmtKind::Return) return true;
+      if (last.kind == checked_ir::StmtKind::Match)
+        return !last.match_cases.empty() &&
+            std::all_of(last.match_cases.begin(), last.match_cases.end(),
+                [&](const auto& branch) {
+          return terminates_with_return(branch.body);
+        });
       return last.kind == checked_ir::StmtKind::If &&
           !last.else_branch.empty() &&
           terminates_with_return(last.then_branch) &&
@@ -10213,7 +10574,10 @@ class Checker {
       const auto decoded = checked_ir::decode_checked_body_v1(
           bytes, *p_.type_context, summary.parameter_types,
           summary.result_type, hash, vector_relation_summary,
-          checked_generic_map_write);
+          checked_generic_map_write,
+          std::any_of(statements.begin(), statements.end(), [](const auto& s) {
+            return s.kind == checked_ir::StmtKind::Match;
+          }));
       if (checked_ir::encode_checked_body_v1(decoded) != bytes ||
           checked_ir::compute_checked_body_hash_v1(decoded) != hash)
         return false;
@@ -27602,15 +27966,13 @@ class Checker {
     if (operation_id == "+" || operation_id == "-" ||
         operation_id == "*" || operation_id == "/" ||
         operation_id == "%") {
-      // Retain the existing receiver-typed open arithmetic forms. The
-      // checker-owned mixed subtraction relation is the one open reversed
-      // form established here: Int - T produces T, so its specialization is
-      // Int - Int -> Int and Int - Float -> Float. This TypeRef comes from the
-      // exact operator operands, not a return-type widening heuristic.
+      // Retain checker-derived open arithmetic result relationships. The
+      // reversed mixed numeric forms Int - T and Int + T return T under the
+      // existing Int/Float operator rules.
       const auto right_term = current_body_types_->solver.resolve(right);
       const auto left_term = current_body_types_->solver.resolve(left);
       const bool left_int = primitive_term(left_term, "int");
-      if (operation_id == "-" && left_int && right_term &&
+      if ((operation_id == "-" || operation_id == "+") && left_int && right_term &&
           !right_term->is_closed())
         result = right;
       else
@@ -52618,6 +52980,11 @@ abi_v10_checked_requirements(
         operator_subject->structurally_equal(*int_type) &&
         operator_argument->kind == moss::TypeKind::InferenceVar &&
         operator_result->structurally_equal(*operator_argument);
+    const bool supported_mixed_addition = generic_relation &&
+        requirement.target_id == "operator:+" && operator_subject &&
+        operator_subject->structurally_equal(*int_type) &&
+        operator_argument->kind == moss::TypeKind::InferenceVar &&
+        operator_result->structurally_equal(*operator_argument);
     const bool numeric_comparison = generic_relation &&
         (requirement.target_id == "operator:<" ||
          requirement.target_id == "operator:>" ||
@@ -52633,7 +53000,8 @@ abi_v10_checked_requirements(
         (requirement.target_id == "operator:*" ||
          requirement.target_id == "operator:+" ||
          requirement.target_id == "operator:==" ||
-         supported_mixed_subtraction || numeric_comparison);
+         supported_mixed_subtraction || supported_mixed_addition ||
+         numeric_comparison);
     const bool supported_iterate = requirement.kind ==
             moss::RequirementKind::Iterate &&
         requirement.target_id == "static iterator" &&
@@ -53276,6 +53644,8 @@ static void append_abi_v10_occurrence_records(
     body.semantic_hash = summary.body_semantic_hash;
     body.checked_ir_bytes = *function.checked_body_ir_v1_bytes;
     vector<checked_ir::Stmt> decoded;
+    const bool typed_enum_match_candidate =
+        abi_v10_typed_enum_match_summary_candidate(summary);
     const bool vector_literal_summary_candidate =
         abi_v10_checked_vector_literal_summary_candidate(summary);
     const bool generic_map_mutation_candidate =
@@ -53285,7 +53655,7 @@ static void append_abi_v10_occurrence_records(
           body.checked_ir_bytes, *program.type_context,
           facts.parameter_types, facts.result_type, body.semantic_hash,
           vector_literal_summary_candidate,
-          generic_map_mutation_candidate);
+          generic_map_mutation_candidate, typed_enum_match_candidate);
       if (checked_ir::encode_checked_body_v1(decoded) != body.checked_ir_bytes ||
           checked_ir::compute_checked_body_hash_v1(decoded) !=
               body.semantic_hash)
@@ -53293,6 +53663,10 @@ static void append_abi_v10_occurrence_records(
     } catch (const std::invalid_argument&) {
       continue;
     }
+    const bool typed_enum_match_body = typed_enum_match_candidate &&
+        abi_v10_typed_enum_match_body_candidate(
+            summary, decoded, *program.type_context, program);
+    if (typed_enum_match_candidate && !typed_enum_match_body) continue;
     const bool deferred_member_effects =
         facts.member_requirements.size() == 1 &&
         abi_v10_deferred_member_effects(facts.observable_effects) &&
@@ -53427,6 +53801,7 @@ static void append_abi_v10_occurrence_records(
         !checked_numeric_early_return &&
         !checked_numeric_while &&
         !checked_assert &&
+        !typed_enum_match_body &&
         !checked_member_summary)
       continue;
     vector<abi_v10::SourceProvenance> provenance{callable_provenance};

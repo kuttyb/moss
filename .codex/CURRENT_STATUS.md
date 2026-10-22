@@ -11087,3 +11087,29 @@ reconstruction was added. Generic raise/recover remains ABI-v10-unavailable,
 and the source-backed/v9 oracle still exposes its `RAISE_REQUIRES_TYPED_VALUE`
 failure in the v9 consumer. The `packages/time` source error is unchanged.
 Functional pipeline and higher-order callback profiles remain open.
+
+## Phase 25.1 R3C — typed enum Match candidate awaiting architect review — 2026-10-22
+
+The common occurrence lowerer now consumes checker-owned Match and Case
+occurrences, including exact provider enum identity, canonical variant IDs,
+payload binding ordinals and TypeRefs, branch operation requirements, and
+return lineage. The source-free reader admits Enum and Match only behind a
+bounded profile. Import validates exhaustive coverage against the provider's
+sealed enum declaration, payload field types, the mixed `Int + T -> T`
+requirement, both reachable return paths, and pure effects before projection.
+Projection uses checked IR and provider declaration fields, then normal Moss
+checking revalidates the resulting AST. ABI-v9 keeps its existing path.
+
+The unchanged `generic-typed-enum-match` compatibility oracle passes
+source-backed, ABI-v9, and source-deleted ABI-v10 Debug and Release. The
+source-free harness deletes provider source, poisons `unwrap`'s legacy body,
+requires checked projection, executes Ready and Empty, and rejects eight
+internally rehashed mutations: variant identity, payload ordinal, payload
+TypeRef, branch identity, return lineage, return result TypeRef, provider enum
+identity, and numeric operator semantics. Existing R3B numeric, while, and
+Map mutation hostile harnesses pass; the R3A Range hostile harness passes;
+the full M2b2 source-free corpus passes. `make --jobs="$(nproc)" moss-dev`,
+`git diff --check`, and agent-feedback validation pass. Architect review is
+pending at the frozen candidate SHA. R3D pipeline, R3E callback, and R3F
+raise/recover remain unstarted; ABI-v9 `RAISE_REQUIRES_TYPED_VALUE` remains an
+open compatibility defect. Do not claim R3 complete.

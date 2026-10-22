@@ -112,9 +112,9 @@
       "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.unwrap(5, Service.Outcome.Ready(value: 7))\n  echo Service.unwrap(5, Service.Outcome.Empty)\n",
       "expected_output": "12\n5\n",
       "callable_name": "unwrap",
-      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "checked_body_status": "Exhaustive match is valid in an open generic body when the match value has a statically closed provider enum type; v10 support is classified separately.",
+      "poison_callables": ["unwrap"],
+      "provider_must_emit_v10": true,
+      "checked_body_status": "Source-backed, ABI-v9, and source-deleted ABI-v10 Debug/Release preserve the provider enum identity, exhaustive variant match, payload binding, mixed addition requirement, and both return paths.",
       "evidence": "docs/GENTLE_INTRODUCTION_TO_MOSS.md#closed-enums"
     },
     {

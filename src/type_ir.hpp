@@ -326,6 +326,17 @@ public:
     return t;
   }
 
+  static TypeRef enumeration_bound(NominalDeclarationRef declaration,
+                                   std::string name) {
+    if (!declaration || declaration->kind != DeclarationKind::Enum)
+      return nullptr;
+    auto t = std::make_shared<Type>();
+    t->kind = TypeKind::Enum;
+    t->declaration = std::move(declaration);
+    t->name = std::move(name);
+    return t;
+  }
+
   static TypeRef domain(std::string name) {
     auto t = std::make_shared<Type>();
     t->kind = TypeKind::Domain;

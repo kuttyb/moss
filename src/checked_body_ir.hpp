@@ -561,13 +561,15 @@ class H3BodyReader {
                bool allow_collection_loop_body = false,
                bool allow_vector_literal_relation = false,
                bool allow_member_call = false,
-               bool allow_generic_map_index_mutation = false)
+               bool allow_generic_map_index_mutation = false,
+               bool allow_typed_enum_match = false)
       : bytes_(bytes), context_(context), parameters_(parameters), result_(result),
         allow_empty_vector_return_(allow_empty_vector_return),
         allow_collection_loop_body_(allow_collection_loop_body),
         allow_vector_literal_relation_(allow_vector_literal_relation),
         allow_member_call_(allow_member_call),
-        allow_generic_map_index_mutation_(allow_generic_map_index_mutation) {}
+        allow_generic_map_index_mutation_(allow_generic_map_index_mutation),
+        allow_typed_enum_match_(allow_typed_enum_match) {}
 
   std::vector<Stmt> read() {
     constexpr std::string_view header = "moss-checked-body-v1\n";
@@ -622,6 +624,7 @@ class H3BodyReader {
   bool allow_vector_literal_relation_ = false;
   bool allow_member_call_ = false;
   bool allow_generic_map_index_mutation_ = false;
+  bool allow_typed_enum_match_ = false;
   static constexpr std::uint32_t kMaxBodyNodes = 4096;
   static constexpr std::uint32_t kMaxLocalCount = 256;
   static constexpr unsigned kMaxBlockDepth = 32;
@@ -717,6 +720,16 @@ class H3BodyReader {
         fail("checked body nominal template ID is unknown or mismatched");
       return Type::nominal_bound(declaration, declaration->program_name,
                                  std::move(fields));
+    }
+    if (kind == TypeKind::Enum && !identity.empty() && !type_count &&
+        !field_count) {
+      auto declaration = context_.find_id(identity);
+      if (!declaration || declaration->kind != DeclarationKind::Enum)
+        fail("checked body enum declaration identity is unknown or mismatched");
+      auto type = Type::enumeration_bound(declaration,
+                                          declaration->program_name);
+      if (!type) fail("checked body enum declaration is invalid");
+      return type;
     }
     fail("checked body type shape is unsupported");
   }
@@ -1286,8 +1299,61 @@ class H3BodyReader {
         scopes_.pop_back();
         break;
       }
-      case StmtKind::Match:
-        fail("checked body statement is outside the collection-loop subset");
+      case StmtKind::Match: {
+        if (!allow_typed_enum_match_)
+          fail("checked body match is outside the typed-enum subset");
+        statement.expr = read_expr();
+        const auto& subject = statement.expr->type;
+        if (!subject || subject->kind != TypeKind::Enum ||
+            !subject->declaration ||
+            subject->declaration->kind != DeclarationKind::Enum)
+          fail("checked body match subject is not a closed enum identity");
+        const auto case_count = number();
+        if (!case_count || case_count > 128)
+          fail("checked body match case count is invalid");
+        std::set<std::string> variant_ids;
+        std::set<std::string> variant_tags;
+        statement.match_cases.reserve(case_count);
+        for (std::uint32_t index = 0; index < case_count; ++index) {
+          CaseBranch branch;
+          branch.variant_tag = field();
+          branch.variant_id = field();
+          const std::string expected_id =
+              "nominal-enum-variant-v1:" + subject->declaration->id +
+              ":case:" + branch.variant_tag;
+          if (branch.variant_tag.empty() || branch.variant_id != expected_id ||
+              !variant_ids.insert(branch.variant_id).second ||
+              !variant_tags.insert(branch.variant_tag).second)
+            fail("checked body match variant identity is duplicate or mismatched");
+          const auto payload_count = number();
+          if (payload_count > 64)
+            fail("checked body match payload count exceeds bounds");
+          for (std::uint32_t payload = 0; payload < payload_count; ++payload)
+            branch.payload_ordinals.push_back(number());
+          const auto payload_type_count = number();
+          if (payload_type_count != payload_count)
+            fail("checked body match payload ordinal and type counts differ");
+          for (std::uint32_t payload = 0; payload < payload_type_count; ++payload)
+            branch.payload_types.push_back(read_type());
+          const auto body_count = number();
+          if (!body_count || body_count > kMaxBodyNodes - node_count_)
+            fail("checked body match arm is empty or exceeds bounds");
+          std::set<std::uint32_t> payload_ordinals;
+          scopes_.emplace_back();
+          for (std::size_t payload = 0; payload < branch.payload_ordinals.size();
+               ++payload) {
+            if (!payload_ordinals.insert(branch.payload_ordinals[payload]).second)
+              fail("checked body match payload ordinal is duplicated");
+            declare_loop_local(branch.payload_ordinals[payload],
+                               branch.payload_types[payload], false);
+          }
+          read_loop_block(body_count, depth + 1, branch.body);
+          for (const auto ordinal : scopes_.back()) locals_.erase(ordinal);
+          scopes_.pop_back();
+          statement.match_cases.push_back(std::move(branch));
+        }
+        break;
+      }
       default:
         fail("checked body statement kind is unsupported");
     }
@@ -1397,10 +1463,12 @@ inline std::vector<Stmt> decode_checked_body_v1(
     const std::vector<TypeRef>& parameters, const TypeRef& result,
     std::string_view expected_hash,
     bool allow_vector_literal_relation = false,
-    bool allow_generic_map_index_mutation = false) {
+    bool allow_generic_map_index_mutation = false,
+    bool allow_typed_enum_match = false) {
   H3BodyReader reader(bytes, context, parameters, result, true, true,
                       allow_vector_literal_relation, true,
-                      allow_generic_map_index_mutation);
+                      allow_generic_map_index_mutation,
+                      allow_typed_enum_match);
   auto statements = reader.read();
   if (compute_checked_body_hash_v1(statements) != expected_hash)
     throw std::invalid_argument("checked body semantic hash is mismatched");
