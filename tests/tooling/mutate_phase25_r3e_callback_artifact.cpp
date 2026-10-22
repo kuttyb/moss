@@ -84,6 +84,9 @@ int main(int argc, char** argv) {
     assert(summary.requirements.size() == 1 &&
            summary.requirements.front().result);
     summary.requirements.front().result->ordinal = 1;
+  } else if (mode == "callable-receiver-type") {
+    assert(summary.requirements.size() == 1);
+    summary.requirements.front().receiver.ordinal = 1;
   } else if (mode == "return-result") {
     assert(summary.result.kind == moss::abi_v10::WireTypeKind::BoundVar);
     summary.result.ordinal = summary.parameters.back().ordinal;
