@@ -34,4 +34,11 @@ except ValueError as error:
 else:
     raise AssertionError("duplicate IDs must fail inventory validation")
 
+assert ORACLE.unexpected_results([{"id": "expected-negative", "modes": {
+    "v10": {"debug": {"status": "valid-but-unavailable-v10"}}}}]) == []
+assert ORACLE.unexpected_results([{"id": "mismatch", "modes": {
+    "source_backed": {"debug": {"status": "output-mismatch"}}}}]) == [
+        {"id": "mismatch", "mode": "source_backed", "profile": "debug",
+         "status": "output-mismatch"}]
+
 print(f"PASS combined oracle inventory self-test ({len(cases)} unique cases)")

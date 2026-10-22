@@ -111,7 +111,9 @@ before projection.
 The oracle now gives the Map-parameter surface probe a distinct ID, records
 mode-specific expected source/v9/v10 outputs for negative controls, and checks
 combined inventories for duplicate IDs and missing source/v9 expectations.
-The self-test covers corpus plus surface probes and duplicate-ID rejection.
+The self-test covers corpus plus surface probes, duplicate-ID rejection, and
+both accepted fail-closed and unexpected-output result classification; the
+oracle exits nonzero for any unexpected build, output, or projection status.
 Run the complete R2 call/member/nominal matrix against one frozen candidate in
 native Debug and Release; retain ABI-v9 controls and exact diagnostics.
 

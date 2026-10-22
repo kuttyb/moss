@@ -10766,3 +10766,10 @@ unavailable. WP1/2/3 focused harnesses, checked-body IR tests, M2b2 source-free
 and hostile corpus, G2 ambiguity/conflict conformance, and invalid-member
 source diagnostics pass. These gates are being rerun after the WP4 harness
 checkpoint; final architect review and R2 candidate report remain outstanding.
+
+The architect's review of `c68db7fd` found a WP4 P2: the oracle recorded
+unexpected build/output/projection statuses but returned exit code 0, and the
+self-test did not cover that failure path. WP4 now maps any unexpected status
+to a nonzero oracle exit and self-tests both accepted fail-closed outcomes and
+an output mismatch. The final matrix is being rerun on the corrected checkpoint
+before the architect issues the final verdict.

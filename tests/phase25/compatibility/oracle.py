@@ -120,6 +120,19 @@ def validate_inventory(cases: list[dict]) -> None:
                     "mode-specific output for valid negative controls")
 
 
+def unexpected_results(results: list[dict]) -> list[dict]:
+    accepted = {"pass", "valid-but-unavailable-v10"}
+    failures = []
+    for result in results:
+        for mode, profiles in result["modes"].items():
+            for profile, details in profiles.items():
+                if details["status"] not in accepted:
+                    failures.append({"id": result["id"], "mode": mode,
+                                     "profile": profile,
+                                     "status": details["status"]})
+    return failures
+
+
 def combined_inventory(*, include_surface: bool = False,
                        include_sdk_bytes_range: bool = False) -> list[dict]:
     cases = list(json.loads(CORPUS.read_text(encoding="utf-8"))["cases"])
@@ -294,9 +307,11 @@ def main() -> int:
         for result in results:
             for mode, profiles in result["modes"].items():
                 statuses.setdefault(mode, []).extend(item["status"] for item in profiles.values())
+        failures = unexpected_results(results)
         print(json.dumps({"compiler_commit": payload["compiler_commit"], "cases": len(results), "mode_statuses": statuses,
+                          "unexpected_results": failures,
                           "output": str(args.output)}, indent=2))
-    return 0
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":
