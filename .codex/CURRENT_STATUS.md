@@ -11045,5 +11045,8 @@ generic `assert`, exception control flow, and higher-order callback evidence
 remain open. The R4 ABI-v9 raise/recover defect and `packages/time` source
 error remain unchanged.
 
-The mutable-local while checkpoint is awaiting an independent exact-candidate
-adversarial review before it is accepted.
+The independent adversarial architect reviewed exact candidate
+`d42b86af8eebdc52b92d7286d906ca7a61a8fad8` and returned scoped GO with no
+P0/P1/P2 findings. The reviewer independently ran the source-free ABI-v10
+Float case, the unsupported String specialization, all three resealed while
+mutations, and the M2b2 collection-loop corpus.
