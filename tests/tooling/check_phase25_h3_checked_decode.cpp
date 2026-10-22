@@ -88,5 +88,54 @@ int main() {
   assert(rejects(forged, result,
                  "body-semantic-v1:sha256:" +
                      moss::source_free_contract_sha256(forged)));
+
+  moss::checked_ir::Expr member_receiver;
+  member_receiver.kind = moss::checked_ir::ExprKind::Parameter;
+  member_receiver.type = var;
+  member_receiver.ordinal = 0;
+  moss::checked_ir::Expr member_call;
+  member_call.kind = moss::checked_ir::ExprKind::MemberCall;
+  member_call.type = moss::Type::primitive("int");
+  member_call.semantic_target_id =
+      std::string(moss::checked_ir::kMemberRequirementPrefix) +
+      "callable-v1:" + module + ":fn:size:member:0";
+  member_call.member_ordinal = 0;
+  member_call.member_name = "length";
+  member_call.operands = {member_receiver};
+  returned.expr = member_call;
+  returned.type = member_call.type;
+  const std::vector<moss::checked_ir::Stmt> member_statements{returned};
+  const auto member_bytes =
+      moss::checked_ir::encode_checked_body_v1(member_statements);
+  const auto member_hash =
+      moss::checked_ir::compute_checked_body_hash_v1(member_statements);
+  const auto member_decoded = moss::checked_ir::decode_checked_body_v1(
+      member_bytes, context, {var}, member_call.type, member_hash);
+  assert(member_decoded.size() == 1 && member_decoded.front().expr &&
+         member_decoded.front().expr->kind ==
+             moss::checked_ir::ExprKind::MemberCall &&
+         member_decoded.front().expr->semantic_target_id ==
+             member_call.semantic_target_id &&
+         member_decoded.front().expr->member_name == "length");
+  bool narrow_reader_rejected_member = false;
+  try {
+    (void)moss::checked_ir::decode_h3_checked_body_v1(
+        member_bytes, context, {var}, member_call.type, member_hash);
+  } catch (const std::invalid_argument&) {
+    narrow_reader_rejected_member = true;
+  }
+  assert(narrow_reader_rejected_member);
+  auto invalid_member = member_call;
+  invalid_member.semantic_target_id.clear();
+  auto invalid_member_statement = member_statements.front();
+  invalid_member_statement.expr = invalid_member;
+  bool encoder_rejected_unlinked_member = false;
+  try {
+    (void)moss::checked_ir::encode_checked_body_v1(
+        {invalid_member_statement});
+  } catch (const std::invalid_argument&) {
+    encoder_rejected_unlinked_member = true;
+  }
+  assert(encoder_rejected_unlinked_member);
   std::cout << "H3 checked body decoder: PASS\n";
 }

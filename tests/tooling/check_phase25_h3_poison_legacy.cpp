@@ -58,9 +58,19 @@ int main(int argc, char** argv) {
            callable == "nested_private_box" ||
            callable == "identity_chain" ||
            callable == "private_identity" ||
+           ((argc == 6 && std::string(argv[5]) == "member") &&
+            callable == "size") ||
            ((argc == 6 && std::string(argv[5]) == "call-chain") &&
             (callable == "middle" || callable == "relay")))) {
         ++removed;
+        continue;
+      }
+      if (argc == 6 && std::string(argv[5]) == "member" &&
+          callable == "size" &&
+          line.find("generic_constraint ") != std::string::npos) {
+        replacement +=
+            "  generic_constraint 1 \"value\" \"forged_member\" "
+            "\"_method_result:0\"\n";
         continue;
       }
       replacement += line + "\n";

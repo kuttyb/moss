@@ -10684,3 +10684,32 @@ The focused WP1 harness, checked-body IR tests, H3 source-free chain, and the
 M2b2 source-free/hostile corpus pass. WP1 does not close R2 overall. WP2 member
 requirements, WP3 independent nominal consumers, and WP4 acceptance harness
 repair/matrix remain open.
+
+## Phase 25.1 R2 WP2 — checked generic member requirements — 2026-10-22
+
+Common checked-body-v1 now represents the statically selected generic member
+call in `size(value): return value.length()`. ABI-v10 production retains the
+member requirement's checker-selected identity, receiver/result TypeRefs,
+access, and effect marker. The source-free importer ties the body target and
+ordinal to the imported provenance declaration and member requirement before
+projection; the bounded profile does not use provider `generic_stmt` or the
+legacy generic Method constraint to reconstruct the call.
+
+The dedicated harness builds the source-free provider and consumer in native
+Debug and Release, removes provider source, poisons the legacy records, requires
+checked-body projection traces, and observes output `3`. Hostile artifacts for
+member body identity, summary/provenance identity, receiver TypeRef, result
+TypeRef, access, effect, duplicated requirement, and requirement ordering all
+reject before projection. The summary/provenance mutation coherently updates
+the body target, name, ordinal, and hashes, so it exercises importer identity
+and order validation rather than only malformed-body rejection.
+
+The forced source build passed with the two existing TypeSolver Undo
+missing-initializer warnings. `check_phase25_r2_wp2_member.py`,
+`check_phase25_checked_body_ir.py`, the full M2b2 source-free/hostile corpus,
+and `git diff --check` pass. The existing adversarial architect reviewed the
+WP2 correction against base `4e4616477db8ed11e9113709dd66f25f5b3f3f2c` and
+issued scoped GO: the prior P2 hostile-coverage note is closed, with no new
+P0/P1/P2 findings. This accepts the WP2 slice only; WP3 independent nominal
+consumers and WP4 harness repair/final R2 matrix remain open. WP2 is ready to
+commit and push; R2 is not accepted.

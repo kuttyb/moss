@@ -82,13 +82,17 @@ enum class ExprKind : uint32_t {
   // Additive ABI-v10 checked-body-v1 tags. Keep existing values fixed: the
   // encoder's canonical bytes and hashes are part of the sealed interface.
   CollectionCount = 15,
-  Index = 16
+  Index = 16,
+  // Generic member calls link to a checker-owned summary requirement by ID.
+  MemberCall = 17
 };
 
 inline constexpr std::string_view kCollectionCountOperationId =
     "builtin:collection-count-v1";
 inline constexpr std::string_view kCollectionIndexOperationId =
     "builtin:index";
+inline constexpr std::string_view kMemberRequirementPrefix =
+    "member-requirement-v1:";
 
 enum class UnaryOp : uint32_t {
   Neg = 1,
@@ -353,6 +357,20 @@ inline void encode_checked_expr(std::string& out, const Expr& expr) {
       encode_checked_expr(out, expr.operands[1]);
       break;
 
+    case ExprKind::MemberCall:
+      if (expr.semantic_target_id.rfind(kMemberRequirementPrefix, 0) != 0 ||
+          expr.member_name.empty() || expr.operands.empty() ||
+          expr.member_ordinal == UINT32_MAX || !expr.literal_value.empty())
+        throw std::invalid_argument(
+            "invalid checked member call: requirement identity or shape is missing");
+      checked_body_field(out, expr.semantic_target_id);
+      checked_body_field(out, std::to_string(expr.member_ordinal));
+      checked_body_field(out, expr.member_name);
+      checked_body_field(out, std::to_string(expr.operands.size()));
+      for (const auto& child : expr.operands)
+        encode_checked_expr(out, child);
+      break;
+
     default:
       throw std::invalid_argument("unknown checked body expression kind");
   }
@@ -524,11 +542,13 @@ class H3BodyReader {
                const std::vector<TypeRef>& parameters, const TypeRef& result,
                bool allow_empty_vector_return = false,
                bool allow_collection_loop_body = false,
-               bool allow_vector_literal_relation = false)
+               bool allow_vector_literal_relation = false,
+               bool allow_member_call = false)
       : bytes_(bytes), context_(context), parameters_(parameters), result_(result),
         allow_empty_vector_return_(allow_empty_vector_return),
         allow_collection_loop_body_(allow_collection_loop_body),
-        allow_vector_literal_relation_(allow_vector_literal_relation) {}
+        allow_vector_literal_relation_(allow_vector_literal_relation),
+        allow_member_call_(allow_member_call) {}
 
   std::vector<Stmt> read() {
     constexpr std::string_view header = "moss-checked-body-v1\n";
@@ -581,6 +601,7 @@ class H3BodyReader {
   bool allow_empty_vector_return_ = false;
   bool allow_collection_loop_body_ = false;
   bool allow_vector_literal_relation_ = false;
+  bool allow_member_call_ = false;
   static constexpr std::uint32_t kMaxBodyNodes = 4096;
   static constexpr std::uint32_t kMaxLocalCount = 256;
   static constexpr unsigned kMaxBlockDepth = 32;
@@ -811,7 +832,7 @@ class H3BodyReader {
     if (++node_count_ > kMaxBodyNodes)
       fail("checked body node count exceeds bounds");
     const auto tag = number();
-    if (tag > static_cast<std::uint32_t>(ExprKind::Index))
+    if (tag > static_cast<std::uint32_t>(ExprKind::MemberCall))
       fail("checked body expression kind is unknown");
     Expr expression;
     expression.kind = static_cast<ExprKind>(tag);
@@ -986,6 +1007,19 @@ class H3BodyReader {
           container->type_args[1]->structurally_equal(*expression.type);
       if (!sequence_index && !map_index)
         fail("checked index receiver, index, or result TypeRef is mismatched");
+    } else if (expression.kind == ExprKind::MemberCall) {
+      if (!allow_member_call_)
+        fail("checked member call is outside the unified ABI-v10 reader");
+      expression.semantic_target_id = field();
+      expression.member_ordinal = number();
+      expression.member_name = field();
+      const auto count = number();
+      if (expression.semantic_target_id.rfind(kMemberRequirementPrefix, 0) != 0 ||
+          expression.member_name.empty() || expression.member_ordinal >= 4096 ||
+          count == 0 || count > 65)
+        fail("checked member call requirement identity or arity is invalid");
+      for (std::uint32_t index = 0; index < count; ++index)
+        expression.operands.push_back(read_expr(depth + 1));
     } else if (expression.kind == ExprKind::Call ||
                expression.kind == ExprKind::NominalConstruct) {
       expression.semantic_target_id = field();
@@ -1279,7 +1313,7 @@ inline std::vector<Stmt> decode_checked_body_v1(
     std::string_view expected_hash,
     bool allow_vector_literal_relation = false) {
   H3BodyReader reader(bytes, context, parameters, result, true, true,
-                      allow_vector_literal_relation);
+                      allow_vector_literal_relation, true);
   auto statements = reader.read();
   if (compute_checked_body_hash_v1(statements) != expected_hash)
     throw std::invalid_argument("checked body semantic hash is mismatched");
