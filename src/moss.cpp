@@ -50127,6 +50127,62 @@ static ParsedModuleUnit load_module_interface(
       current_trait = nullptr;
       continue;
     }
+    if (starts_with(line, "generic_error_enum ")) {
+      std::istringstream header(line.substr(19));
+      string name, declaration_id;
+      header >> std::quoted(name) >> std::quoted(declaration_id);
+      if (!header || name.empty() ||
+          declaration_id != moss::declaration_identity(
+              moss::DeclarationKind::Enum, unit.module_identity, name) ||
+          exported_declarations.count(name) ||
+          std::any_of(provider.enums.begin(), provider.enums.end(),
+              [&](const EnumType& candidate) {
+            return candidate.name == name;
+          }))
+        throw CompileError(0,
+            "invalid private generic error enum identity in module interface",
+            "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+      EnumType enumeration;
+      enumeration.name = name;
+      enumeration.exported = false;
+      enumeration.source_file = file.string();
+      provider.enums.push_back(std::move(enumeration));
+      current_enum = &provider.enums.back();
+      current = nullptr;
+      current_object = nullptr;
+      current_domain = nullptr;
+      current_trait = nullptr;
+      continue;
+    }
+    if (starts_with(line, "generic_error_case ") && current_enum &&
+        !current_enum->exported) {
+      std::istringstream fields(line.substr(19));
+      EnumCase item;
+      size_t field_count = 0;
+      fields >> std::quoted(item.name) >> field_count;
+      if (!fields || item.name.empty() || field_count > 64 ||
+          std::any_of(current_enum->cases.begin(), current_enum->cases.end(),
+              [&](const EnumCase& candidate) {
+            return candidate.name == item.name;
+          }))
+        throw CompileError(0,
+            "invalid private generic error enum case in module interface",
+            "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+      item.source_file = file.string();
+      for (size_t index = 0; index < field_count; ++index) {
+        Field field;
+        fields >> std::quoted(field.name) >> std::quoted(field.type);
+        if (!fields || field.name.empty() || field.type.empty())
+          throw CompileError(0,
+              "invalid private generic error enum payload in module interface",
+              "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+        field.source_file = file.string();
+        item.fields.push_back(std::move(field));
+      }
+      item.source_file = file.string();
+      current_enum->cases.push_back(std::move(item));
+      continue;
+    }
     if (starts_with(line, "enum_case ") && current_enum) {
       std::istringstream fields(line.substr(10));
       EnumCase item;
@@ -54674,6 +54730,59 @@ static vector<std::filesystem::path> write_module_interfaces(
       }
       out << "\n";
       interface_contents[module] << "\n";
+    }
+  }
+  // ABI-v9 generic bodies can raise provider-private enum variants. Preserve
+  // only the closed type identity needed to check those exported generic
+  // bodies; the declarations remain private in the importing module's export
+  // set. This repairs the v9 source-free typing path without exposing a Moss
+  // type or changing the source language contract.
+  if (!staged_abi_v10()) {
+    for (const auto& enumeration : program.enums) {
+      if (enumeration.exported || enumeration.source_file == "<moss-std>")
+        continue;
+      const string module = module_name_from_symbol(enumeration.name);
+      if (module.empty() || program.external_modules.count(module)) continue;
+      const bool required = std::any_of(program.functions.begin(),
+          program.functions.end(), [&](const Function& function) {
+        if (!function.exported || !function.generic ||
+            module_name_from_symbol(function.name) != module)
+          return false;
+        return std::any_of(function.body.begin(), function.body.end(),
+            [&](const Stmt& statement) {
+          return std::any_of(statement.exceptional_alternatives.begin(),
+              statement.exceptional_alternatives.end(),
+              [&](const RaisedIdentity& raised) {
+            if (raised.kind != RaisedIdentityKind::EnumVariant) return false;
+            const string type = canonical_type_name(raised.type);
+            const string candidate = canonical_type_name(enumeration.name);
+            if (type == candidate) return true;
+            const auto separator = type.rfind("::");
+            return separator != string::npos &&
+                type.substr(separator + 2) ==
+                    enumeration.name.substr(module.size() + 2);
+          });
+        });
+      });
+      if (!required) continue;
+      const auto declaration = program.type_context
+          ? program.type_context->find(enumeration.name) : nullptr;
+      if (!declaration || declaration->kind != moss::DeclarationKind::Enum)
+        throw ProjectError("MOSS_INTERFACE_ERROR",
+            "private raised enum '" + enumeration.name +
+                "' has no interned declaration identity");
+      auto& out = contents[module];
+      out << "generic_error_enum "
+          << std::quoted(enumeration.name.substr(module.size() + 2)) << " "
+          << std::quoted(declaration->id) << "\n";
+      for (const auto& item : enumeration.cases) {
+        out << "  generic_error_case " << std::quoted(item.name) << " "
+            << item.fields.size();
+        for (const auto& field : item.fields)
+          out << " " << std::quoted(field.name) << " "
+              << std::quoted(field.type);
+        out << "\n";
+      }
     }
   }
   for (const auto& trait : program.traits) {

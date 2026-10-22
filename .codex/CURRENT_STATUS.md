@@ -11141,3 +11141,48 @@ enum declaration and canonical variant metadata, so the importing checker
 cannot type that constructor before recovery analysis. This is the earliest
 missing authority found; no implementation has started. Higher-order callback
 result/effect and ABI-v10 exceptional-flow representations remain uninvestigated.
+
+## Phase 25.1 R3D–R3F continuation — working tree evidence — 2026-10-22
+
+The R3D callback checker prototype now unifies the deferred Map placeholder
+TypeRef with the source Vector element TypeRef and retains the callback's
+checked operation and output TypeRef. It remains fail-closed and incomplete:
+the occurrence validator, common checked-body lowerer, bounded reader, and
+summary/importer admission still accept only Count. The architect reviewed the
+earlier prototype and returned NO-GO because the input relation was missing;
+that relation is now present in the worktree but has not been independently
+re-reviewed. The unchanged pipeline oracle remains source/v9-valid and v10
+unavailable. Do not treat this as R3D acceptance.
+
+The returned-callback oracle passes source-backed and ABI-v9 Debug/Release;
+ABI-v10 remains unavailable at provider publication with
+`SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED`. Checked call result and callable
+argument/result relations are present; the missing authority is a callback
+effect row in the open callable summary/ABI. No R3E implementation has started.
+
+The ABI-v9 raise/recover defect is now corrected in the worktree. The checker
+already annotates a caught `Raise` with its exact `exceptional_alternatives`,
+but the exported function's outward effect set is empty after recovery and
+cannot identify the private enum needed to recheck the generic body. ABI-v9
+`.mossi` now carries the referenced private enum identity and canonical cases
+without adding it to the public export set. The new focused Debug/Release
+source-free regression passes; an internally rehashed forged private enum ID
+is rejected by the provider/library binding before projection. The unchanged
+raise/recover oracle now passes source-backed and ABI-v9 in both profiles while
+ABI-v10 remains unavailable as expected. This is only the v9 compatibility
+repair; checked ABI-v10 exceptional-flow lowering is not implemented.
+
+Current focused validation against rebuilt `build/compiler/moss-dev`:
+R3C Match source-free Debug/Release and all eight rehashed hostile attacks pass;
+R3B numeric source-free Debug/Release and five hostile attacks pass; R3F
+source/v9 oracle and private-enum hostile regression pass. The focused generic
+arithmetic requirements harness currently fails at its existing assertion
+that `20 + x * 2` must have no checked body. It failed the same way with
+`src/moss.cpp` and `src/checked_body_ir.hpp` restored to committed HEAD, so this
+is not attributed to the R3D prototype. Investigate the stale expectation or
+its baseline before integrating; preserve the failing result accurately.
+
+The R3D/R3F source changes and tests remain uncommitted pending exact-SHA
+architect review. R3C is already independently accepted and pushed at
+`b9706849`. R3D checked-body/importer support, R3E callback effects, and R3F
+ABI-v10 exceptional control flow remain open. Do not claim R3 complete.
