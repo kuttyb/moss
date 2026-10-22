@@ -10487,3 +10487,24 @@ SHA. Next: commit and push this candidate, request exact-SHA review, address any
 P0/P1/P2 findings, and record the verdict. This is not an R1 GO or Phase 25.1
 closeout; L7 retains final R1 acceptance authority. No merge or ABI-default
 change has been made.
+
+## Adversarial P1 correction — rehashed shadow return substitution — 2026-10-21
+
+The exact-SHA architect review of a36e9ec02b901f0e92cdd6d5d9e1e80e395760dd
+found and reproduced a P1: changing the inner shadowed return to the still-valid
+outer local ordinal, then recomputing checked-body and summary hashes, was
+accepted by source-free checked-body projection. With all generic_stmt records
+removed, the consumer returned 10 where the inner branch should return 11.
+The existing ordinal-999 mutation did not cover this valid-identity substitution.
+
+The conditional arithmetic lineage validator now tracks the requirement
+dependencies executed along each branch path and requires every return's
+resolved dependencies to match that path. Added
+shadow-outer-local-ordinal, which performs the same valid outer-binding
+substitution and rehashes the evidence; the M2b2 consumer rejects it before
+projection. Focused generic arithmetic, D2 codec, checked-body IR, and the full
+M2b2 source-free/hostile corpus all pass with the correction. Feedback and diff
+checks pass.
+
+The original candidate review is NO-GO with this P1. The correction is not yet
+committed or pushed and awaits architect re-review on the revised exact SHA.

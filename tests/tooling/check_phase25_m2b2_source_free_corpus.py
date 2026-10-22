@@ -384,6 +384,9 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                 negative_cases["shadow-local-ordinal"] = (
                     "SOURCE_FREE_CHECKED_BODY_INVALID",
                 )
+                negative_cases["shadow-outer-local-ordinal"] = (
+                    "SOURCE_FREE_CHECKED_BODY_INVALID",
+                )
             if case["id"] == "generic-range-iteration":
                 negative_cases.update({
                     "for-iterator-receiver": (
@@ -468,12 +471,12 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                                     mutation_id,
                                     "hostile vector body was projected",
                                     reject_output)
-                    if mode.startswith("for-") or mode == "shadow-local-ordinal":
+                    if mode.startswith("for-") or mode.startswith("shadow-"):
                         assert "MOSS_CHECKED_BODY_PROJECTED|" not in reject_output, (
                             mutation_id,
                             "hostile checked body projected before rejection",
                             reject_output)
-                    if mode == "shadow-local-ordinal":
+                    if mode.startswith("shadow-"):
                         assert ("MOSS_CHECKED_BODY_PROJECTED|" not in
                                 reject_output), (
                                     mutation_id,

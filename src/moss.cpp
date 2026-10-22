@@ -3346,9 +3346,11 @@ static bool abi_v10_checked_conditional_arithmetic_lineage_candidate(
   bool saw_conditional = false;
   std::function<bool(const vector<checked_ir::Stmt>&,
                      std::map<std::uint32_t, std::set<std::uint32_t>>&,
+                     std::set<std::uint32_t>&,
                      unsigned)> check_block;
   check_block = [&](const vector<checked_ir::Stmt>& block,
                     std::map<std::uint32_t, std::set<std::uint32_t>>& locals,
+                    std::set<std::uint32_t>& executed_requirements,
                     unsigned depth) {
     if (depth > 32) return false;
     for (const auto& statement : block) {
@@ -3359,9 +3361,11 @@ static bool abi_v10_checked_conditional_arithmetic_lineage_candidate(
               !statement.type->structurally_equal(*statement.expr->type) ||
               locals.count(statement.local_ordinal)) return false;
           if (auto dependencies = expression_dependencies(
-                  *statement.expr, locals, 0))
+                  *statement.expr, locals, 0)) {
+            executed_requirements.insert(dependencies->begin(),
+                                         dependencies->end());
             locals.emplace(statement.local_ordinal, std::move(*dependencies));
-          else
+          } else
             return false;
           break;
         case checked_ir::StmtKind::Assign: {
@@ -3370,6 +3374,8 @@ static bool abi_v10_checked_conditional_arithmetic_lineage_candidate(
           auto dependencies = expression_dependencies(
               *statement.expr, locals, 0);
           if (!dependencies) return false;
+          executed_requirements.insert(dependencies->begin(),
+                                       dependencies->end());
           locals[statement.local_ordinal] = std::move(*dependencies);
           break;
         }
@@ -3383,9 +3389,16 @@ static bool abi_v10_checked_conditional_arithmetic_lineage_candidate(
           saw_conditional = true;
           auto then_locals = locals;
           auto else_locals = locals;
-          if (!check_block(statement.then_branch, then_locals, depth + 1) ||
-              !check_block(statement.else_branch, else_locals, depth + 1))
+          auto then_requirements = executed_requirements;
+          auto else_requirements = executed_requirements;
+          if (!check_block(statement.then_branch, then_locals,
+                           then_requirements, depth + 1) ||
+              !check_block(statement.else_branch, else_locals,
+                           else_requirements, depth + 1))
             return false;
+          executed_requirements = std::move(then_requirements);
+          executed_requirements.insert(else_requirements.begin(),
+                                       else_requirements.end());
           for (auto& [ordinal, dependencies] : locals) {
             const auto then_value = then_locals.find(ordinal);
             const auto else_value = else_locals.find(ordinal);
@@ -3397,10 +3410,14 @@ static bool abi_v10_checked_conditional_arithmetic_lineage_candidate(
           }
           break;
         }
-        case checked_ir::StmtKind::Return:
-          if (!statement.expr || !expression_dependencies(
-                  *statement.expr, locals, 0)) return false;
+        case checked_ir::StmtKind::Return: {
+          if (!statement.expr) return false;
+          const auto dependencies = expression_dependencies(
+              *statement.expr, locals, 0);
+          if (!dependencies || *dependencies != executed_requirements)
+            return false;
           break;
+        }
         case checked_ir::StmtKind::Pass:
           break;
         default:
@@ -3410,7 +3427,8 @@ static bool abi_v10_checked_conditional_arithmetic_lineage_candidate(
     return true;
   };
   std::map<std::uint32_t, std::set<std::uint32_t>> locals;
-  if (!check_block(statements, locals, 0) || !saw_conditional ||
+  std::set<std::uint32_t> executed_requirements;
+  if (!check_block(statements, locals, executed_requirements, 0) || !saw_conditional ||
       operation_counts.size() != 2 || operation_counts[0] != 1 ||
       operation_counts[1] != 1)
     return false;

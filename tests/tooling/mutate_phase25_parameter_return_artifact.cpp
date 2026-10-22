@@ -241,7 +241,8 @@ int main(int argc, char** argv) {
     requirement.parent = requirement.dependencies.empty()
         ? 0 : requirement.dependencies.front();
     replace_summary();
-  } else if (mode == "shadow-local-ordinal") {
+  } else if (mode == "shadow-local-ordinal" ||
+             mode == "shadow-outer-local-ordinal") {
     assert(summary.parameters.size() == 3 &&
            summary.parameters[0].kind == moss::abi_v10::WireTypeKind::BoundVar &&
            summary.parameters[1].kind == moss::abi_v10::WireTypeKind::Primitive &&
@@ -255,6 +256,9 @@ int main(int argc, char** argv) {
     auto statements = moss::checked_ir::decode_checked_body_v1(
         body.checked_ir_bytes, context, {variable, boolean, boolean}, variable,
         body.semantic_hash);
+    assert(!statements.empty() &&
+           statements.front().kind == moss::checked_ir::StmtKind::Let);
+    const auto outer_ordinal = statements.front().local_ordinal;
     bool changed = false;
     std::function<void(std::vector<moss::checked_ir::Stmt>&)> substitute =
         [&](std::vector<moss::checked_ir::Stmt>& block) {
@@ -262,7 +266,8 @@ int main(int argc, char** argv) {
         if (!changed && statement.kind == moss::checked_ir::StmtKind::Return &&
             statement.expr && statement.expr->kind ==
                 moss::checked_ir::ExprKind::LocalRead) {
-          statement.expr->ordinal = 999;
+          statement.expr->ordinal = mode == "shadow-local-ordinal"
+              ? 999 : outer_ordinal;
           changed = true;
         }
         substitute(statement.then_branch);
