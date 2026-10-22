@@ -76,6 +76,14 @@ int main(int argc, char** argv) {
         moss::checked_ir::compute_checked_body_hash_v1(statements);
     summary.body_semantic_hash = body.semantic_hash;
     *body_position = moss::abi_v10::checked_body_record(body);
+  } else if (mode == "callable-argument-type") {
+    assert(summary.requirements.size() == 1 &&
+           summary.requirements.front().arguments.size() == 1);
+    summary.requirements.front().arguments.front().ordinal = 0;
+  } else if (mode == "callable-result-type") {
+    assert(summary.requirements.size() == 1 &&
+           summary.requirements.front().result);
+    summary.requirements.front().result->ordinal = 1;
   } else if (mode == "return-result") {
     assert(summary.result.kind == moss::abi_v10::WireTypeKind::BoundVar);
     summary.result.ordinal = summary.parameters.back().ordinal;

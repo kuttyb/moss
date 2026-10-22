@@ -60,7 +60,8 @@ shutil.rmtree(provider / "src")
 assert not (provider / "src").exists()
 
 for mode in ("missing-effect-dependency", "wrong-callback-identity",
-             "callback-argument", "return-result", "effect-weakening"):
+             "callback-argument", "callable-argument-type",
+             "callable-result-type", "return-result", "effect-weakening"):
     artifacts = work / f"artifacts-{mode}"
     shutil.copytree(artifact_base, artifacts)
     run([str(mutator), str(artifacts / "Service.mossi"),
