@@ -11246,3 +11246,22 @@ resolve the open callback formal until concrete specialization. The control is
 valid under Moss's static-callable contract, so R3E requires an additive
 checked representation and concrete specialization of that effect
 dependency. No source-free callback effect support is claimed yet.
+
+## Phase 25.1 R3E — callback effect dependency prototype — WIP checkpoint — 2026-10-22
+
+The first implementation slice adds a version-4 ABI-v10 summary field for
+canonical 1-based effect dependencies on `static callable` requirements,
+checker-side capture for the exact returned-callback shape, and bounded
+Callable requirement admission. ABI-v10 summary readers still accept versions
+2 and 3. The proposed closure is callback effects plus direct enclosing
+callable effects; concrete specialization and effect merging are not wired yet.
+The common producer/importer does not yet encode, validate, or consume the new
+relation, and the callback checked-body validator is currently unused.
+
+`make --jobs="$(nproc)" moss-dev` succeeds on this worktree. It reports the two
+pre-existing TypeSolver missing-initializer warnings and one new unused
+`abi_v10_returned_callback_body_candidate` warning. No R3E focused harness,
+source-free execution, hostile mutation, oracle update, or architect acceptance
+review exists yet. This pushed checkpoint is for architecture feedback only,
+not R3E acceptance. R3C, R3D, and the R3F ABI-v9 repair remain completed on the
+reviewed/pushed checkpoints documented above; R3F ABI-v10 remains open.

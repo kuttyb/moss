@@ -594,7 +594,8 @@ class H3BodyReader {
                bool allow_member_call = false,
                bool allow_generic_map_index_mutation = false,
                bool allow_typed_enum_match = false,
-               bool allow_pipeline_map = false)
+               bool allow_pipeline_map = false,
+               bool allow_returned_callback = false)
       : bytes_(bytes), context_(context), parameters_(parameters), result_(result),
         allow_empty_vector_return_(allow_empty_vector_return),
         allow_collection_loop_body_(allow_collection_loop_body),
@@ -602,7 +603,8 @@ class H3BodyReader {
         allow_member_call_(allow_member_call),
         allow_generic_map_index_mutation_(allow_generic_map_index_mutation),
         allow_typed_enum_match_(allow_typed_enum_match),
-        allow_pipeline_map_(allow_pipeline_map) {}
+        allow_pipeline_map_(allow_pipeline_map),
+        allow_returned_callback_(allow_returned_callback) {}
 
   std::vector<Stmt> read() {
     constexpr std::string_view header = "moss-checked-body-v1\n";
@@ -659,6 +661,7 @@ class H3BodyReader {
   bool allow_generic_map_index_mutation_ = false;
   bool allow_typed_enum_match_ = false;
   bool allow_pipeline_map_ = false;
+  bool allow_returned_callback_ = false;
   static constexpr std::uint32_t kMaxBodyNodes = 4096;
   static constexpr std::uint32_t kMaxLocalCount = 256;
   static constexpr unsigned kMaxBlockDepth = 32;
@@ -1183,7 +1186,9 @@ class H3BodyReader {
         const bool builtin_assert =
             expression.semantic_target_id == "builtin:assert";
         if (!builtin_assert &&
-            expression.semantic_target_id.rfind("callable-v1:", 0) != 0)
+            expression.semantic_target_id.rfind("callable-v1:", 0) != 0 &&
+            !(allow_returned_callback_ &&
+              expression.semantic_target_id == "parameter:0"))
           fail("checked body call target is not a callable ID");
         for (std::uint32_t index = 0; index < count; ++index)
           expression.operands.push_back(read_expr(depth + 1));

@@ -158,6 +158,10 @@ struct OpenCallableSummaryFacts {
   vector<OperationFact> operations;
   vector<MemberDispatchRequirement> member_requirements;
   vector<string> semantic_dependencies;
+  // Open callable effects may depend on an exact statically selected callback
+  // requirement. These IDs remain checker-owned until ABI encoding assigns
+  // canonical requirement ordinals.
+  vector<string> effect_requirement_ids;
   vector<AccessMode> parameter_access;
   ObservableEffects observable_effects;
   RequirementOrigin origin;

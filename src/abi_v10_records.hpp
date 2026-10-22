@@ -230,6 +230,9 @@ struct Summary {
   WireType result;
   std::vector<Access> parameter_access;
   std::vector<Requirement> requirements;
+  // 1-based indices into requirements whose selected static callable effects
+  // are included in this summary's observable effect row.
+  std::vector<std::uint32_t> effect_dependencies;
   std::vector<std::pair<std::string, std::string>> dependencies;
   std::uint32_t observable_effect_bits = 0;
   std::vector<std::string> observable_effect_tags;
@@ -240,7 +243,8 @@ struct Summary {
 inline bool typed_summary_payload(std::string_view payload) {
   return !payload.empty() &&
       (static_cast<unsigned char>(payload.front()) == 2 ||
-       static_cast<unsigned char>(payload.front()) == 3);
+       static_cast<unsigned char>(payload.front()) == 3 ||
+       static_cast<unsigned char>(payload.front()) == 4);
 }
 
 inline bool summary_ordinals_dense(const Summary& summary) {
@@ -365,10 +369,12 @@ inline std::string summary_payload(const Summary& summary,
               summary.parameters.size() <= 256 &&
               summary.parameters.size() == summary.parameter_access.size() &&
               summary.requirements.size() <= 4096 &&
+              summary.effect_dependencies.size() <= 4096 &&
               summary.dependencies.size() <= 4096 &&
               checked_body_hash_valid(summary.body_semantic_hash) &&
               !summary.provenance_id.empty() &&
-              summary_ordinals_dense(summary) && (version == 2 || version == 3),
+              summary_ordinals_dense(summary) &&
+              (version == 2 || version == 3 || version == 4),
           "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 summary shape is invalid");
   WireWriter writer;
   writer.byte(version);
@@ -401,6 +407,26 @@ inline std::string summary_payload(const Summary& summary,
             "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 requirement DAG is invalid");
     write_requirement(writer, requirement, summary.variable_count, version);
   }
+  if (version >= 4) {
+    std::uint32_t previous_effect_dependency = 0;
+    for (const auto dependency : summary.effect_dependencies) {
+      require(dependency > previous_effect_dependency &&
+                  dependency <= summary.requirements.size() &&
+                  summary.requirements[dependency - 1].operation ==
+                      "static callable",
+              "SOURCE_FREE_SUMMARY_INVALID",
+              "ABI-v10 effect dependency does not name a canonical Callable requirement");
+      previous_effect_dependency = dependency;
+    }
+    writer.number(static_cast<std::uint32_t>(
+        summary.effect_dependencies.size()));
+    for (const auto dependency : summary.effect_dependencies)
+      writer.number(dependency);
+  } else {
+    require(summary.effect_dependencies.empty(),
+            "SOURCE_FREE_SUMMARY_INVALID",
+            "legacy ABI-v10 summary version cannot encode effect dependencies");
+  }
   writer.number(static_cast<std::uint32_t>(summary.dependencies.size()));
   std::string previous;
   for (const auto& dependency : summary.dependencies) {
@@ -422,7 +448,8 @@ inline std::string summary_payload(const Summary& summary,
 inline Summary read_summary(std::string_view payload) {
   WireReader reader(payload);
   const auto version = reader.byte();
-  require(version == 2 || version == 3, "SOURCE_FREE_SUMMARY_INVALID",
+  require(version == 2 || version == 3 || version == 4,
+          "SOURCE_FREE_SUMMARY_INVALID",
           "ABI-v10 summary record version is unsupported");
   Summary summary;
   summary.callable_id = reader.string();
@@ -444,6 +471,14 @@ inline Summary read_summary(std::string_view payload) {
     summary.requirements.push_back(
         read_requirement(reader, summary.variable_count, version));
   }
+  if (version >= 4) {
+    const auto effect_dependencies = reader.number();
+    require(effect_dependencies <= requirements,
+            "SOURCE_FREE_SUMMARY_INVALID",
+            "ABI-v10 effect dependency set exceeds its requirements");
+    for (std::uint32_t i = 0; i < effect_dependencies; ++i)
+      summary.effect_dependencies.push_back(reader.number());
+  }
   const auto dependencies = reader.number();
   require(dependencies <= 4096, "SOURCE_FREE_SUMMARY_INVALID",
           "ABI-v10 summary has too many dependencies");
@@ -459,7 +494,7 @@ inline Summary read_summary(std::string_view payload) {
 }
 
 inline Record summary_record(const Summary& summary) {
-  auto payload = summary_payload(summary);
+  auto payload = summary_payload(summary, 4);
   return {hash("moss-abi-v10-open-summary", payload), std::move(payload)};
 }
 

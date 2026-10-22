@@ -3022,6 +3022,8 @@ static bool abi_v10_generic_member_summary_candidate(
     const abi_v10::Summary& summary);
 static bool abi_v10_checked_pipeline_map_summary_candidate(
     const abi_v10::Summary& summary);
+static bool abi_v10_returned_callback_summary_candidate(
+    const abi_v10::Summary& summary);
 
 static vector<moss::Requirement> imported_abi_v10_requirements(
     const abi_v10::Summary& summary, const Function& function,
@@ -3058,6 +3060,8 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
       abi_v10_typed_enum_match_summary_candidate(summary);
   const bool pipeline_map =
       abi_v10_checked_pipeline_map_summary_candidate(summary);
+  const bool returned_callback =
+      abi_v10_returned_callback_summary_candidate(summary);
   const bool member_summary =
       abi_v10_generic_member_summary_candidate(summary);
   if (member_summary) {
@@ -3066,12 +3070,14 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
   } else if (!vector_literal && !branch_arithmetic && !checked_numeric &&
       !checked_numeric_while && !checked_assert && !generic_for &&
       !generic_map_mutation && !typed_enum_match && !pipeline_map &&
+      !returned_callback &&
       summary.requirements.size() != 2)
     invalid("checked ABI-v10 typed requirement set is incomplete");
   if (!member_summary && !collection_loop && !vector_literal &&
       !branch_arithmetic && !checked_numeric && !checked_numeric_while &&
       !checked_assert && !generic_for &&
-      !generic_map_mutation && !typed_enum_match && !pipeline_map) {
+      !generic_map_mutation && !typed_enum_match && !pipeline_map &&
+      !returned_callback) {
     if (summary.requirements[0].operation != "operator:*" ||
         summary.requirements[1].operation != "operator:+" ||
         summary.requirements[0].parent != 0 ||
@@ -3208,7 +3214,10 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
 
     moss::Requirement requirement;
     requirement.id = origin.declaration_id;
-    requirement.kind = generic_for ||
+    requirement.kind = returned_callback &&
+            wire.operation == "static callable"
+        ? moss::RequirementKind::Callable
+        : generic_for ||
             (pipeline_map && wire.operation == "functional source")
         ? moss::RequirementKind::Iterate
         : vector_literal
@@ -3423,6 +3432,63 @@ static bool abi_v10_checked_pipeline_map_summary_candidate(
       is_int(operation.arguments.front()) &&
       operation.argument_access == vector<abi_v10::Access>{abi_v10::Access::Read} &&
       operation.result && is_var_ordinal(*operation.result, 1);
+}
+
+// A returned formal callback is closed only when the checked callable
+// requirement carries its argument/result relation and the summary's effect
+// row explicitly depends on that exact requirement.
+static bool abi_v10_returned_callback_summary_candidate(
+    const abi_v10::Summary& summary) {
+  const auto is_var = [](const abi_v10::WireType& type,
+                         std::uint32_t ordinal) {
+    return type.kind == abi_v10::WireTypeKind::BoundVar &&
+        type.ordinal == ordinal && type.arguments.empty();
+  };
+  if (summary.variable_count != 2 || summary.parameters.size() != 2 ||
+      !is_var(summary.parameters[0], 0) ||
+      !is_var(summary.parameters[1], 1) || !is_var(summary.result, 1) ||
+      summary.parameter_access != vector<abi_v10::Access>{
+          abi_v10::Access::Read, abi_v10::Access::Read} ||
+      summary.requirements.size() != 1 ||
+      summary.effect_dependencies != vector<std::uint32_t>{1} ||
+      !summary.dependencies.empty() || summary.observable_effect_bits != 0 ||
+      !summary.observable_effect_tags.empty())
+    return false;
+  const auto& callable = summary.requirements.front();
+  return callable.operation == "static callable" && callable.parent == 0 &&
+      callable.dependencies.empty() &&
+      callable.access == abi_v10::Access::Read &&
+      abi_v10::type_bytes(callable.receiver, summary.variable_count) ==
+          abi_v10::type_bytes(summary.parameters[0], summary.variable_count) &&
+      callable.arguments.size() == 1 && is_var(callable.arguments.front(), 1) &&
+      callable.argument_access == vector<abi_v10::Access>{
+          abi_v10::Access::Read} && callable.result &&
+      is_var(*callable.result, 1);
+}
+
+static bool abi_v10_returned_callback_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements) {
+  if (!abi_v10_returned_callback_summary_candidate(summary) ||
+      statements.size() != 1 ||
+      statements.front().kind != checked_ir::StmtKind::Return ||
+      !statements.front().expr)
+    return false;
+  const auto& returned = *statements.front().expr;
+  if (returned.kind != checked_ir::ExprKind::Call ||
+      returned.semantic_target_id != "parameter:0" ||
+      returned.operands.size() != 1 ||
+      returned.operands.front().kind != checked_ir::ExprKind::Parameter ||
+      returned.operands.front().ordinal != 1 || !returned.type ||
+      returned.type->kind != moss::TypeKind::InferenceVar ||
+      returned.type->var_id != moss::TypeVarId{0, 0, 1} ||
+      !returned.operands.front().type ||
+      returned.operands.front().type->kind != moss::TypeKind::InferenceVar ||
+      returned.operands.front().type->var_id != moss::TypeVarId{0, 0, 1} ||
+      !statements.front().type ||
+      !statements.front().type->structurally_equal(*returned.type))
+    return false;
+  return true;
 }
 
 static bool abi_v10_checked_pipeline_map_body_candidate(
@@ -6976,25 +7042,6 @@ class Checker {
     }
     { CompilerStageTimer timer("effects"); infer_effects(); infer_observable_effects(); }
     validate_imported_h3_summary_closure(p_);
-    // ABI-v10 has no effect-polymorphic callable summary. A concrete static
-    // specialization can resolve the selected callback's effects, but an
-    // exported open callback cannot promise checked effects to a source-free
-    // consumer. Keep the incomplete summary inspectable and reject export.
-    if (staged_abi_v10() && p_.explicit_module)
-      for (const auto& function : p_.functions) {
-        if (!function.exported || compiled_interface_file(function.source_file) ||
-            !std::any_of(function.constraints.begin(), function.constraints.end(),
-                         [](const Constraint& constraint) {
-              return constraint.kind == ConstraintKind::Callable;
-            })) continue;
-        if (!function.open_summary ||
-            !function.open_summary->scheme_complete ||
-            function.observable_effects.unresolved)
-          err(function.source_file, function.line,
-              "exported callable '" + function.name +
-                  "' has unresolved callback effects in its open ABI-v10 summary",
-              "SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED");
-      }
     for (auto& function : p_.functions)
       if (function.open_summary) {
         function.open_summary->observable_effects = function.observable_effects;
@@ -7023,6 +7070,22 @@ class Checker {
     refresh_open_pipeline_map_summaries_from_checked_types();
     refresh_open_map_mutation_summaries_from_checked_types();
     refresh_open_for_summaries_from_checked_types();
+    refresh_open_callback_effect_dependencies_from_checked_types();
+    if (staged_abi_v10() && p_.explicit_module)
+      for (const auto& function : p_.functions) {
+        if (!function.exported || compiled_interface_file(function.source_file) ||
+            !std::any_of(function.constraints.begin(), function.constraints.end(),
+                         [](const Constraint& constraint) {
+              return constraint.kind == ConstraintKind::Callable;
+            })) continue;
+        if (!function.open_summary ||
+            !function.open_summary->scheme_complete ||
+            function.open_summary->observable_effects.unresolved)
+          err(function.source_file, function.line,
+              "exported callable '" + function.name +
+                  "' has unresolved callback effects in its open ABI-v10 summary",
+              "SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED");
+      }
     for (const auto& d : p_.domains) check_domain(d);
     if (p_.main) check_main(*p_.main);
     check_test_and_benchmark_declarations();
@@ -12791,6 +12854,76 @@ class Checker {
           summary.parameter_access.size() == 1 &&
           !summary.observable_effects.unresolved;
       summary.complete = false;
+    }
+  }
+
+  // Close only the exact returned-callback control whose checked result
+  // relation is already retained by R2. The callback's unresolved effects
+  // become an explicit row dependency on its unique Callable requirement.
+  void refresh_open_callback_effect_dependencies_from_checked_types() {
+    for (auto& function : p_.functions) {
+      if (!function.exported || !function.open_summary ||
+          !function.observable_effects.unresolved ||
+          function.body.size() != 1 || function.params.size() != 2 ||
+          function.body.front().kind != Stmt::Kind::Return)
+        continue;
+      const auto& summary = *function.open_summary;
+      if (summary.parameter_types.size() != 2 || !summary.result_type ||
+          summary.effect_requirement_ids.size() != 0)
+        continue;
+      const auto retained = checked_body_states_.find(&function.body);
+      if (retained == checked_body_states_.end() || !retained->second)
+        continue;
+      auto& state = *retained->second;
+      resolve_callable_occurrence_bindings(function, state);
+      const auto statement_id = state.statement_occurrence_ids.find(
+          &function.body.front());
+      if (statement_id == state.statement_occurrence_ids.end()) continue;
+      const auto root = state.expression_root_slots.find(
+          {statement_id->second, "return-value"});
+      if (root == state.expression_root_slots.end() ||
+          root->second >= state.expression_occurrences.size())
+        continue;
+      const auto& call = state.expression_occurrences[root->second];
+      if (call.kind != BodyTypeState::ExpressionOccurrence::Kind::Call ||
+          call.semantic_target_id != "parameter:0" ||
+          call.operation_id != "call:" + function.params[0].name ||
+          call.source_operands != vector<string>{function.params[1].name} ||
+          !call.callable_result_relation ||
+          !call.callable_result_relation->structurally_equal(
+              *summary.result_type) ||
+          call.linked_constraints.size() != 1 ||
+          call.linked_constraints.front().kind != ConstraintKind::Callable ||
+          call.linked_constraints.front().subject != function.params[0].name ||
+          call.linked_constraints.front().detail != "static callable" ||
+          call.linked_constraints.front().arity != 1 ||
+          call.linked_constraints.front().arguments !=
+              vector<string>{function.params[1].name} ||
+          !state.expression_occurrence_ledger_complete)
+        continue;
+      const auto callable = std::find_if(summary.requirements.begin(),
+          summary.requirements.end(), [&](const moss::Requirement& requirement) {
+        return requirement.kind == moss::RequirementKind::Callable &&
+            requirement.target_id == "static callable" &&
+            requirement.subject &&
+            requirement.subject->structurally_equal(
+                *summary.parameter_types[0]) &&
+            requirement.arguments.size() == 1 &&
+            requirement.arguments.front() &&
+            requirement.arguments.front()->structurally_equal(
+                *summary.parameter_types[1]) && requirement.result &&
+            (*requirement.result)->structurally_equal(*summary.result_type);
+      });
+      if (callable == summary.requirements.end() ||
+          std::count_if(summary.requirements.begin(), summary.requirements.end(),
+              [&](const moss::Requirement& requirement) {
+        return requirement.kind == moss::RequirementKind::Callable &&
+            requirement.target_id == "static callable";
+      }) != 1)
+        continue;
+      function.open_summary->effect_requirement_ids = {callable->id};
+      function.open_summary->observable_effects.unresolved = false;
+      function.open_summary->scheme_complete = true;
     }
   }
 
@@ -54010,6 +54143,15 @@ abi_v10_checked_requirements(
         requirement.arguments.empty() &&
         requirement.argument_access.empty() && requirement.result &&
         requirement.access == moss::AccessMode::Read;
+    const bool supported_static_callable = requirement.kind ==
+            moss::RequirementKind::Callable &&
+        requirement.target_id == "static callable" &&
+        requirement.access == moss::AccessMode::Read &&
+        !requirement.arguments.empty() &&
+        requirement.arguments.size() <= 2 && requirement.result &&
+        *requirement.result &&
+        requirement.argument_access == vector<moss::AccessMode>(
+            requirement.arguments.size(), moss::AccessMode::Read);
     const auto vector_result = requirement.result && *requirement.result &&
         (*requirement.result)->kind == moss::TypeKind::Builtin &&
         (*requirement.result)->name == "vector" &&
@@ -54033,7 +54175,7 @@ abi_v10_checked_requirements(
         });
     if ((!supported_index && !supported_index_write_value &&
          !supported_operator && !supported_iterate &&
-         !supported_vector_relation) ||
+         !supported_vector_relation && !supported_static_callable) ||
         requirement.id.empty() || requirement.origin.module_id.empty() ||
         requirement.origin.enclosing_callable.empty() ||
         requirement.origin.call_expression_id.empty() ||
