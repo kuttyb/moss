@@ -105,6 +105,7 @@ TOOLING_TESTS: list[tuple] = [
     ("check_phase25_checked_body_ir", [sys.executable, "tests/tooling/check_phase25_checked_body_ir.py", "{compiler}"]),
     ("check_phase25_r2_wp1_call_chain", [sys.executable, "tests/tooling/check_phase25_r2_wp1_call_chain.py", "{compiler}"]),
     ("check_phase25_r2_wp2_member", [sys.executable, "tests/tooling/check_phase25_r2_wp2_member.py", "{compiler}"]),
+    ("check_phase25_r2_wp3_nominal", [sys.executable, "tests/tooling/check_phase25_r2_wp3_nominal.py", "{compiler}"]),
     ("check_runtime", [sys.executable, "tests/phase25/runtime/check_runtime.py"]),
     ("check_shared_string_linkage", [sys.executable, "tests/phase25/runtime/check_shared_string_linkage.py"]),
     ("sdk_foundations", [sys.executable, "sdk/foundations/acceptance/run_all.py"]),

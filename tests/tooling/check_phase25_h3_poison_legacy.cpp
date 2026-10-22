@@ -58,6 +58,8 @@ int main(int argc, char** argv) {
            callable == "nested_private_box" ||
            callable == "identity_chain" ||
            callable == "private_identity" ||
+           ((argc == 6 && std::string(argv[5]) == "nominal") &&
+            (callable == "fresh" || callable == "unbox")) ||
            ((argc == 6 && std::string(argv[5]) == "member") &&
             callable == "size") ||
            ((argc == 6 && std::string(argv[5]) == "call-chain") &&

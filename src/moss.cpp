@@ -47798,6 +47798,64 @@ static string verified_abi_v10_interface_records(
   return records;
 }
 
+static void validate_abi_v10_nominal_declarations(
+    const abi_v10::SealedInterface& sealed, const string& module_identity,
+    const Program& provider) {
+  vector<const abi_v10::Record*> records;
+  auto collect = [&](const vector<abi_v10::Record>& section) {
+    for (const auto& record : section)
+      if (abi_v10::nominal_template_id_valid(record.id) &&
+          !record.payload.empty() && record.payload.front() == 1)
+        records.push_back(&record);
+  };
+  collect(sealed.value.binary_contract);
+  collect(sealed.value.semantic_contract);
+  collect(sealed.value.private_semantic_dependencies);
+
+  for (const auto* record : records) {
+    const auto nominal = abi_v10::read_template(record->payload);
+    auto invalid = [&](const string& detail) {
+      throw CompileError(0,
+          "ABI-v10 nominal template disagrees with its provider declaration: " +
+              detail,
+          "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+    };
+    if (nominal.module_id != module_identity ||
+        nominal.template_id != record->id)
+      invalid("provider module or declaration identity is mismatched");
+    auto object = std::find_if(provider.objects.begin(), provider.objects.end(),
+        [&](const ObjectType& candidate) {
+      return candidate.name == nominal.declaration_name;
+    });
+    if (object == provider.objects.end() || !object->exported ||
+        !object->methods.empty())
+      invalid("template has no matching exported record declaration");
+    if (object->fields.size() != nominal.fields.size() ||
+        nominal.variable_count != object->fields.size())
+      invalid("field count or open type-slot count is mismatched");
+    for (std::size_t index = 0; index < object->fields.size(); ++index) {
+      const auto& declared = object->fields[index];
+      const auto& checked = nominal.fields[index];
+      if (declared.name != checked.name ||
+          declared.exported != checked.exported || !declared.inferred ||
+          checked.type.kind != abi_v10::WireTypeKind::BoundVar ||
+          checked.type.ordinal != index || !checked.type.arguments.empty() ||
+          checked.provenance_id != nominal.provenance_id)
+        invalid("field identity, visibility, TypeRef, or provenance is mismatched");
+    }
+    auto provenance = std::find_if(sealed.value.provenance.begin(),
+        sealed.value.provenance.end(), [&](const abi_v10::Record& candidate) {
+      return candidate.id == nominal.provenance_id;
+    });
+    if (provenance == sealed.value.provenance.end())
+      invalid("nominal declaration has no provider provenance");
+    const auto origin = abi_v10::read_provenance(provenance->payload);
+    if (origin.module_id != module_identity ||
+        origin.declaration_id != nominal.template_id)
+      invalid("provider provenance does not name this declaration");
+  }
+}
+
 static ParsedModuleUnit load_module_interface(
     const std::filesystem::path& file) {
   std::ifstream input(file, std::ios::binary);
@@ -49387,6 +49445,9 @@ static ParsedModuleUnit load_module_interface(
       throw CompileError(0, "checked ABI-v10 body has no imported callable",
                          "SOURCE_FREE_SUMMARY_INVALID");
   }
+  if (v10_interface)
+    validate_abi_v10_nominal_declarations(
+        sealed, unit.module_identity, provider);
   unit.files.push_back({std::move(provider), file.string()});
   return unit;
 }

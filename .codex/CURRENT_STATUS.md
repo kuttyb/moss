@@ -10713,3 +10713,31 @@ issued scoped GO: the prior P2 hostile-coverage note is closed, with no new
 P0/P1/P2 findings. This accepts the WP2 slice only; WP3 independent nominal
 consumers and WP4 harness repair/final R2 matrix remain open. WP2 is ready to
 commit and push; R2 is not accepted.
+
+## Phase 25.1 R2 WP3 — independent provider-owned nominal consumers — 2026-10-22
+
+Two independently compiled consumers now specialize the same source-deleted
+ABI-v10 provider record as `Box[Int]` and `Box[String]`. Both retain the same
+provider module and declaration identity, produce distinct nominal instance
+keys, project the checked `fresh` and `unbox` bodies, and execute with their
+expected outputs after the provider's legacy bodies are poisoned.
+
+The importer now checks each sealed nominal template against the parsed
+provider declaration before returning the provider for body projection. It
+validates selected provider/module and declaration identity, record
+visibility, field count/order/name/visibility, each open field slot's
+operand-free BoundVar TypeRef, and provenance links. Hostile nominal identity,
+field ordinal/type, template field TypeRef, visibility, missing dependency,
+and dependency hash mutations all reject before the affected body is
+projected. The visibility and template-TypeRef mutations update the nominal
+representation hash and reseal dependent body hashes, so they reach the
+declaration consistency check.
+
+Validation passed: forced `moss-dev` build (two existing TypeSolver Undo
+missing-initializer warnings), `check_phase25_r2_wp3_nominal.py` (two positive
+consumers and seven hostile mutations), `check_phase25_h3_direct_records.py`,
+feedback validation, and `git diff --check`. The adversarial architect reviewed
+the working diff based on `29f2cad2fac95a5f3d088ce18c59b4183832e009` and issued
+WP3 GO with no P0/P1/P2 findings; review was code/harness inspection and did not
+rerun the reported gates. WP3 is ready for its own commit and push. WP4 and the
+final R2 matrix remain open; R2 is not accepted.
