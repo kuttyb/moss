@@ -57,7 +57,9 @@ int main(int argc, char** argv) {
           (callable == "fresh" || callable == "private_box" ||
            callable == "nested_private_box" ||
            callable == "identity_chain" ||
-           callable == "private_identity")) {
+           callable == "private_identity" ||
+           ((argc == 6 && std::string(argv[5]) == "call-chain") &&
+            (callable == "middle" || callable == "relay")))) {
         ++removed;
         continue;
       }

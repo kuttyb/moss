@@ -10655,3 +10655,32 @@ L7 authorized R2 after R1.1. Begin WP1, then WP2/WP3, then WP4 per
 `docs/phase25/PHASE_25_1_R2_EXECUTION_PLAN.md`; keep one compiler writer and the
 existing architect review cadence. R1.1 does not close the R3 ABI-v10
 `bytes.from_range` objective. No R2 package is complete yet.
+
+## Phase 25.1 R2 WP1 — three-hop open-result call closure — 2026-10-22
+
+WP1's three-function zero-argument open-Vector chain passes source-free ABI-v10
+in native Debug and Release after provider source deletion and poisoning all
+three selected callables' legacy `generic_stmt` rows. Two independent calls
+specialize to `Vector[Int]` and `Vector[Bool]`; checked projection traces name
+the exact `fresh`, `middle`, and `relay` callable IDs. ABI-v9 source-free
+controls pass in both profiles. This positive demonstrates that the existing
+checker-owned summary/body dependency closure was sufficient for this bounded
+chain, so WP1 required durable acceptance and hostile tests rather than a new
+producer architecture.
+
+Hostile consumer artifacts reject forged intermediate callable identity and
+body result TypeRef, missing intermediate/deep summary or body, missing
+dependency, dependency hash substitution, and duplicate callable summary. The
+identity/result/dependency mutations recompute the middle body hash and reseal
+the parent relay summary/body dependency so each reaches the intended importer
+validation. Duplicate body, duplicate dependency, and empty dependency hash are
+rejected by canonical ABI-v10 writer validation and are reported separately,
+not claimed as consumer-import cases.
+
+The existing adversarial architect reviewed the exact WP1 diff against
+`f81c222c492f5b54e9f71ff920e20d5b731e9828`. The initial P2 on stale parent
+hashes was fixed; exact-diff re-review issued scoped GO with no open P0/P1/P2.
+The focused WP1 harness, checked-body IR tests, H3 source-free chain, and the
+M2b2 source-free/hostile corpus pass. WP1 does not close R2 overall. WP2 member
+requirements, WP3 independent nominal consumers, and WP4 acceptance harness
+repair/matrix remain open.

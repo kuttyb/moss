@@ -3,7 +3,8 @@
 **Planning baseline:** `d289024c7c578de26ba670d4bd477ba90609c23e`
 **State:** L7 authorized execution after R1.1. Planning review GO at
 `6cd9cf7f66b4a26b235c313153eba3019eac1910`. R1.1 is complete at
-`ec0f64d5`; R2 implementation is now authorized and proceeds WP1 through WP4.
+`ec0f64d5`; WP1 is complete with scoped implementation GO. WP2 through WP4
+remain open and authorized.
 
 ## R2 objectives from the established plan
 
@@ -48,7 +49,7 @@ flowchart TD
   C --> D
 ```
 
-### WP1 — Checker authority for call results and closure
+### WP1 — Checker authority for call results and closure — complete
 
 Extend the existing checked occurrence/summary facts only where the current
 R2 cases expose a gap. Link each call result to its exact selected callable,
@@ -63,6 +64,15 @@ calls. Preserve the already passing `fresh` and one-hop `relay` profiles.
 callable identity, duplicate body record, result TypeRef substitution,
 reordered/forged arguments, missing/duplicate dependency, altered dependency
 hash, and stale provenance. Each must reject before projection.
+
+**Implementation evidence:** `tests/tooling/check_phase25_r2_wp1_call_chain.py`
+builds a zero-argument `relay -> middle -> fresh` provider, deletes source,
+poisons all three legacy bodies, and verifies independent `Vector[Int]` and
+`Vector[Bool]` source-free Debug/Release consumers plus ABI-v9 controls. Hostile
+tests reseal the parent relay dependency when mutating intermediate body
+identity or result type. The exact WP1 diff received architect scoped GO with
+no P0/P1/P2. Canonical writer rejection cases are labeled separately from
+consumer importer rejection.
 
 ### WP2 — Common call/member representation and imported proof
 
@@ -130,4 +140,4 @@ No language-design decision is currently required. Preserve the bounded
 checker-owned contracts and fail-closed admission. If a required relation
 cannot fit an append-only checked-body-v1 node or the change would alter
 ABI-v10 meaning, stop and request L7 direction before implementation. This
-proposal does not authorize coding; wait for L7 approval after the plan review.
+work continues under L7's R2 execution authorization. Do not start R3.
