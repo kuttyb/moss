@@ -10739,9 +10739,8 @@ consumers and seven hostile mutations), `check_phase25_h3_direct_records.py`,
 feedback validation, and `git diff --check`. The adversarial architect reviewed
 the working diff based on `29f2cad2fac95a5f3d088ce18c59b4183832e009` and issued
 WP3 GO with no P0/P1/P2 findings; review was code/harness inspection and did not
-rerun the reported gates. WP3 is ready for its own commit and push. WP4 and the
 rerun the reported gates. WP3 was subsequently committed and pushed as
-`b410596e`. WP4 and the final R2 matrix remain open; R2 is not accepted.
+`b410596e`. WP4 and final R2 validation remained open at that checkpoint.
 
 ## Phase 25.1 R2 WP4 — compatibility oracle reliability and matrix — 2026-10-22
 
@@ -10757,15 +10756,20 @@ explicitly pass source-backed and ABI-v9: callback result prints `31` and
 `moss`, and non-loop Count prints `2`. Their ABI-v10 provider failures remain
 expected and are reported as `valid-but-unavailable-v10`.
 
-Initial WP4 acceptance evidence on compiler candidate `b410596ea3657b1f62a73c8cb0c0951858e9a18f`:
-the six-profile R2/R0 oracle slice passes source-backed and ABI-v9 in Debug and
-Release; ABI-v10 passes empty Vector results, zero-argument relay, String
-member length, provider-owned nominal construction, and local Map mutation in
-both profiles. The Map-parameter surface probe remains intentionally
-unavailable. WP1/2/3 focused harnesses, checked-body IR tests, M2b2 source-free
-and hostile corpus, G2 ambiguity/conflict conformance, and invalid-member
-source diagnostics pass. These gates are being rerun after the WP4 harness
-checkpoint; final architect review and R2 candidate report remain outstanding.
+On final candidate `2f1647b7636766e6c898550bba2437f7b2d69a29`, the six-case
+R2/R0 oracle slice passes source-backed and ABI-v9 in Debug and Release.
+ABI-v10 passes empty Vector results, zero-argument relay, String member length,
+provider-owned nominal construction, and local Map mutation in both profiles.
+The Map-parameter surface probe remains intentionally unavailable. Callback
+result and non-loop Count controls pass source-backed and ABI-v9, while their
+ABI-v10 provider/consumer rejection stages match their declared expectations.
+Both matrix reports have `unexpected_results: []`.
+
+WP1/2/3 focused harnesses, checked-body IR, M2b2 source-free/hostile corpus,
+G2 ambiguity/conflict conformance (11/11), invalid-member/source diagnostics,
+H3 direct records, feedback validation, and `git diff --check` passed at
+`c68db7fd`; no compiler source changed after that candidate. `make --jobs="$(nproc)" moss-dev` succeeds. The oracle self-test and final matrices pass
+again at `2f1647b7` after its WP4-only classification changes.
 
 The architect's review of `c68db7fd` found a WP4 P2: the oracle recorded
 unexpected build/output/projection statuses but returned exit code 0, and the
@@ -10776,4 +10780,58 @@ provider error could be classified as an expected unavailable capability even
 when the case requires successful provider emission. `failure_status` now
 rejects provider-stage failures for `provider_must_emit_v10` cases, with
 self-tests for both required-emission and expected-provider-rejection controls.
-The matrix is being rerun on the corrected checkpoint before final review.
+The architect reviewed exact HEAD `2f1647b7636766e6c898550bba2437f7b2d69a29`,
+confirmed both P2s closed, and issued bounded R2 implementation GO with no
+remaining P0/P1/P2 findings. The review inspected the changes and relied on the
+reported post-commit matrices and compiler gates; it did not rerun them. This is
+an implementation-level R2 candidate, not L7 R2 acceptance. R3–R5 and the
+default ABI decision remain open.
+
+## Phase 25.1 R2 candidate closeout summary — 2026-10-22
+
+R1.1 source-backed borrowed-Range restoration is committed at
+`ec0f64d5c5c2f3173c79632cd6d1dc007e6f71fc`; the architect issued scoped GO on
+the correction diff based on `ae24c960915021d924deb0c75db4030d7983b8b9`.
+Debug/Release `bytes.from_range` source-backed builds print `329`; source-free
+ABI-v10 Range remains deliberately deferred to R3.
+
+R2 work packages and pushed commits:
+
+- WP1 three-hop call-result/dependency closure: `4e461647`; hostile identity,
+  result TypeRef, missing/duplicate summary/body/dependency, and hash coverage.
+- WP2 selected member requirements: `29f2cad2`; source-free String `length()`
+  Debug/Release and eight member/receiver/result/access/effect/duplicate/order
+  mutations.
+- WP3 independent nominal consumers: `b410596e`; source-deleted Box[Int] and
+  Box[String] consumers share provider identity while independently
+  specializing; seven identity/field/visibility/provenance/dependency attacks
+  reject before projection.
+- WP4 oracle repair and closeout: `c68db7fd`, `f4c7276e`, `2f1647b7`; unique
+  combined probe IDs, explicit source/v9 control outputs, fail-status handling,
+  and enforcement of required provider-emission stage.
+
+Previously unavailable generic String `length()` now passes source-free
+ABI-v10 Debug and Release. The independent nominal consumer profile passes
+both concrete specializations. The final six-case oracle matrix has 12/12
+source-backed and 12/12 ABI-v9 pass results; ABI-v10 passes 10/12 profiles
+(empty Vector result, zero-argument relay, member length, nominal constructor,
+and local Map mutation in Debug/Release), with the Map-parameter probe
+intentionally unavailable in both profiles. Callback and non-loop Count
+controls pass source-backed and ABI-v9 and retain their expected ABI-v10
+fail-closed stages. All matrix reports have zero unexpected results.
+
+Compiler integration gates pass: `make --jobs="$(nproc)" moss-dev`, WP1-WP3
+focused harnesses, full M2b2 source-free/hostile corpus, checked-body IR, G2
+conformance (11/11), invalid-source diagnostics, H3 direct-record test, and
+feedback validation. The architect's final bounded verdict is GO at exact
+compiler candidate `2f1647b7636766e6c898550bba2437f7b2d69a29`, with no open
+P0/P1/P2 findings. L7 owns final R2 acceptance. Do not merge, change ABI-v9
+default, or start R3 before L7's closeout decision.
+
+Recommended first R3 work package, pending L7 authorization: take the actual
+`bytes.from_range`/`range_copy` workload through checker-owned Iterate binder
+and effect/ownership facts, common checked-body emission and reading, imported
+dependency validation, then source-deleted Debug/Release execution with legacy
+poisoning and hostile iterator/binder/dependency/borrow checks. This is the
+smallest direct continuation of the R1.1 compatibility repair; no R3 code has
+started.

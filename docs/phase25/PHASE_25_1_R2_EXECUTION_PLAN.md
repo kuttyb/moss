@@ -3,9 +3,14 @@
 **Planning baseline:** `d289024c7c578de26ba670d4bd477ba90609c23e`
 **State:** L7 authorized execution after R1.1. Planning review GO at
 `6cd9cf7f66b4a26b235c313153eba3019eac1910`. R1.1 is complete at
-`ec0f64d5`; WP1 through WP3 have scoped implementation GO and pushed
-checkpoints. WP4 harness repair is implemented; final candidate matrix and
-architect review remain before an R2 candidate report.
+`ec0f64d5`; WP1 through WP4 have pushed implementation checkpoints. The final
+bounded R2 matrix passed on `2f1647b7`, and the architect issued implementation
+GO on that exact HEAD. L7 R2 closeout remains pending.
+
+The coordinator's detailed result and remaining R3–R5 gaps are recorded in
+`.codex/CURRENT_STATUS.md` and `PHASE_25_1_REMAINING_WORK.md`. This is an R2
+implementation candidate only; do not infer R2 acceptance from the architect's
+GO.
 
 ## R2 objectives from the established plan
 
@@ -116,14 +121,23 @@ both accepted fail-closed and unexpected-output result classification; the
 oracle exits nonzero for any unexpected build, output, or projection status.
 Provider-stage rejection is unexpected when a case requires a v10 provider
 artifact; expected provider-stage rejection remains valid for other controls.
-Run the complete R2 call/member/nominal matrix against one frozen candidate in
-native Debug and Release; retain ABI-v9 controls and exact diagnostics.
+The bounded R2 call/member/nominal matrix ran against frozen candidate
+`2f1647b7` in native Debug and Release with ABI-v9 controls. Source-backed and
+ABI-v9 passed all six selected matrix cases. ABI-v10 passed empty Vector
+result, zero-argument relay, String member, nominal constructor, and local Map
+profiles in both modes; the Map-parameter surface profile remained correctly
+classified as unavailable. Callback-result and non-loop Count controls pass
+source-backed/ABI-v9, with expected v10 provider/consumer rejection stages.
+All matrix reports had zero unexpected results.
 
 **Completion tests:** all positives have removed provider source, poisoned
 selected legacy records, and a checked projection trace. All hostile mutations
 reject before projection. Open-result ambiguity, type conflict, and unsupported
 member cases retain their source-level diagnostics. No per-shape opt-in is
-needed beyond `MOSS_STAGED_ABI=v10`.
+needed beyond `MOSS_STAGED_ABI=v10`. WP1-WP3 harnesses, M2b2, checked-body IR,
+G2 conformance (11/11), source diagnostics, and the final architect review are
+complete. The architect recorded GO with no open P0/P1/P2 findings at
+`2f1647b7`; L7 retains final R2 acceptance authority.
 
 ## Sequencing and ownership
 
