@@ -11072,10 +11072,18 @@ profile and retains the known ABI-v9 `generic-raise-recover` consumer failure
 green in all three modes. The R3B numeric/while/Map harnesses, R3A Range suite,
 generic arithmetic requirement check, checked-body IR suite, and full M2B2
 source-free hostile corpus pass. The earlier numeric and While exact-SHA
-architect reviews remain recorded above; this assertion follow-on is pending
-review.
+architect reviews remain recorded above. The architect reviewed exact
+assertion candidate `33d83305b8de49efaa1aaeeb044ab7cc1c0c17a7` and returned
+scoped GO with no P0/P1/P2 findings. The reviewer independently ran the
+assertion source-free Debug/Release harness and all four resealed hostile
+mutations, then reran the negative-Float magnitude case and all five numeric
+hostile mutations.
 
 Typed enum Match remains source/v9-valid but ABI-v10-unavailable because its
-checker inspection exposes no checked body or operation requirements. The
-generic raise/recover v9 consumer failure and `packages/time` source error are
-unchanged. Functional pipeline and higher-order callback profiles remain open.
+live checker inspection reports `body_semantic_status=unsupported_checked_body_form`,
+no checked body, and zero operation requirements. The numeric relation path
+does not apply to this missing Match occurrence body; no source-shaped
+reconstruction was added. Generic raise/recover remains ABI-v10-unavailable,
+and the source-backed/v9 oracle still exposes its `RAISE_REQUIRES_TYPED_VALUE`
+failure in the v9 consumer. The `packages/time` source error is unchanged.
+Functional pipeline and higher-order callback profiles remain open.
