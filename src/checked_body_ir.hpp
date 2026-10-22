@@ -87,7 +87,9 @@ enum class ExprKind : uint32_t {
   MemberCall = 17,
   // Statically checked mutable Vector.push, retained as an explicit checked
   // operation so the reader can validate its WRITE target and element type.
-  CollectionPush = 18
+  CollectionPush = 18,
+  PipelineElement = 19,
+  PipelineMap = 20
 };
 
 inline constexpr std::string_view kCollectionCountOperationId =
@@ -145,6 +147,8 @@ struct Expr {
   // For Call: callable ID ("callable-v1:...")
   // For Message: handler callable ID ("callable-v1:...")
   std::string semantic_target_id;
+  TypeRef pipeline_input_type;
+  std::string pipeline_placeholder_identity;
   uint32_t member_ordinal = 0;
   std::string member_name;
   std::string target_domain;
@@ -388,6 +392,33 @@ inline void encode_checked_expr(std::string& out, const Expr& expr) {
         encode_checked_expr(out, child);
       break;
 
+    case ExprKind::PipelineElement:
+      if (expr.semantic_target_id.rfind("pipeline-placeholder:", 0) != 0 ||
+          !expr.operands.empty() || !expr.literal_value.empty() ||
+          expr.ordinal != 0 || expr.pipeline_input_type ||
+          !expr.pipeline_placeholder_identity.empty())
+        throw std::invalid_argument("invalid checked pipeline placeholder");
+      checked_body_field(out, expr.semantic_target_id);
+      break;
+
+    case ExprKind::PipelineMap:
+      if (expr.semantic_target_id != "functional:Map" || expr.ordinal != 0 ||
+          expr.operands.size() != 2 || !expr.pipeline_input_type ||
+          !expr.type || expr.type->kind != TypeKind::Builtin ||
+          expr.type->name != "vector" || expr.type->type_args.size() != 1 ||
+          !expr.operands[1].type ||
+          !expr.type->type_args.front()->structurally_equal(
+              *expr.operands[1].type) || !expr.literal_value.empty() ||
+          expr.pipeline_placeholder_identity.empty())
+        throw std::invalid_argument("invalid checked functional Map node");
+      checked_body_field(out, expr.semantic_target_id);
+      checked_body_field(out, std::to_string(expr.ordinal));
+      encode_checked_body_type_v1(out, expr.pipeline_input_type);
+      checked_body_field(out, expr.pipeline_placeholder_identity);
+      for (const auto& child : expr.operands)
+        encode_checked_expr(out, child);
+      break;
+
     default:
       throw std::invalid_argument("unknown checked body expression kind");
   }
@@ -562,14 +593,16 @@ class H3BodyReader {
                bool allow_vector_literal_relation = false,
                bool allow_member_call = false,
                bool allow_generic_map_index_mutation = false,
-               bool allow_typed_enum_match = false)
+               bool allow_typed_enum_match = false,
+               bool allow_pipeline_map = false)
       : bytes_(bytes), context_(context), parameters_(parameters), result_(result),
         allow_empty_vector_return_(allow_empty_vector_return),
         allow_collection_loop_body_(allow_collection_loop_body),
         allow_vector_literal_relation_(allow_vector_literal_relation),
         allow_member_call_(allow_member_call),
         allow_generic_map_index_mutation_(allow_generic_map_index_mutation),
-        allow_typed_enum_match_(allow_typed_enum_match) {}
+        allow_typed_enum_match_(allow_typed_enum_match),
+        allow_pipeline_map_(allow_pipeline_map) {}
 
   std::vector<Stmt> read() {
     constexpr std::string_view header = "moss-checked-body-v1\n";
@@ -625,6 +658,7 @@ class H3BodyReader {
   bool allow_member_call_ = false;
   bool allow_generic_map_index_mutation_ = false;
   bool allow_typed_enum_match_ = false;
+  bool allow_pipeline_map_ = false;
   static constexpr std::uint32_t kMaxBodyNodes = 4096;
   static constexpr std::uint32_t kMaxLocalCount = 256;
   static constexpr unsigned kMaxBlockDepth = 32;
@@ -769,6 +803,18 @@ class H3BodyReader {
            (left_generic || right_generic);
   }
 
+  bool checked_pipeline_multiply_types_match(
+      const TypeRef& result, const TypeRef& left, const TypeRef& right) const {
+    if (!allow_pipeline_map_ || !result || !left || !right ||
+        result->kind != TypeKind::InferenceVar ||
+        result->var_id.session_id != 0 || result->var_id.owner_id != 0)
+      return false;
+    const bool left_element = left->structurally_equal(*result);
+    const bool right_element = right->structurally_equal(*result);
+    return (left_element && is_integer_type(right)) ||
+        (right_element && is_integer_type(left));
+  }
+
   static bool is_canonical_integer(std::string_view value) {
     if (value.empty()) return false;
     std::size_t first_digit = value.front() == '-' ? 1 : 0;
@@ -866,7 +912,7 @@ class H3BodyReader {
     if (++node_count_ > kMaxBodyNodes)
       fail("checked body node count exceeds bounds");
     const auto tag = number();
-    if (tag > static_cast<std::uint32_t>(ExprKind::CollectionPush))
+    if (tag > static_cast<std::uint32_t>(ExprKind::PipelineMap))
       fail("checked body expression kind is unknown");
     Expr expression;
     expression.kind = static_cast<ExprKind>(tag);
@@ -875,6 +921,9 @@ class H3BodyReader {
          expression.kind == ExprKind::CollectionPush) &&
         !allow_collection_loop_body_)
       fail("checked body collection operation is outside the H3 subset");
+    if ((expression.kind == ExprKind::PipelineElement ||
+         expression.kind == ExprKind::PipelineMap) && !allow_pipeline_map_)
+      fail("checked functional Map is outside the admitted checked-body subset");
     expression.type = read_type();
     if (expression.kind == ExprKind::IntegerLiteral) {
       expression.literal_value = field();
@@ -923,7 +972,10 @@ class H3BodyReader {
       const auto& left = expression.operands[0].type;
       const auto& right = expression.operands[1].type;
       if (is_integer_arithmetic(expression.binary_op)) {
-        if (!arithmetic_types_match(expression.type, left, right))
+        if (!arithmetic_types_match(expression.type, left, right) &&
+            !(expression.binary_op == BinaryOp::Mul &&
+              checked_pipeline_multiply_types_match(
+                  expression.type, left, right)))
           fail("checked body binary operand type is mismatched");
       } else if (allow_collection_loop_body_ &&
                  (expression.binary_op == BinaryOp::Equal ||
@@ -1083,6 +1135,45 @@ class H3BodyReader {
           receiver->name != "vector" || receiver->type_args.size() != 1 ||
           !receiver->type_args.front()->structurally_equal(*value))
         fail("checked Vector.push receiver and element TypeRefs disagree");
+    } else if (expression.kind == ExprKind::PipelineElement) {
+      expression.semantic_target_id = field();
+      if (expression.semantic_target_id.rfind("pipeline-placeholder:", 0) != 0 ||
+          !expression.type ||
+          !(expression.type->is_closed() ||
+            is_generic_parameter_type(expression.type) ||
+            (allow_pipeline_map_ &&
+             expression.type->kind == TypeKind::InferenceVar)))
+        fail("checked functional Map placeholder identity or type is invalid");
+    } else if (expression.kind == ExprKind::PipelineMap) {
+      expression.semantic_target_id = field();
+      expression.ordinal = number();
+      expression.pipeline_input_type = read_type();
+      expression.pipeline_placeholder_identity = field();
+      if (expression.semantic_target_id != "functional:Map" ||
+          expression.ordinal != 0 || !expression.type ||
+          expression.type->kind != TypeKind::Builtin ||
+          expression.type->name != "vector" ||
+          expression.type->type_args.size() != 1 ||
+          !expression.pipeline_input_type ||
+          !(expression.pipeline_input_type->is_closed() ||
+            is_generic_parameter_type(expression.pipeline_input_type) ||
+            expression.pipeline_input_type->kind == TypeKind::InferenceVar))
+        fail("checked functional Map identity or TypeRef is invalid");
+      expression.operands.push_back(read_expr(depth + 1));
+      expression.operands.push_back(read_expr(depth + 1));
+      const auto& source = expression.operands[0];
+      const auto& callback = expression.operands[1];
+      if (!source.type || !callback.type ||
+          !expression.type->type_args.front()->structurally_equal(
+              *callback.type))
+        fail("checked functional Map source, callback, and result TypeRefs disagree");
+      if (callback.kind != ExprKind::Binary || callback.operands.size() != 2 ||
+          callback.operands.front().kind != ExprKind::PipelineElement ||
+          callback.operands.front().semantic_target_id !=
+              expression.pipeline_placeholder_identity ||
+          !callback.operands.front().type->structurally_equal(
+              *expression.pipeline_input_type))
+        fail("checked functional Map placeholder identity is disconnected from its callback");
     } else if (expression.kind == ExprKind::Call ||
                expression.kind == ExprKind::NominalConstruct) {
       expression.semantic_target_id = field();
@@ -1464,11 +1555,12 @@ inline std::vector<Stmt> decode_checked_body_v1(
     std::string_view expected_hash,
     bool allow_vector_literal_relation = false,
     bool allow_generic_map_index_mutation = false,
-    bool allow_typed_enum_match = false) {
+    bool allow_typed_enum_match = false,
+    bool allow_pipeline_map = false) {
   H3BodyReader reader(bytes, context, parameters, result, true, true,
                       allow_vector_literal_relation, true,
                       allow_generic_map_index_mutation,
-                      allow_typed_enum_match);
+                      allow_typed_enum_match, allow_pipeline_map);
   auto statements = reader.read();
   if (compute_checked_body_hash_v1(statements) != expected_hash)
     throw std::invalid_argument("checked body semantic hash is mismatched");

@@ -11182,7 +11182,45 @@ that `20 + x * 2` must have no checked body. It failed the same way with
 is not attributed to the R3D prototype. Investigate the stale expectation or
 its baseline before integrating; preserve the failing result accurately.
 
-The R3D/R3F source changes and tests remain uncommitted pending exact-SHA
-architect review. R3C is already independently accepted and pushed at
-`b9706849`. R3D checked-body/importer support, R3E callback effects, and R3F
-ABI-v10 exceptional control flow remain open. Do not claim R3 complete.
+R3F ABI-v9 private typed-error identity is committed at
+`bb44663a7a5bbdbd09a73990be889ef0a7e714eb` and pushed to
+`origin/phase25-1-work`. The existing Adversarial Architect reviewed that exact
+SHA with scoped GO and no P0/P1. The reviewer independently built the commit,
+ran `check_phase25_r3f_raise_recover.py` (including source-deleted Debug and
+Release and a rehashed private-enum identity mutation), and ran the four-value
+magnitude source/v9/v10 Debug/Release oracle. The reviewer noted that the
+focused R3F payload uses a tag-only error variant; payload recovery was not
+independently covered. ABI-v10 exceptional-flow lowering remains open.
+
+R3B Range, while, Map mutation, and assert focused tests all pass on the current
+worktree. The full M2b2 source-free/hostile corpus also passed before the latest
+R3D lowering edits. The four-value magnitude oracle passed all six source/v9/v10
+Debug/Release rows on exact committed SHA `bb44663a` under independent review.
+The R3F focused test passes on that exact SHA. These results do not include the
+latest uncommitted Map reader/lowerer changes.
+
+R3D now has an uncommitted additive checked Map node, a bounded reader relation,
+and shared occurrence lowering/importer checks. It remains unaccepted and the
+source-deleted Map oracle still reports `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE`.
+Inspection found the generic checker summary is incomplete before occurrence
+lowering: the source parameter retains a `functional source` Iterate requirement
+without an associated element TypeRef, and the unresolved result remains the
+source parameter TypeRef. Do not infer a Vector-only generic contract from this
+profile. The architect has been asked to decide whether the existing Iterate
+result relation can safely represent source element authority without narrowing
+source semantics. The temporary diagnostic instrumentation was removed.
+
+R3E returned-callback remains source/v9-valid and ABI-v10 unavailable at
+`SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED`. The checked call result relation is
+present; the open callable summary lacks a callback effect row. R3D/R3E/R3F-v10
+remain open. Do not claim R3 complete.
+
+## Phase 25.1 R3D — common checked Map body — awaiting architect review — 2026-10-22
+
+The generic `values |> map(_ * 2)` profile now lowers from its checker occurrence graph into a common checked-body `PipelineMap` node. The checked element variable is linked from the existing `functional source` Iterate result to the placeholder, `operator:*` result, callback result, and returned `Vector` element. The ABI-v10 encoder retains both Iterate and Operator requirements; importer classification keeps them distinct and validates the bounded requirement/body candidate before projection. Concrete Map specialization derives the actual Vector element TypeRef from the checked Iterate relation and calls the existing Moss arithmetic admission rule, so Int and Float keep their established results.
+
+The checked reader admits the extra summary variable only for the gated Map body and validates the callback/placeholder and element/result edges. The bounded importer also checks the canonical checker placeholder identity, operation shape, exact result relations, pure effect tag, and returned Vector relation. No default ABI, `main`, or source language rule changed.
+
+Validation on rebuilt `build/compiler/moss-dev`: `check_phase25_r3d_pipeline.py` passes source-free ABI-v10 Debug/Release for Int and Float, with deleted provider source, poisoned legacy generic rows, projection traces, rejected string specialization, and four internally rehashed operation/placeholder/result/effect mutations before projection. `oracle.py --include-surface-probes --case generic-functional-pipeline` passes source-backed, ABI-v9, and source-deleted ABI-v10 in Debug/Release. The unchanged M2b2 corpus exited 0. Focused R3A Range, R3B numeric/assert/while/Map-mutation, R3C Match, R3F ABI-v9 repair, and R2 WP1/WP2/WP3 suites passed.
+
+The architect's earlier scoped NO-GO identified the Map operator being imported as an Iterate requirement; that was corrected. Request an independent review of the current exact SHA and independent positive plus rehashed hostile execution before pushing this checkpoint. R3D is not marked reviewed until that response arrives. R3E callback effects and R3F ABI-v10 exceptional flow remain open; R3 is not complete.

@@ -122,12 +122,12 @@
       "priority": "P1-pipeline",
       "category": "typed functional pipeline operation and placeholder expression",
       "provider": "module Service\n\nexport fn double(values):\n  return values |> map(_ * 2)\n",
-      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.double([1, 2, 3])\n",
-      "expected_output": "[2, 4, 6]\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.double([3, 4])[0]\n  echo Service.double([3, 4])[1]\n  echo Service.double([1.5, 2.5])[0]\n  echo Service.double([1.5, 2.5])[1]\n",
+      "expected_output": "6\n8\n3.0\n5.0\n",
       "callable_name": "double",
-      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "checked_body_status": "Pipeline validity and source-free v9 execution are controls; v10 must preserve checked operation identity and type requirements or reject selection.",
+      "poison_callables": ["double"],
+      "provider_must_emit_v10": true,
+      "checked_body_status": "Source-backed, ABI-v9, and source-deleted ABI-v10 Debug/Release preserve the checker-owned Map element, placeholder, multiplication, return-element relation, and both numeric specializations.",
       "evidence": "docs/GENTLE_INTRODUCTION_TO_MOSS.md#functional-pipelines"
     },
     {

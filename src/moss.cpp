@@ -3020,6 +3020,8 @@ static bool abi_v10_checked_for_assert_mutation_summary_candidate(
     const abi_v10::Summary& summary);
 static bool abi_v10_generic_member_summary_candidate(
     const abi_v10::Summary& summary);
+static bool abi_v10_checked_pipeline_map_summary_candidate(
+    const abi_v10::Summary& summary);
 
 static vector<moss::Requirement> imported_abi_v10_requirements(
     const abi_v10::Summary& summary, const Function& function,
@@ -3054,6 +3056,8 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
       abi_v10_generic_map_mutation_summary_candidate(summary);
   const bool typed_enum_match =
       abi_v10_typed_enum_match_summary_candidate(summary);
+  const bool pipeline_map =
+      abi_v10_checked_pipeline_map_summary_candidate(summary);
   const bool member_summary =
       abi_v10_generic_member_summary_candidate(summary);
   if (member_summary) {
@@ -3061,13 +3065,13 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
       invalid("checked ABI-v10 member requirement set exceeds its limit");
   } else if (!vector_literal && !branch_arithmetic && !checked_numeric &&
       !checked_numeric_while && !checked_assert && !generic_for &&
-      !generic_map_mutation && !typed_enum_match &&
+      !generic_map_mutation && !typed_enum_match && !pipeline_map &&
       summary.requirements.size() != 2)
     invalid("checked ABI-v10 typed requirement set is incomplete");
   if (!member_summary && !collection_loop && !vector_literal &&
       !branch_arithmetic && !checked_numeric && !checked_numeric_while &&
       !checked_assert && !generic_for &&
-      !generic_map_mutation && !typed_enum_match) {
+      !generic_map_mutation && !typed_enum_match && !pipeline_map) {
     if (summary.requirements[0].operation != "operator:*" ||
         summary.requirements[1].operation != "operator:+" ||
         summary.requirements[0].parent != 0 ||
@@ -3204,7 +3208,8 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
 
     moss::Requirement requirement;
     requirement.id = origin.declaration_id;
-    requirement.kind = generic_for
+    requirement.kind = generic_for ||
+            (pipeline_map && wire.operation == "functional source")
         ? moss::RequirementKind::Iterate
         : vector_literal
         ? moss::RequirementKind::SameType
@@ -3246,6 +3251,21 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
         static_cast<int>(origin.start_column), summary.callable_id,
         origin.declaration_id};
     converted.push_back(std::move(requirement));
+  }
+  if (pipeline_map) {
+    // Map's source relation and callback operator are separate checker
+    // obligations. Keep the operator obligation available to specialization
+    // instead of importing it as a second Iterate requirement.
+    if (converted.size() != 2 ||
+        converted[0].kind != moss::RequirementKind::Iterate ||
+        converted[0].target_id != "functional source" ||
+        converted[1].kind != moss::RequirementKind::Operator ||
+        converted[1].target_id != "operator:*" ||
+        converted[0].subject == nullptr || converted[0].result == nullptr ||
+        *converted[0].result == nullptr || converted[1].subject == nullptr ||
+        converted[1].arguments.size() != 1 ||
+        converted[1].result == nullptr || *converted[1].result == nullptr)
+      invalid("checked ABI-v10 Map requirement import mismatches its candidate");
   }
   return converted;
 }
@@ -3354,6 +3374,101 @@ static bool abi_v10_checked_numeric_summary_candidate(
     }
   }
   return true;
+}
+
+// A checked Map callback keeps one symbolic element type across the source
+// vector, placeholder, operator result, and returned vector. The ordinary
+// operator requirement is the authority for specialization; this predicate
+// only admits the single pure multiply profile currently observed.
+static bool abi_v10_checked_pipeline_map_summary_candidate(
+    const abi_v10::Summary& summary) {
+  const auto& parameter = summary.parameters.size() == 1
+      ? summary.parameters.front() : abi_v10::WireType{};
+  const auto& result_element = summary.result.arguments.size() == 1
+      ? summary.result.arguments.front() : abi_v10::WireType{};
+  const auto is_var = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::BoundVar &&
+        type.ordinal == 0 && type.arguments.empty();
+  };
+  const auto is_var_ordinal = [](const abi_v10::WireType& type,
+                                std::uint32_t ordinal) {
+    return type.kind == abi_v10::WireTypeKind::BoundVar &&
+        type.ordinal == ordinal && type.arguments.empty();
+  };
+  const auto is_int = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::Primitive &&
+        type.identity == "int" && type.arguments.empty();
+  };
+  const bool source_parameter = is_var(parameter);
+  const bool vector_result = summary.result.kind ==
+          abi_v10::WireTypeKind::Builtin && summary.result.identity == "vector" &&
+      summary.result.arguments.size() == 1 && is_var_ordinal(result_element, 1);
+  if (summary.variable_count != 2 || summary.parameters.size() != 1 ||
+      !source_parameter || !vector_result ||
+      summary.parameter_access != vector<abi_v10::Access>{abi_v10::Access::Read} ||
+      summary.requirements.size() != 2 || summary.observable_effect_bits != 0 ||
+      !summary.observable_effect_tags.empty() || !summary.dependencies.empty())
+    return false;
+  const auto& iterate = summary.requirements[0];
+  const auto& operation = summary.requirements[1];
+  return iterate.operation == "functional source" && iterate.parent == 0 &&
+      iterate.dependencies.empty() && iterate.access == abi_v10::Access::Read &&
+      abi_v10::type_bytes(iterate.receiver, summary.variable_count) ==
+          abi_v10::type_bytes(parameter, summary.variable_count) &&
+      iterate.arguments.empty() &&
+      iterate.result && is_var_ordinal(*iterate.result, 1) &&
+      operation.operation == "operator:*" && operation.parent == 0 &&
+      operation.dependencies.empty() && operation.access == abi_v10::Access::Read &&
+      is_var_ordinal(operation.receiver, 1) && operation.arguments.size() == 1 &&
+      is_int(operation.arguments.front()) &&
+      operation.argument_access == vector<abi_v10::Access>{abi_v10::Access::Read} &&
+      operation.result && is_var_ordinal(*operation.result, 1);
+}
+
+static bool abi_v10_checked_pipeline_map_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements,
+    const moss::TypeContext& context) {
+  if (!abi_v10_checked_pipeline_map_summary_candidate(summary) ||
+      statements.size() != 1 ||
+      statements.front().kind != checked_ir::StmtKind::Return ||
+      !statements.front().expr)
+    return false;
+  const auto& body = *statements.front().expr;
+  if (body.kind != checked_ir::ExprKind::PipelineMap ||
+      body.semantic_target_id != "functional:Map" || body.ordinal != 0 ||
+      body.operands.size() != 2 || !body.pipeline_input_type ||
+      body.operands[0].kind != checked_ir::ExprKind::Parameter ||
+      body.operands[0].ordinal != 0 ||
+      body.operands[1].kind != checked_ir::ExprKind::Binary ||
+      body.operands[1].binary_op != checked_ir::BinaryOp::Mul ||
+      body.operands[1].operands.size() != 2 ||
+      body.operands[1].operands[0].kind !=
+          checked_ir::ExprKind::PipelineElement ||
+      body.operands[1].operands[0].semantic_target_id !=
+          body.pipeline_placeholder_identity ||
+      body.pipeline_placeholder_identity != "pipeline-placeholder:2:0" ||
+      body.operands[1].operands[1].kind !=
+          checked_ir::ExprKind::IntegerLiteral ||
+      body.operands[1].operands[1].literal_value != "2")
+    return false;
+  const auto input = imported_abi_v10_type(
+      summary.requirements.front().result.value(), context,
+      summary.variable_count);
+  const auto int_type = moss::Type::primitive("int");
+  const auto source_type = imported_abi_v10_type(
+      summary.parameters.front(), context, summary.variable_count);
+  const auto vector_result = imported_abi_v10_type(
+      summary.result, context, summary.variable_count);
+  return input && int_type && source_type && vector_result &&
+      body.pipeline_input_type->structurally_equal(*input) &&
+      body.type->structurally_equal(*vector_result) &&
+      body.operands[0].type->structurally_equal(*source_type) &&
+      body.operands[1].type->structurally_equal(*input) &&
+      body.operands[1].operands[0].type->structurally_equal(*input) &&
+      body.operands[1].operands[1].type->structurally_equal(*int_type) &&
+      statements.front().type &&
+      statements.front().type->structurally_equal(*vector_result);
 }
 
 // A pure two-arm arithmetic join has three source operation occurrences:
@@ -4608,6 +4723,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
         abi_v10_generic_map_mutation_summary_candidate(summary);
     const bool typed_enum_match_candidate =
         abi_v10_typed_enum_match_summary_candidate(summary);
+    const bool pipeline_map_candidate =
+        abi_v10_checked_pipeline_map_summary_candidate(summary);
     const bool numeric_while_summary_candidate =
         abi_v10_checked_numeric_while_summary_candidate(summary);
     const bool assert_summary_candidate =
@@ -4623,6 +4740,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
         summary.parameter_access.size() != function.parameter_effects.size() ||
         (!collection_loop_candidate && !generic_for_candidate &&
          !generic_map_mutation_candidate &&
+         !pipeline_map_candidate &&
          !typed_enum_match_candidate &&
          !assert_summary_candidate &&
          summary.observable_effect_bits))
@@ -4648,7 +4766,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
       statements = checked_ir::decode_checked_body_v1(
           body.checked_ir_bytes, *program.type_context, parameters, result,
           body.semantic_hash, vector_literal_summary_candidate,
-          generic_map_mutation_candidate, typed_enum_match_candidate);
+          generic_map_mutation_candidate, typed_enum_match_candidate,
+          pipeline_map_candidate);
     } catch (const std::invalid_argument& error) {
       invalid(string("checked ABI-v10 body cannot be decoded: ") + error.what());
     }
@@ -4657,6 +4776,12 @@ static void project_imported_h3_checked_bodies(Program& program) {
             summary, statements, *program.type_context, program);
     if (typed_enum_match_candidate && !typed_enum_match_body_candidate)
       invalid("checked ABI-v10 enum match does not preserve provider variants and return lineage");
+    const bool pipeline_map_body_candidate = body.dependencies.empty() &&
+        pipeline_map_candidate &&
+        abi_v10_checked_pipeline_map_body_candidate(
+            summary, statements, *program.type_context);
+    if (pipeline_map_candidate && !pipeline_map_body_candidate)
+      invalid("checked ABI-v10 Map body does not preserve its operation and element type relation");
     const bool vector_literal_body_candidate =
         vector_literal_summary_candidate &&
         abi_v10_checked_vector_literal_body_candidate(summary, statements);
@@ -5551,6 +5676,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
     if ((checked_straight_line || checked_if_body || checked_generic_for_body ||
          checked_numeric_while_body ||
          checked_assert_projection ||
+         pipeline_map_body_candidate ||
          contains_typed_enum_match ||
          checked_member_body_candidate ||
          checked_direct_vector_return) &&
@@ -5644,6 +5770,33 @@ static void project_imported_h3_checked_bodies(Program& program) {
           case checked_ir::ExprKind::MapLiteral:
             if (!expression.operands.empty()) return std::nullopt;
             return string("Map()");
+          case checked_ir::ExprKind::PipelineElement:
+            if (expression.semantic_target_id.rfind(
+                    "pipeline-placeholder:", 0) != 0 ||
+                !expression.operands.empty())
+              return std::nullopt;
+            return string("_");
+          case checked_ir::ExprKind::PipelineMap: {
+            if (expression.semantic_target_id != "functional:Map" ||
+                expression.ordinal != 0 || expression.operands.size() != 2 ||
+                !expression.pipeline_input_type ||
+                !expression.operands[0].type ||
+                !expression.type ||
+                expression.type->kind != moss::TypeKind::Builtin ||
+                expression.type->name != "vector" ||
+                expression.type->type_args.size() != 1 ||
+                !expression.type->type_args.front()->structurally_equal(
+                    *expression.operands[1].type) ||
+                expression.operands[1].kind != checked_ir::ExprKind::Binary ||
+                expression.operands[1].operands.empty() ||
+                expression.operands[1].operands.front().semantic_target_id !=
+                    expression.pipeline_placeholder_identity)
+              return std::nullopt;
+            auto source = render(expression.operands[0], depth + 1);
+            auto callback = render(expression.operands[1], depth + 1);
+            if (!source || !callback) return std::nullopt;
+            return "(" + *source + " |> map(" + *callback + "))";
+          }
           case checked_ir::ExprKind::CollectionCount: {
             if (expression.operands.size() != 1 ||
                 expression.semantic_target_id !=
@@ -6867,6 +7020,7 @@ class Checker {
     check_method_ownership();
     for (const auto& f : p_.functions) check_function(f);
     refresh_open_collection_summaries_from_checked_types();
+    refresh_open_pipeline_map_summaries_from_checked_types();
     refresh_open_map_mutation_summaries_from_checked_types();
     refresh_open_for_summaries_from_checked_types();
     for (const auto& d : p_.domains) check_domain(d);
@@ -7837,6 +7991,9 @@ class Checker {
       string output_type;
       moss::TypeRef input_type_ref;
       moss::TypeRef output_type_ref;
+      // Checker-owned result of the deferred functional-source Iterate
+      // obligation. Map uses this exact TypeRef for its callback placeholder.
+      moss::TypeRef iterable_element_type_ref;
       string operation_id;
       moss::TypeRef checked_type;
       // Explicit cross-namespace relation for a formal Callable invocation
@@ -7907,6 +8064,11 @@ class Checker {
     vector<std::uint32_t> active_expression_occurrences;
     std::unordered_map<std::uint32_t, std::uint32_t>
         operation_counts_by_occurrence;
+    // During deferred generic functional checking, `_` is a checker-owned
+    // callback parameter, not a source local. Bind it to the exact symbolic
+    // element TypeRef while checking the callback expression.
+    string active_pipeline_placeholder_identity;
+    moss::TypeRef active_pipeline_placeholder_type;
     std::set<std::pair<std::uint32_t, string>>
         expected_open_operator_operations;
     std::set<std::pair<std::uint32_t, string>>
@@ -8250,6 +8412,66 @@ class Checker {
       });
     };
     std::set<string> observed_dependencies;
+    auto checked_inline_map_callback = [&](
+        const BodyTypeState::ExpressionOccurrence& stage,
+        const string& callback_source) {
+      if (stage.operation_id != "functional:Map" ||
+          stage.source_operands.size() != 1 ||
+          trim(stage.source_operands.front()) != trim(callback_source) ||
+          !expression_uses(callback_source, "_") ||
+          stage.semantic_target_id != "builtin:functional:Map" ||
+          !stage.input_type_ref || !stage.output_type_ref)
+        return false;
+      const auto pipeline = std::find_if(body.expression_occurrences.begin(),
+          body.expression_occurrences.end(), [&](const auto& candidate) {
+        return candidate.id == stage.parent_id &&
+            candidate.kind ==
+                BodyTypeState::ExpressionOccurrence::Kind::Pipeline &&
+            candidate.operation_id == "functional-pipeline-v1" &&
+            candidate.semantic_target_id == "builtin:functional:Map";
+      });
+      if (pipeline == body.expression_occurrences.end()) return false;
+      std::vector<const BodyTypeState::ExpressionOccurrence*> callbacks;
+      for (const auto& candidate : body.expression_occurrences)
+        if (candidate.parent_id == stage.id &&
+            candidate.child_role == "callback-expression")
+          callbacks.push_back(&candidate);
+      if (callbacks.size() != 1 || !callbacks.front()->completed ||
+          !callbacks.front()->checked_type)
+        return false;
+      const auto& callback = *callbacks.front();
+      const string placeholder_id = "pipeline-placeholder:" +
+          std::to_string(stage.id) + ":0";
+      std::size_t placeholder_count = 0;
+      for (const auto& candidate : body.expression_occurrences)
+        if (candidate.parent_id == callback.id &&
+            candidate.resolved_binding_id == placeholder_id &&
+            candidate.semantic_target_id == placeholder_id &&
+            candidate.checked_type &&
+            candidate.checked_type->structurally_equal(
+                *stage.input_type_ref))
+          ++placeholder_count;
+      if (placeholder_count != 1) return false;
+      if (!stage.output_type_ref->structurally_equal(*callback.checked_type))
+        return false;
+      std::size_t operator_count = 0;
+      for (const auto& operation : body.open_operations) {
+        if (operation.operation_id != "operator:*" ||
+            operation.expression_occurrence_id != callback.id)
+          continue;
+        const auto& receiver = operation.receiver;
+        const auto argument = operation.arguments.size() == 1
+            ? operation.arguments.front() : nullptr;
+        const auto result = operation.result
+            ? operation.result : nullptr;
+        if (receiver && argument && result &&
+            receiver->structurally_equal(*stage.input_type_ref) &&
+            argument->structurally_equal(*moss::Type::primitive("int")) &&
+            result->structurally_equal(*stage.output_type_ref))
+          ++operator_count;
+      }
+      return operator_count == 1;
+    };
     for (const auto& occurrence : body.expression_occurrences) {
       if (occurrence.kind !=
               BodyTypeState::ExpressionOccurrence::Kind::Call)
@@ -8417,6 +8639,8 @@ class Checker {
           trim(occurrence.source_operands[callback_operand]);
       const auto named_callback = functions_.find(source_callback);
       if (named_callback == functions_.end()) {
+        if (checked_inline_map_callback(occurrence, source_callback))
+          continue;
         if (starts_with(occurrence.semantic_target_id, "callable-v1:"))
           return false;
         if (starts_with(occurrence.semantic_target_id, "placeholder:") &&
@@ -9076,9 +9300,69 @@ class Checker {
     }
     std::size_t iterate_requirements = 0;
     for (const auto& requirement : summary.requirements) {
-      if (requirement.kind != moss::RequirementKind::Iterate ||
-          requirement.target_id != "static iterator")
+      if (requirement.kind != moss::RequirementKind::Iterate)
         continue;
+      if (requirement.target_id == "functional source") {
+        if (!requirement.result || !*requirement.result) return false;
+        const BodyTypeState::ExpressionOccurrence* pipeline = nullptr;
+        for (const auto& occurrence : state.expression_occurrences)
+          if (occurrence.kind ==
+                  BodyTypeState::ExpressionOccurrence::Kind::Pipeline &&
+              occurrence.operation_id == "functional-pipeline-v1" &&
+              occurrence.semantic_target_id == "builtin:functional:Map") {
+            if (pipeline) return false;
+            pipeline = &occurrence;
+          }
+        const auto* source = pipeline
+            ? [&]() -> const BodyTypeState::ExpressionOccurrence* {
+                const BodyTypeState::ExpressionOccurrence* found = nullptr;
+                for (const auto& occurrence : state.expression_occurrences)
+                  if (occurrence.parent_id == pipeline->id &&
+                      occurrence.child_role == "pipeline-source") {
+                    if (found) return nullptr;
+                    found = &occurrence;
+                  }
+                return found;
+              }() : nullptr;
+        const auto* stage = pipeline
+            ? [&]() -> const BodyTypeState::ExpressionOccurrence* {
+                const BodyTypeState::ExpressionOccurrence* found = nullptr;
+                for (const auto& occurrence : state.expression_occurrences)
+                  if (occurrence.parent_id == pipeline->id &&
+                      occurrence.child_role == "stage:0") {
+                    if (found) return nullptr;
+                    found = &occurrence;
+                  }
+                return found;
+              }() : nullptr;
+        if (!source || !source->checked_type || !stage ||
+            !stage->input_type_ref || !requirement.subject)
+          return false;
+        const auto source_term = state.solver.resolve(source->checked_type);
+        const auto element_term = state.solver.resolve(stage->input_type_ref);
+        if (!source_term || !element_term ||
+            source_term->kind != moss::TypeKind::InferenceVar ||
+            element_term->kind != moss::TypeKind::InferenceVar)
+          return false;
+        const auto source_projection = body_type_projection.find(
+            source_term->var_id);
+        if (source_projection == body_type_projection.end() ||
+            !source_projection->second->structurally_equal(
+                *requirement.subject))
+          return false;
+        const auto element_projection = body_type_projection.find(
+            element_term->var_id);
+        if (element_projection != body_type_projection.end()) {
+          if (!element_projection->second->structurally_equal(
+                  **requirement.result))
+            return false;
+        } else {
+          body_type_projection.emplace(element_term->var_id,
+                                       *requirement.result);
+        }
+        continue;
+      }
+      if (requirement.target_id != "static iterator") continue;
       ++iterate_requirements;
       if (!requirement.result || !*requirement.result) return false;
       const BodyTypeState::StatementOccurrence* loop = nullptr;
@@ -9656,6 +9940,36 @@ class Checker {
           return nested;
         }
         case BodyTypeState::ExpressionOccurrence::Kind::Identifier: {
+          if (occurrence.resolved_binding_id.rfind(
+                  "pipeline-placeholder:", 0) == 0) {
+            std::uint32_t ancestor_id = occurrence.parent_id;
+            const BodyTypeState::ExpressionOccurrence* stage = nullptr;
+            while (ancestor_id < state.expression_occurrences.size()) {
+              const auto& ancestor = state.expression_occurrences[ancestor_id];
+              if (ancestor.kind ==
+                  BodyTypeState::ExpressionOccurrence::Kind::PipelineStage) {
+                stage = &ancestor;
+                break;
+              }
+              ancestor_id = ancestor.parent_id;
+            }
+            if (!stage || stage->kind !=
+                    BodyTypeState::ExpressionOccurrence::Kind::PipelineStage ||
+                stage->operation_id != "functional:Map" ||
+                occurrence.semantic_target_id !=
+                    occurrence.resolved_binding_id ||
+                occurrence.resolved_binding_id !=
+                    "pipeline-placeholder:" + std::to_string(stage->id) + ":0" ||
+                !stage->input_type_ref ||
+                !state.solver.resolve(occurrence.checked_type) ||
+                !state.solver.resolve(stage->input_type_ref) ||
+                !state.solver.resolve(occurrence.checked_type)->structurally_equal(
+                    *state.solver.resolve(stage->input_type_ref)))
+              return std::nullopt;
+            result.kind = checked_ir::ExprKind::PipelineElement;
+            result.semantic_target_id = occurrence.resolved_binding_id;
+            return result;
+          }
           if (starts_with(occurrence.resolved_binding_id, "parameter:")) {
             std::uint32_t parameter = UINT32_MAX;
             try {
@@ -10050,15 +10364,68 @@ class Checker {
           return std::nullopt;
         }
         case BodyTypeState::ExpressionOccurrence::Kind::Pipeline: {
-          if (occurrence.operation_id != "functional-pipeline-v1" ||
-              occurrence.semantic_target_id !=
-                  "builtin:collection-count-v1")
+          if (occurrence.operation_id != "functional-pipeline-v1")
             return std::nullopt;
           const auto source = children_for("pipeline-source");
           const auto stages = children_for("stage:0");
           if (source.size() != 1 || stages.size() != 1 ||
               stages.front()->kind !=
-                  BodyTypeState::ExpressionOccurrence::Kind::PipelineStage ||
+                  BodyTypeState::ExpressionOccurrence::Kind::PipelineStage)
+            return std::nullopt;
+          if (stages.front()->operation_id == "functional:Map") {
+            const auto& stage = *stages.front();
+            vector<const BodyTypeState::ExpressionOccurrence*> callback_children;
+            for (const auto& child : state.expression_occurrences)
+              if (child.parent_id == stage.id &&
+                  child.child_role == "callback-expression")
+                callback_children.push_back(&child);
+            if (occurrence.semantic_target_id != "builtin:functional:Map" ||
+                !stage.input_type_ref || !stage.output_type_ref ||
+                callback_children.size() != 1 ||
+                !source.front()->checked_type)
+              return std::nullopt;
+            auto input_type = checked_body_type(stage.input_type_ref);
+            auto callback_type = checked_body_type(stage.output_type_ref);
+            auto source_type = checked_body_type(source.front()->checked_type);
+            if (!input_type || !callback_type || !source_type ||
+                type->kind != TypeKind::Builtin || type->name != "vector" ||
+                type->type_args.size() != 1 ||
+                !type->type_args.front() ||
+                !type->type_args.front()->structurally_equal(*callback_type))
+              return std::nullopt;
+            const auto map_facts = std::count_if(
+                state.open_operations.begin(), state.open_operations.end(),
+                [&](const auto& fact) {
+              return fact.expression_occurrence_id == occurrence.id &&
+                  fact.operation_id == "functional:Map" && fact.result &&
+                  state.solver.resolve(fact.result) &&
+                  state.solver.resolve(occurrence.checked_type) &&
+                  state.solver.resolve(fact.result)->structurally_equal(
+                      *state.solver.resolve(occurrence.checked_type));
+            });
+            if (map_facts != 1)
+              return std::nullopt;
+            auto input = lower_expression(source.front()->id, depth + 1);
+            auto callback = lower_expression(callback_children.front()->id,
+                                             depth + 1);
+            if (!input || !callback || !callback->type ||
+                !callback->type->structurally_equal(*callback_type))
+              return std::nullopt;
+            result.kind = checked_ir::ExprKind::PipelineMap;
+            result.semantic_target_id = "functional:Map";
+            result.pipeline_input_type = input_type;
+            if (callback->kind != checked_ir::ExprKind::Binary ||
+                callback->operands.size() != 2 ||
+                callback->operands[0].kind !=
+                    checked_ir::ExprKind::PipelineElement)
+              return std::nullopt;
+            result.pipeline_placeholder_identity =
+                callback->operands[0].semantic_target_id;
+            result.operands = {std::move(*input), std::move(*callback)};
+            return result;
+          }
+          if (occurrence.semantic_target_id !=
+                  "builtin:collection-count-v1" ||
               stages.front()->semantic_target_id !=
                   "builtin:collection-count-v1" ||
               !stages.front()->output_type_ref ||
@@ -10571,13 +10938,41 @@ class Checker {
             return argument && vector_relation->subject->structurally_equal(
                 *argument);
           });
+      const auto map_iterate = summary.requirements.size() == 2
+          ? &summary.requirements[0] : nullptr;
+      const auto map_operator = summary.requirements.size() == 2
+          ? &summary.requirements[1] : nullptr;
+      const auto map_result = moss::Type::builtin(
+          "vector", {moss::Type::var({0, 0, 1})});
+      const bool pipeline_map_summary = summary.bound_variable_count == 2 &&
+          summary.parameter_types.size() == 1 &&
+          is_bound_variable(summary.parameter_types.front(), 0) &&
+          summary.result_type && map_result &&
+          summary.result_type->structurally_equal(*map_result) &&
+          map_iterate && map_operator &&
+          map_iterate->kind == moss::RequirementKind::Iterate &&
+          map_iterate->target_id == "functional source" &&
+          map_iterate->subject &&
+          map_iterate->subject->structurally_equal(
+              *summary.parameter_types.front()) &&
+          map_iterate->result && *map_iterate->result &&
+          is_bound_variable(*map_iterate->result, 1) &&
+          map_operator->kind == moss::RequirementKind::Operator &&
+          map_operator->target_id == "operator:*" &&
+          map_operator->subject &&
+          is_bound_variable(map_operator->subject, 1) &&
+          map_operator->arguments.size() == 1 &&
+          map_operator->arguments.front()->structurally_equal(
+              *moss::Type::primitive("int")) &&
+          map_operator->result && *map_operator->result &&
+          is_bound_variable(*map_operator->result, 1);
       const auto decoded = checked_ir::decode_checked_body_v1(
           bytes, *p_.type_context, summary.parameter_types,
           summary.result_type, hash, vector_relation_summary,
           checked_generic_map_write,
           std::any_of(statements.begin(), statements.end(), [](const auto& s) {
             return s.kind == checked_ir::StmtKind::Match;
-          }));
+          }), pipeline_map_summary);
       if (checked_ir::encode_checked_body_v1(decoded) != bytes ||
           checked_ir::compute_checked_body_hash_v1(decoded) != hash)
         return false;
@@ -11871,6 +12266,279 @@ class Checker {
     }
   }
 
+  // Close a generic functional Map summary only from the retained checked
+  // source, placeholder, callback, and operator TypeRefs. The Iterate result
+  // is the checker-owned element relation for the existing functional-source
+  // obligation; the open operator fact owns callback-result specialization.
+  void refresh_open_pipeline_map_summaries_from_checked_types() {
+    for (auto& function : p_.functions) {
+      if (!function.exported || !function.generic ||
+          !function.imported_checked_summary_payload.empty() ||
+          !function.open_summary || function.params.size() != 1 ||
+          function.body.size() != 1 ||
+          function.body.front().kind != Stmt::Kind::Return)
+        continue;
+      const auto retained = checked_body_states_.find(&function.body);
+      if (retained == checked_body_states_.end() || !retained->second) continue;
+      auto& state = *retained->second;
+      const auto pipeline = std::find_if(state.expression_occurrences.begin(),
+          state.expression_occurrences.end(), [](const auto& occurrence) {
+        return occurrence.kind ==
+                BodyTypeState::ExpressionOccurrence::Kind::Pipeline &&
+            occurrence.operation_id == "functional-pipeline-v1" &&
+            occurrence.semantic_target_id == "builtin:functional:Map";
+      });
+      const auto source = pipeline == state.expression_occurrences.end()
+          ? state.expression_occurrences.end()
+          : std::find_if(state.expression_occurrences.begin(),
+              state.expression_occurrences.end(), [&](const auto& occurrence) {
+            return occurrence.parent_id == pipeline->id &&
+                occurrence.child_role == "pipeline-source" &&
+                occurrence.completed && occurrence.checked_type;
+          });
+      const auto stage = pipeline == state.expression_occurrences.end()
+          ? state.expression_occurrences.end()
+          : std::find_if(state.expression_occurrences.begin(),
+              state.expression_occurrences.end(), [&](const auto& occurrence) {
+            return occurrence.parent_id == pipeline->id &&
+                occurrence.child_role == "stage:0" &&
+                occurrence.kind ==
+                    BodyTypeState::ExpressionOccurrence::Kind::PipelineStage;
+          });
+      const auto callback = stage == state.expression_occurrences.end()
+          ? state.expression_occurrences.end()
+          : std::find_if(state.expression_occurrences.begin(),
+              state.expression_occurrences.end(), [&](const auto& occurrence) {
+            return occurrence.parent_id == stage->id &&
+                occurrence.child_role == "callback-expression" &&
+                occurrence.completed && occurrence.checked_type;
+          });
+      if (pipeline == state.expression_occurrences.end() ||
+          source == state.expression_occurrences.end() ||
+          stage == state.expression_occurrences.end() ||
+          callback == state.expression_occurrences.end() ||
+          !pipeline->checked_type || !stage->input_type_ref ||
+          !stage->output_type_ref ||
+          stage->operation_id != "functional:Map" ||
+          stage->semantic_target_id != "builtin:functional:Map" ||
+          !source->checked_type || !callback->checked_type ||
+          !source->iterable_element_type_ref ||
+          !state.solver.resolve(source->checked_type) ||
+          !state.solver.resolve(source->iterable_element_type_ref) ||
+          !state.solver.resolve(stage->input_type_ref) ||
+          !state.solver.resolve(stage->output_type_ref) ||
+          !state.solver.resolve(pipeline->checked_type))
+        continue;
+      const auto pipeline_type = state.solver.resolve(pipeline->checked_type);
+      const auto callback_type = state.solver.resolve(callback->checked_type);
+      const auto element_type = state.solver.resolve(stage->input_type_ref);
+      const auto source_element = state.solver.resolve(
+          source->iterable_element_type_ref);
+      if (!pipeline_type || pipeline_type->kind != moss::TypeKind::Builtin ||
+          pipeline_type->name != "vector" || pipeline_type->type_args.size() != 1 ||
+          !pipeline_type->type_args.front()->structurally_equal(*callback_type) ||
+          !source_element || !source_element->structurally_equal(*element_type) ||
+          !callback_type->structurally_equal(*state.solver.resolve(
+              stage->output_type_ref)))
+        continue;
+      const auto matching_operations = std::count_if(state.open_operations.begin(),
+          state.open_operations.end(), [&](const auto& operation) {
+        return operation.operation_id == "operator:*" &&
+            operation.expression_occurrence_id == callback->id;
+      });
+      const auto map_facts = std::count_if(state.open_operations.begin(),
+          state.open_operations.end(), [&](const auto& operation) {
+        return operation.operation_id == "functional:Map" &&
+            operation.expression_occurrence_id == pipeline->id &&
+            operation.result;
+      });
+      if (matching_operations != 1 || map_facts != 1)
+        continue;
+      const auto operation_it = std::find_if(state.open_operations.begin(),
+          state.open_operations.end(), [&](const auto& candidate) {
+        return candidate.operation_id == "operator:*" &&
+            candidate.expression_occurrence_id == callback->id;
+      });
+      if (operation_it == state.open_operations.end()) continue;
+      const auto& operation = *operation_it;
+      if (operation.operation_id != "operator:*" ||
+          operation.arguments.size() != 1 || !operation.result ||
+          !state.solver.resolve(operation.receiver) ||
+          !state.solver.resolve(operation.arguments.front()) ||
+          !state.solver.resolve(operation.result)->structurally_equal(*callback_type) ||
+          !state.solver.resolve(operation.receiver)->structurally_equal(*element_type) ||
+          !state.solver.resolve(operation.arguments.front())->structurally_equal(
+              *moss::Type::primitive("int")))
+        continue;
+
+      auto summary = *function.open_summary;
+      const auto iterable = std::find_if(summary.requirements.begin(),
+          summary.requirements.end(), [](const moss::Requirement& requirement) {
+        return requirement.kind == moss::RequirementKind::Iterate &&
+            requirement.target_id == "functional source";
+      });
+      if (summary.requirements.size() != 1 ||
+          iterable == summary.requirements.end() ||
+          !iterable->result || !*iterable->result ||
+          (*iterable->result)->kind != moss::TypeKind::InferenceVar ||
+          (*iterable->result)->var_id.session_id != 0 ||
+          (*iterable->result)->var_id.owner_id != 0 ||
+          (*iterable->result)->var_id.ordinal >= summary.bound_variable_count ||
+          function.open_summary->parameter_access !=
+              vector<moss::AccessMode>{moss::AccessMode::Read})
+        continue;
+
+      std::map<std::tuple<uint32_t, uint32_t, uint32_t>, moss::TypeRef> variables;
+      uint32_t next_variable = 0;
+      const auto checked_element = state.solver.resolve(
+          source->iterable_element_type_ref);
+      if (!checked_element ||
+          checked_element->kind != moss::TypeKind::InferenceVar)
+        continue;
+      variables.emplace(std::make_tuple(checked_element->var_id.session_id,
+                                        checked_element->var_id.owner_id,
+                                        checked_element->var_id.ordinal),
+                        *iterable->result);
+      std::function<moss::TypeRef(const moss::TypeRef&)> openize =
+          [&](const moss::TypeRef& source_type) -> moss::TypeRef {
+        if (!source_type) return nullptr;
+        auto type = state.solver.resolve(source_type);
+        if (!type) return nullptr;
+        if (type->kind == moss::TypeKind::InferenceVar) {
+          const auto key = std::make_tuple(type->var_id.session_id,
+                                           type->var_id.owner_id,
+                                           type->var_id.ordinal);
+          auto found = variables.find(key);
+          if (found != variables.end()) return found->second;
+          auto opened = moss::Type::var({0, 0, next_variable++});
+          variables.emplace(key, opened);
+          return opened;
+        }
+        if (type->kind == moss::TypeKind::Builtin) {
+          vector<moss::TypeRef> arguments;
+          for (const auto& argument : type->type_args) {
+            auto opened = openize(argument);
+            if (!opened) return nullptr;
+            arguments.push_back(std::move(opened));
+          }
+          return moss::Type::builtin(type->name, std::move(arguments));
+        }
+        return type;
+      };
+      const auto source_term = openize(source->checked_type);
+      const auto element_term = openize(source->iterable_element_type_ref);
+      const auto callback_term = openize(callback->checked_type);
+      if (!source_term || !element_term || !callback_term ||
+          !callback_term->structurally_equal(*element_term) ||
+          !element_term->structurally_equal(**iterable->result) ||
+          function.params.front().name.empty())
+        continue;
+      auto local = state.locals.find(function.params.front().name);
+      if (local == state.locals.end() ||
+          !state.solver.resolve(local->second) ||
+          !state.solver.resolve(local->second)->structurally_equal(
+              *state.solver.resolve(source->checked_type)))
+        continue;
+      auto result_term = moss::Type::builtin("vector", {callback_term});
+      if (!result_term) continue;
+      iterable->subject = source_term;
+      iterable->arguments.clear();
+      iterable->argument_access.clear();
+      moss::Requirement operation_requirement;
+      operation_requirement.id = function.semantic_callable_id +
+          ":requirement:checked-map-operator:" +
+          std::to_string(operation.line);
+      operation_requirement.kind = moss::RequirementKind::Operator;
+      operation_requirement.target_id = "operator:*";
+      operation_requirement.subject = element_term;
+      auto operation_argument = openize(operation.arguments.front());
+      auto operation_result = openize(operation.result);
+      if (!operation_argument || !operation_result ||
+          !operation_argument->structurally_equal(
+              *moss::Type::primitive("int")) ||
+          !operation_result->structurally_equal(*callback_term))
+        continue;
+      operation_requirement.arguments = {operation_argument};
+      operation_requirement.argument_access = {moss::AccessMode::Read};
+      operation_requirement.result = operation_result;
+      operation_requirement.origin = {summary.origin.module_id,
+          function.source_file,
+          operation.line, 1,
+          function.semantic_callable_id, operation_requirement.id};
+      summary.parameter_types = {source_term};
+      summary.result_type = result_term;
+      summary.requirements.push_back(std::move(operation_requirement));
+      summary.bound_variable_count = std::max(summary.bound_variable_count,
+                                               next_variable);
+      summary.scheme_complete = !summary.observable_effects.unresolved &&
+          !summary.observable_effects.may_panic &&
+          !summary.observable_effects.may_diverge;
+      summary.complete = false;
+      const bool closed = moss::close_open_summary_ordinals(summary);
+      if (!summary.scheme_complete || !closed)
+        continue;
+      auto child = [&](std::uint32_t parent, const string& role)
+          -> const BodyTypeState::ExpressionOccurrence* {
+        const BodyTypeState::ExpressionOccurrence* found = nullptr;
+        for (const auto& candidate : state.expression_occurrences)
+          if (candidate.parent_id == parent && candidate.child_role == role) {
+            if (found) return nullptr;
+            found = &candidate;
+          }
+        return found;
+      };
+      const auto* placeholder = child(callback->id, "left");
+      const auto* literal = child(callback->id, "right");
+      const auto statement_id = state.statement_occurrence_ids.find(
+          &function.body.front());
+      const auto return_root = statement_id == state.statement_occurrence_ids.end()
+          ? state.expression_root_slots.end()
+          : state.expression_root_slots.find(
+              {statement_id->second, "return-value"});
+      const auto map_operation = std::find_if(state.open_operations.begin(),
+          state.open_operations.end(), [&](const auto& candidate) {
+        return candidate.operation_id == "functional:Map" &&
+            candidate.expression_occurrence_id == pipeline->id;
+      });
+      const bool exact_graph = state.expression_occurrences.size() == 6 &&
+          state.statement_occurrences.size() == 1 && statement_id !=
+              state.statement_occurrence_ids.end() && statement_id->second <
+                  state.statement_occurrences.size() &&
+          state.statement_occurrences[statement_id->second].source ==
+              &function.body.front() &&
+          state.statement_occurrences[statement_id->second].kind ==
+              Stmt::Kind::Return && return_root != state.expression_root_slots.end() &&
+          return_root->second == pipeline->id && pipeline->parent_id == UINT32_MAX &&
+          source->kind == BodyTypeState::ExpressionOccurrence::Kind::Identifier &&
+          source->resolved_binding_id == "parameter:0" &&
+          source->iterable_element_type_ref &&
+          state.solver.resolve(source->iterable_element_type_ref)->
+              structurally_equal(*state.solver.resolve(stage->input_type_ref)) &&
+          stage->parent_id == pipeline->id && callback->parent_id == stage->id &&
+          callback->kind == BodyTypeState::ExpressionOccurrence::Kind::Binary &&
+          callback->operation_id == "*" && placeholder && placeholder->completed &&
+          placeholder->kind == BodyTypeState::ExpressionOccurrence::Kind::Identifier &&
+          placeholder->resolved_binding_id == "pipeline-placeholder:" +
+              std::to_string(stage->id) + ":0" &&
+          placeholder->semantic_target_id == placeholder->resolved_binding_id &&
+          literal && literal->completed &&
+          literal->kind == BodyTypeState::ExpressionOccurrence::Kind::Literal &&
+          literal->checked_type && state.open_operations.size() == 2 &&
+          map_operation != state.open_operations.end() && map_operation->result &&
+          state.solver.resolve(map_operation->receiver)->structurally_equal(
+              *state.solver.resolve(source->checked_type)) &&
+          state.solver.resolve(map_operation->result)->structurally_equal(
+              *state.solver.resolve(pipeline->checked_type)) &&
+          std::all_of(state.expression_occurrences.begin(),
+              state.expression_occurrences.end(), [](const auto& occurrence) {
+            return occurrence.completed && occurrence.checked_type;
+          });
+      if (!exact_graph) continue;
+      state.expression_occurrence_ledger_complete = true;
+      function.open_summary = std::move(summary);
+    }
+  }
+
   // Preserve the checker's deferred Map-write relation for source-free
   // specialization. The ordinary checker defers compatibility until call
   // arguments are known, so retain the exact indexed result/value/return
@@ -12709,12 +13377,19 @@ class Checker {
       for (const auto& parameter : function.params) {
         if (trim(pipeline->source) == parameter.name &&
             (parameter.type.empty() || parameter.type == "vector")) {
-          if (!has_structural_requirement(function, parameter.name,
-                                          ConstraintKind::Iterable,
-                                          "functional source"))
+          auto iterable = std::find_if(function.constraints.begin(),
+              function.constraints.end(), [&](const Constraint& constraint) {
+            return constraint.kind == ConstraintKind::Iterable &&
+                constraint.subject == parameter.name &&
+                constraint.detail == "functional source";
+          });
+          if (iterable == function.constraints.end())
             function.constraints.push_back({ConstraintKind::Iterable,
                                             parameter.name,
-                                            "functional source", ""});
+                                            "functional source",
+                                            "element:" + parameter.name});
+          else if (iterable->result.empty())
+            iterable->result = "element:" + parameter.name;
           function.generic = true;
           function.static_dispatch = true;
         }
@@ -14982,6 +15657,12 @@ class Checker {
       return InferredExpr{moss::Type::primitive(name), {}};
     };
     string original = strip_redundant_outer_parentheses(expression);
+    if (original == "_" && current_body_types_ &&
+        !current_body_types_->active_pipeline_placeholder_identity.empty() &&
+        current_body_types_->active_pipeline_placeholder_type)
+      return InferredExpr{
+          current_body_types_->solver.resolve(
+              current_body_types_->active_pipeline_placeholder_type), {}, {}};
     auto operand_term = [&](const string& operand) -> moss::TypeRef {
       if (current_body_types_) {
         auto retained = current_body_types_->known_expression(operand);
@@ -26799,6 +27480,48 @@ class Checker {
                 " to function '" + name + "' has unresolved typed '" +
                 operation + "' requirements");
         }
+        if (!parameter_found && summary.parameter_types.size() == 1 &&
+            summary.requirements.size() == 2 &&
+            requirement.target_id == "operator:*" &&
+            requirement.arguments.front()->structurally_equal(
+                *moss::Type::primitive("int")) &&
+            requirement.result && *requirement.result &&
+            requirement.subject->structurally_equal(
+                **requirement.result)) {
+          const auto& iterable = summary.requirements.front();
+          for (std::size_t index = 0; index < summary.parameter_types.size() &&
+                                 index < actual_results.size(); ++index) {
+            if (iterable.kind != moss::RequirementKind::Iterate ||
+                iterable.target_id != "functional source" ||
+                !iterable.subject ||
+                !iterable.subject->structurally_equal(
+                    *summary.parameter_types[index]) ||
+                !iterable.result || !*iterable.result ||
+                !(*iterable.result)->structurally_equal(
+                    *requirement.subject))
+              continue;
+            const auto actual = actual_results[index].term;
+            if (!actual) continue;
+            moss::TypeRef actual_element;
+            if (actual->kind == moss::TypeKind::Builtin &&
+                (actual->name == "vector" || actual->name == "seq") &&
+                actual->type_args.size() == 1)
+              actual_element = actual->type_args.front();
+            else if (actual->kind == moss::TypeKind::Primitive &&
+                     actual->name == "Range")
+              actual_element = moss::Type::primitive("int");
+            if (!actual_element) continue;
+            parameter_found = true;
+            const auto admission = admit_typed_arithmetic_operator(
+                requirement.target_id, actual_element,
+                requirement.arguments.front(), actual_element);
+            if (admission != BuiltinOperatorAdmission::Admitted)
+              fail_requirement("argument " + std::to_string(index + 1) +
+                  " to function '" + name +
+                  "' has no compatible typed '" + operation +
+                  "' operation through its checked Map element relation");
+          }
+        }
         if (!parameter_found)
           fail_requirement("function '" + name + "' has an operator requirement "
               "that is not tied to a parameter");
@@ -27637,6 +28360,114 @@ class Checker {
             current_body_types_->expression_occurrences.at(pipeline_id)
                 .semantic_target_id = operation->operation_id;
           }
+        } else if (stage.kind == FunctionalNodeKind::Map &&
+                   stage.arguments.size() == 1 &&
+                   expression_uses(stage.arguments.front(), "_") &&
+                   !current_body_types_->active_expression_occurrences.empty()) {
+          auto element_type = current_body_types_->solver.fresh(0);
+          const auto source = std::find_if(
+              current_body_types_->expression_occurrences.begin(),
+              current_body_types_->expression_occurrences.end(),
+              [&](const auto& candidate) {
+            return candidate.parent_id == pipeline_id &&
+                candidate.child_role == "pipeline-source" &&
+                candidate.completed && candidate.checked_type;
+          });
+          auto source_type = source ==
+                  current_body_types_->expression_occurrences.end()
+              ? nullptr : current_body_types_->solver.resolve(source->checked_type);
+          if (!source_type) {
+            stages_resolved = false;
+            current_body_types_->finish_child_expression(id);
+            continue;
+          }
+          element_type = current_body_types_->solver.resolve(element_type);
+          // The generic source is unresolved until call specialization. Keep
+          // the element TypeRef on its source occurrence as the result of the
+          // functional-source Iterate obligation, and use that exact term for
+          // callback checking below.
+          auto& checked_source =
+              current_body_types_->expression_occurrences.at(source->id);
+          if (checked_source.iterable_element_type_ref) {
+            stages_resolved = false;
+            current_body_types_->finish_child_expression(id);
+            continue;
+          }
+          checked_source.iterable_element_type_ref = element_type;
+          occurrence.semantic_target_id = "builtin:functional:Map";
+          occurrence.input_type_ref = element_type;
+          occurrence.input_type = element_type->to_canonical_string();
+          const auto previous_identity =
+              current_body_types_->active_pipeline_placeholder_identity;
+          const auto previous_type =
+              current_body_types_->active_pipeline_placeholder_type;
+          current_body_types_->active_pipeline_placeholder_identity =
+              "pipeline-placeholder:" + std::to_string(id) + ":0";
+          current_body_types_->active_pipeline_placeholder_type = element_type;
+          TypeEnv callback_env = env;
+          callback_env["_"] = element_type->to_canonical_string();
+          check_expression(line, stage.arguments.front(), callback_env, {},
+                           "callback-expression");
+          current_body_types_->active_pipeline_placeholder_identity =
+              previous_identity;
+          current_body_types_->active_pipeline_placeholder_type =
+              previous_type;
+          const auto callback = std::find_if(
+              current_body_types_->expression_occurrences.begin(),
+              current_body_types_->expression_occurrences.end(),
+              [&](const auto& candidate) {
+            return candidate.parent_id == id &&
+                candidate.child_role == "callback-expression";
+          });
+          // Checking the callback may append child nodes and reallocate the
+          // occurrence vector. Reacquire this stage by its checker identity
+          // before linking its callback result.
+          auto& checked_stage =
+              current_body_types_->expression_occurrences.at(id);
+          auto callback_result = callback !=
+                  current_body_types_->expression_occurrences.end() &&
+                  callback->checked_type
+              ? current_body_types_->solver.resolve(callback->checked_type)
+              : nullptr;
+          if (!callback_result ||
+              (callback_result->kind != moss::TypeKind::InferenceVar &&
+               callback_result->kind != moss::TypeKind::Primitive)) {
+            stages_resolved = false;
+          } else {
+            checked_stage.output_type_ref = callback_result;
+            checked_stage.output_type = callback_result->to_canonical_string();
+            checked_stage.checked_type = callback_result;
+            if (parsed->stages.size() == 1) {
+              auto& pipeline = current_body_types_->expression_occurrences.at(
+                  pipeline_id);
+              pipeline.checked_type = moss::Type::builtin(
+                  "vector", {callback_result});
+              pipeline.output_type_ref = pipeline.checked_type;
+              pipeline.output_type =
+                  pipeline.checked_type->to_canonical_string();
+              pipeline.semantic_target_id = "builtin:functional:Map";
+            }
+            const auto map_fact = std::find_if(
+                current_body_types_->open_operations.begin(),
+                current_body_types_->open_operations.end(),
+                [&](const auto& fact) {
+              return fact.expression_occurrence_id == pipeline_id &&
+                  fact.operation_id == "functional:Map";
+            });
+            if (map_fact == current_body_types_->open_operations.end() ||
+                std::count_if(current_body_types_->open_operations.begin(),
+                    current_body_types_->open_operations.end(),
+                    [&](const auto& fact) {
+                  return fact.expression_occurrence_id == pipeline_id &&
+                      fact.operation_id == "functional:Map";
+                }) != 1) {
+              stages_resolved = false;
+            } else {
+              map_fact->result = current_body_types_->solver.resolve(
+                  current_body_types_->expression_occurrences.at(
+                      pipeline_id).checked_type);
+            }
+          }
         } else {
           stages_resolved = false;
         }
@@ -27645,6 +28476,10 @@ class Checker {
         if (callable_index < stage.arguments.size()) {
           const string callable = trim(stage.arguments[callable_index]);
           if (expression_uses(callable, "_")) {
+          if (!(stage.kind == FunctionalNodeKind::Map &&
+                occurrence.output_type_ref &&
+                occurrence.semantic_target_id ==
+                    "builtin:functional:Map"))
             occurrence.semantic_target_id = "placeholder:" + callable;
           } else if (auto local = env.find(callable);
                      local != env.end() && open_generic(local->second)) {
@@ -28061,6 +28896,16 @@ class Checker {
           occurrence_state->statement_occurrence_id(*current_check_statement_);
       occurrence.line = line;
       occurrence.source_expression = original;
+      if (original == "_" &&
+          !occurrence_state->active_pipeline_placeholder_identity.empty() &&
+          occurrence_state->active_pipeline_placeholder_type) {
+        occurrence.resolved_binding_id =
+            occurrence_state->active_pipeline_placeholder_identity;
+        occurrence.checked_type =
+            occurrence_state->active_pipeline_placeholder_type;
+        occurrence.semantic_target_id =
+            occurrence_state->active_pipeline_placeholder_identity;
+      }
       if (occurrence_state->active_expression_occurrences.empty()) {
         occurrence.root_slot = string(root_slot);
         const auto key = std::make_pair(occurrence.statement_id,
@@ -29506,7 +30351,8 @@ class Checker {
             for (const auto& requirement :
                  resolved_target->open_summary->requirements) {
               if (requirement.kind != moss::RequirementKind::Iterate ||
-                  requirement.target_id != "static iterator")
+                  (requirement.target_id != "static iterator" &&
+                   requirement.target_id != "functional source"))
                 continue;
               if (!requirement.result || !*requirement.result) {
                 // Source and ABI-v9 summaries may retain the static iterator
@@ -29551,7 +30397,16 @@ class Checker {
               auto actual = child && child->checked_type
                   ? state.solver.resolve(child->checked_type) : nullptr;
               moss::TypeRef element;
-              if (actual && actual->kind == moss::TypeKind::Builtin &&
+              if (requirement.target_id == "functional source" && actual &&
+                  parameter_index < args.size() &&
+                  actual->kind == moss::TypeKind::Builtin &&
+                  (actual->name == "vector" || actual->name == "seq") &&
+                  actual->type_args.size() == 1) {
+                // Preserve the caller solver's checked element TypeRef. A
+                // canonical-name round trip can turn an open symbolic marker
+                // into an inference variable this solver does not own.
+                element = actual->type_args.front();
+              } else if (actual && actual->kind == moss::TypeKind::Builtin &&
                   (actual->name == "vector" || actual->name == "seq") &&
                   actual->type_args.size() == 1)
                 element = actual->type_args.front();
@@ -31659,41 +32514,73 @@ class Checker {
           vector<string> expected{"pipeline-source"};
           for (std::size_t index = 0; index + 1 < children.size(); ++index)
             expected.push_back("stage:" + std::to_string(index));
-          const bool one_count_stage = children.size() == 2 &&
+          const bool one_stage = children.size() == 2 &&
               occurrence.operation_id == "functional-pipeline-v1" &&
               occurrence.source_operands.size() == 1 &&
-              occurrence.checked_type && occurrence.checked_type->is_closed();
+              occurrence.checked_type;
           const auto& stage = children.size() == 2
               ? checked_types.expression_occurrences[children[1]]
               : occurrence;
           const auto& source = children.size() == 2
               ? checked_types.expression_occurrences[children[0]]
               : occurrence;
-          if (!has_roles(expected) || !one_count_stage ||
+          const auto same_terms = [&](const moss::TypeRef& left,
+                                      const moss::TypeRef& right) {
+            const auto resolved_left = checked_types.solver.resolve(left);
+            const auto resolved_right = checked_types.solver.resolve(right);
+            return resolved_left && resolved_right &&
+                resolved_left->structurally_equal(*resolved_right);
+          };
+          const bool count_stage = one_stage &&
+              stage.operation_id == "functional:Count" &&
+              stage.semantic_target_id == "builtin:collection-count-v1" &&
+              stage.input_type_ref && stage.output_type_ref &&
+              source.checked_type &&
+              same_terms(stage.input_type_ref, source.checked_type) &&
+              stage.checked_type &&
+              same_terms(stage.checked_type, stage.output_type_ref) &&
+              same_terms(occurrence.checked_type, stage.output_type_ref) &&
+              same_type(stage.output_type, "int");
+          const auto callback_children = std::count_if(
+              checked_types.expression_occurrences.begin(),
+              checked_types.expression_occurrences.end(),
+              [&](const auto& child) {
+            return child.parent_id == stage.id &&
+                child.child_role == "callback-expression";
+          });
+          const auto source_type = source.checked_type
+              ? checked_types.solver.resolve(source.checked_type) : nullptr;
+      const bool map_stage = one_stage &&
+              stage.operation_id == "functional:Map" &&
+              occurrence.semantic_target_id == "builtin:functional:Map" &&
+              stage.semantic_target_id == "builtin:functional:Map" &&
+              stage.input_type_ref && stage.output_type_ref &&
+              source_type &&
+              source.iterable_element_type_ref &&
+              same_terms(source.iterable_element_type_ref,
+                         stage.input_type_ref) &&
+              callback_children == 1 && stage.checked_type &&
+              same_terms(stage.checked_type, stage.output_type_ref) &&
+              occurrence.checked_type->kind == moss::TypeKind::Builtin &&
+              occurrence.checked_type->name == "vector" &&
+              occurrence.checked_type->type_args.size() == 1 &&
+              same_terms(occurrence.checked_type->type_args.front(),
+                         stage.output_type_ref);
+          if (!has_roles(expected) || (!count_stage && !map_stage) ||
               stage.kind !=
-                  BodyTypeState::ExpressionOccurrence::Kind::PipelineStage ||
-              stage.operation_id != "functional:Count" ||
-              stage.semantic_target_id != "builtin:collection-count-v1" ||
-              !stage.input_type_ref || !stage.output_type_ref ||
-              !source.checked_type ||
-              !stage.input_type_ref->structurally_equal(
-                  *source.checked_type) ||
-              !stage.output_type_ref->is_closed() ||
-              !stage.checked_type ||
-              !stage.checked_type->structurally_equal(
-                  *stage.output_type_ref) ||
-              !occurrence.checked_type->structurally_equal(
-                  *stage.output_type_ref) ||
-              !same_type(stage.output_type, "int"))
+                  BodyTypeState::ExpressionOccurrence::Kind::PipelineStage)
             checked_types.expression_occurrence_ledger_complete = false;
           break;
         }
         case BodyTypeState::ExpressionOccurrence::Kind::PipelineStage:
-          if (occurrence.operation_id != "functional:Count" ||
-              occurrence.semantic_target_id !=
-                  "builtin:collection-count-v1" ||
-              !occurrence.input_type_ref || !occurrence.output_type_ref ||
-              !occurrence.checked_type)
+          if (!occurrence.input_type_ref || !occurrence.output_type_ref ||
+              !occurrence.checked_type ||
+              !((occurrence.operation_id == "functional:Count" &&
+                 occurrence.semantic_target_id ==
+                     "builtin:collection-count-v1") ||
+                (occurrence.operation_id == "functional:Map" &&
+                 occurrence.semantic_target_id ==
+                     "builtin:functional:Map")))
             checked_types.expression_occurrence_ledger_complete = false;
           break;
         case BodyTypeState::ExpressionOccurrence::Kind::Constructor: {
@@ -31971,6 +32858,67 @@ class Checker {
             !operation.result || !stage->output_type_ref ||
             !same_resolved_term(operation.result, stage->output_type_ref) ||
             !linked.checked_type ||
+            !same_resolved_term(linked.checked_type, operation.result))
+          checked_types.expression_occurrence_ledger_complete = false;
+      } else if (operation.operation_id == "functional:Map") {
+        const auto source = std::find_if(
+            checked_types.expression_occurrences.begin(),
+            checked_types.expression_occurrences.end(),
+            [&](const auto& candidate) {
+          return candidate.parent_id == occurrence &&
+              candidate.child_role == "pipeline-source";
+        });
+        const auto stage = std::find_if(
+            checked_types.expression_occurrences.begin(),
+            checked_types.expression_occurrences.end(),
+            [&](const auto& candidate) {
+          return candidate.parent_id == occurrence &&
+              candidate.child_role == "stage:0";
+        });
+        const auto callback = stage ==
+                checked_types.expression_occurrences.end()
+            ? checked_types.expression_occurrences.end()
+            : std::find_if(checked_types.expression_occurrences.begin(),
+                checked_types.expression_occurrences.end(),
+                [&](const auto& candidate) {
+              return candidate.parent_id == stage->id &&
+                  candidate.child_role == "callback-expression";
+            });
+        const auto source_type = source !=
+                checked_types.expression_occurrences.end() &&
+                source->checked_type
+            ? checked_types.solver.resolve(source->checked_type) : nullptr;
+        const auto result_type = operation.result
+            ? checked_types.solver.resolve(operation.result) : nullptr;
+        const auto callback_type = callback !=
+                checked_types.expression_occurrences.end() &&
+                callback->checked_type
+            ? checked_types.solver.resolve(callback->checked_type) : nullptr;
+        if (linked.kind != BodyTypeState::ExpressionOccurrence::Kind::Pipeline ||
+            linked.operation_id != "functional-pipeline-v1" ||
+            linked.semantic_target_id != "builtin:functional:Map" ||
+            linked.source_operands.size() != 1 ||
+            operation.receiver_operand_ordinal != 0 ||
+            !operation.arguments.empty() ||
+            !operation.argument_operand_ordinals.empty() ||
+            !operation.result || source ==
+                checked_types.expression_occurrences.end() ||
+            stage == checked_types.expression_occurrences.end() ||
+            callback == checked_types.expression_occurrences.end() ||
+            stage->kind != BodyTypeState::ExpressionOccurrence::Kind::PipelineStage ||
+            stage->operation_id != "functional:Map" ||
+            stage->semantic_target_id != "builtin:functional:Map" ||
+            !stage->input_type_ref || !stage->output_type_ref ||
+            !source_type ||
+            !same_resolved_term(source->checked_type, operation.receiver) ||
+            !callback_type ||
+            !same_resolved_term(callback->checked_type,
+                                stage->output_type_ref) ||
+            !result_type || result_type->kind != moss::TypeKind::Builtin ||
+            result_type->name != "vector" || result_type->type_args.size() != 1 ||
+            !same_resolved_term(result_type->type_args.front(),
+                                stage->output_type_ref) ||
+            !same_resolved_term(stage->checked_type, stage->output_type_ref) ||
             !same_resolved_term(linked.checked_type, operation.result))
           checked_types.expression_occurrence_ledger_complete = false;
       } else if (operation.operation_id == "builtin:vector-literal") {
@@ -53060,7 +54008,8 @@ abi_v10_checked_requirements(
          numeric_comparison);
     const bool supported_iterate = requirement.kind ==
             moss::RequirementKind::Iterate &&
-        requirement.target_id == "static iterator" &&
+        (requirement.target_id == "static iterator" ||
+         requirement.target_id == "functional source") &&
         requirement.arguments.empty() &&
         requirement.argument_access.empty() && requirement.result &&
         requirement.access == moss::AccessMode::Read;
@@ -53702,6 +54651,8 @@ static void append_abi_v10_occurrence_records(
     vector<checked_ir::Stmt> decoded;
     const bool typed_enum_match_candidate =
         abi_v10_typed_enum_match_summary_candidate(summary);
+    const bool pipeline_map_candidate =
+        abi_v10_checked_pipeline_map_summary_candidate(summary);
     const bool vector_literal_summary_candidate =
         abi_v10_checked_vector_literal_summary_candidate(summary);
     const bool generic_map_mutation_candidate =
@@ -53711,7 +54662,8 @@ static void append_abi_v10_occurrence_records(
           body.checked_ir_bytes, *program.type_context,
           facts.parameter_types, facts.result_type, body.semantic_hash,
           vector_literal_summary_candidate,
-          generic_map_mutation_candidate, typed_enum_match_candidate);
+          generic_map_mutation_candidate, typed_enum_match_candidate,
+          pipeline_map_candidate);
       if (checked_ir::encode_checked_body_v1(decoded) != body.checked_ir_bytes ||
           checked_ir::compute_checked_body_hash_v1(decoded) !=
               body.semantic_hash)
@@ -53723,6 +54675,10 @@ static void append_abi_v10_occurrence_records(
         abi_v10_typed_enum_match_body_candidate(
             summary, decoded, *program.type_context, program);
     if (typed_enum_match_candidate && !typed_enum_match_body) continue;
+    const bool pipeline_map_body = pipeline_map_candidate &&
+        abi_v10_checked_pipeline_map_body_candidate(
+            summary, decoded, *program.type_context);
+    if (pipeline_map_candidate && !pipeline_map_body) continue;
     const bool deferred_member_effects =
         facts.member_requirements.size() == 1 &&
         abi_v10_deferred_member_effects(facts.observable_effects) &&
@@ -53853,6 +54809,7 @@ static void append_abi_v10_occurrence_records(
         !abi_v10_checked_for_summary_candidate(summary) &&
         !abi_v10_checked_for_assert_mutation_summary_candidate(summary) &&
         !checked_vector_literal && !generic_map_mutation_candidate &&
+        !pipeline_map_body &&
         !checked_branch_arithmetic &&
         !checked_numeric_early_return &&
         !checked_numeric_while &&
