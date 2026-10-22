@@ -10771,5 +10771,9 @@ The architect's review of `c68db7fd` found a WP4 P2: the oracle recorded
 unexpected build/output/projection statuses but returned exit code 0, and the
 self-test did not cover that failure path. WP4 now maps any unexpected status
 to a nonzero oracle exit and self-tests both accepted fail-closed outcomes and
-an output mismatch. The final matrix is being rerun on the corrected checkpoint
-before the architect issues the final verdict.
+an output mismatch. Review of that correction found a second WP4 P2: a v10
+provider error could be classified as an expected unavailable capability even
+when the case requires successful provider emission. `failure_status` now
+rejects provider-stage failures for `provider_must_emit_v10` cases, with
+self-tests for both required-emission and expected-provider-rejection controls.
+The matrix is being rerun on the corrected checkpoint before final review.

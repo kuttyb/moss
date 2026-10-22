@@ -104,6 +104,17 @@ def expected_output_for(case: dict, mode: str) -> str | None:
     return case.get(field, case.get("expected_output"))
 
 
+def failure_status(case: dict, mode: str, stage: str,
+                   expected_error: str | None, failure_text: str) -> str:
+    expected_unavailable = (
+        mode == "v10" and expected_error and expected_error in failure_text)
+    provider_was_required = (
+        stage == "provider-build" and case.get("provider_must_emit_v10", False))
+    if expected_unavailable and not provider_was_required:
+        return "valid-but-unavailable-v10"
+    return f"{stage}-failed"
+
+
 def validate_inventory(cases: list[dict]) -> None:
     seen: set[str] = set()
     for case in cases:
@@ -194,9 +205,8 @@ def case_result(case: dict, root: Path, poisoner: Path) -> dict:
             if provider_build["exit_code"]:
                 failure_text = provider_build["stdout"] + provider_build["stderr"]
                 expected_error = case.get("provider_expected_error")
-                status = "valid-but-unavailable-v10" if (
-                    mode == "v10" and expected_error and expected_error in failure_text
-                ) else "provider-build-failed"
+                status = failure_status(case, mode, "provider-build",
+                                        expected_error, failure_text)
                 result["modes"].setdefault(mode, {})[profile] = {
                     "status": status,
                     "stage": "provider-build",
@@ -238,9 +248,8 @@ def case_result(case: dict, root: Path, poisoner: Path) -> dict:
             if consumer_build["exit_code"]:
                 failure_text = consumer_build["stdout"] + consumer_build["stderr"]
                 expected_error = case.get("consumer_expected_error") or case.get("provider_expected_error")
-                status = "valid-but-unavailable-v10" if (
-                    mode == "v10" and expected_error and expected_error in failure_text
-                ) else "consumer-build-failed"
+                status = failure_status(case, mode, "consumer-build",
+                                        expected_error, failure_text)
                 result["modes"].setdefault(mode, {})[profile] = {
                     "status": status, "stage": "source-free-consumer-build",
                     "expected_diagnostic": expected_error,
