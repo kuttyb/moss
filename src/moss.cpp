@@ -27196,6 +27196,20 @@ class Checker {
               if (requirement.kind != moss::RequirementKind::Iterate ||
                   requirement.target_id != "static iterator")
                 continue;
+              if (!requirement.result || !*requirement.result) {
+                // Source and ABI-v9 summaries may retain the static iterator
+                // obligation before the checked For binder relation is
+                // available. Do not turn that incomplete summary fact into a
+                // source-level type error; ordinary specialization checks the
+                // provider body. Imported ABI-v10 checked summaries require
+                // this relation at admission and remain fail-closed here.
+                if (!resolved_target->imported_checked_summary_payload.empty()) {
+                  exact_arguments = false;
+                  invalid_iterate_substitution = true;
+                  break;
+                }
+                continue;
+              }
               std::size_t parameter_index = args.size();
               for (std::size_t index = 0; index <
                        resolved_target->open_summary->parameter_types.size();
@@ -27236,7 +27250,6 @@ class Checker {
                        actual->name == "RangeBatch")
                 element = moss::Type::primitive("Range");
               if (parameter_index >= args.size() || !child || !element ||
-                  !requirement.result || !*requirement.result ||
                   !bind(*requirement.result, element)) {
                 exact_arguments = false;
                 invalid_iterate_substitution = true;

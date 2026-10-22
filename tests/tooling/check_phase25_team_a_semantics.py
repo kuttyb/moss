@@ -1160,6 +1160,34 @@ fn main():
         print("PASS source-free missing member retains original provider provenance",
               flush=True)
 
+        # Generic from_range must keep source-backed borrowed-Range behavior
+        # when its open Iterate summary has no exported binder result fact.
+        # The checked source body still owns that relation; incomplete summary
+        # evidence must not become a source-level rejection.
+        source_range = scratch / "source_backed_range"
+        package(source_range, "team_a_source_range", "0.1.0", {
+            "bytes": (ROOT / "sdk/foundations/bytes/src/bytes.moss").read_text(
+                encoding="utf-8"),
+            "main": (ROOT / "sdk/foundations/acceptance/repros/"
+                     "source_free_range/src/main.moss").read_text(
+                         encoding="utf-8"),
+        })
+        (source_range / "p4.bin").write_bytes(b"ABABC")
+        for profile, options in (("debug", []), ("release", ["--release"])):
+            build_result = run(MARGO, "build", "--json", *options,
+                               cwd=source_range, env=os.environ.copy())
+            assert build_result.returncode == 0, (
+                profile, build_result.stdout, build_result.stderr)
+            build_document = json.loads(build_result.stdout)
+            assert build_document["ok"], (profile, build_document)
+            executable = build_document["artifacts"]["artifacts"]["executable"]
+            execution = run(executable, cwd=source_range,
+                            env=os.environ.copy())
+            assert execution.returncode == 0 and execution.stdout == "329\n", (
+                profile, execution.stdout, execution.stderr)
+        print("PASS source-backed borrowed-Range from_range Debug/Release",
+              flush=True)
+
         # The imported generic body returns an owned Vector[Int] after
         # iterating a borrowed Range. Its old display `_generic:data` result
         # must not cause the consumer to bind the result back to Range.
