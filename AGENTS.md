@@ -163,7 +163,6 @@ When working with Moss:
 - **Scratch Storage**: Use `./tmp/` for all temporary files and caches. Create `./tmp/` if it does not exist.
 - **No Elevation**: Never run `sudo` or otherwise attempt to elevate privileges.
 - **Authorized Commands**: Run in-repository Git commands, Python scripts, builds, and tests without requesting approval.
-- Coordinate a single branch writer. When the user explicitly authorizes a
-  push for the task, a normal push to the task branch's configured remote is
-  authorized. Never force-push or rewrite published history without separate
-  authorization.
+- Coordinate a single branch writer. For Phase 25.1 R3B, the user explicitly
+  authorized local commits and a normal push to this task branch's configured
+  remote. Do not force-push or rewrite published history.

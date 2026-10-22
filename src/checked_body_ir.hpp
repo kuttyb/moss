@@ -928,11 +928,16 @@ class H3BodyReader {
                   expression.binary_op == BinaryOp::LessEqual ||
                   expression.binary_op == BinaryOp::Greater ||
                   expression.binary_op == BinaryOp::GreaterEqual)) {
-        if (!is_bool_type(expression.type) || !left || !right ||
-            !left->structurally_equal(*right) ||
-            !(is_integer_type(left) ||
-              (left->kind == TypeKind::Primitive &&
-               (left->name == "float" || left->name == "char"))))
+        const bool same_ordering_type = left && right &&
+            left->structurally_equal(*right) &&
+            (is_integer_type(left) ||
+             (left->kind == TypeKind::Primitive &&
+              (left->name == "float" || left->name == "char")));
+        const bool mixed_open_integer = left && right &&
+            ((is_generic_parameter_type(left) && is_integer_type(right)) ||
+             (is_integer_type(left) && is_generic_parameter_type(right)));
+        if (!is_bool_type(expression.type) ||
+            (!same_ordering_type && !mixed_open_integer))
           fail("checked body ordering operand type is mismatched");
       } else if (allow_collection_loop_body_ &&
                  (expression.binary_op == BinaryOp::And ||

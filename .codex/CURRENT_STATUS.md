@@ -10968,3 +10968,41 @@ remain visible.
 Diagnostic evidence: `tmp/r3b-control-flow-baseline.json`,
 `tmp/r3b_control_probes.moss`, and `tmp/r3b_magnitude_float.moss`. The R4
 ABI-v9 raise/recover defect and `packages/time` source error remain unchanged.
+
+## R3B numeric operator authority — L7 decision applied — 2026-10-22
+
+L7 directed preservation of valid mixed-numeric generic operations through
+checker-owned type relations, with no new language semantics, unconditional
+return widening, or ABI-v10-specific promotion rules. This supersedes the
+control-flow stop recorded immediately above. Before implementing ABI-v10,
+the magnitude source-backed and ABI-v9 Debug/Release controls were expanded to
+both branches for both types: `-7 -> 7`, `5 -> 5`, `-1.5 -> 1.5`, and
+`2.5 -> 2.5`. All eight controls pass, establishing that negative Float
+subtraction already behaves correctly.
+
+The checker now refreshes the complete summary from exact checked operator
+occurrences, retaining ordered `T < Int -> Bool` and `Int - T -> T` evidence.
+The common checked-body IR accepts the mixed open numeric comparison, and the
+common occurrence lowerer emits the if/return body. The ABI-v10 importer ties
+the ordered requirements to both branches, operation and result TypeRefs,
+parameter identity, and return lineage before projection. Specialization uses
+the same closed Int/Float arithmetic admission as source-backed checking.
+Existing generic `*`/`+` admission was preserved; no generic `/` promotion was
+added.
+
+The unchanged magnitude surface profile now requires ABI-v10 emission and
+source deletion, poisons the legacy generic body, and passes source-backed,
+ABI-v9, and ABI-v10 Debug/Release with the four-value output above. Rehashed
+hostile operator-result, unsupported operand, branch-return identity,
+return-result, and numeric-semantics mutations all reject before checked-body
+projection. The numeric source-free harness, compatibility oracle, generic
+arithmetic requirement test, checked-body IR unit suite, complete M2b2 corpus,
+R3A Range hostile suite, and R3B Map hostile suite pass. Feedback validation
+and `git diff --check` pass. The build continues to emit the two existing
+`TypeSolver::Undo` missing-initializer warnings.
+
+This checkpoint remains subject to an independent exact-candidate adversarial
+architect review. Other R3 control-flow groups (mutable-local `while`, typed
+enum `match`, pipelines, generic `assert`, exception control flow, and
+higher-order callback evidence) remain open. The R4 ABI-v9 raise/recover defect
+and `packages/time` source error remain unchanged.

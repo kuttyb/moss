@@ -83,12 +83,12 @@
       "priority": "P1-control-flow",
       "category": "branch join and early return",
       "provider": "module Service\n\nexport fn magnitude(value):\n  if value < 0:\n    return 0 - value\n  else:\n    return value\n",
-      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.magnitude(-7)\n  echo Service.magnitude(5)\n",
-      "expected_output": "7\n5\n",
+      "consumer": "module Main\nimport Service\n\nfn main():\n  echo Service.magnitude(-7)\n  echo Service.magnitude(5)\n  echo Service.magnitude(-1.5)\n  echo Service.magnitude(2.5)\n",
+      "expected_output": "7\n5\n1.5\n2.5\n",
       "callable_name": "magnitude",
-      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "checked_body_status": "Valid source-backed/v9 branch and early-return controls; v10 admission requires checked control-flow facts.",
+      "poison_callables": ["magnitude"],
+      "provider_must_emit_v10": true,
+      "checked_body_status": "Source-backed, ABI-v9, and source-deleted ABI-v10 Debug/Release exercise both early-return branches for Int and Float through checker-owned numeric operator requirements.",
       "evidence": "src/ast.hpp: Stmt::Kind::If and Return"
     },
     {

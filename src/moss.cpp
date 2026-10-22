@@ -536,21 +536,47 @@ static bool primitive_term(const moss::TypeRef& type, std::string_view name) {
 
 enum class BuiltinOperatorAdmission { Admitted, Deferred, Rejected };
 
-// The checked arithmetic subset carried by ABI-v10 currently describes
-// `T * Int -> T` and `T + Int -> T`. Keep its closed admission rule shared
-// between imported-call admission and specialization-body closure.
+// Resolve the closed Moss numeric operator relation shared by ordinary
+// specialization and checked ABI-v10 import. The result is derived from both
+// operands, so an imported relation cannot substitute an arbitrary result.
 static BuiltinOperatorAdmission admit_typed_arithmetic_operator(
     const string& operation, const moss::TypeRef& subject,
     const moss::TypeRef& argument, const moss::TypeRef& result) {
-  if (operation != "operator:*" && operation != "operator:+")
+  if (operation != "operator:*" && operation != "operator:+" &&
+      operation != "operator:-" && operation != "operator:/")
     return BuiltinOperatorAdmission::Rejected;
   if (!subject || !argument || !result || !subject->is_closed() ||
       !argument->is_closed() || !result->is_closed())
     return BuiltinOperatorAdmission::Deferred;
-  if ((!primitive_term(subject, "int") &&
-       !primitive_term(subject, "float")) ||
-      !primitive_term(argument, "int") ||
-      !result->structurally_equal(*subject))
+  const bool subject_numeric = primitive_term(subject, "int") ||
+      primitive_term(subject, "float");
+  const bool argument_numeric = primitive_term(argument, "int") ||
+      primitive_term(argument, "float");
+  if (!subject_numeric || !argument_numeric)
+    return BuiltinOperatorAdmission::Rejected;
+  const auto expected = primitive_term(subject, "float") ||
+          primitive_term(argument, "float")
+      ? moss::Type::primitive("float") : moss::Type::primitive("int");
+  if (!expected || !result->structurally_equal(*expected))
+    return BuiltinOperatorAdmission::Rejected;
+  return BuiltinOperatorAdmission::Admitted;
+}
+
+static BuiltinOperatorAdmission admit_typed_numeric_comparison(
+    const string& operation, const moss::TypeRef& subject,
+    const moss::TypeRef& argument, const moss::TypeRef& result) {
+  if (operation != "operator:<" && operation != "operator:>" &&
+      operation != "operator:<=" && operation != "operator:>=")
+    return BuiltinOperatorAdmission::Rejected;
+  if (!subject || !argument || !result || !subject->is_closed() ||
+      !argument->is_closed() || !result->is_closed())
+    return BuiltinOperatorAdmission::Deferred;
+  const bool subject_numeric = primitive_term(subject, "int") ||
+      primitive_term(subject, "float");
+  const bool argument_numeric = primitive_term(argument, "int") ||
+      primitive_term(argument, "float");
+  if (!subject_numeric || !argument_numeric ||
+      !primitive_term(result, "bool"))
     return BuiltinOperatorAdmission::Rejected;
   return BuiltinOperatorAdmission::Admitted;
 }
@@ -2961,6 +2987,8 @@ static bool abi_v10_checked_vector_literal_body_candidate(
     const vector<checked_ir::Stmt>& statements);
 static bool abi_v10_checked_branch_arithmetic_summary_candidate(
     const abi_v10::Summary& summary);
+static bool abi_v10_checked_numeric_summary_candidate(
+    const abi_v10::Summary& summary);
 static bool abi_v10_checked_for_summary_candidate(
     const abi_v10::Summary& summary);
 static bool abi_v10_checked_for_assert_mutation_summary_candidate(
@@ -2989,6 +3017,8 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
       abi_v10_checked_vector_literal_summary_candidate(summary);
   const bool branch_arithmetic =
       abi_v10_checked_branch_arithmetic_summary_candidate(summary);
+  const bool checked_numeric =
+      abi_v10_checked_numeric_summary_candidate(summary);
   const bool generic_for = abi_v10_checked_for_summary_candidate(summary) ||
       abi_v10_checked_for_assert_mutation_summary_candidate(summary);
   const bool generic_map_mutation =
@@ -2998,12 +3028,14 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
   if (member_summary) {
     if (summary.requirements.size() > 64)
       invalid("checked ABI-v10 member requirement set exceeds its limit");
-  } else if (!vector_literal && !branch_arithmetic && !generic_for &&
+  } else if (!vector_literal && !branch_arithmetic && !checked_numeric &&
+      !generic_for &&
       !generic_map_mutation &&
       summary.requirements.size() != 2)
     invalid("checked ABI-v10 typed requirement set is incomplete");
   if (!member_summary && !collection_loop && !vector_literal &&
-      !branch_arithmetic && !generic_for && !generic_map_mutation) {
+      !branch_arithmetic && !checked_numeric && !generic_for &&
+      !generic_map_mutation) {
     if (summary.requirements[0].operation != "operator:*" ||
         summary.requirements[1].operation != "operator:+" ||
         summary.requirements[0].parent != 0 ||
@@ -3226,6 +3258,70 @@ static bool abi_v10_checked_arithmetic_summary_candidate(
       integer(multiply.arguments.front()) && integer(add.arguments.front()) &&
       multiply.result && add.result && bound_zero(*multiply.result) &&
       bound_zero(*add.result);
+}
+
+// Open numeric control-flow summaries carry the operation result as a
+// checker-selected TypeRef. This admits numeric comparisons plus arithmetic
+// whose operands are the open parameter and an Int operand, including the
+// promoted `Int op T -> T` relation. The body validator ties each record to its
+// exact occurrence before the importer can use it.
+static bool abi_v10_checked_numeric_summary_candidate(
+    const abi_v10::Summary& summary) {
+  const auto bound_zero = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::BoundVar &&
+        type.ordinal == 0 && type.arguments.empty();
+  };
+  const auto integer = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::Primitive &&
+        type.identity == "int" && type.arguments.empty();
+  };
+  const auto boolean = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::Primitive &&
+        type.identity == "bool" && type.arguments.empty();
+  };
+  if (summary.variable_count != 1 || summary.parameters.empty() ||
+      summary.parameters.size() > 8 || !bound_zero(summary.parameters[0]) ||
+      summary.parameter_access != vector<abi_v10::Access>(
+          summary.parameters.size(), abi_v10::Access::Read) ||
+      !std::all_of(std::next(summary.parameters.begin()),
+          summary.parameters.end(), boolean) ||
+      !bound_zero(summary.result) || summary.requirements.size() < 2 ||
+      summary.requirements.size() > 8 ||
+      summary.observable_effect_bits != 0 ||
+      !summary.observable_effect_tags.empty() ||
+      !summary.dependencies.empty())
+    return false;
+  for (const auto& requirement : summary.requirements) {
+    const bool comparison = requirement.operation == "operator:<" ||
+        requirement.operation == "operator:>" ||
+        requirement.operation == "operator:<=" ||
+        requirement.operation == "operator:>=";
+    const bool arithmetic = requirement.operation == "operator:-";
+    if ((!comparison && !arithmetic) ||
+        requirement.parent != 0 || !requirement.dependencies.empty() ||
+        requirement.access != abi_v10::Access::Read ||
+        requirement.receiver.arguments.size() != 0 ||
+        requirement.arguments.size() != 1 ||
+        requirement.argument_access !=
+            vector<abi_v10::Access>{abi_v10::Access::Read} ||
+        !requirement.result ||
+        (!bound_zero(requirement.receiver) &&
+         !integer(requirement.receiver)) ||
+        (!bound_zero(requirement.arguments.front()) &&
+         !integer(requirement.arguments.front())))
+      return false;
+    if (comparison) {
+      if (!boolean(*requirement.result) ||
+          (bound_zero(requirement.receiver) ==
+           bound_zero(requirement.arguments.front())))
+        return false;
+    } else if (!integer(requirement.receiver) ||
+        !bound_zero(requirement.arguments.front()) ||
+        !bound_zero(*requirement.result)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 // A pure two-arm arithmetic join has three source operation occurrences:
@@ -3515,6 +3611,101 @@ static bool abi_v10_checked_conditional_arithmetic_lineage_candidate(
       operation_counts[1] != 1)
     return false;
   return true;
+}
+
+// A bounded common-lowerer control-flow body with a numeric predicate, an
+// early arithmetic return, and a fallthrough parameter return. All semantic
+// choices are checked against the ordered operation requirements and IR
+// TypeRefs; this is independent of source spelling and callable name.
+static bool abi_v10_checked_numeric_early_return_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements,
+    const moss::TypeContext& context) {
+  if (!abi_v10_checked_numeric_summary_candidate(summary) ||
+      summary.parameters.size() != 1 || summary.requirements.size() != 2 ||
+      statements.size() != 1 ||
+      statements.front().kind != checked_ir::StmtKind::If ||
+      !statements.front().expr ||
+      statements.front().then_branch.size() != 1 ||
+      statements.front().else_branch.size() != 1 ||
+      statements.front().then_branch.front().kind !=
+          checked_ir::StmtKind::Return ||
+      statements.front().else_branch.front().kind !=
+          checked_ir::StmtKind::Return)
+    return false;
+  const auto parameter_type = imported_abi_v10_type(
+      summary.parameters.front(), context, summary.variable_count);
+  const auto int_type = moss::Type::primitive("int");
+  const auto bool_type = moss::Type::primitive("bool");
+  if (!parameter_type || !int_type || !bool_type) return false;
+  const auto& conditional = statements.front();
+  const auto& condition = *conditional.expr;
+  const auto& checked_return = conditional.then_branch.front();
+  const auto& fallthrough_return = conditional.else_branch.front();
+  if (!condition.type || !condition.type->structurally_equal(*bool_type) ||
+      condition.kind != checked_ir::ExprKind::Binary ||
+      condition.operands.size() != 2 ||
+      condition.operands[0].kind != checked_ir::ExprKind::Parameter ||
+      condition.operands[0].ordinal != 0 ||
+      !condition.operands[0].type ||
+      !condition.operands[0].type->structurally_equal(*parameter_type) ||
+      condition.operands[1].kind != checked_ir::ExprKind::IntegerLiteral ||
+      !condition.operands[1].type ||
+      !condition.operands[1].type->structurally_equal(*int_type))
+    return false;
+  const string comparison = condition.binary_op == checked_ir::BinaryOp::Less
+      ? "operator:<" : condition.binary_op == checked_ir::BinaryOp::Greater
+      ? "operator:>" : condition.binary_op == checked_ir::BinaryOp::LessEqual
+      ? "operator:<=" : condition.binary_op == checked_ir::BinaryOp::GreaterEqual
+      ? "operator:>=" : string{};
+  if (comparison.empty() || summary.requirements[0].operation != comparison)
+    return false;
+  const auto& result = checked_return.expr;
+  if (!result || checked_return.type == nullptr ||
+      !checked_return.type->structurally_equal(*parameter_type) ||
+      !result->type || !result->type->structurally_equal(*parameter_type) ||
+      result->kind != checked_ir::ExprKind::Binary ||
+      result->operands.size() != 2 ||
+      !fallthrough_return.expr ||
+      fallthrough_return.expr->kind != checked_ir::ExprKind::Parameter ||
+      fallthrough_return.expr->ordinal != 0 ||
+      !fallthrough_return.expr->type ||
+      !fallthrough_return.expr->type->structurally_equal(*parameter_type) ||
+      !fallthrough_return.type ||
+      !fallthrough_return.type->structurally_equal(*parameter_type))
+    return false;
+  const string arithmetic = result->binary_op == checked_ir::BinaryOp::Add
+      ? "operator:+" : result->binary_op == checked_ir::BinaryOp::Sub
+      ? "operator:-" : result->binary_op == checked_ir::BinaryOp::Mul
+      ? "operator:*" : result->binary_op == checked_ir::BinaryOp::Div
+      ? "operator:/" : string{};
+  if (arithmetic.empty() || summary.requirements[1].operation != arithmetic ||
+      !result->operands[0].type || !result->operands[1].type ||
+      !result->operands[0].type->structurally_equal(*int_type) ||
+      !result->operands[1].type->structurally_equal(*parameter_type))
+    return false;
+  const auto comparison_receiver = imported_abi_v10_type(
+      summary.requirements[0].receiver, context, summary.variable_count);
+  const auto comparison_argument = imported_abi_v10_type(
+      summary.requirements[0].arguments.front(), context,
+      summary.variable_count);
+  const auto comparison_result = imported_abi_v10_type(
+      *summary.requirements[0].result, context, summary.variable_count);
+  const auto arithmetic_receiver = imported_abi_v10_type(
+      summary.requirements[1].receiver, context, summary.variable_count);
+  const auto arithmetic_argument = imported_abi_v10_type(
+      summary.requirements[1].arguments.front(), context,
+      summary.variable_count);
+  const auto arithmetic_result = imported_abi_v10_type(
+      *summary.requirements[1].result, context, summary.variable_count);
+  return comparison_receiver && comparison_argument && comparison_result &&
+      arithmetic_receiver && arithmetic_argument && arithmetic_result &&
+      comparison_receiver->structurally_equal(*condition.operands[0].type) &&
+      comparison_argument->structurally_equal(*condition.operands[1].type) &&
+      comparison_result->structurally_equal(*condition.type) &&
+      arithmetic_receiver->structurally_equal(*result->operands[0].type) &&
+      arithmetic_argument->structurally_equal(*result->operands[1].type) &&
+      arithmetic_result->structurally_equal(*result->type);
 }
 
 static bool abi_v10_parameter_return_summary_candidate(
@@ -4233,6 +4424,10 @@ static void project_imported_h3_checked_bodies(Program& program) {
         body.dependencies.empty() &&
         abi_v10_checked_conditional_arithmetic_lineage_candidate(
             summary, statements, *program.type_context);
+    const bool checked_numeric_early_return_candidate =
+        body.dependencies.empty() &&
+        abi_v10_checked_numeric_early_return_body_candidate(
+            summary, statements, *program.type_context);
     if (contains_if_join(statements) && !pure_branch_join_candidate &&
         !checked_branch_arithmetic_candidate)
       invalid("checked ABI-v10 branch-join body lacks requirement lineage validation");
@@ -4275,7 +4470,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
     inspect_operations(statements);
     if (contains_conditional && contains_operation && !collection_loop_candidate &&
         !checked_branch_arithmetic_candidate &&
-        !checked_conditional_arithmetic_candidate)
+        !checked_conditional_arithmetic_candidate &&
+        !checked_numeric_early_return_candidate)
       invalid("checked ABI-v10 conditional body lacks requirement lineage validation");
     const bool local_map_effect_contract =
         abi_v10_local_map_effects_covered(
@@ -6281,8 +6477,10 @@ class Checker {
         all_paths_return = block_returns(block_returns, UINT32_MAX);
       }
       if (body != checked_body_states_.end() && body->second &&
-          !function.open_summary->scheme_complete &&
           function.constraints.empty() && !function.body.empty() &&
+          function.open_summary->requirements.empty() &&
+          function.open_summary->operations.empty() &&
+          function.open_summary->member_requirements.empty() &&
           (function.body.size() >= 2 ||
            (function.body.size() == 1 &&
             function.body.front().kind == Stmt::Kind::Return &&
@@ -16418,7 +16616,9 @@ class Checker {
       // invalid call fails before open-result closure/codegen.
       if (requirement.kind != moss::RequirementKind::Operator ||
           (requirement.target_id != "operator:*" &&
-           requirement.target_id != "operator:+")) continue;
+           requirement.target_id != "operator:+" &&
+           requirement.target_id != "operator:-" &&
+           requirement.target_id != "operator:/")) continue;
       auto subject = requirement.subject
           ? solver.resolve(requirement.subject) : nullptr;
       auto argument = requirement.arguments.size() == 1
@@ -25783,7 +25983,6 @@ class Checker {
       err(line, "unknown local function '" + name + "'");
     }
     if (resolved_target) *resolved_target = function_target;
-    require_staged_v10_callable_body(line, *function_target);
     struct FnWrapper {
       Function* second;
       const FnWrapper* operator->() const { return this; }
@@ -25879,50 +26078,81 @@ class Checker {
       for (const auto& requirement : summary.requirements) {
         if (requirement.kind != moss::RequirementKind::Operator ||
             (requirement.target_id != "operator:*" &&
-             requirement.target_id != "operator:+")) continue;
+             requirement.target_id != "operator:+" &&
+             requirement.target_id != "operator:-" &&
+             requirement.target_id != "operator:/" &&
+             requirement.target_id != "operator:<" &&
+             requirement.target_id != "operator:>" &&
+             requirement.target_id != "operator:<=" &&
+             requirement.target_id != "operator:>=")) continue;
         const auto operation = requirement.target_id.substr(9);
+        auto fail_requirement = [&](const string& message) -> void {
+          CompileError error(line, message, "TYPE_MISMATCH");
+          error.source_file = current_source_file_;
+          throw error;
+        };
         if (requirement.arguments.size() != 1 || !requirement.subject ||
-            !requirement.result || !*requirement.result ||
-            !(*requirement.result)->structurally_equal(
-                *requirement.subject)) {
-          err(line, "function '" + name + "' has an invalid typed '" +
-              operation + "' requirement", "TYPE_MISMATCH");
-          continue;
+            !requirement.arguments.front() || !requirement.result ||
+            !*requirement.result) {
+          fail_requirement("function '" + name + "' has an invalid typed '" +
+              operation + "' requirement");
         }
-        bool subject_parameter_found = false;
+        bool parameter_found = false;
         for (size_t index = 0; index < summary.parameter_types.size() &&
                                index < actual_types.size(); ++index) {
-          if (!summary.parameter_types[index]->structurally_equal(
-                  *requirement.subject)) continue;
-          subject_parameter_found = true;
+          const auto& parameter_type = summary.parameter_types[index];
+          const bool subject_is_parameter = parameter_type &&
+              parameter_type->structurally_equal(*requirement.subject);
+          const bool argument_is_parameter = parameter_type &&
+              parameter_type->structurally_equal(
+                  *requirement.arguments.front());
+          if (!subject_is_parameter && !argument_is_parameter) continue;
+          parameter_found = true;
           const auto& actual = actual_results[index].term;
           if (!actual) {
             if (concrete_specialization_type(actual_types[index]))
-              err(line, "argument " + std::to_string(index + 1) +
+              fail_requirement("argument " + std::to_string(index + 1) +
                   " to function '" + name +
                   "' has no typed term for its '" + operation +
-                  "' requirement", "TYPE_INFERENCE_FAILED");
+                  "' requirement");
             continue;
           }
-          const auto admission = admit_typed_arithmetic_operator(
-              requirement.target_id, actual, requirement.arguments.front(),
-              actual);
+          const auto subject = subject_is_parameter
+              ? actual : requirement.subject;
+          const auto argument = argument_is_parameter
+              ? actual : requirement.arguments.front();
+          const auto result = (*requirement.result)->structurally_equal(
+                  *parameter_type)
+              ? actual : *requirement.result;
+          const bool comparison = requirement.target_id == "operator:<" ||
+              requirement.target_id == "operator:>" ||
+              requirement.target_id == "operator:<=" ||
+              requirement.target_id == "operator:>=";
+          const auto admission = comparison
+              ? admit_typed_numeric_comparison(
+                    requirement.target_id, subject, argument, result)
+              : admit_typed_arithmetic_operator(
+                    requirement.target_id, subject, argument, result);
           if (admission == BuiltinOperatorAdmission::Rejected)
-            err(line, "argument " + std::to_string(index + 1) +
+            fail_requirement("argument " + std::to_string(index + 1) +
                 " to function '" + name +
-                "' has no compatible '" + operation +
-                "' operation with Int", "TYPE_MISMATCH");
+                "' has no compatible typed '" + operation +
+                "' operation");
           else if (admission == BuiltinOperatorAdmission::Deferred &&
                    concrete_specialization_type(actual_types[index]))
-            err(line, "argument " + std::to_string(index + 1) +
+            fail_requirement("argument " + std::to_string(index + 1) +
                 " to function '" + name + "' has unresolved typed '" +
-                operation + "' requirements", "TYPE_INFERENCE_FAILED");
+                operation + "' requirements");
         }
-        if (!subject_parameter_found)
-          err(line, "function '" + name + "' has an operator requirement "
-              "that is not tied to a parameter", "TYPE_MISMATCH");
+        if (!parameter_found)
+          fail_requirement("function '" + name + "' has an operator requirement "
+              "that is not tied to a parameter");
       }
     }
+    // Concrete operator admission uses actual argument TypeRefs. Perform it
+    // before importing/projecting the provider body so an unsupported numeric
+    // substitution fails closed without exposing unchecked IR to specialization.
+    require_staged_v10_callable_body(line, *function_target);
     // Each explicit module currently emits its own nominal FileIO runtime.
     // A concrete provider-owned call cannot take another crate's Range.
     // Static/generic calls specialize in the consumer crate and use its Range;
@@ -27081,10 +27311,19 @@ class Checker {
     if (operation_id == "+" || operation_id == "-" ||
         operation_id == "*" || operation_id == "/" ||
         operation_id == "%") {
-      // Generic arithmetic's checked operator contract returns the receiver
-      // type. Keep that solver term on the exact binary occurrence; later
-      // lowerers must not reconstruct it from source spelling.
-      result = left;
+      // Retain the existing receiver-typed open arithmetic forms. The
+      // checker-owned mixed subtraction relation is the one open reversed
+      // form established here: Int - T produces T, so its specialization is
+      // Int - Int -> Int and Int - Float -> Float. This TypeRef comes from the
+      // exact operator operands, not a return-type widening heuristic.
+      const auto right_term = current_body_types_->solver.resolve(right);
+      const auto left_term = current_body_types_->solver.resolve(left);
+      const bool left_int = primitive_term(left_term, "int");
+      if (operation_id == "-" && left_int && right_term &&
+          !right_term->is_closed())
+        result = right;
+      else
+        result = left;
     } else if (operation_id == "==" || operation_id == "!=" ||
                operation_id == "<" || operation_id == "<=" ||
                operation_id == ">" || operation_id == ">=") {
@@ -52069,11 +52308,41 @@ abi_v10_checked_requirements(
         requirement.access == moss::AccessMode::Read &&
         requirement.argument_access == vector<moss::AccessMode>{
             moss::AccessMode::Read, moss::AccessMode::Read};
+    const bool generic_relation = requirement.kind ==
+            moss::RequirementKind::Operator &&
+        requirement.access == moss::AccessMode::Read &&
+        requirement.argument_access ==
+            vector<moss::AccessMode>{moss::AccessMode::Read} &&
+        requirement.arguments.size() == 1 && requirement.arguments.front() &&
+        requirement.result && *requirement.result;
+    const auto& operator_subject = requirement.subject;
+    const auto& operator_argument = requirement.arguments.empty()
+        ? moss::TypeRef{} : requirement.arguments.front();
+    const auto operator_result = requirement.result
+        ? *requirement.result : moss::TypeRef{};
+    const auto int_type = moss::Type::primitive("int");
+    const auto bool_type = moss::Type::primitive("bool");
+    const bool supported_mixed_subtraction = generic_relation &&
+        requirement.target_id == "operator:-" && operator_subject &&
+        operator_subject->structurally_equal(*int_type) &&
+        operator_argument->kind == moss::TypeKind::InferenceVar &&
+        operator_result->structurally_equal(*operator_argument);
+    const bool numeric_comparison = generic_relation &&
+        (requirement.target_id == "operator:<" ||
+         requirement.target_id == "operator:>" ||
+         requirement.target_id == "operator:<=" ||
+         requirement.target_id == "operator:>=") && operator_subject &&
+        operator_result->structurally_equal(*bool_type) &&
+        ((operator_subject->kind == moss::TypeKind::InferenceVar &&
+          operator_argument->structurally_equal(*int_type)) ||
+         (operator_subject->structurally_equal(*int_type) &&
+          operator_argument->kind == moss::TypeKind::InferenceVar));
     const bool supported_operator = requirement.kind ==
             moss::RequirementKind::Operator &&
         (requirement.target_id == "operator:*" ||
          requirement.target_id == "operator:+" ||
-         requirement.target_id == "operator:==");
+         requirement.target_id == "operator:==" ||
+         supported_mixed_subtraction || numeric_comparison);
     const bool supported_iterate = requirement.kind ==
             moss::RequirementKind::Iterate &&
         requirement.target_id == "static iterator" &&
@@ -52799,6 +53068,9 @@ static void append_abi_v10_occurrence_records(
     const bool checked_branch_arithmetic =
         abi_v10_checked_branch_arithmetic_body_candidate(
             summary, decoded, *program.type_context);
+    const bool checked_numeric_early_return =
+        abi_v10_checked_numeric_early_return_body_candidate(
+            summary, decoded, *program.type_context);
     const bool checked_member_summary =
         !facts.member_requirements.empty() &&
         abi_v10_generic_member_summary_candidate(summary);
@@ -52829,7 +53101,8 @@ static void append_abi_v10_occurrence_records(
             summary, decoded, *program.type_context);
     if (contains_conditional && contains_operation &&
         !abi_v10_collection_loop_summary_candidate(summary) &&
-        !checked_branch_arithmetic && !checked_conditional_arithmetic)
+        !checked_branch_arithmetic && !checked_conditional_arithmetic &&
+        !checked_numeric_early_return)
       continue;
     if (!summary.requirements.empty() &&
         !abi_v10_checked_arithmetic_summary_candidate(summary) &&
@@ -52838,6 +53111,7 @@ static void append_abi_v10_occurrence_records(
         !abi_v10_checked_for_assert_mutation_summary_candidate(summary) &&
         !checked_vector_literal && !generic_map_mutation_candidate &&
         !checked_branch_arithmetic &&
+        !checked_numeric_early_return &&
         !checked_member_summary)
       continue;
     vector<abi_v10::SourceProvenance> provenance{callable_provenance};
