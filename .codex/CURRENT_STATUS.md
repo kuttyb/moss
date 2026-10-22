@@ -10620,3 +10620,38 @@ filtered artifact agrees with the raw recheck, with unmeasured Range profiles
 explicitly marked. WP1/WP3 scope is separated, duplicate hostile records are
 explicit, and R3–R5 detail is outside the R2 proposal. No material planning
 blocker remains. This is not implementation review or L7 approval to begin R2.
+
+## Phase 25.1 R1.1 — source-backed borrowed-Range compatibility restored — 2026-10-22
+
+The exact source-backed reproducer was run on current `ae24c960` and failed
+in both profiles at `bytes.from_range(borrowed)` with
+`SOURCE_FREE_SUMMARY_INVALID`: the call-site Iterate validator required a
+result TypeRef absent from the incomplete source-side summary. An isolated
+worktree at `aa542b71` built and executed the same program in Debug and Release,
+printing `329` in each.
+
+The earliest incorrect relation was the assumption that an absent
+`Iterate.result` summary fact is a source-level mismatch. The bounded summary
+refresher intentionally promotes only the supported pure generic-For summary
+shape; it leaves the checked binder result absent for the effectful
+`from_range` body. R1.1 commit `ec0f64d5c5c2f3173c79632cd6d1dc007e6f71fc`
+skips that unavailable relation for source/ABI-v9 summaries, where normal
+body specialization remains authoritative, and keeps imported checked
+summaries fail-closed. It does not add ABI-v10 support for the Range body.
+
+The architect reviewed the correction on the working diff against
+`ae24c960915021d924deb0c75db4030d7983b8b9` and issued scoped GO with no
+P0/P1/P2 findings. The review confirmed the v10 For importer requires a
+nonempty Iterate result and rejects unsupported requirement sets. Focused
+validation passed: Team A semantics including source-backed `from_range`
+Debug/Release and source-free Range; M2b2 source-free/hostile corpus including
+Iterate receiver/result/binder/ordinal mutations; D2 collection-loop codec;
+checked-body IR/dependency closure; Phase 20 cross-crate Range ABI; Phase 21
+borrowed-view WRITE controls; feedback validation and `git diff --check`.
+
+## Phase 25.1 R2 execution authorization — 2026-10-22
+
+L7 authorized R2 after R1.1. Begin WP1, then WP2/WP3, then WP4 per
+`docs/phase25/PHASE_25_1_R2_EXECUTION_PLAN.md`; keep one compiler writer and the
+existing architect review cadence. R1.1 does not close the R3 ABI-v10
+`bytes.from_range` objective. No R2 package is complete yet.

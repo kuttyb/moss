@@ -1,9 +1,9 @@
 # Phase 25.1 R2 execution plan
 
 **Planning baseline:** `d289024c7c578de26ba670d4bd477ba90609c23e`
-**State:** Planning-review GO at
-`6cd9cf7f66b4a26b235c313153eba3019eac1910`. Proposal only; no R2
-implementation has started. L7 approval is required before coding.
+**State:** L7 authorized execution after R1.1. Planning review GO at
+`6cd9cf7f66b4a26b235c313153eba3019eac1910`. R1.1 is complete at
+`ec0f64d5`; R2 implementation is now authorized and proceeds WP1 through WP4.
 
 ## R2 objectives from the established plan
 
