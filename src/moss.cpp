@@ -2831,6 +2831,14 @@ static bool abi_v10_deferred_member_effects(
 static bool abi_v10_local_map_effects_covered(
     const ObservableEffects& effects,
     const vector<checked_ir::Stmt>& body);
+static bool abi_v10_generic_map_mutation_summary_candidate(
+    const abi_v10::Summary& summary);
+static bool abi_v10_checked_generic_map_mutation_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements);
+static bool abi_v10_generic_map_mutation_effects_covered(
+    const ObservableEffects& effects,
+    const vector<checked_ir::Stmt>& body);
 
 static bool valid_checked_string_literal_spelling(const string& source) {
   if (!is_single_string_literal(source)) return false;
@@ -2983,16 +2991,19 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
       abi_v10_checked_branch_arithmetic_summary_candidate(summary);
   const bool generic_for = abi_v10_checked_for_summary_candidate(summary) ||
       abi_v10_checked_for_assert_mutation_summary_candidate(summary);
+  const bool generic_map_mutation =
+      abi_v10_generic_map_mutation_summary_candidate(summary);
   const bool member_summary =
       abi_v10_generic_member_summary_candidate(summary);
   if (member_summary) {
     if (summary.requirements.size() > 64)
       invalid("checked ABI-v10 member requirement set exceeds its limit");
   } else if (!vector_literal && !branch_arithmetic && !generic_for &&
+      !generic_map_mutation &&
       summary.requirements.size() != 2)
     invalid("checked ABI-v10 typed requirement set is incomplete");
-  if (!member_summary && !collection_loop && !vector_literal && !branch_arithmetic &&
-      !generic_for) {
+  if (!member_summary && !collection_loop && !vector_literal &&
+      !branch_arithmetic && !generic_for && !generic_map_mutation) {
     if (summary.requirements[0].operation != "operator:*" ||
         summary.requirements[1].operation != "operator:+" ||
         summary.requirements[0].parent != 0 ||
@@ -3053,6 +3064,8 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
   std::set<string> requirement_ids;
   for (std::size_t index = 0; index < summary.requirements.size(); ++index) {
     const auto& wire = summary.requirements[index];
+    const bool index_write_value_relation = generic_map_mutation &&
+        wire.operation == "builtin:index-write-value";
     auto provenance = provenance_by_id.find(wire.provenance_id);
     if (provenance == provenance_by_id.end())
       invalid("checked ABI-v10 requirement has no verified provenance record");
@@ -3071,7 +3084,8 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
     auto result = wire.result
         ? imported_abi_v10_type(*wire.result, context, summary.variable_count)
         : moss::TypeRef{};
-    if (!subject || !result)
+    if (!subject || (wire.result && !result) ||
+        (!wire.result && !index_write_value_relation))
       invalid("checked ABI-v10 requirement TypeRef is unresolved");
 
     if (member_summary) {
@@ -3130,7 +3144,10 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
         ? moss::RequirementKind::Iterate
         : vector_literal
         ? moss::RequirementKind::SameType
-        : collection_loop && wire.operation == "builtin:index"
+        : index_write_value_relation
+            ? moss::RequirementKind::SameType
+        : (collection_loop || generic_map_mutation) &&
+                wire.operation == "builtin:index"
             ? moss::RequirementKind::Index
             : moss::RequirementKind::Operator;
     requirement.target_id = wire.operation;
@@ -4036,6 +4053,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
     const bool generic_for_candidate =
         abi_v10_checked_for_summary_candidate(summary) ||
         abi_v10_checked_for_assert_mutation_summary_candidate(summary);
+    const bool generic_map_mutation_candidate =
+        abi_v10_generic_map_mutation_summary_candidate(summary);
     const bool assert_mutation_for_candidate =
         abi_v10_checked_for_assert_mutation_summary_candidate(summary);
     const abi_v10::CheckedBodyRecord body = abi_v10::read_checked_body_record(
@@ -4046,6 +4065,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
         summary.parameters.size() != function.params.size() ||
         summary.parameter_access.size() != function.parameter_effects.size() ||
         (!collection_loop_candidate && !generic_for_candidate &&
+         !generic_map_mutation_candidate &&
          summary.observable_effect_bits))
       invalid("checked ABI-v10 body disagrees with its callable summary");
     for (std::size_t index = 0; index < summary.parameter_access.size(); ++index)
@@ -4068,7 +4088,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
     try {
       statements = checked_ir::decode_checked_body_v1(
           body.checked_ir_bytes, *program.type_context, parameters, result,
-          body.semantic_hash, vector_literal_summary_candidate);
+          body.semantic_hash, vector_literal_summary_candidate,
+          generic_map_mutation_candidate);
     } catch (const std::invalid_argument& error) {
       invalid(string("checked ABI-v10 body cannot be decoded: ") + error.what());
     }
@@ -4077,6 +4098,12 @@ static void project_imported_h3_checked_bodies(Program& program) {
         abi_v10_checked_vector_literal_body_candidate(summary, statements);
     if (vector_literal_summary_candidate && !vector_literal_body_candidate)
       invalid("checked ABI-v10 vector requirement does not match its body operands");
+    const bool generic_map_mutation_body_candidate =
+        generic_map_mutation_candidate &&
+        abi_v10_checked_generic_map_mutation_body_candidate(summary, statements);
+    if (generic_map_mutation_candidate &&
+        !generic_map_mutation_body_candidate)
+      invalid("checked ABI-v10 Map mutation requirement does not match its body");
     const bool member_summary_candidate =
         abi_v10_generic_member_summary_candidate(summary);
     const bool checked_member_body_candidate = member_summary_candidate &&
@@ -4255,6 +4282,11 @@ static void project_imported_h3_checked_bodies(Program& program) {
             function.observable_effects, statements);
     const bool map_effect_record_valid = local_map_effect_contract &&
         summary.observable_effect_tags == vector<string>{"may_panic"};
+    const bool generic_map_effect_record_valid =
+        generic_map_mutation_body_candidate &&
+        abi_v10_generic_map_mutation_effects_covered(
+            function.observable_effects, statements) &&
+        summary.observable_effect_tags == vector<string>{"may_panic"};
     const bool pure_effect_record_valid =
         abi_v10_effects_pure(function.observable_effects) &&
         summary.observable_effect_tags.empty();
@@ -4274,8 +4306,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
                 : abi_v10_checked_for_effects(function.observable_effects) &&
                       summary.observable_effect_tags ==
                           vector<string>{"may_diverge"})
-            : pure_effect_record_valid || map_effect_record_valid ||
-                  member_effect_record_valid;
+        : pure_effect_record_valid || map_effect_record_valid ||
+                  generic_map_effect_record_valid || member_effect_record_valid;
     if (!effect_contract_valid)
       invalid("checked ABI-v10 body disagrees with its callable summary");
     const auto dependencies = extract_semantic_dependencies(statements);
@@ -4818,12 +4850,27 @@ static void project_imported_h3_checked_bodies(Program& program) {
                                             statement.type).second)
             checked_projection_subset = false;
         } else if (statement.kind == checked_ir::StmtKind::AssignIndex) {
+          const bool local_map_receiver = statement.operands.size() == 2 &&
+              statement.operands[0].kind ==
+                  checked_ir::ExprKind::LocalRead &&
+              checked_local_types.count(statement.operands[0].ordinal) &&
+              statement.operands[0].type &&
+              checked_local_types.at(statement.operands[0].ordinal)
+                  ->structurally_equal(*statement.operands[0].type);
+          const bool writable_parameter_receiver =
+              generic_map_mutation_body_candidate &&
+              statement.operands.size() == 2 &&
+              statement.operands[0].kind ==
+                  checked_ir::ExprKind::Parameter &&
+              statement.operands[0].ordinal < summary.parameter_access.size() &&
+              summary.parameter_access[statement.operands[0].ordinal] ==
+                  abi_v10::Access::Write &&
+              statement.operands[0].type &&
+              statement.operands[0].ordinal < parameters.size() &&
+              statement.operands[0].type->structurally_equal(
+                  *parameters[statement.operands[0].ordinal]);
           if (statement.operands.size() != 2 || !statement.expr ||
-              statement.operands[0].kind != checked_ir::ExprKind::LocalRead ||
-              !checked_local_types.count(statement.operands[0].ordinal) ||
-              !statement.operands[0].type ||
-              !checked_local_types.at(statement.operands[0].ordinal)
-                   ->structurally_equal(*statement.operands[0].type))
+              (!local_map_receiver && !writable_parameter_receiver))
             checked_projection_subset = false;
         } else if (statement.kind == checked_ir::StmtKind::ExprStmt) {
           if (!statement.expr ||
@@ -5725,6 +5772,8 @@ static void validate_imported_h3_summary_closure(const Program& program) {
     const bool collection_loop =
         abi_v10_collection_loop_summary_candidate(summary);
     const bool generic_for = abi_v10_checked_for_summary_candidate(summary);
+    const bool generic_map_mutation =
+        abi_v10_generic_map_mutation_summary_candidate(summary);
     const bool assert_mutation_for =
         abi_v10_checked_for_assert_mutation_summary_candidate(summary);
     bool effects_valid = collection_loop
@@ -5769,11 +5818,18 @@ static void validate_imported_h3_summary_closure(const Program& program) {
             body.semantic_hash == summary.body_semantic_hash) {
           const auto statements = checked_ir::decode_checked_body_v1(
               body.checked_ir_bytes, *program.type_context, parameters,
-              result, body.semantic_hash);
+              result, body.semantic_hash, false, generic_map_mutation);
           effects_valid = abi_v10_local_map_effects_covered(
                   function.observable_effects, statements) &&
               summary.observable_effect_bits == 0 &&
               summary.observable_effect_tags == vector<string>{"may_panic"};
+          effects_valid = effects_valid ||
+              (generic_map_mutation &&
+               abi_v10_generic_map_mutation_effects_covered(
+                   function.observable_effects, statements) &&
+               summary.observable_effect_bits == 0 &&
+               summary.observable_effect_tags ==
+                   vector<string>{"may_panic"});
         }
       } catch (const std::exception&) {
         effects_valid = false;
@@ -6096,6 +6152,7 @@ class Checker {
     check_method_ownership();
     for (const auto& f : p_.functions) check_function(f);
     refresh_open_collection_summaries_from_checked_types();
+    refresh_open_map_mutation_summaries_from_checked_types();
     refresh_open_for_summaries_from_checked_types();
     for (const auto& d : p_.domains) check_domain(d);
     if (p_.main) check_main(*p_.main);
@@ -8111,6 +8168,55 @@ class Checker {
       return false;
     }
     const auto& summary = *function.open_summary;
+    const auto is_bound_variable = [](const moss::TypeRef& type,
+                                      std::uint32_t ordinal) {
+      return type && type->kind == moss::TypeKind::InferenceVar &&
+          type->var_id == moss::TypeVarId{0, 0, ordinal};
+    };
+    const auto index_write_requirement = std::find_if(
+        summary.requirements.begin(), summary.requirements.end(),
+        [](const moss::Requirement& requirement) {
+      return requirement.kind == moss::RequirementKind::Index &&
+          requirement.target_id == "builtin:index";
+    });
+    const auto index_write_relation = std::find_if(
+        summary.requirements.begin(), summary.requirements.end(),
+        [](const moss::Requirement& requirement) {
+      return requirement.kind == moss::RequirementKind::SameType &&
+          requirement.target_id == "builtin:index-write-value";
+    });
+    const bool checked_generic_map_write = function.params.size() == 3 &&
+        summary.parameter_types.size() == 3 &&
+        summary.parameter_access == vector<moss::AccessMode>{
+            moss::AccessMode::Write, moss::AccessMode::Read,
+            moss::AccessMode::Read} && summary.requirements.size() == 2 &&
+        index_write_requirement != summary.requirements.end() &&
+        index_write_relation != summary.requirements.end() &&
+        index_write_requirement->access == moss::AccessMode::Write &&
+        index_write_requirement->subject &&
+        index_write_requirement->subject->structurally_equal(
+            *summary.parameter_types[0]) &&
+        index_write_requirement->arguments.size() == 1 &&
+        index_write_requirement->arguments.front() &&
+        index_write_requirement->arguments.front()->structurally_equal(
+            *summary.parameter_types[1]) && index_write_requirement->result &&
+        *index_write_requirement->result &&
+        is_bound_variable(*index_write_requirement->result, 3) &&
+        index_write_relation->subject &&
+        index_write_relation->subject->structurally_equal(
+            **index_write_requirement->result) &&
+        index_write_relation->arguments.size() == 2 &&
+        index_write_relation->arguments[0] &&
+        index_write_relation->arguments[0]->structurally_equal(
+            *summary.parameter_types[2]) &&
+        index_write_relation->arguments[1] &&
+        index_write_relation->arguments[1]->structurally_equal(
+            *summary.result_type) &&
+        is_bound_variable(summary.parameter_types[0], 0) &&
+        is_bound_variable(summary.parameter_types[1], 1) &&
+        is_bound_variable(summary.parameter_types[2], 2) &&
+        summary.result_type && summary.result_type->structurally_equal(
+            *moss::Type::primitive("int"));
     std::map<moss::TypeVarId, moss::TypeRef> body_type_projection;
     std::function<bool(const moss::TypeRef&, const moss::TypeRef&)> relate_type =
         [&](const moss::TypeRef& actual, const moss::TypeRef& scheme) {
@@ -8155,6 +8261,7 @@ class Checker {
     }
     for (std::size_t index = 0; index < function.params.size(); ++index) {
       auto actual = state.resolved_local(function.params[index].name);
+      if (checked_generic_map_write) continue;
       if (!actual || !relate_type(actual, summary.parameter_types[index])) {
         return false;
       }
@@ -8173,8 +8280,10 @@ class Checker {
       }
       if (parameter >= function.params.size() ||
           parameter >= summary.parameter_types.size() ||
-          !summary.parameter_types[parameter] ||
-          !relate_type(occurrence.checked_type,
+          !summary.parameter_types[parameter])
+        return false;
+      if (checked_generic_map_write) continue;
+      if (!relate_type(occurrence.checked_type,
                        summary.parameter_types[parameter])) {
           return false;
         }
@@ -8693,14 +8802,27 @@ class Checker {
             parameter >= summary.parameter_types.size() ||
             !summary.parameter_types[parameter])
           return std::nullopt;
-        const auto parameter_type = state.resolved_local(
-            function.params[parameter].name);
-        const auto occurrence_type = state.solver.resolve(
-            occurrence.checked_type);
-        if (!parameter_type || !occurrence_type ||
-            !parameter_type->structurally_equal(*occurrence_type))
-          return std::nullopt;
+        if (!checked_generic_map_write) {
+          const auto parameter_type = state.resolved_local(
+              function.params[parameter].name);
+          const auto occurrence_type = state.solver.resolve(
+              occurrence.checked_type);
+          if (!parameter_type || !occurrence_type ||
+              !parameter_type->structurally_equal(*occurrence_type))
+            return std::nullopt;
+        }
         type = summary.parameter_types[parameter];
+      } else if (checked_generic_map_write &&
+          occurrence.kind == BodyTypeState::ExpressionOccurrence::Kind::Index &&
+          occurrence.root_slot == "assignment-place" &&
+          index_write_requirement != summary.requirements.end() &&
+          index_write_requirement->result) {
+        type = *index_write_requirement->result;
+      } else if (checked_generic_map_write &&
+          occurrence.kind == BodyTypeState::ExpressionOccurrence::Kind::Index &&
+          occurrence.parent_id == UINT32_MAX &&
+          occurrence.root_slot == "return-value") {
+        type = summary.result_type;
       } else {
         type = summary_typed_return_root
             ? summary.result_type : checked_body_type(occurrence.checked_type);
@@ -8899,7 +9021,9 @@ class Checker {
           auto container = lower_expression(children[0]->id, depth + 1);
           auto index = lower_expression(children[1]->id, depth + 1);
           if (!container || !index || !container->type || !index->type ||
-              container->type->kind != TypeKind::Builtin)
+              (container->type->kind != TypeKind::Builtin &&
+               !(checked_generic_map_write &&
+                 container->type->kind == TypeKind::InferenceVar)))
             return std::nullopt;
           const bool sequence_index =
               (container->type->name == "vector" ||
@@ -8912,7 +9036,43 @@ class Checker {
               container->type->type_args.size() == 2 &&
               container->type->type_args[0]->structurally_equal(*index->type) &&
               container->type->type_args[1]->structurally_equal(*type);
-          if (!sequence_index && !map_index) return std::nullopt;
+          const auto checked_index_requirement = std::find_if(
+              summary.requirements.begin(), summary.requirements.end(),
+              [&](const moss::Requirement& requirement) {
+            return requirement.kind == moss::RequirementKind::Index &&
+                requirement.target_id == "builtin:index" &&
+                requirement.subject &&
+                requirement.subject->structurally_equal(*container->type) &&
+                requirement.arguments.size() == 1 &&
+                requirement.arguments.front() &&
+                requirement.arguments.front()->structurally_equal(*index->type);
+          });
+          const bool requirement_result_matches =
+              checked_index_requirement != summary.requirements.end() &&
+              checked_index_requirement->result &&
+              (*checked_index_requirement->result)->structurally_equal(*type);
+          const bool requirement_result_related =
+              checked_index_requirement != summary.requirements.end() &&
+              checked_index_requirement->result &&
+              std::any_of(summary.requirements.begin(),
+                  summary.requirements.end(), [&](const moss::Requirement& relation) {
+            return relation.kind == moss::RequirementKind::SameType &&
+                relation.target_id == "builtin:index-write-value" &&
+                relation.subject &&
+                relation.subject->structurally_equal(
+                    **checked_index_requirement->result) &&
+                std::any_of(relation.arguments.begin(),
+                    relation.arguments.end(), [&](const moss::TypeRef& argument) {
+              return argument && argument->structurally_equal(*type);
+            });
+          });
+          const bool generic_map_index =
+              container->type->kind == TypeKind::InferenceVar &&
+              checked_index_requirement != summary.requirements.end() &&
+              checked_index_requirement->access == moss::AccessMode::Write &&
+              (requirement_result_matches || requirement_result_related);
+          if (!sequence_index && !map_index && !generic_map_index)
+            return std::nullopt;
           result.kind = checked_ir::ExprKind::Index;
           result.semantic_target_id = occurrence.operation_id;
           result.operands = {std::move(*container), std::move(*index)};
@@ -9267,13 +9427,55 @@ class Checker {
                 place->semantic_target_id !=
                     checked_ir::kCollectionIndexOperationId ||
                 place->operands.size() != 2 || !place->type ||
-                !place->type->structurally_equal(*expression->type) ||
-                place->operands[0].kind != checked_ir::ExprKind::LocalRead ||
-                place->operands[0].ordinal >= local_types.size() ||
-                !local_types[place->operands[0].ordinal] ||
-                place->operands[0].type->kind != TypeKind::Builtin ||
-                place->operands[0].type->name != "map")
+                (place->operands[0].kind != checked_ir::ExprKind::LocalRead &&
+                 place->operands[0].kind != checked_ir::ExprKind::Parameter))
               return std::nullopt;
+            if (place->operands[0].kind == checked_ir::ExprKind::LocalRead) {
+              if (place->operands[0].ordinal >= local_types.size() ||
+                  !local_types[place->operands[0].ordinal] ||
+                  place->operands[0].type->kind != TypeKind::Builtin ||
+                  place->operands[0].type->name != "map" ||
+                  !place->type->structurally_equal(*expression->type))
+                return std::nullopt;
+            } else {
+              const auto parameter = place->operands[0].ordinal;
+              const bool write_index_requirement =
+                  parameter < summary.parameter_access.size() &&
+                  summary.parameter_access[parameter] ==
+                      moss::AccessMode::Write &&
+                  place->operands[0].type &&
+                  place->operands[0].type->kind == TypeKind::InferenceVar &&
+                  std::any_of(summary.requirements.begin(),
+                      summary.requirements.end(), [&](const auto& requirement) {
+                return requirement.kind == moss::RequirementKind::Index &&
+                    requirement.target_id == "builtin:index" &&
+                    requirement.access == moss::AccessMode::Write &&
+                    requirement.subject &&
+                    requirement.subject->structurally_equal(
+                        *place->operands[0].type) &&
+                    requirement.arguments.size() == 1 &&
+                    requirement.arguments.front() &&
+                    requirement.arguments.front()->structurally_equal(
+                        *place->operands[1].type) && requirement.result &&
+                    (*requirement.result)->structurally_equal(
+                        *place->type);
+              });
+              const bool value_type_relation = std::any_of(
+                  summary.requirements.begin(), summary.requirements.end(),
+                  [&](const auto& requirement) {
+                return requirement.kind == moss::RequirementKind::SameType &&
+                    requirement.target_id == "builtin:index-write-value" &&
+                    requirement.subject &&
+                    requirement.subject->structurally_equal(*place->type) &&
+                    std::any_of(requirement.arguments.begin(),
+                        requirement.arguments.end(), [&](const auto& argument) {
+                  return argument &&
+                      argument->structurally_equal(*expression->type);
+                });
+              });
+              if (!write_index_requirement || !value_type_relation)
+                return std::nullopt;
+            }
             lowered.kind = checked_ir::StmtKind::AssignIndex;
             lowered.operands = std::move(place->operands);
             lowered.expr = std::move(*expression);
@@ -9479,8 +9681,9 @@ class Checker {
     };
     auto lowered_body = lower_block(UINT32_MAX, 0);
     if (!lowered_body || lowered_body->empty() ||
-        consumed_statements.size() != state.statement_occurrence_ids.size())
+        consumed_statements.size() != state.statement_occurrence_ids.size()) {
       return false;
+    }
     statements = std::move(*lowered_body);
     std::function<bool(const vector<checked_ir::Stmt>&)> terminates_with_return =
         [&](const vector<checked_ir::Stmt>& block) {
@@ -9520,14 +9723,15 @@ class Checker {
           });
       const auto decoded = checked_ir::decode_checked_body_v1(
           bytes, *p_.type_context, summary.parameter_types,
-          summary.result_type, hash, vector_relation_summary);
+          summary.result_type, hash, vector_relation_summary,
+          checked_generic_map_write);
       if (checked_ir::encode_checked_body_v1(decoded) != bytes ||
           checked_ir::compute_checked_body_hash_v1(decoded) != hash)
         return false;
       function.checked_body_ir_v1_bytes = bytes;
       function.checked_body_ir_v1_hash = hash;
       return true;
-    } catch (const std::invalid_argument& error) {
+    } catch (const std::invalid_argument&) {
       return false;
     }
   }
@@ -10808,6 +11012,181 @@ class Checker {
       if (!moss::close_open_summary_ordinals(summary)) continue;
       summary.observable_effects = function.observable_effects;
       summary.scheme_complete = !summary.observable_effects.unresolved &&
+          summary.observable_effects.may_panic;
+      summary.complete = false;
+      if (summary.scheme_complete) function.open_summary = std::move(summary);
+    }
+  }
+
+  // Preserve the checker's deferred Map-write relation for source-free
+  // specialization. The ordinary checker defers compatibility until call
+  // arguments are known, so retain the exact indexed result/value/return
+  // TypeRefs as a SameType requirement instead of guessing from names.
+  void refresh_open_map_mutation_summaries_from_checked_types() {
+    for (auto& function : p_.functions) {
+      if (!function.exported || !function.generic ||
+          !function.imported_checked_summary_payload.empty() ||
+          !function.open_summary || function.params.size() != 3 ||
+          !function.open_summary->scheme_complete ||
+          function.open_summary->requirements.size() != 1 ||
+          function.open_summary->requirements.front().kind !=
+              moss::RequirementKind::Index ||
+          function.open_summary->requirements.front().target_id !=
+              "builtin:index")
+        continue;
+      const auto retained = checked_body_states_.find(&function.body);
+      if (retained == checked_body_states_.end() || !retained->second) {
+        continue;
+      }
+      auto& state = *retained->second;
+      const auto access = function.open_summary->parameter_access;
+      if (access != vector<moss::AccessMode>{moss::AccessMode::Write,
+              moss::AccessMode::Read, moss::AccessMode::Read})
+      {
+        continue;
+      }
+
+      const BodyTypeState::StatementOccurrence* write_statement = nullptr;
+      const BodyTypeState::StatementOccurrence* return_statement = nullptr;
+      std::size_t indexed_writes = 0;
+      std::size_t returns = 0;
+      for (const auto& occurrence : state.statement_occurrences) {
+        if (!occurrence.source) continue;
+        if (occurrence.kind == Stmt::Kind::Assign) {
+          const auto root = state.expression_root_slots.find(
+              {occurrence.id, "assignment-place"});
+          if (root != state.expression_root_slots.end() &&
+              root->second < state.expression_occurrences.size() &&
+              state.expression_occurrences[root->second].kind ==
+                  BodyTypeState::ExpressionOccurrence::Kind::Index) {
+            write_statement = &occurrence;
+            ++indexed_writes;
+          }
+        } else if (occurrence.kind == Stmt::Kind::Return) {
+          const auto root = state.expression_root_slots.find(
+              {occurrence.id, "return-value"});
+          if (root != state.expression_root_slots.end() &&
+              root->second < state.expression_occurrences.size() &&
+              state.expression_occurrences[root->second].kind ==
+                  BodyTypeState::ExpressionOccurrence::Kind::Index) {
+            return_statement = &occurrence;
+            ++returns;
+          }
+        }
+      }
+      if (indexed_writes != 1 || returns != 1 || !write_statement ||
+          !return_statement || function.body.size() != 2 ||
+          function.body[0].kind != Stmt::Kind::Assign ||
+          function.body[1].kind != Stmt::Kind::Return)
+      {
+        continue;
+      }
+
+      auto root_for = [&](const auto& statement, const string& slot)
+          -> const BodyTypeState::ExpressionOccurrence* {
+        const auto root = state.expression_root_slots.find(
+            {statement.id, slot});
+        return root == state.expression_root_slots.end() ||
+                root->second >= state.expression_occurrences.size()
+            ? nullptr : &state.expression_occurrences[root->second];
+      };
+      auto child_for = [&](std::uint32_t parent, const string& role)
+          -> const BodyTypeState::ExpressionOccurrence* {
+        const BodyTypeState::ExpressionOccurrence* found = nullptr;
+        for (const auto& occurrence : state.expression_occurrences) {
+          if (occurrence.parent_id != parent || occurrence.child_role != role)
+            continue;
+          if (found) return nullptr;
+          found = &occurrence;
+        }
+        return found;
+      };
+      const auto* write_place = root_for(*write_statement, "assignment-place");
+      const auto* write_receiver = write_place
+          ? child_for(write_place->id, "container") : nullptr;
+      const auto* write_key = write_place
+          ? child_for(write_place->id, "index") : nullptr;
+      const auto* write_value = root_for(*write_statement, "initializer");
+      const auto* return_index = root_for(*return_statement, "return-value");
+      const auto* return_receiver = return_index
+          ? child_for(return_index->id, "container") : nullptr;
+      const auto* return_key = return_index
+          ? child_for(return_index->id, "index") : nullptr;
+      auto parameter_is = [](const auto* occurrence, std::uint32_t ordinal) {
+        return occurrence && occurrence->completed && occurrence->checked_type &&
+            occurrence->kind ==
+                BodyTypeState::ExpressionOccurrence::Kind::Identifier &&
+            occurrence->resolved_binding_id ==
+                "parameter:" + std::to_string(ordinal);
+      };
+      if (!write_place || !write_place->completed || !write_place->checked_type ||
+          write_place->operation_id != "builtin:index" ||
+          !parameter_is(write_receiver, 0) || !parameter_is(write_key, 1) ||
+          !parameter_is(write_value, 2) || !return_index ||
+          !return_index->completed || !return_index->checked_type ||
+          return_index->operation_id != "builtin:index" ||
+          !parameter_is(return_receiver, 0) || !parameter_is(return_key, 1))
+      {
+        continue;
+      }
+
+      auto summary = *function.open_summary;
+      auto index = std::find_if(summary.requirements.begin(),
+          summary.requirements.end(), [](const moss::Requirement& requirement) {
+        return requirement.kind == moss::RequirementKind::Index &&
+            requirement.target_id == "builtin:index";
+      });
+      if (index == summary.requirements.end() ||
+          std::count_if(summary.requirements.begin(), summary.requirements.end(),
+              [](const moss::Requirement& requirement) {
+            return requirement.kind == moss::RequirementKind::Index &&
+                requirement.target_id == "builtin:index";
+          }) != 1)
+        continue;
+      if (summary.bound_variable_count != 4 ||
+          summary.parameter_types.size() != 3 || !index->subject ||
+          !index->result || !*index->result ||
+          index->arguments.size() != 1 || !index->arguments.front() ||
+          !summary.parameter_types[0] || !summary.parameter_types[1] ||
+          !summary.parameter_types[2] || !summary.result_type ||
+          !summary.parameter_types[0]->structurally_equal(*index->subject) ||
+          !summary.parameter_types[1]->structurally_equal(
+              *index->arguments.front()) ||
+          (*index->result)->kind != moss::TypeKind::InferenceVar ||
+          (*index->result)->var_id != moss::TypeVarId{0, 0, 3} ||
+          summary.parameter_types[0]->kind != moss::TypeKind::InferenceVar ||
+          summary.parameter_types[0]->var_id != moss::TypeVarId{0, 0, 0} ||
+          summary.parameter_types[1]->kind != moss::TypeKind::InferenceVar ||
+          summary.parameter_types[1]->var_id != moss::TypeVarId{0, 0, 1} ||
+          summary.parameter_types[2]->kind != moss::TypeKind::InferenceVar ||
+          summary.parameter_types[2]->var_id != moss::TypeVarId{0, 0, 2} ||
+          !summary.result_type->structurally_equal(
+              *moss::Type::primitive("int")) ||
+          !state.solver.resolve(write_place->checked_type) ||
+          !state.solver.resolve(return_index->checked_type) ||
+          !state.solver.resolve(write_place->checked_type)->structurally_equal(
+              *state.solver.resolve(return_index->checked_type)))
+        continue;
+      index->argument_access = {moss::AccessMode::Read};
+      index->access = moss::AccessMode::Write;
+
+      moss::Requirement relation;
+      relation.id = function.semantic_callable_id +
+          ":requirement:index-write-value";
+      relation.kind = moss::RequirementKind::SameType;
+      relation.target_id = "builtin:index-write-value";
+      relation.subject = *index->result;
+      relation.arguments = {summary.parameter_types[2], summary.result_type};
+      relation.argument_access = {moss::AccessMode::Read,
+                                  moss::AccessMode::Read};
+      relation.origin = {summary.origin.module_id, function.source_file,
+          write_statement->line, 1, function.semantic_callable_id,
+          relation.id};
+      summary.requirements.push_back(std::move(relation));
+      if (!moss::close_open_summary_ordinals(summary)) continue;
+      summary.observable_effects = function.observable_effects;
+      summary.scheme_complete = !summary.observable_effects.unresolved &&
+          summary.observable_effects.local_mutation &&
           summary.observable_effects.may_panic;
       summary.complete = false;
       if (summary.scheme_complete) function.open_summary = std::move(summary);
@@ -15456,6 +15835,25 @@ class Checker {
             if (!argument || !solver.unify(requirement.subject, argument))
               err(line, "arguments to function '" + callee +
                   "' violate a homogeneous vector element type relation",
+                  "TYPE_MISMATCH");
+          continue;
+        }
+        if (requirement.kind == moss::RequirementKind::SameType &&
+            requirement.target_id == "builtin:index-write-value") {
+          if (!requirement.subject || requirement.arguments.empty() ||
+              requirement.result ||
+              requirement.access != moss::AccessMode::Read ||
+              requirement.argument_access != vector<moss::AccessMode>(
+                  requirement.arguments.size(), moss::AccessMode::Read)) {
+            err(line, "function '" + callee +
+                "' has an invalid indexed-write type relation",
+                "SOURCE_FREE_REQUIREMENT_INVALID");
+            continue;
+          }
+          for (const auto& argument : requirement.arguments)
+            if (!argument || !solver.unify(requirement.subject, argument))
+              err(line, "arguments to function '" + callee +
+                  "' violate the indexed-write value type relation",
                   "TYPE_MISMATCH");
           continue;
         }
@@ -51664,6 +52062,13 @@ abi_v10_checked_requirements(
     const bool supported_index = requirement.kind ==
             moss::RequirementKind::Index &&
         requirement.target_id == "builtin:index";
+    const bool supported_index_write_value = requirement.kind ==
+            moss::RequirementKind::SameType &&
+        requirement.target_id == "builtin:index-write-value" &&
+        requirement.arguments.size() == 2 && !requirement.result &&
+        requirement.access == moss::AccessMode::Read &&
+        requirement.argument_access == vector<moss::AccessMode>{
+            moss::AccessMode::Read, moss::AccessMode::Read};
     const bool supported_operator = requirement.kind ==
             moss::RequirementKind::Operator &&
         (requirement.target_id == "operator:*" ||
@@ -51696,7 +52101,8 @@ abi_v10_checked_requirements(
             requirement.argument_access.end(), [](moss::AccessMode access) {
           return access == moss::AccessMode::Read;
         });
-    if ((!supported_index && !supported_operator && !supported_iterate &&
+    if ((!supported_index && !supported_index_write_value &&
+         !supported_operator && !supported_iterate &&
          !supported_vector_relation) ||
         requirement.id.empty() || requirement.origin.module_id.empty() ||
         requirement.origin.enclosing_callable.empty() ||
@@ -51900,6 +52306,115 @@ static bool abi_v10_local_map_effects_covered(
   checked_ir::encode_checked_expr(written_key, write.operands[1]);
   checked_ir::encode_checked_expr(read_key, result.expr->operands[1]);
   return written_key == read_key;
+}
+
+// A generic Map write carries two checker obligations: the receiver is
+// writable and indexable, and the assigned parameter type matches both the
+// indexed result and the callable's declared Int result. Keep this ABI-v10
+// subset tied to its exact parameter and TypeRef ordinals.
+static bool abi_v10_generic_map_mutation_summary_candidate(
+    const abi_v10::Summary& summary) {
+  const auto bound = [](const abi_v10::WireType& type, std::uint32_t ordinal) {
+    return type.kind == abi_v10::WireTypeKind::BoundVar &&
+        type.ordinal == ordinal && type.identity.empty() &&
+        type.arguments.empty();
+  };
+  const auto int_type = [](const abi_v10::WireType& type) {
+    return type.kind == abi_v10::WireTypeKind::Primitive &&
+        type.identity == "int" && type.arguments.empty();
+  };
+  if (summary.variable_count != 4 || summary.parameters.size() != 3 ||
+      !bound(summary.parameters[0], 0) ||
+      !bound(summary.parameters[1], 1) ||
+      !bound(summary.parameters[2], 2) ||
+      summary.parameter_access != vector<abi_v10::Access>{
+          abi_v10::Access::Write, abi_v10::Access::Read,
+          abi_v10::Access::Read} ||
+      !int_type(summary.result) || !summary.dependencies.empty() ||
+      !abi_v10::checked_body_hash_valid(summary.body_semantic_hash) ||
+      summary.provenance_id.empty() || summary.requirements.size() != 2)
+    return false;
+  const auto& index = summary.requirements[0];
+  const auto& value_relation = summary.requirements[1];
+  return index.operation == "builtin:index" && index.parent == 0 &&
+      index.access == abi_v10::Access::Write && bound(index.receiver, 0) &&
+      index.arguments.size() == 1 && index.argument_access.size() == 1 &&
+      index.argument_access.front() == abi_v10::Access::Read &&
+      bound(index.arguments.front(), 1) && index.result &&
+      bound(*index.result, 3) && !index.provenance_id.empty() &&
+      value_relation.operation == "builtin:index-write-value" &&
+      value_relation.parent == 0 &&
+      value_relation.access == abi_v10::Access::Read &&
+      bound(value_relation.receiver, 3) &&
+      value_relation.arguments.size() == 2 &&
+      value_relation.argument_access.size() == 2 &&
+      std::all_of(value_relation.argument_access.begin(),
+          value_relation.argument_access.end(), [](abi_v10::Access access) {
+        return access == abi_v10::Access::Read;
+      }) &&
+      bound(value_relation.arguments.front(), 2) &&
+      int_type(value_relation.arguments[1]) && !value_relation.result &&
+      !value_relation.provenance_id.empty();
+}
+
+static bool abi_v10_checked_generic_map_mutation_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements) {
+  if (!abi_v10_generic_map_mutation_summary_candidate(summary) ||
+      statements.size() != 2 ||
+      statements[0].kind != checked_ir::StmtKind::AssignIndex ||
+      statements[0].operands.size() != 2 || !statements[0].expr ||
+      statements[1].kind != checked_ir::StmtKind::Return ||
+      !statements[1].expr ||
+      statements[1].expr->kind != checked_ir::ExprKind::Index ||
+      statements[1].expr->operands.size() != 2)
+    return false;
+  const auto parameter = [](const checked_ir::Expr& expression,
+                            std::uint32_t ordinal) {
+    return expression.kind == checked_ir::ExprKind::Parameter &&
+        expression.ordinal == ordinal && expression.operands.empty();
+  };
+  const auto& write = statements[0];
+  const auto& read = *statements[1].expr;
+  if (!parameter(write.operands[0], 0) ||
+      !parameter(write.operands[1], 1) || !parameter(*write.expr, 2) ||
+      read.semantic_target_id != checked_ir::kCollectionIndexOperationId ||
+      !parameter(read.operands[0], 0) || !parameter(read.operands[1], 1))
+    return false;
+  auto matches = [&](const moss::TypeRef& type,
+                     const abi_v10::WireType& wire) {
+    auto encoded = abi_v10_checked_type(type, summary.variable_count);
+    return encoded && abi_v10::type_bytes(*encoded, summary.variable_count) ==
+        abi_v10::type_bytes(wire, summary.variable_count);
+  };
+  return matches(write.operands[0].type, summary.parameters[0]) &&
+      matches(write.operands[1].type, summary.requirements[0].arguments[0]) &&
+      matches(write.expr->type, summary.requirements[1].arguments[0]) &&
+      matches(read.type, summary.result) &&
+      matches(read.operands[0].type, summary.parameters[0]) &&
+      matches(read.operands[1].type, summary.requirements[0].arguments[0]);
+}
+
+static bool abi_v10_generic_map_mutation_effects_covered(
+    const ObservableEffects& effects,
+    const vector<checked_ir::Stmt>& body) {
+  if (effects.local_capture_read || !effects.local_mutation ||
+      effects.domain_read || effects.domain_write || effects.message ||
+      effects.external_io || effects.fileio || effects.fileio_unknown ||
+      !effects.may_panic || !effects.raise_set.empty() ||
+      effects.may_diverge || effects.unresolved || body.size() != 2)
+    return false;
+  const auto& write = body.front();
+  const auto& result = body.back();
+  return write.kind == checked_ir::StmtKind::AssignIndex &&
+      write.operands.size() == 2 && write.operands.front().kind ==
+          checked_ir::ExprKind::Parameter &&
+      write.operands.front().ordinal == 0 &&
+      result.kind == checked_ir::StmtKind::Return && result.expr &&
+      result.expr->kind == checked_ir::ExprKind::Index &&
+      result.expr->operands.size() == 2 &&
+      result.expr->operands.front().kind == checked_ir::ExprKind::Parameter &&
+      result.expr->operands.front().ordinal == 0;
 }
 
 static abi_v10::SourceProvenance abi_v10_checked_provenance(
@@ -52203,11 +52718,14 @@ static void append_abi_v10_occurrence_records(
     vector<checked_ir::Stmt> decoded;
     const bool vector_literal_summary_candidate =
         abi_v10_checked_vector_literal_summary_candidate(summary);
+    const bool generic_map_mutation_candidate =
+        abi_v10_generic_map_mutation_summary_candidate(summary);
     try {
       decoded = checked_ir::decode_checked_body_v1(
           body.checked_ir_bytes, *program.type_context,
           facts.parameter_types, facts.result_type, body.semantic_hash,
-          vector_literal_summary_candidate);
+          vector_literal_summary_candidate,
+          generic_map_mutation_candidate);
       if (checked_ir::encode_checked_body_v1(decoded) != body.checked_ir_bytes ||
           checked_ir::compute_checked_body_hash_v1(decoded) !=
               body.semantic_hash)
@@ -52237,6 +52755,12 @@ static void append_abi_v10_occurrence_records(
               facts.observable_effects, decoded)) {
         // Key evaluation can panic even when the same-key write dominates
         // the Map read, so the sealed summary must retain that effect.
+        summary.observable_effect_tags = {"may_panic"};
+      } else if (generic_map_mutation_candidate &&
+          abi_v10_checked_generic_map_mutation_body_candidate(
+              summary, decoded) &&
+          abi_v10_generic_map_mutation_effects_covered(
+              facts.observable_effects, decoded)) {
         summary.observable_effect_tags = {"may_panic"};
       } else {
         auto for_summary = summary;
@@ -52312,7 +52836,8 @@ static void append_abi_v10_occurrence_records(
         !abi_v10_collection_loop_summary_candidate(summary) &&
         !abi_v10_checked_for_summary_candidate(summary) &&
         !abi_v10_checked_for_assert_mutation_summary_candidate(summary) &&
-        !checked_vector_literal && !checked_branch_arithmetic &&
+        !checked_vector_literal && !generic_map_mutation_candidate &&
+        !checked_branch_arithmetic &&
         !checked_member_summary)
       continue;
     vector<abi_v10::SourceProvenance> provenance{callable_provenance};

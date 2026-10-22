@@ -73,9 +73,9 @@
       "consumer": "module Main\nimport Service\n\nfn main():\n  values = Map()\n  values[\"seed\"] = 0\n  echo Service.insert_and_read(values, \"moss\", 7)\n  echo Service.insert_and_read(values, \"codex\", 9)\n  echo values[\"moss\"]\n",
       "expected_output": "7\n9\n7\n",
       "callable_name": "insert_and_read",
-      "provider_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "consumer_expected_error": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-      "checked_body_status": "Valid Map operation and key/value specialization are checked in source-backed/v9; v10 admission is not inferred from ordinary concrete Map functions.",
+      "poison_callables": ["insert_and_read"],
+      "provider_must_emit_v10": true,
+      "checked_body_status": "Open Map key/value relations, indexed write/read effects, and source-free specialization are preserved by the checked body in source-backed, ABI-v9, and ABI-v10.",
       "evidence": "docs/GENTLE_INTRODUCTION_TO_MOSS.md#map"
     },
     {

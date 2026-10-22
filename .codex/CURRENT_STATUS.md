@@ -10842,8 +10842,8 @@ Authorized first R3A work package: take the actual
 and effect/ownership facts, common checked-body emission and reading, imported
 dependency validation, then source-deleted Debug/Release execution with legacy
 poisoning and hostile iterator/binder/dependency/borrow checks. This is the
-smallest direct continuation of the R1.1 compatibility repair; R3A is now in
-progress.
+smallest direct continuation of the R1.1 compatibility repair; R3A was
+accepted at `84a9bb28` and the acceptance record was pushed at `7668a8ff`.
 
 ## R3A implementation checkpoint — 2026-10-22
 
@@ -10899,25 +10899,37 @@ checks, and `git diff --check` pass. The accepted R3A implementation is
 committed and pushed as `84a9bb28`; the acceptance record is pushed at
 `7668a8ff`.
 
-## R3B initial Map baseline — 2026-10-22
+## R3B Map-parameter mutation — scoped architect GO — 2026-10-22
 
-The first remaining R3B slice is open Map-parameter mutation. The focused
-compatibility oracle at `7668a8ff` confirms the unchanged probe passes
-source-backed and ABI-v9 Debug/Release with output `7`, `9`, `7`; ABI-v10
-remains intentionally fail-closed at provider admission with
-`SOURCE_FREE_CHECKED_BODY_UNAVAILABLE` because `Service__insert_and_read` has
-no validated typed summary and checked body. Source inspection confirms the
-existing common indexed-assignment reader only admits a mutable local typed
-`Map[K,V]`; the producer's corresponding local-target check also excludes an
-open parameter. The structured `inspect insert_and_read` result shows one
-`index` requirement (receiver bound variable 0, key variable 1, result
-variable 3), while the value parameter is a separate variable 2. Top-level
-checker ownership facts say `values: WRITE`, `key: READ`, `value: READ`, and
-observable effects include `local_mutation` and `may_panic`; however the typed
-open summary has `parameter_leaf_effects: null` and no explicit checked
-index-write relation. A concrete source-backed call that passes a String
-value to a Map[String,Int] is rejected with `TYPE_MISMATCH`, so that
-specialization relation exists in the live checker but is missing from the
-source-free typed contract/body. This is the first authority gap to close.
-No compiler edits for R3B have been made yet. Other R3B profiles and the R4
-ABI-v9 raise/recover and `packages/time` findings remain open.
+The first missing invariant was an explicit checker-owned relation tying the
+open indexed result TypeRef to both the assigned value parameter and the
+callable's declared result. The ordinary checker had deferred this comparison
+until call specialization, but the exported summary retained only the
+read-index requirement. The common occurrence producer now promotes the
+relation only after verifying the exact indexed-write and indexed-read
+occurrences, parameter binding identities, open TypeRefs, and checker-derived
+WRITE/READ/READ access facts. Its common checked-body IR supports the open
+parameter receiver; the reader/importer validates the exact requirement order,
+TypeRefs, write target, effects, and specialization before projection.
+
+The unchanged `surface-map-index-mutation` profile passes source-backed,
+ABI-v9, and source-deleted ABI-v10 Debug/Release with output `7\n9\n7\n`.
+ABI-v10 removes the provider source, poisons both `generic_stmt` records from
+`insert_and_read`, and observes checked-body projection. Rehashed mutations of
+index access, value relation, missing `may_panic`, and missing body all reject
+before projecting the selected Map body. The checked-body IR unit suite and
+full M2b2 source-free/hostile corpus pass, preserving R1 Vector `For` and the
+previously accepted R1/R2 rows. The full M2b2 run also passes Map's existing
+effect-erasure, missing-summary/body, provenance, identity, and hash controls.
+
+The architect independently ran the source-free positive in Debug/Release and
+all four rehashed Map mutations. The first review found a P2 oracle gap: stale
+expected-unavailable fields could have hidden a provider or consumer failure.
+Those fields are removed, `provider_must_emit_v10` is required, and the
+architect reran the corrected compatibility oracle. Source-backed, ABI-v9,
+and ABI-v10 Debug/Release pass with zero unexpected results; the architect
+issued scoped GO with no compiler P0/P1/P2 findings. Work is limited to this
+Map operation profile; early return, mutable-local `while`, typed enum
+`match`, pipelines, generic `assert`, exception control flow, and higher-order
+callback evidence remain open R3 work. The R4 ABI-v9 raise/recover defect and
+`packages/time` source error remain visible.

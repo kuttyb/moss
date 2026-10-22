@@ -243,8 +243,8 @@ def case_result(case: dict, root: Path, poisoner: Path) -> dict:
             check_env = env_for(root, mode=mode, profile=profile)
             check_env["MOSS_MODULE_PATH"] = str(artifacts)
             check_env["MOSS_PHASE25_CHECKED_BODY_TRACE"] = "1" if mode == "v10" else "0"
-            consumer_build = margo_build(consumer, mode, profile, root, module_path=artifacts,
-                                         trace=(mode == "v10"))
+            consumer_build = margo_build(consumer, mode, profile, root,
+                                         module_path=artifacts)
             if consumer_build["exit_code"]:
                 failure_text = consumer_build["stdout"] + consumer_build["stderr"]
                 expected_error = case.get("consumer_expected_error") or case.get("provider_expected_error")

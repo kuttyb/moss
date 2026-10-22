@@ -560,12 +560,14 @@ class H3BodyReader {
                bool allow_empty_vector_return = false,
                bool allow_collection_loop_body = false,
                bool allow_vector_literal_relation = false,
-               bool allow_member_call = false)
+               bool allow_member_call = false,
+               bool allow_generic_map_index_mutation = false)
       : bytes_(bytes), context_(context), parameters_(parameters), result_(result),
         allow_empty_vector_return_(allow_empty_vector_return),
         allow_collection_loop_body_(allow_collection_loop_body),
         allow_vector_literal_relation_(allow_vector_literal_relation),
-        allow_member_call_(allow_member_call) {}
+        allow_member_call_(allow_member_call),
+        allow_generic_map_index_mutation_(allow_generic_map_index_mutation) {}
 
   std::vector<Stmt> read() {
     constexpr std::string_view header = "moss-checked-body-v1\n";
@@ -619,6 +621,7 @@ class H3BodyReader {
   bool allow_collection_loop_body_ = false;
   bool allow_vector_literal_relation_ = false;
   bool allow_member_call_ = false;
+  bool allow_generic_map_index_mutation_ = false;
   static constexpr std::uint32_t kMaxBodyNodes = 4096;
   static constexpr std::uint32_t kMaxLocalCount = 256;
   static constexpr unsigned kMaxBlockDepth = 32;
@@ -1024,7 +1027,14 @@ class H3BodyReader {
           container->type_args.size() == 2 &&
           container->type_args[0]->structurally_equal(*index) &&
           container->type_args[1]->structurally_equal(*expression.type);
-      if (!sequence_index && !map_index)
+      const bool generic_map_index = allow_generic_map_index_mutation_ &&
+          container && container->kind == TypeKind::InferenceVar &&
+          expression.operands[0].kind == ExprKind::Parameter &&
+          expression.operands[0].ordinal < parameters_.size() &&
+          parameters_[expression.operands[0].ordinal] &&
+          parameters_[expression.operands[0].ordinal]->structurally_equal(
+              *container);
+      if (!sequence_index && !map_index && !generic_map_index)
         fail("checked index receiver, index, or result TypeRef is mismatched");
     } else if (expression.kind == ExprKind::MemberCall) {
       if (!allow_member_call_)
@@ -1161,13 +1171,20 @@ class H3BodyReader {
         statement.expr = read_expr();
         const auto& receiver = statement.operands[0];
         const auto& index = statement.operands[1];
-        if (receiver.kind != ExprKind::LocalRead ||
-            receiver.ordinal >= locals_.size() ||
-            !locals_.at(receiver.ordinal).mutable_binding ||
-            !receiver.type || receiver.type->kind != TypeKind::Builtin ||
-            receiver.type->name != "map" || receiver.type->type_args.size() != 2 ||
-            !receiver.type->type_args[0]->structurally_equal(*index.type) ||
-            !receiver.type->type_args[1]->structurally_equal(*statement.expr->type))
+        const bool local_map = receiver.kind == ExprKind::LocalRead &&
+            receiver.ordinal < locals_.size() &&
+            locals_.at(receiver.ordinal).mutable_binding && receiver.type &&
+            receiver.type->kind == TypeKind::Builtin &&
+            receiver.type->name == "map" && receiver.type->type_args.size() == 2 &&
+            receiver.type->type_args[0]->structurally_equal(*index.type) &&
+            receiver.type->type_args[1]->structurally_equal(*statement.expr->type);
+        const bool generic_map_parameter = allow_generic_map_index_mutation_ &&
+            receiver.kind == ExprKind::Parameter &&
+            receiver.ordinal < parameters_.size() && receiver.type &&
+            receiver.type->kind == TypeKind::InferenceVar &&
+            parameters_[receiver.ordinal] &&
+            parameters_[receiver.ordinal]->structurally_equal(*receiver.type);
+        if (!local_map && !generic_map_parameter)
           fail("checked body indexed assignment target is not a mutable typed local Map");
         break;
       }
@@ -1374,9 +1391,11 @@ inline std::vector<Stmt> decode_checked_body_v1(
     std::string_view bytes, const TypeContext& context,
     const std::vector<TypeRef>& parameters, const TypeRef& result,
     std::string_view expected_hash,
-    bool allow_vector_literal_relation = false) {
+    bool allow_vector_literal_relation = false,
+    bool allow_generic_map_index_mutation = false) {
   H3BodyReader reader(bytes, context, parameters, result, true, true,
-                      allow_vector_literal_relation, true);
+                      allow_vector_literal_relation, true,
+                      allow_generic_map_index_mutation);
   auto statements = reader.read();
   if (compute_checked_body_hash_v1(statements) != expected_hash)
     throw std::invalid_argument("checked body semantic hash is mismatched");
