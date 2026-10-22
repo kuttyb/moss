@@ -11224,3 +11224,25 @@ The checked reader admits the extra summary variable only for the gated Map body
 Validation on rebuilt `build/compiler/moss-dev`: `check_phase25_r3d_pipeline.py` passes source-free ABI-v10 Debug/Release for Int and Float, with deleted provider source, poisoned legacy generic rows, projection traces, rejected string specialization, and four internally rehashed operation/placeholder/result/effect mutations before projection. `oracle.py --include-surface-probes --case generic-functional-pipeline` passes source-backed, ABI-v9, and source-deleted ABI-v10 in Debug/Release. The unchanged M2b2 corpus exited 0. Focused R3A Range, R3B numeric/assert/while/Map-mutation, R3C Match, R3F ABI-v9 repair, and R2 WP1/WP2/WP3 suites passed.
 
 The architect's earlier scoped NO-GO identified the Map operator being imported as an Iterate requirement; that was corrected. Request an independent review of the current exact SHA and independent positive plus rehashed hostile execution before pushing this checkpoint. R3D is not marked reviewed until that response arrives. R3E callback effects and R3F ABI-v10 exceptional flow remain open; R3 is not complete.
+
+The architect reviewed pushed SHA `b3fac7bf9821c05e202e3e67460302b4757c77df`
+and returned scoped GO with no remaining authority/importer blocker for the
+bounded `map(_ * 2)` profile. The reviewer independently ran source-deleted
+ABI-v10 Debug/Release for Int and Float, all four internally rehashed hostile
+mutations, and the source/v9/v10 oracle in both profiles. This GO does not
+establish broader callback or other pipeline-stage support.
+
+## Phase 25.1 R3E — returned callback effect authority — investigation
+
+The unchanged `returned-callback` control remains valid and passes in source
+and ABI-v9 Debug/Release (`31` and `moss`). ABI-v10 correctly fails provider
+publication with `SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED`. The checked call
+result is related to the formal Callable requirement result, and the existing
+semantic dependency closure retains the selected callable dependency. The
+first missing checker-owned relationship is an effect row from the formal
+Callable requirement to the enclosing callable's observable effects. Current
+`ObservableEffects` records only a Boolean `unresolved`; effect analysis cannot
+resolve the open callback formal until concrete specialization. The control is
+valid under Moss's static-callable contract, so R3E requires an additive
+checked representation and concrete specialization of that effect
+dependency. No source-free callback effect support is claimed yet.

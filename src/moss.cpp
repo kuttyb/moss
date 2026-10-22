@@ -27507,9 +27507,6 @@ class Checker {
                 (actual->name == "vector" || actual->name == "seq") &&
                 actual->type_args.size() == 1)
               actual_element = actual->type_args.front();
-            else if (actual->kind == moss::TypeKind::Primitive &&
-                     actual->name == "Range")
-              actual_element = moss::Type::primitive("int");
             if (!actual_element) continue;
             parameter_found = true;
             const auto admission = admit_typed_arithmetic_operator(
