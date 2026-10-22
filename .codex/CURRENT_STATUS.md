@@ -11116,3 +11116,28 @@ Ready/Empty Debug/Release, all eight rehashed hostile mutations, and the
 three-mode Match oracle. R3D pipeline, R3E callback, and R3F
 raise/recover remain unstarted; ABI-v9 `RAISE_REQUIRES_TYPED_VALUE` remains an
 open compatibility defect. Do not claim R3 complete.
+
+## Phase 25.1 R3D/F investigation — working tree — 2026-10-22
+
+The unchanged `generic-functional-pipeline` oracle passes source-backed and
+ABI-v9 Debug/Release and remains valid-but-unavailable in ABI-v10 Debug/Release.
+The checker inspection and independent architect assessment identify the first
+missing pipeline fact: the open-source path does not bind Map's `_` callback
+placeholder to the collection element TypeRef or check the callback. Therefore
+it retains no checked callback parameter, multiplication operation/result,
+Map output-element relation, or root result relation; it records only
+`functional:Map` and the placeholder spelling, then marks the occurrence ledger
+incomplete. The architect found this can be addressed with an additive ABI-v10
+checked Map node and checker-owned symbolic callback relation, followed by
+ordinary pipeline lowering; no language-semantics or L7 contract change is
+required. No implementation has started.
+
+The `generic-raise-recover` oracle passes source-backed Debug/Release but the
+ABI-v9 consumer fails both profiles with `RAISE_REQUIRES_TYPED_VALUE`. A manual
+source-deleted v9 control confirms that exporting the otherwise private
+provider `Failure` enum makes the consumer pass. The current provider artifact
+contains `raise Service__Failure.Bad` in the generic body but omits the private
+enum declaration and canonical variant metadata, so the importing checker
+cannot type that constructor before recovery analysis. This is the earliest
+missing authority found; no implementation has started. Higher-order callback
+result/effect and ABI-v10 exceptional-flow representations remain uninvestigated.
