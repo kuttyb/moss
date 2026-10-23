@@ -12847,7 +12847,12 @@ class Checker {
           if (!functions_.count(qualified) && !objects_.count(qualified) &&
               !function.defining_module.empty())
             qualified = function.defining_module + "__" + target;
-          if (functions_.count(qualified))
+          // A direct return of a nominal constructor has the same checked
+          // open result relation as the existing local-constructor/return
+          // form. The nominal branch below binds its declared field slots to
+          // the checked parameter terms, and checked-body lowering validates
+          // the returned constructor occurrence against that relation.
+          if (functions_.count(qualified) || objects_.count(qualified))
             local_result = std::make_pair(trim(function.body.front().a),
                                           function.body.front().line);
         }

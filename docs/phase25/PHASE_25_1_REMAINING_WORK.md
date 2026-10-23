@@ -187,3 +187,38 @@ resealed subtraction-targeted mutations. The earlier candidate's P2 is
 resolved. Commit the durable closeout and push this reviewed checkpoint for
 L7 acceptance. No R4 work has started; `packages/time` remains separately
 classified as a source-package inventory failure.
+
+## R4 recovery continuation — 2026-10-23
+
+The direct-return nominal constructor gap found during R4B is narrowly
+addressed in the current uncommitted compiler candidate by admitting the
+checked `return Box(value: parameter)` form alongside the established
+local-constructor/return form. Rebuilt compiler hash:
+`c62ac9534a1f817cf518ec458f987fbd5403352f2f747533bb805dd8f82e642c`.
+The R2 WP3 source-free nominal gate and its seven hostile mutations pass.
+
+The staged-v10 cross-crate matrix now passes 10/11 in both Debug and Release.
+Scenarios 2–5 (source-deleted direct nominal returns, independent consumers,
+and third-crate identity) pass; so do scenarios 1, 6, and 8–11 (artifact
+emission, private helper, ownership conflict, ABI mismatch, metadata mutation,
+and replaced-cache invalidation). Scenario 7 remains failed: generic
+`invoke_action` calls an unconstrained member `custom_action` through a private
+helper, leaving no checked body; source-free import reports
+`SOURCE_FREE_CHECKED_BODY_UNAVAILABLE` instead of the fixture's required
+consumer `METHOD_NOT_FOUND` diagnostic and provider/consumer spans. This is a
+compiler checked-body admission gap, not a harness invocation issue. The
+bounded R2 member-length acceptance does not cover this general member shape;
+R4 still treats unapproved valid ABI-v9 source-free gaps as red.
+
+An exact-candidate rerun of the advanced-data ABI/profile matrix was
+interrupted during ABI-v9 Debug after about six minutes of CPU-bound provider
+builds. It exited 130 and provides no pass/fail result. Previous R4B evidence
+on `a854c901` records passes for all four modes, but these are not exact-current-
+candidate evidence. ABI-v9-only source-free SDK scripts previously passed
+8/8 on `c0ff87fd`; the four real generic exports passed 18/18 on `a854c901`.
+Both matrices require a final frozen-SHA run.
+
+**R4 remains open.** Exact-candidate complete compatibility/R3 regression,
+SDK and hostile acceptance, advanced-data final matrix, inventory/harness-map
+reconciliation, and exact-SHA independent Architect review remain required.
+Do not advance to R5 or change the ABI-v9 default.

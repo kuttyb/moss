@@ -11688,3 +11688,37 @@ SDK source-free/cross-crate and migration/hostile suites, run the full
 compatibility and accepted R3 regressions on one frozen SHA, reconcile the
 remaining-work ledger, and obtain the Architect's exact-SHA disposition.
 No R5 work has started; ABI-v9 remains the default and `main` is untouched.
+
+## Phase 25.1 R4 recovery continuation — 2026-10-23
+
+Recovery reconfirmed branch `phase25-1-work` at local `c0ff87fd`, one commit
+ahead of `origin/phase25-1-work`; the only new source edit is the uncommitted
+direct nominal-constructor return summary adjustment in `src/moss.cpp`.
+`make --jobs="$(nproc)" moss-dev` completed and the compiler executable hash
+is `c62ac9534a1f817cf518ec458f987fbd5403352f2f747533bb805dd8f82e642c`.
+Bootstrap still reports `moss-0.1`.
+
+On that rebuilt compiler, the accepted R2 WP3 nominal gate passes two
+independent source-free Box consumers and all seven identity/field/visibility/
+dependency hostile mutations. The cross-crate staged-v10 harness passes 10/11
+in Debug and 10/11 in Release (ABI-v9 migration, independent nominal consumers,
+provider source removal, mutation rejection, and warm-cache replacement pass).
+Scenario 7 remains a real red result in each profile: an exported generic
+callable whose private helper invokes unconstrained `item.custom_action()` has
+an unavailable checked body, so provider metadata admission fails before the
+consumer can report the expected `METHOD_NOT_FOUND` with source provenance.
+Do not reclassify or mask this result; first violated invariant is complete
+checked-body availability for that open member-call shape. The staged-v10
+report JSON files are under disposable `tmp/r4-cross-crate-resume/`.
+
+The real-SDK generic matrix passed 18/18 on this compiler. The mixed-provider
+per-callable admission gate passed all six checks, including supported-body
+projection beside an unsupported generic callable. The exact-candidate
+advanced-data four-mode rerun was started but interrupted after roughly six
+minutes while ABI-v9 Debug was still CPU-bound in provider builds; its log ends
+at the harness KeyboardInterrupt and is unverified, not a pass or compiler
+failure. Earlier R4B advanced-data results on `a854c901` remain v9
+Debug/Release and v10 Debug/Release passes. The complete 32-case R3 oracle,
+other R4 hostile suites, and independent Architect disposition for the source
+change are still outstanding. No R5 work has started; ABI-v9 is the default
+and protected branches are untouched.
