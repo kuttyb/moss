@@ -11556,6 +11556,41 @@ rehashed operator occurrence mutations reject before projection. The common
 Raise/recover comparison retains its dedicated checker-owned occurrence
 relation to avoid duplicate operator evidence.
 
-Candidate commit, exact-SHA 32-case compatibility matrix, consolidated
-Architect review and independent hostile execution, and final ledger/status
-closeout remain pending. Do not start R4 or change the default ABI.
+Frozen candidate: `114a687313f98f0aa6f515f4c11d0cf3e41d3ae5`. Its complete
+32-case oracle is preserved at
+`docs/phase25/PHASE_25_1_R3_CANDIDATE_114A6873.json`: 64/64 source-backed,
+64/64 ABI-v9, and 64/64 ABI-v10 Debug/Release profiles passed with no
+unexpected results. The formerly unavailable valid R3 observations now pass
+all three modes; the matrix and remaining-work ledger identify the specific
+forms and retain the intentional invalid controls separately.
+
+The existing Architect independently built and ran the arithmetic positives
+and all six internally rehashed hostile mutations on this exact SHA, issuing
+scoped GO with no P0/P1/P2 findings. The consolidated R3 review is still
+pending. After that review, run final consistency checks, commit the durable
+matrix/status update, and push the reviewed checkpoint. Do not start R4 or
+change the default ABI.
+
+## Phase 25.1 R3 — mixed subtraction authority follow-up — WIP — 2026-10-22
+
+The consolidated review of `114a687313f98f0aa6f515f4c11d0cf3e41d3ae5` found a
+P2 scope limitation: valid `x * 2 - 20` had checked occurrence facts but the
+ABI-v10 requirement converter admitted only `Int - T`, not the checker-proven
+`T - Int` relation. No projection bypass or semantic mismatch was found. The
+converter now retains that exact generic relation, and concrete import still
+uses the shared Int/Float operator admission rules.
+
+Updated source-backed, ABI-v9 source-deleted, and ABI-v10 source-deleted native
+Debug/Release fixtures execute `x * 2 - 20` as `-10` / `-15.0`; the other
+nested expressions remain covered. All six rehashed arithmetic mutations now
+run against both `20 + x * 2` and `x * 2 - 20`, and reject. String/Bool operand
+substitutions reject. The ABI-v10 artifact verifier confirms checked summaries
+and bodies for all arithmetic callables with their legacy `generic_stmt`
+records removed. The focused R3A–R3F suite set, arithmetic suites, and M2b2
+source-free/hostile corpus pass after this correction.
+
+A new committed candidate SHA is required. Rerun the 32-case compatibility
+oracle on that exact SHA, obtain exact-SHA Architect GO for this subtraction
+extension and consolidated R3, then update the compatibility report and push.
+The previous `114a6873` report is historical for that SHA and does not close R3.
+No R4 work has started; ABI-v9 remains default.

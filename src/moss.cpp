@@ -56231,9 +56231,12 @@ abi_v10_checked_requirements(
     const auto bool_type = moss::Type::primitive("bool");
     const bool supported_mixed_subtraction = generic_relation &&
         requirement.target_id == "operator:-" && operator_subject &&
-        operator_subject->structurally_equal(*int_type) &&
-        operator_argument->kind == moss::TypeKind::InferenceVar &&
-        operator_result->structurally_equal(*operator_argument);
+        ((operator_subject->structurally_equal(*int_type) &&
+          operator_argument->kind == moss::TypeKind::InferenceVar &&
+          operator_result->structurally_equal(*operator_argument)) ||
+         (operator_subject->kind == moss::TypeKind::InferenceVar &&
+          operator_argument->structurally_equal(*int_type) &&
+          operator_result->structurally_equal(*operator_subject)));
     const bool supported_mixed_addition = generic_relation &&
         requirement.target_id == "operator:+" && operator_subject &&
         operator_subject->structurally_equal(*int_type) &&

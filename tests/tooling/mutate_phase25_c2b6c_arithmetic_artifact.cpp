@@ -35,8 +35,12 @@ int main(int argc, char** argv) {
   const std::string mode = argv[4];
   auto sealed = moss::abi_v10::decode(read_file(interface_path));
   const auto old_digest = sealed.digest;
+  const bool subtraction_target = mode.rfind("sub-", 0) == 0;
+  const std::string mutation_mode = subtraction_target
+      ? mode.substr(4) : mode;
   const std::string callable_id =
-      "callable-v1:" + sealed.value.module_id + ":fn:compute";
+      "callable-v1:" + sealed.value.module_id + ":fn:" +
+      (subtraction_target ? "subtract" : "compute");
 
   auto locate_summary = [&]() -> moss::abi_v10::Summary {
     for (const auto& record : sealed.value.semantic_contract) {
@@ -62,7 +66,7 @@ int main(int argc, char** argv) {
     assert(replaced);
   };
 
-  if (mode == "unsupported-body") {
+  if (mutation_mode == "unsupported-body") {
     moss::abi_v10::Summary summary;
     bool found_summary = false;
     for (auto& record : sealed.value.semantic_contract) {
@@ -130,8 +134,8 @@ int main(int argc, char** argv) {
         replaced_body = true;
       }
     assert(replaced_summary && replaced_body);
-  } else if (mode == "drop-body-alternative-legacy" ||
-             mode == "drop-body-no-legacy") {
+  } else if (mutation_mode == "drop-body-alternative-legacy" ||
+             mutation_mode == "drop-body-no-legacy") {
     auto& records = sealed.value.private_semantic_dependencies;
     const auto before = records.size();
     records.erase(std::remove_if(records.begin(), records.end(),
@@ -139,7 +143,7 @@ int main(int argc, char** argv) {
       return record.id == "checked-body-v1:" + callable_id;
     }), records.end());
     assert(before == records.size() + 1);
-    if (mode == "drop-body-alternative-legacy") {
+    if (mutation_mode == "drop-body-alternative-legacy") {
       const std::string alternative =
           "  generic_stmt 15 2 0 \"return x * 2 + 21\" "
           "\"x * 2 + 21\" \"\" \"\" 0";
@@ -159,7 +163,7 @@ int main(int argc, char** argv) {
       }
       assert(injected);
     }
-  } else if (mode == "mismatch-body-hash") {
+  } else if (mutation_mode == "mismatch-body-hash") {
     bool replaced = false;
     for (auto& record : sealed.value.semantic_contract) {
       if (!moss::abi_v10::hex_hash(record.id) || record.payload.empty() ||
@@ -173,28 +177,31 @@ int main(int argc, char** argv) {
       replaced = true;
     }
     assert(replaced);
-  } else if (mode == "wrong-operation" || mode == "wrong-operands" ||
-             mode == "wrong-result" || mode == "wrong-parent" ||
-             mode == "duplicate-fact" || mode == "missing-fact") {
+  } else if (mutation_mode == "wrong-operation" ||
+             mutation_mode == "wrong-operands" ||
+             mutation_mode == "wrong-result" ||
+             mutation_mode == "wrong-parent" ||
+             mutation_mode == "duplicate-fact" ||
+             mutation_mode == "missing-fact") {
     auto summary = locate_summary();
     assert(summary.requirements.size() >= 2);
-    if (mode == "wrong-operation") {
+    if (mutation_mode == "wrong-operation") {
       summary.requirements[0].operation = "operator:+";
-    } else if (mode == "wrong-operands") {
+    } else if (mutation_mode == "wrong-operands") {
       std::swap(summary.requirements[0].receiver,
                 summary.requirements[0].arguments.front());
-    } else if (mode == "wrong-result") {
+    } else if (mutation_mode == "wrong-result") {
       moss::abi_v10::WireType wrong;
       wrong.kind = moss::abi_v10::WireTypeKind::Primitive;
       wrong.identity = "int";
       summary.requirements[0].result = wrong;
-    } else if (mode == "wrong-parent") {
+    } else if (mutation_mode == "wrong-parent") {
       auto& root = summary.requirements.back();
       root.parent = 0;
       root.dependencies.clear();
-    } else if (mode == "duplicate-fact") {
+    } else if (mutation_mode == "duplicate-fact") {
       summary.requirements.push_back(summary.requirements.front());
-    } else if (mode == "missing-fact") {
+    } else if (mutation_mode == "missing-fact") {
       summary.requirements.erase(summary.requirements.begin());
       for (auto& requirement : summary.requirements) {
         requirement.parent = 0;

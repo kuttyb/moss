@@ -18,12 +18,13 @@ int main(int argc, char** argv) {
 
   const std::string compute_id =
       "callable-v1:" + iface.module_id + ":fn:compute";
-  const std::string unsupported_sub_id =
-      "callable-v1:" + iface.module_id + ":fn:unsupported_sub";
+  const std::string subtraction_id =
+      "callable-v1:" + iface.module_id + ":fn:subtract";
   const std::string reverse_id =
       "callable-v1:" + iface.module_id + ":fn:unsupported_reverse";
 
   std::vector<moss::abi_v10::Summary> compute_summaries;
+  std::vector<moss::abi_v10::Summary> subtraction_summaries;
   std::vector<moss::abi_v10::Summary> reverse_summaries;
   for (const auto& record : iface.semantic_contract) {
     if (record.payload.empty() || !moss::abi_v10::typed_summary_payload(record.payload) ||
@@ -32,10 +33,13 @@ int main(int argc, char** argv) {
     auto summary = moss::abi_v10::read_summary(record.payload);
     if (summary.callable_id == compute_id)
       compute_summaries.push_back(std::move(summary));
+    if (summary.callable_id == subtraction_id)
+      subtraction_summaries.push_back(std::move(summary));
     if (summary.callable_id == reverse_id)
       reverse_summaries.push_back(std::move(summary));
   }
   assert(compute_summaries.size() == 1);
+  assert(subtraction_summaries.size() == 1);
   const auto& summary = compute_summaries.front();
   assert(summary.variable_count == 1 && summary.parameters.size() == 1);
   assert(summary.parameters.front().kind ==
@@ -65,23 +69,31 @@ int main(int argc, char** argv) {
          summary.requirements[0].parent == 0);
   assert(summary.requirements[1].operation == "operator:+" &&
          summary.requirements[1].parent == 1);
+  const auto& subtraction_summary = subtraction_summaries.front();
+  assert(subtraction_summary.requirements.size() == 2 &&
+         subtraction_summary.requirements[0].operation == "operator:*" &&
+         subtraction_summary.requirements[0].parent == 0 &&
+         subtraction_summary.requirements[1].operation == "operator:-" &&
+         subtraction_summary.requirements[1].parent == 1 &&
+         subtraction_summary.requirements[1].dependencies ==
+             std::vector<std::uint32_t>{1});
 
   std::vector<moss::abi_v10::CheckedBodyRecord> compute_bodies;
+  std::vector<moss::abi_v10::CheckedBodyRecord> subtraction_bodies;
   std::vector<moss::abi_v10::CheckedBodyRecord> reverse_bodies;
-  std::size_t unsupported_sub_body_count = 0;
   for (const auto& record : iface.private_semantic_dependencies) {
     if (record.id.rfind("checked-body-v1:", 0) != 0) continue;
     moss::abi_v10::validate_checked_body_record(record);
     auto body = moss::abi_v10::read_checked_body_record(record.payload);
-    if (body.callable_id == unsupported_sub_id)
-      ++unsupported_sub_body_count;
     if (body.callable_id == compute_id)
       compute_bodies.push_back(std::move(body));
+    if (body.callable_id == subtraction_id)
+      subtraction_bodies.push_back(std::move(body));
     if (body.callable_id == reverse_id)
       reverse_bodies.push_back(std::move(body));
   }
   assert(compute_bodies.size() == 1);
-  assert(unsupported_sub_body_count == 0);
+  assert(subtraction_bodies.size() == 1);
   const auto& body = compute_bodies.front();
   assert(body.semantic_hash == summary.body_semantic_hash);
   assert(body.dependencies.empty());
@@ -126,6 +138,22 @@ int main(int argc, char** argv) {
            literal->type->structurally_equal(*moss::Type::primitive("int")));
   assert(multiply_literal.literal_value == "2" &&
          add_literal.literal_value == "20");
+  const auto& subtraction_body = subtraction_bodies.front();
+  assert(subtraction_body.semantic_hash == subtraction_summary.body_semantic_hash);
+  const auto subtraction_decoded = moss::checked_ir::decode_h3_checked_body_v1(
+      subtraction_body.checked_ir_bytes, context, {type_t}, type_t,
+      subtraction_body.semantic_hash);
+  assert(subtraction_decoded.size() == 1 &&
+         subtraction_decoded.front().expr &&
+         subtraction_decoded.front().expr->kind ==
+             moss::checked_ir::ExprKind::Binary &&
+         subtraction_decoded.front().expr->binary_op ==
+             moss::checked_ir::BinaryOp::Sub &&
+         subtraction_decoded.front().expr->operands.size() == 2 &&
+         subtraction_decoded.front().expr->operands.front().kind ==
+             moss::checked_ir::ExprKind::Binary &&
+         subtraction_decoded.front().expr->operands.front().binary_op ==
+             moss::checked_ir::BinaryOp::Mul);
   assert(moss::checked_ir::encode_checked_body_v1(decoded) ==
          body.checked_ir_bytes);
   assert(moss::checked_ir::compute_checked_body_hash_v1(decoded) ==
@@ -178,5 +206,5 @@ int main(int argc, char** argv) {
             << body.semantic_hash
             << "; requirement provenance records=2 valid; callable provenance valid; "
                "canonical interface and decoded tree verified; reverse operand order "
-               "has checked occurrence lineage; subtraction remains unavailable\n";
+               "and T-Int subtraction have checked occurrence lineage\n";
 }

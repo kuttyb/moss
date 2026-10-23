@@ -46,11 +46,16 @@ fn compute(x):
 fn nested(x):
   return x * 2 + x * 3
 
+fn subtract(x):
+  return x * 2 - 20
+
 fn main():
   echo compute(5)
   echo compute(2.5)
   echo nested(5)
   echo nested(2.5)
+  echo subtract(5)
+  echo subtract(2.5)
 """)
     source_env = os.environ.copy()
     source_env["MOSS"] = str(MOSS)
@@ -58,11 +63,11 @@ fn main():
     source_debug = run([str(MARGO), "build"], cwd=source_backed,
                        env=source_env)
     assert run([str(MARGO), "run"], cwd=source_backed,
-               env=source_env) == "30\n25.0\n25\n12.5\n"
+               env=source_env) == "30\n25.0\n25\n12.5\n-10\n-15.0\n"
     run([str(MARGO), "build", "--release"], cwd=source_backed,
         env=source_env)
     assert run([str(MARGO), "run", "--release"], cwd=source_backed,
-               env=source_env) == "30\n25.0\n25\n12.5\n"
+               env=source_env) == "30\n25.0\n25\n12.5\n-10\n-15.0\n"
     print("PASS source-backed native Debug/Release numeric parity")
 
     v9_provider = scratch / "provider-v9"
@@ -73,6 +78,9 @@ export fn compute(x):
 
 export fn nested(x):
   return x * 2 + x * 3
+
+export fn subtract(x):
+  return x * 2 - 20
 """)
     v9_env = os.environ.copy()
     v9_env["MOSS"] = str(MOSS)
@@ -98,6 +106,8 @@ fn main():
   echo Service.compute(2.5)
   echo Service.nested(5)
   echo Service.nested(2.5)
+  echo Service.subtract(5)
+  echo Service.subtract(2.5)
 """)
         consumer_env = v9_env.copy()
         consumer_env["MOSS_MODULE_PATH"] = str(artifacts)
@@ -105,7 +115,7 @@ fn main():
             env=consumer_env)
         actual = run([str(MARGO), "run", *release_args], cwd=consumer,
                      env=consumer_env)
-        assert actual == "30\n25.0\n25\n12.5\n", (flavor, actual)
+        assert actual == "30\n25.0\n25\n12.5\n-10\n-15.0\n", (flavor, actual)
     print("PASS source-deleted ABI-v9 native Debug/Release numeric parity")
 
     mutator = scratch / "mutate_arithmetic_artifact"
@@ -133,6 +143,9 @@ export fn compute(x):
 
 export fn nested(x):
   return x * 2 + x * 3
+
+export fn subtract(x):
+  return x * 2 - 20
 """)
     run([str(MARGO), "build"], cwd=provider, env=staged_env)
     interface = provider / "build" / "debug" / "Service.mossi"
@@ -191,6 +204,8 @@ fn main():
   echo Service.compute(2.5)
   echo Service.nested(5)
   echo Service.nested(2.5)
+  echo Service.subtract(5)
+  echo Service.subtract(2.5)
 """)
     run([str(MARGO), "build"], cwd=positive, env=env)
     projection_trace = run(
@@ -198,51 +213,56 @@ fn main():
         cwd=positive, env=env)
     assert "MOSS_CHECKED_BODY_PROJECTED|" in projection_trace and \
         "Service:fn:compute|checked-body-v1" in projection_trace and \
-        "Service:fn:nested|checked-body-v1" in projection_trace, projection_trace
+        "Service:fn:nested|checked-body-v1" in projection_trace and \
+        "Service:fn:subtract|checked-body-v1" in projection_trace, projection_trace
     actual = run([str(MARGO), "run"], cwd=positive, env=env)
-    assert actual == "30\n25.0\n25\n12.5\n", actual
+    assert actual == "30\n25.0\n25\n12.5\n-10\n-15.0\n", actual
     release_env = staged_env.copy()
     release_env["MOSS_MODULE_PATH"] = str(emitted_release)
     run([str(MARGO), "build", "--release"], cwd=positive, env=release_env)
     actual_release = run([str(MARGO), "run", "--release"], cwd=positive,
                          env=release_env)
-    assert actual_release == "30\n25.0\n25\n12.5\n", actual_release
+    assert actual_release == "30\n25.0\n25\n12.5\n-10\n-15.0\n", actual_release
 
-    for mode in ("wrong-operation", "wrong-operands", "wrong-result",
-                 "wrong-parent", "duplicate-fact", "missing-fact"):
-        artifacts = scratch / f"artifacts-{mode}"
-        shutil.copytree(emitted, artifacts)
-        run([str(mutator), str(artifacts / "Service.mossi"),
-             str(artifacts / "libService.rlib"), "Service", mode])
-        hostile_env = staged_env.copy()
-        hostile_env["MOSS_MODULE_PATH"] = str(artifacts)
-        hostile = scratch / f"consumer-{mode}"
-        package(hostile, f"c2b6c_consumer_{mode.replace('-', '_')}", """module Main
+    for target_prefix, function_name in (("", "compute"), ("sub-", "subtract")):
+        for mutation in ("wrong-operation", "wrong-operands", "wrong-result",
+                         "wrong-parent", "duplicate-fact", "missing-fact"):
+            mode = target_prefix + mutation
+            artifacts = scratch / f"artifacts-{mode}"
+            shutil.copytree(emitted, artifacts)
+            run([str(mutator), str(artifacts / "Service.mossi"),
+                 str(artifacts / "libService.rlib"), "Service", mode])
+            hostile_env = staged_env.copy()
+            hostile_env["MOSS_MODULE_PATH"] = str(artifacts)
+            hostile = scratch / f"consumer-{mode}"
+            package(hostile, f"c2b6c_consumer_{mode.replace('-', '_')}", """module Main
 import Service
 
 fn main():
-  echo Service.compute(5)
-""")
-        result = subprocess.run([str(MARGO), "build"], cwd=hostile,
-                                env=hostile_env, capture_output=True, text=True)
-        output = result.stdout + result.stderr
-        assert result.returncode != 0, f"{mode} unexpectedly accepted"
-        assert "SOURCE_FREE_" in output, (mode, output)
-        print(f"PASS rehashed hostile arithmetic mutation rejected: {mode}")
+  echo Service.%s(5)
+""" % function_name)
+            result = subprocess.run([str(MARGO), "build"], cwd=hostile,
+                                    env=hostile_env, capture_output=True, text=True)
+            output = result.stdout + result.stderr
+            assert result.returncode != 0, (
+                f"{mode} unexpectedly accepted: {output}")
+            assert "SOURCE_FREE_" in output, (mode, output)
+            print(f"PASS rehashed hostile arithmetic mutation rejected: {mode}")
 
-    for case, argument in (("string", '"bad"'), ("bool", "true")):
-        negative = scratch / f"consumer-{case}"
-        package(negative, f"c2b6c_consumer_{case}",
-                "module Main\nimport Service\n\nfn main():\n"
-                f"  echo Service.compute({argument})\n")
-        negative_env = env.copy()
-        negative_env.pop("MOSS_PHASE25_CHECKED_BODY_TRACE", None)
-        rejected = run([str(MARGO), "build"], cwd=negative,
-                       env=negative_env, expected=1)
-        assert any(marker in rejected for marker in (
-            "TYPE_MISMATCH", "NO_VALID_SPECIALIZATION",
-            "SOURCE_FREE_")), rejected
-        print(f"PASS {case} rejected during checking")
+    for function_name in ("compute", "subtract"):
+        for case, argument in (("string", '"bad"'), ("bool", "true")):
+            negative = scratch / f"consumer-{function_name}-{case}"
+            package(negative, f"c2b6c_consumer_{function_name}_{case}",
+                    "module Main\nimport Service\n\nfn main():\n"
+                    f"  echo Service.{function_name}({argument})\n")
+            negative_env = env.copy()
+            negative_env.pop("MOSS_PHASE25_CHECKED_BODY_TRACE", None)
+            rejected = run([str(MARGO), "build"], cwd=negative,
+                           env=negative_env, expected=1)
+            assert any(marker in rejected for marker in (
+                "TYPE_MISMATCH", "NO_VALID_SPECIALIZATION",
+                "SOURCE_FREE_")), rejected
+            print(f"PASS {function_name} with {case} rejected during checking")
 
     bad_env = staged_env.copy()
     bad_env["MOSS_MODULE_PATH"] = str(unsupported)
@@ -324,7 +344,13 @@ fn main():
     package(provider_v9, "c2b6c_provider_v9", """module Service
 
 export fn compute(x):
-  return x * 2 + 20
+  return 20 + x * 2
+
+export fn nested(x):
+  return x * 2 + x * 3
+
+export fn subtract(x):
+  return x * 2 - 20
 """)
     run([str(MARGO), "build"], cwd=provider_v9, env=v9_env)
     artifacts_v9 = scratch / "artifacts-v9"
@@ -339,11 +365,17 @@ import Service
 
 fn main():
   echo Service.compute(5)
+  echo Service.compute(2.5)
+  echo Service.nested(5)
+  echo Service.nested(2.5)
+  echo Service.subtract(5)
+  echo Service.subtract(2.5)
 """)
     run([str(MARGO), "build"], cwd=consumer_v9, env=v9_env)
     assert run([str(MARGO), "run"], cwd=consumer_v9,
-               env=v9_env) == "30\n"
+               env=v9_env) == "30\n25.0\n25\n12.5\n-10\n-15.0\n"
 
-print("PASS source-free checked arithmetic: Int=30, Float=25.0; normal staged "
-      "artifact omits compute generic_stmt; unsupported legacy forms and "
+print("PASS source-free checked arithmetic: nested Int/Float addition and "
+      "subtraction parity; normal staged artifacts omit all three checked "
+      "arithmetic generic_stmt bodies; unsupported legacy forms and "
       "default ABI-v9 remain executable")

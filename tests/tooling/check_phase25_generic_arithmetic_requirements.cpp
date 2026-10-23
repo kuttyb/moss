@@ -226,6 +226,51 @@ fn main():
   assert(checked_body_available("x + 20"));
   assert(checked_body_available("x * 2 - 20"));
   assert(checked_body_available("x * 2 + 20 + 1"));
+  auto trailing_subtraction = checked_arithmetic_source("x * 2 - 20");
+  const Function& trailing_subtraction_function =
+      find_function(trailing_subtraction, "compute");
+  assert(trailing_subtraction_function.open_summary &&
+         trailing_subtraction_function.open_summary->complete &&
+         trailing_subtraction_function.open_summary->requirements.size() == 2 &&
+         trailing_subtraction_function.checked_body_ir_v1_occurrence_lowered);
+  const auto& trailing_subtraction_facts =
+      *trailing_subtraction_function.open_summary;
+  const auto& trailing_multiply = trailing_subtraction_facts.requirements[0];
+  const auto& trailing_subtract = trailing_subtraction_facts.requirements[1];
+  assert(trailing_multiply.target_id == "operator:*" &&
+         trailing_multiply.expression_occurrence_id != UINT32_MAX &&
+         trailing_multiply.subject->structurally_equal(*generic) &&
+         trailing_multiply.arguments.front()->structurally_equal(
+             *Type::primitive("int")) && trailing_multiply.result &&
+         (*trailing_multiply.result)->structurally_equal(*generic));
+  assert(trailing_subtract.target_id == "operator:-" &&
+         trailing_subtract.expression_occurrence_id != UINT32_MAX &&
+         trailing_subtract.subject->structurally_equal(*generic) &&
+         trailing_subtract.arguments.front()->structurally_equal(
+             *Type::primitive("int")) && trailing_subtract.result &&
+         (*trailing_subtract.result)->structurally_equal(*generic) &&
+         trailing_subtract.dependency_requirement_ids ==
+             vector<string>{trailing_multiply.id});
+  vector<abi_v10::SourceProvenance> trailing_provenance;
+  auto trailing_requirements = abi_v10_checked_requirements(
+      trailing_subtraction_facts.requirements,
+      trailing_subtraction_facts.bound_variable_count, trailing_provenance);
+  assert(trailing_requirements && trailing_requirements->size() == 2);
+  abi_v10::Summary trailing_wire;
+  trailing_wire.variable_count =
+      trailing_subtraction_facts.bound_variable_count;
+  trailing_wire.parameters.push_back(*abi_v10_checked_type(
+      trailing_subtraction_facts.parameter_types.front(),
+      trailing_wire.variable_count));
+  trailing_wire.parameter_access.push_back(abi_v10::Access::Read);
+  trailing_wire.result = *abi_v10_checked_type(
+      trailing_subtraction_facts.result_type, trailing_wire.variable_count);
+  trailing_wire.requirements = *trailing_requirements;
+  assert(trailing_wire.requirements[0].operation == "operator:*" &&
+         trailing_wire.requirements[1].operation == "operator:-" &&
+         trailing_wire.requirements[1].dependencies ==
+             vector<std::uint32_t>{1} &&
+         abi_v10_checked_arithmetic_summary_candidate(trailing_wire));
   auto leading_literal = checked_arithmetic_source("20 + x * 2");
   const Function& leading_literal_function =
       find_function(leading_literal, "compute");
@@ -827,7 +872,7 @@ export fn fresh(value, outer: Bool, inner: Bool):
   assert(imported_add.parent_requirement_id == imported_multiply.id);
   assert(imported_multiply.id != imported_add.id);
 
-  for (const char* operation : {"operator:*", "operator:+"}) {
+  for (const char* operation : {"operator:*", "operator:+", "operator:-"}) {
     assert(admit_typed_arithmetic_operator(operation, Type::primitive("int"),
         Type::primitive("int"), Type::primitive("int")) ==
         BuiltinOperatorAdmission::Admitted);
@@ -902,6 +947,8 @@ export fn fresh(value, outer: Bool, inner: Bool):
                << *compute.checked_body_ir_v1_hash
                << "; canonical tree and codec roundtrip passed; checker-retained "
                "typed requirements and broader valid arithmetic bodies passed; "
-               "and ABI-v10 roundtripped two typed operator "
-               "requirements for * and +; import preserves T, parent links, and provenance; H3 empty requirements and malformed-record rejection pass\n";
+               "and ABI-v10 roundtripped typed operator requirements for "
+               "multiplication, addition, and mixed subtraction; import preserves "
+               "T, parent links, and provenance; H3 empty requirements and "
+               "malformed-record rejection pass\n";
 }

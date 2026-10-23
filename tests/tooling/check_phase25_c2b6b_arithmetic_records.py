@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix="phase25-c2b6b-arithmetic-",
 export fn compute(x):
   return x * 2 + 20
 
-export fn unsupported_sub(x):
+export fn subtract(x):
   return x * 2 - 20
 
 export fn unsupported_reverse(x):
