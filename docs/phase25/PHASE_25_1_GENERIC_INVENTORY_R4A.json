@@ -24,7 +24,7 @@
         "ABI artifact assertion"
       ],
       "path": "tests/phase25/compatibility/inventory.py",
-      "sha256": "986d479e4695ccf61de0c9d281d63476262d308514838de0dcac512734958840",
+      "sha256": "27b46b026bf725431f0e85fb60c8cc89d75da80890c509dbb3db234b513b93a8",
       "source_free_indicators": [
         "MOSS_MODULE_PATH",
         "SOURCE_FREE_",
@@ -922,7 +922,7 @@
         "explicit compiled-module search path"
       ],
       "path": "sdk/advanced-data-acceptance/check_source_free.py",
-      "sha256": "136e94f095e71b7de96814aaa033d65f67413d1574fa473a687bff06b870f4cc",
+      "sha256": "98953f62bfacfee5a2cc63d912ef4bccd746ad14d331014e8deb73fb305f1a03",
       "source_free_indicators": [
         "MOSS_MODULE_PATH",
         "MOSS_STAGED_ABI"
@@ -1055,7 +1055,9 @@
   ],
   "generic_callable_count": 4,
   "inventory_method": "Margo debug package build; generic exports parsed from compiler-emitted semantic_exports in .mossi",
-  "inventory_refresh_commit": "bb4b340981207a2d988227ca30d3d5b4bd1d3a20",
+  "inventory_refresh_binary_sha256": "8918ca0e22079a13125f78c9ed6ac93e50bb85e2e264ac9b406a275c0a5da4a5",
+  "inventory_refresh_commit": "6bb84e33fa89b9a393dbae46106a447dcac7dc3d",
+  "inventory_refresh_executable": "build/compiler/moss-dev",
   "language_version": "moss-0.1",
   "package_count": 26,
   "packages": [
