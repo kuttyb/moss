@@ -191,8 +191,9 @@ classified as a source-package inventory failure.
 ## R4 recovery continuation — 2026-10-23
 
 The direct-return nominal constructor gap found during R4B is narrowly
-addressed in the current uncommitted compiler candidate by admitting the
-checked `return Box(value: parameter)` form alongside the established
+addressed at committed compiler checkpoint
+`3b4689fe29f1393d512bbb07d1084e9f84898dcc` by admitting the checked
+`return Box(value: parameter)` form alongside the established
 local-constructor/return form. Rebuilt compiler hash:
 `c62ac9534a1f817cf518ec458f987fbd5403352f2f747533bb805dd8f82e642c`.
 The R2 WP3 source-free nominal gate and its seven hostile mutations pass.
@@ -210,6 +211,26 @@ compiler checked-body admission gap, not a harness invocation issue. The
 bounded R2 member-length acceptance does not cover this general member shape;
 R4 still treats unapproved valid ABI-v9 source-free gaps as red.
 
+The direct-return boundary received scoped Architect GO on exact compiler SHA
+`3b4689fe29f1393d512bbb07d1084e9f84898dcc`, with no P0/P1 and one P2 for
+missing durable direct-form legacy poisoning/projection/hostile coverage. That
+P2 is addressed by `tests/tooling/check_phase25_r4_direct_nominal.py`: after
+deleting provider source and poisoning all legacy generic statements, two
+independent Int/String consumers require checked projection and execute; seven
+nominal identity, field, visibility, and dependency mutations reject before
+the fresh body projects. Exact-SHA Architect follow-up remains pending.
+
+The cohesive 32-case compatibility oracle passed on this frozen compiler SHA:
+64/64 source-backed, 64/64 ABI-v9, and 64/64 ABI-v10 Debug/Release profiles,
+with no unexpected outcomes. Report:
+`tmp/r4-cross-crate-resume/r3-oracle.json`. The real-SDK generic matrix passed
+18/18, and the mixed-provider per-callable admission gate passed all six checks.
+Eight ABI-v9-only SDK source-free harnesses, the ABI-v9 migration/rebuild
+diagnostic, warm provider/library cache binding, and the focused M2b2 source-
+free hostile corpus also pass on this compiler. The corpus covers legacy-body
+poisoning, forged identity/provenance/digest, weakened effects, dependency
+deletion/hash, branch/control-flow/binding lineage, and ABI-v9 controls.
+
 An exact-candidate rerun of the advanced-data ABI/profile matrix was
 interrupted during ABI-v9 Debug after about six minutes of CPU-bound provider
 builds. It exited 130 and provides no pass/fail result. Previous R4B evidence
@@ -218,7 +239,9 @@ candidate evidence. ABI-v9-only source-free SDK scripts previously passed
 8/8 on `c0ff87fd`; the four real generic exports passed 18/18 on `a854c901`.
 Both matrices require a final frozen-SHA run.
 
-**R4 remains open.** Exact-candidate complete compatibility/R3 regression,
-SDK and hostile acceptance, advanced-data final matrix, inventory/harness-map
-reconciliation, and exact-SHA independent Architect review remain required.
+**R4 remains open.** Cross-crate scenario 7 is red in both profiles; exact-
+candidate advanced-data evidence and exact-SHA independent Architect follow-up
+remain required. The inventory maps all four open generic exports to the
+18-case SDK matrix; the separate 14-provider advanced-data graph is concrete-
+API coverage.
 Do not advance to R5 or change the ABI-v9 default.

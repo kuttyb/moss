@@ -11691,11 +11691,12 @@ No R5 work has started; ABI-v9 remains the default and `main` is untouched.
 
 ## Phase 25.1 R4 recovery continuation — 2026-10-23
 
-Recovery reconfirmed branch `phase25-1-work` at local `c0ff87fd`, one commit
-ahead of `origin/phase25-1-work`; the only new source edit is the uncommitted
-direct nominal-constructor return summary adjustment in `src/moss.cpp`.
-`make --jobs="$(nproc)" moss-dev` completed and the compiler executable hash
-is `c62ac9534a1f817cf518ec458f987fbd5403352f2f747533bb805dd8f82e642c`.
+Recovery reconfirmed local R4B checkpoint `c0ff87fd`, one commit ahead of
+`origin/phase25-1-work`. The direct nominal-constructor return summary change
+is committed at compiler checkpoint `3b4689fe29f1393d512bbb07d1084e9f84898dcc`;
+local branch is two commits ahead of remote. `make --jobs="$(nproc)" moss-dev`
+completed and the compiler executable hash is
+`c62ac9534a1f817cf518ec458f987fbd5403352f2f747533bb805dd8f82e642c`.
 Bootstrap still reports `moss-0.1`.
 
 On that rebuilt compiler, the accepted R2 WP3 nominal gate passes two
@@ -11711,14 +11712,30 @@ Do not reclassify or mask this result; first violated invariant is complete
 checked-body availability for that open member-call shape. The staged-v10
 report JSON files are under disposable `tmp/r4-cross-crate-resume/`.
 
-The real-SDK generic matrix passed 18/18 on this compiler. The mixed-provider
-per-callable admission gate passed all six checks, including supported-body
-projection beside an unsupported generic callable. The exact-candidate
-advanced-data four-mode rerun was started but interrupted after roughly six
-minutes while ABI-v9 Debug was still CPU-bound in provider builds; its log ends
-at the harness KeyboardInterrupt and is unverified, not a pass or compiler
-failure. Earlier R4B advanced-data results on `a854c901` remain v9
-Debug/Release and v10 Debug/Release passes. The complete 32-case R3 oracle,
-other R4 hostile suites, and independent Architect disposition for the source
-change are still outstanding. No R5 work has started; ABI-v9 is the default
+The complete 32-case compatibility oracle passed on exact compiler commit
+`3b4689fe`: 64/64 source-backed, 64/64 ABI-v9, and 64/64 ABI-v10 Debug/Release
+profiles, with no unexpected outcomes. Its report is
+`tmp/r4-cross-crate-resume/r3-oracle.json`. The real-SDK generic matrix passed
+18/18, and the eight ABI-v9-only SDK source-free harnesses passed 8/8.
+ABI-v9 migration/rebuild diagnostics, warm provider/library cache binding, and
+the focused M2b2 source-free hostile corpus also pass on this compiler. The
+mixed-provider per-callable admission gate passed all six checks, including
+supported-body projection beside an unsupported generic callable.
+
+The Architect gave scoped GO on the compiler change at exact SHA `3b4689fe`,
+with no P0/P1 findings and one P2 asking for durable direct-form legacy
+poisoning, checked projection, and hostile evidence. New gate
+`tests/tooling/check_phase25_r4_direct_nominal.py` addresses it: source-free
+Box[Int]/Box[String] consumers pass after removing all `generic_stmt` rows,
+both require checked projection, and seven rehashed nominal/field/visibility/
+dependency mutations reject before fresh projection. Exact-SHA Architect
+follow-up is pending.
+
+The exact-candidate advanced-data four-mode rerun was started but interrupted
+after roughly six minutes while ABI-v9 Debug was still CPU-bound in provider
+builds; its log ends at the harness KeyboardInterrupt and is unverified, not a
+pass or compiler failure. Earlier R4B advanced-data results on `a854c901` remain
+v9 Debug/Release and v10 Debug/Release passes. Remaining R4 closure is blocked
+on the scenario 7 diagnostic gap, exact-candidate advanced-data matrix, and
+exact-SHA Architect follow-up. No R5 work has started; ABI-v9 is the default
 and protected branches are untouched.
