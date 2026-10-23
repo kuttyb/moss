@@ -11816,6 +11816,12 @@ ABI-v9 migration, warm-cache/provider-binding, transitive external-cache, and
 legacy inventory-provenance refresh and feedback validation also pass. A
 rehashed legacy inventory with missing artifact compiler identity preserves
 that identity as unknown while recording the refresh compiler separately.
+The first migration invocation used a compiler path without sibling `margo`
+and the first historical-inventory refresh encountered paths overwritten by
+ABI-v10 binary-contract interfaces; both were test-input/setup issues and were
+resolved with the repository-local toolchain shim and a rehashed legacy text
+interface provenance probe, respectively. The Architect independently
+verified the latter behavior.
 Durable summary:
 `docs/phase25/PHASE_25_1_R4_CANDIDATE_60ADD1F3.json`; raw run reports are under
 disposable `tmp/r4-final/`.

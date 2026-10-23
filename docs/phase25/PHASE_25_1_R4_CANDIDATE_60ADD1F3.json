@@ -164,5 +164,15 @@
   ],
   "remaining_gates": [
     "Return the reviewed R4 candidate recommendation and exact evidence to L7."
+  ],
+  "test_setup_and_inventory_notes": [
+    {
+      "classification": "test invocation issue, resolved; not a compiler failure",
+      "detail": "The ABI-v9 migration script derives margo as a sibling of the compiler path. The first call with build/compiler/moss-dev therefore could not find margo. It passed when rerun with a repository-local tmp toolchain copy and sibling margo link."
+    },
+    {
+      "classification": "stale/replaced inventory input, not a compiler failure",
+      "detail": "Refreshing the historical inventory against paths that later SDK matrix builds had overwritten with binary-contract ABI-v10 interfaces hit UnicodeDecodeError. The provenance behavior was then exercised with a rehashed legacy text-interface inventory lacking compiler executable/hash; original artifact identity stayed unknown and refresh tool identity was recorded separately. The Architect independently verified this behavior."
+    }
   ]
 }
