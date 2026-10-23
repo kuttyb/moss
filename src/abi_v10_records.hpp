@@ -7,10 +7,12 @@
 #include "source_free_abi_v10.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <functional>
 #include <optional>
 #include <set>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -1523,9 +1525,54 @@ inline void validate_complete_interface(
 
   std::vector<Summary> public_summaries;
   std::vector<MethodTemplate> public_methods;
+  std::set<std::string> public_enum_ids;
   std::vector<Record> key_proof_records;
   for (const auto& rec : sealed.value.semantic_contract) {
     if (rec.payload.empty()) continue;
+    if (rec.payload.rfind("export enum ", 0) == 0) {
+      std::istringstream lines(rec.payload);
+      std::string line;
+      std::string enum_name;
+      {
+        std::istringstream header(rec.payload.substr(12,
+            rec.payload.find('\n') == std::string::npos
+                ? std::string::npos : rec.payload.find('\n') - 12));
+        std::string extra;
+        header >> enum_name;
+        require(!enum_name.empty() && !(header >> extra),
+                "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                "Exported enum header is malformed");
+      }
+      require(rec.id.size() > 16 &&
+                  std::all_of(rec.id.begin(), rec.id.begin() + 8,
+                              [](unsigned char c) { return std::isdigit(c); }) &&
+                  rec.id.compare(8, 8, " export ") == 0 &&
+                  rec.id.substr(16) == enum_name,
+              "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+              "Exported enum record ID does not match its declaration name");
+      std::string declaration_id;
+      while (std::getline(lines, line))
+        if (line.rfind("  declaration_id ", 0) == 0) {
+          require(declaration_id.empty(), "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                  "Exported enum has duplicate declaration identity rows");
+          declaration_id = line.substr(std::string("  declaration_id ").size());
+        }
+      constexpr std::string_view enum_prefix = "nominal-enum-v1:";
+      const auto enum_separator = declaration_id.rfind(":enum:");
+      require(enum_separator != std::string::npos &&
+                  declaration_id.rfind(enum_prefix, 0) == 0 &&
+                  enum_separator > enum_prefix.size() &&
+                  declaration_id.substr(enum_prefix.size(),
+                      enum_separator - enum_prefix.size()) ==
+                      sealed.value.module_id &&
+                  declaration_id.substr(enum_separator +
+                      std::string_view(":enum:").size()) == enum_name,
+              "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+              "Exported enum declaration identity is malformed or foreign");
+      require(public_enum_ids.insert(std::move(declaration_id)).second,
+              "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+              "Duplicate exported enum declaration identity");
+    }
     const bool summary_v2_to_v4 = hex_hash(rec.id) &&
         (rec.payload[0] == 2 || rec.payload[0] == 3 || rec.payload[0] == 4);
     require(rec.payload[0] == 1 ||
@@ -1560,6 +1607,7 @@ inline void validate_complete_interface(
   std::map<std::string, MethodTemplate> private_methods;
   std::map<std::string, CheckedBodyRecord> private_bodies;
   std::map<std::string, PrivateEnumDeclaration> private_enums;
+  std::set<std::string> private_template_ids;
   for (const auto& rec : sealed.value.private_semantic_dependencies) {
     if (rec.payload.empty()) continue;
     const bool summary_v2_or_v3 = hex_hash(rec.id) &&
@@ -1589,6 +1637,7 @@ inline void validate_complete_interface(
       require(known_templates.emplace(tmpl.template_id, tmpl).second,
               "SOURCE_FREE_CONTRACT_INVALID",
               "Duplicate nominal template record ID");
+      private_template_ids.insert(tmpl.template_id);
     } else if (hex_hash(rec.id)) {
       const auto sum = read_summary(rec.payload);
       validate_summary(rec);
@@ -1729,31 +1778,203 @@ inline void validate_complete_interface(
     }
   }
 
-  std::set<std::string> required_deps;
-  for (const auto& sum : public_summaries) {
-    for (const auto& dep : sum.dependencies) {
-      required_deps.insert(dep.first);
+  // Validate that every private record is in the transitive closure of the
+  // exported callable and type roots. Keep separate worklists for each record
+  // kind so method signatures and enum payloads can authorize nested types.
+  std::set<std::string> public_callable_ids;
+  for (const auto& sum : public_summaries)
+    public_callable_ids.insert(sum.callable_id);
+  std::set<std::string> reachable_callables = public_callable_ids;
+  std::set<std::string> visited_deps;
+  std::vector<std::string> callable_worklist;
+  const auto mark_callable = [&](const std::string& id) {
+    if (reachable_callables.insert(id).second) {
+      if (!public_callable_ids.count(id)) visited_deps.insert(id);
+      callable_worklist.push_back(id);
     }
-  }
-  for (const auto& m : public_methods) {
-    for (const auto& dep : m.dependencies) {
-      required_deps.insert(dep.first);
-    }
-  }
-  std::vector<std::string> dep_worklist(required_deps.begin(), required_deps.end());
-  std::set<std::string> visited_deps = required_deps;
-  while (!dep_worklist.empty()) {
-    const auto current = dep_worklist.back();
-    dep_worklist.pop_back();
-    const auto sum_it = private_summaries.find(current);
-    if (sum_it != private_summaries.end()) {
-      for (const auto& dep : sum_it->second.dependencies) {
-        if (visited_deps.insert(dep.first).second) {
-          dep_worklist.push_back(dep.first);
-        }
+  };
+  std::set<std::string> reachable_templates;
+  std::set<std::string> reachable_enums;
+  std::set<std::string> reachable_method_ids;
+  std::vector<std::string> template_worklist;
+  std::vector<std::string> enum_worklist;
+  std::vector<std::string> method_worklist;
+  const auto mark_template = [&](const std::string& id) {
+    if (reachable_templates.insert(id).second)
+      template_worklist.push_back(id);
+  };
+  const auto mark_enum = [&](const std::string& id) {
+    if (reachable_enums.insert(id).second) enum_worklist.push_back(id);
+  };
+  const auto mark_method = [&](const std::string& id) {
+    if (reachable_method_ids.insert(id).second)
+      method_worklist.push_back(id);
+  };
+  const auto collect_wire_references = [&](const auto& self,
+      const WireType& type) -> void {
+    if (type.kind == WireTypeKind::Nominal) {
+      const auto local = known_templates.find(type.identity);
+      if (local == known_templates.end()) {
+        constexpr std::string_view prefix = "nominal-template-v1:";
+        const auto separator = type.identity.rfind(":type:");
+        require(type.identity.rfind(prefix, 0) == 0 &&
+                    separator != std::string::npos &&
+                    separator > prefix.size(),
+                "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                "Nominal TypeExpr has a malformed template identity");
+        const auto owner = type.identity.substr(
+            prefix.size(), separator - prefix.size());
+        require(owner != sealed.value.module_id &&
+                    import_modules.count(owner) != 0,
+                "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                "Nominal TypeExpr references an unknown provider template");
       }
+      mark_template(type.identity);
+    } else if (type.kind == WireTypeKind::Enum) {
+      if (!private_enums.count(type.identity) &&
+          !public_enum_ids.count(type.identity)) {
+        constexpr std::string_view prefix = "nominal-enum-v1:";
+        const auto separator = type.identity.rfind(":enum:");
+        require(type.identity.rfind(prefix, 0) == 0 &&
+                    separator != std::string::npos &&
+                    separator > prefix.size(),
+                "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                "Enum TypeExpr has a malformed declaration identity");
+        const auto owner = type.identity.substr(
+            prefix.size(), separator - prefix.size());
+        require(owner != sealed.value.module_id &&
+                    import_modules.count(owner) != 0,
+                "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                "Enum TypeExpr references an unknown provider declaration");
+      }
+      mark_enum(type.identity);
+    }
+    for (const auto& argument : type.arguments) self(self, argument);
+  };
+  const auto collect_summary = [&](const Summary& sum) {
+    for (const auto& parameter : sum.parameters)
+      collect_wire_references(collect_wire_references, parameter);
+    collect_wire_references(collect_wire_references, sum.result);
+    for (const auto& requirement : sum.requirements) {
+      collect_wire_references(collect_wire_references, requirement.receiver);
+      for (const auto& argument : requirement.arguments)
+        collect_wire_references(collect_wire_references, argument);
+      if (requirement.result)
+        collect_wire_references(collect_wire_references, *requirement.result);
+    }
+    for (const auto& dependency : sum.dependencies)
+      mark_callable(dependency.first);
+  };
+  const auto collect_method = [&](const MethodTemplate& method) {
+    mark_template(method.template_id);
+    for (const auto& parameter : method.parameters)
+      collect_wire_references(collect_wire_references, parameter);
+    collect_wire_references(collect_wire_references, method.result);
+    for (const auto& requirement : method.requirements) {
+      collect_wire_references(collect_wire_references, requirement.receiver);
+      for (const auto& argument : requirement.arguments)
+        collect_wire_references(collect_wire_references, argument);
+      if (requirement.result)
+        collect_wire_references(collect_wire_references, *requirement.result);
+    }
+    for (const auto& dependency : method.dependencies)
+      mark_callable(dependency.first);
+  };
+
+  for (const auto& sum : public_summaries) collect_summary(sum);
+  for (const auto& method : public_methods) {
+    mark_method(method.method_id);
+    collect_method(method);
+  }
+  // Every non-private nominal template is public API. Its methods and field
+  // types are roots even when no callable currently mentions the type.
+  for (const auto& nominal : known_templates)
+    if (!private_template_ids.count(nominal.first))
+      mark_template(nominal.first);
+  for (const auto& body : private_bodies) {
+    if (!public_callable_ids.count(body.second.callable_id)) continue;
+    for (const auto& dependency : body.second.dependencies) {
+      if (dependency.kind == CheckedBodyRecord::Dependency::Kind::Callable)
+        mark_callable(dependency.target_id);
+      else if (known_templates.count(dependency.target_id))
+        mark_template(dependency.target_id);
+      else
+        mark_enum(dependency.target_id);
     }
   }
+
+  while (!callable_worklist.empty() || !template_worklist.empty() ||
+         !enum_worklist.empty() || !method_worklist.empty()) {
+    if (!callable_worklist.empty()) {
+      const auto current = callable_worklist.back();
+      callable_worklist.pop_back();
+      const auto sum = private_summaries.find(current);
+      if (sum != private_summaries.end()) collect_summary(sum->second);
+      const auto body = private_bodies.find(current);
+      if (body != private_bodies.end())
+        for (const auto& dependency : body->second.dependencies) {
+          if (dependency.kind == CheckedBodyRecord::Dependency::Kind::Callable)
+            mark_callable(dependency.target_id);
+          else if (known_templates.count(dependency.target_id))
+            mark_template(dependency.target_id);
+          else
+            mark_enum(dependency.target_id);
+        }
+    } else if (!template_worklist.empty()) {
+      const auto current = template_worklist.back();
+      template_worklist.pop_back();
+      const auto nominal = known_templates.find(current);
+      if (nominal == known_templates.end()) continue;
+      for (const auto& method : nominal->second.method_template_ids)
+        mark_method(method);
+      for (const auto& field : nominal->second.fields)
+        collect_wire_references(collect_wire_references, field.type);
+    } else if (!method_worklist.empty()) {
+      const auto current = method_worklist.back();
+      method_worklist.pop_back();
+      const auto private_method = private_methods.find(current);
+      if (private_method != private_methods.end()) {
+        collect_method(private_method->second);
+      } else {
+        const auto public_method = std::find_if(public_methods.begin(),
+            public_methods.end(), [&](const MethodTemplate& method) {
+          return method.method_id == current;
+        });
+        if (public_method != public_methods.end())
+          collect_method(*public_method);
+      }
+    } else {
+      const auto current = enum_worklist.back();
+      enum_worklist.pop_back();
+      const auto enumeration = private_enums.find(current);
+      if (enumeration == private_enums.end()) continue;
+      for (const auto& variant : enumeration->second.variants)
+        for (const auto& field : variant.fields)
+          collect_wire_references(collect_wire_references, field.type);
+    }
+  }
+
+  std::set<std::string> authorized_callables = reachable_callables;
+  for (const auto& sum : private_summaries)
+    require(reachable_callables.count(sum.first) != 0,
+            "SOURCE_FREE_PRIVATE_DEPENDENCY_UNEXPECTED",
+            "Private callable summary is outside the exported dependency closure");
+  for (const auto& body : private_bodies)
+    require(authorized_callables.count(body.first) != 0,
+            "SOURCE_FREE_PRIVATE_DEPENDENCY_UNEXPECTED",
+            "Private checked body is outside the exported dependency closure");
+  for (const auto& template_id : private_template_ids)
+    require(reachable_templates.count(template_id) != 0,
+            "SOURCE_FREE_PRIVATE_DEPENDENCY_UNEXPECTED",
+            "Private nominal template is outside the exported dependency closure");
+  for (const auto& method : private_methods)
+    require(reachable_method_ids.count(method.first) != 0,
+            "SOURCE_FREE_PRIVATE_DEPENDENCY_UNEXPECTED",
+            "Private method template is outside the exported dependency closure");
+  for (const auto& enumeration : private_enums)
+    require(reachable_enums.count(enumeration.first) != 0,
+            "SOURCE_FREE_PRIVATE_DEPENDENCY_UNEXPECTED",
+            "Private enum declaration is outside the exported dependency closure");
   for (const auto& dep : visited_deps)
     require(callable_body_hashes.count(dep) > 0,
             "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",

@@ -495,6 +495,276 @@ int main() {
       summary_record(private_helper)};
   validate_complete_interface(decode(encode(iface_with_helper)));
 
+  // Re-sealed private records cannot extend the provider beyond the
+  // dependency closure rooted at the exported callable.
+  Summary orphan_private = private_helper;
+  orphan_private.callable_id = "helper:unreachable";
+  Interface iface_with_orphan = iface_with_helper;
+  iface_with_orphan.private_semantic_dependencies.push_back(
+      summary_record(orphan_private));
+  std::sort(iface_with_orphan.private_semantic_dependencies.begin(),
+            iface_with_orphan.private_semantic_dependencies.end(),
+            [](const Record& left, const Record& right) {
+              return left.id < right.id;
+            });
+  expect_error([&] {
+    validate_complete_interface(decode(encode(iface_with_orphan)));
+  }, "SOURCE_FREE_PRIVATE_DEPENDENCY_UNEXPECTED");
+
+  // Replacing the authorized helper with a distinct, correctly resealed
+  // summary leaves the authorized dependency unresolved and the replacement
+  // private record outside the closure.
+  Interface iface_with_substitute = iface_with_helper;
+  orphan_private.callable_id = private_helper.callable_id + ":substitute";
+  iface_with_substitute.private_semantic_dependencies = {
+      summary_record(orphan_private)};
+  expect_error([&] {
+    validate_complete_interface(decode(encode(iface_with_substitute)));
+  }, "SOURCE_FREE_PRIVATE_DEPENDENCY_UNEXPECTED");
+
+  const auto private_template = [&](const std::string& name) {
+    NominalTemplate value;
+    value.template_id = "nominal-template-v1:" + iface.module_id +
+        ":type:" + name;
+    value.module_id = iface.module_id;
+    value.declaration_name = name;
+    value.representation_hash = "sha256:" + std::string(64, 'c');
+    value.provenance_id = prov.provenance_id;
+    return value;
+  };
+  const auto private_enum = [&](const std::string& name) {
+    PrivateEnumDeclaration value;
+    value.declaration_id = "nominal-enum-v1:" + iface.module_id +
+        ":enum:" + name;
+    value.module_id = iface.module_id;
+    value.declaration_name = name;
+    value.variants.push_back({
+        "Only", "nominal-enum-variant-v1:" + value.declaration_id +
+            ":case:Only", {}});
+    value.provenance_id = prov.provenance_id;
+    return value;
+  };
+  const auto canonicalize_record_order = [](Interface& value) {
+    const auto by_id = [](const Record& left, const Record& right) {
+      return left.id < right.id;
+    };
+    std::sort(value.binary_contract.begin(), value.binary_contract.end(), by_id);
+    std::sort(value.semantic_contract.begin(), value.semantic_contract.end(), by_id);
+    std::sort(value.private_semantic_dependencies.begin(),
+              value.private_semantic_dependencies.end(), by_id);
+    std::sort(value.provenance.begin(), value.provenance.end(), by_id);
+  };
+
+  auto orphan_template = private_template("Unreachable");
+  Interface iface_with_orphan_template = iface_with_helper;
+  iface_with_orphan_template.private_semantic_dependencies.push_back(
+      template_record(orphan_template));
+  canonicalize_record_order(iface_with_orphan_template);
+  expect_error([&] {
+    validate_complete_interface(decode(encode(iface_with_orphan_template)));
+  }, "SOURCE_FREE_PRIVATE_DEPENDENCY_UNEXPECTED");
+
+  auto missing_nominal_root = private_template("MissingNominalRoot");
+  missing_nominal_root.fields.push_back({
+      "child", {WireTypeKind::Nominal,
+          "nominal-template-v1:" + iface.module_id + ":type:MissingChild",
+          {}, 0}, true, prov.provenance_id});
+  Interface iface_with_missing_nominal = iface_with_helper;
+  iface_with_missing_nominal.binary_contract.push_back(
+      template_record(missing_nominal_root));
+  canonicalize_record_order(iface_with_missing_nominal);
+  expect_error([&] {
+    validate_complete_interface(decode(encode(iface_with_missing_nominal)));
+  }, "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+
+  auto missing_enum_root = private_template("MissingEnumRoot");
+  missing_enum_root.fields.push_back({
+      "state", {WireTypeKind::Enum,
+          "nominal-enum-v1:" + iface.module_id + ":enum:MissingEnum",
+          {}, 0}, true, prov.provenance_id});
+  Interface iface_with_missing_enum = iface_with_helper;
+  iface_with_missing_enum.binary_contract.push_back(
+      template_record(missing_enum_root));
+  canonicalize_record_order(iface_with_missing_enum);
+  expect_error([&] {
+    validate_complete_interface(decode(encode(iface_with_missing_enum)));
+  }, "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+
+  auto public_enum_root = private_template("PublicEnumRoot");
+  const std::string public_enum_id =
+      "nominal-enum-v1:" + iface.module_id + ":enum:PublicError";
+  public_enum_root.fields.push_back({
+      "state", {WireTypeKind::Enum, public_enum_id, {}, 0}, true,
+      prov.provenance_id});
+  Interface iface_with_public_enum = iface_with_helper;
+  iface_with_public_enum.binary_contract.push_back(
+      template_record(public_enum_root));
+  iface_with_public_enum.semantic_contract.push_back({
+      "00000000 export PublicError",
+      "export enum PublicError\n  declaration_id " + public_enum_id + "\n"});
+  canonicalize_record_order(iface_with_public_enum);
+  validate_complete_interface(decode(encode(iface_with_public_enum)));
+
+  Interface iface_with_mismatched_public_enum_id = iface_with_public_enum;
+  auto public_enum_record = std::find_if(
+      iface_with_mismatched_public_enum_id.semantic_contract.begin(),
+      iface_with_mismatched_public_enum_id.semantic_contract.end(),
+      [](const Record& record) {
+        return record.id == "00000000 export PublicError";
+      });
+  assert(public_enum_record !=
+         iface_with_mismatched_public_enum_id.semantic_contract.end());
+  public_enum_record->payload =
+      "export enum PublicError\n  declaration_id nominal-enum-v1:" +
+      iface.module_id + ":enum:ForgedError\n";
+  canonicalize_record_order(iface_with_mismatched_public_enum_id);
+  expect_error([&] {
+    validate_complete_interface(
+        decode(encode(iface_with_mismatched_public_enum_id)));
+  }, "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+
+  Interface iface_with_mismatched_public_enum_record = iface_with_public_enum;
+  auto mismatched_record = std::find_if(
+      iface_with_mismatched_public_enum_record.semantic_contract.begin(),
+      iface_with_mismatched_public_enum_record.semantic_contract.end(),
+      [](const Record& record) {
+        return record.id == "00000000 export PublicError";
+      });
+  assert(mismatched_record !=
+         iface_with_mismatched_public_enum_record.semantic_contract.end());
+  mismatched_record->id =
+      "00000000 export ForgedError";
+  expect_error([&] {
+    validate_complete_interface(
+        decode(encode(iface_with_mismatched_public_enum_record)));
+  }, "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+
+  Interface iface_with_duplicate_public_enum_id = iface_with_public_enum;
+  iface_with_duplicate_public_enum_id.semantic_contract.push_back(
+      *std::find_if(iface_with_public_enum.semantic_contract.begin(),
+          iface_with_public_enum.semantic_contract.end(),
+          [](const Record& record) {
+            return record.id == "00000000 export PublicError";
+          }));
+  iface_with_duplicate_public_enum_id.semantic_contract.back().id =
+      "00000001 export PublicError";
+  canonicalize_record_order(iface_with_duplicate_public_enum_id);
+  expect_error([&] {
+    validate_complete_interface(
+        decode(encode(iface_with_duplicate_public_enum_id)));
+  }, "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+
+  const std::string imported_module = "module-v1:other@1.0.0::Other";
+  auto imported_type_root = private_template("ImportedTypeRoot");
+  imported_type_root.fields.push_back({
+      "child", {WireTypeKind::Nominal,
+          "nominal-template-v1:" + imported_module + ":type:Record",
+          {}, 0}, true, prov.provenance_id});
+  Interface iface_with_imported_type = iface_with_helper;
+  iface_with_imported_type.imports.push_back({imported_module, digest, digest});
+  iface_with_imported_type.binary_contract.push_back(
+      template_record(imported_type_root));
+  canonicalize_record_order(iface_with_imported_type);
+  validate_complete_interface(decode(encode(iface_with_imported_type)));
+
+  auto imported_enum_root = private_template("ImportedEnumRoot");
+  imported_enum_root.fields.push_back({
+      "state", {WireTypeKind::Enum,
+          "nominal-enum-v1:" + imported_module + ":enum:ExternalError",
+          {}, 0}, true, prov.provenance_id});
+  Interface iface_with_imported_enum = iface_with_helper;
+  iface_with_imported_enum.imports.push_back({imported_module, digest, digest});
+  iface_with_imported_enum.binary_contract.push_back(
+      template_record(imported_enum_root));
+  canonicalize_record_order(iface_with_imported_enum);
+  validate_complete_interface(decode(encode(iface_with_imported_enum)));
+
+  auto orphan_enum = private_enum("Unreachable");
+  Interface iface_with_orphan_enum = iface_with_helper;
+  iface_with_orphan_enum.private_semantic_dependencies.push_back(
+      private_enum_record(orphan_enum));
+  canonicalize_record_order(iface_with_orphan_enum);
+  expect_error([&] {
+    validate_complete_interface(decode(encode(iface_with_orphan_enum)));
+  }, "SOURCE_FREE_PRIVATE_DEPENDENCY_UNEXPECTED");
+
+  auto method_owner = private_template("MethodOwner");
+  method_owner.template_id = "nominal-template-v1:" + iface.module_id +
+      ":type:MethodOwner";
+  MethodTemplate orphan_method;
+  orphan_method.method_id = "method-v1:" + method_owner.template_id +
+      ":method:unreachable";
+  orphan_method.template_id = method_owner.template_id;
+  orphan_method.method_name = "unreachable";
+  orphan_method.result = {WireTypeKind::Primitive, "int", {}, 0};
+  orphan_method.provenance_id = prov.provenance_id;
+  Interface iface_with_orphan_method = iface_with_helper;
+  iface_with_orphan_method.binary_contract.push_back(
+      template_record(method_owner));
+  iface_with_orphan_method.private_semantic_dependencies.push_back(
+      method_template_record(orphan_method));
+  canonicalize_record_order(iface_with_orphan_method);
+  expect_error([&] {
+    validate_complete_interface(decode(encode(iface_with_orphan_method)));
+  }, "SOURCE_FREE_PRIVATE_DEPENDENCY_UNEXPECTED");
+
+  // Reachability follows public template -> private method -> nested private
+  // nominal result, and private enum payload -> nested private enum.
+  auto public_owner = private_template("PublicOwner");
+  const std::string nested_method_id =
+      "method-v1:" + public_owner.template_id + ":method:lookup";
+  public_owner.method_template_ids = {nested_method_id};
+  auto nested_type = private_template("NestedResult");
+  MethodTemplate nested_method;
+  nested_method.method_id = nested_method_id;
+  nested_method.template_id = public_owner.template_id;
+  nested_method.method_name = "lookup";
+  nested_method.result = {WireTypeKind::Nominal,
+                          nested_type.template_id, {}, 0};
+  nested_method.provenance_id = prov.provenance_id;
+  Interface iface_transitive_method = iface_with_helper;
+  iface_transitive_method.binary_contract.push_back(
+      template_record(public_owner));
+  iface_transitive_method.private_semantic_dependencies.push_back(
+      method_template_record(nested_method));
+  iface_transitive_method.private_semantic_dependencies.push_back(
+      template_record(nested_type));
+  canonicalize_record_order(iface_transitive_method);
+  validate_complete_interface(decode(encode(iface_transitive_method)));
+
+  auto enum_owner = private_template("EnumOwner");
+  auto outer_enum = private_enum("Outer");
+  auto inner_enum = private_enum("Inner");
+  outer_enum.variants.front().fields.push_back({
+      "nested", {WireTypeKind::Enum, inner_enum.declaration_id, {}, 0},
+      false, prov.provenance_id});
+  enum_owner.fields.push_back({
+      "state", {WireTypeKind::Enum, outer_enum.declaration_id, {}, 0},
+      true, prov.provenance_id});
+  Interface iface_transitive_enum = iface_with_helper;
+  iface_transitive_enum.binary_contract.push_back(template_record(enum_owner));
+  iface_transitive_enum.private_semantic_dependencies.push_back(
+      private_enum_record(outer_enum));
+  iface_transitive_enum.private_semantic_dependencies.push_back(
+      private_enum_record(inner_enum));
+  canonicalize_record_order(iface_transitive_enum);
+  validate_complete_interface(decode(encode(iface_transitive_enum)));
+
+  auto substituted_enum = private_enum("Substituted");
+  auto enum_root = private_template("EnumRoot");
+  enum_root.fields.push_back({
+      "state", {WireTypeKind::Enum, "nominal-enum-v1:" + iface.module_id +
+                   ":enum:Expected", {}, 0}, true, prov.provenance_id});
+  Interface iface_with_substituted_enum = iface_with_helper;
+  iface_with_substituted_enum.binary_contract.push_back(
+      template_record(enum_root));
+  iface_with_substituted_enum.private_semantic_dependencies.push_back(
+      private_enum_record(substituted_enum));
+  canonicalize_record_order(iface_with_substituted_enum);
+  expect_error([&] {
+    validate_complete_interface(decode(encode(iface_with_substituted_enum)));
+  }, "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+
   moss::checked_ir::Expr literal;
   literal.kind = moss::checked_ir::ExprKind::IntegerLiteral;
   literal.type = moss::Type::primitive("int");
@@ -523,6 +793,29 @@ int main() {
   iface_with_body.private_semantic_dependencies = {
       checked_body_record(checked_body)};
   validate_complete_interface(decode(encode(iface_with_body)));
+
+  Summary orphan_body_owner = body_owner;
+  orphan_body_owner.callable_id = "callable-v1:module-v1:provider@1.0.0::Provider:fn:orphan_body";
+  CheckedBodyRecord orphan_body = checked_body;
+  orphan_body.callable_id = orphan_body_owner.callable_id;
+  orphan_body_owner.body_semantic_hash = orphan_body.semantic_hash;
+  Interface iface_with_orphan_body = iface_with_body;
+  iface_with_orphan_body.private_semantic_dependencies.push_back(
+      summary_record(orphan_body_owner));
+  iface_with_orphan_body.private_semantic_dependencies.push_back(
+      checked_body_record(orphan_body));
+  canonicalize_record_order(iface_with_orphan_body);
+  expect_error([&] {
+    validate_complete_interface(decode(encode(iface_with_orphan_body)));
+  }, "SOURCE_FREE_PRIVATE_DEPENDENCY_UNEXPECTED");
+
+  Interface iface_with_substituted_body = iface_with_body;
+  iface_with_substituted_body.private_semantic_dependencies = {
+      summary_record(orphan_body_owner), checked_body_record(orphan_body)};
+  canonicalize_record_order(iface_with_substituted_body);
+  expect_error([&] {
+    validate_complete_interface(decode(encode(iface_with_substituted_body)));
+  }, "SOURCE_FREE_PRIVATE_DEPENDENCY_UNEXPECTED");
   Interface malformed_body_iface = iface_with_body;
   malformed_body_iface.private_semantic_dependencies.front().payload.resize(12);
   expect_error([&] {
@@ -630,6 +923,7 @@ int main() {
       "callable-v1:module-v1:other@1.0.0::Other:fn:helper", body_digest}};
   iface_unresolved_import.semantic_contract = {
       summary_record(external_dependency)};
+  iface_unresolved_import.private_semantic_dependencies.clear();
   expect_error([&] {
     validate_complete_interface(decode(encode(iface_unresolved_import)));
   }, "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING");

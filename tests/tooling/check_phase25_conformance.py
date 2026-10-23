@@ -315,11 +315,12 @@ import Provider
 fn main():
   echo Provider.outer(1)
 ''')
-    # ABI-v10 rejects this legacy-only generic call chain before method
-    # resolution; the typed checked-body path must not rebuild it from source.
-    error = check_negative(source, {"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE"},
-                           ("Provider.outer", "callable-v1:"), env)
-    assert error["source_file"].endswith("Provider.mossi"), error
+    # R4 preserves the deferred member obligation through the private relay,
+    # so the consumer's concrete specialization reports the source-level
+    # missing-method diagnostic with both consumer and provider provenance.
+    error = check_negative(source, {"METHOD_NOT_FOUND"},
+                           ("Provider.outer", "required"), env)
+    assert error["source_file"].endswith("main.moss"), error
     related = error.get("related") or []
     assert len(related) >= 1, "missing checked provider provenance"
     assert any((note.get("source") or {}).get("file", "").endswith("provider.moss")

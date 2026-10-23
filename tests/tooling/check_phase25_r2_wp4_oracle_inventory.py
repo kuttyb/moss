@@ -19,26 +19,21 @@ assert "generic-map-index-mutation" in ids
 assert "surface-map-index-mutation" in ids
 
 by_id = {case["id"]: case for case in cases}
-assert ORACLE.expected_output_for(by_id["returned-callback"], "source") == "31\nmoss\n"
-assert ORACLE.expected_output_for(by_id["returned-callback"], "v9") == "31\nmoss\n"
-assert ORACLE.expected_output_for(
-    by_id["collection-count-nonloop-fail-closed"], "source") == "2\n"
-assert ORACLE.expected_output_for(
-    by_id["collection-count-nonloop-fail-closed"], "v9") == "2\n"
-count_control = by_id["collection-count-nonloop-fail-closed"]
-assert count_control["provider_must_emit_v10"] is True
+assert ORACLE.expected_output_for(by_id["returned-callback"], "source") == "31\nmoss\n23\n7\n"
+assert ORACLE.expected_output_for(by_id["returned-callback"], "v9") == "31\nmoss\n23\n7\n"
+count_control = by_id["collection-count-early-return"]
+assert ORACLE.expected_output_for(count_control, "source") == "2\n"
+assert ORACLE.expected_output_for(count_control, "v9") == "2\n"
+assert ORACLE.expected_output_for(count_control, "v10") == "2\n"
+required_provider = {"provider_must_emit_v10": True}
 assert ORACLE.failure_status(
-    count_control, "v10", "provider-build",
-    count_control["provider_expected_error"],
+    required_provider, "v10", "provider-build",
+    "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
     "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE") == "provider-build-failed"
 assert ORACLE.failure_status(
-    count_control, "v10", "consumer-build",
-    count_control["provider_expected_error"],
+    required_provider, "v10", "consumer-build",
+    "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
     "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE") == "valid-but-unavailable-v10"
-assert ORACLE.failure_status(
-    by_id["returned-callback"], "v10", "provider-build",
-    by_id["returned-callback"]["provider_expected_error"],
-    "SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED") == "valid-but-unavailable-v10"
 
 try:
     ORACLE.validate_inventory([by_id["generic-map-index-mutation"],

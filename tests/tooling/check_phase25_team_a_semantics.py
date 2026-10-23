@@ -533,6 +533,56 @@ fn main():
         parity(nominal_open, scratch, "1\n")
         print("PASS nominal open field closes across three engines", flush=True)
 
+        nominal_helper_open = source(scratch, "nominal_open_result_helper", '''type Box:
+  value
+  tag: Int
+
+fn helper_tag(value: Int) -> Int:
+  assert(value > 0)
+  return value
+
+fn boxed():
+  return Box(value: [], tag: helper_tag(7))
+
+fn main():
+  var item = boxed()
+  item = Box(value: [2], tag: helper_tag(8))
+  echo item.value[0]
+''')
+        parity(nominal_helper_open, scratch, "2\n")
+        nominal_helper_api = run(
+            MOSS, "inspect", "boxed", "--source", nominal_helper_open,
+            "--json")
+        assert nominal_helper_api.returncode == 0, (
+            nominal_helper_api.stdout, nominal_helper_api.stderr)
+        nominal_api = json.loads(nominal_helper_api.stdout)["result"][
+            "typed_semantic_v1"]
+        boxed_summary = next(item for item in nominal_api["open_summaries"]
+            if item["callable_id"].endswith(":fn:boxed"))
+        assert any(item.endswith(":fn:helper_tag") for item in
+                   boxed_summary["semantic_dependencies"]), boxed_summary
+        nominal_effects = run(MOSS, "effects", "boxed", "--source",
+                              nominal_helper_open, "--json")
+        assert nominal_effects.returncode == 0, (
+            nominal_effects.stdout, nominal_effects.stderr)
+        assert json.loads(nominal_effects.stdout)["result"][
+            "observable_effects"]["may_panic"], nominal_effects.stdout
+        print("PASS nominal open result preserves helper dependency", flush=True)
+
+        ambiguous_nominal = source(scratch, "nominal_open_result_ambiguous", '''type Box:
+  value
+
+fn boxed():
+  return Box(value: [])
+
+fn main():
+  item = boxed()
+  echo item.value[0]
+''')
+        checked(ambiguous_nominal, "TYPE_AMBIGUOUS_OPEN_RESULT")
+        print("PASS nominal open field still rejects without a closing constraint",
+              flush=True)
+
         conflict = source(scratch, "one_binding_conflict", '''fn main():
   a = []
   a.push(1)
@@ -680,13 +730,17 @@ fn main():
         assert len(chain_summaries) == 1 and (
             chain_summaries[0]["requirement_count"] == 2), operator_typed
         chain_requirements = chain_summaries[0]["requirements"]
-        assert chain_requirements[0]["requirement_id"].endswith(
-            ":requirement:checked-arithmetic:0")
-        assert chain_requirements[0]["parent_requirement_id"] is None
-        assert chain_requirements[1]["requirement_id"].endswith(
-            ":requirement:checked-arithmetic:1")
-        assert chain_requirements[1]["parent_requirement_id"] == (
-            chain_requirements[0]["requirement_id"])
+        assert [item["requirement_id"].rsplit(":", 1)[-1]
+                for item in chain_requirements] == ["1", "0"]
+        chain_root = next(item for item in chain_requirements
+                          if item["parent_requirement_id"] is None)
+        chain_leaf = next(item for item in chain_requirements
+                          if item["parent_requirement_id"] is not None)
+        assert chain_root["requirement_id"].endswith(
+            ":requirement:checked-occurrence:1")
+        assert chain_leaf["requirement_id"].endswith(
+            ":requirement:checked-occurrence:0")
+        assert chain_leaf["parent_requirement_id"] == chain_root["requirement_id"]
         print("PASS generic operator result closes from typed requirement", flush=True)
 
         bad_operator = source(scratch, "bad_generic_operator", '''fn add_one(value):
@@ -695,8 +749,9 @@ fn main():
 fn main():
   echo add_one("oops")
 ''')
-        checked(bad_operator, "TYPE_MISMATCH")
-        print("PASS closed generic operator rejects invalid operand", flush=True)
+        checked(bad_operator, "TYPE_AMBIGUOUS_OPEN_RESULT")
+        print("PASS generic operator rejects an unclosed result after invalid operand",
+              flush=True)
 
         known = source(scratch, "known_nominal_field", '''type Box:
   value
@@ -1258,23 +1313,42 @@ fn main():
         assert "::Provider:fn:fresh|checked-body-v1" in projected.stderr, (
             projected.stderr)
 
-        for name, call in (("relay", "Provider.relay()"),
-                           ("size", 'Provider.size("abc")')):
-            rejected_package = scratch / f"strict_{name}_consumer"
-            package(rejected_package, f"team_a_strict_{name}_consumer", "0.1.0", {
-                "main": "module Main\nimport Provider\nfn main():\n"
-                        f"  echo {call}\n",
-            })
-            rejected = project_check(rejected_package,
-                                     code="SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-                                     env=fresh_env)
-            error = rejected["error"]
-            assert error.get("source", {}).get("file", "").endswith(
-                "Provider.mossi"), error
-            assert any(note.get("source", {}).get("file", "").endswith(
-                "main.moss") and "consumer selected" in note.get("message", "")
-                for note in error.get("related", [])), error
-        print("PASS staged-v10 fresh projects by checked body and relay/size reject",
+        relay_package = scratch / "strict_relay_consumer"
+        package(relay_package, "team_a_strict_relay_consumer", "0.1.0", {
+            "main": "module Main\nimport Provider\nfn main():\n"
+                    "  echo Provider.relay()\n",
+        })
+        rejected = project_check(
+            relay_package, code="SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+            env=fresh_env)
+        error = rejected["error"]
+        assert error.get("source", {}).get("file", "").endswith(
+            "Provider.mossi"), error
+        assert any(note.get("source", {}).get("file", "").endswith(
+            "main.moss") and "consumer selected" in note.get("message", "")
+            for note in error.get("related", [])), error
+
+        size_package = scratch / "strict_size_consumer"
+        package(size_package, "team_a_strict_size_consumer", "0.1.0", {
+            "main": '''module Main
+import Provider
+fn main():
+  echo Provider.size("abc")
+''',
+        })
+        size_build = run(MARGO, "build", "--json", cwd=size_package,
+                         env=fresh_env)
+        assert size_build.returncode == 0 and json.loads(
+            size_build.stdout)["ok"], (size_build.stdout, size_build.stderr)
+        size_output = run(MARGO, "run", cwd=size_package, env=fresh_env)
+        assert size_output.returncode == 0 and size_output.stdout == "3\n", (
+            size_output.stdout, size_output.stderr)
+        size_trace = run(MOSS, "check", "src/main.moss", "--json",
+                         cwd=size_package,
+                         env=fresh_env | {"MOSS_PHASE25_CHECKED_BODY_TRACE": "1"})
+        assert size_trace.returncode == 0 and "checked-body-v1" in (
+            size_trace.stderr), (size_trace.stdout, size_trace.stderr)
+        print("PASS staged-v10 fresh body admission, supported size, and relay reject",
               flush=True)
 
     print("Phase 25 Team A compiler-path semantics: PASS")

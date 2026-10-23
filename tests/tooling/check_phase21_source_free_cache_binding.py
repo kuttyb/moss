@@ -16,6 +16,7 @@ compiler = Path(sys.argv[1]).resolve()
 scratch = repo / "tmp/phase21-source-free-cache-binding"
 if scratch.exists():
     shutil.rmtree(scratch)
+scratch.mkdir(parents=True)
 provider = scratch / "provider"
 consumer = scratch / "consumer"
 (provider / "src").mkdir(parents=True)
@@ -47,6 +48,19 @@ def run(*args, cwd, provider_path=None):
         env["MOSS_MODULE_PATH"] = str(provider_path)
     return subprocess.run([str(arg) for arg in args], cwd=cwd, env=env,
                           capture_output=True, text=True, timeout=180)
+
+
+cxx = os.environ.get("CXX", "c++")
+identity_test = scratch / "native-cache-identity-test"
+identity_build = run(cxx, "-std=c++17", "-Wall", "-Wextra", "-Werror",
+                     "-pedantic", "-Isrc",
+                     "tests/tooling/native_cache_identity_test.cpp", "-o",
+                     identity_test, cwd=repo)
+assert identity_build.returncode == 0, (identity_build.stdout,
+                                       identity_build.stderr)
+identity_run = run(identity_test, cwd=repo)
+assert identity_run.returncode == 0, (identity_run.stdout,
+                                      identity_run.stderr)
 
 
 def build(cwd, provider_path=None):

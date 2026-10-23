@@ -46,6 +46,7 @@
 #include "executor_runtime.hpp"
 #include "synchronization_lowering.hpp"
 #include "source_free_abi_v9.hpp"
+#include "native_cache_identity.hpp"
 #include "source_free_abi_v10.hpp"
 #include "abi_v10_records.hpp"
 #include "moss_runtime_linkage.hpp"
@@ -8060,6 +8061,7 @@ class Checker {
     { CompilerStageTimer timer("concrete_graph"); build_concrete_domain_graph(); }
     check_method_ownership();
     for (const auto& f : p_.functions) check_function(f);
+    refresh_open_nominal_constructor_results_from_checked_types();
     refresh_open_arithmetic_summaries_from_checked_types();
     refresh_open_collection_summaries_from_checked_types();
     refresh_open_pipeline_map_summaries_from_checked_types();
@@ -13539,6 +13541,151 @@ class Checker {
       if (summary.bound_variable_count || function.generic ||
           (checked_concrete_dependency && summary.scheme_complete))
         function.open_summary = std::move(summary);
+    }
+  }
+
+  // Preserve an open nominal constructor result only from the checked return
+  // occurrence. Signature inference prints an empty collection field as a
+  // bare collection name, which loses the element TypeRef needed to close
+  // `Box(value: [])` at a later concrete caller. The retained body solver has
+  // the actual constructor identity and the shared open field term.
+  void refresh_open_nominal_constructor_results_from_checked_types() {
+    for (auto& function : p_.functions) {
+      if (!function.constraints.empty() || function.body.size() != 1 ||
+          function.body.front().kind != Stmt::Kind::Return)
+        continue;
+      const auto retained = checked_body_states_.find(&function.body);
+      if (retained == checked_body_states_.end() || !retained->second) continue;
+      auto& state = *retained->second;
+      const auto statement = state.statement_occurrence_ids.find(
+          &function.body.front());
+      if (statement == state.statement_occurrence_ids.end()) continue;
+      const auto root = state.expression_root_slots.find(
+          {statement->second, "return-value"});
+      if (root == state.expression_root_slots.end() ||
+          root->second >= state.expression_occurrences.size())
+        continue;
+      const auto& occurrence = state.expression_occurrences[root->second];
+      if (occurrence.kind != BodyTypeState::ExpressionOccurrence::Kind::Constructor ||
+          occurrence.statement_id != statement->second ||
+          occurrence.parent_id != UINT32_MAX || !occurrence.checked_type ||
+          !occurrence.semantic_target_id.size())
+        continue;
+      const auto checked_result = state.solver.resolve(occurrence.checked_type);
+      if (!checked_result ||
+          checked_result->kind != moss::TypeKind::NominalInstance ||
+          !checked_result->declaration ||
+          checked_result->declaration->id != occurrence.semantic_target_id ||
+          checked_result->is_closed())
+        continue;
+
+      // Do not carry incomplete signature-pass variables into the checked
+      // body result. Its display projection can contain open slots that are
+      // absent from the actual constructor TypeRef.
+      OpenCallableSummaryFacts summary;
+      summary.callable_id = function.semantic_callable_id;
+      summary.origin.module_id =
+          program_module_identity(p_, function.defining_module);
+      summary.origin.source_file = function.source_file;
+      summary.origin.line = function.line;
+      summary.origin.enclosing_callable = function.semantic_callable_id;
+      if (function.open_summary) {
+        // Preserve provider call identities; source requirements remain
+        // represented only when their checked body facts accompany them.
+        summary.semantic_dependencies =
+            function.open_summary->semantic_dependencies;
+      }
+      for (const auto& nested : state.expression_occurrences) {
+        if (nested.kind !=
+                BodyTypeState::ExpressionOccurrence::Kind::Call ||
+            !starts_with(nested.semantic_target_id, "callable-v1:") ||
+            nested.semantic_target_id == function.semantic_callable_id)
+          continue;
+        if (std::find(summary.semantic_dependencies.begin(),
+                      summary.semantic_dependencies.end(),
+                      nested.semantic_target_id) ==
+            summary.semantic_dependencies.end())
+          summary.semantic_dependencies.push_back(nested.semantic_target_id);
+      }
+      if (summary.parameter_types.empty()) {
+        bool concrete_parameters = true;
+        for (const auto& parameter : function.params) {
+          auto parsed = parameter.type.empty() ? std::nullopt
+              : moss::Type::parse_canonical(
+                    canonical_type_name(parameter.type));
+          if (!parsed || !(*parsed)->is_closed()) {
+            concrete_parameters = false;
+            break;
+          }
+          summary.parameter_types.push_back(*parsed);
+        }
+        if (!concrete_parameters) continue;
+      }
+      if (summary.parameter_types.size() != function.params.size()) continue;
+
+      std::map<moss::TypeVarId, moss::TypeRef> projected_variables;
+      uint32_t next_ordinal = summary.bound_variable_count;
+      std::function<moss::TypeRef(const moss::TypeRef&)> openize_checked =
+          [&](const moss::TypeRef& source) -> moss::TypeRef {
+        if (!source) return nullptr;
+        auto type = state.solver.resolve(source);
+        if (!type) return nullptr;
+        if (type->kind == moss::TypeKind::InferenceVar) {
+          auto found = projected_variables.find(type->var_id);
+          if (found != projected_variables.end()) return found->second;
+          auto opened = moss::Type::var({0, 0, next_ordinal++});
+          projected_variables.emplace(type->var_id, opened);
+          return opened;
+        }
+        if (type->kind == moss::TypeKind::Builtin) {
+          vector<moss::TypeRef> arguments;
+          auto arity = moss::Type::collection_arity(type->name);
+          if (arity && type->type_args.empty()) {
+            for (size_t index = 0; index < *arity; ++index) {
+              auto opened = moss::Type::var({0, 0, next_ordinal++});
+              arguments.push_back(opened);
+            }
+          } else {
+            if (arity && type->type_args.size() != *arity) return nullptr;
+            for (const auto& argument : type->type_args) {
+              auto opened = openize_checked(argument);
+              if (!opened) return nullptr;
+              arguments.push_back(std::move(opened));
+            }
+          }
+          return moss::Type::builtin(type->name, std::move(arguments));
+        }
+        if (type->kind == moss::TypeKind::NominalInstance) {
+          if (!type->declaration) return nullptr;
+          vector<std::pair<string, moss::TypeRef>> fields;
+          for (const auto& field : type->field_substitutions) {
+            auto opened = openize_checked(field.second);
+            if (!opened) return nullptr;
+            fields.emplace_back(field.first, std::move(opened));
+          }
+          return moss::Type::nominal_bound(type->declaration, type->name,
+                                           std::move(fields));
+        }
+        return type->is_closed() ? type : nullptr;
+      };
+      summary.result_type = openize_checked(checked_result);
+      summary.bound_variable_count = next_ordinal;
+      if (!summary.result_type || summary.result_type->is_closed() ||
+          !moss::close_open_summary_ordinals(summary))
+        continue;
+      summary.observable_effects = function.observable_effects;
+      summary.parameter_access.clear();
+      for (const auto effect : function.parameter_effects)
+        summary.parameter_access.push_back(
+            effect == Effect::Consume ? moss::AccessMode::Consume :
+            effect == Effect::Write ? moss::AccessMode::Write :
+                                      moss::AccessMode::Read);
+      if (summary.parameter_access.size() != function.params.size() ||
+          summary.observable_effects.unresolved)
+        continue;
+      summary.scheme_complete = true;
+      summary.complete = false;
+      function.open_summary = std::move(summary);
     }
   }
 
@@ -31471,6 +31618,22 @@ class Checker {
                          "element:" + std::to_string(&element - elements->data()));
       }
       if (current_body_types_) {
+        if (elements->empty()) {
+          // A nominal field constructor needs this exact open solver term to
+          // connect its inferred field to the result TypeRef. Keep standalone
+          // empty-vector summaries on their established direct-return path.
+          const auto& active =
+              current_body_types_->active_expression_occurrences;
+          const bool nominal_field = active.size() >= 2 &&
+              current_body_types_->expression_occurrences[active[active.size() - 2]].kind ==
+                  BodyTypeState::ExpressionOccurrence::Kind::Constructor;
+          if (nominal_field) {
+            auto element = current_body_types_->solver.fresh(0);
+            current_body_types_->retain_active_expression_type(
+                moss::Type::builtin("vector", {std::move(element)}));
+          }
+          return;
+        }
         vector<moss::TypeRef> element_terms;
         const auto parent_id = current_body_types_->active_expression_occurrences.empty()
             ? UINT32_MAX
@@ -32491,13 +32654,32 @@ class Checker {
               }
               child = &candidate;
             }
+            moss::TypeRef checked_field_type = child
+                ? child->checked_type : nullptr;
+            if (complete_type && child && !checked_field_type &&
+                child->kind ==
+                    BodyTypeState::ExpressionOccurrence::Kind::VectorLiteral) {
+              const moss::OpenCallableSummaryFacts::OperationFact* literal = nullptr;
+              for (const auto& candidate : current_body_types_->open_operations)
+                if (candidate.expression_occurrence_id == child->id &&
+                    candidate.operation_id == "builtin:vector-literal") {
+                  if (literal) {
+                    literal = nullptr;
+                    break;
+                  }
+                  literal = &candidate;
+                }
+              if (literal && literal->result)
+                checked_field_type = current_body_types_->solver.resolve(
+                    literal->result);
+            }
             if (!complete_type || !child || !child->completed ||
-                !child->checked_type) {
+                !checked_field_type) {
               complete_type = false;
               break;
             }
             if (field.inferred)
-              substitutions.emplace_back(field.name, child->checked_type);
+              substitutions.emplace_back(field.name, checked_field_type);
           }
           if (complete_type) {
             for (const auto& field : declaration->fields)
@@ -32739,6 +32921,20 @@ class Checker {
               else if (actual && actual->kind == moss::TypeKind::Primitive &&
                        actual->name == "RangeBatch")
                 element = moss::Type::primitive("Range");
+              else if (actual &&
+                       actual->kind == moss::TypeKind::NominalInstance &&
+                       actual->declaration) {
+                // Concrete user-defined iterators already have a checker
+                // resolution path shared with ordinary For checking. Reuse
+                // that resolved element fact for this exact argument instead
+                // of rejecting it merely because it is not a Vector/Range.
+                const auto checked_element = iterator_element_type(
+                    line, args[parameter_index], env);
+                auto parsed = checked_element
+                    ? moss::Type::parse_canonical(*checked_element)
+                    : std::nullopt;
+                if (parsed && (*parsed)->is_closed()) element = *parsed;
+              }
               if (parameter_index >= args.size() || !child || !element ||
                   !bind(*requirement.result, element)) {
                 exact_arguments = false;
@@ -59018,7 +59214,7 @@ static NativeArtifact compile_native_artifact(
   for (const auto& source : sources) {
     const string source_text = read_text_file(source, "PROJECT_SOURCE_NOT_FOUND");
     source_key << project_relative_path(manifest, source) << "\n"
-               << stable_hash(source_text)
+               << native_cache::artifact_identity(source_text, stable_hash)
                << "\n";
     std::istringstream lines(source_text);
     string line;
@@ -59060,7 +59256,8 @@ static NativeArtifact compile_native_artifact(
     std::ostringstream interface_text;
     if (interface_input) interface_text << interface_input.rdbuf();
     source_key << "provider-interface " << interface_file.string() << "\n"
-               << stable_hash(interface_text.str()) << "\n";
+               << native_cache::artifact_identity(interface_text.str(), stable_hash)
+               << "\n";
     std::filesystem::path provider_rlib = interface_file;
     provider_rlib.replace_extension(".rlib");
     if (!std::filesystem::is_regular_file(provider_rlib))
@@ -59071,7 +59268,8 @@ static NativeArtifact compile_native_artifact(
       std::ostringstream rlib_text;
       rlib_text << rlib_input.rdbuf();
       source_key << "provider-rlib " << provider_rlib.string() << "\n"
-                 << stable_hash(rlib_text.str()) << "\n";
+                 << native_cache::artifact_identity(rlib_text.str(), stable_hash)
+                 << "\n";
     }
   }
   source_key << "compiler\n" << kCompilerVersion << "\nnative_abi\n"
@@ -59082,7 +59280,7 @@ static NativeArtifact compile_native_artifact(
   if (declaration_ids)
     for (const auto& identity : *declaration_ids)
       source_key << identity << "\n";
-  string source_fingerprint = stable_hash(source_key.str());
+  string source_fingerprint = source_free_contract_sha256(source_key.str());
   string cache_text = backend_cache_metadata(
       artifact.backend_toolchain, source_fingerprint);
   std::ifstream early_cache(artifact.cache_metadata, std::ios::binary);
@@ -59145,14 +59343,17 @@ static NativeArtifact compile_native_artifact(
     const auto provider_rlib = selected_provider_rlib(interface_file);
     source_key << "selected-provider " << selected.first << "\n"
                << interface_file.string() << "\n"
-               << stable_hash(read_text_file(interface_file, "MOSS_INTERFACE_ERROR"))
+               << native_cache::artifact_identity(
+                      read_text_file(interface_file, "MOSS_INTERFACE_ERROR"),
+                      stable_hash)
                << "\n" << provider_rlib.string() << "\n";
     std::ifstream rlib_input(provider_rlib, std::ios::binary);
     std::ostringstream rlib_text;
     rlib_text << rlib_input.rdbuf();
-    source_key << stable_hash(rlib_text.str()) << "\n";
+    source_key << native_cache::artifact_identity(rlib_text.str(), stable_hash)
+               << "\n";
   }
-  source_fingerprint = stable_hash(source_key.str());
+  source_fingerprint = source_free_contract_sha256(source_key.str());
   cache_text = backend_cache_metadata(
       artifact.backend_toolchain, source_fingerprint);
   // Indexed Strings outside the shared v10 runtime still differ per crate.

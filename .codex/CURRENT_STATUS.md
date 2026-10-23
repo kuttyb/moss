@@ -11864,3 +11864,36 @@ unreachable private records and collision-resistant provider cache
 fingerprinting. ABI-v9 remains the default; ABI-v10 remains opt-in. R5 is not
 accepted and Phase 25.1 is not complete. Durable R5 report:
 `docs/phase25/PHASE_25_1_R5_RELEASE_READINESS.md`.
+
+## Phase 25.1 R5.1 stabilization — in progress — 2026-10-23
+
+R5.1 started from clean pushed checkpoint `b0913776`; no local commits or
+uncommitted work were recovered at start. The existing compiler was the
+accepted R4 source at `60add1f3`. The fixes now present in the worktree address
+the two reproduced failures: checked open nominal constructor results retain
+the body-checked result relation/dependencies, and staged generic Iterate
+binders reuse the checker-resolved concrete iterator element TypeRef. Four
+stale assertions/fixtures were reconciled with separately passing execution or
+semantic controls. The branch-error fault injection passed 20/20 controlled
+isolated repetitions (0 failures; 138.111 seconds total); this does not erase
+the original intermittent failure from the R5 record.
+
+The ABI-v10 private dependency closure now rejects unreachable/substituted
+private records and checks referenced TypeRef identities. A public enum
+compatibility path preserves same-provider exports while binding its header,
+ordinal record ID, and declaration identity name; local private enums still
+require private records and external identities require exact imports. The
+Architect reviewed this latest enum parser delta and found the P1 closed with
+no remaining concrete issue. Native artifact cache trust now combines the fast
+FNV lookup with SHA-256 of exact provider/source bytes; deterministic forced
+fast-hash collision coverage passes.
+
+Fresh focused validation on the current worktree passes: compiler build,
+ABI-v10 unit shard, Team A semantic gate, integer-payload shard (including
+`phase47_iteration.moss`), typed semantic API, checked-body IR/dependency
+closure, R2 WP4 inventory self-test, 11/11 conformance gates, M2b2 prioritized
+source-free/hostile corpus, cache collision/binding test, feedback validation,
+and direct ABI-v10 adversarial executable. These are focused results, not the
+final frozen-candidate qualification. Full `make check`, examples, final R4/R5
+matrices, four-mode advanced-data matrix, and exact-SHA Architect verdict are
+still outstanding. ABI-v9 remains default and R5.1 is not yet accepted.

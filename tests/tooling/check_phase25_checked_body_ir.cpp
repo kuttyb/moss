@@ -144,7 +144,9 @@ int main() {
 
   // Message
   const std::string audit_handler_id = "callable-v1:module-v1:app@1.0.0::main:domain:Audit:handler:Record";
-  cir::Expr msg_record{cir::ExprKind::Message, unit_type, 0, {}, cir::UnaryOp::Neg, cir::BinaryOp::Add, {int_lit1}, audit_handler_id, 0, "Record", "audit"};
+  cir::Expr msg_record{cir::ExprKind::Message, unit_type, 0, {},
+      cir::UnaryOp::Neg, cir::BinaryOp::Add, {int_lit1}, audit_handler_id,
+      {}, {}, 0, {}, "Audit"};
 
   // 3. Test Statement Nodes and Control Flow
   // Return
@@ -270,7 +272,9 @@ int main() {
 
   // Message without target domain
   assert(throws_invalid([&] {
-    cir::Expr bad{cir::ExprKind::Message, unit_type, 0, {}, cir::UnaryOp::Neg, cir::BinaryOp::Add, {int_lit1}, audit_handler_id, 0, "Record", ""};
+    cir::Expr bad{cir::ExprKind::Message, unit_type, 0, {},
+        cir::UnaryOp::Neg, cir::BinaryOp::Add, {int_lit1}, audit_handler_id,
+        {}, {}, 0, {}, ""};
     std::string out;
     cir::encode_checked_expr(out, bad);
   }));

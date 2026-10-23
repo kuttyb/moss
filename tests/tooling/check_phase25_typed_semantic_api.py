@@ -133,7 +133,7 @@ fn main():
             for requirement in operator_summary["requirements"]] == ["0"], (
                 operator_summary)
     assert operator_summary["requirements"][0]["requirement_id"].endswith(
-        ":requirement:checked-arithmetic:0"), operator_summary
+        ":requirement:checked-occurrence:0"), operator_summary
     operator_specs = [entry for entry in operator_typed["specializations"]
                       if entry["callable_id"] == operator_summary["callable_id"]]
     assert len(operator_specs) == 2, operator_specs
@@ -143,14 +143,18 @@ fn main():
     assert chain_summary["requirement_count"] == 2, chain_summary
     chain_requirements = chain_summary["requirements"]
     assert [entry["requirement_id"].rsplit(":", 1)[-1]
-            for entry in chain_requirements] == ["0", "1"], chain_summary
-    assert chain_requirements[0]["requirement_id"].endswith(
-        ":requirement:checked-arithmetic:0"), chain_summary
-    assert chain_requirements[0]["parent_requirement_id"] is None, chain_summary
-    assert chain_requirements[1]["requirement_id"].endswith(
-        ":requirement:checked-arithmetic:1"), chain_summary
-    assert chain_requirements[1]["parent_requirement_id"] == (
-        chain_requirements[0]["requirement_id"]), chain_summary
+            for entry in chain_requirements] == ["1", "0"], chain_summary
+    assert all(":requirement:checked-occurrence:" in
+               entry["requirement_id"] for entry in chain_requirements), chain_summary
+    chain_root = next(entry for entry in chain_requirements
+                      if entry["parent_requirement_id"] is None)
+    chain_leaf = next(entry for entry in chain_requirements
+                      if entry["parent_requirement_id"] is not None)
+    assert chain_root["requirement_id"].endswith(
+        ":requirement:checked-occurrence:1"), chain_summary
+    assert chain_leaf["requirement_id"].endswith(
+        ":requirement:checked-occurrence:0"), chain_summary
+    assert chain_leaf["parent_requirement_id"] == chain_root["requirement_id"], chain_summary
     chain_specs = [entry for entry in operator_typed["specializations"]
                    if entry["callable_id"] == chain_summary["callable_id"]]
     assert len(chain_specs) == 2, chain_specs
@@ -385,8 +389,7 @@ fn main():
     assert callback["subject"] == {"kind": "bound_var", "ordinal": 0}, callback
     assert callback["argument_types"] == [{"kind": "primitive", "id": "int",
         "arguments": [], "fields": []}], callback
-    assert callback["result"] == {"kind": "primitive", "id": "int",
-        "arguments": [], "fields": []}, callback
+    assert callback["result"] == {"kind": "bound_var", "ordinal": 1}, callback
     assert callback["subject_access"] == "READ" and (
         callback["argument_access"] == ["READ"]), callback
     assert callback["origin"]["module_id"] == module and (
@@ -407,6 +410,27 @@ fn main():
     assert not by_target["raising"]["observable_effects"]["unresolved"] and (
         by_target["raising"]["observable_effects"]["raise_set"] == [
             "enum:CalcError:InvalidInput"]), by_target
+    callable_run = subprocess.run([str(MOSS), "run", "--interp",
+        str(callable_source)], text=True, capture_output=True)
+    assert callable_run.returncode == 0 and callable_run.stdout == "3\n3\n", (
+        callable_run.stdout, callable_run.stderr)
+    bad_callback_source = Path(scratch_path) / "bad_callable_result.moss"
+    bad_callback_source.write_text("""fn text(value: Int) -> String:
+  return "wrong"
+
+fn apply(f, value: Int) -> Int:
+  return f(value)
+
+fn main():
+  echo apply(text, 2)
+""")
+    bad_callback = subprocess.run([str(MOSS), "check", str(bad_callback_source),
+        "--json"], text=True, capture_output=True)
+    bad_callback_doc = json.loads(bad_callback.stdout)
+    assert bad_callback.returncode != 0 and not bad_callback_doc["ok"] and (
+        bad_callback_doc["error"]["code"] == "MOSS_COMPILE_ERROR" and
+        "returns 'string' but is annotated 'int'" in
+        bad_callback_doc["error"]["message"]), bad_callback_doc
 
     exported_callback = Path(scratch_path) / "exported_callback.moss"
     exported_callback.write_text("""module Provider
@@ -417,14 +441,11 @@ export fn apply(f, value: Int) -> Int:
 """)
     export_env = os.environ.copy()
     export_env["MOSS_STAGED_ABI"] = "v10"
-    rejected_export = subprocess.run([str(MOSS), "check", str(exported_callback),
+    staged_export = subprocess.run([str(MOSS), "check", str(exported_callback),
         "--json"], text=True, capture_output=True, env=export_env)
-    assert rejected_export.returncode != 0, (
-        rejected_export.stdout, rejected_export.stderr)
-    export_error = json.loads(rejected_export.stdout)["error"]
-    assert export_error["code"] == (
-        "SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED") and (
-        export_error["source"]["line"] == 4), export_error
+    assert staged_export.returncode == 0 and json.loads(
+        staged_export.stdout)["ok"], (staged_export.stdout,
+                                      staged_export.stderr)
     default_env = os.environ.copy()
     default_env.pop("MOSS_STAGED_ABI", None)
     default_export = subprocess.run([str(MOSS), "check", str(exported_callback),
