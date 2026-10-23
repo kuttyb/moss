@@ -11310,3 +11310,43 @@ does not claim R3F acceptance. Checker summary authority, importer
 validation/projection, Debug/Release source-free tests, hostile corpus, and
 independent Architect acceptance review remain required. Existing R3E GO
 remains scoped to the returned-callback profile.
+
+R3F compatibility oracle on candidate `cde289d6c54cc1ba55525c184ddccd39341a2432`
+reports source-backed 2/2 and ABI-v9 2/2 pass; ABI-v10 is valid-but-unavailable
+in Debug and Release with no unexpected results. The checked-body IR standalone
+harness fails to compile at its two existing `Message` aggregate initializers;
+the same errors reproduce on parent `72a21496`, so this is a pre-existing test
+harness issue. The new `Expr` field is now appended after the prior fields to
+preserve those positions. The Architect has been asked to inspect the corrected
+candidate for authority and fail-closed behavior; no R3F GO has been issued.
+
+
+## Phase 25.1 R3F — checked return/result authority audit — NO-GO — 2026-10-22
+
+The existing Architect reviewed the exact prototype/checker path and returned
+NO-GO for ABI-v10 summary completion. The checked body retains the normal
+return as the formal result TypeRef `T` and the recover return as `Int`. The
+`operator:<` relation proves only receiver `T`, argument `Int`, and result
+`Bool`; it does not prove that the recover value is callable result `T`. The
+Architect also identified a consistency hole in the experimental summary gate:
+it must compare each return against the solver-resolved callable result and
+require that result to equal the TypeRef projected into the summary.
+
+Independent local compatibility checks on the current compiler confirm
+source-backed and ABI-v9 native Debug/Release `Int` calls print `7` and `0`.
+A Float call to this exact generic control fails source-backed and ABI-v9
+specialization with `cannot determine the concrete result type`; no Float
+behavior is inferred or admitted. The focused ABI-v9 tag-only and
+payload-bearing exception test passes in Debug/Release, including its rehashed
+private enum identity mutation. The compatibility oracle reports source-backed
+2/2, ABI-v9 2/2, and ABI-v10 valid-but-unavailable 2/2 with no unexpected
+results. ABI-v10 importer projection and hostile exceptional-flow cases remain
+unexercised. The Architect did not run tests for this NO-GO audit.
+
+The minimum missing checker invariant is a typed relation from every reachable
+normal/recover return to the checker-resolved callable result, with the result
+identity matching the summary projection. Current operator and specialization
+facts do not authorize treating `Int` as `T=Float`. ABI-v10 remains fail-closed;
+no new return widening or language rule is introduced. This is a semantic
+authority stop for R3F. R3E's bounded callback profile remains independently
+accepted at its recorded SHAs. Do not begin R4.
