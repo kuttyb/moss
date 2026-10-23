@@ -73,6 +73,10 @@ for artifacts in artifacts_by_profile.values():
     run([str(poisoner), str(artifacts / "Service.mossi"),
          str(artifacts / "libService.rlib"), "Service", "unhandled"],
         cwd=ROOT, env=env)
+for artifacts in artifacts_by_profile.values():
+    run([str(mutator), str(artifacts / "Service.mossi"),
+         str(artifacts / "libService.rlib"), "erase-legacy-raise-effect",
+         "Service"], cwd=ROOT, env=env)
 shutil.rmtree(provider / "src")
 assert not (provider / "src").exists()
 
@@ -128,7 +132,7 @@ print("PASS source-free String specialization remains rejected")
 
 for mode in ("missing-raise-effect", "wrong-raise-effect",
              "wrong-raise-variant", "wrong-payload-type",
-             "wrong-private-dependency-hash"):
+             "wrong-branch-identity", "wrong-private-dependency-hash"):
     artifacts = WORK / f"hostile-{mode}"
     shutil.copytree(artifacts_by_profile["debug"], artifacts)
     run([str(mutator), str(artifacts / "Service.mossi"),

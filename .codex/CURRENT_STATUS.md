@@ -11471,3 +11471,18 @@ Full compatibility inventory on a committed frozen candidate and consolidated
 Architect review of this exact candidate remain pending. The bounded escaping
 Raise profile also needs Architect acceptance. Do not begin R4 or claim R3
 complete.
+
+The first frozen candidate `356aafe36ac49a62176669f15a82d8f6aafe82e6`
+completed the compatibility oracle: 32 cases, source-backed, ABI-v9, and
+ABI-v10 all passed in Debug and Release with no unexpected results. The
+Architect's code-only review found a P1 authority gap: ABI-v10's Raise tag was
+only compared with legacy interface RaiseSet metadata, not used to restore the
+imported effect. It also found that direct-Raise branch identity was checked
+only for non-emptiness. Both findings are corrected in the follow-up: import
+reconstructs the private enum variant effect from the validated tag/body and
+checks the canonical callable occurrence identity; the focused positive now
+erases legacy RaiseSet metadata and a rehashed branch-identity mutation
+rejects. Corrected R3F and R3E focused suites and M2b2 pass. The full oracle
+must be rerun on the correction's exact committed SHA, followed by Architect
+independent execution and review. The earlier matrix result is evidence for
+`356aafe...` only.

@@ -41,6 +41,24 @@ int main(int argc, char** argv) {
   });
   assert(summary_position != sealed.value.semantic_contract.end());
   auto summary = moss::abi_v10::read_summary(summary_position->payload);
+  if (mode == "erase-legacy-raise-effect") {
+    std::size_t erased = 0;
+    for (auto* records : {&sealed.value.binary_contract,
+                          &sealed.value.semantic_contract})
+      for (auto& record : *records) {
+        if (record.payload.find("unhandled") == std::string::npos) continue;
+        auto effect = record.payload.find("raise_set=enum:");
+        while (effect != std::string::npos) {
+          const auto end = record.payload.find(';', effect);
+          assert(end != std::string::npos);
+          record.payload.replace(effect + std::string("raise_set=").size(),
+              end - (effect + std::string("raise_set=").size()), "-");
+          ++erased;
+          effect = record.payload.find("raise_set=enum:", effect + 10);
+        }
+      }
+    assert(erased > 0 && "expected legacy effect metadata for unhandled");
+  }
   auto body_position = std::find_if(
       sealed.value.private_semantic_dependencies.begin(),
       sealed.value.private_semantic_dependencies.end(), [&](const auto& record) {
@@ -77,7 +95,9 @@ int main(int argc, char** argv) {
       statements.front().expr->kind ==
           moss::checked_ir::ExprKind::EnumConstruct);
 
-  if (mode == "missing-raise-effect") {
+  if (mode == "erase-legacy-raise-effect") {
+    // This mutation deliberately leaves the checked v10 tag and body intact.
+  } else if (mode == "missing-raise-effect") {
     summary.observable_effect_tags.clear();
   } else if (mode == "wrong-raise-effect") {
     assert(summary.observable_effect_tags.size() == 1);
@@ -101,6 +121,14 @@ int main(int argc, char** argv) {
   } else if (mode == "wrong-payload-type") {
     statements.front().expr->operands.front().type =
         moss::Type::primitive("float");
+    body.checked_ir_bytes =
+        moss::checked_ir::encode_checked_body_v1(statements);
+    body.semantic_hash =
+        moss::checked_ir::compute_checked_body_hash_v1(statements);
+    summary.body_semantic_hash = body.semantic_hash;
+    *body_position = moss::abi_v10::checked_body_record(body);
+  } else if (mode == "wrong-branch-identity") {
+    statements.front().branch_identity += ":forged";
     body.checked_ir_bytes =
         moss::checked_ir::encode_checked_body_v1(statements);
     body.semantic_hash =

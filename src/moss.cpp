@@ -3591,7 +3591,7 @@ static std::optional<string> abi_v10_direct_raise_effect_tag(
   if (separator == string::npos || separator <= 5) return std::nullopt;
   const auto variant_name = variant_id.substr(separator + 1);
   if (raised.expr->semantic_target_id != prefix + variant_name ||
-      raised.branch_identity.empty())
+      raised.branch_identity != "raise-v1:" + summary.callable_id + ":0")
     return std::nullopt;
   const EnumType* declaration = nullptr;
   for (const auto& candidate : program.enums) {
@@ -3658,6 +3658,46 @@ static bool abi_v10_direct_raise_effects_match(
           std::to_string(raised.exceptional_identity.size()) + ":" +
           raised.exceptional_identity + ":" +
           std::to_string(variant_name.size()) + ":" + variant_name;
+}
+
+static bool abi_v10_restore_direct_raise_effect(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements, const Program& program,
+    ObservableEffects& effects) {
+  const auto tag = abi_v10_direct_raise_effect_tag(summary, statements, program);
+  if (!tag || summary.observable_effect_tags != vector<string>{*tag} ||
+      effects.local_capture_read || effects.local_mutation ||
+      effects.domain_read || effects.domain_write || effects.message ||
+      effects.external_io || effects.fileio || effects.fileio_unknown ||
+      effects.may_panic || effects.may_diverge || effects.unresolved ||
+      effects.raise_set.size() > 1)
+    return false;
+  const auto& raised = statements.front();
+  const auto& variant_id = raised.exceptional_alternatives.front();
+  const auto separator = variant_id.rfind(':');
+  if (separator == string::npos) return false;
+  const auto variant_name = variant_id.substr(separator + 1);
+  const EnumType* declaration = nullptr;
+  for (const auto& candidate : program.enums) {
+    if (candidate.exported) continue;
+    const auto module_id = program_module_identity(program,
+        candidate.defining_module);
+    const auto declaration_name = candidate.declaration_name.empty()
+        ? candidate.name : candidate.declaration_name;
+    if (moss::declaration_identity(moss::DeclarationKind::Enum,
+            module_id, declaration_name) == raised.exceptional_identity) {
+      if (declaration) return false;
+      declaration = &candidate;
+    }
+  }
+  if (!declaration) return false;
+  const auto expected = RaisedIdentity::enum_variant(
+      canonical_type_name(declaration->name), variant_name);
+  if (!effects.raise_set.empty() &&
+      !(*effects.raise_set.begin() == expected))
+    return false;
+  effects.raise_set.insert(expected);
+  return true;
 }
 
 static bool abi_v10_direct_raise_body_candidate(
@@ -5375,6 +5415,11 @@ static void project_imported_h3_checked_bodies(Program& program) {
       };
       return scan(statements);
     }();
+    const bool direct_raise_effect_restored =
+        summary.observable_effect_tags.size() == 1 &&
+        starts_with(summary.observable_effect_tags.front(), "raise-v1:") &&
+        abi_v10_restore_direct_raise_effect(summary, statements, program,
+            function.observable_effects);
     const bool checked_exceptional_body_candidate =
         contains_exceptional_control &&
         (abi_v10_checked_raise_recover_body_candidate(
@@ -5382,8 +5427,9 @@ static void project_imported_h3_checked_bodies(Program& program) {
             body.dependencies) ||
          abi_v10_checked_payload_raise_recover_body_candidate(
             summary, statements, program, body.dependencies) ||
-         abi_v10_direct_raise_body_candidate(summary, statements, program,
-             body.dependencies, function.observable_effects));
+         (direct_raise_effect_restored &&
+          abi_v10_direct_raise_body_candidate(summary, statements, program,
+              body.dependencies, function.observable_effects)));
     if (contains_exceptional_control && !checked_exceptional_body_candidate)
       invalid("checked ABI-v10 exceptional body does not preserve its typed raise, recovery, and result relations");
     const bool typed_enum_match_body_candidate = body.dependencies.empty() &&
@@ -7414,9 +7460,9 @@ static void project_imported_h3_checked_bodies(Program& program) {
   }
 }
 
-static void validate_imported_h3_summary_closure(const Program& program) {
+static void validate_imported_h3_summary_closure(Program& program) {
   if (!staged_abi_v10() || !program.type_context) return;
-  for (const auto& function : program.functions) {
+  for (auto& function : program.functions) {
     if (function.imported_checked_body_payload.empty()) continue;
     auto mismatch = [&](const string& reason) {
       CompileError error(std::max(function.line, 1), reason,
@@ -7506,8 +7552,11 @@ static void validate_imported_h3_summary_closure(const Program& program) {
                summary.observable_effect_bits == 0 &&
                summary.observable_effect_tags ==
                    vector<string>{"may_panic"});
+          const bool direct_raise_restored = direct_raise_tagged &&
+              abi_v10_restore_direct_raise_effect(summary, statements,
+                  program, function.observable_effects);
           effects_valid = effects_valid ||
-              (direct_raise_tagged &&
+              (direct_raise_restored &&
                abi_v10_direct_raise_body_candidate(summary, statements,
                    program, body.dependencies, function.observable_effects));
         }
