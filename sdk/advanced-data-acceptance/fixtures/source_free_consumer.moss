@@ -110,6 +110,6 @@ fn main():
     assertEqual(cbor.edge_count(cbor_root_doc), 0)
     assertEqual(cbor.array_length(cbor_root_doc, cbor_parent), 0)
     assert(cbor.validate_doc(cbor_root_doc))
-    echo "advanced data ABI-v9 source-free ok"
+    echo "advanced data source-free consumer ok"
   recover:
     assert(false)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and execute the compiled-only ABI-v9 advanced-data consumer."""
+"""Build and execute the compiled-only advanced-data consumer."""
 
 import hashlib
 import json
@@ -159,9 +159,10 @@ def main() -> None:
                 shutil.copy2(source, destination)
                 assert digest(source) == digest(destination), filename
                 copied.append(filename)
-            interface = (provider / f"{module}.mossi").read_text(encoding="utf-8")
-            expected_abi = f"native_abi {9 if mode == 'v9' else 10}"
-            assert expected_abi in interface, f"{module} is not ABI-{mode[1:]}"
+            interface = (provider / f"{module}.mossi").read_bytes()
+            header = interface.split(b"binary_contract\n", 1)[0]
+            expected_abi = f"native_abi {9 if mode == 'v9' else 10}\n".encode()
+            assert expected_abi in header, f"{module} is not ABI-{mode[1:]}"
 
         assert not list(provider.rglob("*.moss"))
         assert len(copied) == len(PROVIDERS) * 2
@@ -188,7 +189,7 @@ def main() -> None:
             app,
             source_free_env,
         )
-        assert executed.stdout == "advanced data ABI-v9 source-free ok\n"
+        assert executed.stdout == "advanced data source-free consumer ok\n"
 
     print(
         "Compiled-only advanced-data gate passed: "

@@ -11653,3 +11653,38 @@ unknown and records refresh executable/hash separately. A rehashed legacy
 report refresh test passes with this distinction. The Architect independently
 ran the 18-case SDK matrix and R3A's three rehashed importer mutations; exact
 SHA follow-up for the legacy-refresh correction is pending.
+
+## Phase 25.1 R4B — advanced-data source-free profile continuation — 2026-10-23
+
+Recovered at pushed HEAD `a854c9011d8bbeb66ef8137020363555f30f021f`; local
+branch matched `origin/phase25-1-work`, with no stash or uncommitted work.
+The previously running real generic SDK matrix completed after recovery:
+18/18 source-backed, ABI-v9, and ABI-v10 consumer/profile/mode runs passed on
+compiler `a854c901`. Its report is `tmp/r4-sdk-generic-consumers.json`; the
+four open generic exports are covered there, including source-deleted and
+legacy-body-poisoned v10 runs with checked projection.
+
+The advanced-data 14-provider source-free gate passed ABI-v9 Release and
+ABI-v10 Debug/Release on compiler `a854c901`; each copied 14 `.mossi`/`.rlib`
+pairs, removed provider source, and built/executed the same consumer. ABI-v9
+Debug had already passed in the preceding R4 checkpoint and will be rerun with
+the final candidate. The first v10 Debug attempt exposed a test-harness parser
+bug: v10 `.mossi` binary contracts are not wholly UTF-8. The harness now reads
+only the textual header before `binary_contract`; the rerun passed. The
+consumer's success marker is ABI-neutral, and README instructions distinguish
+this concrete-API graph from generic specialization coverage.
+
+The broader `sdk/advanced-data-acceptance/run_all.py` run validated all 12 RFC
+CBOR fixture vectors and progressed through its Native Debug and Native
+Release ndarray/table oracle checks, then spent more than nine minutes at full
+CPU in Fast Debug on the small generated workload. It was manually interrupted
+to prioritize the required compiled-only matrix; the full runner therefore
+exited 130, and its Fast Debug result remains unverified. This is not recorded
+as an acceptance pass or a compiler failure.
+
+Exact-candidate R4 closure is still open: rerun all four advanced-data
+ABI/profile combinations after the harness change is committed, complete the
+SDK source-free/cross-crate and migration/hostile suites, run the full
+compatibility and accepted R3 regressions on one frozen SHA, reconcile the
+remaining-work ledger, and obtain the Architect's exact-SHA disposition.
+No R5 work has started; ABI-v9 remains the default and `main` is untouched.

@@ -63,16 +63,32 @@ encoded by pinned `cbor2 5.7.1`, decoded and re-encoded by Moss; and 12 values
 encoded by Moss and decoded by `cbor2`. Each side is also checked against the
 fixed RFC encoding.
 
-## ABI-v9 method and limits
+## Compiled-only ABI matrix and limits
 
-`check_source_free.py` serially builds and copies 14 explicitly named
+`check_source_free.py` builds and copies 14 explicitly named
 `.mossi`/`.rlib` pairs: the five Team A modules plus all required transitive
 providers. It checks every copied interface for `native_abi 9`, verifies copy
 digests, rejects provider `.moss` files, then checks, builds, and executes a
 consumer whose manifest has no source dependencies. The consumer exercises
 exported records and mutators plus typed error-variant payload recovery from all
 five Team A modules, including failed-mutation atomicity. There are no globs
-and no parallel Margo invocations.
+and no parallel Margo invocations for the consumer build. The provider DAG is
+scheduled in parallel with dependency-closure locks to avoid concurrent writes
+to shared package artifacts.
+
+Run the 14-provider consumer in each compiled ABI/profile combination:
+
+```sh
+python3 check_source_free.py --abi v9 --profile debug
+python3 check_source_free.py --abi v9 --profile release
+MOSS_STAGED_ABI=v10 python3 check_source_free.py --abi v10 --profile debug
+MOSS_STAGED_ABI=v10 python3 check_source_free.py --abi v10 --profile release
+```
+
+The v10 runs exercise this graph's concrete APIs and do not count as generic
+specialization coverage. The separate Phase 25 generic matrix covers the four
+open SDK exports. Both ABI modes physically remove provider Moss source before
+checking and running the consumer.
 
 The acceptance workload is intentionally small and deterministic. It makes no
 throughput, allocation, asymptotic superiority, zero-copy, accelerator, or
