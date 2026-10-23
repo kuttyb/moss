@@ -548,7 +548,8 @@ inline std::string checked_body_record_payload(const CheckedBodyRecord& body) {
                 ((dep.kind == CheckedBodyRecord::Dependency::Kind::Callable &&
                   checked_body_hash_valid(dep.expected_hash)) ||
                  (dep.kind == CheckedBodyRecord::Dependency::Kind::NominalType &&
-                  nominal_template_id_valid(dep.target_id) &&
+                  (nominal_template_id_valid(dep.target_id) ||
+                   dep.target_id.rfind("nominal-enum-v1:", 0) == 0) &&
                   hex_hash(dep.expected_hash))),
             "SOURCE_FREE_SUMMARY_INVALID",
             "ABI-v10 checked body dependency kind or hash is invalid");

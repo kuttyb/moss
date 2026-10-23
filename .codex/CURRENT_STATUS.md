@@ -11350,3 +11350,32 @@ facts do not authorize treating `Int` as `T=Float`. ABI-v10 remains fail-closed;
 no new return widening or language rule is introduced. This is a semantic
 authority stop for R3F. R3E's bounded callback profile remains independently
 accepted at its recorded SHAs. Do not begin R4.
+
+## Phase 25.1 R3F — bounded checked Int exceptional path — WIP — 2026-10-22
+
+The checker refresh now closes the observed `nonnegative(value)` specialization
+to Int only: the checked normal return is the formal, the recovery value is
+checked Int, the solver unifies the formal/result to Int, and the emitted
+summary projects that same Int TypeRef. Float remains rejected by source-backed
+and ABI-v9 specialization, so this does not widen return semantics. The common
+occurrence lowerer emits the Try/If/Raise/Return/recover structure and exact
+private enum dependency. ABI-v10 records now permit the existing nominal body
+dependency kind to reference a hashed private enum declaration; interface
+validation checks that hash against the provider enum record.
+
+The importer validates the comparison requirement, private enum identity,
+variant selection, branch IDs, both Int return relations, and dependency
+closure before common checked-body projection. Native source-free Debug and
+Release compatibility oracle runs pass for the tag-only generic control with
+provider source deleted and six legacy `generic_stmt` records removed. Output is
+`7\n0\n`; the focused ABI-v9 private-error test still passes Debug/Release and
+its rehashed private-enum mutation. The changed compiler builds with only the
+two existing TypeSolver initializer warnings.
+
+This is not R3F acceptance. The payload-bearing ABI-v10 helper remains
+unavailable: its current source form does not retain an open summary, and an
+inferred generic probe still does not lower to a checked body. Exceptional
+hostile mutations and Architect independent execution/review for this new
+candidate are also outstanding. The compatibility oracle run predates the
+latest payload-probe edits; rerun it on the final candidate SHA. R3E remains
+accepted only at its recorded scoped SHAs. Do not begin R4.

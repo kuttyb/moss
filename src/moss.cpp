@@ -3062,6 +3062,36 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
       abi_v10_checked_pipeline_map_summary_candidate(summary);
   const bool returned_callback =
       abi_v10_returned_callback_summary_candidate(summary);
+  const bool checked_raise_recover =
+      summary.variable_count == 0 && summary.parameters.size() == 1 &&
+      summary.parameters.front().kind == abi_v10::WireTypeKind::Primitive &&
+      summary.parameters.front().identity == "int" &&
+      summary.result.kind == abi_v10::WireTypeKind::Primitive &&
+      summary.result.identity == "int" && summary.requirements.size() == 1 &&
+      summary.requirements.front().operation == "operator:<" &&
+      summary.requirements.front().receiver.kind ==
+          abi_v10::WireTypeKind::Primitive &&
+      summary.requirements.front().receiver.identity == "int" &&
+      summary.requirements.front().arguments.size() == 1 &&
+      summary.requirements.front().arguments.front().kind ==
+          abi_v10::WireTypeKind::Primitive &&
+      summary.requirements.front().arguments.front().identity == "int" &&
+      summary.requirements.front().result &&
+      summary.requirements.front().result->kind ==
+          abi_v10::WireTypeKind::Primitive &&
+      summary.requirements.front().result->identity == "bool" &&
+      summary.parameter_access == vector<abi_v10::Access>{
+          abi_v10::Access::Read} && summary.observable_effect_bits == 0 &&
+      summary.observable_effect_tags.empty() && summary.dependencies.empty();
+  const bool checked_payload_raise_recover =
+      summary.variable_count == 0 && summary.parameters.size() == 1 &&
+      summary.parameters.front().kind == abi_v10::WireTypeKind::Primitive &&
+      summary.parameters.front().identity == "int" &&
+      summary.result.kind == abi_v10::WireTypeKind::Primitive &&
+      summary.result.identity == "int" && summary.requirements.empty() &&
+      summary.parameter_access == vector<abi_v10::Access>{
+          abi_v10::Access::Read} && summary.observable_effect_bits == 0 &&
+      summary.observable_effect_tags.empty() && summary.dependencies.empty();
   const bool member_summary =
       abi_v10_generic_member_summary_candidate(summary);
   if (member_summary) {
@@ -3070,14 +3100,16 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
   } else if (!vector_literal && !branch_arithmetic && !checked_numeric &&
       !checked_numeric_while && !checked_assert && !generic_for &&
       !generic_map_mutation && !typed_enum_match && !pipeline_map &&
-      !returned_callback &&
+      !returned_callback && !checked_raise_recover &&
+      !checked_payload_raise_recover &&
       summary.requirements.size() != 2)
     invalid("checked ABI-v10 typed requirement set is incomplete");
   if (!member_summary && !collection_loop && !vector_literal &&
       !branch_arithmetic && !checked_numeric && !checked_numeric_while &&
       !checked_assert && !generic_for &&
       !generic_map_mutation && !typed_enum_match && !pipeline_map &&
-      !returned_callback) {
+      !returned_callback && !checked_raise_recover &&
+      !checked_payload_raise_recover) {
     if (summary.requirements[0].operation != "operator:*" ||
         summary.requirements[1].operation != "operator:+" ||
         summary.requirements[0].parent != 0 ||
@@ -3277,6 +3309,231 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
       invalid("checked ABI-v10 Map requirement import mismatches its candidate");
   }
   return converted;
+}
+
+// Admit the checked raise/recover control only when its exceptional branch,
+// typed comparison, both return paths, and private enum dependency agree.
+// This is deliberately a checked-IR validator; source text is not consulted.
+static bool abi_v10_checked_raise_recover_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements,
+    const moss::TypeContext& context, const Program& program,
+    const vector<abi_v10::CheckedBodyRecord::Dependency>& dependencies) {
+  const auto int_type = moss::Type::primitive("int");
+  const auto bool_type = moss::Type::primitive("bool");
+  if (summary.variable_count != 0 || summary.parameters.size() != 1 ||
+      summary.parameters.front().kind != abi_v10::WireTypeKind::Primitive ||
+      summary.parameters.front().identity != "int" ||
+      summary.result.kind != abi_v10::WireTypeKind::Primitive ||
+      summary.result.identity != "int" || summary.requirements.size() != 1 ||
+      summary.requirements.front().operation != "operator:<" ||
+      summary.requirements.front().receiver.kind !=
+          abi_v10::WireTypeKind::Primitive ||
+      summary.requirements.front().receiver.identity != "int" ||
+      summary.requirements.front().arguments.size() != 1 ||
+      summary.requirements.front().arguments.front().kind !=
+          abi_v10::WireTypeKind::Primitive ||
+      summary.requirements.front().arguments.front().identity != "int" ||
+      !summary.requirements.front().result ||
+      summary.requirements.front().result->kind !=
+          abi_v10::WireTypeKind::Primitive ||
+      summary.requirements.front().result->identity != "bool" ||
+      summary.requirements.front().access != abi_v10::Access::Read ||
+      summary.requirements.front().argument_access !=
+          vector<abi_v10::Access>{abi_v10::Access::Read} ||
+      summary.observable_effect_bits != 0 ||
+      !summary.observable_effect_tags.empty() || !summary.dependencies.empty() ||
+      summary.parameter_access != vector<abi_v10::Access>{abi_v10::Access::Read} ||
+      statements.size() != 1 || statements.front().kind !=
+          checked_ir::StmtKind::Try || dependencies.size() != 1 ||
+      dependencies.front().kind !=
+          abi_v10::CheckedBodyRecord::Dependency::Kind::NominalType ||
+      dependencies.front().target_id.empty())
+    return false;
+  const auto& attempt = statements.front();
+  const auto& enum_id = attempt.exceptional_identity;
+  if (enum_id.empty() || attempt.branch_identity !=
+          "try-v1:" + summary.callable_id + ":0" ||
+      attempt.exceptional_alternatives.size() != 1 ||
+      attempt.body.size() != 2 || attempt.exceptional_cases.size() != 1)
+    return false;
+  const auto variant_id = attempt.exceptional_alternatives.front();
+  if (dependencies.front().target_id != enum_id) return false;
+  if (!starts_with(variant_id, "enum:")) return false;
+  const auto variant_separator = variant_id.rfind(':');
+  if (variant_separator == string::npos || variant_separator <= 5)
+    return false;
+  const string variant_type = variant_id.substr(5,
+      variant_separator - 5);
+  const string variant_name = variant_id.substr(variant_separator + 1);
+  const EnumType* declaration = nullptr;
+  for (const auto& candidate : program.enums) {
+    if (candidate.exported) continue;
+    const auto module_id = program_module_identity(program,
+        candidate.defining_module);
+    const auto declaration_name = candidate.declaration_name.empty()
+        ? candidate.name : candidate.declaration_name;
+    if (moss::declaration_identity(moss::DeclarationKind::Enum,
+            module_id, declaration_name) == enum_id) {
+      if (declaration) return false;
+      declaration = &candidate;
+    }
+  }
+  if (!declaration) return false;
+  const auto* variant = [&]() -> const EnumCase* {
+    for (const auto& candidate : declaration->cases)
+      if (candidate.name == variant_name) return &candidate;
+    return nullptr;
+  }();
+  if (!variant || !variant->fields.empty()) return false;
+  const auto& attempt_if = attempt.body.front();
+  if (attempt_if.kind != checked_ir::StmtKind::If || !attempt_if.expr ||
+      !attempt_if.expr->type ||
+      !attempt_if.expr->type->structurally_equal(*bool_type) ||
+      attempt_if.expr->kind != checked_ir::ExprKind::Binary ||
+      attempt_if.expr->binary_op != checked_ir::BinaryOp::Less ||
+      attempt_if.expr->operands.size() != 2 ||
+      attempt_if.then_branch.size() != 1 ||
+      !attempt_if.else_branch.empty())
+    return false;
+  const auto& comparison = *attempt_if.expr;
+  if (comparison.operands[0].kind != checked_ir::ExprKind::Parameter ||
+      comparison.operands[0].ordinal != 0 ||
+      !comparison.operands[0].type ||
+      !comparison.operands[0].type->structurally_equal(*int_type) ||
+      comparison.operands[1].kind != checked_ir::ExprKind::IntegerLiteral ||
+      comparison.operands[1].literal_value != "0" ||
+      !comparison.operands[1].type ||
+      !comparison.operands[1].type->structurally_equal(*int_type))
+    return false;
+  const auto& raised = attempt_if.then_branch.front();
+  const auto& normal_return = attempt.body.back();
+  if (raised.kind != checked_ir::StmtKind::Raise || !raised.expr ||
+      raised.exceptional_identity != enum_id ||
+      raised.exceptional_alternatives != attempt.exceptional_alternatives ||
+      raised.branch_identity != "raise-v1:" + summary.callable_id + ":2" ||
+      raised.expr->kind != checked_ir::ExprKind::EnumConstruct ||
+      raised.expr->semantic_target_id != "nominal-enum-variant-v1:" +
+          enum_id + ":case:" + variant_name ||
+      !raised.expr->type || !raised.expr->type->declaration ||
+      raised.expr->type->declaration->id != enum_id ||
+      !normal_return.expr || normal_return.kind != checked_ir::StmtKind::Return ||
+      !normal_return.expr->type ||
+      !normal_return.expr->type->structurally_equal(*int_type) ||
+      normal_return.expr->kind != checked_ir::ExprKind::Parameter ||
+      normal_return.expr->ordinal != 0 ||
+      attempt.exceptional_cases.front().branch_identity !=
+          "recover-v1:" + attempt.branch_identity + ":0" ||
+      attempt.exceptional_cases.front().variant_ids !=
+          vector<string>{"nominal-enum-variant-v1:" + enum_id + ":case:" +
+              variant_name} ||
+      !attempt.exceptional_cases.front().payload_ordinals.empty() ||
+      !attempt.exceptional_cases.front().payload_types.empty() ||
+      attempt.exceptional_cases.front().body.size() != 1)
+    return false;
+  const auto& recovered = attempt.exceptional_cases.front().body.front();
+  const auto receiver = imported_abi_v10_type(
+      summary.requirements.front().receiver, context, summary.variable_count);
+  const auto argument = imported_abi_v10_type(
+      summary.requirements.front().arguments.front(), context,
+      summary.variable_count);
+  const auto result = imported_abi_v10_type(
+      *summary.requirements.front().result, context, summary.variable_count);
+  return variant_type == declaration->name &&
+      recovered.kind == checked_ir::StmtKind::Return && recovered.expr &&
+      recovered.expr->kind == checked_ir::ExprKind::IntegerLiteral &&
+      recovered.expr->literal_value == "0" && recovered.expr->type &&
+      recovered.expr->type->structurally_equal(*int_type) && recovered.type &&
+      recovered.type->structurally_equal(*int_type) && receiver && argument &&
+      result && receiver->structurally_equal(*comparison.operands[0].type) &&
+      argument->structurally_equal(*comparison.operands[1].type) &&
+      result->structurally_equal(*comparison.type);
+}
+
+static bool abi_v10_checked_payload_raise_recover_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements,
+    const Program& program,
+    const vector<abi_v10::CheckedBodyRecord::Dependency>& dependencies) {
+  const auto int_type = moss::Type::primitive("int");
+  if (summary.variable_count != 0 || summary.parameters.size() != 1 ||
+      summary.parameters.front().kind != abi_v10::WireTypeKind::Primitive ||
+      summary.parameters.front().identity != "int" ||
+      summary.result.kind != abi_v10::WireTypeKind::Primitive ||
+      summary.result.identity != "int" || !summary.requirements.empty() ||
+      summary.parameter_access != vector<abi_v10::Access>{
+          abi_v10::Access::Read} || summary.observable_effect_bits != 0 ||
+      !summary.observable_effect_tags.empty() || !summary.dependencies.empty() ||
+      statements.size() != 1 || statements.front().kind !=
+          checked_ir::StmtKind::Try || dependencies.size() != 1 ||
+      dependencies.front().kind !=
+          abi_v10::CheckedBodyRecord::Dependency::Kind::NominalType)
+    return false;
+  const auto& attempt = statements.front();
+  const auto& enum_id = attempt.exceptional_identity;
+  if (enum_id.empty() || dependencies.front().target_id != enum_id ||
+      attempt.branch_identity != "try-v1:" + summary.callable_id + ":0" ||
+      attempt.exceptional_alternatives.size() != 1 || attempt.body.size() != 1 ||
+      attempt.exceptional_cases.size() != 1 ||
+      attempt.body.front().kind != checked_ir::StmtKind::Raise ||
+      attempt.exceptional_cases.front().payload_ordinals.size() != 1 ||
+      attempt.exceptional_cases.front().payload_types.size() != 1 ||
+      attempt.exceptional_cases.front().body.size() != 1)
+    return false;
+  const auto& raised = attempt.body.front();
+  const auto& recovery = attempt.exceptional_cases.front();
+  if (!starts_with(attempt.exceptional_alternatives.front(), "enum:"))
+    return false;
+  const auto separator = attempt.exceptional_alternatives.front().rfind(':');
+  if (separator == string::npos || separator <= 5) return false;
+  const auto enum_name = attempt.exceptional_alternatives.front().substr(
+      5, separator - 5);
+  const auto variant_name =
+      attempt.exceptional_alternatives.front().substr(separator + 1);
+  const EnumType* declaration = nullptr;
+  for (const auto& candidate : program.enums) {
+    if (candidate.exported || candidate.name != enum_name) continue;
+    const auto module_id = program_module_identity(program,
+        candidate.defining_module);
+    const auto declaration_name = candidate.declaration_name.empty()
+        ? candidate.name : candidate.declaration_name;
+    if (moss::declaration_identity(moss::DeclarationKind::Enum,
+            module_id, declaration_name) == enum_id) {
+      if (declaration) return false;
+      declaration = &candidate;
+    }
+  }
+  if (!declaration) return false;
+  const EnumCase* variant = nullptr;
+  for (const auto& candidate : declaration->cases)
+    if (candidate.name == variant_name) variant = &candidate;
+  const auto variant_id = "nominal-enum-variant-v1:" + enum_id +
+      ":case:" + variant_name;
+  const auto& returned = recovery.body.front();
+  return variant && variant->fields.size() == 1 &&
+      variant->fields.front().type == "int" &&
+      raised.exceptional_identity == enum_id &&
+      raised.exceptional_alternatives == attempt.exceptional_alternatives &&
+      raised.branch_identity == "raise-v1:" + summary.callable_id + ":1" &&
+      raised.expr && raised.expr->kind == checked_ir::ExprKind::EnumConstruct &&
+      raised.expr->semantic_target_id == variant_id && raised.expr->type &&
+      raised.expr->type->declaration &&
+      raised.expr->type->declaration->id == enum_id &&
+      raised.expr->operands.size() == 1 &&
+      raised.expr->operands.front().kind == checked_ir::ExprKind::Parameter &&
+      raised.expr->operands.front().ordinal == 0 &&
+      raised.expr->operands.front().type &&
+      raised.expr->operands.front().type->structurally_equal(*int_type) &&
+      recovery.branch_identity == "recover-v1:" + attempt.branch_identity + ":0" &&
+      recovery.variant_ids == vector<string>{variant_id} &&
+      recovery.payload_ordinals == vector<std::uint32_t>{0} &&
+      recovery.payload_types.front() &&
+      recovery.payload_types.front()->structurally_equal(*int_type) &&
+      returned.kind == checked_ir::StmtKind::Return && returned.expr &&
+      returned.expr->kind == checked_ir::ExprKind::LocalRead &&
+      returned.expr->ordinal == 0 && returned.expr->type &&
+      returned.expr->type->structurally_equal(*int_type) && returned.type &&
+      returned.type->structurally_equal(*int_type);
 }
 
 // Only this typed v2 summary shape selects the checked arithmetic lowering.
@@ -4855,6 +5112,31 @@ static void project_imported_h3_checked_bodies(Program& program) {
     } catch (const std::invalid_argument& error) {
       invalid(string("checked ABI-v10 body cannot be decoded: ") + error.what());
     }
+    const bool contains_exceptional_control = [&] {
+      std::function<bool(const vector<checked_ir::Stmt>&)> scan =
+          [&](const vector<checked_ir::Stmt>& block) {
+        for (const auto& statement : block) {
+          if (statement.kind == checked_ir::StmtKind::Try ||
+              statement.kind == checked_ir::StmtKind::Raise)
+            return true;
+          if (scan(statement.then_branch) || scan(statement.else_branch) ||
+              scan(statement.body)) return true;
+          for (const auto& branch : statement.exceptional_cases)
+            if (scan(branch.body)) return true;
+        }
+        return false;
+      };
+      return scan(statements);
+    }();
+    const bool checked_exceptional_body_candidate =
+        contains_exceptional_control &&
+        (abi_v10_checked_raise_recover_body_candidate(
+            summary, statements, *program.type_context, program,
+            body.dependencies) ||
+         abi_v10_checked_payload_raise_recover_body_candidate(
+            summary, statements, program, body.dependencies));
+    if (contains_exceptional_control && !checked_exceptional_body_candidate)
+      invalid("checked ABI-v10 exceptional body does not preserve its typed raise, recovery, and result relations");
     const bool typed_enum_match_body_candidate = body.dependencies.empty() &&
         typed_enum_match_candidate && abi_v10_typed_enum_match_body_candidate(
             summary, statements, *program.type_context, program);
@@ -5083,7 +5365,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
     if (contains_conditional && contains_operation && !collection_loop_candidate &&
         !checked_branch_arithmetic_candidate &&
         !checked_conditional_arithmetic_candidate &&
-        !checked_numeric_early_return_candidate)
+        !checked_numeric_early_return_candidate &&
+        !checked_exceptional_body_candidate)
       invalid("checked ABI-v10 conditional body lacks requirement lineage validation");
     if (contains_while && !numeric_while_body_candidate &&
         !collection_loop_candidate)
@@ -5697,6 +5980,26 @@ static void project_imported_h3_checked_bodies(Program& program) {
                 checked_projection_subset = false;
             collect_local_types(branch.body);
           }
+        } else if (statement.kind == checked_ir::StmtKind::Try) {
+          if (!checked_exceptional_body_candidate ||
+              statement.exceptional_cases.size() != 1)
+            checked_projection_subset = false;
+          for (const auto& branch : statement.exceptional_cases) {
+            if (branch.payload_ordinals.size() != branch.payload_types.size()) {
+              checked_projection_subset = false;
+              continue;
+            }
+            for (std::size_t index = 0;
+                 index < branch.payload_ordinals.size(); ++index)
+              if (!branch.payload_types[index] ||
+                  !checked_local_types.emplace(branch.payload_ordinals[index],
+                      branch.payload_types[index]).second)
+                checked_projection_subset = false;
+            collect_local_types(branch.body);
+          }
+        } else if (statement.kind == checked_ir::StmtKind::Raise) {
+          if (!checked_exceptional_body_candidate || !statement.expr)
+            checked_projection_subset = false;
         } else if (statement.kind == checked_ir::StmtKind::AssignIndex) {
           const bool local_map_receiver = statement.operands.size() == 2 &&
               statement.operands[0].kind ==
@@ -5731,7 +6034,9 @@ static void project_imported_h3_checked_bodies(Program& program) {
         } else if (statement.kind != checked_ir::StmtKind::Return &&
                    statement.kind != checked_ir::StmtKind::Pass &&
                    statement.kind != checked_ir::StmtKind::Assign &&
-                   statement.kind != checked_ir::StmtKind::Match) {
+                   statement.kind != checked_ir::StmtKind::Match &&
+                   statement.kind != checked_ir::StmtKind::Try &&
+                   statement.kind != checked_ir::StmtKind::Raise) {
           checked_projection_subset = false;
         }
         collect_local_types(statement.then_branch);
@@ -5774,6 +6079,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
     const bool checked_direct_vector_return =
         vector_literal_body_candidate && checked_projection_subset &&
         body.dependencies.empty();
+    const bool checked_exceptional_projection =
+        checked_exceptional_body_candidate && checked_projection_subset;
     const bool checked_nominal_field_body =
         summary.dependencies.empty() && body.dependencies.size() == 1 &&
         body.dependencies.front().kind ==
@@ -5781,6 +6088,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
     if ((checked_straight_line || checked_if_body || checked_generic_for_body ||
          checked_numeric_while_body ||
          checked_assert_projection ||
+         checked_exceptional_projection ||
          pipeline_map_body_candidate ||
          contains_typed_enum_match ||
          checked_member_body_candidate ||
@@ -5789,7 +6097,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
         (body.dependencies.empty() ||
          (checked_generic_for_body &&
           abi_v10_checked_for_assert_mutation_summary_candidate(summary)) ||
-         (checked_straight_line && checked_nominal_field_body))) {
+         (checked_straight_line && checked_nominal_field_body) ||
+         checked_exceptional_projection)) {
       const std::size_t local_count = checked_local_types.size();
       vector<string> local_names;
       for (std::size_t index = 0; index < local_count; ++index)
@@ -6073,6 +6382,19 @@ static void project_imported_h3_checked_bodies(Program& program) {
       int projected_line = std::max(function.line, 1);
       std::function<bool(const vector<checked_ir::Stmt>&, int)> project_block;
       std::function<bool(const checked_ir::Stmt&, int)> project_statement;
+      auto checked_exception_name = [&](const string& declaration_id)
+          -> std::optional<string> {
+        for (const auto& candidate : program.enums) {
+          const auto module_id = program_module_identity(
+              program, candidate.defining_module);
+          const auto declaration_name = candidate.declaration_name.empty()
+              ? candidate.name : candidate.declaration_name;
+          if (moss::declaration_identity(moss::DeclarationKind::Enum,
+                  module_id, declaration_name) == declaration_id)
+            return candidate.name;
+        }
+        return std::nullopt;
+      };
       project_statement = [&](const checked_ir::Stmt& checked, int indent) {
         auto expression = checked.expr ? render(*checked.expr, 0)
                                        : std::optional<string>{};
@@ -6161,6 +6483,108 @@ static void project_imported_h3_checked_bodies(Program& program) {
           }
           projected.push_back(std::move(statement));
           return true;
+        }
+        if (checked.kind == checked_ir::StmtKind::Raise) {
+          if (!checked_exceptional_projection || !checked.expr ||
+              checked.exceptional_alternatives.size() != 1)
+            return false;
+          const string prefix = "enum:";
+          const auto& variant_id = checked.exceptional_alternatives.front();
+          if (!starts_with(variant_id, prefix)) return false;
+          const auto enum_name = checked_exception_name(
+              checked.exceptional_identity);
+          if (!enum_name) return false;
+          const auto separator = variant_id.rfind(':');
+          if (separator == string::npos) return false;
+          const auto variant_name = variant_id.substr(separator + 1);
+          const EnumType* enum_declaration = nullptr;
+          for (const auto& candidate : program.enums)
+            if (candidate.name == *enum_name) enum_declaration = &candidate;
+          if (!enum_declaration) return false;
+          const auto variant = std::find_if(enum_declaration->cases.begin(),
+              enum_declaration->cases.end(), [&](const EnumCase& item) {
+            return item.name == variant_name;
+          });
+          if (variant == enum_declaration->cases.end() ||
+              variant->fields.size() != checked.expr->operands.size())
+            return false;
+          statement.kind = Stmt::Kind::Raise;
+          statement.a = *enum_name + "." + variant_name;
+          if (!variant->fields.empty()) {
+            statement.a += "(";
+            for (std::size_t index = 0; index < variant->fields.size(); ++index) {
+              auto value = render(checked.expr->operands[index], 0);
+              if (!value) return false;
+              if (index) statement.a += ", ";
+              statement.a += variant->fields[index].name + ": " + *value;
+            }
+            statement.a += ")";
+          }
+          statement.text = "raise " + statement.a;
+          statement.exceptional_alternatives.insert(
+              RaisedIdentity::enum_variant(*enum_name, variant_name));
+          projected.push_back(std::move(statement));
+          return true;
+        }
+        if (checked.kind == checked_ir::StmtKind::Try) {
+          if (!checked_exceptional_projection ||
+              checked.exceptional_cases.size() != 1 ||
+              checked.exceptional_alternatives.size() != 1)
+            return false;
+          const string prefix = "enum:";
+          const auto& variant_id = checked.exceptional_alternatives.front();
+          if (!starts_with(variant_id, prefix)) return false;
+          const auto enum_name = checked_exception_name(
+              checked.exceptional_identity);
+          if (!enum_name) return false;
+          const auto separator = variant_id.rfind(':');
+          if (separator == string::npos) return false;
+          const auto variant_name = variant_id.substr(separator + 1);
+          const EnumType* enum_declaration = nullptr;
+          for (const auto& candidate : program.enums)
+            if (candidate.name == *enum_name) enum_declaration = &candidate;
+          if (!enum_declaration) return false;
+          const auto variant = std::find_if(enum_declaration->cases.begin(),
+              enum_declaration->cases.end(), [&](const EnumCase& item) {
+            return item.name == variant_name;
+          });
+          const auto& branch = checked.exceptional_cases.front();
+          if (variant == enum_declaration->cases.end() ||
+              variant->fields.size() != branch.payload_ordinals.size() ||
+              branch.payload_ordinals.size() != branch.payload_types.size())
+            return false;
+          for (std::size_t index = 0; index < branch.payload_ordinals.size();
+               ++index) {
+            const auto ordinal = branch.payload_ordinals[index];
+            if (ordinal >= local_names.size() ||
+                !plain_identifier(variant->fields[index].name))
+              return false;
+            local_names[ordinal] = variant->fields[index].name;
+          }
+          statement.kind = Stmt::Kind::Try;
+          statement.text = "try:";
+          statement.exceptional_alternatives.insert(
+              RaisedIdentity::enum_variant(*enum_name, variant_name));
+          projected.push_back(std::move(statement));
+          if (!project_block(checked.body, indent + 1)) return false;
+          Stmt recover;
+          recover.kind = Stmt::Kind::Recover;
+          recover.line = projected_line++;
+          recover.indent = indent;
+          recover.a = *enum_name + "." + variant_name;
+          if (!variant->fields.empty()) {
+            recover.a += "(";
+            for (std::size_t index = 0; index < variant->fields.size(); ++index) {
+              if (index) recover.a += ", ";
+              recover.a += local_names[branch.payload_ordinals[index]];
+            }
+            recover.a += ")";
+          }
+          recover.text = "recover " + recover.a + ":";
+          recover.exceptional_alternatives.insert(
+              RaisedIdentity::enum_variant(*enum_name, variant_name));
+          projected.push_back(std::move(recover));
+          return project_block(branch.body, indent + 1);
         }
         if (checked.kind == checked_ir::StmtKind::If) {
           if (!expression || !checked.expr->type->structurally_equal(
@@ -6327,6 +6751,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
                   [&](const auto& branch) {
             return returns_on_all_paths(branch.body);
           });
+        if (last.kind == checked_ir::StmtKind::Try)
+          return checked_exceptional_body_candidate;
         return last.kind == checked_ir::StmtKind::If &&
             !last.else_branch.empty() &&
             returns_on_all_paths(last.then_branch) &&
@@ -7120,6 +7546,7 @@ class Checker {
     refresh_open_pipeline_map_summaries_from_checked_types();
     refresh_open_map_mutation_summaries_from_checked_types();
     refresh_open_for_summaries_from_checked_types();
+    refresh_open_exceptional_summaries_from_checked_types();
     refresh_open_callback_effect_dependencies_from_checked_types();
     if (staged_abi_v10() && p_.explicit_module)
       for (const auto& function : p_.functions) {
@@ -13212,6 +13639,340 @@ class Checker {
           summary.parameter_access.size() == 1 &&
           !summary.observable_effects.unresolved;
       summary.complete = false;
+    }
+  }
+
+  // The generic source checker accepts this body only for Int today: its
+  // recover path returns a checked Int while the normal path returns the open
+  // formal. Close the common TypeSolver relation from the recover return to
+  // that formal, so an ABI-v10 summary admits only the existing Int
+  // specialization and never assumes an Int-to-Float return conversion.
+  void refresh_open_exceptional_summaries_from_checked_types() {
+    const auto int_type = moss::Type::primitive("int");
+    const auto bool_type = moss::Type::primitive("bool");
+    for (auto& function : p_.functions) {
+      // The payload-return control has a different checker relation from the
+      // comparison control below: its formal is bound by the provider-owned
+      // enum field, and its recover return reads that exact checked binder.
+      if (function.generic && function.open_summary &&
+          function.open_summary->scheme_complete &&
+          function.params.size() == 1 &&
+          function.open_summary->parameter_types.size() == 1 &&
+          function.open_summary->parameter_types.front() &&
+          function.open_summary->result_type &&
+          function.open_summary->parameter_types.front()->structurally_equal(
+              *function.open_summary->result_type) &&
+          function.open_summary->requirements.empty() &&
+          function.open_summary->member_requirements.empty() &&
+          function.open_summary->operations.empty() &&
+          function.open_summary->semantic_dependencies.empty() &&
+          function.open_summary->effect_requirement_ids.empty() &&
+          !function.open_summary->observable_effects.unresolved &&
+          function.open_summary->observable_effects.raise_set.empty() &&
+          !function.observable_effects.unresolved &&
+          function.observable_effects.raise_set.empty()) {
+        auto retained = checked_body_states_.find(&function.body);
+        if (retained != checked_body_states_.end() && retained->second &&
+            retained->second->expression_occurrence_ledger_complete) {
+          auto& state = *retained->second;
+          const auto formal = state.resolved_local(function.params.front().name);
+          const BodyTypeState::StatementOccurrence* try_node = nullptr;
+          const BodyTypeState::StatementOccurrence* raised = nullptr;
+          const BodyTypeState::StatementOccurrence* recovery = nullptr;
+          const BodyTypeState::StatementOccurrence* returned = nullptr;
+          std::size_t tries = 0, raises = 0, recoveries = 0, returns = 0;
+          bool unsupported = false;
+          for (const auto& node : state.statement_occurrences) {
+            switch (node.kind) {
+              case Stmt::Kind::Try: try_node = &node; ++tries; break;
+              case Stmt::Kind::Raise: raised = &node; ++raises; break;
+              case Stmt::Kind::Recover: recovery = &node; ++recoveries; break;
+              case Stmt::Kind::Return: returned = &node; ++returns; break;
+              case Stmt::Kind::Pass: break;
+              default: unsupported = true; break;
+            }
+          }
+          if (formal && tries == 1 && raises == 1 && recoveries == 1 &&
+              returns == 1 && !unsupported && try_node && raised && recovery &&
+              returned && recovery->control_parent_id == try_node->id &&
+              raised->parent_id == try_node->id &&
+              returned->parent_id == recovery->id && recovery->source &&
+              raised->source && try_node->source &&
+              recovery->bindings.size() == 1 &&
+              recovery->source->exceptional_alternatives.size() == 1 &&
+              recovery->source->exceptional_alternatives ==
+                  try_node->source->exceptional_alternatives &&
+              raised->source->exceptional_alternatives ==
+                  try_node->source->exceptional_alternatives) {
+            const auto root = state.expression_root_slots.find(
+                {raised->id, "raise-value"});
+            const auto result_root = state.expression_root_slots.find(
+                {returned->id, "return-value"});
+            if (root != state.expression_root_slots.end() &&
+                result_root != state.expression_root_slots.end() &&
+                root->second < state.expression_occurrences.size() &&
+                result_root->second < state.expression_occurrences.size()) {
+              const auto& constructor =
+                  state.expression_occurrences[root->second];
+              const auto& result_value =
+                  state.expression_occurrences[result_root->second];
+              const auto& identity =
+                  *raised->source->exceptional_alternatives.begin();
+              const auto declaration = enums_.find(
+                  canonical_type_name(identity.type));
+              const auto payload_type = moss::Type::primitive("int");
+              const EnumCase* variant = nullptr;
+              if (declaration != enums_.end())
+                for (const auto& candidate : declaration->second->cases)
+                  if (candidate.name == identity.variant) variant = &candidate;
+              const auto enum_id = declaration == enums_.end()
+                  ? string{} : moss::declaration_identity(
+                      moss::DeclarationKind::Enum,
+                      program_module_identity(p_,
+                          declaration->second->defining_module),
+                      declaration->second->declaration_name.empty()
+                          ? declaration->second->name
+                          : declaration->second->declaration_name);
+              const auto binding_id = recovery->bindings.front().identity;
+              const auto binding_type = state.solver.resolve(
+                  recovery->bindings.front().type);
+              const auto returned_type = result_value.checked_type
+                  ? state.solver.resolve(result_value.checked_type) : nullptr;
+              std::vector<const BodyTypeState::ExpressionOccurrence*> args;
+              for (const auto& expression : state.expression_occurrences)
+                if (expression.parent_id == root->second &&
+                    expression.child_role.rfind("argument:", 0) == 0)
+                  args.push_back(&expression);
+              std::sort(args.begin(), args.end(), [](const auto* left,
+                                                     const auto* right) {
+                return left->child_ordinal < right->child_ordinal;
+              });
+              const bool constructor_relation = declaration != enums_.end() &&
+                  variant && variant->fields.size() == 1 &&
+                  canonical_type_name(variant->fields.front().type) == "int" &&
+                  constructor.kind ==
+                      BodyTypeState::ExpressionOccurrence::Kind::Constructor &&
+                  constructor.checked_type &&
+                  state.solver.resolve(constructor.checked_type)->kind ==
+                      moss::TypeKind::Enum &&
+                  state.solver.resolve(constructor.checked_type)->declaration &&
+                  state.solver.resolve(constructor.checked_type)->declaration->id ==
+                      enum_id && constructor.semantic_target_id ==
+                      "nominal-enum-variant-v1:" + enum_id + ":case:" +
+                          identity.variant && args.size() == 1 &&
+                  args.front()->kind ==
+                      BodyTypeState::ExpressionOccurrence::Kind::Identifier &&
+                  args.front()->resolved_binding_id == "parameter:0" &&
+                  args.front()->checked_type && state.solver.resolve(
+                      args.front()->checked_type)->structurally_equal(*payload_type);
+              if (constructor_relation && binding_type && returned_type &&
+                  returned_type->structurally_equal(*payload_type) &&
+                  binding_type->structurally_equal(*payload_type) &&
+                  result_value.kind ==
+                      BodyTypeState::ExpressionOccurrence::Kind::Identifier &&
+                  result_value.resolved_binding_id == binding_id &&
+                  state.solver.unify(formal, payload_type)) {
+                auto summary = *function.open_summary;
+                const auto resolved_formal = state.solver.resolve(formal);
+                if (resolved_formal &&
+                    resolved_formal->structurally_equal(*payload_type)) {
+                  summary.parameter_types.front() = payload_type;
+                  summary.result_type = payload_type;
+                  summary.bound_variable_count = 0;
+                  if (moss::close_open_summary_ordinals(summary)) {
+                    summary.scheme_complete = true;
+                    summary.complete = false;
+                    function.open_summary = std::move(summary);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      if (!function.generic || !function.open_summary ||
+          function.open_summary->scheme_complete ||
+          function.params.size() != 1 || !function.params.front().type.empty() ||
+          function.open_summary->parameter_types.size() != 1 ||
+          !function.open_summary->parameter_types.front() ||
+          !function.open_summary->result_type ||
+          !function.open_summary->parameter_types.front()->structurally_equal(
+              *function.open_summary->result_type) ||
+          !function.open_summary->requirements.empty() ||
+          !function.open_summary->member_requirements.empty() ||
+          !function.open_summary->operations.empty() ||
+          !function.open_summary->semantic_dependencies.empty() ||
+          !function.open_summary->effect_requirement_ids.empty() ||
+          function.open_summary->observable_effects.unresolved ||
+          !function.open_summary->observable_effects.raise_set.empty() ||
+          function.observable_effects.unresolved ||
+          !function.observable_effects.raise_set.empty())
+        continue;
+      auto retained = checked_body_states_.find(&function.body);
+      if (retained == checked_body_states_.end() || !retained->second ||
+          !retained->second->expression_occurrence_ledger_complete)
+        continue;
+      auto& state = *retained->second;
+      const auto formal = state.resolved_local(function.params.front().name);
+      if (!formal) continue;
+      const BodyTypeState::StatementOccurrence* try_node = nullptr;
+      const BodyTypeState::StatementOccurrence* recovery = nullptr;
+      const BodyTypeState::StatementOccurrence* raised = nullptr;
+      const BodyTypeState::StatementOccurrence* normal_return = nullptr;
+      const BodyTypeState::StatementOccurrence* recover_return = nullptr;
+      std::size_t tries = 0, recoveries = 0, raises = 0, returns = 0;
+      bool unsupported = false;
+      for (const auto& node : state.statement_occurrences) {
+        switch (node.kind) {
+          case Stmt::Kind::Try: try_node = &node; ++tries; break;
+          case Stmt::Kind::Recover: recovery = &node; ++recoveries; break;
+          case Stmt::Kind::Raise: raised = &node; ++raises; break;
+          case Stmt::Kind::Return:
+            ++returns;
+            if (recovery && node.parent_id == recovery->id)
+              recover_return = &node;
+            else
+              normal_return = &node;
+            break;
+          case Stmt::Kind::If:
+          case Stmt::Kind::Pass: break;
+          default: unsupported = true; break;
+        }
+      }
+      if (tries != 1 || recoveries != 1 || raises != 1 || returns != 2 ||
+          unsupported || !try_node || !try_node->source || !recovery ||
+          !recovery->source || !raised || !raised->source || !normal_return ||
+          !normal_return->source || !recover_return || !recover_return->source ||
+          recovery->control_parent_id != try_node->id ||
+          normal_return->parent_id != try_node->id ||
+          recover_return->parent_id != recovery->id)
+        continue;
+
+      auto expression_type = [&](const auto& node, const string& slot,
+                                 BodyTypeState::ExpressionOccurrence::Kind kind)
+          -> moss::TypeRef {
+        const auto root = state.expression_root_slots.find({node.id, slot});
+        if (root == state.expression_root_slots.end() ||
+            root->second >= state.expression_occurrences.size()) return nullptr;
+        const auto& expression = state.expression_occurrences[root->second];
+        if (expression.kind != kind || !expression.checked_type) return nullptr;
+        return state.solver.resolve(expression.checked_type);
+      };
+      const auto normal_type = expression_type(*normal_return, "return-value",
+          BodyTypeState::ExpressionOccurrence::Kind::Identifier);
+      auto recovered_type = expression_type(*recover_return, "return-value",
+          BodyTypeState::ExpressionOccurrence::Kind::Literal);
+      const auto raise_root = state.expression_root_slots.find(
+          {raised->id, "raise-value"});
+      if (!normal_type || !recovered_type ||
+          normal_type->to_canonical_string() !=
+              state.solver.resolve(formal)->to_canonical_string() ||
+          trim(state.expression_occurrences[
+              state.expression_root_slots.at(
+                  {normal_return->id, "return-value"})].source_expression) !=
+              function.params.front().name ||
+          raise_root == state.expression_root_slots.end() ||
+          raise_root->second >= state.expression_occurrences.size())
+        continue;
+      const auto& raise_expression =
+          state.expression_occurrences[raise_root->second];
+      const auto enum_type = raise_expression.checked_type
+          ? state.solver.resolve(raise_expression.checked_type) : nullptr;
+      if (raise_expression.kind !=
+              BodyTypeState::ExpressionOccurrence::Kind::Constructor ||
+          !enum_type || enum_type->kind != moss::TypeKind::Enum ||
+          !enum_type->declaration ||
+          raised->source->exceptional_alternatives.size() != 1 ||
+          raised->source->exceptional_alternatives !=
+              try_node->source->exceptional_alternatives ||
+          raised->source->exceptional_alternatives !=
+              recovery->source->exceptional_alternatives ||
+          !recovery->bindings.empty())
+        continue;
+      const auto& raised_identity =
+          *raised->source->exceptional_alternatives.begin();
+      const auto declaration = enums_.find(raised_identity.type);
+      if (raised_identity.kind != RaisedIdentityKind::EnumVariant ||
+          declaration == enums_.end() || declaration->second->exported)
+        continue;
+      const auto variant = std::find_if(declaration->second->cases.begin(),
+          declaration->second->cases.end(), [&](const EnumCase& item) {
+        return item.name == raised_identity.variant && item.fields.empty();
+      });
+      const string declaration_name = declaration->second->declaration_name.empty()
+          ? declaration->second->name : declaration->second->declaration_name;
+      const string enum_id = moss::declaration_identity(
+          moss::DeclarationKind::Enum,
+          program_module_identity(p_, declaration->second->defining_module),
+          declaration_name);
+      if (variant == declaration->second->cases.end() ||
+          enum_type->declaration->id != enum_id ||
+          raise_expression.semantic_target_id !=
+              "nominal-enum-variant-v1:" + enum_id + ":case:" +
+                  raised_identity.variant)
+        continue;
+
+      const moss::OpenCallableSummaryFacts::OperationFact* comparison = nullptr;
+      std::size_t comparisons = 0;
+      for (const auto& operation : state.open_operations)
+        if (operation.operation_id == "operator:<") {
+          comparison = &operation;
+          ++comparisons;
+        }
+      if (comparisons != 1 || !comparison || !comparison->receiver ||
+          comparison->arguments.size() != 1 || !comparison->result ||
+          comparison->expression_occurrence_id == UINT32_MAX ||
+          comparison->expression_occurrence_id >=
+              state.expression_occurrences.size())
+        continue;
+      const auto receiver = state.solver.resolve(comparison->receiver);
+      const auto argument = state.solver.resolve(comparison->arguments.front());
+      const auto comparison_result = state.solver.resolve(comparison->result);
+      const auto& binary = state.expression_occurrences[
+          comparison->expression_occurrence_id];
+      if (!receiver || !argument || !comparison_result ||
+          !receiver->structurally_equal(*state.solver.resolve(formal)) ||
+          !argument->structurally_equal(*int_type) ||
+          !comparison_result->structurally_equal(*bool_type) ||
+          binary.kind != BodyTypeState::ExpressionOccurrence::Kind::Binary ||
+          binary.operation_id != "<")
+        continue;
+
+      if (!state.solver.unify(formal, recovered_type)) continue;
+      const auto resolved_result = state.solver.resolve(formal);
+      const auto resolved_normal = state.solver.resolve(normal_type);
+      recovered_type = state.solver.resolve(recovered_type);
+      const auto resolved_receiver = state.solver.resolve(comparison->receiver);
+      if (!resolved_result || !resolved_normal || !recovered_type ||
+          !resolved_result->structurally_equal(*int_type) ||
+          !resolved_normal->structurally_equal(*resolved_result) ||
+          !recovered_type->structurally_equal(*resolved_result) ||
+          !resolved_receiver ||
+          !resolved_receiver->structurally_equal(*resolved_result))
+        continue;
+
+      auto summary = *function.open_summary;
+      moss::Requirement requirement;
+      requirement.id = function.semantic_callable_id +
+          ":requirement:checked-exception-comparison";
+      requirement.kind = moss::RequirementKind::Operator;
+      requirement.target_id = comparison->operation_id;
+      requirement.subject = resolved_receiver;
+      requirement.arguments = {argument};
+      requirement.argument_access = {moss::AccessMode::Read};
+      requirement.result = comparison_result;
+      requirement.expression_occurrence_id =
+          comparison->expression_occurrence_id;
+      requirement.origin = {summary.origin.module_id, function.source_file,
+          comparison->line, 1, function.semantic_callable_id, requirement.id};
+      summary.requirements.push_back(std::move(requirement));
+      summary.parameter_types.front() = resolved_result;
+      summary.result_type = resolved_result;
+      summary.bound_variable_count = 0;
+      if (!moss::close_open_summary_ordinals(summary)) continue;
+      summary.scheme_complete = true;
+      summary.complete = false;
+      function.open_summary = std::move(summary);
     }
   }
 
@@ -54861,10 +55622,13 @@ abi_v10_checked_requirements(
          requirement.target_id == "operator:<=" ||
          requirement.target_id == "operator:>=") && operator_subject &&
         operator_result->structurally_equal(*bool_type) &&
-        ((operator_subject->kind == moss::TypeKind::InferenceVar &&
-          operator_argument->structurally_equal(*int_type)) ||
-         (operator_subject->structurally_equal(*int_type) &&
-          operator_argument->kind == moss::TypeKind::InferenceVar));
+        (((operator_subject->kind == moss::TypeKind::InferenceVar &&
+           operator_argument->structurally_equal(*int_type)) ||
+          (operator_subject->structurally_equal(*int_type) &&
+           operator_argument->kind == moss::TypeKind::InferenceVar)) ||
+         admit_typed_numeric_comparison(requirement.target_id,
+             operator_subject, operator_argument, operator_result) ==
+                 BuiltinOperatorAdmission::Admitted);
     const bool supported_operator = requirement.kind ==
             moss::RequirementKind::Operator &&
         (requirement.target_id == "operator:*" ||
@@ -55774,6 +56538,18 @@ static void append_abi_v10_occurrence_records(
       }
       if (!dependencies_complete) continue;
     }
+    const bool has_exceptional_control = std::any_of(
+        decoded.begin(), decoded.end(), [](const checked_ir::Stmt& statement) {
+      return statement.kind == checked_ir::StmtKind::Try ||
+          statement.kind == checked_ir::StmtKind::Raise;
+    });
+    const bool checked_exceptional_body = has_exceptional_control &&
+        (abi_v10_checked_raise_recover_body_candidate(
+             summary, decoded, *program.type_context, program,
+             body.dependencies) ||
+         abi_v10_checked_payload_raise_recover_body_candidate(
+             summary, decoded, program, body.dependencies));
+    if (has_exceptional_control && !checked_exceptional_body) continue;
     const bool checked_vector_literal =
         abi_v10_checked_vector_literal_summary_candidate(summary) &&
         abi_v10_checked_vector_literal_body_candidate(summary, decoded);
@@ -55826,7 +56602,7 @@ static void append_abi_v10_occurrence_records(
     if (contains_conditional && contains_operation &&
         !abi_v10_collection_loop_summary_candidate(summary) &&
         !checked_branch_arithmetic && !checked_conditional_arithmetic &&
-        !checked_numeric_early_return)
+        !checked_numeric_early_return && !checked_exceptional_body)
       continue;
     if (contains_while && contains_operation && !checked_numeric_while &&
         !abi_v10_collection_loop_summary_candidate(summary))
@@ -55843,6 +56619,7 @@ static void append_abi_v10_occurrence_records(
         !checked_numeric_while &&
         !checked_assert &&
         !checked_returned_callback &&
+        !checked_exceptional_body &&
         !typed_enum_match_body &&
         !checked_member_summary)
       {
