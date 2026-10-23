@@ -320,11 +320,14 @@ commit/executable/hash separately.
 The Architect independently built this exact SHA and issued scoped GO on the
 relay correction with no P0/P1/P2. Their independent scenario 7 Debug/Release
 and five-hostile runs passed, including the reject-before-projection trace.
-Overall consolidated R4 review is the remaining R4 gate. Durable evidence is
-in [`PHASE_25_1_R4_CANDIDATE_60ADD1F3.json`](PHASE_25_1_R4_CANDIDATE_60ADD1F3.json);
+After reviewing the consolidated evidence at commit
+`f84a4909aded15526e53b6d8f48e339364329344`, the Architect issued overall R4
+GO with no P0/P1/P2 findings. They verified the matrix reports, inventory
+provenance refresh, and the scenario 7 hostiles. Durable evidence is in
+[`PHASE_25_1_R4_CANDIDATE_60ADD1F3.json`](PHASE_25_1_R4_CANDIDATE_60ADD1F3.json);
 raw reports are in disposable `tmp/r4-final/`.
 
-**R4 candidate acceptance and exact-SHA overall GO remain pending.** R5 has
-not started. Preserve ABI-v9 as default. The broader advanced-data
-`run_all.py` Fast Debug workload remains outside this compiled-only matrix and
-unverified on this candidate.
+**R4 candidate acceptance: GO.** Return the exact compiler SHA and evidence
+to L7. R5 has not started; preserve ABI-v9 as default. The broader advanced-
+data `run_all.py` Fast Debug workload remains outside this compiled-only
+matrix and unverified on this candidate.

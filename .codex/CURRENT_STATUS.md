@@ -11799,8 +11799,11 @@ The importer now validates/projects direct deferred-member leaves before
 forwarding bodies. This keeps a forged leaf from emitting a projection event
 for its relay. The exact-SHA Architect follow-up issued scoped GO with no
 P0/P1/P2 and independently ran scenario 7 in staged-v10 Debug/Release plus the
-relay hostile suite. The overall candidate review is requested after the
-consolidated durable report is recorded.
+relay hostile suite. After the consolidated report was committed at
+`f84a4909aded15526e53b6d8f48e339364329344`, the Architect issued overall
+exact-SHA R4 GO with P0/P1/P2 = 0/0/0. They independently verified all scenario
+names and raw report hashes, generic export coverage, and the legacy inventory
+provenance refresh.
 
 Exact-candidate gates pass: staged-v10 cross-crate 11/11 Debug and 11/11
 Release; the 32-case compatibility oracle has 64/64 source-backed, 64/64
@@ -11817,7 +11820,7 @@ Durable summary:
 `docs/phase25/PHASE_25_1_R4_CANDIDATE_60ADD1F3.json`; raw run reports are under
 disposable `tmp/r4-final/`.
 
-R4 candidate acceptance awaits a fresh exact-SHA overall Architect GO on the
-consolidated evidence. Do not begin R5 or change ABI-v9 default. The broader
-advanced-data `run_all.py` Fast Debug workload is outside the compiled-only
-acceptance matrix and remains unverified for this candidate.
+R4 candidate acceptance is recorded as GO on the exact compiler SHA above.
+Return this candidate and evidence to L7; do not begin R5 or change ABI-v9
+default. The broader advanced-data `run_all.py` Fast Debug workload is outside
+the compiled-only acceptance matrix and remains unverified for this candidate.

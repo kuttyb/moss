@@ -142,17 +142,27 @@
       "staged ABI-v10 Release"
     ],
     "member_identity_reject_before_projection": "pass",
-    "overall_r4_verdict": "pending fresh overall candidate review",
-    "legacy_inventory_provenance_followup": "requested with consolidated overall review"
+    "overall_r4_verdict": "GO",
+    "legacy_inventory_provenance_followup": "requested with consolidated overall review",
+    "overall_r4_p0": 0,
+    "overall_r4_p1": 0,
+    "overall_r4_p2": 0,
+    "overall_r4_evidence_commit": "f84a4909aded15526e53b6d8f48e339364329344",
+    "independent_checks": [
+      "All 11 scenario names pass in staged-v10 Debug/Release.",
+      "Candidate report and raw report hashes match compiler source and binary SHA.",
+      "All four inventoried generic exports are covered by the 18-run SDK matrix.",
+      "Legacy inventory provenance refresh leaves unknown artifact identity unset and records refresh tool identity separately."
+    ],
+    "scope_limit": "The broader advanced-data run_all.py Fast Debug workload remains unverified and outside the compiled-only native Debug/Release matrix."
   },
-  "r4_acceptance": "CANDIDATE_GATES_GREEN_PENDING_OVERALL_ARCHITECT_GO",
+  "r4_acceptance": "ACCEPTED_R4_CANDIDATE",
   "known_limitations": [
     "The advanced-data matrix validates concrete API paths, not generic specialization; generic specialization coverage is recorded separately in the 18-run SDK matrix.",
     "The broader advanced-data run_all Fast Debug workload is not part of this compiled-only gate and remains unverified for this candidate.",
     "R5 has not started; ABI-v9 remains the default."
   ],
   "remaining_gates": [
-    "Obtain and record a fresh exact-SHA overall R4 Architect GO after review of this consolidated evidence.",
-    "Return the R4 candidate recommendation and exact evidence to L7."
+    "Return the reviewed R4 candidate recommendation and exact evidence to L7."
   ]
 }
