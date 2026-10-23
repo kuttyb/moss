@@ -11910,7 +11910,56 @@ Both corrected scripts pass individually. The corrected branch gate passed
 test-only corrections are in the worktree but not yet committed; therefore
 the first full-suite result is superseded and must not be reported as final.
 
-Still outstanding on the next committed candidate: complete current-manifest
-`make check`, `make examples`, final R4/R5 compatibility and SDK acceptance
-gates, the four-mode advanced-data compiled-only matrix, and exact-SHA
-Architect GO. ABI-v9 remains default and R5.1 is not yet accepted.
+The historical outstanding list above has now been completed on the frozen
+candidate except for the requested independent final Architect verdict.
+
+## Phase 25.1 R5.1 final qualification — Architect GO; L7 acceptance pending — 2026-10-23
+
+Frozen tested compiler candidate: `caea7335f86f58f53d6f17662444e7c613ad39d0`
+on `phase25-1-work`. `moss-dev`/`./moss` SHA-256 is
+`119416cc5aee866e7b025ad034a41430cb5ede90a4de8ee65f0800c01225567e`; `moss-opt`
+SHA-256 is `ab2d9348b3bc8a59b176f8486d5bd029f391d60bcd0fabe916817954ed272543`.
+No compiler edits followed the tested commit. ABI-v9 remains default and
+ABI-v10 is opt-in.
+
+The final full `TMPDIR="$PWD/tmp" make --jobs="$(nproc)" check` used 16 jobs:
+136/136 passed, 0 failed, 0 skipped, 1019.14 seconds wall, 6133.92 cumulative
+worker seconds. `make examples` built 32 examples; the intentional negative
+use-after-transfer example was skipped. The two asynchronous harness fixes
+from `caea7335` followed the superseded `b7d3d28b` full run (134/136); the
+corrected branch-error test passed 20/20 isolated repetitions (0 failures,
+137.762 seconds total), retaining the injected read fault.
+
+Fresh frozen-candidate gates also passed: compatibility oracle 32 cases and
+64/64 outcomes per source-backed/ABI-v9/ABI-v10 mode; real SDK generic matrix
+18/18; staged ABI-v10 cross-crate scenarios 11/11 in Debug and Release;
+staged SDK 34/34 builds across 17 packages and two profiles; ABI-v9 source-free
+SDK controls 8/8; advanced-data source-free matrix 4/4 modes with 14 provider
+pairs each; deferred-member positive/hostile controls; direct nominal and
+mixed-provider admission; migration/cache replacement; deterministic native
+fast-hash collision; and the complete prioritized M2b2 source-free/hostile
+corpus. Advanced-data `sdk_adv_data_margo_debug` passed in `make check` in
+993.25 seconds. The separate bounded seeded ndarray/table Fast Debug oracle
+was not freshly rerun and is not counted as final fresh evidence.
+
+The seven original R5 failures are resolved: generic nominal open result and
+generic Iterate binder in `2b0b5f81`; typed semantic API, checked-body IR
+fixture, WP4 callback inventory, and conformance expectation in `2b0b5f81`;
+branch-error fault synchronization in `caea7335`. The durable table and
+complete counts are in `docs/phase25/PHASE_25_1_R5_RELEASE_READINESS.md`.
+
+The two prior Architect P2 corrections (private-record dependency closure and
+collision-resistant native cache identity) have focused tests and independent
+review. The existing Architect verified source SHA
+`caea7335f86f58f53d6f17662444e7c613ad39d0` and both binary hashes above, then
+issued **GO with zero open P0/P1/P2**. Independent execution passed scenario 7
+Debug/Release (including optimized Release), member relay positive/hostile
+cases, nominal source-free plus seven hostiles, mixed-provider admission, full
+M2b2, ABI-v10 closure adversarial tests, injected fast-hash collision, stale
+provider replacement, and expression ownership-edge checks. The complete
+independent evidence and scope are in the durable R5 report. The Architect did
+not rerun the full manifest or all SDK packages; coordinator execution covered
+those gates on the frozen candidate. Documentation-only closeout edits follow
+the reviewed compiler SHA; no compiler/test source changed. R5.1 is submitted
+to L7 for acceptance. Do not merge, change the ABI default, or declare Phase
+25.1 complete before L7 acceptance.

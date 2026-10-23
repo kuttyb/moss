@@ -1,11 +1,11 @@
 # Phase 25.1 R5 Release Readiness
 
 **Branch:** `phase25-1-work`
-**Compiler source candidate:** `60add1f31fabcb467445a3d7e72db93e4725b394`
+**Original R5 compiler source candidate:** `60add1f31fabcb467445a3d7e72db93e4725b394`
 **Evidence checkpoint at start:** `d1e3c662ca796b3328f0d1de86aefa9bca55d232`
 **Owner:** L6 Coordinator
 **Independent reviewer:** L6 Adversarial Architect
-**Disposition:** **NO-GO for R5 release acceptance**
+**Disposition:** **Architect GO on the frozen R5.1 candidate; submitted to L7 for acceptance**
 
 ## Candidate identity and scope
 
@@ -181,8 +181,118 @@ the injected read fault retained.
 
 Both corrected gates pass individually. The corrected branch fault gate passed
 20/20 serial repetitions in isolated output directories (137.762 seconds
-total, 0 failures). These test-only changes are not yet committed; the first
-full-suite count is historical evidence for that checkpoint, not final R5.1
-qualification. A new full `make check`, `make examples`, compatibility/SDK
+total, 0 failures). At that checkpoint these test-only changes were not yet
+committed; the first full-suite count is historical evidence for that
+checkpoint, not final R5.1 qualification. A new full `make check`, `make examples`, compatibility/SDK
 and advanced-data matrices, and exact-SHA Architect verdict remain required.
 ABI-v9 remains the default, ABI-v10 remains opt-in, and R5.1 remains open.
+
+## R5.1 final qualification — frozen candidate
+
+The final tested compiler candidate is `caea7335f86f58f53d6f17662444e7c613ad39d0`.
+Compiler source changes are from `2b0b5f81`; `caea7335` adds only the two
+parallel-test synchronization corrections. `moss-dev` and `./moss` SHA-256:
+`119416cc5aee866e7b025ad034a41430cb5ede90a4de8ee65f0800c01225567e`.
+`moss-opt` SHA-256: `ab2d9348b3bc8a59b176f8486d5bd029f391d60bcd0fabe916817954ed272543`.
+The candidate preserves ABI-v9 as the default and enables ABI-v10 through the
+existing opt-in selector only.
+
+### Original seven R5 failures
+
+| Original failing job | Correction commit | Final result on frozen candidate | Review cycle |
+|---|---|---|---|
+| `check_phase25_team_a_semantics` — generic nominal open result | `2b0b5f81` | PASS in full `make check`; focused positive result-inference and ambiguity controls pass | Final Architect GO; no open P0/P1/P2 |
+| `shard_phase25_int_payloads` — Iterate binder/element TypeRef mismatch | `2b0b5f81` | PASS in full `make check`; fresh `phase47_iteration.moss` shard passes | Final Architect GO; no open P0/P1/P2 |
+| `check_phase25_typed_semantic_api` — requirement identity | `2b0b5f81` | PASS; checked-occurrence identity is verified by semantic control | Final Architect GO; no open P0/P1/P2 |
+| `check_phase25_checked_body_ir` — stale C++ aggregate fixture | `2b0b5f81` | PASS; fixture now initializes current IR shape and checked-body gate passes | Final Architect GO; no open P0/P1/P2 |
+| `check_phase25_r2_wp4_oracle_inventory` — callback outputs | `2b0b5f81` | PASS; expected `23` and `7` verified by oracle control | Final Architect GO; no open P0/P1/P2 |
+| `check_phase25_conformance` — obsolete unavailable-body contract | `2b0b5f81` | PASS; source-free missing-member result is `METHOD_NOT_FOUND` with locations | Final Architect independently ran scenario 7 Debug/Release; GO |
+| `check_phase21c_branch_errors` — injected read-fault synchronization | `caea7335` | PASS; 20/20 isolated repetitions, 0 failures, 137.762 seconds total; fault injection retained | Final Architect GO; no open P0/P1/P2 |
+
+The full parallel run on `b7d3d28b` additionally exposed two test-ordering
+assumptions. `caea7335` corrected asynchronous executor output ordering and
+moved branch quiescence assertions after `join`; both are harness-only changes.
+The initial `b7d3d28b` result (134/136) is superseded by the final full run.
+
+### Final regression and package gates
+
+- `TMPDIR="$PWD/tmp" make --jobs="$(nproc)" check`: **136/136 pass, 0 fail,
+  0 skipped**, using 16 jobs; 1019.14 seconds wall time and 6133.92 cumulative
+  worker seconds. No retries were performed by the runner.
+- `TMPDIR="$PWD/tmp" make --jobs="$(nproc)" examples`: **32 examples built**;
+  the intentional negative `use_after_transfer.moss` example was skipped.
+  Nested rustc jobserver file-descriptor warnings were non-fatal.
+- 32-case compatibility oracle: **64/64** outcomes each for source-backed,
+  ABI-v9, and ABI-v10; no unexpected results.
+- Real SDK generic consumer matrix: **18/18**.
+- Staged ABI-v10 cross-crate harness: **11/11 Debug and 11/11 Release**,
+  including scenario 7's `METHOD_NOT_FOUND`, member name, consumer location,
+  and related provider location.
+- Staged ABI-v10 primary SDK package matrix: **34/34** Debug/Release builds
+  across 17 packages.
+- ABI-v9 SDK source-free controls: **8/8** (data acceptance, encoding, fs,
+  text, path, Foundations generic/Range acceptance, algorithms, collections).
+  Foundations Range source-free execution returned `329`.
+- Advanced-data compiled-only source-free matrix: **4/4 modes** (ABI-v9/v10 ×
+  Debug/Release), 14 provider pairs per mode, provider Moss source removed.
+- R4 deferred-member positive and hostile suite, direct nominal suite, mixed
+  provider suite, ABI migration, native cache binding/collision injection,
+  and full prioritized M2b2 source-free/hostile corpus all pass.
+- ABI-v10 mode remains opt-in without shape-specific flags. ABI-v9 mismatch
+  rebuild diagnostics, stale/replaced artifacts, cache invalidation, forged
+  provenance, unreachable/substituted private records, and legacy generic-body
+  removal remain covered and pass.
+- The broader advanced-data `run_all.py` Fast Debug workload passed inside the
+  final `make check` (`sdk_adv_data_margo_debug`, 993.25 seconds). The bounded
+  seeded Fast Debug ndarray/table oracle was not rerun separately on this
+  candidate; the historical 428.24-second result is not counted as fresh.
+
+The branch-fault event was not disabled: the corrected test still injects the
+native read fault and checks the joined executor state. Twenty controlled
+isolated repetitions passed after the synchronization fix. The earlier R5
+single failure is retained as historical evidence rather than erased by the
+rerun.
+
+One exploratory invocation of the Foundations source-free validator omitted
+its required `--foundations-root`, `--workdir`, and `--moss` arguments and exited
+with usage status 2. It was rerun with all required repository-local paths and
+passed; this setup error is not counted as a test failure or as a pass.
+
+### Architect review and disposition
+
+The existing independent Adversarial Architect reviewed exact source SHA
+`caea7335f86f58f53d6f17662444e7c613ad39d0` and issued **GO**, with zero open
+P0/P1/P2. The Architect verified `./moss` SHA-256
+`119416cc5aee866e7b025ad034a41430cb5ede90a4de8ee65f0800c01225567e` and
+`moss-opt` SHA-256
+`ab2d9348b3bc8a59b176f8486d5bd029f391d60bcd0fabe916817954ed272543`.
+
+The independent review cycle executed staged-v10 scenario 7 in Debug and
+Release with `./moss`, and Release with `moss-opt`; all returned
+`METHOD_NOT_FOUND` for `custom_action` with consumer primary and provider
+related locations. The Architect also independently passed the member-relay
+positive/effect/result and hostile suite; direct nominal source-free controls
+and seven hostiles; mixed-provider admission; the full prioritized M2b2
+source-free corpus; ABI-v10 closure/referential-integrity/public-enum identity
+adversarial executable; deterministic fast-hash collision executable; stale
+provider replacement scenario 11; and the isolated expression ownership-edge
+suite. The two original P2 findings are closed: private records are constrained
+to the validated dependency closure, and native cache artifact trust includes
+SHA-256 of exact bytes in addition to the fast lookup hash. The public enum
+identity review also closed the follow-up compatibility concern.
+
+This was an independent representative adversarial review; the Architect did
+not rerun the entire 136-job manifest or all 17 SDK packages. Those full
+qualification gates were executed by the coordinator as listed above. The
+Architect returned GO on the compiler candidate before the documentation-only
+closeout commit; no compiler or test source changes followed the reviewed SHA.
+
+Known scope limitation: these gates establish the listed compiler, SDK,
+source-free, migration, cache, and hostile paths only. They do not authorize a
+new language feature, ABI-v10 default promotion, merge to another branch, R5,
+or Phase 25.1 completion. ABI-v9 remains default and ABI-v10 remains opt-in.
+
+**Recommendation to L7:** accept `caea7335f86f58f53d6f17662444e7c613ad39d0`
+as the R5.1 ABI-v10 opt-in release-readiness candidate. This is a request for
+L7 acceptance, not a declaration of Phase 25.1 completion. No merge to `main`
+or `phase25-integration` and no ABI-v10 default promotion is proposed.
