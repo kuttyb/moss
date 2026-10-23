@@ -11830,3 +11830,37 @@ R4 candidate acceptance is recorded as GO on the exact compiler SHA above.
 Return this candidate and evidence to L7; do not begin R5 or change ABI-v9
 default. The broader advanced-data `run_all.py` Fast Debug workload is outside
 the compiled-only acceptance matrix and remains unverified for this candidate.
+
+## Phase 25.1 R5 final release qualification — NO-GO — 2026-10-23
+
+R5 ran on compiler source SHA `60add1f31fabcb467445a3d7e72db93e4725b394`.
+`./moss` and `moss-dev` SHA-256 are
+`f1ace0694ecd9440800daf57629e4b018749632cf30f9c609ea92ec35fce126e`; optimized
+`moss-opt` SHA-256 is
+`2ff630198d355147dcf409c104bc86989f2fffb8d0b4bd49f49c0034ee427e33`.
+The full `make check` used 16 jobs and selected 136/136 jobs: 129 passed, 7
+failed, 0 skipped. Four failures are stale test/inventory expectations or a
+fixture compile failure; `check_phase25_team_a_semantics` and
+`shard_phase25_int_payloads` reproduced compiler failures; the
+`check_phase21c_branch_errors` injected read-fault failure passed on one
+immediate rerun and is intermittent. Details are in
+[`PHASE_25_1_R5_RELEASE_READINESS.md`](../docs/phase25/PHASE_25_1_R5_RELEASE_READINESS.md).
+
+Fresh gates passed: 32-case compatibility oracle 64/64 in source, ABI-v9, and
+ABI-v10 modes; SDK generic matrix 18/18; staged-v10 cross-crate scenarios 11/11
+in Debug and Release; SDK ABI-v10 build matrix 34/34 across 17 packages; and
+advanced-data source-free matrix in all four ABI/profile modes with 14 provider
+pairs each. Eight ABI-v9 SDK source-free controls, focused cache/migration and
+hostile gates, full Foundations acceptance, full Text & Encoding acceptance,
+and `make examples` passed. The formerly interrupted advanced-data Fast Debug
+package job passed fresh in 966.09 seconds; its seeded Fast Debug oracle passed
+in 428.24 seconds.
+
+The independent Architect verified exact source SHA and `./moss` fingerprint,
+independently ran scenario 7 Debug/Release and representative relay, nominal,
+mixed-provider, and cache controls. Overall R5 verdict is **NO-GO** because of
+the seven full-suite failures. Two P2 hardening findings remain: rejection of
+unreachable private records and collision-resistant provider cache
+fingerprinting. ABI-v9 remains the default; ABI-v10 remains opt-in. R5 is not
+accepted and Phase 25.1 is not complete. Durable R5 report:
+`docs/phase25/PHASE_25_1_R5_RELEASE_READINESS.md`.

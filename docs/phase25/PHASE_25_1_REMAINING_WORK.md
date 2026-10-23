@@ -331,3 +331,33 @@ raw reports are in disposable `tmp/r4-final/`.
 to L7. R5 has not started; preserve ABI-v9 as default. The broader advanced-
 data `run_all.py` Fast Debug workload remains outside this compiled-only
 matrix and unverified on this candidate.
+
+## R5 final release qualification — exact R4 compiler candidate — 2026-10-23
+
+R5 executed against compiler source SHA
+`60add1f31fabcb467445a3d7e72db93e4725b394`, with development executable
+SHA-256 `f1ace0694ecd9440800daf57629e4b018749632cf30f9c609ea92ec35fce126e`.
+The durable evidence and complete failure ledger are in
+[`PHASE_25_1_R5_RELEASE_READINESS.md`](PHASE_25_1_R5_RELEASE_READINESS.md).
+
+Fresh results include `make check` at 16 jobs (136 selected, 129 pass, 7 fail,
+0 skipped), `make examples` (32 examples built, intentional negative skipped),
+the 32-case compatibility oracle (64/64 each for source-backed, ABI-v9, and
+ABI-v10), SDK generic (18/18), staged-v10 cross-crate (11/11 in both profiles),
+the 17-package ABI-v10 SDK build matrix (34/34), and the advanced-data
+source-free 14-provider matrix in all four ABI/profile modes. Eight ABI-v9
+SDK source-free controls, focused migration/cache/hostile suites, full
+Foundations and Text & Encoding acceptance, and the advanced-data Fast Debug
+package run also passed.
+
+The independent Architect reviewed and ran exact-SHA representative positive
+and hostile cases. Their overall R5 verdict is **NO-GO**. The full regression
+failures include two reproduced compiler failures (`nominal_open_result` and
+the ABI-v10 Iterate binder) and one intermittent native read-fault failure;
+four failures are test/fixture expectation mismatches. The Architect also
+retains two P2 hardening findings: reject unreachable private records, and use
+a collision-resistant provider cache fingerprint. R5 release acceptance is
+blocked until all seven regression failures are triaged/resolved, both P2s are
+closed to the Architect's satisfaction, and the required fresh gates pass on
+one resulting committed compiler candidate. ABI-v9 remains default and
+ABI-v10 remains opt-in; no R5 acceptance or Phase 25.1 completion is declared.
