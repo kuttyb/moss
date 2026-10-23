@@ -37,7 +37,7 @@ from typing import Callable, NamedTuple
 
 ROOT = Path(__file__).resolve().parents[3]
 MARGO = ROOT / "margo"
-MOSS = ROOT / "moss"
+MOSS = Path(os.environ.get("MOSS", ROOT / "moss")).resolve()
 SCRATCH = ROOT / "tmp" / "phase25_sdk_smoke"
 SCRATCH.mkdir(parents=True, exist_ok=True)
 

@@ -9,7 +9,7 @@ import tempfile
 
 PACKAGE = Path(__file__).resolve().parents[1]
 ROOT = Path(__file__).resolve().parents[4]
-MOSS = ROOT / "moss"
+MOSS = Path(os.environ.get("MOSS", ROOT / "moss")).resolve()
 MARGO = ROOT / "margo"
 SCRATCH = ROOT / "tmp"
 SCRATCH.mkdir(exist_ok=True)

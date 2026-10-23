@@ -11623,3 +11623,24 @@ now honors an explicit `MOSS` compiler override so the refreshed report can
 record the built compiler. The full 26-root inventory is next; ABI matrix,
 cross-crate and migration hostile suites, Architect review, and frozen R4
 candidate remain outstanding. No R5 work has started.
+
+R4 continuation: the Architect reviewed R4A package-fix checkpoint
+`bb4b340981207a2d988227ca30d3d5b4bd1d3a20` and returned scoped GO with no
+P0/P1 and one P2: compiler attribution did not fingerprint an arbitrary
+`MOSS` override. Inventory metadata now records the resolved compiler path and
+binary SHA-256; the 26-root inventory is rebuilding serially with
+`build/compiler/moss-dev` and the output will be refreshed from its recorded
+interfaces. Prior inventory evidence enumerates four actual generic SDK
+exports (`bytes.from_range`, plus `collections.index_of`, `contains`, and
+`count_equal`); the separate 14-provider advanced-data harness exercises
+concrete API coverage and currently has no selected open generic export.
+The 26-root refresh passed with zero failures and four generic exports; report
+`docs/phase25/PHASE_25_1_GENERIC_INVENTORY_R4A.json` records the executable path
+and binary hash. The real-SDK generic matrix passed 18 consumer runs across
+source-backed/v9/v10 Debug/Release, including source-deleted v10 providers,
+poisoned legacy bodies, and checked projection. The advanced-data source-free
+v9 Debug graph passed with all 14 provider pairs; v9 Release and v10 Debug/
+Release remain in progress. The inventory's first attempt wrote its report
+then exited nonzero on a relative-output-path formatting bug; that path is
+fixed, and metadata was refreshed from the exact built interfaces. No compiler
+source changes have been made since accepted R3.

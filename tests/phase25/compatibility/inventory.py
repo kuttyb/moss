@@ -239,6 +239,7 @@ def main() -> int:
     parser.add_argument("--refresh-exports", action="store_true",
                         help="reparse recorded compiler artifacts without rebuilding packages")
     args = parser.parse_args()
+    args.output = args.output.resolve()
     packages = package_roots()
     if args.inventory_only:
         for package in packages:
@@ -247,6 +248,8 @@ def main() -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     compiler_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     artifact_compiler_sha = compiler_sha
+    compiler_executable = str(MOSS.relative_to(ROOT)) if MOSS.is_relative_to(ROOT) else str(MOSS)
+    compiler_binary_sha256 = hashlib.sha256(MOSS.read_bytes()).hexdigest()
     if args.refresh_exports:
         payload = json.loads(args.output.read_text(encoding="utf-8"))
         artifact_compiler_sha = payload["compiler_commit"]
@@ -261,6 +264,8 @@ def main() -> int:
                 if path.is_file():
                     package["exported_generic_callables"].extend(parse_interface(path))
         results = payload["packages"]
+        compiler_executable = payload.get("compiler_executable") or compiler_executable
+        compiler_binary_sha256 = payload.get("compiler_binary_sha256") or compiler_binary_sha256
     else:
         results = [run_build(package, args.output) for package in packages]
     harnesses = harness_catalog()
@@ -270,6 +275,8 @@ def main() -> int:
     payload = {
         "schema": "phase25-1-generic-inventory-v1",
         "compiler_commit": artifact_compiler_sha,
+        "compiler_executable": compiler_executable,
+        "compiler_binary_sha256": compiler_binary_sha256,
         "inventory_refresh_commit": compiler_sha,
         "language_version": "moss-0.1",
         "inventory_method": "Margo debug package build; generic exports parsed from compiler-emitted semantic_exports in .mossi",

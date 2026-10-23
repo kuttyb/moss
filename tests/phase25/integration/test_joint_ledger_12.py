@@ -11,7 +11,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE = Path(__file__).with_suffix(".moss")
-MOSS = ROOT / "moss"
+MOSS = Path(os.environ.get("MOSS", ROOT / "moss")).resolve()
 SCRATCH = ROOT / "tmp/phase25-g5-joint-ledger-12"
 EXPECTED = "3\n"
 

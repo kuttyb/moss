@@ -12,7 +12,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[3]
 MARGO = ROOT / "margo"
-MOSS = ROOT / "moss"
+MOSS = Path(os.environ.get("MOSS", ROOT / "moss")).resolve()
 
 # Acceptance projects, examples, negative repros and host-I/O feasibility
 # projects are separate test fixtures. Keep this inventory explicit so a new

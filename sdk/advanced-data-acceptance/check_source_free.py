@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import argparse
 from contextlib import ExitStack
 
 
@@ -57,13 +58,23 @@ def digest(path: Path) -> str:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--abi", choices=("v9", "v10"), default="v9")
+    parser.add_argument("--profile", choices=("debug", "release"), default="debug")
+    args = parser.parse_args()
+    mode = args.abi
+    profile = args.profile
     SCRATCH.mkdir(exist_ok=True)
     env = os.environ.copy()
     env.update(
         MOSS=str(MOSS),
-        MARGO_HOME=str(SCRATCH / "margo-advanced-data-source-free"),
+        MARGO_HOME=str(SCRATCH / f"margo-advanced-data-source-free-{mode}-{profile}"),
         TMPDIR=str(SCRATCH),
     )
+    env.pop("MOSS_STAGED_ABI", None)
+    if mode == "v10":
+        env["MOSS_STAGED_ABI"] = "v10"
+    release_args = ["--release"] if profile == "release" else []
 
     # Parallel builds scheduled by Moss.toml dependency DAG
     from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
@@ -99,12 +110,12 @@ def main() -> None:
 
     def build_provider(mod: str, pkg: Path) -> None:
         provider_env = env.copy()
-        provider_env["MARGO_HOME"] = str(SCRATCH / "margo-advanced-data-source-free" / mod)
+        provider_env["MARGO_HOME"] = str(SCRATCH / f"margo-advanced-data-source-free-{mode}-{profile}" / mod)
         with ExitStack() as locks:
             for dependency in sorted(closures[mod]):
                 locks.enter_context(package_locks[dependency])
-            run([str(MARGO), "build", "--json"], pkg, provider_env)
-        artifact_dir = pkg / "build" / "debug"
+            run([str(MARGO), "build", "--json", *release_args], pkg, provider_env)
+        artifact_dir = pkg / "build" / profile
         assert (artifact_dir / f"{mod}.mossi").is_file(), mod
         assert (artifact_dir / f"lib{mod}.rlib").is_file(), mod
 
@@ -141,7 +152,7 @@ def main() -> None:
 
         copied = []
         for module, package in PROVIDERS:
-            artifact_dir = package / "build" / "debug"
+            artifact_dir = package / "build" / profile
             for filename in (f"{module}.mossi", f"lib{module}.rlib"):
                 source = artifact_dir / filename
                 destination = provider / filename
@@ -149,7 +160,8 @@ def main() -> None:
                 assert digest(source) == digest(destination), filename
                 copied.append(filename)
             interface = (provider / f"{module}.mossi").read_text(encoding="utf-8")
-            assert "native_abi 9" in interface, f"{module} is not ABI-v9"
+            expected_abi = f"native_abi {9 if mode == 'v9' else 10}"
+            assert expected_abi in interface, f"{module} is not ABI-{mode[1:]}"
 
         assert not list(provider.rglob("*.moss"))
         assert len(copied) == len(PROVIDERS) * 2
@@ -169,18 +181,19 @@ def main() -> None:
             source_free_env,
         )
         assert json.loads(formatted.stdout)["result"]["would_change"] is False
-        run([str(MOSS), "build", "--json"], app, source_free_env)
+        run([str(MOSS), "build", "--json", *release_args], app, source_free_env)
+        executable = app / "build" / profile / "advanced_data_source_free"
         executed = run(
-            [str(app / "build" / "debug" / "advanced_data_source_free")],
+            [str(executable)],
             app,
             source_free_env,
         )
         assert executed.stdout == "advanced data ABI-v9 source-free ok\n"
 
     print(
-        "Compiled-only ABI-v9 gate passed: "
-        f"{len(TEAM_A_MODULES)} Team A modules, {len(PROVIDERS)} exact provider pairs, "
-        "no provider Moss source"
+        "Compiled-only advanced-data gate passed: "
+        f"ABI-{mode[1:]} {profile}: {len(TEAM_A_MODULES)} Team A modules, "
+        f"{len(PROVIDERS)} exact provider pairs, no provider Moss source"
     )
 
 

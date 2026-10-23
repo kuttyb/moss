@@ -1,53 +1,61 @@
 {
   "schema": "phase25-1-source-free-harness-map-v1",
-  "inventory": "docs/phase25/PHASE_25_1_GENERIC_INVENTORY.json",
-  "inventory_compiler_commit": "43973e1adfdf015d5588e85f41d986925a85a565",
+  "inventory": "docs/phase25/PHASE_25_1_GENERIC_INVENTORY_R4A.json",
+  "inventory_compiler_commit": "bb4b340981207a2d988227ca30d3d5b4bd1d3a20",
   "discovery": "inventory.py catalogs files selected by source-free path/name or explicit module-path, source-free diagnostic, ABI artifact, or staged generic-body markers. Catalog entries are discovery evidence, not semantic coverage claims. This map records inspected selected-callable coverage.",
   "sdk_generic_exports": [
     {
       "package": "sdk/foundations/collections",
       "callable": "index_of",
       "abi_v9": [
-        "sdk/foundations/collections/tests/check_source_free.py"
+        "sdk/foundations/collections/tests/check_source_free.py",
+        "tests/phase25/integration/r4_sdk_generic_consumers.py"
       ],
       "abi_v10": [
         "tests/tooling/check_phase25_d3d_collection_source_free.py",
-        "tests/tooling/check_phase25_d4_collection_source_free.py"
+        "tests/tooling/check_phase25_d4_collection_source_free.py",
+        "tests/phase25/integration/r4_sdk_generic_consumers.py"
       ],
-      "coverage": "Source physically removed; Int and String specializations; checked projection trace; generic_stmt removed. D4 also tests empty Vector and malformed requirement/effect artifacts."
+      "coverage": "R4 real-SDK matrix executes Int and String in source-backed, ABI-v9, and ABI-v10 Debug/Release; ABI-v10 deletes provider source, poisons generic_stmt, and traces checked projection. Existing D4 additionally tests empty Vector and malformed requirement/effect artifacts."
     },
     {
       "package": "sdk/foundations/collections",
       "callable": "contains",
       "abi_v9": [
-        "sdk/foundations/collections/tests/check_source_free.py"
+        "sdk/foundations/collections/tests/check_source_free.py",
+        "tests/phase25/integration/r4_sdk_generic_consumers.py"
       ],
       "abi_v10": [
-        "tests/tooling/check_phase25_d4_collection_source_free.py"
+        "tests/tooling/check_phase25_d4_collection_source_free.py",
+        "tests/phase25/integration/r4_sdk_generic_consumers.py"
       ],
-      "coverage": "Source physically removed; Int, String and empty String Vector; checked projection trace; generic_stmt removed."
+      "coverage": "R4 real-SDK matrix executes String specialization in source-backed, ABI-v9, and ABI-v10 Debug/Release; ABI-v10 deletes provider source, poisons generic_stmt, and traces checked projection. Existing D4 also covers empty String Vector."
     },
     {
       "package": "sdk/foundations/collections",
       "callable": "count_equal",
       "abi_v9": [
-        "sdk/foundations/collections/tests/check_source_free.py"
+        "sdk/foundations/collections/tests/check_source_free.py",
+        "tests/phase25/integration/r4_sdk_generic_consumers.py"
       ],
       "abi_v10": [
-        "tests/tooling/check_phase25_d4_collection_source_free.py"
+        "tests/tooling/check_phase25_d4_collection_source_free.py",
+        "tests/phase25/integration/r4_sdk_generic_consumers.py"
       ],
-      "coverage": "Source physically removed; Int, String and empty Int Vector; checked projection trace; generic_stmt removed."
+      "coverage": "R4 real-SDK matrix executes Int and String in source-backed, ABI-v9, and ABI-v10 Debug/Release; ABI-v10 deletes provider source, poisons generic_stmt, and traces checked projection. Existing D4 also covers empty Int Vector."
     },
     {
       "package": "sdk/foundations/bytes",
       "callable": "from_range",
       "abi_v9": [
-        "sdk/foundations/acceptance/validate_source_free.py"
+        "sdk/foundations/acceptance/validate_source_free.py",
+        "tests/phase25/integration/r4_sdk_generic_consumers.py"
       ],
       "abi_v10": [
-        "tests/phase25/compatibility/oracle.py --include-sdk-bytes-range"
+        "tests/phase25/compatibility/oracle.py --include-sdk-bytes-range",
+        "tests/phase25/integration/r4_sdk_generic_consumers.py"
       ],
-      "coverage": "R0 oracle source-backed and v9 Debug/Release pass, provider source removed, legacy body poisoned; v10 rejects at source-free consumer selection. The tested oracle/acceptance input is the `source_free_range` repro. The actual `sdk/foundations/bytes/examples/range_copy` program remains an R3 requirement and has not yet been run as the source-free acceptance case."
+      "coverage": "R4 real-SDK matrix executes the actual source-free range consumer in source-backed, ABI-v9, and ABI-v10 Debug/Release; ABI-v9/v10 provider source is removed, ABI-v10 generic_stmt is poisoned, and checked projection traces from_range plus its private is_byte helper. Existing R0 oracle covers the source_free_range repro."
     }
   ],
   "generic_shape_harnesses": [

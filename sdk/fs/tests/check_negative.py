@@ -1,12 +1,13 @@
 """Verify FileIO's bounded-request safety remains visible to SDK users."""
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[3]
-MOSS = ROOT / "moss"
+MOSS = Path(os.environ.get("MOSS", ROOT / "moss")).resolve()
 with tempfile.TemporaryDirectory(prefix="host-fs-negative-", dir=ROOT / "tmp") as temporary:
     source = Path(temporary) / "unbounded_probe.moss"
     source.write_text('''fn bad(file: FileIO, offset: Int, size: Int) -> Int:

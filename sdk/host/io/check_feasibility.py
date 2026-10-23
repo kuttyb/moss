@@ -12,7 +12,7 @@ import tempfile
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
-MOSS = ROOT / "moss"
+MOSS = Path(os.environ.get("MOSS", ROOT / "moss")).resolve()
 MARGO = ROOT / "margo"
 TMP_ROOT = ROOT / "tmp"
 ENV = os.environ | {"TMPDIR": str(ROOT / "tmp")}

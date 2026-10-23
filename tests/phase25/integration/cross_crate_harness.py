@@ -46,7 +46,7 @@ class HarnessContext:
                  staged_v10: bool = False):
         self.repo_root = REPO_ROOT
         self.fixtures_dir = FIXTURES_DIR
-        self.compiler = self.repo_root / "moss"
+        self.compiler = Path(os.environ.get("MOSS", self.repo_root / "moss")).resolve()
         self.project_driver = self.repo_root / "margo"
         self.rustc = find_tool("rustc")
         self.profile = profile

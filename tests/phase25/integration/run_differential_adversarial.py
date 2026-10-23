@@ -38,7 +38,7 @@ import tempfile
 from typing import Any, Dict, List, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_MOSS = ROOT / "moss"
+DEFAULT_MOSS = Path(os.environ.get("MOSS", ROOT / "moss")).resolve()
 DEFAULT_MARGO = ROOT / "margo"
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures" / "adversarial"
 SCRATCH_DIR = ROOT / "tmp"
