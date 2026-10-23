@@ -11913,7 +11913,7 @@ the first full-suite result is superseded and must not be reported as final.
 The historical outstanding list above has now been completed on the frozen
 candidate except for the requested independent final Architect verdict.
 
-## Phase 25.1 R5.1 final qualification — Architect GO; L7 acceptance pending — 2026-10-23
+## Phase 25.1 R5.1 final qualification — Architect GO — 2026-10-23
 
 Frozen tested compiler candidate: `caea7335f86f58f53d6f17662444e7c613ad39d0`
 on `phase25-1-work`. `moss-dev`/`./moss` SHA-256 is
@@ -11960,6 +11960,22 @@ provider replacement, and expression ownership-edge checks. The complete
 independent evidence and scope are in the durable R5 report. The Architect did
 not rerun the full manifest or all SDK packages; coordinator execution covered
 those gates on the frozen candidate. Documentation-only closeout edits follow
-the reviewed compiler SHA; no compiler/test source changed. R5.1 is submitted
-to L7 for acceptance. Do not merge, change the ABI default, or declare Phase
-25.1 complete before L7 acceptance.
+the reviewed compiler SHA; no compiler/test source changed. The candidate was
+submitted to L7 for acceptance. Its formal acceptance and administrative
+closeout are recorded below.
+
+## Phase 25.1 L7 closeout — ACCEPTED; COMPLETE — 2026-10-23
+
+L7 formally accepts Phase 25.1 R5.1 and declares **Phase 25.1 COMPLETE** at
+reviewed compiler candidate `caea7335f86f58f53d6f17662444e7c613ad39d0`.
+Acceptance preserves the reviewed binary fingerprints: `./moss`/`moss-dev`
+SHA-256 `119416cc5aee866e7b025ad034a41430cb5ede90a4de8ee65f0800c01225567e`
+and `moss-opt` SHA-256
+`ab2d9348b3bc8a59b176f8486d5bd029f391d60bcd0fabe916817954ed272543`. The
+R5.1 validation record and independent Architect exact-SHA GO are preserved in
+`docs/phase25/PHASE_25_1_R5_RELEASE_READINESS.md` and above. This is an
+administrative documentation-only closeout; no regression suites were rerun.
+
+ABI-v9 remains the default; ABI-v10 remains opt-in. No merge to `main` or
+`phase25-integration` was performed, and ABI-v10 was not promoted. No further
+stabilization work is authorized without a new L7 assignment.

@@ -292,7 +292,17 @@ source-free, migration, cache, and hostile paths only. They do not authorize a
 new language feature, ABI-v10 default promotion, merge to another branch, R5,
 or Phase 25.1 completion. ABI-v9 remains default and ABI-v10 remains opt-in.
 
-**Recommendation to L7:** accept `caea7335f86f58f53d6f17662444e7c613ad39d0`
-as the R5.1 ABI-v10 opt-in release-readiness candidate. This is a request for
-L7 acceptance, not a declaration of Phase 25.1 completion. No merge to `main`
-or `phase25-integration` and no ABI-v10 default promotion is proposed.
+## L7 administrative closeout — ACCEPTED; COMPLETE — 2026-10-23
+
+L7 formally accepts Phase 25.1 R5.1 and declares **Phase 25.1 COMPLETE** at
+the reviewed compiler candidate `caea7335f86f58f53d6f17662444e7c613ad39d0`.
+The accepted compiler fingerprints remain `./moss`/`moss-dev` SHA-256
+`119416cc5aee866e7b025ad034a41430cb5ede90a4de8ee65f0800c01225567e` and
+`moss-opt` SHA-256
+`ab2d9348b3bc8a59b176f8486d5bd029f391d60bcd0fabe916817954ed272543`. The
+validation results and exact-SHA independent Architect GO above are preserved
+without rerun or modification; this closeout changes documentation only.
+
+ABI-v9 remains the default and ABI-v10 remains opt-in. No merge to `main` or
+`phase25-integration` was performed, and ABI-v10 was not promoted. No further
+stabilization work is authorized without a new L7 assignment.
