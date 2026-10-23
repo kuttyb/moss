@@ -142,7 +142,6 @@ struct Expr {
 
   // Children:
   std::vector<Expr> operands;
-  std::vector<uint32_t> payload_ordinals;
 
   // Exact target identifiers:
   // For Field: nominal declaration ID ("nominal-template-v1:...")
@@ -154,6 +153,7 @@ struct Expr {
   uint32_t member_ordinal = 0;
   std::string member_name;
   std::string target_domain;
+  std::vector<uint32_t> payload_ordinals;
 };
 
 enum class StmtKind : uint32_t {
