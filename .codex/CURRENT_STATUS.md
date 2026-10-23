@@ -11486,3 +11486,17 @@ rejects. Corrected R3F and R3E focused suites and M2b2 pass. The full oracle
 must be rerun on the correction's exact committed SHA, followed by Architect
 independent execution and review. The earlier matrix result is evidence for
 `356aafe...` only.
+
+Corrected candidate `b6e2db29df8e10ba75255da09ee9b9a23f53ed09` then passed
+the complete compatibility oracle: all 32 cases passed source-backed, ABI-v9,
+and ABI-v10 in Debug and Release; no unexpected results. Its focused Raise
+suite passed with provider source deleted, poisoned generic bodies, erased
+legacy RaiseSet metadata, and rehashed mutations for missing/wrong v10 effect,
+variant, payload type, branch identity, private dependency hash. The Architect
+reviewed the correction at code level and found the P1/P2 findings addressed;
+they requested one more hostile case where the correct v10 tag/body conflicts
+with a rehashed legacy RaiseSet. That Detailed→Alternate metadata mutation is
+now added and passes locally before projection. Architect independent execution
+of the corrected positive and hostile cases remains pending. The compatibility
+matrix source code is unchanged since `b6e2db29`; the new pending commit only
+adds this hostile test and status evidence.

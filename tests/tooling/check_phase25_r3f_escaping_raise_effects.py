@@ -132,7 +132,8 @@ print("PASS source-free String specialization remains rejected")
 
 for mode in ("missing-raise-effect", "wrong-raise-effect",
              "wrong-raise-variant", "wrong-payload-type",
-             "wrong-branch-identity", "wrong-private-dependency-hash"):
+             "wrong-branch-identity", "wrong-private-dependency-hash",
+             "conflict-legacy-raise-effect"):
     artifacts = WORK / f"hostile-{mode}"
     shutil.copytree(artifacts_by_profile["debug"], artifacts)
     run([str(mutator), str(artifacts / "Service.mossi"),

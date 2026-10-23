@@ -41,20 +41,37 @@ int main(int argc, char** argv) {
   });
   assert(summary_position != sealed.value.semantic_contract.end());
   auto summary = moss::abi_v10::read_summary(summary_position->payload);
-  if (mode == "erase-legacy-raise-effect") {
+  if (mode == "erase-legacy-raise-effect" ||
+      mode == "conflict-legacy-raise-effect") {
     std::size_t erased = 0;
     for (auto* records : {&sealed.value.binary_contract,
                           &sealed.value.semantic_contract})
       for (auto& record : *records) {
         if (record.payload.find("unhandled") == std::string::npos) continue;
-        auto effect = record.payload.find("raise_set=enum:");
+        auto effect = record.payload.find("raise_set=");
         while (effect != std::string::npos) {
           const auto end = record.payload.find(';', effect);
           assert(end != std::string::npos);
-          record.payload.replace(effect + std::string("raise_set=").size(),
-              end - (effect + std::string("raise_set=").size()), "-");
+          const auto value_begin = effect + std::string("raise_set=").size();
+          if (mode == "erase-legacy-raise-effect") {
+            if (record.payload.compare(value_begin, 5, "enum:") != 0) {
+              effect = record.payload.find("raise_set=", end + 1);
+              continue;
+            }
+            record.payload.replace(value_begin, end - value_begin, "-");
+          } else {
+            if (record.payload.compare(value_begin, 1, "-") == 0) {
+              record.payload.replace(value_begin, 1,
+                  "enum:Service__Failure:Alternate");
+            } else {
+              auto detailed = record.payload.find("Detailed", value_begin);
+              assert(detailed != std::string::npos && detailed < end);
+              record.payload.replace(detailed,
+                  std::string("Detailed").size(), "Alternate");
+            }
+          }
           ++erased;
-          effect = record.payload.find("raise_set=enum:", effect + 10);
+          effect = record.payload.find("raise_set=", effect + 10);
         }
       }
     assert(erased > 0 && "expected legacy effect metadata for unhandled");
@@ -95,7 +112,8 @@ int main(int argc, char** argv) {
       statements.front().expr->kind ==
           moss::checked_ir::ExprKind::EnumConstruct);
 
-  if (mode == "erase-legacy-raise-effect") {
+  if (mode == "erase-legacy-raise-effect" ||
+      mode == "conflict-legacy-raise-effect") {
     // This mutation deliberately leaves the checked v10 tag and body intact.
   } else if (mode == "missing-raise-effect") {
     summary.observable_effect_tags.clear();
