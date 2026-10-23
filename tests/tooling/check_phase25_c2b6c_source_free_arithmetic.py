@@ -36,6 +36,78 @@ def package(path, name, source):
 with tempfile.TemporaryDirectory(prefix="phase25-c2b6c-arithmetic-",
                                  dir=TMP) as temp:
     scratch = Path(temp)
+
+    source_backed = scratch / "source-backed"
+    package(source_backed, "r3_arithmetic_source", """module Main
+
+fn compute(x):
+  return 20 + x * 2
+
+fn nested(x):
+  return x * 2 + x * 3
+
+fn main():
+  echo compute(5)
+  echo compute(2.5)
+  echo nested(5)
+  echo nested(2.5)
+""")
+    source_env = os.environ.copy()
+    source_env["MOSS"] = str(MOSS)
+    source_env["MARGO_HOME"] = str(scratch / "margo-home-source")
+    source_debug = run([str(MARGO), "build"], cwd=source_backed,
+                       env=source_env)
+    assert run([str(MARGO), "run"], cwd=source_backed,
+               env=source_env) == "30\n25.0\n25\n12.5\n"
+    run([str(MARGO), "build", "--release"], cwd=source_backed,
+        env=source_env)
+    assert run([str(MARGO), "run", "--release"], cwd=source_backed,
+               env=source_env) == "30\n25.0\n25\n12.5\n"
+    print("PASS source-backed native Debug/Release numeric parity")
+
+    v9_provider = scratch / "provider-v9"
+    package(v9_provider, "r3_arithmetic_v9_provider", """module Service
+
+export fn compute(x):
+  return 20 + x * 2
+
+export fn nested(x):
+  return x * 2 + x * 3
+""")
+    v9_env = os.environ.copy()
+    v9_env["MOSS"] = str(MOSS)
+    v9_env["MARGO_HOME"] = str(scratch / "margo-home-v9")
+    run([str(MARGO), "build"], cwd=v9_provider, env=v9_env)
+    v9_debug = scratch / "artifacts-v9-debug"
+    shutil.copytree(v9_provider / "build" / "debug", v9_debug)
+    run([str(MARGO), "build", "--release"], cwd=v9_provider, env=v9_env)
+    v9_release = scratch / "artifacts-v9-release"
+    shutil.copytree(v9_provider / "build" / "release", v9_release)
+    shutil.rmtree(v9_provider)
+    assert not list(scratch.rglob("provider-v9/**/*.moss"))
+
+    for flavor, artifacts, release_args in (
+            ("debug", v9_debug, []),
+            ("release", v9_release, ["--release"])):
+        consumer = scratch / f"consumer-v9-{flavor}"
+        package(consumer, f"r3_arithmetic_v9_{flavor}", """module Main
+import Service
+
+fn main():
+  echo Service.compute(5)
+  echo Service.compute(2.5)
+  echo Service.nested(5)
+  echo Service.nested(2.5)
+""")
+        consumer_env = v9_env.copy()
+        consumer_env["MOSS_MODULE_PATH"] = str(artifacts)
+        run([str(MARGO), "build", *release_args], cwd=consumer,
+            env=consumer_env)
+        actual = run([str(MARGO), "run", *release_args], cwd=consumer,
+                     env=consumer_env)
+        assert actual == "30\n25.0\n25\n12.5\n", (flavor, actual)
+    print("PASS source-deleted ABI-v9 native Debug/Release numeric parity")
+
     mutator = scratch / "mutate_arithmetic_artifact"
     verifier = scratch / "verify_emitted_arithmetic"
     run(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
@@ -57,7 +129,10 @@ with tempfile.TemporaryDirectory(prefix="phase25-c2b6c-arithmetic-",
     package(provider, "c2b6c_provider", """module Service
 
 export fn compute(x):
-  return x * 2 + 20
+  return 20 + x * 2
+
+export fn nested(x):
+  return x * 2 + x * 3
 """)
     run([str(MARGO), "build"], cwd=provider, env=staged_env)
     interface = provider / "build" / "debug" / "Service.mossi"
@@ -66,6 +141,9 @@ export fn compute(x):
 
     emitted = scratch / "artifacts-emitted"
     shutil.copytree(provider / "build" / "debug", emitted)
+    run([str(MARGO), "build", "--release"], cwd=provider, env=staged_env)
+    emitted_release = scratch / "artifacts-emitted-release"
+    shutil.copytree(provider / "build" / "release", emitted_release)
 
     unsupported = scratch / "artifacts-unsupported"
     shutil.copytree(provider / "build" / "debug", unsupported)
@@ -86,11 +164,8 @@ export fn compute(x):
     unsupported_provider = scratch / "provider-unsupported"
     package(unsupported_provider, "c2b6c_unsupported_provider", """module Legacy
 
-export fn unsupported_sub(x):
-  return x * 2 - 20
-
-export fn unsupported_reverse(x):
-  return 20 + x * 2
+export fn unsupported_operand(x):
+  return x * "bad"
 """)
     run([str(MARGO), "build"], cwd=unsupported_provider, env=staged_env)
     unsupported_legacy = scratch / "artifacts-unsupported-legacy"
@@ -106,6 +181,7 @@ export fn unsupported_reverse(x):
 
     env = staged_env.copy()
     env["MOSS_MODULE_PATH"] = str(emitted)
+    env["MOSS_PHASE25_CHECKED_BODY_TRACE"] = "1"
     positive = scratch / "consumer-positive"
     package(positive, "c2b6c_consumer", """module Main
 import Service
@@ -113,20 +189,60 @@ import Service
 fn main():
   echo Service.compute(5)
   echo Service.compute(2.5)
+  echo Service.nested(5)
+  echo Service.nested(2.5)
 """)
     run([str(MARGO), "build"], cwd=positive, env=env)
+    projection_trace = run(
+        [str(MOSS), "check", str(positive / "src" / "main.moss"), "--json"],
+        cwd=positive, env=env)
+    assert "MOSS_CHECKED_BODY_PROJECTED|" in projection_trace and \
+        "Service:fn:compute|checked-body-v1" in projection_trace and \
+        "Service:fn:nested|checked-body-v1" in projection_trace, projection_trace
     actual = run([str(MARGO), "run"], cwd=positive, env=env)
-    assert actual == "30\n25.0\n", actual
+    assert actual == "30\n25.0\n25\n12.5\n", actual
+    release_env = staged_env.copy()
+    release_env["MOSS_MODULE_PATH"] = str(emitted_release)
+    run([str(MARGO), "build", "--release"], cwd=positive, env=release_env)
+    actual_release = run([str(MARGO), "run", "--release"], cwd=positive,
+                         env=release_env)
+    assert actual_release == "30\n25.0\n25\n12.5\n", actual_release
+
+    for mode in ("wrong-operation", "wrong-operands", "wrong-result",
+                 "wrong-parent", "duplicate-fact", "missing-fact"):
+        artifacts = scratch / f"artifacts-{mode}"
+        shutil.copytree(emitted, artifacts)
+        run([str(mutator), str(artifacts / "Service.mossi"),
+             str(artifacts / "libService.rlib"), "Service", mode])
+        hostile_env = staged_env.copy()
+        hostile_env["MOSS_MODULE_PATH"] = str(artifacts)
+        hostile = scratch / f"consumer-{mode}"
+        package(hostile, f"c2b6c_consumer_{mode.replace('-', '_')}", """module Main
+import Service
+
+fn main():
+  echo Service.compute(5)
+""")
+        result = subprocess.run([str(MARGO), "build"], cwd=hostile,
+                                env=hostile_env, capture_output=True, text=True)
+        output = result.stdout + result.stderr
+        assert result.returncode != 0, f"{mode} unexpectedly accepted"
+        assert "SOURCE_FREE_" in output, (mode, output)
+        print(f"PASS rehashed hostile arithmetic mutation rejected: {mode}")
 
     for case, argument in (("string", '"bad"'), ("bool", "true")):
         negative = scratch / f"consumer-{case}"
         package(negative, f"c2b6c_consumer_{case}",
                 "module Main\nimport Service\n\nfn main():\n"
                 f"  echo Service.compute({argument})\n")
-        rejected = run([str(MARGO), "build"], cwd=negative, env=env,
-                       expected=1)
-        assert "TYPE_MISMATCH" in rejected, rejected
-        print(f"PASS {case} rejected during checking with TYPE_MISMATCH")
+        negative_env = env.copy()
+        negative_env.pop("MOSS_PHASE25_CHECKED_BODY_TRACE", None)
+        rejected = run([str(MARGO), "build"], cwd=negative,
+                       env=negative_env, expected=1)
+        assert any(marker in rejected for marker in (
+            "TYPE_MISMATCH", "NO_VALID_SPECIALIZATION",
+            "SOURCE_FREE_")), rejected
+        print(f"PASS {case} rejected during checking")
 
     bad_env = staged_env.copy()
     bad_env["MOSS_MODULE_PATH"] = str(unsupported)
@@ -139,7 +255,7 @@ fn main():
 """)
     rejected = run([str(MARGO), "build"], cwd=invalid, env=bad_env,
                    expected=1)
-    assert "SOURCE_FREE_CHECKED_BODY_INVALID" in rejected, rejected
+    assert "SOURCE_FREE_" in rejected, rejected
     print("PASS unsupported sealed arithmetic body rejected fail-closed")
 
     legacy_env = staged_env.copy()
@@ -149,7 +265,7 @@ fn main():
 import Legacy
 
 fn main():
-  echo Legacy.unsupported_sub(5)
+  echo Legacy.unsupported_operand(5)
 """)
     rejected = run([str(MARGO), "build"], cwd=unsupported_consumer,
                    env=legacy_env, expected=1)

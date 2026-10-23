@@ -3032,6 +3032,8 @@ static bool abi_v10_checked_pipeline_map_summary_candidate(
     const abi_v10::Summary& summary);
 static bool abi_v10_returned_callback_summary_candidate(
     const abi_v10::Summary& summary);
+static bool abi_v10_checked_arithmetic_summary_candidate(
+    const abi_v10::Summary& summary);
 
 static vector<moss::Requirement> imported_abi_v10_requirements(
     const abi_v10::Summary& summary, const Function& function,
@@ -3050,6 +3052,25 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
   }
   const bool collection_loop =
       abi_v10_collection_loop_summary_candidate(summary);
+  std::set<string> checked_occurrence_provenance_ids;
+  const string checked_occurrence_prefix = summary.callable_id +
+      ":requirement:checked-occurrence:";
+  for (const auto& entry : function.imported_checked_provenance_records) {
+    try {
+      const auto provenance = abi_v10::read_provenance(entry.second);
+      if (provenance.declaration_id.rfind(checked_occurrence_prefix, 0) == 0)
+        checked_occurrence_provenance_ids.insert(provenance.provenance_id);
+    } catch (const abi_v10::Error&) {
+      // The canonical provenance validation below owns malformed records.
+    }
+  }
+  const bool checked_arithmetic =
+      abi_v10_checked_arithmetic_summary_candidate(summary) &&
+      std::all_of(summary.requirements.begin(), summary.requirements.end(),
+          [&](const abi_v10::Requirement& requirement) {
+        return checked_occurrence_provenance_ids.count(
+            requirement.provenance_id) == 1;
+      });
   const bool vector_literal =
       abi_v10_checked_vector_literal_summary_candidate(summary);
   const bool branch_arithmetic =
@@ -3110,6 +3131,7 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
       !generic_map_mutation && !typed_enum_match && !pipeline_map &&
       !returned_callback && !checked_raise_recover &&
       !checked_payload_raise_recover &&
+      !checked_arithmetic &&
       summary.requirements.size() != 2)
     invalid("checked ABI-v10 typed requirement set is incomplete");
   if (!member_summary && !collection_loop && !vector_literal &&
@@ -3117,7 +3139,7 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
       !checked_assert && !generic_for &&
       !generic_map_mutation && !typed_enum_match && !pipeline_map &&
       !returned_callback && !checked_raise_recover &&
-      !checked_payload_raise_recover) {
+      !checked_payload_raise_recover && !checked_arithmetic) {
     if (summary.requirements[0].operation != "operator:*" ||
         summary.requirements[1].operation != "operator:+" ||
         summary.requirements[0].parent != 0 ||
@@ -3193,6 +3215,17 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
             std::numeric_limits<int>::max()) ||
         !requirement_ids.insert(origin.declaration_id).second)
       invalid("checked ABI-v10 requirement provenance is inconsistent");
+    if (checked_arithmetic) {
+      if (origin.declaration_id.rfind(checked_occurrence_prefix, 0) != 0)
+        invalid("checked ABI-v10 arithmetic requirement has no exact occurrence identity");
+      const string ordinal = origin.declaration_id.substr(
+          checked_occurrence_prefix.size());
+      if (ordinal.empty() ||
+          !std::all_of(ordinal.begin(), ordinal.end(), [](unsigned char c) {
+            return std::isdigit(c);
+          }) || (ordinal.size() > 1 && ordinal.front() == '0'))
+        invalid("checked ABI-v10 arithmetic occurrence identity is malformed");
+    }
     auto subject = imported_abi_v10_type(
         wire.receiver, context, summary.variable_count);
     auto result = wire.result
@@ -3727,34 +3760,52 @@ static bool abi_v10_checked_arithmetic_summary_candidate(
     return type.kind == abi_v10::WireTypeKind::Primitive &&
         type.identity == "int" && type.arguments.empty();
   };
-  const bool parameter_shape = summary.parameters.size() == 1 ||
-      (summary.parameters.size() >= 2 &&
-       std::all_of(std::next(summary.parameters.begin()),
-                   summary.parameters.end(), [](const auto& parameter) {
-         return parameter.kind == abi_v10::WireTypeKind::Primitive &&
-             parameter.identity == "bool" && parameter.arguments.empty();
-       }));
+  const bool parameter_shape = !summary.parameters.empty() &&
+      std::all_of(std::next(summary.parameters.begin()),
+          summary.parameters.end(), [](const auto& parameter) {
+        return parameter.kind == abi_v10::WireTypeKind::Primitive &&
+            parameter.identity == "bool" && parameter.arguments.empty();
+      });
   if (summary.variable_count != 1 || !parameter_shape ||
       summary.parameter_access != vector<abi_v10::Access>(
           summary.parameters.size(), abi_v10::Access::Read) ||
       !bound_zero(summary.parameters.front()) ||
-      !bound_zero(summary.result) || summary.requirements.size() != 2)
+      !bound_zero(summary.result) || summary.requirements.size() < 2 ||
+      summary.requirements.size() > 64 ||
+      summary.observable_effect_bits != 0 ||
+      !summary.observable_effect_tags.empty() || !summary.dependencies.empty())
     return false;
-  const auto& multiply = summary.requirements[0];
-  const auto& add = summary.requirements[1];
-  return multiply.operation == "operator:*" &&
-      add.operation == "operator:+" && multiply.parent == 0 &&
-      add.parent == 1 && multiply.dependencies.empty() &&
-      multiply.access == abi_v10::Access::Read &&
-      add.access == abi_v10::Access::Read &&
-      bound_zero(multiply.receiver) && bound_zero(add.receiver) &&
-      multiply.arguments.size() == 1 && add.arguments.size() == 1 &&
-      multiply.argument_access == vector<abi_v10::Access>{
-          abi_v10::Access::Read} &&
-      add.argument_access == vector<abi_v10::Access>{abi_v10::Access::Read} &&
-      integer(multiply.arguments.front()) && integer(add.arguments.front()) &&
-      multiply.result && add.result && bound_zero(*multiply.result) &&
-      bound_zero(*add.result);
+  for (std::size_t index = 0; index < summary.requirements.size(); ++index) {
+    const auto& requirement = summary.requirements[index];
+    const bool supported_operation = requirement.operation == "operator:+" ||
+        requirement.operation == "operator:-" ||
+        requirement.operation == "operator:*" ||
+        requirement.operation == "operator:/" ||
+        requirement.operation == "operator:%";
+    const auto accepted_numeric_type = [&](const abi_v10::WireType& type) {
+      return bound_zero(type) || integer(type);
+    };
+    if (!supported_operation || requirement.parent > index ||
+        requirement.access != abi_v10::Access::Read ||
+        requirement.arguments.size() != 1 ||
+        requirement.argument_access !=
+            vector<abi_v10::Access>{abi_v10::Access::Read} ||
+        !accepted_numeric_type(requirement.receiver) ||
+        !accepted_numeric_type(requirement.arguments.front()) ||
+        (!bound_zero(requirement.receiver) &&
+         !bound_zero(requirement.arguments.front())) ||
+        !requirement.result || !bound_zero(*requirement.result))
+      return false;
+    std::set<std::uint32_t> dependency_set;
+    for (const auto dependency : requirement.dependencies)
+      if (dependency == 0 || dependency > index ||
+          !dependency_set.insert(dependency).second)
+        return false;
+    const auto expected_parent = requirement.dependencies.size() == 1
+        ? requirement.dependencies.front() : 0;
+    if (requirement.parent != expected_parent) return false;
+  }
+  return true;
 }
 
 // Open numeric control-flow summaries carry the operation result as a
@@ -5234,50 +5285,102 @@ static void validate_abi_v10_checked_arithmetic_summary(
     error.source_file = function.source_file;
     throw error;
   };
-  const auto bound_var_zero = [](const abi_v10::WireType& type) {
-    return type.kind == abi_v10::WireTypeKind::BoundVar &&
-        type.ordinal == 0 && type.arguments.empty();
+  if (!abi_v10_checked_arithmetic_summary_candidate(summary) ||
+      !abi_v10::checked_body_hash_valid(summary.body_semantic_hash))
+    invalid("checked ABI-v10 arithmetic summary has an incomplete or inconsistent occurrence relation");
+}
+
+static bool abi_v10_checked_arithmetic_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements,
+    const moss::TypeContext& context) {
+  if (!abi_v10_checked_arithmetic_summary_candidate(summary) ||
+      statements.size() != 1 ||
+      statements.front().kind != checked_ir::StmtKind::Return ||
+      !statements.front().expr || !statements.front().type)
+    return false;
+  struct OperatorOccurrence {
+    const checked_ir::Expr* expression = nullptr;
+    std::vector<std::uint32_t> descendants;
   };
-  const auto primitive_int = [](const abi_v10::WireType& type) {
-    return type.kind == abi_v10::WireTypeKind::Primitive &&
-        type.identity == "int" && type.arguments.empty();
+  std::vector<OperatorOccurrence> operators;
+  std::function<bool(const checked_ir::Expr&, std::vector<std::uint32_t>&,
+                     unsigned)> visit = [&](const checked_ir::Expr& expression,
+        std::vector<std::uint32_t>& subtree, unsigned depth) {
+    if (depth > 64 || !expression.type) return false;
+    if (expression.kind == checked_ir::ExprKind::Binary) {
+      if (expression.operands.size() != 2) return false;
+      std::vector<std::uint32_t> descendants;
+      if (!visit(expression.operands[0], descendants, depth + 1) ||
+          !visit(expression.operands[1], descendants, depth + 1))
+        return false;
+      const auto operation = expression.binary_op == checked_ir::BinaryOp::Add
+          ? "operator:+" : expression.binary_op == checked_ir::BinaryOp::Sub
+          ? "operator:-" : expression.binary_op == checked_ir::BinaryOp::Mul
+          ? "operator:*" : expression.binary_op == checked_ir::BinaryOp::Div
+          ? "operator:/" : expression.binary_op == checked_ir::BinaryOp::Mod
+          ? "operator:%" : "";
+      if (!*operation) return false;
+      const auto index = static_cast<std::uint32_t>(operators.size());
+      operators.push_back({&expression, descendants});
+      subtree.insert(subtree.end(), descendants.begin(), descendants.end());
+      subtree.push_back(index);
+      return true;
+    }
+    if (!expression.operands.empty()) return false;
+    switch (expression.kind) {
+      case checked_ir::ExprKind::Parameter:
+      case checked_ir::ExprKind::IntegerLiteral:
+      case checked_ir::ExprKind::FloatLiteral:
+        return true;
+      default:
+        return false;
+    }
   };
-  if (summary.requirements.size() != 2 || summary.parameters.empty())
-    invalid("checked ABI-v10 arithmetic summary requirement chain is incomplete");
-  const auto& multiply = summary.requirements[0];
-  const auto& add = summary.requirements[1];
-  if (summary.variable_count != 1 ||
-      !bound_var_zero(summary.parameters[0]) ||
-      (summary.parameters.size() > 1 &&
-       !std::all_of(std::next(summary.parameters.begin()),
-                    summary.parameters.end(), [](const auto& parameter) {
-         return parameter.kind == abi_v10::WireTypeKind::Primitive &&
-             parameter.identity == "bool" && parameter.arguments.empty();
-       })) ||
-      !bound_var_zero(summary.result) ||
-      summary.parameter_access.size() != summary.parameters.size() ||
-      std::any_of(summary.parameter_access.begin(),
-                  summary.parameter_access.end(), [](abi_v10::Access access) {
-        return access != abi_v10::Access::Read;
-      }) ||
-      summary.observable_effect_bits != 0 ||
-      !summary.observable_effect_tags.empty() ||
-      !summary.dependencies.empty() ||
-      !abi_v10::checked_body_hash_valid(summary.body_semantic_hash) ||
-      multiply.operation != "operator:*" || add.operation != "operator:+" ||
-      multiply.parent != 0 || add.parent != 1 ||
-      multiply.access != abi_v10::Access::Read ||
-      add.access != abi_v10::Access::Read ||
-      !bound_var_zero(multiply.receiver) || !bound_var_zero(add.receiver) ||
-      multiply.arguments.size() != 1 || add.arguments.size() != 1 ||
-      multiply.argument_access.size() != 1 ||
-      add.argument_access.size() != 1 ||
-      multiply.argument_access[0] != abi_v10::Access::Read ||
-      add.argument_access[0] != abi_v10::Access::Read ||
-      !primitive_int(multiply.arguments[0]) ||
-      !primitive_int(add.arguments[0]) || !multiply.result || !add.result ||
-      !bound_var_zero(*multiply.result) || !bound_var_zero(*add.result))
-    invalid("checked ABI-v10 arithmetic summary has an inconsistent typed shape");
+  std::vector<std::uint32_t> root_operators;
+  if (!visit(*statements.front().expr, root_operators, 0) ||
+      operators.size() != summary.requirements.size() ||
+      !statements.front().expr->type->structurally_equal(
+          *statements.front().type))
+    return false;
+  for (std::size_t index = 0; index < operators.size(); ++index) {
+    const auto& occurrence = operators[index];
+    const auto& expression = *occurrence.expression;
+    const auto& requirement = summary.requirements[index];
+    const auto operation = expression.binary_op == checked_ir::BinaryOp::Add
+        ? "operator:+" : expression.binary_op == checked_ir::BinaryOp::Sub
+        ? "operator:-" : expression.binary_op == checked_ir::BinaryOp::Mul
+        ? "operator:*" : expression.binary_op == checked_ir::BinaryOp::Div
+        ? "operator:/" : expression.binary_op == checked_ir::BinaryOp::Mod
+        ? "operator:%" : "";
+    if (requirement.operation != operation || expression.operands.size() != 2)
+      return false;
+    const auto receiver = imported_abi_v10_type(
+        requirement.receiver, context, summary.variable_count);
+    const auto argument = imported_abi_v10_type(
+        requirement.arguments.front(), context, summary.variable_count);
+    const auto result = requirement.result
+        ? imported_abi_v10_type(*requirement.result, context,
+                                summary.variable_count)
+        : moss::TypeRef{};
+    if (!receiver || !argument || !result ||
+        !expression.operands[0].type || !expression.operands[1].type ||
+        !receiver->structurally_equal(*expression.operands[0].type) ||
+        !argument->structurally_equal(*expression.operands[1].type) ||
+        !result->structurally_equal(*expression.type))
+      return false;
+    std::vector<std::uint32_t> expected_dependencies;
+    for (const auto descendant : occurrence.descendants)
+      expected_dependencies.push_back(descendant + 1);
+    if (requirement.dependencies != expected_dependencies ||
+        requirement.parent != (expected_dependencies.size() == 1
+            ? expected_dependencies.front() : 0))
+      return false;
+  }
+  const auto summary_result = imported_abi_v10_type(
+      summary.result, context, summary.variable_count);
+  return summary_result && summary_result->structurally_equal(
+      *statements.front().expr->type);
 }
 
 // Stage-v10 H3 import projection. It derives an AST lowering view solely from
@@ -5318,6 +5421,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
       invalid("checked ABI-v10 body is detached from its provider summary");
     const abi_v10::Summary summary = abi_v10::read_summary(
         function.imported_checked_summary_payload);
+    const bool arithmetic_summary_candidate =
+        abi_v10_checked_arithmetic_summary_candidate(summary);
     const bool collection_summary_candidate =
         abi_v10_collection_loop_summary_candidate(summary);
     const bool generic_for_candidate =
@@ -5397,6 +5502,12 @@ static void project_imported_h3_checked_bodies(Program& program) {
         collection_summary_candidate &&
         abi_v10_collection_count_branch_body_candidate(
             summary, statements, *program.type_context);
+    const bool direct_arithmetic_return = statements.size() == 1 &&
+        statements.front().kind == checked_ir::StmtKind::Return;
+    if (arithmetic_summary_candidate && direct_arithmetic_return &&
+        !abi_v10_checked_arithmetic_body_candidate(
+            summary, statements, *program.type_context))
+      invalid("checked ABI-v10 arithmetic body does not match its exact operator occurrence relations");
     const bool collection_loop_candidate =
         collection_summary_candidate && !collection_count_branch_candidate;
     const bool contains_exceptional_control = [&] {
@@ -7171,75 +7282,59 @@ static void project_imported_h3_checked_bodies(Program& program) {
         invalid("checked ABI-v10 generic field body identity or type is mismatched");
       lowered = function.params.front().name + "." + expression.member_name;
       direct_return_projection = direct_return_body;
-    } else if (statements.size() == 1 &&
-        statements.front().kind == checked_ir::StmtKind::Return &&
-        expression.kind == checked_ir::ExprKind::Binary &&
-        expression.binary_op == checked_ir::BinaryOp::Add) {
-      // Keep arithmetic import deliberately limited to the checked generic
-      // T * Int + Int form. Types and the operation chain come from the
-      // sealed summary; only the executable spelling is reconstructed from
-      // the decoded IR values.
-      const auto int_type = moss::Type::primitive("int");
-      const auto requirements = imported_abi_v10_requirements(
+    } else if (direct_arithmetic_return &&
+        abi_v10_checked_arithmetic_summary_candidate(summary) &&
+        body.dependencies.empty()) {
+      if (!abi_v10_checked_arithmetic_body_candidate(
+              summary, statements, *program.type_context) ||
+          summary.parameters.size() != 1 || parameters.size() != 1 ||
+          !result->structurally_equal(*parameters.front()) ||
+          !abi_v10_effects_pure(function.observable_effects))
+        invalid("checked ABI-v10 arithmetic body disagrees with its typed occurrence requirements");
+      (void)imported_abi_v10_requirements(
           summary, function, *program.type_context);
-      const bool summary_shape = summary.variable_count == 1 &&
-          parameters.size() == 1 &&
-          parameters.front()->kind == moss::TypeKind::InferenceVar &&
-          parameters.front()->var_id.session_id == 0 &&
-          parameters.front()->var_id.owner_id == 0 &&
-          parameters.front()->var_id.ordinal == 0 &&
-          result->structurally_equal(*parameters.front()) &&
-          function.params.size() == 1 &&
-          plain_identifier(function.params.front().name);
-      if (!summary_shape || requirements.size() != 2)
-        invalid("checked ABI-v10 arithmetic summary shape is unsupported");
-      const auto& multiply_requirement = requirements[0];
-      const auto& add_requirement = requirements[1];
-      auto valid_requirement = [&](const moss::Requirement& requirement,
-                                   const string& operation) {
-        return requirement.kind == moss::RequirementKind::Operator &&
-            requirement.target_id == operation && requirement.subject &&
-            requirement.subject->structurally_equal(*parameters.front()) &&
-            requirement.arguments.size() == 1 &&
-            requirement.arguments.front() &&
-            requirement.arguments.front()->structurally_equal(*int_type) &&
-            requirement.result &&
-            (*requirement.result)->structurally_equal(*parameters.front()) &&
-            requirement.access == moss::AccessMode::Read &&
-            requirement.argument_access ==
-                vector<moss::AccessMode>{moss::AccessMode::Read};
+      std::function<std::optional<string>(const checked_ir::Expr&, unsigned)>
+          render = [&](const checked_ir::Expr& node,
+                       unsigned depth) -> std::optional<string> {
+        if (depth > 64 || !node.type) return std::nullopt;
+        if (node.kind == checked_ir::ExprKind::Parameter) {
+          if (node.ordinal >= function.params.size() ||
+              !node.type->structurally_equal(*parameters[node.ordinal]))
+            return std::nullopt;
+          return function.params[node.ordinal].name;
+        }
+        if (node.kind == checked_ir::ExprKind::IntegerLiteral) {
+          if (!node.operands.empty() ||
+              !node.type->structurally_equal(*moss::Type::primitive("int")) ||
+              node.literal_value.empty())
+            return std::nullopt;
+          return node.literal_value;
+        }
+        if (node.kind == checked_ir::ExprKind::FloatLiteral) {
+          if (!node.operands.empty() ||
+              !node.type->structurally_equal(*moss::Type::primitive("float")) ||
+              node.literal_value.empty())
+            return std::nullopt;
+          return node.literal_value;
+        }
+        if (node.kind != checked_ir::ExprKind::Binary ||
+            node.operands.size() != 2) return std::nullopt;
+        string operation;
+        if (node.binary_op == checked_ir::BinaryOp::Add) operation = " + ";
+        else if (node.binary_op == checked_ir::BinaryOp::Sub) operation = " - ";
+        else if (node.binary_op == checked_ir::BinaryOp::Mul) operation = " * ";
+        else if (node.binary_op == checked_ir::BinaryOp::Div) operation = " / ";
+        else if (node.binary_op == checked_ir::BinaryOp::Mod) operation = " % ";
+        else return std::nullopt;
+        auto left = render(node.operands[0], depth + 1);
+        auto right = render(node.operands[1], depth + 1);
+        if (!left || !right) return std::nullopt;
+        return "(" + *left + operation + *right + ")";
       };
-      if (!valid_requirement(multiply_requirement, "operator:*") ||
-          !valid_requirement(add_requirement, "operator:+") ||
-          multiply_requirement.id == add_requirement.id ||
-          multiply_requirement.parent_requirement_id ||
-          !add_requirement.parent_requirement_id ||
-          *add_requirement.parent_requirement_id != multiply_requirement.id)
-        invalid("checked ABI-v10 arithmetic requirements disagree with body");
-
-      const bool add_shape = expression.operands.size() == 2 &&
-          expression.type->structurally_equal(*parameters.front()) &&
-          expression.operands[0].kind == checked_ir::ExprKind::Binary &&
-          expression.operands[0].binary_op == checked_ir::BinaryOp::Mul &&
-          expression.operands[0].operands.size() == 2;
-      if (!add_shape)
-        invalid("checked ABI-v10 arithmetic expression is unsupported");
-      const auto& multiplication = expression.operands[0];
-      const auto& parameter = multiplication.operands[0];
-      const auto& multiplier = multiplication.operands[1];
-      const auto& addend = expression.operands[1];
-      if (!multiplication.type->structurally_equal(*parameters.front()) ||
-          parameter.kind != checked_ir::ExprKind::Parameter ||
-          parameter.ordinal != 0 ||
-          !parameter.type->structurally_equal(*parameters.front()) ||
-          multiplier.kind != checked_ir::ExprKind::IntegerLiteral ||
-          !multiplier.type->structurally_equal(*int_type) ||
-          addend.kind != checked_ir::ExprKind::IntegerLiteral ||
-          !addend.type->structurally_equal(*int_type))
-        invalid("checked ABI-v10 arithmetic node types or parameter are mismatched");
-
-      lowered = function.params.front().name + " * " +
-          multiplier.literal_value + " + " + addend.literal_value;
+      auto rendered = render(*statements.front().expr, 0);
+      if (!rendered)
+        invalid("checked ABI-v10 arithmetic expression contains an unsupported occurrence");
+      lowered = *rendered;
       Stmt returned;
       returned.kind = Stmt::Kind::Return;
       returned.line = std::max(function.line, 1);
@@ -7861,6 +7956,7 @@ class Checker {
     { CompilerStageTimer timer("concrete_graph"); build_concrete_domain_graph(); }
     check_method_ownership();
     for (const auto& f : p_.functions) check_function(f);
+    refresh_open_arithmetic_summaries_from_checked_types();
     refresh_open_collection_summaries_from_checked_types();
     refresh_open_pipeline_map_summaries_from_checked_types();
     refresh_open_map_mutation_summaries_from_checked_types();
@@ -9965,76 +10061,218 @@ class Checker {
       function.open_summary->complete = false;
       return false;
     }
-    // Promote the retained open operation relation into the callable's
-    // ordinary requirement evidence. This covers branch-local operations
-    // whose result cannot be discovered by the older single-return scanner.
-    // The operands and result must be the exact checker occurrences.
+    // Promote checker-retained arithmetic occurrences into ordinary summary
+    // requirements. The occurrence graph and operation facts are the sole
+    // source of operator identity, operand roles, and TypeRefs here.
+    std::map<std::uint32_t, string> arithmetic_requirement_ids;
+    auto project_arithmetic_type = [&](const moss::TypeRef& input)
+        -> moss::TypeRef {
+      auto resolved = input ? state.solver.resolve(input) : nullptr;
+      if (!resolved) return nullptr;
+      for (std::size_t index = 0; index < function.params.size(); ++index) {
+        if (!function.params[index].type.empty() ||
+            index >= function.open_summary->parameter_types.size())
+          continue;
+        auto body_parameter = state.resolved_local(function.params[index].name);
+        body_parameter = body_parameter
+            ? state.solver.resolve(body_parameter) : nullptr;
+        if (body_parameter && body_parameter->kind ==
+                moss::TypeKind::InferenceVar &&
+            resolved->kind == moss::TypeKind::InferenceVar &&
+            body_parameter->var_id == resolved->var_id)
+          return function.open_summary->parameter_types[index];
+      }
+      return resolved->is_closed() ? resolved : nullptr;
+    };
+    auto operation_descends_from = [&](std::uint32_t node,
+                                       std::uint32_t ancestor) {
+      std::set<std::uint32_t> visited;
+      while (node < state.expression_occurrences.size() &&
+             visited.insert(node).second) {
+        if (node == ancestor) return true;
+        const auto parent = state.expression_occurrences[node].parent_id;
+        if (parent == UINT32_MAX) return false;
+        node = parent;
+      }
+      return false;
+    };
+    const bool supported_occurrence_body =
+        (function.body.size() == 1 &&
+         function.body.front().kind == Stmt::Kind::Return) ||
+        std::any_of(function.body.begin(), function.body.end(),
+            [](const Stmt& statement) {
+          return statement.kind == Stmt::Kind::If ||
+              statement.kind == Stmt::Kind::Match;
+        });
+    const bool has_exceptional_control =
+        std::any_of(function.body.begin(), function.body.end(),
+            [](const Stmt& statement) {
+          return statement.kind == Stmt::Kind::Try ||
+              statement.kind == Stmt::Kind::Raise;
+        });
+    const auto int_type = moss::Type::primitive("int");
     for (const auto& operation : state.open_operations) {
-      if (operation.operation_id != "operator:+" ||
+      if (!supported_occurrence_body ||
+          !starts_with(operation.operation_id, "operator:") ||
+          operation.arguments.size() != 1 || !operation.result ||
           operation.expression_occurrence_id >=
               state.expression_occurrences.size())
         continue;
-      const auto& expression =
-          state.expression_occurrences[operation.expression_occurrence_id];
-      const auto left = std::find_if(state.expression_occurrences.begin(),
-          state.expression_occurrences.end(), [&](const auto& candidate) {
-        return candidate.parent_id == expression.id &&
-            candidate.child_role == "left";
-      });
-      const auto right = std::find_if(state.expression_occurrences.begin(),
-          state.expression_occurrences.end(), [&](const auto& candidate) {
-        return candidate.parent_id == expression.id &&
-            candidate.child_role == "right";
-      });
-      const auto receiver = state.solver.resolve(operation.receiver);
-      const auto argument = operation.arguments.size() == 1
-          ? state.solver.resolve(operation.arguments.front()) : nullptr;
-      const auto result = operation.result
-          ? state.solver.resolve(operation.result) : nullptr;
-      const auto left_type = left != state.expression_occurrences.end() &&
-              left->checked_type
-          ? state.solver.resolve(left->checked_type) : nullptr;
-      const auto right_type = right != state.expression_occurrences.end() &&
-              right->checked_type
-          ? state.solver.resolve(right->checked_type) : nullptr;
-      const auto callable_value_type =
-          function.open_summary->parameter_types.empty()
-              ? moss::TypeRef{} : function.open_summary->parameter_types.front();
-      const auto int_type = moss::Type::primitive("int");
+      const auto& expression = state.expression_occurrences[
+          operation.expression_occurrence_id];
+      const string operation_name = operation.operation_id.substr(9);
       if (expression.kind !=
               BodyTypeState::ExpressionOccurrence::Kind::Binary ||
-          expression.operation_id != "+" || left == state.expression_occurrences.end() ||
-          right == state.expression_occurrences.end() || !left->checked_type ||
-          !right->checked_type || !left_type || !right_type || !receiver ||
-          !argument || !result || !callable_value_type ||
-          !receiver->structurally_equal(*int_type) ||
-          argument->kind != moss::TypeKind::InferenceVar ||
-          !result->structurally_equal(*argument) ||
-          callable_value_type->kind != moss::TypeKind::InferenceVar ||
-          !left_type->structurally_equal(*receiver) ||
-          !right_type->structurally_equal(*argument))
+          expression.operation_id != operation_name ||
+          (operation_name != "+" && operation_name != "-" &&
+           operation_name != "*" && operation_name != "/" &&
+           operation_name != "%" && operation_name != "<" &&
+           operation_name != ">" && operation_name != "<=" &&
+           operation_name != ">="))
         continue;
+      const BodyTypeState::ExpressionOccurrence* left = nullptr;
+      const BodyTypeState::ExpressionOccurrence* right = nullptr;
+      std::size_t left_count = 0, right_count = 0;
+      for (const auto& child : state.expression_occurrences) {
+        if (child.parent_id != expression.id) continue;
+        if (child.child_role == "left") { left = &child; ++left_count; }
+        if (child.child_role == "right") { right = &child; ++right_count; }
+      }
+      const auto receiver = state.solver.resolve(operation.receiver);
+      const auto argument = state.solver.resolve(operation.arguments.front());
+      const auto result = state.solver.resolve(operation.result);
+      const auto left_type = left && left->checked_type
+          ? state.solver.resolve(left->checked_type) : nullptr;
+      const auto right_type = right && right->checked_type
+          ? state.solver.resolve(right->checked_type) : nullptr;
+      const auto result_type = project_arithmetic_type(operation.result);
+      const auto receiver_type = project_arithmetic_type(operation.receiver);
+      const auto argument_type =
+          project_arithmetic_type(operation.arguments.front());
+      if (left_count != 1 || right_count != 1 || !left || !right ||
+          !receiver || !argument || !result || !left_type || !right_type ||
+          !result_type || !receiver_type || !argument_type ||
+          !left->checked_type || !right->checked_type ||
+          !left_type->structurally_equal(*receiver) ||
+          !right_type->structurally_equal(*argument) ||
+          !expression.checked_type ||
+          !state.solver.resolve(expression.checked_type) ||
+          !state.solver.resolve(expression.checked_type)->structurally_equal(
+              *result))
+        continue;
+      const auto generic_type = function.open_summary->parameter_types.empty()
+          ? moss::TypeRef{} : function.open_summary->parameter_types.front();
+      const bool arithmetic_operator = operation_name == "+" ||
+          operation_name == "-" || operation_name == "*" ||
+          operation_name == "/" || operation_name == "%";
+      const bool comparison_operator = operation_name == "<" ||
+          operation_name == ">" || operation_name == "<=" ||
+          operation_name == ">=";
+      // Raise/recover retains its comparison through the same checked
+      // occurrence graph in the exceptional summary path. Keep a second
+      // generic occurrence requirement from making that relation ambiguous.
+      if (comparison_operator && has_exceptional_control) continue;
+      const auto bool_type = moss::Type::primitive("bool");
+      const bool valid_result = generic_type &&
+          (arithmetic_operator
+              ? result_type->structurally_equal(*generic_type)
+              : comparison_operator &&
+                  result_type->structurally_equal(*bool_type));
+      const bool numeric_operands = generic_type &&
+          (receiver_type->structurally_equal(*generic_type) ||
+           receiver_type->structurally_equal(*int_type)) &&
+          (argument_type->structurally_equal(*generic_type) ||
+           argument_type->structurally_equal(*int_type)) &&
+          (receiver_type->structurally_equal(*generic_type) ||
+           argument_type->structurally_equal(*generic_type));
+      if ((!arithmetic_operator && !comparison_operator) ||
+          !valid_result || !numeric_operands) continue;
       const string requirement_id = function.semantic_callable_id +
           ":requirement:checked-occurrence:" +
           std::to_string(operation.expression_occurrence_id);
-      auto existing = std::find_if(function.open_summary->requirements.begin(),
-          function.open_summary->requirements.end(), [&](const auto& item) {
-        return item.id == requirement_id;
-      });
-      if (existing != function.open_summary->requirements.end()) continue;
+      if (std::any_of(function.open_summary->requirements.begin(),
+              function.open_summary->requirements.end(), [&](const auto& item) {
+            return item.id == requirement_id;
+          }))
+        continue;
       moss::Requirement requirement;
       requirement.id = requirement_id;
       requirement.kind = moss::RequirementKind::Operator;
-      requirement.target_id = "operator:+";
-      requirement.subject = receiver;
-      requirement.arguments.push_back(callable_value_type);
+      requirement.target_id = operation.operation_id;
+      requirement.subject = receiver_type;
+      requirement.arguments.push_back(argument_type);
       requirement.argument_access.push_back(moss::AccessMode::Read);
-      requirement.result = callable_value_type;
+      requirement.result = result_type;
       requirement.expression_occurrence_id = expression.id;
       requirement.origin = {function.open_summary->origin.module_id,
           function.source_file, expression.line, 1,
           function.semantic_callable_id, requirement_id};
+      arithmetic_requirement_ids.emplace(expression.id, requirement_id);
       function.open_summary->requirements.push_back(std::move(requirement));
+    }
+    std::map<string, std::size_t> promoted_operation_counts;
+    for (const auto& item : arithmetic_requirement_ids) {
+      const auto occurrence = item.first;
+      const auto fact = std::find_if(state.open_operations.begin(),
+          state.open_operations.end(), [&](const auto& operation) {
+        return operation.expression_occurrence_id == occurrence &&
+            starts_with(operation.operation_id, "operator:");
+      });
+      if (fact != state.open_operations.end())
+        ++promoted_operation_counts[fact->operation_id];
+    }
+    for (const auto& promoted : promoted_operation_counts) {
+      const auto checked_fact_count = std::count_if(
+          state.open_operations.begin(), state.open_operations.end(),
+          [&](const auto& operation) {
+        return operation.operation_id == promoted.first;
+      });
+      if (static_cast<std::size_t>(checked_fact_count) != promoted.second)
+        continue;
+      function.open_summary->requirements.erase(
+          std::remove_if(function.open_summary->requirements.begin(),
+              function.open_summary->requirements.end(),
+              [&](const moss::Requirement& existing) {
+        return existing.expression_occurrence_id == UINT32_MAX &&
+            existing.kind == moss::RequirementKind::Operator &&
+            existing.target_id == promoted.first;
+      }), function.open_summary->requirements.end());
+    }
+    for (auto& requirement : function.open_summary->requirements) {
+      const auto occurrence = requirement.expression_occurrence_id;
+      if (!arithmetic_requirement_ids.count(occurrence)) continue;
+      const auto operation = std::find_if(state.open_operations.begin(),
+          state.open_operations.end(), [&](const auto& candidate) {
+        return candidate.expression_occurrence_id == occurrence &&
+            candidate.operation_id == requirement.target_id;
+      });
+      if (operation == state.open_operations.end()) continue;
+      std::vector<std::uint32_t> dependencies =
+          operation->dependency_occurrence_ids;
+      if (dependencies.empty())
+        for (const auto& candidate : state.open_operations) {
+          const auto descendant = candidate.expression_occurrence_id;
+          if (descendant != occurrence &&
+              arithmetic_requirement_ids.count(descendant) &&
+              operation_descends_from(descendant, occurrence))
+            dependencies.push_back(descendant);
+        }
+      std::set<std::uint32_t> unique_dependencies;
+      for (const auto dependency : dependencies) {
+        const auto linked = arithmetic_requirement_ids.find(dependency);
+        if (dependency == occurrence ||
+            !unique_dependencies.insert(dependency).second ||
+            linked == arithmetic_requirement_ids.end()) {
+          requirement.dependency_requirement_ids.clear();
+          break;
+        }
+        requirement.dependency_requirement_ids.push_back(linked->second);
+      }
+      if (requirement.dependency_requirement_ids.size() == 1)
+        requirement.parent_requirement_id =
+            requirement.dependency_requirement_ids.front();
+      else if (requirement.dependency_requirement_ids.size() > 1)
+        requirement.parent_requirement_id.reset();
     }
     const auto& summary = *function.open_summary;
     const auto is_bound_variable = [](const moss::TypeRef& type,
@@ -12560,8 +12798,6 @@ class Checker {
       bool complete = true;
       bool unresolved_open_generic_return = false;
       bool complete_open_arithmetic_return = false;
-      std::optional<string> legacy_return_operator_id;
-      std::optional<string> legacy_return_operator_expression;
       for (const auto& parameter : function.params) {
         moss::TypeRef term = parameter.type.empty() ? bound() :
             type_term(parameter.type);
@@ -12824,9 +13060,6 @@ class Checker {
           function.body.size() == 1 &&
               function.body.front().kind == Stmt::Kind::Return
               ? &function.body.front().a : nullptr;
-      const int single_result_line = function.result_expression
-          ? function.result_line : function.body.size() == 1
-              ? function.body.front().line : function.line;
       if (!summary.result_type && single_result_expression &&
           (function.body.empty() ||
            (function.body.size() == 1 &&
@@ -12858,237 +13091,6 @@ class Checker {
               }
             }
           }
-        }
-        if (!summary.result_type) {
-          if (auto binary = split_binary(expression, {"+"})) {
-            for (const auto& parameter : function.params) {
-              const string left = trim(binary->first);
-              const string right = trim(binary->second);
-              const bool parameter_left = left == parameter.name;
-              const bool parameter_right = right == parameter.name;
-              if (parameter_left == parameter_right) continue;
-              const string& operand = parameter_left ? right : left;
-              if (constraint_expression_type(function, operand) !=
-                  std::optional<string>("int")) continue;
-              auto subject = parameter_variables.find(parameter.name);
-              if (subject == parameter_variables.end() || !subject->second)
-                continue;
-              summary.result_type = subject->second;
-              moss::Requirement requirement;
-              requirement.id = function.semantic_callable_id +
-                  ":requirement:return-operator";
-              requirement.kind = moss::RequirementKind::Operator;
-              requirement.target_id = "operator:+";
-              requirement.subject = subject->second;
-              requirement.arguments.push_back(moss::Type::primitive("int"));
-              requirement.argument_access.push_back(moss::AccessMode::Read);
-              requirement.result = subject->second;
-              requirement.origin = {summary.origin.module_id,
-                                    function.source_file, single_result_line,
-                                    1, function.semantic_callable_id,
-                                    requirement.id};
-              legacy_return_operator_id = requirement.id;
-              legacy_return_operator_expression =
-                  strip_redundant_outer_parentheses(expression);
-              summary.requirements.push_back(std::move(requirement));
-              break;
-            }
-          }
-        }
-      }
-      // Retain the typed operator edges in an open arithmetic return even
-      // when another expression fact (for example, the complete return type)
-      // is still unavailable. This records evidence already expressible by
-      // Requirement; it does not complete the summary or admit an operation.
-      if (single_result_expression && function.body.size() == 1 &&
-          function.body.front().kind == Stmt::Kind::Return) {
-        struct OpenArithmeticExpr {
-          moss::TypeRef type;
-          std::optional<string> requirement_id;
-        };
-        auto parameter_for_type = [&](const moss::TypeRef& type)
-            -> std::optional<string> {
-          if (!type) return std::nullopt;
-          for (const auto& parameter : function.params) {
-            if (!parameter.type.empty()) continue;
-            auto entry = parameter_variables.find(parameter.name);
-            if (entry != parameter_variables.end() && entry->second &&
-                entry->second->kind == moss::TypeKind::InferenceVar &&
-                entry->second->structurally_equal(*type))
-              return parameter.name;
-          }
-          return std::nullopt;
-        };
-        std::uint32_t arithmetic_requirement_ordinal = 0;
-        vector<moss::Requirement> captured_arithmetic_requirements;
-        std::map<string, string> captured_arithmetic_expressions;
-        std::function<std::optional<OpenArithmeticExpr>(const string&)> retain =
-            [&](const string& source) -> std::optional<OpenArithmeticExpr> {
-          const string expression = strip_redundant_outer_parentheses(
-              trim(source));
-          if (auto parameter = parameter_variables.find(expression);
-              parameter != parameter_variables.end() && parameter->second)
-            return OpenArithmeticExpr{parameter->second, std::nullopt};
-          if (auto spelling = constraint_expression_type(function, expression)) {
-            auto literal_type = type_term(*spelling);
-            if (literal_type && literal_type->is_closed())
-              return OpenArithmeticExpr{literal_type, std::nullopt};
-          }
-          static const vector<vector<string>> arithmetic_precedence = {
-              {"+", "-"}, {"*", "/", "%"}};
-          for (const auto& operators : arithmetic_precedence) {
-            auto binary = split_binary(expression, operators);
-            if (!binary) continue;
-            string operation;
-            for (const auto& candidate : operators) {
-              auto matching = split_binary(expression, {candidate});
-              if (matching && *matching == *binary) {
-                operation = candidate;
-                break;
-              }
-            }
-            if (operation.empty()) return std::nullopt;
-            auto left = retain(binary->first);
-            auto right = retain(binary->second);
-            if (!left || !right) return std::nullopt;
-            auto left_parameter = parameter_for_type(left->type);
-            auto right_parameter = parameter_for_type(right->type);
-            const bool left_is_int = left->type->kind == moss::TypeKind::Primitive &&
-                left->type->name == "int";
-            const bool right_is_int = right->type->kind == moss::TypeKind::Primitive &&
-                right->type->name == "int";
-            moss::TypeRef subject;
-            moss::TypeRef argument;
-            if (left_parameter && right_is_int) {
-              subject = left->type;
-              argument = right->type;
-            } else if (right_parameter && left_is_int) {
-              subject = right->type;
-              argument = left->type;
-            } else {
-              return std::nullopt;
-            }
-            if (left_parameter && right_parameter) return std::nullopt;
-            const string requirement_id = function.semantic_callable_id +
-                ":requirement:checked-arithmetic:" +
-                std::to_string(arithmetic_requirement_ordinal++);
-            moss::Requirement requirement;
-            requirement.id = requirement_id;
-            requirement.kind = moss::RequirementKind::Operator;
-            requirement.target_id = "operator:" + operation;
-            requirement.subject = subject;
-            requirement.arguments.push_back(argument);
-            requirement.argument_access.push_back(moss::AccessMode::Read);
-            requirement.result = subject;
-            const auto& return_statement = function.body.front();
-            requirement.origin = {summary.origin.module_id,
-                                  function.source_file,
-                                  return_statement.line, 1,
-                                  function.semantic_callable_id,
-                                  requirement_id};
-            requirement.parent_requirement_id = left->requirement_id
-                ? left->requirement_id : right->requirement_id;
-            captured_arithmetic_expressions.emplace(requirement_id,
-                                                     expression);
-            captured_arithmetic_requirements.push_back(std::move(requirement));
-            return OpenArithmeticExpr{subject, requirement_id};
-          }
-          return std::nullopt;
-        };
-        auto arithmetic_result = retain(*single_result_expression);
-        if (arithmetic_result && arithmetic_result->requirement_id &&
-            !captured_arithmetic_requirements.empty()) {
-          // The checked expression walker above derives an open result only
-          // alongside a typed Requirement for every generic arithmetic node.
-          // Validate that retained chain before using its result as the
-          // callable's open result type. This keeps the TypeRef authoritative
-          // and prevents an unsupported or partially captured expression
-          // from completing the summary.
-          bool requirements_complete =
-              captured_arithmetic_requirements.back().id ==
-                  *arithmetic_result->requirement_id;
-          std::set<string> prior_requirement_ids;
-          for (size_t index = 0;
-               requirements_complete &&
-                   index < captured_arithmetic_requirements.size(); ++index) {
-            const auto& requirement = captured_arithmetic_requirements[index];
-            requirements_complete =
-                requirement.kind == moss::RequirementKind::Operator &&
-                !requirement.target_id.empty() && requirement.subject &&
-                requirement.subject->structurally_equal(
-                    *arithmetic_result->type) &&
-                requirement.arguments.size() == 1 &&
-                requirement.arguments.front() &&
-                requirement.arguments.front()->structurally_equal(
-                    *moss::Type::primitive("int")) &&
-                requirement.result &&
-                (*requirement.result)->structurally_equal(
-                    *arithmetic_result->type) &&
-                !requirement.id.empty() &&
-                !prior_requirement_ids.count(requirement.id);
-            if (index == 0) {
-              requirements_complete = requirements_complete &&
-                  !requirement.parent_requirement_id;
-            } else {
-              requirements_complete = requirements_complete &&
-                  requirement.parent_requirement_id &&
-                  prior_requirement_ids.count(
-                      *requirement.parent_requirement_id) == 1;
-            }
-            prior_requirement_ids.insert(requirement.id);
-          }
-          if (requirements_complete)
-            summary.result_type =
-                *captured_arithmetic_requirements.back().result;
-          complete_open_arithmetic_return = requirements_complete;
-          // The older return-expression inference can retain one broad `+`
-          // obligation before this checked walker runs. Replace that specific
-          // fallback only when the complete checked arithmetic chain contains
-          // the same typed operation. Other requirements, including distinct
-          // arithmetic nodes in a chain, remain untouched.
-          if (requirements_complete && legacy_return_operator_id &&
-              legacy_return_operator_expression) {
-            auto legacy = std::find_if(summary.requirements.begin(),
-                summary.requirements.end(), [&](const auto& requirement) {
-              return requirement.id == *legacy_return_operator_id;
-            });
-            auto same_typed_operation = [&](const auto& left,
-                                            const auto& right) {
-              if (left.kind != moss::RequirementKind::Operator ||
-                  right.kind != moss::RequirementKind::Operator ||
-                  left.target_id != right.target_id || !left.subject ||
-                  !right.subject ||
-                  !left.subject->structurally_equal(*right.subject) ||
-                  left.arguments.size() != right.arguments.size() ||
-                  left.access != right.access ||
-                  left.argument_access != right.argument_access ||
-                  static_cast<bool>(left.result) !=
-                      static_cast<bool>(right.result))
-                return false;
-              for (size_t index = 0; index < left.arguments.size(); ++index)
-                if (!left.arguments[index] || !right.arguments[index] ||
-                    !left.arguments[index]->structurally_equal(
-                        *right.arguments[index]))
-                  return false;
-              return !left.result ||
-                  (*left.result)->structurally_equal(**right.result);
-            };
-            if (legacy != summary.requirements.end() &&
-                std::any_of(captured_arithmetic_requirements.begin(),
-                            captured_arithmetic_requirements.end(),
-                            [&](const auto& checked) {
-                  auto expression = captured_arithmetic_expressions.find(
-                      checked.id);
-                  return expression != captured_arithmetic_expressions.end() &&
-                      expression->second ==
-                          *legacy_return_operator_expression &&
-                      same_typed_operation(*legacy, checked);
-                }))
-              summary.requirements.erase(legacy);
-          }
-          summary.requirements.insert(summary.requirements.end(),
-              std::make_move_iterator(captured_arithmetic_requirements.begin()),
-              std::make_move_iterator(captured_arithmetic_requirements.end()));
         }
       }
       for (size_t ordinal = 0; ordinal < function.constraints.size(); ++ordinal) {
@@ -13250,6 +13252,162 @@ class Checker {
   // The earlier signature pass deliberately cannot close this shape: it sees
   // `items[i]`'s local index spelling before the body solver has assigned that
   // local its Int TypeRef, and it does not own equality's deferred type link.
+  void refresh_open_arithmetic_summaries_from_checked_types() {
+    const auto is_arithmetic = [](const string& operation) {
+      return operation == "+" || operation == "-" || operation == "*" ||
+          operation == "/" || operation == "%";
+    };
+    const auto int_type = moss::Type::primitive("int");
+    for (auto& function : p_.functions) {
+      if (!function.open_summary || function.open_summary->scheme_complete ||
+          function.body.size() != 1 ||
+          function.body.front().kind != Stmt::Kind::Return)
+        continue;
+      auto retained = checked_body_states_.find(&function.body);
+      if (retained == checked_body_states_.end() || !retained->second) continue;
+      auto& state = *retained->second;
+      const auto statement = state.statement_occurrence_ids.find(
+          &function.body.front());
+      if (statement == state.statement_occurrence_ids.end()) continue;
+      const auto root_slot = state.expression_root_slots.find(
+          {statement->second, "return-value"});
+      if (root_slot == state.expression_root_slots.end() ||
+          root_slot->second >= state.expression_occurrences.size())
+        continue;
+      const auto& root = state.expression_occurrences[root_slot->second];
+      if (root.kind != BodyTypeState::ExpressionOccurrence::Kind::Binary ||
+          !is_arithmetic(root.operation_id) || !root.checked_type ||
+          !state.expression_occurrence_ledger_complete)
+        continue;
+      std::optional<std::size_t> parameter_ordinal;
+      const auto root_type = state.solver.resolve(root.checked_type);
+      for (std::size_t index = 0; root_type && index < function.params.size();
+           ++index) {
+        if (!function.params[index].type.empty() ||
+            index >= function.open_summary->parameter_types.size())
+          continue;
+        auto parameter_type = state.resolved_local(function.params[index].name);
+        parameter_type = parameter_type
+            ? state.solver.resolve(parameter_type) : nullptr;
+        if (parameter_type && parameter_type->kind ==
+                moss::TypeKind::InferenceVar &&
+            root_type->kind == moss::TypeKind::InferenceVar &&
+            parameter_type->var_id == root_type->var_id) {
+          if (parameter_ordinal) {
+            parameter_ordinal.reset();
+            break;
+          }
+          parameter_ordinal = index;
+        }
+      }
+      if (!parameter_ordinal) continue;
+      const auto result_scheme =
+          function.open_summary->parameter_types[*parameter_ordinal];
+      if (!result_scheme) continue;
+
+      std::set<std::uint32_t> arithmetic_occurrences;
+      bool valid = true;
+      for (const auto& occurrence : state.expression_occurrences) {
+        std::uint32_t ancestor = occurrence.id;
+        std::set<std::uint32_t> visited;
+        while (ancestor != UINT32_MAX && ancestor != root.id &&
+               ancestor < state.expression_occurrences.size() &&
+               visited.insert(ancestor).second)
+          ancestor = state.expression_occurrences[ancestor].parent_id;
+        if (ancestor != root.id || occurrence.kind !=
+                BodyTypeState::ExpressionOccurrence::Kind::Binary ||
+            !is_arithmetic(occurrence.operation_id))
+          continue;
+        arithmetic_occurrences.insert(occurrence.id);
+        std::vector<const BodyTypeState::ExpressionOccurrence*> left, right;
+        for (const auto& child : state.expression_occurrences) {
+          if (child.parent_id != occurrence.id) continue;
+          if (child.child_role == "left") left.push_back(&child);
+          if (child.child_role == "right") right.push_back(&child);
+        }
+        const auto facts = std::count_if(state.open_operations.begin(),
+            state.open_operations.end(), [&](const auto& operation) {
+          return operation.expression_occurrence_id == occurrence.id &&
+              operation.operation_id == "operator:" + occurrence.operation_id;
+        });
+        if (facts != 1 || left.size() != 1 || right.size() != 1 ||
+            !occurrence.checked_type || !left.front()->checked_type ||
+            !right.front()->checked_type) {
+          valid = false;
+          break;
+        }
+        const auto operation = std::find_if(state.open_operations.begin(),
+            state.open_operations.end(), [&](const auto& candidate) {
+          return candidate.expression_occurrence_id == occurrence.id &&
+              candidate.operation_id == "operator:" + occurrence.operation_id;
+        });
+        const auto result = operation == state.open_operations.end() ||
+                !operation->result
+            ? moss::TypeRef{} : state.solver.resolve(operation->result);
+        const auto receiver = operation == state.open_operations.end()
+            ? moss::TypeRef{} : state.solver.resolve(operation->receiver);
+        const auto argument = operation == state.open_operations.end() ||
+                operation->arguments.size() != 1
+            ? moss::TypeRef{} : state.solver.resolve(operation->arguments.front());
+        auto parameter_type = state.solver.resolve(
+            state.resolved_local(function.params[*parameter_ordinal].name));
+        const auto left_type = state.solver.resolve(left.front()->checked_type);
+        const auto right_type = state.solver.resolve(right.front()->checked_type);
+        if (!result || !receiver || !argument || !parameter_type ||
+            !left_type || !right_type ||
+            !result->structurally_equal(*parameter_type) ||
+            !receiver->structurally_equal(*left_type) ||
+            !argument->structurally_equal(*right_type) ||
+            !state.solver.resolve(occurrence.checked_type)->structurally_equal(
+                *result)) {
+          valid = false;
+          break;
+        }
+        const bool left_is_parameter = left_type->kind ==
+                moss::TypeKind::InferenceVar &&
+            left_type->var_id == parameter_type->var_id;
+        const bool right_is_parameter = right_type->kind ==
+                moss::TypeKind::InferenceVar &&
+            right_type->var_id == parameter_type->var_id;
+        const bool left_is_int = left_type->structurally_equal(*int_type);
+        const bool right_is_int = right_type->structurally_equal(*int_type);
+        if ((!left_is_parameter && !left_is_int) ||
+            (!right_is_parameter && !right_is_int) ||
+            (!left_is_parameter && !right_is_parameter)) {
+          valid = false;
+          break;
+        }
+      }
+      if (!valid || arithmetic_occurrences.empty()) continue;
+      const auto operation_count = std::count_if(state.open_operations.begin(),
+          state.open_operations.end(), [&](const auto& operation) {
+        if (!starts_with(operation.operation_id, "operator:") ||
+            operation.expression_occurrence_id >=
+                state.expression_occurrences.size())
+          return false;
+        const auto& occurrence = state.expression_occurrences[
+            operation.expression_occurrence_id];
+        std::uint32_t ancestor = occurrence.id;
+        std::set<std::uint32_t> visited;
+        while (ancestor != UINT32_MAX && ancestor != root.id &&
+               ancestor < state.expression_occurrences.size() &&
+               visited.insert(ancestor).second)
+          ancestor = state.expression_occurrences[ancestor].parent_id;
+        return ancestor == root.id;
+      });
+      if (static_cast<std::size_t>(operation_count) !=
+          arithmetic_occurrences.size()) continue;
+
+      function.open_summary->result_type = result_scheme;
+      function.open_summary->scheme_complete =
+          std::all_of(function.open_summary->parameter_types.begin(),
+                      function.open_summary->parameter_types.end(),
+                      [](const moss::TypeRef& type) { return type != nullptr; }) &&
+          moss::close_open_summary_ordinals(*function.open_summary);
+      function.open_summary->complete = false;
+    }
+  }
+
   void refresh_open_collection_summaries_from_checked_types() {
     for (auto& function : p_.functions) {
       if (!function.imported_checked_summary_payload.empty() ||
@@ -31259,7 +31417,8 @@ class Checker {
         return;
       }
     }
-    for (const auto& operators : vector<vector<string>>{{"+", "-", "*", "/", "%"}}) {
+    for (const auto& operators : vector<vector<string>>{
+             {"+", "-"}, {"*", "/", "%"}}) {
         if (auto binary = split_binary(value, operators)) {
           string operation_id;
           for (const auto& candidate : operators) {
@@ -58179,37 +58338,7 @@ static vector<std::filesystem::path> write_module_interfaces(
              static_cast<unsigned char>(summary_record.payload.front()) != 4))
           continue;
         const auto summary = abi_v10::read_summary(summary_record.payload);
-        if (summary.variable_count != 1 || summary.parameters.size() != 1 ||
-            summary.parameters.front().kind !=
-                abi_v10::WireTypeKind::BoundVar ||
-            summary.parameters.front().ordinal != 0 ||
-            summary.result.kind != abi_v10::WireTypeKind::BoundVar ||
-            summary.result.ordinal != 0 || summary.requirements.size() != 2 ||
-            summary.requirements[0].operation != "operator:*" ||
-            summary.requirements[0].parent != 0 ||
-            summary.requirements[1].operation != "operator:+" ||
-            summary.requirements[1].parent != 1)
-          continue;
-        const auto& multiply = summary.requirements[0];
-        const auto& add = summary.requirements[1];
-        auto same_bound = [](const abi_v10::WireType& type) {
-          return type.kind == abi_v10::WireTypeKind::BoundVar &&
-              type.ordinal == 0;
-        };
-        auto typed_arithmetic_requirement = [&](const auto& requirement) {
-          return same_bound(requirement.receiver) &&
-              requirement.arguments.size() == 1 &&
-              requirement.arguments.front().kind ==
-                  abi_v10::WireTypeKind::Primitive &&
-              requirement.arguments.front().identity == "int" &&
-              requirement.result && same_bound(*requirement.result) &&
-              requirement.access == abi_v10::Access::Read &&
-              requirement.argument_access ==
-                  vector<abi_v10::Access>{abi_v10::Access::Read};
-        };
-        if (!typed_arithmetic_requirement(multiply) ||
-            !typed_arithmetic_requirement(add))
-          continue;
+        if (!abi_v10_checked_arithmetic_summary_candidate(summary)) continue;
 
         const string body_id = "checked-body-v1:" + summary.callable_id;
         const abi_v10::Record* body_record = nullptr;
@@ -58240,26 +58369,8 @@ static vector<std::filesystem::path> write_module_interfaces(
         } catch (const std::invalid_argument&) {
           continue;
         }
-        if (checked_statements.size() != 1 ||
-            checked_statements.front().kind != checked_ir::StmtKind::Return ||
-            !checked_statements.front().expr ||
-            checked_statements.front().expr->kind !=
-                checked_ir::ExprKind::Binary ||
-            checked_statements.front().expr->binary_op !=
-                checked_ir::BinaryOp::Add)
-          continue;
-        const auto& expression = *checked_statements.front().expr;
-        if (expression.operands.size() != 2 ||
-            expression.operands.front().kind != checked_ir::ExprKind::Binary ||
-            expression.operands.front().binary_op != checked_ir::BinaryOp::Mul ||
-            expression.operands.front().operands.size() != 2 ||
-            expression.operands.front().operands.front().kind !=
-                checked_ir::ExprKind::Parameter ||
-            expression.operands.front().operands.front().ordinal != 0 ||
-            expression.operands.front().operands.back().kind !=
-                checked_ir::ExprKind::IntegerLiteral ||
-            expression.operands.back().kind !=
-                checked_ir::ExprKind::IntegerLiteral)
+        if (!abi_v10_checked_arithmetic_body_candidate(
+                summary, checked_statements, *program.type_context))
           continue;
         emitted_checked_arithmetic.insert(summary.callable_id);
       }

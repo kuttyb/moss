@@ -20,10 +20,11 @@ int main(int argc, char** argv) {
       "callable-v1:" + iface.module_id + ":fn:compute";
   const std::string unsupported_sub_id =
       "callable-v1:" + iface.module_id + ":fn:unsupported_sub";
-  const std::string unsupported_reverse_id =
+  const std::string reverse_id =
       "callable-v1:" + iface.module_id + ":fn:unsupported_reverse";
 
   std::vector<moss::abi_v10::Summary> compute_summaries;
+  std::vector<moss::abi_v10::Summary> reverse_summaries;
   for (const auto& record : iface.semantic_contract) {
     if (record.payload.empty() || !moss::abi_v10::typed_summary_payload(record.payload) ||
         !moss::abi_v10::hex_hash(record.id)) continue;
@@ -31,6 +32,8 @@ int main(int argc, char** argv) {
     auto summary = moss::abi_v10::read_summary(record.payload);
     if (summary.callable_id == compute_id)
       compute_summaries.push_back(std::move(summary));
+    if (summary.callable_id == reverse_id)
+      reverse_summaries.push_back(std::move(summary));
   }
   assert(compute_summaries.size() == 1);
   const auto& summary = compute_summaries.front();
@@ -64,19 +67,21 @@ int main(int argc, char** argv) {
          summary.requirements[1].parent == 1);
 
   std::vector<moss::abi_v10::CheckedBodyRecord> compute_bodies;
-  std::size_t unsupported_body_count = 0;
+  std::vector<moss::abi_v10::CheckedBodyRecord> reverse_bodies;
+  std::size_t unsupported_sub_body_count = 0;
   for (const auto& record : iface.private_semantic_dependencies) {
     if (record.id.rfind("checked-body-v1:", 0) != 0) continue;
     moss::abi_v10::validate_checked_body_record(record);
     auto body = moss::abi_v10::read_checked_body_record(record.payload);
-    if (body.callable_id == unsupported_sub_id ||
-        body.callable_id == unsupported_reverse_id)
-      ++unsupported_body_count;
+    if (body.callable_id == unsupported_sub_id)
+      ++unsupported_sub_body_count;
     if (body.callable_id == compute_id)
       compute_bodies.push_back(std::move(body));
+    if (body.callable_id == reverse_id)
+      reverse_bodies.push_back(std::move(body));
   }
   assert(compute_bodies.size() == 1);
-  assert(unsupported_body_count == 0);
+  assert(unsupported_sub_body_count == 0);
   const auto& body = compute_bodies.front();
   assert(body.semantic_hash == summary.body_semantic_hash);
   assert(body.dependencies.empty());
@@ -126,9 +131,52 @@ int main(int argc, char** argv) {
   assert(moss::checked_ir::compute_checked_body_hash_v1(decoded) ==
          summary.body_semantic_hash);
 
+  assert(reverse_summaries.size() == 1 && reverse_bodies.size() == 1);
+  const auto& reverse_summary = reverse_summaries.front();
+  const auto& reverse_body = reverse_bodies.front();
+  assert(reverse_summary.requirements.size() == 2);
+  assert(reverse_summary.requirements[0].operation == "operator:*" &&
+         reverse_summary.requirements[0].parent == 0 &&
+         reverse_summary.requirements[0].dependencies.empty());
+  assert(reverse_summary.requirements[1].operation == "operator:+" &&
+         reverse_summary.requirements[1].parent == 1 &&
+         reverse_summary.requirements[1].dependencies ==
+             std::vector<std::uint32_t>{1});
+  assert(reverse_summary.requirements[1].receiver.kind ==
+             moss::abi_v10::WireTypeKind::Primitive &&
+         reverse_summary.requirements[1].receiver.identity == "int" &&
+         reverse_summary.requirements[1].arguments.size() == 1 &&
+         reverse_summary.requirements[1].arguments.front().kind ==
+             moss::abi_v10::WireTypeKind::BoundVar &&
+         reverse_summary.requirements[1].arguments.front().ordinal == 0);
+  assert(reverse_body.semantic_hash == reverse_summary.body_semantic_hash &&
+         reverse_body.dependencies.empty());
+  const auto reverse_decoded = moss::checked_ir::decode_h3_checked_body_v1(
+      reverse_body.checked_ir_bytes, context, {type_t}, type_t,
+      reverse_body.semantic_hash);
+  assert(reverse_decoded.size() == 1 &&
+         reverse_decoded.front().kind == moss::checked_ir::StmtKind::Return &&
+         reverse_decoded.front().expr &&
+         reverse_decoded.front().expr->binary_op ==
+             moss::checked_ir::BinaryOp::Add);
+  const auto& reverse_add = *reverse_decoded.front().expr;
+  assert(reverse_add.operands[0].kind ==
+             moss::checked_ir::ExprKind::IntegerLiteral &&
+         reverse_add.operands[0].literal_value == "20" &&
+         reverse_add.operands[0].type->structurally_equal(
+             *moss::Type::primitive("int")) &&
+         reverse_add.operands[1].kind == moss::checked_ir::ExprKind::Binary &&
+         reverse_add.operands[1].binary_op ==
+             moss::checked_ir::BinaryOp::Mul &&
+         reverse_add.operands[1].type->structurally_equal(*type_t));
+  assert(moss::checked_ir::encode_checked_body_v1(reverse_decoded) ==
+         reverse_body.checked_ir_bytes);
+  assert(moss::checked_ir::compute_checked_body_hash_v1(reverse_decoded) ==
+         reverse_summary.body_semantic_hash);
+
   std::cout << "PASS actual ABI-v10 compute summary/body counts 1/1; hash="
             << body.semantic_hash
             << "; requirement provenance records=2 valid; callable provenance valid; "
-               "canonical interface and decoded tree verified; "
-               "unsupported checked-body count=0\n";
+               "canonical interface and decoded tree verified; reverse operand order "
+               "has checked occurrence lineage; subtraction remains unavailable\n";
 }

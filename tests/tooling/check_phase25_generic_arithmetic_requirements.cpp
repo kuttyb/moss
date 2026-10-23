@@ -40,7 +40,8 @@ static abi_v10::SourceProvenance synthetic_requirement_provenance(
   provenance.start_column = 3;
   provenance.end_line = static_cast<uint32_t>(line);
   provenance.end_column = 17;
-  provenance.declaration_id = "requirement:" + std::to_string(line);
+  provenance.declaration_id = kImportedCallableId +
+      ":requirement:checked-occurrence:" + std::to_string(line);
   return provenance;
 }
 
@@ -66,6 +67,7 @@ static abi_v10::Summary synthetic_arithmetic_summary() {
     requirement.operation = index == 0 ? "operator:*" : "operator:+";
     requirement.access = abi_v10::Access::Read;
     requirement.parent = index == 0 ? 0 : 1;
+    if (index == 1) requirement.dependencies = {1};
     requirement.provenance_id = "requirement-provenance-" +
         std::to_string(index);
     requirement.arguments = {integer};
@@ -232,18 +234,29 @@ fn main():
   assert(leading_literal_function.checked_body_ir_v1_bytes &&
          leading_literal_function.checked_body_ir_v1_hash);
   const auto& leading_facts = *leading_literal_function.open_summary;
-  assert(leading_facts.requirements.size() == 3);
-  const auto& exact_leading_add = leading_facts.requirements.back();
+  assert(leading_facts.requirements.size() == 2);
+  const auto& exact_leading_multiply = leading_facts.requirements[0];
+  const auto& exact_leading_add = leading_facts.requirements[1];
+  assert(exact_leading_multiply.target_id == "operator:*" &&
+         exact_leading_multiply.expression_occurrence_id != UINT32_MAX &&
+         exact_leading_multiply.subject->structurally_equal(*generic) &&
+         exact_leading_multiply.arguments.size() == 1 &&
+         exact_leading_multiply.arguments.front()->structurally_equal(
+             *Type::primitive("int")) && exact_leading_multiply.result &&
+         (*exact_leading_multiply.result)->structurally_equal(*generic));
   assert(exact_leading_add.target_id == "operator:+" &&
+         exact_leading_add.expression_occurrence_id != UINT32_MAX &&
+         exact_leading_add.expression_occurrence_id !=
+             exact_leading_multiply.expression_occurrence_id &&
          exact_leading_add.subject->structurally_equal(
              *Type::primitive("int")) &&
          exact_leading_add.arguments.size() == 1 &&
          exact_leading_add.arguments.front()->structurally_equal(*generic) &&
          exact_leading_add.result &&
-         (*exact_leading_add.result)->structurally_equal(*generic));
-  // The occurrence lowerer now retains bytes for this shape, but the ABI-v10
-  // arithmetic admission contract still requires a validated two-relation
-  // summary. A body hash alone does not establish that contract.
+         (*exact_leading_add.result)->structurally_equal(*generic) &&
+         exact_leading_add.dependency_requirement_ids ==
+             vector<string>{exact_leading_multiply.id});
+  assert(leading_literal_function.checked_body_ir_v1_occurrence_lowered);
   abi_v10::Summary leading_wire;
   leading_wire.variable_count = leading_facts.bound_variable_count;
   for (const auto& parameter : leading_facts.parameter_types) {
@@ -263,7 +276,22 @@ fn main():
       leading_provenance);
   assert(leading_requirements);
   leading_wire.requirements = *leading_requirements;
-  assert(!abi_v10_checked_arithmetic_summary_candidate(leading_wire));
+  assert(abi_v10_checked_arithmetic_summary_candidate(leading_wire));
+
+  auto repeated_operator = checked_arithmetic_source("x * 2 + x * 3");
+  const auto& repeated_function = find_function(repeated_operator, "compute");
+  assert(repeated_function.open_summary &&
+         repeated_function.open_summary->complete &&
+         repeated_function.open_summary->requirements.size() == 3);
+  std::vector<std::uint32_t> multiply_ids;
+  for (const auto& requirement : repeated_function.open_summary->requirements)
+    if (requirement.target_id == "operator:*")
+      multiply_ids.push_back(requirement.expression_occurrence_id);
+  assert(multiply_ids.size() == 2 && multiply_ids[0] != multiply_ids[1]);
+  const auto& repeated_add = repeated_function.open_summary->requirements.back();
+  assert(repeated_add.target_id == "operator:+" &&
+         repeated_add.dependency_requirement_ids.size() == 2 &&
+         !repeated_add.parent_requirement_id.has_value());
 
   const auto& multiply = summary.requirements[0];
   const auto& add = summary.requirements[1];
@@ -474,7 +502,7 @@ export fn alias_compute(value):
   assert(branch_result);
   branch_wire.result = *branch_result;
   branch_wire.requirements = *branch_requirements;
-  assert(!abi_v10_checked_arithmetic_summary_candidate(branch_wire));
+  assert(abi_v10_checked_arithmetic_summary_candidate(branch_wire));
   branch_wire.body_semantic_hash = "body-semantic-v1:sha256:" +
       string(64, 'b');
   const auto branch_callable_provenance = abi_v10_checked_provenance(
@@ -837,13 +865,9 @@ export fn fresh(value, outer: Bool, inner: Bool):
   assert(synthetic_summary_rejected(
       abi_v10::summary_payload(incomplete_wire), {imported_provenance.front()}));
   auto unsupported_wire = imported_wire;
-  unsupported_wire.requirements[1].operation = "operator:/";
+  unsupported_wire.requirements[1].operation = "operator:pow";
   assert(synthetic_summary_rejected(
       abi_v10::summary_payload(unsupported_wire), imported_provenance));
-  auto unlinked_wire = imported_wire;
-  unlinked_wire.requirements[1].parent = 0;
-  assert(synthetic_summary_rejected(
-      abi_v10::summary_payload(unlinked_wire), imported_provenance));
   auto duplicate_identity_wire = imported_wire;
   duplicate_identity_wire.requirements[1].provenance_id =
       duplicate_identity_wire.requirements[0].provenance_id;

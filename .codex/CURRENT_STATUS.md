@@ -11535,3 +11535,27 @@ for this R3 candidate or authorize implementing the missing checker authority.
 
 No R4 work has started. Await L7 acceptance/disposition of this reviewed
 candidate before beginning R4.
+
+## Phase 25.1 R3 — final arithmetic authority fix — candidate preparation — 2026-10-22
+
+L7 authorized the bounded checker-owned occurrence fix for `20 + x * 2`. The
+common occurrence producer now retains exact operator facts with operand and
+result TypeRefs plus parent/dependency links, and the ABI-v10 reader validates
+those relations against the checked body before projection. A second nested
+expression exercises the same path. The old source-free arithmetic expectation
+for `20 + x * 2` has been replaced with positive checked-body coverage; the
+unsupported subtraction control remains fail-closed.
+
+On the current working tree, `make --jobs="$(nproc)" moss-dev`, all focused
+R3A–R3F suites, both arithmetic record/source-free suites, the generic
+arithmetic requirements harness, the complete M2b2 source-free/hostile corpus,
+`python3 tests/tooling/check_agent_feedback.py`, and `git diff --check` pass.
+Native Debug and Release source-backed, ABI-v9, and ABI-v10 source-deleted
+arithmetic executions produce Int `30` and Float `25.0`; six internally
+rehashed operator occurrence mutations reject before projection. The common
+Raise/recover comparison retains its dedicated checker-owned occurrence
+relation to avoid duplicate operator evidence.
+
+Candidate commit, exact-SHA 32-case compatibility matrix, consolidated
+Architect review and independent hostile execution, and final ledger/status
+closeout remain pending. Do not start R4 or change the default ABI.

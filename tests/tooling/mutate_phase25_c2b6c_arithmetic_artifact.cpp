@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cassert>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include <sstream>
@@ -36,6 +37,30 @@ int main(int argc, char** argv) {
   const auto old_digest = sealed.digest;
   const std::string callable_id =
       "callable-v1:" + sealed.value.module_id + ":fn:compute";
+
+  auto locate_summary = [&]() -> moss::abi_v10::Summary {
+    for (const auto& record : sealed.value.semantic_contract) {
+      if (!moss::abi_v10::hex_hash(record.id) || record.payload.empty() ||
+          !moss::abi_v10::typed_summary_payload(record.payload))
+        continue;
+      auto candidate = moss::abi_v10::read_summary(record.payload);
+      if (candidate.callable_id == callable_id) return candidate;
+    }
+    assert(false && "missing arithmetic summary");
+    return {};
+  };
+  auto replace_summary = [&](const moss::abi_v10::Summary& summary) {
+    auto replacement = moss::abi_v10::summary_record(summary);
+    bool replaced = false;
+    for (auto& record : sealed.value.semantic_contract)
+      if (moss::abi_v10::hex_hash(record.id) && !record.payload.empty() &&
+          moss::abi_v10::typed_summary_payload(record.payload) &&
+          moss::abi_v10::read_summary(record.payload).callable_id == callable_id) {
+        record = replacement;
+        replaced = true;
+      }
+    assert(replaced);
+  };
 
   if (mode == "unsupported-body") {
     moss::abi_v10::Summary summary;
@@ -70,10 +95,17 @@ int main(int argc, char** argv) {
            statements[0].expr->kind == moss::checked_ir::ExprKind::Binary &&
            statements[0].expr->binary_op == moss::checked_ir::BinaryOp::Add);
     auto unsupported = statements;
-    auto& multiply = unsupported[0].expr->operands[0];
-    assert(multiply.kind == moss::checked_ir::ExprKind::Binary &&
-           multiply.binary_op == moss::checked_ir::BinaryOp::Mul);
-    multiply.binary_op = moss::checked_ir::BinaryOp::Sub;
+    moss::checked_ir::Expr* multiply = nullptr;
+    std::function<void(moss::checked_ir::Expr&)> find_multiply =
+        [&](moss::checked_ir::Expr& expression) {
+      if (expression.kind == moss::checked_ir::ExprKind::Binary &&
+          expression.binary_op == moss::checked_ir::BinaryOp::Mul)
+        multiply = &expression;
+      for (auto& operand : expression.operands) find_multiply(operand);
+    };
+    find_multiply(*unsupported[0].expr);
+    assert(multiply);
+    multiply->binary_op = moss::checked_ir::BinaryOp::Sub;
     body.checked_ir_bytes = moss::checked_ir::encode_checked_body_v1(unsupported);
     body.semantic_hash =
         moss::checked_ir::compute_checked_body_hash_v1(unsupported);
@@ -141,10 +173,44 @@ int main(int argc, char** argv) {
       replaced = true;
     }
     assert(replaced);
+  } else if (mode == "wrong-operation" || mode == "wrong-operands" ||
+             mode == "wrong-result" || mode == "wrong-parent" ||
+             mode == "duplicate-fact" || mode == "missing-fact") {
+    auto summary = locate_summary();
+    assert(summary.requirements.size() >= 2);
+    if (mode == "wrong-operation") {
+      summary.requirements[0].operation = "operator:+";
+    } else if (mode == "wrong-operands") {
+      std::swap(summary.requirements[0].receiver,
+                summary.requirements[0].arguments.front());
+    } else if (mode == "wrong-result") {
+      moss::abi_v10::WireType wrong;
+      wrong.kind = moss::abi_v10::WireTypeKind::Primitive;
+      wrong.identity = "int";
+      summary.requirements[0].result = wrong;
+    } else if (mode == "wrong-parent") {
+      auto& root = summary.requirements.back();
+      root.parent = 0;
+      root.dependencies.clear();
+    } else if (mode == "duplicate-fact") {
+      summary.requirements.push_back(summary.requirements.front());
+    } else if (mode == "missing-fact") {
+      summary.requirements.erase(summary.requirements.begin());
+      for (auto& requirement : summary.requirements) {
+        requirement.parent = 0;
+        requirement.dependencies.clear();
+      }
+    }
+    replace_summary(summary);
   } else {
     assert(false && "unknown mutation mode");
   }
 
+  std::sort(sealed.value.semantic_contract.begin(),
+            sealed.value.semantic_contract.end(),
+            [](const auto& left, const auto& right) {
+    return left.id < right.id;
+  });
   const auto rewritten = moss::abi_v10::encode(sealed.value);
   const auto decoded = moss::abi_v10::decode(rewritten);
   if (mode != "mismatch-body-hash")
