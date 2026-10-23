@@ -176,6 +176,11 @@ with tempfile.TemporaryDirectory(prefix="phase25-r4-member-relay-",
                        cwd=hostile_consumer, env=env, ok=False)
         error = json.loads(rejected.stdout)["error"]
         assert error["code"].startswith("SOURCE_FREE_"), (mode, error)
+        assert "|invoke_action|checked-body-v1" not in rejected.stderr, (
+            mode, rejected.stderr)
+        if mode == "member-identity":
+            assert "MOSS_CHECKED_BODY_PROJECTED|" not in rejected.stderr, (
+                mode, rejected.stderr)
         print(f"PASS member relay hostile {mode}: {error['code']}", flush=True)
 
 print("PASS R4 deferred-member relay and hostile gate")

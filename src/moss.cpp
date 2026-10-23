@@ -5432,8 +5432,27 @@ static void project_imported_h3_checked_bodies(Program& program) {
         function.parameter_effects.push_back(
             imported_abi_v10_effect(access));
     }
+  // Validate/project direct member leaves before any forwarding caller. A
+  // caller can authenticate the leaf artifact hash and summary shape, but only
+  // the leaf body validator can confirm its exact MemberCall identity. If a
+  // leaf is forged, reject it before emitting a projection event for its relay.
+  vector<std::pair<bool, Function*>> checked_body_functions;
   for (auto& function : program.functions) {
     if (function.imported_checked_body_payload.empty()) continue;
+    const auto summary = abi_v10::read_summary(
+        function.imported_checked_summary_payload);
+    checked_body_functions.emplace_back(
+        abi_v10_generic_member_summary_candidate(summary), &function);
+  }
+  std::stable_sort(checked_body_functions.begin(), checked_body_functions.end(),
+      [](const auto& left, const auto& right) {
+    return left.first && !right.first;
+  });
+  for (const auto& checked_body_entry : checked_body_functions) {
+    auto& function = *checked_body_entry.second;
+    if (function.imported_checked_body_payload.empty()) continue;
+    const abi_v10::Summary summary = abi_v10::read_summary(
+        function.imported_checked_summary_payload);
     auto invalid = [&](const string& reason) {
       CompileError error(std::max(function.line, 1), reason,
                          "SOURCE_FREE_CHECKED_BODY_INVALID");
@@ -5448,8 +5467,6 @@ static void project_imported_h3_checked_bodies(Program& program) {
     if (std::filesystem::path(function.source_file).extension() != ".mossi" ||
         function.imported_checked_summary_payload.empty())
       invalid("checked ABI-v10 body is detached from its provider summary");
-    const abi_v10::Summary summary = abi_v10::read_summary(
-        function.imported_checked_summary_payload);
     const bool arithmetic_summary_candidate =
         abi_v10_checked_arithmetic_summary_candidate(summary);
     const bool collection_summary_candidate =
