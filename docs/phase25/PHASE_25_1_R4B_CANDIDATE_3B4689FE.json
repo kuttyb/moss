@@ -20,9 +20,17 @@
     "status": "pass"
   },
   "advanced_data_compiled_only": {
-    "attempted_mode": "ABI-v9 Debug",
-    "exact_candidate_status": "unverified_interrupted",
-    "exit_code": 130,
+    "exact_candidate_status": "pass",
+    "mode_results": {
+      "abi_v9_debug": "pass",
+      "abi_v9_release": "pass",
+      "abi_v10_debug": "pass",
+      "abi_v10_release": "pass"
+    },
+    "provider_pairs_per_mode": 14,
+    "provider_source_removed": true,
+    "consumer_checked_formatted_built_and_executed": true,
+    "raw_logs": "tmp/r4-cross-crate-resume/advanced-*-final.log",
     "prior_checkpoint": "a854c901",
     "prior_results": [
       "ABI-v9 Debug pass",
@@ -30,15 +38,17 @@
       "ABI-v10 Debug pass",
       "ABI-v10 Release pass"
     ],
-    "reason": "manually interrupted after about six minutes while provider builds remained CPU-bound"
+    "historical_attempt": "The first exact-candidate attempt was interrupted during ABI-v9 Debug and is superseded by the four completed final runs."
   },
   "architect_review": {
     "compiler_sha": "3b4689fe29f1393d512bbb07d1084e9f84898dcc",
-    "disposition": "Addressed by the test listed above; exact-SHA follow-up pending.",
+    "disposition": "The scoped direct-nominal P2 was closed by exact-SHA follow-up; overall R4 exact-SHA verdict is pending.",
     "p0": 0,
     "p1": 0,
     "p2": "Durable direct-return source-free legacy-poison/projection/hostile regression coverage was missing.",
-    "scoped_verdict": "GO"
+    "scoped_verdict": "GO",
+    "direct_nominal_followup": "closed at exact compiler SHA 3b4689fe29f1393d512bbb07d1084e9f84898dcc",
+    "overall_r4_verdict": "pending"
   },
   "compatibility_oracle": {
     "case_count": 32,
@@ -71,7 +81,7 @@
       "scenario7": {
         "detail": "expected exact diagnostic ['METHOD_NOT_FOUND'], got {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'MethodProvider__invoke_action' has no validated typed summary and checked body\", \"source_file\": \"/home/owner/daji/code/moss3/tmp/moss-sc7-5uwfkq29/provider-artifacts/MethodProvider.mossi\", \"line\": 6,",
         "expected_diagnostic": "METHOD_NOT_FOUND",
-        "first_missing_invariant": "validated checked body for open custom_action member-call shape",
+        "first_missing_invariant": "open-summary closure leaves invoke_action/private_action incomplete with gap unresolved_effects because custom_action is unresolved; consumer specialization never reaches METHOD_NOT_FOUND",
         "observed_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
         "status": "FAIL"
       },
@@ -87,7 +97,7 @@
       "scenario7": {
         "detail": "expected exact diagnostic ['METHOD_NOT_FOUND'], got {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\", \"severity\": \"error\", \"message\": \"staged ABI-v10 callable 'MethodProvider__invoke_action' has no validated typed summary and checked body\", \"source_file\": \"/home/owner/daji/code/moss3/tmp/moss-sc7-980a9tny/provider-artifacts/MethodProvider.mossi\", \"line\": 6,",
         "expected_diagnostic": "METHOD_NOT_FOUND",
-        "first_missing_invariant": "validated checked body for open custom_action member-call shape",
+        "first_missing_invariant": "open-summary closure leaves invoke_action/private_action incomplete with gap unresolved_effects because custom_action is unresolved; consumer specialization never reaches METHOD_NOT_FOUND",
         "observed_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
         "status": "FAIL"
       },
@@ -139,7 +149,7 @@
     "details": "Supported callable projects and runs beside an unsupported callable; forged provenance controls reject on use.",
     "status": "pass"
   },
-  "r4_acceptance": "OPEN",
+  "r4_acceptance": "OPEN_SCENARIO_7_RED",
   "real_sdk_generic_matrix": {
     "compiler_executable_sha256": "c62ac9534a1f817cf518ec458f987fbd5403352f2f747533bb805dd8f82e642c",
     "raw_report": "tmp/r4-cross-crate-resume/sdk-generic.json",
@@ -147,10 +157,47 @@
     "status": "pass"
   },
   "remaining_gates": [
-    "Cross-crate scenario 7 exact METHOD_NOT_FOUND diagnostic and provider/consumer spans",
-    "Exact-candidate advanced-data four-mode matrix",
-    "Exact-SHA Architect follow-up and L7 handoff"
+    "Resolve scenario 7 checker-owned open result/requirement closure and preserve exact METHOD_NOT_FOUND diagnostic provenance",
+    "Obtain the overall exact-SHA R4 Architect verdict and return R4 recommendation to L7",
+    "After R4 acceptance only, run R5 gates recorded in PHASE_25_1_REMAINING_WORK.md"
   ],
+  "scenario7_controls": {
+    "abi_v10_semantic_inspection": {
+      "affected_callables": [
+        "invoke_action",
+        "private_action"
+      ],
+      "classification": "ABI-v10 checker-summary closure/diagnostic parity defect; not a source-backed fixture failure",
+      "command": "./moss inspect MethodProvider__invoke_action --source tmp/r4-s7-source-backed/provider/src/provider.moss --json",
+      "open_member_requirement": "custom_action on generic receiver item",
+      "open_summary_gap": "unresolved_effects",
+      "first_missing_invariant": "The direct private member leaf has checked typed facts, but the exported forwarding callable's open type scheme is incomplete; its checker-owned result/requirement relation is unavailable for checked-body projection."
+    },
+    "abi_v9_source_free": {
+      "command": "Build ABI-v9 provider, copy MethodProvider.mossi/libMethodProvider.rlib, delete provider source, then moss check the dependency-free consumer with MOSS_MODULE_PATH.",
+      "observed": "pass",
+      "status": "expected METHOD_NOT_FOUND with provider locations"
+    },
+    "source_backed": {
+      "command": "Margo build the fixture consumer with the provider path dependency and provider source present.",
+      "observed": "pass",
+      "status": "expected METHOD_NOT_FOUND with provider and consumer source locations"
+    }
+  },
+  "scenario7_test_harness_mode": {
+    "command": "MOSS=build/compiler/moss-dev python3 tests/phase25/integration/cross_crate_harness.py --scenario 7 --profile debug --json",
+    "observed": "provider did not emit ABI-v10 records",
+    "reason": "scenario 7 runner requires ABI-v10 artifact staging; this production-default invocation exits before checking the consumer.",
+    "status": "test-mode mismatch, not compiler result"
+  },
+  "scenario7_exact_binary_rerun": {
+    "command": "MOSS=build/compiler/moss-dev python3 tests/phase25/integration/cross_crate_harness.py --scenario 7 --profile debug --staged-v10 --json",
+    "compiler_executable_sha256": "c62ac9534a1f817cf518ec458f987fbd5403352f2f747533bb805dd8f82e642c",
+    "expected_diagnostic": "METHOD_NOT_FOUND",
+    "observed_diagnostic": "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+    "raw_report": "tmp/r4-cross-crate-resume/scenario7-final.json",
+    "status": "FAIL"
+  },
   "schema": "phase25-1-r4b-candidate-evidence-v1",
   "scope": {
     "abi_v9_remains_default": true,
@@ -160,7 +207,7 @@
   },
   "test_harness_corrections": {
     "classification": "test setup/invocation errors, not compiler failures",
-    "resolution": "direct-return nominal gate corrected its legacy-row count to two and supplied the module argument; final exact-binary gate passed."
+    "resolution": "direct-return nominal gate corrected its legacy-row count to two and supplied the module argument; final exact-binary gate passed. The ABI-v9 migration script was also rerun with its repository-local `./moss` wrapper as required by its sibling-Margo path; it then passed. A production-default invocation of the ABI-v10-only scenario 7 runner was classified as a harness mode mismatch because it stops before consumer checking."
   },
   "warm_cache_provider_binding": {
     "command": "python3 tests/tooling/check_phase21_source_free_cache_binding.py ./moss",

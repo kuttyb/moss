@@ -207,9 +207,17 @@ and replaced-cache invalidation). Scenario 7 remains failed: generic
 helper, leaving no checked body; source-free import reports
 `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE` instead of the fixture's required
 consumer `METHOD_NOT_FOUND` diagnostic and provider/consumer spans. This is a
-compiler checked-body admission gap, not a harness invocation issue. The
-bounded R2 member-length acceptance does not cover this general member shape;
-R4 still treats unapproved valid ABI-v9 source-free gaps as red.
+compiler ABI-v10 parity defect, not a harness invocation issue. Semantic
+inspection shows both `invoke_action` and `private_action` open summaries are
+incomplete with `unresolved_effects` because `custom_action` is an unbound
+member requirement. Source-backed and ABI-v9 source-free controls report the
+expected `METHOD_NOT_FOUND`; ABI-v10 stops at summary closure before consumer
+specialization. The bounded R2 member-length acceptance does not cover this
+general member shape, but R4 still treats the v9-valid diagnostic mismatch as
+red.
+Running this ABI-v10-only scenario harness in production-default mode fails
+before consumer checking because the fixture requires ABI-v10 artifacts; that
+is a harness mode mismatch, not ABI-v9 compiler evidence.
 
 The direct-return boundary received scoped Architect GO on exact compiler SHA
 `3b4689fe29f1393d512bbb07d1084e9f84898dcc`, with no P0/P1 and one P2 for
@@ -236,12 +244,48 @@ interrupted during ABI-v9 Debug after about six minutes of CPU-bound provider
 builds. It exited 130 and provides no pass/fail result. Previous R4B evidence
 on `a854c901` records passes for all four modes, but these are not exact-current-
 candidate evidence. ABI-v9-only source-free SDK scripts previously passed
-8/8 on `c0ff87fd`; the four real generic exports passed 18/18 on `a854c901`.
-Both matrices require a final frozen-SHA run.
+8/8 on `c0ff87fd`, and the four real generic exports passed 18/18 on
+`a854c901`; exact-candidate reruns now pass 8/8 and 18/18 respectively. Only
+the exact-candidate advanced-data matrix remained unverified at the time of
+this checkpoint; see the exact-candidate continuation below for its completed
+four-mode rerun.
 
-**R4 remains open.** Cross-crate scenario 7 is red in both profiles; exact-
-candidate advanced-data evidence and exact-SHA independent Architect follow-up
-remain required. The inventory maps all four open generic exports to the
-18-case SDK matrix; the separate 14-provider advanced-data graph is concrete-
-API coverage.
+**R4 remains open.** Cross-crate scenario 7 is red in both profiles and an
+overall exact-SHA independent Architect verdict remains required. The
+inventory maps all four open generic exports to the 18-case SDK matrix; the
+separate 14-provider advanced-data graph is concrete-API coverage.
 Do not advance to R5 or change the ABI-v9 default.
+
+## R4 exact-candidate matrix continuation — 2026-10-23
+
+This entry supersedes the interrupted-matrix status above. On compiler source
+SHA `3b4689fe29f1393d512bbb07d1084e9f84898dcc` (executable SHA-256
+`c62ac9534a1f817cf518ec458f987fbd5403352f2f747533bb805dd8f82e642c`),
+the compiled-only advanced-data 14-provider source-free gate passed in all
+four modes: ABI-v9 Debug/Release and ABI-v10 Debug/Release. Each run removed
+provider source and checked, formatted, built, and executed the consumer. Raw
+logs are in `tmp/r4-cross-crate-resume/advanced-*-final.log`.
+
+All other current candidate evidence remains green: full 32-case R3 oracle
+(64/64 source-backed, ABI-v9, and ABI-v10 outcomes per Debug/Release matrix),
+real-SDK generic matrix 18/18, ABI-v9-only SDK source-free harnesses 8/8,
+mixed-provider admission 6/6, focused M2b2 source-free/hostile corpus, ABI-v9
+migration/cache controls, and direct nominal source-free hostiles. The exact-
+binary cross-crate staged-v10 harness is 10/11 in both Debug and Release.
+
+Scenario 7 was rerun against the clean exact candidate and remains red with
+`SOURCE_FREE_CHECKED_BODY_UNAVAILABLE`; the source-backed and ABI-v9 source-
+free controls produce the expected `METHOD_NOT_FOUND` with provider and
+consumer provenance. Inspection shows the private direct-member leaf has a
+checked body and member requirement, while the exported forwarding callable's
+open type scheme is incomplete. The first missing invariant is checker-owned
+result/requirement closure through that private member call. No result
+relation may be copied or guessed to make the ABI record fit. Treat this as a
+compiler ABI-v10 diagnostic-parity defect, not a test-harness failure.
+
+The scoped direct-nominal Architect P2 is closed on exact SHA. Overall
+exact-SHA R4 Architect verdict is pending. **R4 remains open and is not
+accepted** until scenario 7 is resolved and the exact-SHA review completes.
+R5 remains unstarted; its recorded gates require green R0/R4 evidence,
+`make check`, examples/SDK/cross-crate and migration/cache/provenance gates,
+and an independent final architectural review. ABI-v9 remains the default.
