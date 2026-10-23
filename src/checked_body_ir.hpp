@@ -89,7 +89,8 @@ enum class ExprKind : uint32_t {
   // operation so the reader can validate its WRITE target and element type.
   CollectionPush = 18,
   PipelineElement = 19,
-  PipelineMap = 20
+  PipelineMap = 20,
+  EnumConstruct = 21
 };
 
 inline constexpr std::string_view kCollectionCountOperationId =
@@ -141,6 +142,7 @@ struct Expr {
 
   // Children:
   std::vector<Expr> operands;
+  std::vector<uint32_t> payload_ordinals;
 
   // Exact target identifiers:
   // For Field: nominal declaration ID ("nominal-template-v1:...")
@@ -168,7 +170,9 @@ enum class StmtKind : uint32_t {
   For = 11,
   Match = 12,
   Pass = 13,
-  IfJoin = 14
+  IfJoin = 14,
+  Try = 15,
+  Raise = 16
 };
 
 struct Stmt;
@@ -176,6 +180,14 @@ struct Stmt;
 struct CaseBranch {
   std::string variant_tag;
   std::string variant_id;
+  std::vector<uint32_t> payload_ordinals;
+  std::vector<TypeRef> payload_types;
+  std::vector<Stmt> body;
+};
+
+struct ExceptionalBranch {
+  std::string branch_identity;
+  std::vector<std::string> variant_ids;
   std::vector<uint32_t> payload_ordinals;
   std::vector<TypeRef> payload_types;
   std::vector<Stmt> body;
@@ -197,6 +209,12 @@ struct Stmt {
   std::vector<Stmt> else_branch;
   std::vector<Stmt> body;
   std::vector<CaseBranch> match_cases;
+  // Checker-produced raise alternatives and recover arms. The enum identity
+  // and variant IDs are retained separately from the source spelling.
+  std::string exceptional_identity;
+  std::string branch_identity;
+  std::vector<std::string> exceptional_alternatives;
+  std::vector<ExceptionalBranch> exceptional_cases;
 };
 
 inline void encode_checked_expr(std::string& out, const Expr& expr) {
@@ -419,6 +437,31 @@ inline void encode_checked_expr(std::string& out, const Expr& expr) {
         encode_checked_expr(out, child);
       break;
 
+    case ExprKind::EnumConstruct: {
+      if (!expr.type || expr.type->kind != TypeKind::Enum ||
+          !expr.type->declaration ||
+          expr.type->declaration->kind != DeclarationKind::Enum ||
+          expr.semantic_target_id.rfind(
+              "nominal-enum-variant-v1:" + expr.type->declaration->id +
+                  ":case:", 0) != 0 ||
+          expr.payload_ordinals.size() != expr.operands.size() ||
+          !expr.literal_value.empty())
+        throw std::invalid_argument(
+            "invalid checked enum constructor identity or shape");
+      for (std::size_t index = 0; index < expr.payload_ordinals.size(); ++index)
+        if (expr.payload_ordinals[index] != index ||
+            !expr.operands[index].type)
+          throw std::invalid_argument(
+              "checked enum constructor payload ordinals are noncanonical");
+      checked_body_field(out, expr.semantic_target_id);
+      checked_body_field(out, std::to_string(expr.operands.size()));
+      for (std::size_t index = 0; index < expr.operands.size(); ++index) {
+        checked_body_field(out, std::to_string(expr.payload_ordinals[index]));
+        encode_checked_expr(out, expr.operands[index]);
+      }
+      break;
+    }
+
     default:
       throw std::invalid_argument("unknown checked body expression kind");
   }
@@ -546,6 +589,96 @@ inline void encode_checked_stmt(std::string& out, const Stmt& stmt) {
       }
       break;
 
+    case StmtKind::Try: {
+      if (stmt.exceptional_identity.empty() || stmt.branch_identity.empty() ||
+          stmt.exceptional_alternatives.empty() || stmt.body.empty() ||
+          stmt.exceptional_cases.empty() || stmt.expr || stmt.type)
+        throw std::invalid_argument(
+            "invalid checked try statement: identity, alternatives, or blocks are missing");
+      checked_body_field(out, stmt.exceptional_identity);
+      checked_body_field(out, stmt.branch_identity);
+      checked_body_field(out,
+                         std::to_string(stmt.exceptional_alternatives.size()));
+      std::string previous_alternative;
+      for (const auto& alternative : stmt.exceptional_alternatives) {
+        if (alternative.empty() ||
+            (!previous_alternative.empty() && previous_alternative >= alternative))
+          throw std::invalid_argument(
+              "checked try alternatives are not canonical");
+        previous_alternative = alternative;
+        checked_body_field(out, alternative);
+      }
+      checked_body_field(out, std::to_string(stmt.body.size()));
+      for (const auto& child : stmt.body) encode_checked_stmt(out, child);
+      checked_body_field(out,
+                         std::to_string(stmt.exceptional_cases.size()));
+      std::string previous_branch;
+      for (const auto& branch : stmt.exceptional_cases) {
+        if (branch.branch_identity.empty() ||
+            (!previous_branch.empty() &&
+             previous_branch >= branch.branch_identity) ||
+            branch.variant_ids.empty() ||
+            branch.payload_ordinals.size() != branch.payload_types.size() ||
+            branch.body.empty())
+          throw std::invalid_argument(
+              "checked recover branch identity or shape is invalid");
+        previous_branch = branch.branch_identity;
+        checked_body_field(out, branch.branch_identity);
+        checked_body_field(out, std::to_string(branch.variant_ids.size()));
+        std::string previous_variant;
+        for (const auto& variant : branch.variant_ids) {
+          if (variant.empty() ||
+              (!previous_variant.empty() && previous_variant >= variant))
+            throw std::invalid_argument(
+                "checked recover variant identities are not canonical");
+          previous_variant = variant;
+          checked_body_field(out, variant);
+        }
+        checked_body_field(out,
+                           std::to_string(branch.payload_ordinals.size()));
+        for (std::size_t index = 0;
+             index < branch.payload_ordinals.size(); ++index) {
+          if ((index != 0 && branch.payload_ordinals[index - 1] >=
+                                  branch.payload_ordinals[index]) ||
+              !branch.payload_types[index])
+            throw std::invalid_argument(
+                "checked recover payload ordinals or TypeRefs are invalid");
+          checked_body_field(out,
+                             std::to_string(branch.payload_ordinals[index]));
+          encode_checked_body_type_v1(out, branch.payload_types[index]);
+        }
+        checked_body_field(out, std::to_string(branch.body.size()));
+        for (const auto& child : branch.body) encode_checked_stmt(out, child);
+      }
+      break;
+    }
+
+    case StmtKind::Raise:
+      if (stmt.exceptional_identity.empty() || stmt.branch_identity.empty() ||
+          stmt.exceptional_alternatives.empty() || !stmt.expr ||
+          stmt.expr->kind != ExprKind::EnumConstruct ||
+          !stmt.body.empty() || !stmt.exceptional_cases.empty())
+        throw std::invalid_argument(
+            "invalid checked raise statement: identity or value is missing");
+      checked_body_field(out, stmt.exceptional_identity);
+      checked_body_field(out, stmt.branch_identity);
+      checked_body_field(out,
+                         std::to_string(stmt.exceptional_alternatives.size()));
+      {
+        std::string previous_alternative;
+        for (const auto& alternative : stmt.exceptional_alternatives) {
+          if (alternative.empty() ||
+              (!previous_alternative.empty() &&
+               previous_alternative >= alternative))
+            throw std::invalid_argument(
+                "checked raise alternatives are not canonical");
+          previous_alternative = alternative;
+          checked_body_field(out, alternative);
+        }
+      }
+      encode_checked_expr(out, *stmt.expr);
+      break;
+
     case StmtKind::Pass:
       if (stmt.expr || stmt.local_ordinal != 0 || !stmt.operands.empty() ||
           !stmt.semantic_target_id.empty() || stmt.member_ordinal != 0 ||
@@ -595,7 +728,8 @@ class H3BodyReader {
                bool allow_generic_map_index_mutation = false,
                bool allow_typed_enum_match = false,
                bool allow_pipeline_map = false,
-               bool allow_returned_callback = false)
+               bool allow_returned_callback = false,
+               bool allow_exceptional_body = false)
       : bytes_(bytes), context_(context), parameters_(parameters), result_(result),
         allow_empty_vector_return_(allow_empty_vector_return),
         allow_collection_loop_body_(allow_collection_loop_body),
@@ -604,7 +738,8 @@ class H3BodyReader {
         allow_generic_map_index_mutation_(allow_generic_map_index_mutation),
         allow_typed_enum_match_(allow_typed_enum_match),
         allow_pipeline_map_(allow_pipeline_map),
-        allow_returned_callback_(allow_returned_callback) {}
+        allow_returned_callback_(allow_returned_callback),
+        allow_exceptional_body_(allow_exceptional_body) {}
 
   std::vector<Stmt> read() {
     constexpr std::string_view header = "moss-checked-body-v1\n";
@@ -613,7 +748,14 @@ class H3BodyReader {
     position_ = header.size();
     std::vector<Stmt> statements;
     const auto statement_count = number();
-    if (allow_collection_loop_body_) {
+    if (allow_exceptional_body_) {
+      if (bytes_.size() > (1u << 20) || statement_count == 0 ||
+          statement_count > kMaxBodyNodes)
+        fail("exceptional checked body exceeds bounds");
+      scopes_.emplace_back();
+      read_loop_statements(statement_count, 0, statements);
+      scopes_.pop_back();
+    } else if (allow_collection_loop_body_) {
       if (bytes_.size() > (1u << 20) || statement_count == 0 ||
           statement_count > kMaxBodyNodes)
         fail("collection checked body exceeds bounds");
@@ -662,6 +804,7 @@ class H3BodyReader {
   bool allow_typed_enum_match_ = false;
   bool allow_pipeline_map_ = false;
   bool allow_returned_callback_ = false;
+  bool allow_exceptional_body_ = false;
   static constexpr std::uint32_t kMaxBodyNodes = 4096;
   static constexpr std::uint32_t kMaxLocalCount = 256;
   static constexpr unsigned kMaxBlockDepth = 32;
@@ -915,7 +1058,7 @@ class H3BodyReader {
     if (++node_count_ > kMaxBodyNodes)
       fail("checked body node count exceeds bounds");
     const auto tag = number();
-    if (tag > static_cast<std::uint32_t>(ExprKind::PipelineMap))
+    if (tag > static_cast<std::uint32_t>(ExprKind::EnumConstruct))
       fail("checked body expression kind is unknown");
     Expr expression;
     expression.kind = static_cast<ExprKind>(tag);
@@ -927,6 +1070,9 @@ class H3BodyReader {
     if ((expression.kind == ExprKind::PipelineElement ||
          expression.kind == ExprKind::PipelineMap) && !allow_pipeline_map_)
       fail("checked functional Map is outside the admitted checked-body subset");
+    if (expression.kind == ExprKind::EnumConstruct &&
+        !allow_exceptional_body_)
+      fail("checked enum construction is outside the admitted checked-body subset");
     expression.type = read_type();
     if (expression.kind == ExprKind::IntegerLiteral) {
       expression.literal_value = field();
@@ -1210,6 +1356,26 @@ class H3BodyReader {
           expression.operands.push_back(read_expr(depth + 1));
         }
       }
+    } else if (expression.kind == ExprKind::EnumConstruct) {
+      if (!allow_exceptional_body_ || !expression.type ||
+          expression.type->kind != TypeKind::Enum ||
+          !expression.type->declaration ||
+          expression.type->declaration->kind != DeclarationKind::Enum)
+        fail("checked enum constructor has no admitted enum declaration");
+      expression.semantic_target_id = field();
+      const auto prefix = "nominal-enum-variant-v1:" +
+          expression.type->declaration->id + ":case:";
+      if (expression.semantic_target_id.rfind(prefix, 0) != 0 ||
+          expression.semantic_target_id.size() == prefix.size())
+        fail("checked enum constructor variant identity is mismatched");
+      const auto count = number();
+      if (count > 64) fail("checked enum constructor payload exceeds bounds");
+      for (std::uint32_t index = 0; index < count; ++index) {
+        if (number() != index)
+          fail("checked enum constructor payload ordinals are noncanonical");
+        expression.payload_ordinals.push_back(index);
+        expression.operands.push_back(read_expr(depth + 1));
+      }
     } else {
       fail("checked body expression is outside the H3 subset");
     }
@@ -1252,8 +1418,13 @@ class H3BodyReader {
       fail("checked body node count exceeds bounds");
     const auto tag = number();
     if (tag < static_cast<std::uint32_t>(StmtKind::Let) ||
-        tag > static_cast<std::uint32_t>(StmtKind::IfJoin))
+        tag > static_cast<std::uint32_t>(
+            allow_exceptional_body_ ? StmtKind::Raise : StmtKind::IfJoin))
       fail("checked body statement kind is unknown");
+    if ((tag == static_cast<std::uint32_t>(StmtKind::Try) ||
+         tag == static_cast<std::uint32_t>(StmtKind::Raise)) &&
+        !allow_exceptional_body_)
+      fail("checked exceptional statement is outside the admitted subset");
     Stmt statement;
     statement.kind = static_cast<StmtKind>(tag);
     switch (statement.kind) {
@@ -1450,6 +1621,95 @@ class H3BodyReader {
         }
         break;
       }
+      case StmtKind::Try: {
+        statement.exceptional_identity = field();
+        statement.branch_identity = field();
+        if (statement.exceptional_identity.empty() ||
+            statement.branch_identity.empty())
+          fail("checked try identity is missing");
+        const auto alternative_count = number();
+        if (!alternative_count || alternative_count > 128)
+          fail("checked try alternative count is invalid");
+        std::string prior_alternative;
+        for (std::uint32_t index = 0; index < alternative_count; ++index) {
+          auto alternative = field();
+          if (alternative.empty() ||
+              (!prior_alternative.empty() && prior_alternative >= alternative))
+            fail("checked try alternatives are noncanonical");
+          prior_alternative = alternative;
+          statement.exceptional_alternatives.push_back(std::move(alternative));
+        }
+        const auto body_count = number();
+        if (!body_count || body_count > kMaxBodyNodes - node_count_)
+          fail("checked try body is empty or exceeds bounds");
+        read_loop_block(body_count, depth + 1, statement.body);
+        const auto recover_count = number();
+        if (!recover_count || recover_count > 128)
+          fail("checked recovery arm count is invalid");
+        std::string prior_branch;
+        for (std::uint32_t index = 0; index < recover_count; ++index) {
+          ExceptionalBranch branch;
+          branch.branch_identity = field();
+          if (branch.branch_identity.empty() ||
+              (!prior_branch.empty() && prior_branch >= branch.branch_identity))
+            fail("checked recovery branch identities are noncanonical");
+          prior_branch = branch.branch_identity;
+          const auto variant_count = number();
+          if (!variant_count || variant_count > 128)
+            fail("checked recovery variant count is invalid");
+          std::string prior_variant;
+          for (std::uint32_t variant = 0; variant < variant_count; ++variant) {
+            auto id = field();
+            if (id.empty() ||
+                (!prior_variant.empty() && prior_variant >= id))
+              fail("checked recovery variant identities are noncanonical");
+            prior_variant = id;
+            branch.variant_ids.push_back(std::move(id));
+          }
+          const auto payload_count = number();
+          if (payload_count > 64)
+            fail("checked recovery payload count exceeds bounds");
+          scopes_.emplace_back();
+          for (std::uint32_t payload = 0; payload < payload_count; ++payload) {
+            const auto ordinal = number();
+            if (ordinal != next_local_ordinal_)
+              fail("checked recovery payload ordinals are noncanonical");
+            auto type = read_type();
+            if (!type) fail("checked recovery payload TypeRef is missing");
+            branch.payload_ordinals.push_back(ordinal);
+            branch.payload_types.push_back(type);
+            declare_loop_local(ordinal, type, false);
+          }
+          const auto recover_body_count = number();
+          if (!recover_body_count ||
+              recover_body_count > kMaxBodyNodes - node_count_)
+            fail("checked recovery body is empty or exceeds bounds");
+          read_loop_block(recover_body_count, depth + 1, branch.body);
+          for (const auto ordinal : scopes_.back()) locals_.erase(ordinal);
+          scopes_.pop_back();
+          statement.exceptional_cases.push_back(std::move(branch));
+        }
+        break;
+      }
+      case StmtKind::Raise: {
+        statement.exceptional_identity = field();
+        statement.branch_identity = field();
+        const auto alternative_count = number();
+        if (statement.exceptional_identity.empty() ||
+            statement.branch_identity.empty() || !alternative_count ||
+            alternative_count > 128)
+          fail("checked raise identity or alternatives are invalid");
+        for (std::uint32_t index = 0; index < alternative_count; ++index)
+          statement.exceptional_alternatives.push_back(field());
+        statement.expr = read_expr();
+        if (!statement.expr ||
+            statement.expr->kind != ExprKind::EnumConstruct ||
+            !statement.expr->type || !statement.expr->type->declaration ||
+            statement.expr->type->declaration->id !=
+                statement.exceptional_identity)
+          fail("checked raise value and private enum identity disagree");
+        break;
+      }
       default:
         fail("checked body statement kind is unsupported");
     }
@@ -1562,12 +1822,13 @@ inline std::vector<Stmt> decode_checked_body_v1(
     bool allow_generic_map_index_mutation = false,
     bool allow_typed_enum_match = false,
     bool allow_pipeline_map = false,
-    bool allow_returned_callback = false) {
+    bool allow_returned_callback = false,
+    bool allow_exceptional_body = false) {
   H3BodyReader reader(bytes, context, parameters, result, true, true,
                       allow_vector_literal_relation, true,
                       allow_generic_map_index_mutation,
                       allow_typed_enum_match, allow_pipeline_map,
-                      allow_returned_callback);
+                      allow_returned_callback, allow_exceptional_body);
   auto statements = reader.read();
   if (compute_checked_body_hash_v1(statements) != expected_hash)
     throw std::invalid_argument("checked body semantic hash is mismatched");
@@ -1760,6 +2021,12 @@ inline void collect_expr_dependencies(const checked_ir::Expr& expr,
     if (expr.semantic_target_id.empty())
       throw std::invalid_argument("nominal constructor has empty template id");
     out.insert({SemanticDependency::Kind::NominalType, expr.semantic_target_id, ""});
+  } else if (expr.kind == checked_ir::ExprKind::EnumConstruct) {
+    if (!expr.type || !expr.type->declaration ||
+        expr.type->declaration->kind != DeclarationKind::Enum)
+      throw std::invalid_argument("enum constructor has no declaration identity");
+    out.insert({SemanticDependency::Kind::NominalType,
+                expr.type->declaration->id, ""});
   }
   for (const auto& operand : expr.operands) {
     collect_expr_dependencies(operand, out);
@@ -1783,6 +2050,8 @@ inline void collect_stmt_dependencies(const checked_ir::Stmt& stmt,
   for (const auto& c : stmt.match_cases) {
     for (const auto& s : c.body) collect_stmt_dependencies(s, out);
   }
+  for (const auto& c : stmt.exceptional_cases)
+    for (const auto& s : c.body) collect_stmt_dependencies(s, out);
 }
 
 inline std::vector<SemanticDependency> extract_semantic_dependencies(

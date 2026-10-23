@@ -11285,3 +11285,28 @@ R3E hostile coverage follow-up: the architect independently verified the Callabl
 The architect independently ran the receiver-TypeRef mutation at exact SHA `9202c585d82ca9665b4007e33a332af788a29ce8`; it rejects before projection. This closes the final hostile coverage finding for R3E's bounded returned-callback profile. Exact implementation SHA `660cfb718d6eb265b7d150f69d5d7359c1526e90` has independent scoped GO and source-free positive execution evidence; SHA `9202c585d82ca9665b4007e33a332af788a29ce8` contains the complete eight-case hostile suite. No P0/P1/P2 remains for this bounded profile. The architect's review explicitly does not accept generalized multiple callback dependencies or mixed direct-effect rows.
 
 The R3F ABI-v9 compatibility test now includes `Failure.Detailed(code: Int)` and a payload-bearing raise/recover in addition to the tag-only case. `check_phase25_r3f_raise_recover.py` passes native Debug/Release source-free execution and the rehashed private-enum identity rejection with provider source deleted. This is ABI-v9 evidence only; ABI-v10 still rejects the existing generic raise/recover callable as `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE`.
+
+## Phase 25.1 R3F — ABI-v10 checked exceptional flow — WIP — 2026-10-22
+
+Starting from reviewed/pushed R3E checkpoint `72a21496`, the working tree now
+contains a prototype private enum ABI record, checked-body `EnumConstruct`,
+`Raise`, and `Try` nodes, recover payload local identities, and checker-side
+exceptional occurrence lowering. The occurrence gate now validates enum
+constructor declaration/variant identity, payload ordinals, and payload
+TypeRefs. Rebuilt compiler and `check_phase25_r3f_raise_recover.py` pass the
+ABI-v9 Debug/Release source-free tag-only and `Detailed(code: Int)` cases plus
+the rehashed private enum identity rejection.
+
+ABI-v10 admission is not demonstrated. The source-backed generic
+`nonnegative(value)` remains without a complete open summary (`scheme_complete`
+is false; semantic inspect reports `missing_typed_facts`), so the common body
+reader/importer is not yet exercised. The first unresolved authority is the
+checker relation that types the unconstrained formal `value` through the
+`value < 0` operator and relates both Try return paths to the exported result.
+The payload-only concrete helper is not an adequate ABI-v10 generic positive.
+The ABI-v10 prototype is being checkpointed for review only; no R3F
+source-free execution or hostile importer tests have passed. This checkpoint
+does not claim R3F acceptance. Checker summary authority, importer
+validation/projection, Debug/Release source-free tests, hostile corpus, and
+independent Architect acceptance review remain required. Existing R3E GO
+remains scoped to the returned-callback profile.

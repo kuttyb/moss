@@ -750,6 +750,123 @@ struct NominalTemplate {
   std::string provenance_id;
 };
 
+struct PrivateEnumDeclaration {
+  struct Variant {
+    std::string name;
+    std::string variant_id;
+    std::vector<Field> fields;
+  };
+  std::string declaration_id;
+  std::string module_id;
+  std::string declaration_name;
+  std::vector<Variant> variants;
+  std::string provenance_id;
+};
+
+inline std::string private_enum_record_id(std::string_view declaration_id) {
+  return "private-enum-v1:" + std::string(declaration_id);
+}
+
+inline bool private_enum_record_id_valid(std::string_view id) {
+  constexpr std::string_view prefix = "private-enum-v1:";
+  return id.rfind(prefix, 0) == 0 && id.size() > prefix.size();
+}
+
+inline std::string private_enum_payload(const PrivateEnumDeclaration& value) {
+  require(module_id_valid(value.module_id) &&
+              !value.declaration_name.empty() &&
+              value.declaration_id ==
+                  "nominal-enum-v1:" + value.module_id + ":enum:" +
+                      value.declaration_name &&
+              value.variants.size() > 0 && value.variants.size() <= 128 &&
+              !value.provenance_id.empty(),
+          "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+          "ABI-v10 private enum declaration identity or shape is invalid");
+  WireWriter writer;
+  writer.byte(1);
+  writer.string(value.declaration_id);
+  writer.string(value.module_id);
+  writer.string(value.declaration_name);
+  writer.number(static_cast<std::uint32_t>(value.variants.size()));
+  std::set<std::string> names;
+  for (const auto& variant : value.variants) {
+    require(!variant.name.empty() && names.insert(variant.name).second &&
+                variant.variant_id == "nominal-enum-variant-v1:" +
+                    value.declaration_id + ":case:" + variant.name &&
+                variant.fields.size() <= 64,
+            "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+            "ABI-v10 private enum variant identity or payload is invalid");
+    writer.string(variant.name);
+    writer.string(variant.variant_id);
+    writer.number(static_cast<std::uint32_t>(variant.fields.size()));
+    std::set<std::string> field_names;
+    for (const auto& field : variant.fields) {
+      require(!field.name.empty() && field_names.insert(field.name).second &&
+                  !field.exported && field.provenance_id == value.provenance_id,
+              "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+              "ABI-v10 private enum payload field identity is invalid");
+      writer.string(field.name);
+      write_type(writer, field.type, 0);
+      writer.string(field.provenance_id);
+    }
+  }
+  writer.string(value.provenance_id);
+  return writer.finish();
+}
+
+inline PrivateEnumDeclaration read_private_enum(std::string_view payload) {
+  WireReader reader(payload);
+  require(reader.byte() == 1, "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+          "ABI-v10 private enum record version is unsupported");
+  PrivateEnumDeclaration value;
+  value.declaration_id = reader.string();
+  value.module_id = reader.string();
+  value.declaration_name = reader.string();
+  const auto variants = reader.number();
+  require(variants > 0 && variants <= 128,
+          "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+          "ABI-v10 private enum variant count is invalid");
+  for (std::uint32_t index = 0; index < variants; ++index) {
+    PrivateEnumDeclaration::Variant variant;
+    variant.name = reader.string();
+    variant.variant_id = reader.string();
+    const auto fields = reader.number();
+    require(fields <= 64, "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+            "ABI-v10 private enum payload count exceeds bounds");
+    for (std::uint32_t field_index = 0; field_index < fields; ++field_index) {
+      Field field;
+      field.name = reader.string();
+      field.type = read_type(reader, 0);
+      field.provenance_id = reader.string();
+      variant.fields.push_back(std::move(field));
+    }
+    value.variants.push_back(std::move(variant));
+  }
+  value.provenance_id = reader.string();
+  require(reader.done() && private_enum_payload(value) == payload,
+          "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+          "ABI-v10 private enum record is noncanonical");
+  return value;
+}
+
+inline std::string private_enum_dependency_hash(
+    const PrivateEnumDeclaration& value) {
+  return hash("moss-abi-v10-private-enum-dependency",
+              private_enum_payload(value));
+}
+
+inline Record private_enum_record(const PrivateEnumDeclaration& value) {
+  return {private_enum_record_id(value.declaration_id),
+          private_enum_payload(value)};
+}
+
+inline void validate_private_enum(const Record& record) {
+  const auto value = read_private_enum(record.payload);
+  require(record.id == private_enum_record_id(value.declaration_id),
+          "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+          "ABI-v10 private enum declaration ID disagrees with its record");
+}
+
 inline std::string template_payload(const NominalTemplate& value) {
   require(nominal_template_id_valid(value.template_id) &&
               value.template_id == "nominal-template-v1:" + value.module_id +
@@ -1441,6 +1558,7 @@ inline void validate_complete_interface(
   std::map<std::string, Summary> private_summaries;
   std::map<std::string, MethodTemplate> private_methods;
   std::map<std::string, CheckedBodyRecord> private_bodies;
+  std::map<std::string, PrivateEnumDeclaration> private_enums;
   for (const auto& rec : sealed.value.private_semantic_dependencies) {
     if (rec.payload.empty()) continue;
     const bool summary_v2_or_v3 = hex_hash(rec.id) &&
@@ -1457,6 +1575,13 @@ inline void validate_complete_interface(
       require(private_bodies.emplace(body.callable_id, body).second,
               "SOURCE_FREE_CONTRACT_INVALID",
               "Duplicate checked body record ID");
+    } else if (private_enum_record_id_valid(rec.id)) {
+      const auto enumeration = read_private_enum(rec.payload);
+      validate_private_enum(rec);
+      require(private_enums.emplace(enumeration.declaration_id,
+                                    enumeration).second,
+              "SOURCE_FREE_CONTRACT_INVALID",
+              "Duplicate private enum declaration ID");
     } else if (nominal_template_id_valid(rec.id)) {
       const auto tmpl = read_template(rec.payload);
       validate_template(rec);
@@ -1585,12 +1710,20 @@ inline void validate_complete_interface(
                 "Checked body callable dependency hash mismatch");
       } else {
         const auto target = known_templates.find(dep.target_id);
-        require(target != known_templates.end(),
-                "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
-                "Checked body references an unknown nominal template");
-        require(target->second.representation_hash == dep.expected_hash,
-                "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
-                "Checked body nominal representation hash mismatch");
+        if (target != known_templates.end()) {
+          require(target->second.representation_hash == dep.expected_hash,
+                  "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                  "Checked body nominal representation hash mismatch");
+        } else {
+          const auto enum_target = private_enums.find(dep.target_id);
+          require(enum_target != private_enums.end(),
+                  "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                  "Checked body references an unknown nominal declaration");
+          require(private_enum_dependency_hash(enum_target->second) ==
+                      dep.expected_hash,
+                  "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                  "Checked body private enum declaration hash mismatch");
+        }
       }
     }
   }
@@ -1672,6 +1805,10 @@ inline void validate_complete_interface(
               "NominalTemplate references unknown method template: " + mid);
     }
   }
+  for (const auto& pair : private_enums)
+    require(known_provenances.count(pair.second.provenance_id) > 0,
+            "SOURCE_FREE_CONTRACT_INVALID",
+            "Private enum references unknown provenance ID");
 
   for (const auto& sum : public_summaries) {
     if (!sum.provenance_id.empty()) {
