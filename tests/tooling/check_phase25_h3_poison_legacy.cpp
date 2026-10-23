@@ -53,6 +53,9 @@ int main(int argc, char** argv) {
       } else if (line.find("generic_dependency_end") != std::string::npos) {
         callable.clear();
       }
+      const bool member_relay_drop = argc == 6 &&
+          std::string(argv[5]) == "member-relay" &&
+          (callable == "invoke_action" || callable == "private_action");
       if (line.find("generic_stmt ") != std::string::npos &&
           (callable == "fresh" || callable == "private_box" ||
            callable == "nested_private_box" ||
@@ -63,7 +66,8 @@ int main(int argc, char** argv) {
            ((argc == 6 && std::string(argv[5]) == "member") &&
             callable == "size") ||
            ((argc == 6 && std::string(argv[5]) == "call-chain") &&
-            (callable == "middle" || callable == "relay")))) {
+            (callable == "middle" || callable == "relay")) ||
+           member_relay_drop)) {
         ++removed;
         continue;
       }

@@ -3028,6 +3028,8 @@ static bool abi_v10_checked_for_assert_mutation_summary_candidate(
     const abi_v10::Summary& summary);
 static bool abi_v10_generic_member_summary_candidate(
     const abi_v10::Summary& summary);
+static bool abi_v10_generic_member_relay_summary_candidate(
+    const abi_v10::Summary& summary);
 static bool abi_v10_checked_pipeline_map_summary_candidate(
     const abi_v10::Summary& summary);
 static bool abi_v10_returned_callback_summary_candidate(
@@ -3122,7 +3124,8 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
           abi_v10::Access::Read} && summary.observable_effect_bits == 0 &&
       summary.observable_effect_tags.empty() && summary.dependencies.empty();
   const bool member_summary =
-      abi_v10_generic_member_summary_candidate(summary);
+      abi_v10_generic_member_summary_candidate(summary) ||
+      abi_v10_generic_member_relay_summary_candidate(summary);
   if (member_summary) {
     if (summary.requirements.size() > 64)
       invalid("checked ABI-v10 member requirement set exceeds its limit");
@@ -3215,6 +3218,16 @@ static vector<moss::Requirement> imported_abi_v10_requirements(
             std::numeric_limits<int>::max()) ||
         !requirement_ids.insert(origin.declaration_id).second)
       invalid("checked ABI-v10 requirement provenance is inconsistent");
+    const string expected_logical_source = abi_v10::hash(
+        "moss-abi-v10-logical-source",
+        origin.module_id + "\n" + origin.source_file_display);
+    const string expected_provenance = abi_v10::hash(
+        "moss-abi-v10-provenance",
+        origin.declaration_id + "\n" + expected_logical_source + "\n" +
+            std::to_string(origin.start_line));
+    if (origin.logical_source_id != expected_logical_source ||
+        origin.provenance_id != expected_provenance)
+      invalid("checked ABI-v10 requirement provenance identity is forged");
     if (checked_arithmetic) {
       if (origin.declaration_id.rfind(checked_occurrence_prefix, 0) != 0)
         invalid("checked ABI-v10 arithmetic requirement has no exact occurrence identity");
@@ -4836,6 +4849,22 @@ static bool abi_v10_generic_member_summary_candidate(
       same_wire_type(same_wire_type, *requirement.result, summary.result);
 }
 
+// A checked forwarding callable may expose one deferred member requirement
+// through exactly one sealed private dependency. Its type shape is identical
+// to the direct member leaf; only the authenticated dependency edge differs.
+static bool abi_v10_generic_member_relay_summary_candidate(
+    const abi_v10::Summary& summary) {
+  abi_v10::Summary leaf_shape = summary;
+  leaf_shape.dependencies.clear();
+  if (!abi_v10_generic_member_summary_candidate(leaf_shape) ||
+      summary.dependencies.size() != 1 ||
+      summary.dependencies.front().first.empty() ||
+      !abi_v10::checked_body_hash_valid(
+          summary.dependencies.front().second))
+    return false;
+  return true;
+}
+
 static bool abi_v10_empty_vector_summary_candidate(
     const abi_v10::Summary& summary) {
   const auto bound_zero = [](const abi_v10::WireType& type) {
@@ -5801,7 +5830,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
         abi_v10_direct_raise_body_candidate(summary, statements, program,
             body.dependencies, function.observable_effects);
     const bool member_effect_record_valid =
-        abi_v10_generic_member_summary_candidate(summary) &&
+        (abi_v10_generic_member_summary_candidate(summary) ||
+         abi_v10_generic_member_relay_summary_candidate(summary)) &&
         abi_v10_deferred_member_effects(function.observable_effects) &&
         summary.observable_effect_tags ==
             vector<string>{"member-dispatch-v1"};
@@ -7477,9 +7507,65 @@ static void project_imported_h3_checked_bodies(Program& program) {
           dependency->second != target.body_semantic_hash ||
           summary.dependencies.size() != 1 || body.dependencies.size() != 1)
         invalid("checked ABI-v10 direct call dependency identity or hash is mismatched");
+      auto requirement_provenance = [](const Function& owner,
+                                      const abi_v10::Requirement& requirement)
+          -> std::optional<abi_v10::SourceProvenance> {
+        auto record = std::find_if(
+            owner.imported_checked_provenance_records.begin(),
+            owner.imported_checked_provenance_records.end(),
+            [&](const auto& item) {
+          return item.first == requirement.provenance_id;
+        });
+        if (record == owner.imported_checked_provenance_records.end())
+          return std::nullopt;
+        try {
+          return abi_v10::read_provenance(record->second);
+        } catch (const abi_v10::Error&) {
+          return std::nullopt;
+        }
+      };
+      const auto relay_provenance = summary.requirements.size() == 1
+          ? requirement_provenance(function, summary.requirements.front())
+          : std::nullopt;
+      const auto leaf_provenance = target.requirements.size() == 1
+          ? requirement_provenance(*callee, target.requirements.front())
+          : std::nullopt;
+      const bool member_provenance_matches = relay_provenance &&
+          leaf_provenance &&
+          relay_provenance->module_id == leaf_provenance->module_id &&
+          relay_provenance->logical_source_id ==
+              leaf_provenance->logical_source_id &&
+          relay_provenance->source_file_display ==
+              leaf_provenance->source_file_display &&
+          relay_provenance->start_line == leaf_provenance->start_line &&
+          relay_provenance->start_column == leaf_provenance->start_column &&
+          relay_provenance->end_line == leaf_provenance->end_line &&
+          relay_provenance->end_column == leaf_provenance->end_column;
+      const bool checked_member_relay =
+          abi_v10_generic_member_relay_summary_candidate(summary) &&
+          abi_v10_generic_member_summary_candidate(target) &&
+          member_provenance_matches &&
+          abi_v10_deferred_member_effects(callee->observable_effects) &&
+          target.observable_effect_bits == 0 &&
+          target.observable_effect_tags ==
+              vector<string>{"member-dispatch-v1"} &&
+          summary.requirements.size() == 1 && target.requirements.size() == 1 &&
+          summary.requirements.front().operation ==
+              target.requirements.front().operation &&
+          summary.requirements.front().result &&
+          target.requirements.front().result &&
+          abi_v10::type_bytes(summary.requirements.front().receiver,
+                              summary.variable_count) ==
+              abi_v10::type_bytes(target.requirements.front().receiver,
+                                  target.variable_count) &&
+          abi_v10::type_bytes(*summary.requirements.front().result,
+                              summary.variable_count) ==
+              abi_v10::type_bytes(*target.requirements.front().result,
+                                  target.variable_count);
       if (target.observable_effect_bits ||
-          !target.observable_effect_tags.empty() ||
-          !abi_v10_effects_pure(callee->observable_effects) ||
+          ((!target.observable_effect_tags.empty() ||
+            !abi_v10_effects_pure(callee->observable_effects)) &&
+           !checked_member_relay) ||
           target.parameters.size() != expression.operands.size() ||
           target.parameter_access.size() != callee->parameter_effects.size())
         invalid("checked ABI-v10 call target effects or arity are mismatched");
@@ -7596,7 +7682,8 @@ static void validate_imported_h3_summary_closure(Program& program) {
             summary.observable_effect_bits == 0 &&
             summary.observable_effect_tags.empty();
     const bool member_effects_valid =
-        abi_v10_generic_member_summary_candidate(summary) &&
+        (abi_v10_generic_member_summary_candidate(summary) ||
+         abi_v10_generic_member_relay_summary_candidate(summary)) &&
         abi_v10_deferred_member_effects(function.observable_effects) &&
         summary.observable_effect_bits == 0 &&
         summary.observable_effect_tags ==
@@ -8738,6 +8825,132 @@ class Checker {
                   return operation.expression_occurrence_id == occurrence.id &&
                       operation.operation_id == occurrence.operation_id;
                 }) == 1;
+          }
+        }
+      }
+      // A single exact helper relay may preserve the same deferred member
+      // effect contract as its checked leaf. Validate the leaf occurrence,
+      // the relay's checked call edge, and the shared receiver/result TypeRefs;
+      // an unresolved effect row by itself is never sufficient evidence.
+      if (!deferred_member_effects_complete &&
+          function.open_summary->member_requirements.size() == 1 &&
+          function.body.size() == 1 &&
+          function.body.front().kind == Stmt::Kind::Return) {
+        const auto& member =
+            function.open_summary->member_requirements.front();
+        string target_name;
+        vector<string> arguments;
+        if (member.requirement_id ==
+                function.open_summary->callable_id + ":member:0" &&
+            member.member_name.size() && member.result && *member.result &&
+            member.receiver && function.open_summary->result_type &&
+            !function.open_summary->parameter_types.empty() &&
+            member.receiver->structurally_equal(
+                *function.open_summary->parameter_types.front()) &&
+            (*member.result)->structurally_equal(
+                *function.open_summary->result_type) &&
+            parse_simple_call(trim(function.body.front().a), target_name,
+                              arguments) &&
+            arguments.size() == function.params.size() &&
+            std::all_of(arguments.begin(), arguments.end(),
+                [&](const string& argument) {
+              return std::any_of(function.params.begin(),
+                  function.params.end(), [&](const Param& parameter) {
+                return parameter.name == trim(argument);
+              });
+            })) {
+          string qualified = target_name;
+          if (!functions_.count(qualified) && !objects_.count(qualified) &&
+              !function.defining_module.empty())
+            qualified = function.defining_module + "__" + target_name;
+          auto callee = functions_.find(qualified);
+          const auto exact_edges = std::count_if(
+              p_.semantic_call_edges.begin(), p_.semantic_call_edges.end(),
+              [&](const moss::SemanticCallEdge& edge) {
+            return edge.source == "fn:" + function.name &&
+                edge.target == "fn:" + qualified &&
+                edge.line == function.body.front().line &&
+                edge.invocation_kind == "ordinary_call" &&
+                edge.occurrence == 0 &&
+                edge.source_specialization_key.empty();
+          });
+          if (callee != functions_.end() && exact_edges == 1 &&
+              callee->second->open_summary &&
+              callee->second->open_summary->scheme_complete &&
+              callee->second->open_summary->member_requirements.size() == 1 &&
+              callee->second->open_summary->member_requirements.front().member_name ==
+                  member.member_name &&
+              callee->second->open_summary->parameter_types.size() ==
+                  arguments.size() &&
+              !callee->second->open_summary->parameter_types.empty() &&
+              callee->second->params.size() == arguments.size() &&
+              callee->second->open_summary->result_type &&
+              callee->second->open_summary->result_type->structurally_equal(
+                  **member.result) &&
+              callee->second->open_summary->member_requirements.front().receiver &&
+              callee->second->open_summary->member_requirements.front().receiver
+                  ->structurally_equal(*member.receiver) &&
+              callee->second->open_summary->member_requirements.front().result &&
+              *callee->second->open_summary->member_requirements.front().result &&
+              (**callee->second->open_summary->member_requirements.front().result)
+                  .structurally_equal(**member.result) &&
+              callee->second->open_summary->parameter_types.front()->structurally_equal(
+                  *member.receiver) &&
+              callee->second->body.size() == 1 &&
+              callee->second->body.front().kind == Stmt::Kind::Return &&
+              abi_v10_deferred_member_effects(
+                  callee->second->observable_effects)) {
+            string receiver;
+            string member_name;
+            vector<string> member_arguments;
+            auto& leaf = *callee->second;
+            const auto& leaf_summary = *leaf.open_summary;
+            const auto& leaf_member = leaf_summary.member_requirements.front();
+            const bool leaf_shape =
+                leaf_summary.callable_id + ":member:0" ==
+                    leaf_member.requirement_id &&
+                leaf_summary.requirements.empty() &&
+                leaf_summary.semantic_dependencies.empty() &&
+                leaf.params.size() == 1 && leaf_summary.parameter_types.size() == 1 &&
+                leaf_member.receiver &&
+                leaf_member.receiver->structurally_equal(
+                    *leaf_summary.parameter_types.front()) &&
+                leaf_member.result && *leaf_member.result &&
+                leaf_summary.result_type &&
+                (*leaf_member.result)->structurally_equal(
+                    *leaf_summary.result_type) &&
+                parse_member_call(trim(leaf.body.front().a), receiver,
+                                  member_name, member_arguments) &&
+                receiver == leaf.params.front().name &&
+                member_name == member.member_name &&
+                member_arguments.empty();
+            auto leaf_state = checked_body_states_.find(&leaf.body);
+            if (leaf_shape && leaf_state != checked_body_states_.end() &&
+                leaf_state->second &&
+                leaf_state->second->expression_occurrence_ledger_complete) {
+              auto statement = leaf_state->second->statement_occurrence_ids.find(
+                  &leaf.body.front());
+              if (statement !=
+                  leaf_state->second->statement_occurrence_ids.end()) {
+                auto root = leaf_state->second->expression_root_slots.find(
+                    {statement->second, "return-value"});
+                if (root != leaf_state->second->expression_root_slots.end() &&
+                    root->second <
+                        leaf_state->second->expression_occurrences.size()) {
+                  const auto& occurrence =
+                      leaf_state->second->expression_occurrences[root->second];
+                  deferred_member_effects_complete = occurrence.completed &&
+                      occurrence.kind == BodyTypeState::ExpressionOccurrence::Kind::MemberCall &&
+                      occurrence.operation_id == "method:" + member_name &&
+                      std::count_if(leaf_state->second->open_operations.begin(),
+                          leaf_state->second->open_operations.end(),
+                          [&](const auto& operation) {
+                    return operation.expression_occurrence_id == occurrence.id &&
+                        operation.operation_id == occurrence.operation_id;
+                  }) == 1;
+                }
+              }
+            }
           }
         }
       }
@@ -12828,6 +13041,11 @@ class Checker {
       // straight-line local/return pair use the callee's checker-owned summary;
       // branches and reassignment retain the existing incomplete behavior.
       std::optional<std::pair<string, int>> local_result;
+      // A checked relay may carry a deferred member requirement whose result
+      // is an independent callee-bound TypeRef. Keep that relation alongside
+      // the call-result substitution; it is not derivable from the source
+      // spelling after the provider has been removed.
+      vector<moss::MemberDispatchRequirement> forwarded_member_requirements;
       if (function.body.size() == 2 &&
           function.body.back().kind == Stmt::Kind::Return &&
           plain_identifier(trim(function.body.back().a)) &&
@@ -12937,8 +13155,18 @@ class Checker {
                 if (!type) return nullptr;
                 if (type->kind == moss::TypeKind::InferenceVar) {
                   auto replacement = replacements.find(type->var_id.ordinal);
-                  return replacement == replacements.end() ? nullptr
-                      : replacement->second;
+                  if (replacement != replacements.end())
+                    return replacement->second;
+                  // Callee-local variables (for example the result of an
+                  // open member call) are freshened into this summary. Their
+                  // identity and sharing are checker-owned; never substitute
+                  // the caller's result variable or infer a concrete type.
+                  if (type->var_id.session_id || type->var_id.owner_id ||
+                      type->var_id.ordinal >= source.bound_variable_count)
+                    return nullptr;
+                  auto fresh = bound();
+                  replacements.emplace(type->var_id.ordinal, fresh);
+                  return fresh;
                 }
                 if (type->kind == moss::TypeKind::NominalInstance) {
                   vector<std::pair<string, moss::TypeRef>> fields;
@@ -12962,7 +13190,50 @@ class Checker {
                 }
                 return type;
               };
-              if (valid) local_result_type = substitute(source.result_type);
+              if (valid) {
+                local_result_type = substitute(source.result_type);
+                // A one-member leaf is the only currently admitted deferred
+                // member closure. Preserve it through this exact forwarding
+                // edge, including the independent result TypeRef and original
+                // provider location. More complex requirement graphs remain
+                // unavailable until their checker relations are represented.
+                if (source.member_requirements.size() == 1 &&
+                    source.requirements.empty() &&
+                    source.semantic_dependencies.empty()) {
+                  const auto& member = source.member_requirements.front();
+                  const bool exact_member_leaf =
+                      member.requirement_id ==
+                          source.callable_id + ":member:0" &&
+                      source.parameter_types.size() == 1 &&
+                      arguments.size() == 1 &&
+                      member.argument_types.empty() &&
+                      member.argument_access.empty() &&
+                      member.receiver_access == moss::AccessMode::Read &&
+                      member.receiver && source.parameter_types.front() &&
+                      member.receiver->structurally_equal(
+                          *source.parameter_types.front()) &&
+                      member.result && *member.result && source.result_type &&
+                      (*member.result)->structurally_equal(
+                          *source.result_type);
+                  if (exact_member_leaf) {
+                    moss::MemberDispatchRequirement forwarded = member;
+                    forwarded.requirement_id =
+                        function.semantic_callable_id + ":member:0";
+                    forwarded.receiver = substitute(member.receiver);
+                    forwarded.result = substitute(*member.result);
+                    forwarded.origin.enclosing_callable =
+                        function.semantic_callable_id;
+                    forwarded.origin.call_expression_id =
+                        forwarded.requirement_id;
+                    if (forwarded.receiver && forwarded.result &&
+                        *forwarded.result && local_result_type &&
+                        local_result_type->structurally_equal(
+                            **forwarded.result))
+                      forwarded_member_requirements.push_back(
+                          std::move(forwarded));
+                  }
+                }
+              }
             }
           }
         }
@@ -13224,6 +13495,8 @@ class Checker {
           member.result = summary.result_type;
         summary.member_requirements.push_back(std::move(member));
       }
+      for (auto& member : forwarded_member_requirements)
+        summary.member_requirements.push_back(std::move(member));
       const bool dense_ordinals = moss::close_open_summary_ordinals(summary);
       summary.scheme_complete = complete &&
           (!unresolved_open_generic_return ||
@@ -28380,11 +28653,46 @@ class Checker {
   // Unwinding through a specialization records each provider frame. At the
   // boundary between consumer source and a compiled provider, the consumer's
   // outer call becomes the primary location (ABI_V10_DESIGN.md §3.6).
-  static void annotate_specialization_failure(CompileError& error,
-                                              const Function& function,
-                                              int call_line,
-                                              const string& call_source) {
-    if (!compiled_interface_file(error.source_file)) return;
+  void annotate_specialization_failure(CompileError& error,
+                                       const Function& function,
+                                       int call_line,
+                                       const string& call_source) const {
+    if (!compiled_interface_file(error.source_file)) {
+      // Source-backed cross-module checking can discover a deferred member
+      // failure while walking the provider's specialized helper chain. Keep
+      // the original provider requirement as related evidence and report the
+      // outer consumer call as primary, matching the imported-provider path.
+      if (error.code != "METHOD_NOT_FOUND" || call_source.empty() ||
+          compiled_interface_file(call_source) ||
+          compiled_interface_file(function.source_file) ||
+          function.defining_module.empty() || !function.open_summary ||
+          function.open_summary->member_requirements.empty())
+        return;
+      string caller_module = p_.main_module.empty()
+          ? p_.module_name : p_.main_module;
+      if (starts_with(current_semantic_context_, "fn:")) {
+        const string caller_name = current_semantic_context_.substr(3);
+        auto caller = std::find_if(p_.functions.begin(), p_.functions.end(),
+            [&](const Function& candidate) {
+          return candidate.name == caller_name;
+        });
+        if (caller != p_.functions.end())
+          caller_module = caller->defining_module;
+      }
+      if (caller_module.empty() || caller_module == function.defining_module)
+        return;
+      const auto& member =
+          function.open_summary->member_requirements.front();
+      const auto& origin = member.origin;
+      error.teaching.related.insert(error.teaching.related.begin(),
+          {origin.source_file.empty() ? function.source_file : origin.source_file,
+           std::max(origin.line, 1), std::max(origin.column, 1),
+           "provider function '" + provider_callable_display(function.name) +
+               "' requires method '" + member.member_name + "'"});
+      error.line = std::max(call_line, 1);
+      error.source_file = call_source;
+      return;
+    }
     error.teaching.related.insert(
         error.teaching.related.begin(),
         {function.provider_origin_file.empty()
@@ -57439,8 +57747,7 @@ static void append_abi_v10_private_chain_records(
         function.open_summary->bound_variable_count == 0;
     if ((!function.static_dispatch && !checked_concrete_callable) ||
         !function.open_summary ||
-        !function.open_summary->scheme_complete ||
-        !function.open_summary->member_requirements.empty())
+        !function.open_summary->scheme_complete)
       throw ProjectError("SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
                          "private checked ABI-v10 callable has incomplete type or effect facts");
     auto body = common_checked_body(program, function);
@@ -57462,9 +57769,6 @@ static void append_abi_v10_private_chain_records(
             [](const checked_ir::Stmt& statement) {
           return statement.kind == checked_ir::StmtKind::For;
         });
-    if (!pure_callable && !checked_for_callable)
-      throw ProjectError("SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
-                         "checked ABI-v10 dependency has unsupported requirements or effects");
     std::set<string> callable_edges;
     for (const auto& dependency : body->dependencies)
       if (dependency.kind == SemanticDependency::Kind::Callable) {
@@ -57495,6 +57799,73 @@ static void append_abi_v10_private_chain_records(
         callable_edges != checked_call_edges)
       throw ProjectError("SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING",
                          "checked ABI-v10 body, summary, and checked call edges disagree");
+    bool checked_member_callable = false;
+    const auto& member_facts = function.open_summary->member_requirements;
+    if (member_facts.size() == 1 &&
+        function.open_summary->requirements.empty() &&
+        function.open_summary->parameter_types.size() == 1 &&
+        function.open_summary->parameter_access ==
+            vector<moss::AccessMode>{moss::AccessMode::Read} &&
+        function.open_summary->result_type &&
+        abi_v10_deferred_member_effects(
+            function.open_summary->observable_effects)) {
+      const auto& member = member_facts.front();
+      const bool relation = member.requirement_id ==
+              function.open_summary->callable_id + ":member:0" &&
+          member.member_name.size() && member.receiver && member.result &&
+          *member.result && member.argument_types.empty() &&
+          member.argument_access.empty() &&
+          member.receiver_access == moss::AccessMode::Read &&
+          member.receiver->structurally_equal(
+              *function.open_summary->parameter_types.front()) &&
+          (*member.result)->structurally_equal(
+              *function.open_summary->result_type);
+      if (relation && body->statements.size() == 1 &&
+          body->statements.front().kind == checked_ir::StmtKind::Return &&
+          body->statements.front().expr) {
+        const auto& expression = *body->statements.front().expr;
+        const bool direct_leaf = body->dependencies.empty() &&
+            expression.kind == checked_ir::ExprKind::MemberCall &&
+            expression.semantic_target_id ==
+                std::string(checked_ir::kMemberRequirementPrefix) +
+                    member.requirement_id &&
+            expression.member_ordinal == 0 &&
+            expression.member_name == member.member_name &&
+            expression.operands.size() == 1 &&
+            expression.operands.front().kind ==
+                checked_ir::ExprKind::Parameter &&
+            expression.operands.front().ordinal == 0 && expression.type &&
+            expression.type->structurally_equal(
+                *function.open_summary->result_type);
+        bool direct_relay = false;
+        if (expression.kind == checked_ir::ExprKind::Call &&
+            body->dependencies.size() == 1 &&
+            body->dependencies.front().kind ==
+                SemanticDependency::Kind::Callable &&
+            expression.semantic_target_id ==
+                body->dependencies.front().target_id &&
+            expression.operands.size() == 1 &&
+            expression.operands.front().kind ==
+                checked_ir::ExprKind::Parameter &&
+            expression.operands.front().ordinal == 0 && expression.type &&
+            expression.type->structurally_equal(
+                *function.open_summary->result_type)) {
+          const Function* callee = find_callable(
+              body->dependencies.front().target_id);
+          direct_relay = callee && callee->open_summary &&
+              callee->open_summary->member_requirements.size() == 1 &&
+              callee->open_summary->member_requirements.front().member_name ==
+                  member.member_name &&
+              callee->open_summary->result_type &&
+              callee->open_summary->result_type->structurally_equal(
+                  *function.open_summary->result_type);
+        }
+        checked_member_callable = direct_leaf || direct_relay;
+      }
+    }
+    if (!pure_callable && !checked_for_callable && !checked_member_callable)
+      throw ProjectError("SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+                         "checked ABI-v10 dependency has unsupported requirements or effects");
     checked_bodies.emplace(id, std::move(*body));
     selected.emplace(id, &function);
     visiting.erase(id);
@@ -57676,6 +58047,18 @@ static void append_abi_v10_private_chain_records(
     summary.requirements = std::move(*requirements);
     if (abi_v10_checked_for_assert_mutation_effects(facts.observable_effects))
       summary.observable_effect_tags = {"may_diverge", "may_panic"};
+    if (!facts.member_requirements.empty()) {
+      auto members = abi_v10_checked_member_requirements(
+          facts.member_requirements, summary.variable_count,
+          requirement_provenance);
+      if (!members || members->size() != 1)
+        throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+                           "checked ABI-v10 deferred member facts are incomplete");
+      summary.requirements.insert(summary.requirements.end(),
+          std::make_move_iterator(members->begin()),
+          std::make_move_iterator(members->end()));
+      summary.observable_effect_tags = {"member-dispatch-v1"};
+    }
     summary.body_semantic_hash = checked.semantic_hash;
     auto provenance = abi_v10_checked_provenance(
         value.module_id, id, function.source_file, function.line);
@@ -57705,6 +58088,11 @@ static void append_abi_v10_private_chain_records(
                            "checked ABI-v10 body has unsupported dependency kind");
       }
     }
+    if (!facts.member_requirements.empty() &&
+        !abi_v10_generic_member_summary_candidate(summary) &&
+        !abi_v10_generic_member_relay_summary_candidate(summary))
+      throw ProjectError("SOURCE_FREE_SUMMARY_INVALID",
+                         "checked deferred member summary is not a validated leaf or relay");
     if (abi_v10_checked_for_assert_mutation_summary_candidate(summary) &&
         !abi_v10_checked_for_assert_mutation_body_candidate(
             summary, checked.statements, *program.type_context))
