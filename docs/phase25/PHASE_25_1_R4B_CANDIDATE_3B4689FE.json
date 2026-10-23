@@ -42,13 +42,22 @@
   },
   "architect_review": {
     "compiler_sha": "3b4689fe29f1393d512bbb07d1084e9f84898dcc",
-    "disposition": "The scoped direct-nominal P2 was closed by exact-SHA follow-up; overall R4 exact-SHA verdict is pending.",
+    "disposition": "The scoped direct-nominal P2 was closed by exact-SHA follow-up. Overall exact-candidate R4 review returned NO-GO with one P1, no P0, and no additional P2.",
     "p0": 0,
     "p1": 0,
     "p2": "Durable direct-return source-free legacy-poison/projection/hostile regression coverage was missing.",
     "scoped_verdict": "GO",
     "direct_nominal_followup": "closed at exact compiler SHA 3b4689fe29f1393d512bbb07d1084e9f84898dcc",
-    "overall_r4_verdict": "pending"
+    "overall_r4_verdict": "NO-GO",
+    "overall_r4_p0": 0,
+    "overall_r4_p1": 1,
+    "overall_r4_additional_p2": 0,
+    "overall_r4_p1_finding": "Scenario 7 fails in ABI-v10 Debug and Release with SOURCE_FREE_CHECKED_BODY_UNAVAILABLE before consumer specialization instead of METHOD_NOT_FOUND with provider/consumer provenance.",
+    "independent_exact_binary_runs": [
+      "tests/tooling/check_phase25_r4_direct_nominal.py: PASS; Int/String checked projection and seven hostile mutations rejected",
+      "tests/tooling/check_phase25_m2b2_source_free_corpus.py ./moss: PASS; full prioritized source-free/hostile corpus and ABI-v9 controls"
+    ],
+    "reviewed_evidence_commit": "40db78652ae767cd73a936b4e3a60801ca6e237d"
   },
   "compatibility_oracle": {
     "case_count": 32,
@@ -149,7 +158,7 @@
     "details": "Supported callable projects and runs beside an unsupported callable; forged provenance controls reject on use.",
     "status": "pass"
   },
-  "r4_acceptance": "OPEN_SCENARIO_7_RED",
+  "r4_acceptance": "OPEN_NO_GO_SCENARIO_7_P1",
   "real_sdk_generic_matrix": {
     "compiler_executable_sha256": "c62ac9534a1f817cf518ec458f987fbd5403352f2f747533bb805dd8f82e642c",
     "raw_report": "tmp/r4-cross-crate-resume/sdk-generic.json",
@@ -158,7 +167,7 @@
   },
   "remaining_gates": [
     "Resolve scenario 7 checker-owned open result/requirement closure and preserve exact METHOD_NOT_FOUND diagnostic provenance",
-    "Obtain the overall exact-SHA R4 Architect verdict and return R4 recommendation to L7",
+    "Obtain a fresh exact-SHA R4 Architect GO after scenario 7 is resolved and return the acceptance recommendation to L7",
     "After R4 acceptance only, run R5 gates recorded in PHASE_25_1_REMAINING_WORK.md"
   ],
   "scenario7_controls": {

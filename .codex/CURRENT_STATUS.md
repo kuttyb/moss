@@ -11775,6 +11775,9 @@ ABI-v10 profile outcomes), as do the 18-run real-SDK generic matrix, eight
 ABI-v9-only SDK source-free harnesses, R2 nominal hostiles, mixed-provider
 admission (6/6), focused M2b2 source-free hostiles, migration/cache controls,
 and direct nominal source-free hostiles. The scoped direct-nominal P2 was
-closed by exact-SHA follow-up. Overall exact-SHA Architect R4 disposition is
-pending. R4 remains open and is not accepted; R5 has not started. Keep ABI-v9
-as default and leave protected branches untouched.
+closed by exact-SHA follow-up. The Architect independently reran the direct-
+nominal gate and full M2b2 source-free/hostile corpus on this exact binary; both
+passed. Overall exact-SHA R4 review at evidence checkpoint `40db7865` returned
+NO-GO with one P1, no P0, and no additional P2: scenario 7 remains red in both
+profiles. R4 is not accepted; R5 has not started. Keep ABI-v9 as default and
+leave protected branches untouched.

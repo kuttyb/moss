@@ -283,9 +283,12 @@ result/requirement closure through that private member call. No result
 relation may be copied or guessed to make the ABI record fit. Treat this as a
 compiler ABI-v10 diagnostic-parity defect, not a test-harness failure.
 
-The scoped direct-nominal Architect P2 is closed on exact SHA. Overall
-exact-SHA R4 Architect verdict is pending. **R4 remains open and is not
-accepted** until scenario 7 is resolved and the exact-SHA review completes.
+The scoped direct-nominal Architect P2 is closed on exact SHA. The overall
+exact-SHA R4 review at evidence checkpoint `40db78652ae767cd73a936b4e3a60801ca6e237d`
+returned **NO-GO**, with one P1, no P0, and no additional P2. The Architect
+independently reran the direct-nominal hostile gate and full M2b2 source-free/
+hostile corpus on the exact compiler; both passed. **R4 remains open and is
+not accepted** until scenario 7 is resolved and a fresh exact-SHA GO is issued.
 R5 remains unstarted; its recorded gates require green R0/R4 evidence,
 `make check`, examples/SDK/cross-crate and migration/cache/provenance gates,
 and an independent final architectural review. ABI-v9 remains the default.
